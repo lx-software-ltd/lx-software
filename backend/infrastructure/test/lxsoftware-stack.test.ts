@@ -275,13 +275,13 @@ describe("Admin Lambda IAM policies", () => {
 
 describe("Executive Board placeholder secrets", () => {
   const expectedNames = [
-    "lxsoftware-admin-siutindei-board-github-token",
-    "lxsoftware-admin-siutindei-board-search-api-key",
-    "lxsoftware-admin-siutindei-board-meta-token",
-    "lxsoftware-admin-siutindei-board-meta-app-secret",
-    "lxsoftware-admin-siutindei-board-app-store-connect-key",
-    "lxsoftware-admin-siutindei-board-google-play-sa",
-    "lxsoftware-admin-siutindei-board-google-analytics-sa",
+    "lxsoftware-admin-github-read-token",
+    "lxsoftware-admin-search-api-key",
+    "lxsoftware-admin-meta-board-token",
+    "lxsoftware-admin-meta-app-secret",
+    "lxsoftware-admin-app-store-connect-key",
+    "lxsoftware-admin-google-play-sa",
+    "lxsoftware-admin-google-analytics-sa",
   ];
 
   const removedParameters = [
@@ -307,6 +307,13 @@ describe("Executive Board placeholder secrets", () => {
       expect(secret.Properties?.GenerateSecretString).toBeDefined();
       expect(secret.UpdateReplacePolicy).toBe("Retain");
       expect(secret.DeletionPolicy).toBe("Retain");
+      const tags = asArray<{ Key: string; Value: string }>(secret.Properties?.Tags);
+      expect(tags).toEqual(
+        expect.arrayContaining([
+          { Key: "lxsoftware:tenant", Value: "siutindei" },
+          { Key: "lxsoftware:purpose", Value: "siutindei-executive-board" },
+        ]),
+      );
     }
   });
 
@@ -314,19 +321,19 @@ describe("Executive Board placeholder secrets", () => {
     const byName = Object.fromEntries(
       boardSecrets().map((s) => [s.Properties?.Name as string, s])
     );
-    expect(byName["lxsoftware-admin-siutindei-board-app-store-connect-key"].Properties?.GenerateSecretString).toEqual(
+    expect(byName["lxsoftware-admin-app-store-connect-key"].Properties?.GenerateSecretString).toEqual(
       expect.objectContaining({
         GenerateStringKey: "privateKey",
         SecretStringTemplate: expect.stringContaining("keyId"),
       })
     );
-    expect(byName["lxsoftware-admin-siutindei-board-google-play-sa"].Properties?.GenerateSecretString).toEqual(
+    expect(byName["lxsoftware-admin-google-play-sa"].Properties?.GenerateSecretString).toEqual(
       expect.objectContaining({
         GenerateStringKey: "private_key",
         SecretStringTemplate: expect.stringContaining("client_email"),
       })
     );
-    expect(byName["lxsoftware-admin-siutindei-board-google-analytics-sa"].Properties?.GenerateSecretString).toEqual(
+    expect(byName["lxsoftware-admin-google-analytics-sa"].Properties?.GenerateSecretString).toEqual(
       expect.objectContaining({
         GenerateStringKey: "private_key",
         SecretStringTemplate: expect.stringContaining("client_email"),

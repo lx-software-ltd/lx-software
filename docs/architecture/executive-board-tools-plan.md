@@ -161,7 +161,7 @@ tools add on-demand `search_issues`, `get_issue`, `list_pull_requests`,
 `get_workflow_runs`, `get_file`, `list_security_alerts`. Writes use one
 fine-grained token restricted to the `siutindei` repo with `issues: write`,
 `pull_requests: read`, `contents: read`, `security_events: read`. The
-CDK-owned `lxsoftware-admin-siutindei-board-github-token` secret **is** the board token
+CDK-owned `lxsoftware-admin-github-read-token` secret **is** the board token
 (dummy value on first deploy; replace it in Secrets Manager). There is no
 separate `GitHubBoardToken` parameter.
 
@@ -359,7 +359,7 @@ Google into the `meta` tool.
   `properties/123,properties/456`); `GtmContainers` is
   `account:container` pairs. CEO / CPO / CTO / CIO / CMO default to `read`.
   A **dedicated** service account lives in
-  `lxsoftware-admin-siutindei-board-google-analytics-sa` (not the Play publisher key).
+  `lxsoftware-admin-google-analytics-sa` (not the Play publisher key).
   Reads are cached 20 hours and refreshed by `BoardCacheRefreshSchedule`.
 - **`ads` (T8b):** Google Ads spend and campaigns, plus propose a campaign.
   Monthly cap USD 50 (same shape as Meta ads caps). `act` only after T7-style
@@ -411,7 +411,7 @@ default global mode is `propose`, so nothing acts until the owner flips it.
 | Routes | `GET /siu-tin-dei/board/approvals`, `POST …/approvals/{id}/approve|reject`, `GET …/board/tools` (matrix), `PUT …/board/tools` (matrix), `GET …/board/tools/calls` (audit log), `GET …/board/mail`, `GET …/board/mail/{threadId}`, `POST …/board/mail/{threadId}/read`, `GET …/board/receivables` (aging for the owner), `POST /webhooks/meta` (no JWT, HMAC-verified, throttled), `GET /webhooks/meta` (verify). Proposals are created only by the tool loop, never by a `POST …/approvals` route. |
 | DynamoDB | `BOARD#TOOLCALL#`, `BOARD#APPROVAL#`, `BOARD#MAIL#`, `BOARD#META#`, `BOARD#CACHE#`, `BOARD#USAGE#` prefixes; all covered by the existing `BOARD#` scan filter |
 | Contracts | `contracts/board-tools.json`: tool ids, default matrix, `maxToolRoundsPerTurn`, `toolResultMaxChars`, cap names; synced to Python, TS and CDK |
-| Secrets / params | CDK creates dummy Secrets Manager secrets (`lxsoftware-admin-siutindei-board-github-token`, `lxsoftware-admin-siutindei-board-search-api-key`, `lxsoftware-admin-siutindei-board-meta-token`, `lxsoftware-admin-siutindei-board-meta-app-secret`, `lxsoftware-admin-siutindei-board-app-store-connect-key`, `lxsoftware-admin-siutindei-board-google-play-sa`, `lxsoftware-admin-siutindei-board-google-analytics-sa`) and grants `AdminApiFn` read. Ids stay as CfnParameters (`Ga4PropertyIds`, `GtmContainers`, `SiutindeiClusterArn`, `SiutindeiDbSecretArn`). OpenRouter stays the existing parameter. |
+| Secrets / params | CDK creates dummy Secrets Manager secrets (`lxsoftware-admin-github-read-token`, `lxsoftware-admin-search-api-key`, `lxsoftware-admin-meta-board-token`, `lxsoftware-admin-meta-app-secret`, `lxsoftware-admin-app-store-connect-key`, `lxsoftware-admin-google-play-sa`, `lxsoftware-admin-google-analytics-sa`) and grants `AdminApiFn` read. Ids stay as CfnParameters (`Ga4PropertyIds`, `GtmContainers`, `SiutindeiClusterArn`, `SiutindeiDbSecretArn`). OpenRouter stays the existing parameter. |
 | SES | Receipt rule for `siutindei-board@inbound.lx-software.com` → S3 prefix `inbound-raw/siutindei/`; sending identity `siutindei.com` |
 | Cloudflare (siutindei zone) | Email Worker on the catch-all that fans out to the owner's inbox and the SES address; DKIM/SPF/DMARC records for SES sending |
 | Scheduler | `BoardCacheRefreshSchedule` (hourly), `BoardReceivablesMirrorSchedule` (nightly), `BoardDunningSchedule` (daily 09:00 HKT, produces `propose` items) — all role-based invokes, no Lambda resource-policy statements |

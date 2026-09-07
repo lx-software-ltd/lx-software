@@ -739,7 +739,7 @@ def _require_write_token() -> None:
     if not write_enabled():
         raise GitHubSnapshotError(
             "GitHub writes need a token: replace the dummy value in the "
-            "lxsoftware-admin-siutindei-board-github-token secret with a fine-grained token "
+            "lxsoftware-admin-github-read-token secret with a fine-grained token "
             "that has issues: write on the repository"
         )
 
