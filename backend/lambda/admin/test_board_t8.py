@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 from unittest.mock import patch
@@ -118,7 +119,7 @@ class TestWebTools(WebTestCase):
         self.assertEqual(one.result["properties"][0]["propertyId"], "222")
         bad = execute_call(self._ctx(), REGISTRY["web_sessions"], {"propertyId": "999"})
         self.assertEqual(bad.status, "error")
-        self.assertIn("GA4_PROPERTY_IDS", bad.result["error"])
+        self.assertIn("configured GA4 property ids", bad.result["error"])
 
     def test_conversions_and_gtm_live(self) -> None:
         conv = execute_call(self._ctx(), REGISTRY["web_conversions"], {})
@@ -231,3 +232,29 @@ class TestWebSecretFromArn(WebTestCase):
         self.assertIn("error", notes["aws"])
         self.assertEqual(notes["web"]["web:sessions"], "ok")
         self.assertEqual(notes["web"]["web:gtm"], "ok")
+
+    def test_csv_strings_in_secret_are_read_after_edit(self) -> None:
+        payload: dict[str, Any] = {
+            "client_email": "ga@example.iam.gserviceaccount.com",
+            "private_key": "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----\n",
+        }
+
+        class Client:
+            def get_secret_value(self, SecretId: str) -> dict[str, str]:  # noqa: N803
+                return {"SecretString": json.dumps(payload)}
+
+        board_web._SA_TTL_SECONDS = 0
+        self.addCleanup(lambda: setattr(board_web, "_SA_TTL_SECONDS", 30))
+        with patch.object(board_web, "_get_secretsmanager_client", return_value=Client()):
+            board_web.reset_caches_for_tests()
+            missing = execute_call(self._ctx(), REGISTRY["web_sessions"], {})
+            self.assertEqual(missing.status, "error")
+            self.assertIn("property ids are not set", missing.result["error"])
+            payload["propertyIds"] = "properties/111, 222"
+            payload["gtmContainers"] = "acc-1:c1, acc-1:c2"
+            sessions = execute_call(self._ctx(), REGISTRY["web_sessions"], {})
+            self.assertEqual(sessions.status, "ok", sessions.result)
+            self.assertEqual(sessions.result["count"], 2)
+            gtm = execute_call(self._ctx(), REGISTRY["web_gtm_status"], {})
+            self.assertEqual(gtm.status, "ok", gtm.result)
+            self.assertEqual(gtm.result["containers"][0]["containerId"], "c1")

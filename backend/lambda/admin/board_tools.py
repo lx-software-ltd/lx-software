@@ -1942,6 +1942,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         actor=ctx.actor,
         status=outcome.status,
         duration_ms=outcome.duration_ms,
+        error=str((outcome.result or {}).get("error") or "")[:200] or None,
     )
     return outcome
 

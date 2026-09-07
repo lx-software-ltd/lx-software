@@ -39,8 +39,11 @@ CONVERSIONS_CACHE = "web:conversions"
 GTM_CACHE = "web:gtm"
 
 _sa: dict[str, Any] | None = None
-_sa_checked = False
+_sa_loaded_at = 0.0
 _token: tuple[str, float] | None = None
+# Re-read Secrets Manager so a console edit of propertyIds / gtmContainers is
+# picked up without waiting for a Lambda cold start.
+_SA_TTL_SECONDS = 30
 
 
 class WebError(RuntimeError):
@@ -48,17 +51,16 @@ class WebError(RuntimeError):
 
 
 def reset_caches_for_tests() -> None:
-    global _sa, _sa_checked, _token
+    global _sa, _sa_loaded_at, _token
     _sa = None
-    _sa_checked = False
+    _sa_loaded_at = 0.0
     _token = None
 
 
 def _secret_json() -> dict[str, Any]:
-    global _sa, _sa_checked
-    if _sa_checked:
-        return _sa or {}
-    _sa_checked = True
+    global _sa, _sa_loaded_at
+    if _sa is not None and (time.time() - _sa_loaded_at) < _SA_TTL_SECONDS:
+        return _sa
     plain = (os.environ.get("GOOGLE_ANALYTICS_SERVICE_ACCOUNT") or "").strip()
     raw = ""
     if plain:
@@ -73,21 +75,30 @@ def _secret_json() -> dict[str, Any]:
             except OpenRouterError as exc:
                 _log_event("warning", tag="board_web_secret_failed", error=str(exc)[:200])
                 _sa = {}
+                _sa_loaded_at = time.time()
                 return _sa
     if not raw:
         _sa = {}
+        _sa_loaded_at = time.time()
         return _sa
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
         _sa = {}
+        _sa_loaded_at = time.time()
         return _sa
     _sa = parsed if isinstance(parsed, dict) else {}
+    _sa_loaded_at = time.time()
     return _sa
 
 
 def _csv(env_name: str) -> list[str]:
-    return [p.strip() for p in (os.environ.get(env_name) or "").split(",") if p.strip()]
+    return _split_csv(os.environ.get(env_name) or "")
+
+
+def _split_csv(raw: Any) -> list[str]:
+    text = str(raw or "")
+    return [p.strip() for p in text.replace("\n", ",").split(",") if p.strip()]
 
 
 def _norm_property(raw: str) -> str:
@@ -97,46 +108,78 @@ def _norm_property(raw: str) -> str:
     return value
 
 
+def _gtm_pair(raw: str) -> dict[str, str] | None:
+    if ":" not in raw:
+        return None
+    account, container = raw.split(":", 1)
+    account, container = account.strip(), container.strip()
+    if account and container:
+        return {"accountId": account, "containerId": container}
+    return None
+
+
+def _properties_from_secret(secret: dict[str, Any]) -> list[str]:
+    listed = secret.get("propertyIds") or secret.get("property_ids") or secret.get("properties")
+    out: list[str] = []
+    if isinstance(listed, list):
+        out = [_norm_property(str(p)) for p in listed if str(p).strip()]
+    elif listed is not None and str(listed).strip():
+        out = [_norm_property(p) for p in _split_csv(listed)]
+    if out:
+        return out
+    single = str(secret.get("propertyId") or secret.get("property_id") or "").strip()
+    return [_norm_property(single)] if single else []
+
+
+def _gtm_from_secret(secret: dict[str, Any]) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    listed = secret.get("gtmContainers") or secret.get("gtm_containers")
+    rows: list[Any]
+    if isinstance(listed, list):
+        rows = listed
+    elif listed is not None and str(listed).strip():
+        rows = _split_csv(listed)
+    else:
+        rows = []
+    for row in rows:
+        if isinstance(row, dict):
+            acc = str(row.get("accountId") or row.get("account_id") or "").strip()
+            cid = str(row.get("containerId") or row.get("container_id") or "").strip()
+            if acc and cid:
+                out.append({"accountId": acc, "containerId": cid})
+            continue
+        pair = _gtm_pair(str(row))
+        if pair:
+            out.append(pair)
+    if out:
+        return out
+    account = str(secret.get("gtmAccountId") or secret.get("gtm_account_id") or "").strip()
+    container = str(secret.get("gtmContainerId") or secret.get("gtm_container_id") or "").strip()
+    if account and container:
+        return [{"accountId": account, "containerId": container}]
+    return []
+
+
 def property_ids() -> list[str]:
     env = [_norm_property(p) for p in _csv("GA4_PROPERTY_IDS")]
     if env:
         return env
-    secret = _secret_json()
-    listed = secret.get("propertyIds") or secret.get("property_ids") or []
-    if isinstance(listed, list):
-        out = [_norm_property(str(p)) for p in listed if str(p).strip()]
-        if out:
-            return out
-    single = str(secret.get("propertyId") or secret.get("property_id") or "").strip()
-    return [_norm_property(single)] if single else []
+    return _properties_from_secret(_secret_json())
 
 
 def gtm_containers() -> list[dict[str, str]]:
     out: list[dict[str, str]] = []
     for pair in _csv("GTM_CONTAINERS"):
-        if ":" not in pair:
-            continue
-        account, container = pair.split(":", 1)
-        account, container = account.strip(), container.strip()
-        if account and container:
-            out.append({"accountId": account, "containerId": container})
+        parsed = _gtm_pair(pair)
+        if parsed:
+            out.append(parsed)
     if out:
         return out
     account = (os.environ.get("GTM_ACCOUNT_ID") or "").strip()
     container = (os.environ.get("GTM_CONTAINER_ID") or "").strip()
     if account and container:
         return [{"accountId": account, "containerId": container}]
-    secret = _secret_json()
-    listed = secret.get("gtmContainers") or secret.get("gtm_containers") or []
-    if isinstance(listed, list):
-        for row in listed:
-            if not isinstance(row, dict):
-                continue
-            acc = str(row.get("accountId") or row.get("account_id") or "").strip()
-            cid = str(row.get("containerId") or row.get("container_id") or "").strip()
-            if acc and cid:
-                out.append({"accountId": acc, "containerId": cid})
-    return out
+    return _gtm_from_secret(_secret_json())
 
 
 def sa_configured() -> bool:
@@ -224,10 +267,10 @@ def _wanted_properties(args: dict[str, Any]) -> list[str]:
     ids = property_ids()
     if wanted:
         if wanted not in ids and ids:
-            raise WebError(f"propertyId {wanted} is not in GA4_PROPERTY_IDS")
+            raise WebError(f"propertyId {wanted} is not in the configured GA4 property ids")
         return [wanted]
     if not ids:
-        raise WebError("GA4_PROPERTY_IDS is not set.")
+        raise _missing_ids_error("ga4")
     return ids
 
 
@@ -240,7 +283,7 @@ def _wanted_containers(args: dict[str, Any]) -> list[dict[str, str]]:
             raise WebError(f"containerId {wanted} is not in GTM_CONTAINERS")
         return match
     if not rows:
-        raise WebError("GTM_CONTAINERS is not set.")
+        raise _missing_ids_error("gtm")
     return rows
 
 
@@ -395,9 +438,30 @@ def refresh_caches(table: Any) -> dict[str, str]:
     return notes or {"web:sessions": "skipped"}
 
 
+def _missing_ids_error(kind: str) -> WebError:
+    secret = _secret_json()
+    keys = sorted(str(k) for k in secret.keys())[:24]
+    _log_event(
+        "warning",
+        tag="board_web_ids_missing",
+        kind=kind,
+        secretKeyCount=len(secret),
+        secretKeys=",".join(keys),
+    )
+    if kind == "ga4":
+        return WebError(
+            "GA4 property ids are not set. Put numeric ids in GA4_PROPERTY_IDS "
+            "or propertyIds on lxsoftware-admin-siutindei-board-google-analytics-sa."
+        )
+    return WebError(
+        "GTM containers are not set. Put account:container pairs in GTM_CONTAINERS "
+        "or gtmContainers on lxsoftware-admin-siutindei-board-google-analytics-sa."
+    )
+
+
 def op_sessions(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if not property_ids():
-        raise WebError("GA4_PROPERTY_IDS is not set.")
+        raise _missing_ids_error("ga4")
     if args.get("propertyId"):
         return fetch_sessions(property_filter=str(args.get("propertyId") or ""), limit=_limit(args))
     return _read(ctx.table, SESSIONS_CACHE, lambda: fetch_sessions(limit=_limit(args)))
@@ -405,7 +469,7 @@ def op_sessions(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
 
 def op_conversions(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if not property_ids():
-        raise WebError("GA4_PROPERTY_IDS is not set.")
+        raise _missing_ids_error("ga4")
     if args.get("propertyId"):
         return fetch_conversions(property_filter=str(args.get("propertyId") or ""), limit=_limit(args))
     return _read(ctx.table, CONVERSIONS_CACHE, lambda: fetch_conversions(limit=_limit(args)))
@@ -413,7 +477,7 @@ def op_conversions(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
 
 def op_gtm_status(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if not gtm_containers():
-        raise WebError("GTM_CONTAINERS is not set.")
+        raise _missing_ids_error("gtm")
     if args.get("containerId"):
         return fetch_gtm(container_filter=str(args.get("containerId") or ""))
     return _read(ctx.table, GTM_CACHE, fetch_gtm)
