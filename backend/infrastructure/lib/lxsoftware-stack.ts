@@ -728,8 +728,7 @@ export class LxsoftwareStack extends cdk.Stack {
       description: "Google Play service-account JSON (client_email, private_key, optional packageName).",
       encryptionKey: this.sharedEncryptionKey,
       jsonTemplate: {
-        // Omit `type: service_account` — Semgrep treats that JSON key as a live
-        // Google SA. The owner pastes a real key (which includes type) later.
+        // Placeholder only. Paste the real Play Console key in Secrets Manager.
         client_email: "REPLACE_ME@example.iam.gserviceaccount.com",
         packageName: "",
       },
@@ -740,7 +739,7 @@ export class LxsoftwareStack extends cdk.Stack {
       description: "Dedicated GA4 / GTM service-account JSON (not the Play key).",
       encryptionKey: this.sharedEncryptionKey,
       jsonTemplate: {
-        // Same Semgrep false-positive as the Play SA template above.
+        // Placeholder only. Paste the dedicated Analytics key in Secrets Manager.
         client_email: "REPLACE_ME@example.iam.gserviceaccount.com",
       },
       generateKey: "private_key",
