@@ -54,13 +54,13 @@ const ANALYTICS_SA_TEMPLATE = {
 };
 
 type BoardConnectorSecrets = {
-  github: secretsmanager.Secret;
-  search: secretsmanager.Secret;
-  metaToken: secretsmanager.Secret;
-  metaAppSecret: secretsmanager.Secret;
-  appStore: secretsmanager.Secret;
-  play: secretsmanager.Secret;
-  analytics: secretsmanager.Secret;
+  github: secretsmanager.ISecret;
+  search: secretsmanager.ISecret;
+  metaToken: secretsmanager.ISecret;
+  metaAppSecret: secretsmanager.ISecret;
+  appStore: secretsmanager.ISecret;
+  play: secretsmanager.ISecret;
+  analytics: secretsmanager.ISecret;
 };
 
 /**
@@ -103,6 +103,45 @@ function boardPlaceholderSecret(
   cdk.Tags.of(secret).add("lxsoftware:tenant", props.tenant);
   cdk.Tags.of(secret).add("lxsoftware:purpose", props.purpose);
   return secret;
+}
+
+/** Secrets Manager objects that already exist (failed-create leftovers). */
+function boardImportedSecrets(
+  scope: Construct,
+  opts: {
+    ids: {
+      github: string;
+      search: string;
+      metaToken: string;
+      metaAppSecret: string;
+      appStore: string;
+      play: string;
+      analytics: string;
+    };
+    names: {
+      github: string;
+      search: string;
+      metaToken: string;
+      metaAppSecret: string;
+      appStore: string;
+      play: string;
+      analytics: string;
+    };
+  }
+): BoardConnectorSecrets {
+  return {
+    github: secretsmanager.Secret.fromSecretNameV2(scope, opts.ids.github, opts.names.github),
+    search: secretsmanager.Secret.fromSecretNameV2(scope, opts.ids.search, opts.names.search),
+    metaToken: secretsmanager.Secret.fromSecretNameV2(scope, opts.ids.metaToken, opts.names.metaToken),
+    metaAppSecret: secretsmanager.Secret.fromSecretNameV2(
+      scope,
+      opts.ids.metaAppSecret,
+      opts.names.metaAppSecret
+    ),
+    appStore: secretsmanager.Secret.fromSecretNameV2(scope, opts.ids.appStore, opts.names.appStore),
+    play: secretsmanager.Secret.fromSecretNameV2(scope, opts.ids.play, opts.names.play),
+    analytics: secretsmanager.Secret.fromSecretNameV2(scope, opts.ids.analytics, opts.names.analytics),
+  };
 }
 
 function boardConnectorSecrets(
@@ -820,13 +859,12 @@ export class LxsoftwareStack extends cdk.Stack {
     });
 
     /**
-     * Siu Tin Dei Executive Board — what AdminApiFn uses. New construct ids
-     * so the reserved set above is left in place.
+     * Siu Tin Dei Executive Board — what AdminApiFn uses. These named
+     * secrets already exist in the account (CREATE succeeded, then
+     * RemovalPolicy.RETAIN skipped delete on rollback). Import by name so
+     * CloudFormation does not try to create them again.
      */
-    const siutindeiBoardSecrets = boardConnectorSecrets(this, this.sharedEncryptionKey, {
-      tenant: "siutindei",
-      purpose: "siutindei-executive-board",
-      label: "Siu Tin Dei Executive Board",
+    const siutindeiBoardSecrets = boardImportedSecrets(this, {
       ids: {
         github: "SiutindeiBoardGitHubToken",
         search: "SiutindeiBoardSearchApiKey",
