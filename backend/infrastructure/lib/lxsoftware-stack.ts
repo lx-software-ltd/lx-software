@@ -875,7 +875,7 @@ export class LxsoftwareStack extends cdk.Stack {
         analytics: "SiutindeiBoardGoogleAnalyticsSa",
       },
       names: {
-        github: "lxsoftware-siutindei-board-github-token",
+        github: "lxsoftware-admin-siutindei-board-github-token",
         search: "lxsoftware-admin-siutindei-board-search-api-key",
         metaToken: "lxsoftware-admin-siutindei-board-meta-token",
         metaAppSecret: "lxsoftware-admin-siutindei-board-meta-app-secret",

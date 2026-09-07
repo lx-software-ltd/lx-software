@@ -331,7 +331,7 @@ describe("Executive Board placeholder secrets", () => {
     "lxsoftware-admin-google-analytics-sa",
   ];
   const siutindeiNames = [
-    "lxsoftware-siutindei-board-github-token",
+    "lxsoftware-admin-siutindei-board-github-token",
     "lxsoftware-admin-siutindei-board-search-api-key",
     "lxsoftware-admin-siutindei-board-meta-token",
     "lxsoftware-admin-siutindei-board-meta-app-secret",
