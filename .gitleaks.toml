@@ -10,9 +10,11 @@ title = "lx-software"
 useDefault = true
 
 [allowlist]
-description = "False positive: generic-api-key vs unittest kwargs in inbound mail S3 path tests"
+description = "False positives: unittest kwargs and a deleted board-secret fixture that used dummy PEM / sk-or-v1 strings"
 paths = [
   '''backend/lambda/admin/test_inbound_email_handler\.py''',
+  # Removed in the CDK-owned-secrets change; gitleaks still scans the old commit.
+  '''scripts/test_verify_board_secrets\.py''',
 ]
 
 # Public read-only API keys minted by scripts/manage-public-api-keys.py use
