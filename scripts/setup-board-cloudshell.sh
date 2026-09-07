@@ -33,6 +33,7 @@ CE_REGION="us-east-1"
 DRY_RUN=0
 YES=0
 NONINTERACTIVE=0
+VERIFY_ONLY=0
 
 SECRET_GITHUB="lxsoftware-admin-github-read-token"
 SECRET_SEARCH="lxsoftware-admin-search-api-key"
@@ -45,10 +46,13 @@ SECRET_GA="lxsoftware-admin-google-analytics-sa"
 usage() {
   cat <<'EOF'
 Usage: bash setup-board-cloudshell.sh [--dry-run] [--yes] [--region ap-southeast-1] [--stack lxsoftware]
+       bash setup-board-cloudshell.sh verify [--region ap-southeast-1] [--stack lxsoftware]
 
 Run inside AWS CloudShell while signed in as root (or an admin role).
 Leave a prompt blank to skip that item.
 
+  verify        Check secrets exist, have the right JSON/token shape, and
+                are wired on the lxsoftware stack (never prints values)
   --dry-run     Print the plan; do not write to AWS
   --yes         Do not ask for the final confirmation
   --region      Override CloudShell's region (default: $AWS_REGION or ap-southeast-1)
@@ -57,8 +61,25 @@ Leave a prompt blank to skip that item.
 EOF
 }
 
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VERIFY_PY_URL="${BOARD_VERIFY_PY_URL:-https://raw.githubusercontent.com/lx-software-ltd/lx-software/main/scripts/verify-board-secrets.py}"
+
+run_verify() {
+  local py=""
+  if [[ -f "$HERE/verify-board-secrets.py" ]]; then
+    py="$HERE/verify-board-secrets.py"
+  else
+    py="$(mktemp)"
+    curl -fsSL "$VERIFY_PY_URL" -o "$py" || die "could not download verify-board-secrets.py"
+  fi
+  exec python3 "$py" --region "$REGION" --stack "$STACK" --aws "$AWS"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    verify) shift; # region/stack parsed below, then run
+      VERIFY_ONLY=1
+      ;;
     --dry-run) DRY_RUN=1; shift ;;
     --yes) YES=1; shift ;;
     --non-interactive) NONINTERACTIVE=1; shift ;;
@@ -69,6 +90,10 @@ while [[ $# -gt 0 ]]; do
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
+
+if [[ "$VERIFY_ONLY" -eq 1 ]]; then
+  run_verify
+fi
 
 aws_cli() {
   "$AWS" --region "$REGION" "$@"
@@ -307,7 +332,7 @@ fi
 
 if [[ -z "$META_VERIFY_TOKEN" && ( -n "$META_BOARD_TOKEN" || -n "$META_APP_SECRET" || -n "$META_PAGE_ID" ) ]]; then
   META_VERIFY_TOKEN=$(python3 -c 'import secrets; print(secrets.token_hex(24))')
-  echo "Generated MetaVerifyToken (will be stored on the stack; copied to ~/board-meta-verify-token.txt)."
+  echo "Generated MetaVerifyToken (saved to ~/board-meta-verify-token.txt; add it as a GitHub Actions secret, do not commit it)."
 fi
 
 # --- build ASC / SA payloads -------------------------------------------------

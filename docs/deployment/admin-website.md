@@ -565,6 +565,20 @@ feeds the new env into `AdminApiFn`. `MetaVerifyToken` is saved only to
 `~/board-meta-verify-token.txt`; put it in GitHub Actions as a secret, do
 not commit it.
 
+To see what is already in the account (existence, JSON/token shape, and
+whether the stack parameter points at the ARN) without printing values:
+
+```bash
+python3 scripts/verify-board-secrets.py
+# or, in CloudShell after downloading the wizard:
+bash setup-board-cloudshell.sh verify
+```
+
+`OK` = secret is readable and wired on `lxsoftware`. `WARN` = secret exists
+but the stack param is still empty (commit the ARN and CDK-deploy). `MISS`
+= optional tool not set up. `FAIL` = required OpenRouter secret missing or
+any secret has the wrong shape.
+
 A repo-local Python helper (`scripts/setup-board-config.py`) can still write
 the same keys from an answers file if you prefer not to use CloudShell.
 

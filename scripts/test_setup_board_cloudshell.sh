@@ -52,4 +52,16 @@ grep -q "Write CDK param fragment (no live stack change)" "$out"
 ! grep -q "Update CloudFormation stack" "$out"
 # must not leak a fake token if we did not set one
 ! grep -qi "github_pat" "$out"
+
+# verify subcommand uses the sibling python checker
+ver="$(mktemp)"
+AWS="$FAKE" bash "$ROOT/setup-board-cloudshell.sh" verify --region ap-southeast-1 --stack lxsoftware \
+  >"$ver" 2>&1 || true
+# fake aws from this smoke file is not the verify fake; just ensure dispatch works
+# (full verify coverage is test_verify_board_secrets.py)
+grep -qE "Executive Board secrets|error:|OpenRouter|aws CLI" "$ver" || {
+  echo "verify dispatch produced unexpected output:" >&2
+  cat "$ver" >&2
+  exit 1
+}
 echo "cloudshell dry-run smoke: OK"
