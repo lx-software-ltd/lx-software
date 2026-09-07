@@ -27,9 +27,9 @@ Where T1 lives in the code:
 | Mail ingest, SES send, PII aliases | `backend/lambda/admin/board_mail.py`, `board_pii.py`; S3 prefix `inbound-raw/siutindei/` |
 | Cloudflare fan-out | `scripts/cloudflare/siutindei-mail-fanout.js` |
 | Tests | `backend/lambda/admin/test_board_tools.py`, `test_board_mail.py`, `test_board_t2.py`, `test_board_t4.py`, `test_board_t5.py`, `test_board_t6.py`, `test_board_t7.py`, `test_board_t8.py` |
-| T2 reads | `board_research.py`, `board_aws.py`, `board_security.py`, `board_cache.py`; `BOARD#…#cache`; `BoardCacheRefreshSchedule` |
-| T4 receivables | `board_data_api.py`, `board_receivables.py`, `board_product.py`; `scripts/siutindei/receivables.sql`; `BoardReceivablesMirrorSchedule`, `BoardDunningSchedule` |
-| T5 Meta | `board_meta.py`; unauthenticated `GET/POST /webhooks/meta`; `BOARD#…#meta#` rows; `MetaBoardToken` / app secret |
+| T2 reads | `board_research.py`, `board_aws.py`, `board_security.py`, `board_cache.py`; `BOARD#…#cache`; `SiutindeiBoardCacheRefreshSchedule` |
+| T4 receivables | `board_data_api.py`, `board_receivables.py`, `board_product.py`; `scripts/siutindei/receivables.sql`; `SiutindeiBoardReceivablesMirrorSchedule`, `SiutindeiBoardDunningSchedule` |
+| T5 Meta | `board_meta.py`; unauthenticated `GET/POST /webhooks/meta/siutindei` (legacy `/webhooks/meta`); `BOARD#…#meta#` rows; `MetaBoardToken` / app secret |
 | T6 stores | `board_stores.py`; App Store Connect JWT + Play service account; review replies; hourly `stores:*` cache |
 | T8 web | `board_web.py`; dedicated Analytics SA; multi-property GA4 + multi-container GTM live version; hourly `web:*` cache |
 
@@ -161,9 +161,10 @@ tools add on-demand `search_issues`, `get_issue`, `list_pull_requests`,
 `get_workflow_runs`, `get_file`, `list_security_alerts`. Writes use one
 fine-grained token restricted to the `siutindei` repo with `issues: write`,
 `pull_requests: read`, `contents: read`, `security_events: read`. The
-CDK-owned `lxsoftware-admin-github-read-token` secret **is** the board token
-(dummy value on first deploy; replace it in Secrets Manager). There is no
-separate `GitHubBoardToken` parameter.
+CDK-owned `lxsoftware-admin-siutindei-board-github-token` secret **is** the
+board token (dummy value on first deploy; replace it in Secrets Manager).
+`lxsoftware-admin-github-read-token` is reserved for a future LX Software
+board. There is no separate `GitHubBoardToken` parameter.
 
 ### 5.2 Email — every `siutindei.com` mailbox
 
@@ -222,8 +223,9 @@ client changes.
   phone keeps working while the board reads and replies through the API.
   If coexistence is unavailable for the account, the number moves fully to
   the API and the owner replies from the Approvals section.
-- **Inbound**: new **unauthenticated** HTTP route `POST /webhooks/meta`
-  on the admin API, verified by `X-Hub-Signature-256` with the app secret,
+- **Inbound**: unauthenticated HTTP routes `POST /webhooks/meta/siutindei`
+  (canonical) and `POST /webhooks/meta` (already-subscribed apps) on the
+  admin API, verified by `X-Hub-Signature-256` with the app secret,
   plus the `GET` verify handshake. Payloads are queued to `BOARD#META#`
   rows (masked) and acknowledged within the 20 s Meta limit; no LLM work in
   the webhook path. This is the first non-JWT route on the admin API and
@@ -279,7 +281,7 @@ lines are never touched.
 |------|-----------------|--------------|
 | `list_subscriptions`, `list_invoices`, `aging_report` | read | Standard receivables views incl. DSO, past-due by provider |
 | `unit_economics` | read | Revenue per provider/store, cost per acquisition from `aws` + `meta` spend, gross margin |
-| `draft_invoice` | propose | Creates a `draft` invoice with a unique FPS reference; PDF is rendered in `AdminApiFn` and stored under `board/invoices/` on the assets bucket |
+| `draft_invoice` | propose | Creates a `draft` invoice with a unique FPS reference; PDF is rendered in `AdminApiFn` and stored under `board/siuTinDei/invoices/` on the assets bucket |
 | `send_invoice` | propose → act for allow-listed payers | Emails the invoice from `billing@siutindei.com` |
 | `send_reminder` | propose → act for allow-listed payers | Dunning at D+7 / D+21 / D+35, email or WhatsApp template |
 | `match_payment` | act | Attaches a `payments` row to an invoice when reference and amount agree; otherwise `propose` with candidates |
@@ -359,8 +361,8 @@ Google into the `meta` tool.
   `properties/123,properties/456`); `GtmContainers` is
   `account:container` pairs. CEO / CPO / CTO / CIO / CMO default to `read`.
   A **dedicated** service account lives in
-  `lxsoftware-admin-google-analytics-sa` (not the Play publisher key).
-  Reads are cached 20 hours and refreshed by `BoardCacheRefreshSchedule`.
+  `lxsoftware-admin-siutindei-board-google-analytics-sa` (not the Play publisher key).
+  Reads are cached 20 hours and refreshed by `SiutindeiBoardCacheRefreshSchedule`.
 - **`ads` (T8b):** Google Ads spend and campaigns, plus propose a campaign.
   Monthly cap USD 50 (same shape as Meta ads caps). `act` only after T7-style
   spend tracking; until then writes stay `propose`.
@@ -408,13 +410,13 @@ default global mode is `propose`, so nothing acts until the owner flips it.
 | Area | Change |
 |------|--------|
 | `backend/lambda/admin/` | New `board_tools.py` (registry, loop, level enforcement, audit), `board_mail.py`, `board_meta.py`, `board_receivables.py`, `board_product.py`, `board_stores.py`, `board_aws.py`, `board_research.py`; `board_github.py` gains write and search calls; `openrouter_client.py` gains tool-call support; `board_meeting.py` and `board_chat.py` call the loop |
-| Routes | `GET /siu-tin-dei/board/approvals`, `POST …/approvals/{id}/approve|reject`, `GET …/board/tools` (matrix), `PUT …/board/tools` (matrix), `GET …/board/tools/calls` (audit log), `GET …/board/mail`, `GET …/board/mail/{threadId}`, `POST …/board/mail/{threadId}/read`, `GET …/board/receivables` (aging for the owner), `POST /webhooks/meta` (no JWT, HMAC-verified, throttled), `GET /webhooks/meta` (verify). Proposals are created only by the tool loop, never by a `POST …/approvals` route. |
+| Routes | `GET /siu-tin-dei/board/approvals`, `POST …/approvals/{id}/approve|reject`, `GET …/board/tools` (matrix), `PUT …/board/tools` (matrix), `GET …/board/tools/calls` (audit log), `GET …/board/mail`, `GET …/board/mail/{threadId}`, `POST …/board/mail/{threadId}/read`, `GET …/board/receivables` (aging for the owner), `POST /webhooks/meta/siutindei` (no JWT, HMAC-verified, throttled; `/webhooks/meta` still accepted), `GET /webhooks/meta/siutindei` (verify). Proposals are created only by the tool loop, never by a `POST …/approvals` route. |
 | DynamoDB | `BOARD#TOOLCALL#`, `BOARD#APPROVAL#`, `BOARD#MAIL#`, `BOARD#META#`, `BOARD#CACHE#`, `BOARD#USAGE#` prefixes; all covered by the existing `BOARD#` scan filter |
 | Contracts | `contracts/board-tools.json`: tool ids, default matrix, `maxToolRoundsPerTurn`, `toolResultMaxChars`, cap names; synced to Python, TS and CDK |
-| Secrets / params | CDK creates dummy Secrets Manager secrets (`lxsoftware-admin-github-read-token`, `lxsoftware-admin-search-api-key`, `lxsoftware-admin-meta-board-token`, `lxsoftware-admin-meta-app-secret`, `lxsoftware-admin-app-store-connect-key`, `lxsoftware-admin-google-play-sa`, `lxsoftware-admin-google-analytics-sa`) and grants `AdminApiFn` read. Ids stay as CfnParameters (`Ga4PropertyIds`, `GtmContainers`, `SiutindeiClusterArn`, `SiutindeiDbSecretArn`). OpenRouter stays the existing parameter. |
+| Secrets / params | CDK creates dummy Secrets Manager secrets for Siu Tin Dei (`lxsoftware-admin-siutindei-board-*`) and grants `AdminApiFn` read. The earlier `lxsoftware-admin-{github-read-token,search-api-key,meta-board-token,meta-app-secret,app-store-connect-key,google-play-sa,google-analytics-sa}` set stays reserved for a future LX Software board. Ids stay as CfnParameters (`Ga4PropertyIds`, `GtmContainers`, `SiutindeiClusterArn`, `SiutindeiDbSecretArn`). OpenRouter stays the existing parameter. |
 | SES | Receipt rule for `siutindei-board@inbound.lx-software.com` → S3 prefix `inbound-raw/siutindei/`; sending identity `siutindei.com` |
 | Cloudflare (siutindei zone) | Email Worker on the catch-all that fans out to the owner's inbox and the SES address; DKIM/SPF/DMARC records for SES sending |
-| Scheduler | `BoardCacheRefreshSchedule` (hourly), `BoardReceivablesMirrorSchedule` (nightly), `BoardDunningSchedule` (daily 09:00 HKT, produces `propose` items) — all role-based invokes, no Lambda resource-policy statements |
+| Scheduler | `lxsoftware-admin-siutindei-board-*` (`SiutindeiBoardCacheRefreshSchedule` hourly, `SiutindeiBoardReceivablesMirrorSchedule` nightly, `SiutindeiBoardDunningSchedule` daily 09:00 HKT, plus morning/evening stand-ups). Each payload includes `boardKey: "siuTinDei"`. Role-based invokes, no Lambda resource-policy statements |
 | IAM | Read-only Cost Explorer/CloudWatch/Security Hub policy on `AdminApiFn`; `rds-data:ExecuteStatement`/`BatchExecuteStatement` on the siutindei cluster; `ses:SendEmail` restricted to `siutindei.com` identities |
 | siutindei repo | Migration for §5.4 tables, SQL views for §5.7, Data API enabled on the Aurora cluster if not already |
 

@@ -289,6 +289,12 @@ class TestAwsAndSecurity(ToolsTestCase):
             dispatch.lambda_handler({"internal": "board_cache_refresh"}, None)
         self.assertIsNotNone(board_store.get_cache(self.table, "aws:monthly_cost"))
 
+    def test_schedule_trigger_skips_other_board(self) -> None:
+        with patch.object(board_store, "records_table", return_value=self.table):
+            out = board_cache.handle_schedule_trigger({"boardKey": "lxSoftware"})
+        self.assertEqual(out, {"ok": True, "skipped": "other_board"})
+        self.assertIsNone(board_store.get_cache(self.table, "aws:monthly_cost"))
+
 
 class TestResearchUnavailable(BoardTestCase):
     def test_no_key_raises(self) -> None:

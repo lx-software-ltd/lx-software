@@ -39,6 +39,30 @@ import { ADMIN_WEB_HOSTNAME, PARSE_TIMEOUTS } from "./shared-contracts";
  * next to the legacy per-route statements during the deployment that
  * removes them (CloudFormation creates before it deletes).
  */
+const ASC_KEY_TEMPLATE = {
+  keyId: "REPLACE_ME",
+  issuerId: "REPLACE_ME",
+  appId: "",
+  vendorNumber: "",
+};
+const PLAY_SA_TEMPLATE = {
+  client_email: "REPLACE_ME@example.iam.gserviceaccount.com",
+  packageName: "",
+};
+const ANALYTICS_SA_TEMPLATE = {
+  client_email: "REPLACE_ME@example.iam.gserviceaccount.com",
+};
+
+type BoardConnectorSecrets = {
+  github: secretsmanager.Secret;
+  search: secretsmanager.Secret;
+  metaToken: secretsmanager.Secret;
+  metaAppSecret: secretsmanager.Secret;
+  appStore: secretsmanager.Secret;
+  play: secretsmanager.Secret;
+  analytics: secretsmanager.Secret;
+};
+
 /**
  * Placeholder secret the owner overwrites in the Secrets Manager console.
  * CloudFormation only writes GenerateSecretString on create (or if this
@@ -52,6 +76,8 @@ function boardPlaceholderSecret(
     secretName: string;
     description: string;
     encryptionKey: kms.IKey;
+    tenant: string;
+    purpose: string;
     jsonTemplate?: Record<string, string>;
     generateKey?: string;
   }
@@ -67,13 +93,93 @@ function boardPlaceholderSecret(
         excludePunctuation: true,
         passwordLength: 40,
       };
-  return new secretsmanager.Secret(scope, id, {
+  const secret = new secretsmanager.Secret(scope, id, {
     secretName: props.secretName,
     description: `${props.description} Dummy value — replace in Secrets Manager.`,
     encryptionKey: props.encryptionKey,
     removalPolicy: cdk.RemovalPolicy.RETAIN,
     generateSecretString: generator,
   });
+  cdk.Tags.of(secret).add("lxsoftware:tenant", props.tenant);
+  cdk.Tags.of(secret).add("lxsoftware:purpose", props.purpose);
+  return secret;
+}
+
+function boardConnectorSecrets(
+  scope: Construct,
+  encryptionKey: kms.IKey,
+  opts: {
+    tenant: string;
+    purpose: string;
+    label: string;
+    ids: {
+      github: string;
+      search: string;
+      metaToken: string;
+      metaAppSecret: string;
+      appStore: string;
+      play: string;
+      analytics: string;
+    };
+    names: {
+      github: string;
+      search: string;
+      metaToken: string;
+      metaAppSecret: string;
+      appStore: string;
+      play: string;
+      analytics: string;
+    };
+  }
+): BoardConnectorSecrets {
+  const common = {
+    encryptionKey,
+    tenant: opts.tenant,
+    purpose: opts.purpose,
+  };
+  return {
+    github: boardPlaceholderSecret(scope, opts.ids.github, {
+      ...common,
+      secretName: opts.names.github,
+      description: `${opts.label}: fine-grained GitHub PAT (Contents read, Issues r/w, Actions read, Metadata read, Security events read).`,
+    }),
+    search: boardPlaceholderSecret(scope, opts.ids.search, {
+      ...common,
+      secretName: opts.names.search,
+      description: `${opts.label}: Brave Search API key for research.`,
+    }),
+    metaToken: boardPlaceholderSecret(scope, opts.ids.metaToken, {
+      ...common,
+      secretName: opts.names.metaToken,
+      description: `${opts.label}: Meta System User long-lived token (Page / Instagram / WhatsApp / ads).`,
+    }),
+    metaAppSecret: boardPlaceholderSecret(scope, opts.ids.metaAppSecret, {
+      ...common,
+      secretName: opts.names.metaAppSecret,
+      description: `${opts.label}: Meta app secret for X-Hub-Signature-256 on POST /webhooks/meta/siutindei.`,
+    }),
+    appStore: boardPlaceholderSecret(scope, opts.ids.appStore, {
+      ...common,
+      secretName: opts.names.appStore,
+      description: `${opts.label}: App Store Connect API key JSON (keyId, issuerId, privateKey, optional appId / vendorNumber).`,
+      jsonTemplate: ASC_KEY_TEMPLATE,
+      generateKey: "privateKey",
+    }),
+    play: boardPlaceholderSecret(scope, opts.ids.play, {
+      ...common,
+      secretName: opts.names.play,
+      description: `${opts.label}: Google Play service-account JSON (client_email, private_key, optional packageName).`,
+      jsonTemplate: PLAY_SA_TEMPLATE,
+      generateKey: "private_key",
+    }),
+    analytics: boardPlaceholderSecret(scope, opts.ids.analytics, {
+      ...common,
+      secretName: opts.names.analytics,
+      description: `${opts.label}: dedicated GA4 / GTM service-account JSON (not the Play key).`,
+      jsonTemplate: ANALYTICS_SA_TEMPLATE,
+      generateKey: "private_key",
+    }),
+  };
 }
 
 class SharedPermissionLambdaIntegration extends HttpLambdaIntegration {
@@ -256,7 +362,7 @@ export class LxsoftwareStack extends cdk.Stack {
       default: "",
       noEcho: true,
       description:
-        "Verify token Meta sends on GET /webhooks/meta (hub.verify_token). Leave blank to keep the handshake rejected.",
+        "Verify token Meta sends on GET /webhooks/meta/siutindei (hub.verify_token). Leave blank to keep the handshake rejected.",
     });
     const metaPageId = new cdk.CfnParameter(this, "MetaPageId", {
       type: "String",
@@ -685,64 +791,60 @@ export class LxsoftwareStack extends cdk.Stack {
     const parseJobStuckSeconds = String(PARSE_TIMEOUTS.parseJobStuckSeconds);
 
     /**
-     * Executive Board connector secrets. CDK creates each with a dummy
-     * GenerateSecretString value; the owner overwrites them in the console.
-     * CloudFormation does not rewrite the secret string on later deploys
-     * unless the generator properties change.
+     * Already-deployed connector secrets. Construct ids must stay so
+     * CloudFormation does not replace them. Reserved for a future LX
+     * Software Executive Board — AdminApiFn does not read these today.
      */
-    const boardGitHubReadToken = boardPlaceholderSecret(this, "BoardGitHubReadToken", {
-      secretName: "lxsoftware-admin-github-read-token",
-      description:
-        "Fine-grained GitHub PAT for siutindei (Contents read, Issues r/w, Actions read, Metadata read, Security events read).",
-      encryptionKey: this.sharedEncryptionKey,
-    });
-    const boardSearchApiKey = boardPlaceholderSecret(this, "BoardSearchApiKey", {
-      secretName: "lxsoftware-admin-search-api-key",
-      description: "Brave Search API key for Executive Board research.",
-      encryptionKey: this.sharedEncryptionKey,
-    });
-    const boardMetaToken = boardPlaceholderSecret(this, "BoardMetaToken", {
-      secretName: "lxsoftware-admin-meta-board-token",
-      description: "Meta System User long-lived token (Page / Instagram / WhatsApp / ads).",
-      encryptionKey: this.sharedEncryptionKey,
-    });
-    const boardMetaAppSecret = boardPlaceholderSecret(this, "BoardMetaAppSecret", {
-      secretName: "lxsoftware-admin-meta-app-secret",
-      description: "Meta app secret for X-Hub-Signature-256 on POST /webhooks/meta.",
-      encryptionKey: this.sharedEncryptionKey,
-    });
-    const boardAppStoreConnectKey = boardPlaceholderSecret(this, "BoardAppStoreConnectKey", {
-      secretName: "lxsoftware-admin-app-store-connect-key",
-      description: "App Store Connect API key JSON (keyId, issuerId, privateKey, optional appId / vendorNumber).",
-      encryptionKey: this.sharedEncryptionKey,
-      jsonTemplate: {
-        keyId: "REPLACE_ME",
-        issuerId: "REPLACE_ME",
-        appId: "",
-        vendorNumber: "",
+    boardConnectorSecrets(this, this.sharedEncryptionKey, {
+      tenant: "lxsoftware",
+      purpose: "lxsoftware-executive-board",
+      label: "Reserved for a future LX Software Executive Board",
+      ids: {
+        github: "BoardGitHubReadToken",
+        search: "BoardSearchApiKey",
+        metaToken: "BoardMetaToken",
+        metaAppSecret: "BoardMetaAppSecret",
+        appStore: "BoardAppStoreConnectKey",
+        play: "BoardGooglePlaySa",
+        analytics: "BoardGoogleAnalyticsSa",
       },
-      generateKey: "privateKey",
-    });
-    const boardGooglePlaySa = boardPlaceholderSecret(this, "BoardGooglePlaySa", {
-      secretName: "lxsoftware-admin-google-play-sa",
-      description: "Google Play service-account JSON (client_email, private_key, optional packageName).",
-      encryptionKey: this.sharedEncryptionKey,
-      jsonTemplate: {
-        // Placeholder only. Paste the real Play Console key in Secrets Manager.
-        client_email: "REPLACE_ME@example.iam.gserviceaccount.com",
-        packageName: "",
+      names: {
+        github: "lxsoftware-admin-github-read-token",
+        search: "lxsoftware-admin-search-api-key",
+        metaToken: "lxsoftware-admin-meta-board-token",
+        metaAppSecret: "lxsoftware-admin-meta-app-secret",
+        appStore: "lxsoftware-admin-app-store-connect-key",
+        play: "lxsoftware-admin-google-play-sa",
+        analytics: "lxsoftware-admin-google-analytics-sa",
       },
-      generateKey: "private_key",
     });
-    const boardGoogleAnalyticsSa = boardPlaceholderSecret(this, "BoardGoogleAnalyticsSa", {
-      secretName: "lxsoftware-admin-google-analytics-sa",
-      description: "Dedicated GA4 / GTM service-account JSON (not the Play key).",
-      encryptionKey: this.sharedEncryptionKey,
-      jsonTemplate: {
-        // Placeholder only. Paste the dedicated Analytics key in Secrets Manager.
-        client_email: "REPLACE_ME@example.iam.gserviceaccount.com",
+
+    /**
+     * Siu Tin Dei Executive Board — what AdminApiFn uses. New construct ids
+     * so the reserved set above is left in place.
+     */
+    const siutindeiBoardSecrets = boardConnectorSecrets(this, this.sharedEncryptionKey, {
+      tenant: "siutindei",
+      purpose: "siutindei-executive-board",
+      label: "Siu Tin Dei Executive Board",
+      ids: {
+        github: "SiutindeiBoardGitHubToken",
+        search: "SiutindeiBoardSearchApiKey",
+        metaToken: "SiutindeiBoardMetaToken",
+        metaAppSecret: "SiutindeiBoardMetaAppSecret",
+        appStore: "SiutindeiBoardAppStoreConnectKey",
+        play: "SiutindeiBoardGooglePlaySa",
+        analytics: "SiutindeiBoardGoogleAnalyticsSa",
       },
-      generateKey: "private_key",
+      names: {
+        github: "lxsoftware-admin-siutindei-board-github-token",
+        search: "lxsoftware-admin-siutindei-board-search-api-key",
+        metaToken: "lxsoftware-admin-siutindei-board-meta-token",
+        metaAppSecret: "lxsoftware-admin-siutindei-board-meta-app-secret",
+        appStore: "lxsoftware-admin-siutindei-board-app-store-connect-key",
+        play: "lxsoftware-admin-siutindei-board-google-play-sa",
+        analytics: "lxsoftware-admin-siutindei-board-google-analytics-sa",
+      },
     });
 
     /**
@@ -783,32 +885,32 @@ export class LxsoftwareStack extends cdk.Stack {
         PARSE_JOB_TTL_SECONDS: String(PARSE_TIMEOUTS.parseJobTtlSeconds),
         ENABLE_BANKING_APP_ID: enableBankingAppId.valueAsString,
         ENABLE_BANKING_KMS_KEY_ID: enableBankingSigningKey.keyId,
-        GITHUB_READ_TOKEN_SECRET_ARN: boardGitHubReadToken.secretArn,
+        GITHUB_READ_TOKEN_SECRET_ARN: siutindeiBoardSecrets.github.secretArn,
         BOARD_GITHUB_REPO: boardGitHubRepo.valueAsString,
         BOARD_CHAT_MODEL: boardChatModel.valueAsString,
         BOARD_MEETING_MODEL: boardMeetingModel.valueAsString,
         BOARD_DEEP_DIVE_MODEL: boardDeepDiveModel.valueAsString,
         BOARD_TOOLS_ENABLED: boardToolsEnabled.valueAsString,
-        SEARCH_API_KEY_SECRET_ARN: boardSearchApiKey.secretArn,
+        SEARCH_API_KEY_SECRET_ARN: siutindeiBoardSecrets.search.secretArn,
         BOARD_AWS_STACK_PREFIX: boardAwsStackPrefix.valueAsString,
         BOARD_AWS_LAMBDA_NAMES: boardAwsLambdaNames.valueAsString,
         USER_POOL_ID: this.auth.userPool.userPoolId,
         SIUTINDEI_CLUSTER_ARN: siutindeiClusterArn.valueAsString,
         SIUTINDEI_DB_SECRET_ARN: siutindeiDbSecretArn.valueAsString,
-        META_BOARD_TOKEN_SECRET_ARN: boardMetaToken.secretArn,
-        META_APP_SECRET_SECRET_ARN: boardMetaAppSecret.secretArn,
+        META_BOARD_TOKEN_SECRET_ARN: siutindeiBoardSecrets.metaToken.secretArn,
+        META_APP_SECRET_SECRET_ARN: siutindeiBoardSecrets.metaAppSecret.secretArn,
         META_VERIFY_TOKEN: metaVerifyToken.valueAsString,
         META_PAGE_ID: metaPageId.valueAsString,
         META_IG_USER_ID: metaIgUserId.valueAsString,
         META_WA_PHONE_NUMBER_ID: metaWaPhoneNumberId.valueAsString,
         META_WABA_ID: metaWabaId.valueAsString,
         META_AD_ACCOUNT_ID: metaAdAccountId.valueAsString,
-        APP_STORE_CONNECT_KEY_SECRET_ARN: boardAppStoreConnectKey.secretArn,
-        GOOGLE_PLAY_SERVICE_ACCOUNT_SECRET_ARN: boardGooglePlaySa.secretArn,
+        APP_STORE_CONNECT_KEY_SECRET_ARN: siutindeiBoardSecrets.appStore.secretArn,
+        GOOGLE_PLAY_SERVICE_ACCOUNT_SECRET_ARN: siutindeiBoardSecrets.play.secretArn,
         APP_STORE_CONNECT_APP_ID: appStoreConnectAppId.valueAsString,
         ASC_VENDOR_NUMBER: appStoreConnectVendorNumber.valueAsString,
         GOOGLE_PLAY_PACKAGE_NAME: googlePlayPackageName.valueAsString,
-        GOOGLE_ANALYTICS_SERVICE_ACCOUNT_SECRET_ARN: boardGoogleAnalyticsSa.secretArn,
+        GOOGLE_ANALYTICS_SERVICE_ACCOUNT_SECRET_ARN: siutindeiBoardSecrets.analytics.secretArn,
         GA4_PROPERTY_IDS: ga4PropertyIds.valueAsString,
         GTM_CONTAINERS: gtmContainers.valueAsString,
         // BOARD_MAIL_DOMAIN / _RAW_SEGMENT / _INBOUND_ADDRESS are added with the
@@ -823,83 +925,88 @@ export class LxsoftwareStack extends cdk.Stack {
 
     enableBankingSigningKey.grant(adminFn, "kms:Sign", "kms:GetPublicKey");
 
-    // Executive Board scheduled meetings. The handler checks the board
-    // settings (morning / evening toggles) and no-ops when disabled, so both
-    // schedules are safe to keep enabled.
-    //
-    // EventBridge Scheduler (not an events.Rule) on purpose: Scheduler invokes
-    // the function through an IAM role, whereas a Rule target adds another
-    // statement to the Lambda resource-based policy that is already close to
-    // its 20 KB limit (see `SharedPermissionLambdaIntegration`). Scheduler also
-    // takes the cron in Hong Kong time directly.
-    const boardMeetingSchedule = (
+    // Siu Tin Dei Executive Board schedules. Explicit scheduleName + boardKey
+    // so a later LX Software board can add a parallel set without colliding.
+    // EventBridge Scheduler (not an events.Rule): invokes through an IAM role
+    // so we do not add more Lambda resource-policy statements (20 KB cap).
+    const siutindeiBoardKey = "siuTinDei";
+    const siutindeiBoardSchedule = (
       id: string,
-      slot: "morning" | "evening",
-      hour: string
+      scheduleName: string,
+      description: string,
+      schedule: scheduler.ScheduleExpression,
+      input: Record<string, string>,
+      retryAttempts: number
     ) =>
       new scheduler.Schedule(this, id, {
-        description: `Executive Board ${slot} stand-up (${hour.padStart(2, "0")}:00 HKT) when enabled in settings.`,
-        schedule: scheduler.ScheduleExpression.cron({
+        scheduleName,
+        description,
+        schedule,
+        target: new schedulerTargets.LambdaInvoke(adminFn, {
+          input: scheduler.ScheduleTargetInput.fromObject({
+            ...input,
+            boardKey: siutindeiBoardKey,
+          }),
+          retryAttempts,
+        }),
+      });
+    const siutindeiStandup = (id: string, name: string, slot: "morning" | "evening", hour: string) =>
+      siutindeiBoardSchedule(
+        id,
+        name,
+        `Siu Tin Dei Executive Board ${slot} stand-up (${hour.padStart(2, "0")}:00 HKT) when enabled in settings.`,
+        scheduler.ScheduleExpression.cron({
           minute: "0",
           hour,
           timeZone: cdk.TimeZone.ASIA_HONG_KONG,
         }),
-        target: new schedulerTargets.LambdaInvoke(adminFn, {
-          input: scheduler.ScheduleTargetInput.fromObject({
-            internal: "board_meeting",
-            trigger: "schedule",
-            slot,
-          }),
-          // A retried trigger would start a second meeting; the handler is
-          // cheap to miss once and runs again at the next slot.
-          retryAttempts: 0,
-        }),
-      });
-    boardMeetingSchedule("BoardMorningMeetingSchedule", "morning", "6");
-    boardMeetingSchedule("BoardEveningMeetingSchedule", "evening", "18");
-
-    // Role-based Scheduler invokes (no extra Lambda resource-policy statements).
-    new scheduler.Schedule(this, "BoardReceivablesMirrorSchedule", {
-      description:
-        "Nightly mirror of siutindei invoices/payments into the Siu Tin Dei statement book (HKT 00:30).",
-      schedule: scheduler.ScheduleExpression.cron({
+        { internal: "board_meeting", trigger: "schedule", slot },
+        0
+      );
+    siutindeiStandup(
+      "SiutindeiBoardMorningMeetingSchedule",
+      "lxsoftware-admin-siutindei-board-standup-morning",
+      "morning",
+      "6"
+    );
+    siutindeiStandup(
+      "SiutindeiBoardEveningMeetingSchedule",
+      "lxsoftware-admin-siutindei-board-standup-evening",
+      "evening",
+      "18"
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardReceivablesMirrorSchedule",
+      "lxsoftware-admin-siutindei-board-receivables-mirror",
+      "Nightly mirror of siutindei invoices/payments into the Siu Tin Dei statement book (HKT 00:30).",
+      scheduler.ScheduleExpression.cron({
         minute: "30",
         hour: "0",
         timeZone: cdk.TimeZone.ASIA_HONG_KONG,
       }),
-      target: new schedulerTargets.LambdaInvoke(adminFn, {
-        input: scheduler.ScheduleTargetInput.fromObject({
-          internal: "board_receivables_mirror",
-        }),
-        retryAttempts: 1,
-      }),
-    });
-    new scheduler.Schedule(this, "BoardDunningSchedule", {
-      description:
-        "Daily 09:00 HKT dunning: queues propose-level invoice reminders at D+7 / D+21 / D+35.",
-      schedule: scheduler.ScheduleExpression.cron({
+      { internal: "board_receivables_mirror" },
+      1
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardDunningSchedule",
+      "lxsoftware-admin-siutindei-board-dunning",
+      "Daily 09:00 HKT dunning: queues propose-level invoice reminders at D+7 / D+21 / D+35.",
+      scheduler.ScheduleExpression.cron({
         minute: "0",
         hour: "9",
         timeZone: cdk.TimeZone.ASIA_HONG_KONG,
       }),
-      target: new schedulerTargets.LambdaInvoke(adminFn, {
-        input: scheduler.ScheduleTargetInput.fromObject({
-          internal: "board_dunning",
-        }),
-        retryAttempts: 0,
-      }),
-    });
-    new scheduler.Schedule(this, "BoardCacheRefreshSchedule", {
-      description:
-        "Hourly refresh of Executive Board AWS cost/alarms and security findings cache (HKT).",
-      schedule: scheduler.ScheduleExpression.rate(cdk.Duration.hours(1)),
-      target: new schedulerTargets.LambdaInvoke(adminFn, {
-        input: scheduler.ScheduleTargetInput.fromObject({
-          internal: "board_cache_refresh",
-        }),
-        retryAttempts: 1,
-      }),
-    });
+      { internal: "board_dunning" },
+      0
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardCacheRefreshSchedule",
+      "lxsoftware-admin-siutindei-board-cache-refresh",
+      "Hourly refresh of Siu Tin Dei Executive Board AWS / security / stores / web cache (HKT).",
+      scheduler.ScheduleExpression.rate(cdk.Duration.hours(1)),
+      { internal: "board_cache_refresh" },
+      1
+    );
 
     // Daily unattended balance refresh (05:30 HKT). The handler no-ops when
     // ENABLE_BANKING_APP_ID is blank, so the rule is safe to keep enabled.
@@ -984,19 +1091,19 @@ export class LxsoftwareStack extends cdk.Stack {
     const cfnSecretPolicy = openRouterSecretPolicy.node.defaultChild as iam.CfnPolicy;
     cfnSecretPolicy.cfnOptions.condition = hasOpenRouterSecret;
 
-    boardGitHubReadToken.grantRead(adminFn);
-    boardSearchApiKey.grantRead(adminFn);
-    boardMetaToken.grantRead(adminFn);
-    boardMetaAppSecret.grantRead(adminFn);
-    boardAppStoreConnectKey.grantRead(adminFn);
-    boardGooglePlaySa.grantRead(adminFn);
-    boardGoogleAnalyticsSa.grantRead(adminFn);
+    siutindeiBoardSecrets.github.grantRead(adminFn);
+    siutindeiBoardSecrets.search.grantRead(adminFn);
+    siutindeiBoardSecrets.metaToken.grantRead(adminFn);
+    siutindeiBoardSecrets.metaAppSecret.grantRead(adminFn);
+    siutindeiBoardSecrets.appStore.grantRead(adminFn);
+    siutindeiBoardSecrets.play.grantRead(adminFn);
+    siutindeiBoardSecrets.analytics.grantRead(adminFn);
 
     // Executive Board aws + security read tools (plan §8). Each statement is
     // scoped as tightly as the IAM action allows (see the Service
     // Authorization Reference); the handler additionally filters CloudWatch
     // results to the siutindei stacks in code.
-    new iam.Policy(this, "AdminBoardAwsReadPolicy", {
+    new iam.Policy(this, "SiutindeiBoardAwsReadPolicy", {
       statements: [
         // Cost Explorer, Health, and the CloudWatch metrics/alarm-list APIs
         // do not support resource-level permissions, so "*" is the only
@@ -1220,7 +1327,7 @@ export class LxsoftwareStack extends cdk.Stack {
         filters: [{ prefix: boardMailRawKeyPrefix }],
       })
     );
-    inboundReceiptRuleSet.addRule("InboundMailbox-board", {
+    inboundReceiptRuleSet.addRule("InboundMailbox-siutindei-board", {
       recipients: [boardMailInboundAddress],
       enabled: true,
       actions: [
@@ -1246,13 +1353,13 @@ export class LxsoftwareStack extends cdk.Stack {
         "true"
       ),
     });
-    const boardMailIdentity = new ses.CfnEmailIdentity(this, "BoardMailSendingIdentity", {
+    const boardMailIdentity = new ses.CfnEmailIdentity(this, "SiutindeiBoardMailSendingIdentity", {
       emailIdentity: boardMailDomain.valueAsString,
       dkimAttributes: { signingEnabled: true },
       mailFromAttributes: { behaviorOnMxFailure: "USE_DEFAULT_VALUE" },
     });
     boardMailIdentity.cfnOptions.condition = hasBoardMailSending;
-    const boardMailSendPolicy = new iam.Policy(this, "AdminBoardMailSendPolicy", {
+    const boardMailSendPolicy = new iam.Policy(this, "SiutindeiBoardMailSendPolicy", {
       statements: [
         new iam.PolicyStatement({
           actions: ["ses:SendEmail", "ses:SendRawEmail"],
@@ -1364,6 +1471,8 @@ export class LxsoftwareStack extends cdk.Stack {
     defaultStage.routeSettings = {
       "POST /webhooks/meta": webhookRouteThrottle,
       "GET /webhooks/meta": webhookRouteThrottle,
+      "POST /webhooks/meta/siutindei": webhookRouteThrottle,
+      "GET /webhooks/meta/siutindei": webhookRouteThrottle,
     };
 
     this.httpApi.addRoutes({
@@ -1372,10 +1481,15 @@ export class LxsoftwareStack extends cdk.Stack {
       integration,
     });
 
-    // First non-JWT admin route. Meta's verify handshake + HMAC-signed
-    // inbound webhooks. The handler checks hub.verify_token / X-Hub-Signature-256.
+    // First non-JWT admin routes. Tenant path is canonical; /webhooks/meta
+    // stays so an already-subscribed Meta app keeps working.
     this.httpApi.addRoutes({
       path: "/webhooks/meta",
+      methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
+      integration,
+    });
+    this.httpApi.addRoutes({
+      path: "/webhooks/meta/siutindei",
       methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
       integration,
     });
@@ -1830,11 +1944,11 @@ export class LxsoftwareStack extends cdk.Stack {
       exportName: "lxsoftware-InboundMailBucketName",
     });
 
-    new cdk.CfnOutput(this, "BoardMailInboundAddress", {
+    new cdk.CfnOutput(this, "SiutindeiBoardMailInboundAddress", {
       value: boardMailInboundAddress,
       description:
         "Destination the Cloudflare Email Worker forwards every BoardMailDomain message to (verify it once in Cloudflare; the verification mail lands in the inbound bucket).",
-      exportName: "lxsoftware-BoardMailInboundAddress",
+      exportName: "lxsoftware-SiutindeiBoardMailInboundAddress",
     });
 
     for (const n of [1, 2, 3] as const) {

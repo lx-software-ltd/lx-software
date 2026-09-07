@@ -754,6 +754,28 @@ class TestMeetings(BoardTestCase):
         lambda_handler({"internal": "board_meeting", "slot": "evening"}, None)
         self.assertEqual(len(board_store.list_meetings(self.table)), 1)
 
+    def test_schedule_trigger_ignores_other_board_key(self) -> None:
+        self.call("/siu-tin-dei/board/settings", "PUT", {"schedule": {"morningEnabled": True}})
+        lambda_handler(
+            {"internal": "board_meeting", "slot": "morning", "boardKey": "lxSoftware"},
+            None,
+        )
+        self.assertEqual(board_store.list_meetings(self.table), [])
+        lambda_handler(
+            {"internal": "board_meeting", "slot": "morning", "boardKey": "siuTinDei"},
+            None,
+        )
+        self.assertEqual(len(board_store.list_meetings(self.table)), 1)
+
+
+class TestBoardKeyRouting(unittest.TestCase):
+    def test_missing_or_blank_board_key_is_this_board(self) -> None:
+        self.assertTrue(board_store.event_targets_this_board(None))
+        self.assertTrue(board_store.event_targets_this_board({}))
+        self.assertTrue(board_store.event_targets_this_board({"boardKey": ""}))
+        self.assertTrue(board_store.event_targets_this_board({"boardKey": "siuTinDei"}))
+        self.assertFalse(board_store.event_targets_this_board({"boardKey": "lxSoftware"}))
+
 
 class TestNormalizers(unittest.TestCase):
     def test_normalize_minutes_defaults_unknown_persona_to_chair(self) -> None:
