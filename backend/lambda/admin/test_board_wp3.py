@@ -378,6 +378,15 @@ class TestDunningExactDays(ReceivablesTestCase):
     def _reminders(self) -> list[dict[str, Any]]:
         return [a for a in board_store.list_approvals(self.table) if a.get("op") == "finance_send_reminder"]
 
+    def test_other_board_key_is_a_no_op(self) -> None:
+        self._overdue("inv-21", 21, "STD-2026-0021")
+        with patch.object(board_store, "records_table", return_value=self.table):
+            out = board_receivables.handle_dunning_trigger({"boardKey": "lxSoftware"})
+            mirror = board_receivables.handle_mirror_trigger({"boardKey": "lxSoftware"})
+        self.assertEqual(out, {"ok": True, "skipped": "other_board"})
+        self.assertEqual(mirror, {"ok": True, "skipped": "other_board"})
+        self.assertEqual(self._reminders(), [])
+
     def test_day_8_and_day_20_do_nothing(self) -> None:
         self._overdue("inv-8", 8, "STD-2026-0008")
         self._overdue("inv-20", 20, "STD-2026-0020")

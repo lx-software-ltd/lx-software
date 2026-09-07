@@ -28,7 +28,9 @@ def refresh_all(table: Any) -> dict[str, Any]:
     return {"aws": aws_notes, "security": sec_notes, "stores": store_notes, "web": web_notes, "product": product_notes}
 
 
-def handle_schedule_trigger(_event: dict[str, Any]) -> dict[str, Any]:
+def handle_schedule_trigger(event: dict[str, Any]) -> dict[str, Any]:
+    if not board_store.event_targets_this_board(event):
+        return {"ok": True, "skipped": "other_board"}
     table = board_store.records_table()
     try:
         result = refresh_all(table)

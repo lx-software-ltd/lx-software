@@ -258,7 +258,8 @@ export function BoardToolsCard({
                     {tool.id === "meta" ? (
                       metaConfigured ? (
                         <div className="small text-muted mt-1">
-                          Webhook at <code>/webhooks/meta</code>. WhatsApp{" "}
+                          Webhook at <code>/webhooks/meta/siutindei</code>{" "}
+                          (<code>/webhooks/meta</code> still works). WhatsApp{" "}
                           <strong>act</strong> only inside the 24-hour window, to the allow-list.
                           Ads <strong>act</strong> only while daily and monthly caps have room;
                           otherwise <code>create_ad_set</code> / <code>boost_post</code> go to

@@ -279,7 +279,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     method, path = _route(event)
 
-    if path == "/webhooks/meta":
+    if path in {"/webhooks/meta", "/webhooks/meta/siutindei"}:
         import board_meta as board_meta_mod
 
         return board_meta_mod.handle_http(event, method)

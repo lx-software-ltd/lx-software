@@ -126,6 +126,18 @@ class TestWebhook(MetaTestCase):
         self.assertEqual(out["body"], "abc123")
         self.assertEqual(out["headers"]["Content-Type"], "text/plain")
 
+    def test_tenant_webhook_path_uses_the_same_handler(self) -> None:
+        ev = {
+            "requestContext": {
+                "http": {"method": "GET", "path": "/webhooks/meta/siutindei"},
+                "requestId": "w1b",
+            },
+            "rawQueryString": "hub.mode=subscribe&hub.verify_token=verify-me&hub.challenge=tenant",
+        }
+        out = dispatch.lambda_handler(ev, None)
+        self.assertEqual(out["statusCode"], 200)
+        self.assertEqual(out["body"], "tenant")
+
     def test_verify_rejects_wrong_token(self) -> None:
         ev = {
             "requestContext": {"http": {"method": "GET", "path": "/webhooks/meta"}, "requestId": "w2"},

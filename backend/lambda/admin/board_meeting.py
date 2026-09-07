@@ -139,6 +139,9 @@ def handle_meeting_cancel(event: dict[str, Any], meeting_id: str, user_sub: str 
 def handle_schedule_trigger(event: dict[str, Any]) -> None:
     """EventBridge entry point: start the scheduled meeting when the slot is enabled."""
     slot = str(event.get("slot") or "morning")
+    if not board_store.event_targets_this_board(event):
+        _log_event("info", tag="board_schedule_skipped", slot=slot, reason="other_board")
+        return
     table = board_store.records_table()
     settings = board_store.load_settings(table)
     enabled = bool((settings.get("schedule") or {}).get(f"{slot}Enabled"))

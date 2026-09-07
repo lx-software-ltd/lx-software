@@ -1,7 +1,8 @@
 """Executive Board ``meta`` tools: Facebook Page, Instagram, WhatsApp Cloud API.
 
-Webhook (``GET/POST /webhooks/meta``) is the first unauthenticated admin-API
-route: Meta's verify handshake plus ``X-Hub-Signature-256``. Inbound payloads
+Webhook (``GET/POST /webhooks/meta/siutindei``, plus the legacy
+``/webhooks/meta`` path) is the first unauthenticated admin-API route:
+Meta's verify handshake plus ``X-Hub-Signature-256``. Inbound payloads
 are masked and stored under ``BOARD#…#meta#``; no LLM work happens here.
 
 Writes execute after approval, or at ``act`` when the global mode allows it

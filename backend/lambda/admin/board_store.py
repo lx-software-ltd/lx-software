@@ -69,6 +69,20 @@ def board_pk(suffix: str) -> str:
     return f"{BOARD_PK_PREFIX}{BOARD_KEY}#{suffix}"
 
 
+def event_targets_this_board(event: dict[str, Any] | None) -> bool:
+    """True when a Scheduler / internal event is for this board.
+
+    Missing or blank ``boardKey`` means this board (legacy payloads). A
+    different key belongs to a sibling board — skip it.
+    """
+    if not event:
+        return True
+    key = event.get("boardKey")
+    if key is None or str(key).strip() == "":
+        return True
+    return str(key) == BOARD_KEY
+
+
 def records_table() -> Any:
     return runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
 

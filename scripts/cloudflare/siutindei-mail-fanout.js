@@ -9,7 +9,7 @@
  *
  * Setup (Cloudflare dashboard, siutindei.com zone):
  *   1. Email > Email Routing > Destination addresses: add the board address
- *      from the `BoardMailInboundAddress` stack output
+ *      from the `SiutindeiBoardMailInboundAddress` stack output
  *      (siutindei-board@inbound.lx-software.com). Cloudflare emails a
  *      verification link there; it lands in the SES inbound bucket under
  *      inbound-raw/siutindei/ — open the object once and click the link.

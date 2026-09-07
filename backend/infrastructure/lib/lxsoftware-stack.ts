@@ -156,7 +156,7 @@ function boardConnectorSecrets(
     metaAppSecret: boardPlaceholderSecret(scope, opts.ids.metaAppSecret, {
       ...common,
       secretName: opts.names.metaAppSecret,
-      description: `${opts.label}: Meta app secret for X-Hub-Signature-256 on POST /webhooks/meta.`,
+      description: `${opts.label}: Meta app secret for X-Hub-Signature-256 on POST /webhooks/meta/siutindei.`,
     }),
     appStore: boardPlaceholderSecret(scope, opts.ids.appStore, {
       ...common,
@@ -362,7 +362,7 @@ export class LxsoftwareStack extends cdk.Stack {
       default: "",
       noEcho: true,
       description:
-        "Verify token Meta sends on GET /webhooks/meta (hub.verify_token). Leave blank to keep the handshake rejected.",
+        "Verify token Meta sends on GET /webhooks/meta/siutindei (hub.verify_token). Leave blank to keep the handshake rejected.",
     });
     const metaPageId = new cdk.CfnParameter(this, "MetaPageId", {
       type: "String",
@@ -925,83 +925,88 @@ export class LxsoftwareStack extends cdk.Stack {
 
     enableBankingSigningKey.grant(adminFn, "kms:Sign", "kms:GetPublicKey");
 
-    // Executive Board scheduled meetings. The handler checks the board
-    // settings (morning / evening toggles) and no-ops when disabled, so both
-    // schedules are safe to keep enabled.
-    //
-    // EventBridge Scheduler (not an events.Rule) on purpose: Scheduler invokes
-    // the function through an IAM role, whereas a Rule target adds another
-    // statement to the Lambda resource-based policy that is already close to
-    // its 20 KB limit (see `SharedPermissionLambdaIntegration`). Scheduler also
-    // takes the cron in Hong Kong time directly.
-    const boardMeetingSchedule = (
+    // Siu Tin Dei Executive Board schedules. Explicit scheduleName + boardKey
+    // so a later LX Software board can add a parallel set without colliding.
+    // EventBridge Scheduler (not an events.Rule): invokes through an IAM role
+    // so we do not add more Lambda resource-policy statements (20 KB cap).
+    const siutindeiBoardKey = "siuTinDei";
+    const siutindeiBoardSchedule = (
       id: string,
-      slot: "morning" | "evening",
-      hour: string
+      scheduleName: string,
+      description: string,
+      schedule: scheduler.ScheduleExpression,
+      input: Record<string, string>,
+      retryAttempts: number
     ) =>
       new scheduler.Schedule(this, id, {
-        description: `Executive Board ${slot} stand-up (${hour.padStart(2, "0")}:00 HKT) when enabled in settings.`,
-        schedule: scheduler.ScheduleExpression.cron({
+        scheduleName,
+        description,
+        schedule,
+        target: new schedulerTargets.LambdaInvoke(adminFn, {
+          input: scheduler.ScheduleTargetInput.fromObject({
+            ...input,
+            boardKey: siutindeiBoardKey,
+          }),
+          retryAttempts,
+        }),
+      });
+    const siutindeiStandup = (id: string, name: string, slot: "morning" | "evening", hour: string) =>
+      siutindeiBoardSchedule(
+        id,
+        name,
+        `Siu Tin Dei Executive Board ${slot} stand-up (${hour.padStart(2, "0")}:00 HKT) when enabled in settings.`,
+        scheduler.ScheduleExpression.cron({
           minute: "0",
           hour,
           timeZone: cdk.TimeZone.ASIA_HONG_KONG,
         }),
-        target: new schedulerTargets.LambdaInvoke(adminFn, {
-          input: scheduler.ScheduleTargetInput.fromObject({
-            internal: "board_meeting",
-            trigger: "schedule",
-            slot,
-          }),
-          // A retried trigger would start a second meeting; the handler is
-          // cheap to miss once and runs again at the next slot.
-          retryAttempts: 0,
-        }),
-      });
-    boardMeetingSchedule("BoardMorningMeetingSchedule", "morning", "6");
-    boardMeetingSchedule("BoardEveningMeetingSchedule", "evening", "18");
-
-    // Role-based Scheduler invokes (no extra Lambda resource-policy statements).
-    new scheduler.Schedule(this, "BoardReceivablesMirrorSchedule", {
-      description:
-        "Nightly mirror of siutindei invoices/payments into the Siu Tin Dei statement book (HKT 00:30).",
-      schedule: scheduler.ScheduleExpression.cron({
+        { internal: "board_meeting", trigger: "schedule", slot },
+        0
+      );
+    siutindeiStandup(
+      "SiutindeiBoardMorningMeetingSchedule",
+      "lxsoftware-admin-siutindei-board-standup-morning",
+      "morning",
+      "6"
+    );
+    siutindeiStandup(
+      "SiutindeiBoardEveningMeetingSchedule",
+      "lxsoftware-admin-siutindei-board-standup-evening",
+      "evening",
+      "18"
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardReceivablesMirrorSchedule",
+      "lxsoftware-admin-siutindei-board-receivables-mirror",
+      "Nightly mirror of siutindei invoices/payments into the Siu Tin Dei statement book (HKT 00:30).",
+      scheduler.ScheduleExpression.cron({
         minute: "30",
         hour: "0",
         timeZone: cdk.TimeZone.ASIA_HONG_KONG,
       }),
-      target: new schedulerTargets.LambdaInvoke(adminFn, {
-        input: scheduler.ScheduleTargetInput.fromObject({
-          internal: "board_receivables_mirror",
-        }),
-        retryAttempts: 1,
-      }),
-    });
-    new scheduler.Schedule(this, "BoardDunningSchedule", {
-      description:
-        "Daily 09:00 HKT dunning: queues propose-level invoice reminders at D+7 / D+21 / D+35.",
-      schedule: scheduler.ScheduleExpression.cron({
+      { internal: "board_receivables_mirror" },
+      1
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardDunningSchedule",
+      "lxsoftware-admin-siutindei-board-dunning",
+      "Daily 09:00 HKT dunning: queues propose-level invoice reminders at D+7 / D+21 / D+35.",
+      scheduler.ScheduleExpression.cron({
         minute: "0",
         hour: "9",
         timeZone: cdk.TimeZone.ASIA_HONG_KONG,
       }),
-      target: new schedulerTargets.LambdaInvoke(adminFn, {
-        input: scheduler.ScheduleTargetInput.fromObject({
-          internal: "board_dunning",
-        }),
-        retryAttempts: 0,
-      }),
-    });
-    new scheduler.Schedule(this, "BoardCacheRefreshSchedule", {
-      description:
-        "Hourly refresh of Executive Board AWS cost/alarms and security findings cache (HKT).",
-      schedule: scheduler.ScheduleExpression.rate(cdk.Duration.hours(1)),
-      target: new schedulerTargets.LambdaInvoke(adminFn, {
-        input: scheduler.ScheduleTargetInput.fromObject({
-          internal: "board_cache_refresh",
-        }),
-        retryAttempts: 1,
-      }),
-    });
+      { internal: "board_dunning" },
+      0
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardCacheRefreshSchedule",
+      "lxsoftware-admin-siutindei-board-cache-refresh",
+      "Hourly refresh of Siu Tin Dei Executive Board AWS / security / stores / web cache (HKT).",
+      scheduler.ScheduleExpression.rate(cdk.Duration.hours(1)),
+      { internal: "board_cache_refresh" },
+      1
+    );
 
     // Daily unattended balance refresh (05:30 HKT). The handler no-ops when
     // ENABLE_BANKING_APP_ID is blank, so the rule is safe to keep enabled.
@@ -1098,7 +1103,7 @@ export class LxsoftwareStack extends cdk.Stack {
     // scoped as tightly as the IAM action allows (see the Service
     // Authorization Reference); the handler additionally filters CloudWatch
     // results to the siutindei stacks in code.
-    new iam.Policy(this, "AdminBoardAwsReadPolicy", {
+    new iam.Policy(this, "SiutindeiBoardAwsReadPolicy", {
       statements: [
         // Cost Explorer, Health, and the CloudWatch metrics/alarm-list APIs
         // do not support resource-level permissions, so "*" is the only
@@ -1322,7 +1327,7 @@ export class LxsoftwareStack extends cdk.Stack {
         filters: [{ prefix: boardMailRawKeyPrefix }],
       })
     );
-    inboundReceiptRuleSet.addRule("InboundMailbox-board", {
+    inboundReceiptRuleSet.addRule("InboundMailbox-siutindei-board", {
       recipients: [boardMailInboundAddress],
       enabled: true,
       actions: [
@@ -1348,13 +1353,13 @@ export class LxsoftwareStack extends cdk.Stack {
         "true"
       ),
     });
-    const boardMailIdentity = new ses.CfnEmailIdentity(this, "BoardMailSendingIdentity", {
+    const boardMailIdentity = new ses.CfnEmailIdentity(this, "SiutindeiBoardMailSendingIdentity", {
       emailIdentity: boardMailDomain.valueAsString,
       dkimAttributes: { signingEnabled: true },
       mailFromAttributes: { behaviorOnMxFailure: "USE_DEFAULT_VALUE" },
     });
     boardMailIdentity.cfnOptions.condition = hasBoardMailSending;
-    const boardMailSendPolicy = new iam.Policy(this, "AdminBoardMailSendPolicy", {
+    const boardMailSendPolicy = new iam.Policy(this, "SiutindeiBoardMailSendPolicy", {
       statements: [
         new iam.PolicyStatement({
           actions: ["ses:SendEmail", "ses:SendRawEmail"],
@@ -1466,6 +1471,8 @@ export class LxsoftwareStack extends cdk.Stack {
     defaultStage.routeSettings = {
       "POST /webhooks/meta": webhookRouteThrottle,
       "GET /webhooks/meta": webhookRouteThrottle,
+      "POST /webhooks/meta/siutindei": webhookRouteThrottle,
+      "GET /webhooks/meta/siutindei": webhookRouteThrottle,
     };
 
     this.httpApi.addRoutes({
@@ -1474,10 +1481,15 @@ export class LxsoftwareStack extends cdk.Stack {
       integration,
     });
 
-    // First non-JWT admin route. Meta's verify handshake + HMAC-signed
-    // inbound webhooks. The handler checks hub.verify_token / X-Hub-Signature-256.
+    // First non-JWT admin routes. Tenant path is canonical; /webhooks/meta
+    // stays so an already-subscribed Meta app keeps working.
     this.httpApi.addRoutes({
       path: "/webhooks/meta",
+      methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
+      integration,
+    });
+    this.httpApi.addRoutes({
+      path: "/webhooks/meta/siutindei",
       methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
       integration,
     });
@@ -1932,11 +1944,11 @@ export class LxsoftwareStack extends cdk.Stack {
       exportName: "lxsoftware-InboundMailBucketName",
     });
 
-    new cdk.CfnOutput(this, "BoardMailInboundAddress", {
+    new cdk.CfnOutput(this, "SiutindeiBoardMailInboundAddress", {
       value: boardMailInboundAddress,
       description:
         "Destination the Cloudflare Email Worker forwards every BoardMailDomain message to (verify it once in Cloudflare; the verification mail lands in the inbound bucket).",
-      exportName: "lxsoftware-BoardMailInboundAddress",
+      exportName: "lxsoftware-SiutindeiBoardMailInboundAddress",
     });
 
     for (const n of [1, 2, 3] as const) {

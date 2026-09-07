@@ -263,6 +263,12 @@ class TestInvoicePdf(unittest.TestCase):
             payer_contact=payer,
         )
 
+    def test_invoice_s3_key_is_tenant_prefixed(self) -> None:
+        self.assertEqual(
+            board_invoice_pdf.invoice_s3_key("inv-1", "2026-09-01"),
+            "board/siuTinDei/invoices/2026/inv-1.pdf",
+        )
+
     def test_pdf_bytes_are_valid_header(self) -> None:
         out = self._render("billing@provider.example")
         pdf = out.data
@@ -343,7 +349,7 @@ class TestInvoicePdfStorage(ToolsTestCase):
                 "amount_hkd": 388,
                 "status": "draft",
                 "fps_reference": "STDREF001",
-                "pdf_key": "board/invoices/2026/inv-1.pdf",
+                "pdf_key": "board/siuTinDei/invoices/2026/inv-1.pdf",
             }
         )
         ses = FakeSES()
@@ -449,7 +455,7 @@ class TestDraftInvoiceStoresPdf(ToolsTestCase):
                 None, {"subscriptionId": "sub-1", "amountHkd": 388, "reason": "PDF."}
             )
         self.assertTrue(out["ok"])
-        self.assertTrue(str(out.get("pdfKey") or "").startswith("board/invoices/"))
+        self.assertTrue(str(out.get("pdfKey") or "").startswith("board/siuTinDei/invoices/"))
         put.assert_called_once()
         self.assertEqual(db.invoices[0]["pdf_key"], out["pdfKey"])
 
