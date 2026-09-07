@@ -6,6 +6,7 @@ type CfnResource = {
   Type: string;
   Properties?: Record<string, any>;
   Condition?: string;
+  DependsOn?: string | string[];
   UpdateReplacePolicy?: string;
   DeletionPolicy?: string;
 };
@@ -140,6 +141,20 @@ describe("HTTP API stage throttling", () => {
         ThrottlingBurstLimit: 100,
       },
     });
+  });
+
+  test("the default stage waits for Meta webhook routes before RouteSettings", () => {
+    const [, stage] = Object.entries(resourcesOfType("AWS::ApiGatewayV2::Stage")).find(
+      ([, r]) => r.Properties?.StageName === "$default"
+    )!;
+    const webhookRouteIds = Object.entries(resourcesOfType("AWS::ApiGatewayV2::Route"))
+      .filter(([, r]) => String(r.Properties?.RouteKey).includes("/webhooks/meta"))
+      .map(([id]) => id);
+    expect(webhookRouteIds).toHaveLength(4);
+    const dependsOn = asArray<string>(stage.DependsOn);
+    for (const id of webhookRouteIds) {
+      expect(dependsOn).toContain(id);
+    }
   });
 
   test("access logging on the default stage is preserved", () => {
