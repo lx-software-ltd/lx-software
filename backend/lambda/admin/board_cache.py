@@ -20,12 +20,26 @@ from http_common import _log_event
 
 
 def refresh_all(table: Any) -> dict[str, Any]:
-    aws_notes = board_aws.refresh_caches(table)
-    sec_notes = board_security.refresh_caches(table)
-    store_notes = board_stores.refresh_caches(table)
-    web_notes = board_web.refresh_caches(table)
-    product_notes = board_product.refresh_caches(table)
-    return {"aws": aws_notes, "security": sec_notes, "stores": store_notes, "web": web_notes, "product": product_notes}
+    """Refresh every cheap cache. One subsystem failure must not skip the rest.
+
+    Production Health ``describe_events`` used to raise ``ParamValidationError``
+    (``maxResults`` in the filter) and abort before GA4 / GTM ever ran.
+    """
+    result: dict[str, Any] = {}
+    jobs = (
+        ("aws", board_aws.refresh_caches),
+        ("security", board_security.refresh_caches),
+        ("stores", board_stores.refresh_caches),
+        ("web", board_web.refresh_caches),
+        ("product", board_product.refresh_caches),
+    )
+    for name, fn in jobs:
+        try:
+            result[name] = fn(table)
+        except Exception as exc:
+            _log_event("error", tag="board_cache_refresh_failed", key=name, error=str(exc)[:300])
+            result[name] = {"error": str(exc)[:200]}
+    return result
 
 
 def handle_schedule_trigger(event: dict[str, Any]) -> dict[str, Any]:

@@ -349,11 +349,12 @@ def resolve_api_key(secrets_client: Any) -> str:
     return _api_key_cache
 
 
-def read_secret_string(secrets_client: Any, secret_arn: str, *, what: str) -> str:
-    """Fetch a Secrets Manager secret and return the bare token inside it.
+def read_secret_raw(secrets_client: Any, secret_arn: str, *, what: str) -> str:
+    """Fetch a Secrets Manager secret and return the full string payload.
 
-    Accepts either a plain string secret or a JSON object with one of the
-    conventional key names.
+    Unlike :func:`read_secret_string`, this does not unwrap a JSON object to a
+    single token field. Service-account blobs (GA4, Play, App Store Connect)
+    must stay intact so callers can read ``client_email`` / ``private_key``.
     """
     response = secrets_client.get_secret_value(SecretId=secret_arn)
     secret_string = response.get("SecretString")
@@ -364,6 +365,16 @@ def read_secret_string(secrets_client: Any, secret_arn: str, *, what: str) -> st
     raw = secret_string.strip()
     if not raw:
         raise OpenRouterError(f"{what} value is blank")
+    return raw
+
+
+def read_secret_string(secrets_client: Any, secret_arn: str, *, what: str) -> str:
+    """Fetch a Secrets Manager secret and return the bare token inside it.
+
+    Accepts either a plain string secret or a JSON object with one of the
+    conventional key names.
+    """
+    raw = read_secret_raw(secrets_client, secret_arn, what=what)
     if raw.startswith("{"):
         payload = json.loads(raw)
         if not isinstance(payload, dict):

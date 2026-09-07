@@ -45,7 +45,7 @@ import board_pii
 import board_store
 from contract_constants import BOARD_STORES_CACHE_TTL_HOURS, BOARD_STORES_LIST_MAX
 from http_common import _log_event, _utc_iso_z
-from openrouter_client import read_secret_string
+from openrouter_client import OpenRouterError, read_secret_raw
 
 ASC_ORIGIN = "https://api.appstoreconnect.apple.com"
 PLAY_ORIGIN = "https://androidpublisher.googleapis.com"
@@ -80,7 +80,7 @@ def reset_caches_for_tests() -> None:
     _play_token = None
 
 
-def _secret_json(env_plain: str, env_arn: str) -> dict[str, Any]:
+def _secret_json(env_plain: str, env_arn: str, *, what: str) -> dict[str, Any]:
     plain = (os.environ.get(env_plain) or "").strip()
     if plain:
         try:
@@ -91,7 +91,11 @@ def _secret_json(env_plain: str, env_arn: str) -> dict[str, Any]:
     arn = (os.environ.get(env_arn) or "").strip()
     if not arn:
         return {}
-    raw = (read_secret_string(_get_secretsmanager_client(), arn) or "").strip()
+    try:
+        raw = read_secret_raw(_get_secretsmanager_client(), arn, what=what).strip()
+    except OpenRouterError as exc:
+        _log_event("warning", tag="board_stores_secret_failed", error=str(exc)[:200])
+        return {}
     if not raw:
         return {}
     try:
@@ -106,7 +110,9 @@ def _asc_secret() -> dict[str, str]:
     if _asc_creds_checked:
         return _asc_creds or {}
     _asc_creds_checked = True
-    raw = _secret_json("APP_STORE_CONNECT_KEY", "APP_STORE_CONNECT_KEY_SECRET_ARN")
+    raw = _secret_json(
+        "APP_STORE_CONNECT_KEY", "APP_STORE_CONNECT_KEY_SECRET_ARN", what="App Store Connect key"
+    )
     key_id = str(raw.get("keyId") or raw.get("kid") or "").strip()
     issuer = str(raw.get("issuerId") or raw.get("iss") or "").strip()
     pem = str(raw.get("privateKey") or raw.get("p8") or raw.get("key") or "").strip()
@@ -129,7 +135,11 @@ def _play_secret() -> dict[str, str]:
     if _play_creds_checked:
         return _play_creds or {}
     _play_creds_checked = True
-    raw = _secret_json("GOOGLE_PLAY_SERVICE_ACCOUNT", "GOOGLE_PLAY_SERVICE_ACCOUNT_SECRET_ARN")
+    raw = _secret_json(
+        "GOOGLE_PLAY_SERVICE_ACCOUNT",
+        "GOOGLE_PLAY_SERVICE_ACCOUNT_SECRET_ARN",
+        what="Google Play service account",
+    )
     email = str(raw.get("client_email") or raw.get("clientEmail") or "").strip()
     pem = str(raw.get("private_key") or raw.get("privateKey") or "").strip()
     package = str(

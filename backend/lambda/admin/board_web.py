@@ -25,7 +25,7 @@ import board_store
 import board_stores
 from contract_constants import BOARD_WEB_CACHE_TTL_HOURS, BOARD_WEB_LIST_MAX
 from http_common import _log_event
-from openrouter_client import read_secret_string
+from openrouter_client import OpenRouterError, read_secret_raw
 
 GA4_ORIGIN = "https://analyticsdata.googleapis.com"
 GTM_ORIGIN = "https://tagmanager.googleapis.com"
@@ -66,7 +66,14 @@ def _secret_json() -> dict[str, Any]:
     else:
         arn = (os.environ.get("GOOGLE_ANALYTICS_SERVICE_ACCOUNT_SECRET_ARN") or "").strip()
         if arn:
-            raw = (read_secret_string(_get_secretsmanager_client(), arn) or "").strip()
+            try:
+                raw = read_secret_raw(
+                    _get_secretsmanager_client(), arn, what="Google Analytics service account"
+                ).strip()
+            except OpenRouterError as exc:
+                _log_event("warning", tag="board_web_secret_failed", error=str(exc)[:200])
+                _sa = {}
+                return _sa
     if not raw:
         _sa = {}
         return _sa

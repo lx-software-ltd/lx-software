@@ -172,3 +172,62 @@ class TestWebUnavailable(ToolsTestCase):
         notes = board_web.refresh_caches(self.table)
         self.assertEqual(notes["web:sessions"], "skipped")
         self.assertFalse(board_web.configured())
+
+
+class FakeAnalyticsSecrets:
+    def get_secret_value(self, SecretId: str) -> dict[str, str]:  # noqa: N803
+        assert SecretId == "arn:ga-sa"
+        return {
+            "SecretString": (
+                '{"client_email":"ga@example.iam.gserviceaccount.com",'
+                '"private_key":"-----BEGIN PRIVATE KEY-----\\nMIIB\\n-----END PRIVATE KEY-----\\n",'
+                '"propertyIds":["properties/111","222"],'
+                '"gtmContainers":[{"accountId":"acc-1","containerId":"c1"},'
+                '{"accountId":"acc-1","containerId":"c2"}]}'
+            )
+        }
+
+
+class TestWebSecretFromArn(WebTestCase):
+    """Production path: ids live in the SA JSON; env CSV params are blank."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        os.environ.pop("GA4_PROPERTY_IDS", None)
+        os.environ.pop("GTM_CONTAINERS", None)
+        os.environ.pop("GOOGLE_ANALYTICS_SERVICE_ACCOUNT", None)
+        os.environ["GOOGLE_ANALYTICS_SERVICE_ACCOUNT_SECRET_ARN"] = "arn:ga-sa"
+        board_web.reset_caches_for_tests()
+        secrets = patch.object(board_web, "_get_secretsmanager_client", return_value=FakeAnalyticsSecrets())
+        secrets.start()
+        self.addCleanup(secrets.stop)
+        self.addCleanup(lambda: os.environ.pop("GOOGLE_ANALYTICS_SERVICE_ACCOUNT_SECRET_ARN", None))
+
+    def test_cmo_sessions_and_gtm_read_ids_from_secret_json(self) -> None:
+        sessions = execute_call(self._ctx(), REGISTRY["web_sessions"], {})
+        self.assertEqual(sessions.status, "ok", sessions.result)
+        self.assertEqual(sessions.result["count"], 2)
+        gtm = execute_call(self._ctx(), REGISTRY["web_gtm_status"], {})
+        self.assertEqual(gtm.status, "ok", gtm.result)
+        self.assertEqual(gtm.result["count"], 2)
+        self.assertEqual(gtm.result["containers"][0]["publicId"], "GTM-c1")
+
+    def test_token_unwrap_would_drop_the_sa_json(self) -> None:
+        from openrouter_client import OpenRouterError, read_secret_raw, read_secret_string
+
+        client = FakeAnalyticsSecrets()
+        raw = read_secret_raw(client, "arn:ga-sa", what="Google Analytics service account")
+        self.assertIn("client_email", raw)
+        with self.assertRaises(OpenRouterError) as raised:
+            read_secret_string(client, "arn:ga-sa", what="Google Analytics service account")
+        self.assertIn("missing in secret JSON", str(raised.exception))
+
+    def test_cache_refresh_still_warms_web_when_aws_raises(self) -> None:
+        import board_aws
+
+        boom = RuntimeError("Unknown parameter in filter: maxResults")
+        with patch.object(board_aws, "refresh_caches", side_effect=boom):
+            notes = board_cache.refresh_all(self.table)
+        self.assertIn("error", notes["aws"])
+        self.assertEqual(notes["web"]["web:sessions"], "ok")
+        self.assertEqual(notes["web"]["web:gtm"], "ok")

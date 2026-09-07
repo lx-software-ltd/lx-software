@@ -249,7 +249,8 @@ def fetch_lambda_health() -> dict[str, Any]:
 def fetch_health_events() -> dict[str, Any]:
     try:
         resp = _health().describe_events(
-            filter={"eventStatusCodes": ["open", "upcoming"], "maxResults": 20}
+            filter={"eventStatusCodes": ["open", "upcoming"]},
+            maxResults=20,
         )
     except ClientError as exc:
         code = exc.response.get("Error", {}).get("Code", "")
@@ -282,7 +283,7 @@ def refresh_caches(table: Any) -> dict[str, str]:
         try:
             _store(table, name, fn())
             notes[name] = "ok"
-        except (AwsToolError, ClientError) as exc:
+        except Exception as exc:
             notes[name] = str(exc)[:200]
             _log_event("warning", tag="board_aws_refresh_failed", key=name, error=str(exc)[:200])
     return notes
