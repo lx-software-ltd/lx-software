@@ -892,7 +892,9 @@ def mirror_to_statement_book(table: Any) -> dict[str, Any]:
     return {"ok": True, "linesWritten": written, "linesRemoved": removed}
 
 
-def handle_mirror_trigger(_event: dict[str, Any]) -> dict[str, Any]:
+def handle_mirror_trigger(event: dict[str, Any]) -> dict[str, Any]:
+    if not board_store.event_targets_this_board(event):
+        return {"ok": True, "skipped": "other_board"}
     if not configured():
         return {"ok": True, "skipped": "not_configured"}
     return mirror_to_statement_book(board_store.records_table())
@@ -925,13 +927,15 @@ def _already_queued(approvals: list[dict[str, Any]], invoice_id: str, stage: str
     return False
 
 
-def handle_dunning_trigger(_event: dict[str, Any]) -> dict[str, Any]:
+def handle_dunning_trigger(event: dict[str, Any]) -> dict[str, Any]:
     """Queue propose-level reminder approvals on the exact D+7 / D+21 / D+35 days.
 
     Firing only on the exact day (rather than "≥ 7 days") means a daily
     schedule proposes each stage once without tracking state on the invoice;
     the approval log (any status) is the dedupe for re-runs on the same day.
     """
+    if not board_store.event_targets_this_board(event):
+        return {"ok": True, "skipped": "other_board"}
     if not configured():
         return {"ok": True, "skipped": "not_configured"}
     import board_tools

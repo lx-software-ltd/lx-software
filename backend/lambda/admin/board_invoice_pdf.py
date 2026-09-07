@@ -12,6 +12,8 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import date
 
+from contract_constants import BOARD_KEY
+
 PDF_ENCODING = "cp1252"
 NON_LATIN_NOTE = "Some characters could not be printed in the PDF (Latin text only)."
 
@@ -111,4 +113,4 @@ def _simple_pdf(lines: list[str]) -> bytes:
 def invoice_s3_key(invoice_id: str, issued_on: str | None = None) -> str:
     year = (issued_on or date.today().isoformat())[:4]
     safe = "".join(ch for ch in invoice_id if ch.isalnum() or ch in "-_")[:64]
-    return f"board/invoices/{year}/{safe}.pdf"
+    return f"board/{BOARD_KEY}/invoices/{year}/{safe}.pdf"

@@ -65,6 +65,8 @@ describe("HTTP API routes", () => {
     // validates hub.verify_token / X-Hub-Signature-256 itself.
     "GET /webhooks/meta",
     "POST /webhooks/meta",
+    "GET /webhooks/meta/siutindei",
+    "POST /webhooks/meta/siutindei",
   ]);
 
   test("only the health check and Meta webhook routes lack an authorizer", () => {
@@ -118,6 +120,14 @@ describe("HTTP API stage throttling", () => {
           ThrottlingRateLimit: 10,
           ThrottlingBurstLimit: 20,
         },
+        "POST /webhooks/meta/siutindei": {
+          ThrottlingRateLimit: 10,
+          ThrottlingBurstLimit: 20,
+        },
+        "GET /webhooks/meta/siutindei": {
+          ThrottlingRateLimit: 10,
+          ThrottlingBurstLimit: 20,
+        },
       }),
     });
   });
@@ -160,11 +170,33 @@ describe("EventBridge Scheduler wiring", () => {
     );
     expect(schedulerGrants).toEqual([]);
   });
+
+  test("Siu Tin Dei board schedules use tenant names and boardKey", () => {
+    const expected: Record<string, string> = {
+      "lxsoftware-admin-siutindei-board-standup-morning": "board_meeting",
+      "lxsoftware-admin-siutindei-board-standup-evening": "board_meeting",
+      "lxsoftware-admin-siutindei-board-receivables-mirror": "board_receivables_mirror",
+      "lxsoftware-admin-siutindei-board-dunning": "board_dunning",
+      "lxsoftware-admin-siutindei-board-cache-refresh": "board_cache_refresh",
+    };
+    const schedules = Object.values(resourcesOfType("AWS::Scheduler::Schedule"));
+    const byName = Object.fromEntries(
+      schedules
+        .filter((s) => typeof s.Properties?.Name === "string")
+        .map((s) => [s.Properties?.Name as string, s])
+    );
+    expect(Object.keys(byName).sort()).toEqual(Object.keys(expected).sort());
+    for (const [name, internal] of Object.entries(expected)) {
+      const input = JSON.stringify(byName[name].Properties?.Target?.Input ?? "");
+      expect(input).toContain(internal);
+      expect(input).toContain("siuTinDei");
+    }
+  });
 });
 
 describe("Admin Lambda IAM policies", () => {
   test("the SES send statement is scoped to the board mail identity, not *", () => {
-    const [policy, ...rest] = findPoliciesByConstructId("AdminBoardMailSendPolicy");
+    const [policy, ...rest] = findPoliciesByConstructId("SiutindeiBoardMailSendPolicy");
     expect(policy).toBeDefined();
     expect(rest).toHaveLength(0);
 
@@ -187,7 +219,7 @@ describe("Admin Lambda IAM policies", () => {
   test.each([
     ["AdminOpenRouterSecretPolicy", "HasOpenRouterSecret"],
     ["AdminSiutindeiDataApiPolicy", "HasSiutindeiDataApi"],
-    ["AdminBoardMailSendPolicy", "HasBoardMailSending"],
+    ["SiutindeiBoardMailSendPolicy", "HasBoardMailSending"],
   ])("%s keeps its %s condition", (constructId, conditionName) => {
     const policies = findPoliciesByConstructId(constructId);
     expect(policies).toHaveLength(1);
@@ -195,11 +227,11 @@ describe("Admin Lambda IAM policies", () => {
     expect(template.toJSON().Conditions[conditionName]).toBeDefined();
   });
 
-  describe("AdminBoardAwsReadPolicy", () => {
+  describe("SiutindeiBoardAwsReadPolicy", () => {
     let statements: Record<string, any>[];
 
     beforeAll(() => {
-      const policies = findPoliciesByConstructId("AdminBoardAwsReadPolicy");
+      const policies = findPoliciesByConstructId("SiutindeiBoardAwsReadPolicy");
       expect(policies).toHaveLength(1);
       statements = policyStatements(policies[0]);
     });
@@ -396,5 +428,18 @@ describe("Executive Board placeholder secrets", () => {
     for (const logicalId of reservedIds) {
       expect(serialized).not.toContain(logicalId);
     }
+  });
+});
+
+describe("Siu Tin Dei board mail outputs", () => {
+  test("inbound mailbox uses the tenant-prefixed export", () => {
+    const outputs = template.toJSON().Outputs as Record<
+      string,
+      { Export?: { Name?: string } }
+    >;
+    expect(outputs.SiutindeiBoardMailInboundAddress?.Export?.Name).toBe(
+      "lxsoftware-SiutindeiBoardMailInboundAddress"
+    );
+    expect(outputs.BoardMailInboundAddress).toBeUndefined();
   });
 });

@@ -277,7 +277,7 @@ uses it.
 | `lxsoftware-admin-siutindei-board-github-token` | random 40-char string | Fine-grained GitHub PAT (plain string). Needed for write tools, security alerts, and a higher rate limit. Reads of the public `siutindei` repo work without it. |
 | `lxsoftware-admin-siutindei-board-search-api-key` | random 40-char string | Brave Search API key (plain string). Until then `research` falls back to OpenRouter `:online`. |
 | `lxsoftware-admin-siutindei-board-meta-token` | random 40-char string | Meta System User long-lived token (Page / Instagram / WhatsApp / ads). |
-| `lxsoftware-admin-siutindei-board-meta-app-secret` | random 40-char string | Meta app secret (`X-Hub-Signature-256` on `POST /webhooks/meta`). |
+| `lxsoftware-admin-siutindei-board-meta-app-secret` | random 40-char string | Meta app secret (`X-Hub-Signature-256` on `POST /webhooks/meta/siutindei` and `/webhooks/meta`). |
 | `lxsoftware-admin-siutindei-board-app-store-connect-key` | JSON `{keyId, issuerId, appId, vendorNumber, privateKey}` | Real App Store Connect API key. Paste the `.p8` into `privateKey`. |
 | `lxsoftware-admin-siutindei-board-google-play-sa` | JSON `{client_email, packageName, private_key}` | Real Play Console service-account JSON. |
 | `lxsoftware-admin-siutindei-board-google-analytics-sa` | JSON `{client_email, private_key}` | Dedicated GA4 / GTM service-account JSON (not the Play key). |
@@ -366,8 +366,9 @@ function calling. Design:
   `GET /siu-tin-dei/board/mail`, `GET /siu-tin-dei/board/mail/{threadId}`,
   `POST /siu-tin-dei/board/mail/{threadId}/read`,
   `GET /siu-tin-dei/board/receivables`.
-  Admin-group JWT only. `GET/POST /webhooks/meta` is the **first
-  unauthenticated** admin-API route (HMAC / verify-token only).
+  Admin-group JWT only. `GET/POST /webhooks/meta/siutindei` is the
+  canonical **unauthenticated** admin-API route (`/webhooks/meta` stays
+  for an already-subscribed Meta app; HMAC / verify-token only).
 - **Emergency stop:** set `lxsoftware:BoardToolsEnabled=false` and redeploy,
   or flip **Tools enabled** off in the app. Both leave the matrix intact.
 
@@ -378,14 +379,14 @@ ask the CTO "what is open on GitHub about bookings?" and check the reply lists
 a `Searched GitHub issues` row; ask the CPO to open an issue and confirm it
 lands in **Approvals** rather than on GitHub. Ask the CFO "what did AWS cost
 last month?" and the CISO "any HIGH findings?" — both should cite cached
-reads after the hourly `BoardCacheRefreshSchedule` has run once. For mail: open **Mail**, confirm
+reads after the hourly `SiutindeiBoardCacheRefreshSchedule` has run once. For mail: open **Mail**, confirm
 mailbox chips and threads, toggle **Board's view** (addresses become
 `contact#N`), then ask the CMO "what's unread?" and confirm a `Listed threads`
 row. For receivables: apply `scripts/siutindei/receivables.sql` on the
 siutindei cluster, set the two Data API parameters, open **Receivables**, and
 ask the CFO to draft the first listing plan (`finance_propose_price_change`).
-Nightly `BoardReceivablesMirrorSchedule` (00:30 HKT) writes `[receivables]`
-lines into the Siu Tin Dei book; daily `BoardDunningSchedule` (09:00 HKT)
+Nightly `SiutindeiBoardReceivablesMirrorSchedule` (00:30 HKT) writes `[receivables]`
+lines into the Siu Tin Dei book; daily `SiutindeiBoardDunningSchedule` (09:00 HKT)
 queues D+7 / D+21 / D+35 reminders in **Approvals**.
 
 ### Board receivables (Aurora Data API)
@@ -406,7 +407,7 @@ Data API (no VPC). Design:
    / `BatchExecuteStatement` policy plus `secretsmanager:GetSecretValue` on
    the DB secret.
 4. Invoice numbers are `STD-{year}-0001`; each draft also gets a unique FPS
-   reference. Drafts also write a PDF to `board/invoices/` on the assets
+   reference. Drafts also write a PDF to `board/siuTinDei/invoices/` on the assets
    bucket (`pdf_key` on the invoice). `finance_send_invoice` / `finance_send_reminder` email from
    `billing@siutindei.com` and stay in **Approvals** unless the payer is on
    the mail allow-list. `finance_match_payment` acts only when amount and FPS
@@ -430,8 +431,9 @@ Facebook Page and Instagram account. Design:
    owner's phone app keeps working while the board reads and replies through
    the API. If coexistence is unavailable, the number moves fully to the
    Cloud API and the owner replies from **Approvals**.
-3. Subscribe the app to `GET/POST https://<admin-api>/webhooks/meta`. This
-   is the first admin-API route **without** a Cognito JWT: GET checks
+3. Subscribe the app to `GET/POST https://<admin-api>/webhooks/meta/siutindei`
+   (or the legacy `/webhooks/meta` path). This is the first admin-API route
+   **without** a Cognito JWT: GET checks
    `MetaVerifyToken`; POST checks `X-Hub-Signature-256`. The handler stores
    masked `BOARD#…#meta#` rows and returns 200 without calling OpenRouter.
 4. Set `MetaPageId`, `MetaIgUserId`, `MetaWaPhoneNumberId`,
@@ -468,7 +470,7 @@ Design: [`docs/architecture/executive-board-tools-plan.md`](../architecture/exec
    tools return a clear error; the hourly cache refresh skips them.
 4. Reads (`stores_metrics`, `stores_crashes`, `stores_ratings`,
    `stores_list_reviews`) are cached 20 hours and refreshed by
-   `BoardCacheRefreshSchedule`. Review text is masked (`contact#hidden` /
+   `SiutindeiBoardCacheRefreshSchedule`. Review text is masked (`contact#hidden` /
    `phone#hidden`) before it reaches the model.
 5. `stores_reply_review`: CMO may **act**; every other role proposes.
    `stores_draft_release_notes` always stays in **Approvals** and writes a
@@ -490,7 +492,7 @@ Dedicated Analytics service account — not the Play publisher key. Design:
 3. Until the SA plus at least one property or container is set, `web` tools
    return a clear error and the hourly cache refresh skips them.
 4. Reads (`web_sessions`, `web_conversions`, `web_gtm_status`) are cached
-   20 hours and refreshed by `BoardCacheRefreshSchedule`. Page paths are
+   20 hours and refreshed by `SiutindeiBoardCacheRefreshSchedule`. Page paths are
    masked (`contact#hidden` / `phone#hidden`) before they reach the model.
 5. Google Ads (`ads` tool) is T8b. `gtm_propose_publish` is T8c and always
    stays in **Approvals**.
@@ -503,7 +505,7 @@ Worker copies every message to the board as well. Design:
 
 **Read path (no DNS change on `siutindei.com`):**
 
-1. Deploy the `lxsoftware` stack. Copy the `BoardMailInboundAddress` output
+1. Deploy the `lxsoftware` stack. Copy the `SiutindeiBoardMailInboundAddress` output
    (`siutindei-board@<InboundMailDomain>`). The receipt rule stores raw MIME
    under `inbound-raw/siutindei/` and `inbound_email_handler` hands those
    objects to `board_mail.ingest_raw_object`.
