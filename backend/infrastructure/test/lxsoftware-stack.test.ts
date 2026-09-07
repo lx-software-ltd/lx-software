@@ -444,3 +444,41 @@ describe("Siu Tin Dei board mail outputs", () => {
     expect(outputs.BoardMailInboundAddress).toBeUndefined();
   });
 });
+
+describe("shared inbound SES receipt rule set", () => {
+  test("hosts hillmarton, siutindei-board, and Evolve Sprouts invoice rules", () => {
+    const ruleSets = Object.values(resourcesOfType("AWS::SES::ReceiptRuleSet"));
+    expect(ruleSets).toHaveLength(1);
+    expect(ruleSets[0].Properties?.RuleSetName).toBe("lxsoftware-inbound-mail");
+
+    const rules = Object.values(resourcesOfType("AWS::SES::ReceiptRule"));
+    const serialized = JSON.stringify(rules);
+    expect(serialized).toContain("32-hillmarton");
+    expect(serialized).toContain("siutindei-board");
+
+    const invoiceRule = rules.find(
+      (r) => r.Properties?.Rule?.Name === "evolvesprouts-inbound-invoice-email-rule"
+    );
+    expect(invoiceRule).toBeDefined();
+    expect(invoiceRule?.Properties?.RuleSetName).toBeDefined();
+    expect(invoiceRule?.Properties?.Rule?.Enabled).toBe(true);
+    expect(invoiceRule?.Properties?.Rule?.Recipients).toEqual([
+      { Ref: "EvolvesproutsInboundInvoiceRecipient" },
+    ]);
+    const s3Action = invoiceRule?.Properties?.Rule?.Actions?.[0]?.S3Action;
+    expect(s3Action?.ObjectKeyPrefix).toBe("inbound-email/raw/");
+    expect(JSON.stringify(s3Action?.BucketName)).toContain("evolvesprouts-assets");
+    expect(JSON.stringify(s3Action?.TopicArn)).toContain(
+      "evolvesprouts-inbound-invoice-email-events"
+    );
+    expect(JSON.stringify(s3Action?.IamRoleArn)).toContain(
+      "EvolvesproutsInboundInvoiceReceiptRoleName"
+    );
+  });
+
+  test("activates the shared rule set on create and update", () => {
+    const serialized = JSON.stringify(template.toJSON());
+    expect(serialized).toContain("setActiveReceiptRuleSet");
+    expect(serialized).toContain("lxsoftware-inbound-mail-active");
+  });
+});

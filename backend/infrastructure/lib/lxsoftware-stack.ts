@@ -22,6 +22,7 @@ import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as ses from "aws-cdk-lib/aws-ses";
 import * as sesActions from "aws-cdk-lib/aws-ses-actions";
 import * as sqs from "aws-cdk-lib/aws-sqs";
+import * as cr from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
 import { AuthConstruct } from "./constructs/auth";
 import { createPythonLambda } from "./constructs/python-lambda";
@@ -1375,6 +1376,115 @@ export class LxsoftwareStack extends cdk.Stack {
         }),
       ],
     });
+
+    // ------------------------------------------------------------------
+    // Evolve Sprouts invoices share this rule set. SES allows only one
+    // active receipt rule set per region; the evolvesprouts stack used to
+    // create and activate its own set, which hid hillmarton + board mail.
+    // The ES processor / bucket / SNS topic stay in that repo. This rule
+    // keeps the same SES receipt-rule name so ES bucket/role/KMS policies
+    // can allow both SourceArns during the cutover.
+    // ------------------------------------------------------------------
+    const evolvesproutsInvoiceRecipient = new cdk.CfnParameter(
+      this,
+      "EvolvesproutsInboundInvoiceRecipient",
+      {
+        type: "String",
+        default: "invoices@inbound.evolvesprouts.com",
+        description:
+          "SES recipient for Evolve Sprouts invoice automation (iCloud forwards invoices@evolvesprouts.com here).",
+      }
+    );
+    const evolvesproutsInvoiceReceiptRoleName = new cdk.CfnParameter(
+      this,
+      "EvolvesproutsInboundInvoiceReceiptRoleName",
+      {
+        type: "String",
+        default: "evolvesprouts-InboundInvoiceReceiptRoleBA3C88C4-9AWbAAtiZBZS",
+        description:
+          "Physical IAM role name from the evolvesprouts stack. SES assumes it to write invoice mail to the ES assets bucket and publish SNS.",
+      }
+    );
+    const evolvesproutsInvoiceRuleName = "evolvesprouts-inbound-invoice-email-rule";
+    const evolvesproutsInvoiceRawPrefix = "inbound-email/raw/";
+    const evolvesproutsAssetsBucketName = cdk.Fn.join("-", [
+      "evolvesprouts-assets",
+      cdk.Aws.ACCOUNT_ID,
+      cdk.Aws.REGION,
+    ]);
+    const evolvesproutsInvoiceTopicArn = cdk.Stack.of(this).formatArn({
+      service: "sns",
+      resource: "evolvesprouts-inbound-invoice-email-events",
+    });
+    const evolvesproutsInvoiceReceiptRoleArn = cdk.Stack.of(this).formatArn({
+      service: "iam",
+      region: "",
+      resource: "role",
+      resourceName: evolvesproutsInvoiceReceiptRoleName.valueAsString,
+    });
+
+    const evolvesproutsInvoiceRule = new ses.CfnReceiptRule(
+      this,
+      "InboundMailbox-evolvesprouts-invoices",
+      {
+        ruleSetName: inboundReceiptRuleSet.receiptRuleSetName,
+        rule: {
+          name: evolvesproutsInvoiceRuleName,
+          enabled: true,
+          scanEnabled: true,
+          tlsPolicy: "Optional",
+          recipients: [evolvesproutsInvoiceRecipient.valueAsString],
+          actions: [
+            {
+              s3Action: {
+                bucketName: evolvesproutsAssetsBucketName,
+                objectKeyPrefix: evolvesproutsInvoiceRawPrefix,
+                topicArn: evolvesproutsInvoiceTopicArn,
+                iamRoleArn: evolvesproutsInvoiceReceiptRoleArn,
+              },
+            },
+          ],
+        },
+      }
+    );
+    evolvesproutsInvoiceRule.node.addDependency(inboundReceiptRuleSet);
+
+    const activateInboundMailRuleSet = new cr.AwsCustomResource(
+      this,
+      "ActivateInboundMailReceiptRuleSet",
+      {
+        policy: cr.AwsCustomResourcePolicy.fromStatements([
+          new iam.PolicyStatement({
+            actions: ["ses:SetActiveReceiptRuleSet"],
+            resources: ["*"],
+          }),
+        ]),
+        installLatestAwsSdk: false,
+        onCreate: {
+          service: "SES",
+          action: "setActiveReceiptRuleSet",
+          parameters: {
+            RuleSetName: inboundReceiptRuleSet.receiptRuleSetName,
+          },
+          physicalResourceId: cr.PhysicalResourceId.of(
+            "lxsoftware-inbound-mail-active"
+          ),
+        },
+        onUpdate: {
+          service: "SES",
+          action: "setActiveReceiptRuleSet",
+          parameters: {
+            RuleSetName: inboundReceiptRuleSet.receiptRuleSetName,
+          },
+          physicalResourceId: cr.PhysicalResourceId.of(
+            "lxsoftware-inbound-mail-active"
+          ),
+        },
+      }
+    );
+    activateInboundMailRuleSet.node.addDependency(inboundReceiptRuleSet);
+    activateInboundMailRuleSet.node.addDependency(evolvesproutsInvoiceRule);
+
     for (const fn of [adminFn, inboundStatementFn]) {
       fn.addEnvironment("BOARD_MAIL_DOMAIN", boardMailDomain.valueAsString);
       fn.addEnvironment("BOARD_MAIL_RAW_SEGMENT", boardMailRawSegment);
@@ -1974,8 +2084,15 @@ export class LxsoftwareStack extends cdk.Stack {
     new cdk.CfnOutput(this, "InboundMailReceiptRuleSetName", {
       value: inboundReceiptRuleSet.receiptRuleSetName,
       description:
-        "SES receipt rule set for inbound mail. Activate once per region: aws ses set-active-receipt-rule-set --rule-set-name lxsoftware-inbound-mail",
+        "Shared SES receipt rule set (hillmarton, siutindei-board, Evolve Sprouts invoices). This stack sets it active on deploy.",
       exportName: "lxsoftware-InboundMailReceiptRuleSetName",
+    });
+
+    new cdk.CfnOutput(this, "EvolvesproutsInboundInvoiceAddress", {
+      value: evolvesproutsInvoiceRecipient.valueAsString,
+      description:
+        "Invoice mailbox hosted on the shared lxsoftware-inbound-mail rule set; raw MIME still lands in the Evolve Sprouts assets bucket.",
+      exportName: "lxsoftware-EvolvesproutsInboundInvoiceAddress",
     });
 
     new cdk.CfnOutput(this, "InboundMailMxTarget", {

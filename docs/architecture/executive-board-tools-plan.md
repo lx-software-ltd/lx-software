@@ -181,10 +181,12 @@ client changes.
    Cloudflare requires destination addresses to be verified; the
    verification mail lands in the SES S3 bucket, where the owner reads the
    link once. `inbound.lx-software.com` already has MX → SES in the stack
-   region and the `lxsoftware-inbound-mail` receipt rule set; a new
-   receipt rule for `siutindei-board@…` stores raw MIME under
-   `inbound-raw/siutindei/`. No DNS change on `siutindei.com` is needed
-   for reading.
+   region. SES allows only one active receipt rule set per region, so
+   `lxsoftware-inbound-mail` hosts every inbound mailbox in this account
+   (32 Hillmarton statements, `siutindei-board@…`, and Evolve Sprouts
+   `invoices@inbound.evolvesprouts.com`). The Siu Tin Dei receipt rule
+   stores raw MIME under `inbound-raw/siutindei/`. No DNS change on
+   `siutindei.com` is needed for reading.
 2. **Index**: a new S3 event branch in `inbound_email_handler.py`
    (`board_mail.py`) parses headers, text body and `text/*` attachments (PDF
    attachments are listed by name only; their text is not extracted because
