@@ -232,7 +232,7 @@ def _live_search(table: Any, query: str, *, count: int) -> tuple[list[dict[str, 
         return results
     raise ResearchError(
         "Web search is not configured. Put a Brave Search key in "
-        "lxsoftware-admin-search-api-key or rely on the existing OpenRouter key."
+        "lxsoftware-admin-siutindei-board-search-api-key or rely on the existing OpenRouter key."
     )
 
 

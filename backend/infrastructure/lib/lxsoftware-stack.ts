@@ -40,6 +40,14 @@ import { ADMIN_WEB_HOSTNAME, PARSE_TIMEOUTS } from "./shared-contracts";
  * removes them (CloudFormation creates before it deletes).
  */
 /**
+ * Physical name prefix for Siu Tin Dei Executive Board connector secrets.
+ * `lxsoftware-admin` is this stack; `siutindei-board` is the tenant (same
+ * local-part as the inbound mailbox). Do not reuse for LX Software's own
+ * GitHub / Play / Meta credentials.
+ */
+const SIUTINDEI_BOARD_SECRET_PREFIX = "lxsoftware-admin-siutindei-board";
+
+/**
  * Placeholder secret the owner overwrites in the Secrets Manager console.
  * CloudFormation only writes GenerateSecretString on create (or if this
  * construct's generator properties change), so later CDK deploys keep the
@@ -691,29 +699,32 @@ export class LxsoftwareStack extends cdk.Stack {
      * unless the generator properties change.
      */
     const boardGitHubReadToken = boardPlaceholderSecret(this, "BoardGitHubReadToken", {
-      secretName: "lxsoftware-admin-github-read-token",
+      secretName: `${SIUTINDEI_BOARD_SECRET_PREFIX}-github-token`,
       description:
-        "Fine-grained GitHub PAT for siutindei (Contents read, Issues r/w, Actions read, Metadata read, Security events read).",
+        "Siu Tin Dei Executive Board: fine-grained GitHub PAT for lx-software-ltd/siutindei (Contents read, Issues r/w, Actions read, Metadata read, Security events read).",
       encryptionKey: this.sharedEncryptionKey,
     });
     const boardSearchApiKey = boardPlaceholderSecret(this, "BoardSearchApiKey", {
-      secretName: "lxsoftware-admin-search-api-key",
-      description: "Brave Search API key for Executive Board research.",
+      secretName: `${SIUTINDEI_BOARD_SECRET_PREFIX}-search-api-key`,
+      description: "Siu Tin Dei Executive Board: Brave Search API key for research.",
       encryptionKey: this.sharedEncryptionKey,
     });
     const boardMetaToken = boardPlaceholderSecret(this, "BoardMetaToken", {
-      secretName: "lxsoftware-admin-meta-board-token",
-      description: "Meta System User long-lived token (Page / Instagram / WhatsApp / ads).",
+      secretName: `${SIUTINDEI_BOARD_SECRET_PREFIX}-meta-token`,
+      description:
+        "Siu Tin Dei Executive Board: Meta System User long-lived token (Page / Instagram / WhatsApp / ads).",
       encryptionKey: this.sharedEncryptionKey,
     });
     const boardMetaAppSecret = boardPlaceholderSecret(this, "BoardMetaAppSecret", {
-      secretName: "lxsoftware-admin-meta-app-secret",
-      description: "Meta app secret for X-Hub-Signature-256 on POST /webhooks/meta.",
+      secretName: `${SIUTINDEI_BOARD_SECRET_PREFIX}-meta-app-secret`,
+      description:
+        "Siu Tin Dei Executive Board: Meta app secret for X-Hub-Signature-256 on POST /webhooks/meta.",
       encryptionKey: this.sharedEncryptionKey,
     });
     const boardAppStoreConnectKey = boardPlaceholderSecret(this, "BoardAppStoreConnectKey", {
-      secretName: "lxsoftware-admin-app-store-connect-key",
-      description: "App Store Connect API key JSON (keyId, issuerId, privateKey, optional appId / vendorNumber).",
+      secretName: `${SIUTINDEI_BOARD_SECRET_PREFIX}-app-store-connect-key`,
+      description:
+        "Siu Tin Dei Executive Board: App Store Connect API key JSON (keyId, issuerId, privateKey, optional appId / vendorNumber).",
       encryptionKey: this.sharedEncryptionKey,
       jsonTemplate: {
         keyId: "REPLACE_ME",
@@ -724,8 +735,9 @@ export class LxsoftwareStack extends cdk.Stack {
       generateKey: "privateKey",
     });
     const boardGooglePlaySa = boardPlaceholderSecret(this, "BoardGooglePlaySa", {
-      secretName: "lxsoftware-admin-google-play-sa",
-      description: "Google Play service-account JSON (client_email, private_key, optional packageName).",
+      secretName: `${SIUTINDEI_BOARD_SECRET_PREFIX}-google-play-sa`,
+      description:
+        "Siu Tin Dei Executive Board: Google Play service-account JSON (client_email, private_key, optional packageName).",
       encryptionKey: this.sharedEncryptionKey,
       jsonTemplate: {
         // Placeholder only. Paste the real Play Console key in Secrets Manager.
@@ -735,8 +747,9 @@ export class LxsoftwareStack extends cdk.Stack {
       generateKey: "private_key",
     });
     const boardGoogleAnalyticsSa = boardPlaceholderSecret(this, "BoardGoogleAnalyticsSa", {
-      secretName: "lxsoftware-admin-google-analytics-sa",
-      description: "Dedicated GA4 / GTM service-account JSON (not the Play key).",
+      secretName: `${SIUTINDEI_BOARD_SECRET_PREFIX}-google-analytics-sa`,
+      description:
+        "Siu Tin Dei Executive Board: dedicated GA4 / GTM service-account JSON (not the Play key).",
       encryptionKey: this.sharedEncryptionKey,
       jsonTemplate: {
         // Placeholder only. Paste the dedicated Analytics key in Secrets Manager.
