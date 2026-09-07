@@ -509,6 +509,28 @@ Dedicated Analytics service account — not the Play publisher key. Design:
 5. Google Ads (`ads` tool) is T8b. `gtm_propose_publish` is T8c and always
    stays in **Approvals**.
 
+### Shared inbound SES rule set
+
+SES allows only **one** active receipt rule set per region. `lxsoftware`
+owns `lxsoftware-inbound-mail` and activates it on deploy. That set must
+include every mailbox that receives mail in `ap-southeast-1`:
+
+| Recipient | Raw store | Processor |
+|---|---|---|
+| `32-hillmarton@inbound.lx-software.com` | `lxsoftware-admin-inbound-mail-…` / `inbound-raw/hillmarton/` | `InboundStatementMailFn` |
+| `siutindei-board@inbound.lx-software.com` | same bucket / `inbound-raw/siutindei/` | `board_mail.ingest_raw_object` |
+| `invoices@inbound.evolvesprouts.com` | `evolvesprouts-assets-…` / `inbound-email/raw/` | Evolve Sprouts `InboundInvoiceEmailProcessor` |
+
+The Evolve Sprouts stack still owns the invoice bucket, SNS topic, SQS
+queue, receipt IAM role, and processor. It must **not** call
+`SetActiveReceiptRuleSet` on `evolvesprouts-inbound-invoice-email-rule-set`
+(that hid hillmarton + board mail). Before this stack activates the
+shared set, deploy the companion change in
+[evolvesprouts](https://github.com/lx-software-ltd/evolvesprouts) so the
+invoice bucket / role / KMS policies allow the shared-set SourceArn
+`…:receipt-rule-set/lxsoftware-inbound-mail:receipt-rule/evolvesprouts-inbound-invoice-email-rule`
+as well as the old rule-set ARN.
+
 ### Board mail (Cloudflare + SES)
 
 The owner's existing `siutindei.com` inbox is unchanged. A Cloudflare Email
@@ -517,10 +539,13 @@ Worker copies every message to the board as well. Design:
 
 **Read path (no DNS change on `siutindei.com`):**
 
-1. Deploy the `lxsoftware` stack. Copy the `SiutindeiBoardMailInboundAddress` output
+1. Deploy the `lxsoftware` stack (after the Evolve Sprouts companion above).
+   Copy the `SiutindeiBoardMailInboundAddress` output
    (`siutindei-board@<InboundMailDomain>`). The receipt rule stores raw MIME
    under `inbound-raw/siutindei/` and `inbound_email_handler` hands those
-   objects to `board_mail.ingest_raw_object`.
+   objects to `board_mail.ingest_raw_object`. The stack also activates
+   `lxsoftware-inbound-mail`, so you do not run `set-active-receipt-rule-set`
+   by hand.
 2. In the `siutindei.com` Cloudflare zone: **Email → Email Routing →
    Destination addresses**, add that inbound address. Cloudflare sends a
    verification mail; it lands in the inbound S3 bucket. Open the object
