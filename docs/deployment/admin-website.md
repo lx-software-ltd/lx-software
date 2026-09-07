@@ -265,20 +265,22 @@ Manager (`ap-southeast-1`) and replace the dummy. Later CDK deploys do
 **not** overwrite a value you edited in the console (unless the generator
 properties in `lxsoftware-stack.ts` change). Secrets use
 `RemovalPolicy.RETAIN`, so a stack delete keeps the filled-in tokens.
-Names are `lxsoftware-admin-siutindei-board-*`: `lxsoftware-admin` is this
-stack; `siutindei-board` is the Siu Tin Dei Executive Board (same local-part
-as the inbound mailbox). OpenRouter stays `lxsoftware-admin-openrouter-api-secret-*`
-because statement parsing also uses it.
+Physical names stay `lxsoftware-admin-*` (this stack's convention). Each
+secret's Description starts with `Siu Tin Dei Executive Board:` and the
+tags `lxsoftware:tenant=siutindei` and
+`lxsoftware:purpose=siutindei-executive-board` mark the tenant. OpenRouter
+stays `lxsoftware-admin-openrouter-api-secret-*` because statement parsing
+also uses it.
 
 | Secret name | Dummy shape | Replace with |
 |-------------|-------------|--------------|
-| `lxsoftware-admin-siutindei-board-github-token` | random 40-char string | Fine-grained GitHub PAT (plain string). Needed for write tools, security alerts, and a higher rate limit. Reads of the public `siutindei` repo work without it. |
-| `lxsoftware-admin-siutindei-board-search-api-key` | random 40-char string | Brave Search API key (plain string). Until then `research` falls back to OpenRouter `:online`. |
-| `lxsoftware-admin-siutindei-board-meta-token` | random 40-char string | Meta System User long-lived token (Page / Instagram / WhatsApp / ads). |
-| `lxsoftware-admin-siutindei-board-meta-app-secret` | random 40-char string | Meta app secret (`X-Hub-Signature-256` on `POST /webhooks/meta`). |
-| `lxsoftware-admin-siutindei-board-app-store-connect-key` | JSON `{keyId, issuerId, appId, vendorNumber, privateKey}` | Real App Store Connect API key. Paste the `.p8` into `privateKey`. |
-| `lxsoftware-admin-siutindei-board-google-play-sa` | JSON `{type, client_email, packageName, private_key}` | Real Play Console service-account JSON. |
-| `lxsoftware-admin-siutindei-board-google-analytics-sa` | JSON `{type, client_email, private_key}` | Dedicated GA4 / GTM service-account JSON (not the Play key). |
+| `lxsoftware-admin-github-read-token` | random 40-char string | Fine-grained GitHub PAT (plain string). Needed for write tools, security alerts, and a higher rate limit. Reads of the public `siutindei` repo work without it. |
+| `lxsoftware-admin-search-api-key` | random 40-char string | Brave Search API key (plain string). Until then `research` falls back to OpenRouter `:online`. |
+| `lxsoftware-admin-meta-board-token` | random 40-char string | Meta System User long-lived token (Page / Instagram / WhatsApp / ads). |
+| `lxsoftware-admin-meta-app-secret` | random 40-char string | Meta app secret (`X-Hub-Signature-256` on `POST /webhooks/meta`). |
+| `lxsoftware-admin-app-store-connect-key` | JSON `{keyId, issuerId, appId, vendorNumber, privateKey}` | Real App Store Connect API key. Paste the `.p8` into `privateKey`. |
+| `lxsoftware-admin-google-play-sa` | JSON `{type, client_email, packageName, private_key}` | Real Play Console service-account JSON. |
+| `lxsoftware-admin-google-analytics-sa` | JSON `{type, client_email, private_key}` | Dedicated GA4 / GTM service-account JSON (not the Play key). |
 
 GitHub token setup (only needed for write tools, security alerts, or a higher
 rate limit):
@@ -289,7 +291,7 @@ rate limit):
    see Dependabot / code-scanning findings, **Security events: read**. Set an
    expiry and rotate it like any other secret.
 2. After the stack is deployed, open
-   `lxsoftware-admin-siutindei-board-github-token` in Secrets Manager and replace the
+   `lxsoftware-admin-github-read-token` in Secrets Manager and replace the
    dummy string with the PAT. No stack parameter or redeploy is required.
 
 Scheduled stand-ups: two EventBridge Scheduler schedules invoke `AdminApiFn`
@@ -422,8 +424,8 @@ Facebook Page and Instagram account. Design:
 1. Create a Business-type app under the Siu Tin Dei Business Manager and a
    System User token (`pages_*`, `instagram_*`, `whatsapp_business_*`,
    `ads_read` / `ads_management`). After deploy, replace the dummy values
-   in `lxsoftware-admin-siutindei-board-meta-token` and
-   `lxsoftware-admin-siutindei-board-meta-app-secret`.
+   in `lxsoftware-admin-meta-board-token` and
+   `lxsoftware-admin-meta-app-secret`.
 2. **WhatsApp coexistence:** turn coexistence on for the number so the
    owner's phone app keeps working while the board reads and replies through
    the API. If coexistence is unavailable, the number moves fully to the
@@ -453,11 +455,11 @@ Facebook Page and Instagram account. Design:
 The App Store Connect API key and Google Play service account already exist.
 Design: [`docs/architecture/executive-board-tools-plan.md`](../architecture/executive-board-tools-plan.md) §4 `stores`.
 
-1. After deploy, edit `lxsoftware-admin-siutindei-board-app-store-connect-key`: set
+1. After deploy, edit `lxsoftware-admin-app-store-connect-key`: set
    `keyId`, `issuerId`, and `privateKey` (the `.p8` body). Optional
    `appId` / `vendorNumber` can live here or in the matching stack
    parameters. The Lambda signs a 20-minute ES256 JWT on each call.
-2. Edit `lxsoftware-admin-siutindei-board-google-play-sa` with the real Play
+2. Edit `lxsoftware-admin-google-play-sa` with the real Play
    service-account JSON (standard GCP key; add `packageName` if it is not
    passed as `GooglePlayPackageName`).
 3. Set `AppStoreConnectAppId` and `GooglePlayPackageName` if they are not
@@ -480,7 +482,7 @@ Dedicated Analytics service account — not the Play publisher key. Design:
 1. Create a GCP service account with `analytics.readonly` and
    `tagmanager.readonly`. Grant it Viewer on every GA4 property and GTM
    container the board should see. After deploy, replace the dummy JSON in
-   `lxsoftware-admin-siutindei-board-google-analytics-sa`.
+   `lxsoftware-admin-google-analytics-sa`.
 2. Set `Ga4PropertyIds` to a comma-separated list (`123456789,987654321` or
    `properties/123456789,…`). Set `GtmContainers` to
    `accountId:containerId` pairs. Both can also live inside the secret as
