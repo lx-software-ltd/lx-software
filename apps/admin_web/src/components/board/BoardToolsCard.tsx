@@ -226,7 +226,7 @@ export function BoardToolsCard({
                       <div className="small text-warning mt-1">
                         <i className="bi bi-key me-1" aria-hidden="true" />
                         Writes and security alerts need a real PAT in{" "}
-                        <code>lxsoftware-admin-siutindei-board-github-token</code>; reads work without it.
+                        <code>lxsoftware-siutindei-board-github-token</code>; reads work without it.
                       </div>
                     ) : null}
                     {tool.id === "mail" ? (

@@ -274,19 +274,18 @@ Stack parameters (all optional, set in `backend/infrastructure/params/*.json`):
 | `lxsoftware:BoardMailSendingEnabled` | `false` (default) / `true`. Flip to `true` only after the DKIM CNAMEs, SPF `include:amazonses.com`, and DMARC are in the `BoardMailDomain` zone. Creates the SES sending identity and the IAM send policy; until then mail tools stay read-only. |
 | `lxsoftware:BoardChatModel` / `BoardMeetingModel` / `BoardDeepDiveModel` | Default OpenRouter model slugs (`openai/gpt-4.1-mini`, `openai/gpt-4.1-mini`, `anthropic/claude-sonnet-4`). The owner can override them per board in **Settings**. |
 
-The **Siu Tin Dei** connector secrets (`lxsoftware-admin-siutindei-board-*`)
-already exist in the account. The first #328 deploy created them, then
-`RemovalPolicy.RETAIN` left them behind when rollback dropped them from the
-stack. CDK now **imports those names** and grants `AdminApiFn` read; it
-does not try to create them again. Replace the dummy values in Secrets
-Manager (`ap-southeast-1`). The older `lxsoftware-admin-*` set stays in
-the stack (CDK-created, unused) for a future LX Software board. OpenRouter
-stays `lxsoftware-admin-openrouter-api-secret-*` because statement parsing
-also uses it.
+The **Siu Tin Dei** connector secrets already exist in the account. CDK
+**imports those names** and grants `AdminApiFn` read; it does not try to
+create them again. The GitHub PAT is `lxsoftware-siutindei-board-github-token`
+(shorter than the other `lxsoftware-admin-siutindei-board-*` names). The
+older `lxsoftware-admin-*` set stays in the stack (CDK-created, unused)
+for a future LX Software board. OpenRouter stays
+`lxsoftware-admin-openrouter-api-secret-*` because statement parsing also
+uses it.
 
 | Secret name | Dummy shape | Replace with |
 |-------------|-------------|--------------|
-| `lxsoftware-admin-siutindei-board-github-token` | random 40-char string | Fine-grained GitHub PAT (plain string). Needed for write tools, security alerts, and a higher rate limit. Reads of the public `siutindei` repo work without it. |
+| `lxsoftware-siutindei-board-github-token` | PAT string | Fine-grained GitHub PAT (plain string). Needed for write tools, security alerts, and a higher rate limit. Reads of the public `siutindei` repo work without it. |
 | `lxsoftware-admin-siutindei-board-search-api-key` | random 40-char string | Brave Search API key (plain string). Until then `research` falls back to OpenRouter `:online`. |
 | `lxsoftware-admin-siutindei-board-meta-token` | random 40-char string | Meta System User long-lived token (Page / Instagram / WhatsApp / ads). |
 | `lxsoftware-admin-siutindei-board-meta-app-secret` | random 40-char string | Meta app secret (`X-Hub-Signature-256` on `POST /webhooks/meta/siutindei` and `/webhooks/meta`). |
@@ -303,8 +302,8 @@ rate limit):
    see Dependabot / code-scanning findings, **Security events: read**. Set an
    expiry and rotate it like any other secret.
 2. After the stack is deployed, open
-   `lxsoftware-admin-siutindei-board-github-token` in Secrets Manager and replace the
-   dummy string with the PAT. No stack parameter or redeploy is required.
+   `lxsoftware-siutindei-board-github-token` in Secrets Manager and put the
+   PAT there. No stack parameter or redeploy is required.
 
 Scheduled stand-ups: two EventBridge Scheduler schedules invoke `AdminApiFn`
 with `{ internal: "board_meeting", trigger: "schedule", slot: "morning" | "evening" }`

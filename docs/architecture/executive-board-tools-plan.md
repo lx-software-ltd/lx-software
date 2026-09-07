@@ -161,8 +161,7 @@ tools add on-demand `search_issues`, `get_issue`, `list_pull_requests`,
 `get_workflow_runs`, `get_file`, `list_security_alerts`. Writes use one
 fine-grained token restricted to the `siutindei` repo with `issues: write`,
 `pull_requests: read`, `contents: read`, `security_events: read`. The
-CDK-owned `lxsoftware-admin-siutindei-board-github-token` secret **is** the
-board token (dummy value on first deploy; replace it in Secrets Manager).
+`lxsoftware-siutindei-board-github-token` **is** the board token.
 `lxsoftware-admin-github-read-token` is reserved for a future LX Software
 board. There is no separate `GitHubBoardToken` parameter.
 
@@ -413,7 +412,7 @@ default global mode is `propose`, so nothing acts until the owner flips it.
 | Routes | `GET /siu-tin-dei/board/approvals`, `POST …/approvals/{id}/approve|reject`, `GET …/board/tools` (matrix), `PUT …/board/tools` (matrix), `GET …/board/tools/calls` (audit log), `GET …/board/mail`, `GET …/board/mail/{threadId}`, `POST …/board/mail/{threadId}/read`, `GET …/board/receivables` (aging for the owner), `POST /webhooks/meta/siutindei` (no JWT, HMAC-verified, throttled; `/webhooks/meta` still accepted), `GET /webhooks/meta/siutindei` (verify). Proposals are created only by the tool loop, never by a `POST …/approvals` route. |
 | DynamoDB | `BOARD#TOOLCALL#`, `BOARD#APPROVAL#`, `BOARD#MAIL#`, `BOARD#META#`, `BOARD#CACHE#`, `BOARD#USAGE#` prefixes; all covered by the existing `BOARD#` scan filter |
 | Contracts | `contracts/board-tools.json`: tool ids, default matrix, `maxToolRoundsPerTurn`, `toolResultMaxChars`, cap names; synced to Python, TS and CDK |
-| Secrets / params | CDK imports the existing Siu Tin Dei Secrets Manager secrets (`lxsoftware-admin-siutindei-board-*`) and grants `AdminApiFn` read. The earlier `lxsoftware-admin-{github-read-token,search-api-key,meta-board-token,meta-app-secret,app-store-connect-key,google-play-sa,google-analytics-sa}` set stays reserved for a future LX Software board. Ids stay as CfnParameters (`Ga4PropertyIds`, `GtmContainers`, `SiutindeiClusterArn`, `SiutindeiDbSecretArn`). OpenRouter stays the existing parameter. |
+| Secrets / params | CDK imports the existing Siu Tin Dei Secrets Manager secrets (`lxsoftware-siutindei-board-github-token` and `lxsoftware-admin-siutindei-board-*`) and grants `AdminApiFn` read. The earlier `lxsoftware-admin-{github-read-token,search-api-key,meta-board-token,meta-app-secret,app-store-connect-key,google-play-sa,google-analytics-sa}` set stays reserved for a future LX Software board. Ids stay as CfnParameters (`Ga4PropertyIds`, `GtmContainers`, `SiutindeiClusterArn`, `SiutindeiDbSecretArn`). OpenRouter stays the existing parameter. |
 | SES | Receipt rule for `siutindei-board@inbound.lx-software.com` → S3 prefix `inbound-raw/siutindei/`; sending identity `siutindei.com` |
 | Cloudflare (siutindei zone) | Email Worker on the catch-all that fans out to the owner's inbox and the SES address; DKIM/SPF/DMARC records for SES sending |
 | Scheduler | `lxsoftware-admin-siutindei-board-*` (`SiutindeiBoardCacheRefreshSchedule` hourly, `SiutindeiBoardReceivablesMirrorSchedule` nightly, `SiutindeiBoardDunningSchedule` daily 09:00 HKT, plus morning/evening stand-ups). Each payload includes `boardKey: "siuTinDei"`. Role-based invokes, no Lambda resource-policy statements |
