@@ -18,6 +18,7 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import * as schedulerTargets from "aws-cdk-lib/aws-scheduler-targets";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as ses from "aws-cdk-lib/aws-ses";
 import * as sesActions from "aws-cdk-lib/aws-ses-actions";
 import * as sqs from "aws-cdk-lib/aws-sqs";
@@ -38,6 +39,43 @@ import { ADMIN_WEB_HOSTNAME, PARSE_TIMEOUTS } from "./shared-contracts";
  * next to the legacy per-route statements during the deployment that
  * removes them (CloudFormation creates before it deletes).
  */
+/**
+ * Placeholder secret the owner overwrites in the Secrets Manager console.
+ * CloudFormation only writes GenerateSecretString on create (or if this
+ * construct's generator properties change), so later CDK deploys keep the
+ * real value. RETAIN so a stack delete does not wipe a filled-in token.
+ */
+function boardPlaceholderSecret(
+  scope: Construct,
+  id: string,
+  props: {
+    secretName: string;
+    description: string;
+    encryptionKey: kms.IKey;
+    jsonTemplate?: Record<string, string>;
+    generateKey?: string;
+  }
+): secretsmanager.Secret {
+  const generator: secretsmanager.SecretStringGenerator = props.jsonTemplate
+    ? {
+        secretStringTemplate: JSON.stringify(props.jsonTemplate),
+        generateStringKey: props.generateKey ?? "token",
+        excludePunctuation: true,
+        passwordLength: 40,
+      }
+    : {
+        excludePunctuation: true,
+        passwordLength: 40,
+      };
+  return new secretsmanager.Secret(scope, id, {
+    secretName: props.secretName,
+    description: `${props.description} Dummy value — replace in Secrets Manager.`,
+    encryptionKey: props.encryptionKey,
+    removalPolicy: cdk.RemovalPolicy.RETAIN,
+    generateSecretString: generator,
+  });
+}
+
 class SharedPermissionLambdaIntegration extends HttpLambdaIntegration {
   protected completeBind(_options: apigwv2.HttpRouteIntegrationBindOptions): void {
     // Intentionally empty: invoke permission is granted once for the whole API.
@@ -193,26 +231,6 @@ export class LxsoftwareStack extends cdk.Stack {
     });
 
     // Executive Board (AI board for Siu Tin Dei; see docs/architecture/executive-board-plan.md)
-    const gitHubReadTokenSecretArn = new cdk.CfnParameter(
-      this,
-      "GitHubReadTokenSecretArn",
-      {
-        type: "String",
-        default: "",
-        description:
-          "ARN of the Secrets Manager secret holding a fine-grained GitHub token for the siutindei repository (Executive Board). The repository is public, so reads work without it; the token raises the rate limit and is required for the board's GitHub write tools (issues: write) and security alerts (security_events: read).",
-      }
-    );
-    const searchApiKeySecretArn = new cdk.CfnParameter(
-      this,
-      "SearchApiKeySecretArn",
-      {
-        type: "String",
-        default: "",
-        description:
-          "ARN of the Secrets Manager secret holding a Brave Search API key (Executive Board research tool). Leave blank to fall back to OpenRouter :online when that key is already set.",
-      }
-    );
     const siutindeiClusterArn = new cdk.CfnParameter(
       this,
       "SiutindeiClusterArn",
@@ -231,27 +249,6 @@ export class LxsoftwareStack extends cdk.Stack {
         default: "",
         description:
           "Secrets Manager ARN of the siutindei DB credentials used by the RDS Data API.",
-      }
-    );
-    const metaBoardTokenSecretArn = new cdk.CfnParameter(
-      this,
-      "MetaBoardTokenSecretArn",
-      {
-        type: "String",
-        default: "",
-        description:
-          "ARN of the Secrets Manager secret holding the Meta System User token (Executive Board meta tool + webhook writes).",
-      }
-    );
-    const metaAppSecretSecretArn = new cdk.CfnParameter(
-      this,
-      "MetaAppSecretSecretArn",
-      {
-        type: "String",
-        default: "",
-        noEcho: true,
-        description:
-          "ARN of the Secrets Manager secret holding the Meta app secret used to verify X-Hub-Signature-256 on POST /webhooks/meta.",
       }
     );
     const metaVerifyToken = new cdk.CfnParameter(this, "MetaVerifyToken", {
@@ -292,26 +289,6 @@ export class LxsoftwareStack extends cdk.Stack {
       description:
         "WhatsApp Business Account id for listing message templates. Optional if the phone-number id can resolve it.",
     });
-    const appStoreConnectKeySecretArn = new cdk.CfnParameter(
-      this,
-      "AppStoreConnectKeySecretArn",
-      {
-        type: "String",
-        default: "",
-        description:
-          "ARN of the Secrets Manager secret holding the App Store Connect API key JSON (keyId, issuerId, privateKey, optional appId) for Executive Board stores tools.",
-      }
-    );
-    const googlePlayServiceAccountSecretArn = new cdk.CfnParameter(
-      this,
-      "GooglePlayServiceAccountSecretArn",
-      {
-        type: "String",
-        default: "",
-        description:
-          "ARN of the Secrets Manager secret holding the Google Play service-account JSON (plus optional packageName) for Executive Board stores tools.",
-      }
-    );
     const appStoreConnectAppId = new cdk.CfnParameter(
       this,
       "AppStoreConnectAppId",
@@ -340,16 +317,6 @@ export class LxsoftwareStack extends cdk.Stack {
         default: "",
         description:
           "Google Play package name (e.g. com.siutindei.app). May also live inside the service-account secret.",
-      }
-    );
-    const googleAnalyticsServiceAccountSecretArn = new cdk.CfnParameter(
-      this,
-      "GoogleAnalyticsServiceAccountSecretArn",
-      {
-        type: "String",
-        default: "",
-        description:
-          "ARN of the Secrets Manager secret holding the Google service-account JSON for GA4 Data API + GTM read (Executive Board web tool). Use a dedicated SA, not the Play publisher key.",
       }
     );
     const ga4PropertyIds = new cdk.CfnParameter(this, "Ga4PropertyIds", {
@@ -718,6 +685,67 @@ export class LxsoftwareStack extends cdk.Stack {
     const parseJobStuckSeconds = String(PARSE_TIMEOUTS.parseJobStuckSeconds);
 
     /**
+     * Executive Board connector secrets. CDK creates each with a dummy
+     * GenerateSecretString value; the owner overwrites them in the console.
+     * CloudFormation does not rewrite the secret string on later deploys
+     * unless the generator properties change.
+     */
+    const boardGitHubReadToken = boardPlaceholderSecret(this, "BoardGitHubReadToken", {
+      secretName: "lxsoftware-admin-github-read-token",
+      description:
+        "Fine-grained GitHub PAT for siutindei (Contents read, Issues r/w, Actions read, Metadata read, Security events read).",
+      encryptionKey: this.sharedEncryptionKey,
+    });
+    const boardSearchApiKey = boardPlaceholderSecret(this, "BoardSearchApiKey", {
+      secretName: "lxsoftware-admin-search-api-key",
+      description: "Brave Search API key for Executive Board research.",
+      encryptionKey: this.sharedEncryptionKey,
+    });
+    const boardMetaToken = boardPlaceholderSecret(this, "BoardMetaToken", {
+      secretName: "lxsoftware-admin-meta-board-token",
+      description: "Meta System User long-lived token (Page / Instagram / WhatsApp / ads).",
+      encryptionKey: this.sharedEncryptionKey,
+    });
+    const boardMetaAppSecret = boardPlaceholderSecret(this, "BoardMetaAppSecret", {
+      secretName: "lxsoftware-admin-meta-app-secret",
+      description: "Meta app secret for X-Hub-Signature-256 on POST /webhooks/meta.",
+      encryptionKey: this.sharedEncryptionKey,
+    });
+    const boardAppStoreConnectKey = boardPlaceholderSecret(this, "BoardAppStoreConnectKey", {
+      secretName: "lxsoftware-admin-app-store-connect-key",
+      description: "App Store Connect API key JSON (keyId, issuerId, privateKey, optional appId / vendorNumber).",
+      encryptionKey: this.sharedEncryptionKey,
+      jsonTemplate: {
+        keyId: "REPLACE_ME",
+        issuerId: "REPLACE_ME",
+        appId: "",
+        vendorNumber: "",
+      },
+      generateKey: "privateKey",
+    });
+    const boardGooglePlaySa = boardPlaceholderSecret(this, "BoardGooglePlaySa", {
+      secretName: "lxsoftware-admin-google-play-sa",
+      description: "Google Play service-account JSON (client_email, private_key, optional packageName).",
+      encryptionKey: this.sharedEncryptionKey,
+      jsonTemplate: {
+        type: "service_account",
+        client_email: "REPLACE_ME@example.iam.gserviceaccount.com",
+        packageName: "",
+      },
+      generateKey: "private_key",
+    });
+    const boardGoogleAnalyticsSa = boardPlaceholderSecret(this, "BoardGoogleAnalyticsSa", {
+      secretName: "lxsoftware-admin-google-analytics-sa",
+      description: "Dedicated GA4 / GTM service-account JSON (not the Play key).",
+      encryptionKey: this.sharedEncryptionKey,
+      jsonTemplate: {
+        type: "service_account",
+        client_email: "REPLACE_ME@example.iam.gserviceaccount.com",
+      },
+      generateKey: "private_key",
+    });
+
+    /**
      * Asymmetric RSA key that signs the Enable Banking RS256 JWTs. The
      * private key never leaves KMS; the admin Lambda calls kms:Sign per
      * token (tokens are cached for ~1h in the Lambda, so call volume is
@@ -755,33 +783,32 @@ export class LxsoftwareStack extends cdk.Stack {
         PARSE_JOB_TTL_SECONDS: String(PARSE_TIMEOUTS.parseJobTtlSeconds),
         ENABLE_BANKING_APP_ID: enableBankingAppId.valueAsString,
         ENABLE_BANKING_KMS_KEY_ID: enableBankingSigningKey.keyId,
-        GITHUB_READ_TOKEN_SECRET_ARN: gitHubReadTokenSecretArn.valueAsString,
+        GITHUB_READ_TOKEN_SECRET_ARN: boardGitHubReadToken.secretArn,
         BOARD_GITHUB_REPO: boardGitHubRepo.valueAsString,
         BOARD_CHAT_MODEL: boardChatModel.valueAsString,
         BOARD_MEETING_MODEL: boardMeetingModel.valueAsString,
         BOARD_DEEP_DIVE_MODEL: boardDeepDiveModel.valueAsString,
         BOARD_TOOLS_ENABLED: boardToolsEnabled.valueAsString,
-        SEARCH_API_KEY_SECRET_ARN: searchApiKeySecretArn.valueAsString,
+        SEARCH_API_KEY_SECRET_ARN: boardSearchApiKey.secretArn,
         BOARD_AWS_STACK_PREFIX: boardAwsStackPrefix.valueAsString,
         BOARD_AWS_LAMBDA_NAMES: boardAwsLambdaNames.valueAsString,
         USER_POOL_ID: this.auth.userPool.userPoolId,
         SIUTINDEI_CLUSTER_ARN: siutindeiClusterArn.valueAsString,
         SIUTINDEI_DB_SECRET_ARN: siutindeiDbSecretArn.valueAsString,
-        META_BOARD_TOKEN_SECRET_ARN: metaBoardTokenSecretArn.valueAsString,
-        META_APP_SECRET_SECRET_ARN: metaAppSecretSecretArn.valueAsString,
+        META_BOARD_TOKEN_SECRET_ARN: boardMetaToken.secretArn,
+        META_APP_SECRET_SECRET_ARN: boardMetaAppSecret.secretArn,
         META_VERIFY_TOKEN: metaVerifyToken.valueAsString,
         META_PAGE_ID: metaPageId.valueAsString,
         META_IG_USER_ID: metaIgUserId.valueAsString,
         META_WA_PHONE_NUMBER_ID: metaWaPhoneNumberId.valueAsString,
         META_WABA_ID: metaWabaId.valueAsString,
         META_AD_ACCOUNT_ID: metaAdAccountId.valueAsString,
-        APP_STORE_CONNECT_KEY_SECRET_ARN: appStoreConnectKeySecretArn.valueAsString,
-        GOOGLE_PLAY_SERVICE_ACCOUNT_SECRET_ARN: googlePlayServiceAccountSecretArn.valueAsString,
+        APP_STORE_CONNECT_KEY_SECRET_ARN: boardAppStoreConnectKey.secretArn,
+        GOOGLE_PLAY_SERVICE_ACCOUNT_SECRET_ARN: boardGooglePlaySa.secretArn,
         APP_STORE_CONNECT_APP_ID: appStoreConnectAppId.valueAsString,
         ASC_VENDOR_NUMBER: appStoreConnectVendorNumber.valueAsString,
         GOOGLE_PLAY_PACKAGE_NAME: googlePlayPackageName.valueAsString,
-        GOOGLE_ANALYTICS_SERVICE_ACCOUNT_SECRET_ARN:
-          googleAnalyticsServiceAccountSecretArn.valueAsString,
+        GOOGLE_ANALYTICS_SERVICE_ACCOUNT_SECRET_ARN: boardGoogleAnalyticsSa.secretArn,
         GA4_PROPERTY_IDS: ga4PropertyIds.valueAsString,
         GTM_CONTAINERS: gtmContainers.valueAsString,
         // BOARD_MAIL_DOMAIN / _RAW_SEGMENT / _INBOUND_ADDRESS are added with the
@@ -957,117 +984,13 @@ export class LxsoftwareStack extends cdk.Stack {
     const cfnSecretPolicy = openRouterSecretPolicy.node.defaultChild as iam.CfnPolicy;
     cfnSecretPolicy.cfnOptions.condition = hasOpenRouterSecret;
 
-    // Same pattern for the optional GitHub read token (Executive Board).
-    const gitHubSecretArnValue = gitHubReadTokenSecretArn.valueAsString;
-    const hasGitHubSecret = new cdk.CfnCondition(this, "HasGitHubReadTokenSecret", {
-      expression: cdk.Fn.conditionNot(
-        cdk.Fn.conditionEquals(gitHubSecretArnValue, "")
-      ),
-    });
-    const gitHubSecretPolicy = new iam.Policy(this, "AdminGitHubReadTokenSecretPolicy", {
-      statements: [
-        new iam.PolicyStatement({
-          actions: ["secretsmanager:GetSecretValue"],
-          resources: [gitHubSecretArnValue],
-        }),
-      ],
-    });
-    gitHubSecretPolicy.attachToRole(adminFn.role!);
-    const cfnGitHubSecretPolicy = gitHubSecretPolicy.node.defaultChild as iam.CfnPolicy;
-    cfnGitHubSecretPolicy.cfnOptions.condition = hasGitHubSecret;
-
-    const searchSecretArnValue = searchApiKeySecretArn.valueAsString;
-    const hasSearchSecret = new cdk.CfnCondition(this, "HasSearchApiKeySecret", {
-      expression: cdk.Fn.conditionNot(
-        cdk.Fn.conditionEquals(searchSecretArnValue, "")
-      ),
-    });
-    const searchSecretPolicy = new iam.Policy(this, "AdminSearchApiKeySecretPolicy", {
-      statements: [
-        new iam.PolicyStatement({
-          actions: ["secretsmanager:GetSecretValue"],
-          resources: [searchSecretArnValue],
-        }),
-      ],
-    });
-    searchSecretPolicy.attachToRole(adminFn.role!);
-    const cfnSearchSecretPolicy = searchSecretPolicy.node.defaultChild as iam.CfnPolicy;
-    cfnSearchSecretPolicy.cfnOptions.condition = hasSearchSecret;
-
-    const metaTokenArnValue = metaBoardTokenSecretArn.valueAsString;
-    const hasMetaToken = new cdk.CfnCondition(this, "HasMetaBoardTokenSecret", {
-      expression: cdk.Fn.conditionNot(cdk.Fn.conditionEquals(metaTokenArnValue, "")),
-    });
-    const metaTokenPolicy = new iam.Policy(this, "AdminMetaBoardTokenSecretPolicy", {
-      statements: [
-        new iam.PolicyStatement({
-          actions: ["secretsmanager:GetSecretValue"],
-          resources: [metaTokenArnValue],
-        }),
-      ],
-    });
-    metaTokenPolicy.attachToRole(adminFn.role!);
-    (metaTokenPolicy.node.defaultChild as iam.CfnPolicy).cfnOptions.condition = hasMetaToken;
-
-    const metaAppSecretArnValue = metaAppSecretSecretArn.valueAsString;
-    const hasMetaAppSecret = new cdk.CfnCondition(this, "HasMetaAppSecretSecret", {
-      expression: cdk.Fn.conditionNot(cdk.Fn.conditionEquals(metaAppSecretArnValue, "")),
-    });
-    const metaAppSecretPolicy = new iam.Policy(this, "AdminMetaAppSecretPolicy", {
-      statements: [
-        new iam.PolicyStatement({
-          actions: ["secretsmanager:GetSecretValue"],
-          resources: [metaAppSecretArnValue],
-        }),
-      ],
-    });
-    metaAppSecretPolicy.attachToRole(adminFn.role!);
-    (metaAppSecretPolicy.node.defaultChild as iam.CfnPolicy).cfnOptions.condition = hasMetaAppSecret;
-
-    const ascKeyArnValue = appStoreConnectKeySecretArn.valueAsString;
-    const hasAscKey = new cdk.CfnCondition(this, "HasAppStoreConnectKeySecret", {
-      expression: cdk.Fn.conditionNot(cdk.Fn.conditionEquals(ascKeyArnValue, "")),
-    });
-    const ascKeyPolicy = new iam.Policy(this, "AdminAppStoreConnectKeySecretPolicy", {
-      statements: [
-        new iam.PolicyStatement({
-          actions: ["secretsmanager:GetSecretValue"],
-          resources: [ascKeyArnValue],
-        }),
-      ],
-    });
-    ascKeyPolicy.attachToRole(adminFn.role!);
-    (ascKeyPolicy.node.defaultChild as iam.CfnPolicy).cfnOptions.condition = hasAscKey;
-
-    const playSaArnValue = googlePlayServiceAccountSecretArn.valueAsString;
-    const hasPlaySa = new cdk.CfnCondition(this, "HasGooglePlayServiceAccountSecret", {
-      expression: cdk.Fn.conditionNot(cdk.Fn.conditionEquals(playSaArnValue, "")),
-    });
-    const playSaPolicy = new iam.Policy(this, "AdminGooglePlayServiceAccountSecretPolicy", {
-      statements: [
-        new iam.PolicyStatement({
-          actions: ["secretsmanager:GetSecretValue"],
-          resources: [playSaArnValue],
-        }),
-      ],
-    });
-    playSaPolicy.attachToRole(adminFn.role!);
-    (playSaPolicy.node.defaultChild as iam.CfnPolicy).cfnOptions.condition = hasPlaySa;
-
-    const gaSaArnValue = googleAnalyticsServiceAccountSecretArn.valueAsString;
-    const hasGaSa = new cdk.CfnCondition(this, "HasGoogleAnalyticsServiceAccountSecret", {
-      expression: cdk.Fn.conditionNot(cdk.Fn.conditionEquals(gaSaArnValue, "")),
-    });
-    const gaSaPolicy = new iam.Policy(this, "AdminGoogleAnalyticsServiceAccountSecretPolicy", {
-      statements: [
-        new iam.PolicyStatement({
-          actions: ["secretsmanager:GetSecretValue"],
-          resources: [gaSaArnValue],
-        }),
-      ],
-    });
-    gaSaPolicy.attachToRole(adminFn.role!);
-    (gaSaPolicy.node.defaultChild as iam.CfnPolicy).cfnOptions.condition = hasGaSa;
+    boardGitHubReadToken.grantRead(adminFn);
+    boardSearchApiKey.grantRead(adminFn);
+    boardMetaToken.grantRead(adminFn);
+    boardMetaAppSecret.grantRead(adminFn);
+    boardAppStoreConnectKey.grantRead(adminFn);
+    boardGooglePlaySa.grantRead(adminFn);
+    boardGoogleAnalyticsSa.grantRead(adminFn);
 
     // Executive Board aws + security read tools (plan §8). Each statement is
     // scoped as tightly as the IAM action allows (see the Service

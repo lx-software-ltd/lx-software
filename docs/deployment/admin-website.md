@@ -244,26 +244,37 @@ Stack parameters (all optional, set in `backend/infrastructure/params/*.json`):
 
 | Parameter | Purpose |
 |-----------|---------|
-| `lxsoftware:OpenRouterApiKeySecretArn` | Already required for statement parsing; the board reuses the same key. |
-| `lxsoftware:GitHubReadTokenSecretArn` | Secrets Manager secret holding a **fine-grained** GitHub token for the `siutindei` repository. The repository is public, so the snapshot and every GitHub *read* tool work without it; the token raises the API rate limit and is **required for the board's GitHub write tools** (issues, comments, labels) and for security alerts. |
+| `lxsoftware:OpenRouterApiKeySecretArn` | Already required for statement parsing; the board reuses the same key. This secret already exists in the account — CDK does not create it. |
 | `lxsoftware:BoardGitHubRepo` | `owner/name` of the repository to read (default `lx-software-ltd/siutindei`). |
 | `lxsoftware:BoardToolsEnabled` | `true` (default) / `false`. Deploy-time kill switch for every board tool call, independent of the in-app settings. |
-| `lxsoftware:SearchApiKeySecretArn` | Secrets Manager secret holding a **Brave Search** API key for the `research` tool. Leave blank to fall back to OpenRouter `:online` (uses the existing OpenRouter key and costs more). |
 | `lxsoftware:BoardAwsStackPrefix` | CloudFormation stack-name prefix used to filter Cost Explorer / CloudWatch results (default `siutindei`). When no cost rows carry the tag, `aws_monthly_cost` falls back to the whole account and labels the result `scope: account`. |
 | `lxsoftware:BoardAwsLambdaNames` | Comma-separated Lambda function names (the siutindei stack lives in another repo, so they cannot be derived here). `aws_lambda_health` reports 24h errors/duration for exactly these; empty means "no functions configured". |
 | `lxsoftware:SiutindeiClusterArn` | Aurora cluster ARN for the siutindei database (RDS Data API). Required for Executive Board `finance` and `product` tools. Leave blank to keep those tools returning a clear "not configured" error. |
-| `lxsoftware:SiutindeiDbSecretArn` | Secrets Manager ARN of the siutindei DB credentials the Data API uses. |
-| `lxsoftware:MetaBoardTokenSecretArn` | System User long-lived token for the Page / Instagram / WhatsApp Cloud API. |
-| `lxsoftware:MetaAppSecretSecretArn` | App secret used to verify `X-Hub-Signature-256` on `POST /webhooks/meta`. |
-| `lxsoftware:MetaVerifyToken` | Token Meta sends on the GET verify handshake (`hub.verify_token`). |
-| `lxsoftware:MetaPageId` / `MetaIgUserId` / `MetaWaPhoneNumberId` / `MetaAdAccountId` | Graph ids the `meta` tools call. |
-| `lxsoftware:AppStoreConnectKeySecretArn` | Secrets Manager secret: App Store Connect API key JSON (`keyId`, `issuerId`, `privateKey`, optional `appId`). JWT is signed in `AdminApiFn`. |
-| `lxsoftware:GooglePlayServiceAccountSecretArn` | Secrets Manager secret: Google Play service-account JSON (optional `packageName`). |
+| `lxsoftware:SiutindeiDbSecretArn` | Secrets Manager ARN of the siutindei DB credentials the Data API uses (RDS-owned; do not recreate). |
+| `lxsoftware:MetaVerifyToken` | Token Meta sends on the GET verify handshake (`hub.verify_token`). Not a Secrets Manager secret. |
+| `lxsoftware:MetaPageId` / `MetaIgUserId` / `MetaWaPhoneNumberId` / `MetaAdAccountId` / `MetaWabaId` | Graph ids the `meta` tools call. |
 | `lxsoftware:AppStoreConnectAppId` / `GooglePlayPackageName` | App id / package if they are not already inside the secrets. |
 | `lxsoftware:AppStoreConnectVendorNumber` | App Store Connect vendor number (Payments and Financial Reports page). Needed for Apple download counts, which come from yesterday's daily `SALES`/`SUMMARY` report; may also be stored as `vendorNumber` inside the key secret. Installs are not exposed by either store API and are reported as `null`. |
 | `lxsoftware:BoardMailDomain` | Domain the board indexes (default `siutindei.com`). Every mailbox at this domain is copied to the board's SES inbound address by the Cloudflare Email Worker. |
 | `lxsoftware:BoardMailSendingEnabled` | `false` (default) / `true`. Flip to `true` only after the DKIM CNAMEs, SPF `include:amazonses.com`, and DMARC are in the `BoardMailDomain` zone. Creates the SES sending identity and the IAM send policy; until then mail tools stay read-only. |
 | `lxsoftware:BoardChatModel` / `BoardMeetingModel` / `BoardDeepDiveModel` | Default OpenRouter model slugs (`openai/gpt-4.1-mini`, `openai/gpt-4.1-mini`, `anthropic/claude-sonnet-4`). The owner can override them per board in **Settings**. |
+
+CDK creates these connector secrets with dummy values and wires their ARNs
+into `AdminApiFn`. After **Deploy Backend**, open each secret in Secrets
+Manager (`ap-southeast-1`) and replace the dummy. Later CDK deploys do
+**not** overwrite a value you edited in the console (unless the generator
+properties in `lxsoftware-stack.ts` change). Secrets use
+`RemovalPolicy.RETAIN`, so a stack delete keeps the filled-in tokens.
+
+| Secret name | Dummy shape | Replace with |
+|-------------|-------------|--------------|
+| `lxsoftware-admin-github-read-token` | random 40-char string | Fine-grained GitHub PAT (plain string). Needed for write tools, security alerts, and a higher rate limit. Reads of the public `siutindei` repo work without it. |
+| `lxsoftware-admin-search-api-key` | random 40-char string | Brave Search API key (plain string). Until then `research` falls back to OpenRouter `:online`. |
+| `lxsoftware-admin-meta-board-token` | random 40-char string | Meta System User long-lived token (Page / Instagram / WhatsApp / ads). |
+| `lxsoftware-admin-meta-app-secret` | random 40-char string | Meta app secret (`X-Hub-Signature-256` on `POST /webhooks/meta`). |
+| `lxsoftware-admin-app-store-connect-key` | JSON `{keyId, issuerId, appId, vendorNumber, privateKey}` | Real App Store Connect API key. Paste the `.p8` into `privateKey`. |
+| `lxsoftware-admin-google-play-sa` | JSON `{type, client_email, packageName, private_key}` | Real Play Console service-account JSON. |
+| `lxsoftware-admin-google-analytics-sa` | JSON `{type, client_email, private_key}` | Dedicated GA4 / GTM service-account JSON (not the Play key). |
 
 GitHub token setup (only needed for write tools, security alerts, or a higher
 rate limit):
@@ -273,17 +284,9 @@ rate limit):
    write**, **Actions: read**, **Metadata: read** and, if you want the CISO to
    see Dependabot / code-scanning findings, **Security events: read**. Set an
    expiry and rotate it like any other secret.
-2. Store it as a plain-string secret:
-
-   ```bash
-   aws secretsmanager create-secret \
-     --name lxsoftware-admin-github-read-token \
-     --secret-string 'github_pat_…'
-   ```
-
-3. Put the returned ARN in `lxsoftware:GitHubReadTokenSecretArn` and
-   redeploy. The stack adds a conditional `secretsmanager:GetSecretValue`
-   grant to `AdminApiFn`.
+2. After the stack is deployed, open
+   `lxsoftware-admin-github-read-token` in Secrets Manager and replace the
+   dummy string with the PAT. No stack parameter or redeploy is required.
 
 Scheduled stand-ups: two EventBridge Scheduler schedules invoke `AdminApiFn`
 with `{ internal: "board_meeting", trigger: "schedule", slot: "morning" | "evening" }`
@@ -414,9 +417,9 @@ Facebook Page and Instagram account. Design:
 
 1. Create a Business-type app under the Siu Tin Dei Business Manager and a
    System User token (`pages_*`, `instagram_*`, `whatsapp_business_*`,
-   `ads_read` / `ads_management`). Store the token as
-   `lxsoftware:MetaBoardTokenSecretArn` and the app secret as
-   `lxsoftware:MetaAppSecretSecretArn`.
+   `ads_read` / `ads_management`). After deploy, replace the dummy values
+   in `lxsoftware-admin-meta-board-token` and
+   `lxsoftware-admin-meta-app-secret`.
 2. **WhatsApp coexistence:** turn coexistence on for the number so the
    owner's phone app keeps working while the board reads and replies through
    the API. If coexistence is unavailable, the number moves fully to the
@@ -446,13 +449,13 @@ Facebook Page and Instagram account. Design:
 The App Store Connect API key and Google Play service account already exist.
 Design: [`docs/architecture/executive-board-tools-plan.md`](../architecture/executive-board-tools-plan.md) §4 `stores`.
 
-1. Store the App Store Connect key as JSON
-   (`keyId`, `issuerId`, `privateKey` from the `.p8`, optional `appId`) and
-   pass the secret ARN as `lxsoftware:AppStoreConnectKeySecretArn`. The
-   Lambda signs a 20-minute ES256 JWT on each call.
-2. Store the Play service-account JSON (standard GCP key; add
-   `packageName` if it is not passed as `GooglePlayPackageName`) and pass
-   the ARN as `lxsoftware:GooglePlayServiceAccountSecretArn`.
+1. After deploy, edit `lxsoftware-admin-app-store-connect-key`: set
+   `keyId`, `issuerId`, and `privateKey` (the `.p8` body). Optional
+   `appId` / `vendorNumber` can live here or in the matching stack
+   parameters. The Lambda signs a 20-minute ES256 JWT on each call.
+2. Edit `lxsoftware-admin-google-play-sa` with the real Play
+   service-account JSON (standard GCP key; add `packageName` if it is not
+   passed as `GooglePlayPackageName`).
 3. Set `AppStoreConnectAppId` and `GooglePlayPackageName` if they are not
    inside the secrets, plus `AppStoreConnectVendorNumber` for Apple
    downloads. Until at least one store is configured the `stores`
@@ -472,8 +475,8 @@ Dedicated Analytics service account — not the Play publisher key. Design:
 
 1. Create a GCP service account with `analytics.readonly` and
    `tagmanager.readonly`. Grant it Viewer on every GA4 property and GTM
-   container the board should see. Store the JSON key and pass the ARN as
-   `lxsoftware:GoogleAnalyticsServiceAccountSecretArn`.
+   container the board should see. After deploy, replace the dummy JSON in
+   `lxsoftware-admin-google-analytics-sa`.
 2. Set `Ga4PropertyIds` to a comma-separated list (`123456789,987654321` or
    `properties/123456789,…`). Set `GtmContainers` to
    `accountId:containerId` pairs. Both can also live inside the secret as
@@ -533,54 +536,6 @@ message is indexed as `direction=out` so it appears in **Mail**. Bodies and
 threads expire after 90 days (`BOARD_MAIL_MESSAGE_TTL_DAYS`).
 
 ## Scripts
-
-### Executive Board AWS setup (CloudShell)
-
-Sign in to the AWS console as **root** (or an admin role), open **CloudShell**
-in `ap-southeast-1`, and run the standalone wizard. CloudShell already has
-the AWS CLI — you do not need a git checkout. Do **not** pipe curl to bash
-(the prompts need a real terminal).
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/lx-software-ltd/lx-software/main/scripts/setup-board-cloudshell.sh \
-  -o setup-board-cloudshell.sh
-bash setup-board-cloudshell.sh --dry-run    # preview
-bash setup-board-cloudshell.sh              # type / upload secrets; confirm
-```
-
-Leave a prompt blank to skip. Upload `.p8` / service-account JSON first
-(**Actions → Upload file**), then paste the path (`~/AuthKey.p8`).
-
-The wizard does **not** change the CDK-managed `lxsoftware` stack. It:
-
-1. Creates or updates Secrets Manager secrets (never prints the values).
-2. Writes `~/board-params-fragment.json` (ARNs and ids only) for you to merge
-   into `backend/infrastructure/params/production.json`.
-3. Activates the Cost Explorer tag `aws:cloudformation:stack-name` (Billing).
-4. Optionally applies `receivables.sql` through the RDS Data API (siutindei
-   Aurora).
-
-Commit the fragment and run **Deploy Backend**. That CDK deploy is what
-feeds the new env into `AdminApiFn`. `MetaVerifyToken` is saved only to
-`~/board-meta-verify-token.txt`; put it in GitHub Actions as a secret, do
-not commit it.
-
-To see what is already in the account (existence, JSON/token shape, and
-whether the stack parameter points at the ARN) without printing values:
-
-```bash
-python3 scripts/verify-board-secrets.py
-# or, in CloudShell after downloading the wizard:
-bash setup-board-cloudshell.sh verify
-```
-
-`OK` = secret is readable and wired on `lxsoftware`. `WARN` = secret exists
-but the stack param is still empty (commit the ARN and CDK-deploy). `MISS`
-= optional tool not set up. `FAIL` = required OpenRouter secret missing or
-any secret has the wrong shape.
-
-A repo-local Python helper (`scripts/setup-board-config.py`) can still write
-the same keys from an answers file if you prefer not to use CloudShell.
 
 Local or CI deploy of static files after a build:
 

@@ -225,7 +225,8 @@ export function BoardToolsCard({
                     {needsToken ? (
                       <div className="small text-warning mt-1">
                         <i className="bi bi-key me-1" aria-hidden="true" />
-                        Writes and security alerts need <code>GitHubReadTokenSecretArn</code>; reads work without it.
+                        Writes and security alerts need a real PAT in{" "}
+                        <code>lxsoftware-admin-github-read-token</code>; reads work without it.
                       </div>
                     ) : null}
                     {tool.id === "mail" ? (
@@ -248,8 +249,9 @@ export function BoardToolsCard({
                         <div className="small text-muted mt-1">Results are cached for 24 hours.</div>
                       ) : (
                         <div className="small text-warning mt-1">
-                          No Brave Search key (`SearchApiKeySecretArn`). Queries fail until one is set (or OpenRouter
-                          `:online` is used as a fallback).
+                          No Brave Search key in <code>lxsoftware-admin-search-api-key</code>. Queries
+                          fail until one is set (or OpenRouter <code>:online</code> is used as a
+                          fallback).
                         </div>
                       )
                     ) : null}
@@ -264,8 +266,9 @@ export function BoardToolsCard({
                         </div>
                       ) : (
                         <div className="small text-warning mt-1">
-                          Set <code>MetaBoardTokenSecretArn</code> and the Page / WhatsApp ids.
-                          Enable coexistence so the owner&apos;s phone keeps the number.
+                          Put a real System User token in{" "}
+                          <code>lxsoftware-admin-meta-board-token</code> and set the Page / WhatsApp
+                          ids. Enable coexistence so the owner&apos;s phone keeps the number.
                         </div>
                       )
                     ) : null}
@@ -277,9 +280,10 @@ export function BoardToolsCard({
                         </div>
                       ) : (
                         <div className="small text-warning mt-1">
-                          Set <code>AppStoreConnectKeySecretArn</code> and{" "}
-                          <code>GooglePlayServiceAccountSecretArn</code> (keys already exist). JWT
-                          for App Store Connect is signed in the Lambda.
+                          Replace the dummy JSON in{" "}
+                          <code>lxsoftware-admin-app-store-connect-key</code> and{" "}
+                          <code>lxsoftware-admin-google-play-sa</code> (keys already exist). JWT for
+                          App Store Connect is signed in the Lambda.
                         </div>
                       )
                     ) : null}
@@ -291,8 +295,9 @@ export function BoardToolsCard({
                         </div>
                       ) : (
                         <div className="small text-warning mt-1">
-                          Set <code>GoogleAnalyticsServiceAccountSecretArn</code> (dedicated SA, not
-                          the Play key), <code>Ga4PropertyIds</code>, and{" "}
+                          Replace the dummy JSON in{" "}
+                          <code>lxsoftware-admin-google-analytics-sa</code> (dedicated SA, not the
+                          Play key), then set <code>Ga4PropertyIds</code> and{" "}
                           <code>GtmContainers</code> (<code>account:container</code> pairs).
                         </div>
                       )

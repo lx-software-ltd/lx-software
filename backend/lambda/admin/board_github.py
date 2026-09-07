@@ -738,8 +738,9 @@ def _clean_labels(raw: Any) -> list[str]:
 def _require_write_token() -> None:
     if not write_enabled():
         raise GitHubSnapshotError(
-            "GitHub writes need a token: set the GitHubReadTokenSecretArn stack parameter to a "
-            "fine-grained token with issues: write on the repository"
+            "GitHub writes need a token: replace the dummy value in the "
+            "lxsoftware-admin-github-read-token secret with a fine-grained token "
+            "that has issues: write on the repository"
         )
 
 

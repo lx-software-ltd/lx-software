@@ -32,11 +32,6 @@ lerna-debug.log*
 .env.*.local
 .envrc
 
-# Executive Board setup overlays (tokens / noEcho CDK params)
-backend/infrastructure/params/*.local.json
-setup-board-config.answers.json
-**/setup-board-config.answers.json
-
 # IDE and editors
 .idea/
 *.swp

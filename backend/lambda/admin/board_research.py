@@ -231,7 +231,8 @@ def _live_search(table: Any, query: str, *, count: int) -> tuple[list[dict[str, 
             _log_event("warning", tag="board_research_usage_failed", error=str(exc)[:200])
         return results
     raise ResearchError(
-        "Web search is not configured. Set SearchApiKeySecretArn (Brave) or rely on the existing OpenRouter key."
+        "Web search is not configured. Put a Brave Search key in "
+        "lxsoftware-admin-search-api-key or rely on the existing OpenRouter key."
     )
 
 

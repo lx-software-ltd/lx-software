@@ -2,7 +2,13 @@ import * as cdk from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import { LxsoftwareStack } from "../lib/lxsoftware-stack";
 
-type CfnResource = { Type: string; Properties?: Record<string, any>; Condition?: string };
+type CfnResource = {
+  Type: string;
+  Properties?: Record<string, any>;
+  Condition?: string;
+  UpdateReplacePolicy?: string;
+  DeletionPolicy?: string;
+};
 
 /**
  * Synthesize the admin backend stack once for the whole file. The App is
@@ -180,13 +186,6 @@ describe("Admin Lambda IAM policies", () => {
 
   test.each([
     ["AdminOpenRouterSecretPolicy", "HasOpenRouterSecret"],
-    ["AdminGitHubReadTokenSecretPolicy", "HasGitHubReadTokenSecret"],
-    ["AdminSearchApiKeySecretPolicy", "HasSearchApiKeySecret"],
-    ["AdminMetaBoardTokenSecretPolicy", "HasMetaBoardTokenSecret"],
-    ["AdminMetaAppSecretPolicy", "HasMetaAppSecretSecret"],
-    ["AdminAppStoreConnectKeySecretPolicy", "HasAppStoreConnectKeySecret"],
-    ["AdminGooglePlayServiceAccountSecretPolicy", "HasGooglePlayServiceAccountSecret"],
-    ["AdminGoogleAnalyticsServiceAccountSecretPolicy", "HasGoogleAnalyticsServiceAccountSecret"],
     ["AdminSiutindeiDataApiPolicy", "HasSiutindeiDataApi"],
     ["AdminBoardMailSendPolicy", "HasBoardMailSending"],
   ])("%s keeps its %s condition", (constructId, conditionName) => {
@@ -271,5 +270,89 @@ describe("Admin Lambda IAM policies", () => {
         ].sort()
       );
     });
+  });
+});
+
+describe("Executive Board placeholder secrets", () => {
+  const expectedNames = [
+    "lxsoftware-admin-github-read-token",
+    "lxsoftware-admin-search-api-key",
+    "lxsoftware-admin-meta-board-token",
+    "lxsoftware-admin-meta-app-secret",
+    "lxsoftware-admin-app-store-connect-key",
+    "lxsoftware-admin-google-play-sa",
+    "lxsoftware-admin-google-analytics-sa",
+  ];
+
+  const removedParameters = [
+    "GitHubReadTokenSecretArn",
+    "SearchApiKeySecretArn",
+    "MetaBoardTokenSecretArn",
+    "MetaAppSecretSecretArn",
+    "AppStoreConnectKeySecretArn",
+    "GooglePlayServiceAccountSecretArn",
+    "GoogleAnalyticsServiceAccountSecretArn",
+  ];
+
+  function boardSecrets(): CfnResource[] {
+    return Object.values(resourcesOfType("AWS::SecretsManager::Secret")).filter((r) =>
+      expectedNames.includes(r.Properties?.Name as string)
+    );
+  }
+
+  test("CDK creates the seven named board secrets with generated dummy values", () => {
+    const secrets = boardSecrets();
+    expect(secrets.map((s) => s.Properties?.Name).sort()).toEqual([...expectedNames].sort());
+    for (const secret of secrets) {
+      expect(secret.Properties?.GenerateSecretString).toBeDefined();
+      expect(secret.UpdateReplacePolicy).toBe("Retain");
+      expect(secret.DeletionPolicy).toBe("Retain");
+    }
+  });
+
+  test("the JSON store / analytics secrets include a generated private-key field", () => {
+    const byName = Object.fromEntries(
+      boardSecrets().map((s) => [s.Properties?.Name as string, s])
+    );
+    expect(byName["lxsoftware-admin-app-store-connect-key"].Properties?.GenerateSecretString).toEqual(
+      expect.objectContaining({
+        GenerateStringKey: "privateKey",
+        SecretStringTemplate: expect.stringContaining("keyId"),
+      })
+    );
+    expect(byName["lxsoftware-admin-google-play-sa"].Properties?.GenerateSecretString).toEqual(
+      expect.objectContaining({
+        GenerateStringKey: "private_key",
+        SecretStringTemplate: expect.stringContaining("client_email"),
+      })
+    );
+    expect(byName["lxsoftware-admin-google-analytics-sa"].Properties?.GenerateSecretString).toEqual(
+      expect.objectContaining({
+        GenerateStringKey: "private_key",
+        SecretStringTemplate: expect.stringContaining("client_email"),
+      })
+    );
+  });
+
+  test("removed CfnParameters no longer exist", () => {
+    const parameters = template.toJSON().Parameters as Record<string, unknown>;
+    for (const name of removedParameters) {
+      expect(parameters[name]).toBeUndefined();
+    }
+  });
+
+  test("AdminApiFn can GetSecretValue on every board secret", () => {
+    const secretLogicalIds = Object.entries(resourcesOfType("AWS::SecretsManager::Secret"))
+      .filter(([, r]) => expectedNames.includes(r.Properties?.Name as string))
+      .map(([id]) => id);
+
+    const getSecretStatements = Object.values(resourcesOfType("AWS::IAM::Policy"))
+      .flatMap((policy) => policyStatements(policy))
+      .filter((s) => asArray<string>(s.Action).includes("secretsmanager:GetSecretValue"));
+
+    const serialized = JSON.stringify(getSecretStatements);
+    for (const logicalId of secretLogicalIds) {
+      expect(serialized).toContain(logicalId);
+    }
   });
 });
