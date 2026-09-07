@@ -39,15 +39,35 @@ import { ADMIN_WEB_HOSTNAME, PARSE_TIMEOUTS } from "./shared-contracts";
  * next to the legacy per-route statements during the deployment that
  * removes them (CloudFormation creates before it deletes).
  */
+const ASC_KEY_TEMPLATE = {
+  keyId: "REPLACE_ME",
+  issuerId: "REPLACE_ME",
+  appId: "",
+  vendorNumber: "",
+};
+const PLAY_SA_TEMPLATE = {
+  client_email: "REPLACE_ME@example.iam.gserviceaccount.com",
+  packageName: "",
+};
+const ANALYTICS_SA_TEMPLATE = {
+  client_email: "REPLACE_ME@example.iam.gserviceaccount.com",
+};
+
+type BoardConnectorSecrets = {
+  github: secretsmanager.Secret;
+  search: secretsmanager.Secret;
+  metaToken: secretsmanager.Secret;
+  metaAppSecret: secretsmanager.Secret;
+  appStore: secretsmanager.Secret;
+  play: secretsmanager.Secret;
+  analytics: secretsmanager.Secret;
+};
+
 /**
  * Placeholder secret the owner overwrites in the Secrets Manager console.
  * CloudFormation only writes GenerateSecretString on create (or if this
  * construct's generator properties change), so later CDK deploys keep the
  * real value. RETAIN so a stack delete does not wipe a filled-in token.
- *
- * Physical names stay `lxsoftware-admin-*` (this stack's convention, already
- * deployed). Tenant + purpose live on Description and tags so a later
- * `secretName` change does not replace the live secret.
  */
 function boardPlaceholderSecret(
   scope: Construct,
@@ -56,6 +76,8 @@ function boardPlaceholderSecret(
     secretName: string;
     description: string;
     encryptionKey: kms.IKey;
+    tenant: string;
+    purpose: string;
     jsonTemplate?: Record<string, string>;
     generateKey?: string;
   }
@@ -78,9 +100,86 @@ function boardPlaceholderSecret(
     removalPolicy: cdk.RemovalPolicy.RETAIN,
     generateSecretString: generator,
   });
-  cdk.Tags.of(secret).add("lxsoftware:tenant", "siutindei");
-  cdk.Tags.of(secret).add("lxsoftware:purpose", "siutindei-executive-board");
+  cdk.Tags.of(secret).add("lxsoftware:tenant", props.tenant);
+  cdk.Tags.of(secret).add("lxsoftware:purpose", props.purpose);
   return secret;
+}
+
+function boardConnectorSecrets(
+  scope: Construct,
+  encryptionKey: kms.IKey,
+  opts: {
+    tenant: string;
+    purpose: string;
+    label: string;
+    ids: {
+      github: string;
+      search: string;
+      metaToken: string;
+      metaAppSecret: string;
+      appStore: string;
+      play: string;
+      analytics: string;
+    };
+    names: {
+      github: string;
+      search: string;
+      metaToken: string;
+      metaAppSecret: string;
+      appStore: string;
+      play: string;
+      analytics: string;
+    };
+  }
+): BoardConnectorSecrets {
+  const common = {
+    encryptionKey,
+    tenant: opts.tenant,
+    purpose: opts.purpose,
+  };
+  return {
+    github: boardPlaceholderSecret(scope, opts.ids.github, {
+      ...common,
+      secretName: opts.names.github,
+      description: `${opts.label}: fine-grained GitHub PAT (Contents read, Issues r/w, Actions read, Metadata read, Security events read).`,
+    }),
+    search: boardPlaceholderSecret(scope, opts.ids.search, {
+      ...common,
+      secretName: opts.names.search,
+      description: `${opts.label}: Brave Search API key for research.`,
+    }),
+    metaToken: boardPlaceholderSecret(scope, opts.ids.metaToken, {
+      ...common,
+      secretName: opts.names.metaToken,
+      description: `${opts.label}: Meta System User long-lived token (Page / Instagram / WhatsApp / ads).`,
+    }),
+    metaAppSecret: boardPlaceholderSecret(scope, opts.ids.metaAppSecret, {
+      ...common,
+      secretName: opts.names.metaAppSecret,
+      description: `${opts.label}: Meta app secret for X-Hub-Signature-256 on POST /webhooks/meta.`,
+    }),
+    appStore: boardPlaceholderSecret(scope, opts.ids.appStore, {
+      ...common,
+      secretName: opts.names.appStore,
+      description: `${opts.label}: App Store Connect API key JSON (keyId, issuerId, privateKey, optional appId / vendorNumber).`,
+      jsonTemplate: ASC_KEY_TEMPLATE,
+      generateKey: "privateKey",
+    }),
+    play: boardPlaceholderSecret(scope, opts.ids.play, {
+      ...common,
+      secretName: opts.names.play,
+      description: `${opts.label}: Google Play service-account JSON (client_email, private_key, optional packageName).`,
+      jsonTemplate: PLAY_SA_TEMPLATE,
+      generateKey: "private_key",
+    }),
+    analytics: boardPlaceholderSecret(scope, opts.ids.analytics, {
+      ...common,
+      secretName: opts.names.analytics,
+      description: `${opts.label}: dedicated GA4 / GTM service-account JSON (not the Play key).`,
+      jsonTemplate: ANALYTICS_SA_TEMPLATE,
+      generateKey: "private_key",
+    }),
+  };
 }
 
 class SharedPermissionLambdaIntegration extends HttpLambdaIntegration {
@@ -692,69 +791,60 @@ export class LxsoftwareStack extends cdk.Stack {
     const parseJobStuckSeconds = String(PARSE_TIMEOUTS.parseJobStuckSeconds);
 
     /**
-     * Executive Board connector secrets. CDK creates each with a dummy
-     * GenerateSecretString value; the owner overwrites them in the console.
-     * CloudFormation does not rewrite the secret string on later deploys
-     * unless the generator properties change.
+     * Already-deployed connector secrets. Construct ids must stay so
+     * CloudFormation does not replace them. Reserved for a future LX
+     * Software Executive Board — AdminApiFn does not read these today.
      */
-    const boardGitHubReadToken = boardPlaceholderSecret(this, "BoardGitHubReadToken", {
-      secretName: "lxsoftware-admin-github-read-token",
-      description:
-        "Siu Tin Dei Executive Board: fine-grained GitHub PAT for lx-software-ltd/siutindei (Contents read, Issues r/w, Actions read, Metadata read, Security events read).",
-      encryptionKey: this.sharedEncryptionKey,
-    });
-    const boardSearchApiKey = boardPlaceholderSecret(this, "BoardSearchApiKey", {
-      secretName: "lxsoftware-admin-search-api-key",
-      description: "Siu Tin Dei Executive Board: Brave Search API key for research.",
-      encryptionKey: this.sharedEncryptionKey,
-    });
-    const boardMetaToken = boardPlaceholderSecret(this, "BoardMetaToken", {
-      secretName: "lxsoftware-admin-meta-board-token",
-      description:
-        "Siu Tin Dei Executive Board: Meta System User long-lived token (Page / Instagram / WhatsApp / ads).",
-      encryptionKey: this.sharedEncryptionKey,
-    });
-    const boardMetaAppSecret = boardPlaceholderSecret(this, "BoardMetaAppSecret", {
-      secretName: "lxsoftware-admin-meta-app-secret",
-      description:
-        "Siu Tin Dei Executive Board: Meta app secret for X-Hub-Signature-256 on POST /webhooks/meta.",
-      encryptionKey: this.sharedEncryptionKey,
-    });
-    const boardAppStoreConnectKey = boardPlaceholderSecret(this, "BoardAppStoreConnectKey", {
-      secretName: "lxsoftware-admin-app-store-connect-key",
-      description:
-        "Siu Tin Dei Executive Board: App Store Connect API key JSON (keyId, issuerId, privateKey, optional appId / vendorNumber).",
-      encryptionKey: this.sharedEncryptionKey,
-      jsonTemplate: {
-        keyId: "REPLACE_ME",
-        issuerId: "REPLACE_ME",
-        appId: "",
-        vendorNumber: "",
+    boardConnectorSecrets(this, this.sharedEncryptionKey, {
+      tenant: "lxsoftware",
+      purpose: "lxsoftware-executive-board",
+      label: "Reserved for a future LX Software Executive Board",
+      ids: {
+        github: "BoardGitHubReadToken",
+        search: "BoardSearchApiKey",
+        metaToken: "BoardMetaToken",
+        metaAppSecret: "BoardMetaAppSecret",
+        appStore: "BoardAppStoreConnectKey",
+        play: "BoardGooglePlaySa",
+        analytics: "BoardGoogleAnalyticsSa",
       },
-      generateKey: "privateKey",
-    });
-    const boardGooglePlaySa = boardPlaceholderSecret(this, "BoardGooglePlaySa", {
-      secretName: "lxsoftware-admin-google-play-sa",
-      description:
-        "Siu Tin Dei Executive Board: Google Play service-account JSON (client_email, private_key, optional packageName).",
-      encryptionKey: this.sharedEncryptionKey,
-      jsonTemplate: {
-        // Placeholder only. Paste the real Play Console key in Secrets Manager.
-        client_email: "REPLACE_ME@example.iam.gserviceaccount.com",
-        packageName: "",
+      names: {
+        github: "lxsoftware-admin-github-read-token",
+        search: "lxsoftware-admin-search-api-key",
+        metaToken: "lxsoftware-admin-meta-board-token",
+        metaAppSecret: "lxsoftware-admin-meta-app-secret",
+        appStore: "lxsoftware-admin-app-store-connect-key",
+        play: "lxsoftware-admin-google-play-sa",
+        analytics: "lxsoftware-admin-google-analytics-sa",
       },
-      generateKey: "private_key",
     });
-    const boardGoogleAnalyticsSa = boardPlaceholderSecret(this, "BoardGoogleAnalyticsSa", {
-      secretName: "lxsoftware-admin-google-analytics-sa",
-      description:
-        "Siu Tin Dei Executive Board: dedicated GA4 / GTM service-account JSON (not the Play key).",
-      encryptionKey: this.sharedEncryptionKey,
-      jsonTemplate: {
-        // Placeholder only. Paste the dedicated Analytics key in Secrets Manager.
-        client_email: "REPLACE_ME@example.iam.gserviceaccount.com",
+
+    /**
+     * Siu Tin Dei Executive Board — what AdminApiFn uses. New construct ids
+     * so the reserved set above is left in place.
+     */
+    const siutindeiBoardSecrets = boardConnectorSecrets(this, this.sharedEncryptionKey, {
+      tenant: "siutindei",
+      purpose: "siutindei-executive-board",
+      label: "Siu Tin Dei Executive Board",
+      ids: {
+        github: "SiutindeiBoardGitHubToken",
+        search: "SiutindeiBoardSearchApiKey",
+        metaToken: "SiutindeiBoardMetaToken",
+        metaAppSecret: "SiutindeiBoardMetaAppSecret",
+        appStore: "SiutindeiBoardAppStoreConnectKey",
+        play: "SiutindeiBoardGooglePlaySa",
+        analytics: "SiutindeiBoardGoogleAnalyticsSa",
       },
-      generateKey: "private_key",
+      names: {
+        github: "lxsoftware-admin-siutindei-board-github-token",
+        search: "lxsoftware-admin-siutindei-board-search-api-key",
+        metaToken: "lxsoftware-admin-siutindei-board-meta-token",
+        metaAppSecret: "lxsoftware-admin-siutindei-board-meta-app-secret",
+        appStore: "lxsoftware-admin-siutindei-board-app-store-connect-key",
+        play: "lxsoftware-admin-siutindei-board-google-play-sa",
+        analytics: "lxsoftware-admin-siutindei-board-google-analytics-sa",
+      },
     });
 
     /**
@@ -795,32 +885,32 @@ export class LxsoftwareStack extends cdk.Stack {
         PARSE_JOB_TTL_SECONDS: String(PARSE_TIMEOUTS.parseJobTtlSeconds),
         ENABLE_BANKING_APP_ID: enableBankingAppId.valueAsString,
         ENABLE_BANKING_KMS_KEY_ID: enableBankingSigningKey.keyId,
-        GITHUB_READ_TOKEN_SECRET_ARN: boardGitHubReadToken.secretArn,
+        GITHUB_READ_TOKEN_SECRET_ARN: siutindeiBoardSecrets.github.secretArn,
         BOARD_GITHUB_REPO: boardGitHubRepo.valueAsString,
         BOARD_CHAT_MODEL: boardChatModel.valueAsString,
         BOARD_MEETING_MODEL: boardMeetingModel.valueAsString,
         BOARD_DEEP_DIVE_MODEL: boardDeepDiveModel.valueAsString,
         BOARD_TOOLS_ENABLED: boardToolsEnabled.valueAsString,
-        SEARCH_API_KEY_SECRET_ARN: boardSearchApiKey.secretArn,
+        SEARCH_API_KEY_SECRET_ARN: siutindeiBoardSecrets.search.secretArn,
         BOARD_AWS_STACK_PREFIX: boardAwsStackPrefix.valueAsString,
         BOARD_AWS_LAMBDA_NAMES: boardAwsLambdaNames.valueAsString,
         USER_POOL_ID: this.auth.userPool.userPoolId,
         SIUTINDEI_CLUSTER_ARN: siutindeiClusterArn.valueAsString,
         SIUTINDEI_DB_SECRET_ARN: siutindeiDbSecretArn.valueAsString,
-        META_BOARD_TOKEN_SECRET_ARN: boardMetaToken.secretArn,
-        META_APP_SECRET_SECRET_ARN: boardMetaAppSecret.secretArn,
+        META_BOARD_TOKEN_SECRET_ARN: siutindeiBoardSecrets.metaToken.secretArn,
+        META_APP_SECRET_SECRET_ARN: siutindeiBoardSecrets.metaAppSecret.secretArn,
         META_VERIFY_TOKEN: metaVerifyToken.valueAsString,
         META_PAGE_ID: metaPageId.valueAsString,
         META_IG_USER_ID: metaIgUserId.valueAsString,
         META_WA_PHONE_NUMBER_ID: metaWaPhoneNumberId.valueAsString,
         META_WABA_ID: metaWabaId.valueAsString,
         META_AD_ACCOUNT_ID: metaAdAccountId.valueAsString,
-        APP_STORE_CONNECT_KEY_SECRET_ARN: boardAppStoreConnectKey.secretArn,
-        GOOGLE_PLAY_SERVICE_ACCOUNT_SECRET_ARN: boardGooglePlaySa.secretArn,
+        APP_STORE_CONNECT_KEY_SECRET_ARN: siutindeiBoardSecrets.appStore.secretArn,
+        GOOGLE_PLAY_SERVICE_ACCOUNT_SECRET_ARN: siutindeiBoardSecrets.play.secretArn,
         APP_STORE_CONNECT_APP_ID: appStoreConnectAppId.valueAsString,
         ASC_VENDOR_NUMBER: appStoreConnectVendorNumber.valueAsString,
         GOOGLE_PLAY_PACKAGE_NAME: googlePlayPackageName.valueAsString,
-        GOOGLE_ANALYTICS_SERVICE_ACCOUNT_SECRET_ARN: boardGoogleAnalyticsSa.secretArn,
+        GOOGLE_ANALYTICS_SERVICE_ACCOUNT_SECRET_ARN: siutindeiBoardSecrets.analytics.secretArn,
         GA4_PROPERTY_IDS: ga4PropertyIds.valueAsString,
         GTM_CONTAINERS: gtmContainers.valueAsString,
         // BOARD_MAIL_DOMAIN / _RAW_SEGMENT / _INBOUND_ADDRESS are added with the
@@ -996,13 +1086,13 @@ export class LxsoftwareStack extends cdk.Stack {
     const cfnSecretPolicy = openRouterSecretPolicy.node.defaultChild as iam.CfnPolicy;
     cfnSecretPolicy.cfnOptions.condition = hasOpenRouterSecret;
 
-    boardGitHubReadToken.grantRead(adminFn);
-    boardSearchApiKey.grantRead(adminFn);
-    boardMetaToken.grantRead(adminFn);
-    boardMetaAppSecret.grantRead(adminFn);
-    boardAppStoreConnectKey.grantRead(adminFn);
-    boardGooglePlaySa.grantRead(adminFn);
-    boardGoogleAnalyticsSa.grantRead(adminFn);
+    siutindeiBoardSecrets.github.grantRead(adminFn);
+    siutindeiBoardSecrets.search.grantRead(adminFn);
+    siutindeiBoardSecrets.metaToken.grantRead(adminFn);
+    siutindeiBoardSecrets.metaAppSecret.grantRead(adminFn);
+    siutindeiBoardSecrets.appStore.grantRead(adminFn);
+    siutindeiBoardSecrets.play.grantRead(adminFn);
+    siutindeiBoardSecrets.analytics.grantRead(adminFn);
 
     // Executive Board aws + security read tools (plan §8). Each statement is
     // scoped as tightly as the IAM action allows (see the Service

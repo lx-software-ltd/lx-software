@@ -274,7 +274,7 @@ describe("Admin Lambda IAM policies", () => {
 });
 
 describe("Executive Board placeholder secrets", () => {
-  const expectedNames = [
+  const reservedNames = [
     "lxsoftware-admin-github-read-token",
     "lxsoftware-admin-search-api-key",
     "lxsoftware-admin-meta-board-token",
@@ -282,6 +282,15 @@ describe("Executive Board placeholder secrets", () => {
     "lxsoftware-admin-app-store-connect-key",
     "lxsoftware-admin-google-play-sa",
     "lxsoftware-admin-google-analytics-sa",
+  ];
+  const siutindeiNames = [
+    "lxsoftware-admin-siutindei-board-github-token",
+    "lxsoftware-admin-siutindei-board-search-api-key",
+    "lxsoftware-admin-siutindei-board-meta-token",
+    "lxsoftware-admin-siutindei-board-meta-app-secret",
+    "lxsoftware-admin-siutindei-board-app-store-connect-key",
+    "lxsoftware-admin-siutindei-board-google-play-sa",
+    "lxsoftware-admin-siutindei-board-google-analytics-sa",
   ];
 
   const removedParameters = [
@@ -294,15 +303,17 @@ describe("Executive Board placeholder secrets", () => {
     "GoogleAnalyticsServiceAccountSecretArn",
   ];
 
-  function boardSecrets(): CfnResource[] {
+  function secretsNamed(names: string[]): CfnResource[] {
     return Object.values(resourcesOfType("AWS::SecretsManager::Secret")).filter((r) =>
-      expectedNames.includes(r.Properties?.Name as string)
+      names.includes(r.Properties?.Name as string)
     );
   }
 
-  test("CDK creates the seven named board secrets with generated dummy values", () => {
-    const secrets = boardSecrets();
-    expect(secrets.map((s) => s.Properties?.Name).sort()).toEqual([...expectedNames].sort());
+  function expectRetainedPlaceholders(
+    secrets: CfnResource[],
+    tenant: string,
+    purpose: string,
+  ) {
     for (const secret of secrets) {
       expect(secret.Properties?.GenerateSecretString).toBeDefined();
       expect(secret.UpdateReplacePolicy).toBe("Retain");
@@ -310,35 +321,53 @@ describe("Executive Board placeholder secrets", () => {
       const tags = asArray<{ Key: string; Value: string }>(secret.Properties?.Tags);
       expect(tags).toEqual(
         expect.arrayContaining([
-          { Key: "lxsoftware:tenant", Value: "siutindei" },
-          { Key: "lxsoftware:purpose", Value: "siutindei-executive-board" },
+          { Key: "lxsoftware:tenant", Value: tenant },
+          { Key: "lxsoftware:purpose", Value: purpose },
         ]),
       );
     }
+  }
+
+  test("keeps the deployed LX Software board secrets and adds a Siu Tin Dei set", () => {
+    const reserved = secretsNamed(reservedNames);
+    const siutindei = secretsNamed(siutindeiNames);
+    expect(reserved.map((s) => s.Properties?.Name).sort()).toEqual([...reservedNames].sort());
+    expect(siutindei.map((s) => s.Properties?.Name).sort()).toEqual([...siutindeiNames].sort());
+    expectRetainedPlaceholders(reserved, "lxsoftware", "lxsoftware-executive-board");
+    expectRetainedPlaceholders(siutindei, "siutindei", "siutindei-executive-board");
   });
 
   test("the JSON store / analytics secrets include a generated private-key field", () => {
     const byName = Object.fromEntries(
-      boardSecrets().map((s) => [s.Properties?.Name as string, s])
+      [...secretsNamed(reservedNames), ...secretsNamed(siutindeiNames)].map((s) => [
+        s.Properties?.Name as string,
+        s,
+      ])
     );
-    expect(byName["lxsoftware-admin-app-store-connect-key"].Properties?.GenerateSecretString).toEqual(
-      expect.objectContaining({
-        GenerateStringKey: "privateKey",
-        SecretStringTemplate: expect.stringContaining("keyId"),
-      })
-    );
-    expect(byName["lxsoftware-admin-google-play-sa"].Properties?.GenerateSecretString).toEqual(
-      expect.objectContaining({
-        GenerateStringKey: "private_key",
-        SecretStringTemplate: expect.stringContaining("client_email"),
-      })
-    );
-    expect(byName["lxsoftware-admin-google-analytics-sa"].Properties?.GenerateSecretString).toEqual(
-      expect.objectContaining({
-        GenerateStringKey: "private_key",
-        SecretStringTemplate: expect.stringContaining("client_email"),
-      })
-    );
+    for (const name of [
+      "lxsoftware-admin-app-store-connect-key",
+      "lxsoftware-admin-siutindei-board-app-store-connect-key",
+    ]) {
+      expect(byName[name].Properties?.GenerateSecretString).toEqual(
+        expect.objectContaining({
+          GenerateStringKey: "privateKey",
+          SecretStringTemplate: expect.stringContaining("keyId"),
+        })
+      );
+    }
+    for (const name of [
+      "lxsoftware-admin-google-play-sa",
+      "lxsoftware-admin-siutindei-board-google-play-sa",
+      "lxsoftware-admin-google-analytics-sa",
+      "lxsoftware-admin-siutindei-board-google-analytics-sa",
+    ]) {
+      expect(byName[name].Properties?.GenerateSecretString).toEqual(
+        expect.objectContaining({
+          GenerateStringKey: "private_key",
+          SecretStringTemplate: expect.stringContaining("client_email"),
+        })
+      );
+    }
   });
 
   test("removed CfnParameters no longer exist", () => {
@@ -348,9 +377,12 @@ describe("Executive Board placeholder secrets", () => {
     }
   });
 
-  test("AdminApiFn can GetSecretValue on every board secret", () => {
-    const secretLogicalIds = Object.entries(resourcesOfType("AWS::SecretsManager::Secret"))
-      .filter(([, r]) => expectedNames.includes(r.Properties?.Name as string))
+  test("AdminApiFn can GetSecretValue on the Siu Tin Dei board secrets only", () => {
+    const siutindeiIds = Object.entries(resourcesOfType("AWS::SecretsManager::Secret"))
+      .filter(([, r]) => siutindeiNames.includes(r.Properties?.Name as string))
+      .map(([id]) => id);
+    const reservedIds = Object.entries(resourcesOfType("AWS::SecretsManager::Secret"))
+      .filter(([, r]) => reservedNames.includes(r.Properties?.Name as string))
       .map(([id]) => id);
 
     const getSecretStatements = Object.values(resourcesOfType("AWS::IAM::Policy"))
@@ -358,8 +390,11 @@ describe("Executive Board placeholder secrets", () => {
       .filter((s) => asArray<string>(s.Action).includes("secretsmanager:GetSecretValue"));
 
     const serialized = JSON.stringify(getSecretStatements);
-    for (const logicalId of secretLogicalIds) {
+    for (const logicalId of siutindeiIds) {
       expect(serialized).toContain(logicalId);
+    }
+    for (const logicalId of reservedIds) {
+      expect(serialized).not.toContain(logicalId);
     }
   });
 });

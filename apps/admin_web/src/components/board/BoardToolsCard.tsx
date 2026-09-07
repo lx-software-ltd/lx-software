@@ -226,7 +226,7 @@ export function BoardToolsCard({
                       <div className="small text-warning mt-1">
                         <i className="bi bi-key me-1" aria-hidden="true" />
                         Writes and security alerts need a real PAT in{" "}
-                        <code>lxsoftware-admin-github-read-token</code>; reads work without it.
+                        <code>lxsoftware-admin-siutindei-board-github-token</code>; reads work without it.
                       </div>
                     ) : null}
                     {tool.id === "mail" ? (
@@ -249,7 +249,7 @@ export function BoardToolsCard({
                         <div className="small text-muted mt-1">Results are cached for 24 hours.</div>
                       ) : (
                         <div className="small text-warning mt-1">
-                          No Brave Search key in <code>lxsoftware-admin-search-api-key</code>. Queries
+                          No Brave Search key in <code>lxsoftware-admin-siutindei-board-search-api-key</code>. Queries
                           fail until one is set (or OpenRouter <code>:online</code> is used as a
                           fallback).
                         </div>
@@ -267,7 +267,7 @@ export function BoardToolsCard({
                       ) : (
                         <div className="small text-warning mt-1">
                           Put a real System User token in{" "}
-                          <code>lxsoftware-admin-meta-board-token</code> and set the Page / WhatsApp
+                          <code>lxsoftware-admin-siutindei-board-meta-token</code> and set the Page / WhatsApp
                           ids. Enable coexistence so the owner&apos;s phone keeps the number.
                         </div>
                       )
@@ -281,8 +281,8 @@ export function BoardToolsCard({
                       ) : (
                         <div className="small text-warning mt-1">
                           Replace the dummy JSON in{" "}
-                          <code>lxsoftware-admin-app-store-connect-key</code> and{" "}
-                          <code>lxsoftware-admin-google-play-sa</code> (keys already exist). JWT for
+                          <code>lxsoftware-admin-siutindei-board-app-store-connect-key</code> and{" "}
+                          <code>lxsoftware-admin-siutindei-board-google-play-sa</code> (keys already exist). JWT for
                           App Store Connect is signed in the Lambda.
                         </div>
                       )
@@ -296,7 +296,7 @@ export function BoardToolsCard({
                       ) : (
                         <div className="small text-warning mt-1">
                           Replace the dummy JSON in{" "}
-                          <code>lxsoftware-admin-google-analytics-sa</code> (dedicated SA, not the
+                          <code>lxsoftware-admin-siutindei-board-google-analytics-sa</code> (dedicated SA, not the
                           Play key), then set <code>Ga4PropertyIds</code> and{" "}
                           <code>GtmContainers</code> (<code>account:container</code> pairs).
                         </div>
