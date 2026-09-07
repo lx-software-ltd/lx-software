@@ -87,7 +87,10 @@ class FakeCW:
 
 
 class FakeHealth:
-    def describe_events(self, **_kwargs: Any) -> dict[str, Any]:
+    last_call: dict[str, Any] = {}
+
+    def describe_events(self, **kwargs: Any) -> dict[str, Any]:
+        type(self).last_call = kwargs
         return {
             "events": [
                 {
@@ -279,6 +282,8 @@ class TestAwsAndSecurity(ToolsTestCase):
         notes = board_cache.refresh_all(self.table)
         self.assertEqual(notes["aws"]["aws:monthly_cost"], "ok")
         self.assertEqual(notes["security"]["security:cognito"], "ok")
+        self.assertEqual(FakeHealth.last_call.get("maxResults"), 20)
+        self.assertNotIn("maxResults", FakeHealth.last_call.get("filter") or {})
         settings = board_store.load_settings(self.table)
         pack = board_context.build_context_pack(self.table, settings, roster=[])
         self.assertIn("AWS", pack["text"])

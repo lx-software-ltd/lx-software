@@ -40,7 +40,7 @@ from contract_constants import (
     BOARD_META_LIST_MAX,
 )
 from http_common import _log_event, _utc_iso_z
-from openrouter_client import read_secret_string
+from openrouter_client import OpenRouterError, read_secret_string
 
 GRAPH_ORIGIN = "https://graph.facebook.com/v21.0"
 HTTP_TIMEOUT_SECONDS = 12
@@ -194,14 +194,18 @@ def reset_caches_for_tests() -> None:
     _app_secret_checked = False
 
 
-def _secret(env_plain: str, env_arn: str) -> str:
+def _secret(env_plain: str, env_arn: str, *, what: str) -> str:
     plain = (os.environ.get(env_plain) or "").strip()
     if plain:
         return plain
     arn = (os.environ.get(env_arn) or "").strip()
     if not arn:
         return ""
-    return (read_secret_string(_get_secretsmanager_client(), arn) or "").strip()
+    try:
+        return read_secret_string(_get_secretsmanager_client(), arn, what=what).strip()
+    except OpenRouterError as exc:
+        _log_event("warning", tag="board_meta_secret_failed", error=str(exc)[:200])
+        return ""
 
 
 def board_token() -> str:
@@ -209,7 +213,7 @@ def board_token() -> str:
     if _token_checked:
         return _token_cache or ""
     _token_checked = True
-    _token_cache = _secret("META_BOARD_TOKEN", "META_BOARD_TOKEN_SECRET_ARN")
+    _token_cache = _secret("META_BOARD_TOKEN", "META_BOARD_TOKEN_SECRET_ARN", what="Meta board token")
     return _token_cache or ""
 
 
@@ -218,7 +222,7 @@ def app_secret() -> str:
     if _app_secret_checked:
         return _app_secret_cache or ""
     _app_secret_checked = True
-    _app_secret_cache = _secret("META_APP_SECRET", "META_APP_SECRET_SECRET_ARN")
+    _app_secret_cache = _secret("META_APP_SECRET", "META_APP_SECRET_SECRET_ARN", what="Meta app secret")
     return _app_secret_cache or ""
 
 
