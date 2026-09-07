@@ -1483,16 +1483,24 @@ export class LxsoftwareStack extends cdk.Stack {
 
     // First non-JWT admin routes. Tenant path is canonical; /webhooks/meta
     // stays so an already-subscribed Meta app keeps working.
-    this.httpApi.addRoutes({
+    const metaWebhookRoutes = this.httpApi.addRoutes({
       path: "/webhooks/meta",
       methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
       integration,
     });
-    this.httpApi.addRoutes({
+    const siutindeiMetaWebhookRoutes = this.httpApi.addRoutes({
       path: "/webhooks/meta/siutindei",
       methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
       integration,
     });
+    // API Gateway V2 rejects RouteSettings keys until the Route exists.
+    // CloudFormation can update DefaultStage before creating new routes in
+    // the same changeset (that left lxsoftware UPDATE_ROLLBACK_FAILED on
+    // the first /webhooks/meta/siutindei deploy). Pin the stage to the
+    // throttled routes so settings land after GET/POST exist.
+    for (const route of [...metaWebhookRoutes, ...siutindeiMetaWebhookRoutes]) {
+      defaultStage.addResourceDependency(route.node.defaultChild as apigwv2.CfnRoute);
+    }
 
     this.httpApi.addRoutes({
       path: "/me",

@@ -72,6 +72,21 @@ Copy CloudFormation outputs for the user pool, client, hosted UI domain, API
 URL, and CloudFront domain name into the GitHub environment variables used by
 the **Deploy Admin Web** workflow.
 
+If **Deploy Backend** fails because API Gateway cannot find
+`POST /webhooks/meta/siutindei` (or `GET`) in `RouteSettings`, the
+`$default` stage was updated before those routes existed. The stack may be
+left `UPDATE_ROLLBACK_FAILED`. Continue rollback, skipping the stage if
+CloudFormation still cannot revert it:
+
+```bash
+aws cloudformation continue-update-rollback \
+  --stack-name lxsoftware \
+  --resources-to-skip HttpApiDefaultStage3EEB07D6
+```
+
+Then redeploy. The stage now `DependsOn` the Meta webhook routes so the
+same changeset creates the routes first.
+
 ## 5. DNS
 
 Create a **CNAME** from `admin.lx-software.com` to the CloudFront distribution
