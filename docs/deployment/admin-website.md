@@ -274,18 +274,15 @@ Stack parameters (all optional, set in `backend/infrastructure/params/*.json`):
 | `lxsoftware:BoardMailSendingEnabled` | `false` (default) / `true`. Flip to `true` only after the DKIM CNAMEs, SPF `include:amazonses.com`, and DMARC are in the `BoardMailDomain` zone. Creates the SES sending identity and the IAM send policy; until then mail tools stay read-only. |
 | `lxsoftware:BoardChatModel` / `BoardMeetingModel` / `BoardDeepDiveModel` | Default OpenRouter model slugs (`openai/gpt-4.1-mini`, `openai/gpt-4.1-mini`, `anthropic/claude-sonnet-4`). The owner can override them per board in **Settings**. |
 
-CDK creates these connector secrets with dummy values and wires their ARNs
-into `AdminApiFn`. After **Deploy Backend**, open each secret in Secrets
-Manager (`ap-southeast-1`) and replace the dummy. Later CDK deploys do
-**not** overwrite a value you edited in the console (unless the generator
-properties in `lxsoftware-stack.ts` change). Secrets use
-`RemovalPolicy.RETAIN`, so a stack delete keeps the filled-in tokens.
-CDK keeps two named sets. `AdminApiFn` reads the **Siu Tin Dei** set
-(`lxsoftware-admin-siutindei-board-*`). The older `lxsoftware-admin-*`
-names stay in the stack, unused, for a future LX Software board. Filter
-in Secrets Manager by tag `lxsoftware:purpose`. OpenRouter stays
-`lxsoftware-admin-openrouter-api-secret-*` because statement parsing also
-uses it.
+The **Siu Tin Dei** connector secrets (`lxsoftware-admin-siutindei-board-*`)
+already exist in the account. The first #328 deploy created them, then
+`RemovalPolicy.RETAIN` left them behind when rollback dropped them from the
+stack. CDK now **imports those names** and grants `AdminApiFn` read; it
+does not try to create them again. Replace the dummy values in Secrets
+Manager (`ap-southeast-1`). The older `lxsoftware-admin-*` set stays in
+the stack (CDK-created, unused) for a future LX Software board. OpenRouter
+stays `lxsoftware-admin-openrouter-api-secret-*` because statement parsing
+also uses it.
 
 | Secret name | Dummy shape | Replace with |
 |-------------|-------------|--------------|

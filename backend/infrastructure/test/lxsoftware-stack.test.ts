@@ -375,38 +375,27 @@ describe("Executive Board placeholder secrets", () => {
     }
   }
 
-  test("keeps the deployed LX Software board secrets and adds a Siu Tin Dei set", () => {
+  test("keeps the deployed LX Software board secrets and imports the Siu Tin Dei set", () => {
     const reserved = secretsNamed(reservedNames);
     const siutindei = secretsNamed(siutindeiNames);
     expect(reserved.map((s) => s.Properties?.Name).sort()).toEqual([...reservedNames].sort());
-    expect(siutindei.map((s) => s.Properties?.Name).sort()).toEqual([...siutindeiNames].sort());
+    expect(siutindei).toEqual([]);
     expectRetainedPlaceholders(reserved, "lxsoftware", "lxsoftware-executive-board");
-    expectRetainedPlaceholders(siutindei, "siutindei", "siutindei-executive-board");
   });
 
   test("the JSON store / analytics secrets include a generated private-key field", () => {
     const byName = Object.fromEntries(
-      [...secretsNamed(reservedNames), ...secretsNamed(siutindeiNames)].map((s) => [
-        s.Properties?.Name as string,
-        s,
-      ])
+      secretsNamed(reservedNames).map((s) => [s.Properties?.Name as string, s])
+    );
+    expect(byName["lxsoftware-admin-app-store-connect-key"].Properties?.GenerateSecretString).toEqual(
+      expect.objectContaining({
+        GenerateStringKey: "privateKey",
+        SecretStringTemplate: expect.stringContaining("keyId"),
+      })
     );
     for (const name of [
-      "lxsoftware-admin-app-store-connect-key",
-      "lxsoftware-admin-siutindei-board-app-store-connect-key",
-    ]) {
-      expect(byName[name].Properties?.GenerateSecretString).toEqual(
-        expect.objectContaining({
-          GenerateStringKey: "privateKey",
-          SecretStringTemplate: expect.stringContaining("keyId"),
-        })
-      );
-    }
-    for (const name of [
       "lxsoftware-admin-google-play-sa",
-      "lxsoftware-admin-siutindei-board-google-play-sa",
       "lxsoftware-admin-google-analytics-sa",
-      "lxsoftware-admin-siutindei-board-google-analytics-sa",
     ]) {
       expect(byName[name].Properties?.GenerateSecretString).toEqual(
         expect.objectContaining({
@@ -425,9 +414,6 @@ describe("Executive Board placeholder secrets", () => {
   });
 
   test("AdminApiFn can GetSecretValue on the Siu Tin Dei board secrets only", () => {
-    const siutindeiIds = Object.entries(resourcesOfType("AWS::SecretsManager::Secret"))
-      .filter(([, r]) => siutindeiNames.includes(r.Properties?.Name as string))
-      .map(([id]) => id);
     const reservedIds = Object.entries(resourcesOfType("AWS::SecretsManager::Secret"))
       .filter(([, r]) => reservedNames.includes(r.Properties?.Name as string))
       .map(([id]) => id);
@@ -437,8 +423,8 @@ describe("Executive Board placeholder secrets", () => {
       .filter((s) => asArray<string>(s.Action).includes("secretsmanager:GetSecretValue"));
 
     const serialized = JSON.stringify(getSecretStatements);
-    for (const logicalId of siutindeiIds) {
-      expect(serialized).toContain(logicalId);
+    for (const name of siutindeiNames) {
+      expect(serialized).toContain(name);
     }
     for (const logicalId of reservedIds) {
       expect(serialized).not.toContain(logicalId);
