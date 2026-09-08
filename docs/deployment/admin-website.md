@@ -403,6 +403,40 @@ The OpenRouter invoice itself stays on the LX Software card. Parser spend is
 only recorded after this deploy; the board's daily budget row remains the cap,
 and the ledger is the in-admin split.
 
+### AWS bill (shared account)
+
+LX Software pays one AWS invoice for account `588024549699`. Sibling products
+share that account by tagging every resource. Cost allocation tags
+**Organization** and **Project** are already **Active** in Billing → Cost
+allocation tags (required before Cost Explorer can group by them).
+
+The catalog is [`contracts/aws-billing.json`](../../contracts/aws-billing.json)
+(`payer: lxSoftware`). First matching row wins:
+
+| Company | `Organization` tag | `Project` tag |
+|---------|--------------------|---------------|
+| Siu Tin Dei | `LX Software` | `Siu Tin Dei` |
+| Evolve Sprouts | `Evolve Sprouts` | any |
+| LX Software | `LX Software` | anything else (`Admin Console`, `Public Website`, …) |
+
+Untagged resources and leftover values such as `Organization=Personal` land in
+**Unallocated**. August 2026 Cost Explorer (UnblendedCost) was about half
+Evolve Sprouts (`Project=Backend`) and half Siu Tin Dei, with LX Software's
+own websites under a few dollars.
+
+**AWS's own invoice PDF cannot be split.** It is one account total. The
+internal allocation is:
+
+- Admin **LX Software → Dashboard → AWS last invoice** (`GET /aws/usage`) —
+  last complete UTC calendar month by default (`?from=YYYY-MM-DD&to=YYYY-MM-DD`
+  to override).
+- **Download allocation PDF** (`GET /aws/usage.pdf`) — the tagged split to
+  attach to the LX Software book or send to the other companies.
+
+Keep tagging new stacks the same way (`cdk.Tags` `Organization` + `Project`).
+Do not rotate tag keys; Cost Explorer only groups by **activated** cost
+allocation tags, and a key change orphans historical spend.
+
 ### Board tools (function calling)
 
 Members can look things up and act while answering, through OpenRouter

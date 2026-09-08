@@ -21,6 +21,7 @@ import {
   financeFixture,
   lxSoftwareBookFixture,
   openrouterUsageFixture,
+  awsUsageFixture,
   siuTinDeiBookFixture,
 } from "./fixtures";
 
@@ -136,6 +137,18 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   if (p === "/health") return json({ status: "ok" });
   if (p === "/me") return json({ sub: "mock-admin", email: "mock.admin@example.com" });
   if (p === "/openrouter/usage") return json(openrouterUsageFixture);
+  if (p === "/aws/usage") return json(awsUsageFixture);
+  if (p === "/aws/usage.pdf") {
+    const body =
+      "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\nlx-software-aws-mock\n";
+    return new Response(body, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": 'attachment; filename="lx-software-aws-2026-08.pdf"',
+      },
+    });
+  }
   if (p === "/finance" && method === "GET") return json(state.finance);
   if (p === "/finance/quotes") return quotes(url);
   if (p === "/fx/v2/rates") return fxRates(url);
