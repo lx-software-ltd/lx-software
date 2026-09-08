@@ -20,6 +20,7 @@ import parse_jobs as parse_jobs_mod
 import runtime
 from board_routes import handle_board_route
 from board_store import BOARD_PK_PREFIX
+from openrouter_usage import USAGE_PK_PREFIX, handle_usage_get
 from contract_constants import (
     EXPENSE_RECORD_CATEGORIES,
     FINANCE_HOUSE_KEYS,
@@ -144,12 +145,15 @@ def _records_get_response(event: dict[str, Any]) -> dict[str, Any]:
     cursor_raw = parse_qs(qs).get("cursor", [""])[0]
     start_key = _decode_cursor(cursor_raw)
     table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
-    # Executive Board rows (strategy discussions, chats) never leave via the
+    # Executive Board rows and OpenRouter usage ledgers never leave via the
     # generic record browser or its public API-key mirror.
     kwargs: dict[str, Any] = {
         "Limit": 50,
-        "FilterExpression": "NOT begins_with(pk, :board)",
-        "ExpressionAttributeValues": {":board": BOARD_PK_PREFIX},
+        "FilterExpression": "NOT begins_with(pk, :board) AND NOT begins_with(pk, :openrouter)",
+        "ExpressionAttributeValues": {
+            ":board": BOARD_PK_PREFIX,
+            ":openrouter": USAGE_PK_PREFIX,
+        },
     }
     if start_key:
         kwargs["ExclusiveStartKey"] = start_key
@@ -337,6 +341,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 "cognito_username": admin_claims.get("cognito:username"),
             },
         )
+
+    if method == "GET" and path == "/openrouter/usage":
+        return handle_usage_get(event)
 
     if method == "GET" and path == "/fx/v2/rates":
         return _proxy_fx_v2_rates(

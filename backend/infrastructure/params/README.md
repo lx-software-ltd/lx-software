@@ -63,9 +63,11 @@ asks OpenRouter to extract transactions. Configure these `lxsoftware:`-prefixed
 parameters to enable it:
 
 - **`lxsoftware:OpenRouterApiKeySecretArn`** — ARN of the AWS Secrets Manager
-  secret containing the OpenRouter API key. The secret value can be either a
-  raw key string or a JSON object with an `openrouter_api_key` (or `api_key`)
-  field. Leave empty to disable PDF parsing.
+  secret containing OpenRouter API keys. The secret **must** be a JSON object
+  with named keys `statement-parser` and `executive-board` (see
+  `contracts/openrouter-apps.json`). Mint with
+  `python3 scripts/mint-openrouter-app-keys.py`. Leave empty to disable PDF
+  parsing and the Executive Board LLM.
 - **`lxsoftware:OpenRouterModel`** — model slug (default `mistralai/mistral-medium-3`).
   Pick a model that supports the `file-parser` plugin / file inputs.
 - **`lxsoftware:OpenRouterPdfEngine`** — `pdf-text` (free, text-based PDFs),

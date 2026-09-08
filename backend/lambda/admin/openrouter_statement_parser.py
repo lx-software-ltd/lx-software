@@ -43,6 +43,7 @@ def parse_statement_from_asset(
     file_name: str | None,
     content_type: str | None,
     default_currency: str,
+    owner: str | None = None,
 ) -> dict[str, Any]:
     """Download a single asset from S3 and ask OpenRouter to extract lines.
 
@@ -92,14 +93,18 @@ def parse_statement_from_asset(
         json_mode=True,
         temperature=0,
         plugins=plugins,
-        include_usage=False,
+        include_usage=True,
         deny_data_collection=False,
         max_retries=0,
+        service=openrouter_client.SERVICE_STATEMENT_PARSER,
+        owner=owner,
     )
 
     parsed = openrouter_client.parse_json_object_text(completion.text)
     parsed["__raw_response__"] = completion.raw
-    return _normalize_result(parsed, default_currency=default_currency)
+    result = _normalize_result(parsed, default_currency=default_currency)
+    result["usage"] = completion.usage
+    return result
 
 
 def _download_attachment(

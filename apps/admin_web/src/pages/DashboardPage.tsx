@@ -33,7 +33,6 @@ export function DashboardPage() {
     queryFn: () =>
       adminFetchJson<{ sub?: string; email?: string }>("/me"),
   });
-
   const [lxSoftwareFy, setLxSoftwareFy] = useState<FiscalYearId>(() =>
     defaultFiscalYearIdForNowUtc(),
   );

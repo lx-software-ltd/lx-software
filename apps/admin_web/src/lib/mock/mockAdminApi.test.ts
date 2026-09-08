@@ -17,6 +17,19 @@ describe("mockAdminFetch", () => {
     expect(overview.openActionCount).toBeGreaterThan(0);
   });
 
+  it("serves the OpenRouter usage split for the LX Software dashboard", async () => {
+    const res = await mockAdminFetch("/openrouter/usage");
+    expect(res.ok).toBe(true);
+    const body = (await res.json()) as {
+      payer: { id: string };
+      apps: readonly { id: string; cost: number }[];
+    };
+    expect(body.payer.id).toBe("lxSoftware");
+    expect(body.apps.map((app) => app.id)).toEqual(
+      expect.arrayContaining(["statement-parser", "executive-board", "evolvesprouts", "siutindei"]),
+    );
+  });
+
   it("returns 404 for unknown paths", async () => {
     const res = await mockAdminFetch("/no-such-route");
     expect(res.status).toBe(404);
