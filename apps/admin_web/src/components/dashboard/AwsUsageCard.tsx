@@ -2,40 +2,30 @@ import { useState } from "react";
 import { AWS_BILLING_COST_ALLOCATION_TAGS } from "../../lib/contracts/generated";
 import { formatUsageCost } from "../../lib/boardModel";
 import { adminFetch } from "../../lib/apiAdminClient";
-import {
-  AWS_USAGE_PDF_PATH,
-  awsUsageQuery,
-  type AwsBillingPayload,
-} from "../../lib/awsBilling";
+import { AWS_USAGE_PDF_PATH, type AwsBillingPayload } from "../../lib/awsBilling";
+import { defaultAwsUsageMonth, usageRangeQuery } from "../../lib/usageMonth";
+import { useAwsUsage } from "../../hooks/useAwsUsage";
+import { useUsageMonth } from "../../hooks/useUsageMonth";
+import { UsageBillCard } from "./UsageBillCard";
 
-export function AwsUsageCard({
-  isLoading,
-  isError,
-  data,
-}: {
-  readonly isLoading: boolean;
-  readonly isError: boolean;
-  readonly data: AwsBillingPayload | undefined;
-}) {
+export function AwsUsageCard() {
+  const { months, month, setMonthKey } = useUsageMonth(defaultAwsUsageMonth);
+  const query = useAwsUsage(month.from, month.to);
   return (
-    <div className="card shadow-sm">
-      <div className="card-body">
-        <h2 className="h6 text-uppercase text-muted">AWS last invoice</h2>
-        {isLoading ? (
-          <p className="mb-0 small text-muted">Loading AWS cost split…</p>
-        ) : isError ? (
-          <p className="mb-0 small text-danger">
-            Could not load the AWS cost split. LX Software still pays the
-            account invoice; Cost Explorer needs the Organization and Project
-            cost-allocation tags.
-          </p>
-        ) : data ? (
-          <AwsUsageBody data={data} />
-        ) : (
-          <p className="mb-0 small text-muted">No AWS cost data yet.</p>
-        )}
-      </div>
-    </div>
+    <UsageBillCard
+      title="AWS"
+      monthAriaLabel="AWS month"
+      month={month}
+      months={months}
+      onMonthChange={setMonthKey}
+      isLoading={query.isPending}
+      loadingMessage="Loading AWS cost split…"
+      isError={query.isError}
+      errorMessage="Could not load the AWS cost split. LX Software still pays the account invoice; Cost Explorer needs the Organization and Project cost-allocation tags."
+      emptyMessage="No AWS cost data yet."
+    >
+      {query.data ? <AwsUsageBody data={query.data} /> : null}
+    </UsageBillCard>
   );
 }
 
@@ -55,7 +45,7 @@ function AwsUsageBody({ data }: { readonly data: AwsBillingPayload }) {
     setIsDownloading(true);
     try {
       const res = await adminFetch(
-        `${AWS_USAGE_PDF_PATH}${awsUsageQuery(data.from, data.to)}`,
+        `${AWS_USAGE_PDF_PATH}${usageRangeQuery(data.from, data.to)}`,
       );
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -109,7 +99,7 @@ function AwsUsageBody({ data }: { readonly data: AwsBillingPayload }) {
       </ul>
       <button
         type="button"
-        className="btn btn-outline-secondary btn-sm"
+        className="btn btn-outline-secondary btn-sm mt-auto"
         onClick={() => void downloadPdf()}
         disabled={isDownloading}
       >

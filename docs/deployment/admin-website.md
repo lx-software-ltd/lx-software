@@ -285,7 +285,8 @@ stays `lxsoftware-admin-openrouter-api-secret-*` because statement parsing
 also uses it. That secret must be JSON with named keys `statement-parser`
 and `executive-board` (mint via `scripts/mint-openrouter-app-keys.py`).
 Sibling products store their own named keys. **LX Software → Dashboard**
-shows the UTC month-to-date usage metered in this admin.
+shows AWS and OpenRouter side by side; each card has a UTC month dropdown
+(current month-to-date plus the previous 12 months).
 
 | Secret name | Dummy shape | Replace with |
 |-------------|-------------|--------------|
@@ -393,11 +394,13 @@ client yet. When it does, mint `lxsoftware:siutindei`, store that key in
 the product's secret, and send `https://siutindei.com` / `Siu Tin Dei` /
 `siutindei:{workload}`.
 
-**Where the invoice lands.** Admin **LX Software → Dashboard → OpenRouter this
-month** (and `GET /openrouter/usage`) rolls up UTC month-to-date spend metered
-here, grouped by app. Parser rows still record which book or house the OCR
-ran against. Evolve Sprouts / Siu Tin Dei product spend shows in OpenRouter
-Activity by app and named key until those repos write to this ledger.
+**Where the invoice lands.** Admin **LX Software → Dashboard → OpenRouter**
+(and `GET /openrouter/usage`) rolls up UTC spend metered here, grouped by
+app. The card defaults to month-to-date and can switch to any of the previous
+12 UTC months (`?from=YYYY-MM-DD&to=YYYY-MM-DD`). Parser rows still record
+which book or house the OCR ran against. Evolve Sprouts / Siu Tin Dei product
+spend shows in OpenRouter Activity by app and named key until those repos
+write to this ledger.
 
 The OpenRouter invoice itself stays on the LX Software card. Parser spend is
 only recorded after this deploy; the board's daily budget row remains the cap,
@@ -427,9 +430,9 @@ own websites under a few dollars.
 **AWS's own invoice PDF cannot be split.** It is one account total. The
 internal allocation is:
 
-- Admin **LX Software → Dashboard → AWS last invoice** (`GET /aws/usage`) —
-  last complete UTC calendar month by default (`?from=YYYY-MM-DD&to=YYYY-MM-DD`
-  to override).
+- Admin **LX Software → Dashboard → AWS** (`GET /aws/usage`) — last complete
+  UTC calendar month by default, with the current month-to-date and previous
+  12 months on the card dropdown (`?from=YYYY-MM-DD&to=YYYY-MM-DD` to override).
 - **Download allocation PDF** (`GET /aws/usage.pdf`) — the tagged split to
   attach to the LX Software book or send to the other companies.
 

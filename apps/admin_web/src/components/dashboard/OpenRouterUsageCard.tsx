@@ -1,46 +1,52 @@
 import { OPENROUTER_APPS } from "../../lib/contracts/generated";
 import { formatUsageCost } from "../../lib/boardModel";
 import type { OpenRouterUsagePayload } from "../../lib/openrouterUsage";
+import { defaultOpenRouterUsageMonth } from "../../lib/usageMonth";
+import { useOpenRouterUsage } from "../../hooks/useOpenRouterUsage";
+import { useUsageMonth } from "../../hooks/useUsageMonth";
+import { UsageBillCard } from "./UsageBillCard";
 
-export function OpenRouterUsageCard({
-  isLoading,
-  isError,
-  data,
-}: {
-  readonly isLoading: boolean;
-  readonly isError: boolean;
-  readonly data: OpenRouterUsagePayload | undefined;
-}) {
+export function OpenRouterUsageCard() {
+  const { months, month, setMonthKey } = useUsageMonth(
+    defaultOpenRouterUsageMonth,
+  );
+  const query = useOpenRouterUsage(month.from, month.to);
   return (
-    <div className="card shadow-sm">
-      <div className="card-body">
-        <h2 className="h6 text-uppercase text-muted">OpenRouter this month</h2>
-        {isLoading ? (
-          <p className="mb-0 small text-muted">Loading OpenRouter usage…</p>
-        ) : isError ? (
-          <p className="mb-0 small text-danger">
-            Could not load OpenRouter usage. LX Software still pays the
-            invoice; tag sibling apps until this endpoint is available.
-          </p>
-        ) : data ? (
-          <OpenRouterUsageBody data={data} />
-        ) : (
-          <p className="mb-0 small text-muted">No OpenRouter usage recorded yet.</p>
-        )}
-      </div>
-    </div>
+    <UsageBillCard
+      title="OpenRouter"
+      monthAriaLabel="OpenRouter month"
+      month={month}
+      months={months}
+      onMonthChange={setMonthKey}
+      isLoading={query.isPending}
+      loadingMessage="Loading OpenRouter usage…"
+      isError={query.isError}
+      errorMessage="Could not load OpenRouter usage. LX Software still pays the invoice; tag sibling apps until this endpoint is available."
+      emptyMessage="No OpenRouter usage recorded yet."
+    >
+      {query.data ? (
+        <OpenRouterUsageBody data={query.data} isCurrent={month.isCurrent} />
+      ) : null}
+    </UsageBillCard>
   );
 }
 
-function OpenRouterUsageBody({ data }: { readonly data: OpenRouterUsagePayload }) {
+function OpenRouterUsageBody({
+  data,
+  isCurrent,
+}: {
+  readonly data: OpenRouterUsagePayload;
+  readonly isCurrent: boolean;
+}) {
   const metered = data.apps.filter((app) => app.meteredHere || (app.cost ?? 0) > 0);
   const siblings = data.apps.filter((app) => !app.meteredHere);
   const catalogSiblings =
     siblings.length > 0 ? siblings : OPENROUTER_APPS.filter((app) => !app.meteredHere);
+  const periodLabel = isCurrent ? "UTC month-to-date" : "UTC month";
   return (
     <>
       <p className="small text-muted">
-        {data.payer.label} pays the OpenRouter invoice. UTC month-to-date (
+        {data.payer.label} pays the OpenRouter invoice. {periodLabel} (
         {data.from} – {data.to}) is tagged by app so sibling products can
         share the account. Total {formatUsageCost(data.total.cost)} over{" "}
         {data.total.calls ?? 0} calls metered in this admin.
