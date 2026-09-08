@@ -19,7 +19,8 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByRole("heading", { name: "LX Software", level: 1 })).toBeVisible();
     await expect(page.getByRole("heading", { name: "AWS last invoice" })).toBeVisible();
     await expect(page.getByText("LX Software pays the AWS invoice")).toBeVisible();
-    await expect(page.getByText("Evolve Sprouts")).toBeVisible();
+    await expect(page.getByText("USD 434.12 · 50.6%")).toBeVisible();
+    await expect(page.getByText("USD 420.64 · 49.0%")).toBeVisible();
     await expect(page.getByRole("button", { name: "Download allocation PDF" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "OpenRouter this month" })).toBeVisible();
     await expect(page.getByText("LX Software pays the OpenRouter invoice")).toBeVisible();

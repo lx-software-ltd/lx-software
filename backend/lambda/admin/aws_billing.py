@@ -192,7 +192,7 @@ def split_groups(groups: list[dict[str, Any]]) -> dict[str, Any]:
         organization = parse_ce_tag(keys[0] if len(keys) > 0 else "", ORG_TAG)
         project = parse_ce_tag(keys[1] if len(keys) > 1 else "", PROJECT_TAG)
         usd = _amount(group)
-        if usd == 0:
+        if abs(usd) < 0.005:
             continue
         company_id = assign_company(organization, project)
         bucket = buckets.get(company_id)
@@ -217,6 +217,7 @@ def split_groups(groups: list[dict[str, Any]]) -> dict[str, Any]:
             for name, amount in sorted(
                 bucket["projects"].items(), key=lambda item: (-item[1], item[0])
             )
+            if abs(amount) >= 0.005
         ]
         companies.append(
             {
@@ -277,7 +278,7 @@ def render_allocation_pdf(payload: dict[str, Any]) -> bytes:
     total = payload.get("total") if isinstance(payload.get("total"), dict) else {}
     total_usd = float(total.get("usd") or 0)
     lines = [
-        "LX Software — AWS cost allocation",
+        "LX Software - AWS cost allocation",
         f"Period {period_label(from_day, to_day)} ({from_day} to {to_day})",
         f"Payer: {payer.get('label') or 'LX Software'}",
         "Source: Cost Explorer UnblendedCost by Organization + Project tags",
