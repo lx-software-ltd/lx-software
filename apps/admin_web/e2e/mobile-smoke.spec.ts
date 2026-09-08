@@ -17,6 +17,10 @@ test.describe("admin viewport smoke", () => {
   test("LX Software dashboard shows the OpenRouter bill", async ({ page }) => {
     await page.goto("/lx-software");
     await expect(page.getByRole("heading", { name: "LX Software", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "AWS last invoice" })).toBeVisible();
+    await expect(page.getByText("LX Software pays the AWS invoice")).toBeVisible();
+    await expect(page.getByText("Evolve Sprouts")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Download allocation PDF" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "OpenRouter this month" })).toBeVisible();
     await expect(page.getByText("LX Software pays the OpenRouter invoice")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Tag sibling apps" })).toBeVisible();

@@ -19,6 +19,7 @@ import type {
   BoardToolsPayload,
 } from "../boardModel";
 import type { OpenRouterUsagePayload } from "../openrouterUsage";
+import type { AwsBillingPayload } from "../awsBilling";
 import type { FinancePersistedState, HouseFinanceData } from "../financeModel";
 
 const TODAY = new Date();
@@ -431,6 +432,57 @@ export const boardReceivablesFixture: BoardReceivablesPayload = {
       d35: [],
     },
   },
+};
+
+export const awsUsageFixture: AwsBillingPayload = {
+  from: "2026-08-01",
+  to: "2026-08-31",
+  currency: "USD",
+  payer: { id: "lxSoftware", label: "LX Software" },
+  source: "cost-explorer",
+  costAllocationTags: ["Organization", "Project"],
+  total: { usd: 858.69 },
+  companies: [
+    {
+      id: "siuTinDei",
+      label: "Siu Tin Dei",
+      usd: 420.64,
+      share: 0.4899,
+      projects: [{ id: "Siu Tin Dei", label: "Siu Tin Dei", usd: 420.64 }],
+    },
+    {
+      id: "evolveSprouts",
+      label: "Evolve Sprouts",
+      usd: 434.12,
+      share: 0.5056,
+      projects: [
+        { id: "Backend", label: "Backend", usd: 432.37 },
+        { id: "Public Website", label: "Public Website", usd: 0.91 },
+        { id: "Marketing", label: "Marketing", usd: 0.4 },
+        { id: "(untagged)", label: "(untagged)", usd: 0.4 },
+        { id: "Admin Website", label: "Admin Website", usd: 0.04 },
+      ],
+    },
+    {
+      id: "lxSoftware",
+      label: "LX Software",
+      usd: 3.88,
+      share: 0.0045,
+      projects: [
+        { id: "(untagged)", label: "(untagged)", usd: 1.82 },
+        { id: "Admin Console", label: "Admin Console", usd: 1.65 },
+        { id: "Admin Portal", label: "Admin Portal", usd: 0.4 },
+        { id: "Public Website", label: "Public Website", usd: 0.01 },
+      ],
+    },
+    {
+      id: "unallocated",
+      label: "Unallocated",
+      usd: 0.05,
+      share: 0.0001,
+      projects: [{ id: "(untagged)", label: "(untagged)", usd: 0.05 }],
+    },
+  ],
 };
 
 export const openrouterUsageFixture: OpenRouterUsagePayload = {

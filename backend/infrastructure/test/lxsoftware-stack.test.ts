@@ -106,6 +106,17 @@ describe("HTTP API routes", () => {
       expect(route.Properties?.AuthorizationType).toBe("CUSTOM");
     }
   });
+
+  test("AWS usage JSON and PDF routes are JWT-protected", () => {
+    const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
+    const keys = routes.map((r) => r.Properties?.RouteKey as string);
+    expect(keys).toEqual(expect.arrayContaining(["GET /aws/usage", "GET /aws/usage.pdf"]));
+    for (const key of ["GET /aws/usage", "GET /aws/usage.pdf"]) {
+      const route = routes.find((r) => r.Properties?.RouteKey === key);
+      expect(route?.Properties?.AuthorizationType).toBe("JWT");
+      expect(route?.Properties?.AuthorizerId).toBeDefined();
+    }
+  });
 });
 
 describe("HTTP API stage throttling", () => {

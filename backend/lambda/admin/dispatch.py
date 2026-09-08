@@ -21,6 +21,8 @@ import runtime
 from board_routes import handle_board_route
 from board_store import BOARD_PK_PREFIX
 from openrouter_usage import USAGE_PK_PREFIX, handle_usage_get
+from aws_billing import handle_usage_get as handle_aws_usage_get
+from aws_billing import handle_usage_pdf as handle_aws_usage_pdf
 from contract_constants import (
     EXPENSE_RECORD_CATEGORIES,
     FINANCE_HOUSE_KEYS,
@@ -344,6 +346,12 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     if method == "GET" and path == "/openrouter/usage":
         return handle_usage_get(event)
+
+    if method == "GET" and path == "/aws/usage":
+        return handle_aws_usage_get(event)
+
+    if method == "GET" and path == "/aws/usage.pdf":
+        return handle_aws_usage_pdf(event)
 
     if method == "GET" and path == "/fx/v2/rates":
         return _proxy_fx_v2_rates(

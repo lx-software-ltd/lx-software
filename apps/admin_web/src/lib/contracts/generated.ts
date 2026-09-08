@@ -489,3 +489,31 @@ export const OPENROUTER_APPS: readonly OpenRouterAppDefinition[] = [
     "meteredHere": false
   }
 ];
+
+export type AwsBillingCompanyDefinition = {
+  readonly id: string;
+  readonly label: string;
+  readonly organization: string;
+  readonly project?: string;
+};
+export const AWS_BILLING_PAYER = "lxSoftware" as const;
+export const AWS_BILLING_CURRENCY = "USD" as const;
+export const AWS_BILLING_COST_ALLOCATION_TAGS: readonly string[] = ["Organization", "Project"];
+export const AWS_BILLING_COMPANIES: readonly AwsBillingCompanyDefinition[] = [
+  {
+    "id": "siuTinDei",
+    "label": "Siu Tin Dei",
+    "organization": "LX Software",
+    "project": "Siu Tin Dei"
+  },
+  {
+    "id": "evolveSprouts",
+    "label": "Evolve Sprouts",
+    "organization": "Evolve Sprouts"
+  },
+  {
+    "id": "lxSoftware",
+    "label": "LX Software",
+    "organization": "LX Software"
+  }
+];

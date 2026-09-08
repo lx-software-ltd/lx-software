@@ -30,6 +30,22 @@ describe("mockAdminFetch", () => {
     );
   });
 
+  it("serves the AWS cost split for the LX Software dashboard", async () => {
+    const res = await mockAdminFetch("/aws/usage");
+    expect(res.ok).toBe(true);
+    const body = (await res.json()) as {
+      payer: { id: string };
+      companies: readonly { id: string; usd: number }[];
+    };
+    expect(body.payer.id).toBe("lxSoftware");
+    expect(body.companies.map((row) => row.id)).toEqual(
+      expect.arrayContaining(["siuTinDei", "evolveSprouts", "lxSoftware"]),
+    );
+    const pdf = await mockAdminFetch("/aws/usage.pdf");
+    expect(pdf.ok).toBe(true);
+    expect(pdf.headers.get("Content-Type")).toBe("application/pdf");
+  });
+
   it("returns 404 for unknown paths", async () => {
     const res = await mockAdminFetch("/no-such-route");
     expect(res.status).toBe(404);

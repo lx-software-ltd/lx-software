@@ -57,6 +57,8 @@ There are no automated test suites for `apps/public_www` or CDK currently.
 
 - **OpenRouter bill:** LX Software pays one OpenRouter invoice. Each catalog app in `contracts/openrouter-apps.json` has its own named key (`lxsoftware:{app-id}`). This admin’s secret JSON must include `statement-parser` and `executive-board`. Sibling products store their named key in their own secret and tag requests with the catalog `referer` / `title` / `user {id}:{workload}`. Mint with `python3 scripts/mint-openrouter-app-keys.py`. Book UTC month-to-date from **LX Software → Dashboard → OpenRouter this month**. See [`docs/deployment/admin-website.md`](docs/deployment/admin-website.md).
 
+- **AWS bill:** LX Software pays one AWS invoice for this account (Siu Tin Dei and Evolve Sprouts share it). Cost Explorer splits UnblendedCost by activated cost-allocation tags `Organization` and `Project` (`contracts/aws-billing.json`). AWS's own invoice PDF is one account total; **LX Software → Dashboard → AWS last invoice** (`GET /aws/usage` and `GET /aws/usage.pdf`) is the tagged split. See [`docs/deployment/admin-website.md`](docs/deployment/admin-website.md).
+
 - **Currencies (admin):** supported codes are GBP, HKD, USD, EUR, CNY, SGD, AED. Global default is HKD; each house can set `defaultCurrency` on its finance record. Use `CurrencySelect` and `src/lib/currencies.ts`; the admin Lambda validates the same set on finance writes.
 - **Shared contracts:** cross-app constants live in `contracts/*.json`. After editing, run `python3 scripts/sync-contracts.py` and `python3 scripts/check-contracts.py` (also enforced in CI).
 

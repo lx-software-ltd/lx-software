@@ -1,0 +1,23 @@
+{
+  "payer": "lxSoftware",
+  "currency": "USD",
+  "costAllocationTags": ["Organization", "Project"],
+  "companies": [
+    {
+      "id": "siuTinDei",
+      "label": "Siu Tin Dei",
+      "organization": "LX Software",
+      "project": "Siu Tin Dei"
+    },
+    {
+      "id": "evolveSprouts",
+      "label": "Evolve Sprouts",
+      "organization": "Evolve Sprouts"
+    },
+    {
+      "id": "lxSoftware",
+      "label": "LX Software",
+      "organization": "LX Software"
+    }
+  ]
+}
