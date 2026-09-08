@@ -67,7 +67,7 @@ Staff seats (§4) sit on top of the task engine as prompt profiles with their
 own budgets and model tiers. They are optional in the first milestones: the
 executives can be their own workers until volume justifies specialisation.
 
-## 4. Roster (proposed, optional until §11 A6)
+## 4. Roster (proposed; seats arrive with the §11 milestones that need them)
 
 Fixed seats in `contracts/board-staff.json`; `reportsTo` is a persona id.
 Titles and briefs are defaults the owner can override (same mechanism as
