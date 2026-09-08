@@ -31,7 +31,6 @@ from contract_constants import (
     AWS_BILLING_CURRENCY,
     AWS_BILLING_PAYER,
 )
-from http_common import _json_response
 
 ORG_TAG = "Organization"
 PROJECT_TAG = "Project"
@@ -308,7 +307,8 @@ def render_allocation_pdf(payload: dict[str, Any]) -> bytes:
 
 
 def pdf_filename(from_day: str) -> str:
-    return f"lx-software-aws-{from_day[:7]}.pdf"
+    start = _parse_day(from_day, "from")
+    return f"lx-software-aws-{start.strftime('%Y-%m')}.pdf"
 
 
 def _pdf_response(data: bytes, filename: str) -> dict[str, Any]:
@@ -333,6 +333,8 @@ def _query_range(event: dict[str, Any]) -> tuple[str, str]:
 
 def handle_usage_get(event: dict[str, Any]) -> dict[str, Any]:
     """GET /aws/usage?from=YYYY-MM-DD&to=YYYY-MM-DD (last complete month default)."""
+    from http_common import _json_response
+
     from_day, to_day = _query_range(event)
     try:
         payload = fetch_usage(from_day=from_day, to_day=to_day)
@@ -345,6 +347,8 @@ def handle_usage_get(event: dict[str, Any]) -> dict[str, Any]:
 
 def handle_usage_pdf(event: dict[str, Any]) -> dict[str, Any]:
     """GET /aws/usage.pdf?from=YYYY-MM-DD&to=YYYY-MM-DD."""
+    from http_common import _json_response
+
     from_day, to_day = _query_range(event)
     try:
         payload = fetch_usage(from_day=from_day, to_day=to_day)

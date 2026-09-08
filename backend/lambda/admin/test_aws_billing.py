@@ -7,10 +7,10 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from botocore.exceptions import ClientError
+from test_board import BoardTestCase  # noqa: E402  # stubs boto3 before other admin imports
 
-import aws_billing
-from test_board import BoardTestCase
+import aws_billing  # noqa: E402
+from botocore.exceptions import ClientError  # noqa: E402
 
 
 def _group(organization: str, project: str, amount: str) -> dict:
