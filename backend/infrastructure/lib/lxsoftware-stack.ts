@@ -1239,18 +1239,47 @@ export class LxsoftwareStack extends cdk.Stack {
     const inboundRawMailPrefix = "inbound-raw";
 
     /**
-     * Map each inbox local-part to a finance house key (must match
-     * ``FINANCE_HOUSE_KEYS`` / ``HouseKey`` in the admin app). Display names
-     * differ: e.g. "32 Hillmarton" in the UI uses key ``hillmarton``; the
-     * Morrison house uses key ``morrison``.
+     * Map each inbox local-part to a finance owner key (house or statement
+     * book). Display names differ from keys: "32 Hillmarton" uses
+     * ``hillmarton``; The Morrison uses ``morrison``; LX Software expenses
+     * use statement-book key ``lxSoftware``. S3 prefixes are lower-case
+     * (``rawSegment``, defaulting to ``ownerKey``) because the Lambda
+     * lower-cases the first path segment. ``billing@`` is the SES drop for
+     * iCloud-forwarded ``billing@lx-software.com``.
      */
-    const inboundHouseMailboxes: ReadonlyArray<{
+    type InboundStatementMailbox = {
       readonly localPart: string;
-      readonly houseKey: string;
-    }> = [
-      { localPart: "32-hillmarton", houseKey: "hillmarton" },
-      { localPart: "the-morrison", houseKey: "morrison" },
+      readonly ownerKey: string;
+      readonly displayLabel: string;
+      readonly rawSegment?: string;
+      readonly lineTypeOnly?: "income" | "expenditure";
+    };
+    const inboundStatementMailboxes: ReadonlyArray<InboundStatementMailbox> = [
+      {
+        localPart: "32-hillmarton",
+        ownerKey: "hillmarton",
+        displayLabel: "32 Hillmarton",
+      },
+      {
+        localPart: "the-morrison",
+        ownerKey: "morrison",
+        displayLabel: "The Morrison",
+      },
+      {
+        localPart: "billing",
+        ownerKey: "lxSoftware",
+        displayLabel: "LX Software",
+        rawSegment: "lx-software",
+        lineTypeOnly: "expenditure",
+      },
     ];
+    const inboundStatementMailboxEnv = JSON.stringify(
+      inboundStatementMailboxes.map((mailbox) => ({
+        segment: mailbox.rawSegment ?? mailbox.ownerKey,
+        ownerKey: mailbox.ownerKey,
+        ...(mailbox.lineTypeOnly ? { lineTypeOnly: mailbox.lineTypeOnly } : {}),
+      }))
+    );
 
     const inboundMailBucketName = [
       "lxsoftware-admin-inbound-mail",
@@ -1289,6 +1318,7 @@ export class LxsoftwareStack extends cdk.Stack {
         ASSETS_BUCKET_NAME: this.assetsBucket.bucketName,
         INBOUND_MAIL_BUCKET_NAME: inboundMailBucket.bucketName,
         INBOUND_RAW_MAIL_PREFIX: inboundRawMailPrefix,
+        INBOUND_STATEMENT_MAILBOXES: inboundStatementMailboxEnv,
         INBOUND_AUDIT_USER_SUB: "inbound-email",
         ASSET_MAX_BYTES: String(20 * 1024 * 1024),
         OPENROUTER_API_KEY_SECRET_ARN: openRouterApiKeySecretArn.valueAsString,
@@ -1321,8 +1351,9 @@ export class LxsoftwareStack extends cdk.Stack {
       receiptRuleSetName: "lxsoftware-inbound-mail",
     });
 
-    for (const mailbox of inboundHouseMailboxes) {
-      const rawKeyPrefix = `${inboundRawMailPrefix}/${mailbox.houseKey}/`;
+    for (const mailbox of inboundStatementMailboxes) {
+      const rawSegment = mailbox.rawSegment ?? mailbox.ownerKey;
+      const rawKeyPrefix = `${inboundRawMailPrefix}/${rawSegment}/`;
 
       inboundStatementFn.addEventSource(
         new lambdaEventSources.S3EventSource(inboundMailBucket, {
@@ -1331,7 +1362,7 @@ export class LxsoftwareStack extends cdk.Stack {
         })
       );
 
-      inboundReceiptRuleSet.addRule(`InboundMailbox-${mailbox.houseKey}`, {
+      inboundReceiptRuleSet.addRule(`InboundMailbox-${mailbox.ownerKey}`, {
         recipients: [
           cdk.Fn.join("", [mailbox.localPart, "@", inboundMailDomain.valueAsString]),
         ],
@@ -2075,28 +2106,27 @@ export class LxsoftwareStack extends cdk.Stack {
       exportName: "lxsoftware-AssetsBucketArn",
     });
 
-    const inboundHouseDisplayLabel: Readonly<Record<string, string>> = {
-      hillmarton: "32 Hillmarton",
-      morrison: "The Morrison",
-    };
-
-    for (const mailbox of inboundHouseMailboxes) {
-      const suffix = mailbox.houseKey.replace(/[^a-zA-Z0-9]/g, "");
-      const houseLabel = inboundHouseDisplayLabel[mailbox.houseKey];
-      const displayHint = houseLabel
-        ? `Statement PDF inbox for "${houseLabel}"`
-        : `Statement PDF inbox (finance house key "${mailbox.houseKey}")`;
+    for (const mailbox of inboundStatementMailboxes) {
+      const suffix = mailbox.ownerKey.replace(/[^a-zA-Z0-9]/g, "");
+      const displayHint =
+        mailbox.lineTypeOnly === "expenditure"
+          ? `Expense PDF inbox for "${mailbox.displayLabel}"`
+          : `Statement PDF inbox for "${mailbox.displayLabel}"`;
+      const forwardHint =
+        mailbox.localPart === "billing"
+          ? ' Forward billing@lx-software.com (iCloud) here.'
+          : "";
       new cdk.CfnOutput(this, `InboundMailboxAddress${suffix}`, {
         value: cdk.Fn.join("", [mailbox.localPart, "@", inboundMailDomain.valueAsString]),
-        description: `${displayHint}; DDB/API key is "${mailbox.houseKey}".`,
-        exportName: `lxsoftware-InboundMailbox-${mailbox.houseKey}`,
+        description: `${displayHint}; DDB/API key is "${mailbox.ownerKey}".${forwardHint}`,
+        exportName: `lxsoftware-InboundMailbox-${mailbox.ownerKey}`,
       });
     }
 
     new cdk.CfnOutput(this, "InboundMailReceiptRuleSetName", {
       value: inboundReceiptRuleSet.receiptRuleSetName,
       description:
-        "Shared SES receipt rule set (hillmarton, morrison, siutindei-board, Evolve Sprouts invoices). This stack sets it active on deploy.",
+        "Shared SES receipt rule set (hillmarton, morrison, LX Software billing, siutindei-board, Evolve Sprouts invoices). This stack sets it active on deploy.",
       exportName: "lxsoftware-InboundMailReceiptRuleSetName",
     });
 
