@@ -592,10 +592,18 @@ include every mailbox that receives mail in `ap-southeast-1`:
 
 | Recipient | Raw store | Processor |
 |---|---|---|
-| `32-hillmarton@inbound.lx-software.com` | `lxsoftware-admin-inbound-mail-…` / `inbound-raw/hillmarton/` | `InboundStatementMailFn` |
-| `the-morrison@inbound.lx-software.com` | same bucket / `inbound-raw/morrison/` | `InboundStatementMailFn` |
+| `32-hillmarton@inbound.lx-software.com` | `lxsoftware-admin-inbound-mail-…` / `inbound-raw/hillmarton/` | `InboundStatementMailFn` (house `hillmarton`) |
+| `the-morrison@inbound.lx-software.com` | same bucket / `inbound-raw/morrison/` | `InboundStatementMailFn` (house `morrison`) |
+| `billing@inbound.lx-software.com` | same bucket / `inbound-raw/lx-software/` | `InboundStatementMailFn` (book `lxSoftware`, expenses only) |
 | `siutindei-board@inbound.lx-software.com` | same bucket / `inbound-raw/siutindei/` | `board_mail.ingest_raw_object` |
 | `invoices@inbound.evolvesprouts.com` | `evolvesprouts-assets-…` / `inbound-email/raw/` | Evolve Sprouts `InboundInvoiceEmailProcessor` |
+
+`lx-software.com` apex MX stays on iCloud. Public address `billing@lx-software.com`
+is not an SES recipient; after deploy, forward that iCloud mailbox to
+`billing@inbound.lx-software.com` (stack output
+`lxsoftware-InboundMailbox-lxSoftware`). PDFs then use the same extract →
+assets → `enqueue_parse_statement_async_job` path as the house inboxes, with
+`lineTypeOnly=expenditure` so lines land on **LX Software → Expenses**.
 
 The Evolve Sprouts stack still owns the invoice bucket, SNS topic, SQS
 queue, receipt IAM role, and processor. It must **not** call

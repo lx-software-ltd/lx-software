@@ -446,7 +446,7 @@ describe("Siu Tin Dei board mail outputs", () => {
 });
 
 describe("shared inbound SES receipt rule set", () => {
-  test("hosts hillmarton, morrison, siutindei-board, and Evolve Sprouts invoice rules", () => {
+  test("hosts hillmarton, morrison, LX Software billing, siutindei-board, and Evolve Sprouts invoice rules", () => {
     const ruleSets = Object.values(resourcesOfType("AWS::SES::ReceiptRuleSet"));
     expect(ruleSets).toHaveLength(1);
     expect(ruleSets[0].Properties?.RuleSetName).toBe("lxsoftware-inbound-mail");
@@ -455,9 +455,16 @@ describe("shared inbound SES receipt rule set", () => {
     const serialized = JSON.stringify(rules);
     expect(serialized).toContain("32-hillmarton");
     expect(serialized).toContain("the-morrison");
+    expect(serialized).toContain("billing");
     expect(serialized).toContain("siutindei-board");
     expect(serialized).toContain("inbound-raw/hillmarton/");
     expect(serialized).toContain("inbound-raw/morrison/");
+    expect(serialized).toContain("inbound-raw/lx-software/");
+
+    const lambdaEnv = JSON.stringify(template.toJSON());
+    expect(lambdaEnv).toContain("INBOUND_STATEMENT_MAILBOXES");
+    expect(lambdaEnv).toContain("lxSoftware");
+    expect(lambdaEnv).toContain("expenditure");
 
     const invoiceRule = rules.find(
       (r) => r.Properties?.Rule?.Name === "evolvesprouts-inbound-invoice-email-rule"
@@ -479,7 +486,7 @@ describe("shared inbound SES receipt rule set", () => {
     );
   });
 
-  test("exports hillmarton and morrison inbound mailbox addresses", () => {
+  test("exports hillmarton, morrison, and LX Software billing inbound mailbox addresses", () => {
     const outputs = template.toJSON().Outputs as Record<
       string,
       { Export?: { Name?: string }; Description?: string }
@@ -492,6 +499,15 @@ describe("shared inbound SES receipt rule set", () => {
     );
     expect(outputs.InboundMailboxAddressmorrison?.Description).toContain(
       "The Morrison"
+    );
+    expect(outputs.InboundMailboxAddresslxSoftware?.Export?.Name).toBe(
+      "lxsoftware-InboundMailbox-lxSoftware"
+    );
+    expect(outputs.InboundMailboxAddresslxSoftware?.Description).toContain(
+      "LX Software"
+    );
+    expect(outputs.InboundMailboxAddresslxSoftware?.Description).toContain(
+      "billing@lx-software.com"
     );
   });
 
