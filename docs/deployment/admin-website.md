@@ -282,9 +282,10 @@ does not try to create them again. Replace the dummy values in Secrets
 Manager (`ap-southeast-1`). The older `lxsoftware-admin-*` set stays in
 the stack (CDK-created, unused) for a future LX Software board. OpenRouter
 stays `lxsoftware-admin-openrouter-api-secret-*` because statement parsing
-also uses it. Optional JSON fields `statement-parser` and `executive-board`
-inside that secret split the OpenRouter invoice by key; the admin Dashboard
-shows the UTC month allocation.
+also uses it. Optional JSON fields matching `contracts/openrouter-apps.json`
+ids (`statement-parser`, `executive-board`, `evolvesprouts`, `siutindei`)
+split the OpenRouter invoice by key; **LX Software → Dashboard** shows the
+UTC month-to-date usage metered in this admin.
 
 | Secret name | Dummy shape | Replace with |
 |-------------|-------------|--------------|
@@ -332,44 +333,68 @@ collection denied. The context pack shares only aggregated finance totals
 
 ### OpenRouter bill (shared account)
 
-Statement parsing and the Executive Board share one OpenRouter account —
-the card charge is a single invoice. Split it as follows.
+LX Software pays one OpenRouter invoice. Sibling products share that account
+by tagging every chat-completions request. The catalog is
+[`contracts/openrouter-apps.json`](../../contracts/openrouter-apps.json)
+(`payer: lxSoftware`).
 
-**What the code tags.** Each request sends a distinct app (`HTTP-Referer` +
-`X-OpenRouter-Title`) and a stable `user` of `{service}:{owner}`
+| App id | Product | Metered in this admin |
+|--------|---------|----------------------|
+| `statement-parser` | Statement OCR in this repo | Yes |
+| `executive-board` | Executive Board in this repo | Yes |
+| `evolvesprouts` | [lx-software-ltd/evolvesprouts](https://github.com/lx-software-ltd/evolvesprouts) | No (tag only) |
+| `siutindei` | [lx-software-ltd/siutindei](https://github.com/lx-software-ltd/siutindei) (when it starts calling OpenRouter) | No (tag only) |
+
+**What this admin sends.** Each request sets a distinct app (`HTTP-Referer` +
+`X-OpenRouter-Title` from the catalog) and a stable `user` of `{app-id}:{owner}`
 (`statement-parser:hillmarton`, `executive-board:siuTinDei`, …). Apps are
 created **hidden**, so they do not appear on OpenRouter's public rankings.
 OpenRouter Activity / Analytics can then group by **app**.
 
+**How to tag a sibling repo** (Evolve Sprouts now; Siu Tin Dei product later).
+Use the same OpenRouter account (the LX Software card). On every
+`https://openrouter.ai/api/v1/chat/completions` call:
+
+```
+HTTP-Referer: https://evolvesprouts.com
+X-OpenRouter-Title: Evolve Sprouts
+X-OpenRouter-App-Visibility: hidden
+```
+
+Body field `user`: `evolvesprouts:{stable-workload}` (no PII — a service
+name, environment, or house key, not an email). For Siu Tin Dei product
+use `https://siutindei.com`, title `Siu Tin Dei`, and `siutindei:{workload}`.
+
 **Named keys (optional, recommended).** Keep the existing secret
 `lxsoftware-admin-openrouter-api-secret-*`. Replace the plain string with JSON
-so each service can have its own key (OpenRouter groups the invoice by
+so each app can have its own key (OpenRouter groups the invoice by
 `api_key_id`, and you can set a credit limit per key):
 
 ```json
 {
   "openrouter_api_key": "sk-or-v1-shared-fallback",
   "statement-parser": "sk-or-v1-parser",
-  "executive-board": "sk-or-v1-board"
+  "executive-board": "sk-or-v1-board",
+  "evolvesprouts": "sk-or-v1-evolvesprouts",
+  "siutindei": "sk-or-v1-siutindei"
 }
 ```
 
 Mint the named keys at [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys).
-A missing per-service field falls back to `openrouter_api_key` (today's
-single-key setup still works).
+A missing per-app field falls back to `openrouter_api_key` (today's
+single-key setup still works). Sibling backends can use the named key for
+their app even if they keep the key in their own secret; the **id** must
+match the catalog so Analytics lines up.
 
-**Where to book the invoice.** Admin **Dashboard → OpenRouter this month**
-(and `GET /openrouter/usage`) rolls up UTC month-to-date spend:
+**Where the invoice lands.** Admin **LX Software → Dashboard → OpenRouter this
+month** (and `GET /openrouter/usage`) rolls up UTC month-to-date spend metered
+here, grouped by app. Parser rows still record which book or house the OCR
+ran against. Evolve Sprouts / Siu Tin Dei product spend will show in OpenRouter
+Activity by app (and by named key) until those repos write to this ledger.
 
-| Cost center | What to book there |
-|-------------|--------------------|
-| Siu Tin Dei | Executive Board + Siu Tin Dei statement OCR |
-| LX Software | LX Software statement OCR |
-| 32 Hillmarton / The Morrison | That house's statement OCR |
-
-The OpenRouter invoice itself stays on the company card; this split is the
-internal allocation. Parser spend is only recorded after this deploy; the
-board's daily budget row remains the cap, and the ledger is the bill split.
+The OpenRouter invoice itself stays on the LX Software card. Parser spend is
+only recorded after this deploy; the board's daily budget row remains the cap,
+and the ledger is the in-admin split.
 
 ### Board tools (function calling)
 

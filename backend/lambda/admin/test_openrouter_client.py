@@ -144,6 +144,14 @@ class TestOpenRouterAttribution(unittest.TestCase):
             )
         self.assertEqual(key, "sk-shared")
 
+    def test_catalog_apps_include_sibling_products(self) -> None:
+        sprouts = openrouter_client.resolve_app("evolvesprouts")
+        self.assertEqual(sprouts.title, "Evolve Sprouts")
+        self.assertEqual(sprouts.referer, "https://evolvesprouts.com")
+        product = openrouter_client.resolve_app("siutindei")
+        self.assertEqual(product.title, "Siu Tin Dei")
+        self.assertEqual(product.referer, "https://siutindei.com")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,3 +1,4 @@
+import { OPENROUTER_APPS } from "../../lib/contracts/generated";
 import { formatUsageCost } from "../../lib/boardModel";
 import type { OpenRouterUsagePayload } from "../../lib/openrouterUsage";
 
@@ -18,8 +19,8 @@ export function OpenRouterUsageCard({
           <p className="mb-0 small text-muted">Loading OpenRouter usage…</p>
         ) : isError ? (
           <p className="mb-0 small text-danger">
-            Could not load OpenRouter usage. The invoice still needs a manual
-            split until this endpoint is available.
+            Could not load OpenRouter usage. LX Software still pays the
+            invoice; tag sibling apps until this endpoint is available.
           </p>
         ) : data ? (
           <OpenRouterUsageBody data={data} />
@@ -32,41 +33,76 @@ export function OpenRouterUsageCard({
 }
 
 function OpenRouterUsageBody({ data }: { readonly data: OpenRouterUsagePayload }) {
-  const centers = data.costCenters;
+  const metered = data.apps.filter((app) => app.meteredHere || (app.cost ?? 0) > 0);
+  const siblings = data.apps.filter((app) => !app.meteredHere);
+  const catalogSiblings =
+    siblings.length > 0 ? siblings : OPENROUTER_APPS.filter((app) => !app.meteredHere);
   return (
     <>
       <p className="small text-muted">
-        OpenRouter bills one account. Book these UTC month-to-date amounts (
-        {data.from} – {data.to}) onto each statement book or house. Total{" "}
-        {formatUsageCost(data.total.cost)} over {data.total.calls ?? 0} calls.
+        {data.payer.label} pays the OpenRouter invoice. UTC month-to-date (
+        {data.from} – {data.to}) is tagged by app so sibling products can
+        share the account. Total {formatUsageCost(data.total.cost)} over{" "}
+        {data.total.calls ?? 0} calls metered in this admin.
       </p>
-      {centers.length === 0 ? (
-        <p className="mb-0 small text-muted">No usage this month.</p>
+      {metered.every((app) => (app.cost ?? 0) === 0) ? (
+        <p className="small text-muted">No usage metered in this admin this month.</p>
       ) : (
-        <ul className="list-unstyled mb-0 small">
-          {centers.map((center) => (
-            <li key={center.id} className="mb-2">
+        <ul className="list-unstyled mb-3 small">
+          {metered.map((app) => (
+            <li key={app.id} className="mb-2">
               <div className="d-flex justify-content-between gap-3">
-                <strong>{center.label}</strong>
-                <span>{formatUsageCost(center.cost)}</span>
+                <strong>{app.label}</strong>
+                <span>{formatUsageCost(app.cost)}</span>
               </div>
-              <ul className="list-unstyled ms-2 mb-0 text-muted">
-                {center.services.map((service) => (
-                  <li
-                    key={service.id}
-                    className="d-flex justify-content-between gap-3"
-                  >
-                    <span>{service.label}</span>
-                    <span>
-                      {formatUsageCost(service.cost)} · {service.calls ?? 0} calls
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              {app.owners.length > 0 ? (
+                <ul className="list-unstyled ms-2 mb-0 text-muted">
+                  {app.owners.map((owner) => (
+                    <li
+                      key={owner.id}
+                      className="d-flex justify-content-between gap-3"
+                    >
+                      <span>{owner.label}</span>
+                      <span>
+                        {formatUsageCost(owner.cost)} · {owner.calls ?? 0} calls
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </li>
           ))}
         </ul>
       )}
+      {catalogSiblings.length > 0 ? (
+        <div className="small">
+          <h3 className="h6">Tag sibling apps</h3>
+          <p className="text-muted">
+            Same LX Software OpenRouter account. On every chat-completions
+            request send <code>HTTP-Referer</code>,{" "}
+            <code>X-OpenRouter-Title</code>,{" "}
+            <code>X-OpenRouter-App-Visibility: hidden</code>, and body{" "}
+            <code>user</code> as <code>{"{app-id}:{workload}"}</code> (no PII).
+            Optional named key in the existing secret JSON matching the app id.
+          </p>
+          <ul className="list-unstyled mb-0">
+            {catalogSiblings.map((app) => (
+              <li key={app.id} className="mb-2">
+                <strong>{app.label}</strong>
+                <div className="text-muted">
+                  {app.repo ? <code>{app.repo}</code> : null}
+                  {app.repo && app.referer ? " · " : null}
+                  {app.referer ? <code>{app.referer}</code> : null}
+                </div>
+                <div className="text-muted">
+                  title <code>{app.title}</code> · user{" "}
+                  <code>{`${app.id}:{workload}`}</code>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
     </>
   );
 }

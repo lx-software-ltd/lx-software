@@ -6,23 +6,33 @@ export type OpenRouterUsageTotals = {
   readonly calls?: number;
 };
 
-export type OpenRouterUsageService = OpenRouterUsageTotals & {
+export type OpenRouterUsageOwner = OpenRouterUsageTotals & {
   readonly id: string;
   readonly label: string;
 };
 
-export type OpenRouterUsageCostCenter = OpenRouterUsageTotals & {
+export type OpenRouterUsageApp = OpenRouterUsageTotals & {
   readonly id: string;
   readonly label: string;
-  readonly services: readonly OpenRouterUsageService[];
+  readonly title: string;
+  readonly referer: string;
+  readonly repo: string;
+  readonly meteredHere: boolean;
+  readonly owners: readonly OpenRouterUsageOwner[];
+};
+
+export type OpenRouterUsagePayer = {
+  readonly id: string;
+  readonly label: string;
 };
 
 export type OpenRouterUsagePayload = {
   readonly from: string;
   readonly to: string;
   readonly currency: string;
+  readonly payer: OpenRouterUsagePayer;
   readonly total: OpenRouterUsageTotals;
-  readonly costCenters: readonly OpenRouterUsageCostCenter[];
+  readonly apps: readonly OpenRouterUsageApp[];
 };
 
 export const OPENROUTER_USAGE_PATH = "/openrouter/usage";

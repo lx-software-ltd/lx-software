@@ -37,7 +37,7 @@ class TestOpenRouterUsage(unittest.TestCase):
             "hillmarton",
         )
 
-    def test_month_rollup_splits_the_bill(self) -> None:
+    def test_month_rollup_groups_by_app(self) -> None:
         table = FakeTable()
         openrouter_usage.add_usage_day(
             table,
@@ -68,13 +68,28 @@ class TestOpenRouterUsage(unittest.TestCase):
             date_iso="2026-09-04",
         )
         out = openrouter_usage.list_usage(table, from_day="2026-09-01", to_day="2026-09-08")
+        self.assertEqual(out["payer"]["id"], "lxSoftware")
+        self.assertEqual(out["payer"]["label"], "LX Software")
         self.assertAlmostEqual(out["total"]["cost"], 2.0)
         self.assertEqual(out["total"]["calls"], 4)
-        by_id = {c["id"]: c for c in out["costCenters"]}
-        self.assertAlmostEqual(by_id["siuTinDei"]["cost"], 1.5)
-        self.assertEqual(len(by_id["siuTinDei"]["services"]), 2)
-        self.assertAlmostEqual(by_id["lxSoftware"]["cost"], 0.1)
-        self.assertAlmostEqual(by_id["hillmarton"]["cost"], 0.4)
+        by_id = {app["id"]: app for app in out["apps"]}
+        self.assertAlmostEqual(by_id["executive-board"]["cost"], 1.2)
+        self.assertEqual(by_id["executive-board"]["owners"][0]["id"], "siuTinDei")
+        self.assertAlmostEqual(by_id["statement-parser"]["cost"], 0.8)
+        owner_ids = {o["id"] for o in by_id["statement-parser"]["owners"]}
+        self.assertEqual(owner_ids, {"siuTinDei", "hillmarton", "lxSoftware"})
+        self.assertTrue(by_id["evolvesprouts"]["meteredHere"] is False)
+        self.assertAlmostEqual(by_id["evolvesprouts"]["cost"], 0.0)
+        self.assertEqual(by_id["siutindei"]["referer"], "https://siutindei.com")
+
+    def test_empty_range_still_lists_catalog_apps(self) -> None:
+        table = FakeTable()
+        out = openrouter_usage.list_usage(table, from_day="2026-09-01", to_day="2026-09-08")
+        self.assertEqual(out["total"]["calls"], 0)
+        self.assertEqual(
+            [app["id"] for app in out["apps"]],
+            ["statement-parser", "executive-board", "evolvesprouts", "siutindei"],
+        )
 
     def test_rejects_inverted_range(self) -> None:
         table = FakeTable()

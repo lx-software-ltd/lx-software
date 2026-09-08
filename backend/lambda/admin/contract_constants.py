@@ -17,6 +17,7 @@ ADMIN_DOMAINS_CONTRACT = _load("admin-domains.json")
 EXECUTIVE_BOARD_CONTRACT = _load("executive-board.json")
 BOARD_TIMEOUTS_CONTRACT = _load("board-timeouts.json")
 BOARD_TOOLS_CONTRACT = _load("board-tools.json")
+OPENROUTER_APPS_CONTRACT = _load("openrouter-apps.json")
 
 FINANCE_HOUSE_KEYS = frozenset(FINANCE_CONTRACT["houses"])
 FINANCE_STATEMENT_BOOK_KEYS = frozenset(FINANCE_CONTRACT["statementBooks"])
@@ -120,3 +121,6 @@ BOARD_STORES_LIST_MAX = int(_BOARD_TOOL_LIMITS["storesListMax"])
 BOARD_STORES_CACHE_TTL_HOURS = int(_BOARD_TOOL_LIMITS["storesCacheTtlHours"])
 BOARD_WEB_LIST_MAX = int(_BOARD_TOOL_LIMITS["webListMax"])
 BOARD_WEB_CACHE_TTL_HOURS = int(_BOARD_TOOL_LIMITS["webCacheTtlHours"])
+
+OPENROUTER_PAYER = OPENROUTER_APPS_CONTRACT["payer"]
+OPENROUTER_APPS: list[dict] = list(OPENROUTER_APPS_CONTRACT["apps"])

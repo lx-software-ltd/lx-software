@@ -440,3 +440,47 @@ export const BOARD_STORES_LIST_MAX = 30;
 export const BOARD_STORES_CACHE_TTL_HOURS = 20;
 export const BOARD_WEB_LIST_MAX = 30;
 export const BOARD_WEB_CACHE_TTL_HOURS = 20;
+
+export type OpenRouterAppDefinition = {
+  readonly id: string;
+  readonly label: string;
+  readonly title: string;
+  readonly referer: string;
+  readonly repo: string;
+  readonly meteredHere: boolean;
+};
+export const OPENROUTER_PAYER = "lxSoftware" as const;
+export const OPENROUTER_APPS: readonly OpenRouterAppDefinition[] = [
+  {
+    "id": "statement-parser",
+    "label": "Statement parser",
+    "title": "LX Admin — Statement parser",
+    "referer": "https://admin.lx-software.com/finance/parse-statement",
+    "repo": "lx-software-ltd/lx-software",
+    "meteredHere": true
+  },
+  {
+    "id": "executive-board",
+    "label": "Executive Board",
+    "title": "LX Admin — Executive Board",
+    "referer": "https://admin.lx-software.com/siu-tin-dei/board",
+    "repo": "lx-software-ltd/lx-software",
+    "meteredHere": true
+  },
+  {
+    "id": "evolvesprouts",
+    "label": "Evolve Sprouts",
+    "title": "Evolve Sprouts",
+    "referer": "https://evolvesprouts.com",
+    "repo": "lx-software-ltd/evolvesprouts",
+    "meteredHere": false
+  },
+  {
+    "id": "siutindei",
+    "label": "Siu Tin Dei",
+    "title": "Siu Tin Dei",
+    "referer": "https://siutindei.com",
+    "repo": "lx-software-ltd/siutindei",
+    "meteredHere": false
+  }
+];

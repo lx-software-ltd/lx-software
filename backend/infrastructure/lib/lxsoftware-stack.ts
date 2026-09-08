@@ -348,7 +348,7 @@ export class LxsoftwareStack extends cdk.Stack {
         type: "String",
         default: "",
         description:
-          "ARN of the AWS Secrets Manager secret holding the OpenRouter API key(s). Used by statement parsing and the Executive Board. A JSON object may name keys per service (statement-parser, executive-board) plus a shared openrouter_api_key fallback. Leave blank to disable those features.",
+          "ARN of the AWS Secrets Manager secret holding the OpenRouter API key(s). LX Software pays the invoice. A JSON object may name keys per app (statement-parser, executive-board, evolvesprouts, siutindei) plus a shared openrouter_api_key fallback. Leave blank to disable those features.",
       }
     );
 

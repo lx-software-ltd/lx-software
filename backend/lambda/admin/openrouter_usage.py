@@ -1,7 +1,9 @@
-"""Daily OpenRouter usage ledger, keyed by service and cost-center owner.
+"""Daily OpenRouter usage ledger, keyed by app and owner.
 
-OpenRouter invoices one account. These rows are the split used to book
-that invoice onto Siu Tin Dei, LX Software, or a house statement.
+LX Software pays the OpenRouter invoice. These rows are the split used
+to see which tagged app (and, for this admin, which book or house) drove
+the spend. Sibling products share the same account via the app catalog
+in ``contracts/openrouter-apps.json``.
 """
 
 from __future__ import annotations
@@ -15,6 +17,8 @@ from urllib.parse import parse_qs
 from contract_constants import (
     BOARD_KEY,
     FINANCE_STATEMENT_OWNER_KEYS,
+    OPENROUTER_APPS,
+    OPENROUTER_PAYER,
 )
 from openrouter_client import (
     SERVICE_EXECUTIVE_BOARD,
@@ -24,15 +28,8 @@ from openrouter_client import (
 )
 
 USAGE_PK_PREFIX = "OPENROUTER#"
-SERVICE_STATEMENT_PARSER_LABEL = "Statement parser"
-SERVICE_EXECUTIVE_BOARD_LABEL = "Executive Board"
 
-SERVICE_LABELS: dict[str, str] = {
-    SERVICE_STATEMENT_PARSER: SERVICE_STATEMENT_PARSER_LABEL,
-    SERVICE_EXECUTIVE_BOARD: SERVICE_EXECUTIVE_BOARD_LABEL,
-}
-
-COST_CENTER_LABELS: dict[str, str] = {
+OWNER_LABELS: dict[str, str] = {
     "siuTinDei": "Siu Tin Dei",
     "lxSoftware": "LX Software",
     "hillmarton": "32 Hillmarton",
@@ -51,7 +48,7 @@ def utc_today() -> str:
 
 
 def cost_center_for(*, service: str, owner: str) -> str:
-    """Which statement book / house should absorb this spend."""
+    """Which statement book / house this admin call ran against."""
     if service == SERVICE_EXECUTIVE_BOARD:
         return BOARD_KEY
     if owner in FINANCE_STATEMENT_OWNER_KEYS:
@@ -59,12 +56,63 @@ def cost_center_for(*, service: str, owner: str) -> str:
     return "lxSoftware"
 
 
-def cost_center_label(cost_center: str) -> str:
-    return COST_CENTER_LABELS.get(cost_center, cost_center)
+def owner_label(owner: str) -> str:
+    return OWNER_LABELS.get(owner, owner)
+
+
+def payer_payload() -> dict[str, str]:
+    payer_id = str(OPENROUTER_PAYER or "lxSoftware")
+    return {"id": payer_id, "label": OWNER_LABELS.get(payer_id, payer_id)}
+
+
+def _catalog_row(service_id: str) -> dict[str, Any] | None:
+    for row in OPENROUTER_APPS:
+        if isinstance(row, dict) and str(row.get("id") or "") == service_id:
+            return row
+    return None
 
 
 def service_label(service: str) -> str:
-    return SERVICE_LABELS.get(service, service)
+    row = _catalog_row(service)
+    if row:
+        return str(row.get("label") or service)
+    return service
+
+
+def _app_meta(service_id: str) -> dict[str, Any]:
+    row = _catalog_row(service_id)
+    if row:
+        return {
+            "id": service_id,
+            "label": str(row.get("label") or service_id),
+            "title": str(row.get("title") or ""),
+            "referer": str(row.get("referer") or ""),
+            "repo": str(row.get("repo") or ""),
+            "meteredHere": bool(row.get("meteredHere")),
+        }
+    return {
+        "id": service_id,
+        "label": service_label(service_id),
+        "title": "",
+        "referer": "",
+        "repo": "",
+        "meteredHere": False,
+    }
+
+
+def _empty_app(service_id: str) -> dict[str, Any]:
+    bucket = _app_meta(service_id)
+    bucket.update(
+        {
+            "promptTokens": 0,
+            "completionTokens": 0,
+            "totalTokens": 0,
+            "cost": 0.0,
+            "calls": 0,
+            "owners": {},
+        }
+    )
+    return bucket
 
 
 def add_usage_day(
@@ -147,8 +195,9 @@ def _row_from_item(item: dict[str, Any]) -> dict[str, Any]:
         "service": service,
         "serviceLabel": service_label(service),
         "owner": owner,
+        "ownerLabel": owner_label(owner),
         "costCenter": center,
-        "costCenterLabel": cost_center_label(center),
+        "costCenterLabel": owner_label(center),
         "promptTokens": _as_int(item.get("promptTokens")),
         "completionTokens": _as_int(item.get("completionTokens")),
         "totalTokens": _as_int(item.get("totalTokens")),
@@ -210,7 +259,7 @@ def list_usage(
             if not row["day"]:
                 row["day"] = day
             rows.append(row)
-    rows.sort(key=lambda r: (r["costCenter"], r["service"], r["owner"], r["day"]))
+    rows.sort(key=lambda r: (r["service"], r["owner"], r["day"]))
     return summarize(rows, from_day=from_day, to_day=to_day)
 
 
@@ -219,35 +268,34 @@ def summarize(
 ) -> dict[str, Any]:
     totals = add_usage(None, None)
     total_calls = 0
-    centers: dict[str, dict[str, Any]] = {}
+    apps: dict[str, dict[str, Any]] = {}
+
+    def ensure_app(service_id: str) -> dict[str, Any]:
+        bucket = apps.get(service_id)
+        if bucket is None:
+            bucket = _empty_app(service_id)
+            apps[service_id] = bucket
+        return bucket
+
+    for row in OPENROUTER_APPS:
+        if isinstance(row, dict) and row.get("id"):
+            ensure_app(str(row["id"]))
+
     for row in rows:
         totals = add_usage(totals, row)
         row_calls = int(row.get("calls") or 0)
         total_calls += row_calls
-        center_id = str(row.get("costCenter") or "lxSoftware")
-        bucket = centers.setdefault(
-            center_id,
-            {
-                "id": center_id,
-                "label": cost_center_label(center_id),
-                "promptTokens": 0,
-                "completionTokens": 0,
-                "totalTokens": 0,
-                "cost": 0.0,
-                "calls": 0,
-                "services": {},
-            },
-        )
+        svc_id = str(row.get("service") or "") or "unknown"
+        bucket = ensure_app(svc_id)
         merged = add_usage(bucket, row)
-        bucket_calls = int(bucket.get("calls") or 0) + row_calls
         bucket.update(merged)
-        bucket["calls"] = bucket_calls
-        svc_id = str(row.get("service") or "")
-        svc = bucket["services"].setdefault(
-            svc_id,
+        bucket["calls"] = int(bucket.get("calls") or 0) + row_calls
+        owner_id = str(row.get("owner") or "unknown")
+        owner = bucket["owners"].setdefault(
+            owner_id,
             {
-                "id": svc_id,
-                "label": service_label(svc_id),
+                "id": owner_id,
+                "label": owner_label(owner_id),
                 "promptTokens": 0,
                 "completionTokens": 0,
                 "totalTokens": 0,
@@ -255,29 +303,37 @@ def summarize(
                 "calls": 0,
             },
         )
-        merged_svc = add_usage(svc, row)
-        svc_calls = int(svc.get("calls") or 0) + row_calls
-        svc.update(merged_svc)
-        svc["calls"] = svc_calls
+        merged_owner = add_usage(owner, row)
+        owner.update(merged_owner)
+        owner["calls"] = int(owner.get("calls") or 0) + row_calls
     totals["calls"] = total_calls
 
-    cost_centers = []
-    for center_id in sorted(centers, key=lambda k: cost_center_label(k).lower()):
-        bucket = centers[center_id]
-        services = sorted(
-            bucket.pop("services").values(), key=lambda s: str(s["label"]).lower()
+    catalog_ids = [
+        str(row["id"])
+        for row in OPENROUTER_APPS
+        if isinstance(row, dict) and row.get("id")
+    ]
+    extra_ids = sorted(k for k in apps if k not in catalog_ids)
+    apps_out: list[dict[str, Any]] = []
+    for app_id in catalog_ids + extra_ids:
+        bucket = apps[app_id]
+        owners = sorted(
+            bucket.pop("owners").values(), key=lambda o: str(o["label"]).lower()
         )
+        for owner in owners:
+            owner["cost"] = round(float(owner["cost"]), 6)
         bucket["cost"] = round(float(bucket["cost"]), 6)
-        bucket["services"] = services
-        cost_centers.append(bucket)
+        bucket["owners"] = owners
+        apps_out.append(bucket)
 
     totals["cost"] = round(float(totals["cost"]), 6)
     return {
         "from": from_day,
         "to": to_day,
         "currency": "USD",
+        "payer": payer_payload(),
         "total": totals,
-        "costCenters": cost_centers,
+        "apps": apps_out,
         "rows": rows,
     }
 

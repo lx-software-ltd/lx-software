@@ -10,8 +10,17 @@ test.describe("admin viewport smoke", () => {
   test("dashboard loads fixture summaries", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "OpenRouter this month" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Hillmarton" })).toBeVisible();
+    expect(await pageHasHorizontalOverflow(page)).toBe(false);
+  });
+
+  test("LX Software dashboard shows the OpenRouter bill", async ({ page }) => {
+    await page.goto("/lx-software");
+    await expect(page.getByRole("heading", { name: "LX Software", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "OpenRouter this month" })).toBeVisible();
+    await expect(page.getByText("LX Software pays the OpenRouter invoice")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Tag sibling apps" })).toBeVisible();
+    await expect(page.getByText("lx-software-ltd/evolvesprouts")).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 

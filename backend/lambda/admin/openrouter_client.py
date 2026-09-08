@@ -3,8 +3,8 @@
 Used by the statement parser and the Executive Board. Owns API key
 resolution (env var or Secrets Manager, cached per container), the HTTP
 call with bounded retries, response text extraction, usage / cost
-accounting, and per-service app attribution so the OpenRouter invoice can
-be split by cost center.
+accounting, and per-app attribution so the LX Software OpenRouter invoice
+can be tagged across this admin and sibling products.
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib import error as urlerror
 from urllib import request as urlrequest
+
+from contract_constants import OPENROUTER_APPS as OPENROUTER_APP_CATALOG
 
 DEFAULT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_TIMEOUT_SECONDS = 60
@@ -89,24 +91,29 @@ class OpenRouterApp:
     referer: str
 
 
-OPENROUTER_APPS: dict[str, OpenRouterApp] = {
-    SERVICE_STATEMENT_PARSER: OpenRouterApp(
-        service_id=SERVICE_STATEMENT_PARSER,
-        title="LX Admin — Statement parser",
-        referer=f"{_ADMIN_ORIGIN}/finance/parse-statement",
-    ),
-    SERVICE_EXECUTIVE_BOARD: OpenRouterApp(
-        service_id=SERVICE_EXECUTIVE_BOARD,
-        title="LX Admin — Executive Board",
-        referer=f"{_ADMIN_ORIGIN}/siu-tin-dei/board",
-    ),
-}
+def _apps_from_catalog() -> dict[str, OpenRouterApp]:
+    out: dict[str, OpenRouterApp] = {}
+    for row in OPENROUTER_APP_CATALOG:
+        if not isinstance(row, dict):
+            continue
+        sid = str(row.get("id") or "").strip()
+        if not sid:
+            continue
+        out[sid] = OpenRouterApp(
+            service_id=sid,
+            title=str(row.get("title") or sid),
+            referer=str(row.get("referer") or _ADMIN_ORIGIN),
+        )
+    return out
+
+
+_APPS_BY_ID = _apps_from_catalog()
 
 
 def resolve_app(service_id: str | None) -> OpenRouterApp:
     sid = (service_id or "").strip()
-    if sid in OPENROUTER_APPS:
-        return OPENROUTER_APPS[sid]
+    if sid in _APPS_BY_ID:
+        return _APPS_BY_ID[sid]
     return OpenRouterApp(
         service_id="lxsoftware-admin",
         title="lxsoftware-admin",
@@ -153,8 +160,8 @@ def chat_completion(
     function-calling schema; requested calls come back in ``tool_calls``.
 
     ``service`` selects app-attribution headers and, when the secret is a
-    JSON object, an optional per-service API key so OpenRouter's invoice
-    can be grouped by app / key.
+    JSON object, an optional per-app API key so OpenRouter's invoice can
+    be grouped by app / key. App ids live in ``contracts/openrouter-apps.json``.
     """
     payload: dict[str, Any] = {"model": model, "messages": messages}
     user_id = attribution_user(service=service, owner=owner)
@@ -406,9 +413,11 @@ def add_usage(total: dict[str, Any] | None, delta: dict[str, Any] | None) -> dic
 def resolve_api_key(secrets_client: Any, *, service: str = "") -> str:
     """Resolve the OpenRouter API key from env var or Secrets Manager.
 
-    A JSON secret may hold one key per service id (``statement-parser``,
-    ``executive-board``) plus the shared fallback fields used today
-    (``openrouter_api_key`` / ``api_key`` / plain string).
+    A JSON secret may hold one key per catalog app id (see
+    ``contracts/openrouter-apps.json``) plus the shared fallback fields used
+    today (``openrouter_api_key`` / ``api_key`` / plain string). Sibling
+    products such as Evolve Sprouts use the same account with their own
+    named key and app headers.
     """
     cache_key = (service or "").strip() or "*"
     cached = _api_key_cache.get(cache_key)

@@ -580,7 +580,7 @@ class TestBoardRoutes(BoardTestCase):
             self.table.scan_calls[-1]["ExpressionAttributeValues"][":openrouter"], "OPENROUTER#"
         )
 
-    def test_openrouter_usage_endpoint_splits_by_cost_center(self) -> None:
+    def test_openrouter_usage_endpoint_groups_by_app(self) -> None:
         import openrouter_usage
 
         openrouter_usage.add_usage_day(
@@ -599,10 +599,12 @@ class TestBoardRoutes(BoardTestCase):
         )
         status, body = self.call("/openrouter/usage", query="from=2026-09-01&to=2026-09-08")
         self.assertEqual(status, 200)
+        self.assertEqual(body["payer"]["id"], "lxSoftware")
         self.assertAlmostEqual(body["total"]["cost"], 0.7)
-        by_id = {c["id"]: c for c in body["costCenters"]}
-        self.assertAlmostEqual(by_id["siuTinDei"]["cost"], 0.5)
-        self.assertAlmostEqual(by_id["lxSoftware"]["cost"], 0.2)
+        by_id = {app["id"]: app for app in body["apps"]}
+        self.assertAlmostEqual(by_id["executive-board"]["cost"], 0.5)
+        self.assertAlmostEqual(by_id["statement-parser"]["cost"], 0.2)
+        self.assertIn("evolvesprouts", by_id)
         self.table.put_item(Item={"pk": "RECORD#1", "sk": "A"})
         _, records = self.call("/records")
         pks = [i["pk"] for i in records["items"]]
@@ -646,7 +648,10 @@ class TestChat(BoardTestCase):
         ledger = openrouter_usage.list_usage(
             self.table, from_day=openrouter_usage.utc_today(), to_day=openrouter_usage.utc_today()
         )
-        self.assertEqual(ledger["costCenters"][0]["id"], "siuTinDei")
+        by_id = {app["id"]: app for app in ledger["apps"]}
+        self.assertEqual(ledger["payer"]["id"], "lxSoftware")
+        self.assertAlmostEqual(by_id["executive-board"]["cost"], 0.01)
+        self.assertEqual(by_id["executive-board"]["owners"][0]["id"], "siuTinDei")
         self.assertAlmostEqual(ledger["total"]["cost"], 0.01)
 
     def test_budget_exhausted_refuses_new_messages(self) -> None:
