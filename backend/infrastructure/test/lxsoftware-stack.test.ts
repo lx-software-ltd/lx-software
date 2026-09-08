@@ -446,7 +446,7 @@ describe("Siu Tin Dei board mail outputs", () => {
 });
 
 describe("shared inbound SES receipt rule set", () => {
-  test("hosts hillmarton, siutindei-board, and Evolve Sprouts invoice rules", () => {
+  test("hosts hillmarton, morrison, siutindei-board, and Evolve Sprouts invoice rules", () => {
     const ruleSets = Object.values(resourcesOfType("AWS::SES::ReceiptRuleSet"));
     expect(ruleSets).toHaveLength(1);
     expect(ruleSets[0].Properties?.RuleSetName).toBe("lxsoftware-inbound-mail");
@@ -454,7 +454,10 @@ describe("shared inbound SES receipt rule set", () => {
     const rules = Object.values(resourcesOfType("AWS::SES::ReceiptRule"));
     const serialized = JSON.stringify(rules);
     expect(serialized).toContain("32-hillmarton");
+    expect(serialized).toContain("the-morrison");
     expect(serialized).toContain("siutindei-board");
+    expect(serialized).toContain("inbound-raw/hillmarton/");
+    expect(serialized).toContain("inbound-raw/morrison/");
 
     const invoiceRule = rules.find(
       (r) => r.Properties?.Rule?.Name === "evolvesprouts-inbound-invoice-email-rule"
@@ -473,6 +476,22 @@ describe("shared inbound SES receipt rule set", () => {
     );
     expect(JSON.stringify(s3Action?.IamRoleArn)).toContain(
       "EvolvesproutsInboundInvoiceReceiptRoleName"
+    );
+  });
+
+  test("exports hillmarton and morrison inbound mailbox addresses", () => {
+    const outputs = template.toJSON().Outputs as Record<
+      string,
+      { Export?: { Name?: string }; Description?: string }
+    >;
+    expect(outputs.InboundMailboxAddresshillmarton?.Export?.Name).toBe(
+      "lxsoftware-InboundMailbox-hillmarton"
+    );
+    expect(outputs.InboundMailboxAddressmorrison?.Export?.Name).toBe(
+      "lxsoftware-InboundMailbox-morrison"
+    );
+    expect(outputs.InboundMailboxAddressmorrison?.Description).toContain(
+      "The Morrison"
     );
   });
 

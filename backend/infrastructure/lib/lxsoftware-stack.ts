@@ -1249,7 +1249,7 @@ export class LxsoftwareStack extends cdk.Stack {
       readonly houseKey: string;
     }> = [
       { localPart: "32-hillmarton", houseKey: "hillmarton" },
-      // { localPart: "the-morrison", houseKey: "morrison" },
+      { localPart: "the-morrison", houseKey: "morrison" },
     ];
 
     const inboundMailBucketName = [
@@ -2068,12 +2068,17 @@ export class LxsoftwareStack extends cdk.Stack {
       exportName: "lxsoftware-AssetsBucketArn",
     });
 
+    const inboundHouseDisplayLabel: Readonly<Record<string, string>> = {
+      hillmarton: "32 Hillmarton",
+      morrison: "The Morrison",
+    };
+
     for (const mailbox of inboundHouseMailboxes) {
       const suffix = mailbox.houseKey.replace(/[^a-zA-Z0-9]/g, "");
-      const displayHint =
-        mailbox.houseKey === "hillmarton"
-          ? 'Statement PDF inbox for "32 Hillmarton"'
-          : `Statement PDF inbox (finance house key "${mailbox.houseKey}")`;
+      const houseLabel = inboundHouseDisplayLabel[mailbox.houseKey];
+      const displayHint = houseLabel
+        ? `Statement PDF inbox for "${houseLabel}"`
+        : `Statement PDF inbox (finance house key "${mailbox.houseKey}")`;
       new cdk.CfnOutput(this, `InboundMailboxAddress${suffix}`, {
         value: cdk.Fn.join("", [mailbox.localPart, "@", inboundMailDomain.valueAsString]),
         description: `${displayHint}; DDB/API key is "${mailbox.houseKey}".`,
@@ -2084,7 +2089,7 @@ export class LxsoftwareStack extends cdk.Stack {
     new cdk.CfnOutput(this, "InboundMailReceiptRuleSetName", {
       value: inboundReceiptRuleSet.receiptRuleSetName,
       description:
-        "Shared SES receipt rule set (hillmarton, siutindei-board, Evolve Sprouts invoices). This stack sets it active on deploy.",
+        "Shared SES receipt rule set (hillmarton, morrison, siutindei-board, Evolve Sprouts invoices). This stack sets it active on deploy.",
       exportName: "lxsoftware-InboundMailReceiptRuleSetName",
     });
 

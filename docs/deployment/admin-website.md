@@ -518,6 +518,7 @@ include every mailbox that receives mail in `ap-southeast-1`:
 | Recipient | Raw store | Processor |
 |---|---|---|
 | `32-hillmarton@inbound.lx-software.com` | `lxsoftware-admin-inbound-mail-…` / `inbound-raw/hillmarton/` | `InboundStatementMailFn` |
+| `the-morrison@inbound.lx-software.com` | same bucket / `inbound-raw/morrison/` | `InboundStatementMailFn` |
 | `siutindei-board@inbound.lx-software.com` | same bucket / `inbound-raw/siutindei/` | `board_mail.ingest_raw_object` |
 | `invoices@inbound.evolvesprouts.com` | `evolvesprouts-assets-…` / `inbound-email/raw/` | Evolve Sprouts `InboundInvoiceEmailProcessor` |
 
