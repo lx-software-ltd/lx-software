@@ -14,8 +14,8 @@ context pack.
 
 Follow-up proposal (not approved):
 [`executive-board-staff-plan.md`](./executive-board-staff-plan.md) explores
-agent "staff" reporting to each executive so the board can carry out the
-work it recommends.
+agent "staff" and an autonomous operating model (triage, boundaries, hold
+windows, daily review) so the board carries out the work it recommends.
 
 Where T1 lives in the code:
 
