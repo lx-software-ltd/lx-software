@@ -88,6 +88,7 @@ def _app_meta(service_id: str) -> dict[str, Any]:
             "title": str(row.get("title") or ""),
             "referer": str(row.get("referer") or ""),
             "repo": str(row.get("repo") or ""),
+            "keyName": str(row.get("keyName") or ""),
             "meteredHere": bool(row.get("meteredHere")),
         }
     return {
@@ -96,6 +97,7 @@ def _app_meta(service_id: str) -> dict[str, Any]:
         "title": "",
         "referer": "",
         "repo": "",
+        "keyName": "",
         "meteredHere": False,
     }
 

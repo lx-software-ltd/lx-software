@@ -29,6 +29,7 @@ def _install_stubs() -> None:
 _install_stubs()
 
 import openrouter_statement_parser as parser  # noqa: E402
+import openrouter_client  # noqa: E402
 
 
 def _fake_completion_body(content_obj: dict[str, object]) -> bytes:
@@ -219,10 +220,13 @@ class TestParseStatementFromAsset(unittest.TestCase):
         parser.reset_api_key_cache_for_tests()
 
     def test_pdf_includes_file_parser_plugin(self) -> None:
+        openrouter_client.reset_api_key_cache_for_tests()
         s3 = MagicMock()
         s3.get_object.return_value = {"Body": io.BytesIO(b"%PDF-1.4 fake")}
         secrets = MagicMock()
-        secrets.get_secret_value.return_value = {"SecretString": "sk-test"}
+        secrets.get_secret_value.return_value = {
+            "SecretString": json.dumps({"statement-parser": "sk-test"})
+        }
 
         captured: dict[str, object] = {}
 
@@ -263,6 +267,7 @@ class TestParseStatementFromAsset(unittest.TestCase):
             "os.environ",
             {
                 "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:fake",
+                "OPENROUTER_API_KEY": "",
             },
             clear=False,
         ), patch("openrouter_client.urlrequest.urlopen", _fake_urlopen):

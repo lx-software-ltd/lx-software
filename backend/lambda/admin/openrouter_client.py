@@ -159,9 +159,9 @@ def chat_completion(
     providers that do not retain prompts. ``tools`` follows the OpenAI
     function-calling schema; requested calls come back in ``tool_calls``.
 
-    ``service`` selects app-attribution headers and, when the secret is a
-    JSON object, an optional per-app API key so OpenRouter's invoice can
-    be grouped by app / key. App ids live in ``contracts/openrouter-apps.json``.
+    ``service`` selects app-attribution headers and the named API key for
+    that catalog app (``contracts/openrouter-apps.json``). The secret JSON
+    must include a field matching the app id.
     """
     payload: dict[str, Any] = {"model": model, "messages": messages}
     user_id = attribution_user(service=service, owner=owner)
@@ -410,14 +410,20 @@ def add_usage(total: dict[str, Any] | None, delta: dict[str, Any] | None) -> dic
     }
 
 
+def catalog_app_ids() -> frozenset[str]:
+    return frozenset(
+        str(row["id"])
+        for row in OPENROUTER_APP_CATALOG
+        if isinstance(row, dict) and row.get("id")
+    )
+
+
 def resolve_api_key(secrets_client: Any, *, service: str = "") -> str:
     """Resolve the OpenRouter API key from env var or Secrets Manager.
 
-    A JSON secret may hold one key per catalog app id (see
-    ``contracts/openrouter-apps.json``) plus the shared fallback fields used
-    today (``openrouter_api_key`` / ``api_key`` / plain string). Sibling
-    products such as Evolve Sprouts use the same account with their own
-    named key and app headers.
+    Catalog apps (see ``contracts/openrouter-apps.json``) each have a named
+    key in the JSON secret. Sibling products mint a key on the same
+    OpenRouter account and store it in *their* secret.
     """
     cache_key = (service or "").strip() or "*"
     cached = _api_key_cache.get(cache_key)
@@ -439,7 +445,13 @@ def resolve_api_key(secrets_client: Any, *, service: str = "") -> str:
 
 
 def _pick_openrouter_key(raw: str, *, service: str) -> str:
+    catalog = catalog_app_ids()
     if not raw.startswith("{"):
+        if service in catalog:
+            raise OpenRouterError(
+                f"OpenRouter secret must be JSON with a {service!r} named key; "
+                "a plain-string secret cannot split the invoice by app"
+            )
         return raw
     payload = json.loads(raw)
     if not isinstance(payload, dict):
@@ -448,6 +460,11 @@ def _pick_openrouter_key(raw: str, *, service: str) -> str:
         named = payload.get(service)
         if isinstance(named, str) and named.strip():
             return named.strip()
+        if service in catalog:
+            raise OpenRouterError(
+                f"OpenRouter secret JSON is missing {service!r}; "
+                "each catalog app needs its own named key"
+            )
     for key_name in (
         "openrouter_api_key",
         "OPENROUTER_API_KEY",

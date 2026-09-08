@@ -304,6 +304,7 @@ export type OpenRouterAppDefinition = {{
   readonly title: string;
   readonly referer: string;
   readonly repo: string;
+  readonly keyName: string;
   readonly meteredHere: boolean;
 }};
 export const OPENROUTER_PAYER = {json.dumps(openrouter_apps["payer"])} as const;

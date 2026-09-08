@@ -78,12 +78,12 @@ function OpenRouterUsageBody({ data }: { readonly data: OpenRouterUsagePayload }
         <div className="small">
           <h3 className="h6">Tag sibling apps</h3>
           <p className="text-muted">
-            Same LX Software OpenRouter account. On every chat-completions
-            request send <code>HTTP-Referer</code>,{" "}
-            <code>X-OpenRouter-Title</code>,{" "}
+            Same LX Software OpenRouter account. Mint a named key (
+            <code>lxsoftware:{"{app-id}"}</code>) and store it in that
+            product&apos;s secret. On every chat-completions request send{" "}
+            <code>HTTP-Referer</code>, <code>X-OpenRouter-Title</code>,{" "}
             <code>X-OpenRouter-App-Visibility: hidden</code>, and body{" "}
             <code>user</code> as <code>{"{app-id}:{workload}"}</code> (no PII).
-            Optional named key in the existing secret JSON matching the app id.
           </p>
           <ul className="list-unstyled mb-0">
             {catalogSiblings.map((app) => (
@@ -95,7 +95,8 @@ function OpenRouterUsageBody({ data }: { readonly data: OpenRouterUsagePayload }
                   {app.referer ? <code>{app.referer}</code> : null}
                 </div>
                 <div className="text-muted">
-                  title <code>{app.title}</code> · user{" "}
+                  title <code>{app.title}</code> · key{" "}
+                  <code>{app.keyName || `lxsoftware:${app.id}`}</code> · user{" "}
                   <code>{`${app.id}:{workload}`}</code>
                 </div>
               </li>

@@ -21,6 +21,7 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByText("LX Software pays the OpenRouter invoice")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Tag sibling apps" })).toBeVisible();
     await expect(page.getByText("lx-software-ltd/evolvesprouts")).toBeVisible();
+    await expect(page.getByText("lxsoftware:evolvesprouts")).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 

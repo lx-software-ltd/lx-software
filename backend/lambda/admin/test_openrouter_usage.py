@@ -81,6 +81,9 @@ class TestOpenRouterUsage(unittest.TestCase):
         self.assertTrue(by_id["evolvesprouts"]["meteredHere"] is False)
         self.assertAlmostEqual(by_id["evolvesprouts"]["cost"], 0.0)
         self.assertEqual(by_id["siutindei"]["referer"], "https://siutindei.com")
+        self.assertEqual(
+            by_id["evolvesprouts"]["keyName"], "lxsoftware:evolvesprouts"
+        )
 
     def test_empty_range_still_lists_catalog_apps(self) -> None:
         table = FakeTable()

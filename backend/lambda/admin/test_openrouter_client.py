@@ -126,7 +126,7 @@ class TestOpenRouterAttribution(unittest.TestCase):
         self.assertEqual(parser_key, "sk-parser")
         self.assertEqual(board_key, "sk-board")
 
-    def test_json_secret_falls_back_to_shared_key(self) -> None:
+    def test_json_secret_requires_named_key_for_catalog_app(self) -> None:
         secrets = MagicMock()
         secrets.get_secret_value.return_value = {
             "SecretString": json.dumps({"openrouter_api_key": "sk-shared"})
@@ -139,9 +139,43 @@ class TestOpenRouterAttribution(unittest.TestCase):
             },
             clear=False,
         ):
-            key = openrouter_client.resolve_api_key(
-                secrets, service=openrouter_client.SERVICE_EXECUTIVE_BOARD
-            )
+            with self.assertRaises(openrouter_client.OpenRouterError) as ctx:
+                openrouter_client.resolve_api_key(
+                    secrets, service=openrouter_client.SERVICE_EXECUTIVE_BOARD
+                )
+        self.assertIn("executive-board", str(ctx.exception))
+
+    def test_plain_string_secret_rejected_for_catalog_app(self) -> None:
+        secrets = MagicMock()
+        secrets.get_secret_value.return_value = {"SecretString": "sk-plain"}
+        with patch.dict(
+            "os.environ",
+            {
+                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",
+                "OPENROUTER_API_KEY": "",
+            },
+            clear=False,
+        ):
+            with self.assertRaises(openrouter_client.OpenRouterError) as ctx:
+                openrouter_client.resolve_api_key(
+                    secrets, service=openrouter_client.SERVICE_STATEMENT_PARSER
+                )
+        self.assertIn("statement-parser", str(ctx.exception))
+
+    def test_unknown_service_falls_back_to_shared_key(self) -> None:
+        secrets = MagicMock()
+        secrets.get_secret_value.return_value = {
+            "SecretString": json.dumps({"openrouter_api_key": "sk-shared"})
+        }
+        with patch.dict(
+            "os.environ",
+            {
+                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",
+                "OPENROUTER_API_KEY": "",
+            },
+            clear=False,
+        ):
+            key = openrouter_client.resolve_api_key(secrets, service="ad-hoc-script")
         self.assertEqual(key, "sk-shared")
 
     def test_catalog_apps_include_sibling_products(self) -> None:

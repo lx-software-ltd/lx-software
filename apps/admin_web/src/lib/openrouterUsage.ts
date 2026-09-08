@@ -17,6 +17,7 @@ export type OpenRouterUsageApp = OpenRouterUsageTotals & {
   readonly title: string;
   readonly referer: string;
   readonly repo: string;
+  readonly keyName: string;
   readonly meteredHere: boolean;
   readonly owners: readonly OpenRouterUsageOwner[];
 };

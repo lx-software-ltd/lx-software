@@ -447,6 +447,7 @@ export type OpenRouterAppDefinition = {
   readonly title: string;
   readonly referer: string;
   readonly repo: string;
+  readonly keyName: string;
   readonly meteredHere: boolean;
 };
 export const OPENROUTER_PAYER = "lxSoftware" as const;
@@ -457,6 +458,7 @@ export const OPENROUTER_APPS: readonly OpenRouterAppDefinition[] = [
     "title": "LX Admin — Statement parser",
     "referer": "https://admin.lx-software.com/finance/parse-statement",
     "repo": "lx-software-ltd/lx-software",
+    "keyName": "lxsoftware:statement-parser",
     "meteredHere": true
   },
   {
@@ -465,6 +467,7 @@ export const OPENROUTER_APPS: readonly OpenRouterAppDefinition[] = [
     "title": "LX Admin — Executive Board",
     "referer": "https://admin.lx-software.com/siu-tin-dei/board",
     "repo": "lx-software-ltd/lx-software",
+    "keyName": "lxsoftware:executive-board",
     "meteredHere": true
   },
   {
@@ -473,6 +476,7 @@ export const OPENROUTER_APPS: readonly OpenRouterAppDefinition[] = [
     "title": "Evolve Sprouts",
     "referer": "https://evolvesprouts.com",
     "repo": "lx-software-ltd/evolvesprouts",
+    "keyName": "lxsoftware:evolvesprouts",
     "meteredHere": false
   },
   {
@@ -481,6 +485,7 @@ export const OPENROUTER_APPS: readonly OpenRouterAppDefinition[] = [
     "title": "Siu Tin Dei",
     "referer": "https://siutindei.com",
     "repo": "lx-software-ltd/siutindei",
+    "keyName": "lxsoftware:siutindei",
     "meteredHere": false
   }
 ];
