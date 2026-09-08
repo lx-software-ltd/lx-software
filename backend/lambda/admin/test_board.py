@@ -123,9 +123,14 @@ class FakeTable:
         self.scan_calls.append(kwargs)
         rows = list(self.items.values())
         filt = kwargs.get("FilterExpression")
-        if filt == "NOT begins_with(pk, :board)":
-            prefix = kwargs["ExpressionAttributeValues"][":board"]
-            rows = [r for r in rows if not str(r["pk"]).startswith(prefix)]
+        values = kwargs.get("ExpressionAttributeValues") or {}
+        if isinstance(filt, str) and "NOT begins_with" in filt:
+            prefixes = [str(v) for v in values.values()]
+            rows = [
+                r
+                for r in rows
+                if not any(str(r["pk"]).startswith(p) for p in prefixes)
+            ]
         return {"Items": [dict(r) for r in rows[: kwargs.get("Limit", 50)]]}
 
     def update_item(
@@ -569,7 +574,40 @@ class TestBoardRoutes(BoardTestCase):
         pks = [i["pk"] for i in body["items"]]
         self.assertIn("RECORD#1", pks)
         self.assertFalse(any(pk.startswith("BOARD#") for pk in pks))
-        self.assertEqual(self.table.scan_calls[-1]["FilterExpression"], "NOT begins_with(pk, :board)")
+        self.assertIn("NOT begins_with(pk, :board)", self.table.scan_calls[-1]["FilterExpression"])
+        self.assertEqual(self.table.scan_calls[-1]["ExpressionAttributeValues"][":board"], "BOARD#")
+        self.assertEqual(
+            self.table.scan_calls[-1]["ExpressionAttributeValues"][":openrouter"], "OPENROUTER#"
+        )
+
+    def test_openrouter_usage_endpoint_splits_by_cost_center(self) -> None:
+        import openrouter_usage
+
+        openrouter_usage.add_usage_day(
+            self.table,
+            service=openrouter_client.SERVICE_EXECUTIVE_BOARD,
+            owner="siuTinDei",
+            usage={"promptTokens": 10, "completionTokens": 2, "totalTokens": 12, "cost": 0.5},
+            date_iso="2026-09-02",
+        )
+        openrouter_usage.add_usage_day(
+            self.table,
+            service=openrouter_client.SERVICE_STATEMENT_PARSER,
+            owner="lxSoftware",
+            usage={"promptTokens": 4, "completionTokens": 1, "totalTokens": 5, "cost": 0.2},
+            date_iso="2026-09-03",
+        )
+        status, body = self.call("/openrouter/usage", query="from=2026-09-01&to=2026-09-08")
+        self.assertEqual(status, 200)
+        self.assertAlmostEqual(body["total"]["cost"], 0.7)
+        by_id = {c["id"]: c for c in body["costCenters"]}
+        self.assertAlmostEqual(by_id["siuTinDei"]["cost"], 0.5)
+        self.assertAlmostEqual(by_id["lxSoftware"]["cost"], 0.2)
+        self.table.put_item(Item={"pk": "RECORD#1", "sk": "A"})
+        _, records = self.call("/records")
+        pks = [i["pk"] for i in records["items"]]
+        self.assertIn("RECORD#1", pks)
+        self.assertFalse(any(str(pk).startswith("OPENROUTER#") for pk in pks))
 
     def test_non_admin_forbidden(self) -> None:
         ev = self.event("/siu-tin-dei/board")
@@ -603,6 +641,13 @@ class TestChat(BoardTestCase):
         usage = board_store.load_usage_day(self.table)
         self.assertEqual(usage["calls"], 1)
         self.assertAlmostEqual(usage["cost"], 0.01)
+        import openrouter_usage
+
+        ledger = openrouter_usage.list_usage(
+            self.table, from_day=openrouter_usage.utc_today(), to_day=openrouter_usage.utc_today()
+        )
+        self.assertEqual(ledger["costCenters"][0]["id"], "siuTinDei")
+        self.assertAlmostEqual(ledger["total"]["cost"], 0.01)
 
     def test_budget_exhausted_refuses_new_messages(self) -> None:
         self.call("/siu-tin-dei/board/settings", "PUT", {"dailyBudgetUsd": 0.5})

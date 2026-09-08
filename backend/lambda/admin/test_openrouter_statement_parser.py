@@ -274,6 +274,7 @@ class TestParseStatementFromAsset(unittest.TestCase):
                 file_name="statement.pdf",
                 content_type="application/pdf",
                 default_currency="GBP",
+                owner="hillmarton",
             )
 
         self.assertEqual(len(result["lines"]), 1)
@@ -282,8 +283,15 @@ class TestParseStatementFromAsset(unittest.TestCase):
         self.assertIn("plugins", body, "PDF requests must include the file-parser plugin")
         self.assertEqual(body["plugins"][0]["id"], "file-parser")
         self.assertEqual(body["messages"][1]["content"][1]["type"], "file")
+        self.assertEqual(body["usage"], {"include": True})
+        self.assertEqual(body["user"], "statement-parser:hillmarton")
         self.assertEqual(
             captured["headers"]["Authorization"], "Bearer sk-test"
+        )
+        headers = captured["headers"]
+        self.assertEqual(
+            next(v for k, v in headers.items() if k.lower() == "x-openrouter-title"),
+            "LX Admin — Statement parser",
         )
 
     def test_image_uses_image_url(self) -> None:

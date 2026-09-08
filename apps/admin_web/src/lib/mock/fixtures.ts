@@ -18,6 +18,7 @@ import type {
   BoardToolsConfig,
   BoardToolsPayload,
 } from "../boardModel";
+import type { OpenRouterUsagePayload } from "../openrouterUsage";
 import type { FinancePersistedState, HouseFinanceData } from "../financeModel";
 
 const TODAY = new Date();
@@ -430,4 +431,88 @@ export const boardReceivablesFixture: BoardReceivablesPayload = {
       d35: [],
     },
   },
+};
+
+export const openrouterUsageFixture: OpenRouterUsagePayload = {
+  from: "2026-09-01",
+  to: "2026-09-08",
+  currency: "USD",
+  total: {
+    promptTokens: 41200,
+    completionTokens: 9100,
+    totalTokens: 27300,
+    cost: 2.15,
+    calls: 18,
+  },
+  costCenters: [
+    {
+      id: "hillmarton",
+      label: "32 Hillmarton",
+      promptTokens: 4200,
+      completionTokens: 400,
+      totalTokens: 4600,
+      cost: 0.18,
+      calls: 2,
+      services: [
+        {
+          id: "statement-parser",
+          label: "Statement parser",
+          promptTokens: 4200,
+          completionTokens: 400,
+          totalTokens: 4600,
+          cost: 0.18,
+          calls: 2,
+        },
+      ],
+    },
+    {
+      id: "lxSoftware",
+      label: "LX Software",
+      promptTokens: 8800,
+      completionTokens: 800,
+      totalTokens: 5000,
+      cost: 0.31,
+      calls: 3,
+      services: [
+        {
+          id: "statement-parser",
+          label: "Statement parser",
+          promptTokens: 8800,
+          completionTokens: 800,
+          totalTokens: 5000,
+          cost: 0.31,
+          calls: 3,
+        },
+      ],
+    },
+    {
+      id: "siuTinDei",
+      label: "Siu Tin Dei",
+      promptTokens: 28200,
+      completionTokens: 7900,
+      totalTokens: 17700,
+      cost: 1.66,
+      calls: 13,
+      services: [
+        {
+          id: "executive-board",
+          label: "Executive Board",
+          promptTokens: 18200,
+          completionTokens: 3900,
+          totalTokens: 22100,
+          cost: 1.41,
+          calls: 9,
+        },
+        {
+          id: "statement-parser",
+          label: "Statement parser",
+          promptTokens: 10000,
+          completionTokens: 4000,
+          totalTokens: 5600,
+          cost: 0.25,
+          calls: 4,
+        },
+      ],
+    },
+  ],
 };

@@ -10,6 +10,7 @@ test.describe("admin viewport smoke", () => {
   test("dashboard loads fixture summaries", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "OpenRouter this month" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Hillmarton" })).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });

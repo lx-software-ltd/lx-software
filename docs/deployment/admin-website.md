@@ -282,7 +282,9 @@ does not try to create them again. Replace the dummy values in Secrets
 Manager (`ap-southeast-1`). The older `lxsoftware-admin-*` set stays in
 the stack (CDK-created, unused) for a future LX Software board. OpenRouter
 stays `lxsoftware-admin-openrouter-api-secret-*` because statement parsing
-also uses it.
+also uses it. Optional JSON fields `statement-parser` and `executive-board`
+inside that secret split the OpenRouter invoice by key; the admin Dashboard
+shows the UTC month allocation.
 
 | Secret name | Dummy shape | Replace with |
 |-------------|-------------|--------------|
@@ -327,6 +329,47 @@ usage row, and chats/meetings stop when the configured daily budget
 (default USD 15) is reached. OpenRouter requests are sent with data
 collection denied. The context pack shares only aggregated finance totals
 (never individual transactions) and no owner PII.
+
+### OpenRouter bill (shared account)
+
+Statement parsing and the Executive Board share one OpenRouter account —
+the card charge is a single invoice. Split it as follows.
+
+**What the code tags.** Each request sends a distinct app (`HTTP-Referer` +
+`X-OpenRouter-Title`) and a stable `user` of `{service}:{owner}`
+(`statement-parser:hillmarton`, `executive-board:siuTinDei`, …). Apps are
+created **hidden**, so they do not appear on OpenRouter's public rankings.
+OpenRouter Activity / Analytics can then group by **app**.
+
+**Named keys (optional, recommended).** Keep the existing secret
+`lxsoftware-admin-openrouter-api-secret-*`. Replace the plain string with JSON
+so each service can have its own key (OpenRouter groups the invoice by
+`api_key_id`, and you can set a credit limit per key):
+
+```json
+{
+  "openrouter_api_key": "sk-or-v1-shared-fallback",
+  "statement-parser": "sk-or-v1-parser",
+  "executive-board": "sk-or-v1-board"
+}
+```
+
+Mint the named keys at [openrouter.ai/settings/keys](https://openrouter.ai/settings/keys).
+A missing per-service field falls back to `openrouter_api_key` (today's
+single-key setup still works).
+
+**Where to book the invoice.** Admin **Dashboard → OpenRouter this month**
+(and `GET /openrouter/usage`) rolls up UTC month-to-date spend:
+
+| Cost center | What to book there |
+|-------------|--------------------|
+| Siu Tin Dei | Executive Board + Siu Tin Dei statement OCR |
+| LX Software | LX Software statement OCR |
+| 32 Hillmarton / The Morrison | That house's statement OCR |
+
+The OpenRouter invoice itself stays on the company card; this split is the
+internal allocation. Parser spend is only recorded after this deploy; the
+board's daily budget row remains the cap, and the ledger is the bill split.
 
 ### Board tools (function calling)
 

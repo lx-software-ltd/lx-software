@@ -5,6 +5,8 @@ import { AdminPageIntro } from "../components/ui";
 import { StatementBookDashboardCard } from "../components/StatementBookDashboardCard";
 import { AllocationCoverageDashboardCard } from "../components/dashboard/AllocationCoverageDashboardCard";
 import { DashboardApiHealthCard } from "../components/dashboard/DashboardApiHealthCard";
+import { OpenRouterUsageCard } from "../components/dashboard/OpenRouterUsageCard";
+import { useOpenRouterUsage } from "../hooks/useOpenRouterUsage";
 import { DashboardSessionCard } from "../components/dashboard/DashboardSessionCard";
 import { HouseSummaryCard } from "../components/dashboard/HouseSummaryCard";
 import { MonthlyViewExpenseAllocationsSection } from "../components/dashboard/MonthlyViewExpenseAllocationsSection";
@@ -33,6 +35,7 @@ export function DashboardPage() {
     queryFn: () =>
       adminFetchJson<{ sub?: string; email?: string }>("/me"),
   });
+  const openrouterQuery = useOpenRouterUsage();
 
   const [lxSoftwareFy, setLxSoftwareFy] = useState<FiscalYearId>(() =>
     defaultFiscalYearIdForNowUtc(),
@@ -93,6 +96,16 @@ export function DashboardPage() {
           </div>
         </div>
       ) : null}
+
+      <div className="row g-3 mb-3">
+        <div className="col-12">
+          <OpenRouterUsageCard
+            isLoading={openrouterQuery.isLoading}
+            isError={openrouterQuery.isError}
+            data={openrouterQuery.data}
+          />
+        </div>
+      </div>
 
       <FinanceDataLoadOrError
         isLoading={financeQuery.isLoading}

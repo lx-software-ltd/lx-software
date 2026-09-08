@@ -348,7 +348,7 @@ export class LxsoftwareStack extends cdk.Stack {
         type: "String",
         default: "",
         description:
-          "ARN of the AWS Secrets Manager secret holding the OpenRouter API key (used by the admin Lambda to parse uploaded statement PDFs). Leave blank to disable PDF statement parsing.",
+          "ARN of the AWS Secrets Manager secret holding the OpenRouter API key(s). Used by statement parsing and the Executive Board. A JSON object may name keys per service (statement-parser, executive-board) plus a shared openrouter_api_key fallback. Leave blank to disable those features.",
       }
     );
 
@@ -1652,6 +1652,13 @@ export class LxsoftwareStack extends cdk.Stack {
 
     this.httpApi.addRoutes({
       path: "/me",
+      methods: [apigwv2.HttpMethod.GET],
+      integration,
+      authorizer: jwtAuthorizer,
+    });
+
+    this.httpApi.addRoutes({
+      path: "/openrouter/usage",
       methods: [apigwv2.HttpMethod.GET],
       integration,
       authorizer: jwtAuthorizer,

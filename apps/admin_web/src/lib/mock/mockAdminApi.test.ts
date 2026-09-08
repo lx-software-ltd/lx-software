@@ -17,6 +17,15 @@ describe("mockAdminFetch", () => {
     expect(overview.openActionCount).toBeGreaterThan(0);
   });
 
+  it("serves the OpenRouter usage split for the dashboard", async () => {
+    const res = await mockAdminFetch("/openrouter/usage");
+    expect(res.ok).toBe(true);
+    const body = (await res.json()) as {
+      costCenters: readonly { id: string; cost: number }[];
+    };
+    expect(body.costCenters.map((c) => c.id)).toContain("siuTinDei");
+  });
+
   it("returns 404 for unknown paths", async () => {
     const res = await mockAdminFetch("/no-such-route");
     expect(res.status).toBe(404);

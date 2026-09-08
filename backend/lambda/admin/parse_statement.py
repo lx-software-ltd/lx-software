@@ -9,6 +9,7 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 import runtime
+import openrouter_usage
 from admin_runtime import _get_secretsmanager_client
 from contract_constants import (
     DEFAULT_FINANCE_CURRENCY,
@@ -24,6 +25,7 @@ from finance_store import (
     _persist_asset_meta_after_parse,
 )
 from http_common import _audit, _log_event
+from openrouter_client import SERVICE_STATEMENT_PARSER, add_usage
 
 
 class _ParseStatementError(Exception):
@@ -173,6 +175,8 @@ def execute_parse_statement(
     from openrouter_statement_parser import parse_statement_from_asset
 
     all_parsed_raw_lines: list[dict[str, Any]] = []
+    parse_usage = add_usage(None, None)
+    parse_calls = 0
     for s3_key, file_name, head in file_meta:
         content_type = head.get("ContentType") or ""
         object_size = int(head.get("ContentLength") or 0)
@@ -196,7 +200,10 @@ def execute_parse_statement(
                 file_name=file_name,
                 content_type=content_type,
                 default_currency=default_currency,
+                owner=house,
             )
+            parse_usage = add_usage(parse_usage, parsed.get("usage"))
+            parse_calls += 1
         except RuntimeError as exc:
             _log_event(
                 "warning",
@@ -241,8 +248,26 @@ def execute_parse_statement(
         key=",".join(keys_ordered)[:512],
         added_lines=len(new_lines),
         existing_lines=len(house_data.get("lines", []) or []),
+        cost_usd=(parse_usage or {}).get("cost"),
         request_id=request_id,
     )
+    try:
+        if parse_calls:
+            openrouter_usage.add_usage_day(
+                table,
+                service=SERVICE_STATEMENT_PARSER,
+                owner=house,
+                usage=parse_usage,
+                calls=parse_calls,
+            )
+    except Exception as exc:  # pragma: no cover - accounting must not break import
+        _log_event(
+            "warning",
+            tag="openrouter_usage_record_failed",
+            house=house,
+            error=str(exc)[:200],
+            request_id=request_id,
+        )
 
     merged_payload = {
         "defaultCurrency": house_data.get("defaultCurrency", DEFAULT_FINANCE_CURRENCY),
@@ -291,4 +316,5 @@ def execute_parse_statement(
         "addedLines": len(new_lines),
         "sourceAssetKeys": list(keys_ordered),
         "sourceAssetKey": keys_ordered[0],
+        "usage": {**parse_usage, "calls": parse_calls},
     }

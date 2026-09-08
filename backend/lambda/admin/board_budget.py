@@ -7,6 +7,7 @@ from typing import Any
 
 import board_store
 import openrouter_client
+import openrouter_usage
 from admin_runtime import _get_secretsmanager_client
 from contract_constants import BOARD_MAX_DAILY_BUDGET_USD
 from http_common import _log_event
@@ -93,11 +94,22 @@ def board_completion(
         max_retries=max_retries,
         tools=tools,
         tool_choice=tool_choice,
+        service=openrouter_client.SERVICE_EXECUTIVE_BOARD,
+        owner=board_store.BOARD_KEY,
     )
     try:
         board_store.add_usage_day(table, completion.usage)
     except Exception as exc:  # pragma: no cover - accounting must not break the call
         _log_event("warning", tag="board_usage_record_failed", error=str(exc)[:200])
+    try:
+        openrouter_usage.add_usage_day(
+            table,
+            service=openrouter_client.SERVICE_EXECUTIVE_BOARD,
+            owner=board_store.BOARD_KEY,
+            usage=completion.usage,
+        )
+    except Exception as exc:  # pragma: no cover - accounting must not break the call
+        _log_event("warning", tag="openrouter_usage_record_failed", error=str(exc)[:200])
     _log_event(
         "info",
         tag=tag,
