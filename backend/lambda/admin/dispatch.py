@@ -96,7 +96,7 @@ from parse_statement import (
     _statement_basename_already_imported,
 )
 from proxies import _proxy_finance_quotes, _proxy_fx_v2_rates
-from runtime import RECORD_PK_PREFIX, logger
+from runtime import RECORD_PK_PREFIX
 
 
 # Read-only mirrors of the admin GET endpoints, served under /public/* and
@@ -296,38 +296,12 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     admin_claims = _require_admin(event)
     if admin_claims is None:
-        claims = _claims(event)
-        if not claims:
-            logger.info(
-                json.dumps(
-                    {
-                        "tag": "admin_auth_denied",
-                        "reason": "missing_claims",
-                        "method": method,
-                        "path": path,
-                        "request_id": _request_id(event),
-                    }
-                )
-            )
+        # Log only static fields. CodeQL treats API Gateway requestContext
+        # (JWT claims, path, request id) as private and flags clear-text logs.
+        if not _claims(event):
+            _log_event("info", tag="admin_auth_denied", reason="missing_claims")
             return _json_response(401, {"message": "Unauthorized"})
-        logger.info(
-            json.dumps(
-                {
-                    "tag": "admin_auth_denied",
-                    "reason": "not_in_admin_group",
-                    "method": method,
-                    "path": path,
-                    "request_id": _request_id(event),
-                    "sub": claims.get("sub"),
-                    "email": claims.get("email"),
-                    "cognito_username": claims.get("cognito:username"),
-                    "cognito_groups": claims.get("cognito:groups"),
-                    "token_use": claims.get("token_use"),
-                    "iss": claims.get("iss"),
-                    "aud": claims.get("aud"),
-                }
-            )
-        )
+        _log_event("info", tag="admin_auth_denied", reason="not_in_admin_group")
         return _json_response(403, {"message": "Forbidden: admin group required"})
 
     user_sub = admin_claims.get("sub")
