@@ -25,11 +25,3 @@ export type AwsBillingPayload = {
 
 export const AWS_USAGE_PATH = "/aws/usage";
 export const AWS_USAGE_PDF_PATH = "/aws/usage.pdf";
-
-export function awsUsageQuery(fromDay?: string, toDay?: string): string {
-  const params = new URLSearchParams();
-  if (fromDay) params.set("from", fromDay);
-  if (toDay) params.set("to", toDay);
-  const qs = params.toString();
-  return qs ? `?${qs}` : "";
-}

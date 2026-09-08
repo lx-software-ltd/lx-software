@@ -113,6 +113,16 @@ function fxRates(url: URL): Response {
   );
 }
 
+function overlayUsageRange<T extends { from: string; to: string }>(
+  url: URL,
+  fixture: T,
+): T {
+  const from = url.searchParams.get("from");
+  const to = url.searchParams.get("to");
+  if (!from && !to) return fixture;
+  return { ...fixture, from: from || fixture.from, to: to || fixture.to };
+}
+
 function quotes(url: URL): Response {
   const symbols = (url.searchParams.get("symbols") ?? "").split(",").filter(Boolean);
   const prices: Record<string, { price: number; currency: string }> = {
@@ -136,8 +146,8 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
 
   if (p === "/health") return json({ status: "ok" });
   if (p === "/me") return json({ sub: "mock-admin", email: "mock.admin@example.com" });
-  if (p === "/openrouter/usage") return json(openrouterUsageFixture);
-  if (p === "/aws/usage") return json(awsUsageFixture);
+  if (p === "/openrouter/usage") return json(overlayUsageRange(url, openrouterUsageFixture));
+  if (p === "/aws/usage") return json(overlayUsageRange(url, awsUsageFixture));
   if (p === "/aws/usage.pdf") {
     const body =
       "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\nlx-software-aws-mock\n";
