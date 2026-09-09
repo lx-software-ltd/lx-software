@@ -283,14 +283,22 @@ class TestInboundParseEnqueue(unittest.TestCase):
 
 class TestRecordInboundAssetMeta(unittest.TestCase):
     def test_creates_meta_with_original_filename(self) -> None:
+        import finance_store
         import runtime
-        from botocore.exceptions import ClientError
 
         table = MagicMock()
-        table.update_item.side_effect = ClientError(
-            {"Error": {"Code": "ConditionalCheckFailedException"}},
-            "UpdateItem",
-        )
+
+        class _MissingMeta(finance_store.ClientError):
+            def __init__(self) -> None:
+                super().__init__(
+                    {"Error": {"Code": "ConditionalCheckFailedException"}},
+                    "UpdateItem",
+                )
+                self.response = {
+                    "Error": {"Code": "ConditionalCheckFailedException"}
+                }
+
+        table.update_item.side_effect = _MissingMeta()
         stored: list[dict] = []
 
         def _put(**kwargs: Any) -> dict:

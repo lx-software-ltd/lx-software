@@ -160,11 +160,12 @@ export function AssetsPage() {
     return sorted.filter((row) => rowMatchesFilter(row, tableFilter));
   }, [rows, tableFilter]);
 
+  const { hasNextPage, isFetchingNextPage, isError, fetchNextPage } = q;
   useEffect(() => {
-    if (q.hasNextPage && !q.isFetchingNextPage && !q.isError) {
-      void q.fetchNextPage();
+    if (hasNextPage && !isFetchingNextPage && !isError) {
+      void fetchNextPage();
     }
-  }, [q.hasNextPage, q.isFetchingNextPage, q.isError, q.fetchNextPage]);
+  }, [hasNextPage, isFetchingNextPage, isError, fetchNextPage]);
 
   return (
     <div>
@@ -252,7 +253,7 @@ export function AssetsPage() {
               />
             )}
           </AdminDataTable>
-          {q.isFetchingNextPage ? (
+          {isFetchingNextPage ? (
             <p className="text-muted small mt-2 mb-0">Loading more…</p>
           ) : null}
         </>
