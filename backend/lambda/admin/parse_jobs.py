@@ -79,7 +79,8 @@ def _finalize_stuck_processing_job(
     try:
         table.put_item(Item=_to_ddb_nested(fail_doc))
     except ClientError:
-        pass
+        return fail_doc
+    _notify_parse_job_quietly(fail_doc)
     return fail_doc
 
 
@@ -185,6 +186,21 @@ def _path_siu_tin_dei_parse_job(
 ) -> str | None:
     """Job id from ``/siu-tin-dei/parse-statement/jobs/{jobId}``."""
     return _path_statement_book_parse_job(event, path, "siu-tin-dei")
+
+
+def _notify_parse_job_quietly(doc: dict[str, Any]) -> None:
+    """Best-effort operator email; never raise into the parse worker."""
+    try:
+        from parse_notify import notify_parse_job_outcome
+
+        notify_parse_job_outcome(doc)
+    except Exception as exc:  # noqa: BLE001
+        _log_event(
+            "warning",
+            tag="parse_job_notify_failed",
+            job_id=str(doc.get("jobId") or "")[:64],
+            error=str(exc)[:300],
+        )
 
 
 def _invoke_parse_statement_worker(payload: dict[str, Any]) -> None:
@@ -327,6 +343,7 @@ def _handle_parse_statement_async_worker(payload: dict[str, Any]) -> None:
             house=house,
             error=exc.message[:300],
         )
+        _notify_parse_job_quietly(fail_doc)
         return
     except Exception as exc:
         logger.exception("parse_statement_async worker failed")
@@ -346,6 +363,7 @@ def _handle_parse_statement_async_worker(payload: dict[str, Any]) -> None:
             job_id=job_id[:64],
             error=str(exc)[:500],
         )
+        _notify_parse_job_quietly(fail_doc)
         return
 
     raw_old = table.get_item(Key=key).get("Item") or {}
@@ -366,5 +384,6 @@ def _handle_parse_statement_async_worker(payload: dict[str, Any]) -> None:
     if isinstance(usage, dict):
         ok_doc["usage"] = usage
     table.put_item(Item=_to_ddb_nested(ok_doc))
+    _notify_parse_job_quietly(ok_doc)
 
 

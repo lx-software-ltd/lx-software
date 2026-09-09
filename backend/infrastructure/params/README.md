@@ -83,5 +83,14 @@ workers. The admin SPA `PARSE_POLL_DEADLINE_MS` must stay above those windows.
 Set **`lxsoftware:AdminWebDomainName`** and **`lxsoftware-admin-web:AdminWebDomainName`**
 to the same hostname (default in `contracts/admin-domains.json`).
 
+### Statement parse notify email
+
+`AdminApiFn` emails `statements@<InboundMailDomain>` when a parse job
+succeeds or fails (inbound mail and admin uploads). Set
+**`lxsoftware:StatementParseNotifyEmail`** to one or more comma-separated
+addresses. Leave empty to keep notify off. The inbound domain must already
+be a verified SES identity that can send (out of the SES sandbox, or the
+destination address verified).
+
 Secrets and bootstrap passwords should not live in git; pass them via CI secrets
 or a private parameter file stored outside of git.

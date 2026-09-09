@@ -8,9 +8,10 @@ import os
 import unittest
 from email.message import EmailMessage
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from inbound_email_handler import (
+    _record_inbound_asset_meta,
     extract_first_pdf_attachment,
     extract_pdf_attachments,
     house_key_from_raw_mail_s3_key,
@@ -213,10 +214,18 @@ class TestInboundParseEnqueue(unittest.TestCase):
                 "enqueue_parse_statement_async_job",
                 return_value="job-billing",
             ) as enq,
+            patch.object(
+                inbound_email_handler,
+                "_record_inbound_asset_meta",
+            ) as meta,
         ):
             out = inbound_email_handler.lambda_handler(event, None)
         self.assertEqual(out, {"ok": True})
         enq.assert_called_once()
+        meta.assert_called_once()
+        self.assertEqual(meta.call_args.kwargs["house"], "lxSoftware")
+        self.assertEqual(meta.call_args.kwargs["file_name"], "invoice.pdf")
+        self.assertTrue(meta.call_args.kwargs["s3_key"].startswith("inbound/lxSoftware/"))
         kwargs = enq.call_args.kwargs
         self.assertEqual(kwargs["house"], "lxSoftware")
         self.assertEqual(kwargs["line_type_only"], "expenditure")
@@ -259,11 +268,57 @@ class TestInboundParseEnqueue(unittest.TestCase):
                 "enqueue_parse_statement_async_job",
                 return_value="job-h",
             ) as enq,
+            patch.object(
+                inbound_email_handler,
+                "_record_inbound_asset_meta",
+            ) as meta,
         ):
             inbound_email_handler.lambda_handler(event, None)
         kwargs = enq.call_args.kwargs
         self.assertEqual(kwargs["house"], "hillmarton")
         self.assertIsNone(kwargs["line_type_only"])
+        self.assertEqual(meta.call_args.kwargs["file_name"], "invoice.pdf")
+        self.assertEqual(meta.call_args.kwargs["house"], "hillmarton")
+
+
+class TestRecordInboundAssetMeta(unittest.TestCase):
+    def test_creates_meta_with_original_filename(self) -> None:
+        import runtime
+        from botocore.exceptions import ClientError
+
+        table = MagicMock()
+        table.update_item.side_effect = ClientError(
+            {"Error": {"Code": "ConditionalCheckFailedException"}},
+            "UpdateItem",
+        )
+        stored: list[dict] = []
+
+        def _put(**kwargs: Any) -> dict:
+            stored.append(kwargs["Item"])
+            return {}
+
+        table.put_item.side_effect = _put
+        mock_ddb = MagicMock()
+        mock_ddb.Table.return_value = table
+        env = {"RECORDS_TABLE_NAME": "records-test"}
+        key = f"inbound/hillmarton/{'a' * 32}/00_January.pdf"
+        with (
+            patch.dict(os.environ, env, clear=False),
+            patch.object(runtime, "_ddb", mock_ddb),
+        ):
+            _record_inbound_asset_meta(
+                s3_key=key,
+                house="hillmarton",
+                file_name="January.pdf",
+                size=99,
+                owner_sub="inbound-email",
+                request_id="req-1",
+            )
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(stored[0]["pk"], f"ASSET#{key}")
+        self.assertEqual(stored[0]["fileName"], "January.pdf")
+        self.assertEqual(stored[0]["house"], "hillmarton")
+        self.assertEqual(stored[0]["size"], 99)
 
 
 if __name__ == "__main__":

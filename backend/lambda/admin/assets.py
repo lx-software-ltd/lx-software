@@ -8,9 +8,21 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 import runtime
-from http_common import _audit, _json_response, _log_event, _request_id
-from contract_constants import FINANCE_HOUSE_KEYS
+from http_common import (
+    _audit,
+    _decode_cursor,
+    _encode_cursor,
+    _json_response,
+    _log_event,
+    _request_id,
+)
+from contract_constants import FINANCE_STATEMENT_OWNER_KEYS
 from runtime import ALLOWED_UPLOAD_CONTENT_TYPES
+
+ASSET_PK_PREFIX = "ASSET#"
+_INBOUND_OWNER_SEGMENTS = frozenset(
+    key.lower() for key in FINANCE_STATEMENT_OWNER_KEYS
+)
 
 
 def _is_allowed_upload_content_type(content_type: str) -> bool:
@@ -25,8 +37,10 @@ def _is_allowed_upload_content_type(content_type: str) -> bool:
 def _normalize_public_asset_key(raw: Any) -> str | None:
     """Return a downloadable assets-bucket key, or None if invalid.
 
-    Allows ``uploads/*`` (browser uploads) and ``inbound/{house}/{batch}/…``
-    (SES → inbound-email Lambda). Other prefixes are rejected.
+    Allows ``uploads/*`` (browser uploads) and
+    ``inbound/{owner}/{batch}/…`` (SES → inbound-email Lambda). Owner may be
+    a house (``hillmarton``) or a statement book (``lxSoftware``). Other
+    prefixes are rejected.
     """
     if raw is None:
         return None
@@ -39,8 +53,8 @@ def _normalize_public_asset_key(raw: Any) -> str | None:
         parts = key.split("/")
         if len(parts) < 4:
             return None
-        house_seg = parts[1].strip().lower()
-        if house_seg not in FINANCE_HOUSE_KEYS:
+        house_seg = parts[1].strip()
+        if house_seg.lower() not in _INBOUND_OWNER_SEGMENTS:
             return None
         batch = parts[2]
         if len(batch) != 32 or any(
@@ -49,6 +63,33 @@ def _normalize_public_asset_key(raw: Any) -> str | None:
             return None
         return key
     return None
+
+
+def _assets_list_response(event: dict[str, Any]) -> dict[str, Any]:
+    """Scan only ``ASSET#`` rows for the admin Assets page."""
+    from urllib.parse import parse_qs
+
+    from ddb_convert import _from_ddb
+    from finance_store import _enrich_scan_items_asset_meta
+
+    qs = event.get("rawQueryString") or ""
+    cursor_raw = parse_qs(qs).get("cursor", [""])[0]
+    start_key = _decode_cursor(cursor_raw)
+    table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+    kwargs: dict[str, Any] = {
+        "Limit": 50,
+        "FilterExpression": "begins_with(pk, :asset)",
+        "ExpressionAttributeValues": {":asset": ASSET_PK_PREFIX},
+    }
+    if start_key:
+        kwargs["ExclusiveStartKey"] = start_key
+    result = table.scan(**kwargs)
+    items = [_from_ddb(i) for i in result.get("Items", [])]
+    bucket = os.environ.get("ASSETS_BUCKET_NAME") or ""
+    items = _enrich_scan_items_asset_meta(items, table=table, bucket=bucket)
+    last = result.get("LastEvaluatedKey")
+    next_cursor = _encode_cursor(last) if last else None
+    return _json_response(200, {"items": items, "nextCursor": next_cursor})
 
 
 def _asset_download_presigned_response(

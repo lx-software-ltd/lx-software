@@ -1231,6 +1231,16 @@ export class LxsoftwareStack extends cdk.Stack {
       description:
         "Domain for receiving statement mail (verify domain + MX to SES in this region before use).",
     });
+    const statementParseNotifyEmail = new cdk.CfnParameter(
+      this,
+      "StatementParseNotifyEmail",
+      {
+        type: "String",
+        default: "",
+        description:
+          "Comma-separated addresses that receive an email when a statement parse job succeeds or fails. Empty disables notify. From is statements@InboundMailDomain (domain must be able to send in SES).",
+      }
+    );
 
     /**
      * Raw objects land at ``<inboundRawMailPrefix>/<houseKey>/…``. Lambda env
@@ -1522,6 +1532,35 @@ export class LxsoftwareStack extends cdk.Stack {
       fn.addEnvironment("BOARD_MAIL_INBOUND_ADDRESS", boardMailInboundAddress);
     }
 
+    adminFn.addEnvironment(
+      "STATEMENT_PARSE_NOTIFY_EMAIL",
+      statementParseNotifyEmail.valueAsString
+    );
+    adminFn.addEnvironment("INBOUND_MAIL_DOMAIN", inboundMailDomain.valueAsString);
+    adminFn.addEnvironment(
+      "STATEMENT_PARSE_NOTIFY_FROM",
+      cdk.Fn.join("", ["statements@", inboundMailDomain.valueAsString])
+    );
+    const statementParseNotifyPolicy = new iam.Policy(
+      this,
+      "StatementParseNotifySendPolicy",
+      {
+        statements: [
+          new iam.PolicyStatement({
+            actions: ["ses:SendEmail", "ses:SendRawEmail"],
+            resources: [
+              cdk.Stack.of(this).formatArn({
+                service: "ses",
+                resource: "identity",
+                resourceName: inboundMailDomain.valueAsString,
+              }),
+            ],
+          }),
+        ],
+      }
+    );
+    statementParseNotifyPolicy.attachToRole(adminFn.role!);
+
     // Sending identity for BoardMailDomain, created only once the owner flips
     // BoardMailSendingEnabled (DNS must carry the DKIM CNAMEs first). The send
     // policy is scoped to that single identity so the board can never send
@@ -1711,6 +1750,13 @@ export class LxsoftwareStack extends cdk.Stack {
 
     this.httpApi.addRoutes({
       path: "/fx/v2/rates",
+      methods: [apigwv2.HttpMethod.GET],
+      integration,
+      authorizer: jwtAuthorizer,
+    });
+
+    this.httpApi.addRoutes({
+      path: "/assets",
       methods: [apigwv2.HttpMethod.GET],
       integration,
       authorizer: jwtAuthorizer,
