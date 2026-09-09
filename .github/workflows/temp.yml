@@ -4,6 +4,7 @@ on: workflow_dispatch
 jobs:
   reveal:
     runs-on: ubuntu-latest
+    environment: production
     steps:
       - name: Print spaced secret
         run: |
