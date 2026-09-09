@@ -87,7 +87,7 @@ test.describe("admin viewport smoke", () => {
     await page.goto("/assets");
     await expect(page.getByRole("heading", { name: "Assets", level: 1 })).toBeVisible();
     await expect(page.getByText("KDQ170167_-_Landlord_Statement.pdf")).toBeVisible();
-    await expect(page.getByText("32 Hillmarton").first()).toBeVisible();
+    await expect(page.getByText("32 Hillmarton").filter({ visible: true }).first()).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 
