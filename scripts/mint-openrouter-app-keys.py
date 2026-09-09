@@ -11,6 +11,8 @@ https://openrouter.ai/settings/management-keys (not a regular inference key).
 Usage:
   OPENROUTER_MANAGEMENT_API_KEY=sk-or-... python3 scripts/mint-openrouter-app-keys.py
   OPENROUTER_MANAGEMENT_API_KEY=sk-or-... python3 scripts/mint-openrouter-app-keys.py --dry-run
+  OPENROUTER_MANAGEMENT_API_KEY=sk-or-... python3 scripts/mint-openrouter-app-keys.py \\
+      --plaintext-out minted.txt
 """
 
 from __future__ import annotations
@@ -74,7 +76,15 @@ def main() -> int:
         action="store_true",
         help="List catalog keys and which names are already on the account",
     )
+    parser.add_argument(
+        "--plaintext-out",
+        default=None,
+        help="write minted key material to this file (mode 0600) instead of "
+        "printing it; used by CI where logs must not contain the keys",
+    )
     args = parser.parse_args()
+    if args.dry_run and args.plaintext_out:
+        sys.exit("error: --plaintext-out cannot be combined with --dry-run")
     token = os.getenv("OPENROUTER_MANAGEMENT_API_KEY", "").strip()
     if not token:
         print(
@@ -115,11 +125,17 @@ def main() -> int:
     admin_json = {app_id: minted[app_id] for app_id, app in (
         (str(row["id"]), row) for row in apps
     ) if app.get("meteredHere") and app_id in minted}
-    print("\n# This admin secret (lxsoftware-admin-openrouter-api-secret-*)")
-    print("# Merge into the existing JSON. Do not commit these values.")
-    print(json.dumps(admin_json or {"#": "no new metered keys; existing names were reused"}, indent=2))
-
-    print("\n# Sibling product secrets (store the named key as a plain string)")
+    payload_lines = [
+        "# This admin secret (lxsoftware-admin-openrouter-api-secret-*)",
+        "# Merge into the existing JSON. Do not commit these values.",
+        json.dumps(
+            admin_json
+            or {"#": "no new metered keys; existing names were reused"},
+            indent=2,
+        ),
+        "",
+        "# Sibling product secrets (store the named key as a plain string)",
+    ]
     for app in apps:
         if app.get("meteredHere"):
             continue
@@ -127,10 +143,24 @@ def main() -> int:
         key_name = str(app.get("keyName") or f"lxsoftware:{app_id}")
         repo = str(app.get("repo") or "")
         if app_id in minted:
-            print(f"# {repo}  keyName={key_name}")
-            print(minted[app_id])
+            payload_lines.append(f"# {repo}  keyName={key_name}")
+            payload_lines.append(minted[app_id])
         else:
-            print(f"# {repo}  {key_name} already existed — copy the plaintext from OpenRouter if you still have it, or mint a replacement.")
+            payload_lines.append(
+                f"# {repo}  {key_name} already existed — copy the plaintext "
+                "from OpenRouter if you still have it, or mint a replacement."
+            )
+    payload = "\n".join(payload_lines) + "\n"
+    if args.plaintext_out:
+        out_path = Path(args.plaintext_out)
+        out_path.touch(mode=0o600, exist_ok=False)
+        out_path.write_text(payload, encoding="utf-8")
+        print(
+            f"key material written to {out_path} (shown nowhere else)",
+            file=sys.stderr,
+        )
+    else:
+        sys.stdout.write(payload)
     for line in skipped:
         print(f"# {line}", file=sys.stderr)
     return 0

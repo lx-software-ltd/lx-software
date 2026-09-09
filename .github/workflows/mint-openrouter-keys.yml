@@ -1,0 +1,109 @@
+name: Mint OpenRouter App Keys
+
+# Create the named inference keys in contracts/openrouter-apps.json
+# (lxsoftware:statement-parser, lxsoftware:executive-board, …) via
+# scripts/mint-openrouter-app-keys.py.
+#
+# SECURITY: this repository is PUBLIC, so workflow logs are world-readable.
+# Newly minted keys are never printed. They are written to a file and
+# symmetrically encrypted (gpg AES256) with PUBLIC_API_KEY_GPG_PASSPHRASE
+# before the armored ciphertext is shown. Decrypt locally with:
+#
+#   pbpaste > keys.asc   # or paste the block into keys.asc
+#   gpg --decrypt keys.asc
+#
+# GitHub secret names cannot contain hyphens. Store the OpenRouter
+# Management API key as OPENROUTER_MANAGEMENT_API_KEY (not
+# OPENROUTER-_MANAGEMENT_API_KEY) under
+# Settings > Environments > production > Secrets, together with
+# PUBLIC_API_KEY_GPG_PASSPHRASE. Create the management key at
+# https://openrouter.ai/settings/management-keys (any label; the name is
+# not checked). It is only used to mint; do not put it in AWS Secrets Manager.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview only (do not create keys)"
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mint-openrouter-keys
+  cancel-in-progress: false
+
+jobs:
+  mint:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Validate secrets
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          HAS_MANAGEMENT_KEY: ${{ secrets.OPENROUTER_MANAGEMENT_API_KEY != '' }}
+          HAS_PASSPHRASE: ${{ secrets.PUBLIC_API_KEY_GPG_PASSPHRASE != '' }}
+        run: |
+          set -euo pipefail
+          if [ "$HAS_MANAGEMENT_KEY" != "true" ]; then
+            echo "::error::Secret OPENROUTER_MANAGEMENT_API_KEY is not set. Add the OpenRouter Management API key under Settings > Environments > production > Secrets."
+            exit 1
+          fi
+          if [ "$DRY_RUN" != "true" ] && [ "$HAS_PASSPHRASE" != "true" ]; then
+            echo "::error::Secret PUBLIC_API_KEY_GPG_PASSPHRASE is not set. Add it under Settings > Environments > production > Secrets; it is needed to encrypt minted keys in this public repo's logs."
+            exit 1
+          fi
+
+      - name: Dry-run catalog keys
+        if: ${{ inputs.dry_run }}
+        env:
+          OPENROUTER_MANAGEMENT_API_KEY: ${{ secrets.OPENROUTER_MANAGEMENT_API_KEY }}
+        run: |
+          set -euo pipefail
+          python3 scripts/mint-openrouter-app-keys.py --dry-run | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Mint keys
+        if: ${{ !inputs.dry_run }}
+        env:
+          OPENROUTER_MANAGEMENT_API_KEY: ${{ secrets.OPENROUTER_MANAGEMENT_API_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.PUBLIC_API_KEY_GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          KEY_FILE="$(mktemp -u)"
+          python3 scripts/mint-openrouter-app-keys.py --plaintext-out "$KEY_FILE"
+
+          # Defense in depth: mask any key-shaped token in case a later step
+          # accidentally prints the file. GitHub already masks the management key.
+          grep -oE 'sk-[A-Za-z0-9_-]+' "$KEY_FILE" | while IFS= read -r token; do
+            echo "::add-mask::$token"
+          done || true
+
+          gpg --batch --yes --symmetric --cipher-algo AES256 --armor \
+            --passphrase "$GPG_PASSPHRASE" \
+            --output keys.asc "$KEY_FILE"
+          rm -f "$KEY_FILE"
+
+          {
+            echo "## Encrypted OpenRouter keys"
+            echo ""
+            echo "Copy the block below into \`keys.asc\`, then run"
+            echo "\`gpg --decrypt keys.asc\` and enter the"
+            echo "\`PUBLIC_API_KEY_GPG_PASSPHRASE\` value."
+            echo ""
+            echo "Merge the admin JSON into Secrets Manager secret"
+            echo "\`lxsoftware-admin-openrouter-api-secret-Hzerh6\`"
+            echo "(named keys \`statement-parser\` and \`executive-board\`)."
+            echo "Sibling product keys stay as a plain string in that product's secret."
+            echo ""
+            echo '```'
+            cat keys.asc
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          rm -f keys.asc
+          echo "Encrypted keys emitted to the job summary."
