@@ -37,7 +37,11 @@ class MintOpenRouterAppKeysTest(unittest.TestCase):
             self.assertEqual(method, "POST")
             name = str((body or {}).get("name"))
             created.append(name)
-            return {"data": {"key": f"sk-test-{name.replace(':', '-')}"}}
+            # Official create response: plaintext is top-level `key`.
+            return {
+                "data": {"name": name, "hash": "unused"},
+                "key": f"sk-test-{name.replace(':', '-')}",
+            }
 
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "minted.txt"
@@ -116,6 +120,33 @@ class MintOpenRouterAppKeysTest(unittest.TestCase):
             rc = self.mod.main()
         self.assertEqual(rc, 2)
         self.assertIn("OPENROUTER_MANAGEMENT_API_KEY", stderr.getvalue())
+
+    def test_plaintext_from_create_response_prefers_top_level_key(self) -> None:
+        self.assertEqual(
+            self.mod.plaintext_from_create_response(
+                {
+                    "data": {"name": "lxsoftware:statement-parser", "hash": "abc"},
+                    "key": "sk-test-top",
+                }
+            ),
+            "sk-test-top",
+        )
+
+    def test_plaintext_from_create_response_falls_back_to_nested_key(self) -> None:
+        self.assertEqual(
+            self.mod.plaintext_from_create_response(
+                {"data": {"key": "sk-test-nested"}}
+            ),
+            "sk-test-nested",
+        )
+
+    def test_plaintext_from_create_response_empty_when_only_metadata(self) -> None:
+        self.assertEqual(
+            self.mod.plaintext_from_create_response(
+                {"data": {"name": "lxsoftware:statement-parser", "hash": "abc"}}
+            ),
+            "",
+        )
 
 
 if __name__ == "__main__":
