@@ -363,6 +363,21 @@ Create the management key at
 [openrouter.ai/settings/management-keys](https://openrouter.ai/settings/management-keys).
 The script names keys `lxsoftware:{app-id}` and prints plaintext once.
 
+**Via GitHub Actions** (`.github/workflows/mint-openrouter-keys.yml`, Actions
+tab → **Mint OpenRouter App Keys** → Run workflow). One-time setup under
+**Settings → Environments → production → Secrets**:
+
+- `OPENROUTER_MANAGEMENT_API_KEY` — the management key (GitHub secret names
+  cannot contain hyphens; do not use `OPENROUTER-_MANAGEMENT_API_KEY`)
+- `PUBLIC_API_KEY_GPG_PASSPHRASE` — same passphrase as the public API-key
+  workflow; used to encrypt minted inference keys in this public repo's logs
+
+Leave **Preview only** checked to list which catalog names already exist.
+Uncheck it to mint. Copy the armored block from the job summary and decrypt
+locally (`gpg --decrypt keys.asc`). Then merge the admin JSON into
+`lxsoftware-admin-openrouter-api-secret-*` as below. The management key stays
+in GitHub; it does not go in that AWS secret.
+
 **This admin.** Replace the plain string in
 `lxsoftware-admin-openrouter-api-secret-*` with JSON. Parser and board
 calls fail if their named field is missing (no shared-key fallback):
