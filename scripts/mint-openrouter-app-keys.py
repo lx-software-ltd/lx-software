@@ -69,6 +69,22 @@ def _existing_names(payload: dict) -> set[str]:
     return names
 
 
+def plaintext_from_create_response(created: dict) -> str:
+    """OpenRouter returns the secret once at top-level ``key``, not inside ``data``.
+
+    https://openrouter.ai/docs/api-reference/api-keys/create-api-key
+    """
+    top = created.get("key")
+    if isinstance(top, str) and top.strip():
+        return top.strip()
+    nested = created.get("data")
+    if isinstance(nested, dict):
+        inner = nested.get("key")
+        if isinstance(inner, str) and inner.strip():
+            return inner.strip()
+    return ""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -110,10 +126,17 @@ def main() -> int:
             print(f"would create {key_name} for {app_id}")
             continue
         created = _request("POST", token, body={"name": key_name})
-        data = created.get("data") if isinstance(created.get("data"), dict) else created
-        plaintext = str((data or {}).get("key") or "").strip()
+        plaintext = plaintext_from_create_response(
+            created if isinstance(created, dict) else {}
+        )
         if not plaintext:
-            sys.exit(f"error: create {key_name} returned no key material")
+            keys = sorted(created.keys()) if isinstance(created, dict) else []
+            sys.exit(
+                f"error: create {key_name} returned no key material "
+                f"(response keys: {keys or 'none'}; expected top-level 'key'). "
+                "If OpenRouter created the named key anyway, delete it in the "
+                "dashboard and re-run — plaintext cannot be recovered."
+            )
         minted[app_id] = plaintext
         print(f"created {key_name}", file=sys.stderr)
 
