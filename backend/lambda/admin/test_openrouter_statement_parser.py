@@ -296,7 +296,7 @@ class TestParseStatementFromAsset(unittest.TestCase):
         headers = captured["headers"]
         self.assertEqual(
             next(v for k, v in headers.items() if k.lower() == "x-openrouter-title"),
-            "LX Admin — Statement parser",
+            "LX Admin - Statement parser",
         )
 
     def test_image_uses_image_url(self) -> None:

@@ -455,7 +455,7 @@ export const OPENROUTER_APPS: readonly OpenRouterAppDefinition[] = [
   {
     "id": "statement-parser",
     "label": "Statement parser",
-    "title": "LX Admin — Statement parser",
+    "title": "LX Admin - Statement parser",
     "referer": "https://admin.lx-software.com/finance/parse-statement",
     "repo": "lx-software-ltd/lx-software",
     "keyName": "lxsoftware:statement-parser",
@@ -464,7 +464,7 @@ export const OPENROUTER_APPS: readonly OpenRouterAppDefinition[] = [
   {
     "id": "executive-board",
     "label": "Executive Board",
-    "title": "LX Admin — Executive Board",
+    "title": "LX Admin - Executive Board",
     "referer": "https://admin.lx-software.com/siu-tin-dei/board",
     "repo": "lx-software-ltd/lx-software",
     "keyName": "lxsoftware:executive-board",
