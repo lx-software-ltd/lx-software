@@ -257,13 +257,24 @@ def extract_tool_calls(payload: dict[str, Any]) -> list[ToolCall]:
     return out
 
 
+def _http_header_value(value: str) -> str:
+    """HTTP header values must be latin-1; urllib raises on em dashes etc."""
+    cleaned = (
+        value.replace("\r", " ")
+        .replace("\n", " ")
+        .replace("\u2014", "-")
+        .replace("\u2013", "-")
+    )
+    return cleaned.encode("latin-1", "replace").decode("latin-1")
+
+
 def attribution_headers(service: str) -> dict[str, str]:
     """Headers OpenRouter uses to split Activity / Analytics by app."""
     app = resolve_app(service)
     return {
-        "HTTP-Referer": app.referer,
-        "X-OpenRouter-Title": app.title,
-        "X-Title": app.title,
+        "HTTP-Referer": _http_header_value(app.referer),
+        "X-OpenRouter-Title": _http_header_value(app.title),
+        "X-Title": _http_header_value(app.title),
         "X-OpenRouter-App-Visibility": "hidden",
     }
 

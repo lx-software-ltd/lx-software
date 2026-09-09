@@ -56,6 +56,16 @@ class TestOpenRouterAttribution(unittest.TestCase):
     def setUp(self) -> None:
         openrouter_client.reset_api_key_cache_for_tests()
 
+    def test_http_header_value_replaces_em_dash(self) -> None:
+        self.assertEqual(
+            openrouter_client._http_header_value("LX Admin — Statement parser"),
+            "LX Admin - Statement parser",
+        )
+        encoded = openrouter_client._http_header_value(
+            "LX Admin — Statement parser"
+        ).encode("latin-1")
+        self.assertEqual(encoded, b"LX Admin - Statement parser")
+
     def test_board_headers_and_user(self) -> None:
         captured: dict[str, object] = {}
 
@@ -86,7 +96,7 @@ class TestOpenRouterAttribution(unittest.TestCase):
 
         headers = captured["headers"]
         self.assertEqual(
-            _header(headers, "X-OpenRouter-Title"), "LX Admin — Executive Board"
+            _header(headers, "X-OpenRouter-Title"), "LX Admin - Executive Board"
         )
         self.assertEqual(
             _header(headers, "HTTP-Referer"),
