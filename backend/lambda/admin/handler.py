@@ -14,6 +14,7 @@ from dispatch import lambda_handler
 from assets import (  # noqa: F401
     _asset_delete_response,
     _asset_download_presigned_response,
+    _assets_list_response,
     _is_allowed_upload_content_type,
     _normalize_public_asset_key,
 )

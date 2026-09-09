@@ -31,6 +31,7 @@ from contract_constants import (
 from assets import (
     _asset_delete_response,
     _asset_download_presigned_response,
+    _assets_list_response,
     _is_allowed_upload_content_type,
 )
 from ddb_convert import _from_ddb, _from_ddb_nested, _to_ddb, _to_ddb_nested
@@ -96,7 +97,7 @@ from parse_statement import (
     _statement_basename_already_imported,
 )
 from proxies import _proxy_finance_quotes, _proxy_fx_v2_rates
-from runtime import RECORD_PK_PREFIX
+from runtime import PARSE_JOB_PK_PREFIX, RECORD_PK_PREFIX
 
 
 # Read-only mirrors of the admin GET endpoints, served under /public/* and
@@ -145,14 +146,18 @@ def _records_get_response(event: dict[str, Any]) -> dict[str, Any]:
     cursor_raw = parse_qs(qs).get("cursor", [""])[0]
     start_key = _decode_cursor(cursor_raw)
     table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
-    # Executive Board rows and OpenRouter usage ledgers never leave via the
-    # generic record browser or its public API-key mirror.
+    # Executive Board rows, OpenRouter usage ledgers, and parse-job META
+    # never leave via the generic record browser or its public API-key mirror.
     kwargs: dict[str, Any] = {
         "Limit": 50,
-        "FilterExpression": "NOT begins_with(pk, :board) AND NOT begins_with(pk, :openrouter)",
+        "FilterExpression": (
+            "NOT begins_with(pk, :board) AND NOT begins_with(pk, :openrouter) "
+            "AND NOT begins_with(pk, :parsejob)"
+        ),
         "ExpressionAttributeValues": {
             ":board": BOARD_PK_PREFIX,
             ":openrouter": USAGE_PK_PREFIX,
+            ":parsejob": PARSE_JOB_PK_PREFIX,
         },
     }
     if start_key:
@@ -524,6 +529,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         )
         _audit(user_sub, "ASSET_CONFIRM", str(key), event)
         return _json_response(201, {"item": _from_ddb(item)})
+
+    if method == "GET" and path == "/assets":
+        return _assets_list_response(event)
 
     if method == "GET" and path == "/assets/download-url":
         qs = event.get("rawQueryString") or ""

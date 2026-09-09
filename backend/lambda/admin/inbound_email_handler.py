@@ -27,6 +27,7 @@ import os
 import re
 import urllib.parse
 import uuid
+from datetime import datetime, timezone
 from email import policy
 from email.parser import BytesParser
 from typing import Any, NamedTuple
@@ -34,6 +35,7 @@ from typing import Any, NamedTuple
 import boto3
 
 import board_mail
+import runtime
 from contract_constants import (
     FINANCE_HOUSE_KEYS,
     FINANCE_LINE_TYPES,
@@ -173,6 +175,37 @@ def extract_first_pdf_attachment(raw: bytes) -> tuple[bytes, str] | None:
     """Return ``(pdf_bytes, safe_filename)`` for the first PDF part, if any."""
     parts = extract_pdf_attachments(raw)
     return parts[0] if parts else None
+
+
+def _record_inbound_asset_meta(
+    *,
+    s3_key: str,
+    house: str,
+    file_name: str,
+    size: int,
+    owner_sub: str,
+    request_id: str,
+) -> None:
+    """Create ``ASSET#`` META so inbound PDFs appear on the Assets page immediately."""
+    from finance_store import _persist_asset_meta_after_parse
+
+    table_name = (os.environ.get("RECORDS_TABLE_NAME") or "").strip()
+    if not table_name:
+        raise RuntimeError("RECORDS_TABLE_NAME is not set")
+    table = runtime._ddb.Table(table_name)
+    _persist_asset_meta_after_parse(
+        table=table,
+        s3_key=s3_key,
+        house=house,
+        head={
+            "ContentLength": size,
+            "ETag": "",
+            "LastModified": datetime.now(timezone.utc),
+        },
+        file_name=file_name,
+        request_id=request_id,
+        owner_sub=owner_sub,
+    )
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -326,6 +359,25 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 dest_keys = []
                 break
             dest_keys.append(dest_key)
+            try:
+                _record_inbound_asset_meta(
+                    s3_key=dest_key,
+                    house=owner_key,
+                    file_name=safe_name,
+                    size=len(pdf_bytes),
+                    owner_sub=user_sub,
+                    request_id=request_id,
+                )
+            except Exception as exc:  # noqa: BLE001 — parse can still create META later
+                logger.warning(
+                    json.dumps(
+                        {
+                            "tag": "inbound_mail_asset_meta_failed",
+                            "dest": dest_key[:512],
+                            "error": str(exc)[:500],
+                        }
+                    )
+                )
 
         if not dest_keys:
             continue

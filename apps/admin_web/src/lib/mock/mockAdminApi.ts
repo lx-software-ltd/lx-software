@@ -199,6 +199,7 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   }
 
   if (p === "/records") return json({ items: assetsFixture, nextCursor: null });
+  if (p === "/assets") return json({ items: assetsFixture, nextCursor: null });
   if (p === "/assets/download-url") return json({ url: "about:blank" });
   if (p === "/assets/delete") return json({ ok: true });
 

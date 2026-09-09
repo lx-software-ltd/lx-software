@@ -131,6 +131,9 @@ class FakeTable:
                 for r in rows
                 if not any(str(r["pk"]).startswith(p) for p in prefixes)
             ]
+        elif isinstance(filt, str) and "begins_with(pk," in filt.replace(" ", ""):
+            prefix = str(values.get(":asset") or next(iter(values.values()), ""))
+            rows = [r for r in rows if str(r["pk"]).startswith(prefix)]
         return {"Items": [dict(r) for r in rows[: kwargs.get("Limit", 50)]]}
 
     def update_item(
@@ -569,16 +572,41 @@ class TestBoardRoutes(BoardTestCase):
     def test_records_scan_excludes_board_rows(self) -> None:
         self.call("/siu-tin-dei/board/brief", "PUT", {"markdown": "secret strategy"})
         self.table.put_item(Item={"pk": "RECORD#1", "sk": "A"})
+        self.table.put_item(Item={"pk": "PARSE_JOB#j1", "sk": "META", "status": "failed"})
         status, body = self.call("/records")
         self.assertEqual(status, 200)
         pks = [i["pk"] for i in body["items"]]
         self.assertIn("RECORD#1", pks)
         self.assertFalse(any(pk.startswith("BOARD#") for pk in pks))
+        self.assertFalse(any(pk.startswith("PARSE_JOB#") for pk in pks))
         self.assertIn("NOT begins_with(pk, :board)", self.table.scan_calls[-1]["FilterExpression"])
         self.assertEqual(self.table.scan_calls[-1]["ExpressionAttributeValues"][":board"], "BOARD#")
         self.assertEqual(
             self.table.scan_calls[-1]["ExpressionAttributeValues"][":openrouter"], "OPENROUTER#"
         )
+        self.assertEqual(
+            self.table.scan_calls[-1]["ExpressionAttributeValues"][":parsejob"], "PARSE_JOB#"
+        )
+        self.assertIn("NOT begins_with(pk, :parsejob)", self.table.scan_calls[-1]["FilterExpression"])
+
+    def test_assets_list_returns_only_asset_rows(self) -> None:
+        self.table.put_item(Item={"pk": "RECORD#1", "sk": "A"})
+        self.table.put_item(Item={"pk": "PARSE_JOB#j1", "sk": "META", "status": "failed"})
+        self.table.put_item(
+            Item={
+                "pk": "ASSET#inbound/hillmarton/" + ("a" * 32) + "/00_stmt.pdf",
+                "sk": "META",
+                "fileName": "stmt.pdf",
+                "house": "hillmarton",
+                "size": 12,
+            }
+        )
+        status, body = self.call("/assets")
+        self.assertEqual(status, 200)
+        pks = [i["pk"] for i in body["items"]]
+        self.assertTrue(all(pk.startswith("ASSET#") for pk in pks))
+        self.assertEqual(len(pks), 1)
+        self.assertIn("begins_with(pk, :asset)", self.table.scan_calls[-1]["FilterExpression"])
 
     def test_openrouter_usage_endpoint_groups_by_app(self) -> None:
         import openrouter_usage

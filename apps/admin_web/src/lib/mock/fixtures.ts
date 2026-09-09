@@ -151,6 +151,14 @@ export const assetsFixture: readonly AdminAssetMeta[] = [
   { pk: "ASSET#uploads/hillmarton/2026-08-boiler-service.pdf", sk: "META", size: 182_331, uploadedAt: isoDaysAgo(9), fileName: "2026-08-boiler-service.pdf", house: "hillmarton" },
   { pk: "ASSET#uploads/siu-tin-dei/aws-2026-08.pdf", sk: "META", size: 96_004, uploadedAt: isoDaysAgo(6), fileName: "aws-2026-08.pdf", house: "siu-tin-dei" },
   { pk: "ASSET#uploads/morrison/management-fee-notice.jpg", sk: "META", size: 1_204_112, uploadedAt: isoDaysAgo(40), fileName: "management-fee-notice.jpg", house: "morrison" },
+  {
+    pk: "ASSET#inbound/hillmarton/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/00_KDQ170167_-_Landlord_Statement.pdf",
+    sk: "META",
+    size: 244_357,
+    uploadedAt: isoDaysAgo(0),
+    fileName: "KDQ170167_-_Landlord_Statement.pdf",
+    house: "hillmarton",
+  },
 ];
 
 export const bankingFixture: BankSyncState = {

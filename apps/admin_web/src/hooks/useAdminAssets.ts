@@ -54,7 +54,7 @@ export function useAdminAssets() {
       const data = await adminFetchJson<{
         items: AdminAssetMeta[];
         nextCursor?: string | null;
-      }>(`/records${qs}`);
+      }>(`/assets${qs}`);
       const finance = qc.getQueryData<FinancePersistedState>(["finance"]);
       const books = FINANCE_STATEMENT_BOOK_KEYS.map((key) => ({
         key,

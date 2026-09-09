@@ -87,6 +87,11 @@ class TestNormalizePublicAssetKey(unittest.TestCase):
         key = f"inbound/hillmarton/{batch}/00_stmt.pdf"
         self.assertEqual(_normalize_public_asset_key(key), key)
 
+    def test_accepts_inbound_statement_book_key(self) -> None:
+        batch = "b" * 32
+        key = f"inbound/lxSoftware/{batch}/00_invoice.pdf"
+        self.assertEqual(_normalize_public_asset_key(key), key)
+
     def test_rejects_inbound_bad_house_or_batch(self) -> None:
         batch = "a" * 32
         self.assertIsNone(

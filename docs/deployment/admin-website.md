@@ -656,6 +656,15 @@ is not an SES recipient; after deploy, forward that iCloud mailbox to
 `lxsoftware-InboundMailbox-lxSoftware`). PDFs then use the same extract →
 assets → `enqueue_parse_statement_async_job` path as the house inboxes, with
 `lineTypeOnly=expenditure` so lines land on **LX Software → Expenses**.
+Inbound PDFs are written under `inbound/{owner}/{batch}/` in the assets
+bucket and get an `ASSET#` META row immediately (original filename, not the
+`00_` S3 prefix), so they show on **Assets** even if parse later fails.
+
+Set **`lxsoftware:StatementParseNotifyEmail`** (CDK / `params/*.json`) to
+receive an email from `statements@inbound.lx-software.com` when a statement
+parse job succeeds or fails. Leave it empty to disable. SES must be able to
+send from `InboundMailDomain` to that address (account out of the sandbox,
+or the destination verified).
 
 The Evolve Sprouts stack still owns the invoice bucket, SNS topic, SQS
 queue, receipt IAM role, and processor. It must **not** call

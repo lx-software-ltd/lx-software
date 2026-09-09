@@ -221,6 +221,25 @@ describe("EventBridge Scheduler wiring", () => {
 });
 
 describe("Admin Lambda IAM policies", () => {
+  test("statement parse notify send is scoped to the inbound mail identity", () => {
+    const [policy, ...rest] = findPoliciesByConstructId("StatementParseNotifySendPolicy");
+    expect(policy).toBeDefined();
+    expect(rest).toHaveLength(0);
+
+    const sendStatements = policyStatements(policy).filter((s) =>
+      asArray<string>(s.Action).includes("ses:SendEmail")
+    );
+    expect(sendStatements).toHaveLength(1);
+
+    const resources = asArray(sendStatements[0].Resource);
+    expect(resources).toHaveLength(1);
+    expect(resources[0]).not.toBe("*");
+    const serialized = JSON.stringify(resources[0]);
+    expect(serialized).toContain(":ses:");
+    expect(serialized).toContain(":identity/");
+    expect(serialized).toContain('"Ref":"InboundMailDomain"');
+  });
+
   test("the SES send statement is scoped to the board mail identity, not *", () => {
     const [policy, ...rest] = findPoliciesByConstructId("SiutindeiBoardMailSendPolicy");
     expect(policy).toBeDefined();

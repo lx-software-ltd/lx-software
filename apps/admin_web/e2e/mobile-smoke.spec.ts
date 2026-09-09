@@ -83,6 +83,14 @@ test.describe("admin viewport smoke", () => {
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 
+  test("assets lists inbound statement PDFs", async ({ page }) => {
+    await page.goto("/assets");
+    await expect(page.getByRole("heading", { name: "Assets", level: 1 })).toBeVisible();
+    await expect(page.getByText("KDQ170167_-_Landlord_Statement.pdf")).toBeVisible();
+    await expect(page.getByText("32 Hillmarton").filter({ visible: true }).first()).toBeVisible();
+    expect(await pageHasHorizontalOverflow(page)).toBe(false);
+  });
+
   test("siu tin dei board sections stay reachable", async ({ page }, testInfo) => {
     await page.goto("/siu-tin-dei");
     await expect(page.getByRole("heading", { name: "Siu Tin Dei", level: 1 })).toBeVisible();
