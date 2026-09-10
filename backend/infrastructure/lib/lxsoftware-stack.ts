@@ -917,20 +917,22 @@ export class LxsoftwareStack extends cdk.Stack {
         analytics: "lxsoftware-admin-siutindei-board-google-analytics-sa",
       },
     });
-    const googlePlacesKeySecret = boardPlaceholderSecret(this, "SiutindeiBoardGooglePlacesKey", {
-      secretName: "lxsoftware-admin-siutindei-board-google-places-key",
-      description: "Siu Tin Dei Executive Board: Google Places API (New) key, restricted to Places.",
-      encryptionKey: this.sharedEncryptionKey,
-      tenant: "siutindei",
-      purpose: "board-places",
-    });
-    const boardLinkSigningSecret = boardPlaceholderSecret(this, "SiutindeiBoardLinkSigningKey", {
-      secretName: "lxsoftware-admin-siutindei-board-link-signing-key",
-      description: "Siu Tin Dei Executive Board: HMAC key for outreach unsubscribe and newsletter confirm tokens.",
-      encryptionKey: this.sharedEncryptionKey,
-      tenant: "siutindei",
-      purpose: "board-link-signing",
-    });
+    /**
+     * Places key (dummy, owner replaces) and HMAC link-signing key (CDK
+     * generated 40 chars). Same history as the connector secrets: the first
+     * autonomy deploy created them, RETAIN skipped delete on rollback, so a
+     * fresh CREATE now fails with AlreadyExists. Import by name.
+     */
+    const googlePlacesKeySecret = secretsmanager.Secret.fromSecretNameV2(
+      this,
+      "SiutindeiBoardGooglePlacesKey",
+      "lxsoftware-admin-siutindei-board-google-places-key"
+    );
+    const boardLinkSigningSecret = secretsmanager.Secret.fromSecretNameV2(
+      this,
+      "SiutindeiBoardLinkSigningKey",
+      "lxsoftware-admin-siutindei-board-link-signing-key"
+    );
 
     /**
      * Asymmetric RSA key that signs the Enable Banking RS256 JWTs. The

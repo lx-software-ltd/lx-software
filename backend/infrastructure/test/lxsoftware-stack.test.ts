@@ -390,6 +390,8 @@ describe("Executive Board placeholder secrets", () => {
     "lxsoftware-admin-siutindei-board-app-store-connect-key",
     "lxsoftware-admin-siutindei-board-google-play-sa",
     "lxsoftware-admin-siutindei-board-google-analytics-sa",
+    "lxsoftware-admin-siutindei-board-google-places-key",
+    "lxsoftware-admin-siutindei-board-link-signing-key",
   ];
 
   const removedParameters = [

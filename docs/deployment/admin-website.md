@@ -283,7 +283,10 @@ The **Siu Tin Dei** connector secrets (`lxsoftware-admin-siutindei-board-*`)
 already exist in the account. The first #328 deploy created them, then
 `RemovalPolicy.RETAIN` left them behind when rollback dropped them from the
 stack. CDK now **imports those names** and grants `AdminApiFn` read; it
-does not try to create them again. Replace the dummy values in Secrets
+does not try to create them again. The same happened to the autonomy
+secrets `…-board-google-places-key` and `…-board-link-signing-key` on the
+first #341 deploy, so they are imported the same way (the link-signing
+value generated on that first attempt is the one in use). Replace the dummy values in Secrets
 Manager (`ap-southeast-1`). The older `lxsoftware-admin-*` set stays in
 the stack (CDK-created, unused) for a future LX Software board. OpenRouter
 stays `lxsoftware-admin-openrouter-api-secret-*` because statement parsing
@@ -577,7 +580,7 @@ function calling. Design:
   Schedule `lxsoftware-admin-siutindei-board-targets` (08:00 HKT).
   Secrets `lxsoftware-admin-siutindei-board-google-places-key` (replace
   dummy) and `lxsoftware-admin-siutindei-board-link-signing-key`
-  (generated). SES identity for `OutreachSendingDomain` is created
+  (generated) are imported by name, like the connector set. SES identity for `OutreachSendingDomain` is created
   pending DNS; sends refuse until `VerifiedForSendingStatus`.
   Configuration set `lxsoftware-admin-siutindei-outreach` → SNS → SQS.
   Outreach and board-mail IAM include both `configuration-set/…-outreach`
