@@ -80,6 +80,9 @@ def classify(op: board_tools.ToolOp, ctx: board_tools.ToolContext, args: dict[st
             return "outbound_known", "outbound_known"
         ptype = str(args.get("prospectType") or _prospect_type_for_args(ctx.table, args) or "unknown")
         return "cold_outreach", f"cold_outreach:{ptype}"
+    if name == "content_publish":
+        channel = str(args.get("channel") or _content_channel(ctx.table, args) or "content")
+        return "publish", f"publish:{channel}"
     if name in PUBLISH_OPS:
         return "publish", f"publish:{PUBLISH_OPS[name]}"
     if name in SPEND_OPS:
@@ -119,6 +122,14 @@ def _prospect_for_address(table: Any, address: str) -> dict[str, Any] | None:
     if not key:
         return None
     return board_store.get_prospect(table, key)
+
+
+def _content_channel(table: Any, args: dict[str, Any]) -> str:
+    cid = str(args.get("contentId") or "")
+    if not cid:
+        return ""
+    row = board_store.get_content(table, cid)
+    return str((row or {}).get("channel") or "")
 
 
 def _prospect_type_for_args(table: Any, args: dict[str, Any]) -> str:
@@ -174,10 +185,15 @@ def create_hold(
     class_key: str,
     hours: int,
     summary: str,
+    execute_at: datetime | str | None = None,
 ) -> dict[str, Any]:
     now = datetime.now(timezone.utc)
-    execute_at = _shift_quiet(now + timedelta(hours=max(0, hours)), ctx.settings)
-    execute_iso = board_hk.to_iso(execute_at)
+    if execute_at:
+        target = board_hk.parse_iso(execute_at) if isinstance(execute_at, str) else execute_at
+        execute_dt = _shift_quiet(board_hk.as_hkt(target), ctx.settings)
+    else:
+        execute_dt = _shift_quiet(now + timedelta(hours=max(0, hours)), ctx.settings)
+    execute_iso = board_hk.to_iso(execute_dt)
     preview = board_tools.render_preview(ctx, op, arguments)
     hold_id = board_store.new_id()
     stored_args = dict(arguments)
@@ -237,9 +253,19 @@ def maybe_hold(
     except Exception:
         quiet_reply = False
         quiet_outreach = False
-    if hours <= 0 and not quiet_reply and not quiet_outreach:
+    slot_at = str(arguments.get("slotAt") or "") if op.name == "content_publish" else ""
+    if hours <= 0 and not quiet_reply and not quiet_outreach and not slot_at:
         return None
-    return create_hold(ctx, op, arguments, action_class=action_class, class_key=class_key, hours=hours, summary=summary)
+    return create_hold(
+        ctx,
+        op,
+        arguments,
+        action_class=action_class,
+        class_key=class_key,
+        hours=hours,
+        summary=summary,
+        execute_at=slot_at or None,
+    )
 
 
 def execute_due(table: Any, settings: dict[str, Any], now_iso: str, *, limit: int = 25) -> int:
@@ -348,6 +374,14 @@ def veto(table: Any, hold_id: str, by_sub: str, reason: str) -> dict[str, Any]:
         board_lessons.create_from_veto(table, hold)
     except Exception as exc:
         _log_event("warning", tag="board_lesson_from_veto_failed", error=str(exc)[:200])
+    if hold.get("op") == "content_publish":
+        content_id = str((hold.get("arguments") or {}).get("contentId") or "")
+        if content_id:
+            row = board_store.get_content(table, content_id)
+            if row:
+                row["status"] = "vetoed"
+                row["updatedAt"] = now
+                board_store.put_content(table, row)
     return hold
 
 

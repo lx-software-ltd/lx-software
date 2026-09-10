@@ -946,7 +946,7 @@ export class LxsoftwareStack extends cdk.Stack {
     const adminFn = createPythonLambda(this, "AdminApiFn", {
       entryDir: path.join(__dirname, "..", "..", "lambda", "admin"),
       timeout: adminStatementParseLambdaTimeout,
-      memorySize: 1024,
+      memorySize: 1536,
       environmentEncryptionKey: this.sharedEncryptionKey,
       logEncryptionKey: this.sharedEncryptionKey,
       deadLetterQueue: this.lambdaDeadLetterQueue,
@@ -1158,6 +1158,32 @@ export class LxsoftwareStack extends cdk.Stack {
         timeZone: cdk.TimeZone.ASIA_HONG_KONG,
       }),
       { internal: "board_targets" },
+      0
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardContentPlanSchedule",
+      "lxsoftware-admin-siutindei-board-content-plan",
+      "Sunday 18:00 HKT content calendar planning duty.",
+      scheduler.ScheduleExpression.cron({
+        minute: "0",
+        hour: "18",
+        weekDay: "SUN",
+        timeZone: cdk.TimeZone.ASIA_HONG_KONG,
+      }),
+      { internal: "board_content_plan" },
+      0
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardContentReadoutSchedule",
+      "lxsoftware-admin-siutindei-board-content-readout",
+      "Monday 09:00 HKT weekly content performance readout.",
+      scheduler.ScheduleExpression.cron({
+        minute: "0",
+        hour: "9",
+        weekDay: "MON",
+        timeZone: cdk.TimeZone.ASIA_HONG_KONG,
+      }),
+      { internal: "board_content_readout" },
       0
     );
 
@@ -2191,6 +2217,22 @@ export class LxsoftwareStack extends cdk.Stack {
       },
       {
         path: "/siu-tin-dei/board/outreach/stats",
+        methods: [apigwv2.HttpMethod.GET],
+      },
+      {
+        path: "/siu-tin-dei/board/content",
+        methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/content/{id}",
+        methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.PUT],
+      },
+      {
+        path: "/siu-tin-dei/board/content/{id}/render",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/content/{id}/creative/{n}",
         methods: [apigwv2.HttpMethod.GET],
       },
     ];

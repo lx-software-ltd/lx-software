@@ -218,6 +218,15 @@ def _narrative(table: Any, date_hkt: str) -> str:
     return (text or str(task.get("summary") or "")).strip()[:2000]
 
 
+def _assisted_section(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
+    try:
+        import board_content
+
+        return board_content.assisted_due(table, settings)
+    except Exception:
+        return []
+
+
 def _market_section(table: Any) -> dict[str, Any]:
     try:
         import board_intel
@@ -254,7 +263,7 @@ def compile(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, An
         "sample": _sample(table, settings, date_hkt),
         "breakers": breakers,
         "suggestions": suggestions,
-        "assisted": [],
+        "assisted": _assisted_section(table, settings),
         "market": _market_section(table),
         "promotion": [],
     }

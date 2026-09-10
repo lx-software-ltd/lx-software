@@ -618,6 +618,24 @@ def _outreach_suppress(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]
     return board_outreach.op_suppress(ctx, args)
 
 
+def _content_list(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_content
+
+    return board_content.op_list(ctx, args)
+
+
+def _content_get(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_content
+
+    return board_content.op_get(ctx, args)
+
+
+def _content_publish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_content
+
+    return board_content.op_publish(ctx, args)
+
+
 def _staff_assign(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     import board_staff
 
@@ -1963,6 +1981,44 @@ def build_registry() -> dict[str, ToolOp]:
             contexts=("chat", "meeting", "task"),
         ),
         ToolOp(
+            name="content_list",
+            tool_id="content",
+            kind="read",
+            description="List calendar items, optionally filtered by status.",
+            parameters=_obj({"status": _str_param("Content status.", max_len=20), "limit": _int_param("Max rows.", minimum=1, maximum=80)}),
+            run=_content_list,
+            summarize=_summ("Listed calendar items"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="content_get",
+            tool_id="content",
+            kind="read",
+            description="Get one calendar item including copy and creative keys.",
+            parameters=_obj({"contentId": _str_param("Content id.", max_len=40)}, ["contentId"]),
+            run=_content_get,
+            summarize=_summ("Read a calendar item"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="content_publish",
+            tool_id="content",
+            kind="write",
+            description="Publish a scheduled calendar item to Facebook or Instagram. Held until slotAt.",
+            parameters=_obj(
+                {
+                    "contentId": _str_param("Content id.", max_len=40),
+                    "slotAt": _str_param("ISO slot time (HKT).", max_len=40),
+                    "channel": _str_param("Publish channel.", max_len=40),
+                    "reason": REASON_PARAM,
+                },
+                ["contentId"],
+            ),
+            run=_content_publish,
+            summarize=_summ("Published a calendar item"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
             name="staff_assign",
             tool_id="staff",
             kind="write",
@@ -2143,7 +2199,7 @@ def available_ops(
             continue
         if op.tool_id == "task":
             level = "act" if context == "task" else "off"
-        elif op.tool_id in ("staff", "intel", "outreach"):
+        elif op.tool_id in ("staff", "intel", "outreach", "content"):
             import board_staff
 
             if not board_staff.enabled(settings):

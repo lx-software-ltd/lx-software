@@ -203,6 +203,8 @@ describe("EventBridge Scheduler wiring", () => {
       "lxsoftware-admin-siutindei-board-intel-crawl": "board_intel_crawl",
       "lxsoftware-admin-siutindei-board-intel-weekly": "board_intel_weekly",
       "lxsoftware-admin-siutindei-board-targets": "board_targets",
+      "lxsoftware-admin-siutindei-board-content-plan": "board_content_plan",
+      "lxsoftware-admin-siutindei-board-content-readout": "board_content_readout",
     };
     const schedules = Object.values(resourcesOfType("AWS::Scheduler::Schedule"));
     const byName = Object.fromEntries(

@@ -449,6 +449,15 @@ function calling. Design:
   `partners.siutindei.com`, Places key, SES production / identity verify,
   then raise the daily cap only via the 7-day warm-up (max 100).
 
+- **Content calendar (WP7):** `GET/POST /siu-tin-dei/board/content`,
+  `PUT /content/{id}`, `POST /content/{id}/render`,
+  `GET /content/{id}/creative/{n}`. Sunday 18:00 HKT
+  `…-board-content-plan`, Monday 09:00 HKT `…-board-content-readout`.
+  `AdminApiFn` memory 1536 MB; first pip dependency is Pillow (Docker
+  arm64 wheel). **Content** section. `content-marketer` and
+  `growth-specialist` active by default. Meta App Review for
+  `pages_manage_posts` / `instagram_content_publish` stays an owner task.
+
 Smoke test after deploy: open the tab, save a company vision/mission, edit one
 member's mandate, send a chat message to the CEO (reply arrives within ~30 s),
 then **Run stand-up** and confirm minutes and action items appear. For tools:

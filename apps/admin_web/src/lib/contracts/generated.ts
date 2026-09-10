@@ -450,6 +450,22 @@ export const BOARD_TOOL_DEFINITIONS: readonly BoardToolDefinition[] = [
     }
   },
   {
+    "id": "content",
+    "label": "Content",
+    "description": "Plan the calendar, render template cards and publish to Facebook, Instagram and stories. Writes at act become publish holds until the slot time.",
+    "maxLevel": "act",
+    "defaults": {
+      "ceo": "read",
+      "cfo": "off",
+      "coo": "off",
+      "cpo": "off",
+      "cto": "off",
+      "cio": "off",
+      "ciso": "off",
+      "cmo": "act"
+    }
+  },
+  {
     "id": "web",
     "label": "Web analytics",
     "description": "GA4 sessions, top pages, referrers and conversions across configured properties, plus GTM live-version status. Read-only; cached hourly. GTM publish and Google Ads are later milestones.",
@@ -573,12 +589,13 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cmo",
     "title": "Content Marketer",
     "modelTier": "desk",
-    "isActiveDefault": false,
+    "isActiveDefault": true,
     "tools": {
       "meta": "act",
       "stores": "propose",
       "research": "read",
-      "github": "propose"
+      "github": "propose",
+      "content": "act"
     },
     "brief": "You fill the content calendar, write posts and stories in English and Traditional Chinese, render template cards, and draft newsletters and SEO articles. You never invent photos of children and you never publish a claim the catalog does not support. Report facts you verified with tools; say clearly what you could not verify."
   },
@@ -600,11 +617,12 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cmo",
     "title": "Growth / Paid Social Specialist",
     "modelTier": "desk",
-    "isActiveDefault": false,
+    "isActiveDefault": true,
     "tools": {
       "meta": "act",
       "web": "read",
-      "research": "read"
+      "research": "read",
+      "content": "read"
     },
     "brief": "You write campaign briefs, boost the week's best organic post, and run small ad-set tests inside the founder-set spend caps. You report performance with UTMs, not vanity metrics. Report facts you verified with tools; say clearly what you could not verify."
   },

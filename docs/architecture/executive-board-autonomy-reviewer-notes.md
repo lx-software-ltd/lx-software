@@ -224,3 +224,32 @@ up in review; do not treat them as product decisions unless you confirm.
   only on `intel:prospects` cache.
 - **`OUTREACH_IDENTITY_VERIFIED=false`** forces the SES check off so
   tests can exercise the unverified refusal without a live identity.
+
+## WP7
+
+- **Fonts are variable-font files** saved under the spec names
+  (`NotoSans-Regular.ttf` / `NotoSans-Bold.ttf` are the same wdth+wght
+  variable file; `NotoSansTC-*.otf` is the Google Fonts TC variable TTF).
+  `board_creative` sets the `wght` axis to 400 or 700. OFL text is in
+  `fonts/OFL.txt`.
+- **Brand tokens** (`#FF6B35` / `#2EC4B6` / `#1A1A1A` / `#FFF8F0`) and the
+  placeholder logo were chosen by the implementer; confirm with the owner.
+- **`AdminApiFn` memory is 1536 MB** (spec §5). Inbound statement Lambda
+  stays at 1024.
+- **`create_hold(..., execute_at=)`** is used so `content_publish` waits
+  for `slotAt` even when the publish class has been promoted to 0 hours.
+- **Plan deliverable read limit** is 200_000 characters so a 21-item JSON
+  week is not truncated by the default 6_000-char `read_deliverable`.
+- **Python-lambda Docker bundling** was already in `python-lambda.ts`;
+  adding Pillow to `requirements.txt` disables the local no-pip copy path.
+- **Creatives render inline** in `on_plan_delivered` rather than as a
+  separate staff-task step. Same Pillow path, one Lambda invoke.
+- **Default `perWeek` includes `seo: 2`.** Acceptance still treats the
+  social week as 21 items (7+7+7); SEO rows are extra and unused until
+  a later publishing path.
+- **`web_sessions` campaign filter** uses GA4 `sessionCampaignName`
+  (`board_web.campaign_sessions`) against `{pillar}-{yyyyww}` labels.
+  Missing GA4 config is logged and does not fail the readout.
+- **`add_external_usage_day` now allows `_`** so the spec field
+  `ig_publish` is a legal counter name (colons were already allowed for
+  `reply:{channel}`).

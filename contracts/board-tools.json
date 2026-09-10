@@ -212,6 +212,22 @@
       }
     },
     {
+      "id": "content",
+      "label": "Content",
+      "description": "Plan the calendar, render template cards and publish to Facebook, Instagram and stories. Writes at act become publish holds until the slot time.",
+      "maxLevel": "act",
+      "defaults": {
+        "ceo": "read",
+        "cfo": "off",
+        "coo": "off",
+        "cpo": "off",
+        "cto": "off",
+        "cio": "off",
+        "ciso": "off",
+        "cmo": "act"
+      }
+    },
+    {
       "id": "web",
       "label": "Web analytics",
       "description": "GA4 sessions, top pages, referrers and conversions across configured properties, plus GTM live-version status. Read-only; cached hourly. GTM publish and Google Ads are later milestones.",

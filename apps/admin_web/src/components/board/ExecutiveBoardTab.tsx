@@ -18,6 +18,7 @@ import { BoardMemberEditor } from "./BoardMemberEditor";
 import { BoardMembersStrip } from "./BoardMembersStrip";
 import { BoardSettingsCard } from "./BoardSettingsCard";
 import { BoardMarketSection } from "./BoardMarketSection";
+import { BoardContentSection } from "./BoardContentSection";
 import { BoardPipelineSection } from "./BoardPipelineSection";
 import { BoardStaffSection } from "./BoardStaffSection";
 import { BoardToolsCard } from "./BoardToolsCard";
@@ -43,7 +44,7 @@ import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { adminTabButtonId } from "../../lib/adminTabs";
 import { DEFAULT_BOARD_BOUNDARIES, effectiveToolLevel, type BoardMeetingMode, type BoardOverview } from "../../lib/boardModel";
 
-type BoardSection = "review" | "market" | "pipeline" | "actions" | "staff" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
+type BoardSection = "review" | "market" | "pipeline" | "content" | "actions" | "staff" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
 
 const CLOSED_MEETING = "__closed__";
 const SECTION_ID_PREFIX = "board-section";
@@ -53,6 +54,7 @@ const SECTIONS: readonly { readonly id: BoardSection; readonly label: string; re
   { id: "review", label: "Daily review", icon: "bi-sun" },
   { id: "market", label: "Market", icon: "bi-binoculars" },
   { id: "pipeline", label: "Pipeline", icon: "bi-funnel" },
+  { id: "content", label: "Content", icon: "bi-calendar3" },
   { id: "actions", label: "Next actions", icon: "bi-list-check" },
   { id: "staff", label: "Staff", icon: "bi-people-fill" },
   { id: "approvals", label: "Approvals", icon: "bi-shield-check" },
@@ -238,6 +240,8 @@ export function ExecutiveBoardTab() {
           {overview && section === "market" ? <BoardMarketSection /> : null}
 
           {overview && section === "pipeline" ? <BoardPipelineSection /> : null}
+
+          {overview && section === "content" ? <BoardContentSection /> : null}
 
           {overview && section === "actions" ? (
             <BoardActionsList

@@ -31,6 +31,7 @@ import type {
   BoardProspect,
   BoardOutreachStats,
   BoardSequence,
+  BoardContentItem,
 } from "../boardModel";
 import { DEFAULT_BOARD_BOUNDARIES } from "../boardModel";
 import type { FinancePersistedState, HouseFinanceData } from "../financeModel";
@@ -587,7 +588,17 @@ export const boardReviewFixture: BoardReviewSnapshot = {
   ],
   breakers: [],
   suggestions: [{ classKey: "publish:facebook", actions: 32, vetoes: 0, rate: 0, eligibleForPromotion: true, shouldDemote: false }],
-  assisted: [],
+  assisted: [
+    {
+      contentId: "cnt-xhs",
+      status: "scheduled",
+      channel: "assisted_xiaohongshu",
+      pillar: "activity spotlight",
+      slotAt: isoDaysAgo(0),
+      copyZh: "沙田週末玩樂",
+      copyEn: "Saturday play in Sha Tin",
+    },
+  ],
   market: {
     changes: [
       {
@@ -695,6 +706,29 @@ export const boardChangesFixture: BoardChangeNote[] = [
     createdAt: isoDaysAgo(1),
     beforeDigest: "Saturday class $280",
     afterDigest: "Saturday class $320",
+  },
+];
+
+export const boardContentFixture: BoardContentItem[] = [
+  {
+    contentId: "cnt-1",
+    status: "scheduled",
+    channel: "facebook",
+    pillar: "activity spotlight",
+    slotAt: isoDaysAgo(-1),
+    copyEn: "Saturday play in Sha Tin",
+    copyZh: "沙田週末玩樂",
+    template: "spotlight",
+  },
+  {
+    contentId: "cnt-xhs",
+    status: "scheduled",
+    channel: "assisted_xiaohongshu",
+    pillar: "activity spotlight",
+    slotAt: isoDaysAgo(0),
+    copyEn: "Saturday play in Sha Tin",
+    copyZh: "沙田週末玩樂",
+    template: "spotlight",
   },
 ];
 

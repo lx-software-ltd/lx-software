@@ -300,6 +300,16 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         return board_targets_mod.handle_check(event)
 
+    if isinstance(event, dict) and event.get("internal") == "board_content_plan":
+        import board_content as board_content_mod
+
+        return board_content_mod.handle_plan(event)
+
+    if isinstance(event, dict) and event.get("internal") == "board_content_readout":
+        import board_content as board_content_mod
+
+        return board_content_mod.handle_readout(event)
+
     records = event.get("Records") if isinstance(event, dict) else None
     if isinstance(records, list) and records and records[0].get("eventSource") == "aws:sqs":
         import board_outreach as board_outreach_mod

@@ -1,1 +1,2 @@
 # Boto3 is included in the Lambda Python 3.12 runtime.
+Pillow==11.3.0

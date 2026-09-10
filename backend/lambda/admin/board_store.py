@@ -1327,7 +1327,7 @@ def external_usage_day_key(date_iso: str | None = None) -> str:
 
 def add_external_usage_day(table: Any, field_name: str, amount: int = 1) -> None:
     """Count one third-party API call (e.g. ``searchCalls``) against today."""
-    if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9:]{0,40}", field_name):
+    if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_:]{0,40}", field_name):
         raise ValueError("invalid usage field name")
     table.update_item(
         Key={"pk": board_pk(external_usage_day_key()), "sk": "STATE"},
@@ -2050,8 +2050,8 @@ def list_content(table: Any, status: str | None = None, *, limit: int = 200) -> 
             ScanIndexForward=True,
             Limit=limit,
         )
-        items.extend(_strip_keys(i) for i in rows)
-    return items[:limit]
+        items.extend(_from_ddb_nested(_strip_keys(i)) for i in rows)
+    return [i for i in items if isinstance(i, dict)][:limit]
 
 
 def put_newsletter_sub(table: Any, digest: str, list_name: str, doc: dict[str, Any]) -> None:

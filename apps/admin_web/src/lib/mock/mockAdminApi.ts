@@ -30,6 +30,7 @@ import {
   boardProspectsFixture,
   boardOutreachStatsFixture,
   boardSequenceFixture,
+  boardContentFixture,
   financeFixture,
   lxSoftwareBookFixture,
   siuTinDeiBookFixture,
@@ -45,6 +46,7 @@ import {
   type BoardWatch,
   type BoardProspect,
   type BoardSequence,
+  type BoardContentItem,
 } from "../boardModel";
 
 export { isAdminMockEnabled };
@@ -91,6 +93,7 @@ type MockState = {
   watches: BoardWatch[];
   prospects: BoardProspect[];
   sequences: Record<string, BoardSequence>;
+  content: BoardContentItem[];
 };
 
 const state: MockState = {
@@ -108,6 +111,7 @@ const state: MockState = {
   watches: structuredClone(boardWatchesFixture) as BoardWatch[],
   prospects: structuredClone(boardProspectsFixture) as BoardProspect[],
   sequences: {},
+  content: structuredClone(boardContentFixture) as BoardContentItem[],
 };
 
 function json(body: unknown, status = 200): Response {
@@ -501,6 +505,45 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
       return json({ sequence: state.sequences[type] });
     }
     return json({ sequence: state.sequences[type] ?? boardSequenceFixture(type) });
+  }
+  if (p === `${board}/content`) {
+    if (method === "POST") {
+      const body = parseBody(init);
+      const item: BoardContentItem = {
+        contentId: `cnt-${state.content.length + 1}`,
+        status: "drafted",
+        channel: String(body.channel || "facebook"),
+        pillar: String(body.pillar || "activity spotlight"),
+        slotAt: String(body.slotAt || new Date().toISOString()),
+        copyEn: String(body.copyEn || ""),
+        copyZh: String(body.copyZh || ""),
+      };
+      state.content = [item, ...state.content];
+      return json({ item });
+    }
+    return json({
+      items: state.content,
+      assisted: state.content.filter((row) => String(row.channel || "").startsWith("assisted")),
+    });
+  }
+  if (p.includes("/creative/") && p.startsWith(`${board}/content/`)) {
+    return json({ url: "https://assets.example/board/content/preview.png", key: "preview.png" });
+  }
+  if (p.startsWith(`${board}/content/`) && p.endsWith("/render") && method === "POST") {
+    const contentId = decodeURIComponent(p.slice(`${board}/content/`.length, -"/render".length));
+    const item = state.content.find((row) => row.contentId === contentId);
+    if (!item) return json({ message: "Not found" }, 404);
+    return json({ item });
+  }
+  if (p.startsWith(`${board}/content/`)) {
+    const contentId = decodeURIComponent(p.slice(`${board}/content/`.length));
+    const idx = state.content.findIndex((row) => row.contentId === contentId);
+    if (idx < 0) return json({ message: "Not found" }, 404);
+    if (method === "PUT") {
+      const body = parseBody(init);
+      state.content[idx] = { ...state.content[idx], ...body } as BoardContentItem;
+    }
+    return json({ item: state.content[idx] });
   }
 
   return notFound(p);

@@ -79,6 +79,13 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByRole("heading", { name: "Pipeline" })).toBeVisible();
     await expect(page.getByText(/Sha Tin Playhouse/i)).toBeVisible();
     if (testInfo.project.name === "phone") {
+      await page.locator("#board-section-select").selectOption("content");
+    } else {
+      await page.getByRole("tab", { name: /Content/ }).click();
+    }
+    await expect(page.getByRole("heading", { name: "Content" })).toBeVisible();
+    await expect(page.getByText(/Saturday play in Sha Tin/i)).toBeVisible();
+    if (testInfo.project.name === "phone") {
       await page.locator("#board-section-select").selectOption("staff");
     } else {
       await page.getByRole("tab", { name: /Staff/ }).click();

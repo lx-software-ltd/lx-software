@@ -183,6 +183,9 @@ def handle_board_route(
     if head == "outreach":
         return _outreach_route(event, method, rest, user_sub)
 
+    if head == "content":
+        return _content_route(event, method, rest, user_sub)
+
     return _json_response(404, {"message": "Not found"})
 
 
@@ -968,6 +971,75 @@ def _outreach_route(event: dict[str, Any], method: str, rest: list[str], user_su
         table = board_store.records_table()
         settings = board_store.load_settings(table)
         return _json_response(200, board_outreach.stats(table, settings, days=days))
+    return _json_response(404, {"message": "Not found"})
+
+
+def _content_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
+    if not board_staff.env_enabled():
+        return _staff_disabled()
+    import board_content
+
+    table = board_store.records_table()
+    settings = board_store.load_settings(table)
+    qs = parse_qs(event.get("rawQueryString") or "")
+    if len(rest) == 1:
+        if method == "GET":
+            try:
+                rows = board_content.list_for_api(
+                    table,
+                    status=(qs.get("status") or [""])[0] or None,
+                    start=(qs.get("from") or [""])[0],
+                    end=(qs.get("to") or [""])[0],
+                )
+            except board_content.ContentError as exc:
+                return _json_response(400, {"message": str(exc)})
+            return _json_response(200, {"items": rows, "assisted": board_content.assisted_due(table, settings)})
+        if method == "POST":
+            try:
+                doc = board_content.upsert_item(table, _parse_json_body(event), status="drafted")
+                doc = board_content.render_item(table, doc)
+                doc = board_content.schedule_publish(table, settings, doc)
+            except board_content.ContentError as exc:
+                return _json_response(400, {"message": str(exc)})
+            _audit(user_sub, "BOARD_CONTENT_CREATE", str(doc.get("contentId") or ""), event)
+            return _json_response(200, {"item": board_content.public_row(doc)})
+        return _json_response(405, {"message": "Method not allowed"})
+    if len(rest) == 2:
+        content_id = rest[1]
+        row = board_store.get_content(table, content_id)
+        if not row:
+            return _json_response(404, {"message": "Content not found"})
+        if method == "GET":
+            return _json_response(200, {"item": board_content.public_row(row)})
+        if method == "PUT":
+            try:
+                saved = board_content.owner_put(table, content_id, _parse_json_body(event))
+            except board_content.ContentError as exc:
+                return _json_response(400, {"message": str(exc)})
+            except KeyError:
+                return _json_response(404, {"message": "Content not found"})
+            _audit(user_sub, "BOARD_CONTENT_PUT", content_id, event)
+            return _json_response(200, {"item": board_content.public_row(saved)})
+        return _json_response(405, {"message": "Method not allowed"})
+    if len(rest) == 3 and rest[2] == "render" and method == "POST":
+        row = board_store.get_content(table, rest[1])
+        if not row:
+            return _json_response(404, {"message": "Content not found"})
+        saved = board_content.render_item(table, row)
+        _audit(user_sub, "BOARD_CONTENT_RENDER", rest[1], event)
+        return _json_response(200, {"item": board_content.public_row(saved)})
+    if len(rest) == 4 and rest[2] == "creative" and method == "GET":
+        row = board_store.get_content(table, rest[1])
+        if not row:
+            return _json_response(404, {"message": "Content not found"})
+        try:
+            index = int(rest[3])
+        except ValueError:
+            return _json_response(404, {"message": "Not found"})
+        keys = list(row.get("creativeKeys") or [])
+        if index < 0 or index >= len(keys):
+            return _json_response(404, {"message": "Creative not found"})
+        return _json_response(200, {"url": board_content.presigned_url(str(keys[index])), "key": keys[index]})
     return _json_response(404, {"message": "Not found"})
 
 

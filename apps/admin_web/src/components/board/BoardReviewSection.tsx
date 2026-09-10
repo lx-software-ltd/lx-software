@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
-import type { BoardReviewSnapshot } from "../../lib/boardModel";
+import type { BoardContentItem, BoardReviewSnapshot } from "../../lib/boardModel";
 import { BoardHoldsList } from "./BoardHoldsList";
+import { useBoardContent } from "../../hooks/useBoardContent";
 import { useBoardHolds } from "../../hooks/useBoardHolds";
 import { useBoardReview } from "../../hooks/useBoardReview";
 
@@ -26,6 +27,35 @@ function Section({
         {children}
       </div>
     </section>
+  );
+}
+
+function AssistedPosts({ items }: { readonly items: readonly BoardContentItem[] }) {
+  const calendar = useBoardContent();
+  const rows = items ?? [];
+  return (
+    <Section id="assisted" title="Assisted posts">
+      {rows.length > 0 ? (
+        <ul className="list-unstyled mb-0">
+          {rows.map((item) => (
+            <li key={item.contentId} className="border-bottom py-2">
+              <div className="small fw-semibold">{item.channel} · {item.slotAt?.slice(0, 16)}</div>
+              <div className="small">{item.copyZh || item.copyEn}</div>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-primary mt-1"
+                disabled={calendar.update.isPending}
+                onClick={() => calendar.update.mutate({ contentId: item.contentId, body: { status: "published" } })}
+              >
+                Mark posted
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-muted small mb-0">No assisted packs are due.</p>
+      )}
+    </Section>
   );
 }
 
@@ -131,9 +161,7 @@ export function BoardReviewSection() {
         )}
       </Section>
 
-      <Section id="assisted" title="Assisted posts">
-        <p className="text-muted small mb-0">Ready-to-post packs appear here after WP7.</p>
-      </Section>
+      <AssistedPosts items={review.assisted ?? []} />
 
       <Section id="sample" title="Sample of what ran">
         {review.sample.length === 0 ? (

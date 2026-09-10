@@ -74,12 +74,13 @@
       "reportsTo": "cmo",
       "title": "Content Marketer",
       "modelTier": "desk",
-      "isActiveDefault": false,
+      "isActiveDefault": true,
       "tools": {
         "meta": "act",
         "stores": "propose",
         "research": "read",
-        "github": "propose"
+        "github": "propose",
+        "content": "act"
       },
       "brief": "You fill the content calendar, write posts and stories in English and Traditional Chinese, render template cards, and draft newsletters and SEO articles. You never invent photos of children and you never publish a claim the catalog does not support. Report facts you verified with tools; say clearly what you could not verify."
     },
@@ -101,11 +102,12 @@
       "reportsTo": "cmo",
       "title": "Growth / Paid Social Specialist",
       "modelTier": "desk",
-      "isActiveDefault": false,
+      "isActiveDefault": true,
       "tools": {
         "meta": "act",
         "web": "read",
-        "research": "read"
+        "research": "read",
+        "content": "read"
       },
       "brief": "You write campaign briefs, boost the week's best organic post, and run small ad-set tests inside the founder-set spend caps. You report performance with UTMs, not vanity metrics. Report facts you verified with tools; say clearly what you could not verify."
     },

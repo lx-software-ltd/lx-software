@@ -1135,6 +1135,47 @@ export function boardSequencePath(type: string): string {
   return `${BOARD_API_BASE}/sequences/${encodeURIComponent(type)}`;
 }
 
+export function boardContentPath(query?: {
+  readonly from?: string;
+  readonly to?: string;
+  readonly status?: string;
+}): string {
+  const params = new URLSearchParams();
+  if (query?.from) params.set("from", query.from);
+  if (query?.to) params.set("to", query.to);
+  if (query?.status) params.set("status", query.status);
+  const qs = params.toString();
+  return qs ? `${BOARD_API_BASE}/content?${qs}` : `${BOARD_API_BASE}/content`;
+}
+
+export function boardContentItemPath(contentId: string): string {
+  return `${BOARD_API_BASE}/content/${encodeURIComponent(contentId)}`;
+}
+
+export function boardContentRenderPath(contentId: string): string {
+  return `${BOARD_API_BASE}/content/${encodeURIComponent(contentId)}/render`;
+}
+
+export function boardContentCreativePath(contentId: string, n: number): string {
+  return `${BOARD_API_BASE}/content/${encodeURIComponent(contentId)}/creative/${n}`;
+}
+
+export type BoardContentItem = {
+  readonly contentId: string;
+  readonly status?: string;
+  readonly channel?: string;
+  readonly pillar?: string;
+  readonly slotAt?: string;
+  readonly copyEn?: string;
+  readonly copyZh?: string;
+  readonly hashtags?: readonly string[];
+  readonly template?: string;
+  readonly holdId?: string;
+  readonly platformPostId?: string;
+  readonly creativeKeys?: readonly string[];
+  readonly performance?: Readonly<Record<string, unknown>>;
+};
+
 export function boardOutreachStatsPath(days?: number): string {
   const params = new URLSearchParams();
   if (days) params.set("days", String(days));
@@ -1327,7 +1368,7 @@ export type BoardReviewSnapshot = {
   }[];
   readonly breakers: readonly BoardBreaker[];
   readonly suggestions: readonly BoardRampRow[];
-  readonly assisted?: readonly unknown[];
+  readonly assisted?: readonly BoardContentItem[];
   readonly market?: {
     readonly changes?: readonly BoardChangeNote[];
     readonly latestBrief?: BoardMarketBrief | null;

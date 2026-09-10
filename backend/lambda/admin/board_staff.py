@@ -762,6 +762,20 @@ def _accept_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
             board_intel.on_brief_delivered(table, task)
         except Exception as exc:
             _log_event("warning", tag="board_intel_brief_deliver_failed", error=str(exc)[:200])
+    if ref.get("kind") == "duty" and str(ref.get("id") or "").startswith("content-plan:"):
+        try:
+            import board_content
+
+            board_content.on_plan_delivered(table, board_store.load_settings(table), task)
+        except Exception as exc:
+            _log_event("warning", tag="board_content_plan_deliver_failed", error=str(exc)[:200])
+    if ref.get("kind") == "duty" and str(ref.get("id") or "").startswith("content-readout:"):
+        try:
+            import board_content
+
+            board_content.on_readout_delivered(table, board_store.load_settings(table), task)
+        except Exception as exc:
+            _log_event("warning", tag="board_content_readout_deliver_failed", error=str(exc)[:200])
     return task
 
 
