@@ -485,7 +485,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "coo",
     "title": "Provider Success",
     "modelTier": "desk",
-    "isActiveDefault": false,
+    "isActiveDefault": true,
     "tools": {
       "mail": "act",
       "meta": "act",
@@ -499,7 +499,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "coo",
     "title": "Parent Support",
     "modelTier": "desk",
-    "isActiveDefault": false,
+    "isActiveDefault": true,
     "tools": {
       "mail": "act",
       "meta": "act"
@@ -553,7 +553,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cmo",
     "title": "Community Manager",
     "modelTier": "desk",
-    "isActiveDefault": false,
+    "isActiveDefault": true,
     "tools": {
       "meta": "act",
       "stores": "act",

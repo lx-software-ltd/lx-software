@@ -217,7 +217,14 @@ def maybe_hold(
         return None
     action_class, class_key = classify(op, ctx, arguments, ctx.settings)
     hours = hold_hours(ctx.table, ctx.settings, action_class, class_key)
-    if hours <= 0:
+    quiet_reply = False
+    try:
+        import board_policy
+
+        quiet_reply = op.name in board_policy.REPLY_OPS and board_policy.is_quiet_now(ctx.settings)
+    except Exception:
+        quiet_reply = False
+    if hours <= 0 and not quiet_reply:
         return None
     return create_hold(ctx, op, arguments, action_class=action_class, class_key=class_key, hours=hours, summary=summary)
 

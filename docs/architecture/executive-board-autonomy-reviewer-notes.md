@@ -71,3 +71,23 @@ up in review; do not treat them as product decisions unless you confirm.
 - **`get_mail_thread` via `_public_mail`** must keep `lastInboundAt` for
   the stale-reply check. If that field is stripped, the thread-changed
   rule cannot fire.
+
+## WP3
+
+- **Keyword hits skip the desk classifier.** Spec order is keyword →
+  prospect → otherwise a model call. After a keyword escalation we do not
+  spend a model call; audience stays `unknown` unless a prospect match
+  already set `provider`, and intent is stored as `complaint`.
+- **Inactive WP9 seats.** Routing still names `accountant` (finance@ /
+  billing@) and `security-analyst` (intent `spam`). Those seats are
+  inactive until WP9, so `_open_or_append` falls back to `support` and
+  forces `needs_owner`.
+- **`add_external_usage_day` field names.** Spec used `reply:{channel}`.
+  The helper now allows a colon in the Dynamo attribute name.
+- **Inbound remaining time.** `inbound_email_handler` now passes
+  `context.get_remaining_time_in_millis` into `ingest_raw_object` as a
+  monotonic deadline so `classify_text` can skip the model when fewer
+  than 20 s remain.
+- **Store review fetch** runs inside `refresh_caches` (not only the
+  ratings cache) so new review ids can be detected. Failed review fetches
+  are logged and do not fail metrics refresh.

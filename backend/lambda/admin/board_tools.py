@@ -568,6 +568,26 @@ def _staff_assign_guard(ctx: ToolContext, args: dict[str, Any]) -> str | None:
     return board_staff.act_guard_staff_assign(ctx, args)
 
 
+def _reply_guard(op_name: str, inner: Any = None):
+    def _guard(ctx: ToolContext, args: dict[str, Any]) -> str | None:
+        if inner is not None:
+            reason = inner(ctx, args)
+            if reason:
+                return reason
+        import board_policy
+
+        thread = None
+        thread_id = str(args.get("threadId") or "")
+        if thread_id:
+            thread = board_store.get_mail_thread(ctx.table, thread_id) or board_store.get_meta_thread(ctx.table, thread_id)
+        op = REGISTRY.get(op_name)
+        if op is None:
+            return None
+        return board_policy.check_reply(ctx.settings, ctx, op, args, thread)
+
+    return _guard
+
+
 def _task_note(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     import board_staff
 
@@ -894,13 +914,17 @@ def build_registry() -> dict[str, ToolOp]:
                 {
                     "threadId": _str_param("Thread id from mail_list_threads.", max_len=64),
                     "body": _str_param("Plain-text reply body.", max_len=BOARD_MAIL_BODY_MAX_CHARS),
+                    "templateId": _str_param("Optional approved template id.", max_len=80),
                     "reason": REASON_PARAM,
                 },
                 ["threadId", "body", "reason"],
             ),
             run=board_mail._op_write("mail_reply"),
             summarize=_summ("Reply in email thread {threadId}"),
-            act_guard=lambda ctx, args: board_mail.act_guard(ctx, args, op="mail_reply"),
+            act_guard=_reply_guard(
+                "mail_reply",
+                lambda ctx, args: board_mail.act_guard(ctx, args, op="mail_reply"),
+            ),
             preview=lambda ctx, args: board_mail.owner_preview(ctx, args, op="mail_reply"),
         ),
         ToolOp(
@@ -1280,12 +1304,14 @@ def build_registry() -> dict[str, ToolOp]:
                 {
                     "commentId": _str_param("Graph comment id.", max_len=64),
                     "message": _str_param("Reply text.", max_len=1000),
+                    "templateId": _str_param("Optional approved template id.", max_len=80),
                     "reason": REASON_PARAM,
                 },
                 ["commentId", "message", "reason"],
             ),
             run=board_meta.op_reply_comment,
             summarize=_summ("Reply to comment {commentId}"),
+            act_guard=_reply_guard("meta_reply_comment"),
             preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_comment"),
         ),
         ToolOp(
@@ -1304,7 +1330,10 @@ def build_registry() -> dict[str, ToolOp]:
             ),
             run=board_meta.op_reply_dm,
             summarize=_summ("Reply to Page DM {threadId}"),
-            act_guard=lambda ctx, args: board_meta.act_guard_allow_list(ctx, args, field="recipientId"),
+            act_guard=_reply_guard(
+                "meta_reply_dm",
+                lambda ctx, args: board_meta.act_guard_allow_list(ctx, args, field="recipientId"),
+            ),
             preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_dm"),
         ),
         ToolOp(
@@ -1325,7 +1354,7 @@ def build_registry() -> dict[str, ToolOp]:
             ),
             run=board_meta.op_reply_whatsapp,
             summarize=_summ("WhatsApp reply in thread {threadId}"),
-            act_guard=board_meta.act_guard_whatsapp,
+            act_guard=_reply_guard("meta_reply_whatsapp", board_meta.act_guard_whatsapp),
             preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_whatsapp"),
         ),
         ToolOp(
@@ -1587,12 +1616,14 @@ def build_registry() -> dict[str, ToolOp]:
                     "store": _str_param("Which store.", enum=["apple", "play"]),
                     "reviewId": _str_param("Store review id.", max_len=80),
                     "message": _str_param("Reply text.", max_len=1000),
+                    "templateId": _str_param("Optional approved template id.", max_len=80),
                     "reason": REASON_PARAM,
                 },
                 ["store", "reviewId", "message", "reason"],
             ),
             run=board_stores.op_reply_review,
             summarize=_summ("Reply to {store} review {reviewId}"),
+            act_guard=_reply_guard("stores_reply_review"),
             preview=lambda ctx, args: board_stores.owner_preview_message(ctx, args, op="stores_reply_review"),
         ),
         ToolOp(
@@ -2163,6 +2194,14 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
             result = _invoke_op(ctx, op, arguments)
             status = "error" if result.get("error") and len(result) == 1 else "ok"
             outcome = ToolOutcome(status=status, result=result, summary=summary)
+            if status == "ok":
+                try:
+                    import board_policy
+
+                    if op.name in board_policy.REPLY_OPS:
+                        board_policy.record_reply(ctx.table, op.name, arguments)
+                except Exception:
+                    pass
         except (
             board_github.GitHubSnapshotError,
             board_mail.MailError,

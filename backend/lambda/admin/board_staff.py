@@ -175,6 +175,7 @@ def create_task(
     action_id: str | None = None,
     meeting_id: str | None = None,
     created_by: str = "",
+    status: str = "queued",
 ) -> dict[str, Any]:
     if not enabled(settings):
         raise StaffError("Staff is disabled")
@@ -195,12 +196,14 @@ def create_task(
     except (TypeError, ValueError):
         budget = default_budget
     budget = max(0.01, min(BOARD_STAFF_TASK_BUDGET_MAX_USD, budget))
+    if status not in BOARD_STAFF_TASK_STATUSES:
+        raise StaffError(f"status must be one of {', '.join(BOARD_STAFF_TASK_STATUSES)}")
     now = datetime.now(timezone.utc)
     sla_at = _utc_iso_z(now + timedelta(hours=sla_hours))
     task_id = board_store.new_id()
     doc: dict[str, Any] = {
         "taskId": task_id,
-        "status": "queued",
+        "status": status,
         "assignee": assignee,
         "assigneeKind": kind,
         "managerId": manager_id,
@@ -236,7 +239,8 @@ def create_task(
         "failureReason": "",
     }
     board_store.put_task(table, doc)
-    drain_queue(table, settings)
+    if status == "queued":
+        drain_queue(table, settings)
     return board_store.get_task(table, task_id) or doc
 
 
@@ -918,6 +922,15 @@ def validate_seat_override(body: Any) -> dict[str, Any]:
             raise StaffError("modelTier must be desk or senior")
         out["modelTier"] = tier
     return out
+
+
+def append_event_note(table: Any, task: dict[str, Any], text: str) -> dict[str, Any]:
+    combined = _append_scratchpad(task, text)
+    task["scratchpadKey"] = str(task.get("scratchpadKey") or _scratchpad_key(str(task["taskId"])))
+    task["scratchpadChars"] = len(combined)
+    task["updatedAt"] = board_store.now_iso()
+    board_store.put_task(table, task)
+    return task
 
 
 def public_task(doc: dict[str, Any]) -> dict[str, Any]:

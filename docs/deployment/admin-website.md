@@ -403,6 +403,14 @@ function calling. Design:
   code_staging = 12. Quiet hours (default 22:00–08:00 HKT) push
   `executeAt` to the next 08:00 HKT. The **Approvals** section shows
   **Scheduled (veto to stop)**; **Settings** has the Boundaries card.
+- **Triage (WP3):** with both staff flags on, inbound `siutindei.com` mail,
+  Meta webhooks and newly seen store reviews open tasks for Parent Support,
+  Provider Success or Community Manager. Escalation keywords (English and
+  Chinese) send the acknowledgement template and park the task on
+  **Needs owner**. Quiet hours hold replies until 08:00 HKT. Finance and
+  phishing mail still route to `accountant` / `security-analyst` in the
+  table; those seats stay inactive until WP9 so the task is parked on
+  Support as `needs_owner`.
 
 Smoke test after deploy: open the tab, save a company vision/mission, edit one
 member's mandate, send a chat message to the CEO (reply arrives within ~30 s),

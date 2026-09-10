@@ -826,6 +826,26 @@ def refresh_caches(table: Any) -> dict[str, str]:
         except StoresError as exc:
             notes[name] = str(exc)[:200]
             _log_event("warning", tag="board_stores_refresh_failed", key=name, error=str(exc)[:200])
+    try:
+        reviews: list[dict[str, Any]] = []
+        if apple_configured():
+            reviews.extend(list_asc_reviews(40))
+        if play_configured():
+            reviews.extend(list_play_reviews(40))
+        seen_doc = board_store.get_cache(table, "stores:seen_review_ids") or {}
+        seen = {str(x) for x in ((seen_doc.get("payload") or {}).get("ids") or [])}
+        new_reviews = [r for r in reviews if str(r.get("reviewId") or r.get("id") or "") not in seen]
+        if new_reviews:
+            import board_triage
+
+            settings = board_store.load_settings(table)
+            board_triage.on_store_reviews(table, settings, new_reviews)
+            seen.update(str(r.get("reviewId") or r.get("id") or "") for r in new_reviews)
+        board_store.put_cache(table, "stores:seen_review_ids", {"ids": sorted(seen)}, ttl_seconds=400 * 86400)
+        notes["stores:reviews"] = f"new:{len(new_reviews)}"
+    except Exception as exc:
+        notes["stores:reviews"] = str(exc)[:200]
+        _log_event("warning", tag="board_stores_review_triage_failed", error=str(exc)[:200])
     return notes
 
 

@@ -18,7 +18,7 @@
       "reportsTo": "coo",
       "title": "Provider Success",
       "modelTier": "desk",
-      "isActiveDefault": false,
+      "isActiveDefault": true,
       "tools": {
         "mail": "act",
         "meta": "act",
@@ -32,7 +32,7 @@
       "reportsTo": "coo",
       "title": "Parent Support",
       "modelTier": "desk",
-      "isActiveDefault": false,
+      "isActiveDefault": true,
       "tools": {
         "mail": "act",
         "meta": "act"
@@ -86,7 +86,7 @@
       "reportsTo": "cmo",
       "title": "Community Manager",
       "modelTier": "desk",
-      "isActiveDefault": false,
+      "isActiveDefault": true,
       "tools": {
         "meta": "act",
         "stores": "act",

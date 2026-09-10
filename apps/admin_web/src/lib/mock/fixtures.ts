@@ -471,6 +471,7 @@ function fixtureTask(
   status: BoardTask["status"],
   assignee: string,
   brief: string,
+  extra: Partial<BoardTask> = {},
 ): BoardTask {
   return {
     taskId,
@@ -496,11 +497,12 @@ function fixtureTask(
       status === "needs_owner" ? { verdict: "return", notes: "Need more evidence.", at: isoDaysAgo(0) } : null,
     createdAt: isoDaysAgo(1),
     updatedAt: isoDaysAgo(0),
+    ...extra,
   };
 }
 
 export const boardTasksFixture: BoardTask[] = [
-  fixtureTask("task-queued", "queued", "support", "Draft a reply to yesterday's parent email."),
+  fixtureTask("task-queued", "queued", "support", "Draft a reply to yesterday's parent email.", { eventRef: { kind: "mail", id: "th-parent", channel: "mail" } }),
   fixtureTask("task-running", "running", "cfo", "List our three biggest monthly costs from AWS and finance."),
   fixtureTask("task-review", "review", "provider-success", "Summarise the two warm provider threads."),
   fixtureTask("task-owner", "needs_owner", "accountant", "Reconcile last week's unmatched payments."),

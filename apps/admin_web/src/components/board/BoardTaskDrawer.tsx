@@ -160,7 +160,9 @@ function TaskBody({
       </div>
       <div>
         <div className="small text-muted text-uppercase mb-1">Deliverable</div>
-        {deliverable ? (
+        {task.deliverableType === "messages" && deliverable ? (
+          <MessagesDeliverable text={deliverable} />
+        ) : deliverable ? (
           isCsv && rows.length ? (
             <div className="table-responsive">
               <table className="table table-sm">
@@ -189,5 +191,31 @@ function TaskBody({
         </label>
       ) : null}
     </div>
+  );
+}
+
+function MessagesDeliverable({ text }: { readonly text: string }) {
+  let rows: Array<{ status?: string; summary?: string; threadId?: string; op?: string }> = [];
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    rows = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return <BoardMarkdown text={text} className="small" />;
+  }
+  if (rows.length === 0) return <p className="small text-muted mb-0">No messages recorded.</p>;
+  return (
+    <ul className="list-unstyled mb-0">
+      {rows.map((row, i) => (
+        <li key={i} className="small mb-2">
+          <span className="badge text-bg-light border me-1">{row.status || row.op || "message"}</span>
+          {row.summary || ""}
+          {row.threadId ? (
+            <a className="ms-2" href={`#mail-${row.threadId}`}>
+              open thread
+            </a>
+          ) : null}
+        </li>
+      ))}
+    </ul>
   );
 }

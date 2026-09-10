@@ -134,6 +134,7 @@ class ParsedMail:
     attachments_skipped: list[str] = field(default_factory=list)
     # True when the body, attachment text or address lists were cut to fit.
     truncated: bool = False
+    bulk: bool = False
 
 
 def _single_line(value: Any, limit: int) -> str:
@@ -293,12 +294,22 @@ def parse_mime(raw: bytes, *, domain: str | None = None) -> ParsedMail:
         raw_size=len(raw),
         attachments_skipped=skipped,
         truncated=body_cut or attachments_cut or to_cut or cc_cut,
+        bulk=_is_bulk_mail(msg),
     )
 
 
 # ---------------------------------------------------------------------------
 # Ingest
 # ---------------------------------------------------------------------------
+
+def _is_bulk_mail(msg: EmailMessage) -> bool:
+    auto = str(msg.get("Auto-Submitted") or "").strip().lower()
+    if auto and auto != "no":
+        return True
+    if msg.get("List-Unsubscribe"):
+        return True
+    return str(msg.get("Precedence") or "").strip().lower() == "bulk"
+
 
 def _is_own(address: str) -> bool:
     return board_pii.is_own_address(address, own_domains())
@@ -360,6 +371,7 @@ def ingest_bytes(
     direction: str = "in",
     source: str = "ses",
     received_at: str | None = None,
+    deadline: float | None = None,
 ) -> dict[str, Any]:
     """Index one RFC 822 message. Returns ``{threadId, messageId, duplicate}``.
 
@@ -398,6 +410,8 @@ def ingest_bytes(
         "attachmentsSkipped": parsed.attachments_skipped,
         "truncated": parsed.truncated,
         "rawSize": parsed.raw_size,
+        "bulk": parsed.bulk,
+        "skipTriage": parsed.bulk,
     }
     if parsed.truncated:
         _log_event(
@@ -432,6 +446,15 @@ def ingest_bytes(
         skipped=len(parsed.attachments_skipped),
         size=parsed.raw_size,
     )
+    if direction in ("in", "inbound") and not parsed.bulk:
+        try:
+            import board_triage
+
+            settings = board_store.load_settings(table)
+            thread = board_store.get_mail_thread(table, thread_id) or {"threadId": thread_id}
+            board_triage.on_mail_ingested(table, settings, thread, message, deadline=deadline)
+        except Exception as exc:
+            _log_event("warning", tag="board_triage_mail_failed", error=str(exc)[:300])
     return {"threadId": thread_id, "messageId": message_id, "duplicate": False}
 
 
@@ -465,18 +488,20 @@ def _upsert_thread(table: Any, thread_id: str, parsed: ParsedMail, *, direction:
             "updatedAt": now,
         }
     )
+    if direction in ("in", "inbound"):
+        thread["lastInboundAt"] = now
     if parsed.mailbox and str(thread.get("mailbox") or "").startswith("unknown@"):
         thread["mailbox"] = parsed.mailbox
     board_store.put_mail_thread(table, thread)
 
 
-def ingest_raw_object(bucket: str, key: str, *, s3: Any = None, table: Any = None) -> dict[str, Any]:
+def ingest_raw_object(bucket: str, key: str, *, s3: Any = None, table: Any = None, deadline: float | None = None) -> dict[str, Any]:
     """Read an SES drop from S3, index it, then delete the raw object."""
     s3 = s3 or boto3.client("s3")
     table = table if table is not None else board_store.records_table()
     obj = s3.get_object(Bucket=bucket, Key=key)
     raw = obj["Body"].read()
-    result = ingest_bytes(table, raw, direction="in", source="ses")
+    result = ingest_bytes(table, raw, direction="in", source="ses", deadline=deadline)
     try:
         s3.delete_object(Bucket=bucket, Key=key)
     except Exception as exc:  # noqa: BLE001 - lifecycle rule expires it anyway

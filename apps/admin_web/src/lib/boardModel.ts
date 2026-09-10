@@ -258,6 +258,7 @@ export type BoardTask = {
   readonly failureReason?: string;
   readonly actionId?: string | null;
   readonly meetingId?: string | null;
+  readonly eventRef?: { readonly kind?: string; readonly id?: string; readonly channel?: string; readonly subject?: string; readonly stars?: number } | null;
   readonly deliverableKey?: string;
   readonly deliverableBytes?: number;
 };

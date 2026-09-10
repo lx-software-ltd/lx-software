@@ -539,6 +539,14 @@ def _store_inbound(table: Any, pseud: board_pii.Pseudonymizer, msg: dict[str, An
             "messageCount": int(existing.get("messageCount") or 0) + 1,
         },
     )
+    try:
+        import board_triage
+
+        settings = board_store.load_settings(table)
+        stored = board_store.get_meta_thread(table, thread_id) or {"threadId": thread_id}
+        board_triage.on_meta_event(table, settings, stored, msg)
+    except Exception as exc:
+        _log_event("warning", tag="board_triage_meta_failed", error=str(exc)[:300])
     return True
 
 

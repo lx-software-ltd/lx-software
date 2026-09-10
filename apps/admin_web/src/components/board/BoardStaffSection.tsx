@@ -15,6 +15,15 @@ const COLUMNS: readonly { readonly id: "queued" | "running" | "review" | "needs_
   { id: "delivered", label: "Delivered" },
 ];
 
+function eventSourceLabel(task: BoardTask): string {
+  const ref = task.eventRef;
+  if (!ref) return "";
+  if (ref.kind === "mail") return "✉ mail · ";
+  if (ref.kind === "review") return `★ ${ref.stars ?? ""} review · `;
+  if (ref.kind === "meta") return `${ref.channel || "meta"} · `;
+  return `${ref.kind} · `;
+}
+
 function errorText(err: unknown): string | null {
   if (!err) return null;
   return getAdminApiErrorMessage(err) ?? (err instanceof Error ? err.message : "Request failed.");
@@ -189,6 +198,7 @@ function TaskCard({ task, onOpen }: { readonly task: BoardTask; readonly onOpen:
       <div className="card-body py-2 px-3">
         <div className="small fw-semibold">{task.brief.slice(0, 90)}</div>
         <div className="small text-muted">
+          {eventSourceLabel(task)}
           {task.assignee} · {formatUsageCost(task.usage.cost)}
         </div>
       </div>
