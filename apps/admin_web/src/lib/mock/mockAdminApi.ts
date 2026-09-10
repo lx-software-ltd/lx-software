@@ -37,6 +37,7 @@ import {
 } from "./fixtures";
 import {
   DEFAULT_BOARD_BOUNDARIES,
+  type BoardApproval,
   type BoardBoundaries,
   type BoardBreaker,
   type BoardHold,
@@ -94,6 +95,7 @@ type MockState = {
   prospects: BoardProspect[];
   sequences: Record<string, BoardSequence>;
   content: BoardContentItem[];
+  approvals: BoardApproval[];
 };
 
 const state: MockState = {
@@ -112,6 +114,7 @@ const state: MockState = {
   prospects: structuredClone(boardProspectsFixture) as BoardProspect[],
   sequences: {},
   content: structuredClone(boardContentFixture) as BoardContentItem[],
+  approvals: structuredClone(boardApprovalsFixture) as BoardApproval[],
 };
 
 function json(body: unknown, status = 200): Response {
@@ -238,7 +241,7 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   const board = "/siu-tin-dei/board";
   if (p === board) return json(boardOverviewFixture);
   if (p === `${board}/actions`) return json({ actions: boardActionsFixture });
-  if (p === `${board}/approvals`) return json({ approvals: boardApprovalsFixture });
+  if (p === `${board}/approvals`) return json({ approvals: state.approvals });
   if (p === `${board}/meetings`) return json({ meetings: boardMeetingsFixture });
   if (p === `${board}/tools`) return json(boardToolsFixture);
   if (p === `${board}/tools/calls`) return json({ calls: [] });
@@ -364,9 +367,27 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
     });
   }
   if (p === `${board}/code/promote` && method === "POST") {
+    const now = new Date().toISOString();
+    const approval: BoardApproval = {
+      approvalId: `appr-promote-${state.approvals.length + 1}`,
+      status: "pending",
+      personaId: "cto",
+      displayName: "CTO",
+      toolId: "code",
+      toolLabel: "Code",
+      op: "code_promote",
+      kind: "write",
+      arguments: { kind: "production" },
+      summary: "Open a staging→main PR for board: #42 add booking",
+      reason: "code_promote always queues an Approval",
+      context: { kind: "review" },
+      createdAt: now,
+      updatedAt: now,
+    };
+    state.approvals = [approval, ...state.approvals];
     return json(
       {
-        approval: { approvalId: "appr-promote-1", op: "code_promote", status: "pending" },
+        approval,
         preview: { status: "ahead", aheadBy: 1, behindBy: 0, canPromote: true, commits: [] },
       },
       201,

@@ -327,3 +327,6 @@ up in review; do not treat them as product decisions unless you confirm.
   Rotate/widen the existing fine-grained token.
 - **All fifteen seats are now `isActiveDefault: true`.** Inactive-seat
   tests deactivate `architect` via override.
+- **Mock Approvals list is in-memory.** `POST /code/promote` prepends a
+  pending `code_promote` row so Daily review → Promote → Approvals matches
+  the live API. A static fixture would leave only the mail_send sample.
