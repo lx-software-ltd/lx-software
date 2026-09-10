@@ -17,7 +17,10 @@ import {
   boardMeetingsFixture,
   boardOverviewFixture,
   boardReceivablesFixture,
+  boardBreakersFixture,
   boardHoldsFixture,
+  boardLessonsFixture,
+  boardReviewFixture,
   boardStaffFixture,
   boardTaskDetailFixture,
   boardTasksFixture,
@@ -26,7 +29,15 @@ import {
   lxSoftwareBookFixture,
   siuTinDeiBookFixture,
 } from "./fixtures";
-import { DEFAULT_BOARD_BOUNDARIES, type BoardBoundaries, type BoardHold, type BoardSeat, type BoardTask } from "../boardModel";
+import {
+  DEFAULT_BOARD_BOUNDARIES,
+  type BoardBoundaries,
+  type BoardBreaker,
+  type BoardHold,
+  type BoardLesson,
+  type BoardSeat,
+  type BoardTask,
+} from "../boardModel";
 
 export { isAdminMockEnabled };
 
@@ -67,6 +78,8 @@ type MockState = {
   tasks: BoardTask[];
   holds: BoardHold[];
   boundaries: BoardBoundaries;
+  lessons: BoardLesson[];
+  breakers: BoardBreaker[];
 };
 
 const state: MockState = {
@@ -79,6 +92,8 @@ const state: MockState = {
   tasks: structuredClone(boardTasksFixture),
   holds: structuredClone(boardHoldsFixture) as BoardHold[],
   boundaries: structuredClone(DEFAULT_BOARD_BOUNDARIES),
+  lessons: structuredClone(boardLessonsFixture) as BoardLesson[],
+  breakers: structuredClone(boardBreakersFixture) as BoardBreaker[],
 };
 
 function json(body: unknown, status = 200): Response {
@@ -313,8 +328,53 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   }
   if (p === `${board}/ramp`) {
     return json({
-      ramp: [{ classKey: "publish:facebook", actions: 1, vetoes: 0, rate: 0, eligibleForPromotion: false, shouldDemote: false }],
+      ramp: [{ classKey: "publish:facebook", actions: 32, vetoes: 0, rate: 0, eligibleForPromotion: true, shouldDemote: false }],
     });
+  }
+  if (p.startsWith(`${board}/ramp/`) && p.endsWith("/promote") && method === "POST") {
+    return json({ classKey: decodeURIComponent(p.slice(`${board}/ramp/`.length, -"/promote".length)), holdOverrides: { "publish:facebook": 0 } });
+  }
+  if (p === `${board}/review`) {
+    return json({ review: boardReviewFixture });
+  }
+  if (p.startsWith(`${board}/review/sample/`) && p.endsWith("/wrong") && method === "POST") {
+    const callId = decodeURIComponent(p.slice(`${board}/review/sample/`.length, -"/wrong".length));
+    const lesson: BoardLesson = {
+      lessonId: `lsn-${state.lessons.length + 1}`,
+      kind: "correction",
+      subject: "cmo",
+      classKey: "publish:facebook",
+      what: callId,
+      instruction: "Do not repeat this post without a district and a date.",
+      confirmed: false,
+      createdAt: new Date().toISOString(),
+    };
+    state.lessons = [lesson, ...state.lessons];
+    return json({ lesson });
+  }
+  if (p === `${board}/lessons`) {
+    return json({ lessons: state.lessons });
+  }
+  if (p.startsWith(`${board}/lessons/`) && p.endsWith("/confirm") && method === "POST") {
+    const lessonId = decodeURIComponent(p.slice(`${board}/lessons/`.length, -"/confirm".length));
+    const body = parseBody(init) as { instruction?: string };
+    state.lessons = state.lessons.map((l) =>
+      l.lessonId === lessonId ? { ...l, confirmed: true, instruction: body.instruction || l.instruction } : l,
+    );
+    return json({ lesson: state.lessons.find((l) => l.lessonId === lessonId) });
+  }
+  if (p.startsWith(`${board}/lessons/`) && p.endsWith("/dismiss") && method === "POST") {
+    const lessonId = decodeURIComponent(p.slice(`${board}/lessons/`.length, -"/dismiss".length));
+    state.lessons = state.lessons.map((l) => (l.lessonId === lessonId ? { ...l, dismissed: true } : l));
+    return json({ lesson: state.lessons.find((l) => l.lessonId === lessonId) });
+  }
+  if (p === `${board}/breakers`) {
+    return json({ breakers: state.breakers });
+  }
+  if (p.startsWith(`${board}/breakers/`) && p.endsWith("/reset") && method === "POST") {
+    const name = decodeURIComponent(p.slice(`${board}/breakers/`.length, -"/reset".length));
+    state.breakers = state.breakers.map((b) => (b.name === name ? { ...b, tripped: false, resetAt: new Date().toISOString() } : b));
+    return json({ breaker: state.breakers.find((b) => b.name === name) });
   }
 
   return notFound(p);

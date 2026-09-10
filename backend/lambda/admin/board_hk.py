@@ -49,3 +49,11 @@ def to_iso(dt: datetime) -> str:
         dt = dt.replace(tzinfo=timezone.utc)
     utc = dt.astimezone(timezone.utc)
     return utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def now_hkt() -> datetime:
+    return as_hkt(datetime.now(timezone.utc))
+
+
+def today_hkt() -> str:
+    return now_hkt().date().isoformat()

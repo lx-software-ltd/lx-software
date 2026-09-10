@@ -153,8 +153,20 @@ def handle_board_route(
     if head == "boundaries" and len(rest) == 1 and method == "PUT":
         return _boundaries_put(event, user_sub)
 
-    if head == "ramp" and len(rest) == 1 and method == "GET":
-        return _ramp_get()
+    if head == "ramp":
+        if len(rest) == 1 and method == "GET":
+            return _ramp_get()
+        if len(rest) == 3 and rest[2] == "promote" and method == "POST":
+            return _ramp_promote(event, rest[1], user_sub)
+
+    if head == "review":
+        return _review_route(event, method, rest, user_sub)
+
+    if head == "lessons":
+        return _lessons_route(event, method, rest, user_sub)
+
+    if head == "breakers":
+        return _breakers_route(event, method, rest, user_sub)
 
     return _json_response(404, {"message": "Not found"})
 
@@ -709,6 +721,88 @@ def _ramp_get() -> dict[str, Any]:
         return _staff_disabled()
     table = board_store.records_table()
     return _json_response(200, {"ramp": board_holds.list_ramp(table)})
+
+
+def _ramp_promote(event: dict[str, Any], class_key: str, user_sub: str | None) -> dict[str, Any]:
+    if not board_staff.env_enabled():
+        return _staff_disabled()
+    if not class_key.strip():
+        return _json_response(400, {"message": "classKey is required"})
+    table = board_store.records_table()
+    result = board_holds.promote(table, class_key)
+    _audit(user_sub, "BOARD_RAMP_PROMOTE", class_key, event)
+    return _json_response(200, result)
+
+
+def _review_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
+    if not board_staff.env_enabled():
+        return _staff_disabled()
+    import board_review
+
+    table = board_store.records_table()
+    settings = board_store.load_settings(table)
+    if len(rest) == 1 and method == "GET":
+        qs = parse_qs(event.get("rawQueryString") or "")
+        date_hkt = (qs.get("date") or [""])[0].strip() or board_hk_today()
+        review = board_store.get_review_snapshot(table, date_hkt)
+        if not review:
+            review = board_review.compile(table, settings, date_hkt)
+        return _json_response(200, {"review": review})
+    if len(rest) == 4 and rest[1] == "sample" and rest[3] == "wrong" and method == "POST":
+        import board_lessons
+
+        body = _parse_json_body(event)
+        note = str(body.get("note") or "") if isinstance(body, dict) else ""
+        lesson = board_lessons.create_from_correction(table, rest[2], note)
+        _audit(user_sub, "BOARD_REVIEW_WRONG", rest[2], event)
+        return _json_response(200, {"lesson": lesson})
+    return _json_response(404, {"message": "Not found"})
+
+
+def board_hk_today() -> str:
+    import board_hk
+
+    return board_hk.today_hkt()
+
+
+def _lessons_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
+    if not board_staff.env_enabled():
+        return _staff_disabled()
+    import board_lessons
+
+    table = board_store.records_table()
+    if len(rest) == 1 and method == "GET":
+        qs = parse_qs(event.get("rawQueryString") or "")
+        subject = (qs.get("subject") or [""])[0] or None
+        return _json_response(200, {"lessons": board_lessons.list_lessons(table, subject)})
+    if len(rest) == 3 and rest[2] in ("confirm", "dismiss") and method == "POST":
+        body = _parse_json_body(event)
+        try:
+            if rest[2] == "confirm":
+                instruction = body.get("instruction") if isinstance(body, dict) else None
+                lesson = board_lessons.confirm(table, rest[1], instruction if isinstance(instruction, str) else None)
+            else:
+                lesson = board_lessons.dismiss(table, rest[1])
+        except KeyError:
+            return _json_response(404, {"message": "Lesson not found"})
+        _audit(user_sub, "BOARD_LESSON_CONFIRM" if rest[2] == "confirm" else "BOARD_LESSON_DISMISS", rest[1], event)
+        return _json_response(200, {"lesson": lesson})
+    return _json_response(404, {"message": "Not found"})
+
+
+def _breakers_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
+    if not board_staff.env_enabled():
+        return _staff_disabled()
+    import board_breakers
+
+    table = board_store.records_table()
+    if len(rest) == 1 and method == "GET":
+        return _json_response(200, {"breakers": board_breakers.list_all(table)})
+    if len(rest) == 3 and rest[2] == "reset" and method == "POST":
+        breaker = board_breakers.reset(table, rest[1], user_sub or "")
+        _audit(user_sub, "BOARD_BREAKER_RESET", rest[1], event)
+        return _json_response(200, {"breaker": breaker})
+    return _json_response(404, {"message": "Not found"})
 
 
 def _settings_put(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:

@@ -60,7 +60,8 @@ test.describe("admin viewport smoke", () => {
     await page.goto("/siu-tin-dei");
     await expect(page.getByRole("heading", { name: "Siu Tin Dei", level: 1 })).toBeVisible();
     await page.getByRole("tab", { name: "Executive Board" }).click();
-    await expect(page.getByText(/Ship the provider onboarding form/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Daily review" })).toBeVisible();
+    await expect(page.getByText(/Three parent threads closed/i)).toBeVisible();
     if (testInfo.project.name === "phone") {
       await expect(page.locator("#board-section-select")).toBeVisible();
       await page.locator("#board-section-select").selectOption("staff");

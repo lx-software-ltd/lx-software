@@ -393,9 +393,7 @@ def run_step(payload: dict[str, Any]) -> None:
         default = board_personas.persona_default(persona_id) or {}
         profile = board_personas.effective_profile(default, persona_overrides.get(persona_id))
         lessons = _confirmed_lessons(table, persona_id)
-        system = board_personas.render_system_prompt(profile, charter)
-        if lessons:
-            system += "\n\nSTANDING INSTRUCTIONS FROM THE FOUNDER:\n" + "\n".join(f"- {x}" for x in lessons)
+        system = board_personas.render_system_prompt(profile, charter, lessons=lessons)
         seat_id = ""
         display = str(profile.get("displayName") or persona_id)
         tier = "desk"
@@ -709,6 +707,12 @@ def apply_review(
     task["updatedAt"] = now
     if verdict == "accept":
         return _accept_task(table, task, now)
+    try:
+        import board_lessons
+
+        board_lessons.create_from_return(table, task)
+    except Exception as exc:
+        _log_event("warning", tag="board_lesson_from_return_failed", error=str(exc)[:200])
     revisions = int(task.get("revisions") or 0)
     if revisions < BOARD_STAFF_MAX_REVISIONS:
         _append_scratchpad(task, f"MANAGER NOTES: {notes}")
@@ -793,6 +797,23 @@ def handle_tick(event: dict[str, Any]) -> dict[str, Any]:
         pass
     except Exception as exc:
         _log_event("error", tag="board_holds_tick_failed", error=str(exc)[:300])
+    try:
+        import board_breakers
+
+        board_breakers.evaluate(table, settings)
+        settings = board_store.load_settings(table)
+        if not enabled(settings):
+            return {"ok": True, "skipped": "disabled", "breaker": "budget"}
+    except ImportError:
+        pass
+    except Exception as exc:
+        _log_event("error", tag="board_breakers_tick_failed", error=str(exc)[:300])
+    try:
+        import board_review
+
+        board_review.maybe_create_headline_duty(table, settings)
+    except Exception as exc:
+        _log_event("warning", tag="board_review_duty_failed", error=str(exc)[:300])
     started = drain_queue(table, settings)
     stuck_cut = datetime.now(timezone.utc) - timedelta(seconds=BOARD_STAFF_TASK_STUCK_SECONDS)
     cut_iso = _utc_iso_z(stuck_cut)

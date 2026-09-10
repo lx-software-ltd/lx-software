@@ -4,6 +4,8 @@ import { BoardActionsList } from "./BoardActionsList";
 import { BoardApprovalsList } from "./BoardApprovalsList";
 import { BoardBoundariesCard } from "./BoardBoundariesCard";
 import { BoardHoldsList } from "./BoardHoldsList";
+import { BoardLessonsList } from "./BoardLessonsList";
+import { BoardReviewSection } from "./BoardReviewSection";
 import { BoardBriefEditor } from "./BoardBriefEditor";
 import { BoardCharterEditor } from "./BoardCharterEditor";
 import { BoardChatOffcanvas } from "./BoardChatOffcanvas";
@@ -25,6 +27,7 @@ import { useBoardActions } from "../../hooks/useBoardActions";
 import { useBoardApprovals } from "../../hooks/useBoardApprovals";
 import { useBoardBoundaries } from "../../hooks/useBoardBoundaries";
 import { useBoardHolds } from "../../hooks/useBoardHolds";
+import { useBoardReview } from "../../hooks/useBoardReview";
 import { useBoardToolCalls, useBoardTools } from "../../hooks/useBoardTools";
 import {
   useBoardMeeting,
@@ -38,13 +41,14 @@ import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { adminTabButtonId } from "../../lib/adminTabs";
 import { DEFAULT_BOARD_BOUNDARIES, effectiveToolLevel, type BoardMeetingMode, type BoardOverview } from "../../lib/boardModel";
 
-type BoardSection = "actions" | "staff" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
+type BoardSection = "review" | "actions" | "staff" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
 
 const CLOSED_MEETING = "__closed__";
 const SECTION_ID_PREFIX = "board-section";
 const SECTION_PANEL_ID = "board-section-panel";
 
 const SECTIONS: readonly { readonly id: BoardSection; readonly label: string; readonly icon: string }[] = [
+  { id: "review", label: "Daily review", icon: "bi-sun" },
   { id: "actions", label: "Next actions", icon: "bi-list-check" },
   { id: "staff", label: "Staff", icon: "bi-people-fill" },
   { id: "approvals", label: "Approvals", icon: "bi-shield-check" },
@@ -95,8 +99,14 @@ export function ExecutiveBoardTab() {
   const boundaries = useBoardBoundaries();
   const tools = useBoardTools();
   const staff = useBoardStaff();
+  const lessons = useBoardReview(true);
 
-  const [section, setSection] = useState<BoardSection>("actions");
+  const urlSection = useMemo(() => {
+    const requested = new URLSearchParams(window.location.search).get("section");
+    if (requested && SECTIONS.some((s) => s.id === requested)) return requested as BoardSection;
+    return null;
+  }, []);
+  const [pinnedSection, setPinnedSection] = useState<BoardSection | null>(urlSection);
   const [chatPersonaId, setChatPersonaId] = useState<string | null>(null);
   const [editPersonaId, setEditPersonaId] = useState<string | null>(null);
   // null = follow the running meeting (if any); CLOSED_MEETING = user closed the panel.
@@ -105,9 +115,14 @@ export function ExecutiveBoardTab() {
   const [focusApprovalId, setFocusApprovalId] = useState<string | null>(null);
   const [focusThreadId, setFocusThreadId] = useState<string | null>(null);
   const [showCallLog, setShowCallLog] = useState(false);
-  const callLog = useBoardToolCalls(section === "settings" && showCallLog);
 
   const overview = board.overview;
+  const section: BoardSection =
+    pinnedSection ?? (overview?.settings.staff?.enabled ? "review" : "actions");
+  const setSection = useCallback((id: BoardSection) => {
+    setPinnedSection(id);
+  }, []);
+  const callLog = useBoardToolCalls(section === "settings" && showCallLog);
   const members = overview?.members ?? [];
   const toolsConfig = tools.data?.config ?? overview?.settings.tools;
   const runningId = overview?.runningMeeting?.meetingId ?? null;
@@ -126,18 +141,18 @@ export function ExecutiveBoardTab() {
   const openMeeting = useCallback((meetingId: string) => {
     setSelectedMeeting(meetingId);
     setSection("meetings");
-  }, []);
+  }, [setSection]);
 
   const openApproval = useCallback((approvalId: string) => {
     setChatPersonaId(null);
     setFocusApprovalId(approvalId);
     setSection("approvals");
-  }, []);
+  }, [setSection]);
 
   const openMailThread = useCallback((threadId: string) => {
     setFocusThreadId(threadId);
     setSection("mail");
-  }, []);
+  }, [setSection]);
 
   const chatToolLabels = useMemo(() => {
     if (!chatPersonaId || !toolsConfig || !overview?.toolsEnabled) return [];
@@ -214,6 +229,8 @@ export function ExecutiveBoardTab() {
             role="tabpanel"
             aria-labelledby={adminTabButtonId(SECTION_ID_PREFIX, section)}
           >
+          {overview && section === "review" ? <BoardReviewSection /> : null}
+
           {overview && section === "actions" ? (
             <BoardActionsList
               actions={actions.actions}
@@ -377,6 +394,13 @@ export function ExecutiveBoardTab() {
                 isSaving={boundaries.save.isPending}
                 errorMessage={errorText(boundaries.save.error)}
                 onSave={(next) => boundaries.save.mutate(next)}
+              />
+              <BoardLessonsList
+                lessons={lessons.lessons}
+                isMutating={lessons.confirmLesson.isPending || lessons.dismissLesson.isPending}
+                errorMessage={errorText(lessons.confirmLesson.error) ?? errorText(lessons.dismissLesson.error)}
+                onConfirm={(id, instruction) => lessons.confirmLesson.mutate({ lessonId: id, instruction })}
+                onDismiss={(id) => lessons.dismissLesson.mutate(id)}
               />
               <BoardSettingsCard
                 key={`settings-${overview.settings.updatedAt ?? ""}`}

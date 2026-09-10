@@ -17,7 +17,10 @@ import type {
   BoardOverview,
   BoardReceivablesPayload,
   BoardSeat,
+  BoardBreaker,
   BoardHold,
+  BoardLesson,
+  BoardReviewSnapshot,
   BoardStaffPayload,
   BoardTask,
   BoardTaskDetailPayload,
@@ -367,7 +370,8 @@ export const boardOverviewFixture: BoardOverview = {
     models: { chat: "", standup: "", deepDive: "" },
     dailyBudgetUsd: 15,
     tools: toolsConfig,
-    staff: { enabled: true, maxRunningTasks: 3, dailyBudgetUsd: 20, dutiesEnabled: false },
+    staff: { enabled: true, maxRunningTasks: 6, dailyBudgetUsd: 20, dutiesEnabled: false },
+    review: { digestTo: "founder@example.com", digestHourHkt: 7, sampleSize: 8 },
     boundaries: DEFAULT_BOARD_BOUNDARIES,
   },
   charter: {
@@ -541,6 +545,47 @@ export const boardHoldsFixture: readonly BoardHold[] = [
     executeAt: new Date(TODAY.getTime() + 20 * 3_600_000).toISOString(),
   },
 ];
+
+export const boardLessonsFixture: BoardLesson[] = [
+  {
+    lessonId: "lsn-1",
+    kind: "veto",
+    subject: "cmo",
+    classKey: "publish:facebook",
+    what: "Propose Page post",
+    instruction: "Always name the district and the date in the first sentence.",
+    confirmed: false,
+    createdAt: isoDaysAgo(0),
+  },
+];
+
+export const boardBreakersFixture: BoardBreaker[] = [
+  { name: "budget", tripped: false, reason: "" },
+];
+
+export const boardReviewFixture: BoardReviewSnapshot = {
+  date: dateDaysAgo(0),
+  compiledAt: isoDaysAgo(0),
+  narrative: "Three parent threads closed. One Facebook post is waiting out its hold. Spend is inside the staff cap.",
+  headline: {
+    tasks: { delivered: 1, running: 1, blocked: 1 },
+    messagesByChannel: { mail: 2, meta: 1 },
+    holds: { executed: 0, vetoed: 0 },
+    spend: { boardUsd: 0.4, staffUsd: 0.12, budgetUsd: 20 },
+  },
+  holdsDue: [...boardHoldsFixture],
+  escalations: [
+    { taskId: "task-owner", assignee: "accountant", brief: "Reconcile last week's unmatched payments." },
+  ],
+  sample: [
+    { callId: "call-mail-1", summary: "Replied to a parent about Saturday swimming", op: "mail_reply" },
+  ],
+  breakers: [],
+  suggestions: [{ classKey: "publish:facebook", actions: 32, vetoes: 0, rate: 0, eligibleForPromotion: true, shouldDemote: false }],
+  assisted: [],
+  market: [],
+  promotion: [],
+};
 
 export function boardTaskDetailFixture(taskId: string): BoardTaskDetailPayload | null {
   const task = boardTasksFixture.find((t) => t.taskId === taskId);

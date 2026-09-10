@@ -411,6 +411,16 @@ function calling. Design:
   phishing mail still route to `accountant` / `security-analyst` in the
   table; those seats stay inactive until WP9 so the task is parked on
   Support as `needs_owner`.
+- **Daily review (WP4):** `GET /siu-tin-dei/board/review`,
+  `POST …/review/sample/{callId}/wrong`, `GET/POST …/lessons`,
+  `GET/POST …/breakers/{name}/reset`, `POST …/ramp/{classKey}/promote`.
+  Schedules `lxsoftware-admin-siutindei-board-review-compile` (07:15 HKT)
+  and `…-board-review-send` (07:30 HKT). Set `settings.review.digestTo`
+  (Settings card) before expecting the digest; sending still requires
+  `BoardMailSendingEnabled`. **Daily review** is the default board section
+  once `settings.staff.enabled` is on. Confirming a lesson injects it into
+  the next staff-task prompt. A budget breaker at 100% of
+  `settings.staff.dailyBudgetUsd` flips `settings.staff.enabled` off.
 
 Smoke test after deploy: open the tab, save a company vision/mission, edit one
 member's mandate, send a chat message to the CEO (reply arrives within ~30 s),

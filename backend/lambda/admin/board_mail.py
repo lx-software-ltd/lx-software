@@ -836,6 +836,9 @@ def send_plan(table: Any, plan: dict[str, Any], *, sent_by: str) -> dict[str, An
         msg["References"] = references
     msg["X-Siutindei-Board"] = _single_line(sent_by, 80)
     msg.set_content(text)
+    html_body = plan.get("html")
+    if isinstance(html_body, str) and html_body.strip():
+        msg.add_alternative(html_body.strip(), subtype="html")
     for att in plan.get("attachments") or []:
         if not isinstance(att, dict):
             continue

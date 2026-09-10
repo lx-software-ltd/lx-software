@@ -2136,10 +2136,22 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         except Exception as exc:  # pragma: no cover - a guard bug must fail closed
             _log_event("error", tag="board_tool_guard_crashed", op=op.name, error=str(exc)[:300])
             guard_reason = "the safety check could not be completed"
+    breaker_error: dict[str, Any] | None = None
+    if op.is_write and not invalid and ctx.actor == "persona":
+        try:
+            import board_staff as _staff
+            import board_breakers
+
+            if _staff.enabled(ctx.settings):
+                breaker_error = board_breakers.write_blocked(ctx.table, op)
+        except Exception as exc:
+            _log_event("warning", tag="board_breaker_check_failed", op=op.name, error=str(exc)[:200])
+            breaker_error = None
     hold_doc: dict[str, Any] | None = None
     if (
         op.is_write
         and not invalid
+        and not breaker_error
         and level == "act"
         and not guard_reason
         and ctx.actor == "persona"
@@ -2161,6 +2173,8 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         # Never queue a malformed proposal: the model gets the schema problem back
         # and can retry with corrected arguments.
         outcome = ToolOutcome(status="error", result={"error": invalid[:500]}, summary=summary)
+    elif breaker_error:
+        outcome = ToolOutcome(status="error", result=breaker_error, summary=summary)
     elif hold_doc:
         execute_at = str(hold_doc.get("executeAt") or "")
         hold_id = str(hold_doc.get("holdId") or "")

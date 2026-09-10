@@ -175,6 +175,7 @@ def render_system_prompt(
     charter: dict[str, Any],
     *,
     meeting_role: str | None = None,
+    lessons: list[str] | None = None,
 ) -> str:
     """System prompt for one persona (chat or meeting).
 
@@ -200,6 +201,10 @@ def render_system_prompt(
         "Style: write in plain English, short paragraphs or bullet points, no "
         "preamble, no flattery. Speak in the first person as this executive."
     )
+    if lessons:
+        parts.append("")
+        parts.append("STANDING INSTRUCTIONS FROM THE FOUNDER:")
+        parts.extend(f"- {item}" for item in lessons)
     return "\n".join(parts)
 
 

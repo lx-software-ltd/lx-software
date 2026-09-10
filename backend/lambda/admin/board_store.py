@@ -353,6 +353,7 @@ def default_staff_config() -> dict[str, Any]:
         "dailyBudgetUsd": BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
         "dutiesEnabled": False,
         "seniorPaused": False,
+        "disabledReason": "",
     }
 
 
@@ -439,6 +440,8 @@ def normalize_staff_config(raw: Any) -> dict[str, Any]:
         out["dutiesEnabled"] = bool(raw.get("dutiesEnabled"))
     if "seniorPaused" in raw:
         out["seniorPaused"] = bool(raw.get("seniorPaused"))
+    if isinstance(raw.get("disabledReason"), str):
+        out["disabledReason"] = raw["disabledReason"].strip()[:200]
     try:
         running = int(raw.get("maxRunningTasks") or out["maxRunningTasks"])
         out["maxRunningTasks"] = max(1, min(20, running))
@@ -1778,10 +1781,34 @@ def list_lessons(table: Any, subject: str | None = None, *, limit: int = 100) ->
 
 def put_breaker(table: Any, name: str, doc: dict[str, Any]) -> None:
     _put_state(table, f"breaker#{name}", doc)
+    idx = _get_state(table, "breaker-index") or {"names": []}
+    names = [str(x) for x in (idx.get("names") or []) if x]
+    if name not in names:
+        names.append(name)
+        _put_state(table, "breaker-index", {"names": names})
 
 
 def get_breaker(table: Any, name: str) -> dict[str, Any] | None:
     return _get_state(table, f"breaker#{name}")
+
+
+def list_breakers(table: Any) -> list[dict[str, Any]]:
+    idx = _get_state(table, "breaker-index") or {"names": []}
+    out: list[dict[str, Any]] = []
+    for name in idx.get("names") or []:
+        row = get_breaker(table, str(name))
+        if row:
+            out.append({"name": name, **row})
+    return out
+
+
+def get_tool_call(table: Any, call_id: str) -> dict[str, Any] | None:
+    if not call_id:
+        return None
+    for row in list_tool_calls(table, limit=500):
+        if str(row.get("callId") or "") == call_id:
+            return row
+    return None
 
 
 def put_review_snapshot(table: Any, date_hkt: str, doc: dict[str, Any]) -> None:

@@ -132,7 +132,12 @@ def hold_hours(table: Any, settings: dict[str, Any], action_class: str, class_ke
     holds = ((settings.get("boundaries") or {}).get("holds") or {})
     overrides = ((settings.get("boundaries") or {}).get("holdOverrides") or {})
     default = int(holds.get(action_class, BOARD_STAFF_HOLD_DEFAULT_HOURS) or 0)
-    breaker = board_store.get_breaker(table, action_class) or board_store.get_breaker(table, class_key)
+    breaker = (
+        board_store.get_breaker(table, f"class:{class_key}")
+        or board_store.get_breaker(table, f"class:{action_class}")
+        or board_store.get_breaker(table, action_class)
+        or board_store.get_breaker(table, class_key)
+    )
     if breaker and breaker.get("tripped"):
         return default
     if class_key in overrides:
@@ -329,6 +334,12 @@ def veto(table: Any, hold_id: str, by_sub: str, reason: str) -> dict[str, Any]:
     board_store.put_hold(table, hold)
     settings = board_store.load_settings(table)
     record_ramp(table, settings, str(hold.get("classKey") or ""), vetoed=True)
+    try:
+        import board_lessons
+
+        board_lessons.create_from_veto(table, hold)
+    except Exception as exc:
+        _log_event("warning", tag="board_lesson_from_veto_failed", error=str(exc)[:200])
     return hold
 
 
@@ -405,7 +416,32 @@ def _demote(table: Any, settings: dict[str, Any], class_key: str) -> None:
     boundaries["holdOverrides"] = overrides
     settings["boundaries"] = board_store.normalize_boundaries(boundaries)
     board_store.save_settings(table, settings)
+    try:
+        import board_breakers
+
+        board_breakers.trip(table, f"class:{class_key}", "ramp demote — hold restored")
+    except Exception as exc:
+        _log_event("warning", tag="board_breaker_demote_failed", error=str(exc)[:200], classKey=class_key)
     _log_event("warning", tag="board_ramp_demoted", classKey=class_key)
+
+
+def promote(table: Any, class_key: str) -> dict[str, Any]:
+    settings = board_store.load_settings(table)
+    boundaries = dict(settings.get("boundaries") or {})
+    overrides = dict(boundaries.get("holdOverrides") or {})
+    overrides[class_key] = 0
+    boundaries["holdOverrides"] = overrides
+    settings["boundaries"] = board_store.normalize_boundaries(boundaries)
+    saved = board_store.save_settings(table, settings)
+    try:
+        import board_breakers
+
+        if board_breakers.is_tripped(table, f"class:{class_key}"):
+            board_breakers.reset(table, f"class:{class_key}", "ramp-promote")
+    except Exception as exc:
+        _log_event("warning", tag="board_breaker_promote_reset_failed", error=str(exc)[:200], classKey=class_key)
+    _log_event("info", tag="board_ramp_promoted", classKey=class_key)
+    return {"classKey": class_key, "holdOverrides": (saved.get("boundaries") or {}).get("holdOverrides") or {}}
 
 
 def list_ramp(table: Any) -> list[dict[str, Any]]:

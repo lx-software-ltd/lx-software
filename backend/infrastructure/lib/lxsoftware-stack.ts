@@ -1062,6 +1062,30 @@ export class LxsoftwareStack extends cdk.Stack {
       { internal: "board_staff_tick" },
       0
     );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardReviewCompileSchedule",
+      "lxsoftware-admin-siutindei-board-review-compile",
+      "Daily 07:15 HKT compile of the Executive Board review snapshot.",
+      scheduler.ScheduleExpression.cron({
+        minute: "15",
+        hour: "7",
+        timeZone: cdk.TimeZone.ASIA_HONG_KONG,
+      }),
+      { internal: "board_review_compile" },
+      0
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardReviewSendSchedule",
+      "lxsoftware-admin-siutindei-board-review-send",
+      "Daily 07:30 HKT digest email of the Executive Board review.",
+      scheduler.ScheduleExpression.cron({
+        minute: "30",
+        hour: "7",
+        timeZone: cdk.TimeZone.ASIA_HONG_KONG,
+      }),
+      { internal: "board_review_send" },
+      0
+    );
 
     // Daily unattended balance refresh (05:30 HKT). The handler no-ops when
     // ENABLE_BANKING_APP_ID is blank, so the rule is safe to keep enabled.
@@ -1942,6 +1966,29 @@ export class LxsoftwareStack extends cdk.Stack {
       },
       { path: "/siu-tin-dei/board/boundaries", methods: [apigwv2.HttpMethod.PUT] },
       { path: "/siu-tin-dei/board/ramp", methods: [apigwv2.HttpMethod.GET] },
+      {
+        path: "/siu-tin-dei/board/ramp/{classKey}/promote",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      { path: "/siu-tin-dei/board/review", methods: [apigwv2.HttpMethod.GET] },
+      {
+        path: "/siu-tin-dei/board/review/sample/{callId}/wrong",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      { path: "/siu-tin-dei/board/lessons", methods: [apigwv2.HttpMethod.GET] },
+      {
+        path: "/siu-tin-dei/board/lessons/{lessonId}/confirm",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/lessons/{lessonId}/dismiss",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      { path: "/siu-tin-dei/board/breakers", methods: [apigwv2.HttpMethod.GET] },
+      {
+        path: "/siu-tin-dei/board/breakers/{name}/reset",
+        methods: [apigwv2.HttpMethod.POST],
+      },
     ];
     for (const route of boardRoutes) {
       this.httpApi.addRoutes({

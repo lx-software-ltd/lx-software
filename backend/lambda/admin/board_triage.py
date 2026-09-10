@@ -320,6 +320,16 @@ def _open_or_append(
     )
     if escalate:
         _send_ack(table, settings, task, reply_op, reply_args, text)
+        try:
+            import board_breakers
+
+            board_breakers.note_escalation_after_reply(
+                table,
+                channel=channel,
+                thread_id=str((reply_args or {}).get("threadId") or (reply_args or {}).get("reviewId") or event_id),
+            )
+        except Exception as exc:
+            _log_event("warning", tag="board_breaker_channel_failed", error=str(exc)[:200])
     return task
 
 

@@ -179,6 +179,52 @@ export function BoardSettingsCard({
           ))}
           <div className="form-text">Leave blank to use the stack defaults. Requests are routed only to providers that do not retain prompts.</div>
 
+          <h3 className="h6 mt-4">Staff and daily review</h3>
+          <div className="form-check form-switch">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="board-staff-enabled"
+              checked={Boolean(draft.staff?.enabled)}
+              onChange={(ev) =>
+                setDraft((d) => ({
+                  ...d,
+                  staff: {
+                    enabled: ev.target.checked,
+                    maxRunningTasks: d.staff?.maxRunningTasks ?? 6,
+                    dailyBudgetUsd: d.staff?.dailyBudgetUsd ?? 20,
+                    dutiesEnabled: d.staff?.dutiesEnabled,
+                    seniorPaused: d.staff?.seniorPaused,
+                  },
+                }))
+              }
+            />
+            <label className="form-check-label" htmlFor="board-staff-enabled">
+              Enable staff tasks
+            </label>
+          </div>
+          <div className="mb-2 mt-2">
+            <label className="form-label small" htmlFor="board-review-digest">Digest email</label>
+            <input
+              id="board-review-digest"
+              className="form-control form-control-sm"
+              type="email"
+              value={draft.review?.digestTo ?? ""}
+              placeholder="founder@example.com"
+              onChange={(ev) =>
+                setDraft((d) => ({
+                  ...d,
+                  review: {
+                    digestTo: ev.target.value,
+                    digestHourHkt: d.review?.digestHourHkt ?? 7,
+                    sampleSize: d.review?.sampleSize ?? 8,
+                  },
+                }))
+              }
+            />
+            <div className="form-text">One address. Sent from board@siutindei.com at 07:30 HKT when mail sending is on.</div>
+          </div>
+
           <h3 className="h6 mt-4">Daily budget</h3>
           <div className="input-group input-group-sm board-budget-input">
             <span className="input-group-text">USD</span>

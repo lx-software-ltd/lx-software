@@ -642,7 +642,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "ceo",
     "title": "Chief of Staff / Business Analyst",
     "modelTier": "desk",
-    "isActiveDefault": false,
+    "isActiveDefault": true,
     "tools": {
       "github": "read",
       "board": "read",
@@ -696,7 +696,7 @@ export const BOARD_STAFF_CONTENT_CHANNELS = ["facebook", "instagram", "instagram
 export const BOARD_STAFF_CONTENT_STATUSES = ["idea", "drafted", "creative", "scheduled", "published", "vetoed", "failed"] as const;
 export const BOARD_STAFF_MAX_STEPS_PER_TASK = 12;
 export const BOARD_STAFF_MAX_REVISIONS = 2;
-export const BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = 3;
+export const BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = 6;
 export const BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD = 20;
 export const BOARD_STAFF_REVIEW_SAMPLE_SIZE = 8;
 export const BOARD_STAFF_OUTREACH_DAILY_CAP_START = 20;

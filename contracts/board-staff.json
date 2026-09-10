@@ -175,7 +175,7 @@
       "reportsTo": "ceo",
       "title": "Chief of Staff / Business Analyst",
       "modelTier": "desk",
-      "isActiveDefault": false,
+      "isActiveDefault": true,
       "tools": {
         "github": "read",
         "board": "read",
@@ -222,7 +222,7 @@
     "staffStepMaxSeconds": 150,
     "maxStepsPerTask": 12,
     "maxRevisions": 2,
-    "maxRunningTasksDefault": 3,
+    "maxRunningTasksDefault": 6,
     "staffTaskStuckSeconds": 900,
     "taskBudgetDeskUsd": 1.0,
     "taskBudgetSeniorUsd": 3.0,

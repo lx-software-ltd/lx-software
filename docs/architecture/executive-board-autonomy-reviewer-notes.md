@@ -91,3 +91,44 @@ up in review; do not treat them as product decisions unless you confirm.
 - **Store review fetch** runs inside `refresh_caches` (not only the
   ratings cache) so new review ids can be detected. Failed review fetches
   are logged and do not fail metrics refresh.
+
+## WP4
+
+- **Usage day vs HKT date.** Board `usage#` and `staffusage#` keys are UTC
+  dates. The 07:15 HKT compile runs at 23:15 UTC the previous calendar day,
+  so headline spend reads the current UTC day (yesterday evening UTC /
+  this morning HKT).
+- **`create_from_veto(table, hold)`** (and the other lesson constructors)
+  take `table` first. The spec omitted it; store helpers need the FakeTable
+  in tests.
+- **Class breaker name** is `class:{classKey}`. `hold_hours` still honours
+  a legacy breaker stored under the bare `action_class` / `class_key` so
+  the WP2 test that trips `publish` keeps working.
+- **Channel breaker** fires when an escalation lands on a thread that
+  already had a reply/post tool-call in the last 24 h
+  (`note_escalation_after_reply` from triage). It does not count raw
+  volume.
+- **Owner writes are not held or breaker-blocked.** `execute_call` checks
+  channel/tool breakers only for `actor=="persona"` so the founder can
+  still approve or send.
+- **Promote resets `class:{classKey}`** as well as setting
+  `holdOverrides[classKey]=0`, otherwise a demote breaker would keep the
+  default hold and Accept would do nothing.
+- **Breaker index** is a `breaker-index` state doc listing names. Breakers
+  have distinct `pk`s (`breaker#{name}`), so they cannot be queried with
+  `begins_with` on a single partition.
+- **`get_tool_call`** scans the newest 500 tool-call rows. Fine for the
+  owner's "this was wrong" action.
+- **Digest HTML** is an optional `html` field on `board_mail.send_plan`
+  (`EmailMessage.add_alternative`). Existing text-only sends are unchanged.
+- **Headline duty** is created on the 07:00–07:14 HKT ticks even when
+  `settings.staff.dutiesEnabled` is still false (WP9 owns the general duty
+  system). `business-analyst` must be active (now the contract default).
+- **`maxRunningTasksDefault` is now 6** in the contract. Existing saved
+  settings keep whatever `maxRunningTasks` was stored until the owner
+  saves again.
+- **Staff enable + digestTo** are on the Settings card (called out in WP1
+  reviewer notes).
+- **Default section** is Daily review when `settings.staff.enabled` is
+  true. Digest deep-links use `?tab=board&section=review#…`.
+- **One PR for the whole solution** still applies (see WP1).
