@@ -4,6 +4,12 @@ Uncertainties and intentional deviations found while implementing the
 specification in `executive-board-autonomy-implementation.md`. Pick these
 up in review; do not treat them as product decisions unless you confirm.
 
+The senior review of the finished branch, with numbered findings (`R-nn`),
+gates and an ordered execution plan, is in
+`executive-board-autonomy-remediation-plan.md`. Several notes below are
+superseded by that plan (for example `env_enabled()` is to fail closed —
+R-03; all-seats-active — R-24).
+
 ## WP1
 
 - **S3 in unit tests.** When `ASSETS_BUCKET_NAME` is unset, `board_staff`
