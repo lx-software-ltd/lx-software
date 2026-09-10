@@ -28,9 +28,10 @@ from __future__ import annotations
 
 import csv
 import io
-import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import Any
+
+from defusedxml import ElementTree as ET
 
 import board_hk
 import board_store

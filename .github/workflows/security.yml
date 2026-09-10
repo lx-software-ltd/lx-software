@@ -42,6 +42,9 @@ jobs:
         working-directory: backend/infrastructure
         env:
           CDK_DISABLE_CONTEXT_LOOKUPS: "1"
+          # Pillow/defusedxml force Docker ARM bundling; Checkov only needs the
+          # CloudFormation template, same as CDK Jest (`bundling-stacks: []`).
+          CDK_SKIP_PYTHON_PIP: "1"
         run: |
           npx cdk synth --quiet --output cdk.out \
             --parameters PublicWebsiteDomainName=example.com \

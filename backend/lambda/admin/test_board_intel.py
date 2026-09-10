@@ -227,6 +227,22 @@ class OpendataTests(unittest.TestCase):
         self.assertEqual(rows[1]["district"], "Islands")
         self.assertEqual(rows[0]["nameEn"], "Happy Kids Kitchen")
 
+    def test_fehd_xml_maps_licence_rows(self) -> None:
+        body = """<?xml version="1.0" encoding="UTF-8"?>
+<LICENCELIST>
+  <LP>
+    <EN_NAME>Happy Kids Kitchen</EN_NAME>
+    <TC_NAME>快樂小廚房</TC_NAME>
+    <ADR>1 Sha Tin Centre Street</ADR>
+    <DIST>Sha Tin</DIST>
+  </LP>
+</LICENCELIST>
+"""
+        rows = board_opendata.parse_fehd_xml(body)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["district"], "Sha Tin")
+        self.assertEqual(rows[0]["nameEn"], "Happy Kids Kitchen")
+
 
 class RouteTests(BoardTestCase):
     def setUp(self) -> None:

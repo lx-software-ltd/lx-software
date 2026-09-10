@@ -139,7 +139,8 @@ up in review; do not treat them as product decisions unless you confirm.
   data.gov.hk publishes English and Traditional Chinese XML
   (`LP_Restaurants_EN.XML` / `LP_Restaurants_TC.XML`). The module parses
   XML in production and still accepts the spec's CSV fixture
-  (`test_fixtures/fehd_sample.csv`) via `parse_fehd_csv`.
+  (`test_fixtures/fehd_sample.csv`) via `parse_fehd_csv`. Semgrep flagged
+  stdlib `xml.etree`; parse uses `defusedxml.ElementTree` (`requirements.txt`).
 - **`candidate` was added to `watchKinds`.** The spec's discover path
   writes `kind="candidate"`; the contract list omitted it. CRUD accepts
   it even if a future sync drops it from the JSON.
@@ -241,7 +242,10 @@ up in review; do not treat them as product decisions unless you confirm.
 - **Plan deliverable read limit** is 200_000 characters so a 21-item JSON
   week is not truncated by the default 6_000-char `read_deliverable`.
 - **Python-lambda Docker bundling** was already in `python-lambda.ts`;
-  adding Pillow to `requirements.txt` disables the local no-pip copy path.
+  adding Pillow (and `defusedxml`) to `requirements.txt` disables the
+  local no-pip copy path. Checkov CI sets `CDK_SKIP_PYTHON_PIP=1` so
+  synth copies sources without Docker (GitHub runners cannot execute
+  the arm64 SAM bundling image). Deploy still bundles with pip.
 - **Creatives render inline** in `on_plan_delivered` rather than as a
   separate staff-task step. Same Pillow path, one Lambda invoke.
 - **Default `perWeek` includes `seo: 2`.** Acceptance still treats the
