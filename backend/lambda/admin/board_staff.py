@@ -754,6 +754,14 @@ def _accept_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
             action["updatedAt"] = now
             board_store.put_action(table, action)
     board_store.put_task(table, task)
+    ref = task.get("eventRef") or {}
+    if ref.get("kind") == "duty" and str(ref.get("id") or "").startswith("market-brief:"):
+        try:
+            import board_intel
+
+            board_intel.on_brief_delivered(table, task)
+        except Exception as exc:
+            _log_event("warning", tag="board_intel_brief_deliver_failed", error=str(exc)[:200])
     return task
 
 

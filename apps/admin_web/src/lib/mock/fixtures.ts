@@ -26,6 +26,8 @@ import type {
   BoardTaskDetailPayload,
   BoardToolsConfig,
   BoardToolsPayload,
+  BoardWatch,
+  BoardChangeNote,
 } from "../boardModel";
 import { DEFAULT_BOARD_BOUNDARIES } from "../boardModel";
 import type { FinancePersistedState, HouseFinanceData } from "../financeModel";
@@ -583,9 +585,57 @@ export const boardReviewFixture: BoardReviewSnapshot = {
   breakers: [],
   suggestions: [{ classKey: "publish:facebook", actions: 32, vetoes: 0, rate: 0, eligibleForPromotion: true, shouldDemote: false }],
   assisted: [],
-  market: [],
+  market: {
+    changes: [
+      {
+        changeId: "chg-1",
+        watchId: "watch-1",
+        url: "https://kiztopia.example/pricing",
+        kind: "pricing",
+        summary: "Saturday class price rose from $280 to $320.",
+        createdAt: isoDaysAgo(1),
+        beforeDigest: "Saturday class $280",
+        afterDigest: "Saturday class $320",
+      },
+    ],
+    latestBrief: { taskId: "task-review", status: "review", summary: "Weekly market brief", createdAt: isoDaysAgo(0) },
+  },
   promotion: [],
 };
+
+export const boardWatchesFixture: BoardWatch[] = [
+  {
+    watchId: "watch-1",
+    name: "Kiztopia",
+    kind: "competitor",
+    urls: ["https://kiztopia.example/pricing", "https://kiztopia.example/"],
+    appIds: { ios: "123456789" },
+    socialHandles: [],
+    createdAt: isoDaysAgo(10),
+    pages: [{ url: "https://kiztopia.example/pricing", emptyBody: false, lastFetchedAt: isoDaysAgo(0), status: 200 }],
+  },
+  {
+    watchId: "watch-candidate",
+    name: "New Kids Lab",
+    kind: "candidate",
+    urls: ["https://newkidslab.example/"],
+    seenWeeks: ["2026-W36"],
+    createdAt: isoDaysAgo(7),
+  },
+];
+
+export const boardChangesFixture: BoardChangeNote[] = [
+  {
+    changeId: "chg-1",
+    watchId: "watch-1",
+    url: "https://kiztopia.example/pricing",
+    kind: "pricing",
+    summary: "Saturday class price rose from $280 to $320.",
+    createdAt: isoDaysAgo(1),
+    beforeDigest: "Saturday class $280",
+    afterDigest: "Saturday class $320",
+  },
+];
 
 export function boardTaskDetailFixture(taskId: string): BoardTaskDetailPayload | null {
   const task = boardTasksFixture.find((t) => t.taskId === taskId);

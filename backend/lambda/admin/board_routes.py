@@ -168,6 +168,12 @@ def handle_board_route(
     if head == "breakers":
         return _breakers_route(event, method, rest, user_sub)
 
+    if head == "watchlist":
+        return _watchlist_route(event, method, rest, user_sub)
+
+    if head == "changes" and len(rest) == 1 and method == "GET":
+        return _changes_get(event)
+
     return _json_response(404, {"message": "Not found"})
 
 
@@ -788,6 +794,67 @@ def _lessons_route(event: dict[str, Any], method: str, rest: list[str], user_sub
         _audit(user_sub, "BOARD_LESSON_CONFIRM" if rest[2] == "confirm" else "BOARD_LESSON_DISMISS", rest[1], event)
         return _json_response(200, {"lesson": lesson})
     return _json_response(404, {"message": "Not found"})
+
+
+def _watchlist_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
+    if not board_staff.env_enabled():
+        return _staff_disabled()
+    import board_intel
+    import board_watch
+
+    table = board_store.records_table()
+    if len(rest) == 1:
+        if method == "GET":
+            watches = [board_intel.public_watch(table, w) for w in board_store.list_watches(table)]
+            return _json_response(200, {"watches": watches, "latestBrief": board_intel.latest_brief(table)})
+        if method == "POST":
+            body = _parse_json_body(event)
+            if not isinstance(body, dict):
+                return _json_response(400, {"message": "body must be an object"})
+            try:
+                watch = board_watch.add_watch(table, body)
+            except board_watch.WatchError as exc:
+                return _json_response(400, {"message": str(exc)})
+            _audit(user_sub, "BOARD_WATCH_ADD", watch.get("watchId") or "", event)
+            return _json_response(201, {"watch": board_intel.public_watch(table, watch)})
+        return _json_response(405, {"message": "Method not allowed"})
+    if len(rest) == 2:
+        watch_id = rest[1]
+        if method == "PUT":
+            body = _parse_json_body(event)
+            if not isinstance(body, dict):
+                return _json_response(400, {"message": "body must be an object"})
+            try:
+                watch = board_watch.update_watch(table, watch_id, body)
+            except KeyError:
+                return _json_response(404, {"message": "Watch not found"})
+            except board_watch.WatchError as exc:
+                return _json_response(400, {"message": str(exc)})
+            _audit(user_sub, "BOARD_WATCH_PUT", watch_id, event)
+            return _json_response(200, {"watch": board_intel.public_watch(table, watch)})
+        if method == "DELETE":
+            try:
+                board_watch.remove_watch(table, watch_id)
+            except KeyError:
+                return _json_response(404, {"message": "Watch not found"})
+            _audit(user_sub, "BOARD_WATCH_DELETE", watch_id, event)
+            return _json_response(200, {"ok": True})
+        return _json_response(405, {"message": "Method not allowed"})
+    return _json_response(404, {"message": "Not found"})
+
+
+def _changes_get(event: dict[str, Any]) -> dict[str, Any]:
+    if not board_staff.env_enabled():
+        return _staff_disabled()
+    import board_intel
+
+    table = board_store.records_table()
+    qs = parse_qs(event.get("rawQueryString") or "")
+    try:
+        days = int((qs.get("days") or ["7"])[0] or 7)
+    except ValueError:
+        days = 7
+    return _json_response(200, {"changes": board_intel.list_changes(table, days)})
 
 
 def _breakers_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:

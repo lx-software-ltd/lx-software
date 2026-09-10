@@ -1096,6 +1096,70 @@ export function boardBreakersPath(): string {
   return `${BOARD_API_BASE}/breakers`;
 }
 
+export function boardWatchlistPath(): string {
+  return `${BOARD_API_BASE}/watchlist`;
+}
+
+export function boardWatchPath(watchId: string): string {
+  return `${BOARD_API_BASE}/watchlist/${encodeURIComponent(watchId)}`;
+}
+
+export function boardChangesPath(days?: number): string {
+  const params = new URLSearchParams();
+  if (days) params.set("days", String(days));
+  const qs = params.toString();
+  return qs ? `${BOARD_API_BASE}/changes?${qs}` : `${BOARD_API_BASE}/changes`;
+}
+
+export type BoardWatchPage = {
+  readonly url?: string;
+  readonly emptyBody?: boolean;
+  readonly lastFetchedAt?: string;
+  readonly status?: number;
+};
+
+export type BoardWatch = {
+  readonly watchId: string;
+  readonly name: string;
+  readonly kind: string;
+  readonly urls: readonly string[];
+  readonly appIds?: Readonly<Record<string, string>>;
+  readonly socialHandles?: readonly string[];
+  readonly seenWeeks?: readonly string[];
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
+  readonly pages?: readonly BoardWatchPage[];
+};
+
+export type BoardWatchWrite = {
+  readonly name?: string;
+  readonly kind?: string;
+  readonly urls?: readonly string[];
+  readonly appIds?: Readonly<Record<string, string>>;
+  readonly socialHandles?: readonly string[];
+};
+
+export type BoardChangeNote = {
+  readonly changeId: string;
+  readonly watchId?: string;
+  readonly url?: string;
+  readonly kind?: string;
+  readonly summary?: string;
+  readonly createdAt?: string;
+  readonly beforeDigest?: string;
+  readonly afterDigest?: string;
+  readonly beforeKey?: string;
+  readonly afterKey?: string;
+};
+
+export type BoardMarketBrief = {
+  readonly taskId: string;
+  readonly status?: string;
+  readonly summary?: string;
+  readonly createdAt?: string;
+  readonly eventRef?: { readonly kind?: string; readonly id?: string };
+};
+
 export function boardBreakerResetPath(name: string): string {
   return `${BOARD_API_BASE}/breakers/${encodeURIComponent(name)}/reset`;
 }
@@ -1160,7 +1224,10 @@ export type BoardReviewSnapshot = {
   readonly breakers: readonly BoardBreaker[];
   readonly suggestions: readonly BoardRampRow[];
   readonly assisted?: readonly unknown[];
-  readonly market?: readonly unknown[];
+  readonly market?: {
+    readonly changes?: readonly BoardChangeNote[];
+    readonly latestBrief?: BoardMarketBrief | null;
+  };
   readonly promotion?: readonly unknown[];
 };
 

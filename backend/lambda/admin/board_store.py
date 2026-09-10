@@ -1929,8 +1929,11 @@ def get_watch(table: Any, watch_id: str) -> dict[str, Any] | None:
 def list_watches(table: Any) -> list[dict[str, Any]]:
     from contract_constants import BOARD_STAFF_WATCH_KINDS
 
+    kinds = list(BOARD_STAFF_WATCH_KINDS)
+    if "candidate" not in kinds:
+        kinds.append("candidate")
     items: list[dict[str, Any]] = []
-    for kind in BOARD_STAFF_WATCH_KINDS:
+    for kind in kinds:
         rows = _query_all(
             table,
             IndexName="gsi1",
@@ -1939,6 +1942,19 @@ def list_watches(table: Any) -> list[dict[str, Any]]:
         )
         items.extend(_strip_keys(i) for i in rows)
     return items
+
+
+def delete_watch(table: Any, watch_id: str) -> None:
+    table.delete_item(Key=watch_key(watch_id))
+
+
+def list_watch_pages(table: Any, watch_id: str) -> list[dict[str, Any]]:
+    items = _query_all(
+        table,
+        KeyConditionExpression="pk = :pk AND begins_with(sk, :prefix)",
+        ExpressionAttributeValues={":pk": board_pk(f"watch#{watch_id}"), ":prefix": "PAGE#"},
+    )
+    return [_strip_keys(i) for i in items]
 
 
 def put_watch_page(table: Any, watch_id: str, url_digest: str, doc: dict[str, Any]) -> None:

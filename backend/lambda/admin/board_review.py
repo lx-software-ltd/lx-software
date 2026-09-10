@@ -218,6 +218,18 @@ def _narrative(table: Any, date_hkt: str) -> str:
     return (text or str(task.get("summary") or "")).strip()[:2000]
 
 
+def _market_section(table: Any) -> dict[str, Any]:
+    try:
+        import board_intel
+
+        changes = board_intel.list_changes(table, 7)[:12]
+        brief = board_intel.latest_brief(table)
+    except Exception:
+        changes = []
+        brief = None
+    return {"changes": changes, "latestBrief": brief}
+
+
 def compile(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, Any]:
     narrative = _narrative(table, date_hkt)
     try:
@@ -243,7 +255,7 @@ def compile(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, An
         "breakers": breakers,
         "suggestions": suggestions,
         "assisted": [],
-        "market": [],
+        "market": _market_section(table),
         "promotion": [],
     }
     board_store.put_review_snapshot(table, date_hkt, doc)

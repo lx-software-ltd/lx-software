@@ -25,6 +25,8 @@ import {
   boardTaskDetailFixture,
   boardTasksFixture,
   boardToolsFixture,
+  boardWatchesFixture,
+  boardChangesFixture,
   financeFixture,
   lxSoftwareBookFixture,
   siuTinDeiBookFixture,
@@ -37,6 +39,7 @@ import {
   type BoardLesson,
   type BoardSeat,
   type BoardTask,
+  type BoardWatch,
 } from "../boardModel";
 
 export { isAdminMockEnabled };
@@ -80,6 +83,7 @@ type MockState = {
   boundaries: BoardBoundaries;
   lessons: BoardLesson[];
   breakers: BoardBreaker[];
+  watches: BoardWatch[];
 };
 
 const state: MockState = {
@@ -94,6 +98,7 @@ const state: MockState = {
   boundaries: structuredClone(DEFAULT_BOARD_BOUNDARIES),
   lessons: structuredClone(boardLessonsFixture) as BoardLesson[],
   breakers: structuredClone(boardBreakersFixture) as BoardBreaker[],
+  watches: structuredClone(boardWatchesFixture) as BoardWatch[],
 };
 
 function json(body: unknown, status = 200): Response {
@@ -375,6 +380,47 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
     const name = decodeURIComponent(p.slice(`${board}/breakers/`.length, -"/reset".length));
     state.breakers = state.breakers.map((b) => (b.name === name ? { ...b, tripped: false, resetAt: new Date().toISOString() } : b));
     return json({ breaker: state.breakers.find((b) => b.name === name) });
+  }
+  if (p === `${board}/watchlist`) {
+    if (method === "POST") {
+      const body = parseBody(init);
+      const watch: BoardWatch = {
+        watchId: `watch-${state.watches.length + 1}`,
+        name: String(body.name ?? ""),
+        kind: String(body.kind ?? "competitor"),
+        urls: Array.isArray(body.urls) ? body.urls.map(String) : [],
+        appIds: typeof body.appIds === "object" && body.appIds ? (body.appIds as Record<string, string>) : {},
+        createdAt: new Date().toISOString(),
+      };
+      state.watches = [watch, ...state.watches];
+      return json({ watch }, 201);
+    }
+    return json({
+      watches: state.watches,
+      latestBrief: { taskId: "task-review", status: "review", summary: "Weekly market brief" },
+    });
+  }
+  if (p.startsWith(`${board}/watchlist/`)) {
+    const watchId = decodeURIComponent(p.slice(`${board}/watchlist/`.length));
+    const idx = state.watches.findIndex((w) => w.watchId === watchId);
+    if (idx < 0) return json({ message: "Watch not found" }, 404);
+    if (method === "DELETE") {
+      state.watches = state.watches.filter((w) => w.watchId !== watchId);
+      return json({ ok: true });
+    }
+    if (method === "PUT") {
+      const body = parseBody(init);
+      state.watches[idx] = {
+        ...state.watches[idx],
+        ...(typeof body.name === "string" ? { name: body.name } : {}),
+        ...(typeof body.kind === "string" ? { kind: body.kind } : {}),
+        ...(Array.isArray(body.urls) ? { urls: body.urls.map(String) } : {}),
+      };
+      return json({ watch: state.watches[idx] });
+    }
+  }
+  if (p === `${board}/changes`) {
+    return json({ changes: boardChangesFixture });
   }
 
   return notFound(p);

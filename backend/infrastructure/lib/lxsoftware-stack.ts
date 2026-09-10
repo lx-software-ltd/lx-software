@@ -1086,6 +1086,31 @@ export class LxsoftwareStack extends cdk.Stack {
       { internal: "board_review_send" },
       0
     );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardIntelCrawlSchedule",
+      "lxsoftware-admin-siutindei-board-intel-crawl",
+      "Daily 03:00 HKT crawl of the Executive Board competitor watchlist.",
+      scheduler.ScheduleExpression.cron({
+        minute: "0",
+        hour: "3",
+        timeZone: cdk.TimeZone.ASIA_HONG_KONG,
+      }),
+      { internal: "board_intel_crawl" },
+      0
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardIntelWeeklySchedule",
+      "lxsoftware-admin-siutindei-board-intel-weekly",
+      "Monday 04:00 HKT watchlist discovery and weekly market brief.",
+      scheduler.ScheduleExpression.cron({
+        minute: "0",
+        hour: "4",
+        weekDay: "MON",
+        timeZone: cdk.TimeZone.ASIA_HONG_KONG,
+      }),
+      { internal: "board_intel_weekly" },
+      0
+    );
 
     // Daily unattended balance refresh (05:30 HKT). The handler no-ops when
     // ENABLE_BANKING_APP_ID is blank, so the rule is safe to keep enabled.
@@ -1989,6 +2014,15 @@ export class LxsoftwareStack extends cdk.Stack {
         path: "/siu-tin-dei/board/breakers/{name}/reset",
         methods: [apigwv2.HttpMethod.POST],
       },
+      {
+        path: "/siu-tin-dei/board/watchlist",
+        methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/watchlist/{watchId}",
+        methods: [apigwv2.HttpMethod.PUT, apigwv2.HttpMethod.DELETE],
+      },
+      { path: "/siu-tin-dei/board/changes", methods: [apigwv2.HttpMethod.GET] },
     ];
     for (const route of boardRoutes) {
       this.httpApi.addRoutes({

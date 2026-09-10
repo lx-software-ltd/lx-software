@@ -6,6 +6,75 @@ from datetime import datetime, timedelta, timezone
 
 HKT = timezone(timedelta(hours=8))
 
+# District keywords used to map a Hong Kong address to an 18-district label.
+# Longer / more specific tokens are matched first.
+HK_DISTRICTS: tuple[tuple[str, str], ...] = (
+    ("Sai Kung", "Sai Kung"),
+    ("西貢", "Sai Kung"),
+    ("Tseung Kwan O", "Sai Kung"),
+    ("將軍澳", "Sai Kung"),
+    ("Sha Tin", "Sha Tin"),
+    ("沙田", "Sha Tin"),
+    ("Tai Po", "Tai Po"),
+    ("大埔", "Tai Po"),
+    ("North", "North"),
+    ("北區", "North"),
+    ("Fanling", "North"),
+    ("粉嶺", "North"),
+    ("Sheung Shui", "North"),
+    ("上水", "North"),
+    ("Yuen Long", "Yuen Long"),
+    ("元朗", "Yuen Long"),
+    ("Tuen Mun", "Tuen Mun"),
+    ("屯門", "Tuen Mun"),
+    ("Tsuen Wan", "Tsuen Wan"),
+    ("荃灣", "Tsuen Wan"),
+    ("Kwai Tsing", "Kwai Tsing"),
+    ("葵青", "Kwai Tsing"),
+    ("Kwai Chung", "Kwai Tsing"),
+    ("葵涌", "Kwai Tsing"),
+    ("Tsing Yi", "Kwai Tsing"),
+    ("青衣", "Kwai Tsing"),
+    ("Islands", "Islands"),
+    ("離島", "Islands"),
+    ("Tung Chung", "Islands"),
+    ("東涌", "Islands"),
+    ("Kwun Tong", "Kwun Tong"),
+    ("觀塘", "Kwun Tong"),
+    ("Wong Tai Sin", "Wong Tai Sin"),
+    ("黃大仙", "Wong Tai Sin"),
+    ("Kowloon City", "Kowloon City"),
+    ("九龍城", "Kowloon City"),
+    ("Sham Shui Po", "Sham Shui Po"),
+    ("深水埗", "Sham Shui Po"),
+    ("Yau Tsim Mong", "Yau Tsim Mong"),
+    ("油尖旺", "Yau Tsim Mong"),
+    ("Mong Kok", "Yau Tsim Mong"),
+    ("旺角", "Yau Tsim Mong"),
+    ("Tsim Sha Tsui", "Yau Tsim Mong"),
+    ("尖沙咀", "Yau Tsim Mong"),
+    ("Yau Ma Tei", "Yau Tsim Mong"),
+    ("油麻地", "Yau Tsim Mong"),
+    ("Central and Western", "Central and Western"),
+    ("中西區", "Central and Western"),
+    ("Central", "Central and Western"),
+    ("中環", "Central and Western"),
+    ("Wan Chai", "Wan Chai"),
+    ("灣仔", "Wan Chai"),
+    ("Eastern", "Eastern"),
+    ("東區", "Eastern"),
+    ("Southern", "Southern"),
+    ("南區", "Southern"),
+)
+
+
+def district_from_address(address: str) -> str:
+    text = address or ""
+    for token, district in HK_DISTRICTS:
+        if token.lower() in text.lower() or token in text:
+            return district
+    return ""
+
 
 def parse_iso(value: str) -> datetime:
     text = (value or "").strip()

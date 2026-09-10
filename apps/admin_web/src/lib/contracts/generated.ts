@@ -418,6 +418,22 @@ export const BOARD_TOOL_DEFINITIONS: readonly BoardToolDefinition[] = [
     }
   },
   {
+    "id": "intel",
+    "label": "Market intelligence",
+    "description": "Watchlist, change notes, on-demand page fetch (robots-checked), competitor store reviews and search-rank snapshots. Read-only.",
+    "maxLevel": "read",
+    "defaults": {
+      "ceo": "read",
+      "cfo": "off",
+      "coo": "read",
+      "cpo": "read",
+      "cto": "off",
+      "cio": "off",
+      "ciso": "off",
+      "cmo": "read"
+    }
+  },
+  {
     "id": "web",
     "label": "Web analytics",
     "description": "GA4 sessions, top pages, referrers and conversions across configured properties, plus GTM live-version status. Read-only; cached hourly. GTM publish and Google Ads are later milestones.",
@@ -511,12 +527,13 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cpo",
     "title": "Market and Competitive Intelligence",
     "modelTier": "senior",
-    "isActiveDefault": false,
+    "isActiveDefault": true,
     "tools": {
       "research": "read",
       "stores": "read",
       "product": "read",
-      "web": "read"
+      "web": "read",
+      "intel": "read"
     },
     "brief": "You keep the competitor watchlist, detect changes, write the weekly market brief, and surface activities and features we do not have. Every claim cites a tool call. You never log in to a competitor site or copy a page wholesale. Report facts you verified with tools; say clearly what you could not verify."
   },
@@ -691,7 +708,7 @@ export const BOARD_STAFF_PROSPECT_TYPES = ["provider", "venue", "community", "sc
 export type BoardProspectType = (typeof BOARD_STAFF_PROSPECT_TYPES)[number];
 export const BOARD_STAFF_PROSPECT_STAGES = ["discovered", "qualified", "parked", "contacted", "replied", "onboarding", "listed", "declined", "unresponsive", "suppressed"] as const;
 export type BoardProspectStage = (typeof BOARD_STAFF_PROSPECT_STAGES)[number];
-export const BOARD_STAFF_WATCH_KINDS = ["competitor", "directory", "media", "analogue", "event-source"] as const;
+export const BOARD_STAFF_WATCH_KINDS = ["competitor", "directory", "media", "analogue", "event-source", "candidate"] as const;
 export const BOARD_STAFF_CONTENT_CHANNELS = ["facebook", "instagram", "instagram_story", "newsletter", "seo", "assisted_xiaohongshu", "assisted_fb_group"] as const;
 export const BOARD_STAFF_CONTENT_STATUSES = ["idea", "drafted", "creative", "scheduled", "published", "vetoed", "failed"] as const;
 export const BOARD_STAFF_MAX_STEPS_PER_TASK = 12;

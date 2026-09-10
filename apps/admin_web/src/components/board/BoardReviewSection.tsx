@@ -184,7 +184,26 @@ export function BoardReviewSection() {
       </Section>
 
       <Section id="market" title="Market and ideas">
-        <p className="text-muted small mb-0">Change notes and gap proposals appear here after WP5.</p>
+        {!review.market ? (
+          <p className="text-muted small mb-0">No market notes yet.</p>
+        ) : (
+          <>
+            {(review.market.changes ?? []).length === 0 ? (
+              <p className="text-muted small mb-2">No watchlist changes this week.</p>
+            ) : (
+              <ul className="small mb-2">
+                {(review.market.changes ?? []).slice(0, 8).map((c) => (
+                  <li key={c.changeId}>{c.summary || c.url}</li>
+                ))}
+              </ul>
+            )}
+            {review.market.latestBrief ? (
+              <p className="small mb-0">
+                Latest brief: {review.market.latestBrief.summary || review.market.latestBrief.taskId}
+              </p>
+            ) : null}
+          </>
+        )}
       </Section>
 
       <Section id="breakers" title="Tripped breakers">

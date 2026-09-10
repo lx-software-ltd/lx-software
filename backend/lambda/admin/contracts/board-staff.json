@@ -44,12 +44,13 @@
       "reportsTo": "cpo",
       "title": "Market and Competitive Intelligence",
       "modelTier": "senior",
-      "isActiveDefault": false,
+      "isActiveDefault": true,
       "tools": {
         "research": "read",
         "stores": "read",
         "product": "read",
-        "web": "read"
+        "web": "read",
+        "intel": "read"
       },
       "brief": "You keep the competitor watchlist, detect changes, write the weekly market brief, and surface activities and features we do not have. Every claim cites a tool call. You never log in to a competitor site or copy a page wholesale. Report facts you verified with tools; say clearly what you could not verify."
     },
@@ -215,7 +216,7 @@
   "actionClasses": ["internal", "inbound_reply", "outbound_known", "cold_outreach", "publish", "spend", "code_staging", "code_production", "never"],
   "prospectTypes": ["provider", "venue", "community", "school", "restaurant", "media"],
   "prospectStages": ["discovered", "qualified", "parked", "contacted", "replied", "onboarding", "listed", "declined", "unresponsive", "suppressed"],
-  "watchKinds": ["competitor", "directory", "media", "analogue", "event-source"],
+  "watchKinds": ["competitor", "directory", "media", "analogue", "event-source", "candidate"],
   "contentChannels": ["facebook", "instagram", "instagram_story", "newsletter", "seo", "assisted_xiaohongshu", "assisted_fb_group"],
   "contentStatuses": ["idea", "drafted", "creative", "scheduled", "published", "vetoed", "failed"],
   "limits": {

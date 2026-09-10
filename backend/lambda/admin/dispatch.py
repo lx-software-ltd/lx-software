@@ -16,6 +16,7 @@ import board_cache as board_cache_mod
 import board_chat as board_chat_mod
 import board_meeting as board_meeting_mod
 import board_receivables as board_receivables_mod
+import board_intel as board_intel_mod
 import board_review as board_review_mod
 import board_staff as board_staff_mod
 import parse_jobs as parse_jobs_mod
@@ -287,6 +288,12 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     if isinstance(event, dict) and event.get("internal") == "board_review_send":
         return board_review_mod.handle_send(event)
+
+    if isinstance(event, dict) and event.get("internal") == "board_intel_crawl":
+        return board_intel_mod.handle_crawl(event)
+
+    if isinstance(event, dict) and event.get("internal") == "board_intel_weekly":
+        return board_intel_mod.handle_weekly(event)
 
     if isinstance(event, dict) and event.get("internal") == "board_receivables_mirror":
         board_receivables_mod.handle_mirror_trigger(event)

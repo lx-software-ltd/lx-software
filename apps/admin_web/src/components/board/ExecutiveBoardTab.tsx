@@ -17,6 +17,7 @@ import { BoardMeetingPanel } from "./BoardMeetingPanel";
 import { BoardMemberEditor } from "./BoardMemberEditor";
 import { BoardMembersStrip } from "./BoardMembersStrip";
 import { BoardSettingsCard } from "./BoardSettingsCard";
+import { BoardMarketSection } from "./BoardMarketSection";
 import { BoardStaffSection } from "./BoardStaffSection";
 import { BoardToolsCard } from "./BoardToolsCard";
 import { BoardUpdatesComposer } from "./BoardUpdatesComposer";
@@ -41,7 +42,7 @@ import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { adminTabButtonId } from "../../lib/adminTabs";
 import { DEFAULT_BOARD_BOUNDARIES, effectiveToolLevel, type BoardMeetingMode, type BoardOverview } from "../../lib/boardModel";
 
-type BoardSection = "review" | "actions" | "staff" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
+type BoardSection = "review" | "market" | "actions" | "staff" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
 
 const CLOSED_MEETING = "__closed__";
 const SECTION_ID_PREFIX = "board-section";
@@ -49,6 +50,7 @@ const SECTION_PANEL_ID = "board-section-panel";
 
 const SECTIONS: readonly { readonly id: BoardSection; readonly label: string; readonly icon: string }[] = [
   { id: "review", label: "Daily review", icon: "bi-sun" },
+  { id: "market", label: "Market", icon: "bi-binoculars" },
   { id: "actions", label: "Next actions", icon: "bi-list-check" },
   { id: "staff", label: "Staff", icon: "bi-people-fill" },
   { id: "approvals", label: "Approvals", icon: "bi-shield-check" },
@@ -230,6 +232,8 @@ export function ExecutiveBoardTab() {
             aria-labelledby={adminTabButtonId(SECTION_ID_PREFIX, section)}
           >
           {overview && section === "review" ? <BoardReviewSection /> : null}
+
+          {overview && section === "market" ? <BoardMarketSection /> : null}
 
           {overview && section === "actions" ? (
             <BoardActionsList

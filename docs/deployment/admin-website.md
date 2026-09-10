@@ -421,6 +421,16 @@ function calling. Design:
   once `settings.staff.enabled` is on. Confirming a lesson injects it into
   the next staff-task prompt. A budget breaker at 100% of
   `settings.staff.dailyBudgetUsd` flips `settings.staff.enabled` off.
+- **Market intelligence (WP5):** `GET/POST /siu-tin-dei/board/watchlist`,
+  `PUT/DELETE …/watchlist/{watchId}`, `GET …/changes?days=7`. Schedules
+  `lxsoftware-admin-siutindei-board-intel-crawl` (03:00 HKT daily) and
+  `…-board-intel-weekly` (Monday 04:00 HKT). Digests live under
+  `board/siuTinDei/intel/{watchId}/` on the assets bucket. User-Agent
+  `SiuTinDeiBoardBot/1.0 (+https://siutindei.com/bot)`. The **Market**
+  section is the watchlist, candidates (Promote / Ignore), change notes,
+  and the latest weekly brief. `market-analyst` is active by default.
+  Owner: add about five competitor watches after enabling staff; the
+  first Monday brief creates CPO `later` actions from the JSON block.
 
 Smoke test after deploy: open the tab, save a company vision/mission, edit one
 member's mandate, send a chat message to the CEO (reply arrives within ~30 s),

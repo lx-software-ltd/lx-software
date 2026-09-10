@@ -64,9 +64,16 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByText(/Three parent threads closed/i)).toBeVisible();
     if (testInfo.project.name === "phone") {
       await expect(page.locator("#board-section-select")).toBeVisible();
-      await page.locator("#board-section-select").selectOption("staff");
+      await page.locator("#board-section-select").selectOption("market");
     } else {
       await expect(page.getByRole("tab", { name: /Next actions/ })).toBeVisible();
+      await page.getByRole("tab", { name: /Market/ }).click();
+    }
+    await expect(page.getByRole("heading", { name: "Market" })).toBeVisible();
+    await expect(page.getByText(/Kiztopia/i)).toBeVisible();
+    if (testInfo.project.name === "phone") {
+      await page.locator("#board-section-select").selectOption("staff");
+    } else {
       await page.getByRole("tab", { name: /Staff/ }).click();
     }
     await expect(page.getByText(/Parent Support/i)).toBeVisible();

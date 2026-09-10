@@ -132,3 +132,37 @@ up in review; do not treat them as product decisions unless you confirm.
 - **Default section** is Daily review when `settings.staff.enabled` is
   true. Digest deep-links use `?tab=board&section=review#…`.
 - **One PR for the whole solution** still applies (see WP1).
+
+## WP5
+
+- **FEHD is XML, not CSV.** Verified 2026-09-10: Licensed Restaurants on
+  data.gov.hk publishes English and Traditional Chinese XML
+  (`LP_Restaurants_EN.XML` / `LP_Restaurants_TC.XML`). The module parses
+  XML in production and still accepts the spec's CSV fixture
+  (`test_fixtures/fehd_sample.csv`) via `parse_fehd_csv`.
+- **`candidate` was added to `watchKinds`.** The spec's discover path
+  writes `kind="candidate"`; the contract list omitted it. CRUD accepts
+  it even if a future sync drops it from the JSON.
+- **EDB download URL.** Recorded as
+  `https://www.edb.gov.hk/attachment/en/student-parents/sch-info/sch-search/sch-location-info/SCH_LOC_EDB.csv`
+  (portal dataset `hk-edb-schinfo-school-location-and-information`). If
+  that attachment 404s, the loader returns the last 7-day cache and logs
+  `board_opendata_fetch_failed`.
+- **LCSD programmes** stay an empty stub until WP6 (`lcsd_programmes`).
+- **iTunes RSS 404** falls back to the lookup payload only and logs
+  `board_intel_appstore_rss_missing` (once per failed fetch; the crawl
+  does not add a separate daily lock).
+- **Intel tool is hidden from `available_ops` when staff is off** so the
+  existing board does not see a new tool. The contract still lists it.
+- **Weekly brief ignores `dutiesEnabled`.** Same as the WP4 headline
+  duty; WP9 owns the general duty system.
+- **Digest storage** reuses `board_staff._blob_put` (in-memory when
+  `ASSETS_BUCKET_NAME` is unset).
+- **Open-data cache** uses Dynamo `cache` rows (`opendata:fehd` /
+  `opendata:edb`), not a separate S3 pointer besides the crawl digests.
+- **`discover` must see an already-known host to increment `seenWeeks`.**
+  Skipping known hosts before the match check would prevent promotion.
+- **Same-day recrawl.** Digest keys are
+  `{watchId}/{urlDigest}/{yyyy-mm-dd}.txt`, so a second fetch the same HKT
+  day overwrites the object. `daily_crawl` reads the previous digest
+  *before* `put_digest` so the change note still has a before/after pair.
