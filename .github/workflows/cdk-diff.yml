@@ -50,7 +50,7 @@ jobs:
       # `cdk diff` synthesizes with asset bundling; AdminApiFn pip deps are
       # installed in the linux/arm64 SAM image, which needs QEMU on x86-64.
       - name: Set up QEMU for arm64 Lambda bundling
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
 
