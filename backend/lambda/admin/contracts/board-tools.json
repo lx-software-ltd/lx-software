@@ -196,6 +196,22 @@
       }
     },
     {
+      "id": "outreach",
+      "label": "Outreach",
+      "description": "Discover and qualify Hong Kong activity providers, venues, community spaces and schools. Search Places and open data, score prospects, run sequences and send first-touch mail from the partnerships subdomain. Writes at act become holds until the class is promoted.",
+      "maxLevel": "act",
+      "defaults": {
+        "ceo": "read",
+        "cfo": "off",
+        "coo": "act",
+        "cpo": "off",
+        "cto": "off",
+        "cio": "off",
+        "ciso": "off",
+        "cmo": "propose"
+      }
+    },
+    {
       "id": "web",
       "label": "Web analytics",
       "description": "GA4 sessions, top pages, referrers and conversions across configured properties, plus GTM live-version status. Read-only; cached hourly. GTM publish and Google Ads are later milestones.",

@@ -28,6 +28,9 @@ import type {
   BoardToolsPayload,
   BoardWatch,
   BoardChangeNote,
+  BoardProspect,
+  BoardOutreachStats,
+  BoardSequence,
 } from "../boardModel";
 import { DEFAULT_BOARD_BOUNDARIES } from "../boardModel";
 import type { FinancePersistedState, HouseFinanceData } from "../financeModel";
@@ -623,6 +626,64 @@ export const boardWatchesFixture: BoardWatch[] = [
     createdAt: isoDaysAgo(7),
   },
 ];
+
+export const boardProspectsFixture: BoardProspect[] = [
+  {
+    prospectId: "pros-1",
+    name: "Sha Tin Playhouse",
+    type: "venue",
+    district: "Sha Tin",
+    stage: "qualified",
+    source: "owner",
+    website: "https://shatinplay.example",
+    contact: "info@shatinplay.example",
+    email: "info@shatinplay.example",
+    score: 72,
+    fitNote: "Indoor play space with a Saturday schedule.",
+    touches: [],
+    createdAt: isoDaysAgo(3),
+  },
+  {
+    prospectId: "pros-2",
+    name: "Tai Po Community Hall",
+    type: "community",
+    district: "Tai Po",
+    stage: "qualified",
+    source: "opendata",
+    website: "https://taipohall.example",
+    contact: null,
+    score: 64,
+    fitNote: "Needs a business email before outreach.",
+    createdAt: isoDaysAgo(2),
+  },
+];
+
+export const boardOutreachStatsFixture: BoardOutreachStats = {
+  sent: 12,
+  bounces: 0,
+  complaints: 0,
+  bounceRate: 0,
+  complaintRate: 0,
+  replies: 1,
+  dailyCap: 20,
+  capRaisedAt: isoDaysAgo(10),
+  identityVerified: false,
+  breaker: { name: "outreach", tripped: false },
+  history: [{ date: dateDaysAgo(0), sent: 2, bounces: 0, complaints: 0 }],
+};
+
+export const boardSequenceFixture = (type: string): BoardSequence => ({
+  type,
+  steps: [
+    {
+      dayOffset: 0,
+      subjectEn: `A free listing for {name} on Siu Tin Dei`,
+      subjectZh: `邀請 {name} 免費登上小天地`,
+      bodyEn: "Who we are. {fitNote} Free listing. {signupUrl}",
+      bodyZh: "我們是誰。{fitNote} 免費上架。{signupUrl}",
+    },
+  ],
+});
 
 export const boardChangesFixture: BoardChangeNote[] = [
   {

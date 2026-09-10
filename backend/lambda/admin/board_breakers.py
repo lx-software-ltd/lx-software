@@ -58,6 +58,9 @@ def write_blocked(table: Any, op: Any) -> dict[str, Any] | None:
     channel = _op_channel(op)
     if channel and is_tripped(table, f"channel:{channel}"):
         return {"error": "breaker tripped", "breaker": f"channel:{channel}"}
+    name = str(getattr(op, "name", "") or "")
+    if name == "outreach_send" and is_tripped(table, "outreach"):
+        return {"error": "breaker tripped", "breaker": "outreach"}
     return None
 
 
@@ -160,6 +163,21 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
         if count >= 10 and not is_tripped(table, f"tool:{tool_id}"):
             trip(table, f"tool:{tool_id}", f"{count} errors in the last hour")
             tripped.append(f"tool:{tool_id}")
+
+    try:
+        import board_outreach
+        from contract_constants import BOARD_STAFF_BOUNCE_RATE_BREAKER, BOARD_STAFF_COMPLAINT_RATE_BREAKER
+
+        rates = board_outreach.trailing_rates(table, days=7)
+        if rates["sent"] >= 50 and not is_tripped(table, "outreach"):
+            if rates["bounceRate"] > BOARD_STAFF_BOUNCE_RATE_BREAKER:
+                trip(table, "outreach", f"7-day bounce rate {rates['bounceRate']:.3f} over {rates['sent']} sends")
+                tripped.append("outreach")
+            elif rates["complaintRate"] > BOARD_STAFF_COMPLAINT_RATE_BREAKER:
+                trip(table, "outreach", f"7-day complaint rate {rates['complaintRate']:.4f} over {rates['sent']} sends")
+                tripped.append("outreach")
+    except Exception as exc:
+        _log_event("warning", tag="board_breaker_outreach_eval_failed", error=str(exc)[:200])
 
     return tripped
 

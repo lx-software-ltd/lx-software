@@ -174,6 +174,15 @@ def handle_board_route(
     if head == "changes" and len(rest) == 1 and method == "GET":
         return _changes_get(event)
 
+    if head == "prospects":
+        return _prospects_route(event, method, rest, user_sub)
+
+    if head == "sequences":
+        return _sequences_route(event, method, rest, user_sub)
+
+    if head == "outreach":
+        return _outreach_route(event, method, rest, user_sub)
+
     return _json_response(404, {"message": "Not found"})
 
 
@@ -840,6 +849,125 @@ def _watchlist_route(event: dict[str, Any], method: str, rest: list[str], user_s
             _audit(user_sub, "BOARD_WATCH_DELETE", watch_id, event)
             return _json_response(200, {"ok": True})
         return _json_response(405, {"message": "Method not allowed"})
+    return _json_response(404, {"message": "Not found"})
+
+
+def _prospects_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
+    if not board_staff.env_enabled():
+        return _staff_disabled()
+    import board_prospects
+    import board_outreach
+
+    table = board_store.records_table()
+    settings = board_store.load_settings(table)
+    qs = parse_qs(event.get("rawQueryString") or "")
+    if len(rest) == 1:
+        if method == "GET":
+            try:
+                limit = int((qs.get("limit") or ["200"])[0] or 200)
+            except ValueError:
+                limit = 200
+            try:
+                rows = board_prospects.list_for_api(
+                    table,
+                    stage=(qs.get("stage") or [""])[0] or None,
+                    ptype=(qs.get("type") or [""])[0] or None,
+                    district=(qs.get("district") or [""])[0] or None,
+                    limit=max(1, min(400, limit)),
+                )
+            except board_prospects.ProspectError as exc:
+                return _json_response(400, {"message": str(exc)})
+            return _json_response(
+                200,
+                {
+                    "prospects": rows,
+                    "needsContact": board_prospects.needs_contact(table),
+                    "stats": board_outreach.stats(table, settings, days=28),
+                },
+            )
+        return _json_response(405, {"message": "Method not allowed"})
+    if len(rest) == 2 and rest[1] == "import" and method == "POST":
+        body = _parse_json_body(event)
+        csv_text = str(body.get("csv") or body.get("text") or "")
+        if not csv_text.strip():
+            return _json_response(400, {"message": "csv is required"})
+        result = board_prospects.import_csv(table, csv_text)
+        _audit(user_sub, "BOARD_PROSPECT_IMPORT", str(result.get("created") or 0), event)
+        return _json_response(200, result)
+    if len(rest) == 2:
+        prospect_id = rest[1]
+        row = board_store.get_prospect(table, prospect_id)
+        if not row:
+            return _json_response(404, {"message": "Prospect not found"})
+        if method == "GET":
+            return _json_response(
+                200,
+                {
+                    "prospect": board_prospects.public_row(
+                        row, duplicates=board_prospects.possible_duplicates(table, row)
+                    )
+                },
+            )
+        if method == "PUT":
+            try:
+                saved = board_prospects.owner_put(table, prospect_id, _parse_json_body(event))
+            except board_prospects.ProspectError as exc:
+                return _json_response(400, {"message": str(exc)})
+            _audit(user_sub, "BOARD_PROSPECT_PUT", prospect_id, event)
+            return _json_response(200, {"prospect": board_prospects.public_row(saved)})
+        return _json_response(405, {"message": "Method not allowed"})
+    if len(rest) == 3 and rest[2] == "merge" and method == "POST":
+        body = _parse_json_body(event)
+        into = str(body.get("into") or "")
+        try:
+            dest = board_prospects.merge(table, rest[1], into)
+        except KeyError:
+            return _json_response(404, {"message": "Prospect not found"})
+        except board_prospects.ProspectError as exc:
+            return _json_response(400, {"message": str(exc)})
+        _audit(user_sub, "BOARD_PROSPECT_MERGE", f"{rest[1]}->{into}", event)
+        return _json_response(200, {"prospect": board_prospects.public_row(dest)})
+    return _json_response(404, {"message": "Not found"})
+
+
+def _sequences_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
+    if not board_staff.env_enabled():
+        return _staff_disabled()
+    import board_sequences
+    from contract_constants import BOARD_STAFF_PROSPECT_TYPES
+
+    if len(rest) != 2:
+        return _json_response(404, {"message": "Not found"})
+    ptype = rest[1]
+    if ptype not in BOARD_STAFF_PROSPECT_TYPES:
+        return _json_response(404, {"message": "Unknown sequence type"})
+    table = board_store.records_table()
+    if method == "GET":
+        return _json_response(200, {"sequence": board_sequences.get_or_default(table, ptype)})
+    if method == "PUT":
+        try:
+            saved = board_sequences.save(table, ptype, _parse_json_body(event))
+        except ValueError as exc:
+            return _json_response(400, {"message": str(exc)})
+        _audit(user_sub, "BOARD_SEQUENCE_PUT", ptype, event)
+        return _json_response(200, {"sequence": saved})
+    return _json_response(405, {"message": "Method not allowed"})
+
+
+def _outreach_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
+    if not board_staff.env_enabled():
+        return _staff_disabled()
+    import board_outreach
+
+    if len(rest) == 2 and rest[1] == "stats" and method == "GET":
+        qs = parse_qs(event.get("rawQueryString") or "")
+        try:
+            days = int((qs.get("days") or ["28"])[0] or 28)
+        except ValueError:
+            days = 28
+        table = board_store.records_table()
+        settings = board_store.load_settings(table)
+        return _json_response(200, board_outreach.stats(table, settings, days=days))
     return _json_response(404, {"message": "Not found"})
 
 

@@ -5,11 +5,12 @@
       "reportsTo": "coo",
       "title": "Partnerships Development",
       "modelTier": "desk",
-      "isActiveDefault": false,
+      "isActiveDefault": true,
       "tools": {
         "research": "read",
         "mail": "act",
-        "product": "read"
+        "product": "read",
+        "outreach": "act"
       },
       "brief": "You discover and qualify organisations that fit Siu Tin Dei's child-friendly narrative: activity providers, venues, community spaces and schools. You run outreach sequences, keep the pipeline above the weekly target, and never contact a restaurant or media prospect until the founder enables those types. You use open data first, Places second, and search third. Report facts you verified with tools; say clearly what you could not verify."
     },

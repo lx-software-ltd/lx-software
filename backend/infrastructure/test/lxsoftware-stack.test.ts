@@ -68,6 +68,9 @@ describe("HTTP API routes", () => {
     "POST /webhooks/meta",
     "GET /webhooks/meta/siutindei",
     "POST /webhooks/meta/siutindei",
+    // RFC 8058 one-click / browser unsubscribe; HMAC in the token, no JWT.
+    "GET /public/outreach/unsubscribe/{token}",
+    "POST /public/outreach/unsubscribe/{token}",
   ]);
 
   test("only the health check and Meta webhook routes lack an authorizer", () => {
@@ -97,9 +100,10 @@ describe("HTTP API routes", () => {
 
   test("/public/* mirrors are GET-only and use the API key (CUSTOM) authorizer", () => {
     const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
-    const publicMirrors = routes.filter((r) =>
-      String(r.Properties?.RouteKey).includes(" /public/")
-    );
+    const publicMirrors = routes.filter((r) => {
+      const key = String(r.Properties?.RouteKey);
+      return key.includes(" /public/") && !key.includes("/public/outreach/unsubscribe/");
+    });
     expect(publicMirrors.length).toBeGreaterThan(0);
     for (const route of publicMirrors) {
       expect(String(route.Properties?.RouteKey)).toMatch(/^GET /);
@@ -193,6 +197,12 @@ describe("EventBridge Scheduler wiring", () => {
       "lxsoftware-admin-siutindei-board-receivables-mirror": "board_receivables_mirror",
       "lxsoftware-admin-siutindei-board-dunning": "board_dunning",
       "lxsoftware-admin-siutindei-board-cache-refresh": "board_cache_refresh",
+      "lxsoftware-admin-siutindei-board-staff-tick": "board_staff_tick",
+      "lxsoftware-admin-siutindei-board-review-compile": "board_review_compile",
+      "lxsoftware-admin-siutindei-board-review-send": "board_review_send",
+      "lxsoftware-admin-siutindei-board-intel-crawl": "board_intel_crawl",
+      "lxsoftware-admin-siutindei-board-intel-weekly": "board_intel_weekly",
+      "lxsoftware-admin-siutindei-board-targets": "board_targets",
     };
     const schedules = Object.values(resourcesOfType("AWS::Scheduler::Schedule"));
     const byName = Object.fromEntries(

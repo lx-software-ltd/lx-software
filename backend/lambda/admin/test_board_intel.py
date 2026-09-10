@@ -192,8 +192,10 @@ class BriefTests(BoardTestCase):
         self.assertEqual(actions[0]["persona"], "cpo")
         gaps = board_store.get_cache(self.table, "intel:gaps")
         self.assertEqual(len((gaps or {}).get("payload", {}).get("gaps") or []), 1)
-        prospects = board_store.get_cache(self.table, "intel:prospects")
-        self.assertEqual(len((prospects or {}).get("payload", {}).get("prospects") or []), 1)
+        stored = [p for p in board_store.list_prospects(self.table) if "Kiztopia" in str(p.get("name") or "")]
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(stored[0].get("source"), "intel")
+        self.assertEqual(stored[0].get("website"), "https://kiztopia.example")
 
     def test_accept_task_runs_on_brief_delivered(self) -> None:
         task = board_staff.create_task(

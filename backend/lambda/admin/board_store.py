@@ -58,6 +58,7 @@ from contract_constants import (
     BOARD_STAFF_DAILY_BUDGET_MAX_USD,
     BOARD_STAFF_HOLD_CODE_STAGING_HOURS,
     BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
+    BOARD_STAFF_OUTREACH_DAILY_CAP_MAX,
     BOARD_STAFF_OUTREACH_DAILY_CAP_START,
     BOARD_STAFF_PROSPECT_TYPES,
     BOARD_STAFF_RETENTION_DAYS,
@@ -555,7 +556,9 @@ def normalize_boundaries(raw: Any) -> dict[str, Any]:
         if isinstance(districts, list):
             out["outreach"]["districtsFirst"] = [str(x) for x in districts if isinstance(x, str)][:20]
         try:
-            out["outreach"]["dailyCap"] = max(1, min(200, int(outreach.get("dailyCap") or 20)))
+            out["outreach"]["dailyCap"] = max(
+                1, min(BOARD_STAFF_OUTREACH_DAILY_CAP_MAX, int(outreach.get("dailyCap") or 20))
+            )
         except (TypeError, ValueError):
             pass
         if isinstance(outreach.get("capRaisedAt"), str):

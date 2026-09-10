@@ -27,6 +27,9 @@ import {
   boardToolsFixture,
   boardWatchesFixture,
   boardChangesFixture,
+  boardProspectsFixture,
+  boardOutreachStatsFixture,
+  boardSequenceFixture,
   financeFixture,
   lxSoftwareBookFixture,
   siuTinDeiBookFixture,
@@ -40,6 +43,8 @@ import {
   type BoardSeat,
   type BoardTask,
   type BoardWatch,
+  type BoardProspect,
+  type BoardSequence,
 } from "../boardModel";
 
 export { isAdminMockEnabled };
@@ -84,6 +89,8 @@ type MockState = {
   lessons: BoardLesson[];
   breakers: BoardBreaker[];
   watches: BoardWatch[];
+  prospects: BoardProspect[];
+  sequences: Record<string, BoardSequence>;
 };
 
 const state: MockState = {
@@ -99,6 +106,8 @@ const state: MockState = {
   lessons: structuredClone(boardLessonsFixture) as BoardLesson[],
   breakers: structuredClone(boardBreakersFixture) as BoardBreaker[],
   watches: structuredClone(boardWatchesFixture) as BoardWatch[],
+  prospects: structuredClone(boardProspectsFixture) as BoardProspect[],
+  sequences: {},
 };
 
 function json(body: unknown, status = 200): Response {
@@ -421,6 +430,77 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   }
   if (p === `${board}/changes`) {
     return json({ changes: boardChangesFixture });
+  }
+  if (p === `${board}/prospects`) {
+    return json({
+      prospects: state.prospects,
+      needsContact: state.prospects.filter((row) => row.stage === "qualified" && !row.contact),
+      stats: boardOutreachStatsFixture,
+    });
+  }
+  if (p === `${board}/prospects/import` && method === "POST") {
+    const body = parseBody(init);
+    const lines = String(body.csv ?? "").trim().split("\n").slice(1);
+    let created = 0;
+    for (const line of lines) {
+      const [name, type, district, website, email] = line.split(",");
+      if (!name) continue;
+      state.prospects = [
+        {
+          prospectId: `pros-${state.prospects.length + 1}`,
+          name,
+          type: type || "provider",
+          district,
+          website,
+          email,
+          contact: email || null,
+          stage: "discovered",
+          source: "owner",
+        },
+        ...state.prospects,
+      ];
+      created += 1;
+    }
+    return json({ created, updated: 0, errors: [] });
+  }
+  if (p.startsWith(`${board}/prospects/`) && p.endsWith("/merge") && method === "POST") {
+    const prospectId = decodeURIComponent(p.slice(`${board}/prospects/`.length, -"/merge".length));
+    const body = parseBody(init);
+    const into = String(body.into ?? "");
+    const src = state.prospects.find((row) => row.prospectId === prospectId);
+    const destIdx = state.prospects.findIndex((row) => row.prospectId === into);
+    if (!src || destIdx < 0) return json({ message: "Prospect not found" }, 404);
+    state.prospects[destIdx] = { ...state.prospects[destIdx], name: state.prospects[destIdx].name || src.name };
+    state.prospects = state.prospects.map((row) => (row.prospectId === prospectId ? { ...row, stage: "suppressed" } : row));
+    return json({ prospect: state.prospects[destIdx] });
+  }
+  if (p.startsWith(`${board}/prospects/`)) {
+    const prospectId = decodeURIComponent(p.slice(`${board}/prospects/`.length));
+    const idx = state.prospects.findIndex((row) => row.prospectId === prospectId);
+    if (idx < 0) return json({ message: "Prospect not found" }, 404);
+    if (method === "PUT") {
+      const body = parseBody(init);
+      state.prospects[idx] = {
+        ...state.prospects[idx],
+        ...(typeof body.stage === "string" ? { stage: body.stage } : {}),
+        ...(typeof body.contact === "string" ? { contact: body.contact } : {}),
+        ...(typeof body.type === "string" ? { type: body.type } : {}),
+        ...(typeof body.note === "string" ? { ownerNote: body.note } : {}),
+      };
+    }
+    return json({ prospect: state.prospects[idx] });
+  }
+  if (p === `${board}/outreach/stats`) {
+    return json(boardOutreachStatsFixture);
+  }
+  if (p.startsWith(`${board}/sequences/`)) {
+    const type = decodeURIComponent(p.slice(`${board}/sequences/`.length));
+    if (method === "PUT") {
+      const body = parseBody(init);
+      state.sequences[type] = { type, steps: Array.isArray(body.steps) ? body.steps : [] } as BoardSequence;
+      return json({ sequence: state.sequences[type] });
+    }
+    return json({ sequence: state.sequences[type] ?? boardSequenceFixture(type) });
   }
 
   return notFound(p);

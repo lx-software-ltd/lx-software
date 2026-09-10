@@ -97,6 +97,9 @@ def own_domains() -> set[str]:
     inbound = inbound_address()
     if "@" in inbound:
         out.add(inbound.rsplit("@", 1)[1])
+    outreach = (os.environ.get("OUTREACH_SENDING_DOMAIN") or "").strip().lower()
+    if outreach:
+        out.add(outreach)
     return out
 
 
@@ -379,7 +382,7 @@ def ingest_bytes(
     marker is removed first so the next delivery of the same bytes is indexed.
     """
     parsed = parse_mime(raw)
-    if direction == "out" and parsed.from_address and _is_own(parsed.from_address):
+    if direction in ("out", "outbound") and parsed.from_address and _is_own(parsed.from_address):
         parsed.mailbox = parsed.from_address
     now = received_at or board_store.now_iso()
     message_id = board_store.new_id()

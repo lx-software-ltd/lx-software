@@ -33,6 +33,9 @@ INTERNAL_OPS = frozenset(
         "finance_propose_price_change",
         "finance_record_manual_payment",
         "finance_match_payment",
+        "outreach_upsert_prospect",
+        "outreach_start_sequence",
+        "outreach_suppress",
     }
 )
 INBOUND_REPLY_OPS = {
@@ -64,6 +67,9 @@ def classify(op: board_tools.ToolOp, ctx: board_tools.ToolContext, args: dict[st
     name = op.name
     if op.tool_id in ("board", "staff", "task"):
         return "internal", "internal"
+    if name == "outreach_send":
+        ptype = str(args.get("prospectType") or _prospect_type_for_args(ctx.table, args) or "unknown")
+        return "cold_outreach", f"cold_outreach:{ptype}"
     if name in INTERNAL_OPS or name.startswith("github_"):
         return "internal", "internal"
     if name in INBOUND_REPLY_OPS:
@@ -227,9 +233,11 @@ def maybe_hold(
         import board_policy
 
         quiet_reply = op.name in board_policy.REPLY_OPS and board_policy.is_quiet_now(ctx.settings)
+        quiet_outreach = op.name == "outreach_send" and board_policy.is_quiet_now(ctx.settings)
     except Exception:
         quiet_reply = False
-    if hours <= 0 and not quiet_reply:
+        quiet_outreach = False
+    if hours <= 0 and not quiet_reply and not quiet_outreach:
         return None
     return create_hold(ctx, op, arguments, action_class=action_class, class_key=class_key, hours=hours, summary=summary)
 

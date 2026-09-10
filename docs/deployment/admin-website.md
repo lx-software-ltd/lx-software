@@ -263,6 +263,9 @@ Stack parameters (all optional, set in `backend/infrastructure/params/*.json`):
 | `lxsoftware:BoardGitHubRepo` | `owner/name` of the repository to read (default `lx-software-ltd/siutindei`). |
 | `lxsoftware:BoardToolsEnabled` | `true` (default) / `false`. Deploy-time kill switch for every board tool call, independent of the in-app settings. |
 | `lxsoftware:BoardStaffEnabled` | `false` (default) / `true`. Deploy-time kill switch for Executive Board staff tasks. Also requires `settings.staff.enabled` in the app. |
+| `lxsoftware:OutreachSendingDomain` | SES From domain for cold outreach (default `partners.siutindei.com`). Owner adds DKIM CNAMEs, MAIL FROM MX+TXT and DMARC before `outreach_send` will send. |
+| `lxsoftware:OutreachFromLocalPart` | Local part of the outreach From address (default `partnerships`). |
+| `lxsoftware:PublicApiBaseUrl` | Base URL for unsubscribe / newsletter confirm links. Blank uses this stack's HTTP API URL. |
 | `lxsoftware:BoardAwsStackPrefix` | CloudFormation stack-name prefix used to filter Cost Explorer / CloudWatch results (default `siutindei`). When no cost rows carry the tag, `aws_monthly_cost` falls back to the whole account and labels the result `scope: account`. |
 | `lxsoftware:BoardAwsLambdaNames` | Comma-separated Lambda function names (the siutindei stack lives in another repo, so they cannot be derived here). `aws_lambda_health` reports 24h errors/duration for exactly these; empty means "no functions configured". |
 | `lxsoftware:SiutindeiClusterArn` | Aurora cluster ARN for the siutindei database (RDS Data API). Required for Executive Board `finance` and `product` tools. Leave blank to keep those tools returning a clear "not configured" error. |
@@ -431,6 +434,20 @@ function calling. Design:
   and the latest weekly brief. `market-analyst` is active by default.
   Owner: add about five competitor watches after enabling staff; the
   first Monday brief creates CPO `later` actions from the JSON block.
+- **Prospecting and outreach (WP6):** `GET /siu-tin-dei/board/prospects`,
+  `GET/PUT …/prospects/{id}`, `POST …/prospects/import`,
+  `POST …/prospects/{id}/merge`, `GET/PUT …/sequences/{type}`,
+  `GET …/outreach/stats`. Public
+  `GET/POST /public/outreach/unsubscribe/{token}` (no JWT; HMAC token).
+  Schedule `lxsoftware-admin-siutindei-board-targets` (08:00 HKT).
+  Secrets `lxsoftware-admin-siutindei-board-google-places-key` (replace
+  dummy) and `lxsoftware-admin-siutindei-board-link-signing-key`
+  (generated). SES identity for `OutreachSendingDomain` is created
+  pending DNS; sends refuse until `VerifiedForSendingStatus`.
+  Configuration set `lxsoftware-admin-siutindei-outreach` → SNS → SQS.
+  **Pipeline** section. `prospector` is active by default. Owner: DNS for
+  `partners.siutindei.com`, Places key, SES production / identity verify,
+  then raise the daily cap only via the 7-day warm-up (max 100).
 
 Smoke test after deploy: open the tab, save a company vision/mission, edit one
 member's mandate, send a chat message to the CEO (reply arrives within ~30 s),

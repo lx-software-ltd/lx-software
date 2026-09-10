@@ -166,3 +166,61 @@ up in review; do not treat them as product decisions unless you confirm.
   `{watchId}/{urlDigest}/{yyyy-mm-dd}.txt`, so a second fetch the same HKT
   day overwrites the object. `daily_crawl` reads the previous digest
   *before* `put_digest` so the change note still has a before/after pair.
+
+## WP6
+
+- **Places prices.** The spec quoted Pro SKUs (USD 0.032 text search /
+  0.017 details). The required field mask includes website, phone, rating
+  and hours, which are Enterprise fields. Constants are **USD 0.035**
+  (Text Search Enterprise) and **USD 0.020** (Place Details Enterprise),
+  verified 2026-09-10 against Google Maps Platform pricing pages.
+- **LCSD** remains an empty open-data stub. No stable public file was
+  verified; FEHD and EDB are live. `outreach_open_data(kind=lcsd)`
+  returns the last cache or `[]`.
+- **`PROVIDER_SIGNUP_URL`** is not a CDK parameter. Templates default to
+  `https://siutindei.com` unless that env is set. Confirm the real
+  provider sign-up path with the owner.
+- **Unsubscribe is unauthenticated** on
+  `GET/POST /public/outreach/unsubscribe/{token}` (HMAC in the token,
+  IP rate-limit 100/hour). It is not behind the API-key public
+  authorizer. Staff flags are not required so a person can still opt out
+  after the feature is switched off.
+- **Outreach SES identity is always created** (not gated on
+  `BoardMailSendingEnabled`). `outreach_send` still refuses with
+  `sending identity not verified` until
+  `GetEmailIdentity.VerifiedForSendingStatus` is true (cached 1 h). Tests
+  can set `OUTREACH_IDENTITY_VERIFIED=true`.
+- **`ingest_bytes(direction="outbound")`** is accepted as an alias of
+  `out` so the outbound copy is indexed and triage still skips it.
+- **Daily cap owner writes** are clamped to `outreachDailyCapMax` (100),
+  not 200. Empty `capRaisedAt` is initialised on the first target check
+  without raising, so warm-up does not jump on day one.
+- **Places monthly USD** is stored on cache `places:month:{yyyy-mm}`
+  using the HKT month. Per-call counts also increment
+  `external_usage_day` field `places`.
+- **Prospector tools** gained `"outreach": "act"` so the seat can send.
+  That id was not on the WP1 seat tools object.
+- **Token encoding** is `base64url(prospectId + "." + HMAC-SHA256(secret,
+  prospectId)[:16])` with the first 16 **raw digest bytes**, not hex.
+- **Email suppress does not write a domain suppress.** Unsubscribing
+  `info@gmail.com` must not block every other Gmail prospect. Domain
+  suppress is only written when `suppress(..., domain=)` is explicit.
+  `is_suppressed` still honours an existing domain digest.
+- **`OUTREACH_SENDING_DOMAIN` is an own-mail domain.** Without that,
+  outbound copies From `partnerships@partners.siutindei.com` would be
+  treated as external and would not thread to replies on
+  `partnerships@siutindei.com` when `In-Reply-To` is missing.
+- **SES → KMS-encrypted SNS.** The shared CMK now allows
+  `ses.amazonaws.com` `kms:Decrypt` / `kms:GenerateDataKey*` so bounce
+  and complaint events can publish. SNS already allowed `sns:Publish`.
+- **Prospect replies** attach `eventRef.prospectId` and force
+  `audience=provider` even on a cached triage classification so the
+  task lands on `provider-success`.
+- **Score model** uses `board_budget.model_for("standup")`, the same
+  mapping staff desks already use (desk tier → standup model). Not a
+  separate `desk` kind.
+- **Intel brief prospects** pass `url` (WP5 JSON shape). `upsert_prospect`
+  maps `url` → `website`. After WP6 the row is stored as a prospect, not
+  only on `intel:prospects` cache.
+- **`OUTREACH_IDENTITY_VERIFIED=false`** forces the SES check off so
+  tests can exercise the unverified refusal without a live identity.

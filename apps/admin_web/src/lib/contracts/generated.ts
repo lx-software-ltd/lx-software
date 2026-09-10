@@ -434,6 +434,22 @@ export const BOARD_TOOL_DEFINITIONS: readonly BoardToolDefinition[] = [
     }
   },
   {
+    "id": "outreach",
+    "label": "Outreach",
+    "description": "Discover and qualify Hong Kong activity providers, venues, community spaces and schools. Search Places and open data, score prospects, run sequences and send first-touch mail from the partnerships subdomain. Writes at act become holds until the class is promoted.",
+    "maxLevel": "act",
+    "defaults": {
+      "ceo": "read",
+      "cfo": "off",
+      "coo": "act",
+      "cpo": "off",
+      "cto": "off",
+      "cio": "off",
+      "ciso": "off",
+      "cmo": "propose"
+    }
+  },
+  {
     "id": "web",
     "label": "Web analytics",
     "description": "GA4 sessions, top pages, referrers and conversions across configured properties, plus GTM live-version status. Read-only; cached hourly. GTM publish and Google Ads are later milestones.",
@@ -488,11 +504,12 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "coo",
     "title": "Partnerships Development",
     "modelTier": "desk",
-    "isActiveDefault": false,
+    "isActiveDefault": true,
     "tools": {
       "research": "read",
       "mail": "act",
-      "product": "read"
+      "product": "read",
+      "outreach": "act"
     },
     "brief": "You discover and qualify organisations that fit Siu Tin Dei's child-friendly narrative: activity providers, venues, community spaces and schools. You run outreach sequences, keep the pipeline above the weekly target, and never contact a restaurant or media prospect until the founder enables those types. You use open data first, Places second, and search third. Report facts you verified with tools; say clearly what you could not verify."
   },

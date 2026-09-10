@@ -45,12 +45,24 @@ def on_mail_ingested(
     if sender and board_mail._is_own(sender):  # noqa: SLF001 - same-domain outbound copies
         return None
     text = str(message.get("text") or thread.get("snippet") or "")
+    prospect_id = ""
+    try:
+        import board_outreach
+
+        handled = board_outreach.maybe_handle_reply(table, settings, sender, text)
+        if handled and handled.get("suppressed"):
+            return None
+        if handled and isinstance(handled.get("prospect"), dict):
+            prospect_id = str(handled["prospect"].get("prospectId") or "")
+    except Exception as exc:
+        _log_event("warning", tag="board_triage_prospect_reply_failed", error=str(exc)[:200])
     classified = classify_text(table, settings, text, channel="mail", sender=sender, deadline=deadline)
     thread["intent"] = classified.get("intent")
     thread["audience"] = classified.get("audience")
     board_store.put_mail_thread(table, thread)
     assignee, sla = _route_mail(thread, message, classified)
     brief = render_event_brief("mail", thread, message, classified)
+    extra_ref = {"prospectId": prospect_id} if prospect_id else None
     return _open_or_append(
         table,
         settings,
@@ -63,6 +75,7 @@ def on_mail_ingested(
         channel="mail",
         reply_args={"threadId": str(thread.get("threadId") or ""), "body": "", "reason": "escalation acknowledgement"},
         text=text,
+        extra_ref=extra_ref,
     )
 
 
@@ -151,6 +164,8 @@ def classify_text(
     cached = board_store.get_cache(table, f"triage:{digest}")
     if cached and isinstance(cached.get("payload"), dict):
         payload = dict(cached["payload"])
+        if audience == "provider":
+            payload["audience"] = "provider"
         if escalate:
             payload["escalate"] = True
             payload["reason"] = reason or payload.get("reason") or "keyword"
@@ -293,6 +308,7 @@ def _open_or_append(
     reply_args: dict[str, Any],
     text: str,
     reply_op: str = "mail_reply",
+    extra_ref: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     if not event_id:
         return None
@@ -314,7 +330,7 @@ def _open_or_append(
         brief=brief,
         deliverable_type="messages",
         sla_hours=sla_hours,
-        event_ref={"kind": kind, "id": event_id, "channel": channel},
+        event_ref={**(extra_ref or {}), "kind": kind, "id": event_id, "channel": channel},
         created_by=f"triage:{kind}",
         status=status,
     )

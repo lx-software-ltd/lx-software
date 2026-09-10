@@ -295,6 +295,17 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if isinstance(event, dict) and event.get("internal") == "board_intel_weekly":
         return board_intel_mod.handle_weekly(event)
 
+    if isinstance(event, dict) and event.get("internal") == "board_targets":
+        import board_targets as board_targets_mod
+
+        return board_targets_mod.handle_check(event)
+
+    records = event.get("Records") if isinstance(event, dict) else None
+    if isinstance(records, list) and records and records[0].get("eventSource") == "aws:sqs":
+        import board_outreach as board_outreach_mod
+
+        return board_outreach_mod.handle_ses_events(records)
+
     if isinstance(event, dict) and event.get("internal") == "board_receivables_mirror":
         board_receivables_mod.handle_mirror_trigger(event)
         return {}
@@ -309,6 +320,12 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         import board_meta as board_meta_mod
 
         return board_meta_mod.handle_http(event, method)
+
+    if path.startswith("/public/outreach/unsubscribe/"):
+        import board_outreach as board_outreach_mod
+
+        token = path[len("/public/outreach/unsubscribe/") :]
+        return board_outreach_mod.handle_unsubscribe(event, method, token)
 
     if method == "GET" and path == "/health":
         return _json_response(200, {"status": "ok"})

@@ -1104,6 +1104,110 @@ export function boardWatchPath(watchId: string): string {
   return `${BOARD_API_BASE}/watchlist/${encodeURIComponent(watchId)}`;
 }
 
+export function boardProspectsPath(query?: {
+  readonly stage?: string;
+  readonly type?: string;
+  readonly district?: string;
+  readonly limit?: number;
+}): string {
+  const params = new URLSearchParams();
+  if (query?.stage) params.set("stage", query.stage);
+  if (query?.type) params.set("type", query.type);
+  if (query?.district) params.set("district", query.district);
+  if (query?.limit) params.set("limit", String(query.limit));
+  const qs = params.toString();
+  return qs ? `${BOARD_API_BASE}/prospects?${qs}` : `${BOARD_API_BASE}/prospects`;
+}
+
+export function boardProspectPath(prospectId: string): string {
+  return `${BOARD_API_BASE}/prospects/${encodeURIComponent(prospectId)}`;
+}
+
+export function boardProspectImportPath(): string {
+  return `${BOARD_API_BASE}/prospects/import`;
+}
+
+export function boardProspectMergePath(prospectId: string): string {
+  return `${BOARD_API_BASE}/prospects/${encodeURIComponent(prospectId)}/merge`;
+}
+
+export function boardSequencePath(type: string): string {
+  return `${BOARD_API_BASE}/sequences/${encodeURIComponent(type)}`;
+}
+
+export function boardOutreachStatsPath(days?: number): string {
+  const params = new URLSearchParams();
+  if (days) params.set("days", String(days));
+  const qs = params.toString();
+  return qs ? `${BOARD_API_BASE}/outreach/stats?${qs}` : `${BOARD_API_BASE}/outreach/stats`;
+}
+
+export type BoardProspectTouch = {
+  readonly stepIndex?: number;
+  readonly sentAt?: string;
+  readonly subject?: string;
+  readonly preview?: string;
+  readonly threadId?: string;
+};
+
+export type BoardProspect = {
+  readonly prospectId: string;
+  readonly name: string;
+  readonly type?: string;
+  readonly district?: string;
+  readonly stage?: string;
+  readonly source?: string;
+  readonly website?: string;
+  readonly phone?: string;
+  readonly email?: string;
+  readonly contact?: string | null;
+  readonly placeId?: string;
+  readonly score?: number;
+  readonly fitNote?: string;
+  readonly ownerNote?: string;
+  readonly touches?: readonly BoardProspectTouch[];
+  readonly nextTouchAt?: string;
+  readonly lastThreadId?: string;
+  readonly qualifiedAt?: string;
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
+  readonly possibleDuplicates?: readonly { readonly prospectId: string; readonly name?: string; readonly stage?: string }[];
+};
+
+export type BoardProspectWrite = {
+  readonly stage?: string;
+  readonly contact?: string;
+  readonly type?: string;
+  readonly note?: string;
+};
+
+export type BoardSequenceStep = {
+  readonly dayOffset: number;
+  readonly subjectEn: string;
+  readonly subjectZh: string;
+  readonly bodyEn: string;
+  readonly bodyZh: string;
+};
+
+export type BoardSequence = {
+  readonly type: string;
+  readonly steps: readonly BoardSequenceStep[];
+};
+
+export type BoardOutreachStats = {
+  readonly sent?: number;
+  readonly bounces?: number;
+  readonly complaints?: number;
+  readonly bounceRate?: number;
+  readonly complaintRate?: number;
+  readonly replies?: number;
+  readonly dailyCap?: number;
+  readonly capRaisedAt?: string;
+  readonly identityVerified?: boolean;
+  readonly breaker?: { readonly name?: string; readonly tripped?: boolean; readonly reason?: string };
+  readonly history?: readonly { readonly date: string; readonly sent?: number; readonly bounces?: number; readonly complaints?: number }[];
+};
+
 export function boardChangesPath(days?: number): string {
   const params = new URLSearchParams();
   if (days) params.set("days", String(days));

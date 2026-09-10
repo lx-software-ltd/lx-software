@@ -19,7 +19,9 @@ EDB school location and information
   DISTRICT / 分區, SCHOOL LEVEL / 學校類型.
   Spec PDF: https://www.edb.gov.hk/attachment/en/student-parents/sch-info/datagovhk/DataSpec_School_Location_and_Information_en.pdf
 
-LCSD programmes are a stub for WP6 (`lcsd_programmes`).
+LCSD programmes stay an empty stub (`lcsd_programmes`). No stable public
+CSV/XML was verified at WP6; `outreach_open_data(kind=lcsd)` returns the
+last cache or an empty list.
 """
 
 from __future__ import annotations
