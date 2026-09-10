@@ -1201,9 +1201,14 @@ export class LxsoftwareStack extends cdk.Stack {
       encryptionMasterKey: this.sharedEncryptionKey,
       retentionPeriod: cdk.Duration.days(14),
     });
+    // Lambda rejects an SQS event source whose visibility timeout is shorter
+    // than the function timeout; AWS recommends six times the function
+    // timeout so a slow batch is not redelivered while still in flight.
     const outreachEventsQueue = new sqs.Queue(this, "SiutindeiOutreachEventsQueue", {
       queueName: "lxsoftware-admin-siutindei-outreach-events",
-      visibilityTimeout: cdk.Duration.seconds(60),
+      visibilityTimeout: cdk.Duration.seconds(
+        PARSE_TIMEOUTS.lambdaTimeoutSeconds * 6
+      ),
       encryption: sqs.QueueEncryption.KMS,
       encryptionMasterKey: this.sharedEncryptionKey,
       deadLetterQueue: { queue: outreachEventsDlq, maxReceiveCount: 5 },
