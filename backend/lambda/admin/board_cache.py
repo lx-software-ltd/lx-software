@@ -39,6 +39,15 @@ def refresh_all(table: Any) -> dict[str, Any]:
         except Exception as exc:
             _log_event("error", tag="board_cache_refresh_failed", key=name, error=str(exc)[:300])
             result[name] = {"error": str(exc)[:200]}
+    try:
+        import board_duties
+        import board_staff
+
+        settings = board_store.load_settings(table)
+        if board_staff.enabled(settings):
+            result["opsTriage"] = board_duties.triage_ops_signals(table, settings)
+    except Exception as exc:
+        _log_event("warning", tag="board_ops_triage_failed", error=str(exc)[:200])
     return result
 
 

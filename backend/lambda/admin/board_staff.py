@@ -836,6 +836,12 @@ def handle_tick(event: dict[str, Any]) -> dict[str, Any]:
         board_review.maybe_create_headline_duty(table, settings)
     except Exception as exc:
         _log_event("warning", tag="board_review_duty_failed", error=str(exc)[:300])
+    try:
+        import board_duties
+
+        board_duties.run_due(table, settings)
+    except Exception as exc:
+        _log_event("warning", tag="board_duties_tick_failed", error=str(exc)[:300])
     started = drain_queue(table, settings)
     stuck_cut = datetime.now(timezone.utc) - timedelta(seconds=BOARD_STAFF_TASK_STUCK_SECONDS)
     cut_iso = _utc_iso_z(stuck_cut)

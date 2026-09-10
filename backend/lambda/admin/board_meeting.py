@@ -838,7 +838,8 @@ def _phase_synthesis(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
         "\"actions\": [{\"title\": \"imperative, <= 100 chars\", \"detail\": \"what done looks like\", \"persona\": \"persona id\", "
         "\"priority\": \"now|next|later\", \"effort\": \"S|M|L\", \"dueInDays\": 7, \"dependsOn\": [\"titles\"], "
         "\"metric\": \"how we know it worked\", \"existingActionId\": \"optional id of an open action this reaffirms\"}], "
-        "\"questionsForOwner\": [\"decisions only the founder can make\"]}"
+        "\"questionsForOwner\": [\"decisions only the founder can make\"], "
+        "\"boundarySuggestions\": [{\"classKey\": \"publish:facebook\", \"change\": \"promote to 0 hours\", \"evidence\": \"why\"}]}"
     )
     messages = [
         {"role": "system", "content": board_personas.render_system_prompt(chair, charter, meeting_role=MEETING_ROLE_CHAIR)},
@@ -850,7 +851,9 @@ def _phase_synthesis(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
                 "\n\nOpen action items already assigned to the founder (reference by id instead of re-creating):\n" + open_text +
                 "\n\nWrite the minutes. Rules: at most 7 actions in total, at most 3 with priority \"now\"; each action is one "
                 "concrete thing the founder can start this week; use persona ids for owners (" + ", ".join(sorted(profiles)) + "); "
-                "no duplicate of an open action unless you set existingActionId. Return strict JSON only matching: " + schema
+                "no duplicate of an open action unless you set existingActionId. "
+                "If a hold class is ready to change, add boundarySuggestions with classKey, change and evidence. "
+                "Return strict JSON only matching: " + schema
             ),
         },
     ]
@@ -942,6 +945,21 @@ def normalize_minutes(
     if isinstance(raw.get("questionsForOwner"), list):
         questions = [_clean(q, 400) for q in raw["questionsForOwner"] if _clean(q, 400)][:6]
 
+    suggestions = []
+    if isinstance(raw.get("boundarySuggestions"), list):
+        for row in raw["boundarySuggestions"][:12]:
+            if not isinstance(row, dict):
+                continue
+            class_key = str(row.get("classKey") or "").strip()
+            if class_key:
+                suggestions.append(
+                    {
+                        "classKey": class_key[:80],
+                        "change": _clean(row.get("change"), 200),
+                        "evidence": _clean(row.get("evidence"), 400),
+                    }
+                )
+
     return {
         "headline": _clean(raw.get("headline"), 300),
         "agenda": [{"title": a.get("title"), "question": a.get("question")} for a in agenda],
@@ -950,6 +968,7 @@ def normalize_minutes(
         "risks": risks,
         "actions": actions,
         "questionsForOwner": questions,
+        "boundarySuggestions": suggestions,
     }
 
 
@@ -969,6 +988,15 @@ def _phase_persist(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
                 board_staff.assign_from_minutes(table, settings, action=action, chair_id=chair_id)
     except Exception as exc:
         _log_event("warning", tag="board_staff_minutes_assign_failed", error=str(exc)[:300])
+    try:
+        import board_duties
+
+        validated = board_duties.validate_boundary_suggestions(table, minutes.get("boundarySuggestions"))
+        minutes["boundarySuggestions"] = validated
+        doc["minutes"] = minutes
+        board_store.put_cache(table, "standup:boundary-suggestions", {"items": validated}, ttl_seconds=14 * 86400)
+    except Exception as exc:
+        _log_event("warning", tag="board_boundary_suggestions_failed", error=str(exc)[:200])
     date = str(doc.get("createdAt") or board_store.now_iso())[:10]
     board_store.append_decision_log(
         table,

@@ -258,7 +258,7 @@ up in review; do not treat them as product decisions unless you confirm.
 
 - **No fortnightly Scheduler** in this WP. Drafting is the
   `newsletter_draft_issue` op (content-marketer). A duty can be added in
-  WP9.
+  WP9. The WP9 duty list did not add one; drafting stays an op.
 - **No new admin tab.** Sends appear as `publish:newsletter` holds on
   Approvals. Subscriber counts are not yet an owner UI.
 - **Confirm/issue send require `BoardMailSendingEnabled`.** That is the
@@ -271,3 +271,31 @@ up in review; do not treat them as product decisions unless you confirm.
   repo; owner should confirm the form's production home.
 - **Token payload** is `{c|u}:{list}:{emailDigest}` using the WP6 HMAC
   helper. Digest is SHA-256 of the normalised email (one row per email).
+
+## WP9
+
+- **First enable of `dutiesEnabled` catch-up.** `is_due` treats an empty
+  last-run cache as before the most recent scheduled time, so the first
+  tick after the owner turns duties on creates a task for every duty
+  whose last cron fire is in the past 40 days (including last week's KPI
+  pack and this month's month-end memo). That matches the spec's
+  missed-tick rule. Confirm if the owner would rather wait for the next
+  wall-clock fire.
+- **No newsletter duty.** WP8 noted a fortnightly draft could land here.
+  The WP9 duty list is explicit (BA KPI, accountant month-end + aging,
+  security triage, data-analyst attribution) and does not include a
+  newsletter cron.
+- **Architect stays inactive.** Alarm tasks go to the CTO until WP10
+  activates `architect`. Security alerts go to `security-analyst`.
+- **Dunning still falls back to Approvals** when `create_task` raises
+  `StaffError` (cap, inactive seat) or when staff is off. Existing
+  receivables tests stay on the Approval path because they do not enable
+  staff.
+- **Cron language** is five HKT fields. Named `MON`–`SUN` and UNIX
+  `0`/`7` = Sunday are accepted. When both DOM and DOW are restricted,
+  match is OR (standard cron). Minute `*` steps in 5 minutes to match
+  the tick.
+- **GitHub Dependabot rows have `summary`, not `title`.** Triage brief
+  falls back to `summary` / `description` / `secretType`.
+- **`BoardStaffSeatDefault` gained optional `duties`.** Sync-contracts
+  emits the duty objects onto the seats that define them.

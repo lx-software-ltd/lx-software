@@ -411,9 +411,8 @@ function calling. Design:
   Provider Success or Community Manager. Escalation keywords (English and
   Chinese) send the acknowledgement template and park the task on
   **Needs owner**. Quiet hours hold replies until 08:00 HKT. Finance and
-  phishing mail still route to `accountant` / `security-analyst` in the
-  table; those seats stay inactive until WP9 so the task is parked on
-  Support as `needs_owner`.
+  phishing mail still route to `accountant` / `security-analyst` (those
+  seats are active from WP9).
 - **Daily review (WP4):** `GET /siu-tin-dei/board/review`,
   `POST …/review/sample/{callId}/wrong`, `GET/POST …/lessons`,
   `GET/POST …/breakers/{name}/reset`, `POST …/ramp/{classKey}/promote`.
@@ -467,6 +466,19 @@ function calling. Design:
   Owner: create the `news@siutindei.com` mailbox (fan-out already copies
   `@siutindei.com`) and set the public site env.
 
+- **Duties and remaining desks (WP9):** `accountant`, `data-analyst` and
+  `security-analyst` are active by default. Enable
+  `settings.staff.dutiesEnabled` (Settings → Run scheduled seat duties)
+  after staff is on. HKT crons on the 5-minute staff tick: BA weekly KPI
+  (Mon 08:00), accountant month-end (1st 09:00) and weekly aging (Thu
+  09:00), security weekly triage (Tue 09:00), data-analyst attribution
+  (Mon 10:00). Hourly `board_cache_refresh` opens architect/CTO tasks for
+  new CloudWatch ALARMs and security-analyst tasks for new Hub /
+  Analyzer / GitHub alerts. Daily dunning creates an accountant task
+  when staff is on (Approval path unchanged when staff is off). Stand-up
+  minutes may include `boundarySuggestions` that prepend the daily
+  review suggestions list.
+
 Smoke test after deploy: open the tab, save a company vision/mission, edit one
 member's mandate, send a chat message to the CEO (reply arrives within ~30 s),
 then **Run stand-up** and confirm minutes and action items appear. For tools:
@@ -482,7 +494,8 @@ siutindei cluster, set the two Data API parameters, open **Receivables**, and
 ask the CFO to draft the first listing plan (`finance_propose_price_change`).
 Nightly `SiutindeiBoardReceivablesMirrorSchedule` (00:30 HKT) writes `[receivables]`
 lines into the Siu Tin Dei book; daily `SiutindeiBoardDunningSchedule` (09:00 HKT)
-queues D+7 / D+21 / D+35 reminders in **Approvals**.
+queues D+7 / D+21 / D+35 accountant tasks when staff is enabled, or reminder
+Approvals when staff is off.
 
 ### Board receivables (Aurora Data API)
 

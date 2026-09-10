@@ -60,15 +60,15 @@ class StaffEngineTests(BoardTestCase):
     def test_inactive_seat_is_off(self) -> None:
         settings = _enable_staff(self.table)
         roster = board_staff.seats_by_id(self.table, settings)
-        self.assertFalse(roster["accountant"]["isActive"])
-        self.assertEqual(board_staff.seat_level(settings, roster, "accountant", "mail"), "off")
+        self.assertFalse(roster["architect"]["isActive"])
+        self.assertEqual(board_staff.seat_level(settings, roster, "architect", "mail"), "off")
 
     def test_create_task_validates_and_defaults_budget(self) -> None:
         settings = _enable_staff(self.table)
         with self.assertRaises(board_staff.StaffError):
             board_staff.create_task(self.table, settings, assignee="nope", origin="owner", brief="x", deliverable_type="markdown", created_by="t")
         with self.assertRaises(board_staff.StaffError):
-            board_staff.create_task(self.table, settings, assignee="accountant", origin="owner", brief="x", deliverable_type="markdown", created_by="t")
+            board_staff.create_task(self.table, settings, assignee="architect", origin="owner", brief="x", deliverable_type="markdown", created_by="t")
         with self.assertRaises(board_staff.StaffError):
             board_staff.create_task(self.table, settings, assignee="cfo", origin="owner", brief="", deliverable_type="markdown", created_by="t")
         task = board_staff.create_task(

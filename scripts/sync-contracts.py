@@ -349,6 +349,13 @@ export const BOARD_STORES_CACHE_TTL_HOURS = {tool_limits["storesCacheTtlHours"]}
 export const BOARD_WEB_LIST_MAX = {tool_limits["webListMax"]};
 export const BOARD_WEB_CACHE_TTL_HOURS = {tool_limits["webCacheTtlHours"]};
 
+export type BoardStaffDutyDefault = {{
+  readonly id: string;
+  readonly cron: string;
+  readonly brief: string;
+  readonly deliverableType: string;
+  readonly tier: string;
+}};
 export type BoardStaffSeatDefault = {{
   readonly id: string;
   readonly reportsTo: string;
@@ -357,6 +364,7 @@ export type BoardStaffSeatDefault = {{
   readonly isActiveDefault: boolean;
   readonly tools: Readonly<Record<string, BoardToolLevel>>;
   readonly brief: string;
+  readonly duties?: readonly BoardStaffDutyDefault[];
 }};
 export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = {seats_ts};
 export const BOARD_STAFF_SEAT_IDS = BOARD_STAFF_SEAT_DEFAULTS.map((s) => s.id);

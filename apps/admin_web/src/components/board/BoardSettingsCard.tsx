@@ -203,6 +203,29 @@ export function BoardSettingsCard({
               Enable staff tasks
             </label>
           </div>
+          <div className="form-check form-switch">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="board-duties-enabled"
+              checked={Boolean(draft.staff?.dutiesEnabled)}
+              onChange={(ev) =>
+                setDraft((d) => ({
+                  ...d,
+                  staff: {
+                    enabled: Boolean(d.staff?.enabled),
+                    maxRunningTasks: d.staff?.maxRunningTasks ?? 6,
+                    dailyBudgetUsd: d.staff?.dailyBudgetUsd ?? 20,
+                    dutiesEnabled: ev.target.checked,
+                    seniorPaused: d.staff?.seniorPaused,
+                  },
+                }))
+              }
+            />
+            <label className="form-check-label" htmlFor="board-duties-enabled">
+              Run scheduled seat duties
+            </label>
+          </div>
           <div className="mb-2 mt-2">
             <label className="form-label small" htmlFor="board-review-digest">Digest email</label>
             <input

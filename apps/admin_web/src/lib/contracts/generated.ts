@@ -521,6 +521,13 @@ export const BOARD_STORES_CACHE_TTL_HOURS = 20;
 export const BOARD_WEB_LIST_MAX = 30;
 export const BOARD_WEB_CACHE_TTL_HOURS = 20;
 
+export type BoardStaffDutyDefault = {
+  readonly id: string;
+  readonly cron: string;
+  readonly brief: string;
+  readonly deliverableType: string;
+  readonly tier: string;
+};
 export type BoardStaffSeatDefault = {
   readonly id: string;
   readonly reportsTo: string;
@@ -529,6 +536,7 @@ export type BoardStaffSeatDefault = {
   readonly isActiveDefault: boolean;
   readonly tools: Readonly<Record<string, BoardToolLevel>>;
   readonly brief: string;
+  readonly duties?: readonly BoardStaffDutyDefault[];
 };
 export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
   {
@@ -684,27 +692,52 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cio",
     "title": "Data / Analytics Engineer",
     "modelTier": "desk",
-    "isActiveDefault": false,
+    "isActiveDefault": true,
     "tools": {
       "product": "read",
       "web": "read",
       "aws": "read",
       "research": "read"
     },
-    "brief": "You produce KPI packs, GA4 and product analyses, pipeline and content attribution, and tracking plans. You never invent a number that did not come from a tool. Report facts you verified with tools; say clearly what you could not verify."
+    "brief": "You produce KPI packs, GA4 and product analyses, pipeline and content attribution, and tracking plans. You never invent a number that did not come from a tool. Report facts you verified with tools; say clearly what you could not verify.",
+    "duties": [
+      {
+        "id": "weekly-attribution",
+        "cron": "0 10 * * MON",
+        "brief": "Write this week's attribution pack: GA4 sessions by utm_campaign, content performance, and pipeline conversion. Markdown.",
+        "deliverableType": "markdown",
+        "tier": "desk"
+      }
+    ]
   },
   {
     "id": "accountant",
     "reportsTo": "cfo",
     "title": "Bookkeeper / Accountant",
     "modelTier": "desk",
-    "isActiveDefault": false,
+    "isActiveDefault": true,
     "tools": {
       "finance": "act",
       "aws": "read",
       "mail": "act"
     },
-    "brief": "You write the month-end close memo, reconcile receivables, send dunning reminders under policy, and report costs from AWS and Meta. You never post ledger entries and you never initiate a bank payment. Report facts you verified with tools; say clearly what you could not verify."
+    "brief": "You write the month-end close memo, reconcile receivables, send dunning reminders under policy, and report costs from AWS and Meta. You never post ledger entries and you never initiate a bank payment. Report facts you verified with tools; say clearly what you could not verify.",
+    "duties": [
+      {
+        "id": "month-end-memo",
+        "cron": "0 9 1 * *",
+        "brief": "Write the month-end close memo in HKT: cash, receivables aging, AWS and Meta spend, and open questions. Markdown.",
+        "deliverableType": "markdown",
+        "tier": "desk"
+      },
+      {
+        "id": "weekly-aging",
+        "cron": "0 9 * * THU",
+        "brief": "Write this week's receivables aging and which invoices are at D+7 / D+21 / D+35. Markdown.",
+        "deliverableType": "markdown",
+        "tier": "desk"
+      }
+    ]
   },
   {
     "id": "business-analyst",
@@ -726,21 +759,39 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
       "web": "read",
       "staff": "read"
     },
-    "brief": "You draft the daily digest headline, the weekly KPI pack, competitor briefs and the go-live checklist. You read every tool and write nothing that leaves the system. Report facts you verified with tools; say clearly what you could not verify."
+    "brief": "You draft the daily digest headline, the weekly KPI pack, competitor briefs and the go-live checklist. You read every tool and write nothing that leaves the system. Report facts you verified with tools; say clearly what you could not verify.",
+    "duties": [
+      {
+        "id": "weekly-kpi-pack",
+        "cron": "0 8 * * MON",
+        "brief": "Write this week's KPI pack for the owner: tasks, pipeline, content, spend, and open escalations. Markdown.",
+        "deliverableType": "markdown",
+        "tier": "desk"
+      }
+    ]
   },
   {
     "id": "security-analyst",
     "reportsTo": "ciso",
     "title": "Security Analyst",
     "modelTier": "desk",
-    "isActiveDefault": false,
+    "isActiveDefault": true,
     "tools": {
       "security": "propose",
       "github": "propose",
       "aws": "read",
       "mail": "read"
     },
-    "brief": "You triage security alerts, write PDPO and app-store privacy checklists, open remediation issues, and review phishing flags. You never apply a fix yourself. Report facts you verified with tools; say clearly what you could not verify."
+    "brief": "You triage security alerts, write PDPO and app-store privacy checklists, open remediation issues, and review phishing flags. You never apply a fix yourself. Report facts you verified with tools; say clearly what you could not verify.",
+    "duties": [
+      {
+        "id": "weekly-triage",
+        "cron": "0 9 * * TUE",
+        "brief": "Triage open GitHub and Security Hub alerts. List new HIGH/CRITICAL items and proposed remediations. Markdown.",
+        "deliverableType": "markdown",
+        "tier": "desk"
+      }
+    ]
   }
 ];
 export const BOARD_STAFF_SEAT_IDS = BOARD_STAFF_SEAT_DEFAULTS.map((s) => s.id);

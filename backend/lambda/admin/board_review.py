@@ -247,6 +247,9 @@ def compile(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, An
         suggestions = [row for row in board_holds.list_ramp(table) if row.get("eligibleForPromotion")]
     except Exception:
         suggestions = []
+    standup = board_store.get_cache(table, "standup:boundary-suggestions")
+    if standup and isinstance(standup.get("payload"), dict):
+        suggestions = list(standup["payload"].get("items") or []) + suggestions
     try:
         import board_breakers
 
