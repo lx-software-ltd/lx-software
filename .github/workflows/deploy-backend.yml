@@ -50,6 +50,15 @@ jobs:
           cd backend/infrastructure
           npm run build --if-present
 
+      # AdminApiFn bundles pip dependencies (Pillow, defusedxml) inside the
+      # linux/arm64 SAM build image. The x86-64 runner needs QEMU binfmt
+      # registered or `docker run --platform linux/arm64` fails with
+      # "exec /usr/bin/bash: exec format error".
+      - name: Set up QEMU for arm64 Lambda bundling
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       - name: Check CDK Bootstrap status
         run: |
           QUALIFIER="${CDK_BOOTSTRAP_QUALIFIER:-hnb659fds}"
