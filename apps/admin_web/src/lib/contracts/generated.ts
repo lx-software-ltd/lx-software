@@ -560,7 +560,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "coo",
     "title": "Partnerships Development",
     "modelTier": "desk",
-    "isActiveDefault": true,
+    "isActiveDefault": false,
     "tools": {
       "research": "read",
       "mail": "act",
@@ -600,7 +600,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cpo",
     "title": "Market and Competitive Intelligence",
     "modelTier": "senior",
-    "isActiveDefault": true,
+    "isActiveDefault": false,
     "tools": {
       "research": "read",
       "stores": "read",
@@ -615,7 +615,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cpo",
     "title": "Product Developer",
     "modelTier": "senior",
-    "isActiveDefault": true,
+    "isActiveDefault": false,
     "tools": {
       "product": "propose",
       "stores": "propose",
@@ -630,7 +630,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cmo",
     "title": "Content Marketer",
     "modelTier": "desk",
-    "isActiveDefault": true,
+    "isActiveDefault": false,
     "tools": {
       "meta": "act",
       "stores": "propose",
@@ -660,7 +660,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cmo",
     "title": "Growth / Paid Social Specialist",
     "modelTier": "desk",
-    "isActiveDefault": true,
+    "isActiveDefault": false,
     "tools": {
       "meta": "act",
       "web": "read",
@@ -674,7 +674,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cto",
     "title": "Software Architect",
     "modelTier": "senior",
-    "isActiveDefault": true,
+    "isActiveDefault": false,
     "tools": {
       "github": "propose",
       "aws": "propose",
@@ -698,7 +698,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cto",
     "title": "Senior Engineer",
     "modelTier": "senior",
-    "isActiveDefault": true,
+    "isActiveDefault": false,
     "tools": {
       "github": "act",
       "code": "act"
@@ -710,7 +710,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cto",
     "title": "Senior Engineer",
     "modelTier": "senior",
-    "isActiveDefault": true,
+    "isActiveDefault": false,
     "tools": {
       "github": "act",
       "code": "act"
@@ -722,7 +722,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cio",
     "title": "Data / Analytics Engineer",
     "modelTier": "desk",
-    "isActiveDefault": true,
+    "isActiveDefault": false,
     "tools": {
       "product": "read",
       "web": "read",
@@ -745,7 +745,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cfo",
     "title": "Bookkeeper / Accountant",
     "modelTier": "desk",
-    "isActiveDefault": true,
+    "isActiveDefault": false,
     "tools": {
       "finance": "act",
       "aws": "read",
@@ -805,7 +805,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "ciso",
     "title": "Security Analyst",
     "modelTier": "desk",
-    "isActiveDefault": true,
+    "isActiveDefault": false,
     "tools": {
       "security": "propose",
       "github": "propose",
@@ -827,9 +827,9 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
 export const BOARD_STAFF_SEAT_IDS = BOARD_STAFF_SEAT_DEFAULTS.map((s) => s.id);
 export const BOARD_STAFF_MODEL_TIERS = ["desk", "senior"] as const;
 export type BoardStaffModelTier = (typeof BOARD_STAFF_MODEL_TIERS)[number];
-export const BOARD_STAFF_TASK_STATUSES = ["queued", "running", "review", "returned", "delivered", "needs_owner", "failed", "cancelled"] as const;
+export const BOARD_STAFF_TASK_STATUSES = ["queued", "running", "review", "delivered", "needs_owner", "failed", "cancelled"] as const;
 export type BoardTaskStatus = (typeof BOARD_STAFF_TASK_STATUSES)[number];
-export const BOARD_STAFF_TASK_ORIGINS = ["event", "duty", "target", "minutes", "chat", "owner"] as const;
+export const BOARD_STAFF_TASK_ORIGINS = ["event", "duty", "target", "minutes", "chat", "owner", "task"] as const;
 export type BoardTaskOrigin = (typeof BOARD_STAFF_TASK_ORIGINS)[number];
 export const BOARD_STAFF_DELIVERABLE_TYPES = ["markdown", "csv", "json", "messages", "issues", "pr", "creatives", "prospects"] as const;
 export type BoardDeliverableType = (typeof BOARD_STAFF_DELIVERABLE_TYPES)[number];
@@ -847,7 +847,7 @@ export const BOARD_STAFF_CONTENT_STATUSES = ["idea", "drafted", "creative", "sch
 export const BOARD_STAFF_NEWSLETTER_LISTS = ["parents", "providers"] as const;
 export const BOARD_STAFF_MAX_STEPS_PER_TASK = 12;
 export const BOARD_STAFF_MAX_REVISIONS = 2;
-export const BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = 6;
+export const BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = 3;
 export const BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD = 20;
 export const BOARD_STAFF_REVIEW_SAMPLE_SIZE = 8;
 export const BOARD_STAFF_OUTREACH_DAILY_CAP_START = 20;

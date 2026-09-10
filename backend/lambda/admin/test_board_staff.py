@@ -179,6 +179,64 @@ class StaffStepTests(ToolsTestCase):
         reviews = board_store.list_task_reviews(self.table, task["taskId"])
         self.assertEqual(reviews[0]["verdict"], "accept")
 
+    def test_review_unparsable_verdict_returns(self) -> None:
+        task = self._queued_task()
+        board_store.claim_task_step(self.table, task["taskId"], 0)
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=board_store.load_settings(self.table),
+            persona_id="cfo",
+            display_name="CFO",
+            kind="task",
+            task_id=task["taskId"],
+            actor="persona",
+        )
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "Draft",
+                    "deliverableType": "markdown",
+                    "deliverable": "# Draft",
+                    "evidence": [],
+                    "openQuestions": [],
+                    "confidence": "low",
+                },
+            )
+        self.use_script([], "not json at all")
+        board_staff.run_review({"internal": "board_staff_review", "boardKey": "siuTinDei", "taskId": task["taskId"]})
+        done = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(done["lastReview"]["verdict"], "return")
+
+    def test_review_empty_completion_returns(self) -> None:
+        task = self._queued_task()
+        board_store.claim_task_step(self.table, task["taskId"], 0)
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=board_store.load_settings(self.table),
+            persona_id="cfo",
+            display_name="CFO",
+            kind="task",
+            task_id=task["taskId"],
+            actor="persona",
+        )
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "Draft",
+                    "deliverableType": "markdown",
+                    "deliverable": "# Draft",
+                    "evidence": [],
+                    "openQuestions": [],
+                    "confidence": "low",
+                },
+            )
+        self.use_script([], "")
+        board_staff.run_review({"internal": "board_staff_review", "boardKey": "siuTinDei", "taskId": task["taskId"]})
+        done = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(done["lastReview"]["verdict"], "return")
+
     def test_task_finish_high_confidence_without_evidence_is_flagged(self) -> None:
         task = self._queued_task()
         board_store.claim_task_step(self.table, task["taskId"], 0)
@@ -324,6 +382,77 @@ class StaffRouteTests(BoardTestCase):
             status, listed = self.call("/siu-tin-dei/board/tasks")
             self.assertEqual(status, 200)
             self.assertGreaterEqual(len(listed["tasks"]), 1)
+
+
+class StaffKillSwitchTests(BoardTestCase):
+    def test_env_enabled_false_when_unset(self) -> None:
+        os.environ.pop("BOARD_STAFF_ENABLED", None)
+        self.assertFalse(board_staff.env_enabled())
+
+
+class StaffAccountingTests(StaffStepTests):
+    def test_run_step_noops_when_env_disabled(self) -> None:
+        task = self._queued_task()
+        board_store.claim_task_step(self.table, task["taskId"], 0)
+        os.environ["BOARD_STAFF_ENABLED"] = "false"
+        board_staff.run_step(
+            {"internal": "board_staff_step", "boardKey": "siuTinDei", "taskId": task["taskId"], "step": 1}
+        )
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["step"], 0)
+
+    def test_task_usage_accumulates_and_budget_stops_third_step(self) -> None:
+        task = self._queued_task(budget_usd=0.015)
+
+        class FakeResult:
+            text = "working"
+            calls: list[Any] = []
+            usage = {"cost": 0.01, "promptTokens": 10, "completionTokens": 5, "totalTokens": 15}
+
+        with patch.object(board_async, "invoke_async", side_effect=lambda payload, *, fallback=None: None):
+            with patch.object(board_tools, "run_tool_loop", return_value=FakeResult()):
+                board_staff.run_step(
+                    {"internal": "board_staff_step", "boardKey": "siuTinDei", "taskId": task["taskId"], "step": 1}
+                )
+                board_staff.run_step(
+                    {"internal": "board_staff_step", "boardKey": "siuTinDei", "taskId": task["taskId"], "step": 2}
+                )
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertAlmostEqual(float((latest.get("usage") or {}).get("cost") or 0), 0.02)
+        with patch.object(board_tools, "run_tool_loop", return_value=FakeResult()):
+            board_staff.run_step(
+                {"internal": "board_staff_step", "boardKey": "siuTinDei", "taskId": task["taskId"], "step": 3}
+            )
+        failed = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(failed["failureReason"], "Task budget exhausted")
+
+    def test_claim_task_step_mutual_exclusion(self) -> None:
+        task = self._queued_task()
+        self.assertTrue(board_store.claim_task_step(self.table, task["taskId"], 0))
+        self.assertFalse(board_store.claim_task_step(self.table, task["taskId"], 0))
+
+    def test_staff_usage_day_adds_atomically(self) -> None:
+        board_store.add_staff_usage_day(self.table, "cfo", {"cost": 0.01, "calls": 1})
+        board_store.add_staff_usage_day(self.table, "cfo", {"cost": 0.02, "calls": 1})
+        day = board_store.load_staff_usage_day(self.table)
+        self.assertAlmostEqual(day["cost"], 0.03)
+        self.assertEqual(day["calls"], 2)
+
+    def test_settings_conflict_then_retry(self) -> None:
+        first = board_store.load_settings(self.table)
+        board_store.save_settings(self.table, first)
+        with self.assertRaises(board_store.SettingsConflict):
+            board_store.save_settings(self.table, first)
+
+        def apply(settings: dict[str, Any]) -> dict[str, Any]:
+            staff = dict(settings.get("staff") or {})
+            staff["enabled"] = True
+            settings["staff"] = board_store.normalize_staff_config(staff)
+            return settings
+
+        saved = board_store.save_settings_retry(self.table, apply)
+        self.assertTrue(saved["staff"]["enabled"])
 
 
 class StaffToolAvailabilityTests(unittest.TestCase):

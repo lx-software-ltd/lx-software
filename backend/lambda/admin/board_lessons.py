@@ -121,11 +121,19 @@ def create_from_correction(table: Any, call_id: str, note: str) -> dict[str, Any
         note=note,
         preview=preview,
     )
+    class_key = str(call.get("classKey") or call.get("toolId") or "")
+    if class_key:
+        try:
+            import board_holds
+
+            board_holds.record_ramp(table, settings, class_key, vetoed=True)
+        except Exception as exc:
+            _log_event("warning", tag="board_ramp_correction_failed", error=str(exc)[:200], classKey=class_key)
     return _write(
         table,
         kind="correction",
         subject=str(call.get("seatId") or call.get("personaId") or ""),
-        class_key=str(call.get("classKey") or call.get("toolId") or ""),
+        class_key=class_key,
         what=what,
         instruction=instruction,
         source_ref=str(call_id),

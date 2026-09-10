@@ -64,6 +64,11 @@ class HoldError(ValueError):
     """Hold is missing or cannot be changed."""
 
 
+def action_class_exempt(op: board_tools.ToolOp) -> bool:
+    """Writes that stay Approvals even when staff holds are on (R-37)."""
+    return getattr(op, "action_class", None) == "code_production"
+
+
 def classify(op: board_tools.ToolOp, ctx: board_tools.ToolContext, args: dict[str, Any], settings: dict[str, Any]) -> tuple[str, str]:
     name = op.name
     if op.tool_id in ("board", "staff", "task"):
@@ -121,10 +126,9 @@ def _recipients(args: dict[str, Any]) -> list[str]:
 
 
 def _prospect_for_address(table: Any, address: str) -> dict[str, Any] | None:
-    key = board_store.get_prospect_by_dedupe(table, address.strip().lower())
-    if not key:
-        return None
-    return board_store.get_prospect(table, key)
+    import board_prospects
+
+    return board_prospects.lookup_by_address(table, address)
 
 
 def _content_channel(table: Any, args: dict[str, Any]) -> str:
@@ -245,7 +249,7 @@ def maybe_hold(
         return None
     if not board_staff.enabled(ctx.settings):
         return None
-    if op.name == "code_promote":
+    if action_class_exempt(op):
         return None
     action_class, class_key = classify(op, ctx, arguments, ctx.settings)
     hours = hold_hours(ctx.table, ctx.settings, action_class, class_key)
@@ -261,6 +265,19 @@ def maybe_hold(
     slot_at = str(arguments.get("slotAt") or "") if op.name == "content_publish" else ""
     if hours <= 0 and not quiet_reply and not quiet_outreach and not slot_at:
         return None
+    execute_at = None
+    if slot_at:
+        try:
+            slot_dt = board_hk.parse_iso(slot_at)
+            if hours > 0:
+                floor = datetime.now(timezone.utc) + timedelta(hours=hours)
+                if slot_dt.tzinfo is None:
+                    slot_dt = slot_dt.replace(tzinfo=timezone.utc)
+                execute_at = board_hk.to_iso(max(slot_dt, floor))
+            else:
+                execute_at = slot_at
+        except ValueError:
+            execute_at = slot_at
     return create_hold(
         ctx,
         op,
@@ -269,8 +286,33 @@ def maybe_hold(
         class_key=class_key,
         hours=hours,
         summary=summary,
-        execute_at=slot_at or None,
+        execute_at=execute_at,
     )
+
+
+def expire_stale(table: Any, settings: dict[str, Any], now_iso: str) -> int:
+    """Mark scheduled holds expired when staff is off or they are more than 24h overdue."""
+    staff_on = board_staff.enabled(settings)
+    expired = 0
+    for hold in board_store.list_holds(table, "scheduled", limit=400):
+        late = False
+        execute_at = str(hold.get("executeAt") or "")
+        if execute_at:
+            try:
+                late = datetime.now(timezone.utc) > board_hk.parse_iso(execute_at) + timedelta(hours=24)
+            except ValueError:
+                late = False
+        if not (late or not staff_on):
+            continue
+        hold_id = str(hold.get("holdId") or "")
+        if not hold_id or not board_store.claim_hold(table, hold_id, from_status="scheduled", to_status="expired"):
+            continue
+        latest = board_store.get_hold(table, hold_id) or hold
+        latest["status"] = "expired"
+        latest["updatedAt"] = now_iso
+        board_store.put_hold(table, latest)
+        expired += 1
+    return expired
 
 
 def execute_due(table: Any, settings: dict[str, Any], now_iso: str, *, limit: int = 25) -> int:
@@ -387,6 +429,14 @@ def veto(table: Any, hold_id: str, by_sub: str, reason: str) -> dict[str, Any]:
                 row["status"] = "vetoed"
                 row["updatedAt"] = now
                 board_store.put_content(table, row)
+    if hold.get("op") == "outreach_send":
+        pid = str((hold.get("arguments") or {}).get("prospectId") or "")
+        prospect = board_store.get_prospect(table, pid) if pid else None
+        if prospect:
+            prospect["vetoedAt"] = now
+            prospect["nextTouchAt"] = board_hk.to_iso(datetime.now(timezone.utc) + timedelta(days=30))
+            prospect["updatedAt"] = now
+            board_store.put_prospect(table, prospect)
     return hold
 
 
@@ -424,6 +474,7 @@ def record_ramp(table: Any, settings: dict[str, Any], class_key: str, *, vetoed:
         "recent": recent,
     }
     board_store.save_ramp(table, class_key, doc)
+    board_store.add_ramp_index(table, class_key)
     state = ramp_state(table, class_key)
     if state.get("shouldDemote"):
         _demote(table, settings, class_key)
@@ -455,14 +506,20 @@ def ramp_state(table: Any, class_key: str) -> dict[str, Any]:
 
 
 def _demote(table: Any, settings: dict[str, Any], class_key: str) -> None:
-    boundaries = dict(settings.get("boundaries") or {})
-    overrides = dict(boundaries.get("holdOverrides") or {})
-    if class_key not in overrides:
-        return
-    overrides.pop(class_key, None)
-    boundaries["holdOverrides"] = overrides
-    settings["boundaries"] = board_store.normalize_boundaries(boundaries)
-    board_store.save_settings(table, settings)
+    def apply(current: dict[str, Any]) -> dict[str, Any]:
+        boundaries = dict(current.get("boundaries") or {})
+        overrides = dict(boundaries.get("holdOverrides") or {})
+        if class_key not in overrides:
+            return current
+        overrides.pop(class_key, None)
+        boundaries["holdOverrides"] = overrides
+        current["boundaries"] = board_store.normalize_boundaries(boundaries)
+        return current
+
+    try:
+        board_store.save_settings_retry(table, apply)
+    except board_store.SettingsConflict:
+        _log_event("warning", tag="board_ramp_demote_conflict", classKey=class_key)
     try:
         import board_breakers
 
@@ -473,13 +530,15 @@ def _demote(table: Any, settings: dict[str, Any], class_key: str) -> None:
 
 
 def promote(table: Any, class_key: str) -> dict[str, Any]:
-    settings = board_store.load_settings(table)
-    boundaries = dict(settings.get("boundaries") or {})
-    overrides = dict(boundaries.get("holdOverrides") or {})
-    overrides[class_key] = 0
-    boundaries["holdOverrides"] = overrides
-    settings["boundaries"] = board_store.normalize_boundaries(boundaries)
-    saved = board_store.save_settings(table, settings)
+    def apply(current: dict[str, Any]) -> dict[str, Any]:
+        boundaries = dict(current.get("boundaries") or {})
+        overrides = dict(boundaries.get("holdOverrides") or {})
+        overrides[class_key] = 0
+        boundaries["holdOverrides"] = overrides
+        current["boundaries"] = board_store.normalize_boundaries(boundaries)
+        return current
+
+    saved = board_store.save_settings_retry(table, apply)
     try:
         import board_breakers
 
@@ -492,8 +551,7 @@ def promote(table: Any, class_key: str) -> dict[str, Any]:
 
 
 def list_ramp(table: Any) -> list[dict[str, Any]]:
-    # Ramp rows are state keys; scan known keys from recent holds plus stored ramps via list of hold classKeys.
-    keys: set[str] = set()
+    keys: set[str] = set(board_store.load_ramp_index(table))
     for status in ("scheduled", "executed", "vetoed"):
         for hold in board_store.list_holds(table, status, limit=200):
             if hold.get("classKey"):

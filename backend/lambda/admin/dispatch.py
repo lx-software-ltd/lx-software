@@ -257,6 +257,27 @@ def _handle_public_read(
     return _records_get_response(event)
 
 
+def _ses_record_route(record: dict[str, Any]) -> str:
+    body_raw = record.get("body") or ""
+    try:
+        body = json.loads(body_raw) if isinstance(body_raw, str) else body_raw
+    except json.JSONDecodeError:
+        return "outreach"
+    if isinstance(body, dict) and body.get("Type") == "Notification" and body.get("Message"):
+        try:
+            body = json.loads(str(body["Message"]))
+        except json.JSONDecodeError:
+            return "outreach"
+    if not isinstance(body, dict):
+        return "outreach"
+    tags = (body.get("mail") or {}).get("tags") or {}
+    raw_cs = tags.get("ses:configuration-set") or tags.get("ses:configurationSet") or ""
+    config = str(raw_cs[0] if isinstance(raw_cs, list) and raw_cs else raw_cs or "").lower()
+    if "newsletter" in config or tags.get("issueId") or tags.get("issueid"):
+        return "newsletter"
+    return "outreach"
+
+
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if isinstance(event, dict) and event.get("internal") == "parse_statement_async":
         parse_jobs_mod._handle_parse_statement_async_worker(event)
@@ -292,6 +313,12 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if isinstance(event, dict) and event.get("internal") == "board_staff_tick":
         return board_staff_mod.handle_tick(event)
 
+    if isinstance(event, dict) and event.get("internal") == "board_triage_ack":
+        import board_triage as board_triage_mod
+
+        board_triage_mod.run_ack(event)
+        return {}
+
     if isinstance(event, dict) and event.get("internal") == "board_review_compile":
         return board_review_mod.handle_compile(event)
 
@@ -324,9 +351,28 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         import board_newsletter as board_newsletter_mod
         import board_outreach as board_outreach_mod
 
-        outreach = board_outreach_mod.handle_ses_events(records)
-        newsletter = board_newsletter_mod.handle_ses_events(records)
-        return {"ok": True, "outreach": outreach, "newsletter": newsletter}
+        failures: list[dict[str, str]] = []
+        outreach_n = 0
+        newsletter_n = 0
+        for record in records:
+            try:
+                route = _ses_record_route(record)
+                if route == "newsletter":
+                    result = board_newsletter_mod.handle_ses_events([record])
+                    newsletter_n += int((result or {}).get("handled") or 0)
+                else:
+                    result = board_outreach_mod.handle_ses_events([record])
+                    outreach_n += int((result or {}).get("handled") or 0)
+            except Exception:
+                mid = str(record.get("messageId") or record.get("messageID") or "")
+                if mid:
+                    failures.append({"itemIdentifier": mid})
+        return {
+            "ok": True,
+            "outreach": {"handled": outreach_n},
+            "newsletter": {"handled": newsletter_n},
+            "batchItemFailures": failures,
+        }
 
     if isinstance(event, dict) and event.get("internal") == "board_receivables_mirror":
         board_receivables_mod.handle_mirror_trigger(event)

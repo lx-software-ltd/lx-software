@@ -403,9 +403,10 @@ export function ExecutiveBoardTab() {
               <BoardBoundariesCard
                 key={`boundaries-${overview.settings.updatedAt ?? ""}`}
                 boundaries={overview.settings.boundaries ?? DEFAULT_BOARD_BOUNDARIES}
+                version={overview.settings.version}
                 isSaving={boundaries.save.isPending}
                 errorMessage={errorText(boundaries.save.error)}
-                onSave={(next) => boundaries.save.mutate(next)}
+                onSave={(next, version) => boundaries.save.mutate({ boundaries: next, version })}
               />
               <BoardLessonsList
                 lessons={lessons.lessons}

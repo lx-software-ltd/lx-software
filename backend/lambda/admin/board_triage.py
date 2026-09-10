@@ -22,9 +22,17 @@ from http_common import _log_event
 
 AUDIENCES = ("parent", "provider", "vendor", "unknown")
 INTENTS = ("question", "booking", "complaint", "billing", "partnership", "spam", "other")
-OPEN_TASK_STATUSES = ("queued", "running", "review", "returned", "needs_owner")
+OPEN_TASK_STATUSES = ("queued", "running", "review", "needs_owner")
 FINANCE_LOCAL_PARTS = frozenset({"finance", "billing"})
 LATIN_WORD_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 '\-]{0,80}$")
+
+
+def _mask_prompt_text(table: Any, text: str) -> str:
+    try:
+        return board_mail.pseudonymizer(table).mask_text(text or "")
+    except Exception as exc:
+        _log_event("warning", tag="board_triage_mask_failed", error=str(exc)[:200])
+        return text or ""
 
 
 def on_mail_ingested(
@@ -44,12 +52,13 @@ def on_mail_ingested(
     sender = str((message.get("from") or {}).get("address") or message.get("from") or "")
     if sender and board_mail._is_own(sender):  # noqa: SLF001 - same-domain outbound copies
         return None
-    text = str(message.get("text") or thread.get("snippet") or "")
+    raw_text = str(message.get("text") or thread.get("snippet") or "")
+    text = _mask_prompt_text(table, raw_text)
     prospect_id = ""
     try:
         import board_outreach
 
-        handled = board_outreach.maybe_handle_reply(table, settings, sender, text)
+        handled = board_outreach.maybe_handle_reply(table, settings, sender, raw_text)
         if handled and handled.get("suppressed"):
             return None
         if handled and isinstance(handled.get("prospect"), dict):
@@ -61,7 +70,11 @@ def on_mail_ingested(
     thread["audience"] = classified.get("audience")
     board_store.put_mail_thread(table, thread)
     assignee, sla = _route_mail(thread, message, classified)
-    brief = render_event_brief("mail", thread, message, classified)
+    brief_source = dict(thread)
+    brief_source["subject"] = _mask_prompt_text(
+        table, str(thread.get("subject") or message.get("subject") or "")
+    )
+    brief = render_event_brief("mail", brief_source, message, classified)
     extra_ref = {"prospectId": prospect_id} if prospect_id else None
     return _open_or_append(
         table,
@@ -82,7 +95,7 @@ def on_mail_ingested(
 def on_meta_event(table: Any, settings: dict[str, Any], thread: dict[str, Any], msg: dict[str, Any]) -> dict[str, Any] | None:
     if not board_staff.enabled(settings):
         return None
-    text = str(msg.get("text") or thread.get("lastTextMasked") or "")
+    text = str(msg.get("textMasked") or thread.get("lastTextMasked") or "")
     channel = str(msg.get("channel") or thread.get("channel") or "meta")
     classified = classify_text(table, settings, text, channel=channel, sender=str(msg.get("senderId") or ""))
     assignee, sla = _route_meta(thread, msg, classified)
@@ -155,6 +168,7 @@ def classify_text(
     sender: str = "",
     deadline: float | None = None,
 ) -> dict[str, Any]:
+    text = _mask_prompt_text(table, text)
     keywords = ((settings.get("boundaries") or {}).get("escalation") or {}).get("keywords") or []
     escalate, reason = _keyword_hit(text, keywords)
     audience = "unknown"
@@ -248,15 +262,9 @@ def _keyword_hit(text: str, keywords: list[Any]) -> tuple[bool, str]:
 
 
 def _prospect_for_sender(table: Any, sender: str) -> dict[str, Any] | None:
-    addr = sender.strip().lower()
-    if not addr:
-        return None
-    pid = board_store.get_prospect_by_dedupe(table, addr)
-    if not pid and "@" in addr:
-        pid = board_store.get_prospect_by_dedupe(table, addr.split("@", 1)[1])
-    if not pid:
-        return None
-    return board_store.get_prospect(table, pid)
+    import board_prospects
+
+    return board_prospects.lookup_by_address(table, sender)
 
 
 def _route_mail(thread: dict[str, Any], message: dict[str, Any], classified: dict[str, Any]) -> tuple[str, int]:
@@ -391,6 +399,46 @@ def _send_ack(
         seat_id=str(task.get("assignee") or ""),
     )
     try:
-        board_tools.execute_call(ctx, op, payload)
+        import board_async
+
+        board_async.invoke_async(
+            {
+                "internal": "board_triage_ack",
+                "boardKey": "siuTinDei",
+                "op": op_name,
+                "args": payload,
+                "taskId": str(task.get("taskId") or ""),
+                "personaId": manager,
+                "displayName": str(display),
+                "seatId": str(task.get("assignee") or ""),
+            },
+            fallback=run_ack,
+        )
     except Exception as exc:
         _log_event("warning", tag="board_triage_ack_failed", error=str(exc)[:200], op=op_name)
+
+
+def run_ack(payload: dict[str, Any]) -> None:
+    if not board_store.event_targets_this_board(payload):
+        return
+    table = board_store.records_table()
+    settings = board_store.load_settings(table)
+    if not board_staff.enabled(settings):
+        return
+    op = board_tools.REGISTRY.get(str(payload.get("op") or ""))
+    if op is None:
+        return
+    ctx = board_tools.ToolContext(
+        table=table,
+        settings=settings,
+        persona_id=str(payload.get("personaId") or "coo"),
+        display_name=str(payload.get("displayName") or "COO"),
+        kind="task",
+        actor="persona",
+        task_id=str(payload.get("taskId") or ""),
+        seat_id=str(payload.get("seatId") or ""),
+    )
+    try:
+        board_tools.execute_call(ctx, op, dict(payload.get("args") or {}))
+    except Exception as exc:
+        _log_event("warning", tag="board_triage_ack_failed", error=str(exc)[:200], op=str(payload.get("op") or ""))

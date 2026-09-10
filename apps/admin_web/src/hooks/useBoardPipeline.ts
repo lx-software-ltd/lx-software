@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { adminFetchJson } from "../lib/apiAdminClient";
 import {
   boardOutreachStatsPath,
@@ -77,14 +77,19 @@ export function sequencePutMutationOptions(qc: QueryClient) {
 
 export function useBoardPipeline() {
   const qc = useQueryClient();
-  const list = useQuery({
+  const list = useInfiniteQuery({
     queryKey: BOARD_PROSPECTS_KEY,
-    queryFn: () =>
-      adminFetchJson<{
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => {
+      const qs = pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : "";
+      return adminFetchJson<{
         prospects: BoardProspect[];
         needsContact: BoardProspect[];
         stats: BoardOutreachStats;
-      }>(boardProspectsPath()),
+        nextCursor?: string | null;
+      }>(`${boardProspectsPath()}${qs}`);
+    },
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
   const stats = useQuery({
     queryKey: BOARD_OUTREACH_STATS_KEY,
@@ -95,9 +100,11 @@ export function useBoardPipeline() {
   const merge = useMutation(prospectMergeMutationOptions(qc));
   const saveSequence = useMutation(sequencePutMutationOptions(qc));
   return {
-    prospects: list.data?.prospects ?? [],
-    needsContact: list.data?.needsContact ?? [],
-    stats: stats.data ?? list.data?.stats,
+    prospects: list.data?.pages.flatMap((page) => page.prospects) ?? [],
+    needsContact: list.data?.pages[0]?.needsContact ?? [],
+    stats: stats.data ?? list.data?.pages[0]?.stats,
+    fetchNextPage: list.fetchNextPage,
+    hasNextPage: list.hasNextPage,
     isLoading: list.isLoading,
     isError: list.isError,
     error: list.error,

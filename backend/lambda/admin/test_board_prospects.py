@@ -7,6 +7,7 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
+import board_hk
 import board_prospects
 import board_store
 from test_board import BoardTestCase
@@ -52,6 +53,8 @@ class QualifyTests(BoardTestCase):
     def test_unmapped_district_is_unknown(self) -> None:
         row, _ = board_prospects.upsert(self.table, name="X", type="venue", district="Narnia")
         self.assertEqual(row["district"], "unknown")
+        self.assertEqual(board_hk.district_from_address("12 North Point Road"), "Eastern")
+        self.assertEqual(board_hk.district_from_address("Somewhere else"), "unknown")
 
     def test_business_address_filter(self) -> None:
         allow = {"boundaries": {"outreach": {"personalAddressesAllowed": False}}}
@@ -115,6 +118,44 @@ class QualifyTests(BoardTestCase):
         self.assertEqual(body["prospect"]["stage"], "parked")
         status, _ = self.call(f"/siu-tin-dei/board/prospects/{a['prospectId']}/merge", "POST", {"into": b["prospectId"]})
         self.assertEqual(status, 200)
+
+    def test_personal_email_not_promoted_to_contact(self) -> None:
+        row, _ = board_prospects.upsert(
+            self.table,
+            name="Hall",
+            type="venue",
+            website="https://hall.example",
+            email="peter.chan.1984@gmail.com",
+        )
+        self.assertNotEqual(row.get("contact"), "peter.chan.1984@gmail.com")
+        self.assertEqual(row.get("contactRejected"), "personal")
+        self.assertIsNone(board_store.get_prospect_by_dedupe(self.table, "gmail.com"))
+
+    def test_type_rewrite_refused_unless_owner(self) -> None:
+        row, _ = board_prospects.upsert(self.table, name="Cafe", type="restaurant", website="https://cafe.example")
+        again, _ = board_prospects.upsert(
+            self.table, name="Cafe", type="venue", website="https://cafe.example", source="intel"
+        )
+        self.assertEqual(again["type"], "restaurant")
+        owner, _ = board_prospects.upsert(
+            self.table, name="Cafe", type="venue", website="https://cafe.example", source="owner"
+        )
+        self.assertEqual(owner["type"], "venue")
+
+    def test_prospect_list_paginates_a_stage(self) -> None:
+        for i in range(30):
+            board_prospects.upsert(
+                self.table, name=f"Hall {i:02d}", type="venue", website=f"https://hall{i}.example"
+            )
+        first = board_prospects.list_for_api(self.table, stage="discovered", limit=20)
+        self.assertEqual(len(first["prospects"]), 20)
+        self.assertTrue(first["nextCursor"])
+        second = board_prospects.list_for_api(
+            self.table, stage="discovered", limit=20, cursor=first["nextCursor"]
+        )
+        self.assertEqual(len(second["prospects"]), 10)
+        ids = {r["prospectId"] for r in first["prospects"] + second["prospects"]}
+        self.assertEqual(len(ids), 30)
 
 
 if __name__ == "__main__":

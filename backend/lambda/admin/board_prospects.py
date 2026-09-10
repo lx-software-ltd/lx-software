@@ -37,6 +37,23 @@ BUSINESS_LOCAL_PARTS = frozenset(
 NEEDS_CONTACT_DAILY_CAP = 20
 OWNER_STAGES = frozenset({"suppressed", "declined", "qualified", "parked"})
 MULTI_LABEL_TLDS = frozenset({"com.hk", "org.hk", "net.hk", "edu.hk", "gov.hk", "idv.hk", "co.uk"})
+PUBLIC_MAILBOX_DOMAINS = frozenset(
+    {
+        "gmail.com",
+        "googlemail.com",
+        "yahoo.com",
+        "hotmail.com",
+        "outlook.com",
+        "live.com",
+        "icloud.com",
+        "me.com",
+        "qq.com",
+        "163.com",
+        "126.com",
+        "ymail.com",
+        "protonmail.com",
+    }
+)
 EMAIL_RE = board_pii.EMAIL_RE
 MAILTO_RE = re.compile(r"mailto:([A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})", re.I)
 
@@ -140,9 +157,12 @@ def upsert(
     if not existing_id and email:
         existing_id = board_store.get_prospect_by_dedupe(table, email)
     now = board_store.now_iso()
+    settings = board_store.load_settings(table)
     if existing_id:
         row = board_store.get_prospect(table, existing_id) or {}
         created = False
+        if source != "owner" and row.get("type"):
+            ptype = str(row.get("type") or ptype)
     else:
         row = {
             "prospectId": board_store.new_id(),
@@ -151,6 +171,7 @@ def upsert(
             "createdAt": now,
         }
         created = True
+    merged_raw = {**(row.get("raw") or {}), **(raw or {})}
     row.update(
         {
             "name": display,
@@ -161,12 +182,18 @@ def upsert(
             "phone": phone or str(row.get("phone") or ""),
             "email": email or str(row.get("email") or ""),
             "placeId": place_id or str(row.get("placeId") or ""),
-            "raw": {**(row.get("raw") or {}), **(raw or {})},
+            "raw": merged_raw,
             "updatedAt": now,
         }
     )
-    if not row.get("contact") and email:
-        row["contact"] = email
+    if email:
+        if _is_business_address(email, allow_personal=_personal_allowed(settings)):
+            if not row.get("contact"):
+                row["contact"] = email
+        else:
+            merged_raw["rejectedEmail"] = email
+            row["raw"] = merged_raw
+            row["contactRejected"] = "personal"
     board_store.put_prospect(table, row)
     _index_keys(table, row)
     return row, created
@@ -197,11 +224,33 @@ def _index_keys(table: Any, row: dict[str, Any]) -> None:
         registrable_domain(str(row.get("website") or "")),
     ]
     contact = str(row.get("contact") or row.get("email") or "")
+    website_domain = registrable_domain(str(row.get("website") or ""))
     if "@" in contact:
-        keys.append(contact.rsplit("@", 1)[1].lower())
+        contact_domain = contact.rsplit("@", 1)[1].lower()
+        if contact_domain == website_domain and not is_public_mailbox_domain(contact_domain):
+            keys.append(contact_domain)
     for key in keys:
-        if key:
+        if key and not is_public_mailbox_domain(str(key)):
             board_store.put_prospect_key(table, key, pid)
+
+
+def is_public_mailbox_domain(domain: str) -> bool:
+    return str(domain or "").strip().lower() in PUBLIC_MAILBOX_DOMAINS
+
+
+def lookup_by_address(table: Any, address: str) -> dict[str, Any] | None:
+    """Exact address first; domain fallback only for non-public mailboxes."""
+    addr = board_pii.normalize_email(address)
+    if not addr:
+        return None
+    pid = board_store.get_prospect_by_dedupe(table, addr)
+    if not pid and "@" in addr:
+        domain = addr.split("@", 1)[1]
+        if not is_public_mailbox_domain(domain):
+            pid = board_store.get_prospect_by_dedupe(table, domain)
+    if not pid:
+        return None
+    return board_store.get_prospect(table, pid)
 
 
 def types_enabled(settings: dict[str, Any]) -> list[str]:
@@ -335,7 +384,10 @@ def find_contact(table: Any, settings: dict[str, Any], prospect: dict[str, Any])
         pages = [website]
         parsed = urlparse(website if "://" in website else f"https://{website}")
         origin = f"{parsed.scheme or 'https'}://{parsed.netloc}"
-        pages.extend([f"{origin}/contact", f"{origin}/contact-us", f"{origin}/enquiry"])
+        if board_crawl.host_is_blocked(parsed.hostname or parsed.netloc):
+            pages = []
+        else:
+            pages.extend([f"{origin}/contact", f"{origin}/contact-us", f"{origin}/enquiry"])
         for url in pages:
             try:
                 fetched = board_crawl.fetch(url)
@@ -506,15 +558,23 @@ def list_for_api(
     ptype: str | None = None,
     district: str | None = None,
     limit: int = 200,
-) -> list[dict[str, Any]]:
+    cursor: str | None = None,
+) -> dict[str, Any]:
     if stage and stage not in BOARD_STAFF_PROSPECT_STAGES:
         raise ProspectError(f"unknown stage {stage}")
-    rows = board_store.list_prospects(table, stage, limit=max(limit, 400))
+    if stage:
+        rows, next_cursor = board_store.list_prospects_page(table, stage, limit=limit, cursor=cursor)
+    else:
+        rows = board_store.list_prospects(table, None, limit=limit)
+        next_cursor = None
     if ptype:
         rows = [r for r in rows if str(r.get("type") or "") == ptype]
     if district:
         rows = [r for r in rows if str(r.get("district") or "") == district]
-    return [public_row(r, duplicates=possible_duplicates(table, r)) for r in rows[:limit]]
+    return {
+        "prospects": [public_row(r) for r in rows[:limit]],
+        "nextCursor": next_cursor,
+    }
 
 
 def needs_contact(table: Any, *, limit: int = 40) -> list[dict[str, Any]]:

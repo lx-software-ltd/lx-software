@@ -42,6 +42,11 @@ def reset(table: Any, name: str, by_sub: str) -> dict[str, Any]:
         "resetAt": board_store.now_iso(),
     }
     board_store.put_breaker(table, name, doc)
+    if name == "budget":
+        try:
+            _fresh_save_staff(table, seniorPaused=False, disabledReason="")
+        except Exception as exc:
+            _log_event("warning", tag="board_breaker_budget_reset_staff", error=str(exc)[:200])
     return doc
 
 
@@ -107,11 +112,13 @@ def note_escalation_after_reply(table: Any, *, channel: str, thread_id: str) -> 
 
 
 def _fresh_save_staff(table: Any, **patch: Any) -> dict[str, Any]:
-    settings = board_store.load_settings(table)
-    staff = dict(settings.get("staff") or {})
-    staff.update(patch)
-    settings["staff"] = board_store.normalize_staff_config(staff)
-    return board_store.save_settings(table, settings)
+    def apply(settings: dict[str, Any]) -> dict[str, Any]:
+        staff = dict(settings.get("staff") or {})
+        staff.update(patch)
+        settings["staff"] = board_store.normalize_staff_config(staff)
+        return settings
+
+    return board_store.save_settings_retry(table, apply)
 
 
 def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
@@ -139,12 +146,16 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
             if not is_tripped(table, "budget"):
                 trip(table, "budget", f"staff spend {spend:.2f} >= daily {daily:.2f}")
                 tripped.append("budget")
-            _fresh_save_staff(table, enabled=False, disabledReason=f"budget {spend:.2f}/{daily:.2f}")
+                _fresh_save_staff(table, enabled=False, disabledReason=f"budget {spend:.2f}/{daily:.2f}")
         elif ratio >= 0.8 and hour < 12:
             if not is_tripped(table, "budget"):
                 trip(table, "budget", f"80% staff budget before noon HKT ({spend:.2f}/{daily:.2f})")
                 tripped.append("budget")
-            _fresh_save_staff(table, seniorPaused=True)
+                _fresh_save_staff(table, seniorPaused=True)
+        elif not is_tripped(table, "budget"):
+            staff = settings.get("staff") or {}
+            if staff.get("seniorPaused") or staff.get("disabledReason"):
+                _fresh_save_staff(table, seniorPaused=False, disabledReason="")
 
     cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
     cutoff_iso = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")

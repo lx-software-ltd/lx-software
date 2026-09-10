@@ -28,6 +28,26 @@ def _enable_staff(table: Any, **staff: Any) -> dict[str, Any]:
     return board_store.save_settings(table, settings)
 
 
+class SsrfTests(BoardTestCase):
+    def test_link_local_and_redirect_refused(self) -> None:
+        with self.assertRaises(Exception):
+            board_crawl.fetch("http://169.254.169.254/")
+        self.assertTrue(board_crawl.host_is_blocked("127.0.0.1"))
+        self.assertTrue(board_crawl.host_is_blocked("169.254.169.254"))
+
+    def test_fetch_page_requires_watchlist(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        settings = _enable_staff(self.table)
+        ctx = type("C", (), {"table": self.table, "settings": settings})()
+        refused = board_intel.op_fetch_page(ctx, {"url": "https://evil.example/"})
+        self.assertIn("watchlist", refused.get("error") or "")
+        board_watch.add_watch(self.table, {"name": "Ok", "kind": "competitor", "urls": ["https://ok.example/home"]})
+        fetched = board_crawl.FetchResult(status=200, final_url="https://ok.example/home", content_type="text/html", text="<p>hi</p>", hash="h")
+        with patch.object(board_crawl, "fetch", return_value=fetched), patch.object(board_crawl, "robots_allows", return_value=True):
+            allowed = board_intel.op_fetch_page(ctx, {"url": "https://ok.example/home"})
+        self.assertEqual(allowed.get("status"), 200)
+
+
 class CrawlHelperTests(unittest.TestCase):
     def test_normalise_strips_counters_dates_and_times(self) -> None:
         raw = "Price 88 updated 2026-09-09 at 14:30:01 visitors 1234567 stay"
@@ -157,6 +177,7 @@ class BriefTests(BoardTestCase):
         os.environ.pop("ASSETS_BUCKET_NAME", None)
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
         self.settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "market-analyst", {"isActive": True})
 
     def test_brief_json_creates_later_action_and_dedupes(self) -> None:
         task = board_staff.create_task(

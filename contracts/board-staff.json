@@ -5,7 +5,7 @@
       "reportsTo": "coo",
       "title": "Partnerships Development",
       "modelTier": "desk",
-      "isActiveDefault": true,
+      "isActiveDefault": false,
       "tools": {
         "research": "read",
         "mail": "act",
@@ -45,7 +45,7 @@
       "reportsTo": "cpo",
       "title": "Market and Competitive Intelligence",
       "modelTier": "senior",
-      "isActiveDefault": true,
+      "isActiveDefault": false,
       "tools": {
         "research": "read",
         "stores": "read",
@@ -60,7 +60,7 @@
       "reportsTo": "cpo",
       "title": "Product Developer",
       "modelTier": "senior",
-      "isActiveDefault": true,
+      "isActiveDefault": false,
       "tools": {
         "product": "propose",
         "stores": "propose",
@@ -75,7 +75,7 @@
       "reportsTo": "cmo",
       "title": "Content Marketer",
       "modelTier": "desk",
-      "isActiveDefault": true,
+      "isActiveDefault": false,
       "tools": {
         "meta": "act",
         "stores": "propose",
@@ -105,7 +105,7 @@
       "reportsTo": "cmo",
       "title": "Growth / Paid Social Specialist",
       "modelTier": "desk",
-      "isActiveDefault": true,
+      "isActiveDefault": false,
       "tools": {
         "meta": "act",
         "web": "read",
@@ -119,7 +119,7 @@
       "reportsTo": "cto",
       "title": "Software Architect",
       "modelTier": "senior",
-      "isActiveDefault": true,
+      "isActiveDefault": false,
       "tools": {
         "github": "propose",
         "aws": "propose",
@@ -143,7 +143,7 @@
       "reportsTo": "cto",
       "title": "Senior Engineer",
       "modelTier": "senior",
-      "isActiveDefault": true,
+      "isActiveDefault": false,
       "tools": {
         "github": "act",
         "code": "act"
@@ -155,7 +155,7 @@
       "reportsTo": "cto",
       "title": "Senior Engineer",
       "modelTier": "senior",
-      "isActiveDefault": true,
+      "isActiveDefault": false,
       "tools": {
         "github": "act",
         "code": "act"
@@ -167,7 +167,7 @@
       "reportsTo": "cio",
       "title": "Data / Analytics Engineer",
       "modelTier": "desk",
-      "isActiveDefault": true,
+      "isActiveDefault": false,
       "tools": {
         "product": "read",
         "web": "read",
@@ -190,7 +190,7 @@
       "reportsTo": "cfo",
       "title": "Bookkeeper / Accountant",
       "modelTier": "desk",
-      "isActiveDefault": true,
+      "isActiveDefault": false,
       "tools": {
         "finance": "act",
         "aws": "read",
@@ -250,7 +250,7 @@
       "reportsTo": "ciso",
       "title": "Security Analyst",
       "modelTier": "desk",
-      "isActiveDefault": true,
+      "isActiveDefault": false,
       "tools": {
         "security": "propose",
         "github": "propose",
@@ -269,23 +269,111 @@
       ]
     }
   ],
-  "modelTiers": ["desk", "senior"],
-  "taskStatuses": ["queued", "running", "review", "returned", "delivered", "needs_owner", "failed", "cancelled"],
-  "taskOrigins": ["event", "duty", "target", "minutes", "chat", "owner"],
-  "deliverableTypes": ["markdown", "csv", "json", "messages", "issues", "pr", "creatives", "prospects"],
-  "holdStatuses": ["scheduled", "executed", "vetoed", "failed", "expired"],
-  "actionClasses": ["internal", "inbound_reply", "outbound_known", "cold_outreach", "publish", "spend", "code_staging", "code_production", "never"],
-  "prospectTypes": ["provider", "venue", "community", "school", "restaurant", "media"],
-  "prospectStages": ["discovered", "qualified", "parked", "contacted", "replied", "onboarding", "listed", "declined", "unresponsive", "suppressed"],
-  "watchKinds": ["competitor", "directory", "media", "analogue", "event-source", "candidate"],
-  "contentChannels": ["facebook", "instagram", "instagram_story", "newsletter", "seo", "assisted_xiaohongshu", "assisted_fb_group"],
-  "contentStatuses": ["idea", "drafted", "creative", "scheduled", "published", "vetoed", "failed"],
-  "newsletterLists": ["parents", "providers"],
+  "modelTiers": [
+    "desk",
+    "senior"
+  ],
+  "taskStatuses": [
+    "queued",
+    "running",
+    "review",
+    "delivered",
+    "needs_owner",
+    "failed",
+    "cancelled"
+  ],
+  "taskOrigins": [
+    "event",
+    "duty",
+    "target",
+    "minutes",
+    "chat",
+    "owner",
+    "task"
+  ],
+  "deliverableTypes": [
+    "markdown",
+    "csv",
+    "json",
+    "messages",
+    "issues",
+    "pr",
+    "creatives",
+    "prospects"
+  ],
+  "holdStatuses": [
+    "scheduled",
+    "executed",
+    "vetoed",
+    "failed",
+    "expired"
+  ],
+  "actionClasses": [
+    "internal",
+    "inbound_reply",
+    "outbound_known",
+    "cold_outreach",
+    "publish",
+    "spend",
+    "code_staging",
+    "code_production",
+    "never"
+  ],
+  "prospectTypes": [
+    "provider",
+    "venue",
+    "community",
+    "school",
+    "restaurant",
+    "media"
+  ],
+  "prospectStages": [
+    "discovered",
+    "qualified",
+    "parked",
+    "contacted",
+    "replied",
+    "onboarding",
+    "listed",
+    "declined",
+    "unresponsive",
+    "suppressed"
+  ],
+  "watchKinds": [
+    "competitor",
+    "directory",
+    "media",
+    "analogue",
+    "event-source",
+    "candidate"
+  ],
+  "contentChannels": [
+    "facebook",
+    "instagram",
+    "instagram_story",
+    "newsletter",
+    "seo",
+    "assisted_xiaohongshu",
+    "assisted_fb_group"
+  ],
+  "contentStatuses": [
+    "idea",
+    "drafted",
+    "creative",
+    "scheduled",
+    "published",
+    "vetoed",
+    "failed"
+  ],
+  "newsletterLists": [
+    "parents",
+    "providers"
+  ],
   "limits": {
     "staffStepMaxSeconds": 150,
     "maxStepsPerTask": 12,
     "maxRevisions": 2,
-    "maxRunningTasksDefault": 6,
+    "maxRunningTasksDefault": 3,
     "staffTaskStuckSeconds": 900,
     "taskBudgetDeskUsd": 1.0,
     "taskBudgetSeniorUsd": 3.0,
@@ -300,7 +388,7 @@
     "tickIntervalMinutes": 5,
     "rampMinActions": 30,
     "rampPromoteMaxVetoRate": 0.02,
-    "rampDemoteVetoRate": 0.10,
+    "rampDemoteVetoRate": 0.1,
     "rampWindowDays": 14,
     "rampDemoteWindowActions": 20,
     "reviewSampleSize": 8,
@@ -308,7 +396,11 @@
     "outreachDailyCapStep": 20,
     "outreachDailyCapMax": 100,
     "outreachCapStepDays": 7,
-    "outreachSequenceDays": [0, 4, 10],
+    "outreachSequenceDays": [
+      0,
+      4,
+      10
+    ],
     "outreachMaxTouches": 3,
     "bounceRateBreaker": 0.05,
     "complaintRateBreaker": 0.001,

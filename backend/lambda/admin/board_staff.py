@@ -53,7 +53,7 @@ class StaffError(ValueError):
 
 def env_enabled() -> bool:
     env = (os.environ.get("BOARD_STAFF_ENABLED") or "").strip().lower()
-    return env not in ("0", "false", "no", "off")
+    return env in ("1", "true", "yes", "on")
 
 
 def enabled(settings: dict[str, Any]) -> bool:
@@ -351,6 +351,8 @@ def run_step(payload: dict[str, Any]) -> None:
         return
     table = board_store.records_table()
     settings = board_store.load_settings(table)
+    if not enabled(settings):
+        return
     task_id = str(payload.get("taskId") or "")
     wanted = int(payload.get("step") or 0)
     task = board_store.get_task(table, task_id)
@@ -358,7 +360,7 @@ def run_step(payload: dict[str, Any]) -> None:
         return
     if wanted != int(task.get("step") or 0) + 1:
         return
-    if wanted > 1 and not board_store.claim_task_step(table, task_id, wanted - 1):
+    if not board_store.claim_task_step(table, task_id, wanted - 1):
         return
     try:
         board_budget.check_budget(table, settings)
@@ -432,12 +434,10 @@ def run_step(payload: dict[str, Any]) -> None:
     task = board_store.get_task(table, task_id) or task
     if task.get("status") != "running":
         return
-    task["usage"] = _task_usage_add(task, usage)
-    if task.get("_finished"):
-        return
     latest = board_store.get_task(table, task_id) or task
     if latest.get("status") == "review":
         return
+    latest["usage"] = _task_usage_add(latest, usage)
     note = (result.text or "").strip()
     if note:
         combined = _append_scratchpad(latest, note)
@@ -490,8 +490,10 @@ def _origin_from_ctx(ctx: board_tools.ToolContext) -> str:
     if ctx.kind == "meeting":
         return "minutes"
     if ctx.kind == "task":
+        return "task" if "task" in BOARD_STAFF_TASK_ORIGINS else "chat"
+    if ctx.kind == "chat":
         return "chat"
-    return "chat" if ctx.kind == "chat" else "chat"
+    return "chat"
 
 
 def act_guard_staff_assign(ctx: board_tools.ToolContext, _args: dict[str, Any]) -> str | None:
@@ -594,11 +596,11 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
             f"deliverable is larger than {BOARD_STAFF_DELIVERABLE_MAX_BYTES} bytes; split it"
         )
     evidence = [str(x) for x in (args.get("evidence") or []) if isinstance(x, (str, int))]
-    known = {
-        str(c.get("callId"))
-        for c in board_store.list_tool_calls(ctx.table, limit=200)
-        if (c.get("context") or {}).get("taskId") == ctx.task_id or c.get("taskId") == ctx.task_id
-    }
+    known = {str(c.get("callId")) for c in board_store.list_tool_calls_for_task(ctx.table, ctx.task_id)}
+    for step in board_store.list_task_steps(ctx.table, ctx.task_id):
+        for cid in step.get("callIds") or []:
+            if cid:
+                known.add(str(cid))
     evidence = [e for e in evidence if e in known]
     confidence = str(args.get("confidence") or "medium")
     flags = list(task.get("flags") or [])
@@ -623,10 +625,11 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
         "updatedAt": now,
     }
     board_store.put_task(ctx.table, updated)
-    board_async.invoke_async(
-        {"internal": "board_staff_review", "boardKey": "siuTinDei", "taskId": ctx.task_id},
-        fallback=run_review,
-    )
+    if enabled(ctx.settings):
+        board_async.invoke_async(
+            {"internal": "board_staff_review", "boardKey": "siuTinDei", "taskId": ctx.task_id},
+            fallback=run_review,
+        )
     return {"ok": True, "status": "review", "deliverableKey": key}
 
 
@@ -635,6 +638,8 @@ def run_review(payload: dict[str, Any]) -> None:
         return
     table = board_store.records_table()
     settings = board_store.load_settings(table)
+    if not enabled(settings):
+        return
     task_id = str(payload.get("taskId") or "")
     task = board_store.get_task(table, task_id)
     if not task or task.get("status") != "review":
@@ -647,11 +652,7 @@ def run_review(payload: dict[str, Any]) -> None:
     raw = _blob_get(str(task.get("deliverableKey") or "")).decode("utf-8", errors="replace")
     if len(raw) > 12000:
         raw = raw[:12000] + "\n[… truncated]"
-    calls = [
-        c
-        for c in board_store.list_tool_calls(table, limit=200)
-        if (c.get("context") or {}).get("taskId") == task_id or c.get("taskId") == task_id
-    ]
+    calls = board_store.list_tool_calls_for_task(table, task_id)
     evidence_lines = [
         f"- {c.get('op')}: {c.get('summary')}" for c in calls if str(c.get("callId")) in set(task.get("evidence") or [])
     ]
@@ -677,15 +678,21 @@ def run_review(payload: dict[str, Any]) -> None:
         tag="board_staff_review",
     )
     board_store.add_staff_usage_day(table, reviewer_id, {**(completion.usage or {}), "calls": 1})
-    verdict = "accept"
+    verdict = "return"
     notes = ""
+    parsed_ok = False
     try:
-        parsed = json.loads(completion.text or "{}")
-        if str(parsed.get("verdict") or "").lower() == "return":
-            verdict = "return"
+        parsed = json.loads(completion.text or "")
+        raw_verdict = str(parsed.get("verdict") or "").lower()
+        if raw_verdict in ("accept", "return"):
+            verdict = raw_verdict
+            parsed_ok = True
         notes = str(parsed.get("notes") or "")[:2000]
     except json.JSONDecodeError:
         notes = (completion.text or "")[:2000]
+    if not parsed_ok:
+        _log_event("warning", tag="board_staff_review_unparsed", taskId=task_id)
+        verdict = "return"
     apply_review(table, settings, task, verdict=verdict, notes=notes, by="manager")
 
 
@@ -816,16 +823,14 @@ def handle_tick(event: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True, "skipped": "other_board"}
     table = board_store.records_table()
     settings = board_store.load_settings(table)
-    if not enabled(settings):
-        return {"ok": True, "skipped": "disabled"}
     try:
         import board_holds
 
-        board_holds.execute_due(table, settings, board_store.now_iso())
-    except ImportError:
-        pass
+        board_holds.expire_stale(table, settings, board_store.now_iso())
     except Exception as exc:
-        _log_event("error", tag="board_holds_tick_failed", error=str(exc)[:300])
+        _log_event("warning", tag="board_holds_expire_failed", error=str(exc)[:300])
+    if not enabled(settings):
+        return {"ok": True, "skipped": "disabled"}
     try:
         import board_breakers
 
@@ -837,6 +842,14 @@ def handle_tick(event: dict[str, Any]) -> dict[str, Any]:
         pass
     except Exception as exc:
         _log_event("error", tag="board_breakers_tick_failed", error=str(exc)[:300])
+    try:
+        import board_holds
+
+        board_holds.execute_due(table, settings, board_store.now_iso())
+    except ImportError:
+        pass
+    except Exception as exc:
+        _log_event("error", tag="board_holds_tick_failed", error=str(exc)[:300])
     try:
         import board_review
 

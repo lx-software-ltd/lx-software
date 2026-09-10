@@ -109,6 +109,8 @@ class DutyRunTests(BoardTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.settings = _enable_staff(self.table)
+        for seat in ("accountant", "security-analyst", "architect", "content-marketer", "market-analyst"):
+            board_store.save_staff_override(self.table, seat, {"isActive": True})
 
     def test_duties_disabled_creates_nothing(self) -> None:
         settings = _enable_staff(self.table, dutiesEnabled=False)
@@ -176,6 +178,7 @@ class OpsTriageTests(BoardTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.settings = _enable_staff(self.table, dutiesEnabled=False)
+        board_store.save_staff_override(self.table, "security-analyst", {"isActive": True})
 
     def test_new_alarm_goes_to_cto_when_architect_inactive(self) -> None:
         board_store.save_staff_override(self.table, "architect", {"isActive": False})
@@ -236,6 +239,7 @@ class DunningHandOffTests(BoardTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.settings = _enable_staff(self.table, dutiesEnabled=False)
+        board_store.save_staff_override(self.table, "accountant", {"isActive": True})
 
     def test_staff_accountant_gets_a_task_not_an_approval(self) -> None:
         aging = {"buckets": {"d7": [{"id": "inv-d7", "number": "STD-2026-0007", "daysOverdue": 7}]}}

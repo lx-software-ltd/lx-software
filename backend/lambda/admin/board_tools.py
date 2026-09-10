@@ -156,6 +156,7 @@ class ToolOp:
     level_floor: str | None = None
     # Writes that the plan keeps in Approvals even when the member is at ``act``.
     always_propose: bool = False
+    action_class: str | None = None
 
     @property
     def is_write(self) -> bool:
@@ -611,6 +612,15 @@ def _outreach_send(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     import board_outreach
 
     return board_outreach.op_send(ctx, args)
+
+
+def _outreach_personalisation_guard(_ctx: ToolContext, args: dict[str, Any]) -> str | None:
+    import board_policy
+
+    text = str(args.get("personalisation") or "")
+    if board_policy.PROMISE_RE.search(text):
+        return "the draft promises a refund, a guarantee, or to hold a place"
+    return None
 
 
 def _outreach_suppress(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
@@ -2012,6 +2022,7 @@ def build_registry() -> dict[str, ToolOp]:
             run=_outreach_send,
             summarize=_summ("Sent outreach"),
             contexts=("chat", "meeting", "task"),
+            act_guard=_outreach_personalisation_guard,
         ),
         ToolOp(
             name="outreach_suppress",
@@ -2157,6 +2168,7 @@ def build_registry() -> dict[str, ToolOp]:
             summarize=_summ("Merged a pull request to staging"),
             contexts=("chat", "meeting", "task"),
             act_guard=_code_merge_guard,
+            always_propose=True,
         ),
         ToolOp(
             name="code_promote",
@@ -2173,6 +2185,7 @@ def build_registry() -> dict[str, ToolOp]:
             summarize=_summ("Proposed a staging promotion"),
             contexts=("chat", "meeting", "task"),
             always_propose=True,
+            action_class="code_production",
         ),
         ToolOp(
             name="staff_assign",
@@ -2601,7 +2614,8 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         invalid = str(exc)
         # Keep the (bounded) raw arguments so the audit row shows what was asked.
         arguments = raw if len(json.dumps(raw, default=str)) <= MAX_ARGUMENT_CHARS else {}
-    if ctx.actor == "persona":
+    safety_actor = ctx.actor in ("persona", "hold")
+    if safety_actor:
         seats = None
         if ctx.seat_id:
             import board_staff
@@ -2619,14 +2633,20 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
     summary = op.summarize(arguments)
     approval_id = ""
     guard_reason = ""
-    if op.is_write and not invalid and level == "act" and ctx.actor == "persona" and op.act_guard is not None:
+    hold_fail = ""
+    if ctx.actor == "hold":
+        if not tools_enabled(ctx.settings):
+            hold_fail = "tools are switched off"
+        elif level != "act":
+            hold_fail = "level changed"
+    if op.is_write and not invalid and not hold_fail and level == "act" and safety_actor and op.act_guard is not None:
         try:
             guard_reason = str(op.act_guard(ctx, arguments) or "")
         except Exception as exc:  # pragma: no cover - a guard bug must fail closed
             _log_event("error", tag="board_tool_guard_crashed", op=op.name, error=str(exc)[:300])
             guard_reason = "the safety check could not be completed"
     breaker_error: dict[str, Any] | None = None
-    if op.is_write and not invalid and ctx.actor == "persona":
+    if op.is_write and not invalid and not hold_fail and safety_actor:
         try:
             import board_staff as _staff
             import board_breakers
@@ -2635,7 +2655,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
                 breaker_error = board_breakers.write_blocked(ctx.table, op)
         except Exception as exc:
             _log_event("warning", tag="board_breaker_check_failed", op=op.name, error=str(exc)[:200])
-            breaker_error = None
+            guard_reason = guard_reason or "the safety check could not be completed"
     hold_doc: dict[str, Any] | None = None
     if (
         op.is_write
@@ -2643,16 +2663,29 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         and not breaker_error
         and level == "act"
         and not guard_reason
+        and not hold_fail
         and ctx.actor == "persona"
     ):
         try:
             import board_holds
 
             hold_doc = board_holds.maybe_hold(ctx, op, arguments, summary=summary)
-        except Exception as exc:  # pragma: no cover - hold bugs must not block today's path
+        except Exception as exc:  # pragma: no cover - hold bugs must fail closed (R-02)
             _log_event("error", tag="board_hold_check_failed", op=op.name, error=str(exc)[:300])
-            hold_doc = None
-    if not allows(level, op.min_level):
+            guard_reason = guard_reason or "the safety check could not be completed"
+    class_key = ""
+    action_class = ""
+    try:
+        import board_holds as _holds_for_class
+
+        action_class, class_key = _holds_for_class.classify(op, ctx, arguments, ctx.settings)
+    except Exception:
+        class_key = ""
+        action_class = ""
+    if ctx.actor == "hold" and (hold_fail or guard_reason or breaker_error):
+        reason = hold_fail or guard_reason or str((breaker_error or {}).get("error") or "blocked")
+        outcome = ToolOutcome(status="error", result={"error": reason}, summary=summary)
+    elif not allows(level, op.min_level):
         outcome = ToolOutcome(
             status="error",
             result={"error": f"{op.name} is not available to you at level '{level}'."},
@@ -2677,7 +2710,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
             },
             summary=f"Scheduled {summary} (executes {execute_at} unless vetoed)",
         )
-    elif op.is_write and (level != "act" or guard_reason or (op.always_propose and ctx.actor == "persona")):
+    elif op.is_write and ctx.actor != "hold" and (level != "act" or guard_reason or (op.always_propose and ctx.actor == "persona")):
         approval = create_approval(ctx, op, arguments, summary=summary, downgrade_reason=guard_reason)
         approval_id = str(approval["approvalId"])
         message = (
@@ -2705,6 +2738,15 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
                         board_policy.record_reply(ctx.table, op.name, arguments)
                 except Exception:
                     pass
+                if op.is_write and ctx.actor == "persona" and class_key:
+                    try:
+                        import board_holds as _holds_ramp
+
+                        hours = _holds_ramp.hold_hours(ctx.table, ctx.settings, action_class, class_key)
+                        if hours <= 0:
+                            _holds_ramp.record_ramp(ctx.table, ctx.settings, class_key, vetoed=False)
+                    except Exception:
+                        pass
         except (
             board_github.GitHubSnapshotError,
             board_mail.MailError,
@@ -2747,6 +2789,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
             "durationMs": outcome.duration_ms,
             "taskId": ctx.task_id,
             "seatId": ctx.seat_id,
+            "classKey": class_key,
         },
     )
     outcome.call_id = str(record["callId"])

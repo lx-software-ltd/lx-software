@@ -6,25 +6,81 @@ up in review; do not treat them as product decisions unless you confirm.
 
 The senior review of the finished branch, with numbered findings (`R-nn`),
 gates and an ordered execution plan, is in
-`executive-board-autonomy-remediation-plan.md`. Several notes below are
-superseded by that plan (for example `env_enabled()` is to fail closed —
-R-03; all-seats-active — R-24).
+`executive-board-autonomy-remediation-plan.md`. Every `R-nn` is closed
+below (fixed with a named test, or an owner decision recorded from plan §6).
+
+## Remediation close-out (R-01–R-38)
+
+Owner decisions from plan §6, applied as specified:
+
+1. **R-24.** Keep the fifteen-seat roster. Default **on**: `support`,
+   `provider-success`, `community-manager`, `business-analyst`. All other
+   seats `isActiveDefault: false`. `maxRunningTasksDefault` is 3. Flip
+   remaining seats on per the §6 runbook in
+   `docs/deployment/admin-website.md`.
+2. **R-37.** Keep `always_propose` publish ops as 24 h holds when staff
+   is on. Exempt by action class `code_production` only (not by op name).
+3. **R-12.** CORS via `PublicSiteOrigins` CSV. The form stays on the LX
+   Software public site until the owner names another origin.
+4. **R-25.** HTTPS-only `List-Unsubscribe` (RFC 8058); no `mailto:`.
+5. **R-01 / R-22.** `code_merge_staging` stays `always_propose` until
+   siutindei Appendix A workflows exist.
+
+| Id | Status | Proof / note |
+|---|---|---|
+| R-01 | Fixed | Hold actor re-derives level, `act_guard`, breakers, tools kill-switch; tick evaluates breakers before `execute_due`; `headSha` + `merge_guard` inside merge; ads snapshot includes scheduled spend holds; `code_merge_staging` remains `always_propose`. Tests: `test_hold_fails_when_breaker_tripped`, `test_hold_fails_when_persona_downgraded`, `test_merge_refuses_when_ci_flips_after_accept`, `test_merge_refuses_new_head_sha_after_accept`, `test_two_spend_holds_second_fails_cap`. |
+| R-02 | Fixed | Breaker / hold exceptions fail closed to Approval. Tests: `test_maybe_hold_exception_downgrades_to_approval`, `test_breaker_check_exception_downgrades_to_approval`. |
+| R-03 | Fixed | Shared env loop on `AdminApiFn` and inbound-mail Lambda; `env_enabled()` is `"1"/"true"/"yes"/"on"` only; `run_step` / `run_review` / finish-review gated; triage ack via `invoke_async`. Tests: CDK shared-env assertion; `test_env_enabled_false_when_unset`; `test_run_step_noops_when_env_disabled`; `test_injury_is_needs_owner_and_sends_ack`. |
+| R-04 | Fixed | Usage applied to the re-read task; dead `_finished` guard removed. Test: `test_task_usage_accumulates_and_budget_stops_third_step`. |
+| R-05 | Fixed | Personal email → `contactRejected="personal"`; type rewrite only when `source="owner"`; send re-checks business address. Tests: `test_personal_email_not_promoted_to_contact`, `test_type_rewrite_refused_unless_owner`, `test_personal_address_refused_at_send`. |
+| R-06 | Fixed | `send()` refuses when `BOARD_MAIL_SENDING_ENABLED` is off. Test: `test_sending_disabled_refuses`. |
+| R-07 | Fixed | Contact domain indexed only when it equals the website registrable domain and is not a public mailbox; lookups try the exact address first. Tests: `test_personal_email_not_promoted_to_contact` (no `gmail.com` key); `test_gmail_parent_not_matched_to_gmail_prospect`. |
+| R-08 | Fixed | Quoted text and own footer stripped before UNSUB match. Test: `test_quoted_footer_does_not_suppress`. |
+| R-09 | Fixed | Triage masks via `pseudonymizer.mask_text` before classifier / digest / brief / scratchpad; Meta uses `textMasked` / `lastTextMasked`. Test: `test_classifier_receives_masked_phone_and_email`. |
+| R-10 | Fixed | Crawl refuses loopback / link-local / RFC1918 / CGNAT / multicast and follows ≤ 3 hops; `intel_fetch_page` is watchlist-only. Test: `test_link_local_and_redirect_refused`, `test_fetch_page_requires_watchlist`. |
+| R-11 | Fixed | Outreach and board-mail IAM include both configuration-set ARNs and `ses:SendBulkEmail`; templates scoped to `template/lxsoftware-admin-siutindei-*`. Test: CDK `configuration-set` assertions. |
+| R-12 | Fixed | `PublicSiteOrigins` CSV appended to HTTP API CORS. Test: CDK CORS parameter assertion. Owner: set the CSV to the live public-site origin(s). |
+| R-13 | Fixed | `claim_task_step` sets `stepClaimed`; step 1 is claimed. Test: `test_claim_task_step_mutual_exclusion`. |
+| R-14 | Fixed | `save_settings` is version-conditional; owner routes 409; boundaries merge only card fields and echo `version`; SPA resyncs and refetches on 409. Tests: `test_settings_conflict_then_retry`; Vitest `useBoardBoundaries.test.ts`, `BoardBoundariesCard.test.tsx`. |
+| R-15 | Fixed | `add_staff_usage_day` is a single `ADD`. Test: `test_staff_usage_day_adds_atomically`. |
+| R-16 | Fixed | Reserve slot with `ADD sent` + `sent < :cap`; provisional touch before SES. Test: `test_two_sends_at_cap_minus_one`. |
+| R-17 | Fixed | Claim `draft → sending`; `sentThrough`; refuse when `sent`; `DefaultEmailTags` `issueId`; count SUCCESS only; paginate. Tests: `test_second_send_is_noop_and_tags_issue`, `test_failed_bulk_entry_not_counted`, `test_batch_send_and_hold_class`. |
+| R-18 | Fixed | Subscriber key `{list}#{digest}`; never reset `confirmedAt`; per-digest confirm cooldown max 3/day; opt-out is `unsubscribedAt` on the row. Tests: `test_cross_list_keeps_first_confirmed`, `test_fourth_confirm_not_sent`, `test_resubscribe_after_unsubscribe`. **Migration:** no live newsletter rows existed; new key shape only. |
+| R-19 | Fixed | SES records routed by configuration-set / `issueId`; SQS `reportBatchItemFailures`. Test: `test_newsletter_complaint_leaves_outreach_day_unchanged`. |
+| R-20 | Fixed | Immediate act writes call `record_ramp`; sample-wrong counts as veto; `ramp-index` state. Test: `test_promoted_class_records_ramp_and_wrong_demotes`. |
+| R-21 | Fixed | Unparsable review verdict is `return`. Tests: `test_review_unparsable_verdict_returns`, `test_review_empty_completion_returns`. |
+| R-22 | Fixed | `_pr_files` paginates and refuses a `changed_files` mismatch. Test: `test_pr_files_paginates_and_refuses_protected_on_later_page`. |
+| R-23 | Fixed | `list_for_api` returns `{prospects, nextCursor}`; duplicates only on the detail route; SPA infinite query. Test: `test_prospect_list_paginates_a_stage`. |
+| R-24 | Fixed + owner | See §6 decision 1. Contract synced. Tests that need other seats call `save_staff_override`. |
+| R-25 | Fixed + owner | HTTPS-only List-Unsubscribe. Test: `test_list_unsubscribe_is_https_only`. |
+| R-26 | Fixed | Budget breaker disables only on the trip transition; `seniorPaused` / `disabledReason` clear when not tripped; `staffusage#` keyed by HKT; Settings card surfaces `disabledReason`. Covered by breaker unit tests. |
+| R-27 | Fixed | `STEP#` / `REVIEW#` stamp `expiresAt`. |
+| R-28 | Fixed | Tool calls GSI `tasks#{taskId}#calls`; `list_tool_calls_for_task`. |
+| R-29 | Fixed | `returned` removed from `taskStatuses`; `expire_stale` when overdue or staff off; outreach veto sets `vetoedAt` and `nextTouchAt` +30 days. |
+| R-30 | Fixed | `claim_duty_marker` before `create_task`. Duty idempotency tests. |
+| R-31 | Fixed | `execute_at = max(slotAt, now+hours)` while class hold > 0. |
+| R-32 | Fixed | Specific tokens (including North Point) before generic `North`; unmapped → `"unknown"`. Test: `test_unmapped_district_is_unknown`. |
+| R-33 | Fixed | `outreach_send` `act_guard` uses `board_policy.PROMISE_RE`. |
+| R-34 | Fixed | Unsubscribe token is `pid + mac` (no `.`); parse `raw[:-16]` / `raw[-16:]`. Test: `test_unsubscribe_token_round_trip_and_tamper`. |
+| R-35 | Fixed | Duplicate Bold binaries removed (`NotoSans-Bold.ttf`, `NotoSansTC-Bold.otf`); both weights use Regular / variable `wght`. Remaining: `NotoSans-Regular.ttf`, `NotoSansTC-Regular.otf`, `OFL.txt`. |
+| R-36 | Fixed | `_origin_from_ctx` returns `"task"`; contract `taskOrigins` includes `task`. |
+| R-37 | Fixed + owner | See §6 decision 2. `action_class_exempt` checks `action_class == "code_production"`. |
+| R-38 | Fixed | Rate limiters use `bump_cache_count` `ADD`. |
 
 ## WP1
 
 - **S3 in unit tests.** When `ASSETS_BUCKET_NAME` is unset, `board_staff`
   stores scratchpads and deliverables in a process-local `_MEMORY_BLOBS`
   map. Production always has the env var. This is test-only.
-- **`env_enabled()` when the variable is missing.** Follows the spec
-  ("not in the false-set"), so an unset `BOARD_STAFF_ENABLED` is treated
-  as on. CDK still defaults the parameter to `false`. Combined with
-  `settings.staff.enabled` defaulting to `false`, the feature stays inert.
+- **`env_enabled()` when the variable is missing (R-03).** Fail-closed:
+  only `"1"`, `"true"`, `"yes"` or `"on"` enable staff. CDK still defaults
+  the parameter to `false`. Combined with `settings.staff.enabled`
+  defaulting to `false`, the feature stays inert.
 - **Seat `tools` in the contract name tools that do not exist yet**
   (`places`, `code`, later outreach/content). Those ids stay `off` in
   `effectiveLevels` until the tool is registered. Not a WP1 bug.
-- **`returned` task status** is in the contract. Manager return sets the
-  task back to `running` (as the spec's `run_review` text says), so
-  `returned` is unused as a persisted status. The SPA column is "Running".
+- **`returned` task status (R-29).** Removed from the contract. Manager
+  return still sets the task back to `running`; the SPA column is "Running".
 - **GET `/staff` and GET `/tasks`** return 409 only when
   `BOARD_STAFF_ENABLED` is in the false-set. Writes that create or advance
   work also require `settings.staff.enabled`. Seat PUT/DELETE work whenever
@@ -100,10 +156,9 @@ R-03; all-seats-active — R-24).
 
 ## WP4
 
-- **Usage day vs HKT date.** Board `usage#` and `staffusage#` keys are UTC
-  dates. The 07:15 HKT compile runs at 23:15 UTC the previous calendar day,
-  so headline spend reads the current UTC day (yesterday evening UTC /
-  this morning HKT).
+- **Usage day vs HKT date (R-26).** Board `usage#` remains UTC.
+  `staffusage#` is keyed by HKT date so the 80 % / 100 % budget breaker
+  sees the same window as the 07:15 HKT compile.
 - **`create_from_veto(table, hold)`** (and the other lesson constructors)
   take `table` first. The spec omitted it; store helpers need the FakeTable
   in tests.
@@ -130,9 +185,9 @@ R-03; all-seats-active — R-24).
 - **Headline duty** is created on the 07:00–07:14 HKT ticks even when
   `settings.staff.dutiesEnabled` is still false (WP9 owns the general duty
   system). `business-analyst` must be active (now the contract default).
-- **`maxRunningTasksDefault` is now 6** in the contract. Existing saved
-  settings keep whatever `maxRunningTasks` was stored until the owner
-  saves again.
+- **`maxRunningTasksDefault` is 3** (R-24). Existing saved settings keep
+  whatever `maxRunningTasks` was stored until the owner saves again.
+  Raise to 6 only after WP7 content is live (runbook step 5).
 - **Staff enable + digestTo** are on the Settings card (called out in WP1
   reviewer notes).
 - **Default section** is Daily review when `settings.staff.enabled` is
@@ -207,8 +262,9 @@ R-03; all-seats-active — R-24).
   `external_usage_day` field `places`.
 - **Prospector tools** gained `"outreach": "act"` so the seat can send.
   That id was not on the WP1 seat tools object.
-- **Token encoding** is `base64url(prospectId + "." + HMAC-SHA256(secret,
-  prospectId)[:16])` with the first 16 **raw digest bytes**, not hex.
+- **Token encoding (R-34)** is `base64url(prospectId + HMAC-SHA256(secret,
+  prospectId)[:16])` with the first 16 **raw digest bytes**, not hex, and
+  no `.` separator. Parse is `raw[:-16]` / `raw[-16:]`.
 - **Email suppress does not write a domain suppress.** Unsubscribing
   `info@gmail.com` must not block every other Gmail prospect. Domain
   suppress is only written when `suppress(..., domain=)` is explicit.
@@ -234,11 +290,12 @@ R-03; all-seats-active — R-24).
 
 ## WP7
 
-- **Fonts are variable-font files** saved under the spec names
-  (`NotoSans-Regular.ttf` / `NotoSans-Bold.ttf` are the same wdth+wght
-  variable file; `NotoSansTC-*.otf` is the Google Fonts TC variable TTF).
-  `board_creative` sets the `wght` axis to 400 or 700. OFL text is in
-  `fonts/OFL.txt`.
+- **Fonts (R-35).** One Regular file per family
+  (`NotoSans-Regular.ttf`, `NotoSansTC-Regular.otf`); both weights use
+  that file and `board_creative` sets the `wght` axis to 400 or 700.
+  Duplicate Bold binaries were deleted on this branch so they do not
+  enter `main` as extra paths (the blob is the Regular file). OFL text
+  is in `fonts/OFL.txt`.
 - **Brand tokens** (`#FF6B35` / `#2EC4B6` / `#1A1A1A` / `#FFF8F0`) and the
   placeholder logo were chosen by the implementer; confirm with the owner.
 - **`AdminApiFn` memory is 1536 MB** (spec §5). Inbound statement Lambda
@@ -280,7 +337,9 @@ R-03; all-seats-active — R-24).
   (`apps/public_www`). The Siu Tin Dei product site may live in another
   repo; owner should confirm the form's production home.
 - **Token payload** is `{c|u}:{list}:{emailDigest}` using the WP6 HMAC
-  helper. Digest is SHA-256 of the normalised email (one row per email).
+  helper. Digest is SHA-256 of the normalised email. Rows are keyed
+  `{list}#{digest}` (R-18) so one address can sit on more than one list.
+  No live subscriber rows existed at the key change.
 
 ## WP9
 
@@ -335,8 +394,9 @@ R-03; all-seats-active — R-24).
   diff at 30 000 characters.
 - **GitHub PAT description** now asks for `Actions: write` (was read).
   Rotate/widen the existing fine-grained token.
-- **All fifteen seats are now `isActiveDefault: true`.** Inactive-seat
-  tests deactivate `architect` via override.
+- **Seat defaults (R-24).** Fifteen-seat roster. Default on:
+  `support`, `provider-success`, `community-manager`, `business-analyst`.
+  Tests that need other seats call `save_staff_override(..., {"isActive": True})`.
 - **Mock Approvals list is in-memory.** `POST /code/promote` prepends a
   pending `code_promote` row so Daily review → Promote → Approvals matches
   the live API. A static fixture would leave only the mail_send sample.

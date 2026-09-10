@@ -134,6 +134,17 @@ export function BoardPipelineSection() {
           ))
         )}
       </AdminDataTable>
+      {pipeline.hasNextPage ? (
+        <div>
+          <button
+            type="button"
+            className="btn btn-outline-secondary btn-sm"
+            onClick={() => void pipeline.fetchNextPage()}
+          >
+            Load more
+          </button>
+        </div>
+      ) : null}
 
       {selected ? (
         <ProspectDrawer

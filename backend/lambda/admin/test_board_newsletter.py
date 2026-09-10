@@ -140,7 +140,9 @@ class NewsletterTests(BoardTestCase):
             None,
         )
         self.assertEqual(out["statusCode"], 200)
-        self.assertTrue(board_outreach.is_suppressed(self.table, "parent@example.com"))
+        row = board_store.get_newsletter_sub(self.table, digest, "parents")
+        self.assertTrue((row or {}).get("unsubscribedAt"))
+        self.assertFalse(board_outreach.is_suppressed(self.table, "parent@example.com"))
         issue = board_newsletter.draft_issue(self.table, self.settings, list_name="parents", markdown="# Bye")
         refused = board_newsletter.send_issue(
             self.table, self.settings, issue_id=issue["issueId"], list_name="parents"
@@ -221,6 +223,198 @@ class NewsletterTests(BoardTestCase):
         )
         self.assertEqual(action, "publish")
         self.assertEqual(key, "publish:newsletter")
+
+    def test_second_send_is_noop_and_tags_issue(self) -> None:
+        digest = board_outreach.suppress_digest("once@example.com")
+        board_store.put_newsletter_sub(
+            self.table,
+            digest,
+            "parents",
+            {
+                "digest": digest,
+                "email": "once@example.com",
+                "list": "parents",
+                "lang": "en",
+                "confirmedAt": board_store.now_iso(),
+                "createdAt": board_store.now_iso(),
+            },
+        )
+        issue = board_newsletter.draft_issue(self.table, self.settings, list_name="parents", markdown="# Once")
+        first = board_newsletter.send_issue(self.table, self.settings, issue_id=issue["issueId"], list_name="parents")
+        second = board_newsletter.send_issue(self.table, self.settings, issue_id=issue["issueId"], list_name="parents")
+        self.assertTrue(first.get("ok"))
+        self.assertTrue(second.get("noop"))
+        self.assertEqual(second.get("sent"), 0)
+        self.assertEqual(self.ses.bulk[0]["DefaultEmailTags"], [{"Name": "issueId", "Value": issue["issueId"]}])
+
+    def test_failed_bulk_entry_not_counted(self) -> None:
+        digest = board_outreach.suppress_digest("fail@example.com")
+        board_store.put_newsletter_sub(
+            self.table,
+            digest,
+            "parents",
+            {
+                "digest": digest,
+                "email": "fail@example.com",
+                "list": "parents",
+                "lang": "en",
+                "confirmedAt": board_store.now_iso(),
+                "createdAt": board_store.now_iso(),
+            },
+        )
+
+        def fail_one(**kwargs: Any) -> dict[str, Any]:
+            self.ses.bulk.append(kwargs)
+            return {"BulkEmailEntryResults": [{"Status": "FAILED"}]}
+
+        self.ses.send_bulk_email = fail_one  # type: ignore[method-assign]
+        issue = board_newsletter.draft_issue(self.table, self.settings, list_name="parents", markdown="# Fail")
+        sent = board_newsletter.send_issue(self.table, self.settings, issue_id=issue["issueId"], list_name="parents")
+        self.assertEqual(sent["sent"], 0)
+
+    def test_cross_list_keeps_first_confirmed(self) -> None:
+        digest = board_outreach.suppress_digest("both@example.com")
+        board_store.put_newsletter_sub(
+            self.table,
+            digest,
+            "parents",
+            {
+                "digest": digest,
+                "email": "both@example.com",
+                "list": "parents",
+                "lang": "en",
+                "confirmedAt": board_store.now_iso(),
+                "createdAt": board_store.now_iso(),
+            },
+        )
+        lambda_handler(
+            {
+                "requestContext": {
+                    "http": {"method": "POST", "path": "/public/newsletter/subscribe", "sourceIp": "9.9.9.9"},
+                    "requestId": "nl-x",
+                },
+                "body": json.dumps({"list": "providers", "email": "both@example.com"}),
+                "rawQueryString": "",
+            },
+            None,
+        )
+        parents = board_store.get_newsletter_sub(self.table, digest, "parents")
+        providers = board_store.get_newsletter_sub(self.table, digest, "providers")
+        self.assertTrue((parents or {}).get("confirmedAt"))
+        self.assertFalse(bool((providers or {}).get("confirmedAt")))
+        self.assertEqual(len(self.ses.calls), 0)
+
+    def test_fourth_confirm_not_sent(self) -> None:
+        for i in range(4):
+            lambda_handler(
+                {
+                    "requestContext": {
+                        "http": {"method": "POST", "path": "/public/newsletter/subscribe", "sourceIp": f"3.3.3.{i}"},
+                        "requestId": f"nl-c{i}",
+                    },
+                    "body": json.dumps({"list": "parents", "email": f"c{i}@example.com"}),
+                    "rawQueryString": "",
+                },
+                None,
+            )
+        # same digest four times
+        self.ses.calls.clear()
+        email = "repeat@example.com"
+        for i in range(4):
+            # force a fresh pending row so cooldown is what blocks the fourth
+            digest = board_outreach.suppress_digest(email)
+            existing = board_store.get_newsletter_sub(self.table, digest, "parents") or {}
+            existing.pop("confirmSentAt", None)
+            existing.pop("confirmedAt", None)
+            if existing:
+                board_store.put_newsletter_sub(self.table, digest, "parents", existing)
+            lambda_handler(
+                {
+                    "requestContext": {
+                        "http": {"method": "POST", "path": "/public/newsletter/subscribe", "sourceIp": f"4.4.4.{i}"},
+                        "requestId": f"nl-r{i}",
+                    },
+                    "body": json.dumps({"list": "parents", "email": email}),
+                    "rawQueryString": "",
+                },
+                None,
+            )
+        self.assertLessEqual(len(self.ses.calls), 3)
+
+    def test_newsletter_complaint_leaves_outreach_day_unchanged(self) -> None:
+        import board_hk
+        import dispatch
+
+        today = board_hk.today_hkt()
+        board_store.save_outreach_day(self.table, {"sent": 10, "bounces": 0, "complaints": 0}, today)
+        event = {
+            "Records": [
+                {
+                    "messageId": "good-1",
+                    "eventSource": "aws:sqs",
+                    "body": json.dumps(
+                        {
+                            "eventType": "Complaint",
+                            "mail": {
+                                "tags": {
+                                    "ses:configuration-set": ["lxsoftware-admin-siutindei-newsletter"],
+                                    "issueId": ["iss-1"],
+                                },
+                                "destination": ["x@example.com"],
+                            },
+                        }
+                    ),
+                },
+                {
+                    "messageId": "bad-1",
+                    "eventSource": "aws:sqs",
+                    "body": "{not-json",
+                },
+            ]
+        }
+        def raise_on_bad(records: list[dict[str, Any]]) -> dict[str, Any]:
+            if records and records[0].get("messageId") == "bad-1":
+                raise RuntimeError("boom")
+            return {"handled": 0}
+
+        with (
+            patch("board_newsletter.handle_ses_events", return_value={"handled": 1}),
+            patch("board_outreach.handle_ses_events", side_effect=raise_on_bad),
+        ):
+            out = dispatch.lambda_handler(event, None)
+        day = board_store.load_outreach_day(self.table, today)
+        self.assertEqual(int(day.get("complaints") or 0), 0)
+        self.assertEqual(out.get("batchItemFailures"), [{"itemIdentifier": "bad-1"}])
+
+    def test_resubscribe_after_unsubscribe(self) -> None:
+        digest = board_outreach.suppress_digest("again@example.com")
+        board_store.put_newsletter_sub(
+            self.table,
+            digest,
+            "parents",
+            {
+                "digest": digest,
+                "email": "again@example.com",
+                "list": "parents",
+                "lang": "en",
+                "confirmedAt": board_store.now_iso(),
+                "unsubscribedAt": board_store.now_iso(),
+                "createdAt": board_store.now_iso(),
+            },
+        )
+        out = lambda_handler(
+            {
+                "requestContext": {
+                    "http": {"method": "POST", "path": "/public/newsletter/subscribe", "sourceIp": "5.5.5.5"},
+                    "requestId": "nl-again",
+                },
+                "body": json.dumps({"list": "parents", "email": "again@example.com"}),
+                "rawQueryString": "",
+            },
+            None,
+        )
+        self.assertEqual(out["statusCode"], 200)
+        self.assertEqual(len(self.ses.calls), 1)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import re
+import socket
 import time
 import urllib.error
 import urllib.request
@@ -58,18 +60,67 @@ def digest(text: str) -> str:
     return (text or "")[:6000]
 
 
+CGNAT_V4 = ipaddress.ip_network("100.64.0.0/10")
+
+
+def host_is_blocked(host: str) -> bool:
+    hostname = (host or "").split(":")[0].split("%")[0].strip().lower()
+    if not hostname or hostname in {"localhost", "localhost.localdomain"}:
+        return True
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except socket.gaierror:
+        return True
+    for info in infos:
+        raw_ip = info[4][0]
+        try:
+            ip = ipaddress.ip_address(raw_ip)
+        except ValueError:
+            return True
+        if (
+            ip.is_loopback
+            or ip.is_link_local
+            or ip.is_private
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+            or (ip.version == 4 and ip in CGNAT_V4)
+        ):
+            return True
+    return False
+
+
+class LimitedRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def __init__(self, max_hops: int = 3) -> None:
+        super().__init__()
+        self.max_hops = max_hops
+        self.hops = 0
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        self.hops += 1
+        if self.hops > self.max_hops:
+            raise urllib.error.HTTPError(newurl, 310, "too many redirects", headers, None)
+        parsed = urlparse(newurl)
+        if parsed.scheme not in ("http", "https") or host_is_blocked(parsed.hostname or ""):
+            raise urllib.error.URLError("refusing private or link-local redirect")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _opener() -> Any:
-    return urllib.request.build_opener()
+    return urllib.request.build_opener(LimitedRedirectHandler())
 
 
 def fetch(url: str, *, max_bytes: int = BOARD_STAFF_CRAWL_MAX_BYTES, timeout: int = 10) -> FetchResult:
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or host_is_blocked(parsed.hostname or ""):
+        raise urllib.error.URLError("refusing private or disallowed host")
     req = urllib.request.Request(  # noqa: S310 - caller supplies allow-listed URLs
         url,
         headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml,text/plain,*/*;q=0.8"},
         method="GET",
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        with _opener().open(req, timeout=timeout) as resp:  # noqa: S310
             raw = resp.read(max_bytes + 1)
             status = int(getattr(resp, "status", None) or resp.getcode() or 200)
             final = str(getattr(resp, "url", None) or url)

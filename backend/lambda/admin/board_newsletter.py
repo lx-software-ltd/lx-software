@@ -42,16 +42,12 @@ def _html_response(status: int, body: str) -> dict[str, Any]:
 def _rate_limited(table: Any, ip: str, prefix: str) -> bool:
     hour = board_hk.now_hkt().strftime("%Y-%m-%d-%H")
     name = f"{prefix}:{ip}:{hour}"
-    hit = board_store.get_cache(table, name)
-    count = 0
-    if hit and isinstance(hit.get("payload"), dict):
-        try:
-            count = int(hit["payload"].get("count") or 0)
-        except (TypeError, ValueError):
-            count = 0
-    count += 1
-    board_store.put_cache(table, name, {"count": count}, ttl_seconds=3600)
-    return count > 100
+    return board_store.bump_cache_count(table, name, ttl_seconds=3600) > 100
+
+
+def _confirm_over_daily(table: Any, digest: str) -> bool:
+    name = f"nl-confirm:{digest}:{board_hk.today_hkt()}"
+    return board_store.bump_cache_count(table, name, ttl_seconds=86400) > 3
 
 
 def make_token(kind: str, list_name: str, digest: str) -> str:
@@ -101,11 +97,17 @@ def handle_subscribe(event: dict[str, Any]) -> dict[str, Any]:
     if list_name not in LISTS or not email or "@" not in email:
         return _json_response(200, generic)
     digest = board_outreach.suppress_digest(email)
-    if board_outreach.is_suppressed(table, email):
-        return _json_response(200, generic)
     now = board_store.now_iso()
-    existing = _sub_row(board_store.get_newsletter_sub(table, digest))
-    if existing.get("confirmedAt") and existing.get("list") == list_name and not existing.get("unsubscribedAt"):
+    for other in LISTS:
+        other_row = _sub_row(board_store.get_newsletter_sub(table, digest, other))
+        if other != list_name and other_row.get("confirmedAt") and not other_row.get("unsubscribedAt"):
+            return _json_response(200, generic)
+    existing = _sub_row(board_store.get_newsletter_sub(table, digest, list_name))
+    if existing.get("confirmedAt") and not existing.get("unsubscribedAt"):
+        return _json_response(200, generic)
+    if existing.get("confirmSentAt") and not existing.get("confirmedAt") and not existing.get("unsubscribedAt"):
+        return _json_response(200, generic)
+    if _confirm_over_daily(table, digest):
         return _json_response(200, generic)
     doc = {
         **existing,
@@ -114,10 +116,11 @@ def handle_subscribe(event: dict[str, Any]) -> dict[str, Any]:
         "list": list_name,
         "lang": lang,
         "source": "public",
-        "confirmedAt": "",
-        "unsubscribedAt": "",
+        "confirmedAt": existing.get("confirmedAt") or "",
+        "unsubscribedAt": existing.get("unsubscribedAt") or "",
         "createdAt": existing.get("createdAt") or now,
         "updatedAt": now,
+        "confirmSentAt": now,
     }
     board_store.put_newsletter_sub(table, digest, list_name, doc)
     _send_confirm(table, email, list_name, digest, lang)
@@ -169,7 +172,7 @@ def handle_confirm(event: dict[str, Any], token: str) -> dict[str, Any]:
     if not parsed or parsed[0] != "c":
         return _html_response(400, "<!doctype html><html><body><p>This confirmation link is not valid.</p></body></html>")
     _, list_name, digest = parsed
-    row = _sub_row(board_store.get_newsletter_sub(table, digest))
+    row = _sub_row(board_store.get_newsletter_sub(table, digest, list_name))
     if not row or row.get("list") != list_name:
         return _html_response(400, "<!doctype html><html><body><p>This confirmation link is not valid.</p></body></html>")
     now = board_store.now_iso()
@@ -194,31 +197,28 @@ def handle_unsubscribe(event: dict[str, Any], method: str, token: str) -> dict[s
             return {"statusCode": 400, "headers": {"content-type": "text/plain"}, "body": ""}
         return _html_response(400, "<!doctype html><html><body><p>This unsubscribe link is not valid.</p></body></html>")
     _, list_name, digest = parsed
-    row = _sub_row(board_store.get_newsletter_sub(table, digest))
+    row = _sub_row(board_store.get_newsletter_sub(table, digest, list_name))
     email = str((row or {}).get("email") or "")
     if row:
         now = board_store.now_iso()
         row["unsubscribedAt"] = now
         row["updatedAt"] = now
         board_store.put_newsletter_sub(table, digest, list_name or str(row.get("list") or "parents"), row)
-    if email:
-        board_outreach.suppress(table, email=email, reason="newsletter unsubscribe")
     if method == "POST":
         return {"statusCode": 200, "headers": {"content-type": "text/plain"}, "body": ""}
     return _html_response(200, "<!doctype html><html><body><p>You are unsubscribed.</p></body></html>")
 
 
-def recipients(table: Any, list_name: str) -> list[dict[str, Any]]:
+def recipients(table: Any, list_name: str, *, cursor: str | None = None, limit: int = 200) -> tuple[list[dict[str, Any]], str | None]:
+    raw_rows, next_cursor = board_store.list_newsletter_subs(table, list_name, limit=limit, cursor=cursor)
     out: list[dict[str, Any]] = []
-    for raw in board_store.list_newsletter_subs(table, list_name, limit=2000):
+    for raw in raw_rows:
         row = _sub_row(raw)
         email = board_pii.normalize_email(str(row.get("email") or ""))
         if not row.get("confirmedAt") or row.get("unsubscribedAt") or not email:
             continue
-        if board_outreach.is_suppressed(table, email):
-            continue
         out.append(row)
-    return out
+    return out, next_cursor
 
 
 def _issue_key(issue_id: str) -> dict[str, str]:
@@ -285,7 +285,7 @@ def draft_issue(table: Any, settings: dict[str, Any], *, list_name: str, markdow
     doc = {
         "issueId": issue_id,
         "list": list_name,
-        "status": "drafted",
+        "status": "draft",
         "markdown": markdown[:20000],
         "html": html[:80000],
         "subject": _subject_from_markdown(markdown, list_name),
@@ -348,6 +348,25 @@ def _ensure_template(ses: Any) -> None:
     )
 
 
+def _claim_issue_sending(table: Any, issue_id: str) -> bool:
+    try:
+        table.update_item(
+            Key=_issue_key(issue_id),
+            UpdateExpression="SET #st = :sending, updatedAt = :now",
+            ConditionExpression="attribute_not_exists(#st) OR #st = :draft OR #st = :sending",
+            ExpressionAttributeNames={"#st": "status"},
+            ExpressionAttributeValues={
+                ":sending": "sending",
+                ":draft": "draft",
+                ":now": board_store.now_iso(),
+            },
+        )
+        return True
+    except Exception as exc:
+        _log_event("warning", tag="board_newsletter_claim_failed", error=str(exc)[:200])
+        return False
+
+
 def send_issue(table: Any, settings: dict[str, Any], *, issue_id: str, list_name: str) -> dict[str, Any]:
     if not board_staff.enabled(settings):
         return {"error": "staff disabled"}
@@ -358,14 +377,34 @@ def send_issue(table: Any, settings: dict[str, Any], *, issue_id: str, list_name
     issue = get_issue(table, issue_id)
     if not issue:
         return {"error": "issue not found"}
-    people = recipients(table, list_name)
-    if not people:
-        return {"error": "no confirmed subscribers"}
+    if issue.get("status") == "sent":
+        return {"ok": True, "sent": 0, "issueId": issue_id, "noop": True}
+    if not _claim_issue_sending(table, issue_id):
+        latest = get_issue(table, issue_id)
+        if latest and latest.get("status") == "sent":
+            return {"ok": True, "sent": 0, "issueId": issue_id, "noop": True}
+        return {"error": "could not claim issue"}
+    issue = get_issue(table, issue_id) or issue
     ses = board_outreach._ses_client()  # noqa: SLF001
     _ensure_template(ses)
-    sent = 0
-    for i in range(0, len(people), BATCH):
-        chunk = people[i : i + BATCH]
+    sent_through = int(issue.get("sentThrough") or 0)
+    metrics = dict(issue.get("metrics") or {})
+    sent = int(metrics.get("sent") or 0)
+    offset = 0
+    cursor = None
+    saw_any = False
+    while True:
+        people, cursor = recipients(table, list_name, cursor=cursor, limit=BATCH)
+        if not people and not cursor:
+            break
+        saw_any = saw_any or bool(people)
+        if offset + len(people) <= sent_through:
+            offset += len(people)
+            if not cursor:
+                break
+            continue
+        start = max(0, sent_through - offset)
+        chunk = people[start:]
         entries = []
         for row in chunk:
             digest = str(row.get("digest") or board_outreach.suppress_digest(str(row.get("email") or "")))
@@ -387,15 +426,37 @@ def send_issue(table: Any, settings: dict[str, Any], *, issue_id: str, list_name
                     },
                 }
             )
-        ses.send_bulk_email(
-            FromEmailAddress=from_address(),
-            DefaultContent={"Template": {"TemplateName": TEMPLATE_NAME, "TemplateData": json.dumps({"subject": "", "html": "", "text": "", "unsub": ""})}},
-            BulkEmailEntries=entries,
-            ConfigurationSetName=CONFIG_SET,
-        )
-        sent += len(chunk)
-    metrics = dict(issue.get("metrics") or {})
-    metrics["sent"] = int(metrics.get("sent") or 0) + sent
+        if entries:
+            result = ses.send_bulk_email(
+                FromEmailAddress=from_address(),
+                DefaultContent={"Template": {"TemplateName": TEMPLATE_NAME, "TemplateData": json.dumps({"subject": "", "html": "", "text": "", "unsub": ""})}},
+                BulkEmailEntries=entries,
+                ConfigurationSetName=CONFIG_SET,
+                DefaultEmailTags=[{"Name": "issueId", "Value": str(issue_id)}],
+            )
+            results = (result or {}).get("BulkEmailEntryResults") or []
+            if results:
+                success = sum(1 for row in results if str(row.get("Status") or "").upper() == "SUCCESS")
+                failures = [row for row in results if str(row.get("Status") or "").upper() != "SUCCESS"]
+                if failures:
+                    _log_event("warning", tag="board_newsletter_bulk_failed", count=len(failures))
+            else:
+                success = len(entries)
+            sent += success
+        offset += len(people)
+        sent_through = offset
+        issue["sentThrough"] = sent_through
+        issue["metrics"] = {**metrics, "sent": sent}
+        issue["status"] = "sending"
+        issue["updatedAt"] = board_store.now_iso()
+        put_issue(table, issue)
+        if not cursor:
+            break
+    if not saw_any and sent == 0:
+        issue["status"] = "draft"
+        put_issue(table, issue)
+        return {"error": "no confirmed subscribers"}
+    metrics["sent"] = sent
     issue["metrics"] = metrics
     issue["status"] = "sent"
     issue["sentAt"] = board_store.now_iso()

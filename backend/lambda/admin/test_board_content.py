@@ -53,6 +53,7 @@ class ContentTests(BoardTestCase):
         self.addCleanup(lambda: os.environ.pop("META_IG_USER_ID", None))
         self.addCleanup(lambda: os.environ.pop("META_BOARD_TOKEN", None))
         self.settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
         self.graph = FakeGraph()
         graph_patch = patch("board_meta.graph", self.graph)
         graph_patch.start()

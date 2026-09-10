@@ -157,6 +157,8 @@ def run_due(table: Any, settings: dict[str, Any], now: datetime | None = None) -
             event_id = f"{seat_id}:{duty_id}:{date_label}"
             if find_open_event_task(table, "duty", event_id):
                 continue
+            if not board_store.claim_duty_marker(table, f"duty:{seat_id}:{duty_id}:{date_label}"):
+                continue
             try:
                 task = board_staff.create_task(
                     table,

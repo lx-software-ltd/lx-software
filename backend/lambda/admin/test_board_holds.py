@@ -338,5 +338,117 @@ class PreambleTests(unittest.TestCase):
         self.assertIn("I have scheduled", text)
 
 
+class HoldSafetyTests(BoardTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+
+    def test_hold_fails_when_breaker_tripped(self) -> None:
+        settings = _enable_staff(self.table)
+        settings["tools"]["globalMode"] = "act"
+        settings["boundaries"]["holds"]["publish"] = 24
+        settings = board_store.save_settings(self.table, settings)
+        outcome = board_tools.execute_call(
+            _ctx(self.table, settings, "cmo"),
+            _op("meta_propose_post"),
+            {"message": "Hi", "reason": "test"},
+        )
+        self.assertEqual(outcome.status, "held")
+        hold = board_store.get_hold(self.table, outcome.result["holdId"])
+        assert hold is not None
+        hold["executeAt"] = "2020-01-01T00:00:00Z"
+        board_store.put_hold(self.table, hold)
+        import board_breakers
+
+        board_breakers.trip(self.table, "channel:facebook", "paused")
+        ran = board_holds.execute_due(self.table, settings, "2026-09-10T00:00:00Z")
+        self.assertEqual(ran, 1)
+        stored = board_store.get_hold(self.table, hold["holdId"])
+        self.assertEqual(stored["status"], "failed")
+        self.assertIn("breaker", str(stored.get("result") or "").lower())
+
+    def test_hold_fails_when_persona_downgraded(self) -> None:
+        settings = _enable_staff(self.table)
+        settings["tools"]["globalMode"] = "act"
+        settings["boundaries"]["holds"]["internal"] = 24
+        settings = board_store.save_settings(self.table, settings)
+        outcome = board_tools.execute_call(
+            _ctx(self.table, settings, "ceo"),
+            _op("board_add_action"),
+            {"title": "Call ten providers", "detail": "Book the calls.", "priority": "now", "reason": "pipeline"},
+        )
+        self.assertEqual(outcome.status, "held")
+        hold = board_store.get_hold(self.table, outcome.result["holdId"])
+        assert hold is not None
+        hold["executeAt"] = "2020-01-01T00:00:00Z"
+        board_store.put_hold(self.table, hold)
+        settings["tools"]["matrix"]["board"]["ceo"] = "propose"
+        settings = board_store.save_settings(self.table, settings)
+        ran = board_holds.execute_due(self.table, settings, "2026-09-10T00:00:00Z")
+        self.assertEqual(ran, 1)
+        stored = board_store.get_hold(self.table, hold["holdId"])
+        self.assertEqual(stored["status"], "failed")
+        self.assertIn("level changed", str(stored.get("result") or ""))
+
+    def test_maybe_hold_exception_downgrades_to_approval(self) -> None:
+        settings = _enable_staff(self.table)
+        settings["tools"]["globalMode"] = "act"
+        settings = board_store.save_settings(self.table, settings)
+
+        def boom(*_a: Any, **_k: Any) -> None:
+            raise RuntimeError("dynamo down")
+
+        with patch.object(board_holds, "maybe_hold", side_effect=boom):
+            outcome = board_tools.execute_call(
+                _ctx(self.table, settings, "cmo"),
+                _op("meta_propose_post"),
+                {"message": "Hi", "reason": "test"},
+            )
+        self.assertEqual(outcome.status, "pending_approval")
+
+    def test_breaker_check_exception_downgrades_to_approval(self) -> None:
+        settings = _enable_staff(self.table)
+        settings["tools"]["globalMode"] = "act"
+        settings = board_store.save_settings(self.table, settings)
+        import board_breakers
+
+        def boom(*_a: Any, **_k: Any) -> None:
+            raise RuntimeError("breaker store down")
+
+        with patch.object(board_breakers, "write_blocked", side_effect=boom):
+            outcome = board_tools.execute_call(
+                _ctx(self.table, settings, "cmo"),
+                _op("meta_propose_post"),
+                {"message": "Hi", "reason": "test"},
+            )
+        self.assertEqual(outcome.status, "pending_approval")
+
+    def test_promoted_class_records_ramp_and_wrong_demotes(self) -> None:
+        settings = _enable_staff(self.table)
+        settings["tools"]["globalMode"] = "act"
+        settings["boundaries"]["holdOverrides"]["internal"] = 0
+        settings = board_store.save_settings(self.table, settings)
+        for _ in range(3):
+            out = board_tools.execute_call(
+                _ctx(self.table, settings, "ceo"),
+                _op("board_add_action"),
+                {"title": "Call ten providers", "detail": "Book the calls.", "priority": "now", "reason": "pipeline"},
+            )
+            self.assertEqual(out.status, "ok")
+        calls = board_store.list_tool_calls(self.table, limit=10)
+        self.assertTrue(calls)
+        import board_lessons
+
+        board_lessons.create_from_correction(self.table, str(calls[0]["callId"]), "Tone was wrong")
+        state = board_holds.ramp_state(self.table, "internal")
+        self.assertGreaterEqual(state["actions"], 3)
+        self.assertGreaterEqual(state["vetoes"], 1)
+        for _ in range(BOARD_STAFF_RAMP_DEMOTE_WINDOW_ACTIONS - 1):
+            board_holds.record_ramp(self.table, settings, "internal", vetoed=True)
+        settings = board_store.load_settings(self.table)
+        self.assertNotIn("internal", settings["boundaries"].get("holdOverrides") or {})
+
+
 if __name__ == "__main__":
     unittest.main()

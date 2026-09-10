@@ -335,7 +335,10 @@ def _tools_put(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
         tools_config = validate_tools_config(_parse_json_body(event), settings["tools"])
     except ValueError as exc:
         return _json_response(400, {"message": str(exc)})
-    saved = board_store.save_settings(table, {**settings, "tools": tools_config})
+    try:
+        saved = board_store.save_settings(table, {**settings, "tools": tools_config})
+    except board_store.SettingsConflict:
+        return _json_response(409, {"message": "settings were updated by someone else"})
     _audit(user_sub, "BOARD_TOOLS_PUT", "tools", event)
     return _json_response(200, _tools_payload(saved))
 
@@ -731,10 +734,30 @@ def _boundaries_put(event: dict[str, Any], user_sub: str | None) -> dict[str, An
     raw = _parse_json_body(event)
     if not isinstance(raw, dict):
         return _json_response(400, {"message": "boundaries must be an object"})
-    current["boundaries"] = board_store.normalize_boundaries(raw)
-    saved = board_store.save_settings(table, current)
+    existing = dict(current.get("boundaries") or {})
+    if "version" in raw:
+        try:
+            current["version"] = int(raw["version"])
+        except (TypeError, ValueError):
+            pass
+    if "holds" in raw:
+        existing["holds"] = raw["holds"]
+    if "reply" in raw:
+        existing["reply"] = raw["reply"]
+    if "escalation" in raw:
+        existing["escalation"] = raw["escalation"]
+    if "keywords" in raw:
+        existing["keywords"] = raw["keywords"]
+    current["boundaries"] = board_store.normalize_boundaries(existing)
+    try:
+        saved = board_store.save_settings(table, current)
+    except board_store.SettingsConflict:
+        return _json_response(409, {"message": "settings were updated by someone else"})
     _audit(user_sub, "BOARD_BOUNDARIES_PUT", "boundaries", event)
-    return _json_response(200, {"boundaries": saved.get("boundaries") or {}})
+    return _json_response(
+        200,
+        {"boundaries": saved.get("boundaries") or {}, "version": saved.get("version")},
+    )
 
 
 def _ramp_get() -> dict[str, Any]:
@@ -874,19 +897,21 @@ def _prospects_route(event: dict[str, Any], method: str, rest: list[str], user_s
             except ValueError:
                 limit = 200
             try:
-                rows = board_prospects.list_for_api(
+                page = board_prospects.list_for_api(
                     table,
                     stage=(qs.get("stage") or [""])[0] or None,
                     ptype=(qs.get("type") or [""])[0] or None,
                     district=(qs.get("district") or [""])[0] or None,
                     limit=max(1, min(400, limit)),
+                    cursor=(qs.get("cursor") or [""])[0] or None,
                 )
             except board_prospects.ProspectError as exc:
                 return _json_response(400, {"message": str(exc)})
             return _json_response(
                 200,
                 {
-                    "prospects": rows,
+                    "prospects": page["prospects"],
+                    "nextCursor": page.get("nextCursor"),
                     "needsContact": board_prospects.needs_contact(table),
                     "stats": board_outreach.stats(table, settings, days=28),
                 },
@@ -1103,7 +1128,10 @@ def _settings_put(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]
         merged = validate_settings(_parse_json_body(event), current)
     except ValueError as exc:
         return _json_response(400, {"message": str(exc)})
-    saved = board_store.save_settings(table, merged)
+    try:
+        saved = board_store.save_settings(table, merged)
+    except board_store.SettingsConflict:
+        return _json_response(409, {"message": "settings were updated by someone else"})
     _audit(user_sub, "BOARD_SETTINGS_PUT", "settings", event)
     return _json_response(200, {"settings": saved})
 

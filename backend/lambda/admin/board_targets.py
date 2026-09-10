@@ -55,11 +55,16 @@ def _maybe_raise_cap(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
     now = board_hk.now_hkt()
     if not raised_at:
         outreach["capRaisedAt"] = board_hk.to_iso(now)
-        settings = dict(settings)
-        bounds = dict(settings.get("boundaries") or {})
-        bounds["outreach"] = outreach
-        settings["boundaries"] = board_store.normalize_boundaries(bounds)
-        return board_store.save_settings(table, settings)
+
+        def apply_stamp(current: dict[str, Any]) -> dict[str, Any]:
+            bounds = dict(current.get("boundaries") or {})
+            current_out = dict(bounds.get("outreach") or {})
+            current_out.setdefault("capRaisedAt", outreach["capRaisedAt"])
+            bounds["outreach"] = current_out
+            current["boundaries"] = board_store.normalize_boundaries(bounds)
+            return current
+
+        return board_store.save_settings_retry(table, apply_stamp)
     try:
         last = board_hk.as_hkt(board_hk.parse_iso(raised_at))
     except ValueError:
@@ -79,11 +84,17 @@ def _maybe_raise_cap(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
         return settings
     outreach["dailyCap"] = new_cap
     outreach["capRaisedAt"] = board_hk.to_iso(now)
-    settings = dict(settings)
-    bounds = dict(settings.get("boundaries") or {})
-    bounds["outreach"] = outreach
-    settings["boundaries"] = board_store.normalize_boundaries(bounds)
-    return board_store.save_settings(table, settings)
+
+    def apply_raise(current: dict[str, Any]) -> dict[str, Any]:
+        bounds = dict(current.get("boundaries") or {})
+        current_out = dict(bounds.get("outreach") or {})
+        current_out["dailyCap"] = new_cap
+        current_out["capRaisedAt"] = outreach["capRaisedAt"]
+        bounds["outreach"] = current_out
+        current["boundaries"] = board_store.normalize_boundaries(bounds)
+        return current
+
+    return board_store.save_settings_retry(table, apply_raise)
 
 
 def check(table: Any, settings: dict[str, Any]) -> dict[str, Any]:

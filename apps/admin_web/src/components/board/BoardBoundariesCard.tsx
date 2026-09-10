@@ -5,15 +5,22 @@ import type { BoardBoundaries } from "../../lib/boardModel";
 
 export type BoardBoundariesCardProps = {
   readonly boundaries: BoardBoundaries;
+  readonly version?: number;
   readonly isSaving: boolean;
   readonly errorMessage?: string | null;
-  readonly onSave: (boundaries: BoardBoundaries) => void;
+  readonly onSave: (boundaries: BoardBoundaries, version?: number) => void;
 };
 
 const HOLD_CLASSES = BOARD_STAFF_ACTION_CLASSES.filter((cls) => cls !== "never" && cls !== "code_production");
 
-export function BoardBoundariesCard({ boundaries, isSaving, errorMessage, onSave }: BoardBoundariesCardProps) {
+export function BoardBoundariesCard({ boundaries, version, isSaving, errorMessage, onSave }: BoardBoundariesCardProps) {
   const [draft, setDraft] = useState<BoardBoundaries>(boundaries);
+  const queryStamp = `${version ?? ""}:${JSON.stringify(boundaries)}`;
+  const [seenStamp, setSeenStamp] = useState(queryStamp);
+  if (queryStamp !== seenStamp) {
+    setSeenStamp(queryStamp);
+    setDraft(boundaries);
+  }
   const isDirty = JSON.stringify(draft) !== JSON.stringify(boundaries);
 
   return (
@@ -22,7 +29,7 @@ export function BoardBoundariesCard({ boundaries, isSaving, errorMessage, onSave
       description="Hold windows, reply policy and escalation keywords. A hold of 0 hours means the write runs immediately when the member is at Act."
       footer={
         <>
-          <button type="button" className="btn btn-primary" disabled={!isDirty || isSaving} onClick={() => onSave(draft)}>
+          <button type="button" className="btn btn-primary" disabled={!isDirty || isSaving} onClick={() => onSave(draft, version)}>
             {isSaving ? "Saving…" : "Save boundaries"}
           </button>
           {errorMessage ? <span className="small text-danger">{errorMessage}</span> : null}

@@ -105,8 +105,7 @@ def signing_secret() -> str:
 def make_unsub_token(prospect_id: str) -> str:
     pid = str(prospect_id or "").encode("utf-8")
     mac = hmac.new(signing_secret().encode("utf-8"), pid, hashlib.sha256).digest()[:16]
-    raw = pid + b"." + mac
-    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    return base64.urlsafe_b64encode(pid + mac).decode("ascii").rstrip("=")
 
 
 def parse_unsub_token(token: str) -> str | None:
@@ -118,10 +117,9 @@ def parse_unsub_token(token: str) -> str | None:
         raw = base64.urlsafe_b64decode(text + pad)
     except Exception:
         return None
-    try:
-        pid_bytes, mac = raw.split(b".", 1)
-    except ValueError:
+    if len(raw) < 16:
         return None
+    pid_bytes, mac = raw[:-16], raw[-16:]
     expected = hmac.new(signing_secret().encode("utf-8"), pid_bytes, hashlib.sha256).digest()[:16]
     if not hmac.compare_digest(mac, expected):
         return None
@@ -273,6 +271,8 @@ def send(
     step_index: int = 0,
     personalisation: str = "",
 ) -> dict[str, Any]:
+    if not board_mail.sending_enabled():
+        return _refuse("email sending is switched off")
     if board_breakers.is_tripped(table, "outreach"):
         return _refuse("breaker tripped", breaker="outreach")
     if not identity_verified():
@@ -293,6 +293,10 @@ def send(
     contact = board_pii.normalize_email(str(prospect.get("contact") or prospect.get("email") or ""))
     if not contact:
         return _refuse("no contact")
+    if not board_prospects._is_business_address(  # noqa: SLF001
+        contact, allow_personal=board_prospects._personal_allowed(settings)  # noqa: SLF001
+    ):
+        return _refuse("personal address not allowed")
     if is_suppressed(table, contact):
         return _refuse("suppressed")
     touches = list(prospect.get("touches") or [])
@@ -305,14 +309,12 @@ def send(
     if step_index < len(touches):
         return _refuse("step already sent")
     today = board_hk.today_hkt()
-    day = board_store.load_outreach_day(table, today)
     cap = int(((settings.get("boundaries") or {}).get("outreach") or {}).get("dailyCap") or 20)
-    if int(day.get("sent") or 0) >= cap:
+    if not board_store.reserve_outreach_sent(table, today, cap):
         return _refuse("daily cap reached", dailyCap=cap)
     note = str(personalisation or "")[:400]
     subject, body = render_message(table, prospect, steps[step_index], personalisation=note)
     unsub = unsubscribe_url(str(prospect.get("prospectId") or ""))
-    token = make_unsub_token(str(prospect.get("prospectId") or ""))
     msg = EmailMessage()
     sender = from_address()
     msg["From"] = formataddr(("Siu Tin Dei Partnerships", sender))
@@ -320,56 +322,79 @@ def send(
     msg["Subject"] = board_mail._single_line(subject, 200) or "(no subject)"  # noqa: SLF001
     msg["Reply-To"] = reply_to_address()
     msg["Message-ID"] = make_msgid(domain=sending_domain())
-    msg["List-Unsubscribe"] = f"<{unsub}>, <mailto:unsubscribe@{sending_domain()}?subject={token}>"
+    msg["List-Unsubscribe"] = f"<{unsub}>"
     msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
     msg["X-Siutindei-Prospect"] = str(prospect.get("prospectId") or "")
     msg.set_content(body)
     raw = msg.as_bytes()
-    response = _ses_client().send_email(
-        FromEmailAddress=sender,
-        Destination={"ToAddresses": [contact]},
-        Content={"Raw": {"Data": raw}},
-        ConfigurationSetName=CONFIG_SET,
-        EmailTags=[{"Name": "prospectId", "Value": str(prospect.get("prospectId") or "none")}],
-        ReplyToAddresses=[reply_to_address()],
-    )
-    indexed = board_mail.ingest_bytes(table, raw, direction="outbound", source="outreach")
-    if indexed.get("threadId"):
-        board_store.set_mail_thread_unread(table, str(indexed["threadId"]), unread=False)
     now = board_store.now_iso()
-    touches.append(
-        {
-            "stepIndex": step_index,
-            "sentAt": now,
-            "subject": subject,
-            "preview": body[:280],
-            "threadId": indexed.get("threadId"),
-            "sesMessageId": str((response or {}).get("MessageId") or ""),
-        }
-    )
+    pending = {
+        "stepIndex": step_index,
+        "sentAt": now,
+        "subject": subject,
+        "preview": body[:280],
+        "threadId": "",
+        "sesMessageId": "pending",
+    }
+    touches.append(pending)
     prospect["touches"] = touches
-    prospect["lastThreadId"] = indexed.get("threadId")
     prospect["contact"] = contact
-    started = str(prospect.get("sequenceStartedAt") or now)
-    if stage == "qualified":
-        prospect["stage"] = "contacted"
-        prospect["sequenceStartedAt"] = started
-    next_index = step_index + 1
-    if next_index >= len(steps) or len(touches) >= BOARD_STAFF_OUTREACH_MAX_TOUCHES:
-        prospect["stage"] = "unresponsive"
-        prospect["nextTouchAt"] = ""
-    else:
-        next_offset = int((steps[next_index] or {}).get("dayOffset") or 0)
-        prospect["nextTouchAt"] = board_sequences.next_touch_at(started, next_offset)
     prospect["updatedAt"] = now
     board_store.put_prospect(table, prospect)
-    board_prospects._index_keys(table, prospect)  # noqa: SLF001
-    day["sent"] = int(day.get("sent") or 0) + 1
-    board_store.save_outreach_day(table, day, today)
+    try:
+        response = _ses_client().send_email(
+            FromEmailAddress=sender,
+            Destination={"ToAddresses": [contact]},
+            Content={"Raw": {"Data": raw}},
+            ConfigurationSetName=CONFIG_SET,
+            EmailTags=[{"Name": "prospectId", "Value": str(prospect.get("prospectId") or "none")}],
+            ReplyToAddresses=[reply_to_address()],
+        )
+    except Exception as exc:
+        board_store.release_outreach_sent(table, today)
+        _log_event("warning", tag="board_outreach_ses_failed", error=str(exc)[:200])
+        return _refuse("ses send failed")
+    indexed = {"threadId": ""}
+    try:
+        indexed = board_mail.ingest_bytes(table, raw, direction="outbound", source="outreach")
+        if indexed.get("threadId"):
+            board_store.set_mail_thread_unread(table, str(indexed["threadId"]), unread=False)
+    except Exception as exc:
+        _log_event("warning", tag="board_outreach_index_failed", error=str(exc)[:200])
+    latest = board_store.get_prospect(table, prospect_id) or prospect
+    latest_touches = list(latest.get("touches") or touches)
+    for touch in latest_touches:
+        if int(touch.get("stepIndex") or -1) == step_index:
+            touch["sesMessageId"] = str((response or {}).get("MessageId") or "")
+            touch["threadId"] = indexed.get("threadId")
+            touch["preview"] = body[:280]
+            break
+    else:
+        latest_touches.append({**pending, "sesMessageId": str((response or {}).get("MessageId") or ""), "threadId": indexed.get("threadId")})
+    latest["touches"] = latest_touches
+    latest["lastThreadId"] = indexed.get("threadId") or latest.get("lastThreadId")
+    latest["contact"] = contact
+    started = str(latest.get("sequenceStartedAt") or now)
+    if str(latest.get("stage") or stage) == "qualified":
+        latest["stage"] = "contacted"
+        latest["sequenceStartedAt"] = started
+    next_index = step_index + 1
+    if next_index >= len(steps) or len(latest_touches) >= BOARD_STAFF_OUTREACH_MAX_TOUCHES:
+        latest["stage"] = "unresponsive"
+        latest["nextTouchAt"] = ""
+    else:
+        next_offset = int((steps[next_index] or {}).get("dayOffset") or 0)
+        latest["nextTouchAt"] = board_sequences.next_touch_at(started, next_offset)
+    latest["updatedAt"] = board_store.now_iso()
+    try:
+        board_store.put_prospect(table, latest)
+        board_prospects._index_keys(table, latest)  # noqa: SLF001
+    except Exception as exc:
+        _log_event("warning", tag="board_outreach_prospect_save_failed", error=str(exc)[:200])
     return {
         "ok": True,
-        "prospectId": prospect.get("prospectId"),
-        "stage": prospect.get("stage"),
+        "prospectId": latest.get("prospectId"),
+        "stage": latest.get("stage"),
         "threadId": indexed.get("threadId"),
         "sesMessageId": str((response or {}).get("MessageId") or ""),
         "to": contact,
@@ -396,6 +421,9 @@ def handle_ses_events(records: list[dict[str, Any]]) -> dict[str, Any]:
         event_type = str(body.get("eventType") or body.get("notificationType") or "").lower()
         mail = body.get("mail") or {}
         tags = mail.get("tags") or {}
+        config = _ses_config_set(tags)
+        if "newsletter" in config or tags.get("issueId") or tags.get("issueid"):
+            continue
         pid = ""
         raw_tag = tags.get("prospectId") or tags.get("prospectid")
         if isinstance(raw_tag, list) and raw_tag:
@@ -411,10 +439,7 @@ def handle_ses_events(records: list[dict[str, Any]]) -> dict[str, Any]:
         prospect = board_store.get_prospect(table, pid) if pid else None
         if prospect is None:
             for addr in destinations:
-                key = board_store.get_prospect_by_dedupe(table, addr)
-                if not key and "@" in addr:
-                    key = board_store.get_prospect_by_dedupe(table, addr.split("@", 1)[1])
-                found = board_store.get_prospect(table, key) if key else None
+                found = board_prospects.lookup_by_address(table, addr)
                 if found:
                     prospect = found
                     break
@@ -432,19 +457,17 @@ def handle_ses_events(records: list[dict[str, Any]]) -> dict[str, Any]:
     return {"ok": True, "handled": handled}
 
 
+def _ses_config_set(tags: dict[str, Any]) -> str:
+    raw = tags.get("ses:configuration-set") or tags.get("ses:configurationSet") or ""
+    if isinstance(raw, list) and raw:
+        return str(raw[0] or "").lower()
+    return str(raw or "").lower()
+
+
 def _rate_limited(table: Any, ip: str) -> bool:
     hour = board_hk.now_hkt().strftime("%Y-%m-%d-%H")
     name = f"unsub-ip:{ip}:{hour}"
-    hit = board_store.get_cache(table, name)
-    count = 0
-    if hit and isinstance(hit.get("payload"), dict):
-        try:
-            count = int(hit["payload"].get("count") or 0)
-        except (TypeError, ValueError):
-            count = 0
-    count += 1
-    board_store.put_cache(table, name, {"count": count}, ttl_seconds=3600)
-    return count > 100
+    return board_store.bump_cache_count(table, name, ttl_seconds=3600) > 100
 
 
 def handle_unsubscribe(event: dict[str, Any], method: str, token: str) -> dict[str, Any]:
@@ -482,25 +505,48 @@ def _html_response(status: int, body: str) -> dict[str, Any]:
     }
 
 
+_QUOTE_START = re.compile(r"^(On .+ wrote:|-----Original Message-----|From:|寄件者:)", re.I)
+_OWN_FOOTER = re.compile(
+    r"Reply\s+[\"“']unsubscribe[\"”'].*|回覆[「\"“]退訂[」\"”].*|\{unsubscribeUrl\}",
+    re.I,
+)
+
+
+def unquoted_reply_text(text: str) -> str:
+    lines: list[str] = []
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith(">"):
+            break
+        if _QUOTE_START.match(stripped):
+            break
+        if _OWN_FOOTER.search(line):
+            continue
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
+def is_unsubscribe_reply(text: str) -> bool:
+    body = unquoted_reply_text(text)
+    return bool(body and UNSUB_WORDS.search(body))
+
+
 def maybe_handle_reply(table: Any, settings: dict[str, Any], sender: str, text: str) -> dict[str, Any] | None:
     """If the sender is a prospect: suppress on unsubscribe words, else mark replied."""
     addr = board_pii.normalize_email(sender)
     if not addr:
         return None
-    pid = board_store.get_prospect_by_dedupe(table, addr)
-    if not pid and "@" in addr:
-        pid = board_store.get_prospect_by_dedupe(table, addr.split("@", 1)[1])
-    if not pid:
-        return None
-    prospect = board_store.get_prospect(table, pid)
+    prospect = board_prospects.lookup_by_address(table, addr)
     if not prospect:
         return None
-    if UNSUB_WORDS.search(text or ""):
+    if is_unsubscribe_reply(text or ""):
         suppress(table, email=addr, prospect=prospect, reason="unsubscribe reply")
         return {"prospect": prospect, "suppressed": True}
     prospect["stage"] = "replied"
     prospect["repliedAt"] = board_store.now_iso()
     prospect["updatedAt"] = prospect["repliedAt"]
+    if UNSUB_WORDS.search(text or "") and not is_unsubscribe_reply(text or ""):
+        prospect["replyNote"] = "unsubscribe keyword appeared only in quoted text"
     board_store.put_prospect(table, prospect)
     return {"prospect": prospect, "suppressed": False}
 
@@ -553,7 +599,7 @@ def op_list_prospects(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     except (TypeError, ValueError):
         limit = 20
     try:
-        rows = board_prospects.list_for_api(
+        page = board_prospects.list_for_api(
             ctx.table,
             stage=str(args.get("stage") or "") or None,
             ptype=str(args.get("type") or "") or None,
@@ -561,7 +607,7 @@ def op_list_prospects(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         )
     except board_prospects.ProspectError as exc:
         return {"error": str(exc)}
-    return {"prospects": [board_prospects.mask_row(ctx.table, r) for r in rows]}
+    return {"prospects": [board_prospects.mask_row(ctx.table, r) for r in page["prospects"]]}
 
 
 def op_get_prospect(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:

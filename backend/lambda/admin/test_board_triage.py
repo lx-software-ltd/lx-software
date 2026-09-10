@@ -55,6 +55,39 @@ class TriageTests(BoardTestCase):
         zh = board_triage.classify_text(self.table, board_store.load_settings(self.table), "小朋友受傷了", channel="mail")
         self.assertTrue(zh["escalate"])
 
+    def test_gmail_parent_not_matched_to_gmail_prospect(self) -> None:
+        board_prospects = __import__("board_prospects")
+        row, _ = board_prospects.upsert(
+            self.table, name="Provider", type="provider", website="https://studio.example", email="hello@gmail.com"
+        )
+        self.assertIsNone(board_store.get_prospect_by_dedupe(self.table, "gmail.com"))
+        found = board_triage._prospect_for_sender(self.table, "some.parent@gmail.com")
+        self.assertIsNone(found)
+        exact = board_triage._prospect_for_sender(self.table, "hello@gmail.com")
+        self.assertEqual((exact or {}).get("prospectId"), row["prospectId"])
+
+    def test_classifier_receives_masked_phone_and_email(self) -> None:
+        settings = board_store.load_settings(self.table)
+        captured: list[str] = []
+
+        def capture(**kwargs: Any) -> FakeCompletion:
+            user = kwargs["messages"][1]["content"]
+            captured.append(user)
+            return FakeCompletion('{"audience":"parent","intent":"question","escalate":false,"reason":""}')
+
+        with patch.object(board_budget, "board_completion", side_effect=capture):
+            board_triage.classify_text(
+                self.table,
+                settings,
+                "Call me on +852 9123 4567 or write wendy@example.com",
+                channel="mail",
+            )
+        self.assertTrue(captured)
+        blob = captured[0]
+        self.assertNotIn("91234567", blob.replace(" ", ""))
+        self.assertNotIn("wendy@example.com", blob)
+        self.assertTrue("phone#" in blob or "contact#" in blob)
+
     def test_prospect_domain_routes_to_provider_success(self) -> None:
         board_store.put_prospect(self.table, {"prospectId": "p1", "type": "provider", "stage": "qualified"})
         board_store.put_prospect_key(self.table, "studio.example", "p1")
@@ -88,18 +121,24 @@ class TriageTests(BoardTestCase):
         self.assertIn("NEW MESSAGE", pad)
 
     def test_injury_is_needs_owner_and_sends_ack(self) -> None:
-        seen: list[tuple[str, dict[str, Any]]] = []
+        seen: list[dict[str, Any]] = []
 
-        def capture(ctx: Any, op: Any, args: dict[str, Any]) -> board_tools.ToolOutcome:
-            seen.append((op.name, args))
-            return board_tools.ToolOutcome(status="ok", result={"ok": True}, summary="ack")
+        def capture(payload: dict[str, Any], *, fallback: Any = None) -> None:
+            seen.append(payload)
 
-        with patch.object(board_tools, "execute_call", side_effect=capture):
+        with patch.object(board_async, "invoke_async", side_effect=capture):
             board_mail.ingest_bytes(self.table, build_mail(text="my son was injured at class", message_id="<inj@test>"))
         tasks = board_store.list_tasks(self.table, "needs_owner")
         self.assertEqual(len(tasks), 1)
         self.assertEqual(tasks[0]["assignee"], "support")
-        self.assertTrue(any(name == "mail_reply" and args.get("templateId") == "ack_escalation" for name, args in seen))
+        self.assertTrue(
+            any(
+                p.get("internal") == "board_triage_ack"
+                and p.get("op") == "mail_reply"
+                and (p.get("args") or {}).get("templateId") == "ack_escalation"
+                for p in seen
+            )
+        )
 
     def test_bulk_headers_skip_triage(self) -> None:
         board_mail.ingest_bytes(
@@ -169,9 +208,8 @@ class PolicyTests(BoardTestCase):
     def test_quiet_hours_hold_not_approval(self) -> None:
         settings = board_store.load_settings(self.table)
         settings["boundaries"]["holds"]["inbound_reply"] = 0
-        board_store.save_settings(self.table, settings)
         settings["tools"]["allowList"] = ["wendy.chan@gmail.com"]
-        board_store.save_settings(self.table, settings)
+        settings = board_store.save_settings(self.table, settings)
         board_store.put_mail_thread(
             self.table,
             {

@@ -61,13 +61,8 @@ def _font(path: Path, size: int, *, weight: int = 400) -> ImageFont.FreeTypeFont
 
 
 def _pick_font(*, lang: str, bold: bool, size: int) -> ImageFont.FreeTypeFont:
-    if lang.startswith("zh"):
-        name = "NotoSansTC-Bold.otf" if bold else "NotoSansTC-Regular.otf"
-    else:
-        name = "NotoSans-Bold.ttf" if bold else "NotoSans-Regular.ttf"
+    name = "NotoSansTC-Regular.otf" if lang.startswith("zh") else "NotoSans-Regular.ttf"
     path = FONTS / name
-    if not path.is_file():
-        path = FONTS / ("NotoSansTC-Regular.otf" if lang.startswith("zh") else "NotoSans-Regular.ttf")
     return _font(path, size, weight=700 if bold else 400)
 
 

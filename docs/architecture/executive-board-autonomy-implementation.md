@@ -1387,21 +1387,25 @@ Promote button listing the staging commits.
 1. Deploy WP1 with `BoardStaffEnabled=false`. Owner: nothing.
 2. Deploy WP2–WP4. Owner: set `review.digestTo`, read one digest, set
    `BoardStaffEnabled=true` and `settings.staff.enabled=true`; all holds
-   at defaults; `maxRunningTasks=3`.
-3. Deploy WP5. Owner: add five watchlist entries; read the first weekly
-   brief.
+   at defaults; `maxRunningTasks=3`. Seats already on: `support`,
+   `provider-success`, `community-manager`, `business-analyst`.
+3. Deploy WP5. Owner: activate `market-analyst`; add five watchlist
+   entries; read the first weekly brief.
 4. Owner: DNS records for `partners.siutindei.com`; Google Cloud key into
    the secret; create mailboxes `partnerships@siutindei.com`,
    `market@siutindei.com`, `news@siutindei.com`, `dmarc@siutindei.com` on
    Cloudflare (they fan out to the board automatically). Deploy WP6.
-   Verify identity status in the Pipeline section; approve the default
-   sequences; first sends are 24 h holds.
-5. Deploy WP7. Owner: drop logo and colours into `brand/`; confirm Meta
-   app permissions; first posts are 24 h holds; raise `maxRunningTasks`
-   to 6.
-6. Deploy WP8, WP9. Owner: enable duties.
-7. siutindei repo: appendix A. Then deploy WP10. Owner: token scope
-   `actions: write`; first merges to staging are 12 h holds.
+   Activate `prospector`. Verify identity status in the Pipeline section;
+   approve the default sequences; first sends are 24 h holds.
+5. Deploy WP7. Owner: activate `content-marketer` and `growth-specialist`;
+   drop logo and colours into `brand/`; confirm Meta app permissions;
+   first posts are 24 h holds; raise `maxRunningTasks` to 6.
+6. Deploy WP8, WP9. Owner: set `PublicSiteOrigins`; activate `accountant`,
+   `data-analyst`, `security-analyst`; then enable duties.
+7. siutindei repo: appendix A. Then deploy WP10. Owner: activate
+   `architect`, `engineer-1`, `engineer-2`, `product-dev`; token scope
+   `actions: write`. Keep `code_merge_staging` as `always_propose` until
+   those workflows exist; then first merges to staging are 12 h holds.
 8. After two weeks: act on ramp promotions from the review page.
 
 ## 7. Definition of done (every WP)

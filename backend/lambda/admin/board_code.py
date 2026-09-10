@@ -224,8 +224,20 @@ def ci_success(sha: str) -> bool:
 
 def _pr_files(number: int) -> list[dict[str, Any]]:
     repo = _repo()
-    raw = _gh("GET", f"/repos/{repo}/pulls/{int(number)}/files?per_page=100") or []
-    return [row for row in raw if isinstance(row, dict)] if isinstance(raw, list) else []
+    files: list[dict[str, Any]] = []
+    page = 1
+    while page <= 20:
+        raw = _gh("GET", f"/repos/{repo}/pulls/{int(number)}/files?per_page=100&page={page}") or []
+        batch = [row for row in raw if isinstance(row, dict)] if isinstance(raw, list) else []
+        files.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    pr = _get_pr(number)
+    changed = int(pr.get("changed_files") or 0)
+    if changed and changed != len(files):
+        raise CodeError("could not load every changed file")
+    return files
 
 
 def _get_pr(number: int) -> dict[str, Any]:
@@ -290,7 +302,7 @@ def parse_review_verdict(text: str) -> dict[str, Any]:
 
 
 def _find_task(table: Any, kind: str, event_id: str, *, statuses: tuple[str, ...] | None = None) -> dict[str, Any] | None:
-    wanted = statuses or ("queued", "running", "review", "returned", "delivered", "needs_owner")
+    wanted = statuses or ("queued", "running", "review", "delivered", "needs_owner")
     for status in wanted:
         for task in board_store.list_tasks(table, status, limit=200):
             ref = task.get("eventRef") or {}
@@ -305,7 +317,14 @@ def architect_accepted(table: Any, pr_number: int) -> bool:
         return False
     text = board_staff.read_deliverable(task, limit=20_000)
     parsed = parse_review_verdict(text)
-    return parsed.get("verdict") == "accept"
+    if parsed.get("verdict") != "accept":
+        return False
+    accepted_sha = str((task.get("eventRef") or {}).get("headSha") or parsed.get("headSha") or "")
+    try:
+        current = str((_get_pr(pr_number).get("head") or {}).get("sha") or "")
+    except (CodeError, board_github.GitHubSnapshotError):
+        return False
+    return bool(accepted_sha) and accepted_sha == current
 
 
 def merge_guard(ctx: Any, args: dict[str, Any]) -> str | None:
@@ -425,13 +444,16 @@ def op_review_pr(_ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     return review_bundle(number)
 
 
-def op_merge_staging(_ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
+def op_merge_staging(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     try:
         number = int(args.get("prNumber") or 0)
     except (TypeError, ValueError):
         raise CodeError("prNumber is required") from None
     if number <= 0:
         raise CodeError("prNumber is required")
+    reason = merge_guard(ctx, args)
+    if reason:
+        return {"error": reason}
     return dispatch_workflow(WORKFLOW_MERGE, {"pr_number": str(number)}, ref="staging")
 
 
@@ -653,6 +675,13 @@ def on_review_delivered(table: Any, settings: dict[str, Any], task: dict[str, An
         engineer = _pick_engineer(
             table, [sid for sid in ("engineer-1", "engineer-2") if (roster.get(sid) or {}).get("isActive")] or ["engineer-1"]
         )
+    try:
+        bundle = review_bundle(pr_number)
+        ref["headSha"] = bundle.get("sha")
+        task["eventRef"] = ref
+        board_store.put_task(table, task)
+    except (CodeError, board_github.GitHubSnapshotError) as exc:
+        _log_event("warning", tag="board_code_head_sha_failed", error=str(exc)[:200])
     if parsed["verdict"] == "changes":
         if rounds >= MAX_REVIEW_ROUNDS:
             return {"verdict": "changes", "stopped": "max rounds"}

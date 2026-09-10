@@ -524,6 +524,12 @@ export class LxsoftwareStack extends cdk.Stack {
       default: "partnerships",
       description: "Local part of the outreach From address (partnerships@OutreachSendingDomain).",
     });
+    const publicSiteOrigins = new cdk.CfnParameter(this, "PublicSiteOrigins", {
+      type: "String",
+      default: "https://lx-software.com,https://www.lx-software.com,https://siutindei.com,https://www.siutindei.com",
+      description:
+        "CSV of extra CORS origins for public newsletter subscribe (LX Software and Siu Tin Dei public sites).",
+    });
     const publicApiBaseUrl = new cdk.CfnParameter(this, "PublicApiBaseUrl", {
       type: "String",
       default: "",
@@ -1254,7 +1260,10 @@ export class LxsoftwareStack extends cdk.Stack {
       ],
     });
     adminFn.addEventSource(
-      new lambdaEventSources.SqsEventSource(outreachEventsQueue, { batchSize: 10 })
+      new lambdaEventSources.SqsEventSource(outreachEventsQueue, {
+        batchSize: 10,
+        reportBatchItemFailures: true,
+      })
     );
     new ses.CfnEmailIdentity(this, "SiutindeiOutreachSendingIdentity", {
       emailIdentity: outreachSendingDomain.valueAsString,
@@ -1266,12 +1275,22 @@ export class LxsoftwareStack extends cdk.Stack {
     });
     adminFn.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ["ses:SendEmail", "ses:SendRawEmail", "ses:GetEmailIdentity"],
+        actions: ["ses:SendEmail", "ses:SendRawEmail", "ses:SendBulkEmail", "ses:GetEmailIdentity"],
         resources: [
           cdk.Stack.of(this).formatArn({
             service: "ses",
             resource: "identity",
             resourceName: outreachSendingDomain.valueAsString,
+          }),
+          cdk.Stack.of(this).formatArn({
+            service: "ses",
+            resource: "configuration-set",
+            resourceName: "lxsoftware-admin-siutindei-outreach",
+          }),
+          cdk.Stack.of(this).formatArn({
+            service: "ses",
+            resource: "configuration-set",
+            resourceName: "lxsoftware-admin-siutindei-newsletter",
           }),
         ],
       })
@@ -1762,6 +1781,11 @@ export class LxsoftwareStack extends cdk.Stack {
       fn.addEnvironment("BOARD_MAIL_DOMAIN", boardMailDomain.valueAsString);
       fn.addEnvironment("BOARD_MAIL_RAW_SEGMENT", boardMailRawSegment);
       fn.addEnvironment("BOARD_MAIL_INBOUND_ADDRESS", boardMailInboundAddress);
+      fn.addEnvironment("BOARD_STAFF_ENABLED", boardStaffEnabled.valueAsString);
+      fn.addEnvironment("BOARD_TOOLS_ENABLED", boardToolsEnabled.valueAsString);
+      fn.addEnvironment("BOARD_MAIL_SENDING_ENABLED", boardMailSendingEnabled.valueAsString);
+      fn.addEnvironment("OUTREACH_SENDING_DOMAIN", outreachSendingDomain.valueAsString);
+      fn.addEnvironment("OUTREACH_FROM_LOCAL_PART", outreachFromLocalPart.valueAsString);
     }
 
     adminFn.addEnvironment(
@@ -1810,22 +1834,38 @@ export class LxsoftwareStack extends cdk.Stack {
     });
     boardMailIdentity.cfnOptions.condition = hasBoardMailSending;
     const boardMailSendPolicy = new iam.Policy(this, "SiutindeiBoardMailSendPolicy", {
-      statements: [
-        new iam.PolicyStatement({
-          actions: ["ses:SendEmail", "ses:SendRawEmail", "ses:SendBulkEmail"],
-          resources: [
-            cdk.Stack.of(this).formatArn({
-              service: "ses",
-              resource: "identity",
-              resourceName: boardMailDomain.valueAsString,
-            }),
-          ],
-        }),
-        new iam.PolicyStatement({
-          actions: ["ses:CreateEmailTemplate", "ses:GetEmailTemplate", "ses:UpdateEmailTemplate"],
-          resources: ["*"],
-        }),
-      ],
+        statements: [
+          new iam.PolicyStatement({
+            actions: ["ses:SendEmail", "ses:SendRawEmail", "ses:SendBulkEmail"],
+            resources: [
+              cdk.Stack.of(this).formatArn({
+                service: "ses",
+                resource: "identity",
+                resourceName: boardMailDomain.valueAsString,
+              }),
+              cdk.Stack.of(this).formatArn({
+                service: "ses",
+                resource: "configuration-set",
+                resourceName: "lxsoftware-admin-siutindei-outreach",
+              }),
+              cdk.Stack.of(this).formatArn({
+                service: "ses",
+                resource: "configuration-set",
+                resourceName: "lxsoftware-admin-siutindei-newsletter",
+              }),
+            ],
+          }),
+          new iam.PolicyStatement({
+            actions: ["ses:CreateEmailTemplate", "ses:GetEmailTemplate", "ses:UpdateEmailTemplate"],
+            resources: [
+              cdk.Stack.of(this).formatArn({
+                service: "ses",
+                resource: "template",
+                resourceName: "lxsoftware-admin-siutindei-*",
+              }),
+            ],
+          }),
+        ],
     });
     boardMailSendPolicy.attachToRole(adminFn.role!);
     const cfnBoardMailSendPolicy = boardMailSendPolicy.node.defaultChild as iam.CfnPolicy;
@@ -1849,9 +1889,13 @@ export class LxsoftwareStack extends cdk.Stack {
           apigwv2.CorsHttpMethod.DELETE,
           apigwv2.CorsHttpMethod.OPTIONS,
         ],
-        allowOrigins: [
-          cdk.Fn.join("", ["https://", adminWebDomainName.valueAsString]),
-        ],
+        allowOrigins: cdk.Fn.split(
+          ",",
+          cdk.Fn.join(",", [
+            cdk.Fn.join("", ["https://", adminWebDomainName.valueAsString]),
+            publicSiteOrigins.valueAsString,
+          ])
+        ),
         allowCredentials: false,
       },
     });

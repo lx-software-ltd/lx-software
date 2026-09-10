@@ -106,6 +106,7 @@ export type BoardSettings = {
   readonly review?: { readonly digestTo: string; readonly digestHourHkt: number; readonly sampleSize: number };
   readonly boundaries?: BoardBoundaries;
   readonly updatedAt?: string | null;
+  readonly version?: number;
 };
 
 export type BoardBoundaries = {

@@ -186,6 +186,7 @@ export function BoardSettingsCard({
               type="checkbox"
               id="board-staff-enabled"
               checked={Boolean(draft.staff?.enabled)}
+              disabled={Boolean(settings.staff?.disabledReason)}
               onChange={(ev) =>
                 setDraft((d) => ({
                   ...d,
@@ -195,6 +196,7 @@ export function BoardSettingsCard({
                     dailyBudgetUsd: d.staff?.dailyBudgetUsd ?? 20,
                     dutiesEnabled: d.staff?.dutiesEnabled,
                     seniorPaused: d.staff?.seniorPaused,
+                    disabledReason: d.staff?.disabledReason,
                   },
                 }))
               }
@@ -203,6 +205,11 @@ export function BoardSettingsCard({
               Enable staff tasks
             </label>
           </div>
+          {settings.staff?.disabledReason ? (
+            <div className="form-text text-danger" id="board-staff-disabled-reason">
+              Staff is disabled: {settings.staff.disabledReason}. Reset the budget breaker from the review page before turning staff back on.
+            </div>
+          ) : null}
           <div className="form-check form-switch">
             <input
               className="form-check-input"

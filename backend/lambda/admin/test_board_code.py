@@ -6,6 +6,7 @@ import os
 import unittest
 from typing import Any
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 
 from test_board import BoardTestCase
 from test_board_tools import ToolsTestCase
@@ -25,7 +26,10 @@ def _enable_staff(table: Any, **staff: Any) -> dict[str, Any]:
     settings["staff"] = board_store.normalize_staff_config({**(settings.get("staff") or {}), "enabled": True, **staff})
     settings["tools"]["globalMode"] = "act"
     settings["tools"]["matrix"]["code"]["cto"] = "act"
-    return board_store.save_settings(table, settings)
+    saved = board_store.save_settings(table, settings)
+    for seat in ("architect", "engineer-1", "engineer-2"):
+        board_store.save_staff_override(table, seat, {"isActive": True})
+    return saved
 
 
 class FakeActions:
@@ -54,9 +58,12 @@ class FakeActions:
             head = path.split("head=", 1)[1].split("&", 1)[0]
             ref = head.split(":", 1)[-1]
             return [p for p in self.prs if ((p.get("head") or {}).get("ref") or "") == ref]
-        if method == "GET" and "/pulls/" in path and path.endswith("/files?per_page=100"):
+        if method == "GET" and "/pulls/" in path and "/files?" in path:
             number = int(path.split("/pulls/", 1)[1].split("/", 1)[0])
-            return list(self.files.get(number) or [])
+            all_files = list(self.files.get(number) or [])
+            page = int((parse_qs(urlparse(path).query).get("page") or ["1"])[0])
+            start = (page - 1) * 100
+            return all_files[start : start + 100]
         if method == "GET" and "/pulls/" in path:
             number = int(path.rstrip("/").rsplit("/", 1)[-1].split("?")[0])
             return next((p for p in self.prs if p.get("number") == number), None)
@@ -183,9 +190,43 @@ class RunnerTests(BoardTestCase):
         self.assertIn("content/**", board_code.merge_guard(self.ctx, {"prNumber": 7, "kind": "content"}) or "")
 
     def test_merge_dispatches_merge_workflow(self) -> None:
+        self.gh.prs.append(_pr())
+        self.gh.files[7] = [{"filename": "lib/app.py", "changes": 12}]
+        self.gh.checks["abc123"] = _green()
+        self._deliver_accept(7)
         out = board_code.op_merge_staging(self.ctx, {"prNumber": 7})
         self.assertEqual(out["workflow"], "board-merge-staging.yml")
         self.assertEqual(self.gh.dispatches[0]["body"]["inputs"]["pr_number"], "7")
+
+    def test_merge_refuses_when_ci_flips_after_accept(self) -> None:
+        self.gh.prs.append(_pr())
+        self.gh.files[7] = [{"filename": "lib/app.py", "changes": 12}]
+        self.gh.checks["abc123"] = _green()
+        self._deliver_accept(7)
+        self.gh.checks["abc123"] = [{"name": "ci", "status": "completed", "conclusion": "failure"}]
+        out = board_code.op_merge_staging(self.ctx, {"prNumber": 7})
+        self.assertIn("CI", out.get("error") or "")
+        self.assertEqual(self.gh.dispatches, [])
+
+    def test_merge_refuses_new_head_sha_after_accept(self) -> None:
+        self.gh.prs.append(_pr())
+        self.gh.files[7] = [{"filename": "lib/app.py", "changes": 12}]
+        self.gh.checks["abc123"] = _green()
+        self._deliver_accept(7)
+        self.gh.prs[0]["head"] = {"ref": "board/task-1", "sha": "fff999"}
+        self.gh.checks["fff999"] = _green()
+        out = board_code.op_merge_staging(self.ctx, {"prNumber": 7})
+        self.assertIn("architect review", out.get("error") or "")
+
+    def test_pr_files_paginates_and_refuses_protected_on_later_page(self) -> None:
+        files = [{"filename": f"lib/f{i}.py", "changes": 1} for i in range(119)]
+        files.append({"filename": "src/auth/secret.ts", "changes": 1})
+        self.gh.prs.append({**_pr(), "changed_files": 120})
+        self.gh.files[7] = files
+        self.gh.checks["abc123"] = _green()
+        self._deliver_accept(7)
+        reason = board_code.merge_guard(self.ctx, {"prNumber": 7})
+        self.assertIn("protected path", reason or "")
 
     def test_promote_refuses_when_staging_behind(self) -> None:
         self.gh.compare = {"status": "behind", "ahead_by": 0, "behind_by": 3, "commits": []}
@@ -240,7 +281,7 @@ class RunnerTests(BoardTestCase):
             origin="event",
             brief="review",
             deliverable_type="markdown",
-            event_ref={"kind": "code-review", "id": f"pr:{pr_number}", "prNumber": pr_number},
+            event_ref={"kind": "code-review", "id": f"pr:{pr_number}", "prNumber": pr_number, "headSha": "abc123"},
             created_by="t",
             status="review",
         )

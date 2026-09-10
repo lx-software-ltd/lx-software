@@ -393,8 +393,25 @@ def op_get_changes(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     return {"changes": list_changes(ctx.table, int(args.get("days") or 7))}
 
 
+def _fetch_host_allowed(table: Any, url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower()
+    if not host:
+        return False
+    for watch in board_store.list_watches(table):
+        for raw in list(watch.get("urls") or []) + [watch.get("url"), watch.get("homepage"), watch.get("domain")]:
+            text = str(raw or "").strip()
+            if not text:
+                continue
+            other = urlparse(text if "://" in text else f"https://{text}").hostname or text
+            if host == other.lower() or host == text.lower():
+                return True
+    return False
+
+
 def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     url = str(args.get("url") or "").strip()
+    if not _fetch_host_allowed(ctx.table, url):
+        return {"error": "host is not on the watchlist"}
     if not board_crawl.robots_allows(ctx.table, url):
         return {"error": "robots.txt disallows this URL"}
     host = _host(url)

@@ -64,6 +64,7 @@ class OutreachTests(BoardTestCase):
     def setUp(self) -> None:
         super().setUp()
         os.environ["BOARD_STAFF_ENABLED"] = "true"
+        os.environ["BOARD_MAIL_SENDING_ENABLED"] = "true"
         os.environ["BOARD_LINK_SIGNING_SECRET"] = "link-secret-for-tests"
         os.environ["PUBLIC_API_BASE_URL"] = "https://api.example"
         os.environ["OUTREACH_IDENTITY_VERIFIED"] = "true"
@@ -71,6 +72,7 @@ class OutreachTests(BoardTestCase):
         os.environ["OUTREACH_SENDING_DOMAIN"] = "partners.siutindei.com"
         os.environ.pop("ASSETS_BUCKET_NAME", None)
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        self.addCleanup(lambda: os.environ.pop("BOARD_MAIL_SENDING_ENABLED", None))
         self.addCleanup(lambda: os.environ.pop("BOARD_LINK_SIGNING_SECRET", None))
         self.addCleanup(lambda: os.environ.pop("PUBLIC_API_BASE_URL", None))
         self.addCleanup(lambda: os.environ.pop("OUTREACH_IDENTITY_VERIFIED", None))
@@ -78,6 +80,7 @@ class OutreachTests(BoardTestCase):
         self.addCleanup(lambda: os.environ.pop("OUTREACH_SENDING_DOMAIN", None))
         board_outreach.reset_caches_for_tests()
         self.settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "prospector", {"isActive": True})
         self.ses = FakeSes()
         self.addCleanup(patch.object(board_outreach, "_ses_client", lambda: self.ses).start())
 
@@ -285,6 +288,63 @@ class OutreachTests(BoardTestCase):
         msg2 = {"from": {"address": "info@stop.example"}, "text": "unsubscribe please", "direction": "in", "threadId": "th-2"}
         self.assertIsNone(board_triage.on_mail_ingested(self.table, self.settings, thread2, msg2))
         self.assertEqual(board_store.get_prospect(self.table, other["prospectId"])["stage"], "suppressed")
+
+    def test_sending_disabled_refuses(self) -> None:
+        row = _prospect(self.table)
+        os.environ["BOARD_MAIL_SENDING_ENABLED"] = "false"
+        self.assertEqual(
+            board_outreach.send(self.table, self.settings, prospect_id=row["prospectId"])["error"],
+            "email sending is switched off",
+        )
+
+    def test_personal_address_refused_at_send(self) -> None:
+        row = _prospect(self.table, email="info@play.example")
+        row["contact"] = "peter.chan.1984@gmail.com"
+        board_store.put_prospect(self.table, row)
+        self.assertEqual(
+            board_outreach.send(self.table, self.settings, prospect_id=row["prospectId"])["error"],
+            "personal address not allowed",
+        )
+
+    def test_quoted_footer_does_not_suppress(self) -> None:
+        row = _prospect(self.table)
+        text = (
+            "Yes, we would love to be listed!\n\n"
+            "> On Mon, Board wrote:\n"
+            "> Reply \"unsubscribe\" or use https://example/unsub\n"
+        )
+        handled = board_outreach.maybe_handle_reply(self.table, self.settings, "info@play.example", text)
+        self.assertFalse(handled["suppressed"])
+        self.assertEqual(board_store.get_prospect(self.table, row["prospectId"])["stage"], "replied")
+        bare = _prospect(self.table, name="Stop", website="https://stop.example", email="info@stop.example")
+        handled2 = board_outreach.maybe_handle_reply(self.table, self.settings, "info@stop.example", "unsubscribe")
+        self.assertTrue(handled2["suppressed"])
+        self.assertEqual(board_store.get_prospect(self.table, bare["prospectId"])["stage"], "suppressed")
+        zh = _prospect(self.table, name="Zh", website="https://zh2.example", email="info@zh2.example")
+        handled3 = board_outreach.maybe_handle_reply(self.table, self.settings, "info@zh2.example", "請取消")
+        self.assertTrue(handled3["suppressed"])
+
+    def test_two_sends_at_cap_minus_one(self) -> None:
+        import board_hk
+
+        today = board_hk.today_hkt()
+        board_store.save_outreach_day(self.table, {"sent": 19, "bounces": 0, "complaints": 0}, today)
+        first = _prospect(self.table, name="A", website="https://a2.example", email="info@a2.example")
+        second = _prospect(self.table, name="B", website="https://b2.example", email="info@b2.example")
+        ok = board_outreach.send(self.table, self.settings, prospect_id=first["prospectId"])
+        refused = board_outreach.send(self.table, self.settings, prospect_id=second["prospectId"])
+        self.assertTrue(ok.get("ok"))
+        self.assertEqual(refused.get("error"), "daily cap reached")
+
+    def test_list_unsubscribe_is_https_only(self) -> None:
+        row = _prospect(self.table)
+        sent = board_outreach.send(self.table, self.settings, prospect_id=row["prospectId"])
+        self.assertTrue(sent.get("ok"))
+        raw = self.ses.calls[-1]["Content"]["Raw"]["Data"]
+        msg = message_from_bytes(raw)
+        raw_text = raw.decode("utf-8", errors="replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
+        self.assertIn("https://", raw_text)
+        self.assertNotIn("mailto:", raw_text)
 
     def test_classify_outreach_send(self) -> None:
         row = _prospect(self.table)
