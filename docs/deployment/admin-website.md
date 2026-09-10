@@ -14,7 +14,9 @@ Before triggering **Deploy Backend**:
    `ADMIN_GOOGLE_CLIENT_ID`, **`ADMIN_FEDERATED_EMAIL_ALLOWLIST`** (comma-separated
    lower-case emails that should receive `admin` via Pre Token Generation — include
    every Google admin and the bootstrap email), `ADMIN_BOOTSTRAP_EMAIL`, and
-   (after first deploy) SPA vars `ADMIN_COGNITO_*`, `ADMIN_API_BASE_URL`. Set
+   (after first deploy) SPA vars `ADMIN_COGNITO_*`, `ADMIN_API_BASE_URL`
+   (`ADMIN_API_BASE_URL` is also inlined as `VITE_PUBLIC_API_URL` by
+   **Deploy Public Website**). Set
    **secrets** `ADMIN_GOOGLE_CLIENT_SECRET` (Google OAuth client secret) and
    `ADMIN_BOOTSTRAP_TEMP_PASSWORD` (bootstrap user password; CDK `noEcho`).
 2. **Bootstrap password** — must satisfy the pool policy (14+ chars with mixed
@@ -609,11 +611,13 @@ function calling. Design:
   Config set `lxsoftware-admin-siutindei-newsletter` → same SNS/SQS as
   outreach, plus OPEN/CLICK (records are routed by configuration-set /
   `issueId` so newsletter bounces do not trip the outreach breaker).
-  Public site form uses `VITE_PUBLIC_API_URL` and needs the public origin
+  Public site form uses `VITE_PUBLIC_API_URL` (CI inlines
+  `vars.ADMIN_API_BASE_URL` at build) and needs the public origin
   in `PublicSiteOrigins`. Subscriber rows are `newsletter#sub#{list}#{digest}`
   (no live migration; no rows existed). Owner: create the
-  `news@siutindei.com` mailbox (fan-out already copies `@siutindei.com`),
-  set `PublicSiteOrigins`, and set the public site env.
+  `news@siutindei.com` mailbox (fan-out already copies `@siutindei.com`)
+  and set `PublicSiteOrigins`. Confirm `ADMIN_API_BASE_URL` is set on the
+  production GitHub environment (already required for the admin SPA).
 
 - **Duties and remaining desks (WP9):** Flip `accountant`, `data-analyst`
   and `security-analyst` on at runbook step 6, then enable

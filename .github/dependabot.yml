@@ -102,3 +102,20 @@ updates:
       # if aws-cdk-lib unbundles `table` upstream.
       - dependency-name: "fast-uri"
 
+  # Pip - AdminApiFn (Pillow, defusedxml). Without this ecosystem Dependabot
+  # security jobs for /backend/lambda/admin fail with dependency_not_found.
+  - package-ecosystem: "pip"
+    directory: "/backend/lambda/admin"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+      - "lambda"
+    groups:
+      pip:
+        patterns:
+          - "*"
+

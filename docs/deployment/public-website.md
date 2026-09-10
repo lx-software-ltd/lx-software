@@ -36,14 +36,18 @@ Ensure these repository variables are set in **Settings** > **Variables**:
 | `AWS_ACCOUNT_ID` | Target AWS account ID | `588024549699` |
 | `AWS_REGION` | Target AWS region | `ap-southeast-1` |
 | `CDK_PARAM_FILE` | Path to parameter file | `params/production.json` |
+| `PUBLIC_WEBSITE_STACK_NAME` | CloudFormation stack that owns the S3 bucket / CloudFront distribution | `lxsoftware-public-www` |
+| `ADMIN_API_BASE_URL` | Admin HTTP API origin (no trailing slash). Inlined at build as `VITE_PUBLIC_API_URL` for `NewsletterForm`. Same variable the admin SPA already uses. | `https://xxxx.execute-api.ap-southeast-1.amazonaws.com` |
 
 ## Build locally
 
 ```bash
 cd apps/public_www
 npm install
-npm run build
+VITE_PUBLIC_API_URL=https://xxxx.execute-api.ap-southeast-1.amazonaws.com npm run build
 ```
+
+Omit `VITE_PUBLIC_API_URL` and the newsletter form throws "not configured" at submit. The **Deploy Public Website** workflow reads `vars.ADMIN_API_BASE_URL` (production environment) and fails the build if it is empty.
 
 The output is written to `apps/public_www/dist`.
 

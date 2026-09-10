@@ -37,9 +37,18 @@ jobs:
         run: npm ci
         working-directory: apps/public_www
 
+      # NewsletterForm posts to the admin HTTP API. Same origin as the admin
+      # SPA (`vars.ADMIN_API_BASE_URL`); Vite inlines it at build time.
       - name: Build public website
-        run: npm run build
         working-directory: apps/public_www
+        env:
+          VITE_PUBLIC_API_URL: ${{ vars.ADMIN_API_BASE_URL }}
+        run: |
+          if [ -z "${VITE_PUBLIC_API_URL}" ]; then
+            echo "::error::ADMIN_API_BASE_URL is empty. Set it on the production environment (same value as the admin SPA) so NewsletterForm can POST /public/newsletter/subscribe."
+            exit 1
+          fi
+          npm run build
 
       - name: Configure AWS credentials
         if: ${{ vars.AWS_ACCOUNT_ID != '' && vars.AWS_REGION != '' }}
