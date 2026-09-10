@@ -63,9 +63,13 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByText(/Ship the provider onboarding form/i)).toBeVisible();
     if (testInfo.project.name === "phone") {
       await expect(page.locator("#board-section-select")).toBeVisible();
+      await page.locator("#board-section-select").selectOption("staff");
     } else {
       await expect(page.getByRole("tab", { name: /Next actions/ })).toBeVisible();
+      await page.getByRole("tab", { name: /Staff/ }).click();
     }
+    await expect(page.getByText(/Parent Support/i)).toBeVisible();
+    await expect(page.getByText(/List our three biggest monthly costs/i)).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 });

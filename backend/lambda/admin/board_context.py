@@ -88,6 +88,14 @@ def build_context_pack(
     meta = board_meta.digest_for_context(table)
     stores = board_stores.digest_for_context(table)
     web = board_web.digest_for_context(table)
+    staff = {}
+    try:
+        import board_staff
+
+        if board_staff.enabled(settings):
+            staff = board_staff.context_staff_pack(table)
+    except Exception:
+        staff = {}
 
     pack = {
         "brief": _cap(str(brief.get("markdown") or ""), MAX_BRIEF_CHARS),
@@ -109,6 +117,8 @@ def build_context_pack(
         "meta": meta,
         "stores": stores,
         "web": web,
+        "staffDelivered": staff.get("staffDelivered") or [],
+        "staffInFlight": staff.get("staffInFlight") or [],
         "finance": finance,
         "repoText": _cap(str((repo or {}).get("text") or ""), MAX_REPO_CHARS) if repo else "",
         "repoFetchedAt": (repo or {}).get("fetchedAt") if repo else None,
@@ -297,6 +307,24 @@ def render_context_pack(pack: dict[str, Any]) -> str:
             f"--- Web: {web.get('sessions') or 0} GA4 sessions, {web.get('users') or 0} users "
             f"({web.get('properties') or 0} properties) — members with web access use web_sessions / web_conversions ---"
         )
+
+    delivered = pack.get("staffDelivered") or []
+    inflight = pack.get("staffInFlight") or []
+    if delivered or inflight:
+        parts.append("")
+        parts.append("--- STAFF WORK ---")
+        if inflight:
+            parts.append(f"In flight ({len(inflight)}):")
+            for t in inflight[:10]:
+                parts.append(
+                    f"- [{t.get('status')}] ({t.get('assignee')}) {_cap(str(t.get('brief') or ''), 80)}"
+                )
+        if delivered:
+            parts.append("Recently delivered:")
+            for t in delivered[:10]:
+                parts.append(
+                    f"- ({t.get('assignee')}) {_cap(str(t.get('summary') or ''), 120)}"
+                )
 
     finance = pack.get("finance")
     if finance:

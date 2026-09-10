@@ -16,6 +16,7 @@ import board_meeting
 import board_personas
 import board_receivables
 import board_research
+import board_staff
 import board_store
 import board_stores
 import board_tools
@@ -138,6 +139,12 @@ def handle_board_route(
 
     if head == "receivables" and len(rest) == 1 and method == "GET":
         return _json_response(200, board_receivables.aging_for_owner())
+
+    if head == "staff":
+        return _staff_route(event, method, rest, user_sub)
+
+    if head == "tasks":
+        return _tasks_route(event, method, rest, user_sub)
 
     return _json_response(404, {"message": "Not found"})
 
@@ -493,7 +500,150 @@ def validate_settings(body: Any, current: dict[str, Any]) -> dict[str, Any]:
         if raw < 0 or raw > BOARD_MAX_DAILY_BUDGET_USD:
             raise ValueError(f"dailyBudgetUsd must be between 0 and {BOARD_MAX_DAILY_BUDGET_USD}")
         out["dailyBudgetUsd"] = round(float(raw), 2)
+    if "staff" in body:
+        if not isinstance(body.get("staff"), dict):
+            raise ValueError("staff must be an object")
+        out["staff"] = board_store.normalize_staff_config({**(current.get("staff") or {}), **body["staff"]})
+    if "review" in body:
+        if not isinstance(body.get("review"), dict):
+            raise ValueError("review must be an object")
+        out["review"] = board_store.normalize_review_config({**(current.get("review") or {}), **body["review"]})
+    if "boundaries" in body:
+        if not isinstance(body.get("boundaries"), dict):
+            raise ValueError("boundaries must be an object")
+        out["boundaries"] = board_store.normalize_boundaries({**(current.get("boundaries") or {}), **body["boundaries"]})
     return out
+
+
+def _staff_disabled() -> dict[str, Any]:
+    return _json_response(409, {"message": "Staff is disabled"})
+
+
+def _staff_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
+    table = board_store.records_table()
+    settings = board_store.load_settings(table)
+    if len(rest) == 1:
+        if method == "GET":
+            if not board_staff.env_enabled():
+                return _staff_disabled()
+            return _json_response(
+                200,
+                {
+                    "enabled": board_staff.enabled(settings),
+                    "envEnabled": True,
+                    "seats": board_staff.seats(table, settings),
+                    "counts": board_staff.staff_counts(table),
+                },
+            )
+        return _json_response(405, {"message": "Method not allowed"})
+    if len(rest) == 2:
+        seat_id = rest[1]
+        if not board_staff.is_seat_id(seat_id):
+            return _json_response(404, {"message": "Unknown staff seat"})
+        if not board_staff.env_enabled():
+            return _staff_disabled()
+        if method == "PUT":
+            try:
+                patch = board_staff.validate_seat_override(_parse_json_body(event))
+            except board_staff.StaffError as exc:
+                return _json_response(400, {"message": str(exc)})
+            board_store.save_staff_override(table, seat_id, patch)
+            _audit(user_sub, "BOARD_STAFF_PUT", seat_id, event)
+            return _json_response(200, {"seat": next((s for s in board_staff.seats(table) if s["id"] == seat_id), None)})
+        if method == "DELETE":
+            board_store.delete_staff_override(table, seat_id)
+            _audit(user_sub, "BOARD_STAFF_RESET", seat_id, event)
+            return _json_response(200, {"seat": next((s for s in board_staff.seats(table) if s["id"] == seat_id), None)})
+        return _json_response(405, {"message": "Method not allowed"})
+    return _json_response(404, {"message": "Not found"})
+
+
+def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
+    table = board_store.records_table()
+    settings = board_store.load_settings(table)
+    if len(rest) == 1:
+        if method == "GET":
+            if not board_staff.env_enabled():
+                return _staff_disabled()
+            qs = parse_qs(event.get("rawQueryString") or "")
+            status = (qs.get("status") or [""])[0] or None
+            assignee = (qs.get("assignee") or [""])[0] or None
+            try:
+                limit = int((qs.get("limit") or ["100"])[0])
+            except (TypeError, ValueError):
+                limit = 100
+            limit = max(1, min(200, limit))
+            tasks = board_staff.list_tasks_for_api(table, status=status, assignee=assignee, limit=limit)
+            return _json_response(200, {"tasks": [board_staff.public_task(t) for t in tasks], "counts": board_staff.staff_counts(table)})
+        if method == "POST":
+            if not board_staff.enabled(settings):
+                return _staff_disabled()
+            body = _parse_json_body(event)
+            try:
+                task = board_staff.create_task(
+                    table,
+                    settings,
+                    assignee=str(body.get("assignee") or ""),
+                    origin="owner",
+                    brief=str(body.get("brief") or ""),
+                    deliverable_type=str(body.get("deliverableType") or "markdown"),
+                    budget_usd=body.get("budgetUsd"),
+                    sla_hours=int(body.get("slaHours") or 24),
+                    created_by=user_sub or "",
+                )
+            except board_staff.StaffError as exc:
+                message = str(exc)
+                return _json_response(409 if "disabled" in message.lower() else 400, {"message": message})
+            except (TypeError, ValueError) as exc:
+                return _json_response(400, {"message": str(exc)})
+            _audit(user_sub, "BOARD_TASK_CREATE", task.get("taskId") or "", event)
+            return _json_response(201, {"task": board_staff.public_task(task)})
+        return _json_response(405, {"message": "Method not allowed"})
+    if len(rest) == 2:
+        if method != "GET":
+            return _json_response(405, {"message": "Method not allowed"})
+        if not board_staff.env_enabled():
+            return _staff_disabled()
+        task = board_store.get_task(table, rest[1])
+        if not task:
+            return _json_response(404, {"message": "Task not found"})
+        return _json_response(
+            200,
+            {
+                "task": board_staff.public_task(task),
+                "steps": board_store.list_task_steps(table, rest[1]),
+                "reviews": board_store.list_task_reviews(table, rest[1]),
+                "deliverable": board_staff.read_deliverable(task),
+                "deliverableUrl": board_staff.presign_deliverable(str(task.get("deliverableKey") or "")),
+            },
+        )
+    if len(rest) == 3 and rest[2] == "cancel" and method == "POST":
+        if not board_staff.enabled(settings):
+            return _staff_disabled()
+        try:
+            task = board_staff.cancel_task(table, rest[1], user_sub or "")
+        except board_staff.StaffError as exc:
+            return _json_response(404 if "not found" in str(exc).lower() else 400, {"message": str(exc)})
+        _audit(user_sub, "BOARD_TASK_CANCEL", rest[1], event)
+        return _json_response(200, {"task": board_staff.public_task(task)})
+    if len(rest) == 3 and rest[2] == "review" and method == "POST":
+        if not board_staff.enabled(settings):
+            return _staff_disabled()
+        body = _parse_json_body(event)
+        try:
+            task = board_staff.owner_review(
+                table,
+                settings,
+                rest[1],
+                str(body.get("verdict") or ""),
+                str(body.get("notes") or ""),
+                user_sub or "",
+            )
+        except board_staff.StaffError as exc:
+            return _json_response(404 if "not found" in str(exc).lower() else 400, {"message": str(exc)})
+        _audit(user_sub, "BOARD_TASK_REVIEW", rest[1], event)
+        return _json_response(200, {"task": board_staff.public_task(task)})
+    return _json_response(404, {"message": "Not found"})
 
 
 def _settings_put(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:

@@ -4,12 +4,26 @@ import {
   BOARD_TOOL_LEVELS,
   type BoardActionPriority,
   type BoardActionStatus,
+  type BoardDeliverableType,
   type BoardMeetingMode,
+  type BoardStaffModelTier,
+  type BoardTaskOrigin,
+  type BoardTaskStatus,
   type BoardToolGlobalMode,
   type BoardToolLevel,
 } from "./contracts/generated";
 
-export type { BoardActionPriority, BoardActionStatus, BoardMeetingMode, BoardToolGlobalMode, BoardToolLevel };
+export type {
+  BoardActionPriority,
+  BoardActionStatus,
+  BoardDeliverableType,
+  BoardMeetingMode,
+  BoardStaffModelTier,
+  BoardTaskOrigin,
+  BoardTaskStatus,
+  BoardToolGlobalMode,
+  BoardToolLevel,
+};
 
 export type BoardCharterField = "vision" | "mission" | "mandate";
 export const BOARD_CHARTER_FIELDS: readonly BoardCharterField[] = [
@@ -77,7 +91,127 @@ export type BoardSettings = {
   readonly models: { readonly chat: string; readonly standup: string; readonly deepDive: string };
   readonly dailyBudgetUsd: number;
   readonly tools: BoardToolsConfig;
+  readonly staff?: {
+    readonly enabled: boolean;
+    readonly maxRunningTasks: number;
+    readonly dailyBudgetUsd: number;
+    readonly dutiesEnabled?: boolean;
+  };
+  readonly review?: { readonly digestTo: string; readonly digestHourHkt: number; readonly sampleSize: number };
   readonly updatedAt?: string | null;
+};
+
+export type BoardSeat = {
+  readonly id: string;
+  readonly reportsTo: string;
+  readonly title: string;
+  readonly modelTier: BoardStaffModelTier;
+  readonly isActive: boolean;
+  readonly isActiveDefault: boolean;
+  readonly tools: Readonly<Record<string, BoardToolLevel>>;
+  readonly brief: string;
+  readonly displayName: string;
+  readonly defaults: { readonly brief: string; readonly displayName: string; readonly modelTier: BoardStaffModelTier };
+  readonly isOverridden: {
+    readonly brief: boolean;
+    readonly displayName: boolean;
+    readonly isActive: boolean;
+    readonly modelTier: boolean;
+  };
+  readonly effectiveLevels: Readonly<Record<string, BoardToolLevel>>;
+  readonly updatedAt?: string | null;
+};
+
+export type BoardTaskUsage = {
+  readonly promptTokens: number;
+  readonly completionTokens: number;
+  readonly cost: number;
+  readonly calls: number;
+};
+
+export type BoardTask = {
+  readonly taskId: string;
+  readonly status: BoardTaskStatus;
+  readonly assignee: string;
+  readonly assigneeKind: "persona" | "seat";
+  readonly managerId: string;
+  readonly origin: BoardTaskOrigin;
+  readonly brief: string;
+  readonly deliverableType: BoardDeliverableType;
+  readonly budgetUsd: number;
+  readonly slaAt: string;
+  readonly step: number;
+  readonly stepsUsed: number;
+  readonly revisions: number;
+  readonly usage: BoardTaskUsage;
+  readonly summary: string;
+  readonly evidence: readonly string[];
+  readonly openQuestions: readonly string[];
+  readonly confidence: string;
+  readonly flags?: readonly string[];
+  readonly reviews: number;
+  readonly lastReview?: { readonly verdict: string; readonly notes: string; readonly at: string; readonly by?: string } | null;
+  readonly createdAt: string;
+  readonly createdBy?: string;
+  readonly updatedAt: string;
+  readonly startedAt?: string | null;
+  readonly finishedAt?: string | null;
+  readonly failureReason?: string;
+  readonly actionId?: string | null;
+  readonly meetingId?: string | null;
+  readonly deliverableKey?: string;
+  readonly deliverableBytes?: number;
+};
+
+export type BoardTaskStep = {
+  readonly seq: number;
+  readonly plan: string;
+  readonly callIds: readonly string[];
+  readonly usage?: Partial<BoardTaskUsage>;
+  readonly at: string;
+};
+
+export type BoardTaskReview = {
+  readonly seq: number;
+  readonly verdict: string;
+  readonly notes: string;
+  readonly at: string;
+  readonly by: string;
+};
+
+export type BoardStaffPayload = {
+  readonly enabled: boolean;
+  readonly envEnabled: boolean;
+  readonly seats: readonly BoardSeat[];
+  readonly counts: Readonly<Record<string, number>>;
+};
+
+export type BoardTaskListPayload = {
+  readonly tasks: readonly BoardTask[];
+  readonly counts: Readonly<Record<string, number>>;
+};
+
+export type BoardTaskDetailPayload = {
+  readonly task: BoardTask;
+  readonly steps: readonly BoardTaskStep[];
+  readonly reviews: readonly BoardTaskReview[];
+  readonly deliverable: string;
+  readonly deliverableUrl: string;
+};
+
+export type BoardSeatOverride = {
+  readonly displayName?: string;
+  readonly brief?: string;
+  readonly isActive?: boolean;
+  readonly modelTier?: BoardStaffModelTier;
+};
+
+export type BoardTaskCreate = {
+  readonly assignee: string;
+  readonly brief: string;
+  readonly deliverableType: BoardDeliverableType;
+  readonly slaHours?: number;
+  readonly budgetUsd?: number;
 };
 
 export type BoardToolOperation = {
@@ -775,6 +909,35 @@ export function boardApprovalDecisionPath(approvalId: string, decision: "approve
 
 export function boardMailThreadPath(threadId: string): string {
   return `${BOARD_API_BASE}/mail/${encodeURIComponent(threadId)}`;
+}
+
+export function boardStaffPath(seatId?: string): string {
+  return seatId ? `${BOARD_API_BASE}/staff/${encodeURIComponent(seatId)}` : `${BOARD_API_BASE}/staff`;
+}
+
+export function boardTasksPath(query?: { status?: string; assignee?: string; limit?: number }): string {
+  const params = new URLSearchParams();
+  if (query?.status) params.set("status", query.status);
+  if (query?.assignee) params.set("assignee", query.assignee);
+  if (query?.limit) params.set("limit", String(query.limit));
+  const qs = params.toString();
+  return qs ? `${BOARD_API_BASE}/tasks?${qs}` : `${BOARD_API_BASE}/tasks`;
+}
+
+export function boardTaskPath(taskId: string): string {
+  return `${BOARD_API_BASE}/tasks/${encodeURIComponent(taskId)}`;
+}
+
+export function boardTaskCancelPath(taskId: string): string {
+  return `${boardTaskPath(taskId)}/cancel`;
+}
+
+export function boardTaskReviewPath(taskId: string): string {
+  return `${boardTaskPath(taskId)}/review`;
+}
+
+export function tasksNeedPolling(tasks: readonly BoardTask[]): boolean {
+  return tasks.some((t) => t.status === "running" || t.status === "review");
 }
 
 /** `hello@siutindei.com` → `hello@`; keeps full addresses from other domains. */

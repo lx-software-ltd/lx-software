@@ -7,6 +7,7 @@ import type { AdminAssetMeta } from "../../hooks/useAdminAssets";
 import type { BankSyncState } from "../bankSyncModel";
 import {
   BOARD_PERSONA_DEFAULTS,
+  BOARD_STAFF_SEAT_DEFAULTS,
   BOARD_TOOL_DEFINITIONS,
 } from "../contracts/generated";
 import type {
@@ -15,6 +16,10 @@ import type {
   BoardMeetingSummary,
   BoardOverview,
   BoardReceivablesPayload,
+  BoardSeat,
+  BoardStaffPayload,
+  BoardTask,
+  BoardTaskDetailPayload,
   BoardToolsConfig,
   BoardToolsPayload,
 } from "../boardModel";
@@ -360,6 +365,7 @@ export const boardOverviewFixture: BoardOverview = {
     models: { chat: "", standup: "", deepDive: "" },
     dailyBudgetUsd: 15,
     tools: toolsConfig,
+    staff: { enabled: true, maxRunningTasks: 3, dailyBudgetUsd: 20, dutiesEnabled: false },
   },
   charter: {
     vision: "Siu Tin Dei is the place Hong Kong parents go first to find and book activities for their children.",
@@ -431,3 +437,102 @@ export const boardReceivablesFixture: BoardReceivablesPayload = {
     },
   },
 };
+
+function fixtureSeat(id: string, isActive: boolean): BoardSeat {
+  const d = BOARD_STAFF_SEAT_DEFAULTS.find((s) => s.id === id);
+  if (!d) throw new Error(`unknown seat ${id}`);
+  return {
+    id: d.id,
+    reportsTo: d.reportsTo,
+    title: d.title,
+    modelTier: d.modelTier === "senior" ? "senior" : "desk",
+    isActive,
+    isActiveDefault: d.isActiveDefault,
+    tools: d.tools,
+    brief: d.brief,
+    displayName: d.title,
+    defaults: { brief: d.brief, displayName: d.title, modelTier: d.modelTier === "senior" ? "senior" : "desk" },
+    isOverridden: { brief: false, displayName: false, isActive: true, modelTier: false },
+    effectiveLevels: d.tools,
+  };
+}
+
+export const boardStaffSeatsFixture: readonly BoardSeat[] = [
+  fixtureSeat("support", true),
+  fixtureSeat("provider-success", true),
+  fixtureSeat("accountant", true),
+];
+
+function fixtureTask(
+  taskId: string,
+  status: BoardTask["status"],
+  assignee: string,
+  brief: string,
+): BoardTask {
+  return {
+    taskId,
+    status,
+    assignee,
+    assigneeKind: assignee === "cfo" ? "persona" : "seat",
+    managerId: assignee === "cfo" ? "cfo" : "coo",
+    origin: "owner",
+    brief,
+    deliverableType: "markdown",
+    budgetUsd: 1,
+    slaAt: isoDaysAgo(-1),
+    step: status === "queued" ? 0 : 1,
+    stepsUsed: status === "queued" ? 0 : 1,
+    revisions: 0,
+    usage: { promptTokens: 400, completionTokens: 120, cost: 0.02, calls: 2 },
+    summary: status === "delivered" ? "Three largest costs listed." : "",
+    evidence: status === "delivered" ? ["call-aws", "call-fin"] : [],
+    openQuestions: [],
+    confidence: status === "delivered" ? "high" : "",
+    reviews: status === "delivered" || status === "review" || status === "needs_owner" ? 1 : 0,
+    lastReview:
+      status === "needs_owner" ? { verdict: "return", notes: "Need more evidence.", at: isoDaysAgo(0) } : null,
+    createdAt: isoDaysAgo(1),
+    updatedAt: isoDaysAgo(0),
+  };
+}
+
+export const boardTasksFixture: BoardTask[] = [
+  fixtureTask("task-queued", "queued", "support", "Draft a reply to yesterday's parent email."),
+  fixtureTask("task-running", "running", "cfo", "List our three biggest monthly costs from AWS and finance."),
+  fixtureTask("task-review", "review", "provider-success", "Summarise the two warm provider threads."),
+  fixtureTask("task-owner", "needs_owner", "accountant", "Reconcile last week's unmatched payments."),
+  fixtureTask("task-done", "delivered", "cfo", "Month-end cost snapshot for the founder."),
+];
+
+export const boardStaffFixture: BoardStaffPayload = {
+  enabled: true,
+  envEnabled: true,
+  seats: boardStaffSeatsFixture,
+  counts: {
+    queued: 1,
+    running: 1,
+    review: 1,
+    returned: 0,
+    delivered: 1,
+    needs_owner: 1,
+    failed: 0,
+    cancelled: 0,
+  },
+};
+
+export function boardTaskDetailFixture(taskId: string): BoardTaskDetailPayload | null {
+  const task = boardTasksFixture.find((t) => t.taskId === taskId);
+  if (!task) return null;
+  return {
+    task,
+    steps:
+      task.status === "queued"
+        ? []
+        : [{ seq: 1, plan: "Looked up AWS and finance totals.", callIds: ["call-aws"], usage: { cost: 0.01, calls: 1 }, at: isoDaysAgo(0) }],
+    reviews: task.reviews
+      ? [{ seq: 1, verdict: task.lastReview?.verdict ?? "accept", notes: task.lastReview?.notes ?? "Looks good.", at: isoDaysAgo(0), by: "manager" }]
+      : [],
+    deliverable: task.status === "queued" || task.status === "running" ? "" : "# Costs\n\n- AWS Lambda\n- OpenRouter\n- SES",
+    deliverableUrl: "",
+  };
+}

@@ -13,9 +13,11 @@ import { BoardMeetingPanel } from "./BoardMeetingPanel";
 import { BoardMemberEditor } from "./BoardMemberEditor";
 import { BoardMembersStrip } from "./BoardMembersStrip";
 import { BoardSettingsCard } from "./BoardSettingsCard";
+import { BoardStaffSection } from "./BoardStaffSection";
 import { BoardToolsCard } from "./BoardToolsCard";
 import { BoardUpdatesComposer } from "./BoardUpdatesComposer";
 import { StartMeetingForm } from "./StartMeetingForm";
+import { useBoardStaff } from "../../hooks/useBoardStaff";
 import { useBoard, useBoardUpdates } from "../../hooks/useBoard";
 import { useBoardActions } from "../../hooks/useBoardActions";
 import { useBoardApprovals } from "../../hooks/useBoardApprovals";
@@ -32,7 +34,7 @@ import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { adminTabButtonId } from "../../lib/adminTabs";
 import { effectiveToolLevel, type BoardMeetingMode, type BoardOverview } from "../../lib/boardModel";
 
-type BoardSection = "actions" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
+type BoardSection = "actions" | "staff" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
 
 const CLOSED_MEETING = "__closed__";
 const SECTION_ID_PREFIX = "board-section";
@@ -40,6 +42,7 @@ const SECTION_PANEL_ID = "board-section-panel";
 
 const SECTIONS: readonly { readonly id: BoardSection; readonly label: string; readonly icon: string }[] = [
   { id: "actions", label: "Next actions", icon: "bi-list-check" },
+  { id: "staff", label: "Staff", icon: "bi-people-fill" },
   { id: "approvals", label: "Approvals", icon: "bi-shield-check" },
   { id: "mail", label: "Mail", icon: "bi-envelope" },
   { id: "receivables", label: "Receivables", icon: "bi-receipt" },
@@ -54,9 +57,13 @@ function errorText(err: unknown): string | null {
   return getAdminApiErrorMessage(err) ?? (err instanceof Error ? err.message : "Request failed.");
 }
 
-function sectionTabs(overview: BoardOverview | undefined): readonly AdminTabItem<BoardSection>[] {
+function sectionTabs(
+  overview: BoardOverview | undefined,
+  needsOwner: number,
+): readonly AdminTabItem<BoardSection>[] {
   const counts: Partial<Record<BoardSection, { value: number; tone: "neutral" | "warning" }>> = {
     actions: { value: overview?.openActionCount ?? 0, tone: "neutral" },
+    staff: { value: needsOwner, tone: "warning" },
     approvals: { value: overview?.pendingApprovalCount ?? 0, tone: "warning" },
     mail: { value: overview?.unreadMailCount ?? 0, tone: "neutral" },
     receivables: { value: overview?.overdueInvoiceCount ?? 0, tone: "warning" },
@@ -81,6 +88,7 @@ export function ExecutiveBoardTab() {
   const cancelMeeting = useCancelBoardMeeting();
   const approvals = useBoardApprovals();
   const tools = useBoardTools();
+  const staff = useBoardStaff();
 
   const [section, setSection] = useState<BoardSection>("actions");
   const [chatPersonaId, setChatPersonaId] = useState<string | null>(null);
@@ -180,7 +188,7 @@ export function ExecutiveBoardTab() {
           ) : null}
 
           <AdminTabList
-            tabs={sectionTabs(overview)}
+            tabs={sectionTabs(overview, staff.counts.needs_owner ?? 0)}
             active={section}
             onChange={setSection}
             label="Board sections"
@@ -209,6 +217,8 @@ export function ExecutiveBoardTab() {
               onOpenMeeting={openMeeting}
             />
           ) : null}
+
+          {overview && section === "staff" ? <BoardStaffSection /> : null}
 
           {overview && section === "approvals" ? (
             <BoardApprovalsList

@@ -262,6 +262,7 @@ Stack parameters (all optional, set in `backend/infrastructure/params/*.json`):
 | `lxsoftware:OpenRouterApiKeySecretArn` | Already required for statement parsing; the board reuses the same key. This secret already exists in the account — CDK does not create it. |
 | `lxsoftware:BoardGitHubRepo` | `owner/name` of the repository to read (default `lx-software-ltd/siutindei`). |
 | `lxsoftware:BoardToolsEnabled` | `true` (default) / `false`. Deploy-time kill switch for every board tool call, independent of the in-app settings. |
+| `lxsoftware:BoardStaffEnabled` | `false` (default) / `true`. Deploy-time kill switch for Executive Board staff tasks. Also requires `settings.staff.enabled` in the app. |
 | `lxsoftware:BoardAwsStackPrefix` | CloudFormation stack-name prefix used to filter Cost Explorer / CloudWatch results (default `siutindei`). When no cost rows carry the tag, `aws_monthly_cost` falls back to the whole account and labels the result `scope: account`. |
 | `lxsoftware:BoardAwsLambdaNames` | Comma-separated Lambda function names (the siutindei stack lives in another repo, so they cannot be derived here). `aws_lambda_health` reports 24h errors/duration for exactly these; empty means "no functions configured". |
 | `lxsoftware:SiutindeiClusterArn` | Aurora cluster ARN for the siutindei database (RDS Data API). Required for Executive Board `finance` and `product` tools. Leave blank to keep those tools returning a clear "not configured" error. |
@@ -383,6 +384,17 @@ function calling. Design:
   for an already-subscribed Meta app; HMAC / verify-token only).
 - **Emergency stop:** set `lxsoftware:BoardToolsEnabled=false` and redeploy,
   or flip **Tools enabled** off in the app. Both leave the matrix intact.
+  Staff tasks have a second ladder: `settings.staff.enabled` (UI / settings
+  PUT), then `lxsoftware:BoardStaffEnabled=false` (redeploy), then the tools
+  kill switch. With either staff flag off, `POST /siu-tin-dei/board/tasks`
+  returns 409 `{"message":"Staff is disabled"}`.
+- **Staff (WP1):** `GET/PUT/DELETE /siu-tin-dei/board/staff`,
+  `GET/POST /siu-tin-dei/board/tasks`, `GET …/tasks/{taskId}`,
+  `POST …/tasks/{taskId}/cancel|review`. Schedule
+  `lxsoftware-admin-siutindei-board-staff-tick` every 5 minutes. Assets stay
+  under `board/siuTinDei/staff/{taskId}/` on the existing assets bucket
+  (already bucket-wide read/write). The **Staff** tab is inert until both
+  flags are on.
 
 Smoke test after deploy: open the tab, save a company vision/mission, edit one
 member's mandate, send a chat message to the CEO (reply arrives within ~30 s),

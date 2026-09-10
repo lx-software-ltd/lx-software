@@ -60,6 +60,7 @@ from contract_constants import (
     BOARD_META_LIST_MAX,
     BOARD_STORES_LIST_MAX,
     BOARD_WEB_LIST_MAX,
+    BOARD_STAFF_DELIVERABLE_TYPES,
 )
 from http_common import _log_event, _utc_iso_z
 from openrouter_client import ChatCompletion, ToolCall, add_usage
@@ -104,6 +105,9 @@ class ToolContext:
     job_id: str = ""
     actor: str = "persona"
     owner_sub: str = ""
+    task_id: str = ""
+    seat_id: str = ""
+    usage_sink: Callable[[dict[str, Any]], None] | None = None
     # ``time.monotonic()`` value after which no new op should start and running
     # ops are cut short; 0 means "no loop deadline" (owner approvals, jobs).
     deadline: float = 0.0
@@ -121,6 +125,10 @@ class ToolContext:
             out["phase"] = self.phase
         if self.job_id:
             out["jobId"] = self.job_id
+        if self.task_id:
+            out["taskId"] = self.task_id
+        if self.seat_id:
+            out["seatId"] = self.seat_id
         return out
 
 
@@ -231,10 +239,21 @@ def configured_level(settings: dict[str, Any], tool_id: str, persona_id: str) ->
     return level if level in LEVEL_RANK else "off"
 
 
-def effective_level(settings: dict[str, Any], tool_id: str, persona_id: str) -> str:
+def effective_level(
+    settings: dict[str, Any],
+    tool_id: str,
+    persona_id: str,
+    *,
+    seat_id: str = "",
+    seats_by_id: dict[str, dict[str, Any]] | None = None,
+) -> str:
     """Configured level capped by the global mode; ``off`` when tools are disabled."""
     if not tools_enabled(settings):
         return "off"
+    if seat_id:
+        import board_staff
+
+        return board_staff.seat_level(settings, seats_by_id or {}, seat_id, tool_id)
     configured = configured_level(settings, tool_id, persona_id)
     cap = global_cap(settings)
     return configured if LEVEL_RANK[configured] <= LEVEL_RANK[cap] else cap
@@ -508,6 +527,58 @@ def _summ_mail_list(args: dict[str, Any]) -> str:
     if args.get("unreadOnly"):
         parts.append("(unread only)")
     return " ".join(parts)
+
+
+def _staff_assign(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_staff
+
+    return board_staff.op_staff_assign(ctx, args)
+
+
+def _staff_list_tasks(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_staff
+
+    return board_staff.op_staff_list_tasks(ctx, args)
+
+
+def _staff_get_deliverable(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_staff
+
+    return board_staff.op_staff_get_deliverable(ctx, args)
+
+
+def _staff_request_revision(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_staff
+
+    return board_staff.op_staff_request_revision(ctx, args)
+
+
+def _staff_cancel_task(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_staff
+
+    return board_staff.op_staff_cancel_task(ctx, args)
+
+
+def _staff_assign_guard(ctx: ToolContext, args: dict[str, Any]) -> str | None:
+    import board_staff
+
+    return board_staff.act_guard_staff_assign(ctx, args)
+
+
+def _task_note(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_staff
+
+    return board_staff.op_task_note(ctx, args)
+
+
+def _task_finish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_staff
+
+    return board_staff.op_task_finish(ctx, args)
+
+
+def _summ_staff_assign(args: dict[str, Any]) -> str:
+    return f"Assigned {args.get('assignee')}: {_short(args.get('brief') or '', 80)}"
 
 
 def _summ_update_action(args: dict[str, Any]) -> str:
@@ -1580,6 +1651,137 @@ def build_registry() -> dict[str, ToolOp]:
             run=board_web.op_gtm_status,
             summarize=_summ("Read GTM status"),
         ),
+        ToolOp(
+            name="staff_assign",
+            tool_id="staff",
+            kind="write",
+            description="Assign a background task to a board member or an active staff seat. The assignee works in steps and produces a deliverable for review.",
+            parameters=_obj(
+                {
+                    "assignee": _str_param("Persona id or active seat id.", max_len=40),
+                    "brief": _str_param("What to do. Be specific about the evidence to gather.", max_len=4000),
+                    "deliverableType": _str_param(
+                        "Deliverable format.",
+                        enum=list(BOARD_STAFF_DELIVERABLE_TYPES),
+                    ),
+                    "slaHours": _int_param("Hours until the SLA (1-168).", minimum=1, maximum=168),
+                    "budgetUsd": {"type": "number", "description": "Optional USD cap for this task."},
+                    "actionId": _str_param("Optional action id to close when the task is accepted.", max_len=40),
+                    "reason": REASON_PARAM,
+                },
+                ["assignee", "brief", "deliverableType"],
+            ),
+            run=_staff_assign,
+            summarize=_summ_staff_assign,
+            act_guard=_staff_assign_guard,
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="staff_list_tasks",
+            tool_id="staff",
+            kind="read",
+            description="List staff tasks. Seats see only their own; executives see all.",
+            parameters=_obj(
+                {
+                    "status": _str_param("Optional status filter.", max_len=20),
+                    "limit": _int_param("Max tasks (1-50).", maximum=50),
+                }
+            ),
+            run=_staff_list_tasks,
+            summarize=_summ("Listed staff tasks"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="staff_get_deliverable",
+            tool_id="staff",
+            kind="read",
+            description="Read a task summary and the first 6000 characters of its deliverable.",
+            parameters=_obj({"taskId": _str_param("Task id.", max_len=40)}, ["taskId"]),
+            run=_staff_get_deliverable,
+            summarize=_summ("Read staff deliverable"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="staff_request_revision",
+            tool_id="staff",
+            kind="write",
+            description="Ask the assignee to revise a task that is in review. Only the manager of the task may do this.",
+            parameters=_obj(
+                {
+                    "taskId": _str_param("Task id.", max_len=40),
+                    "notes": _str_param("What to change.", max_len=2000),
+                    "reason": REASON_PARAM,
+                },
+                ["taskId", "notes"],
+            ),
+            run=_staff_request_revision,
+            summarize=_summ("Requested a staff revision"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="staff_cancel_task",
+            tool_id="staff",
+            kind="write",
+            description="Cancel a queued or running staff task. Manager or founder only.",
+            parameters=_obj(
+                {
+                    "taskId": _str_param("Task id.", max_len=40),
+                    "reason": _str_param("Why the task is cancelled.", max_len=400),
+                },
+                ["taskId", "reason"],
+            ),
+            run=_staff_cancel_task,
+            summarize=_summ("Cancelled a staff task"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="task_note",
+            tool_id="task",
+            kind="write",
+            description="Record progress on the current task and continue. Call this when you are not finished.",
+            parameters=_obj(
+                {
+                    "text": _str_param("Progress note to append to the scratchpad.", max_len=4000),
+                    "reason": REASON_PARAM,
+                },
+                ["text"],
+            ),
+            run=_task_note,
+            summarize=_summ("Noted task progress"),
+            contexts=("task",),
+        ),
+        ToolOp(
+            name="task_finish",
+            tool_id="task",
+            kind="write",
+            description="Finish the current task. Provide the deliverable and evidence call ids. Do not call this without evidence unless the brief needs none.",
+            parameters=_obj(
+                {
+                    "summary": _str_param("One-paragraph summary of the result.", max_len=800),
+                    "deliverableType": _str_param(
+                        "Deliverable format.",
+                        enum=list(BOARD_STAFF_DELIVERABLE_TYPES),
+                    ),
+                    "deliverable": _str_param("The deliverable body as text."),
+                    "evidence": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Tool-call ids from this task that support the deliverable.",
+                    },
+                    "openQuestions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Questions you could not answer.",
+                    },
+                    "confidence": _str_param("How confident you are.", enum=["high", "medium", "low"]),
+                    "reason": REASON_PARAM,
+                },
+                ["summary", "deliverableType", "deliverable", "confidence"],
+            ),
+            run=_task_finish,
+            summarize=_summ("Finished the task"),
+            contexts=("task",),
+        ),
     ]
     return {op.name: op for op in ops}
 
@@ -1613,7 +1815,14 @@ def public_registry() -> list[dict[str, Any]]:
     return out
 
 
-def available_ops(settings: dict[str, Any], persona_id: str, *, context: str) -> list[tuple[ToolOp, str]]:
+def available_ops(
+    settings: dict[str, Any],
+    persona_id: str,
+    *,
+    context: str,
+    seat_id: str = "",
+    seats_by_id: dict[str, dict[str, Any]] | None = None,
+) -> list[tuple[ToolOp, str]]:
     """Operations this member may call now, each with its effective level."""
     out: list[tuple[ToolOp, str]] = []
     if not tools_enabled(settings):
@@ -1621,7 +1830,21 @@ def available_ops(settings: dict[str, Any], persona_id: str, *, context: str) ->
     for op in REGISTRY.values():
         if context not in op.contexts:
             continue
-        level = effective_level(settings, op.tool_id, persona_id)
+        if op.tool_id == "task":
+            level = "act" if context == "task" else "off"
+        elif op.tool_id == "staff":
+            import board_staff
+
+            if not board_staff.enabled(settings):
+                continue
+            if seat_id:
+                level = effective_level(settings, op.tool_id, persona_id, seat_id=seat_id, seats_by_id=seats_by_id)
+            else:
+                level = effective_level(settings, op.tool_id, persona_id)
+        elif seat_id:
+            level = effective_level(settings, op.tool_id, persona_id, seat_id=seat_id, seats_by_id=seats_by_id)
+        else:
+            level = effective_level(settings, op.tool_id, persona_id)
         if allows(level, op.min_level):
             out.append((op, level))
     return out
@@ -1851,7 +2074,21 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         invalid = str(exc)
         # Keep the (bounded) raw arguments so the audit row shows what was asked.
         arguments = raw if len(json.dumps(raw, default=str)) <= MAX_ARGUMENT_CHARS else {}
-    level = effective_level(ctx.settings, op.tool_id, ctx.persona_id) if ctx.actor == "persona" else "act"
+    if ctx.actor == "persona":
+        seats = None
+        if ctx.seat_id:
+            import board_staff
+
+            seats = board_staff.seats_by_id(ctx.table, ctx.settings)
+        level = effective_level(
+            ctx.settings,
+            op.tool_id,
+            ctx.persona_id,
+            seat_id=ctx.seat_id,
+            seats_by_id=seats,
+        )
+    else:
+        level = "act"
     summary = op.summarize(arguments)
     approval_id = ""
     guard_reason = ""
@@ -1931,6 +2168,8 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
             "downgradeReason": guard_reason,
             "context": ctx.public(),
             "durationMs": outcome.duration_ms,
+            "taskId": ctx.task_id,
+            "seatId": ctx.seat_id,
         },
     )
     outcome.call_id = str(record["callId"])
@@ -2016,7 +2255,18 @@ def run_tool_loop(
     The final answer is always produced by a call where the model was not
     allowed to request more tools, so the loop terminates deterministically.
     """
-    ops = available_ops(ctx.settings, ctx.persona_id, context=ctx.kind)
+    seats = None
+    if ctx.seat_id:
+        import board_staff
+
+        seats = board_staff.seats_by_id(ctx.table, ctx.settings)
+    ops = available_ops(
+        ctx.settings,
+        ctx.persona_id,
+        context=ctx.kind,
+        seat_id=ctx.seat_id,
+        seats_by_id=seats,
+    )
     if not ops:
         completion = board_budget.board_completion(
             table=ctx.table,
@@ -2027,6 +2277,7 @@ def run_tool_loop(
             temperature=temperature,
             max_tokens=max_tokens,
             tag=tag,
+            usage_sink=ctx.usage_sink,
         )
         return ToolLoopResult(text=completion.text, usage=completion.usage, model=completion.model, rounds=1, completion=completion)
 
@@ -2074,6 +2325,7 @@ def run_tool_loop(
             tag=tag,
             tools=schemas,
             tool_choice="auto",
+            usage_sink=ctx.usage_sink,
         )
         usage = add_usage(usage, completion.usage)
         if not completion.tool_calls:
@@ -2111,6 +2363,7 @@ def run_tool_loop(
             tag=tag,
             tools=schemas,
             tool_choice="none",
+            usage_sink=ctx.usage_sink,
         )
         usage = add_usage(usage, final.usage)
     return ToolLoopResult(text=final.text, usage=usage, model=final.model, calls=calls, rounds=rounds, completion=final)

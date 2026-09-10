@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from typing import Any
 
 import board_store
@@ -78,6 +79,7 @@ def board_completion(
     tag: str = "board_completion",
     tools: list[dict[str, Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
+    usage_sink: Callable[[dict[str, Any]], None] | None = None,
 ) -> openrouter_client.ChatCompletion:
     """One board LLM call with usage recorded against today's budget."""
     completion = openrouter_client.chat_completion(
@@ -98,6 +100,11 @@ def board_completion(
         board_store.add_usage_day(table, completion.usage)
     except Exception as exc:  # pragma: no cover - accounting must not break the call
         _log_event("warning", tag="board_usage_record_failed", error=str(exc)[:200])
+    if usage_sink is not None:
+        try:
+            usage_sink(completion.usage)
+        except Exception as exc:  # pragma: no cover - staff accounting must not break the call
+            _log_event("warning", tag="board_usage_sink_failed", error=str(exc)[:200])
     _log_event(
         "info",
         tag=tag,

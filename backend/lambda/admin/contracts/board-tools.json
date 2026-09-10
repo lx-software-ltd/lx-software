@@ -164,6 +164,22 @@
       }
     },
     {
+      "id": "staff",
+      "label": "Staff",
+      "description": "Assign background tasks to executives or staff seats, list work, fetch deliverables, request a revision, or cancel a task. Writes at propose become Approvals; at act they start immediately.",
+      "maxLevel": "act",
+      "defaults": {
+        "ceo": "propose",
+        "cfo": "propose",
+        "coo": "propose",
+        "cpo": "propose",
+        "cto": "propose",
+        "cio": "propose",
+        "ciso": "propose",
+        "cmo": "propose"
+      }
+    },
+    {
       "id": "web",
       "label": "Web analytics",
       "description": "GA4 sessions, top pages, referrers and conversions across configured properties, plus GTM live-version status. Read-only; cached hourly. GTM publish and Google Ads are later milestones.",

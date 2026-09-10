@@ -661,6 +661,23 @@ def normalize_action_proposal(raw: Any, *, persona: str | None = None) -> dict[s
     existing = raw.get("existingActionId")
     if isinstance(existing, str) and re.fullmatch(r"[0-9a-f]{32}", existing.strip()):
         out["existingActionId"] = existing.strip()
+    assignee_raw = raw.get("assignee")
+    if isinstance(assignee_raw, str):
+        assignee = assignee_raw.strip().lower()
+        if board_personas.is_persona_id(assignee):
+            out["assignee"] = assignee
+        else:
+            try:
+                import board_staff
+
+                table = board_store.records_table()
+                settings = board_store.load_settings(table)
+                roster = board_staff.seats_by_id(table, settings)
+                seat = roster.get(assignee)
+                if seat and seat.get("isActive"):
+                    out["assignee"] = assignee
+            except Exception:
+                pass
     return out
 
 
@@ -941,6 +958,17 @@ def _phase_persist(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     created_ids, reaffirmed_ids = board_actions.create_actions_from_minutes(
         table, minutes=minutes, meeting_id=str(doc["meetingId"])
     )
+    try:
+        import board_staff
+
+        settings = board_store.load_settings(table)
+        created = {str(a.get("actionId")): a for a in board_store.list_actions(table) if a.get("actionId") in created_ids}
+        chair_id = str(doc.get("chair") or BOARD_CHAIR_DEFAULT)
+        for action in created.values():
+            if action.get("assignee"):
+                board_staff.assign_from_minutes(table, settings, action=action, chair_id=chair_id)
+    except Exception as exc:
+        _log_event("warning", tag="board_staff_minutes_assign_failed", error=str(exc)[:300])
     date = str(doc.get("createdAt") or board_store.now_iso())[:10]
     board_store.append_decision_log(
         table,

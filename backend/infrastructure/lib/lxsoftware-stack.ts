@@ -504,6 +504,13 @@ export class LxsoftwareStack extends cdk.Stack {
       description:
         "Kill switch for Executive Board tool calls (GitHub, board, mail, research, AWS, security). Set to false to stop every tool call without touching the admin settings.",
     });
+    const boardStaffEnabled = new cdk.CfnParameter(this, "BoardStaffEnabled", {
+      type: "String",
+      default: "false",
+      allowedValues: ["true", "false"],
+      description:
+        "Kill switch for Executive Board staff tasks. Default false until the task engine and daily review are live. Also requires settings.staff.enabled.",
+    });
     const boardGitHubRepo = new cdk.CfnParameter(this, "BoardGitHubRepo", {
       type: "String",
       default: "lx-software-ltd/siutindei",
@@ -930,6 +937,7 @@ export class LxsoftwareStack extends cdk.Stack {
         BOARD_MEETING_MODEL: boardMeetingModel.valueAsString,
         BOARD_DEEP_DIVE_MODEL: boardDeepDiveModel.valueAsString,
         BOARD_TOOLS_ENABLED: boardToolsEnabled.valueAsString,
+        BOARD_STAFF_ENABLED: boardStaffEnabled.valueAsString,
         SEARCH_API_KEY_SECRET_ARN: siutindeiBoardSecrets.search.secretArn,
         BOARD_AWS_STACK_PREFIX: boardAwsStackPrefix.valueAsString,
         BOARD_AWS_LAMBDA_NAMES: boardAwsLambdaNames.valueAsString,
@@ -1045,6 +1053,14 @@ export class LxsoftwareStack extends cdk.Stack {
       scheduler.ScheduleExpression.rate(cdk.Duration.hours(1)),
       { internal: "board_cache_refresh" },
       1
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardStaffTickSchedule",
+      "lxsoftware-admin-siutindei-board-staff-tick",
+      "Every 5 minutes: drain the staff task queue and sweep stuck tasks.",
+      scheduler.ScheduleExpression.rate(cdk.Duration.minutes(5)),
+      { internal: "board_staff_tick" },
+      0
     );
 
     // Daily unattended balance refresh (05:30 HKT). The handler no-ops when
@@ -1897,6 +1913,24 @@ export class LxsoftwareStack extends cdk.Stack {
         methods: [apigwv2.HttpMethod.POST],
       },
       { path: "/siu-tin-dei/board/receivables", methods: [apigwv2.HttpMethod.GET] },
+      { path: "/siu-tin-dei/board/staff", methods: [apigwv2.HttpMethod.GET] },
+      {
+        path: "/siu-tin-dei/board/staff/{seatId}",
+        methods: [apigwv2.HttpMethod.PUT, apigwv2.HttpMethod.DELETE],
+      },
+      {
+        path: "/siu-tin-dei/board/tasks",
+        methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
+      },
+      { path: "/siu-tin-dei/board/tasks/{taskId}", methods: [apigwv2.HttpMethod.GET] },
+      {
+        path: "/siu-tin-dei/board/tasks/{taskId}/cancel",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/tasks/{taskId}/review",
+        methods: [apigwv2.HttpMethod.POST],
+      },
     ];
     for (const route of boardRoutes) {
       this.httpApi.addRoutes({

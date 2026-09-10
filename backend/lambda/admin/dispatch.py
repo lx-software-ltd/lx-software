@@ -16,6 +16,7 @@ import board_cache as board_cache_mod
 import board_chat as board_chat_mod
 import board_meeting as board_meeting_mod
 import board_receivables as board_receivables_mod
+import board_staff as board_staff_mod
 import parse_jobs as parse_jobs_mod
 import runtime
 from board_routes import handle_board_route
@@ -268,6 +269,17 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if isinstance(event, dict) and event.get("internal") == "board_cache_refresh":
         board_cache_mod.handle_schedule_trigger(event)
         return {}
+
+    if isinstance(event, dict) and event.get("internal") == "board_staff_step":
+        board_staff_mod.run_step(event)
+        return {}
+
+    if isinstance(event, dict) and event.get("internal") == "board_staff_review":
+        board_staff_mod.run_review(event)
+        return {}
+
+    if isinstance(event, dict) and event.get("internal") == "board_staff_tick":
+        return board_staff_mod.handle_tick(event)
 
     if isinstance(event, dict) and event.get("internal") == "board_receivables_mirror":
         board_receivables_mod.handle_mirror_trigger(event)

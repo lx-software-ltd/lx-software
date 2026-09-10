@@ -33,6 +33,7 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "executive-board.json",
         "board-timeouts.json",
         "board-tools.json",
+        "board-staff.json",
     ):
         shutil.copy2(CONTRACTS / name, LAMBDA_CONTRACTS / name)
 
@@ -56,6 +57,7 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "EXECUTIVE_BOARD_CONTRACT = _load(\"executive-board.json\")",
         "BOARD_TIMEOUTS_CONTRACT = _load(\"board-timeouts.json\")",
         "BOARD_TOOLS_CONTRACT = _load(\"board-tools.json\")",
+        "BOARD_STAFF_CONTRACT = _load(\"board-staff.json\")",
         "",
         "FINANCE_HOUSE_KEYS = frozenset(FINANCE_CONTRACT[\"houses\"])",
         "FINANCE_STATEMENT_BOOK_KEYS = frozenset(FINANCE_CONTRACT[\"statementBooks\"])",
@@ -160,6 +162,58 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "BOARD_WEB_LIST_MAX = int(_BOARD_TOOL_LIMITS[\"webListMax\"])",
         "BOARD_WEB_CACHE_TTL_HOURS = int(_BOARD_TOOL_LIMITS[\"webCacheTtlHours\"])",
         "",
+        "BOARD_STAFF_SEATS: list[dict] = list(BOARD_STAFF_CONTRACT[\"seats\"])",
+        "BOARD_STAFF_SEAT_IDS = tuple(s[\"id\"] for s in BOARD_STAFF_SEATS)",
+        "BOARD_STAFF_MODEL_TIERS = tuple(BOARD_STAFF_CONTRACT[\"modelTiers\"])",
+        "BOARD_STAFF_TASK_STATUSES = tuple(BOARD_STAFF_CONTRACT[\"taskStatuses\"])",
+        "BOARD_STAFF_TASK_ORIGINS = tuple(BOARD_STAFF_CONTRACT[\"taskOrigins\"])",
+        "BOARD_STAFF_DELIVERABLE_TYPES = tuple(BOARD_STAFF_CONTRACT[\"deliverableTypes\"])",
+        "BOARD_STAFF_HOLD_STATUSES = tuple(BOARD_STAFF_CONTRACT[\"holdStatuses\"])",
+        "BOARD_STAFF_ACTION_CLASSES = tuple(BOARD_STAFF_CONTRACT[\"actionClasses\"])",
+        "BOARD_STAFF_PROSPECT_TYPES = tuple(BOARD_STAFF_CONTRACT[\"prospectTypes\"])",
+        "BOARD_STAFF_PROSPECT_STAGES = tuple(BOARD_STAFF_CONTRACT[\"prospectStages\"])",
+        "BOARD_STAFF_WATCH_KINDS = tuple(BOARD_STAFF_CONTRACT[\"watchKinds\"])",
+        "BOARD_STAFF_CONTENT_CHANNELS = tuple(BOARD_STAFF_CONTRACT[\"contentChannels\"])",
+        "BOARD_STAFF_CONTENT_STATUSES = tuple(BOARD_STAFF_CONTRACT[\"contentStatuses\"])",
+        "_BOARD_STAFF_LIMITS = BOARD_STAFF_CONTRACT[\"limits\"]",
+        "BOARD_STAFF_STEP_MAX_SECONDS = int(_BOARD_STAFF_LIMITS[\"staffStepMaxSeconds\"])",
+        "BOARD_STAFF_MAX_STEPS_PER_TASK = int(_BOARD_STAFF_LIMITS[\"maxStepsPerTask\"])",
+        "BOARD_STAFF_MAX_REVISIONS = int(_BOARD_STAFF_LIMITS[\"maxRevisions\"])",
+        "BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = int(_BOARD_STAFF_LIMITS[\"maxRunningTasksDefault\"])",
+        "BOARD_STAFF_TASK_STUCK_SECONDS = int(_BOARD_STAFF_LIMITS[\"staffTaskStuckSeconds\"])",
+        "BOARD_STAFF_TASK_BUDGET_DESK_USD = float(_BOARD_STAFF_LIMITS[\"taskBudgetDeskUsd\"])",
+        "BOARD_STAFF_TASK_BUDGET_SENIOR_USD = float(_BOARD_STAFF_LIMITS[\"taskBudgetSeniorUsd\"])",
+        "BOARD_STAFF_TASK_BUDGET_MAX_USD = float(_BOARD_STAFF_LIMITS[\"taskBudgetMaxUsd\"])",
+        "BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD = float(_BOARD_STAFF_LIMITS[\"staffDailyBudgetDefaultUsd\"])",
+        "BOARD_STAFF_DAILY_BUDGET_MAX_USD = float(_BOARD_STAFF_LIMITS[\"staffDailyBudgetMaxUsd\"])",
+        "BOARD_STAFF_SCRATCHPAD_MAX_CHARS = int(_BOARD_STAFF_LIMITS[\"scratchpadMaxChars\"])",
+        "BOARD_STAFF_DELIVERABLE_MAX_BYTES = int(_BOARD_STAFF_LIMITS[\"deliverableMaxBytes\"])",
+        "BOARD_STAFF_HOLD_DEFAULT_HOURS = int(_BOARD_STAFF_LIMITS[\"holdDefaultHours\"])",
+        "BOARD_STAFF_HOLD_CODE_STAGING_HOURS = int(_BOARD_STAFF_LIMITS[\"holdCodeStagingHours\"])",
+        "BOARD_STAFF_RAMP_MIN_ACTIONS = int(_BOARD_STAFF_LIMITS[\"rampMinActions\"])",
+        "BOARD_STAFF_RAMP_PROMOTE_MAX_VETO_RATE = float(_BOARD_STAFF_LIMITS[\"rampPromoteMaxVetoRate\"])",
+        "BOARD_STAFF_RAMP_DEMOTE_VETO_RATE = float(_BOARD_STAFF_LIMITS[\"rampDemoteVetoRate\"])",
+        "BOARD_STAFF_RAMP_WINDOW_DAYS = int(_BOARD_STAFF_LIMITS[\"rampWindowDays\"])",
+        "BOARD_STAFF_RAMP_DEMOTE_WINDOW_ACTIONS = int(_BOARD_STAFF_LIMITS[\"rampDemoteWindowActions\"])",
+        "BOARD_STAFF_REVIEW_SAMPLE_SIZE = int(_BOARD_STAFF_LIMITS[\"reviewSampleSize\"])",
+        "BOARD_STAFF_OUTREACH_DAILY_CAP_START = int(_BOARD_STAFF_LIMITS[\"outreachDailyCapStart\"])",
+        "BOARD_STAFF_OUTREACH_DAILY_CAP_STEP = int(_BOARD_STAFF_LIMITS[\"outreachDailyCapStep\"])",
+        "BOARD_STAFF_OUTREACH_DAILY_CAP_MAX = int(_BOARD_STAFF_LIMITS[\"outreachDailyCapMax\"])",
+        "BOARD_STAFF_OUTREACH_CAP_STEP_DAYS = int(_BOARD_STAFF_LIMITS[\"outreachCapStepDays\"])",
+        "BOARD_STAFF_OUTREACH_SEQUENCE_DAYS = tuple(_BOARD_STAFF_LIMITS[\"outreachSequenceDays\"])",
+        "BOARD_STAFF_OUTREACH_MAX_TOUCHES = int(_BOARD_STAFF_LIMITS[\"outreachMaxTouches\"])",
+        "BOARD_STAFF_BOUNCE_RATE_BREAKER = float(_BOARD_STAFF_LIMITS[\"bounceRateBreaker\"])",
+        "BOARD_STAFF_COMPLAINT_RATE_BREAKER = float(_BOARD_STAFF_LIMITS[\"complaintRateBreaker\"])",
+        "BOARD_STAFF_PLACES_MONTHLY_CAP_USD = float(_BOARD_STAFF_LIMITS[\"placesMonthlyCapUsd\"])",
+        "BOARD_STAFF_CRAWL_RPS = int(_BOARD_STAFF_LIMITS[\"crawlRequestsPerHostPerSecond\"])",
+        "BOARD_STAFF_CRAWL_MAX_BYTES = int(_BOARD_STAFF_LIMITS[\"crawlMaxBytes\"])",
+        "BOARD_STAFF_CRAWL_MAX_PAGES_PER_RUN = int(_BOARD_STAFF_LIMITS[\"crawlMaxPagesPerRun\"])",
+        "BOARD_STAFF_IG_PUBLISHES_PER_DAY = int(_BOARD_STAFF_LIMITS[\"igPublishesPerDay\"])",
+        "BOARD_STAFF_POSTS_PER_CHANNEL_PER_DAY = int(_BOARD_STAFF_LIMITS[\"postsPerChannelPerDay\"])",
+        "BOARD_STAFF_RETENTION_DAYS = int(_BOARD_STAFF_LIMITS[\"retentionDaysDefault\"])",
+        "BOARD_STAFF_RETENTION_DAYS_CONTENT = int(_BOARD_STAFF_LIMITS[\"retentionDaysContent\"])",
+        "BOARD_STAFF_LESSONS_PER_SEAT_IN_PROMPT = int(_BOARD_STAFF_LIMITS[\"lessonsPerSeatInPrompt\"])",
+        "",
     ]
     PY_OUT.write_text("\n".join(lines), encoding="utf-8")
 
@@ -171,6 +225,7 @@ def write_typescript(
     board: dict,
     board_timeouts: dict,
     board_tools: dict,
+    board_staff: dict,
 ) -> None:
     TS_OUT.parent.mkdir(parents=True, exist_ok=True)
     currencies = finance["currencies"]
@@ -179,6 +234,8 @@ def write_typescript(
     tool_limits = board_tools["limits"]
     personas_ts = json.dumps(board["personas"], indent=2, ensure_ascii=False)
     tools_ts = json.dumps(board_tools["tools"], indent=2, ensure_ascii=False)
+    seats_ts = json.dumps(board_staff["seats"], indent=2, ensure_ascii=False)
+    staff_limits = board_staff["limits"]
     body = f"""/** Generated by scripts/sync-contracts.py — do not edit by hand. */
 
 export const SUPPORTED_CURRENCIES = {json.dumps(currencies)} as const;
@@ -290,6 +347,43 @@ export const BOARD_STORES_LIST_MAX = {tool_limits["storesListMax"]};
 export const BOARD_STORES_CACHE_TTL_HOURS = {tool_limits["storesCacheTtlHours"]};
 export const BOARD_WEB_LIST_MAX = {tool_limits["webListMax"]};
 export const BOARD_WEB_CACHE_TTL_HOURS = {tool_limits["webCacheTtlHours"]};
+
+export type BoardStaffSeatDefault = {{
+  readonly id: string;
+  readonly reportsTo: string;
+  readonly title: string;
+  readonly modelTier: string;
+  readonly isActiveDefault: boolean;
+  readonly tools: Readonly<Record<string, BoardToolLevel>>;
+  readonly brief: string;
+}};
+export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = {seats_ts};
+export const BOARD_STAFF_SEAT_IDS = BOARD_STAFF_SEAT_DEFAULTS.map((s) => s.id);
+export const BOARD_STAFF_MODEL_TIERS = {json.dumps(board_staff["modelTiers"])} as const;
+export type BoardStaffModelTier = (typeof BOARD_STAFF_MODEL_TIERS)[number];
+export const BOARD_STAFF_TASK_STATUSES = {json.dumps(board_staff["taskStatuses"])} as const;
+export type BoardTaskStatus = (typeof BOARD_STAFF_TASK_STATUSES)[number];
+export const BOARD_STAFF_TASK_ORIGINS = {json.dumps(board_staff["taskOrigins"])} as const;
+export type BoardTaskOrigin = (typeof BOARD_STAFF_TASK_ORIGINS)[number];
+export const BOARD_STAFF_DELIVERABLE_TYPES = {json.dumps(board_staff["deliverableTypes"])} as const;
+export type BoardDeliverableType = (typeof BOARD_STAFF_DELIVERABLE_TYPES)[number];
+export const BOARD_STAFF_HOLD_STATUSES = {json.dumps(board_staff["holdStatuses"])} as const;
+export type BoardHoldStatus = (typeof BOARD_STAFF_HOLD_STATUSES)[number];
+export const BOARD_STAFF_ACTION_CLASSES = {json.dumps(board_staff["actionClasses"])} as const;
+export type BoardActionClass = (typeof BOARD_STAFF_ACTION_CLASSES)[number];
+export const BOARD_STAFF_PROSPECT_TYPES = {json.dumps(board_staff["prospectTypes"])} as const;
+export type BoardProspectType = (typeof BOARD_STAFF_PROSPECT_TYPES)[number];
+export const BOARD_STAFF_PROSPECT_STAGES = {json.dumps(board_staff["prospectStages"])} as const;
+export type BoardProspectStage = (typeof BOARD_STAFF_PROSPECT_STAGES)[number];
+export const BOARD_STAFF_WATCH_KINDS = {json.dumps(board_staff["watchKinds"])} as const;
+export const BOARD_STAFF_CONTENT_CHANNELS = {json.dumps(board_staff["contentChannels"])} as const;
+export const BOARD_STAFF_CONTENT_STATUSES = {json.dumps(board_staff["contentStatuses"])} as const;
+export const BOARD_STAFF_MAX_STEPS_PER_TASK = {staff_limits["maxStepsPerTask"]};
+export const BOARD_STAFF_MAX_REVISIONS = {staff_limits["maxRevisions"]};
+export const BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = {staff_limits["maxRunningTasksDefault"]};
+export const BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD = {staff_limits["staffDailyBudgetDefaultUsd"]};
+export const BOARD_STAFF_REVIEW_SAMPLE_SIZE = {staff_limits["reviewSampleSize"]};
+export const BOARD_STAFF_OUTREACH_DAILY_CAP_START = {staff_limits["outreachDailyCapStart"]};
 """
     TS_OUT.write_text(body, encoding="utf-8")
 
@@ -328,8 +422,9 @@ def main() -> None:
     board = load("executive-board.json")
     board_timeouts = load("board-timeouts.json")
     board_tools = load("board-tools.json")
+    board_staff = load("board-staff.json")
     write_python(finance, timeouts, domains)
-    write_typescript(finance, timeouts, domains, board, board_timeouts, board_tools)
+    write_typescript(finance, timeouts, domains, board, board_timeouts, board_tools, board_staff)
     write_cdk(timeouts, domains, board_timeouts)
     print("Synced contract artifacts.")
 

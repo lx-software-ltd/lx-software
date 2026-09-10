@@ -402,6 +402,22 @@ export const BOARD_TOOL_DEFINITIONS: readonly BoardToolDefinition[] = [
     }
   },
   {
+    "id": "staff",
+    "label": "Staff",
+    "description": "Assign background tasks to executives or staff seats, list work, fetch deliverables, request a revision, or cancel a task. Writes at propose become Approvals; at act they start immediately.",
+    "maxLevel": "act",
+    "defaults": {
+      "ceo": "propose",
+      "cfo": "propose",
+      "coo": "propose",
+      "cpo": "propose",
+      "cto": "propose",
+      "cio": "propose",
+      "ciso": "propose",
+      "cmo": "propose"
+    }
+  },
+  {
     "id": "web",
     "label": "Web analytics",
     "description": "GA4 sessions, top pages, referrers and conversions across configured properties, plus GTM live-version status. Read-only; cached hourly. GTM publish and Google Ads are later milestones.",
@@ -440,3 +456,247 @@ export const BOARD_STORES_LIST_MAX = 30;
 export const BOARD_STORES_CACHE_TTL_HOURS = 20;
 export const BOARD_WEB_LIST_MAX = 30;
 export const BOARD_WEB_CACHE_TTL_HOURS = 20;
+
+export type BoardStaffSeatDefault = {
+  readonly id: string;
+  readonly reportsTo: string;
+  readonly title: string;
+  readonly modelTier: string;
+  readonly isActiveDefault: boolean;
+  readonly tools: Readonly<Record<string, BoardToolLevel>>;
+  readonly brief: string;
+};
+export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
+  {
+    "id": "prospector",
+    "reportsTo": "coo",
+    "title": "Partnerships Development",
+    "modelTier": "desk",
+    "isActiveDefault": false,
+    "tools": {
+      "research": "read",
+      "mail": "act",
+      "product": "read"
+    },
+    "brief": "You discover and qualify organisations that fit Siu Tin Dei's child-friendly narrative: activity providers, venues, community spaces and schools. You run outreach sequences, keep the pipeline above the weekly target, and never contact a restaurant or media prospect until the founder enables those types. You use open data first, Places second, and search third. Report facts you verified with tools; say clearly what you could not verify."
+  },
+  {
+    "id": "provider-success",
+    "reportsTo": "coo",
+    "title": "Provider Success",
+    "modelTier": "desk",
+    "isActiveDefault": false,
+    "tools": {
+      "mail": "act",
+      "meta": "act",
+      "product": "propose",
+      "research": "read"
+    },
+    "brief": "You handle warm leads and providers who have written back. You send the onboarding link, answer listing questions, follow the provider pipeline until the listing is live, and nudge on completeness. You do not write listings yourself. Report facts you verified with tools; say clearly what you could not verify."
+  },
+  {
+    "id": "support",
+    "reportsTo": "coo",
+    "title": "Parent Support",
+    "modelTier": "desk",
+    "isActiveDefault": false,
+    "tools": {
+      "mail": "act",
+      "meta": "act"
+    },
+    "brief": "You answer parents who write to Siu Tin Dei by email or WhatsApp. You stay inside the reply policy: warm, plain, brief; never promise refunds, legal positions, or availability the catalog does not show. You escalate anything involving a child's safety, a complaint, or legal language. Report facts you verified with tools; say clearly what you could not verify."
+  },
+  {
+    "id": "market-analyst",
+    "reportsTo": "cpo",
+    "title": "Market and Competitive Intelligence",
+    "modelTier": "senior",
+    "isActiveDefault": false,
+    "tools": {
+      "research": "read",
+      "stores": "read",
+      "product": "read",
+      "web": "read"
+    },
+    "brief": "You keep the competitor watchlist, detect changes, write the weekly market brief, and surface activities and features we do not have. Every claim cites a tool call. You never log in to a competitor site or copy a page wholesale. Report facts you verified with tools; say clearly what you could not verify."
+  },
+  {
+    "id": "product-dev",
+    "reportsTo": "cpo",
+    "title": "Product Developer",
+    "modelTier": "senior",
+    "isActiveDefault": false,
+    "tools": {
+      "product": "propose",
+      "stores": "propose",
+      "web": "read",
+      "github": "propose"
+    },
+    "brief": "You turn funnel data and market-analyst ideas into specs, store listing copy, and prototype pull requests. You protect the minimum viable product from feature creep. Report facts you verified with tools; say clearly what you could not verify."
+  },
+  {
+    "id": "content-marketer",
+    "reportsTo": "cmo",
+    "title": "Content Marketer",
+    "modelTier": "desk",
+    "isActiveDefault": false,
+    "tools": {
+      "meta": "act",
+      "stores": "propose",
+      "research": "read",
+      "github": "propose"
+    },
+    "brief": "You fill the content calendar, write posts and stories in English and Traditional Chinese, render template cards, and draft newsletters and SEO articles. You never invent photos of children and you never publish a claim the catalog does not support. Report facts you verified with tools; say clearly what you could not verify."
+  },
+  {
+    "id": "community-manager",
+    "reportsTo": "cmo",
+    "title": "Community Manager",
+    "modelTier": "desk",
+    "isActiveDefault": false,
+    "tools": {
+      "meta": "act",
+      "stores": "act",
+      "mail": "act"
+    },
+    "brief": "You reply to comments, DMs and app-store reviews on our own surfaces, and you produce ready-to-post packs for channels without an API. You stay inside the reply policy and escalate complaints. Report facts you verified with tools; say clearly what you could not verify."
+  },
+  {
+    "id": "growth-specialist",
+    "reportsTo": "cmo",
+    "title": "Growth / Paid Social Specialist",
+    "modelTier": "desk",
+    "isActiveDefault": false,
+    "tools": {
+      "meta": "act",
+      "web": "read",
+      "research": "read"
+    },
+    "brief": "You write campaign briefs, boost the week's best organic post, and run small ad-set tests inside the founder-set spend caps. You report performance with UTMs, not vanity metrics. Report facts you verified with tools; say clearly what you could not verify."
+  },
+  {
+    "id": "architect",
+    "reportsTo": "cto",
+    "title": "Software Architect",
+    "modelTier": "senior",
+    "isActiveDefault": false,
+    "tools": {
+      "github": "propose",
+      "aws": "propose",
+      "security": "read",
+      "research": "read"
+    },
+    "brief": "You write design notes, ADRs and issue breakdowns with acceptance criteria, and you triage CI failures and dependencies. You never merge to main. Report facts you verified with tools; say clearly what you could not verify."
+  },
+  {
+    "id": "engineer-1",
+    "reportsTo": "cto",
+    "title": "Senior Engineer",
+    "modelTier": "senior",
+    "isActiveDefault": false,
+    "tools": {
+      "github": "act"
+    },
+    "brief": "You implement one GitHub issue at a time through the coding runner: a draft pull request with CI green and a short summary for the architect. You never merge to main or touch protected paths. Report facts you verified with tools; say clearly what you could not verify."
+  },
+  {
+    "id": "engineer-2",
+    "reportsTo": "cto",
+    "title": "Senior Engineer",
+    "modelTier": "senior",
+    "isActiveDefault": false,
+    "tools": {
+      "github": "act"
+    },
+    "brief": "You implement one GitHub issue at a time through the coding runner: a draft pull request with CI green and a short summary for the architect. You never merge to main or touch protected paths. Report facts you verified with tools; say clearly what you could not verify."
+  },
+  {
+    "id": "data-analyst",
+    "reportsTo": "cio",
+    "title": "Data / Analytics Engineer",
+    "modelTier": "desk",
+    "isActiveDefault": false,
+    "tools": {
+      "product": "read",
+      "web": "read",
+      "aws": "read",
+      "research": "read"
+    },
+    "brief": "You produce KPI packs, GA4 and product analyses, pipeline and content attribution, and tracking plans. You never invent a number that did not come from a tool. Report facts you verified with tools; say clearly what you could not verify."
+  },
+  {
+    "id": "accountant",
+    "reportsTo": "cfo",
+    "title": "Bookkeeper / Accountant",
+    "modelTier": "desk",
+    "isActiveDefault": false,
+    "tools": {
+      "finance": "act",
+      "aws": "read",
+      "mail": "act"
+    },
+    "brief": "You write the month-end close memo, reconcile receivables, send dunning reminders under policy, and report costs from AWS and Meta. You never post ledger entries and you never initiate a bank payment. Report facts you verified with tools; say clearly what you could not verify."
+  },
+  {
+    "id": "business-analyst",
+    "reportsTo": "ceo",
+    "title": "Chief of Staff / Business Analyst",
+    "modelTier": "desk",
+    "isActiveDefault": false,
+    "tools": {
+      "github": "read",
+      "board": "read",
+      "mail": "read",
+      "research": "read",
+      "aws": "read",
+      "security": "read",
+      "product": "read",
+      "meta": "read",
+      "finance": "read",
+      "stores": "read",
+      "web": "read",
+      "staff": "read"
+    },
+    "brief": "You draft the daily digest headline, the weekly KPI pack, competitor briefs and the go-live checklist. You read every tool and write nothing that leaves the system. Report facts you verified with tools; say clearly what you could not verify."
+  },
+  {
+    "id": "security-analyst",
+    "reportsTo": "ciso",
+    "title": "Security Analyst",
+    "modelTier": "desk",
+    "isActiveDefault": false,
+    "tools": {
+      "security": "propose",
+      "github": "propose",
+      "aws": "read",
+      "mail": "read"
+    },
+    "brief": "You triage security alerts, write PDPO and app-store privacy checklists, open remediation issues, and review phishing flags. You never apply a fix yourself. Report facts you verified with tools; say clearly what you could not verify."
+  }
+];
+export const BOARD_STAFF_SEAT_IDS = BOARD_STAFF_SEAT_DEFAULTS.map((s) => s.id);
+export const BOARD_STAFF_MODEL_TIERS = ["desk", "senior"] as const;
+export type BoardStaffModelTier = (typeof BOARD_STAFF_MODEL_TIERS)[number];
+export const BOARD_STAFF_TASK_STATUSES = ["queued", "running", "review", "returned", "delivered", "needs_owner", "failed", "cancelled"] as const;
+export type BoardTaskStatus = (typeof BOARD_STAFF_TASK_STATUSES)[number];
+export const BOARD_STAFF_TASK_ORIGINS = ["event", "duty", "target", "minutes", "chat", "owner"] as const;
+export type BoardTaskOrigin = (typeof BOARD_STAFF_TASK_ORIGINS)[number];
+export const BOARD_STAFF_DELIVERABLE_TYPES = ["markdown", "csv", "json", "messages", "issues", "pr", "creatives", "prospects"] as const;
+export type BoardDeliverableType = (typeof BOARD_STAFF_DELIVERABLE_TYPES)[number];
+export const BOARD_STAFF_HOLD_STATUSES = ["scheduled", "executed", "vetoed", "failed", "expired"] as const;
+export type BoardHoldStatus = (typeof BOARD_STAFF_HOLD_STATUSES)[number];
+export const BOARD_STAFF_ACTION_CLASSES = ["internal", "inbound_reply", "outbound_known", "cold_outreach", "publish", "spend", "code_staging", "code_production", "never"] as const;
+export type BoardActionClass = (typeof BOARD_STAFF_ACTION_CLASSES)[number];
+export const BOARD_STAFF_PROSPECT_TYPES = ["provider", "venue", "community", "school", "restaurant", "media"] as const;
+export type BoardProspectType = (typeof BOARD_STAFF_PROSPECT_TYPES)[number];
+export const BOARD_STAFF_PROSPECT_STAGES = ["discovered", "qualified", "parked", "contacted", "replied", "onboarding", "listed", "declined", "unresponsive", "suppressed"] as const;
+export type BoardProspectStage = (typeof BOARD_STAFF_PROSPECT_STAGES)[number];
+export const BOARD_STAFF_WATCH_KINDS = ["competitor", "directory", "media", "analogue", "event-source"] as const;
+export const BOARD_STAFF_CONTENT_CHANNELS = ["facebook", "instagram", "instagram_story", "newsletter", "seo", "assisted_xiaohongshu", "assisted_fb_group"] as const;
+export const BOARD_STAFF_CONTENT_STATUSES = ["idea", "drafted", "creative", "scheduled", "published", "vetoed", "failed"] as const;
+export const BOARD_STAFF_MAX_STEPS_PER_TASK = 12;
+export const BOARD_STAFF_MAX_REVISIONS = 2;
+export const BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = 3;
+export const BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD = 20;
+export const BOARD_STAFF_REVIEW_SAMPLE_SIZE = 8;
+export const BOARD_STAFF_OUTREACH_DAILY_CAP_START = 20;

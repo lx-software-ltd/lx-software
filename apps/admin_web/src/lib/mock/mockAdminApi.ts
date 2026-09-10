@@ -17,11 +17,15 @@ import {
   boardMeetingsFixture,
   boardOverviewFixture,
   boardReceivablesFixture,
+  boardStaffFixture,
+  boardTaskDetailFixture,
+  boardTasksFixture,
   boardToolsFixture,
   financeFixture,
   lxSoftwareBookFixture,
   siuTinDeiBookFixture,
 } from "./fixtures";
+import type { BoardSeat, BoardTask } from "../boardModel";
 
 export { isAdminMockEnabled };
 
@@ -58,6 +62,8 @@ export function installAdminMockSession(): void {
 type MockState = {
   finance: FinancePersistedState;
   books: Record<string, HouseFinanceData>;
+  seats: BoardSeat[];
+  tasks: BoardTask[];
 };
 
 const state: MockState = {
@@ -66,6 +72,8 @@ const state: MockState = {
     "siu-tin-dei": structuredClone(siuTinDeiBookFixture) as HouseFinanceData,
     "lx-software": structuredClone(lxSoftwareBookFixture) as HouseFinanceData,
   },
+  seats: structuredClone(boardStaffFixture.seats) as BoardSeat[],
+  tasks: structuredClone(boardTasksFixture),
 };
 
 function json(body: unknown, status = 200): Response {
@@ -201,6 +209,96 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   if (p === `${board}/mail`) {
     return json({ threads: [], total: 0, mailboxes: [], status: boardOverviewFixture.mail });
   }
+  if (p === `${board}/staff`) {
+    return json({
+      ...boardStaffFixture,
+      seats: state.seats,
+      counts: countsFromTasks(state.tasks),
+    });
+  }
+  if (p.startsWith(`${board}/staff/`)) {
+    const seatId = p.slice(`${board}/staff/`.length);
+    const idx = state.seats.findIndex((s) => s.id === seatId);
+    if (idx < 0) return json({ message: "Unknown staff seat" }, 404);
+    if (method === "DELETE") {
+      const defaults = boardStaffFixture.seats.find((s) => s.id === seatId);
+      if (defaults) state.seats[idx] = structuredClone(defaults);
+      return json({ seat: state.seats[idx] });
+    }
+    if (method === "PUT") {
+      const body = parseBody(init);
+      const current = state.seats[idx];
+      state.seats[idx] = {
+        ...current,
+        displayName: typeof body.displayName === "string" && body.displayName ? body.displayName : current.displayName,
+        brief: typeof body.brief === "string" && body.brief ? body.brief : current.brief,
+        isActive: typeof body.isActive === "boolean" ? body.isActive : current.isActive,
+        modelTier: body.modelTier === "senior" || body.modelTier === "desk" ? body.modelTier : current.modelTier,
+        isOverridden: {
+          ...current.isOverridden,
+          displayName: Boolean(body.displayName),
+          brief: Boolean(body.brief),
+          isActive: body.isActive !== undefined,
+          modelTier: Boolean(body.modelTier),
+        },
+      };
+      return json({ seat: state.seats[idx] });
+    }
+  }
+  if (p === `${board}/tasks`) {
+    if (method === "POST") {
+      const body = parseBody(init);
+      const created: BoardTask = {
+        ...boardTasksFixture[0],
+        taskId: `task-${state.tasks.length + 1}`,
+        status: "queued",
+        assignee: String(body.assignee || "cfo"),
+        assigneeKind: String(body.assignee || "").includes("-") ? "seat" : "persona",
+        brief: String(body.brief || "Untitled"),
+        deliverableType: (body.deliverableType as BoardTask["deliverableType"]) || "markdown",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      state.tasks = [created, ...state.tasks];
+      return json({ task: created }, 201);
+    }
+    return json({ tasks: state.tasks, counts: countsFromTasks(state.tasks) });
+  }
+  if (p.startsWith(`${board}/tasks/`)) {
+    const rest = p.slice(`${board}/tasks/`.length).split("/");
+    const taskId = rest[0];
+    const task = state.tasks.find((t) => t.taskId === taskId);
+    if (!task) return json({ message: "Task not found" }, 404);
+    if (rest[1] === "cancel" && method === "POST") {
+      Object.assign(task, { status: "cancelled", updatedAt: new Date().toISOString() });
+      return json({ task });
+    }
+    if (rest[1] === "review" && method === "POST") {
+      const body = parseBody(init);
+      Object.assign(task, {
+        status: body.verdict === "return" ? "running" : "delivered",
+        lastReview: { verdict: body.verdict, notes: body.notes, at: new Date().toISOString() },
+        updatedAt: new Date().toISOString(),
+      });
+      return json({ task });
+    }
+    return json(boardTaskDetailFixture(taskId) ?? { task, steps: [], reviews: [], deliverable: "", deliverableUrl: "" });
+  }
 
   return notFound(p);
+}
+
+function countsFromTasks(tasks: readonly BoardTask[]): Record<string, number> {
+  const counts: Record<string, number> = {
+    queued: 0,
+    running: 0,
+    review: 0,
+    returned: 0,
+    delivered: 0,
+    needs_owner: 0,
+    failed: 0,
+    cancelled: 0,
+  };
+  for (const task of tasks) counts[task.status] = (counts[task.status] ?? 0) + 1;
+  return counts;
 }
