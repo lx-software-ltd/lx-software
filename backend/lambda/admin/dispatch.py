@@ -312,9 +312,12 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     records = event.get("Records") if isinstance(event, dict) else None
     if isinstance(records, list) and records and records[0].get("eventSource") == "aws:sqs":
+        import board_newsletter as board_newsletter_mod
         import board_outreach as board_outreach_mod
 
-        return board_outreach_mod.handle_ses_events(records)
+        outreach = board_outreach_mod.handle_ses_events(records)
+        newsletter = board_newsletter_mod.handle_ses_events(records)
+        return {"ok": True, "outreach": outreach, "newsletter": newsletter}
 
     if isinstance(event, dict) and event.get("internal") == "board_receivables_mirror":
         board_receivables_mod.handle_mirror_trigger(event)
@@ -336,6 +339,23 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         token = path[len("/public/outreach/unsubscribe/") :]
         return board_outreach_mod.handle_unsubscribe(event, method, token)
+
+    if path == "/public/newsletter/subscribe" and method == "POST":
+        import board_newsletter as board_newsletter_mod
+
+        return board_newsletter_mod.handle_subscribe(event)
+
+    if path.startswith("/public/newsletter/confirm/"):
+        import board_newsletter as board_newsletter_mod
+
+        token = path[len("/public/newsletter/confirm/") :]
+        return board_newsletter_mod.handle_confirm(event, token)
+
+    if path.startswith("/public/newsletter/unsubscribe/"):
+        import board_newsletter as board_newsletter_mod
+
+        token = path[len("/public/newsletter/unsubscribe/") :]
+        return board_newsletter_mod.handle_unsubscribe(event, method, token)
 
     if method == "GET" and path == "/health":
         return _json_response(200, {"status": "ok"})

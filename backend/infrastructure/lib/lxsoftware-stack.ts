@@ -973,6 +973,8 @@ export class LxsoftwareStack extends cdk.Stack {
         BOARD_STAFF_ENABLED: boardStaffEnabled.valueAsString,
         OUTREACH_SENDING_DOMAIN: outreachSendingDomain.valueAsString,
         OUTREACH_FROM_LOCAL_PART: outreachFromLocalPart.valueAsString,
+        NEWSLETTER_CONFIG_SET: "lxsoftware-admin-siutindei-newsletter",
+        NEWSLETTER_FROM_LOCAL_PART: "news",
         SEARCH_API_KEY_SECRET_ARN: siutindeiBoardSecrets.search.secretArn,
         BOARD_AWS_STACK_PREFIX: boardAwsStackPrefix.valueAsString,
         BOARD_AWS_LAMBDA_NAMES: boardAwsLambdaNames.valueAsString,
@@ -1236,6 +1238,19 @@ export class LxsoftwareStack extends cdk.Stack {
         ses.EmailSendingEvent.BOUNCE,
         ses.EmailSendingEvent.COMPLAINT,
         ses.EmailSendingEvent.REJECT,
+      ],
+    });
+    const newsletterConfigSet = new ses.ConfigurationSet(this, "SiutindeiNewsletterConfigSet", {
+      configurationSetName: "lxsoftware-admin-siutindei-newsletter",
+    });
+    newsletterConfigSet.addEventDestination("NewsletterSesEvents", {
+      destination: ses.EventDestination.snsTopic(outreachEventsTopic),
+      events: [
+        ses.EmailSendingEvent.BOUNCE,
+        ses.EmailSendingEvent.COMPLAINT,
+        ses.EmailSendingEvent.REJECT,
+        ses.EmailSendingEvent.OPEN,
+        ses.EmailSendingEvent.CLICK,
       ],
     });
     adminFn.addEventSource(
@@ -1727,7 +1742,7 @@ export class LxsoftwareStack extends cdk.Stack {
     const boardMailSendPolicy = new iam.Policy(this, "SiutindeiBoardMailSendPolicy", {
       statements: [
         new iam.PolicyStatement({
-          actions: ["ses:SendEmail", "ses:SendRawEmail"],
+          actions: ["ses:SendEmail", "ses:SendRawEmail", "ses:SendBulkEmail"],
           resources: [
             cdk.Stack.of(this).formatArn({
               service: "ses",
@@ -1735,6 +1750,10 @@ export class LxsoftwareStack extends cdk.Stack {
               resourceName: boardMailDomain.valueAsString,
             }),
           ],
+        }),
+        new iam.PolicyStatement({
+          actions: ["ses:CreateEmailTemplate", "ses:GetEmailTemplate", "ses:UpdateEmailTemplate"],
+          resources: ["*"],
         }),
       ],
     });
@@ -1840,6 +1859,10 @@ export class LxsoftwareStack extends cdk.Stack {
       "GET /webhooks/meta/siutindei": webhookRouteThrottle,
       "GET /public/outreach/unsubscribe/{token}": webhookRouteThrottle,
       "POST /public/outreach/unsubscribe/{token}": webhookRouteThrottle,
+      "POST /public/newsletter/subscribe": webhookRouteThrottle,
+      "GET /public/newsletter/confirm/{token}": webhookRouteThrottle,
+      "GET /public/newsletter/unsubscribe/{token}": webhookRouteThrottle,
+      "POST /public/newsletter/unsubscribe/{token}": webhookRouteThrottle,
     };
 
     this.httpApi.addRoutes({
@@ -1870,7 +1893,29 @@ export class LxsoftwareStack extends cdk.Stack {
       methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
       integration,
     });
-    for (const route of [...metaWebhookRoutes, ...siutindeiMetaWebhookRoutes, ...outreachUnsubRoutes]) {
+    const newsletterSubscribeRoutes = this.httpApi.addRoutes({
+      path: "/public/newsletter/subscribe",
+      methods: [apigwv2.HttpMethod.POST],
+      integration,
+    });
+    const newsletterConfirmRoutes = this.httpApi.addRoutes({
+      path: "/public/newsletter/confirm/{token}",
+      methods: [apigwv2.HttpMethod.GET],
+      integration,
+    });
+    const newsletterUnsubRoutes = this.httpApi.addRoutes({
+      path: "/public/newsletter/unsubscribe/{token}",
+      methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
+      integration,
+    });
+    for (const route of [
+      ...metaWebhookRoutes,
+      ...siutindeiMetaWebhookRoutes,
+      ...outreachUnsubRoutes,
+      ...newsletterSubscribeRoutes,
+      ...newsletterConfirmRoutes,
+      ...newsletterUnsubRoutes,
+    ]) {
       defaultStage.addResourceDependency(route.node.defaultChild as apigwv2.CfnRoute);
     }
     const hasPublicApiBaseUrl = new cdk.CfnCondition(this, "HasPublicApiBaseUrl", {

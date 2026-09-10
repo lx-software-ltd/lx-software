@@ -175,6 +175,7 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "BOARD_STAFF_WATCH_KINDS = tuple(BOARD_STAFF_CONTRACT[\"watchKinds\"])",
         "BOARD_STAFF_CONTENT_CHANNELS = tuple(BOARD_STAFF_CONTRACT[\"contentChannels\"])",
         "BOARD_STAFF_CONTENT_STATUSES = tuple(BOARD_STAFF_CONTRACT[\"contentStatuses\"])",
+        "BOARD_STAFF_NEWSLETTER_LISTS = tuple(BOARD_STAFF_CONTRACT[\"newsletterLists\"])",
         "_BOARD_STAFF_LIMITS = BOARD_STAFF_CONTRACT[\"limits\"]",
         "BOARD_STAFF_STEP_MAX_SECONDS = int(_BOARD_STAFF_LIMITS[\"staffStepMaxSeconds\"])",
         "BOARD_STAFF_MAX_STEPS_PER_TASK = int(_BOARD_STAFF_LIMITS[\"maxStepsPerTask\"])",
@@ -378,6 +379,7 @@ export type BoardProspectStage = (typeof BOARD_STAFF_PROSPECT_STAGES)[number];
 export const BOARD_STAFF_WATCH_KINDS = {json.dumps(board_staff["watchKinds"])} as const;
 export const BOARD_STAFF_CONTENT_CHANNELS = {json.dumps(board_staff["contentChannels"])} as const;
 export const BOARD_STAFF_CONTENT_STATUSES = {json.dumps(board_staff["contentStatuses"])} as const;
+export const BOARD_STAFF_NEWSLETTER_LISTS = {json.dumps(board_staff["newsletterLists"])} as const;
 export const BOARD_STAFF_MAX_STEPS_PER_TASK = {staff_limits["maxStepsPerTask"]};
 export const BOARD_STAFF_MAX_REVISIONS = {staff_limits["maxRevisions"]};
 export const BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = {staff_limits["maxRunningTasksDefault"]};

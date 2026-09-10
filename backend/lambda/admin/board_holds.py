@@ -36,6 +36,7 @@ INTERNAL_OPS = frozenset(
         "outreach_upsert_prospect",
         "outreach_start_sequence",
         "outreach_suppress",
+        "newsletter_draft_issue",
     }
 )
 INBOUND_REPLY_OPS = {

@@ -71,6 +71,10 @@ describe("HTTP API routes", () => {
     // RFC 8058 one-click / browser unsubscribe; HMAC in the token, no JWT.
     "GET /public/outreach/unsubscribe/{token}",
     "POST /public/outreach/unsubscribe/{token}",
+    "POST /public/newsletter/subscribe",
+    "GET /public/newsletter/confirm/{token}",
+    "GET /public/newsletter/unsubscribe/{token}",
+    "POST /public/newsletter/unsubscribe/{token}",
   ]);
 
   test("only the health check and Meta webhook routes lack an authorizer", () => {
@@ -102,7 +106,11 @@ describe("HTTP API routes", () => {
     const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
     const publicMirrors = routes.filter((r) => {
       const key = String(r.Properties?.RouteKey);
-      return key.includes(" /public/") && !key.includes("/public/outreach/unsubscribe/");
+      return (
+        key.includes(" /public/") &&
+        !key.includes("/public/outreach/unsubscribe/") &&
+        !key.includes("/public/newsletter/")
+      );
     });
     expect(publicMirrors.length).toBeGreaterThan(0);
     for (const route of publicMirrors) {

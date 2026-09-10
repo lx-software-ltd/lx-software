@@ -4,7 +4,7 @@ Design (see docs/architecture/executive-board-tools-plan.md):
 
 - A **registry** of operations, each belonging to a tool (``github``,
   ``board``, ``mail``, ``research``, ``aws``, ``security``, ``product``,
-  ``meta``, ``finance``, ``stores``, ``staff``, ``intel``, ``outreach``)
+  ``meta``, ``finance``, ``stores``, ``staff``, ``intel``, ``outreach``, ``content``, ``newsletter``)
   and being either a *read* or a *write*.
 - A per-tool, per-member **level** (``off`` < ``read`` < ``propose`` <
   ``act``), capped by a global mode. Read operations are offered at
@@ -62,6 +62,7 @@ from contract_constants import (
     BOARD_STORES_LIST_MAX,
     BOARD_WEB_LIST_MAX,
     BOARD_STAFF_DELIVERABLE_TYPES,
+    BOARD_STAFF_NEWSLETTER_LISTS,
     BOARD_STAFF_PROSPECT_TYPES,
 )
 from http_common import _log_event, _utc_iso_z
@@ -634,6 +635,18 @@ def _content_publish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     import board_content
 
     return board_content.op_publish(ctx, args)
+
+
+def _newsletter_draft_issue(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_newsletter
+
+    return board_newsletter.op_draft_issue(ctx, args)
+
+
+def _newsletter_send(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_newsletter
+
+    return board_newsletter.op_send(ctx, args)
 
 
 def _staff_assign(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
@@ -2019,6 +2032,40 @@ def build_registry() -> dict[str, ToolOp]:
             contexts=("chat", "meeting", "task"),
         ),
         ToolOp(
+            name="newsletter_draft_issue",
+            tool_id="newsletter",
+            kind="write",
+            description="Draft a fortnightly newsletter issue from recent content and catalogue highlights.",
+            parameters=_obj(
+                {
+                    "list": _str_param("parents or providers.", enum=list(BOARD_STAFF_NEWSLETTER_LISTS)),
+                    "markdown": _str_param("Optional Markdown body.", max_len=20000),
+                    "reason": REASON_PARAM,
+                },
+                ["list"],
+            ),
+            run=_newsletter_draft_issue,
+            summarize=_summ("Drafted a newsletter issue"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="newsletter_send",
+            tool_id="newsletter",
+            kind="write",
+            description="Send a drafted issue to one confirmed list. Held as publish:newsletter.",
+            parameters=_obj(
+                {
+                    "issueId": _str_param("Issue id.", max_len=40),
+                    "list": _str_param("parents or providers.", enum=list(BOARD_STAFF_NEWSLETTER_LISTS)),
+                    "reason": REASON_PARAM,
+                },
+                ["issueId", "list"],
+            ),
+            run=_newsletter_send,
+            summarize=_summ("Sent a newsletter issue"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
             name="staff_assign",
             tool_id="staff",
             kind="write",
@@ -2199,7 +2246,7 @@ def available_ops(
             continue
         if op.tool_id == "task":
             level = "act" if context == "task" else "off"
-        elif op.tool_id in ("staff", "intel", "outreach", "content"):
+        elif op.tool_id in ("staff", "intel", "outreach", "content", "newsletter"):
             import board_staff
 
             if not board_staff.enabled(settings):

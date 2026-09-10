@@ -253,3 +253,21 @@ up in review; do not treat them as product decisions unless you confirm.
 - **`add_external_usage_day` now allows `_`** so the spec field
   `ig_publish` is a legal counter name (colons were already allowed for
   `reply:{channel}`).
+
+## WP8
+
+- **No fortnightly Scheduler** in this WP. Drafting is the
+  `newsletter_draft_issue` op (content-marketer). A duty can be added in
+  WP9.
+- **No new admin tab.** Sends appear as `publish:newsletter` holds on
+  Approvals. Subscriber counts are not yet an owner UI.
+- **Confirm/issue send require `BoardMailSendingEnabled`.** That is the
+  spec kill-switch for all email. Subscribe still stores a pending row
+  when sending is off.
+- **SES template is created lazily** (`CreateEmailTemplate` on first
+  send), not as a CDK custom resource.
+- **`NewsletterForm` is on the LX Software public footer**
+  (`apps/public_www`). The Siu Tin Dei product site may live in another
+  repo; owner should confirm the form's production home.
+- **Token payload** is `{c|u}:{list}:{emailDigest}` using the WP6 HMAC
+  helper. Digest is SHA-256 of the normalised email (one row per email).

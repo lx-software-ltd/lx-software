@@ -458,6 +458,15 @@ function calling. Design:
   `growth-specialist` active by default. Meta App Review for
   `pages_manage_posts` / `instagram_content_publish` stays an owner task.
 
+- **Newsletter (WP8):** Public `POST /public/newsletter/subscribe`,
+  `GET /public/newsletter/confirm/{token}`,
+  `GET/POST /public/newsletter/unsubscribe/{token}` (no JWT; HMAC token).
+  Sends from `news@siutindei.com` when `BoardMailSendingEnabled=true`.
+  Config set `lxsoftware-admin-siutindei-newsletter` → same SNS/SQS as
+  outreach, plus OPEN/CLICK. Public site form uses `VITE_PUBLIC_API_URL`.
+  Owner: create the `news@siutindei.com` mailbox (fan-out already copies
+  `@siutindei.com`) and set the public site env.
+
 Smoke test after deploy: open the tab, save a company vision/mission, edit one
 member's mandate, send a chat message to the CEO (reply arrives within ~30 s),
 then **Run stand-up** and confirm minutes and action items appear. For tools:

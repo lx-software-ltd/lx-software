@@ -228,6 +228,22 @@
       }
     },
     {
+      "id": "newsletter",
+      "label": "Newsletter",
+      "description": "Draft fortnightly parent and provider issues and send them after a publish hold. Public subscribe is double opt-in; unsubscribe is one click.",
+      "maxLevel": "act",
+      "defaults": {
+        "ceo": "read",
+        "cfo": "off",
+        "coo": "off",
+        "cpo": "off",
+        "cto": "off",
+        "cio": "off",
+        "ciso": "off",
+        "cmo": "act"
+      }
+    },
+    {
       "id": "web",
       "label": "Web analytics",
       "description": "GA4 sessions, top pages, referrers and conversions across configured properties, plus GTM live-version status. Read-only; cached hourly. GTM publish and Google Ads are later milestones.",

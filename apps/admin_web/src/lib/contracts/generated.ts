@@ -466,6 +466,22 @@ export const BOARD_TOOL_DEFINITIONS: readonly BoardToolDefinition[] = [
     }
   },
   {
+    "id": "newsletter",
+    "label": "Newsletter",
+    "description": "Draft fortnightly parent and provider issues and send them after a publish hold. Public subscribe is double opt-in; unsubscribe is one click.",
+    "maxLevel": "act",
+    "defaults": {
+      "ceo": "read",
+      "cfo": "off",
+      "coo": "off",
+      "cpo": "off",
+      "cto": "off",
+      "cio": "off",
+      "ciso": "off",
+      "cmo": "act"
+    }
+  },
+  {
     "id": "web",
     "label": "Web analytics",
     "description": "GA4 sessions, top pages, referrers and conversions across configured properties, plus GTM live-version status. Read-only; cached hourly. GTM publish and Google Ads are later milestones.",
@@ -595,7 +611,8 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
       "stores": "propose",
       "research": "read",
       "github": "propose",
-      "content": "act"
+      "content": "act",
+      "newsletter": "act"
     },
     "brief": "You fill the content calendar, write posts and stories in English and Traditional Chinese, render template cards, and draft newsletters and SEO articles. You never invent photos of children and you never publish a claim the catalog does not support. Report facts you verified with tools; say clearly what you could not verify."
   },
@@ -746,6 +763,7 @@ export type BoardProspectStage = (typeof BOARD_STAFF_PROSPECT_STAGES)[number];
 export const BOARD_STAFF_WATCH_KINDS = ["competitor", "directory", "media", "analogue", "event-source", "candidate"] as const;
 export const BOARD_STAFF_CONTENT_CHANNELS = ["facebook", "instagram", "instagram_story", "newsletter", "seo", "assisted_xiaohongshu", "assisted_fb_group"] as const;
 export const BOARD_STAFF_CONTENT_STATUSES = ["idea", "drafted", "creative", "scheduled", "published", "vetoed", "failed"] as const;
+export const BOARD_STAFF_NEWSLETTER_LISTS = ["parents", "providers"] as const;
 export const BOARD_STAFF_MAX_STEPS_PER_TASK = 12;
 export const BOARD_STAFF_MAX_REVISIONS = 2;
 export const BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = 6;

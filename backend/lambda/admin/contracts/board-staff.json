@@ -80,7 +80,8 @@
         "stores": "propose",
         "research": "read",
         "github": "propose",
-        "content": "act"
+        "content": "act",
+        "newsletter": "act"
       },
       "brief": "You fill the content calendar, write posts and stories in English and Traditional Chinese, render template cards, and draft newsletters and SEO articles. You never invent photos of children and you never publish a claim the catalog does not support. Report facts you verified with tools; say clearly what you could not verify."
     },
@@ -220,8 +221,9 @@
   "prospectTypes": ["provider", "venue", "community", "school", "restaurant", "media"],
   "prospectStages": ["discovered", "qualified", "parked", "contacted", "replied", "onboarding", "listed", "declined", "unresponsive", "suppressed"],
   "watchKinds": ["competitor", "directory", "media", "analogue", "event-source", "candidate"],
-  "contentChannels": ["facebook", "instagram", "instagram_story", "newsletter", "seo", "assisted_xiaohongshu", "assisted_fb_group"],
+      "contentChannels": ["facebook", "instagram", "instagram_story", "newsletter", "seo", "assisted_xiaohongshu", "assisted_fb_group"],
   "contentStatuses": ["idea", "drafted", "creative", "scheduled", "published", "vetoed", "failed"],
+  "newsletterLists": ["parents", "providers"],
   "limits": {
     "staffStepMaxSeconds": 150,
     "maxStepsPerTask": 12,
