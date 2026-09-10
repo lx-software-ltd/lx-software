@@ -121,13 +121,13 @@ test.describe("admin viewport smoke", () => {
       await page.getByRole("tab", { name: /Content/ }).click();
     }
     await expect(page.getByRole("heading", { name: "Content" })).toBeVisible();
-    await expect(page.getByText(/Saturday play in Sha Tin/i)).toBeVisible();
+    await expect(page.getByRole("row", { name: /facebook Saturday play in Sha Tin/i })).toBeVisible();
     if (testInfo.project.name === "phone") {
       await page.locator("#board-section-select").selectOption("staff");
     } else {
       await page.getByRole("tab", { name: /Staff/ }).click();
     }
-    await expect(page.getByText(/Parent Support/i)).toBeVisible();
+    await expect(page.getByText("Parent Support").first()).toBeVisible();
     await expect(page.getByText(/List our three biggest monthly costs/i)).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
