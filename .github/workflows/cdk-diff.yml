@@ -47,6 +47,13 @@ jobs:
             echo "Missing backend/infrastructure/package.json"
           fi
 
+      # `cdk diff` synthesizes with asset bundling; AdminApiFn pip deps are
+      # installed in the linux/arm64 SAM image, which needs QEMU on x86-64.
+      - name: Set up QEMU for arm64 Lambda bundling
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       - name: Check CDK Bootstrap status
         if: ${{ vars.AWS_ACCOUNT_ID != '' && vars.AWS_REGION != '' }}
         run: |

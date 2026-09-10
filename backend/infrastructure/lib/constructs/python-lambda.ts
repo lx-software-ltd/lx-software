@@ -102,7 +102,10 @@ function tryLocalPythonBundle(entry: string, outputDir: string): boolean {
  * sources + pip when requirements.txt has packages). Local bundling only runs
  * when there are no pip dependencies so macOS wheels are never copied into a
  * Linux ARM runtime bundle. `CDK_SKIP_PYTHON_PIP=1` copies sources without
- * pip for template-only synth (Checkov).
+ * pip for template-only synth (Checkov). On x86-64 hosts the arm64 image
+ * only runs with QEMU binfmt registered (`docker/setup-qemu-action` in CI,
+ * Docker Desktop on macOS); otherwise `docker run` fails with
+ * "exec format error".
  *
  * Wires up the standard hardening expected by Checkov on every application
  * Lambda:

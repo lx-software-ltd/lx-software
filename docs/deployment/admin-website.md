@@ -593,7 +593,9 @@ function calling. Design:
   `GET /content/{id}/creative/{n}`. Sunday 18:00 HKT
   `…-board-content-plan`, Monday 09:00 HKT `…-board-content-readout`.
   `AdminApiFn` memory 1536 MB; first pip dependency is Pillow (Docker
-  arm64 wheel). **Content** section. Flip `content-marketer` and
+  arm64 wheel — `deploy-backend.yml` and `cdk-diff.yml` register QEMU
+  with `docker/setup-qemu-action` so the x86-64 runner can execute the
+  `linux/arm64` build image). **Content** section. Flip `content-marketer` and
   `growth-specialist` on at runbook step 5. Meta App Review for
   `pages_manage_posts` / `instagram_content_publish` stays an owner task.
 
