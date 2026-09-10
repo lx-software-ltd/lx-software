@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AdminCell,
   AdminPageIntro,
@@ -160,6 +160,13 @@ export function AssetsPage() {
     return sorted.filter((row) => rowMatchesFilter(row, tableFilter));
   }, [rows, tableFilter]);
 
+  const { hasNextPage, isFetchingNextPage, isError, fetchNextPage } = q;
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage && !isError) {
+      void fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, isError, fetchNextPage]);
+
   return (
     <div>
       <h1 className="h3 mb-3">Assets</h1>
@@ -246,15 +253,8 @@ export function AssetsPage() {
               />
             )}
           </AdminDataTable>
-          {q.hasNextPage ? (
-            <button
-              type="button"
-              className="btn btn-outline-secondary btn-sm mt-2"
-              disabled={q.isFetchingNextPage}
-              onClick={() => void q.fetchNextPage()}
-            >
-              {q.isFetchingNextPage ? "Loading…" : "Load more"}
-            </button>
+          {isFetchingNextPage ? (
+            <p className="text-muted small mt-2 mb-0">Loading more…</p>
           ) : null}
         </>
       )}

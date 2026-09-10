@@ -286,7 +286,11 @@ does not try to create them again. Replace the dummy values in Secrets
 Manager (`ap-southeast-1`). The older `lxsoftware-admin-*` set stays in
 the stack (CDK-created, unused) for a future LX Software board. OpenRouter
 stays `lxsoftware-admin-openrouter-api-secret-*` because statement parsing
-also uses it.
+also uses it. That secret must be JSON with named keys `statement-parser`
+and `executive-board` (mint via `scripts/mint-openrouter-app-keys.py`).
+Sibling products store their own named keys. **LX Software → Dashboard**
+shows AWS and OpenRouter side by side; each card has a UTC month dropdown
+(current month-to-date plus the previous 12 months).
 
 | Secret name | Dummy shape | Replace with |
 |-------------|-------------|--------------|
@@ -331,6 +335,129 @@ usage row, and chats/meetings stop when the configured daily budget
 (default USD 15) is reached. OpenRouter requests are sent with data
 collection denied. The context pack shares only aggregated finance totals
 (never individual transactions) and no owner PII.
+
+### OpenRouter bill (shared account)
+
+LX Software pays one OpenRouter invoice. Sibling products share that account
+by tagging every chat-completions request. The catalog is
+[`contracts/openrouter-apps.json`](../../contracts/openrouter-apps.json)
+(`payer: lxSoftware`).
+
+| App id | Product | Metered in this admin |
+|--------|---------|----------------------|
+| `statement-parser` | Statement OCR in this repo | Yes |
+| `executive-board` | Executive Board in this repo | Yes |
+| `evolvesprouts` | [lx-software-ltd/evolvesprouts](https://github.com/lx-software-ltd/evolvesprouts) | No (tag only) |
+| `siutindei` | [lx-software-ltd/siutindei](https://github.com/lx-software-ltd/siutindei) (when it starts calling OpenRouter) | No (tag only) |
+
+**What this admin sends.** Each request sets a distinct app (`HTTP-Referer` +
+`X-OpenRouter-Title` from the catalog) and a stable `user` of `{app-id}:{owner}`
+(`statement-parser:hillmarton`, `executive-board:siuTinDei`, …). Apps are
+created **hidden**, so they do not appear on OpenRouter's public rankings.
+OpenRouter Activity / Analytics can then group by **app**.
+
+**Named keys (required).** Mint one OpenRouter key per catalog app on the
+LX Software account, then store each key in that product's secret.
+
+```bash
+OPENROUTER_MANAGEMENT_API_KEY=sk-or-... python3 scripts/mint-openrouter-app-keys.py
+```
+
+Create the management key at
+[openrouter.ai/settings/management-keys](https://openrouter.ai/settings/management-keys).
+The script names keys `lxsoftware:{app-id}` and prints plaintext once.
+
+**Via GitHub Actions** (`.github/workflows/mint-openrouter-keys.yml`, Actions
+tab → **Mint OpenRouter App Keys** → Run workflow). One-time setup under
+**Settings → Environments → production → Secrets**:
+
+- `OPENROUTER_MANAGEMENT_API_KEY` — the management key (GitHub secret names
+  cannot contain hyphens; do not use `OPENROUTER-_MANAGEMENT_API_KEY`)
+- `PUBLIC_API_KEY_GPG_PASSPHRASE` — same passphrase as the public API-key
+  workflow; used to encrypt minted inference keys in this public repo's logs
+
+Leave **Preview only** checked to list which catalog names already exist.
+Uncheck it to mint. Copy the armored block from the job summary and decrypt
+locally (`gpg --decrypt keys.asc`). Then merge the admin JSON into
+`lxsoftware-admin-openrouter-api-secret-*` as below. The management key stays
+in GitHub; it does not go in that AWS secret.
+
+**This admin.** Replace the plain string in
+`lxsoftware-admin-openrouter-api-secret-*` with JSON. Parser and board
+calls fail if their named field is missing (no shared-key fallback):
+
+```json
+{
+  "statement-parser": "sk-or-v1-parser",
+  "executive-board": "sk-or-v1-board"
+}
+```
+
+**Evolve Sprouts** already has its own Secrets Manager secret
+(`CDK_PARAM_OPENROUTER_API_KEY` / `OPENROUTER_API_KEY_SECRET_ARN`). Put the
+`lxsoftware:evolvesprouts` plaintext there (plain string is fine — that
+stack does not read this admin's JSON). Also tag every chat-completions
+request in `backend/src/app/services/openrouter_client.py`:
+
+```
+HTTP-Referer: https://evolvesprouts.com
+X-OpenRouter-Title: Evolve Sprouts
+X-OpenRouter-App-Visibility: hidden
+```
+
+Body `user`: `evolvesprouts:{workload}` (`expense-parser`,
+`sales-daily-plan`, `helper-detector`, … — no PII).
+
+**Siu Tin Dei product** (`lx-software-ltd/siutindei`) has no OpenRouter
+client yet. When it does, mint `lxsoftware:siutindei`, store that key in
+the product's secret, and send `https://siutindei.com` / `Siu Tin Dei` /
+`siutindei:{workload}`.
+
+**Where the invoice lands.** Admin **LX Software → Dashboard → OpenRouter**
+(and `GET /openrouter/usage`) rolls up UTC spend metered here, grouped by
+app. The card defaults to month-to-date and can switch to any of the previous
+12 UTC months (`?from=YYYY-MM-DD&to=YYYY-MM-DD`). Parser rows still record
+which book or house the OCR ran against. Evolve Sprouts / Siu Tin Dei product
+spend shows in OpenRouter Activity by app and named key until those repos
+write to this ledger.
+
+The OpenRouter invoice itself stays on the LX Software card. Parser spend is
+only recorded after this deploy; the board's daily budget row remains the cap,
+and the ledger is the in-admin split.
+
+### AWS bill (shared account)
+
+LX Software pays one AWS invoice for account `588024549699`. Sibling products
+share that account by tagging every resource. Cost allocation tags
+**Organization** and **Project** are already **Active** in Billing → Cost
+allocation tags (required before Cost Explorer can group by them).
+
+The catalog is [`contracts/aws-billing.json`](../../contracts/aws-billing.json)
+(`payer: lxSoftware`). First matching row wins:
+
+| Company | `Organization` tag | `Project` tag |
+|---------|--------------------|---------------|
+| Siu Tin Dei | `LX Software` | `Siu Tin Dei` |
+| Evolve Sprouts | `Evolve Sprouts` | any |
+| LX Software | `LX Software` | anything else (`Admin Console`, `Public Website`, …) |
+
+Untagged resources and leftover values such as `Organization=Personal` land in
+**Unallocated**. August 2026 Cost Explorer (UnblendedCost) was about half
+Evolve Sprouts (`Project=Backend`) and half Siu Tin Dei, with LX Software's
+own websites under a few dollars.
+
+**AWS's own invoice PDF cannot be split.** It is one account total. The
+internal allocation is:
+
+- Admin **LX Software → Dashboard → AWS** (`GET /aws/usage`) — last complete
+  UTC calendar month by default, with the current month-to-date and previous
+  12 months on the card dropdown (`?from=YYYY-MM-DD&to=YYYY-MM-DD` to override).
+- **Download allocation PDF** (`GET /aws/usage.pdf`) — the tagged split to
+  attach to the LX Software book or send to the other companies.
+
+Keep tagging new stacks the same way (`cdk.Tags` `Organization` + `Project`).
+Do not rotate tag keys; Cost Explorer only groups by **activated** cost
+allocation tags, and a key change orphans historical spend.
 
 ### Board tools (function calling)
 
@@ -622,9 +749,27 @@ include every mailbox that receives mail in `ap-southeast-1`:
 
 | Recipient | Raw store | Processor |
 |---|---|---|
-| `32-hillmarton@inbound.lx-software.com` | `lxsoftware-admin-inbound-mail-…` / `inbound-raw/hillmarton/` | `InboundStatementMailFn` |
+| `32-hillmarton@inbound.lx-software.com` | `lxsoftware-admin-inbound-mail-…` / `inbound-raw/hillmarton/` | `InboundStatementMailFn` (house `hillmarton`) |
+| `the-morrison@inbound.lx-software.com` | same bucket / `inbound-raw/morrison/` | `InboundStatementMailFn` (house `morrison`) |
+| `billing@inbound.lx-software.com` | same bucket / `inbound-raw/lx-software/` | `InboundStatementMailFn` (book `lxSoftware`, expenses only) |
 | `siutindei-board@inbound.lx-software.com` | same bucket / `inbound-raw/siutindei/` | `board_mail.ingest_raw_object` |
 | `invoices@inbound.evolvesprouts.com` | `evolvesprouts-assets-…` / `inbound-email/raw/` | Evolve Sprouts `InboundInvoiceEmailProcessor` |
+
+`lx-software.com` apex MX stays on iCloud. Public address `billing@lx-software.com`
+is not an SES recipient; after deploy, forward that iCloud mailbox to
+`billing@inbound.lx-software.com` (stack output
+`lxsoftware-InboundMailbox-lxSoftware`). PDFs then use the same extract →
+assets → `enqueue_parse_statement_async_job` path as the house inboxes, with
+`lineTypeOnly=expenditure` so lines land on **LX Software → Expenses**.
+Inbound PDFs are written under `inbound/{owner}/{batch}/` in the assets
+bucket and get an `ASSET#` META row immediately (original filename, not the
+`00_` S3 prefix), so they show on **Assets** even if parse later fails.
+
+Set **`lxsoftware:StatementParseNotifyEmail`** (CDK / `params/*.json`) to
+receive an email from `statements@inbound.lx-software.com` when a statement
+parse job succeeds or fails. Leave it empty to disable. SES must be able to
+send from `InboundMailDomain` to that address (account out of the sandbox,
+or the destination verified).
 
 The Evolve Sprouts stack still owns the invoice bucket, SNS topic, SQS
 queue, receipt IAM role, and processor. It must **not** call

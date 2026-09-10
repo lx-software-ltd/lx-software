@@ -118,6 +118,17 @@ describe("HTTP API routes", () => {
       expect(route.Properties?.AuthorizationType).toBe("CUSTOM");
     }
   });
+
+  test("AWS usage JSON and PDF routes are JWT-protected", () => {
+    const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
+    const keys = routes.map((r) => r.Properties?.RouteKey as string);
+    expect(keys).toEqual(expect.arrayContaining(["GET /aws/usage", "GET /aws/usage.pdf"]));
+    for (const key of ["GET /aws/usage", "GET /aws/usage.pdf"]) {
+      const route = routes.find((r) => r.Properties?.RouteKey === key);
+      expect(route?.Properties?.AuthorizationType).toBe("JWT");
+      expect(route?.Properties?.AuthorizerId).toBeDefined();
+    }
+  });
 });
 
 describe("HTTP API stage throttling", () => {
@@ -230,6 +241,25 @@ describe("EventBridge Scheduler wiring", () => {
 });
 
 describe("Admin Lambda IAM policies", () => {
+  test("statement parse notify send is scoped to the inbound mail identity", () => {
+    const [policy, ...rest] = findPoliciesByConstructId("StatementParseNotifySendPolicy");
+    expect(policy).toBeDefined();
+    expect(rest).toHaveLength(0);
+
+    const sendStatements = policyStatements(policy).filter((s) =>
+      asArray<string>(s.Action).includes("ses:SendEmail")
+    );
+    expect(sendStatements).toHaveLength(1);
+
+    const resources = asArray(sendStatements[0].Resource);
+    expect(resources).toHaveLength(1);
+    expect(resources[0]).not.toBe("*");
+    const serialized = JSON.stringify(resources[0]);
+    expect(serialized).toContain(":ses:");
+    expect(serialized).toContain(":identity/");
+    expect(serialized).toContain('"Ref":"InboundMailDomain"');
+  });
+
   test("the SES send statement is scoped to the board mail identity, not *", () => {
     const [policy, ...rest] = findPoliciesByConstructId("SiutindeiBoardMailSendPolicy");
     expect(policy).toBeDefined();
@@ -466,7 +496,7 @@ describe("Siu Tin Dei board mail outputs", () => {
 });
 
 describe("shared inbound SES receipt rule set", () => {
-  test("hosts hillmarton, siutindei-board, and Evolve Sprouts invoice rules", () => {
+  test("hosts hillmarton, morrison, LX Software billing, siutindei-board, and Evolve Sprouts invoice rules", () => {
     const ruleSets = Object.values(resourcesOfType("AWS::SES::ReceiptRuleSet"));
     expect(ruleSets).toHaveLength(1);
     expect(ruleSets[0].Properties?.RuleSetName).toBe("lxsoftware-inbound-mail");
@@ -474,7 +504,17 @@ describe("shared inbound SES receipt rule set", () => {
     const rules = Object.values(resourcesOfType("AWS::SES::ReceiptRule"));
     const serialized = JSON.stringify(rules);
     expect(serialized).toContain("32-hillmarton");
+    expect(serialized).toContain("the-morrison");
+    expect(serialized).toContain("billing");
     expect(serialized).toContain("siutindei-board");
+    expect(serialized).toContain("inbound-raw/hillmarton/");
+    expect(serialized).toContain("inbound-raw/morrison/");
+    expect(serialized).toContain("inbound-raw/lx-software/");
+
+    const lambdaEnv = JSON.stringify(template.toJSON());
+    expect(lambdaEnv).toContain("INBOUND_STATEMENT_MAILBOXES");
+    expect(lambdaEnv).toContain("lxSoftware");
+    expect(lambdaEnv).toContain("expenditure");
 
     const invoiceRule = rules.find(
       (r) => r.Properties?.Rule?.Name === "evolvesprouts-inbound-invoice-email-rule"
@@ -493,6 +533,31 @@ describe("shared inbound SES receipt rule set", () => {
     );
     expect(JSON.stringify(s3Action?.IamRoleArn)).toContain(
       "EvolvesproutsInboundInvoiceReceiptRoleName"
+    );
+  });
+
+  test("exports hillmarton, morrison, and LX Software billing inbound mailbox addresses", () => {
+    const outputs = template.toJSON().Outputs as Record<
+      string,
+      { Export?: { Name?: string }; Description?: string }
+    >;
+    expect(outputs.InboundMailboxAddresshillmarton?.Export?.Name).toBe(
+      "lxsoftware-InboundMailbox-hillmarton"
+    );
+    expect(outputs.InboundMailboxAddressmorrison?.Export?.Name).toBe(
+      "lxsoftware-InboundMailbox-morrison"
+    );
+    expect(outputs.InboundMailboxAddressmorrison?.Description).toContain(
+      "The Morrison"
+    );
+    expect(outputs.InboundMailboxAddresslxSoftware?.Export?.Name).toBe(
+      "lxsoftware-InboundMailbox-lxSoftware"
+    );
+    expect(outputs.InboundMailboxAddresslxSoftware?.Description).toContain(
+      "LX Software"
+    );
+    expect(outputs.InboundMailboxAddresslxSoftware?.Description).toContain(
+      "billing@lx-software.com"
     );
   });
 

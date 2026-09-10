@@ -851,3 +851,80 @@ export const BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = 6;
 export const BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD = 20;
 export const BOARD_STAFF_REVIEW_SAMPLE_SIZE = 8;
 export const BOARD_STAFF_OUTREACH_DAILY_CAP_START = 20;
+
+export type OpenRouterAppDefinition = {
+  readonly id: string;
+  readonly label: string;
+  readonly title: string;
+  readonly referer: string;
+  readonly repo: string;
+  readonly keyName: string;
+  readonly meteredHere: boolean;
+};
+export const OPENROUTER_PAYER = "lxSoftware" as const;
+export const OPENROUTER_APPS: readonly OpenRouterAppDefinition[] = [
+  {
+    "id": "statement-parser",
+    "label": "Statement parser",
+    "title": "LX Admin - Statement parser",
+    "referer": "https://admin.lx-software.com/finance/parse-statement",
+    "repo": "lx-software-ltd/lx-software",
+    "keyName": "lxsoftware:statement-parser",
+    "meteredHere": true
+  },
+  {
+    "id": "executive-board",
+    "label": "Executive Board",
+    "title": "LX Admin - Executive Board",
+    "referer": "https://admin.lx-software.com/siu-tin-dei/board",
+    "repo": "lx-software-ltd/lx-software",
+    "keyName": "lxsoftware:executive-board",
+    "meteredHere": true
+  },
+  {
+    "id": "evolvesprouts",
+    "label": "Evolve Sprouts",
+    "title": "Evolve Sprouts",
+    "referer": "https://evolvesprouts.com",
+    "repo": "lx-software-ltd/evolvesprouts",
+    "keyName": "lxsoftware:evolvesprouts",
+    "meteredHere": false
+  },
+  {
+    "id": "siutindei",
+    "label": "Siu Tin Dei",
+    "title": "Siu Tin Dei",
+    "referer": "https://siutindei.com",
+    "repo": "lx-software-ltd/siutindei",
+    "keyName": "lxsoftware:siutindei",
+    "meteredHere": false
+  }
+];
+
+export type AwsBillingCompanyDefinition = {
+  readonly id: string;
+  readonly label: string;
+  readonly organization: string;
+  readonly project?: string;
+};
+export const AWS_BILLING_PAYER = "lxSoftware" as const;
+export const AWS_BILLING_CURRENCY = "USD" as const;
+export const AWS_BILLING_COST_ALLOCATION_TAGS: readonly string[] = ["Organization", "Project"];
+export const AWS_BILLING_COMPANIES: readonly AwsBillingCompanyDefinition[] = [
+  {
+    "id": "siuTinDei",
+    "label": "Siu Tin Dei",
+    "organization": "LX Software",
+    "project": "Siu Tin Dei"
+  },
+  {
+    "id": "evolveSprouts",
+    "label": "Evolve Sprouts",
+    "organization": "Evolve Sprouts"
+  },
+  {
+    "id": "lxSoftware",
+    "label": "LX Software",
+    "organization": "LX Software"
+  }
+];

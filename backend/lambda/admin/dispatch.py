@@ -23,6 +23,7 @@ import parse_jobs as parse_jobs_mod
 import runtime
 from board_routes import handle_board_route
 from board_store import BOARD_PK_PREFIX
+from openrouter_usage import USAGE_PK_PREFIX, handle_usage_get
 from contract_constants import (
     EXPENSE_RECORD_CATEGORIES,
     FINANCE_HOUSE_KEYS,
@@ -33,6 +34,7 @@ from contract_constants import (
 from assets import (
     _asset_delete_response,
     _asset_download_presigned_response,
+    _assets_list_response,
     _is_allowed_upload_content_type,
 )
 from ddb_convert import _from_ddb, _from_ddb_nested, _to_ddb, _to_ddb_nested
@@ -98,7 +100,7 @@ from parse_statement import (
     _statement_basename_already_imported,
 )
 from proxies import _proxy_finance_quotes, _proxy_fx_v2_rates
-from runtime import RECORD_PK_PREFIX, logger
+from runtime import PARSE_JOB_PK_PREFIX, RECORD_PK_PREFIX
 
 
 # Read-only mirrors of the admin GET endpoints, served under /public/* and
@@ -147,12 +149,19 @@ def _records_get_response(event: dict[str, Any]) -> dict[str, Any]:
     cursor_raw = parse_qs(qs).get("cursor", [""])[0]
     start_key = _decode_cursor(cursor_raw)
     table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
-    # Executive Board rows (strategy discussions, chats) never leave via the
-    # generic record browser or its public API-key mirror.
+    # Executive Board rows, OpenRouter usage ledgers, and parse-job META
+    # never leave via the generic record browser or its public API-key mirror.
     kwargs: dict[str, Any] = {
         "Limit": 50,
-        "FilterExpression": "NOT begins_with(pk, :board)",
-        "ExpressionAttributeValues": {":board": BOARD_PK_PREFIX},
+        "FilterExpression": (
+            "NOT begins_with(pk, :board) AND NOT begins_with(pk, :openrouter) "
+            "AND NOT begins_with(pk, :parsejob)"
+        ),
+        "ExpressionAttributeValues": {
+            ":board": BOARD_PK_PREFIX,
+            ":openrouter": USAGE_PK_PREFIX,
+            ":parsejob": PARSE_JOB_PK_PREFIX,
+        },
     }
     if start_key:
         kwargs["ExclusiveStartKey"] = start_key
@@ -365,38 +374,12 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
     admin_claims = _require_admin(event)
     if admin_claims is None:
-        claims = _claims(event)
-        if not claims:
-            logger.info(
-                json.dumps(
-                    {
-                        "tag": "admin_auth_denied",
-                        "reason": "missing_claims",
-                        "method": method,
-                        "path": path,
-                        "request_id": _request_id(event),
-                    }
-                )
-            )
+        # Log only static fields. CodeQL treats API Gateway requestContext
+        # (JWT claims, path, request id) as private and flags clear-text logs.
+        if not _claims(event):
+            _log_event("info", tag="admin_auth_denied", reason="missing_claims")
             return _json_response(401, {"message": "Unauthorized"})
-        logger.info(
-            json.dumps(
-                {
-                    "tag": "admin_auth_denied",
-                    "reason": "not_in_admin_group",
-                    "method": method,
-                    "path": path,
-                    "request_id": _request_id(event),
-                    "sub": claims.get("sub"),
-                    "email": claims.get("email"),
-                    "cognito_username": claims.get("cognito:username"),
-                    "cognito_groups": claims.get("cognito:groups"),
-                    "token_use": claims.get("token_use"),
-                    "iss": claims.get("iss"),
-                    "aud": claims.get("aud"),
-                }
-            )
-        )
+        _log_event("info", tag="admin_auth_denied", reason="not_in_admin_group")
         return _json_response(403, {"message": "Forbidden: admin group required"})
 
     user_sub = admin_claims.get("sub")
@@ -410,6 +393,19 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 "cognito_username": admin_claims.get("cognito:username"),
             },
         )
+
+    if method == "GET" and path == "/openrouter/usage":
+        return handle_usage_get(event)
+
+    if method == "GET" and path == "/aws/usage":
+        from aws_billing import handle_usage_get as handle_aws_usage_get
+
+        return handle_aws_usage_get(event)
+
+    if method == "GET" and path == "/aws/usage.pdf":
+        from aws_billing import handle_usage_pdf as handle_aws_usage_pdf
+
+        return handle_aws_usage_pdf(event)
 
     if method == "GET" and path == "/fx/v2/rates":
         return _proxy_fx_v2_rates(
@@ -606,6 +602,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         )
         _audit(user_sub, "ASSET_CONFIRM", str(key), event)
         return _json_response(201, {"item": _from_ddb(item)})
+
+    if method == "GET" and path == "/assets":
+        return _assets_list_response(event)
 
     if method == "GET" and path == "/assets/download-url":
         qs = event.get("rawQueryString") or ""

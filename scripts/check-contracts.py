@@ -19,6 +19,8 @@ ARTIFACTS = [
     ROOT / "backend" / "lambda" / "admin" / "contracts" / "board-timeouts.json",
     ROOT / "backend" / "lambda" / "admin" / "contracts" / "board-tools.json",
     ROOT / "backend" / "lambda" / "admin" / "contracts" / "board-staff.json",
+    ROOT / "backend" / "lambda" / "admin" / "contracts" / "openrouter-apps.json",
+    ROOT / "backend" / "lambda" / "admin" / "contracts" / "aws-billing.json",
 ]
 
 

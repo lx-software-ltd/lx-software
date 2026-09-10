@@ -27,6 +27,9 @@ jobs:
       - name: Verify contract artifacts
         run: python3 scripts/check-contracts.py
 
+      - name: Test OpenRouter key mint script
+        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
+
   test-web:
     name: Test Public Website
     runs-on: ubuntu-latest

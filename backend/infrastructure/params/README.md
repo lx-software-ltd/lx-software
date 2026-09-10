@@ -63,9 +63,11 @@ asks OpenRouter to extract transactions. Configure these `lxsoftware:`-prefixed
 parameters to enable it:
 
 - **`lxsoftware:OpenRouterApiKeySecretArn`** — ARN of the AWS Secrets Manager
-  secret containing the OpenRouter API key. The secret value can be either a
-  raw key string or a JSON object with an `openrouter_api_key` (or `api_key`)
-  field. Leave empty to disable PDF parsing.
+  secret containing OpenRouter API keys. The secret **must** be a JSON object
+  with named keys `statement-parser` and `executive-board` (see
+  `contracts/openrouter-apps.json`). Mint with
+  `python3 scripts/mint-openrouter-app-keys.py`. Leave empty to disable PDF
+  parsing and the Executive Board LLM.
 - **`lxsoftware:OpenRouterModel`** — model slug (default `mistralai/mistral-medium-3`).
   Pick a model that supports the `file-parser` plugin / file inputs.
 - **`lxsoftware:OpenRouterPdfEngine`** — `pdf-text` (free, text-based PDFs),
@@ -80,6 +82,15 @@ workers. The admin SPA `PARSE_POLL_DEADLINE_MS` must stay above those windows.
 
 Set **`lxsoftware:AdminWebDomainName`** and **`lxsoftware-admin-web:AdminWebDomainName`**
 to the same hostname (default in `contracts/admin-domains.json`).
+
+### Statement parse notify email
+
+`AdminApiFn` emails `statements@<InboundMailDomain>` when a parse job
+succeeds or fails (inbound mail and admin uploads). Set
+**`lxsoftware:StatementParseNotifyEmail`** to one or more comma-separated
+addresses. Leave empty to keep notify off. The inbound domain must already
+be a verified SES identity that can send (out of the SES sandbox, or the
+destination address verified).
 
 Secrets and bootstrap passwords should not live in git; pass them via CI secrets
 or a private parameter file stored outside of git.

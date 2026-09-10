@@ -18,6 +18,8 @@ EXECUTIVE_BOARD_CONTRACT = _load("executive-board.json")
 BOARD_TIMEOUTS_CONTRACT = _load("board-timeouts.json")
 BOARD_TOOLS_CONTRACT = _load("board-tools.json")
 BOARD_STAFF_CONTRACT = _load("board-staff.json")
+OPENROUTER_APPS_CONTRACT = _load("openrouter-apps.json")
+AWS_BILLING_CONTRACT = _load("aws-billing.json")
 
 FINANCE_HOUSE_KEYS = frozenset(FINANCE_CONTRACT["houses"])
 FINANCE_STATEMENT_BOOK_KEYS = frozenset(FINANCE_CONTRACT["statementBooks"])
@@ -174,3 +176,11 @@ BOARD_STAFF_POSTS_PER_CHANNEL_PER_DAY = int(_BOARD_STAFF_LIMITS["postsPerChannel
 BOARD_STAFF_RETENTION_DAYS = int(_BOARD_STAFF_LIMITS["retentionDaysDefault"])
 BOARD_STAFF_RETENTION_DAYS_CONTENT = int(_BOARD_STAFF_LIMITS["retentionDaysContent"])
 BOARD_STAFF_LESSONS_PER_SEAT_IN_PROMPT = int(_BOARD_STAFF_LIMITS["lessonsPerSeatInPrompt"])
+
+OPENROUTER_PAYER = OPENROUTER_APPS_CONTRACT["payer"]
+OPENROUTER_APPS: list[dict] = list(OPENROUTER_APPS_CONTRACT["apps"])
+
+AWS_BILLING_PAYER = AWS_BILLING_CONTRACT["payer"]
+AWS_BILLING_CURRENCY = AWS_BILLING_CONTRACT["currency"]
+AWS_BILLING_COST_ALLOCATION_TAGS: list[str] = list(AWS_BILLING_CONTRACT["costAllocationTags"])
+AWS_BILLING_COMPANIES: list[dict] = list(AWS_BILLING_CONTRACT["companies"])

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { FinanceDataLoadOrError, FinanceSaveStatus } from "../components/FinanceDataStatus";
 import { HouseStatementPanel } from "../components/HouseStatementPanel";
 import { StatementBookDashboardCard } from "../components/StatementBookDashboardCard";
@@ -25,8 +25,10 @@ const EXECUTIVE_BOARD_TAB: AdminTabItem<StatementBookTab> = {
 
 export function StatementBookPage({
   bookKey,
+  dashboardExtra,
 }: {
   readonly bookKey: StatementBookKey;
+  readonly dashboardExtra?: ReactNode;
 }) {
   const title = STATEMENT_BOOK_DISPLAY_LABEL[bookKey];
   const hasExecutiveBoard = bookKey === SIU_TIN_DEI_BOOK_KEY;
@@ -103,12 +105,15 @@ export function StatementBookPage({
             aria-labelledby={adminTabButtonId(idPrefix, tab)}
           >
             {tab === "dashboard" ? (
-              <StatementBookDashboardCard
-                title={title}
-                data={data}
-                fiscalYear={fiscalYear}
-                onFiscalYearChange={setFiscalYear}
-              />
+              <>
+                <StatementBookDashboardCard
+                  title={title}
+                  data={data}
+                  fiscalYear={fiscalYear}
+                  onFiscalYearChange={setFiscalYear}
+                />
+                {dashboardExtra ? <div className="mt-3">{dashboardExtra}</div> : null}
+              </>
             ) : null}
             {tab === "expenses" ? (
               <HouseStatementPanel

@@ -1,19 +1,18 @@
 """Process raw inbound email stored by SES in S3: extract PDF, parse statement.
 
 SES receipt rules deliver mail for configured addresses into
-``{INBOUND_RAW_MAIL_PREFIX}/{house_key}/…`` in the inbound bucket. S3 invokes
+``{INBOUND_RAW_MAIL_PREFIX}/{segment}/…`` in the inbound bucket. S3 invokes
 this Lambda on those prefixes. Every ``application/pdf`` part is copied into
 the admin assets bucket; lines are parsed once with **all** of those object
 keys attached to each new line (``sourceAssetKeys``), matching multi-PDF
 imports in the admin UI.
 
-``house_key`` values are the stable finance identifiers in the repo
-(``FINANCE_HOUSE_KEYS``), e.g. ``hillmarton`` for the house labelled
-"32 Hillmarton" in the admin UI. The inbox local-part (e.g. ``32-hillmarton``)
-is configured separately in CDK and does not have to match the key.
-
-Add more inboxes by extending the CDK ``inboundHouseMailboxes`` list (each row
-maps ``localPart@domain`` → a finance ``house_key`` such as ``morrison``).
+``segment`` is the lower-cased S3 prefix (e.g. ``hillmarton``, ``morrison``,
+``lx-software``). CDK ``inboundStatementMailboxes`` maps each inbox
+local-part to a finance owner key (house or statement book) and optional
+``lineTypeOnly``. The Lambda reads that map from
+``INBOUND_STATEMENT_MAILBOXES`` (JSON) and falls back to the same defaults
+used in CDK if the env var is unset.
 
 The Executive Board mailbox (``siutindei-board@…``) lands under
 ``inbound-raw/<BOARD_MAIL_RAW_SEGMENT>/`` and is indexed by ``board_mail``
@@ -29,16 +28,22 @@ import re
 import time
 import urllib.parse
 import uuid
+from datetime import datetime, timezone
 from email import policy
 from email.parser import BytesParser
-from typing import Any
+from typing import Any, NamedTuple
 
 import boto3
 
 import board_mail
+import runtime
+from contract_constants import (
+    FINANCE_HOUSE_KEYS,
+    FINANCE_LINE_TYPES,
+    FINANCE_STATEMENT_OWNER_KEYS,
+)
 from handler import (
     MAX_SOURCE_ASSET_KEYS_PER_LINE,
-    FINANCE_HOUSE_KEYS,
     enqueue_parse_statement_async_job,
 )
 
@@ -46,6 +51,13 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 _s3 = boto3.client("s3")
+
+
+class InboundStatementMailbox(NamedTuple):
+    """Finance owner that should parse PDFs dropped under one S3 prefix."""
+
+    owner_key: str
+    line_type_only: str | None = None
 
 
 def raw_mail_segment(*, ses_drop_path: str, raw_mail_prefix: str) -> str | None:
@@ -60,17 +72,74 @@ def raw_mail_segment(*, ses_drop_path: str, raw_mail_prefix: str) -> str | None:
     return segment or None
 
 
-def house_key_from_raw_mail_s3_key(*, ses_drop_path: str, raw_mail_prefix: str) -> str | None:
-    """Resolve finance house key from an SES drop key.
+def _default_inbound_statement_mailboxes() -> dict[str, InboundStatementMailbox]:
+    """Keep in sync with CDK ``inboundStatementMailboxes``."""
+    out = {
+        key: InboundStatementMailbox(owner_key=key)
+        for key in sorted(FINANCE_HOUSE_KEYS)
+    }
+    out["lx-software"] = InboundStatementMailbox(
+        owner_key="lxSoftware", line_type_only="expenditure"
+    )
+    return out
 
-    Expected layout: ``<raw_mail_prefix>/<house_key>/…`` where ``house_key`` is
-    a member of ``FINANCE_HOUSE_KEYS`` (e.g. ``hillmarton`` for "32 Hillmarton",
-    or ``inbound-raw/morrison/…`` for the Morrison house).
-    """
-    segment = raw_mail_segment(ses_drop_path=ses_drop_path, raw_mail_prefix=raw_mail_prefix)
-    if segment is None or segment not in FINANCE_HOUSE_KEYS:
+
+def _mailboxes_from_env() -> dict[str, InboundStatementMailbox] | None:
+    raw = os.environ.get("INBOUND_STATEMENT_MAILBOXES", "").strip()
+    if not raw:
         return None
-    return segment
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.error(
+            json.dumps({"tag": "inbound_mail_mailboxes_invalid", "reason": "json"})
+        )
+        return None
+    if not isinstance(parsed, list):
+        return None
+    out: dict[str, InboundStatementMailbox] = {}
+    for row in parsed:
+        if not isinstance(row, dict):
+            continue
+        segment = str(row.get("segment") or "").strip().lower()
+        owner = str(row.get("ownerKey") or "").strip()
+        if not segment or owner not in FINANCE_STATEMENT_OWNER_KEYS:
+            continue
+        lt_raw = row.get("lineTypeOnly")
+        line_type_only: str | None = None
+        if isinstance(lt_raw, str) and lt_raw.strip().lower() in FINANCE_LINE_TYPES:
+            line_type_only = lt_raw.strip().lower()
+        out[segment] = InboundStatementMailbox(
+            owner_key=owner, line_type_only=line_type_only
+        )
+    return out or None
+
+
+def inbound_statement_mailboxes() -> dict[str, InboundStatementMailbox]:
+    return _mailboxes_from_env() or _default_inbound_statement_mailboxes()
+
+
+def inbound_mailbox_from_raw_s3_key(
+    *, ses_drop_path: str, raw_mail_prefix: str
+) -> InboundStatementMailbox | None:
+    """Resolve house/book mailbox from an SES drop key."""
+    segment = raw_mail_segment(ses_drop_path=ses_drop_path, raw_mail_prefix=raw_mail_prefix)
+    if segment is None:
+        return None
+    return inbound_statement_mailboxes().get(segment)
+
+
+def house_key_from_raw_mail_s3_key(*, ses_drop_path: str, raw_mail_prefix: str) -> str | None:
+    """Resolve finance owner key from an SES drop key.
+
+    Expected layout: ``<raw_mail_prefix>/<segment>/…``. Houses use the owner
+    key as the segment (``hillmarton``, ``morrison``). The LX Software
+    statement book uses ``lx-software`` → ``lxSoftware``.
+    """
+    mailbox = inbound_mailbox_from_raw_s3_key(
+        ses_drop_path=ses_drop_path, raw_mail_prefix=raw_mail_prefix
+    )
+    return None if mailbox is None else mailbox.owner_key
 
 
 def is_board_mail_s3_key(*, ses_drop_path: str, raw_mail_prefix: str) -> bool:
@@ -107,6 +176,37 @@ def extract_first_pdf_attachment(raw: bytes) -> tuple[bytes, str] | None:
     """Return ``(pdf_bytes, safe_filename)`` for the first PDF part, if any."""
     parts = extract_pdf_attachments(raw)
     return parts[0] if parts else None
+
+
+def _record_inbound_asset_meta(
+    *,
+    s3_key: str,
+    house: str,
+    file_name: str,
+    size: int,
+    owner_sub: str,
+    request_id: str,
+) -> None:
+    """Create ``ASSET#`` META so inbound PDFs appear on the Assets page immediately."""
+    from finance_store import _persist_asset_meta_after_parse
+
+    table_name = (os.environ.get("RECORDS_TABLE_NAME") or "").strip()
+    if not table_name:
+        raise RuntimeError("RECORDS_TABLE_NAME is not set")
+    table = runtime._ddb.Table(table_name)
+    _persist_asset_meta_after_parse(
+        table=table,
+        s3_key=s3_key,
+        house=house,
+        head={
+            "ContentLength": size,
+            "ETag": "",
+            "LastModified": datetime.now(timezone.utc),
+        },
+        file_name=file_name,
+        request_id=request_id,
+        owner_sub=owner_sub,
+    )
 
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
@@ -163,10 +263,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             )
             continue
 
-        house_key = house_key_from_raw_mail_s3_key(
+        mailbox = inbound_mailbox_from_raw_s3_key(
             ses_drop_path=raw_key, raw_mail_prefix=raw_mail_prefix
         )
-        if src_bucket != inbound_bucket or house_key is None:
+        if src_bucket != inbound_bucket or mailbox is None:
             logger.info(
                 json.dumps(
                     {
@@ -239,8 +339,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         batch_id = uuid.uuid4().hex
         dest_keys: list[str] = []
+        owner_key = mailbox.owner_key
         for idx, (pdf_bytes, safe_name) in enumerate(pdf_parts):
-            dest_key = f"inbound/{house_key}/{batch_id}/{idx:02d}_{safe_name}"
+            dest_key = f"inbound/{owner_key}/{batch_id}/{idx:02d}_{safe_name}"
             try:
                 _s3.put_object(
                     Bucket=assets_bucket,
@@ -261,24 +362,45 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 dest_keys = []
                 break
             dest_keys.append(dest_key)
+            try:
+                _record_inbound_asset_meta(
+                    s3_key=dest_key,
+                    house=owner_key,
+                    file_name=safe_name,
+                    size=len(pdf_bytes),
+                    owner_sub=user_sub,
+                    request_id=request_id,
+                )
+            except Exception as exc:  # noqa: BLE001 — parse can still create META later
+                logger.warning(
+                    json.dumps(
+                        {
+                            "tag": "inbound_mail_asset_meta_failed",
+                            "dest": dest_key[:512],
+                            "error": str(exc)[:500],
+                        }
+                    )
+                )
 
         if not dest_keys:
             continue
 
         try:
             job_id = enqueue_parse_statement_async_job(
-                house=house_key,
+                house=owner_key,
                 s3_keys=dest_keys,
                 owner_sub=user_sub,
                 api_request_id=request_id,
                 source="inbound_mail",
+                line_type_only=mailbox.line_type_only,
             )
         except Exception as exc:
             logger.warning(
                 json.dumps(
                     {
                         "tag": "inbound_mail_enqueue_parse_failed",
-                        "houseKey": house_key,
+                        "houseKey": owner_key,
+                        "lineTypeOnly": mailbox.line_type_only,
                         "destKeys": [k[:256] for k in dest_keys],
                         "error": str(exc)[:500],
                     }
@@ -303,7 +425,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             json.dumps(
                 {
                     "tag": "inbound_mail_parse_enqueued",
-                    "houseKey": house_key,
+                    "houseKey": owner_key,
+                    "lineTypeOnly": mailbox.line_type_only,
                     "pdfCount": len(dest_keys),
                     "jobId": job_id,
                 }

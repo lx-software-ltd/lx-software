@@ -14,6 +14,33 @@ test.describe("admin viewport smoke", () => {
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 
+  test("LX Software dashboard shows the OpenRouter bill", async ({ page }) => {
+    await page.goto("/lx-software");
+    await expect(page.getByRole("heading", { name: "LX Software", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "AWS", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "OpenRouter", exact: true })).toBeVisible();
+    const awsMonth = page.getByLabel("AWS month");
+    const openrouterMonth = page.getByLabel("OpenRouter month");
+    await expect(awsMonth).toBeVisible();
+    await expect(openrouterMonth).toBeVisible();
+    expect(await awsMonth.locator("option").count()).toBe(13);
+    expect(await openrouterMonth.locator("option").count()).toBe(13);
+    await expect(page.getByText("LX Software pays the AWS invoice")).toBeVisible();
+    await expect(page.getByText("USD 434.12 · 50.6%")).toBeVisible();
+    await expect(page.getByText("USD 420.64 · 49.0%")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Download allocation PDF" })).toBeVisible();
+    await expect(page.getByText("LX Software pays the OpenRouter invoice")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Tag sibling apps" })).toBeVisible();
+    await expect(page.getByText("lx-software-ltd/evolvesprouts")).toBeVisible();
+    await expect(page.getByText("lxsoftware:evolvesprouts")).toBeVisible();
+
+    const pastKey = await awsMonth.locator("option").nth(2).getAttribute("value");
+    expect(pastKey).toBeTruthy();
+    await awsMonth.selectOption(pastKey!);
+    await expect(page.getByText(`${pastKey}-01`)).toBeVisible();
+    expect(await pageHasHorizontalOverflow(page)).toBe(false);
+  });
+
   test("finance accounts keep name, balance, and stale warning on phones", async ({
     page,
   }, testInfo) => {
@@ -53,6 +80,14 @@ test.describe("admin viewport smoke", () => {
     if (testInfo.project.name === "desktop") {
       await expect(page.getByRole("columnheader", { name: /Consent valid until/i })).toBeVisible();
     }
+    expect(await pageHasHorizontalOverflow(page)).toBe(false);
+  });
+
+  test("assets lists inbound statement PDFs", async ({ page }) => {
+    await page.goto("/assets");
+    await expect(page.getByRole("heading", { name: "Assets", level: 1 })).toBeVisible();
+    await expect(page.getByText("KDQ170167_-_Landlord_Statement.pdf")).toBeVisible();
+    await expect(page.getByText("32 Hillmarton").filter({ visible: true }).first()).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 

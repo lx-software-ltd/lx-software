@@ -33,6 +33,8 @@ import {
   boardContentFixture,
   financeFixture,
   lxSoftwareBookFixture,
+  openrouterUsageFixture,
+  awsUsageFixture,
   siuTinDeiBookFixture,
 } from "./fixtures";
 import {
@@ -160,6 +162,16 @@ function fxRates(url: URL): Response {
   );
 }
 
+function overlayUsageRange<T extends { from: string; to: string }>(
+  url: URL,
+  fixture: T,
+): T {
+  const from = url.searchParams.get("from");
+  const to = url.searchParams.get("to");
+  if (!from && !to) return fixture;
+  return { ...fixture, from: from || fixture.from, to: to || fixture.to };
+}
+
 function quotes(url: URL): Response {
   const symbols = (url.searchParams.get("symbols") ?? "").split(",").filter(Boolean);
   const prices: Record<string, { price: number; currency: string }> = {
@@ -183,6 +195,19 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
 
   if (p === "/health") return json({ status: "ok" });
   if (p === "/me") return json({ sub: "mock-admin", email: "mock.admin@example.com" });
+  if (p === "/openrouter/usage") return json(overlayUsageRange(url, openrouterUsageFixture));
+  if (p === "/aws/usage") return json(overlayUsageRange(url, awsUsageFixture));
+  if (p === "/aws/usage.pdf") {
+    const body =
+      "%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\nlx-software-aws-mock\n";
+    return new Response(body, {
+      status: 200,
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": 'attachment; filename="lx-software-aws-2026-08.pdf"',
+      },
+    });
+  }
   if (p === "/finance" && method === "GET") return json(state.finance);
   if (p === "/finance/quotes") return quotes(url);
   if (p === "/fx/v2/rates") return fxRates(url);
@@ -223,6 +248,7 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   }
 
   if (p === "/records") return json({ items: assetsFixture, nextCursor: null });
+  if (p === "/assets") return json({ items: assetsFixture, nextCursor: null });
   if (p === "/assets/download-url") return json({ url: "about:blank" });
   if (p === "/assets/delete") return json({ ok: true });
 

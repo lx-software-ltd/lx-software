@@ -123,9 +123,17 @@ class FakeTable:
         self.scan_calls.append(kwargs)
         rows = list(self.items.values())
         filt = kwargs.get("FilterExpression")
-        if filt == "NOT begins_with(pk, :board)":
-            prefix = kwargs["ExpressionAttributeValues"][":board"]
-            rows = [r for r in rows if not str(r["pk"]).startswith(prefix)]
+        values = kwargs.get("ExpressionAttributeValues") or {}
+        if isinstance(filt, str) and "NOT begins_with" in filt:
+            prefixes = [str(v) for v in values.values()]
+            rows = [
+                r
+                for r in rows
+                if not any(str(r["pk"]).startswith(p) for p in prefixes)
+            ]
+        elif isinstance(filt, str) and "begins_with(pk," in filt.replace(" ", ""):
+            prefix = str(values.get(":asset") or next(iter(values.values()), ""))
+            rows = [r for r in rows if str(r["pk"]).startswith(prefix)]
         return {"Items": [dict(r) for r in rows[: kwargs.get("Limit", 50)]]}
 
     def update_item(
@@ -564,12 +572,72 @@ class TestBoardRoutes(BoardTestCase):
     def test_records_scan_excludes_board_rows(self) -> None:
         self.call("/siu-tin-dei/board/brief", "PUT", {"markdown": "secret strategy"})
         self.table.put_item(Item={"pk": "RECORD#1", "sk": "A"})
+        self.table.put_item(Item={"pk": "PARSE_JOB#j1", "sk": "META", "status": "failed"})
         status, body = self.call("/records")
         self.assertEqual(status, 200)
         pks = [i["pk"] for i in body["items"]]
         self.assertIn("RECORD#1", pks)
         self.assertFalse(any(pk.startswith("BOARD#") for pk in pks))
-        self.assertEqual(self.table.scan_calls[-1]["FilterExpression"], "NOT begins_with(pk, :board)")
+        self.assertFalse(any(pk.startswith("PARSE_JOB#") for pk in pks))
+        self.assertIn("NOT begins_with(pk, :board)", self.table.scan_calls[-1]["FilterExpression"])
+        self.assertEqual(self.table.scan_calls[-1]["ExpressionAttributeValues"][":board"], "BOARD#")
+        self.assertEqual(
+            self.table.scan_calls[-1]["ExpressionAttributeValues"][":openrouter"], "OPENROUTER#"
+        )
+        self.assertEqual(
+            self.table.scan_calls[-1]["ExpressionAttributeValues"][":parsejob"], "PARSE_JOB#"
+        )
+        self.assertIn("NOT begins_with(pk, :parsejob)", self.table.scan_calls[-1]["FilterExpression"])
+
+    def test_assets_list_returns_only_asset_rows(self) -> None:
+        self.table.put_item(Item={"pk": "RECORD#1", "sk": "A"})
+        self.table.put_item(Item={"pk": "PARSE_JOB#j1", "sk": "META", "status": "failed"})
+        self.table.put_item(
+            Item={
+                "pk": "ASSET#inbound/hillmarton/" + ("a" * 32) + "/00_stmt.pdf",
+                "sk": "META",
+                "fileName": "stmt.pdf",
+                "house": "hillmarton",
+                "size": 12,
+            }
+        )
+        status, body = self.call("/assets")
+        self.assertEqual(status, 200)
+        pks = [i["pk"] for i in body["items"]]
+        self.assertTrue(all(pk.startswith("ASSET#") for pk in pks))
+        self.assertEqual(len(pks), 1)
+        self.assertIn("begins_with(pk, :asset)", self.table.scan_calls[-1]["FilterExpression"])
+
+    def test_openrouter_usage_endpoint_groups_by_app(self) -> None:
+        import openrouter_usage
+
+        openrouter_usage.add_usage_day(
+            self.table,
+            service=openrouter_client.SERVICE_EXECUTIVE_BOARD,
+            owner="siuTinDei",
+            usage={"promptTokens": 10, "completionTokens": 2, "totalTokens": 12, "cost": 0.5},
+            date_iso="2026-09-02",
+        )
+        openrouter_usage.add_usage_day(
+            self.table,
+            service=openrouter_client.SERVICE_STATEMENT_PARSER,
+            owner="lxSoftware",
+            usage={"promptTokens": 4, "completionTokens": 1, "totalTokens": 5, "cost": 0.2},
+            date_iso="2026-09-03",
+        )
+        status, body = self.call("/openrouter/usage", query="from=2026-09-01&to=2026-09-08")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["payer"]["id"], "lxSoftware")
+        self.assertAlmostEqual(body["total"]["cost"], 0.7)
+        by_id = {app["id"]: app for app in body["apps"]}
+        self.assertAlmostEqual(by_id["executive-board"]["cost"], 0.5)
+        self.assertAlmostEqual(by_id["statement-parser"]["cost"], 0.2)
+        self.assertIn("evolvesprouts", by_id)
+        self.table.put_item(Item={"pk": "RECORD#1", "sk": "A"})
+        _, records = self.call("/records")
+        pks = [i["pk"] for i in records["items"]]
+        self.assertIn("RECORD#1", pks)
+        self.assertFalse(any(str(pk).startswith("OPENROUTER#") for pk in pks))
 
     def test_non_admin_forbidden(self) -> None:
         ev = self.event("/siu-tin-dei/board")
@@ -603,6 +671,16 @@ class TestChat(BoardTestCase):
         usage = board_store.load_usage_day(self.table)
         self.assertEqual(usage["calls"], 1)
         self.assertAlmostEqual(usage["cost"], 0.01)
+        import openrouter_usage
+
+        ledger = openrouter_usage.list_usage(
+            self.table, from_day=openrouter_usage.utc_today(), to_day=openrouter_usage.utc_today()
+        )
+        by_id = {app["id"]: app for app in ledger["apps"]}
+        self.assertEqual(ledger["payer"]["id"], "lxSoftware")
+        self.assertAlmostEqual(by_id["executive-board"]["cost"], 0.01)
+        self.assertEqual(by_id["executive-board"]["owners"][0]["id"], "siuTinDei")
+        self.assertAlmostEqual(ledger["total"]["cost"], 0.01)
 
     def test_budget_exhausted_refuses_new_messages(self) -> None:
         self.call("/siu-tin-dei/board/settings", "PUT", {"dailyBudgetUsd": 0.5})

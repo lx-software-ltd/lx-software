@@ -73,15 +73,28 @@ def render_invoice_pdf(**kwargs: object) -> bytes:
     return render_invoice(**kwargs).data  # type: ignore[arg-type]
 
 
+def render_text_pdf(
+    lines: list[str], *, font_size: int = 11, leading: int = 14
+) -> bytes:
+    """One-page Helvetica PDF from already-WinAnsi lines."""
+    printable: list[str] = []
+    for line in lines:
+        text, _dropped = winansi(line)
+        printable.append(text)
+    return _simple_pdf(printable, font_size=font_size, leading=leading)
+
+
 def _escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
-def _simple_pdf(lines: list[str]) -> bytes:
-    content_lines = ["BT", "/F1 12 Tf", "50 780 Td"]
+def _simple_pdf(
+    lines: list[str], *, font_size: int = 12, leading: int = 18
+) -> bytes:
+    content_lines = ["BT", f"/F1 {int(font_size)} Tf", "50 780 Td"]
     for i, line in enumerate(lines):
         if i:
-            content_lines.append("0 -18 Td")
+            content_lines.append(f"0 -{int(leading)} Td")
         content_lines.append(f"({_escape(line[:110])}) Tj")
     content_lines.append("ET")
     stream = "\n".join(content_lines).encode(PDF_ENCODING)

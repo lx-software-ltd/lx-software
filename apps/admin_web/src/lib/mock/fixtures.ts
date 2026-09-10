@@ -34,6 +34,8 @@ import type {
   BoardContentItem,
 } from "../boardModel";
 import { DEFAULT_BOARD_BOUNDARIES } from "../boardModel";
+import type { OpenRouterUsagePayload } from "../openrouterUsage";
+import type { AwsBillingPayload } from "../awsBilling";
 import type { FinancePersistedState, HouseFinanceData } from "../financeModel";
 
 const TODAY = new Date();
@@ -165,6 +167,14 @@ export const assetsFixture: readonly AdminAssetMeta[] = [
   { pk: "ASSET#uploads/hillmarton/2026-08-boiler-service.pdf", sk: "META", size: 182_331, uploadedAt: isoDaysAgo(9), fileName: "2026-08-boiler-service.pdf", house: "hillmarton" },
   { pk: "ASSET#uploads/siu-tin-dei/aws-2026-08.pdf", sk: "META", size: 96_004, uploadedAt: isoDaysAgo(6), fileName: "aws-2026-08.pdf", house: "siu-tin-dei" },
   { pk: "ASSET#uploads/morrison/management-fee-notice.jpg", sk: "META", size: 1_204_112, uploadedAt: isoDaysAgo(40), fileName: "management-fee-notice.jpg", house: "morrison" },
+  {
+    pk: "ASSET#inbound/hillmarton/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/00_KDQ170167_-_Landlord_Statement.pdf",
+    sk: "META",
+    size: 244_357,
+    uploadedAt: isoDaysAgo(0),
+    fileName: "KDQ170167_-_Landlord_Statement.pdf",
+    house: "hillmarton",
+  },
 ];
 
 export const bankingFixture: BankSyncState = {
@@ -748,3 +758,168 @@ export function boardTaskDetailFixture(taskId: string): BoardTaskDetailPayload |
     deliverableUrl: "",
   };
 }
+
+export const awsUsageFixture: AwsBillingPayload = {
+  from: "2026-08-01",
+  to: "2026-08-31",
+  currency: "USD",
+  payer: { id: "lxSoftware", label: "LX Software" },
+  source: "cost-explorer",
+  costAllocationTags: ["Organization", "Project"],
+  total: { usd: 858.69 },
+  companies: [
+    {
+      id: "siuTinDei",
+      label: "Siu Tin Dei",
+      usd: 420.64,
+      share: 0.4899,
+      projects: [{ id: "Siu Tin Dei", label: "Siu Tin Dei", usd: 420.64 }],
+    },
+    {
+      id: "evolveSprouts",
+      label: "Evolve Sprouts",
+      usd: 434.12,
+      share: 0.5056,
+      projects: [
+        { id: "Backend", label: "Backend", usd: 432.37 },
+        { id: "Public Website", label: "Public Website", usd: 0.91 },
+        { id: "Marketing", label: "Marketing", usd: 0.4 },
+        { id: "(untagged)", label: "(untagged)", usd: 0.4 },
+        { id: "Admin Website", label: "Admin Website", usd: 0.04 },
+      ],
+    },
+    {
+      id: "lxSoftware",
+      label: "LX Software",
+      usd: 3.88,
+      share: 0.0045,
+      projects: [
+        { id: "(untagged)", label: "(untagged)", usd: 1.82 },
+        { id: "Admin Console", label: "Admin Console", usd: 1.65 },
+        { id: "Admin Portal", label: "Admin Portal", usd: 0.4 },
+        { id: "Public Website", label: "Public Website", usd: 0.01 },
+      ],
+    },
+    {
+      id: "unallocated",
+      label: "Unallocated",
+      usd: 0.05,
+      share: 0.0001,
+      projects: [{ id: "(untagged)", label: "(untagged)", usd: 0.05 }],
+    },
+  ],
+};
+
+export const openrouterUsageFixture: OpenRouterUsagePayload = {
+  from: "2026-09-01",
+  to: "2026-09-08",
+  currency: "USD",
+  payer: { id: "lxSoftware", label: "LX Software" },
+  total: {
+    promptTokens: 41200,
+    completionTokens: 9100,
+    totalTokens: 37300,
+    cost: 2.15,
+    calls: 18,
+  },
+  apps: [
+    {
+      id: "statement-parser",
+      label: "Statement parser",
+      title: "LX Admin - Statement parser",
+      referer: "https://admin.lx-software.com/finance/parse-statement",
+      repo: "lx-software-ltd/lx-software",
+      keyName: "lxsoftware:statement-parser",
+      meteredHere: true,
+      promptTokens: 23000,
+      completionTokens: 5200,
+      totalTokens: 15200,
+      cost: 0.74,
+      calls: 9,
+      owners: [
+        {
+          id: "hillmarton",
+          label: "32 Hillmarton",
+          promptTokens: 4200,
+          completionTokens: 400,
+          totalTokens: 4600,
+          cost: 0.18,
+          calls: 2,
+        },
+        {
+          id: "lxSoftware",
+          label: "LX Software",
+          promptTokens: 8800,
+          completionTokens: 800,
+          totalTokens: 5000,
+          cost: 0.31,
+          calls: 3,
+        },
+        {
+          id: "siuTinDei",
+          label: "Siu Tin Dei",
+          promptTokens: 10000,
+          completionTokens: 4000,
+          totalTokens: 5600,
+          cost: 0.25,
+          calls: 4,
+        },
+      ],
+    },
+    {
+      id: "executive-board",
+      label: "Executive Board",
+      title: "LX Admin - Executive Board",
+      referer: "https://admin.lx-software.com/siu-tin-dei/board",
+      repo: "lx-software-ltd/lx-software",
+      keyName: "lxsoftware:executive-board",
+      meteredHere: true,
+      promptTokens: 18200,
+      completionTokens: 3900,
+      totalTokens: 22100,
+      cost: 1.41,
+      calls: 9,
+      owners: [
+        {
+          id: "siuTinDei",
+          label: "Siu Tin Dei",
+          promptTokens: 18200,
+          completionTokens: 3900,
+          totalTokens: 22100,
+          cost: 1.41,
+          calls: 9,
+        },
+      ],
+    },
+    {
+      id: "evolvesprouts",
+      label: "Evolve Sprouts",
+      title: "Evolve Sprouts",
+      referer: "https://evolvesprouts.com",
+      repo: "lx-software-ltd/evolvesprouts",
+      keyName: "lxsoftware:evolvesprouts",
+      meteredHere: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      cost: 0,
+      calls: 0,
+      owners: [],
+    },
+    {
+      id: "siutindei",
+      label: "Siu Tin Dei",
+      title: "Siu Tin Dei",
+      referer: "https://siutindei.com",
+      repo: "lx-software-ltd/siutindei",
+      keyName: "lxsoftware:siutindei",
+      meteredHere: false,
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      cost: 0,
+      calls: 0,
+      owners: [],
+    },
+  ],
+};

@@ -2,8 +2,9 @@
 
 Used by the statement parser and the Executive Board. Owns API key
 resolution (env var or Secrets Manager, cached per container), the HTTP
-call with bounded retries, response text extraction, and usage / cost
-accounting so callers can enforce budgets.
+call with bounded retries, response text extraction, usage / cost
+accounting, and per-app attribution so the LX Software OpenRouter invoice
+can be tagged across this admin and sibling products.
 """
 
 from __future__ import annotations
@@ -11,18 +12,26 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
 from urllib import error as urlerror
 from urllib import request as urlrequest
 
+from contract_constants import OPENROUTER_APPS as OPENROUTER_APP_CATALOG
+
 DEFAULT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_TIMEOUT_SECONDS = 60
 _RETRYABLE_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
 _MAX_RETRIES_DEFAULT = 2
+_ADMIN_ORIGIN = "https://admin.lx-software.com"
+_OWNER_SAFE_RE = re.compile(r"[^a-zA-Z0-9_-]+")
 
-_api_key_cache: str | None = None
+SERVICE_STATEMENT_PARSER = "statement-parser"
+SERVICE_EXECUTIVE_BOARD = "executive-board"
+
+_api_key_cache: dict[str, str] = {}
 
 
 class OpenRouterError(RuntimeError):
@@ -73,6 +82,55 @@ class ChatCompletion:
         return msg
 
 
+@dataclass(frozen=True)
+class OpenRouterApp:
+    """OpenRouter app attribution for one internal service."""
+
+    service_id: str
+    title: str
+    referer: str
+
+
+def _apps_from_catalog() -> dict[str, OpenRouterApp]:
+    out: dict[str, OpenRouterApp] = {}
+    for row in OPENROUTER_APP_CATALOG:
+        if not isinstance(row, dict):
+            continue
+        sid = str(row.get("id") or "").strip()
+        if not sid:
+            continue
+        out[sid] = OpenRouterApp(
+            service_id=sid,
+            title=str(row.get("title") or sid),
+            referer=str(row.get("referer") or _ADMIN_ORIGIN),
+        )
+    return out
+
+
+_APPS_BY_ID = _apps_from_catalog()
+
+
+def resolve_app(service_id: str | None) -> OpenRouterApp:
+    sid = (service_id or "").strip()
+    if sid in _APPS_BY_ID:
+        return _APPS_BY_ID[sid]
+    return OpenRouterApp(
+        service_id="lxsoftware-admin",
+        title="lxsoftware-admin",
+        referer=_ADMIN_ORIGIN,
+    )
+
+
+def attribution_user(*, service: str, owner: str | None) -> str | None:
+    """Stable OpenRouter ``user`` id: ``{service}:{owner}`` (no PII)."""
+    sid = (service or "").strip() or "lxsoftware-admin"
+    raw = (owner or "").strip()
+    if not raw:
+        return sid
+    safe = _OWNER_SAFE_RE.sub("-", raw)[:40].strip("-") or "unknown"
+    return f"{sid}:{safe}"
+
+
 def endpoint_url() -> str:
     return os.getenv("OPENROUTER_CHAT_COMPLETIONS_URL", "").strip() or DEFAULT_ENDPOINT
 
@@ -92,14 +150,23 @@ def chat_completion(
     max_retries: int = _MAX_RETRIES_DEFAULT,
     tools: list[dict[str, Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
+    service: str = SERVICE_STATEMENT_PARSER,
+    owner: str | None = None,
 ) -> ChatCompletion:
     """POST one chat completion and return the assistant text plus usage.
 
     With ``deny_data_collection`` (the default) OpenRouter only routes to
     providers that do not retain prompts. ``tools`` follows the OpenAI
     function-calling schema; requested calls come back in ``tool_calls``.
+
+    ``service`` selects app-attribution headers and the named API key for
+    that catalog app (``contracts/openrouter-apps.json``). The secret JSON
+    must include a field matching the app id.
     """
     payload: dict[str, Any] = {"model": model, "messages": messages}
+    user_id = attribution_user(service=service, owner=owner)
+    if user_id:
+        payload["user"] = user_id
     provider: dict[str, Any] = {}
     if deny_data_collection:
         provider["data_collection"] = "deny"
@@ -123,13 +190,14 @@ def chat_completion(
     if include_usage:
         payload["usage"] = {"include": True}
 
-    api_key = resolve_api_key(secrets_client)
+    api_key = resolve_api_key(secrets_client, service=service)
     body_text = post_json(
         url=endpoint_url(),
         api_key=api_key,
         payload=payload,
         timeout=timeout,
         max_retries=max_retries,
+        service=service,
     )
     raw = _load_json_object(body_text, what="OpenRouter response")
     text = extract_message_text(raw)
@@ -189,6 +257,28 @@ def extract_tool_calls(payload: dict[str, Any]) -> list[ToolCall]:
     return out
 
 
+def _http_header_value(value: str) -> str:
+    """HTTP header values must be latin-1; urllib raises on em dashes etc."""
+    cleaned = (
+        value.replace("\r", " ")
+        .replace("\n", " ")
+        .replace("\u2014", "-")
+        .replace("\u2013", "-")
+    )
+    return cleaned.encode("latin-1", "replace").decode("latin-1")
+
+
+def attribution_headers(service: str) -> dict[str, str]:
+    """Headers OpenRouter uses to split Activity / Analytics by app."""
+    app = resolve_app(service)
+    return {
+        "HTTP-Referer": _http_header_value(app.referer),
+        "X-OpenRouter-Title": _http_header_value(app.title),
+        "X-Title": _http_header_value(app.title),
+        "X-OpenRouter-App-Visibility": "hidden",
+    }
+
+
 def post_json(
     *,
     url: str,
@@ -196,6 +286,7 @@ def post_json(
     payload: dict[str, Any],
     timeout: int,
     max_retries: int = _MAX_RETRIES_DEFAULT,
+    service: str = SERVICE_STATEMENT_PARSER,
 ) -> str:
     data = json.dumps(payload).encode("utf-8")
     attempt = 0
@@ -207,8 +298,7 @@ def post_json(
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
-                "HTTP-Referer": "https://admin.lx-software.com",
-                "X-Title": "lxsoftware-admin",
+                **attribution_headers(service),
             },
         )
         try:
@@ -331,22 +421,72 @@ def add_usage(total: dict[str, Any] | None, delta: dict[str, Any] | None) -> dic
     }
 
 
-def resolve_api_key(secrets_client: Any) -> str:
-    """Resolve the OpenRouter API key from env var or Secrets Manager."""
-    global _api_key_cache
-    if _api_key_cache is not None:
-        return _api_key_cache
+def catalog_app_ids() -> frozenset[str]:
+    return frozenset(
+        str(row["id"])
+        for row in OPENROUTER_APP_CATALOG
+        if isinstance(row, dict) and row.get("id")
+    )
+
+
+def resolve_api_key(secrets_client: Any, *, service: str = "") -> str:
+    """Resolve the OpenRouter API key from env var or Secrets Manager.
+
+    Catalog apps (see ``contracts/openrouter-apps.json``) each have a named
+    key in the JSON secret. Sibling products mint a key on the same
+    OpenRouter account and store it in *their* secret.
+    """
+    cache_key = (service or "").strip() or "*"
+    cached = _api_key_cache.get(cache_key)
+    if cached is not None:
+        return cached
     direct = os.getenv("OPENROUTER_API_KEY", "").strip()
     if direct:
-        _api_key_cache = direct
-        return _api_key_cache
+        _api_key_cache[cache_key] = direct
+        return direct
     secret_arn = os.getenv("OPENROUTER_API_KEY_SECRET_ARN", "").strip()
     if not secret_arn:
         raise OpenRouterError(
             "OpenRouter API key is not configured (set OPENROUTER_API_KEY_SECRET_ARN)"
         )
-    _api_key_cache = read_secret_string(secrets_client, secret_arn, what="OpenRouter API key")
-    return _api_key_cache
+    raw = read_secret_raw(secrets_client, secret_arn, what="OpenRouter API key")
+    key = _pick_openrouter_key(raw, service=cache_key if cache_key != "*" else "")
+    _api_key_cache[cache_key] = key
+    return key
+
+
+def _pick_openrouter_key(raw: str, *, service: str) -> str:
+    catalog = catalog_app_ids()
+    if not raw.startswith("{"):
+        if service in catalog:
+            raise OpenRouterError(
+                f"OpenRouter secret must be JSON with a {service!r} named key; "
+                "a plain-string secret cannot split the invoice by app"
+            )
+        return raw
+    payload = json.loads(raw)
+    if not isinstance(payload, dict):
+        raise OpenRouterError("OpenRouter API key secret JSON must be an object")
+    if service:
+        named = payload.get(service)
+        if isinstance(named, str) and named.strip():
+            return named.strip()
+        if service in catalog:
+            raise OpenRouterError(
+                f"OpenRouter secret JSON is missing {service!r}; "
+                "each catalog app needs its own named key"
+            )
+    for key_name in (
+        "openrouter_api_key",
+        "OPENROUTER_API_KEY",
+        "api_key",
+        "key",
+        "token",
+    ):
+        candidate = payload.get(key_name)
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    raise OpenRouterError("OpenRouter API key is missing in secret JSON")
 
 
 def read_secret_raw(secrets_client: Any, secret_arn: str, *, what: str) -> str:
@@ -397,7 +537,7 @@ def read_secret_string(secrets_client: Any, secret_arn: str, *, what: str) -> st
 
 def reset_api_key_cache_for_tests() -> None:
     global _api_key_cache
-    _api_key_cache = None
+    _api_key_cache = {}
 
 
 def _load_json_object(text: str, *, what: str) -> dict[str, Any]:

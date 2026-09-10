@@ -188,7 +188,8 @@ client changes.
    link once. `inbound.lx-software.com` already has MX → SES in the stack
    region. SES allows only one active receipt rule set per region, so
    `lxsoftware-inbound-mail` hosts every inbound mailbox in this account
-   (32 Hillmarton statements, `siutindei-board@…`, and Evolve Sprouts
+   (32 Hillmarton and The Morrison statements, LX Software
+   `billing@inbound.lx-software.com`, `siutindei-board@…`, and Evolve Sprouts
    `invoices@inbound.evolvesprouts.com`). The Siu Tin Dei receipt rule
    stores raw MIME under `inbound-raw/siutindei/`. No DNS change on
    `siutindei.com` is needed for reading.
