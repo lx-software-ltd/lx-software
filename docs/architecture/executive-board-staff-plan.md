@@ -9,7 +9,9 @@ founder reviews what happened once a day and adjusts the boundaries. It
 extends [`executive-board-plan.md`](./executive-board-plan.md) (the board)
 and [`executive-board-tools-plan.md`](./executive-board-tools-plan.md)
 (tools and connectors, T1–T8 shipped). Every section that needs a decision
-says so; §14 collects them.
+says so; §14 collects them. The build-ready version with every decision
+taken is
+[`executive-board-autonomy-implementation.md`](./executive-board-autonomy-implementation.md).
 
 ## 1. Target operating model (the owner's brief)
 
