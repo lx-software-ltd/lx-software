@@ -17,12 +17,14 @@ import type {
   BoardOverview,
   BoardReceivablesPayload,
   BoardSeat,
+  BoardHold,
   BoardStaffPayload,
   BoardTask,
   BoardTaskDetailPayload,
   BoardToolsConfig,
   BoardToolsPayload,
 } from "../boardModel";
+import { DEFAULT_BOARD_BOUNDARIES } from "../boardModel";
 import type { FinancePersistedState, HouseFinanceData } from "../financeModel";
 
 const TODAY = new Date();
@@ -366,6 +368,7 @@ export const boardOverviewFixture: BoardOverview = {
     dailyBudgetUsd: 15,
     tools: toolsConfig,
     staff: { enabled: true, maxRunningTasks: 3, dailyBudgetUsd: 20, dutiesEnabled: false },
+    boundaries: DEFAULT_BOARD_BOUNDARIES,
   },
   charter: {
     vision: "Siu Tin Dei is the place Hong Kong parents go first to find and book activities for their children.",
@@ -519,6 +522,23 @@ export const boardStaffFixture: BoardStaffPayload = {
     cancelled: 0,
   },
 };
+
+export const boardHoldsFixture: readonly BoardHold[] = [
+  {
+    holdId: "hold-post-1",
+    status: "scheduled",
+    actionClass: "publish",
+    classKey: "publish:facebook",
+    personaId: "cmo",
+    displayName: "Maya",
+    op: "meta_propose_post",
+    toolId: "meta",
+    arguments: { message: "Saturday swimming in Sha Tin — book on Siu Tin Dei.", reason: "Weekly spotlight." },
+    summary: "Propose Page post",
+    createdAt: isoDaysAgo(0),
+    executeAt: new Date(TODAY.getTime() + 20 * 3_600_000).toISOString(),
+  },
+];
 
 export function boardTaskDetailFixture(taskId: string): BoardTaskDetailPayload | null {
   const task = boardTasksFixture.find((t) => t.taskId === taskId);

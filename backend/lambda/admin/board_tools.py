@@ -177,7 +177,7 @@ class ToolOp:
 
 @dataclass
 class ToolOutcome:
-    status: str  # ok | error | pending_approval
+    status: str  # ok | error | pending_approval | held
     result: dict[str, Any]
     summary: str
     approval_id: str = ""
@@ -197,6 +197,9 @@ class ToolOutcome:
         }
         if self.approval_id:
             out["approvalId"] = self.approval_id
+        if self.status == "held":
+            out["holdId"] = str(self.result.get("holdId") or "")
+            out["executeAt"] = str(self.result.get("executeAt") or "")
         if self.status == "error":
             out["error"] = str(self.result.get("error") or "")[:300]
         return out
@@ -1871,6 +1874,10 @@ def tools_preamble(ops: list[tuple[ToolOp, str]]) -> str:
             f"Write operations on {', '.join(acts)} execute immediately and are logged. Use them only when "
             "the founder asked for it or your mandate clearly covers it; explain what you did."
         )
+        lines.append(
+            "A result status of 'held' means the write is scheduled and will happen automatically unless the "
+            "founder vetoes it. Say 'I have scheduled …' and never claim it is already done."
+        )
     return "\n".join(lines)
 
 
@@ -2098,6 +2105,21 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         except Exception as exc:  # pragma: no cover - a guard bug must fail closed
             _log_event("error", tag="board_tool_guard_crashed", op=op.name, error=str(exc)[:300])
             guard_reason = "the safety check could not be completed"
+    hold_doc: dict[str, Any] | None = None
+    if (
+        op.is_write
+        and not invalid
+        and level == "act"
+        and not guard_reason
+        and ctx.actor == "persona"
+    ):
+        try:
+            import board_holds
+
+            hold_doc = board_holds.maybe_hold(ctx, op, arguments, summary=summary)
+        except Exception as exc:  # pragma: no cover - hold bugs must not block today's path
+            _log_event("error", tag="board_hold_check_failed", op=op.name, error=str(exc)[:300])
+            hold_doc = None
     if not allows(level, op.min_level):
         outcome = ToolOutcome(
             status="error",
@@ -2108,6 +2130,19 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         # Never queue a malformed proposal: the model gets the schema problem back
         # and can retry with corrected arguments.
         outcome = ToolOutcome(status="error", result={"error": invalid[:500]}, summary=summary)
+    elif hold_doc:
+        execute_at = str(hold_doc.get("executeAt") or "")
+        hold_id = str(hold_doc.get("holdId") or "")
+        outcome = ToolOutcome(
+            status="held",
+            result={
+                "status": "held",
+                "holdId": hold_id,
+                "executeAt": execute_at,
+                "message": f"Scheduled; executes {execute_at} unless the founder vetoes.",
+            },
+            summary=f"Scheduled {summary} (executes {execute_at} unless vetoed)",
+        )
     elif op.is_write and (level != "act" or guard_reason or (op.always_propose and ctx.actor == "persona")):
         approval = create_approval(ctx, op, arguments, summary=summary, downgrade_reason=guard_reason)
         approval_id = str(approval["approvalId"])

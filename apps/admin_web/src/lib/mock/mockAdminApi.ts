@@ -17,6 +17,7 @@ import {
   boardMeetingsFixture,
   boardOverviewFixture,
   boardReceivablesFixture,
+  boardHoldsFixture,
   boardStaffFixture,
   boardTaskDetailFixture,
   boardTasksFixture,
@@ -25,7 +26,7 @@ import {
   lxSoftwareBookFixture,
   siuTinDeiBookFixture,
 } from "./fixtures";
-import type { BoardSeat, BoardTask } from "../boardModel";
+import { DEFAULT_BOARD_BOUNDARIES, type BoardBoundaries, type BoardHold, type BoardSeat, type BoardTask } from "../boardModel";
 
 export { isAdminMockEnabled };
 
@@ -64,6 +65,8 @@ type MockState = {
   books: Record<string, HouseFinanceData>;
   seats: BoardSeat[];
   tasks: BoardTask[];
+  holds: BoardHold[];
+  boundaries: BoardBoundaries;
 };
 
 const state: MockState = {
@@ -74,6 +77,8 @@ const state: MockState = {
   },
   seats: structuredClone(boardStaffFixture.seats) as BoardSeat[],
   tasks: structuredClone(boardTasksFixture),
+  holds: structuredClone(boardHoldsFixture) as BoardHold[],
+  boundaries: structuredClone(DEFAULT_BOARD_BOUNDARIES),
 };
 
 function json(body: unknown, status = 200): Response {
@@ -283,6 +288,33 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
       return json({ task });
     }
     return json(boardTaskDetailFixture(taskId) ?? { task, steps: [], reviews: [], deliverable: "", deliverableUrl: "" });
+  }
+  if (p === `${board}/holds`) {
+    return json({ holds: state.holds.filter((h) => h.status === "scheduled") });
+  }
+  if (p === `${board}/holds/veto-class` && method === "POST") {
+    const body = parseBody(init);
+    const classKey = String(body.classKey || "");
+    state.holds = state.holds.map((h) =>
+      h.classKey === classKey && h.status === "scheduled" ? { ...h, status: "vetoed" as const } : h,
+    );
+    return json({ holds: state.holds.filter((h) => h.status === "vetoed" && h.classKey === classKey) });
+  }
+  if (p.startsWith(`${board}/holds/`) && p.endsWith("/veto") && method === "POST") {
+    const holdId = p.slice(`${board}/holds/`.length, -"/veto".length);
+    const idx = state.holds.findIndex((h) => h.holdId === holdId);
+    if (idx < 0) return json({ message: "Hold not found" }, 404);
+    state.holds[idx] = { ...state.holds[idx], status: "vetoed" };
+    return json({ hold: state.holds[idx] });
+  }
+  if (p === `${board}/boundaries` && method === "PUT") {
+    state.boundaries = parseBody(init) as BoardBoundaries;
+    return json({ boundaries: state.boundaries });
+  }
+  if (p === `${board}/ramp`) {
+    return json({
+      ramp: [{ classKey: "publish:facebook", actions: 1, vetoes: 0, rate: 0, eligibleForPromotion: false, shouldDemote: false }],
+    });
   }
 
   return notFound(p);

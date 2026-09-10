@@ -16,6 +16,7 @@ import board_meeting
 import board_personas
 import board_receivables
 import board_research
+import board_holds
 import board_staff
 import board_store
 import board_stores
@@ -145,6 +146,15 @@ def handle_board_route(
 
     if head == "tasks":
         return _tasks_route(event, method, rest, user_sub)
+
+    if head == "holds":
+        return _holds_route(event, method, rest, user_sub)
+
+    if head == "boundaries" and len(rest) == 1 and method == "PUT":
+        return _boundaries_put(event, user_sub)
+
+    if head == "ramp" and len(rest) == 1 and method == "GET":
+        return _ramp_get()
 
     return _json_response(404, {"message": "Not found"})
 
@@ -644,6 +654,61 @@ def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
         _audit(user_sub, "BOARD_TASK_REVIEW", rest[1], event)
         return _json_response(200, {"task": board_staff.public_task(task)})
     return _json_response(404, {"message": "Not found"})
+
+
+def _holds_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
+    if not board_staff.env_enabled():
+        return _staff_disabled()
+    table = board_store.records_table()
+    if len(rest) == 1:
+        if method == "GET":
+            qs = parse_qs(event.get("rawQueryString") or "")
+            status = (qs.get("status") or ["scheduled"])[0]
+            try:
+                limit = max(1, min(200, int((qs.get("limit") or ["50"])[0])))
+            except (TypeError, ValueError):
+                limit = 50
+            holds = [board_holds.public_hold(h) for h in board_store.list_holds(table, status, limit=limit)]
+            return _json_response(200, {"holds": holds})
+        return _json_response(405, {"message": "Method not allowed"})
+    if len(rest) == 2 and rest[1] == "veto-class" and method == "POST":
+        body = _parse_json_body(event)
+        class_key = str(body.get("classKey") or "").strip()
+        if not class_key:
+            return _json_response(400, {"message": "classKey is required"})
+        vetoed = board_holds.veto_class_today(table, class_key, user_sub or "")
+        _audit(user_sub, "BOARD_HOLD_VETO_CLASS", class_key, event)
+        return _json_response(200, {"holds": [board_holds.public_hold(h) for h in vetoed]})
+    if len(rest) == 3 and rest[2] == "veto" and method == "POST":
+        body = _parse_json_body(event)
+        try:
+            hold = board_holds.veto(table, rest[1], user_sub or "", str(body.get("reason") or ""))
+        except board_holds.HoldError as exc:
+            return _json_response(404 if "not found" in str(exc).lower() else 400, {"message": str(exc)})
+        _audit(user_sub, "BOARD_HOLD_VETO", rest[1], event)
+        return _json_response(200, {"hold": board_holds.public_hold(hold)})
+    return _json_response(404, {"message": "Not found"})
+
+
+def _boundaries_put(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
+    if not board_staff.env_enabled():
+        return _staff_disabled()
+    table = board_store.records_table()
+    current = board_store.load_settings(table)
+    raw = _parse_json_body(event)
+    if not isinstance(raw, dict):
+        return _json_response(400, {"message": "boundaries must be an object"})
+    current["boundaries"] = board_store.normalize_boundaries(raw)
+    saved = board_store.save_settings(table, current)
+    _audit(user_sub, "BOARD_BOUNDARIES_PUT", "boundaries", event)
+    return _json_response(200, {"boundaries": saved.get("boundaries") or {}})
+
+
+def _ramp_get() -> dict[str, Any]:
+    if not board_staff.env_enabled():
+        return _staff_disabled()
+    table = board_store.records_table()
+    return _json_response(200, {"ramp": board_holds.list_ramp(table)})
 
 
 def _settings_put(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:

@@ -2,6 +2,8 @@ import { useCallback, useMemo, useState } from "react";
 import { FinanceDataLoadOrError } from "../FinanceDataStatus";
 import { BoardActionsList } from "./BoardActionsList";
 import { BoardApprovalsList } from "./BoardApprovalsList";
+import { BoardBoundariesCard } from "./BoardBoundariesCard";
+import { BoardHoldsList } from "./BoardHoldsList";
 import { BoardBriefEditor } from "./BoardBriefEditor";
 import { BoardCharterEditor } from "./BoardCharterEditor";
 import { BoardChatOffcanvas } from "./BoardChatOffcanvas";
@@ -21,6 +23,8 @@ import { useBoardStaff } from "../../hooks/useBoardStaff";
 import { useBoard, useBoardUpdates } from "../../hooks/useBoard";
 import { useBoardActions } from "../../hooks/useBoardActions";
 import { useBoardApprovals } from "../../hooks/useBoardApprovals";
+import { useBoardBoundaries } from "../../hooks/useBoardBoundaries";
+import { useBoardHolds } from "../../hooks/useBoardHolds";
 import { useBoardToolCalls, useBoardTools } from "../../hooks/useBoardTools";
 import {
   useBoardMeeting,
@@ -32,7 +36,7 @@ import {
 import { AdminTabList, type AdminTabItem } from "../ui";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { adminTabButtonId } from "../../lib/adminTabs";
-import { effectiveToolLevel, type BoardMeetingMode, type BoardOverview } from "../../lib/boardModel";
+import { DEFAULT_BOARD_BOUNDARIES, effectiveToolLevel, type BoardMeetingMode, type BoardOverview } from "../../lib/boardModel";
 
 type BoardSection = "actions" | "staff" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
 
@@ -87,6 +91,8 @@ export function ExecutiveBoardTab() {
   const startMeeting = useStartBoardMeeting();
   const cancelMeeting = useCancelBoardMeeting();
   const approvals = useBoardApprovals();
+  const holds = useBoardHolds();
+  const boundaries = useBoardBoundaries();
   const tools = useBoardTools();
   const staff = useBoardStaff();
 
@@ -221,17 +227,28 @@ export function ExecutiveBoardTab() {
           {overview && section === "staff" ? <BoardStaffSection /> : null}
 
           {overview && section === "approvals" ? (
-            <BoardApprovalsList
-              approvals={approvals.approvals}
-              members={members}
-              isLoading={approvals.isLoading}
-              isDeciding={approvals.decide.isPending}
-              errorMessage={errorText(approvals.error) ?? errorText(approvals.decide.error)}
-              onDecide={(vars) => approvals.decide.mutate(vars)}
-              onOpenMeeting={openMeeting}
-              onOpenMailThread={openMailThread}
-              focusApprovalId={focusApprovalId}
-            />
+            <>
+              <BoardHoldsList
+                holds={holds.holds}
+                isLoading={holds.isLoading}
+                isVetoing={holds.veto.isPending || holds.vetoClass.isPending}
+                errorMessage={errorText(holds.error) ?? errorText(holds.veto.error) ?? errorText(holds.vetoClass.error)}
+                onVeto={(holdId, reason) => holds.veto.mutate({ holdId, reason })}
+                onVetoClass={(classKey) => holds.vetoClass.mutate(classKey)}
+                onOpenMailThread={openMailThread}
+              />
+              <BoardApprovalsList
+                approvals={approvals.approvals}
+                members={members}
+                isLoading={approvals.isLoading}
+                isDeciding={approvals.decide.isPending}
+                errorMessage={errorText(approvals.error) ?? errorText(approvals.decide.error)}
+                onDecide={(vars) => approvals.decide.mutate(vars)}
+                onOpenMeeting={openMeeting}
+                onOpenMailThread={openMailThread}
+                focusApprovalId={focusApprovalId}
+              />
+            </>
           ) : null}
 
           {overview && section === "mail" ? (
@@ -354,6 +371,13 @@ export function ExecutiveBoardTab() {
               ) : (
                 <div className="card shadow-sm mb-4"><div className="card-body text-muted small">Loading tool permissions…</div></div>
               )}
+              <BoardBoundariesCard
+                key={`boundaries-${overview.settings.updatedAt ?? ""}`}
+                boundaries={overview.settings.boundaries ?? DEFAULT_BOARD_BOUNDARIES}
+                isSaving={boundaries.save.isPending}
+                errorMessage={errorText(boundaries.save.error)}
+                onSave={(next) => boundaries.save.mutate(next)}
+              />
               <BoardSettingsCard
                 key={`settings-${overview.settings.updatedAt ?? ""}`}
                 overview={overview}

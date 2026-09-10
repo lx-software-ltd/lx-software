@@ -395,6 +395,14 @@ function calling. Design:
   under `board/siuTinDei/staff/{taskId}/` on the existing assets bucket
   (already bucket-wide read/write). The **Staff** tab is inert until both
   flags are on.
+- **Holds (WP2):** `GET /siu-tin-dei/board/holds`,
+  `POST …/holds/{holdId}/veto`, `POST …/holds/veto-class`,
+  `PUT …/boundaries`, `GET …/ramp`. A hold is "the founder may say no";
+  an Approval is "the founder must say yes". Default hours: internal /
+  inbound_reply / outbound_known = 0; cold_outreach / publish / spend = 24;
+  code_staging = 12. Quiet hours (default 22:00–08:00 HKT) push
+  `executeAt` to the next 08:00 HKT. The **Approvals** section shows
+  **Scheduled (veto to stop)**; **Settings** has the Boundaries card.
 
 Smoke test after deploy: open the tab, save a company vision/mission, edit one
 member's mandate, send a chat message to the CEO (reply arrives within ~30 s),

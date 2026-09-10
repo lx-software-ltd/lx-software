@@ -4,7 +4,9 @@ import {
   BOARD_TOOL_LEVELS,
   type BoardActionPriority,
   type BoardActionStatus,
+  type BoardActionClass,
   type BoardDeliverableType,
+  type BoardHoldStatus,
   type BoardMeetingMode,
   type BoardStaffModelTier,
   type BoardTaskOrigin,
@@ -14,9 +16,11 @@ import {
 } from "./contracts/generated";
 
 export type {
+  BoardActionClass,
   BoardActionPriority,
   BoardActionStatus,
   BoardDeliverableType,
+  BoardHoldStatus,
   BoardMeetingMode,
   BoardStaffModelTier,
   BoardTaskOrigin,
@@ -98,7 +102,102 @@ export type BoardSettings = {
     readonly dutiesEnabled?: boolean;
   };
   readonly review?: { readonly digestTo: string; readonly digestHourHkt: number; readonly sampleSize: number };
+  readonly boundaries?: BoardBoundaries;
   readonly updatedAt?: string | null;
+};
+
+export type BoardBoundaries = {
+  readonly reply: {
+    readonly languages: readonly string[];
+    readonly tone: string;
+    readonly quietHoursHkt: readonly [number, number] | readonly number[];
+    readonly maxOutboundPerChannelPerDay: Readonly<Record<string, number>>;
+    readonly maxMessagesPerThreadPerDay: number;
+    readonly sensitiveTemplatesOnly: readonly string[];
+  };
+  readonly escalation: {
+    readonly keywords: readonly string[];
+    readonly refundThresholdHkd: number;
+    readonly ackTemplateId: string;
+  };
+  readonly holds: Readonly<Record<string, number>>;
+  readonly holdOverrides: Readonly<Record<string, number>>;
+  readonly outreach?: Readonly<Record<string, unknown>>;
+  readonly content?: Readonly<Record<string, unknown>>;
+  readonly intel?: Readonly<Record<string, unknown>>;
+};
+
+export type BoardHold = {
+  readonly holdId: string;
+  readonly status: BoardHoldStatus;
+  readonly actionClass: BoardActionClass | string;
+  readonly classKey: string;
+  readonly personaId: string;
+  readonly seatId?: string;
+  readonly taskId?: string;
+  readonly displayName?: string;
+  readonly op: string;
+  readonly toolId: string;
+  readonly arguments: Readonly<Record<string, unknown>>;
+  readonly preview?: BoardApprovalPreview;
+  readonly summary: string;
+  readonly createdAt: string;
+  readonly executeAt: string;
+  readonly executedAt?: string | null;
+  readonly vetoedAt?: string | null;
+  readonly vetoBy?: string;
+  readonly vetoReason?: string;
+  readonly result?: Readonly<Record<string, unknown>>;
+};
+
+export const DEFAULT_BOARD_BOUNDARIES: BoardBoundaries = {
+  reply: {
+    languages: ["en", "zh-HK"],
+    tone: "Warm, plain, brief. Never promise refunds, legal positions, or availability the catalog does not show.",
+    quietHoursHkt: [22, 8],
+    maxOutboundPerChannelPerDay: { mail: 60, whatsapp: 60, meta: 100 },
+    maxMessagesPerThreadPerDay: 3,
+    sensitiveTemplatesOnly: ["payment_dispute", "cancellation", "safeguarding", "data_request"],
+  },
+  escalation: {
+    keywords: [
+      "refund",
+      "lawyer",
+      "legal",
+      "police",
+      "injury",
+      "hurt",
+      "abuse",
+      "complaint",
+      "media",
+      "journalist",
+      "PDPO",
+      "delete my data",
+      "unsubscribe me from everything",
+    ],
+    refundThresholdHkd: 0,
+    ackTemplateId: "ack_escalation",
+  },
+  holds: {
+    internal: 0,
+    inbound_reply: 0,
+    outbound_known: 0,
+    cold_outreach: 24,
+    publish: 24,
+    spend: 24,
+    code_staging: 12,
+  },
+  holdOverrides: {},
+};
+
+export type BoardRampState = {
+  readonly classKey: string;
+  readonly actions: number;
+  readonly vetoes: number;
+  readonly rate: number;
+  readonly eligibleForPromotion: boolean;
+  readonly shouldDemote: boolean;
+  readonly totals?: { readonly actions: number; readonly vetoes: number };
 };
 
 export type BoardSeat = {
@@ -247,7 +346,7 @@ export type BoardToolsPayload = {
   readonly adsSpend?: BoardAdsSpend;
 };
 
-export type BoardToolCallStatus = "ok" | "error" | "pending_approval";
+export type BoardToolCallStatus = "ok" | "error" | "pending_approval" | "held";
 
 /** One tool call as shown on a chat reply or a meeting transcript entry. */
 export type BoardToolCallRef = {
@@ -260,6 +359,8 @@ export type BoardToolCallRef = {
   readonly summary: string;
   readonly durationMs: number;
   readonly approvalId?: string;
+  readonly holdId?: string;
+  readonly executeAt?: string;
   readonly error?: string;
 };
 
@@ -707,6 +808,7 @@ export const TOOL_CALL_STATUS_ICON: Readonly<Record<BoardToolCallStatus, { reado
   ok: { icon: "bi-check-circle-fill", className: "text-success", label: "done" },
   error: { icon: "bi-x-circle-fill", className: "text-danger", label: "failed" },
   pending_approval: { icon: "bi-hourglass-split", className: "text-warning", label: "awaiting approval" },
+  held: { icon: "bi-clock-history", className: "text-info", label: "scheduled" },
 };
 
 export const APPROVAL_STATUS_BADGE_CLASS: Readonly<Record<BoardApprovalStatus, string>> = {
@@ -934,6 +1036,30 @@ export function boardTaskCancelPath(taskId: string): string {
 
 export function boardTaskReviewPath(taskId: string): string {
   return `${boardTaskPath(taskId)}/review`;
+}
+
+export function boardHoldsPath(query?: { status?: string; limit?: number }): string {
+  const params = new URLSearchParams();
+  if (query?.status) params.set("status", query.status);
+  if (query?.limit) params.set("limit", String(query.limit));
+  const qs = params.toString();
+  return qs ? `${BOARD_API_BASE}/holds?${qs}` : `${BOARD_API_BASE}/holds`;
+}
+
+export function boardHoldVetoPath(holdId: string): string {
+  return `${BOARD_API_BASE}/holds/${encodeURIComponent(holdId)}/veto`;
+}
+
+export function boardHoldVetoClassPath(): string {
+  return `${BOARD_API_BASE}/holds/veto-class`;
+}
+
+export function boardBoundariesPath(): string {
+  return `${BOARD_API_BASE}/boundaries`;
+}
+
+export function boardRampPath(): string {
+  return `${BOARD_API_BASE}/ramp`;
 }
 
 export function tasksNeedPolling(tasks: readonly BoardTask[]): boolean {

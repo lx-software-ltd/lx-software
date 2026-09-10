@@ -1931,6 +1931,17 @@ export class LxsoftwareStack extends cdk.Stack {
         path: "/siu-tin-dei/board/tasks/{taskId}/review",
         methods: [apigwv2.HttpMethod.POST],
       },
+      { path: "/siu-tin-dei/board/holds", methods: [apigwv2.HttpMethod.GET] },
+      {
+        path: "/siu-tin-dei/board/holds/{holdId}/veto",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/holds/veto-class",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      { path: "/siu-tin-dei/board/boundaries", methods: [apigwv2.HttpMethod.PUT] },
+      { path: "/siu-tin-dei/board/ramp", methods: [apigwv2.HttpMethod.GET] },
     ];
     for (const route of boardRoutes) {
       this.httpApi.addRoutes({

@@ -44,6 +44,30 @@ up in review; do not treat them as product decisions unless you confirm.
   after the stack flag is on. A settings checkbox can land in WP4 with
   the review card.
 
-## Later WPs
+## WP2
 
-Notes will be appended here as each WP is built.
+- **`always_propose` vs publish holds.** The WP2 integration paragraph said
+  to hold only when the call would otherwise execute (`not always_propose`).
+  Acceptance requires CMO `act` + `holds.publish = 24` + `meta_propose_post`
+  → `held`. Publish is a covered boundary, so when staff is enabled, the
+  level is `act`, there is no guard, and hours > 0, the write is held even
+  if `always_propose` is set. With staff off or hours 0, today's Approval
+  path is unchanged.
+- **Owner actor never holds.** Spec said `ctx.actor != "hold"`. Owner
+  executions (approval decide) stay immediate; only `persona` writes enter
+  a hold window. The owner is the vetoer.
+- **Hold arguments are stored unmasked**, same as Approvals (the spec said
+  "masked as stored on approvals"; approvals store the raw args so
+  `execute_due` can run the op).
+- **`hold_hours` takes `(table, settings, action_class, class_key)`** so it
+  can read `breaker#` rows. The spec's `(settings, …)` signature cannot see
+  breakers.
+- **`execute_due` filters `executeAt <= now` in Python** after
+  `list_holds(..., "scheduled")`. FakeTable (and the current query helper)
+  cannot express `gsi1sk <= now`.
+- **Ramp discovery** for `GET /ramp` walks recent holds' `classKey`s. A
+  ramp row with no surviving hold is not listed until another action in
+  that class is recorded.
+- **`get_mail_thread` via `_public_mail`** must keep `lastInboundAt` for
+  the stale-reply check. If that field is stripped, the thread-changed
+  rule cannot fire.

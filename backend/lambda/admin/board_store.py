@@ -1706,6 +1706,7 @@ def load_ramp(table: Any, class_key: str) -> dict[str, Any]:
         "actions": int(stored.get("actions") or 0),
         "vetoes": int(stored.get("vetoes") or 0),
         "days": dict(stored.get("days") or {}),
+        "recent": list(stored.get("recent") or []),
     }
 
 
