@@ -277,6 +277,36 @@ class TestMetaTools(MetaTestCase):
         self.assertEqual(out.status, "pending_approval")
         self.assertIn("cap", out.result["message"])
 
+    def test_two_spend_holds_second_fails_cap(self) -> None:
+        settings = board_store.load_settings(self.table)
+        settings["staff"] = board_store.normalize_staff_config({**(settings.get("staff") or {}), "enabled": True})
+        settings["tools"]["globalMode"] = "act"
+        settings["tools"]["spendCaps"] = {"metaAdsDailyUsd": 50, "metaAdsMonthlyUsd": 2000}
+        settings["boundaries"]["holds"]["spend"] = 24
+        settings = board_store.save_settings(self.table, settings)
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        ctx = ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="cmo",
+            display_name="CMO",
+            actor="persona",
+        )
+        first = execute_call(
+            ctx,
+            REGISTRY["meta_create_ad_set"],
+            {"name": "A", "dailyBudgetUsd": 40, "reason": "launch"},
+        )
+        self.assertEqual(first.status, "held")
+        second = execute_call(
+            ctx,
+            REGISTRY["meta_create_ad_set"],
+            {"name": "B", "dailyBudgetUsd": 40, "reason": "launch"},
+        )
+        self.assertEqual(second.status, "pending_approval")
+        self.assertIn("cap", second.result["message"])
+
     def test_relay_lead_always_proposes_off_allow_list(self) -> None:
         ctx = self._ctx("coo", global_mode="act")
         out = execute_call(

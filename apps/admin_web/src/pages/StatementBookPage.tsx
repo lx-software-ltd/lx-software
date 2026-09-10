@@ -46,7 +46,12 @@ export function StatementBookPage({
     saveError,
     saveErrorDetail,
   } = useStatementBook(bookKey);
-  const [tab, setTab] = useState<StatementBookTab>("dashboard");
+  const [tab, setTab] = useState<StatementBookTab>(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    if (requested === "board" && hasExecutiveBoard) return "board";
+    if (requested === "expenses" || requested === "gains" || requested === "dashboard") return requested;
+    return "dashboard";
+  });
   const [fiscalYear, setFiscalYear] = useState<FiscalYearId>(() =>
     defaultFiscalYearIdForNowUtc(),
   );

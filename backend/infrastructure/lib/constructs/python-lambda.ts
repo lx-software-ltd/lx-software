@@ -90,7 +90,7 @@ function copyDirRecursive(src: string, dest: string): void {
 
 function tryLocalPythonBundle(entry: string, outputDir: string): boolean {
   const req = path.join(entry, "requirements.txt");
-  if (requirementsNeedPip(req)) {
+  if (requirementsNeedPip(req) && process.env.CDK_SKIP_PYTHON_PIP !== "1") {
     return false;
   }
   copyDirRecursive(entry, outputDir);
@@ -101,7 +101,8 @@ function tryLocalPythonBundle(entry: string, outputDir: string): boolean {
  * Creates a Python 3.12 Lambda with Docker-based bundling (recursive copy of
  * sources + pip when requirements.txt has packages). Local bundling only runs
  * when there are no pip dependencies so macOS wheels are never copied into a
- * Linux ARM runtime bundle.
+ * Linux ARM runtime bundle. `CDK_SKIP_PYTHON_PIP=1` copies sources without
+ * pip for template-only synth (Checkov).
  *
  * Wires up the standard hardening expected by Checkov on every application
  * Lambda:

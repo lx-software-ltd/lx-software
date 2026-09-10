@@ -80,6 +80,9 @@ jobs:
           VITE_COGNITO_REDIRECT_URI: http://localhost:5173/auth/callback
           VITE_API_BASE_URL: https://placeholder.execute-api.us-east-1.amazonaws.com
 
+      - name: Install admin Lambda test deps
+        run: python3 -m pip install -q -r backend/lambda/admin/requirements.txt
+
       - name: Test admin website
         run: npm test
         working-directory: apps/admin_web

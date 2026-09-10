@@ -304,6 +304,21 @@ def _run_report(property_id: str, *, dimensions: list[str], metrics: list[str], 
     }
 
 
+def campaign_sessions(wanted: set[str] | None = None, *, limit: int = 20) -> dict[str, Any]:
+    """GA4 sessions broken down by ``sessionCampaignName`` (utm_campaign)."""
+    ids = property_ids()
+    if not ids:
+        raise WebError("GA4_PROPERTY_IDS is not set.")
+    properties = []
+    for pid in ids:
+        report = _run_report(pid, dimensions=["sessionCampaignName"], metrics=["sessions"], limit=limit)
+        rows = [r for r in (report.get("rows") or []) if isinstance(r, dict)]
+        if wanted:
+            rows = [r for r in rows if str(r.get("sessionCampaignName") or "") in wanted]
+        properties.append({"propertyId": pid, "campaigns": rows, "totals": report.get("totals") or {}})
+    return {"properties": properties, "count": len(properties)}
+
+
 def fetch_sessions(*, property_filter: str = "", limit: int = 10) -> dict[str, Any]:
     ids = _wanted_properties({"propertyId": property_filter})
     properties = []

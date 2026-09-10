@@ -4,12 +4,30 @@ import {
   BOARD_TOOL_LEVELS,
   type BoardActionPriority,
   type BoardActionStatus,
+  type BoardActionClass,
+  type BoardDeliverableType,
+  type BoardHoldStatus,
   type BoardMeetingMode,
+  type BoardStaffModelTier,
+  type BoardTaskOrigin,
+  type BoardTaskStatus,
   type BoardToolGlobalMode,
   type BoardToolLevel,
 } from "./contracts/generated";
 
-export type { BoardActionPriority, BoardActionStatus, BoardMeetingMode, BoardToolGlobalMode, BoardToolLevel };
+export type {
+  BoardActionClass,
+  BoardActionPriority,
+  BoardActionStatus,
+  BoardDeliverableType,
+  BoardHoldStatus,
+  BoardMeetingMode,
+  BoardStaffModelTier,
+  BoardTaskOrigin,
+  BoardTaskStatus,
+  BoardToolGlobalMode,
+  BoardToolLevel,
+};
 
 export type BoardCharterField = "vision" | "mission" | "mandate";
 export const BOARD_CHARTER_FIELDS: readonly BoardCharterField[] = [
@@ -77,7 +95,227 @@ export type BoardSettings = {
   readonly models: { readonly chat: string; readonly standup: string; readonly deepDive: string };
   readonly dailyBudgetUsd: number;
   readonly tools: BoardToolsConfig;
+  readonly staff?: {
+    readonly enabled: boolean;
+    readonly maxRunningTasks: number;
+    readonly dailyBudgetUsd: number;
+    readonly dutiesEnabled?: boolean;
+    readonly seniorPaused?: boolean;
+    readonly disabledReason?: string;
+  };
+  readonly review?: { readonly digestTo: string; readonly digestHourHkt: number; readonly sampleSize: number };
+  readonly boundaries?: BoardBoundaries;
   readonly updatedAt?: string | null;
+  readonly version?: number;
+};
+
+export type BoardBoundaries = {
+  readonly reply: {
+    readonly languages: readonly string[];
+    readonly tone: string;
+    readonly quietHoursHkt: readonly [number, number] | readonly number[];
+    readonly maxOutboundPerChannelPerDay: Readonly<Record<string, number>>;
+    readonly maxMessagesPerThreadPerDay: number;
+    readonly sensitiveTemplatesOnly: readonly string[];
+  };
+  readonly escalation: {
+    readonly keywords: readonly string[];
+    readonly refundThresholdHkd: number;
+    readonly ackTemplateId: string;
+  };
+  readonly holds: Readonly<Record<string, number>>;
+  readonly holdOverrides: Readonly<Record<string, number>>;
+  readonly outreach?: Readonly<Record<string, unknown>>;
+  readonly content?: Readonly<Record<string, unknown>>;
+  readonly intel?: Readonly<Record<string, unknown>>;
+};
+
+export type BoardHold = {
+  readonly holdId: string;
+  readonly status: BoardHoldStatus;
+  readonly actionClass: BoardActionClass | string;
+  readonly classKey: string;
+  readonly personaId: string;
+  readonly seatId?: string;
+  readonly taskId?: string;
+  readonly displayName?: string;
+  readonly op: string;
+  readonly toolId: string;
+  readonly arguments: Readonly<Record<string, unknown>>;
+  readonly preview?: BoardApprovalPreview;
+  readonly summary: string;
+  readonly createdAt: string;
+  readonly executeAt: string;
+  readonly executedAt?: string | null;
+  readonly vetoedAt?: string | null;
+  readonly vetoBy?: string;
+  readonly vetoReason?: string;
+  readonly result?: Readonly<Record<string, unknown>>;
+};
+
+export const DEFAULT_BOARD_BOUNDARIES: BoardBoundaries = {
+  reply: {
+    languages: ["en", "zh-HK"],
+    tone: "Warm, plain, brief. Never promise refunds, legal positions, or availability the catalog does not show.",
+    quietHoursHkt: [22, 8],
+    maxOutboundPerChannelPerDay: { mail: 60, whatsapp: 60, meta: 100 },
+    maxMessagesPerThreadPerDay: 3,
+    sensitiveTemplatesOnly: ["payment_dispute", "cancellation", "safeguarding", "data_request"],
+  },
+  escalation: {
+    keywords: [
+      "refund",
+      "lawyer",
+      "legal",
+      "police",
+      "injury",
+      "hurt",
+      "abuse",
+      "complaint",
+      "media",
+      "journalist",
+      "PDPO",
+      "delete my data",
+      "unsubscribe me from everything",
+    ],
+    refundThresholdHkd: 0,
+    ackTemplateId: "ack_escalation",
+  },
+  holds: {
+    internal: 0,
+    inbound_reply: 0,
+    outbound_known: 0,
+    cold_outreach: 24,
+    publish: 24,
+    spend: 24,
+    code_staging: 12,
+    code_production: 0,
+  },
+  holdOverrides: {},
+};
+
+export type BoardRampState = {
+  readonly classKey: string;
+  readonly actions: number;
+  readonly vetoes: number;
+  readonly rate: number;
+  readonly eligibleForPromotion: boolean;
+  readonly shouldDemote: boolean;
+  readonly totals?: { readonly actions: number; readonly vetoes: number };
+};
+
+export type BoardSeat = {
+  readonly id: string;
+  readonly reportsTo: string;
+  readonly title: string;
+  readonly modelTier: BoardStaffModelTier;
+  readonly isActive: boolean;
+  readonly isActiveDefault: boolean;
+  readonly tools: Readonly<Record<string, BoardToolLevel>>;
+  readonly brief: string;
+  readonly displayName: string;
+  readonly defaults: { readonly brief: string; readonly displayName: string; readonly modelTier: BoardStaffModelTier };
+  readonly isOverridden: {
+    readonly brief: boolean;
+    readonly displayName: boolean;
+    readonly isActive: boolean;
+    readonly modelTier: boolean;
+  };
+  readonly effectiveLevels: Readonly<Record<string, BoardToolLevel>>;
+  readonly updatedAt?: string | null;
+};
+
+export type BoardTaskUsage = {
+  readonly promptTokens: number;
+  readonly completionTokens: number;
+  readonly cost: number;
+  readonly calls: number;
+};
+
+export type BoardTask = {
+  readonly taskId: string;
+  readonly status: BoardTaskStatus;
+  readonly assignee: string;
+  readonly assigneeKind: "persona" | "seat";
+  readonly managerId: string;
+  readonly origin: BoardTaskOrigin;
+  readonly brief: string;
+  readonly deliverableType: BoardDeliverableType;
+  readonly budgetUsd: number;
+  readonly slaAt: string;
+  readonly step: number;
+  readonly stepsUsed: number;
+  readonly revisions: number;
+  readonly usage: BoardTaskUsage;
+  readonly summary: string;
+  readonly evidence: readonly string[];
+  readonly openQuestions: readonly string[];
+  readonly confidence: string;
+  readonly flags?: readonly string[];
+  readonly reviews: number;
+  readonly lastReview?: { readonly verdict: string; readonly notes: string; readonly at: string; readonly by?: string } | null;
+  readonly createdAt: string;
+  readonly createdBy?: string;
+  readonly updatedAt: string;
+  readonly startedAt?: string | null;
+  readonly finishedAt?: string | null;
+  readonly failureReason?: string;
+  readonly actionId?: string | null;
+  readonly meetingId?: string | null;
+  readonly eventRef?: { readonly kind?: string; readonly id?: string; readonly channel?: string; readonly subject?: string; readonly stars?: number } | null;
+  readonly deliverableKey?: string;
+  readonly deliverableBytes?: number;
+};
+
+export type BoardTaskStep = {
+  readonly seq: number;
+  readonly plan: string;
+  readonly callIds: readonly string[];
+  readonly usage?: Partial<BoardTaskUsage>;
+  readonly at: string;
+};
+
+export type BoardTaskReview = {
+  readonly seq: number;
+  readonly verdict: string;
+  readonly notes: string;
+  readonly at: string;
+  readonly by: string;
+};
+
+export type BoardStaffPayload = {
+  readonly enabled: boolean;
+  readonly envEnabled: boolean;
+  readonly seats: readonly BoardSeat[];
+  readonly counts: Readonly<Record<string, number>>;
+};
+
+export type BoardTaskListPayload = {
+  readonly tasks: readonly BoardTask[];
+  readonly counts: Readonly<Record<string, number>>;
+};
+
+export type BoardTaskDetailPayload = {
+  readonly task: BoardTask;
+  readonly steps: readonly BoardTaskStep[];
+  readonly reviews: readonly BoardTaskReview[];
+  readonly deliverable: string;
+  readonly deliverableUrl: string;
+};
+
+export type BoardSeatOverride = {
+  readonly displayName?: string;
+  readonly brief?: string;
+  readonly isActive?: boolean;
+  readonly modelTier?: BoardStaffModelTier;
+};
+
+export type BoardTaskCreate = {
+  readonly assignee: string;
+  readonly brief: string;
+  readonly deliverableType: BoardDeliverableType;
+  readonly slaHours?: number;
+  readonly budgetUsd?: number;
 };
 
 export type BoardToolOperation = {
@@ -113,7 +351,7 @@ export type BoardToolsPayload = {
   readonly adsSpend?: BoardAdsSpend;
 };
 
-export type BoardToolCallStatus = "ok" | "error" | "pending_approval";
+export type BoardToolCallStatus = "ok" | "error" | "pending_approval" | "held";
 
 /** One tool call as shown on a chat reply or a meeting transcript entry. */
 export type BoardToolCallRef = {
@@ -126,6 +364,8 @@ export type BoardToolCallRef = {
   readonly summary: string;
   readonly durationMs: number;
   readonly approvalId?: string;
+  readonly holdId?: string;
+  readonly executeAt?: string;
   readonly error?: string;
 };
 
@@ -573,6 +813,7 @@ export const TOOL_CALL_STATUS_ICON: Readonly<Record<BoardToolCallStatus, { reado
   ok: { icon: "bi-check-circle-fill", className: "text-success", label: "done" },
   error: { icon: "bi-x-circle-fill", className: "text-danger", label: "failed" },
   pending_approval: { icon: "bi-hourglass-split", className: "text-warning", label: "awaiting approval" },
+  held: { icon: "bi-clock-history", className: "text-info", label: "scheduled" },
 };
 
 export const APPROVAL_STATUS_BADGE_CLASS: Readonly<Record<BoardApprovalStatus, string>> = {
@@ -775,6 +1016,388 @@ export function boardApprovalDecisionPath(approvalId: string, decision: "approve
 
 export function boardMailThreadPath(threadId: string): string {
   return `${BOARD_API_BASE}/mail/${encodeURIComponent(threadId)}`;
+}
+
+export function boardStaffPath(seatId?: string): string {
+  return seatId ? `${BOARD_API_BASE}/staff/${encodeURIComponent(seatId)}` : `${BOARD_API_BASE}/staff`;
+}
+
+export function boardTasksPath(query?: { status?: string; assignee?: string; limit?: number }): string {
+  const params = new URLSearchParams();
+  if (query?.status) params.set("status", query.status);
+  if (query?.assignee) params.set("assignee", query.assignee);
+  if (query?.limit) params.set("limit", String(query.limit));
+  const qs = params.toString();
+  return qs ? `${BOARD_API_BASE}/tasks?${qs}` : `${BOARD_API_BASE}/tasks`;
+}
+
+export function boardTaskPath(taskId: string): string {
+  return `${BOARD_API_BASE}/tasks/${encodeURIComponent(taskId)}`;
+}
+
+export function boardTaskCancelPath(taskId: string): string {
+  return `${boardTaskPath(taskId)}/cancel`;
+}
+
+export function boardTaskReviewPath(taskId: string): string {
+  return `${boardTaskPath(taskId)}/review`;
+}
+
+export function boardHoldsPath(query?: { status?: string; limit?: number }): string {
+  const params = new URLSearchParams();
+  if (query?.status) params.set("status", query.status);
+  if (query?.limit) params.set("limit", String(query.limit));
+  const qs = params.toString();
+  return qs ? `${BOARD_API_BASE}/holds?${qs}` : `${BOARD_API_BASE}/holds`;
+}
+
+export function boardHoldVetoPath(holdId: string): string {
+  return `${BOARD_API_BASE}/holds/${encodeURIComponent(holdId)}/veto`;
+}
+
+export function boardHoldVetoClassPath(): string {
+  return `${BOARD_API_BASE}/holds/veto-class`;
+}
+
+export function boardBoundariesPath(): string {
+  return `${BOARD_API_BASE}/boundaries`;
+}
+
+export function boardRampPath(): string {
+  return `${BOARD_API_BASE}/ramp`;
+}
+
+export function boardRampPromotePath(classKey: string): string {
+  return `${BOARD_API_BASE}/ramp/${encodeURIComponent(classKey)}/promote`;
+}
+
+export function boardReviewPath(date?: string): string {
+  const params = new URLSearchParams();
+  if (date) params.set("date", date);
+  const qs = params.toString();
+  return qs ? `${BOARD_API_BASE}/review?${qs}` : `${BOARD_API_BASE}/review`;
+}
+
+export function boardReviewWrongPath(callId: string): string {
+  return `${BOARD_API_BASE}/review/sample/${encodeURIComponent(callId)}/wrong`;
+}
+
+export function boardLessonsPath(): string {
+  return `${BOARD_API_BASE}/lessons`;
+}
+
+export function boardLessonConfirmPath(lessonId: string): string {
+  return `${BOARD_API_BASE}/lessons/${encodeURIComponent(lessonId)}/confirm`;
+}
+
+export function boardLessonDismissPath(lessonId: string): string {
+  return `${BOARD_API_BASE}/lessons/${encodeURIComponent(lessonId)}/dismiss`;
+}
+
+export function boardBreakersPath(): string {
+  return `${BOARD_API_BASE}/breakers`;
+}
+
+export function boardWatchlistPath(): string {
+  return `${BOARD_API_BASE}/watchlist`;
+}
+
+export function boardWatchPath(watchId: string): string {
+  return `${BOARD_API_BASE}/watchlist/${encodeURIComponent(watchId)}`;
+}
+
+export function boardProspectsPath(query?: {
+  readonly stage?: string;
+  readonly type?: string;
+  readonly district?: string;
+  readonly limit?: number;
+}): string {
+  const params = new URLSearchParams();
+  if (query?.stage) params.set("stage", query.stage);
+  if (query?.type) params.set("type", query.type);
+  if (query?.district) params.set("district", query.district);
+  if (query?.limit) params.set("limit", String(query.limit));
+  const qs = params.toString();
+  return qs ? `${BOARD_API_BASE}/prospects?${qs}` : `${BOARD_API_BASE}/prospects`;
+}
+
+export function boardProspectPath(prospectId: string): string {
+  return `${BOARD_API_BASE}/prospects/${encodeURIComponent(prospectId)}`;
+}
+
+export function boardProspectImportPath(): string {
+  return `${BOARD_API_BASE}/prospects/import`;
+}
+
+export function boardProspectMergePath(prospectId: string): string {
+  return `${BOARD_API_BASE}/prospects/${encodeURIComponent(prospectId)}/merge`;
+}
+
+export function boardSequencePath(type: string): string {
+  return `${BOARD_API_BASE}/sequences/${encodeURIComponent(type)}`;
+}
+
+export function boardContentPath(query?: {
+  readonly from?: string;
+  readonly to?: string;
+  readonly status?: string;
+}): string {
+  const params = new URLSearchParams();
+  if (query?.from) params.set("from", query.from);
+  if (query?.to) params.set("to", query.to);
+  if (query?.status) params.set("status", query.status);
+  const qs = params.toString();
+  return qs ? `${BOARD_API_BASE}/content?${qs}` : `${BOARD_API_BASE}/content`;
+}
+
+export function boardContentItemPath(contentId: string): string {
+  return `${BOARD_API_BASE}/content/${encodeURIComponent(contentId)}`;
+}
+
+export function boardContentRenderPath(contentId: string): string {
+  return `${BOARD_API_BASE}/content/${encodeURIComponent(contentId)}/render`;
+}
+
+export function boardContentCreativePath(contentId: string, n: number): string {
+  return `${BOARD_API_BASE}/content/${encodeURIComponent(contentId)}/creative/${n}`;
+}
+
+export function boardCodeStagingPath(): string {
+  return `${BOARD_API_BASE}/code/staging`;
+}
+
+export function boardCodePromotePath(): string {
+  return `${BOARD_API_BASE}/code/promote`;
+}
+
+export type BoardStagingPreview = {
+  readonly status?: string;
+  readonly behindBy?: number;
+  readonly aheadBy?: number;
+  readonly canPromote?: boolean;
+  readonly htmlUrl?: string;
+  readonly error?: string;
+  readonly commits?: readonly { readonly sha?: string; readonly message?: string }[];
+};
+
+export type BoardContentItem = {
+  readonly contentId: string;
+  readonly status?: string;
+  readonly channel?: string;
+  readonly pillar?: string;
+  readonly slotAt?: string;
+  readonly copyEn?: string;
+  readonly copyZh?: string;
+  readonly hashtags?: readonly string[];
+  readonly template?: string;
+  readonly holdId?: string;
+  readonly platformPostId?: string;
+  readonly creativeKeys?: readonly string[];
+  readonly performance?: Readonly<Record<string, unknown>>;
+};
+
+export function boardOutreachStatsPath(days?: number): string {
+  const params = new URLSearchParams();
+  if (days) params.set("days", String(days));
+  const qs = params.toString();
+  return qs ? `${BOARD_API_BASE}/outreach/stats?${qs}` : `${BOARD_API_BASE}/outreach/stats`;
+}
+
+export type BoardProspectTouch = {
+  readonly stepIndex?: number;
+  readonly sentAt?: string;
+  readonly subject?: string;
+  readonly preview?: string;
+  readonly threadId?: string;
+};
+
+export type BoardProspect = {
+  readonly prospectId: string;
+  readonly name: string;
+  readonly type?: string;
+  readonly district?: string;
+  readonly stage?: string;
+  readonly source?: string;
+  readonly website?: string;
+  readonly phone?: string;
+  readonly email?: string;
+  readonly contact?: string | null;
+  readonly placeId?: string;
+  readonly score?: number;
+  readonly fitNote?: string;
+  readonly ownerNote?: string;
+  readonly touches?: readonly BoardProspectTouch[];
+  readonly nextTouchAt?: string;
+  readonly lastThreadId?: string;
+  readonly qualifiedAt?: string;
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
+  readonly possibleDuplicates?: readonly { readonly prospectId: string; readonly name?: string; readonly stage?: string }[];
+};
+
+export type BoardProspectWrite = {
+  readonly stage?: string;
+  readonly contact?: string;
+  readonly type?: string;
+  readonly note?: string;
+};
+
+export type BoardSequenceStep = {
+  readonly dayOffset: number;
+  readonly subjectEn: string;
+  readonly subjectZh: string;
+  readonly bodyEn: string;
+  readonly bodyZh: string;
+};
+
+export type BoardSequence = {
+  readonly type: string;
+  readonly steps: readonly BoardSequenceStep[];
+};
+
+export type BoardOutreachStats = {
+  readonly sent?: number;
+  readonly bounces?: number;
+  readonly complaints?: number;
+  readonly bounceRate?: number;
+  readonly complaintRate?: number;
+  readonly replies?: number;
+  readonly dailyCap?: number;
+  readonly capRaisedAt?: string;
+  readonly identityVerified?: boolean;
+  readonly breaker?: { readonly name?: string; readonly tripped?: boolean; readonly reason?: string };
+  readonly history?: readonly { readonly date: string; readonly sent?: number; readonly bounces?: number; readonly complaints?: number }[];
+};
+
+export function boardChangesPath(days?: number): string {
+  const params = new URLSearchParams();
+  if (days) params.set("days", String(days));
+  const qs = params.toString();
+  return qs ? `${BOARD_API_BASE}/changes?${qs}` : `${BOARD_API_BASE}/changes`;
+}
+
+export type BoardWatchPage = {
+  readonly url?: string;
+  readonly emptyBody?: boolean;
+  readonly lastFetchedAt?: string;
+  readonly status?: number;
+};
+
+export type BoardWatch = {
+  readonly watchId: string;
+  readonly name: string;
+  readonly kind: string;
+  readonly urls: readonly string[];
+  readonly appIds?: Readonly<Record<string, string>>;
+  readonly socialHandles?: readonly string[];
+  readonly seenWeeks?: readonly string[];
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
+  readonly pages?: readonly BoardWatchPage[];
+};
+
+export type BoardWatchWrite = {
+  readonly name?: string;
+  readonly kind?: string;
+  readonly urls?: readonly string[];
+  readonly appIds?: Readonly<Record<string, string>>;
+  readonly socialHandles?: readonly string[];
+};
+
+export type BoardChangeNote = {
+  readonly changeId: string;
+  readonly watchId?: string;
+  readonly url?: string;
+  readonly kind?: string;
+  readonly summary?: string;
+  readonly createdAt?: string;
+  readonly beforeDigest?: string;
+  readonly afterDigest?: string;
+  readonly beforeKey?: string;
+  readonly afterKey?: string;
+};
+
+export type BoardMarketBrief = {
+  readonly taskId: string;
+  readonly status?: string;
+  readonly summary?: string;
+  readonly createdAt?: string;
+  readonly eventRef?: { readonly kind?: string; readonly id?: string };
+};
+
+export function boardBreakerResetPath(name: string): string {
+  return `${BOARD_API_BASE}/breakers/${encodeURIComponent(name)}/reset`;
+}
+
+export type BoardRampRow = {
+  readonly classKey: string;
+  readonly actions: number;
+  readonly vetoes: number;
+  readonly rate: number;
+  readonly eligibleForPromotion: boolean;
+  readonly shouldDemote: boolean;
+};
+
+export type BoardBreaker = {
+  readonly name: string;
+  readonly tripped?: boolean;
+  readonly reason?: string;
+  readonly trippedAt?: string;
+  readonly resetBy?: string;
+  readonly resetAt?: string | null;
+};
+
+export type BoardLesson = {
+  readonly lessonId: string;
+  readonly subject?: string;
+  readonly classKey?: string;
+  readonly what?: string;
+  readonly instruction: string;
+  readonly confirmed?: boolean;
+  readonly dismissed?: boolean;
+  readonly kind?: string;
+  readonly createdAt?: string;
+};
+
+export type BoardReviewSnapshot = {
+  readonly date: string;
+  readonly compiledAt?: string;
+  readonly narrative?: string;
+  readonly digestHtml?: string;
+  readonly headline: {
+    readonly tasks: { readonly delivered: number; readonly running: number; readonly blocked: number };
+    readonly messagesByChannel: Readonly<Record<string, number>>;
+    readonly holds: { readonly executed: number; readonly vetoed: number };
+    readonly spend: { readonly boardUsd: number; readonly staffUsd: number; readonly budgetUsd: number };
+    readonly pipeline?: Readonly<Record<string, unknown>>;
+    readonly content?: Readonly<Record<string, unknown>>;
+    readonly market?: Readonly<Record<string, unknown>>;
+  };
+  readonly holdsDue: readonly BoardHold[];
+  readonly escalations: readonly {
+    readonly taskId: string;
+    readonly assignee?: string;
+    readonly brief?: string;
+    readonly suggestedReply?: { readonly summary?: string; readonly preview?: unknown } | null;
+  }[];
+  readonly sample: readonly {
+    readonly callId: string;
+    readonly summary?: string;
+    readonly preview?: unknown;
+    readonly op?: string;
+  }[];
+  readonly breakers: readonly BoardBreaker[];
+  readonly suggestions: readonly BoardRampRow[];
+  readonly assisted?: readonly BoardContentItem[];
+  readonly market?: {
+    readonly changes?: readonly BoardChangeNote[];
+    readonly latestBrief?: BoardMarketBrief | null;
+  };
+  readonly promotion?: BoardStagingPreview | readonly unknown[];
+};
+
+export function tasksNeedPolling(tasks: readonly BoardTask[]): boolean {
+  return tasks.some((t) => t.status === "running" || t.status === "review");
 }
 
 /** `hello@siutindei.com` → `hello@`; keeps full addresses from other domains. */

@@ -115,9 +115,30 @@ class FakeTable:
             if i.get(pk_attr) == pk_value and (prefix is None or str(i.get(sk_attr, "")).startswith(prefix))
         ]
         rows.sort(key=lambda i: str(i.get(sk_attr, "")), reverse=not ScanIndexForward)
-        if Limit is not None:
+        if ExclusiveStartKey:
+            skipped = False
+            rest: list[dict[str, Any]] = []
+            for row in rows:
+                if not skipped:
+                    same_index = row.get(pk_attr) == ExclusiveStartKey.get(pk_attr) and row.get(sk_attr) == ExclusiveStartKey.get(sk_attr)
+                    same_item = row.get("pk") == ExclusiveStartKey.get("pk") and row.get("sk") == ExclusiveStartKey.get("sk")
+                    if same_index and (ExclusiveStartKey.get("pk") is None or same_item):
+                        skipped = True
+                    continue
+                rest.append(row)
+            rows = rest
+        last_key = None
+        if Limit is not None and len(rows) > Limit:
+            last = rows[Limit - 1]
+            last_key = {k: last[k] for k in ("pk", "sk") if k in last}
+            if IndexName == "gsi1":
+                last_key["gsi1pk"] = last.get("gsi1pk")
+                last_key["gsi1sk"] = last.get("gsi1sk")
             rows = rows[:Limit]
-        return {"Items": rows}
+        out: dict[str, Any] = {"Items": rows}
+        if last_key:
+            out["LastEvaluatedKey"] = last_key
+        return out
 
     def scan(self, **kwargs: Any) -> dict[str, Any]:
         self.scan_calls.append(kwargs)

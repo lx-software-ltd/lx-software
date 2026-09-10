@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import re
+import time
 import urllib.parse
 import uuid
 from datetime import datetime, timezone
@@ -236,7 +237,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             ses_drop_path=raw_key, raw_mail_prefix=raw_mail_prefix
         ):
             try:
-                result = board_mail.ingest_raw_object(inbound_bucket, raw_key, s3=_s3)
+                remaining_ms = getattr(context, "get_remaining_time_in_millis", lambda: 0)()
+                deadline = time.monotonic() + max(0, remaining_ms) / 1000 if remaining_ms else None
+                result = board_mail.ingest_raw_object(inbound_bucket, raw_key, s3=_s3, deadline=deadline)
             except Exception as exc:  # noqa: BLE001 — one bad message must not block the batch
                 logger.error(
                     json.dumps(

@@ -110,6 +110,7 @@ def create_actions_from_minutes(
             "title": title[:120],
             "detail": str(proposal.get("detail") or "")[:800],
             "persona": str(proposal.get("persona") or ""),
+            "assignee": str(proposal.get("assignee") or ""),
             "priority": str(proposal.get("priority") or "next"),
             "effort": str(proposal.get("effort") or "M"),
             "metric": str(proposal.get("metric") or "")[:300],

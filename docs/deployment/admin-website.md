@@ -262,6 +262,11 @@ Stack parameters (all optional, set in `backend/infrastructure/params/*.json`):
 | `lxsoftware:OpenRouterApiKeySecretArn` | Already required for statement parsing; the board reuses the same key. This secret already exists in the account — CDK does not create it. |
 | `lxsoftware:BoardGitHubRepo` | `owner/name` of the repository to read (default `lx-software-ltd/siutindei`). |
 | `lxsoftware:BoardToolsEnabled` | `true` (default) / `false`. Deploy-time kill switch for every board tool call, independent of the in-app settings. |
+| `lxsoftware:BoardStaffEnabled` | `false` (default) / `true`. Deploy-time kill switch for Executive Board staff tasks. `board_staff.env_enabled()` is fail-closed: only `1` / `true` / `yes` / `on` count as on (unset is off). The same env is set on **both** `AdminApiFn` and `InboundStatementMailFn`. Also requires `settings.staff.enabled` in the app. |
+| `lxsoftware:PublicSiteOrigins` | CSV of extra browser origins allowed on the HTTP API CORS list (admin origin is always included). Required for the public newsletter form (`apps/public_www`). Example: `https://lx-software.com,https://www.lx-software.com`. |
+| `lxsoftware:OutreachSendingDomain` | SES From domain for cold outreach (default `partners.siutindei.com`). Owner adds DKIM CNAMEs, MAIL FROM MX+TXT and DMARC before `outreach_send` will send. |
+| `lxsoftware:OutreachFromLocalPart` | Local part of the outreach From address (default `partnerships`). |
+| `lxsoftware:PublicApiBaseUrl` | Base URL for unsubscribe / newsletter confirm links. Blank uses this stack's HTTP API URL. |
 | `lxsoftware:BoardAwsStackPrefix` | CloudFormation stack-name prefix used to filter Cost Explorer / CloudWatch results (default `siutindei`). When no cost rows carry the tag, `aws_monthly_cost` falls back to the whole account and labels the result `scope: account`. |
 | `lxsoftware:BoardAwsLambdaNames` | Comma-separated Lambda function names (the siutindei stack lives in another repo, so they cannot be derived here). `aws_lambda_health` reports 24h errors/duration for exactly these; empty means "no functions configured". |
 | `lxsoftware:SiutindeiClusterArn` | Aurora cluster ARN for the siutindei database (RDS Data API). Required for Executive Board `finance` and `product` tools. Leave blank to keep those tools returning a clear "not configured" error. |
@@ -510,6 +515,145 @@ function calling. Design:
   for an already-subscribed Meta app; HMAC / verify-token only).
 - **Emergency stop:** set `lxsoftware:BoardToolsEnabled=false` and redeploy,
   or flip **Tools enabled** off in the app. Both leave the matrix intact.
+  Staff tasks have a second ladder: `settings.staff.enabled` (UI / settings
+  PUT), then `lxsoftware:BoardStaffEnabled=false` (redeploy), then the tools
+  kill switch. `BOARD_STAFF_ENABLED` unset or any value other than
+  `1`/`true`/`yes`/`on` is off. With either staff flag off,
+  `POST /siu-tin-dei/board/tasks` returns 409
+  `{"message":"Staff is disabled"}`.
+- **Staff (WP1):** `GET/PUT/DELETE /siu-tin-dei/board/staff`,
+  `GET/POST /siu-tin-dei/board/tasks`, `GET …/tasks/{taskId}`,
+  `POST …/tasks/{taskId}/cancel|review`. Schedule
+  `lxsoftware-admin-siutindei-board-staff-tick` every 5 minutes. Assets stay
+  under `board/siuTinDei/staff/{taskId}/` on the existing assets bucket
+  (already bucket-wide read/write). The **Staff** tab is inert until both
+  flags are on.
+- **Holds (WP2):** `GET /siu-tin-dei/board/holds`,
+  `POST …/holds/{holdId}/veto`, `POST …/holds/veto-class`,
+  `PUT …/boundaries`, `GET …/ramp`. A hold is "the founder may say no";
+  an Approval is "the founder must say yes". Default hours: internal /
+  inbound_reply / outbound_known = 0; cold_outreach / publish / spend = 24;
+  code_staging = 12. Quiet hours (default 22:00–08:00 HKT) push
+  `executeAt` to the next 08:00 HKT. When staff is on, `always_propose`
+  publish ops (`meta_propose_post`, `meta_propose_story`, newsletter send)
+  become 24 h holds rather than Approvals; `code_production` stays an
+  Approval (`action_class_exempt`). `code_merge_staging` stays
+  `always_propose` until the siutindei Appendix A workflows exist. The
+  **Approvals** section shows **Scheduled (veto to stop)**; **Settings**
+  has the Boundaries card.
+- **Triage (WP3):** with both staff flags on, inbound `siutindei.com` mail,
+  Meta webhooks and newly seen store reviews open tasks for Parent Support,
+  Provider Success or Community Manager. Escalation keywords (English and
+  Chinese) send the acknowledgement template and park the task on
+  **Needs owner**. Quiet hours hold replies until 08:00 HKT. Finance and
+  phishing mail still route to `accountant` / `security-analyst` (those
+  seats are active from WP9).
+- **Daily review (WP4):** `GET /siu-tin-dei/board/review`,
+  `POST …/review/sample/{callId}/wrong`, `GET/POST …/lessons`,
+  `GET/POST …/breakers/{name}/reset`, `POST …/ramp/{classKey}/promote`.
+  Schedules `lxsoftware-admin-siutindei-board-review-compile` (07:15 HKT)
+  and `…-board-review-send` (07:30 HKT). Set `settings.review.digestTo`
+  (Settings card) before expecting the digest; sending still requires
+  `BoardMailSendingEnabled`. **Daily review** is the default board section
+  once `settings.staff.enabled` is on. Confirming a lesson injects it into
+  the next staff-task prompt. A budget breaker at 100% of
+  `settings.staff.dailyBudgetUsd` flips `settings.staff.enabled` off.
+- **Market intelligence (WP5):** `GET/POST /siu-tin-dei/board/watchlist`,
+  `PUT/DELETE …/watchlist/{watchId}`, `GET …/changes?days=7`. Schedules
+  `lxsoftware-admin-siutindei-board-intel-crawl` (03:00 HKT daily) and
+  `…-board-intel-weekly` (Monday 04:00 HKT). Digests live under
+  `board/siuTinDei/intel/{watchId}/` on the assets bucket. User-Agent
+  `SiuTinDeiBoardBot/1.0 (+https://siutindei.com/bot)`. The **Market**
+  section is the watchlist, candidates (Promote / Ignore), change notes,
+  and the latest weekly brief. `market-analyst` starts inactive — flip
+  it on at runbook step 3. Owner: add about five competitor watches
+  after enabling staff; the first Monday brief creates CPO `later`
+  actions from the JSON block.
+- **Prospecting and outreach (WP6):** `GET /siu-tin-dei/board/prospects`,
+  `GET/PUT …/prospects/{id}`, `POST …/prospects/import`,
+  `POST …/prospects/{id}/merge`, `GET/PUT …/sequences/{type}`,
+  `GET …/outreach/stats`. Public
+  `GET/POST /public/outreach/unsubscribe/{token}` (no JWT; HMAC token).
+  Schedule `lxsoftware-admin-siutindei-board-targets` (08:00 HKT).
+  Secrets `lxsoftware-admin-siutindei-board-google-places-key` (replace
+  dummy) and `lxsoftware-admin-siutindei-board-link-signing-key`
+  (generated). SES identity for `OutreachSendingDomain` is created
+  pending DNS; sends refuse until `VerifiedForSendingStatus`.
+  Configuration set `lxsoftware-admin-siutindei-outreach` → SNS → SQS.
+  Outreach and board-mail IAM include both `configuration-set/…-outreach`
+  and `…-newsletter` plus `ses:SendBulkEmail`; templates are scoped to
+  `template/lxsoftware-admin-siutindei-*`. List-Unsubscribe is HTTPS-only
+  (RFC 8058). **Pipeline** section. `prospector` starts inactive — flip
+  it on at runbook step 4. Owner: DNS for `partners.siutindei.com`,
+  Places key, SES production / identity verify, then raise the daily cap
+  only via the 7-day warm-up (max 100).
+
+- **Content calendar (WP7):** `GET/POST /siu-tin-dei/board/content`,
+  `PUT /content/{id}`, `POST /content/{id}/render`,
+  `GET /content/{id}/creative/{n}`. Sunday 18:00 HKT
+  `…-board-content-plan`, Monday 09:00 HKT `…-board-content-readout`.
+  `AdminApiFn` memory 1536 MB; first pip dependency is Pillow (Docker
+  arm64 wheel). **Content** section. Flip `content-marketer` and
+  `growth-specialist` on at runbook step 5. Meta App Review for
+  `pages_manage_posts` / `instagram_content_publish` stays an owner task.
+
+- **Newsletter (WP8):** Public `POST /public/newsletter/subscribe`,
+  `GET /public/newsletter/confirm/{token}`,
+  `GET/POST /public/newsletter/unsubscribe/{token}` (no JWT; HMAC token).
+  Sends from `news@siutindei.com` when `BoardMailSendingEnabled=true`.
+  Config set `lxsoftware-admin-siutindei-newsletter` → same SNS/SQS as
+  outreach, plus OPEN/CLICK (records are routed by configuration-set /
+  `issueId` so newsletter bounces do not trip the outreach breaker).
+  Public site form uses `VITE_PUBLIC_API_URL` and needs the public origin
+  in `PublicSiteOrigins`. Subscriber rows are `newsletter#sub#{list}#{digest}`
+  (no live migration; no rows existed). Owner: create the
+  `news@siutindei.com` mailbox (fan-out already copies `@siutindei.com`),
+  set `PublicSiteOrigins`, and set the public site env.
+
+- **Duties and remaining desks (WP9):** Flip `accountant`, `data-analyst`
+  and `security-analyst` on at runbook step 6, then enable
+  `settings.staff.dutiesEnabled` (Settings → Run scheduled seat duties)
+  after staff is on. HKT crons on the 5-minute staff tick: BA weekly KPI
+  (Mon 08:00), accountant month-end (1st 09:00) and weekly aging (Thu
+  09:00), security weekly triage (Tue 09:00), data-analyst attribution
+  (Mon 10:00). Hourly `board_cache_refresh` opens architect/CTO tasks for
+  new CloudWatch ALARMs and security-analyst tasks for new Hub /
+  Analyzer / GitHub alerts. Daily dunning creates an accountant task
+  when staff is on (Approval path unchanged when staff is off). Stand-up
+  minutes may include `boundarySuggestions` that prepend the daily
+  review suggestions list.
+
+- **Engineering runner (WP10):** `GET /siu-tin-dei/board/code/staging`,
+  `POST …/code/promote`. Tool ops `code_run_task`, `code_get_run`,
+  `code_review_pr`, `code_merge_staging`, `code_promote`. Widen the board
+  GitHub token to **Actions: write**. Workflows
+  `board-agent.yml` / `board-merge-staging.yml` / `board-promote.yml` must
+  exist on **lx-software-ltd/siutindei** (see appendix A). Daily review
+  **Promote** queues an Approval; the owner merges the GitHub
+  `staging → main` PR. Architect weekly duty grooms `board-ready` issues.
+  Keep `code_merge_staging` as an Approval (`always_propose`) until the
+  siutindei Appendix A workflows exist; then flip architect / engineer-1 /
+  engineer-2 / product-dev on (runbook step 7).
+
+**Staff seat rollout (R-24).** Default-on seats: `support`,
+`provider-success`, `community-manager`, `business-analyst`.
+`maxRunningTasksDefault` is 3. Flip others on from **Staff** (or
+`PUT /siu-tin-dei/board/staff/{id}`) at these steps:
+
+1. Deploy with `BoardStaffEnabled=false`. No seats needed.
+2. After WP2–WP4: set `review.digestTo`, then `BoardStaffEnabled=true` and
+   `settings.staff.enabled=true`. Default-on seats handle triage and the
+   daily review. Leave `maxRunningTasks` at 3.
+3. WP5: activate `market-analyst`; add ~five watchlist entries.
+4. WP6: activate `prospector` after `partners.siutindei.com` DNS and SES
+   identity verify. First sends are 24 h holds.
+5. WP7: activate `content-marketer` and `growth-specialist`; raise
+   `maxRunningTasks` to 6 after the first content week is stable.
+6. WP8–WP9: set `PublicSiteOrigins`; activate `accountant`,
+   `data-analyst`, `security-analyst`; then `settings.staff.dutiesEnabled`.
+7. After Appendix A is live in siutindei: activate `architect`,
+   `engineer-1`, `engineer-2`, `product-dev`. First staging merges stay
+   Approvals until `code_merge_staging` is taken off `always_propose`.
 
 Smoke test after deploy: open the tab, save a company vision/mission, edit one
 member's mandate, send a chat message to the CEO (reply arrives within ~30 s),
@@ -526,7 +670,8 @@ siutindei cluster, set the two Data API parameters, open **Receivables**, and
 ask the CFO to draft the first listing plan (`finance_propose_price_change`).
 Nightly `SiutindeiBoardReceivablesMirrorSchedule` (00:30 HKT) writes `[receivables]`
 lines into the Siu Tin Dei book; daily `SiutindeiBoardDunningSchedule` (09:00 HKT)
-queues D+7 / D+21 / D+35 reminders in **Approvals**.
+queues D+7 / D+21 / D+35 accountant tasks when staff is enabled, or reminder
+Approvals when staff is off.
 
 ### Board receivables (Aurora Data API)
 

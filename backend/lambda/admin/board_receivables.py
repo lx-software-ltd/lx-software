@@ -938,12 +938,16 @@ def handle_dunning_trigger(event: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True, "skipped": "other_board"}
     if not configured():
         return {"ok": True, "skipped": "not_configured"}
+    import board_staff
     import board_tools
+    from board_triage import find_open_event_task
 
     table = board_store.records_table()
     settings = board_store.load_settings(table)
     aging = op_aging_report(None, {})
     approvals = _reminder_approvals(table)
+    staff_on = board_staff.enabled(settings)
+    accountant_on = staff_on and (board_staff.seats_by_id(table, settings).get("accountant") or {}).get("isActive")
     created = 0
     skipped = 0
     refused = 0
@@ -957,6 +961,27 @@ def handle_dunning_trigger(event: dict[str, Any]) -> dict[str, Any]:
             if _already_queued(approvals, inv_id, stage):
                 skipped += 1
                 continue
+            if accountant_on:
+                event_id = f"{inv_id}:{stage}"
+                if find_open_event_task(table, "dunning", event_id):
+                    skipped += 1
+                    continue
+                try:
+                    board_staff.create_task(
+                        table,
+                        settings,
+                        assignee="accountant",
+                        origin="event",
+                        brief=f"Dunning {stage} for invoice {inv.get('number') or inv_id} (D+{days}). Draft the reminder; do not send until policy allows.",
+                        deliverable_type="markdown",
+                        sla_hours=24,
+                        event_ref={"kind": "dunning", "id": event_id, "invoiceId": inv_id},
+                        created_by="board_dunning",
+                    )
+                    created += 1
+                    continue
+                except board_staff.StaffError as exc:
+                    _log_event("warning", tag="board_dunning_task_skipped", invoiceId=inv_id, error=str(exc)[:200])
             ctx = board_tools.ToolContext(
                 table=table,
                 settings=settings,

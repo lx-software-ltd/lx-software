@@ -68,6 +68,13 @@ describe("HTTP API routes", () => {
     "POST /webhooks/meta",
     "GET /webhooks/meta/siutindei",
     "POST /webhooks/meta/siutindei",
+    // RFC 8058 one-click / browser unsubscribe; HMAC in the token, no JWT.
+    "GET /public/outreach/unsubscribe/{token}",
+    "POST /public/outreach/unsubscribe/{token}",
+    "POST /public/newsletter/subscribe",
+    "GET /public/newsletter/confirm/{token}",
+    "GET /public/newsletter/unsubscribe/{token}",
+    "POST /public/newsletter/unsubscribe/{token}",
   ]);
 
   test("only the health check and Meta webhook routes lack an authorizer", () => {
@@ -97,9 +104,14 @@ describe("HTTP API routes", () => {
 
   test("/public/* mirrors are GET-only and use the API key (CUSTOM) authorizer", () => {
     const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
-    const publicMirrors = routes.filter((r) =>
-      String(r.Properties?.RouteKey).includes(" /public/")
-    );
+    const publicMirrors = routes.filter((r) => {
+      const key = String(r.Properties?.RouteKey);
+      return (
+        key.includes(" /public/") &&
+        !key.includes("/public/outreach/unsubscribe/") &&
+        !key.includes("/public/newsletter/")
+      );
+    });
     expect(publicMirrors.length).toBeGreaterThan(0);
     for (const route of publicMirrors) {
       expect(String(route.Properties?.RouteKey)).toMatch(/^GET /);
@@ -204,6 +216,14 @@ describe("EventBridge Scheduler wiring", () => {
       "lxsoftware-admin-siutindei-board-receivables-mirror": "board_receivables_mirror",
       "lxsoftware-admin-siutindei-board-dunning": "board_dunning",
       "lxsoftware-admin-siutindei-board-cache-refresh": "board_cache_refresh",
+      "lxsoftware-admin-siutindei-board-staff-tick": "board_staff_tick",
+      "lxsoftware-admin-siutindei-board-review-compile": "board_review_compile",
+      "lxsoftware-admin-siutindei-board-review-send": "board_review_send",
+      "lxsoftware-admin-siutindei-board-intel-crawl": "board_intel_crawl",
+      "lxsoftware-admin-siutindei-board-intel-weekly": "board_intel_weekly",
+      "lxsoftware-admin-siutindei-board-targets": "board_targets",
+      "lxsoftware-admin-siutindei-board-content-plan": "board_content_plan",
+      "lxsoftware-admin-siutindei-board-content-readout": "board_content_readout",
     };
     const schedules = Object.values(resourcesOfType("AWS::Scheduler::Schedule"));
     const byName = Object.fromEntries(
@@ -251,14 +271,16 @@ describe("Admin Lambda IAM policies", () => {
     expect(sendStatements).toHaveLength(1);
 
     const resources = asArray(sendStatements[0].Resource);
-    expect(resources).toHaveLength(1);
-    expect(resources[0]).not.toBe("*");
+    expect(resources).toHaveLength(3);
+    expect(resources.every((r) => r !== "*")).toBe(true);
     // formatArn() emits a Fn::Join whose literal pieces include the
     // `:identity/` resource segment followed by the BoardMailDomain parameter.
-    const serialized = JSON.stringify(resources[0]);
+    const serialized = JSON.stringify(resources);
     expect(serialized).toContain(":ses:");
     expect(serialized).toContain(":identity/");
     expect(serialized).toContain('"Ref":"BoardMailDomain"');
+    expect(serialized).toContain("configuration-set/lxsoftware-admin-siutindei-outreach");
+    expect(serialized).toContain("configuration-set/lxsoftware-admin-siutindei-newsletter");
   });
 
   test.each([
@@ -545,5 +567,40 @@ describe("shared inbound SES receipt rule set", () => {
     const serialized = JSON.stringify(template.toJSON());
     expect(serialized).toContain("setActiveReceiptRuleSet");
     expect(serialized).toContain("lxsoftware-inbound-mail-active");
+  });
+});
+
+describe("Board staff kill switches on both lambdas", () => {
+  test("AdminApiFn and InboundStatementMailFn share BOARD_STAFF_ENABLED and mail flags", () => {
+    const fns = Object.values(resourcesOfType("AWS::Lambda::Function"));
+    const flagged = fns.filter((r) => {
+      const env = r.Properties?.Environment?.Variables || {};
+      return env.BOARD_STAFF_ENABLED && env.OUTREACH_SENDING_DOMAIN;
+    });
+    expect(flagged.length).toBeGreaterThanOrEqual(2);
+    for (const fn of flagged) {
+      const env = fn.Properties?.Environment?.Variables || {};
+      expect(env.BOARD_STAFF_ENABLED).toBeDefined();
+      expect(env.BOARD_TOOLS_ENABLED).toBeDefined();
+      expect(env.BOARD_MAIL_SENDING_ENABLED).toBeDefined();
+      expect(env.OUTREACH_SENDING_DOMAIN).toBeDefined();
+      expect(env.OUTREACH_FROM_LOCAL_PART).toBeDefined();
+    }
+  });
+});
+
+describe("Board SES configuration-set IAM and public CORS", () => {
+  test("outreach and board-mail policies include configuration-set ARNs", () => {
+    const serialized = JSON.stringify(template.toJSON());
+    expect(serialized).toContain("configuration-set/lxsoftware-admin-siutindei-outreach");
+    expect(serialized).toContain("configuration-set/lxsoftware-admin-siutindei-newsletter");
+    expect(serialized).toContain("template/lxsoftware-admin-siutindei-*");
+    expect(serialized).toContain("ReportBatchItemFailures");
+  });
+
+  test("CORS origins include the PublicSiteOrigins parameter", () => {
+    const serialized = JSON.stringify(template.toJSON());
+    expect(serialized).toContain("PublicSiteOrigins");
+    expect(serialized).toContain("lx-software.com");
   });
 });

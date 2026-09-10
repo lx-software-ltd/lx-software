@@ -193,7 +193,7 @@ def _request(
         ) from exc
     except urlerror.URLError as exc:
         raise GitHubSnapshotError(f"GitHub API transport error: {exc.reason}") from exc
-    if accept.endswith("raw"):
+    if accept.endswith("raw") or accept == "application/vnd.github.diff":
         return text
     if not text.strip():
         return {}

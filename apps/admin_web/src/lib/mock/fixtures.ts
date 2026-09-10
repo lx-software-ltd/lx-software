@@ -7,6 +7,7 @@ import type { AdminAssetMeta } from "../../hooks/useAdminAssets";
 import type { BankSyncState } from "../bankSyncModel";
 import {
   BOARD_PERSONA_DEFAULTS,
+  BOARD_STAFF_SEAT_DEFAULTS,
   BOARD_TOOL_DEFINITIONS,
 } from "../contracts/generated";
 import type {
@@ -15,9 +16,24 @@ import type {
   BoardMeetingSummary,
   BoardOverview,
   BoardReceivablesPayload,
+  BoardSeat,
+  BoardBreaker,
+  BoardHold,
+  BoardLesson,
+  BoardReviewSnapshot,
+  BoardStaffPayload,
+  BoardTask,
+  BoardTaskDetailPayload,
   BoardToolsConfig,
   BoardToolsPayload,
+  BoardWatch,
+  BoardChangeNote,
+  BoardProspect,
+  BoardOutreachStats,
+  BoardSequence,
+  BoardContentItem,
 } from "../boardModel";
+import { DEFAULT_BOARD_BOUNDARIES } from "../boardModel";
 import type { OpenRouterUsagePayload } from "../openrouterUsage";
 import type { AwsBillingPayload } from "../awsBilling";
 import type { FinancePersistedState, HouseFinanceData } from "../financeModel";
@@ -370,6 +386,9 @@ export const boardOverviewFixture: BoardOverview = {
     models: { chat: "", standup: "", deepDive: "" },
     dailyBudgetUsd: 15,
     tools: toolsConfig,
+    staff: { enabled: true, maxRunningTasks: 6, dailyBudgetUsd: 20, dutiesEnabled: false },
+    review: { digestTo: "founder@example.com", digestHourHkt: 7, sampleSize: 8 },
+    boundaries: DEFAULT_BOARD_BOUNDARIES,
   },
   charter: {
     vision: "Siu Tin Dei is the place Hong Kong parents go first to find and book activities for their children.",
@@ -441,6 +460,304 @@ export const boardReceivablesFixture: BoardReceivablesPayload = {
     },
   },
 };
+
+function fixtureSeat(id: string, isActive: boolean): BoardSeat {
+  const d = BOARD_STAFF_SEAT_DEFAULTS.find((s) => s.id === id);
+  if (!d) throw new Error(`unknown seat ${id}`);
+  return {
+    id: d.id,
+    reportsTo: d.reportsTo,
+    title: d.title,
+    modelTier: d.modelTier === "senior" ? "senior" : "desk",
+    isActive,
+    isActiveDefault: d.isActiveDefault,
+    tools: d.tools,
+    brief: d.brief,
+    displayName: d.title,
+    defaults: { brief: d.brief, displayName: d.title, modelTier: d.modelTier === "senior" ? "senior" : "desk" },
+    isOverridden: { brief: false, displayName: false, isActive: true, modelTier: false },
+    effectiveLevels: d.tools,
+  };
+}
+
+export const boardStaffSeatsFixture: readonly BoardSeat[] = [
+  fixtureSeat("support", true),
+  fixtureSeat("provider-success", true),
+  fixtureSeat("accountant", true),
+];
+
+function fixtureTask(
+  taskId: string,
+  status: BoardTask["status"],
+  assignee: string,
+  brief: string,
+  extra: Partial<BoardTask> = {},
+): BoardTask {
+  return {
+    taskId,
+    status,
+    assignee,
+    assigneeKind: assignee === "cfo" ? "persona" : "seat",
+    managerId: assignee === "cfo" ? "cfo" : "coo",
+    origin: "owner",
+    brief,
+    deliverableType: "markdown",
+    budgetUsd: 1,
+    slaAt: isoDaysAgo(-1),
+    step: status === "queued" ? 0 : 1,
+    stepsUsed: status === "queued" ? 0 : 1,
+    revisions: 0,
+    usage: { promptTokens: 400, completionTokens: 120, cost: 0.02, calls: 2 },
+    summary: status === "delivered" ? "Three largest costs listed." : "",
+    evidence: status === "delivered" ? ["call-aws", "call-fin"] : [],
+    openQuestions: [],
+    confidence: status === "delivered" ? "high" : "",
+    reviews: status === "delivered" || status === "review" || status === "needs_owner" ? 1 : 0,
+    lastReview:
+      status === "needs_owner" ? { verdict: "return", notes: "Need more evidence.", at: isoDaysAgo(0) } : null,
+    createdAt: isoDaysAgo(1),
+    updatedAt: isoDaysAgo(0),
+    ...extra,
+  };
+}
+
+export const boardTasksFixture: BoardTask[] = [
+  fixtureTask("task-queued", "queued", "support", "Draft a reply to yesterday's parent email.", { eventRef: { kind: "mail", id: "th-parent", channel: "mail" } }),
+  fixtureTask("task-running", "running", "cfo", "List our three biggest monthly costs from AWS and finance."),
+  fixtureTask("task-review", "review", "provider-success", "Summarise the two warm provider threads."),
+  fixtureTask("task-owner", "needs_owner", "accountant", "Reconcile last week's unmatched payments."),
+  fixtureTask("task-done", "delivered", "cfo", "Month-end cost snapshot for the founder."),
+];
+
+export const boardStaffFixture: BoardStaffPayload = {
+  enabled: true,
+  envEnabled: true,
+  seats: boardStaffSeatsFixture,
+  counts: {
+    queued: 1,
+    running: 1,
+    review: 1,
+    returned: 0,
+    delivered: 1,
+    needs_owner: 1,
+    failed: 0,
+    cancelled: 0,
+  },
+};
+
+export const boardHoldsFixture: readonly BoardHold[] = [
+  {
+    holdId: "hold-post-1",
+    status: "scheduled",
+    actionClass: "publish",
+    classKey: "publish:facebook",
+    personaId: "cmo",
+    displayName: "Maya",
+    op: "meta_propose_post",
+    toolId: "meta",
+    arguments: { message: "Saturday swimming in Sha Tin — book on Siu Tin Dei.", reason: "Weekly spotlight." },
+    summary: "Propose Page post",
+    createdAt: isoDaysAgo(0),
+    executeAt: new Date(TODAY.getTime() + 20 * 3_600_000).toISOString(),
+  },
+];
+
+export const boardLessonsFixture: BoardLesson[] = [
+  {
+    lessonId: "lsn-1",
+    kind: "veto",
+    subject: "cmo",
+    classKey: "publish:facebook",
+    what: "Propose Page post",
+    instruction: "Always name the district and the date in the first sentence.",
+    confirmed: false,
+    createdAt: isoDaysAgo(0),
+  },
+];
+
+export const boardBreakersFixture: BoardBreaker[] = [
+  { name: "budget", tripped: false, reason: "" },
+];
+
+export const boardReviewFixture: BoardReviewSnapshot = {
+  date: dateDaysAgo(0),
+  compiledAt: isoDaysAgo(0),
+  narrative: "Three parent threads closed. One Facebook post is waiting out its hold. Spend is inside the staff cap.",
+  headline: {
+    tasks: { delivered: 1, running: 1, blocked: 1 },
+    messagesByChannel: { mail: 2, meta: 1 },
+    holds: { executed: 0, vetoed: 0 },
+    spend: { boardUsd: 0.4, staffUsd: 0.12, budgetUsd: 20 },
+  },
+  holdsDue: [...boardHoldsFixture],
+  escalations: [
+    { taskId: "task-owner", assignee: "accountant", brief: "Reconcile last week's unmatched payments." },
+  ],
+  sample: [
+    { callId: "call-mail-1", summary: "Replied to a parent about Saturday swimming", op: "mail_reply" },
+  ],
+  breakers: [],
+  suggestions: [{ classKey: "publish:facebook", actions: 32, vetoes: 0, rate: 0, eligibleForPromotion: true, shouldDemote: false }],
+  assisted: [
+    {
+      contentId: "cnt-xhs",
+      status: "scheduled",
+      channel: "assisted_xiaohongshu",
+      pillar: "activity spotlight",
+      slotAt: isoDaysAgo(0),
+      copyZh: "沙田週末玩樂",
+      copyEn: "Saturday play in Sha Tin",
+    },
+  ],
+  market: {
+    changes: [
+      {
+        changeId: "chg-1",
+        watchId: "watch-1",
+        url: "https://kiztopia.example/pricing",
+        kind: "pricing",
+        summary: "Saturday class price rose from $280 to $320.",
+        createdAt: isoDaysAgo(1),
+        beforeDigest: "Saturday class $280",
+        afterDigest: "Saturday class $320",
+      },
+    ],
+    latestBrief: { taskId: "task-review", status: "review", summary: "Weekly market brief", createdAt: isoDaysAgo(0) },
+  },
+  promotion: [],
+};
+
+export const boardWatchesFixture: BoardWatch[] = [
+  {
+    watchId: "watch-1",
+    name: "Kiztopia",
+    kind: "competitor",
+    urls: ["https://kiztopia.example/pricing", "https://kiztopia.example/"],
+    appIds: { ios: "123456789" },
+    socialHandles: [],
+    createdAt: isoDaysAgo(10),
+    pages: [{ url: "https://kiztopia.example/pricing", emptyBody: false, lastFetchedAt: isoDaysAgo(0), status: 200 }],
+  },
+  {
+    watchId: "watch-candidate",
+    name: "New Kids Lab",
+    kind: "candidate",
+    urls: ["https://newkidslab.example/"],
+    seenWeeks: ["2026-W36"],
+    createdAt: isoDaysAgo(7),
+  },
+];
+
+export const boardProspectsFixture: BoardProspect[] = [
+  {
+    prospectId: "pros-1",
+    name: "Sha Tin Playhouse",
+    type: "venue",
+    district: "Sha Tin",
+    stage: "qualified",
+    source: "owner",
+    website: "https://shatinplay.example",
+    contact: "info@shatinplay.example",
+    email: "info@shatinplay.example",
+    score: 72,
+    fitNote: "Indoor play space with a Saturday schedule.",
+    touches: [],
+    createdAt: isoDaysAgo(3),
+  },
+  {
+    prospectId: "pros-2",
+    name: "Tai Po Community Hall",
+    type: "community",
+    district: "Tai Po",
+    stage: "qualified",
+    source: "opendata",
+    website: "https://taipohall.example",
+    contact: null,
+    score: 64,
+    fitNote: "Needs a business email before outreach.",
+    createdAt: isoDaysAgo(2),
+  },
+];
+
+export const boardOutreachStatsFixture: BoardOutreachStats = {
+  sent: 12,
+  bounces: 0,
+  complaints: 0,
+  bounceRate: 0,
+  complaintRate: 0,
+  replies: 1,
+  dailyCap: 20,
+  capRaisedAt: isoDaysAgo(10),
+  identityVerified: false,
+  breaker: { name: "outreach", tripped: false },
+  history: [{ date: dateDaysAgo(0), sent: 2, bounces: 0, complaints: 0 }],
+};
+
+export const boardSequenceFixture = (type: string): BoardSequence => ({
+  type,
+  steps: [
+    {
+      dayOffset: 0,
+      subjectEn: `A free listing for {name} on Siu Tin Dei`,
+      subjectZh: `邀請 {name} 免費登上小天地`,
+      bodyEn: "Who we are. {fitNote} Free listing. {signupUrl}",
+      bodyZh: "我們是誰。{fitNote} 免費上架。{signupUrl}",
+    },
+  ],
+});
+
+export const boardChangesFixture: BoardChangeNote[] = [
+  {
+    changeId: "chg-1",
+    watchId: "watch-1",
+    url: "https://kiztopia.example/pricing",
+    kind: "pricing",
+    summary: "Saturday class price rose from $280 to $320.",
+    createdAt: isoDaysAgo(1),
+    beforeDigest: "Saturday class $280",
+    afterDigest: "Saturday class $320",
+  },
+];
+
+export const boardContentFixture: BoardContentItem[] = [
+  {
+    contentId: "cnt-1",
+    status: "scheduled",
+    channel: "facebook",
+    pillar: "activity spotlight",
+    slotAt: isoDaysAgo(-1),
+    copyEn: "Saturday play in Sha Tin",
+    copyZh: "沙田週末玩樂",
+    template: "spotlight",
+  },
+  {
+    contentId: "cnt-xhs",
+    status: "scheduled",
+    channel: "assisted_xiaohongshu",
+    pillar: "activity spotlight",
+    slotAt: isoDaysAgo(0),
+    copyEn: "Saturday play in Sha Tin",
+    copyZh: "沙田週末玩樂",
+    template: "spotlight",
+  },
+];
+
+export function boardTaskDetailFixture(taskId: string): BoardTaskDetailPayload | null {
+  const task = boardTasksFixture.find((t) => t.taskId === taskId);
+  if (!task) return null;
+  return {
+    task,
+    steps:
+      task.status === "queued"
+        ? []
+        : [{ seq: 1, plan: "Looked up AWS and finance totals.", callIds: ["call-aws"], usage: { cost: 0.01, calls: 1 }, at: isoDaysAgo(0) }],
+    reviews: task.reviews
+      ? [{ seq: 1, verdict: task.lastReview?.verdict ?? "accept", notes: task.lastReview?.notes ?? "Looks good.", at: isoDaysAgo(0), by: "manager" }]
+      : [],
+    deliverable: task.status === "queued" || task.status === "running" ? "" : "# Costs\n\n- AWS Lambda\n- OpenRouter\n- SES",
+    deliverableUrl: "",
+  };
+}
 
 export const awsUsageFixture: AwsBillingPayload = {
   from: "2026-08-01",

@@ -21,6 +21,8 @@ import * as schedulerTargets from "aws-cdk-lib/aws-scheduler-targets";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as ses from "aws-cdk-lib/aws-ses";
 import * as sesActions from "aws-cdk-lib/aws-ses-actions";
+import * as sns from "aws-cdk-lib/aws-sns";
+import * as snsSubs from "aws-cdk-lib/aws-sns-subscriptions";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as cr from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
@@ -181,7 +183,7 @@ function boardConnectorSecrets(
     github: boardPlaceholderSecret(scope, opts.ids.github, {
       ...common,
       secretName: opts.names.github,
-      description: `${opts.label}: fine-grained GitHub PAT (Contents read, Issues r/w, Actions read, Metadata read, Security events read).`,
+      description: `${opts.label}: fine-grained GitHub PAT (Contents read, Issues r/w, Actions write, Metadata read, Security events read).`,
     }),
     search: boardPlaceholderSecret(scope, opts.ids.search, {
       ...common,
@@ -503,6 +505,36 @@ export class LxsoftwareStack extends cdk.Stack {
       allowedValues: ["true", "false"],
       description:
         "Kill switch for Executive Board tool calls (GitHub, board, mail, research, AWS, security). Set to false to stop every tool call without touching the admin settings.",
+    });
+    const boardStaffEnabled = new cdk.CfnParameter(this, "BoardStaffEnabled", {
+      type: "String",
+      default: "false",
+      allowedValues: ["true", "false"],
+      description:
+        "Kill switch for Executive Board staff tasks. Default false until the task engine and daily review are live. Also requires settings.staff.enabled.",
+    });
+    const outreachSendingDomain = new cdk.CfnParameter(this, "OutreachSendingDomain", {
+      type: "String",
+      default: "partners.siutindei.com",
+      description:
+        "SES From domain for Executive Board cold outreach. Owner must add DKIM CNAMEs, MAIL FROM MX+TXT and DMARC before sending succeeds.",
+    });
+    const outreachFromLocalPart = new cdk.CfnParameter(this, "OutreachFromLocalPart", {
+      type: "String",
+      default: "partnerships",
+      description: "Local part of the outreach From address (partnerships@OutreachSendingDomain).",
+    });
+    const publicSiteOrigins = new cdk.CfnParameter(this, "PublicSiteOrigins", {
+      type: "String",
+      default: "https://lx-software.com,https://www.lx-software.com,https://siutindei.com,https://www.siutindei.com",
+      description:
+        "CSV of extra CORS origins for public newsletter subscribe (LX Software and Siu Tin Dei public sites).",
+    });
+    const publicApiBaseUrl = new cdk.CfnParameter(this, "PublicApiBaseUrl", {
+      type: "String",
+      default: "",
+      description:
+        "Public base URL for unsubscribe and newsletter confirm links. Leave blank to use this stack's HTTP API URL.",
     });
     const boardGitHubRepo = new cdk.CfnParameter(this, "BoardGitHubRepo", {
       type: "String",
@@ -885,6 +917,20 @@ export class LxsoftwareStack extends cdk.Stack {
         analytics: "lxsoftware-admin-siutindei-board-google-analytics-sa",
       },
     });
+    const googlePlacesKeySecret = boardPlaceholderSecret(this, "SiutindeiBoardGooglePlacesKey", {
+      secretName: "lxsoftware-admin-siutindei-board-google-places-key",
+      description: "Siu Tin Dei Executive Board: Google Places API (New) key, restricted to Places.",
+      encryptionKey: this.sharedEncryptionKey,
+      tenant: "siutindei",
+      purpose: "board-places",
+    });
+    const boardLinkSigningSecret = boardPlaceholderSecret(this, "SiutindeiBoardLinkSigningKey", {
+      secretName: "lxsoftware-admin-siutindei-board-link-signing-key",
+      description: "Siu Tin Dei Executive Board: HMAC key for outreach unsubscribe and newsletter confirm tokens.",
+      encryptionKey: this.sharedEncryptionKey,
+      tenant: "siutindei",
+      purpose: "board-link-signing",
+    });
 
     /**
      * Asymmetric RSA key that signs the Enable Banking RS256 JWTs. The
@@ -906,7 +952,7 @@ export class LxsoftwareStack extends cdk.Stack {
     const adminFn = createPythonLambda(this, "AdminApiFn", {
       entryDir: path.join(__dirname, "..", "..", "lambda", "admin"),
       timeout: adminStatementParseLambdaTimeout,
-      memorySize: 1024,
+      memorySize: 1536,
       environmentEncryptionKey: this.sharedEncryptionKey,
       logEncryptionKey: this.sharedEncryptionKey,
       deadLetterQueue: this.lambdaDeadLetterQueue,
@@ -930,6 +976,11 @@ export class LxsoftwareStack extends cdk.Stack {
         BOARD_MEETING_MODEL: boardMeetingModel.valueAsString,
         BOARD_DEEP_DIVE_MODEL: boardDeepDiveModel.valueAsString,
         BOARD_TOOLS_ENABLED: boardToolsEnabled.valueAsString,
+        BOARD_STAFF_ENABLED: boardStaffEnabled.valueAsString,
+        OUTREACH_SENDING_DOMAIN: outreachSendingDomain.valueAsString,
+        OUTREACH_FROM_LOCAL_PART: outreachFromLocalPart.valueAsString,
+        NEWSLETTER_CONFIG_SET: "lxsoftware-admin-siutindei-newsletter",
+        NEWSLETTER_FROM_LOCAL_PART: "news",
         SEARCH_API_KEY_SECRET_ARN: siutindeiBoardSecrets.search.secretArn,
         BOARD_AWS_STACK_PREFIX: boardAwsStackPrefix.valueAsString,
         BOARD_AWS_LAMBDA_NAMES: boardAwsLambdaNames.valueAsString,
@@ -950,6 +1001,8 @@ export class LxsoftwareStack extends cdk.Stack {
         ASC_VENDOR_NUMBER: appStoreConnectVendorNumber.valueAsString,
         GOOGLE_PLAY_PACKAGE_NAME: googlePlayPackageName.valueAsString,
         GOOGLE_ANALYTICS_SERVICE_ACCOUNT_SECRET_ARN: siutindeiBoardSecrets.analytics.secretArn,
+        GOOGLE_PLACES_KEY_SECRET_ARN: googlePlacesKeySecret.secretArn,
+        BOARD_LINK_SIGNING_SECRET_ARN: boardLinkSigningSecret.secretArn,
         GA4_PROPERTY_IDS: ga4PropertyIds.valueAsString,
         GTM_CONTAINERS: gtmContainers.valueAsString,
         // BOARD_MAIL_DOMAIN / _RAW_SEGMENT / _INBOUND_ADDRESS are added with the
@@ -1046,6 +1099,202 @@ export class LxsoftwareStack extends cdk.Stack {
       { internal: "board_cache_refresh" },
       1
     );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardStaffTickSchedule",
+      "lxsoftware-admin-siutindei-board-staff-tick",
+      "Every 5 minutes: drain the staff task queue and sweep stuck tasks.",
+      scheduler.ScheduleExpression.rate(cdk.Duration.minutes(5)),
+      { internal: "board_staff_tick" },
+      0
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardReviewCompileSchedule",
+      "lxsoftware-admin-siutindei-board-review-compile",
+      "Daily 07:15 HKT compile of the Executive Board review snapshot.",
+      scheduler.ScheduleExpression.cron({
+        minute: "15",
+        hour: "7",
+        timeZone: cdk.TimeZone.ASIA_HONG_KONG,
+      }),
+      { internal: "board_review_compile" },
+      0
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardReviewSendSchedule",
+      "lxsoftware-admin-siutindei-board-review-send",
+      "Daily 07:30 HKT digest email of the Executive Board review.",
+      scheduler.ScheduleExpression.cron({
+        minute: "30",
+        hour: "7",
+        timeZone: cdk.TimeZone.ASIA_HONG_KONG,
+      }),
+      { internal: "board_review_send" },
+      0
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardIntelCrawlSchedule",
+      "lxsoftware-admin-siutindei-board-intel-crawl",
+      "Daily 03:00 HKT crawl of the Executive Board competitor watchlist.",
+      scheduler.ScheduleExpression.cron({
+        minute: "0",
+        hour: "3",
+        timeZone: cdk.TimeZone.ASIA_HONG_KONG,
+      }),
+      { internal: "board_intel_crawl" },
+      0
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardIntelWeeklySchedule",
+      "lxsoftware-admin-siutindei-board-intel-weekly",
+      "Monday 04:00 HKT watchlist discovery and weekly market brief.",
+      scheduler.ScheduleExpression.cron({
+        minute: "0",
+        hour: "4",
+        weekDay: "MON",
+        timeZone: cdk.TimeZone.ASIA_HONG_KONG,
+      }),
+      { internal: "board_intel_weekly" },
+      0
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardTargetsSchedule",
+      "lxsoftware-admin-siutindei-board-targets",
+      "Daily 08:00 HKT pipeline target check: qualify shortfall, due touches, cap raise.",
+      scheduler.ScheduleExpression.cron({
+        minute: "0",
+        hour: "8",
+        timeZone: cdk.TimeZone.ASIA_HONG_KONG,
+      }),
+      { internal: "board_targets" },
+      0
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardContentPlanSchedule",
+      "lxsoftware-admin-siutindei-board-content-plan",
+      "Sunday 18:00 HKT content calendar planning duty.",
+      scheduler.ScheduleExpression.cron({
+        minute: "0",
+        hour: "18",
+        weekDay: "SUN",
+        timeZone: cdk.TimeZone.ASIA_HONG_KONG,
+      }),
+      { internal: "board_content_plan" },
+      0
+    );
+    siutindeiBoardSchedule(
+      "SiutindeiBoardContentReadoutSchedule",
+      "lxsoftware-admin-siutindei-board-content-readout",
+      "Monday 09:00 HKT weekly content performance readout.",
+      scheduler.ScheduleExpression.cron({
+        minute: "0",
+        hour: "9",
+        weekDay: "MON",
+        timeZone: cdk.TimeZone.ASIA_HONG_KONG,
+      }),
+      { internal: "board_content_readout" },
+      0
+    );
+
+    const outreachEventsDlq = new sqs.Queue(this, "SiutindeiOutreachEventsDlq", {
+      queueName: "lxsoftware-admin-siutindei-outreach-events-dlq",
+      encryption: sqs.QueueEncryption.KMS,
+      encryptionMasterKey: this.sharedEncryptionKey,
+      retentionPeriod: cdk.Duration.days(14),
+    });
+    const outreachEventsQueue = new sqs.Queue(this, "SiutindeiOutreachEventsQueue", {
+      queueName: "lxsoftware-admin-siutindei-outreach-events",
+      visibilityTimeout: cdk.Duration.seconds(60),
+      encryption: sqs.QueueEncryption.KMS,
+      encryptionMasterKey: this.sharedEncryptionKey,
+      deadLetterQueue: { queue: outreachEventsDlq, maxReceiveCount: 5 },
+    });
+    const outreachEventsTopic = new sns.Topic(this, "SiutindeiOutreachEventsTopic", {
+      topicName: "lxsoftware-admin-siutindei-outreach-events",
+      masterKey: this.sharedEncryptionKey,
+    });
+    outreachEventsTopic.addToResourcePolicy(
+      new iam.PolicyStatement({
+        principals: [new iam.ServicePrincipal("ses.amazonaws.com")],
+        actions: ["sns:Publish"],
+        resources: [outreachEventsTopic.topicArn],
+        conditions: {
+          StringEquals: { "AWS:SourceAccount": this.account },
+        },
+      })
+    );
+    // SES event destinations must GenerateDataKey on a CMK-encrypted topic.
+    this.sharedEncryptionKey.addToResourcePolicy(
+      new iam.PolicyStatement({
+        sid: "AllowSesOutreachEventEncryption",
+        principals: [new iam.ServicePrincipal("ses.amazonaws.com")],
+        actions: ["kms:Decrypt", "kms:GenerateDataKey*"],
+        resources: ["*"],
+        conditions: {
+          StringEquals: { "aws:SourceAccount": this.account },
+        },
+      })
+    );
+    outreachEventsTopic.addSubscription(new snsSubs.SqsSubscription(outreachEventsQueue));
+    const outreachConfigSet = new ses.ConfigurationSet(this, "SiutindeiOutreachConfigSet", {
+      configurationSetName: "lxsoftware-admin-siutindei-outreach",
+    });
+    outreachConfigSet.addEventDestination("OutreachSesEvents", {
+      destination: ses.EventDestination.snsTopic(outreachEventsTopic),
+      events: [
+        ses.EmailSendingEvent.BOUNCE,
+        ses.EmailSendingEvent.COMPLAINT,
+        ses.EmailSendingEvent.REJECT,
+      ],
+    });
+    const newsletterConfigSet = new ses.ConfigurationSet(this, "SiutindeiNewsletterConfigSet", {
+      configurationSetName: "lxsoftware-admin-siutindei-newsletter",
+    });
+    newsletterConfigSet.addEventDestination("NewsletterSesEvents", {
+      destination: ses.EventDestination.snsTopic(outreachEventsTopic),
+      events: [
+        ses.EmailSendingEvent.BOUNCE,
+        ses.EmailSendingEvent.COMPLAINT,
+        ses.EmailSendingEvent.REJECT,
+        ses.EmailSendingEvent.OPEN,
+        ses.EmailSendingEvent.CLICK,
+      ],
+    });
+    adminFn.addEventSource(
+      new lambdaEventSources.SqsEventSource(outreachEventsQueue, {
+        batchSize: 10,
+        reportBatchItemFailures: true,
+      })
+    );
+    new ses.CfnEmailIdentity(this, "SiutindeiOutreachSendingIdentity", {
+      emailIdentity: outreachSendingDomain.valueAsString,
+      dkimAttributes: { signingEnabled: true },
+      mailFromAttributes: {
+        mailFromDomain: cdk.Fn.join(".", ["mail", outreachSendingDomain.valueAsString]),
+        behaviorOnMxFailure: "USE_DEFAULT_VALUE",
+      },
+    });
+    adminFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["ses:SendEmail", "ses:SendRawEmail", "ses:SendBulkEmail", "ses:GetEmailIdentity"],
+        resources: [
+          cdk.Stack.of(this).formatArn({
+            service: "ses",
+            resource: "identity",
+            resourceName: outreachSendingDomain.valueAsString,
+          }),
+          cdk.Stack.of(this).formatArn({
+            service: "ses",
+            resource: "configuration-set",
+            resourceName: "lxsoftware-admin-siutindei-outreach",
+          }),
+          cdk.Stack.of(this).formatArn({
+            service: "ses",
+            resource: "configuration-set",
+            resourceName: "lxsoftware-admin-siutindei-newsletter",
+          }),
+        ],
+      })
+    );
 
     // Daily unattended balance refresh (05:30 HKT). The handler no-ops when
     // ENABLE_BANKING_APP_ID is blank, so the rule is safe to keep enabled.
@@ -1137,6 +1386,8 @@ export class LxsoftwareStack extends cdk.Stack {
     siutindeiBoardSecrets.appStore.grantRead(adminFn);
     siutindeiBoardSecrets.play.grantRead(adminFn);
     siutindeiBoardSecrets.analytics.grantRead(adminFn);
+    googlePlacesKeySecret.grantRead(adminFn);
+    boardLinkSigningSecret.grantRead(adminFn);
 
     // Executive Board aws + security read tools (plan §8). Each statement is
     // scoped as tightly as the IAM action allows (see the Service
@@ -1530,6 +1781,11 @@ export class LxsoftwareStack extends cdk.Stack {
       fn.addEnvironment("BOARD_MAIL_DOMAIN", boardMailDomain.valueAsString);
       fn.addEnvironment("BOARD_MAIL_RAW_SEGMENT", boardMailRawSegment);
       fn.addEnvironment("BOARD_MAIL_INBOUND_ADDRESS", boardMailInboundAddress);
+      fn.addEnvironment("BOARD_STAFF_ENABLED", boardStaffEnabled.valueAsString);
+      fn.addEnvironment("BOARD_TOOLS_ENABLED", boardToolsEnabled.valueAsString);
+      fn.addEnvironment("BOARD_MAIL_SENDING_ENABLED", boardMailSendingEnabled.valueAsString);
+      fn.addEnvironment("OUTREACH_SENDING_DOMAIN", outreachSendingDomain.valueAsString);
+      fn.addEnvironment("OUTREACH_FROM_LOCAL_PART", outreachFromLocalPart.valueAsString);
     }
 
     adminFn.addEnvironment(
@@ -1578,18 +1834,38 @@ export class LxsoftwareStack extends cdk.Stack {
     });
     boardMailIdentity.cfnOptions.condition = hasBoardMailSending;
     const boardMailSendPolicy = new iam.Policy(this, "SiutindeiBoardMailSendPolicy", {
-      statements: [
-        new iam.PolicyStatement({
-          actions: ["ses:SendEmail", "ses:SendRawEmail"],
-          resources: [
-            cdk.Stack.of(this).formatArn({
-              service: "ses",
-              resource: "identity",
-              resourceName: boardMailDomain.valueAsString,
-            }),
-          ],
-        }),
-      ],
+        statements: [
+          new iam.PolicyStatement({
+            actions: ["ses:SendEmail", "ses:SendRawEmail", "ses:SendBulkEmail"],
+            resources: [
+              cdk.Stack.of(this).formatArn({
+                service: "ses",
+                resource: "identity",
+                resourceName: boardMailDomain.valueAsString,
+              }),
+              cdk.Stack.of(this).formatArn({
+                service: "ses",
+                resource: "configuration-set",
+                resourceName: "lxsoftware-admin-siutindei-outreach",
+              }),
+              cdk.Stack.of(this).formatArn({
+                service: "ses",
+                resource: "configuration-set",
+                resourceName: "lxsoftware-admin-siutindei-newsletter",
+              }),
+            ],
+          }),
+          new iam.PolicyStatement({
+            actions: ["ses:CreateEmailTemplate", "ses:GetEmailTemplate", "ses:UpdateEmailTemplate"],
+            resources: [
+              cdk.Stack.of(this).formatArn({
+                service: "ses",
+                resource: "template",
+                resourceName: "lxsoftware-admin-siutindei-*",
+              }),
+            ],
+          }),
+        ],
     });
     boardMailSendPolicy.attachToRole(adminFn.role!);
     const cfnBoardMailSendPolicy = boardMailSendPolicy.node.defaultChild as iam.CfnPolicy;
@@ -1613,9 +1889,13 @@ export class LxsoftwareStack extends cdk.Stack {
           apigwv2.CorsHttpMethod.DELETE,
           apigwv2.CorsHttpMethod.OPTIONS,
         ],
-        allowOrigins: [
-          cdk.Fn.join("", ["https://", adminWebDomainName.valueAsString]),
-        ],
+        allowOrigins: cdk.Fn.split(
+          ",",
+          cdk.Fn.join(",", [
+            cdk.Fn.join("", ["https://", adminWebDomainName.valueAsString]),
+            publicSiteOrigins.valueAsString,
+          ])
+        ),
         allowCredentials: false,
       },
     });
@@ -1691,6 +1971,12 @@ export class LxsoftwareStack extends cdk.Stack {
       "GET /webhooks/meta": webhookRouteThrottle,
       "POST /webhooks/meta/siutindei": webhookRouteThrottle,
       "GET /webhooks/meta/siutindei": webhookRouteThrottle,
+      "GET /public/outreach/unsubscribe/{token}": webhookRouteThrottle,
+      "POST /public/outreach/unsubscribe/{token}": webhookRouteThrottle,
+      "POST /public/newsletter/subscribe": webhookRouteThrottle,
+      "GET /public/newsletter/confirm/{token}": webhookRouteThrottle,
+      "GET /public/newsletter/unsubscribe/{token}": webhookRouteThrottle,
+      "POST /public/newsletter/unsubscribe/{token}": webhookRouteThrottle,
     };
 
     this.httpApi.addRoutes({
@@ -1716,9 +2002,49 @@ export class LxsoftwareStack extends cdk.Stack {
     // the same changeset (that left lxsoftware UPDATE_ROLLBACK_FAILED on
     // the first /webhooks/meta/siutindei deploy). Pin the stage to the
     // throttled routes so settings land after GET/POST exist.
-    for (const route of [...metaWebhookRoutes, ...siutindeiMetaWebhookRoutes]) {
+    const outreachUnsubRoutes = this.httpApi.addRoutes({
+      path: "/public/outreach/unsubscribe/{token}",
+      methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
+      integration,
+    });
+    const newsletterSubscribeRoutes = this.httpApi.addRoutes({
+      path: "/public/newsletter/subscribe",
+      methods: [apigwv2.HttpMethod.POST],
+      integration,
+    });
+    const newsletterConfirmRoutes = this.httpApi.addRoutes({
+      path: "/public/newsletter/confirm/{token}",
+      methods: [apigwv2.HttpMethod.GET],
+      integration,
+    });
+    const newsletterUnsubRoutes = this.httpApi.addRoutes({
+      path: "/public/newsletter/unsubscribe/{token}",
+      methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
+      integration,
+    });
+    for (const route of [
+      ...metaWebhookRoutes,
+      ...siutindeiMetaWebhookRoutes,
+      ...outreachUnsubRoutes,
+      ...newsletterSubscribeRoutes,
+      ...newsletterConfirmRoutes,
+      ...newsletterUnsubRoutes,
+    ]) {
       defaultStage.addResourceDependency(route.node.defaultChild as apigwv2.CfnRoute);
     }
+    const hasPublicApiBaseUrl = new cdk.CfnCondition(this, "HasPublicApiBaseUrl", {
+      expression: cdk.Fn.conditionNot(
+        cdk.Fn.conditionEquals(publicApiBaseUrl.valueAsString, "")
+      ),
+    });
+    adminFn.addEnvironment(
+      "PUBLIC_API_BASE_URL",
+      cdk.Fn.conditionIf(
+        hasPublicApiBaseUrl.logicalId,
+        publicApiBaseUrl.valueAsString,
+        this.httpApi.apiEndpoint
+      ).toString()
+    );
 
     this.httpApi.addRoutes({
       path: "/me",
@@ -1995,6 +2321,115 @@ export class LxsoftwareStack extends cdk.Stack {
         methods: [apigwv2.HttpMethod.POST],
       },
       { path: "/siu-tin-dei/board/receivables", methods: [apigwv2.HttpMethod.GET] },
+      { path: "/siu-tin-dei/board/staff", methods: [apigwv2.HttpMethod.GET] },
+      {
+        path: "/siu-tin-dei/board/staff/{seatId}",
+        methods: [apigwv2.HttpMethod.PUT, apigwv2.HttpMethod.DELETE],
+      },
+      {
+        path: "/siu-tin-dei/board/tasks",
+        methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
+      },
+      { path: "/siu-tin-dei/board/tasks/{taskId}", methods: [apigwv2.HttpMethod.GET] },
+      {
+        path: "/siu-tin-dei/board/tasks/{taskId}/cancel",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/tasks/{taskId}/review",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      { path: "/siu-tin-dei/board/holds", methods: [apigwv2.HttpMethod.GET] },
+      {
+        path: "/siu-tin-dei/board/holds/{holdId}/veto",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/holds/veto-class",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      { path: "/siu-tin-dei/board/boundaries", methods: [apigwv2.HttpMethod.PUT] },
+      { path: "/siu-tin-dei/board/ramp", methods: [apigwv2.HttpMethod.GET] },
+      {
+        path: "/siu-tin-dei/board/ramp/{classKey}/promote",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      { path: "/siu-tin-dei/board/review", methods: [apigwv2.HttpMethod.GET] },
+      {
+        path: "/siu-tin-dei/board/review/sample/{callId}/wrong",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      { path: "/siu-tin-dei/board/lessons", methods: [apigwv2.HttpMethod.GET] },
+      {
+        path: "/siu-tin-dei/board/lessons/{lessonId}/confirm",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/lessons/{lessonId}/dismiss",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      { path: "/siu-tin-dei/board/breakers", methods: [apigwv2.HttpMethod.GET] },
+      {
+        path: "/siu-tin-dei/board/breakers/{name}/reset",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/watchlist",
+        methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/watchlist/{watchId}",
+        methods: [apigwv2.HttpMethod.PUT, apigwv2.HttpMethod.DELETE],
+      },
+      { path: "/siu-tin-dei/board/changes", methods: [apigwv2.HttpMethod.GET] },
+      {
+        path: "/siu-tin-dei/board/prospects",
+        methods: [apigwv2.HttpMethod.GET],
+      },
+      {
+        path: "/siu-tin-dei/board/prospects/import",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/prospects/{id}",
+        methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.PUT],
+      },
+      {
+        path: "/siu-tin-dei/board/prospects/{id}/merge",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/sequences/{type}",
+        methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.PUT],
+      },
+      {
+        path: "/siu-tin-dei/board/outreach/stats",
+        methods: [apigwv2.HttpMethod.GET],
+      },
+      {
+        path: "/siu-tin-dei/board/content",
+        methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/content/{id}",
+        methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.PUT],
+      },
+      {
+        path: "/siu-tin-dei/board/content/{id}/render",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/content/{id}/creative/{n}",
+        methods: [apigwv2.HttpMethod.GET],
+      },
+      {
+        path: "/siu-tin-dei/board/code/staging",
+        methods: [apigwv2.HttpMethod.GET],
+      },
+      {
+        path: "/siu-tin-dei/board/code/promote",
+        methods: [apigwv2.HttpMethod.POST],
+      },
     ];
     for (const route of boardRoutes) {
       this.httpApi.addRoutes({

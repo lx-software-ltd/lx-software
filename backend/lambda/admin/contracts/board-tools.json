@@ -164,6 +164,102 @@
       }
     },
     {
+      "id": "staff",
+      "label": "Staff",
+      "description": "Assign background tasks to executives or staff seats, list work, fetch deliverables, request a revision, or cancel a task. Writes at propose become Approvals; at act they start immediately.",
+      "maxLevel": "act",
+      "defaults": {
+        "ceo": "propose",
+        "cfo": "propose",
+        "coo": "propose",
+        "cpo": "propose",
+        "cto": "propose",
+        "cio": "propose",
+        "ciso": "propose",
+        "cmo": "propose"
+      }
+    },
+    {
+      "id": "intel",
+      "label": "Market intelligence",
+      "description": "Watchlist, change notes, on-demand page fetch (robots-checked), competitor store reviews and search-rank snapshots. Read-only.",
+      "maxLevel": "read",
+      "defaults": {
+        "ceo": "read",
+        "cfo": "off",
+        "coo": "read",
+        "cpo": "read",
+        "cto": "off",
+        "cio": "off",
+        "ciso": "off",
+        "cmo": "read"
+      }
+    },
+    {
+      "id": "outreach",
+      "label": "Outreach",
+      "description": "Discover and qualify Hong Kong activity providers, venues, community spaces and schools. Search Places and open data, score prospects, run sequences and send first-touch mail from the partnerships subdomain. Writes at act become holds until the class is promoted.",
+      "maxLevel": "act",
+      "defaults": {
+        "ceo": "read",
+        "cfo": "off",
+        "coo": "act",
+        "cpo": "off",
+        "cto": "off",
+        "cio": "off",
+        "ciso": "off",
+        "cmo": "propose"
+      }
+    },
+    {
+      "id": "content",
+      "label": "Content",
+      "description": "Plan the calendar, render template cards and publish to Facebook, Instagram and stories. Writes at act become publish holds until the slot time.",
+      "maxLevel": "act",
+      "defaults": {
+        "ceo": "read",
+        "cfo": "off",
+        "coo": "off",
+        "cpo": "off",
+        "cto": "off",
+        "cio": "off",
+        "ciso": "off",
+        "cmo": "act"
+      }
+    },
+    {
+      "id": "code",
+      "label": "Engineering runner",
+      "description": "Dispatch the coding runner on board/* draft PRs, review diffs, merge to staging under policy, and propose a staging→main promotion. The board never merges to main.",
+      "maxLevel": "act",
+      "defaults": {
+        "ceo": "off",
+        "cfo": "off",
+        "coo": "off",
+        "cpo": "propose",
+        "cto": "act",
+        "cio": "off",
+        "ciso": "off",
+        "cmo": "off"
+      }
+    },
+    {
+      "id": "newsletter",
+      "label": "Newsletter",
+      "description": "Draft fortnightly parent and provider issues and send them after a publish hold. Public subscribe is double opt-in; unsubscribe is one click.",
+      "maxLevel": "act",
+      "defaults": {
+        "ceo": "read",
+        "cfo": "off",
+        "coo": "off",
+        "cpo": "off",
+        "cto": "off",
+        "cio": "off",
+        "ciso": "off",
+        "cmo": "act"
+      }
+    },
+    {
       "id": "web",
       "label": "Web analytics",
       "description": "GA4 sessions, top pages, referrers and conversions across configured properties, plus GTM live-version status. Read-only; cached hourly. GTM publish and Google Ads are later milestones.",

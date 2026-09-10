@@ -175,6 +175,7 @@ def render_system_prompt(
     charter: dict[str, Any],
     *,
     meeting_role: str | None = None,
+    lessons: list[str] | None = None,
 ) -> str:
     """System prompt for one persona (chat or meeting).
 
@@ -200,4 +201,62 @@ def render_system_prompt(
         "Style: write in plain English, short paragraphs or bullet points, no "
         "preamble, no flattery. Speak in the first person as this executive."
     )
+    if lessons:
+        parts.append("")
+        parts.append("STANDING INSTRUCTIONS FROM THE FOUNDER:")
+        parts.extend(f"- {item}" for item in lessons)
     return "\n".join(parts)
+
+
+def render_seat_prompt(
+    seat: dict[str, Any],
+    manager_profile: dict[str, Any],
+    charter: dict[str, Any],
+    lessons: list[str],
+) -> str:
+    """System prompt for a staff seat working a background task."""
+    parts = [common_preamble(charter), ""]
+    title = str(seat.get("title") or seat.get("displayName") or seat.get("id") or "staff")
+    display = str(seat.get("displayName") or title)
+    manager_name = str(manager_profile.get("displayName") or manager_profile.get("title") or seat.get("reportsTo") or "your manager")
+    manager_title = str(manager_profile.get("title") or "")
+    parts.append(f"You are {display}, {title}, reporting to {manager_name}" + (f" ({manager_title})" if manager_title else "") + ".")
+    brief = str(seat.get("brief") or "").strip()
+    if brief:
+        parts.append("")
+        parts.append(brief)
+    parts.append("")
+    parts.append(
+        "You work one assigned task at a time. Use tools to verify facts. "
+        "Call task_note to record progress and continue, or task_finish when the deliverable is ready. "
+        "Do not call task_finish without evidence tool calls unless the brief needs none."
+    )
+    parts.append(
+        "Style: write in plain English, short paragraphs or bullet points, no preamble, no flattery."
+    )
+    if lessons:
+        parts.append("")
+        parts.append("STANDING INSTRUCTIONS FROM THE FOUNDER:")
+        parts.extend(f"- {item}" for item in lessons)
+    return "\n".join(parts)
+
+
+def render_task_frame(task: dict[str, Any], scratchpad: str) -> str:
+    """User message that starts each task step."""
+    budget = float(task.get("budgetUsd") or 0)
+    spent = float((task.get("usage") or {}).get("cost") or 0)
+    left = max(0.0, budget - spent)
+    from contract_constants import BOARD_STAFF_MAX_STEPS_PER_TASK
+
+    steps_used = int(task.get("step") or 0)
+    steps_left = max(0, BOARD_STAFF_MAX_STEPS_PER_TASK - steps_used)
+    pad = (scratchpad or "").strip() or "(empty)"
+    return (
+        f"Task brief: {task.get('brief')}\n"
+        f"Deliverable type: {task.get('deliverableType')}\n"
+        f"Budget left: USD {left:.2f} of {budget:.2f}\n"
+        f"Steps left: {steps_left} (used {steps_used})\n"
+        f"Scratchpad:\n{pad}\n\n"
+        "Either call task_note to record progress and continue, or call task_finish when done. "
+        "Do not call task_finish without evidence tool calls unless the brief needs none."
+    )

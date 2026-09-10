@@ -12,6 +12,11 @@ board itself, shipped) with the ability for each board member to **seek
 information and take action through tools** instead of relying only on the
 context pack.
 
+Follow-up proposal (not approved):
+[`executive-board-staff-plan.md`](./executive-board-staff-plan.md) explores
+agent "staff" and an autonomous operating model (triage, boundaries, hold
+windows, daily review) so the board carries out the work it recommends.
+
 Where T1 lives in the code:
 
 | Piece | Location |

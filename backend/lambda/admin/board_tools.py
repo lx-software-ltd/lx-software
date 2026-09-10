@@ -4,7 +4,8 @@ Design (see docs/architecture/executive-board-tools-plan.md):
 
 - A **registry** of operations, each belonging to a tool (``github``,
   ``board``, ``mail``, ``research``, ``aws``, ``security``, ``product``,
-  ``meta``, ``finance``, ``stores``) and being either a *read* or a *write*.
+  ``meta``, ``finance``, ``stores``, ``staff``, ``intel``, ``outreach``, ``content``, ``code``, ``newsletter``)
+  and being either a *read* or a *write*.
 - A per-tool, per-member **level** (``off`` < ``read`` < ``propose`` <
   ``act``), capped by a global mode. Read operations are offered at
   ``read`` and above; write operations at ``propose`` and above. At
@@ -60,6 +61,9 @@ from contract_constants import (
     BOARD_META_LIST_MAX,
     BOARD_STORES_LIST_MAX,
     BOARD_WEB_LIST_MAX,
+    BOARD_STAFF_DELIVERABLE_TYPES,
+    BOARD_STAFF_NEWSLETTER_LISTS,
+    BOARD_STAFF_PROSPECT_TYPES,
 )
 from http_common import _log_event, _utc_iso_z
 from openrouter_client import ChatCompletion, ToolCall, add_usage
@@ -104,6 +108,9 @@ class ToolContext:
     job_id: str = ""
     actor: str = "persona"
     owner_sub: str = ""
+    task_id: str = ""
+    seat_id: str = ""
+    usage_sink: Callable[[dict[str, Any]], None] | None = None
     # ``time.monotonic()`` value after which no new op should start and running
     # ops are cut short; 0 means "no loop deadline" (owner approvals, jobs).
     deadline: float = 0.0
@@ -121,6 +128,10 @@ class ToolContext:
             out["phase"] = self.phase
         if self.job_id:
             out["jobId"] = self.job_id
+        if self.task_id:
+            out["taskId"] = self.task_id
+        if self.seat_id:
+            out["seatId"] = self.seat_id
         return out
 
 
@@ -145,6 +156,7 @@ class ToolOp:
     level_floor: str | None = None
     # Writes that the plan keeps in Approvals even when the member is at ``act``.
     always_propose: bool = False
+    action_class: str | None = None
 
     @property
     def is_write(self) -> bool:
@@ -169,7 +181,7 @@ class ToolOp:
 
 @dataclass
 class ToolOutcome:
-    status: str  # ok | error | pending_approval
+    status: str  # ok | error | pending_approval | held
     result: dict[str, Any]
     summary: str
     approval_id: str = ""
@@ -189,6 +201,9 @@ class ToolOutcome:
         }
         if self.approval_id:
             out["approvalId"] = self.approval_id
+        if self.status == "held":
+            out["holdId"] = str(self.result.get("holdId") or "")
+            out["executeAt"] = str(self.result.get("executeAt") or "")
         if self.status == "error":
             out["error"] = str(self.result.get("error") or "")[:300]
         return out
@@ -231,10 +246,21 @@ def configured_level(settings: dict[str, Any], tool_id: str, persona_id: str) ->
     return level if level in LEVEL_RANK else "off"
 
 
-def effective_level(settings: dict[str, Any], tool_id: str, persona_id: str) -> str:
+def effective_level(
+    settings: dict[str, Any],
+    tool_id: str,
+    persona_id: str,
+    *,
+    seat_id: str = "",
+    seats_by_id: dict[str, dict[str, Any]] | None = None,
+) -> str:
     """Configured level capped by the global mode; ``off`` when tools are disabled."""
     if not tools_enabled(settings):
         return "off"
+    if seat_id:
+        import board_staff
+
+        return board_staff.seat_level(settings, seats_by_id or {}, seat_id, tool_id)
     configured = configured_level(settings, tool_id, persona_id)
     cap = global_cap(settings)
     return configured if LEVEL_RANK[configured] <= LEVEL_RANK[cap] else cap
@@ -508,6 +534,237 @@ def _summ_mail_list(args: dict[str, Any]) -> str:
     if args.get("unreadOnly"):
         parts.append("(unread only)")
     return " ".join(parts)
+
+
+def _intel_list_watchlist(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_intel
+
+    return board_intel.op_list_watchlist(ctx, args)
+
+
+def _intel_get_changes(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_intel
+
+    return board_intel.op_get_changes(ctx, args)
+
+
+def _intel_fetch_page(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_intel
+
+    return board_intel.op_fetch_page(ctx, args)
+
+
+def _intel_competitor_reviews(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_intel
+
+    return board_intel.op_competitor_reviews(ctx, args)
+
+
+def _intel_search_rank(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_intel
+
+    return board_intel.op_search_rank(ctx, args)
+
+
+def _outreach_search_places(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_outreach
+
+    return board_outreach.op_search_places(ctx, args)
+
+
+def _outreach_open_data(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_outreach
+
+    return board_outreach.op_open_data(ctx, args)
+
+
+def _outreach_list_prospects(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_outreach
+
+    return board_outreach.op_list_prospects(ctx, args)
+
+
+def _outreach_get_prospect(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_outreach
+
+    return board_outreach.op_get_prospect(ctx, args)
+
+
+def _outreach_upsert_prospect(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_outreach
+
+    return board_outreach.op_upsert_prospect(ctx, args)
+
+
+def _outreach_score_prospect(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_outreach
+
+    return board_outreach.op_score_prospect(ctx, args)
+
+
+def _outreach_start_sequence(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_outreach
+
+    return board_outreach.op_start_sequence(ctx, args)
+
+
+def _outreach_send(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_outreach
+
+    return board_outreach.op_send(ctx, args)
+
+
+def _outreach_personalisation_guard(_ctx: ToolContext, args: dict[str, Any]) -> str | None:
+    import board_policy
+
+    text = str(args.get("personalisation") or "")
+    if board_policy.PROMISE_RE.search(text):
+        return "the draft promises a refund, a guarantee, or to hold a place"
+    return None
+
+
+def _outreach_suppress(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_outreach
+
+    return board_outreach.op_suppress(ctx, args)
+
+
+def _content_list(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_content
+
+    return board_content.op_list(ctx, args)
+
+
+def _content_get(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_content
+
+    return board_content.op_get(ctx, args)
+
+
+def _content_publish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_content
+
+    return board_content.op_publish(ctx, args)
+
+
+def _newsletter_draft_issue(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_newsletter
+
+    return board_newsletter.op_draft_issue(ctx, args)
+
+
+def _newsletter_send(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_newsletter
+
+    return board_newsletter.op_send(ctx, args)
+
+
+def _code_run_task(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_code
+
+    return board_code.op_run_task(ctx, args)
+
+
+def _code_get_run(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_code
+
+    return board_code.op_get_run(ctx, args)
+
+
+def _code_review_pr(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_code
+
+    return board_code.op_review_pr(ctx, args)
+
+
+def _code_merge_staging(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_code
+
+    return board_code.op_merge_staging(ctx, args)
+
+
+def _code_promote(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_code
+
+    return board_code.op_promote(ctx, args)
+
+
+def _code_merge_guard(ctx: ToolContext, args: dict[str, Any]) -> str | None:
+    import board_code
+
+    return board_code.merge_guard(ctx, args)
+
+
+def _staff_assign(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_staff
+
+    return board_staff.op_staff_assign(ctx, args)
+
+
+def _staff_list_tasks(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_staff
+
+    return board_staff.op_staff_list_tasks(ctx, args)
+
+
+def _staff_get_deliverable(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_staff
+
+    return board_staff.op_staff_get_deliverable(ctx, args)
+
+
+def _staff_request_revision(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_staff
+
+    return board_staff.op_staff_request_revision(ctx, args)
+
+
+def _staff_cancel_task(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_staff
+
+    return board_staff.op_staff_cancel_task(ctx, args)
+
+
+def _staff_assign_guard(ctx: ToolContext, args: dict[str, Any]) -> str | None:
+    import board_staff
+
+    return board_staff.act_guard_staff_assign(ctx, args)
+
+
+def _reply_guard(op_name: str, inner: Any = None):
+    def _guard(ctx: ToolContext, args: dict[str, Any]) -> str | None:
+        if inner is not None:
+            reason = inner(ctx, args)
+            if reason:
+                return reason
+        import board_policy
+
+        thread = None
+        thread_id = str(args.get("threadId") or "")
+        if thread_id:
+            thread = board_store.get_mail_thread(ctx.table, thread_id) or board_store.get_meta_thread(ctx.table, thread_id)
+        op = REGISTRY.get(op_name)
+        if op is None:
+            return None
+        return board_policy.check_reply(ctx.settings, ctx, op, args, thread)
+
+    return _guard
+
+
+def _task_note(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_staff
+
+    return board_staff.op_task_note(ctx, args)
+
+
+def _task_finish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_staff
+
+    return board_staff.op_task_finish(ctx, args)
+
+
+def _summ_staff_assign(args: dict[str, Any]) -> str:
+    return f"Assigned {args.get('assignee')}: {_short(args.get('brief') or '', 80)}"
 
 
 def _summ_update_action(args: dict[str, Any]) -> str:
@@ -820,13 +1077,17 @@ def build_registry() -> dict[str, ToolOp]:
                 {
                     "threadId": _str_param("Thread id from mail_list_threads.", max_len=64),
                     "body": _str_param("Plain-text reply body.", max_len=BOARD_MAIL_BODY_MAX_CHARS),
+                    "templateId": _str_param("Optional approved template id.", max_len=80),
                     "reason": REASON_PARAM,
                 },
                 ["threadId", "body", "reason"],
             ),
             run=board_mail._op_write("mail_reply"),
             summarize=_summ("Reply in email thread {threadId}"),
-            act_guard=lambda ctx, args: board_mail.act_guard(ctx, args, op="mail_reply"),
+            act_guard=_reply_guard(
+                "mail_reply",
+                lambda ctx, args: board_mail.act_guard(ctx, args, op="mail_reply"),
+            ),
             preview=lambda ctx, args: board_mail.owner_preview(ctx, args, op="mail_reply"),
         ),
         ToolOp(
@@ -1206,12 +1467,14 @@ def build_registry() -> dict[str, ToolOp]:
                 {
                     "commentId": _str_param("Graph comment id.", max_len=64),
                     "message": _str_param("Reply text.", max_len=1000),
+                    "templateId": _str_param("Optional approved template id.", max_len=80),
                     "reason": REASON_PARAM,
                 },
                 ["commentId", "message", "reason"],
             ),
             run=board_meta.op_reply_comment,
             summarize=_summ("Reply to comment {commentId}"),
+            act_guard=_reply_guard("meta_reply_comment"),
             preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_comment"),
         ),
         ToolOp(
@@ -1230,7 +1493,10 @@ def build_registry() -> dict[str, ToolOp]:
             ),
             run=board_meta.op_reply_dm,
             summarize=_summ("Reply to Page DM {threadId}"),
-            act_guard=lambda ctx, args: board_meta.act_guard_allow_list(ctx, args, field="recipientId"),
+            act_guard=_reply_guard(
+                "meta_reply_dm",
+                lambda ctx, args: board_meta.act_guard_allow_list(ctx, args, field="recipientId"),
+            ),
             preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_dm"),
         ),
         ToolOp(
@@ -1251,7 +1517,7 @@ def build_registry() -> dict[str, ToolOp]:
             ),
             run=board_meta.op_reply_whatsapp,
             summarize=_summ("WhatsApp reply in thread {threadId}"),
-            act_guard=board_meta.act_guard_whatsapp,
+            act_guard=_reply_guard("meta_reply_whatsapp", board_meta.act_guard_whatsapp),
             preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_whatsapp"),
         ),
         ToolOp(
@@ -1513,12 +1779,14 @@ def build_registry() -> dict[str, ToolOp]:
                     "store": _str_param("Which store.", enum=["apple", "play"]),
                     "reviewId": _str_param("Store review id.", max_len=80),
                     "message": _str_param("Reply text.", max_len=1000),
+                    "templateId": _str_param("Optional approved template id.", max_len=80),
                     "reason": REASON_PARAM,
                 },
                 ["store", "reviewId", "message", "reason"],
             ),
             run=board_stores.op_reply_review,
             summarize=_summ("Reply to {store} review {reviewId}"),
+            act_guard=_reply_guard("stores_reply_review"),
             preview=lambda ctx, args: board_stores.owner_preview_message(ctx, args, op="stores_reply_review"),
         ),
         ToolOp(
@@ -1580,6 +1848,476 @@ def build_registry() -> dict[str, ToolOp]:
             run=board_web.op_gtm_status,
             summarize=_summ("Read GTM status"),
         ),
+        ToolOp(
+            name="intel_list_watchlist",
+            tool_id="intel",
+            kind="read",
+            description="List competitor, directory and candidate watches.",
+            parameters=_obj({}),
+            run=_intel_list_watchlist,
+            summarize=_summ("Listed the watchlist"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="intel_get_changes",
+            tool_id="intel",
+            kind="read",
+            description="Change notes from the daily crawl (pricing, features, categories, other).",
+            parameters=_obj({"days": _int_param("How many days back (1-30).", minimum=1, maximum=30)}),
+            run=_intel_get_changes,
+            summarize=_summ("Read watchlist changes"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="intel_fetch_page",
+            tool_id="intel",
+            kind="read",
+            description="Fetch one allowed public URL (robots-checked). Returns a short text digest, never a whole page.",
+            parameters=_obj({"url": _str_param("https URL to fetch.", max_len=500)}, ["url"]),
+            run=_intel_fetch_page,
+            summarize=_summ("Fetched a public page"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="intel_competitor_reviews",
+            tool_id="intel",
+            kind="read",
+            description="Public App Store / Play reviews for a watch that has app ids.",
+            parameters=_obj({"watchId": _str_param("Watch id.", max_len=40)}, ["watchId"]),
+            run=_intel_competitor_reviews,
+            summarize=_summ("Read competitor store reviews"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="intel_search_rank",
+            tool_id="intel",
+            kind="read",
+            description="Search-rank snapshot for a query (research_search, cached).",
+            parameters=_obj({"query": _str_param("Search query.", max_len=BOARD_RESEARCH_QUERY_MAX_LEN)}, ["query"]),
+            run=_intel_search_rank,
+            summarize=_summ("Checked search rank"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="outreach_search_places",
+            tool_id="outreach",
+            kind="read",
+            description="Search Google Places (New) in Hong Kong. Costs count against the monthly Places cap.",
+            parameters=_obj(
+                {
+                    "query": _str_param("What to search for.", max_len=200),
+                    "district": _str_param("Optional Hong Kong district.", max_len=40),
+                },
+                ["query"],
+            ),
+            run=_outreach_search_places,
+            summarize=_summ("Searched Places"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="outreach_open_data",
+            tool_id="outreach",
+            kind="read",
+            description="Read FEHD restaurants, EDB schools or LCSD venues (cached open data).",
+            parameters=_obj(
+                {
+                    "kind": _str_param("Dataset.", enum=["fehd", "edb", "lcsd"]),
+                    "district": _str_param("Optional district filter.", max_len=40),
+                },
+                ["kind"],
+            ),
+            run=_outreach_open_data,
+            summarize=_summ("Read open data"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="outreach_list_prospects",
+            tool_id="outreach",
+            kind="read",
+            description="List prospects. Contacts are masked.",
+            parameters=_obj(
+                {
+                    "stage": _str_param("Optional stage filter.", max_len=20),
+                    "type": _str_param("Optional type filter.", max_len=20),
+                    "limit": _int_param("Max rows (1-50).", maximum=50),
+                }
+            ),
+            run=_outreach_list_prospects,
+            summarize=_summ("Listed prospects"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="outreach_get_prospect",
+            tool_id="outreach",
+            kind="read",
+            description="Get one prospect. Email and phone are masked.",
+            parameters=_obj({"id": _str_param("Prospect id.", max_len=40)}, ["id"]),
+            run=_outreach_get_prospect,
+            summarize=_summ("Read a prospect"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="outreach_upsert_prospect",
+            tool_id="outreach",
+            kind="write",
+            description="Create or update a prospect from public data. Dedupes by domain, phone or place id.",
+            parameters=_obj(
+                {
+                    "name": _str_param("Organisation name.", max_len=200),
+                    "type": _str_param("Prospect type.", enum=list(BOARD_STAFF_PROSPECT_TYPES)),
+                    "district": _str_param("Hong Kong district.", max_len=40),
+                    "website": _str_param("Public website.", max_len=300),
+                    "phone": _str_param("Public phone.", max_len=40),
+                    "email": _str_param("Public email.", max_len=120),
+                    "placeId": _str_param("Google place id.", max_len=80),
+                    "source": _str_param("Where this came from.", max_len=40),
+                    "reason": REASON_PARAM,
+                },
+                ["name", "type"],
+            ),
+            run=_outreach_upsert_prospect,
+            summarize=_summ("Upserted a prospect"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="outreach_score_prospect",
+            tool_id="outreach",
+            kind="read",
+            description="Score a prospect with the fit rubric (one desk model call) and qualify it.",
+            parameters=_obj({"id": _str_param("Prospect id.", max_len=40)}, ["id"]),
+            run=_outreach_score_prospect,
+            summarize=_summ("Scored a prospect"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="outreach_start_sequence",
+            tool_id="outreach",
+            kind="write",
+            description="Start the outreach sequence for a qualified prospect with a contact.",
+            parameters=_obj(
+                {
+                    "id": _str_param("Prospect id.", max_len=40),
+                    "reason": REASON_PARAM,
+                },
+                ["id"],
+            ),
+            run=_outreach_start_sequence,
+            summarize=_summ("Started a sequence"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="outreach_send",
+            tool_id="outreach",
+            kind="write",
+            description="Send one sequence step to a prospect. First touches are cold-outreach holds until the class is promoted.",
+            parameters=_obj(
+                {
+                    "prospectId": _str_param("Prospect id.", max_len=40),
+                    "stepIndex": _int_param("Sequence step (0-2).", minimum=0, maximum=5),
+                    "personalisation": _str_param("Fit note, at most 400 characters.", max_len=400),
+                    "reason": REASON_PARAM,
+                },
+                ["prospectId"],
+            ),
+            run=_outreach_send,
+            summarize=_summ("Sent outreach"),
+            contexts=("chat", "meeting", "task"),
+            act_guard=_outreach_personalisation_guard,
+        ),
+        ToolOp(
+            name="outreach_suppress",
+            tool_id="outreach",
+            kind="write",
+            description="Suppress a prospect so they are never emailed again.",
+            parameters=_obj(
+                {
+                    "id": _str_param("Prospect id.", max_len=40),
+                    "reason": _str_param("Why they are suppressed.", max_len=200),
+                },
+                ["id", "reason"],
+            ),
+            run=_outreach_suppress,
+            summarize=_summ("Suppressed a prospect"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="content_list",
+            tool_id="content",
+            kind="read",
+            description="List calendar items, optionally filtered by status.",
+            parameters=_obj({"status": _str_param("Content status.", max_len=20), "limit": _int_param("Max rows.", minimum=1, maximum=80)}),
+            run=_content_list,
+            summarize=_summ("Listed calendar items"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="content_get",
+            tool_id="content",
+            kind="read",
+            description="Get one calendar item including copy and creative keys.",
+            parameters=_obj({"contentId": _str_param("Content id.", max_len=40)}, ["contentId"]),
+            run=_content_get,
+            summarize=_summ("Read a calendar item"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="content_publish",
+            tool_id="content",
+            kind="write",
+            description="Publish a scheduled calendar item to Facebook or Instagram. Held until slotAt.",
+            parameters=_obj(
+                {
+                    "contentId": _str_param("Content id.", max_len=40),
+                    "slotAt": _str_param("ISO slot time (HKT).", max_len=40),
+                    "channel": _str_param("Publish channel.", max_len=40),
+                    "reason": REASON_PARAM,
+                },
+                ["contentId"],
+            ),
+            run=_content_publish,
+            summarize=_summ("Published a calendar item"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="newsletter_draft_issue",
+            tool_id="newsletter",
+            kind="write",
+            description="Draft a fortnightly newsletter issue from recent content and catalogue highlights.",
+            parameters=_obj(
+                {
+                    "list": _str_param("parents or providers.", enum=list(BOARD_STAFF_NEWSLETTER_LISTS)),
+                    "markdown": _str_param("Optional Markdown body.", max_len=20000),
+                    "reason": REASON_PARAM,
+                },
+                ["list"],
+            ),
+            run=_newsletter_draft_issue,
+            summarize=_summ("Drafted a newsletter issue"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="newsletter_send",
+            tool_id="newsletter",
+            kind="write",
+            description="Send a drafted issue to one confirmed list. Held as publish:newsletter.",
+            parameters=_obj(
+                {
+                    "issueId": _str_param("Issue id.", max_len=40),
+                    "list": _str_param("parents or providers.", enum=list(BOARD_STAFF_NEWSLETTER_LISTS)),
+                    "reason": REASON_PARAM,
+                },
+                ["issueId", "list"],
+            ),
+            run=_newsletter_send,
+            summarize=_summ("Sent a newsletter issue"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="code_run_task",
+            tool_id="code",
+            kind="write",
+            description="Dispatch the coding runner. Opens a draft PR on board/{taskId} from staging. Does not merge.",
+            parameters=_obj(
+                {
+                    "issueNumber": _int_param("GitHub issue number.", minimum=1, maximum=100000),
+                    "brief": _str_param("What to implement. Include acceptance criteria.", max_len=4000),
+                    "kind": _str_param("feature, fix or content (SEO).", enum=["feature", "fix", "content"]),
+                    "reason": REASON_PARAM,
+                },
+                ["issueNumber", "brief"],
+            ),
+            run=_code_run_task,
+            summarize=_summ("Dispatched the coding runner"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="code_get_run",
+            tool_id="code",
+            kind="read",
+            description="Poll the Actions run and draft PR for a runner task_id.",
+            parameters=_obj({"taskId": _str_param("Staff or runner task id.", max_len=40)}),
+            run=_code_get_run,
+            summarize=_summ("Polled a coding run"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="code_review_pr",
+            tool_id="code",
+            kind="read",
+            description="Read a pull request: diff stats, paths, CI, and a 30 000 character diff for architect review.",
+            parameters=_obj({"prNumber": _int_param("Pull request number.", minimum=1, maximum=100000)}, ["prNumber"]),
+            run=_code_review_pr,
+            summarize=_summ("Reviewed a pull request"),
+            contexts=("chat", "meeting", "task"),
+            timeout_seconds=25,
+        ),
+        ToolOp(
+            name="code_merge_staging",
+            tool_id="code",
+            kind="write",
+            description="Merge a board/* PR into staging after CI, architect accept, size and path checks. Held as code_staging.",
+            parameters=_obj(
+                {
+                    "prNumber": _int_param("Pull request number.", minimum=1, maximum=100000),
+                    "kind": _str_param("feature, fix or content.", enum=["feature", "fix", "content"]),
+                    "reason": REASON_PARAM,
+                },
+                ["prNumber"],
+            ),
+            run=_code_merge_staging,
+            summarize=_summ("Merged a pull request to staging"),
+            contexts=("chat", "meeting", "task"),
+            act_guard=_code_merge_guard,
+            always_propose=True,
+        ),
+        ToolOp(
+            name="code_promote",
+            tool_id="code",
+            kind="write",
+            description="Open or update the staging→main promotion PR. Always an Approval; the owner merges in GitHub.",
+            parameters=_obj(
+                {
+                    "kind": _str_param("Always production in v1.", enum=["production"]),
+                    "reason": REASON_PARAM,
+                }
+            ),
+            run=_code_promote,
+            summarize=_summ("Proposed a staging promotion"),
+            contexts=("chat", "meeting", "task"),
+            always_propose=True,
+            action_class="code_production",
+        ),
+        ToolOp(
+            name="staff_assign",
+            tool_id="staff",
+            kind="write",
+            description="Assign a background task to a board member or an active staff seat. The assignee works in steps and produces a deliverable for review.",
+            parameters=_obj(
+                {
+                    "assignee": _str_param("Persona id or active seat id.", max_len=40),
+                    "brief": _str_param("What to do. Be specific about the evidence to gather.", max_len=4000),
+                    "deliverableType": _str_param(
+                        "Deliverable format.",
+                        enum=list(BOARD_STAFF_DELIVERABLE_TYPES),
+                    ),
+                    "slaHours": _int_param("Hours until the SLA (1-168).", minimum=1, maximum=168),
+                    "budgetUsd": {"type": "number", "description": "Optional USD cap for this task."},
+                    "actionId": _str_param("Optional action id to close when the task is accepted.", max_len=40),
+                    "reason": REASON_PARAM,
+                },
+                ["assignee", "brief", "deliverableType"],
+            ),
+            run=_staff_assign,
+            summarize=_summ_staff_assign,
+            act_guard=_staff_assign_guard,
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="staff_list_tasks",
+            tool_id="staff",
+            kind="read",
+            description="List staff tasks. Seats see only their own; executives see all.",
+            parameters=_obj(
+                {
+                    "status": _str_param("Optional status filter.", max_len=20),
+                    "limit": _int_param("Max tasks (1-50).", maximum=50),
+                }
+            ),
+            run=_staff_list_tasks,
+            summarize=_summ("Listed staff tasks"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="staff_get_deliverable",
+            tool_id="staff",
+            kind="read",
+            description="Read a task summary and the first 6000 characters of its deliverable.",
+            parameters=_obj({"taskId": _str_param("Task id.", max_len=40)}, ["taskId"]),
+            run=_staff_get_deliverable,
+            summarize=_summ("Read staff deliverable"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="staff_request_revision",
+            tool_id="staff",
+            kind="write",
+            description="Ask the assignee to revise a task that is in review. Only the manager of the task may do this.",
+            parameters=_obj(
+                {
+                    "taskId": _str_param("Task id.", max_len=40),
+                    "notes": _str_param("What to change.", max_len=2000),
+                    "reason": REASON_PARAM,
+                },
+                ["taskId", "notes"],
+            ),
+            run=_staff_request_revision,
+            summarize=_summ("Requested a staff revision"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="staff_cancel_task",
+            tool_id="staff",
+            kind="write",
+            description="Cancel a queued or running staff task. Manager or founder only.",
+            parameters=_obj(
+                {
+                    "taskId": _str_param("Task id.", max_len=40),
+                    "reason": _str_param("Why the task is cancelled.", max_len=400),
+                },
+                ["taskId", "reason"],
+            ),
+            run=_staff_cancel_task,
+            summarize=_summ("Cancelled a staff task"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="task_note",
+            tool_id="task",
+            kind="write",
+            description="Record progress on the current task and continue. Call this when you are not finished.",
+            parameters=_obj(
+                {
+                    "text": _str_param("Progress note to append to the scratchpad.", max_len=4000),
+                    "reason": REASON_PARAM,
+                },
+                ["text"],
+            ),
+            run=_task_note,
+            summarize=_summ("Noted task progress"),
+            contexts=("task",),
+        ),
+        ToolOp(
+            name="task_finish",
+            tool_id="task",
+            kind="write",
+            description="Finish the current task. Provide the deliverable and evidence call ids. Do not call this without evidence unless the brief needs none.",
+            parameters=_obj(
+                {
+                    "summary": _str_param("One-paragraph summary of the result.", max_len=800),
+                    "deliverableType": _str_param(
+                        "Deliverable format.",
+                        enum=list(BOARD_STAFF_DELIVERABLE_TYPES),
+                    ),
+                    "deliverable": _str_param("The deliverable body as text."),
+                    "evidence": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Tool-call ids from this task that support the deliverable.",
+                    },
+                    "openQuestions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Questions you could not answer.",
+                    },
+                    "confidence": _str_param("How confident you are.", enum=["high", "medium", "low"]),
+                    "reason": REASON_PARAM,
+                },
+                ["summary", "deliverableType", "deliverable", "confidence"],
+            ),
+            run=_task_finish,
+            summarize=_summ("Finished the task"),
+            contexts=("task",),
+        ),
     ]
     return {op.name: op for op in ops}
 
@@ -1613,7 +2351,14 @@ def public_registry() -> list[dict[str, Any]]:
     return out
 
 
-def available_ops(settings: dict[str, Any], persona_id: str, *, context: str) -> list[tuple[ToolOp, str]]:
+def available_ops(
+    settings: dict[str, Any],
+    persona_id: str,
+    *,
+    context: str,
+    seat_id: str = "",
+    seats_by_id: dict[str, dict[str, Any]] | None = None,
+) -> list[tuple[ToolOp, str]]:
     """Operations this member may call now, each with its effective level."""
     out: list[tuple[ToolOp, str]] = []
     if not tools_enabled(settings):
@@ -1621,7 +2366,21 @@ def available_ops(settings: dict[str, Any], persona_id: str, *, context: str) ->
     for op in REGISTRY.values():
         if context not in op.contexts:
             continue
-        level = effective_level(settings, op.tool_id, persona_id)
+        if op.tool_id == "task":
+            level = "act" if context == "task" else "off"
+        elif op.tool_id in ("staff", "intel", "outreach", "content", "newsletter", "code"):
+            import board_staff
+
+            if not board_staff.enabled(settings):
+                continue
+            if seat_id:
+                level = effective_level(settings, op.tool_id, persona_id, seat_id=seat_id, seats_by_id=seats_by_id)
+            else:
+                level = effective_level(settings, op.tool_id, persona_id)
+        elif seat_id:
+            level = effective_level(settings, op.tool_id, persona_id, seat_id=seat_id, seats_by_id=seats_by_id)
+        else:
+            level = effective_level(settings, op.tool_id, persona_id)
         if allows(level, op.min_level):
             out.append((op, level))
     return out
@@ -1647,6 +2406,10 @@ def tools_preamble(ops: list[tuple[ToolOp, str]]) -> str:
         lines.append(
             f"Write operations on {', '.join(acts)} execute immediately and are logged. Use them only when "
             "the founder asked for it or your mandate clearly covers it; explain what you did."
+        )
+        lines.append(
+            "A result status of 'held' means the write is scheduled and will happen automatically unless the "
+            "founder vetoes it. Say 'I have scheduled …' and never claim it is already done."
         )
     return "\n".join(lines)
 
@@ -1851,17 +2614,78 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         invalid = str(exc)
         # Keep the (bounded) raw arguments so the audit row shows what was asked.
         arguments = raw if len(json.dumps(raw, default=str)) <= MAX_ARGUMENT_CHARS else {}
-    level = effective_level(ctx.settings, op.tool_id, ctx.persona_id) if ctx.actor == "persona" else "act"
+    safety_actor = ctx.actor in ("persona", "hold")
+    if safety_actor:
+        seats = None
+        if ctx.seat_id:
+            import board_staff
+
+            seats = board_staff.seats_by_id(ctx.table, ctx.settings)
+        level = effective_level(
+            ctx.settings,
+            op.tool_id,
+            ctx.persona_id,
+            seat_id=ctx.seat_id,
+            seats_by_id=seats,
+        )
+    else:
+        level = "act"
     summary = op.summarize(arguments)
     approval_id = ""
     guard_reason = ""
-    if op.is_write and not invalid and level == "act" and ctx.actor == "persona" and op.act_guard is not None:
+    hold_fail = ""
+    if ctx.actor == "hold":
+        if not tools_enabled(ctx.settings):
+            hold_fail = "tools are switched off"
+        elif level != "act":
+            hold_fail = "level changed"
+    if op.is_write and not invalid and not hold_fail and level == "act" and safety_actor and op.act_guard is not None:
         try:
             guard_reason = str(op.act_guard(ctx, arguments) or "")
         except Exception as exc:  # pragma: no cover - a guard bug must fail closed
             _log_event("error", tag="board_tool_guard_crashed", op=op.name, error=str(exc)[:300])
             guard_reason = "the safety check could not be completed"
-    if not allows(level, op.min_level):
+    breaker_error: dict[str, Any] | None = None
+    if op.is_write and not invalid and not hold_fail and safety_actor:
+        try:
+            import board_staff as _staff
+            import board_breakers
+
+            if _staff.enabled(ctx.settings):
+                breaker_error = board_breakers.write_blocked(ctx.table, op)
+        except Exception as exc:
+            _log_event("warning", tag="board_breaker_check_failed", op=op.name, error=str(exc)[:200])
+            guard_reason = guard_reason or "the safety check could not be completed"
+    hold_doc: dict[str, Any] | None = None
+    if (
+        op.is_write
+        and not invalid
+        and not breaker_error
+        and level == "act"
+        and not guard_reason
+        and not hold_fail
+        and ctx.actor == "persona"
+    ):
+        try:
+            import board_holds
+
+            hold_doc = board_holds.maybe_hold(ctx, op, arguments, summary=summary)
+        except Exception as exc:  # pragma: no cover - hold bugs must fail closed (R-02)
+            _log_event("error", tag="board_hold_check_failed", op=op.name, error=str(exc)[:300])
+            guard_reason = guard_reason or "the safety check could not be completed"
+    class_key = ""
+    action_class = ""
+    try:
+        import board_holds as _holds_for_class
+
+        action_class, class_key = _holds_for_class.classify(op, ctx, arguments, ctx.settings)
+    except Exception:
+        class_key = ""
+        action_class = ""
+    if ctx.actor == "hold" and (hold_fail or guard_reason or breaker_error):
+        reason = hold_fail or guard_reason or str((breaker_error or {}).get("error") or "blocked")
+        outcome = ToolOutcome(status="error", result={"error": reason}, summary=summary)
+    elif not allows(level, op.min_level):
         outcome = ToolOutcome(
             status="error",
             result={"error": f"{op.name} is not available to you at level '{level}'."},
@@ -1871,7 +2695,22 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         # Never queue a malformed proposal: the model gets the schema problem back
         # and can retry with corrected arguments.
         outcome = ToolOutcome(status="error", result={"error": invalid[:500]}, summary=summary)
-    elif op.is_write and (level != "act" or guard_reason or (op.always_propose and ctx.actor == "persona")):
+    elif breaker_error:
+        outcome = ToolOutcome(status="error", result=breaker_error, summary=summary)
+    elif hold_doc:
+        execute_at = str(hold_doc.get("executeAt") or "")
+        hold_id = str(hold_doc.get("holdId") or "")
+        outcome = ToolOutcome(
+            status="held",
+            result={
+                "status": "held",
+                "holdId": hold_id,
+                "executeAt": execute_at,
+                "message": f"Scheduled; executes {execute_at} unless the founder vetoes.",
+            },
+            summary=f"Scheduled {summary} (executes {execute_at} unless vetoed)",
+        )
+    elif op.is_write and ctx.actor != "hold" and (level != "act" or guard_reason or (op.always_propose and ctx.actor == "persona")):
         approval = create_approval(ctx, op, arguments, summary=summary, downgrade_reason=guard_reason)
         approval_id = str(approval["approvalId"])
         message = (
@@ -1891,6 +2730,23 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
             result = _invoke_op(ctx, op, arguments)
             status = "error" if result.get("error") and len(result) == 1 else "ok"
             outcome = ToolOutcome(status=status, result=result, summary=summary)
+            if status == "ok":
+                try:
+                    import board_policy
+
+                    if op.name in board_policy.REPLY_OPS:
+                        board_policy.record_reply(ctx.table, op.name, arguments)
+                except Exception:
+                    pass
+                if op.is_write and ctx.actor == "persona" and class_key:
+                    try:
+                        import board_holds as _holds_ramp
+
+                        hours = _holds_ramp.hold_hours(ctx.table, ctx.settings, action_class, class_key)
+                        if hours <= 0:
+                            _holds_ramp.record_ramp(ctx.table, ctx.settings, class_key, vetoed=False)
+                    except Exception:
+                        pass
         except (
             board_github.GitHubSnapshotError,
             board_mail.MailError,
@@ -1931,6 +2787,9 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
             "downgradeReason": guard_reason,
             "context": ctx.public(),
             "durationMs": outcome.duration_ms,
+            "taskId": ctx.task_id,
+            "seatId": ctx.seat_id,
+            "classKey": class_key,
         },
     )
     outcome.call_id = str(record["callId"])
@@ -2016,7 +2875,18 @@ def run_tool_loop(
     The final answer is always produced by a call where the model was not
     allowed to request more tools, so the loop terminates deterministically.
     """
-    ops = available_ops(ctx.settings, ctx.persona_id, context=ctx.kind)
+    seats = None
+    if ctx.seat_id:
+        import board_staff
+
+        seats = board_staff.seats_by_id(ctx.table, ctx.settings)
+    ops = available_ops(
+        ctx.settings,
+        ctx.persona_id,
+        context=ctx.kind,
+        seat_id=ctx.seat_id,
+        seats_by_id=seats,
+    )
     if not ops:
         completion = board_budget.board_completion(
             table=ctx.table,
@@ -2027,6 +2897,7 @@ def run_tool_loop(
             temperature=temperature,
             max_tokens=max_tokens,
             tag=tag,
+            usage_sink=ctx.usage_sink,
         )
         return ToolLoopResult(text=completion.text, usage=completion.usage, model=completion.model, rounds=1, completion=completion)
 
@@ -2074,6 +2945,7 @@ def run_tool_loop(
             tag=tag,
             tools=schemas,
             tool_choice="auto",
+            usage_sink=ctx.usage_sink,
         )
         usage = add_usage(usage, completion.usage)
         if not completion.tool_calls:
@@ -2111,6 +2983,7 @@ def run_tool_loop(
             tag=tag,
             tools=schemas,
             tool_choice="none",
+            usage_sink=ctx.usage_sink,
         )
         usage = add_usage(usage, final.usage)
     return ToolLoopResult(text=final.text, usage=usage, model=final.model, calls=calls, rounds=rounds, completion=final)

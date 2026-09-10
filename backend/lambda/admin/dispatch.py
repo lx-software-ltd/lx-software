@@ -16,6 +16,9 @@ import board_cache as board_cache_mod
 import board_chat as board_chat_mod
 import board_meeting as board_meeting_mod
 import board_receivables as board_receivables_mod
+import board_intel as board_intel_mod
+import board_review as board_review_mod
+import board_staff as board_staff_mod
 import parse_jobs as parse_jobs_mod
 import runtime
 from board_routes import handle_board_route
@@ -254,6 +257,27 @@ def _handle_public_read(
     return _records_get_response(event)
 
 
+def _ses_record_route(record: dict[str, Any]) -> str:
+    body_raw = record.get("body") or ""
+    try:
+        body = json.loads(body_raw) if isinstance(body_raw, str) else body_raw
+    except json.JSONDecodeError:
+        return "outreach"
+    if isinstance(body, dict) and body.get("Type") == "Notification" and body.get("Message"):
+        try:
+            body = json.loads(str(body["Message"]))
+        except json.JSONDecodeError:
+            return "outreach"
+    if not isinstance(body, dict):
+        return "outreach"
+    tags = (body.get("mail") or {}).get("tags") or {}
+    raw_cs = tags.get("ses:configuration-set") or tags.get("ses:configurationSet") or ""
+    config = str(raw_cs[0] if isinstance(raw_cs, list) and raw_cs else raw_cs or "").lower()
+    if "newsletter" in config or tags.get("issueId") or tags.get("issueid"):
+        return "newsletter"
+    return "outreach"
+
+
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if isinstance(event, dict) and event.get("internal") == "parse_statement_async":
         parse_jobs_mod._handle_parse_statement_async_worker(event)
@@ -278,6 +302,78 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         board_cache_mod.handle_schedule_trigger(event)
         return {}
 
+    if isinstance(event, dict) and event.get("internal") == "board_staff_step":
+        board_staff_mod.run_step(event)
+        return {}
+
+    if isinstance(event, dict) and event.get("internal") == "board_staff_review":
+        board_staff_mod.run_review(event)
+        return {}
+
+    if isinstance(event, dict) and event.get("internal") == "board_staff_tick":
+        return board_staff_mod.handle_tick(event)
+
+    if isinstance(event, dict) and event.get("internal") == "board_triage_ack":
+        import board_triage as board_triage_mod
+
+        board_triage_mod.run_ack(event)
+        return {}
+
+    if isinstance(event, dict) and event.get("internal") == "board_review_compile":
+        return board_review_mod.handle_compile(event)
+
+    if isinstance(event, dict) and event.get("internal") == "board_review_send":
+        return board_review_mod.handle_send(event)
+
+    if isinstance(event, dict) and event.get("internal") == "board_intel_crawl":
+        return board_intel_mod.handle_crawl(event)
+
+    if isinstance(event, dict) and event.get("internal") == "board_intel_weekly":
+        return board_intel_mod.handle_weekly(event)
+
+    if isinstance(event, dict) and event.get("internal") == "board_targets":
+        import board_targets as board_targets_mod
+
+        return board_targets_mod.handle_check(event)
+
+    if isinstance(event, dict) and event.get("internal") == "board_content_plan":
+        import board_content as board_content_mod
+
+        return board_content_mod.handle_plan(event)
+
+    if isinstance(event, dict) and event.get("internal") == "board_content_readout":
+        import board_content as board_content_mod
+
+        return board_content_mod.handle_readout(event)
+
+    records = event.get("Records") if isinstance(event, dict) else None
+    if isinstance(records, list) and records and records[0].get("eventSource") == "aws:sqs":
+        import board_newsletter as board_newsletter_mod
+        import board_outreach as board_outreach_mod
+
+        failures: list[dict[str, str]] = []
+        outreach_n = 0
+        newsletter_n = 0
+        for record in records:
+            try:
+                route = _ses_record_route(record)
+                if route == "newsletter":
+                    result = board_newsletter_mod.handle_ses_events([record])
+                    newsletter_n += int((result or {}).get("handled") or 0)
+                else:
+                    result = board_outreach_mod.handle_ses_events([record])
+                    outreach_n += int((result or {}).get("handled") or 0)
+            except Exception:
+                mid = str(record.get("messageId") or record.get("messageID") or "")
+                if mid:
+                    failures.append({"itemIdentifier": mid})
+        return {
+            "ok": True,
+            "outreach": {"handled": outreach_n},
+            "newsletter": {"handled": newsletter_n},
+            "batchItemFailures": failures,
+        }
+
     if isinstance(event, dict) and event.get("internal") == "board_receivables_mirror":
         board_receivables_mod.handle_mirror_trigger(event)
         return {}
@@ -292,6 +388,29 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         import board_meta as board_meta_mod
 
         return board_meta_mod.handle_http(event, method)
+
+    if path.startswith("/public/outreach/unsubscribe/"):
+        import board_outreach as board_outreach_mod
+
+        token = path[len("/public/outreach/unsubscribe/") :]
+        return board_outreach_mod.handle_unsubscribe(event, method, token)
+
+    if path == "/public/newsletter/subscribe" and method == "POST":
+        import board_newsletter as board_newsletter_mod
+
+        return board_newsletter_mod.handle_subscribe(event)
+
+    if path.startswith("/public/newsletter/confirm/"):
+        import board_newsletter as board_newsletter_mod
+
+        token = path[len("/public/newsletter/confirm/") :]
+        return board_newsletter_mod.handle_confirm(event, token)
+
+    if path.startswith("/public/newsletter/unsubscribe/"):
+        import board_newsletter as board_newsletter_mod
+
+        token = path[len("/public/newsletter/unsubscribe/") :]
+        return board_newsletter_mod.handle_unsubscribe(event, method, token)
 
     if method == "GET" and path == "/health":
         return _json_response(200, {"status": "ok"})

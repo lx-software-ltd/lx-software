@@ -17,13 +17,40 @@ import {
   boardMeetingsFixture,
   boardOverviewFixture,
   boardReceivablesFixture,
+  boardBreakersFixture,
+  boardHoldsFixture,
+  boardLessonsFixture,
+  boardReviewFixture,
+  boardStaffFixture,
+  boardTaskDetailFixture,
+  boardTasksFixture,
   boardToolsFixture,
+  boardWatchesFixture,
+  boardChangesFixture,
+  boardProspectsFixture,
+  boardOutreachStatsFixture,
+  boardSequenceFixture,
+  boardContentFixture,
   financeFixture,
   lxSoftwareBookFixture,
   openrouterUsageFixture,
   awsUsageFixture,
   siuTinDeiBookFixture,
 } from "./fixtures";
+import {
+  DEFAULT_BOARD_BOUNDARIES,
+  type BoardApproval,
+  type BoardBoundaries,
+  type BoardBreaker,
+  type BoardHold,
+  type BoardLesson,
+  type BoardSeat,
+  type BoardTask,
+  type BoardWatch,
+  type BoardProspect,
+  type BoardSequence,
+  type BoardContentItem,
+} from "../boardModel";
 
 export { isAdminMockEnabled };
 
@@ -60,6 +87,17 @@ export function installAdminMockSession(): void {
 type MockState = {
   finance: FinancePersistedState;
   books: Record<string, HouseFinanceData>;
+  seats: BoardSeat[];
+  tasks: BoardTask[];
+  holds: BoardHold[];
+  boundaries: BoardBoundaries;
+  lessons: BoardLesson[];
+  breakers: BoardBreaker[];
+  watches: BoardWatch[];
+  prospects: BoardProspect[];
+  sequences: Record<string, BoardSequence>;
+  content: BoardContentItem[];
+  approvals: BoardApproval[];
 };
 
 const state: MockState = {
@@ -68,6 +106,17 @@ const state: MockState = {
     "siu-tin-dei": structuredClone(siuTinDeiBookFixture) as HouseFinanceData,
     "lx-software": structuredClone(lxSoftwareBookFixture) as HouseFinanceData,
   },
+  seats: structuredClone(boardStaffFixture.seats) as BoardSeat[],
+  tasks: structuredClone(boardTasksFixture),
+  holds: structuredClone(boardHoldsFixture) as BoardHold[],
+  boundaries: structuredClone(DEFAULT_BOARD_BOUNDARIES),
+  lessons: structuredClone(boardLessonsFixture) as BoardLesson[],
+  breakers: structuredClone(boardBreakersFixture) as BoardBreaker[],
+  watches: structuredClone(boardWatchesFixture) as BoardWatch[],
+  prospects: structuredClone(boardProspectsFixture) as BoardProspect[],
+  sequences: {},
+  content: structuredClone(boardContentFixture) as BoardContentItem[],
+  approvals: structuredClone(boardApprovalsFixture) as BoardApproval[],
 };
 
 function json(body: unknown, status = 200): Response {
@@ -218,7 +267,7 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   const board = "/siu-tin-dei/board";
   if (p === board) return json(boardOverviewFixture);
   if (p === `${board}/actions`) return json({ actions: boardActionsFixture });
-  if (p === `${board}/approvals`) return json({ approvals: boardApprovalsFixture });
+  if (p === `${board}/approvals`) return json({ approvals: state.approvals });
   if (p === `${board}/meetings`) return json({ meetings: boardMeetingsFixture });
   if (p === `${board}/tools`) return json(boardToolsFixture);
   if (p === `${board}/tools/calls`) return json({ calls: [] });
@@ -227,6 +276,357 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   if (p === `${board}/mail`) {
     return json({ threads: [], total: 0, mailboxes: [], status: boardOverviewFixture.mail });
   }
+  if (p === `${board}/staff`) {
+    return json({
+      ...boardStaffFixture,
+      seats: state.seats,
+      counts: countsFromTasks(state.tasks),
+    });
+  }
+  if (p.startsWith(`${board}/staff/`)) {
+    const seatId = p.slice(`${board}/staff/`.length);
+    const idx = state.seats.findIndex((s) => s.id === seatId);
+    if (idx < 0) return json({ message: "Unknown staff seat" }, 404);
+    if (method === "DELETE") {
+      const defaults = boardStaffFixture.seats.find((s) => s.id === seatId);
+      if (defaults) state.seats[idx] = structuredClone(defaults);
+      return json({ seat: state.seats[idx] });
+    }
+    if (method === "PUT") {
+      const body = parseBody(init);
+      const current = state.seats[idx];
+      state.seats[idx] = {
+        ...current,
+        displayName: typeof body.displayName === "string" && body.displayName ? body.displayName : current.displayName,
+        brief: typeof body.brief === "string" && body.brief ? body.brief : current.brief,
+        isActive: typeof body.isActive === "boolean" ? body.isActive : current.isActive,
+        modelTier: body.modelTier === "senior" || body.modelTier === "desk" ? body.modelTier : current.modelTier,
+        isOverridden: {
+          ...current.isOverridden,
+          displayName: Boolean(body.displayName),
+          brief: Boolean(body.brief),
+          isActive: body.isActive !== undefined,
+          modelTier: Boolean(body.modelTier),
+        },
+      };
+      return json({ seat: state.seats[idx] });
+    }
+  }
+  if (p === `${board}/tasks`) {
+    if (method === "POST") {
+      const body = parseBody(init);
+      const created: BoardTask = {
+        ...boardTasksFixture[0],
+        taskId: `task-${state.tasks.length + 1}`,
+        status: "queued",
+        assignee: String(body.assignee || "cfo"),
+        assigneeKind: String(body.assignee || "").includes("-") ? "seat" : "persona",
+        brief: String(body.brief || "Untitled"),
+        deliverableType: (body.deliverableType as BoardTask["deliverableType"]) || "markdown",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      state.tasks = [created, ...state.tasks];
+      return json({ task: created }, 201);
+    }
+    return json({ tasks: state.tasks, counts: countsFromTasks(state.tasks) });
+  }
+  if (p.startsWith(`${board}/tasks/`)) {
+    const rest = p.slice(`${board}/tasks/`.length).split("/");
+    const taskId = rest[0];
+    const task = state.tasks.find((t) => t.taskId === taskId);
+    if (!task) return json({ message: "Task not found" }, 404);
+    if (rest[1] === "cancel" && method === "POST") {
+      Object.assign(task, { status: "cancelled", updatedAt: new Date().toISOString() });
+      return json({ task });
+    }
+    if (rest[1] === "review" && method === "POST") {
+      const body = parseBody(init);
+      Object.assign(task, {
+        status: body.verdict === "return" ? "running" : "delivered",
+        lastReview: { verdict: body.verdict, notes: body.notes, at: new Date().toISOString() },
+        updatedAt: new Date().toISOString(),
+      });
+      return json({ task });
+    }
+    return json(boardTaskDetailFixture(taskId) ?? { task, steps: [], reviews: [], deliverable: "", deliverableUrl: "" });
+  }
+  if (p === `${board}/holds`) {
+    return json({ holds: state.holds.filter((h) => h.status === "scheduled") });
+  }
+  if (p === `${board}/holds/veto-class` && method === "POST") {
+    const body = parseBody(init);
+    const classKey = String(body.classKey || "");
+    state.holds = state.holds.map((h) =>
+      h.classKey === classKey && h.status === "scheduled" ? { ...h, status: "vetoed" as const } : h,
+    );
+    return json({ holds: state.holds.filter((h) => h.status === "vetoed" && h.classKey === classKey) });
+  }
+  if (p.startsWith(`${board}/holds/`) && p.endsWith("/veto") && method === "POST") {
+    const holdId = p.slice(`${board}/holds/`.length, -"/veto".length);
+    const idx = state.holds.findIndex((h) => h.holdId === holdId);
+    if (idx < 0) return json({ message: "Hold not found" }, 404);
+    state.holds[idx] = { ...state.holds[idx], status: "vetoed" };
+    return json({ hold: state.holds[idx] });
+  }
+  if (p === `${board}/boundaries` && method === "PUT") {
+    state.boundaries = parseBody(init) as BoardBoundaries;
+    return json({ boundaries: state.boundaries });
+  }
+  if (p === `${board}/ramp`) {
+    return json({
+      ramp: [{ classKey: "publish:facebook", actions: 32, vetoes: 0, rate: 0, eligibleForPromotion: true, shouldDemote: false }],
+    });
+  }
+  if (p.startsWith(`${board}/ramp/`) && p.endsWith("/promote") && method === "POST") {
+    return json({ classKey: decodeURIComponent(p.slice(`${board}/ramp/`.length, -"/promote".length)), holdOverrides: { "publish:facebook": 0 } });
+  }
+  if (p === `${board}/code/staging`) {
+    return json({
+      staging: {
+        status: "ahead",
+        behindBy: 0,
+        aheadBy: 1,
+        canPromote: true,
+        commits: [{ sha: "a1b2c3d4", message: "board: #42 add booking" }],
+      },
+    });
+  }
+  if (p === `${board}/code/promote` && method === "POST") {
+    const now = new Date().toISOString();
+    const approval: BoardApproval = {
+      approvalId: `appr-promote-${state.approvals.length + 1}`,
+      status: "pending",
+      personaId: "cto",
+      displayName: "CTO",
+      toolId: "code",
+      toolLabel: "Code",
+      op: "code_promote",
+      kind: "write",
+      arguments: { kind: "production" },
+      summary: "Open a staging→main PR for board: #42 add booking",
+      reason: "code_promote always queues an Approval",
+      context: { kind: "review" },
+      createdAt: now,
+      updatedAt: now,
+    };
+    state.approvals = [approval, ...state.approvals];
+    return json(
+      {
+        approval,
+        preview: { status: "ahead", aheadBy: 1, behindBy: 0, canPromote: true, commits: [] },
+      },
+      201,
+    );
+  }
+  if (p === `${board}/review`) {
+    return json({ review: boardReviewFixture });
+  }
+  if (p.startsWith(`${board}/review/sample/`) && p.endsWith("/wrong") && method === "POST") {
+    const callId = decodeURIComponent(p.slice(`${board}/review/sample/`.length, -"/wrong".length));
+    const lesson: BoardLesson = {
+      lessonId: `lsn-${state.lessons.length + 1}`,
+      kind: "correction",
+      subject: "cmo",
+      classKey: "publish:facebook",
+      what: callId,
+      instruction: "Do not repeat this post without a district and a date.",
+      confirmed: false,
+      createdAt: new Date().toISOString(),
+    };
+    state.lessons = [lesson, ...state.lessons];
+    return json({ lesson });
+  }
+  if (p === `${board}/lessons`) {
+    return json({ lessons: state.lessons });
+  }
+  if (p.startsWith(`${board}/lessons/`) && p.endsWith("/confirm") && method === "POST") {
+    const lessonId = decodeURIComponent(p.slice(`${board}/lessons/`.length, -"/confirm".length));
+    const body = parseBody(init) as { instruction?: string };
+    state.lessons = state.lessons.map((l) =>
+      l.lessonId === lessonId ? { ...l, confirmed: true, instruction: body.instruction || l.instruction } : l,
+    );
+    return json({ lesson: state.lessons.find((l) => l.lessonId === lessonId) });
+  }
+  if (p.startsWith(`${board}/lessons/`) && p.endsWith("/dismiss") && method === "POST") {
+    const lessonId = decodeURIComponent(p.slice(`${board}/lessons/`.length, -"/dismiss".length));
+    state.lessons = state.lessons.map((l) => (l.lessonId === lessonId ? { ...l, dismissed: true } : l));
+    return json({ lesson: state.lessons.find((l) => l.lessonId === lessonId) });
+  }
+  if (p === `${board}/breakers`) {
+    return json({ breakers: state.breakers });
+  }
+  if (p.startsWith(`${board}/breakers/`) && p.endsWith("/reset") && method === "POST") {
+    const name = decodeURIComponent(p.slice(`${board}/breakers/`.length, -"/reset".length));
+    state.breakers = state.breakers.map((b) => (b.name === name ? { ...b, tripped: false, resetAt: new Date().toISOString() } : b));
+    return json({ breaker: state.breakers.find((b) => b.name === name) });
+  }
+  if (p === `${board}/watchlist`) {
+    if (method === "POST") {
+      const body = parseBody(init);
+      const watch: BoardWatch = {
+        watchId: `watch-${state.watches.length + 1}`,
+        name: String(body.name ?? ""),
+        kind: String(body.kind ?? "competitor"),
+        urls: Array.isArray(body.urls) ? body.urls.map(String) : [],
+        appIds: typeof body.appIds === "object" && body.appIds ? (body.appIds as Record<string, string>) : {},
+        createdAt: new Date().toISOString(),
+      };
+      state.watches = [watch, ...state.watches];
+      return json({ watch }, 201);
+    }
+    return json({
+      watches: state.watches,
+      latestBrief: { taskId: "task-review", status: "review", summary: "Weekly market brief" },
+    });
+  }
+  if (p.startsWith(`${board}/watchlist/`)) {
+    const watchId = decodeURIComponent(p.slice(`${board}/watchlist/`.length));
+    const idx = state.watches.findIndex((w) => w.watchId === watchId);
+    if (idx < 0) return json({ message: "Watch not found" }, 404);
+    if (method === "DELETE") {
+      state.watches = state.watches.filter((w) => w.watchId !== watchId);
+      return json({ ok: true });
+    }
+    if (method === "PUT") {
+      const body = parseBody(init);
+      state.watches[idx] = {
+        ...state.watches[idx],
+        ...(typeof body.name === "string" ? { name: body.name } : {}),
+        ...(typeof body.kind === "string" ? { kind: body.kind } : {}),
+        ...(Array.isArray(body.urls) ? { urls: body.urls.map(String) } : {}),
+      };
+      return json({ watch: state.watches[idx] });
+    }
+  }
+  if (p === `${board}/changes`) {
+    return json({ changes: boardChangesFixture });
+  }
+  if (p === `${board}/prospects`) {
+    return json({
+      prospects: state.prospects,
+      needsContact: state.prospects.filter((row) => row.stage === "qualified" && !row.contact),
+      stats: boardOutreachStatsFixture,
+    });
+  }
+  if (p === `${board}/prospects/import` && method === "POST") {
+    const body = parseBody(init);
+    const lines = String(body.csv ?? "").trim().split("\n").slice(1);
+    let created = 0;
+    for (const line of lines) {
+      const [name, type, district, website, email] = line.split(",");
+      if (!name) continue;
+      state.prospects = [
+        {
+          prospectId: `pros-${state.prospects.length + 1}`,
+          name,
+          type: type || "provider",
+          district,
+          website,
+          email,
+          contact: email || null,
+          stage: "discovered",
+          source: "owner",
+        },
+        ...state.prospects,
+      ];
+      created += 1;
+    }
+    return json({ created, updated: 0, errors: [] });
+  }
+  if (p.startsWith(`${board}/prospects/`) && p.endsWith("/merge") && method === "POST") {
+    const prospectId = decodeURIComponent(p.slice(`${board}/prospects/`.length, -"/merge".length));
+    const body = parseBody(init);
+    const into = String(body.into ?? "");
+    const src = state.prospects.find((row) => row.prospectId === prospectId);
+    const destIdx = state.prospects.findIndex((row) => row.prospectId === into);
+    if (!src || destIdx < 0) return json({ message: "Prospect not found" }, 404);
+    state.prospects[destIdx] = { ...state.prospects[destIdx], name: state.prospects[destIdx].name || src.name };
+    state.prospects = state.prospects.map((row) => (row.prospectId === prospectId ? { ...row, stage: "suppressed" } : row));
+    return json({ prospect: state.prospects[destIdx] });
+  }
+  if (p.startsWith(`${board}/prospects/`)) {
+    const prospectId = decodeURIComponent(p.slice(`${board}/prospects/`.length));
+    const idx = state.prospects.findIndex((row) => row.prospectId === prospectId);
+    if (idx < 0) return json({ message: "Prospect not found" }, 404);
+    if (method === "PUT") {
+      const body = parseBody(init);
+      state.prospects[idx] = {
+        ...state.prospects[idx],
+        ...(typeof body.stage === "string" ? { stage: body.stage } : {}),
+        ...(typeof body.contact === "string" ? { contact: body.contact } : {}),
+        ...(typeof body.type === "string" ? { type: body.type } : {}),
+        ...(typeof body.note === "string" ? { ownerNote: body.note } : {}),
+      };
+    }
+    return json({ prospect: state.prospects[idx] });
+  }
+  if (p === `${board}/outreach/stats`) {
+    return json(boardOutreachStatsFixture);
+  }
+  if (p.startsWith(`${board}/sequences/`)) {
+    const type = decodeURIComponent(p.slice(`${board}/sequences/`.length));
+    if (method === "PUT") {
+      const body = parseBody(init);
+      state.sequences[type] = { type, steps: Array.isArray(body.steps) ? body.steps : [] } as BoardSequence;
+      return json({ sequence: state.sequences[type] });
+    }
+    return json({ sequence: state.sequences[type] ?? boardSequenceFixture(type) });
+  }
+  if (p === `${board}/content`) {
+    if (method === "POST") {
+      const body = parseBody(init);
+      const item: BoardContentItem = {
+        contentId: `cnt-${state.content.length + 1}`,
+        status: "drafted",
+        channel: String(body.channel || "facebook"),
+        pillar: String(body.pillar || "activity spotlight"),
+        slotAt: String(body.slotAt || new Date().toISOString()),
+        copyEn: String(body.copyEn || ""),
+        copyZh: String(body.copyZh || ""),
+      };
+      state.content = [item, ...state.content];
+      return json({ item });
+    }
+    return json({
+      items: state.content,
+      assisted: state.content.filter((row) => String(row.channel || "").startsWith("assisted")),
+    });
+  }
+  if (p.includes("/creative/") && p.startsWith(`${board}/content/`)) {
+    return json({ url: "https://assets.example/board/content/preview.png", key: "preview.png" });
+  }
+  if (p.startsWith(`${board}/content/`) && p.endsWith("/render") && method === "POST") {
+    const contentId = decodeURIComponent(p.slice(`${board}/content/`.length, -"/render".length));
+    const item = state.content.find((row) => row.contentId === contentId);
+    if (!item) return json({ message: "Not found" }, 404);
+    return json({ item });
+  }
+  if (p.startsWith(`${board}/content/`)) {
+    const contentId = decodeURIComponent(p.slice(`${board}/content/`.length));
+    const idx = state.content.findIndex((row) => row.contentId === contentId);
+    if (idx < 0) return json({ message: "Not found" }, 404);
+    if (method === "PUT") {
+      const body = parseBody(init);
+      state.content[idx] = { ...state.content[idx], ...body } as BoardContentItem;
+    }
+    return json({ item: state.content[idx] });
+  }
 
   return notFound(p);
+}
+
+function countsFromTasks(tasks: readonly BoardTask[]): Record<string, number> {
+  const counts: Record<string, number> = {
+    queued: 0,
+    running: 0,
+    review: 0,
+    returned: 0,
+    delivered: 0,
+    needs_owner: 0,
+    failed: 0,
+    cancelled: 0,
+  };
+  for (const task of tasks) counts[task.status] = (counts[task.status] ?? 0) + 1;
+  return counts;
 }

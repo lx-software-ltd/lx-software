@@ -2,6 +2,10 @@ import { useCallback, useMemo, useState } from "react";
 import { FinanceDataLoadOrError } from "../FinanceDataStatus";
 import { BoardActionsList } from "./BoardActionsList";
 import { BoardApprovalsList } from "./BoardApprovalsList";
+import { BoardBoundariesCard } from "./BoardBoundariesCard";
+import { BoardHoldsList } from "./BoardHoldsList";
+import { BoardLessonsList } from "./BoardLessonsList";
+import { BoardReviewSection } from "./BoardReviewSection";
 import { BoardBriefEditor } from "./BoardBriefEditor";
 import { BoardCharterEditor } from "./BoardCharterEditor";
 import { BoardChatOffcanvas } from "./BoardChatOffcanvas";
@@ -13,12 +17,20 @@ import { BoardMeetingPanel } from "./BoardMeetingPanel";
 import { BoardMemberEditor } from "./BoardMemberEditor";
 import { BoardMembersStrip } from "./BoardMembersStrip";
 import { BoardSettingsCard } from "./BoardSettingsCard";
+import { BoardMarketSection } from "./BoardMarketSection";
+import { BoardContentSection } from "./BoardContentSection";
+import { BoardPipelineSection } from "./BoardPipelineSection";
+import { BoardStaffSection } from "./BoardStaffSection";
 import { BoardToolsCard } from "./BoardToolsCard";
 import { BoardUpdatesComposer } from "./BoardUpdatesComposer";
 import { StartMeetingForm } from "./StartMeetingForm";
+import { useBoardStaff } from "../../hooks/useBoardStaff";
 import { useBoard, useBoardUpdates } from "../../hooks/useBoard";
 import { useBoardActions } from "../../hooks/useBoardActions";
 import { useBoardApprovals } from "../../hooks/useBoardApprovals";
+import { useBoardBoundaries } from "../../hooks/useBoardBoundaries";
+import { useBoardHolds } from "../../hooks/useBoardHolds";
+import { useBoardReview } from "../../hooks/useBoardReview";
 import { useBoardToolCalls, useBoardTools } from "../../hooks/useBoardTools";
 import {
   useBoardMeeting,
@@ -30,16 +42,21 @@ import {
 import { AdminTabList, type AdminTabItem } from "../ui";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { adminTabButtonId } from "../../lib/adminTabs";
-import { effectiveToolLevel, type BoardMeetingMode, type BoardOverview } from "../../lib/boardModel";
+import { DEFAULT_BOARD_BOUNDARIES, effectiveToolLevel, type BoardMeetingMode, type BoardOverview } from "../../lib/boardModel";
 
-type BoardSection = "actions" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
+type BoardSection = "review" | "market" | "pipeline" | "content" | "actions" | "staff" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
 
 const CLOSED_MEETING = "__closed__";
 const SECTION_ID_PREFIX = "board-section";
 const SECTION_PANEL_ID = "board-section-panel";
 
 const SECTIONS: readonly { readonly id: BoardSection; readonly label: string; readonly icon: string }[] = [
+  { id: "review", label: "Daily review", icon: "bi-sun" },
+  { id: "market", label: "Market", icon: "bi-binoculars" },
+  { id: "pipeline", label: "Pipeline", icon: "bi-funnel" },
+  { id: "content", label: "Content", icon: "bi-calendar3" },
   { id: "actions", label: "Next actions", icon: "bi-list-check" },
+  { id: "staff", label: "Staff", icon: "bi-people-fill" },
   { id: "approvals", label: "Approvals", icon: "bi-shield-check" },
   { id: "mail", label: "Mail", icon: "bi-envelope" },
   { id: "receivables", label: "Receivables", icon: "bi-receipt" },
@@ -54,9 +71,13 @@ function errorText(err: unknown): string | null {
   return getAdminApiErrorMessage(err) ?? (err instanceof Error ? err.message : "Request failed.");
 }
 
-function sectionTabs(overview: BoardOverview | undefined): readonly AdminTabItem<BoardSection>[] {
+function sectionTabs(
+  overview: BoardOverview | undefined,
+  needsOwner: number,
+): readonly AdminTabItem<BoardSection>[] {
   const counts: Partial<Record<BoardSection, { value: number; tone: "neutral" | "warning" }>> = {
     actions: { value: overview?.openActionCount ?? 0, tone: "neutral" },
+    staff: { value: needsOwner, tone: "warning" },
     approvals: { value: overview?.pendingApprovalCount ?? 0, tone: "warning" },
     mail: { value: overview?.unreadMailCount ?? 0, tone: "neutral" },
     receivables: { value: overview?.overdueInvoiceCount ?? 0, tone: "warning" },
@@ -80,9 +101,18 @@ export function ExecutiveBoardTab() {
   const startMeeting = useStartBoardMeeting();
   const cancelMeeting = useCancelBoardMeeting();
   const approvals = useBoardApprovals();
+  const holds = useBoardHolds();
+  const boundaries = useBoardBoundaries();
   const tools = useBoardTools();
+  const staff = useBoardStaff();
+  const lessons = useBoardReview(true);
 
-  const [section, setSection] = useState<BoardSection>("actions");
+  const urlSection = useMemo(() => {
+    const requested = new URLSearchParams(window.location.search).get("section");
+    if (requested && SECTIONS.some((s) => s.id === requested)) return requested as BoardSection;
+    return null;
+  }, []);
+  const [pinnedSection, setPinnedSection] = useState<BoardSection | null>(urlSection);
   const [chatPersonaId, setChatPersonaId] = useState<string | null>(null);
   const [editPersonaId, setEditPersonaId] = useState<string | null>(null);
   // null = follow the running meeting (if any); CLOSED_MEETING = user closed the panel.
@@ -91,9 +121,14 @@ export function ExecutiveBoardTab() {
   const [focusApprovalId, setFocusApprovalId] = useState<string | null>(null);
   const [focusThreadId, setFocusThreadId] = useState<string | null>(null);
   const [showCallLog, setShowCallLog] = useState(false);
-  const callLog = useBoardToolCalls(section === "settings" && showCallLog);
 
   const overview = board.overview;
+  const section: BoardSection =
+    pinnedSection ?? (overview?.settings.staff?.enabled ? "review" : "actions");
+  const setSection = useCallback((id: BoardSection) => {
+    setPinnedSection(id);
+  }, []);
+  const callLog = useBoardToolCalls(section === "settings" && showCallLog);
   const members = overview?.members ?? [];
   const toolsConfig = tools.data?.config ?? overview?.settings.tools;
   const runningId = overview?.runningMeeting?.meetingId ?? null;
@@ -112,18 +147,18 @@ export function ExecutiveBoardTab() {
   const openMeeting = useCallback((meetingId: string) => {
     setSelectedMeeting(meetingId);
     setSection("meetings");
-  }, []);
+  }, [setSection]);
 
   const openApproval = useCallback((approvalId: string) => {
     setChatPersonaId(null);
     setFocusApprovalId(approvalId);
     setSection("approvals");
-  }, []);
+  }, [setSection]);
 
   const openMailThread = useCallback((threadId: string) => {
     setFocusThreadId(threadId);
     setSection("mail");
-  }, []);
+  }, [setSection]);
 
   const chatToolLabels = useMemo(() => {
     if (!chatPersonaId || !toolsConfig || !overview?.toolsEnabled) return [];
@@ -180,7 +215,7 @@ export function ExecutiveBoardTab() {
           ) : null}
 
           <AdminTabList
-            tabs={sectionTabs(overview)}
+            tabs={sectionTabs(overview, staff.counts.needs_owner ?? 0)}
             active={section}
             onChange={setSection}
             label="Board sections"
@@ -200,6 +235,14 @@ export function ExecutiveBoardTab() {
             role="tabpanel"
             aria-labelledby={adminTabButtonId(SECTION_ID_PREFIX, section)}
           >
+          {overview && section === "review" ? <BoardReviewSection /> : null}
+
+          {overview && section === "market" ? <BoardMarketSection /> : null}
+
+          {overview && section === "pipeline" ? <BoardPipelineSection /> : null}
+
+          {overview && section === "content" ? <BoardContentSection /> : null}
+
           {overview && section === "actions" ? (
             <BoardActionsList
               actions={actions.actions}
@@ -210,18 +253,31 @@ export function ExecutiveBoardTab() {
             />
           ) : null}
 
+          {overview && section === "staff" ? <BoardStaffSection /> : null}
+
           {overview && section === "approvals" ? (
-            <BoardApprovalsList
-              approvals={approvals.approvals}
-              members={members}
-              isLoading={approvals.isLoading}
-              isDeciding={approvals.decide.isPending}
-              errorMessage={errorText(approvals.error) ?? errorText(approvals.decide.error)}
-              onDecide={(vars) => approvals.decide.mutate(vars)}
-              onOpenMeeting={openMeeting}
-              onOpenMailThread={openMailThread}
-              focusApprovalId={focusApprovalId}
-            />
+            <>
+              <BoardHoldsList
+                holds={holds.holds}
+                isLoading={holds.isLoading}
+                isVetoing={holds.veto.isPending || holds.vetoClass.isPending}
+                errorMessage={errorText(holds.error) ?? errorText(holds.veto.error) ?? errorText(holds.vetoClass.error)}
+                onVeto={(holdId, reason) => holds.veto.mutate({ holdId, reason })}
+                onVetoClass={(classKey) => holds.vetoClass.mutate(classKey)}
+                onOpenMailThread={openMailThread}
+              />
+              <BoardApprovalsList
+                approvals={approvals.approvals}
+                members={members}
+                isLoading={approvals.isLoading}
+                isDeciding={approvals.decide.isPending}
+                errorMessage={errorText(approvals.error) ?? errorText(approvals.decide.error)}
+                onDecide={(vars) => approvals.decide.mutate(vars)}
+                onOpenMeeting={openMeeting}
+                onOpenMailThread={openMailThread}
+                focusApprovalId={focusApprovalId}
+              />
+            </>
           ) : null}
 
           {overview && section === "mail" ? (
@@ -344,6 +400,21 @@ export function ExecutiveBoardTab() {
               ) : (
                 <div className="card shadow-sm mb-4"><div className="card-body text-muted small">Loading tool permissions…</div></div>
               )}
+              <BoardBoundariesCard
+                key={`boundaries-${overview.settings.updatedAt ?? ""}`}
+                boundaries={overview.settings.boundaries ?? DEFAULT_BOARD_BOUNDARIES}
+                version={overview.settings.version}
+                isSaving={boundaries.save.isPending}
+                errorMessage={errorText(boundaries.save.error)}
+                onSave={(next, version) => boundaries.save.mutate({ boundaries: next, version })}
+              />
+              <BoardLessonsList
+                lessons={lessons.lessons}
+                isMutating={lessons.confirmLesson.isPending || lessons.dismissLesson.isPending}
+                errorMessage={errorText(lessons.confirmLesson.error) ?? errorText(lessons.dismissLesson.error)}
+                onConfirm={(id, instruction) => lessons.confirmLesson.mutate({ lessonId: id, instruction })}
+                onDismiss={(id) => lessons.dismissLesson.mutate(id)}
+              />
               <BoardSettingsCard
                 key={`settings-${overview.settings.updatedAt ?? ""}`}
                 overview={overview}

@@ -170,19 +170,53 @@ def ads_spend_snapshot(table: Any, settings: dict[str, Any] | None = None) -> di
     daily_cap, monthly_cap = ads_caps(settings)
     recorded_daily = float(recorded.get("dailyUsd") or 0.0)
     recorded_month = float(recorded.get("monthlyUsd") or 0.0)
+    held_daily, held_monthly = _scheduled_spend_holds(table)
     return {
         "recordedDailyUsd": recorded_daily,
         "recordedMonthlyUsd": recorded_month,
         "graphMonthlyUsd": graph_month,
         "graphCurrency": detail["currency"],
         "graphAvailable": bool(detail["available"]),
-        "dailyUsd": recorded_daily,
+        "heldDailyUsd": held_daily,
+        "heldMonthlyUsd": held_monthly,
+        "dailyUsd": recorded_daily + held_daily,
         # Cap check stays conservative: commitments the board made this month
-        # plus what Graph has already billed.
-        "monthlyUsd": recorded_month + graph_month,
+        # plus scheduled spend holds plus what Graph has already billed.
+        "monthlyUsd": recorded_month + graph_month + held_monthly,
         "dailyCapUsd": daily_cap,
         "monthlyCapUsd": monthly_cap,
     }
+
+
+def _scheduled_spend_holds(table: Any) -> tuple[float, float]:
+    if table is None:
+        return 0.0, 0.0
+    daily = 0.0
+    monthly = 0.0
+    try:
+        import board_holds
+
+        spend_ops = board_holds.SPEND_OPS
+    except Exception:
+        spend_ops = frozenset({"meta_create_ad_set", "meta_boost_post"})
+    for hold in board_store.list_holds(table, "scheduled", limit=400):
+        op_name = str(hold.get("op") or "")
+        if hold.get("actionClass") != "spend" and op_name not in spend_ops:
+            continue
+        args = hold.get("arguments") or {}
+        try:
+            amount = float(args.get("dailyBudgetUsd") or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        if amount <= 0:
+            continue
+        try:
+            days = int(args.get("days") or (30 if op_name == "meta_create_ad_set" else 1))
+        except (TypeError, ValueError):
+            days = 30 if op_name == "meta_create_ad_set" else 1
+        daily += amount
+        monthly += amount * max(1, days)
+    return daily, monthly
 
 
 def reset_caches_for_tests() -> None:
@@ -539,6 +573,14 @@ def _store_inbound(table: Any, pseud: board_pii.Pseudonymizer, msg: dict[str, An
             "messageCount": int(existing.get("messageCount") or 0) + 1,
         },
     )
+    try:
+        import board_triage
+
+        settings = board_store.load_settings(table)
+        stored = board_store.get_meta_thread(table, thread_id) or {"threadId": thread_id}
+        board_triage.on_meta_event(table, settings, stored, msg)
+    except Exception as exc:
+        _log_event("warning", tag="board_triage_meta_failed", error=str(exc)[:300])
     return True
 
 

@@ -33,11 +33,13 @@ Key layout (``pk`` / ``sk``):
 
 from __future__ import annotations
 
+import base64
+import json
 import os
 import re
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from botocore.exceptions import ClientError
@@ -53,6 +55,17 @@ from contract_constants import (
     BOARD_MAIL_ALLOW_LIST_MAX_ENTRIES,
     BOARD_MAIL_MESSAGE_TTL_DAYS,
     BOARD_PERSONA_IDS,
+    BOARD_STAFF_ACTION_CLASSES,
+    BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
+    BOARD_STAFF_DAILY_BUDGET_MAX_USD,
+    BOARD_STAFF_HOLD_CODE_STAGING_HOURS,
+    BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
+    BOARD_STAFF_OUTREACH_DAILY_CAP_MAX,
+    BOARD_STAFF_OUTREACH_DAILY_CAP_START,
+    BOARD_STAFF_PROSPECT_TYPES,
+    BOARD_STAFF_RETENTION_DAYS,
+    BOARD_STAFF_REVIEW_SAMPLE_SIZE,
+    BOARD_STAFF_TASK_STATUSES,
     BOARD_TOOL_CALL_LOG_TTL_DAYS,
     BOARD_TOOL_DEFAULT_GLOBAL_MODE,
     BOARD_TOOL_DEFINITIONS,
@@ -299,6 +312,305 @@ def normalize_tools_config(raw: Any) -> dict[str, Any]:
     return out
 
 
+DEFAULT_FIT_RUBRIC = (
+    "Score 0–100. Start at 50. +20 if the organisation runs or hosts activities "
+    "for children aged 0–12 in Hong Kong. +10 if it has a physical venue "
+    "parents can visit. +10 if it publishes prices or a schedule. +10 if it is "
+    "in one of the priority districts. −30 if it is adults-only, a tutoring "
+    "centre focused on exams, or a franchise HQ with no local venue. −50 if the "
+    "website or listing is dead or the business appears closed. Restaurants: "
+    "+15 if they advertise a kids' menu, high chairs or a play corner; "
+    "otherwise −20. Never score above 70 without a working website or a "
+    "Google rating with at least 10 reviews."
+)
+
+DEFAULT_ESCALATION_KEYWORDS = [
+    "refund",
+    "lawyer",
+    "legal",
+    "police",
+    "injury",
+    "hurt",
+    "abuse",
+    "complaint",
+    "media",
+    "journalist",
+    "PDPO",
+    "delete my data",
+    "unsubscribe me from everything",
+    "退款",
+    "律师",
+    "律師",
+    "警察",
+    "受伤",
+    "受傷",
+    "投诉",
+    "投訴",
+]
+
+
+def default_staff_config() -> dict[str, Any]:
+    return {
+        "enabled": False,
+        "maxRunningTasks": BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
+        "dailyBudgetUsd": BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
+        "dutiesEnabled": False,
+        "seniorPaused": False,
+        "disabledReason": "",
+    }
+
+
+def default_review_config() -> dict[str, Any]:
+    return {"digestTo": "", "digestHourHkt": 7, "sampleSize": BOARD_STAFF_REVIEW_SAMPLE_SIZE}
+
+
+def default_boundaries() -> dict[str, Any]:
+    return {
+        "reply": {
+            "languages": ["en", "zh-HK"],
+            "tone": (
+                "Warm, plain, brief. Never promise refunds, legal positions, "
+                "or availability the catalog does not show."
+            ),
+            "quietHoursHkt": [22, 8],
+            "maxOutboundPerChannelPerDay": {"mail": 60, "whatsapp": 60, "meta": 100},
+            "maxMessagesPerThreadPerDay": 3,
+            "sensitiveTemplatesOnly": [
+                "payment_dispute",
+                "cancellation",
+                "safeguarding",
+                "data_request",
+            ],
+        },
+        "escalation": {
+            "keywords": list(DEFAULT_ESCALATION_KEYWORDS),
+            "refundThresholdHkd": 0,
+            "ackTemplateId": "ack_escalation",
+        },
+        "holds": {
+            "internal": 0,
+            "inbound_reply": 0,
+            "outbound_known": 0,
+            "cold_outreach": 24,
+            "publish": 24,
+            "spend": 24,
+            "code_staging": BOARD_STAFF_HOLD_CODE_STAGING_HOURS,
+            "code_production": 0,
+        },
+        "holdOverrides": {},
+        "outreach": {
+            "fitRubric": DEFAULT_FIT_RUBRIC,
+            "typesEnabled": ["provider", "venue", "community", "school"],
+            "districtsFirst": [
+                "Sha Tin",
+                "Tai Po",
+                "Kwun Tong",
+                "Tsuen Wan",
+                "Tseung Kwan O",
+                "Yuen Long",
+            ],
+            "dailyCap": BOARD_STAFF_OUTREACH_DAILY_CAP_START,
+            "capRaisedAt": "",
+            "targets": {"qualifiedPerWeek": 50},
+            "personalAddressesAllowed": False,
+            "webFormsAllowed": False,
+        },
+        "content": {
+            "pillars": [
+                "activity spotlight",
+                "district guide",
+                "seasonal guide",
+                "parenting tip",
+                "provider story",
+                "product news",
+            ],
+            "voice": "Helpful neighbour, not a brand. Specific places, dates and prices. No superlatives.",
+            "languages": ["en", "zh-HK"],
+            "perWeek": {"facebook": 7, "instagram": 7, "instagram_story": 7, "seo": 2},
+            "windowsHkt": [10, 20],
+            "assistedChannels": ["assisted_xiaohongshu", "assisted_fb_group"],
+        },
+        "intel": {"newsletterMailbox": "market@siutindei.com"},
+    }
+
+
+def normalize_staff_config(raw: Any) -> dict[str, Any]:
+    out = default_staff_config()
+    if not isinstance(raw, dict):
+        return out
+    if "enabled" in raw:
+        out["enabled"] = bool(raw.get("enabled"))
+    if "dutiesEnabled" in raw:
+        out["dutiesEnabled"] = bool(raw.get("dutiesEnabled"))
+    if "seniorPaused" in raw:
+        out["seniorPaused"] = bool(raw.get("seniorPaused"))
+    if isinstance(raw.get("disabledReason"), str):
+        out["disabledReason"] = raw["disabledReason"].strip()[:200]
+    try:
+        running = int(raw.get("maxRunningTasks") or out["maxRunningTasks"])
+        out["maxRunningTasks"] = max(1, min(20, running))
+    except (TypeError, ValueError):
+        pass
+    try:
+        budget = float(raw.get("dailyBudgetUsd") or out["dailyBudgetUsd"])
+        out["dailyBudgetUsd"] = max(0.0, min(BOARD_STAFF_DAILY_BUDGET_MAX_USD, budget))
+    except (TypeError, ValueError):
+        pass
+    return out
+
+
+def normalize_review_config(raw: Any) -> dict[str, Any]:
+    out = default_review_config()
+    if not isinstance(raw, dict):
+        return out
+    digest = raw.get("digestTo")
+    if isinstance(digest, str):
+        out["digestTo"] = digest.strip()[:200]
+    try:
+        hour = int(raw.get("digestHourHkt") if raw.get("digestHourHkt") is not None else out["digestHourHkt"])
+        out["digestHourHkt"] = max(0, min(23, hour))
+    except (TypeError, ValueError):
+        pass
+    try:
+        sample = int(raw.get("sampleSize") or out["sampleSize"])
+        out["sampleSize"] = max(1, min(40, sample))
+    except (TypeError, ValueError):
+        pass
+    return out
+
+
+def normalize_boundaries(raw: Any) -> dict[str, Any]:
+    out = default_boundaries()
+    if not isinstance(raw, dict):
+        return out
+    reply = raw.get("reply")
+    if isinstance(reply, dict):
+        if isinstance(reply.get("tone"), str):
+            out["reply"]["tone"] = reply["tone"].strip()[:2000]
+        hours = reply.get("quietHoursHkt")
+        if isinstance(hours, list) and len(hours) == 2:
+            try:
+                out["reply"]["quietHoursHkt"] = [int(hours[0]) % 24, int(hours[1]) % 24]
+            except (TypeError, ValueError):
+                pass
+        langs = reply.get("languages")
+        if isinstance(langs, list):
+            out["reply"]["languages"] = [str(x) for x in langs if isinstance(x, str)][:8]
+        caps = reply.get("maxOutboundPerChannelPerDay")
+        if isinstance(caps, dict):
+            merged = dict(out["reply"]["maxOutboundPerChannelPerDay"])
+            for k, v in caps.items():
+                try:
+                    merged[str(k)] = max(0, min(1000, int(v)))
+                except (TypeError, ValueError):
+                    continue
+            out["reply"]["maxOutboundPerChannelPerDay"] = merged
+        try:
+            out["reply"]["maxMessagesPerThreadPerDay"] = max(
+                1, min(20, int(reply.get("maxMessagesPerThreadPerDay") or 3))
+            )
+        except (TypeError, ValueError):
+            pass
+        if isinstance(reply.get("sensitiveTemplatesOnly"), list):
+            out["reply"]["sensitiveTemplatesOnly"] = [
+                str(x) for x in reply["sensitiveTemplatesOnly"] if isinstance(x, str)
+            ][:20]
+    esc = raw.get("escalation")
+    if isinstance(esc, dict):
+        if isinstance(esc.get("keywords"), list):
+            out["escalation"]["keywords"] = [
+                str(x).strip() for x in esc["keywords"] if isinstance(x, str) and str(x).strip()
+            ][:80]
+        try:
+            out["escalation"]["refundThresholdHkd"] = max(0, float(esc.get("refundThresholdHkd") or 0))
+        except (TypeError, ValueError):
+            pass
+        if isinstance(esc.get("ackTemplateId"), str):
+            out["escalation"]["ackTemplateId"] = esc["ackTemplateId"].strip()[:80]
+    holds = raw.get("holds")
+    if isinstance(holds, dict):
+        for cls in BOARD_STAFF_ACTION_CLASSES:
+            if cls in holds:
+                try:
+                    out["holds"][cls] = max(0, min(168, int(holds[cls])))
+                except (TypeError, ValueError):
+                    continue
+    overrides = raw.get("holdOverrides")
+    if isinstance(overrides, dict):
+        cleaned: dict[str, int] = {}
+        for key, hours in overrides.items():
+            if not isinstance(key, str):
+                continue
+            try:
+                cleaned[key[:80]] = max(0, min(168, int(hours)))
+            except (TypeError, ValueError):
+                continue
+        out["holdOverrides"] = cleaned
+    outreach = raw.get("outreach")
+    if isinstance(outreach, dict):
+        if isinstance(outreach.get("fitRubric"), str):
+            out["outreach"]["fitRubric"] = outreach["fitRubric"].strip()[:8000]
+        types = outreach.get("typesEnabled")
+        if isinstance(types, list):
+            out["outreach"]["typesEnabled"] = [
+                t for t in (str(x) for x in types) if t in BOARD_STAFF_PROSPECT_TYPES
+            ]
+        districts = outreach.get("districtsFirst")
+        if isinstance(districts, list):
+            out["outreach"]["districtsFirst"] = [str(x) for x in districts if isinstance(x, str)][:20]
+        try:
+            out["outreach"]["dailyCap"] = max(
+                1, min(BOARD_STAFF_OUTREACH_DAILY_CAP_MAX, int(outreach.get("dailyCap") or 20))
+            )
+        except (TypeError, ValueError):
+            pass
+        if isinstance(outreach.get("capRaisedAt"), str):
+            out["outreach"]["capRaisedAt"] = outreach["capRaisedAt"]
+        targets = outreach.get("targets")
+        if isinstance(targets, dict):
+            try:
+                out["outreach"]["targets"]["qualifiedPerWeek"] = max(
+                    1, min(500, int(targets.get("qualifiedPerWeek") or 50))
+                )
+            except (TypeError, ValueError):
+                pass
+        if "personalAddressesAllowed" in outreach:
+            out["outreach"]["personalAddressesAllowed"] = bool(outreach.get("personalAddressesAllowed"))
+        if "webFormsAllowed" in outreach:
+            out["outreach"]["webFormsAllowed"] = bool(outreach.get("webFormsAllowed"))
+    content = raw.get("content")
+    if isinstance(content, dict):
+        if isinstance(content.get("voice"), str):
+            out["content"]["voice"] = content["voice"].strip()[:2000]
+        if isinstance(content.get("pillars"), list):
+            out["content"]["pillars"] = [str(x) for x in content["pillars"] if isinstance(x, str)][:20]
+        if isinstance(content.get("languages"), list):
+            out["content"]["languages"] = [str(x) for x in content["languages"] if isinstance(x, str)][:8]
+        per_week = content.get("perWeek")
+        if isinstance(per_week, dict):
+            merged = dict(out["content"]["perWeek"])
+            for k, v in per_week.items():
+                try:
+                    merged[str(k)] = max(0, min(50, int(v)))
+                except (TypeError, ValueError):
+                    continue
+            out["content"]["perWeek"] = merged
+        windows = content.get("windowsHkt")
+        if isinstance(windows, list) and windows:
+            try:
+                out["content"]["windowsHkt"] = [int(x) % 24 for x in windows[:4]]
+            except (TypeError, ValueError):
+                pass
+        if isinstance(content.get("assistedChannels"), list):
+            out["content"]["assistedChannels"] = [
+                str(x) for x in content["assistedChannels"] if isinstance(x, str)
+            ][:8]
+    intel = raw.get("intel")
+    if isinstance(intel, dict) and isinstance(intel.get("newsletterMailbox"), str):
+        out["intel"]["newsletterMailbox"] = intel["newsletterMailbox"].strip()[:200]
+    return out
+
+
 def default_settings() -> dict[str, Any]:
     return {
         "schedule": {"morningEnabled": False, "eveningEnabled": False},
@@ -309,7 +621,11 @@ def default_settings() -> dict[str, Any]:
         "models": {"chat": "", "standup": "", "deepDive": ""},
         "dailyBudgetUsd": BOARD_DEFAULT_DAILY_BUDGET_USD,
         "tools": default_tools_config(),
+        "staff": default_staff_config(),
+        "review": default_review_config(),
+        "boundaries": default_boundaries(),
         "updatedAt": None,
+        "version": 0,
     }
 
 
@@ -333,13 +649,40 @@ def load_settings(table: Any) -> dict[str, Any]:
             k: str(models.get(k) or "") for k in ("chat", "standup", "deepDive")
         }
     merged["tools"] = normalize_tools_config(stored.get("tools"))
+    merged["staff"] = normalize_staff_config(stored.get("staff"))
+    merged["review"] = normalize_review_config(stored.get("review"))
+    merged["boundaries"] = normalize_boundaries(stored.get("boundaries"))
+    try:
+        merged["version"] = int(stored.get("version") or 0)
+    except (TypeError, ValueError):
+        merged["version"] = 0
     return merged
 
 
+class SettingsConflict(RuntimeError):
+    """The settings document was written by another caller since it was loaded."""
+
+
 def save_settings(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
-    out = {**doc, "updatedAt": now_iso()}
-    _put_state(table, "settings", out)
+    try:
+        expected = int(doc.get("version") or 0)
+    except (TypeError, ValueError):
+        expected = 0
+    out = {**doc, "updatedAt": now_iso(), "version": expected + 1}
+    if not _put_state_if_version(table, "settings", out, attr="version", expected=expected if expected else None):
+        raise SettingsConflict("settings were updated by someone else")
     return out
+
+
+def save_settings_retry(table: Any, apply: Any) -> dict[str, Any]:
+    last: Exception | None = None
+    for _ in range(2):
+        settings = load_settings(table)
+        try:
+            return save_settings(table, apply(dict(settings)))
+        except SettingsConflict as exc:
+            last = exc
+    raise SettingsConflict("settings were updated by someone else") from last
 
 
 # ---------------------------------------------------------------------------
@@ -794,14 +1137,17 @@ def add_tool_call(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     created = str(doc.get("createdAt") or now_iso())
     call_id = str(doc.get("callId") or new_id())
     full = {**doc, "callId": call_id, "createdAt": created}
-    table.put_item(
-        Item={
-            "pk": board_pk("toolcalls"),
-            "sk": f"CALL#{created}#{call_id}",
-            "expiresAt": int(time.time()) + BOARD_TOOL_CALL_LOG_TTL_DAYS * 86400,
-            **_to_ddb_nested(full),
-        }
-    )
+    item: dict[str, Any] = {
+        "pk": board_pk("toolcalls"),
+        "sk": f"CALL#{created}#{call_id}",
+        "expiresAt": int(time.time()) + BOARD_TOOL_CALL_LOG_TTL_DAYS * 86400,
+        **_to_ddb_nested(full),
+    }
+    task_id = str(doc.get("taskId") or "")
+    if task_id:
+        item["gsi1pk"] = board_pk(f"tasks#{task_id}#calls")
+        item["gsi1sk"] = f"{created}#{call_id}"
+    table.put_item(Item=item)
     return full
 
 
@@ -811,6 +1157,20 @@ def list_tool_calls(table: Any, *, limit: int = 50) -> list[dict[str, Any]]:
         table,
         KeyConditionExpression="pk = :pk AND begins_with(sk, :prefix)",
         ExpressionAttributeValues={":pk": board_pk("toolcalls"), ":prefix": "CALL#"},
+        ScanIndexForward=False,
+        Limit=limit,
+    )
+    return [{k: v for k, v in _strip_keys(i).items() if k != "expiresAt"} for i in items[:limit]]
+
+
+def list_tool_calls_for_task(table: Any, task_id: str, *, limit: int = 400) -> list[dict[str, Any]]:
+    if not task_id:
+        return []
+    items = _query_all(
+        table,
+        IndexName="gsi1",
+        KeyConditionExpression="gsi1pk = :pk",
+        ExpressionAttributeValues={":pk": board_pk(f"tasks#{task_id}#calls")},
         ScanIndexForward=False,
         Limit=limit,
     )
@@ -939,6 +1299,22 @@ def cache_key(name: str) -> dict[str, str]:
     return {"pk": board_pk("cache"), "sk": f"ITEM#{name}"}
 
 
+def bump_cache_count(table: Any, name: str, *, ttl_seconds: int = 3600) -> int:
+    """Atomically increment a cache counter. Returns the new count."""
+    table.update_item(
+        Key=cache_key(name),
+        UpdateExpression="ADD #c :one SET expiresAt = :exp",
+        ExpressionAttributeNames={"#c": "count"},
+        ExpressionAttributeValues={":one": 1, ":exp": int(time.time()) + max(60, ttl_seconds)},
+    )
+    res = table.get_item(Key=cache_key(name))
+    item = res.get("Item") if isinstance(res, dict) else None
+    try:
+        return int((item or {}).get("count") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def put_cache(table: Any, name: str, payload: dict[str, Any], *, ttl_seconds: int | None = None) -> dict[str, Any]:
     ttl = int(ttl_seconds if ttl_seconds is not None else BOARD_CACHE_REFRESH_TTL_HOURS * 3600)
     now = now_iso()
@@ -1003,7 +1379,7 @@ def external_usage_day_key(date_iso: str | None = None) -> str:
 
 def add_external_usage_day(table: Any, field_name: str, amount: int = 1) -> None:
     """Count one third-party API call (e.g. ``searchCalls``) against today."""
-    if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9]{0,40}", field_name):
+    if not re.fullmatch(r"[a-zA-Z][a-zA-Z0-9_:]{0,40}", field_name):
         raise ValueError("invalid usage field name")
     table.update_item(
         Key={"pk": board_pk(external_usage_day_key()), "sk": "STATE"},
@@ -1015,7 +1391,14 @@ def add_external_usage_day(table: Any, field_name: str, amount: int = 1) -> None
 
 def load_external_usage_day(table: Any, date_iso: str | None = None) -> dict[str, Any]:
     stored = _get_state(table, external_usage_day_key(date_iso)) or {}
-    return {"searchCalls": int(stored.get("searchCalls") or 0)}
+    out = {"searchCalls": int(stored.get("searchCalls") or 0)}
+    for key, value in stored.items():
+        if str(key).startswith("reply"):
+            try:
+                out[str(key)] = int(value or 0)
+            except (TypeError, ValueError):
+                continue
+    return out
 
 
 def ads_usage_day_key(date_iso: str | None = None) -> str:
@@ -1139,3 +1522,777 @@ def list_meta_messages(table: Any, thread_id: str) -> list[dict[str, Any]]:
         ExpressionAttributeValues={":pk": board_pk(f"meta#thread#{thread_id}"), ":prefix": "MSG#"},
     )
     return [{k: v for k, v in _strip_keys(i).items() if k != "expiresAt"} for i in items]
+
+
+# ---------------------------------------------------------------------------
+# Staff overrides, tasks, holds, usage
+# ---------------------------------------------------------------------------
+
+def staff_override_suffix(seat_id: str) -> str:
+    return f"staff#{seat_id}"
+
+
+def load_staff_overrides(table: Any) -> dict[str, dict[str, Any]]:
+    from contract_constants import BOARD_STAFF_SEAT_IDS
+
+    out: dict[str, dict[str, Any]] = {}
+    for seat_id in BOARD_STAFF_SEAT_IDS:
+        stored = _get_state(table, staff_override_suffix(seat_id))
+        if stored:
+            out[seat_id] = stored
+    return out
+
+
+def save_staff_override(table: Any, seat_id: str, doc: dict[str, Any]) -> None:
+    current = _get_state(table, staff_override_suffix(seat_id)) or {}
+    _put_state(table, staff_override_suffix(seat_id), {**current, **doc, "updatedAt": now_iso()})
+
+
+def delete_staff_override(table: Any, seat_id: str) -> None:
+    table.delete_item(Key={"pk": board_pk(staff_override_suffix(seat_id)), "sk": "STATE"})
+
+
+def task_key(task_id: str) -> dict[str, str]:
+    return {"pk": board_pk(f"task#{task_id}"), "sk": "META"}
+
+
+def _task_gsi(doc: dict[str, Any]) -> dict[str, str]:
+    status = str(doc.get("status") or "queued")
+    sla = str(doc.get("slaAt") or doc.get("createdAt") or "")
+    return {"gsi1pk": board_pk(f"tasks#{status}"), "gsi1sk": f"{sla}#{doc.get('taskId') or ''}"}
+
+
+def put_task(table: Any, doc: dict[str, Any]) -> None:
+    table.put_item(Item={**task_key(str(doc["taskId"])), **_task_gsi(doc), **_to_ddb_nested(doc)})
+
+
+def get_task(table: Any, task_id: str) -> dict[str, Any] | None:
+    res = table.get_item(Key=task_key(task_id))
+    item = res.get("Item") if isinstance(res, dict) else None
+    if not item:
+        return None
+    doc = _from_ddb_nested(_strip_keys(item))
+    return doc if isinstance(doc, dict) else None
+
+
+def list_tasks(table: Any, status: str | None = None, *, limit: int = 200) -> list[dict[str, Any]]:
+    statuses = [status] if status else list(BOARD_STAFF_TASK_STATUSES)
+    items: list[dict[str, Any]] = []
+    for st in statuses:
+        rows = _query_all(
+            table,
+            IndexName="gsi1",
+            KeyConditionExpression="gsi1pk = :pk",
+            ExpressionAttributeValues={":pk": board_pk(f"tasks#{st}")},
+            ScanIndexForward=True,
+            Limit=limit,
+        )
+        items.extend(_strip_keys(i) for i in rows)
+    items.sort(key=lambda t: str(t.get("slaAt") or t.get("createdAt") or ""))
+    return items[:limit]
+
+
+def claim_task_step(table: Any, task_id: str, expected_step: int) -> bool:
+    """Claim a queued task (expected_step=0) or exclusively claim the next step.
+
+    ``expected_step=0`` first promotes queued→running (drain). A second call
+    with ``expected_step=0`` while already running claims step 1. Later steps
+    set ``stepClaimed`` to the wanted seq so duplicate async deliveries lose.
+    """
+    now = now_iso()
+    wanted = expected_step + 1
+    try:
+        if expected_step == 0:
+            try:
+                table.update_item(
+                    Key=task_key(task_id),
+                    UpdateExpression="SET #st = :running, startedAt = :now, updatedAt = :now, gsi1pk = :gpk, gsi1sk = :gsk",
+                    ConditionExpression="#st = :queued AND #step = :expected",
+                    ExpressionAttributeNames={"#st": "status", "#step": "step"},
+                    ExpressionAttributeValues={
+                        ":running": "running",
+                        ":queued": "queued",
+                        ":expected": expected_step,
+                        ":now": now,
+                        ":gpk": board_pk("tasks#running"),
+                        ":gsk": f"{now}#{task_id}",
+                    },
+                )
+                return True
+            except ClientError as exc:
+                if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+                    raise
+        table.update_item(
+            Key=task_key(task_id),
+            UpdateExpression="SET stepClaimed = :wanted, stepClaimedAt = :now, updatedAt = :now",
+            ConditionExpression="#st = :running AND #step = :expected AND (attribute_not_exists(stepClaimed) OR stepClaimed < :wanted)",
+            ExpressionAttributeNames={"#st": "status", "#step": "step"},
+            ExpressionAttributeValues={
+                ":running": "running",
+                ":expected": expected_step,
+                ":wanted": wanted,
+                ":now": now,
+            },
+        )
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return False
+        raise
+    return True
+
+
+def put_task_step(table: Any, task_id: str, step: dict[str, Any]) -> None:
+    seq = int(step["seq"])
+    table.put_item(
+        Item={
+            "pk": board_pk(f"task#{task_id}"),
+            "sk": f"STEP#{seq:03d}",
+            "expiresAt": int(time.time()) + BOARD_STAFF_RETENTION_DAYS * 86400,
+            **_to_ddb_nested(step),
+        }
+    )
+
+
+def list_task_steps(table: Any, task_id: str) -> list[dict[str, Any]]:
+    items = _query_all(
+        table,
+        KeyConditionExpression="pk = :pk AND begins_with(sk, :prefix)",
+        ExpressionAttributeValues={":pk": board_pk(f"task#{task_id}"), ":prefix": "STEP#"},
+    )
+    return [_strip_keys(i) for i in items]
+
+
+def put_task_review(table: Any, task_id: str, review: dict[str, Any]) -> None:
+    seq = int(review["seq"])
+    table.put_item(
+        Item={
+            "pk": board_pk(f"task#{task_id}"),
+            "sk": f"REVIEW#{seq:02d}",
+            "expiresAt": int(time.time()) + BOARD_STAFF_RETENTION_DAYS * 86400,
+            **_to_ddb_nested(review),
+        }
+    )
+
+
+def list_task_reviews(table: Any, task_id: str) -> list[dict[str, Any]]:
+    items = _query_all(
+        table,
+        KeyConditionExpression="pk = :pk AND begins_with(sk, :prefix)",
+        ExpressionAttributeValues={":pk": board_pk(f"task#{task_id}"), ":prefix": "REVIEW#"},
+    )
+    return [_strip_keys(i) for i in items]
+
+
+def staff_usage_day_key(date_iso: str | None = None) -> str:
+    if date_iso:
+        day = date_iso
+    else:
+        hkt = timezone(timedelta(hours=8))
+        day = datetime.now(hkt).strftime("%Y-%m-%d")
+    return f"staffusage#{day}"
+
+
+def load_staff_usage_day(table: Any, date_iso: str | None = None) -> dict[str, Any]:
+    stored = _get_state(table, staff_usage_day_key(date_iso)) or {}
+    by_seat = dict(stored.get("bySeat") or {})
+    for key, value in stored.items():
+        if key.startswith("seatCost_"):
+            seat = key[len("seatCost_") :]
+            slot = dict(by_seat.get(seat) or {})
+            slot["cost"] = float(value or 0.0)
+            by_seat[seat] = slot
+        elif key.startswith("seatCalls_"):
+            seat = key[len("seatCalls_") :]
+            slot = dict(by_seat.get(seat) or {})
+            slot["calls"] = int(value or 0)
+            by_seat[seat] = slot
+    return {
+        "promptTokens": int(stored.get("promptTokens") or 0),
+        "completionTokens": int(stored.get("completionTokens") or 0),
+        "totalTokens": int(stored.get("totalTokens") or 0),
+        "cost": float(stored.get("cost") or 0.0),
+        "calls": int(stored.get("calls") or 0),
+        "bySeat": by_seat,
+    }
+
+
+def add_staff_usage_day(table: Any, seat_or_persona: str, usage: dict[str, Any]) -> None:
+    cost = float(usage.get("cost") or 0.0)
+    calls = int(usage.get("calls") or 1)
+    prompt = int(usage.get("promptTokens") or 0)
+    completion = int(usage.get("completionTokens") or 0)
+    total = int(usage.get("totalTokens") or 0) or (prompt + completion)
+    seat = re.sub(r"[^a-zA-Z0-9_-]", "_", str(seat_or_persona or "unknown"))[:40] or "unknown"
+    table.update_item(
+        Key={"pk": board_pk(staff_usage_day_key()), "sk": "STATE"},
+        UpdateExpression=(
+            "ADD cost :c, #calls :n, promptTokens :p, completionTokens :k, totalTokens :t, "
+            "#sc :c, #sn :n SET expiresAt = :exp"
+        ),
+        ExpressionAttributeNames={
+            "#calls": "calls",
+            "#sc": f"seatCost_{seat}",
+            "#sn": f"seatCalls_{seat}",
+        },
+        ExpressionAttributeValues={
+            ":c": cost,
+            ":n": calls,
+            ":p": prompt,
+            ":k": completion,
+            ":t": total,
+            ":exp": int(time.time()) + 400 * 86400,
+        },
+    )
+
+
+def claim_duty_marker(table: Any, name: str) -> bool:
+    """Create ``duty:{seat}:{duty}:{date}`` once. Returns False if it already exists."""
+    if not name:
+        return False
+    try:
+        table.put_item(
+            Item={
+                "pk": board_pk(f"dutymark#{name}"),
+                "sk": "STATE",
+                "createdAt": now_iso(),
+                "expiresAt": int(time.time()) + 40 * 86400,
+            },
+            ConditionExpression="attribute_not_exists(pk)",
+        )
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return False
+        raise
+    return True
+
+
+def hold_key(hold_id: str) -> dict[str, str]:
+    return {"pk": board_pk(f"hold#{hold_id}"), "sk": "META"}
+
+
+def put_hold(table: Any, doc: dict[str, Any]) -> None:
+    status = str(doc.get("status") or "scheduled")
+    execute_at = str(doc.get("executeAt") or "")
+    table.put_item(
+        Item={
+            **hold_key(str(doc["holdId"])),
+            "gsi1pk": board_pk(f"holds#{status}"),
+            "gsi1sk": f"{execute_at}#{doc.get('holdId') or ''}",
+            **_to_ddb_nested(doc),
+        }
+    )
+
+
+def get_hold(table: Any, hold_id: str) -> dict[str, Any] | None:
+    res = table.get_item(Key=hold_key(hold_id))
+    item = res.get("Item") if isinstance(res, dict) else None
+    if not item:
+        return None
+    doc = _from_ddb_nested(_strip_keys(item))
+    return doc if isinstance(doc, dict) else None
+
+
+def list_holds(table: Any, status: str = "scheduled", *, limit: int = 200) -> list[dict[str, Any]]:
+    rows = _query_all(
+        table,
+        IndexName="gsi1",
+        KeyConditionExpression="gsi1pk = :pk",
+        ExpressionAttributeValues={":pk": board_pk(f"holds#{status}")},
+        ScanIndexForward=True,
+        Limit=limit,
+    )
+    return [_strip_keys(i) for i in rows[:limit]]
+
+
+def claim_hold(table: Any, hold_id: str, *, from_status: str, to_status: str) -> bool:
+    now = now_iso()
+    try:
+        table.update_item(
+            Key=hold_key(hold_id),
+            UpdateExpression="SET #st = :next, updatedAt = :now, gsi1pk = :gpk",
+            ConditionExpression="#st = :from",
+            ExpressionAttributeNames={"#st": "status"},
+            ExpressionAttributeValues={
+                ":next": to_status,
+                ":from": from_status,
+                ":now": now,
+                ":gpk": board_pk(f"holds#{to_status}"),
+            },
+        )
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return False
+        raise
+    return True
+
+
+def ramp_key(class_key: str) -> str:
+    return f"ramp#{class_key}"
+
+
+def load_ramp(table: Any, class_key: str) -> dict[str, Any]:
+    stored = _get_state(table, ramp_key(class_key)) or {}
+    return {
+        "classKey": class_key,
+        "actions": int(stored.get("actions") or 0),
+        "vetoes": int(stored.get("vetoes") or 0),
+        "days": dict(stored.get("days") or {}),
+        "recent": list(stored.get("recent") or []),
+    }
+
+
+def save_ramp(table: Any, class_key: str, doc: dict[str, Any]) -> None:
+    _put_state(table, ramp_key(class_key), doc)
+
+
+def load_ramp_index(table: Any) -> list[str]:
+    stored = _get_state(table, "ramp-index") or {}
+    keys = stored.get("keys") or []
+    return [str(k) for k in keys if k]
+
+
+def add_ramp_index(table: Any, class_key: str) -> None:
+    if not class_key:
+        return
+    keys = load_ramp_index(table)
+    if class_key in keys:
+        return
+    keys.append(class_key)
+    _put_state(table, "ramp-index", {"keys": keys})
+
+
+def lesson_key(lesson_id: str) -> dict[str, str]:
+    return {"pk": board_pk(f"lesson#{lesson_id}"), "sk": "META"}
+
+
+def put_lesson(table: Any, doc: dict[str, Any]) -> None:
+    subject = str(doc.get("subject") or "")
+    created = str(doc.get("createdAt") or now_iso())
+    item: dict[str, Any] = {
+        **lesson_key(str(doc["lessonId"])),
+        "gsi1pk": board_pk(f"lessons#{subject}"),
+        "gsi1sk": created,
+        **_to_ddb_nested(doc),
+    }
+    if not doc.get("confirmed"):
+        item["expiresAt"] = int(time.time()) + BOARD_STAFF_RETENTION_DAYS * 86400
+    table.put_item(Item=item)
+
+
+def get_lesson(table: Any, lesson_id: str) -> dict[str, Any] | None:
+    res = table.get_item(Key=lesson_key(lesson_id))
+    item = res.get("Item") if isinstance(res, dict) else None
+    if not item:
+        return None
+    doc = _from_ddb_nested(_strip_keys(item))
+    return doc if isinstance(doc, dict) else None
+
+
+def list_lessons(table: Any, subject: str | None = None, *, limit: int = 100) -> list[dict[str, Any]]:
+    if subject:
+        rows = _query_all(
+            table,
+            IndexName="gsi1",
+            KeyConditionExpression="gsi1pk = :pk",
+            ExpressionAttributeValues={":pk": board_pk(f"lessons#{subject}")},
+            ScanIndexForward=False,
+            Limit=limit,
+        )
+        return [_strip_keys(i) for i in rows[:limit]]
+    from contract_constants import BOARD_PERSONA_IDS, BOARD_STAFF_SEAT_IDS
+
+    items: list[dict[str, Any]] = []
+    for sid in list(BOARD_PERSONA_IDS) + list(BOARD_STAFF_SEAT_IDS):
+        items.extend(list_lessons(table, sid, limit=limit))
+    items.sort(key=lambda x: str(x.get("createdAt") or ""), reverse=True)
+    return items[:limit]
+
+
+def put_breaker(table: Any, name: str, doc: dict[str, Any]) -> None:
+    _put_state(table, f"breaker#{name}", doc)
+    idx = _get_state(table, "breaker-index") or {"names": []}
+    names = [str(x) for x in (idx.get("names") or []) if x]
+    if name not in names:
+        names.append(name)
+        _put_state(table, "breaker-index", {"names": names})
+
+
+def get_breaker(table: Any, name: str) -> dict[str, Any] | None:
+    return _get_state(table, f"breaker#{name}")
+
+
+def list_breakers(table: Any) -> list[dict[str, Any]]:
+    idx = _get_state(table, "breaker-index") or {"names": []}
+    out: list[dict[str, Any]] = []
+    for name in idx.get("names") or []:
+        row = get_breaker(table, str(name))
+        if row:
+            out.append({"name": name, **row})
+    return out
+
+
+def get_tool_call(table: Any, call_id: str) -> dict[str, Any] | None:
+    if not call_id:
+        return None
+    for row in list_tool_calls(table, limit=500):
+        if str(row.get("callId") or "") == call_id:
+            return row
+    return None
+
+
+def put_review_snapshot(table: Any, date_hkt: str, doc: dict[str, Any]) -> None:
+    item = {
+        "pk": board_pk(f"review#{date_hkt}"),
+        "sk": "STATE",
+        "expiresAt": int(time.time()) + BOARD_STAFF_RETENTION_DAYS * 86400,
+        **_to_ddb_nested(doc),
+    }
+    table.put_item(Item=item)
+
+
+def get_review_snapshot(table: Any, date_hkt: str) -> dict[str, Any] | None:
+    res = table.get_item(Key={"pk": board_pk(f"review#{date_hkt}"), "sk": "STATE"})
+    item = res.get("Item") if isinstance(res, dict) else None
+    if not item:
+        return None
+    doc = _from_ddb_nested(_strip_keys(item))
+    return doc if isinstance(doc, dict) else None
+
+
+def prospect_key(prospect_id: str) -> dict[str, str]:
+    return {"pk": board_pk(f"prospect#{prospect_id}"), "sk": "META"}
+
+
+def put_prospect(table: Any, doc: dict[str, Any]) -> None:
+    stage = str(doc.get("stage") or "discovered")
+    sort = str(doc.get("nextTouchAt") or doc.get("updatedAt") or doc.get("createdAt") or "")
+    table.put_item(
+        Item={
+            **prospect_key(str(doc["prospectId"])),
+            "gsi1pk": board_pk(f"prospects#{stage}"),
+            "gsi1sk": f"{sort}#{doc.get('prospectId') or ''}",
+            **_to_ddb_nested(doc),
+        }
+    )
+
+
+def get_prospect(table: Any, prospect_id: str) -> dict[str, Any] | None:
+    res = table.get_item(Key=prospect_key(prospect_id))
+    item = res.get("Item") if isinstance(res, dict) else None
+    if not item:
+        return None
+    doc = _from_ddb_nested(_strip_keys(item))
+    return doc if isinstance(doc, dict) else None
+
+
+def list_prospects(table: Any, stage: str | None = None, *, limit: int = 200) -> list[dict[str, Any]]:
+    from contract_constants import BOARD_STAFF_PROSPECT_STAGES
+
+    stages = [stage] if stage else list(BOARD_STAFF_PROSPECT_STAGES)
+    items: list[dict[str, Any]] = []
+    for st in stages:
+        rows = _query_all(
+            table,
+            IndexName="gsi1",
+            KeyConditionExpression="gsi1pk = :pk",
+            ExpressionAttributeValues={":pk": board_pk(f"prospects#{st}")},
+            ScanIndexForward=True,
+            Limit=limit,
+        )
+        items.extend(_strip_keys(i) for i in rows)
+    return items[:limit]
+
+
+def list_prospects_page(
+    table: Any, stage: str, *, limit: int = 200, cursor: str | None = None
+) -> tuple[list[dict[str, Any]], str | None]:
+    params: dict[str, Any] = {
+        "IndexName": "gsi1",
+        "KeyConditionExpression": "gsi1pk = :pk",
+        "ExpressionAttributeValues": {":pk": board_pk(f"prospects#{stage}")},
+        "ScanIndexForward": True,
+        "Limit": max(1, int(limit)),
+    }
+    if cursor:
+        try:
+            pad = "=" * ((4 - len(cursor) % 4) % 4)
+            params["ExclusiveStartKey"] = json.loads(base64.urlsafe_b64decode(cursor + pad).decode("utf-8"))
+        except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+            pass
+    res = table.query(**params)
+    items = [_strip_keys(i) for i in (res.get("Items") or [])]
+    lek = res.get("LastEvaluatedKey")
+    next_cursor = None
+    if lek:
+        next_cursor = base64.urlsafe_b64encode(json.dumps(lek, default=str).encode("utf-8")).decode("ascii").rstrip("=")
+    return items, next_cursor
+
+
+def put_prospect_key(table: Any, dedupe_key: str, prospect_id: str) -> None:
+    _put_state(table, f"prospectkey#{dedupe_key}", {"prospectId": prospect_id})
+
+
+def get_prospect_by_dedupe(table: Any, dedupe_key: str) -> str | None:
+    stored = _get_state(table, f"prospectkey#{dedupe_key}")
+    if not stored:
+        return None
+    pid = stored.get("prospectId")
+    return str(pid) if pid else None
+
+
+def put_suppress(table: Any, digest: str, doc: dict[str, Any]) -> None:
+    _put_state(table, f"suppress#{digest}", doc)
+
+
+def get_suppress(table: Any, digest: str) -> dict[str, Any] | None:
+    return _get_state(table, f"suppress#{digest}")
+
+
+def put_sequence(table: Any, sequence_id: str, doc: dict[str, Any]) -> None:
+    _put_state(table, f"sequence#{sequence_id}", doc)
+
+
+def get_sequence(table: Any, sequence_id: str) -> dict[str, Any] | None:
+    return _get_state(table, f"sequence#{sequence_id}")
+
+
+def watch_key(watch_id: str) -> dict[str, str]:
+    return {"pk": board_pk(f"watch#{watch_id}"), "sk": "META"}
+
+
+def put_watch(table: Any, doc: dict[str, Any]) -> None:
+    table.put_item(
+        Item={
+            **watch_key(str(doc["watchId"])),
+            "gsi1pk": board_pk(f"watch#{doc.get('kind') or 'competitor'}"),
+            "gsi1sk": str(doc.get("name") or doc.get("watchId") or ""),
+            **_to_ddb_nested(doc),
+        }
+    )
+
+
+def get_watch(table: Any, watch_id: str) -> dict[str, Any] | None:
+    res = table.get_item(Key=watch_key(watch_id))
+    item = res.get("Item") if isinstance(res, dict) else None
+    if not item:
+        return None
+    doc = _from_ddb_nested(_strip_keys(item))
+    return doc if isinstance(doc, dict) else None
+
+
+def list_watches(table: Any) -> list[dict[str, Any]]:
+    from contract_constants import BOARD_STAFF_WATCH_KINDS
+
+    kinds = list(BOARD_STAFF_WATCH_KINDS)
+    if "candidate" not in kinds:
+        kinds.append("candidate")
+    items: list[dict[str, Any]] = []
+    for kind in kinds:
+        rows = _query_all(
+            table,
+            IndexName="gsi1",
+            KeyConditionExpression="gsi1pk = :pk",
+            ExpressionAttributeValues={":pk": board_pk(f"watch#{kind}")},
+        )
+        items.extend(_strip_keys(i) for i in rows)
+    return items
+
+
+def delete_watch(table: Any, watch_id: str) -> None:
+    table.delete_item(Key=watch_key(watch_id))
+
+
+def list_watch_pages(table: Any, watch_id: str) -> list[dict[str, Any]]:
+    items = _query_all(
+        table,
+        KeyConditionExpression="pk = :pk AND begins_with(sk, :prefix)",
+        ExpressionAttributeValues={":pk": board_pk(f"watch#{watch_id}"), ":prefix": "PAGE#"},
+    )
+    return [_strip_keys(i) for i in items]
+
+
+def put_watch_page(table: Any, watch_id: str, url_digest: str, doc: dict[str, Any]) -> None:
+    table.put_item(
+        Item={
+            "pk": board_pk(f"watch#{watch_id}"),
+            "sk": f"PAGE#{url_digest}",
+            **_to_ddb_nested(doc),
+        }
+    )
+
+
+def get_watch_page(table: Any, watch_id: str, url_digest: str) -> dict[str, Any] | None:
+    res = table.get_item(Key={"pk": board_pk(f"watch#{watch_id}"), "sk": f"PAGE#{url_digest}"})
+    item = res.get("Item") if isinstance(res, dict) else None
+    if not item:
+        return None
+    doc = _from_ddb_nested(_strip_keys(item))
+    return doc if isinstance(doc, dict) else None
+
+
+def put_change(table: Any, doc: dict[str, Any]) -> None:
+    created = str(doc.get("createdAt") or now_iso())
+    change_id = str(doc.get("changeId") or new_id())
+    day = created[:10]
+    table.put_item(
+        Item={
+            "pk": board_pk(f"change#{day}#{change_id}"),
+            "sk": "META",
+            "gsi1pk": board_pk("changes"),
+            "gsi1sk": created,
+            "expiresAt": int(time.time()) + BOARD_STAFF_RETENTION_DAYS * 86400,
+            **_to_ddb_nested({**doc, "changeId": change_id, "createdAt": created}),
+        }
+    )
+
+
+def list_changes(table: Any, *, limit: int = 100) -> list[dict[str, Any]]:
+    rows = _query_all(
+        table,
+        IndexName="gsi1",
+        KeyConditionExpression="gsi1pk = :pk",
+        ExpressionAttributeValues={":pk": board_pk("changes")},
+        ScanIndexForward=False,
+        Limit=limit,
+    )
+    return [_strip_keys(i) for i in rows[:limit]]
+
+
+def content_key(content_id: str) -> dict[str, str]:
+    return {"pk": board_pk(f"content#{content_id}"), "sk": "META"}
+
+
+def put_content(table: Any, doc: dict[str, Any]) -> None:
+    from contract_constants import BOARD_STAFF_RETENTION_DAYS_CONTENT
+
+    status = str(doc.get("status") or "idea")
+    slot = str(doc.get("slotAt") or "")
+    table.put_item(
+        Item={
+            **content_key(str(doc["contentId"])),
+            "gsi1pk": board_pk(f"content#{status}"),
+            "gsi1sk": f"{slot}#{doc.get('contentId') or ''}",
+            "expiresAt": int(time.time()) + BOARD_STAFF_RETENTION_DAYS_CONTENT * 86400,
+            **_to_ddb_nested(doc),
+        }
+    )
+
+
+def get_content(table: Any, content_id: str) -> dict[str, Any] | None:
+    res = table.get_item(Key=content_key(content_id))
+    item = res.get("Item") if isinstance(res, dict) else None
+    if not item:
+        return None
+    doc = _from_ddb_nested(_strip_keys(item))
+    return doc if isinstance(doc, dict) else None
+
+
+def list_content(table: Any, status: str | None = None, *, limit: int = 200) -> list[dict[str, Any]]:
+    from contract_constants import BOARD_STAFF_CONTENT_STATUSES
+
+    statuses = [status] if status else list(BOARD_STAFF_CONTENT_STATUSES)
+    items: list[dict[str, Any]] = []
+    for st in statuses:
+        rows = _query_all(
+            table,
+            IndexName="gsi1",
+            KeyConditionExpression="gsi1pk = :pk",
+            ExpressionAttributeValues={":pk": board_pk(f"content#{st}")},
+            ScanIndexForward=True,
+            Limit=limit,
+        )
+        items.extend(_from_ddb_nested(_strip_keys(i)) for i in rows)
+    return [i for i in items if isinstance(i, dict)][:limit]
+
+
+def put_newsletter_sub(table: Any, digest: str, list_name: str, doc: dict[str, Any]) -> None:
+    table.put_item(
+        Item={
+            "pk": board_pk(f"newsletter#sub#{list_name}#{digest}"),
+            "sk": "META",
+            "gsi1pk": board_pk(f"newsletter#{list_name}"),
+            "gsi1sk": str(doc.get("confirmedAt") or doc.get("createdAt") or ""),
+            **_to_ddb_nested(doc),
+        }
+    )
+
+
+def get_newsletter_sub(table: Any, digest: str, list_name: str | None = None) -> dict[str, Any] | None:
+    lists = [list_name] if list_name else list(__import__("contract_constants").BOARD_STAFF_NEWSLETTER_LISTS)
+    for name in lists:
+        if not name:
+            continue
+        res = table.get_item(Key={"pk": board_pk(f"newsletter#sub#{name}#{digest}"), "sk": "META"})
+        item = res.get("Item") if isinstance(res, dict) else None
+        if item:
+            doc = _from_ddb_nested(_strip_keys(item))
+            if isinstance(doc, dict):
+                return doc
+    return None
+
+
+def list_newsletter_subs(table: Any, list_name: str, *, limit: int = 500, cursor: str | None = None) -> tuple[list[dict[str, Any]], str | None]:
+    params: dict[str, Any] = {
+        "IndexName": "gsi1",
+        "KeyConditionExpression": "gsi1pk = :pk",
+        "ExpressionAttributeValues": {":pk": board_pk(f"newsletter#{list_name}")},
+        "Limit": max(1, int(limit)),
+    }
+    if cursor:
+        try:
+            pad = "=" * ((4 - len(cursor) % 4) % 4)
+            params["ExclusiveStartKey"] = json.loads(base64.urlsafe_b64decode(cursor + pad).decode("utf-8"))
+        except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
+            pass
+    res = table.query(**params)
+    items = [_strip_keys(i) for i in (res.get("Items") or [])]
+    lek = res.get("LastEvaluatedKey")
+    next_cursor = None
+    if lek:
+        next_cursor = base64.urlsafe_b64encode(json.dumps(lek, default=str).encode("utf-8")).decode("ascii").rstrip("=")
+    return items, next_cursor
+
+
+def outreach_day_key(date_iso: str | None = None) -> str:
+    day = date_iso or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return f"outreachday#{day}"
+
+
+def load_outreach_day(table: Any, date_iso: str | None = None) -> dict[str, Any]:
+    stored = _get_state(table, outreach_day_key(date_iso)) or {}
+    return {
+        "sent": int(stored.get("sent") or 0),
+        "bounces": int(stored.get("bounces") or 0),
+        "complaints": int(stored.get("complaints") or 0),
+    }
+
+
+def save_outreach_day(table: Any, doc: dict[str, Any], date_iso: str | None = None) -> None:
+    _put_state(table, outreach_day_key(date_iso), {**doc, "expiresAt": int(time.time()) + 400 * 86400})
+
+
+def reserve_outreach_sent(table: Any, date_iso: str, cap: int) -> bool:
+    try:
+        table.update_item(
+            Key={"pk": board_pk(outreach_day_key(date_iso)), "sk": "STATE"},
+            UpdateExpression="ADD sent :one SET expiresAt = :exp",
+            ConditionExpression="attribute_not_exists(sent) OR sent < :cap",
+            ExpressionAttributeValues={
+                ":one": 1,
+                ":cap": int(cap),
+                ":exp": int(time.time()) + 400 * 86400,
+            },
+        )
+        return True
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return False
+        raise
+
+
+def release_outreach_sent(table: Any, date_iso: str) -> None:
+    table.update_item(
+        Key={"pk": board_pk(outreach_day_key(date_iso)), "sk": "STATE"},
+        UpdateExpression="ADD sent :neg",
+        ExpressionAttributeValues={":neg": -1},
+    )
