@@ -55,7 +55,7 @@ jobs:
       # registered or `docker run --platform linux/arm64` fails with
       # "exec /usr/bin/bash: exec format error".
       - name: Set up QEMU for arm64 Lambda bundling
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: arm64
 
