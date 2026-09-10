@@ -589,6 +589,23 @@ describe("Board staff kill switches on both lambdas", () => {
   });
 });
 
+describe("SQS event sources on AdminApiFn", () => {
+  test("every source queue's visibility timeout covers the function timeout", () => {
+    const fns = resourcesOfType("AWS::Lambda::Function");
+    const queues = resourcesOfType("AWS::SQS::Queue");
+    const mappings = Object.values(resourcesOfType("AWS::Lambda::EventSourceMapping"));
+    expect(mappings.length).toBeGreaterThanOrEqual(1);
+    for (const mapping of mappings) {
+      const fnRef = mapping.Properties?.FunctionName?.Ref as string;
+      const queueRef = mapping.Properties?.EventSourceArn?.["Fn::GetAtt"]?.[0] as string;
+      const fnTimeout = fns[fnRef]?.Properties?.Timeout as number;
+      const visibility = queues[queueRef]?.Properties?.VisibilityTimeout as number;
+      expect(fnTimeout).toBeGreaterThan(0);
+      expect(visibility).toBeGreaterThanOrEqual(fnTimeout);
+    }
+  });
+});
+
 describe("Board SES configuration-set IAM and public CORS", () => {
   test("outreach and board-mail policies include configuration-set ARNs", () => {
     const serialized = JSON.stringify(template.toJSON());
