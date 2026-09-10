@@ -1,7 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { adminFetchJson } from "../lib/apiAdminClient";
-import { reviewWrongMutationOptions, rampPromoteMutationOptions } from "./useBoardReview";
+import { reviewWrongMutationOptions, rampPromoteMutationOptions, stagingPromoteMutationOptions } from "./useBoardReview";
 
 vi.mock("../lib/apiAdminClient", () => ({
   adminFetchJson: vi.fn(),
@@ -33,6 +33,15 @@ describe("review mutations", () => {
     await mutationFn("publish:facebook");
     const [path, init] = fetchMock.mock.calls[0];
     expect(path).toBe("/siu-tin-dei/board/ramp/publish%3Afacebook/promote");
+    expect(init?.method).toBe("POST");
+  });
+
+  it("posts staging promote", async () => {
+    fetchMock.mockResolvedValueOnce({ approval: { approvalId: "appr-1" }, preview: { aheadBy: 1 } });
+    const { mutationFn } = stagingPromoteMutationOptions(qc);
+    await mutationFn();
+    const [path, init] = fetchMock.mock.calls[0];
+    expect(path).toBe("/siu-tin-dei/board/code/promote");
     expect(init?.method).toBe("POST");
   });
 });

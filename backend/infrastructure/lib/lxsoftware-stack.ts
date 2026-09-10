@@ -183,7 +183,7 @@ function boardConnectorSecrets(
     github: boardPlaceholderSecret(scope, opts.ids.github, {
       ...common,
       secretName: opts.names.github,
-      description: `${opts.label}: fine-grained GitHub PAT (Contents read, Issues r/w, Actions read, Metadata read, Security events read).`,
+      description: `${opts.label}: fine-grained GitHub PAT (Contents read, Issues r/w, Actions write, Metadata read, Security events read).`,
     }),
     search: boardPlaceholderSecret(scope, opts.ids.search, {
       ...common,
@@ -2279,6 +2279,14 @@ export class LxsoftwareStack extends cdk.Stack {
       {
         path: "/siu-tin-dei/board/content/{id}/creative/{n}",
         methods: [apigwv2.HttpMethod.GET],
+      },
+      {
+        path: "/siu-tin-dei/board/code/staging",
+        methods: [apigwv2.HttpMethod.GET],
+      },
+      {
+        path: "/siu-tin-dei/board/code/promote",
+        methods: [apigwv2.HttpMethod.POST],
       },
     ];
     for (const route of boardRoutes) {

@@ -285,8 +285,8 @@ up in review; do not treat them as product decisions unless you confirm.
   The WP9 duty list is explicit (BA KPI, accountant month-end + aging,
   security triage, data-analyst attribution) and does not include a
   newsletter cron.
-- **Architect stays inactive.** Alarm tasks go to the CTO until WP10
-  activates `architect`. Security alerts go to `security-analyst`.
+- **Architect was inactive in WP9.** Alarm tasks went to the CTO until
+  WP10 activated `architect`. Security alerts go to `security-analyst`.
 - **Dunning still falls back to Approvals** when `create_task` raises
   `StaffError` (cap, inactive seat) or when staff is off. Existing
   receivables tests stay on the Approval path because they do not enable
@@ -299,3 +299,31 @@ up in review; do not treat them as product decisions unless you confirm.
   falls back to `summary` / `description` / `secretType`.
 - **`BoardStaffSeatDefault` gained optional `duties`.** Sync-contracts
   emits the duty objects onto the seats that define them.
+- **CI workflow failures are not hourly tasks.** The WP9 backend paragraph
+  diffs CloudWatch ALARMs and Hub/Analyzer/GitHub alert ids. Dependabot /
+  code-scanning are covered. Actions failures on `main` only appear in the
+  meeting repo snapshot (last five default-branch runs). WP10 reviews CI on
+  `board/*` PRs.
+
+## WP10
+
+- **siutindei workflows are a hand-off.** This repo dispatches
+  `board-agent.yml`, `board-merge-staging.yml` and `board-promote.yml`.
+  Exact YAML is in
+  `docs/architecture/executive-board-autonomy-siutindei-appendix-a.md`.
+  Without those files in siutindei, dispatches return GitHub 404.
+- **CMO stays `off` on the `code` tool** (spec defaults: cto act, cpo
+  propose, others off). `content-marketer` has seat-level `code: act` for
+  SEO, but the manager cap keeps it off until the owner raises CMO.
+- **Architect duty cron is Monday 11:00 HKT** (`groom-backlog`). The spec
+  said weekly and did not name a clock time.
+- **Promote from the review page queues an Approval** (`POST /code/promote`
+  → `code_promote`, `always_propose`). Approving it dispatches
+  `board-promote.yml`; the owner still merges the GitHub PR to `main`.
+- **`board_github._request` returns raw text** for
+  `Accept: application/vnd.github.diff` so `code_review_pr` can cap the
+  diff at 30 000 characters.
+- **GitHub PAT description** now asks for `Actions: write` (was read).
+  Rotate/widen the existing fine-grained token.
+- **All fifteen seats are now `isActiveDefault: true`.** Inactive-seat
+  tests deactivate `architect` via override.

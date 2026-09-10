@@ -228,6 +228,22 @@
       }
     },
     {
+      "id": "code",
+      "label": "Engineering runner",
+      "description": "Dispatch the coding runner on board/* draft PRs, review diffs, merge to staging under policy, and propose a staging→main promotion. The board never merges to main.",
+      "maxLevel": "act",
+      "defaults": {
+        "ceo": "off",
+        "cfo": "off",
+        "coo": "off",
+        "cpo": "propose",
+        "cto": "act",
+        "cio": "off",
+        "ciso": "off",
+        "cmo": "off"
+      }
+    },
+    {
       "id": "newsletter",
       "label": "Newsletter",
       "description": "Draft fortnightly parent and provider issues and send them after a publish hold. Public subscribe is double opt-in; unsubscribe is one click.",

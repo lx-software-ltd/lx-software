@@ -186,6 +186,9 @@ def handle_board_route(
     if head == "content":
         return _content_route(event, method, rest, user_sub)
 
+    if head == "code":
+        return _code_route(event, method, rest, user_sub)
+
     return _json_response(404, {"message": "Not found"})
 
 
@@ -1040,6 +1043,27 @@ def _content_route(event: dict[str, Any], method: str, rest: list[str], user_sub
         if index < 0 or index >= len(keys):
             return _json_response(404, {"message": "Creative not found"})
         return _json_response(200, {"url": board_content.presigned_url(str(keys[index])), "key": keys[index]})
+    return _json_response(404, {"message": "Not found"})
+
+
+def _code_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
+    if not board_staff.env_enabled():
+        return _staff_disabled()
+    import board_code
+
+    table = board_store.records_table()
+    settings = board_store.load_settings(table)
+    if len(rest) == 2 and rest[1] == "staging" and method == "GET":
+        return _json_response(200, {"staging": board_code.staging_preview()})
+    if len(rest) == 2 and rest[1] == "promote" and method == "POST":
+        try:
+            out = board_code.queue_promote_approval(table, settings, user_sub or "")
+        except board_code.CodeError as exc:
+            return _json_response(409, {"message": str(exc)})
+        except board_tools.ToolPermissionError as exc:
+            return _json_response(409, {"message": str(exc)})
+        _audit(user_sub, "BOARD_CODE_PROMOTE", "staging", event)
+        return _json_response(201, out)
     return _json_response(404, {"message": "Not found"})
 
 

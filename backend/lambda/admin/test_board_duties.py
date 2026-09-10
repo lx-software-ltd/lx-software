@@ -178,6 +178,7 @@ class OpsTriageTests(BoardTestCase):
         self.settings = _enable_staff(self.table, dutiesEnabled=False)
 
     def test_new_alarm_goes_to_cto_when_architect_inactive(self) -> None:
+        board_store.save_staff_override(self.table, "architect", {"isActive": False})
         board_store.put_cache(
             self.table,
             "aws:alarms",

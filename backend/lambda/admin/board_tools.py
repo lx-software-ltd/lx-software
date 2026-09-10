@@ -4,7 +4,7 @@ Design (see docs/architecture/executive-board-tools-plan.md):
 
 - A **registry** of operations, each belonging to a tool (``github``,
   ``board``, ``mail``, ``research``, ``aws``, ``security``, ``product``,
-  ``meta``, ``finance``, ``stores``, ``staff``, ``intel``, ``outreach``, ``content``, ``newsletter``)
+  ``meta``, ``finance``, ``stores``, ``staff``, ``intel``, ``outreach``, ``content``, ``code``, ``newsletter``)
   and being either a *read* or a *write*.
 - A per-tool, per-member **level** (``off`` < ``read`` < ``propose`` <
   ``act``), capped by a global mode. Read operations are offered at
@@ -647,6 +647,42 @@ def _newsletter_send(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     import board_newsletter
 
     return board_newsletter.op_send(ctx, args)
+
+
+def _code_run_task(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_code
+
+    return board_code.op_run_task(ctx, args)
+
+
+def _code_get_run(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_code
+
+    return board_code.op_get_run(ctx, args)
+
+
+def _code_review_pr(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_code
+
+    return board_code.op_review_pr(ctx, args)
+
+
+def _code_merge_staging(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_code
+
+    return board_code.op_merge_staging(ctx, args)
+
+
+def _code_promote(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_code
+
+    return board_code.op_promote(ctx, args)
+
+
+def _code_merge_guard(ctx: ToolContext, args: dict[str, Any]) -> str | None:
+    import board_code
+
+    return board_code.merge_guard(ctx, args)
 
 
 def _staff_assign(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
@@ -2066,6 +2102,79 @@ def build_registry() -> dict[str, ToolOp]:
             contexts=("chat", "meeting", "task"),
         ),
         ToolOp(
+            name="code_run_task",
+            tool_id="code",
+            kind="write",
+            description="Dispatch the coding runner. Opens a draft PR on board/{taskId} from staging. Does not merge.",
+            parameters=_obj(
+                {
+                    "issueNumber": _int_param("GitHub issue number.", minimum=1, maximum=100000),
+                    "brief": _str_param("What to implement. Include acceptance criteria.", max_len=4000),
+                    "kind": _str_param("feature, fix or content (SEO).", enum=["feature", "fix", "content"]),
+                    "reason": REASON_PARAM,
+                },
+                ["issueNumber", "brief"],
+            ),
+            run=_code_run_task,
+            summarize=_summ("Dispatched the coding runner"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="code_get_run",
+            tool_id="code",
+            kind="read",
+            description="Poll the Actions run and draft PR for a runner task_id.",
+            parameters=_obj({"taskId": _str_param("Staff or runner task id.", max_len=40)}),
+            run=_code_get_run,
+            summarize=_summ("Polled a coding run"),
+            contexts=("chat", "meeting", "task"),
+        ),
+        ToolOp(
+            name="code_review_pr",
+            tool_id="code",
+            kind="read",
+            description="Read a pull request: diff stats, paths, CI, and a 30 000 character diff for architect review.",
+            parameters=_obj({"prNumber": _int_param("Pull request number.", minimum=1, maximum=100000)}, ["prNumber"]),
+            run=_code_review_pr,
+            summarize=_summ("Reviewed a pull request"),
+            contexts=("chat", "meeting", "task"),
+            timeout_seconds=25,
+        ),
+        ToolOp(
+            name="code_merge_staging",
+            tool_id="code",
+            kind="write",
+            description="Merge a board/* PR into staging after CI, architect accept, size and path checks. Held as code_staging.",
+            parameters=_obj(
+                {
+                    "prNumber": _int_param("Pull request number.", minimum=1, maximum=100000),
+                    "kind": _str_param("feature, fix or content.", enum=["feature", "fix", "content"]),
+                    "reason": REASON_PARAM,
+                },
+                ["prNumber"],
+            ),
+            run=_code_merge_staging,
+            summarize=_summ("Merged a pull request to staging"),
+            contexts=("chat", "meeting", "task"),
+            act_guard=_code_merge_guard,
+        ),
+        ToolOp(
+            name="code_promote",
+            tool_id="code",
+            kind="write",
+            description="Open or update the staging→main promotion PR. Always an Approval; the owner merges in GitHub.",
+            parameters=_obj(
+                {
+                    "kind": _str_param("Always production in v1.", enum=["production"]),
+                    "reason": REASON_PARAM,
+                }
+            ),
+            run=_code_promote,
+            summarize=_summ("Proposed a staging promotion"),
+            contexts=("chat", "meeting", "task"),
+            always_propose=True,
+        ),
+        ToolOp(
             name="staff_assign",
             tool_id="staff",
             kind="write",
@@ -2246,7 +2355,7 @@ def available_ops(
             continue
         if op.tool_id == "task":
             level = "act" if context == "task" else "off"
-        elif op.tool_id in ("staff", "intel", "outreach", "content", "newsletter"):
+        elif op.tool_id in ("staff", "intel", "outreach", "content", "newsletter", "code"):
             import board_staff
 
             if not board_staff.enabled(settings):

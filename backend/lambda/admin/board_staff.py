@@ -776,6 +776,13 @@ def _accept_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
             board_content.on_readout_delivered(table, board_store.load_settings(table), task)
         except Exception as exc:
             _log_event("warning", tag="board_content_readout_deliver_failed", error=str(exc)[:200])
+    if ref.get("kind") == "code-review":
+        try:
+            import board_code
+
+            board_code.on_review_delivered(table, board_store.load_settings(table), task)
+        except Exception as exc:
+            _log_event("warning", tag="board_code_review_deliver_failed", error=str(exc)[:200])
     return task
 
 
@@ -842,6 +849,12 @@ def handle_tick(event: dict[str, Any]) -> dict[str, Any]:
         board_duties.run_due(table, settings)
     except Exception as exc:
         _log_event("warning", tag="board_duties_tick_failed", error=str(exc)[:300])
+    try:
+        import board_code
+
+        board_code.handle_tick(table, settings)
+    except Exception as exc:
+        _log_event("warning", tag="board_code_tick_failed", error=str(exc)[:300])
     started = drain_queue(table, settings)
     stuck_cut = datetime.now(timezone.utc) - timedelta(seconds=BOARD_STAFF_TASK_STUCK_SECONDS)
     cut_iso = _utc_iso_z(stuck_cut)

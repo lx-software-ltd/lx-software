@@ -188,6 +188,7 @@ export const DEFAULT_BOARD_BOUNDARIES: BoardBoundaries = {
     publish: 24,
     spend: 24,
     code_staging: 12,
+    code_production: 0,
   },
   holdOverrides: {},
 };
@@ -1160,6 +1161,24 @@ export function boardContentCreativePath(contentId: string, n: number): string {
   return `${BOARD_API_BASE}/content/${encodeURIComponent(contentId)}/creative/${n}`;
 }
 
+export function boardCodeStagingPath(): string {
+  return `${BOARD_API_BASE}/code/staging`;
+}
+
+export function boardCodePromotePath(): string {
+  return `${BOARD_API_BASE}/code/promote`;
+}
+
+export type BoardStagingPreview = {
+  readonly status?: string;
+  readonly behindBy?: number;
+  readonly aheadBy?: number;
+  readonly canPromote?: boolean;
+  readonly htmlUrl?: string;
+  readonly error?: string;
+  readonly commits?: readonly { readonly sha?: string; readonly message?: string }[];
+};
+
 export type BoardContentItem = {
   readonly contentId: string;
   readonly status?: string;
@@ -1373,7 +1392,7 @@ export type BoardReviewSnapshot = {
     readonly changes?: readonly BoardChangeNote[];
     readonly latestBrief?: BoardMarketBrief | null;
   };
-  readonly promotion?: readonly unknown[];
+  readonly promotion?: BoardStagingPreview | readonly unknown[];
 };
 
 export function tasksNeedPolling(tasks: readonly BoardTask[]): boolean {

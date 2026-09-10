@@ -8,12 +8,15 @@ import {
   boardLessonsPath,
   boardRampPath,
   boardRampPromotePath,
+  boardCodePromotePath,
+  boardCodeStagingPath,
   boardReviewPath,
   boardReviewWrongPath,
   type BoardBreaker,
   type BoardLesson,
   type BoardRampRow,
   type BoardReviewSnapshot,
+  type BoardStagingPreview,
 } from "../lib/boardModel";
 import { BOARD_QUERY_KEY } from "./useBoard";
 import { BOARD_HOLDS_KEY } from "./useBoardHolds";
@@ -22,6 +25,7 @@ export const BOARD_REVIEW_KEY = [...BOARD_QUERY_KEY, "review"] as const;
 export const BOARD_LESSONS_KEY = [...BOARD_QUERY_KEY, "lessons"] as const;
 export const BOARD_BREAKERS_KEY = [...BOARD_QUERY_KEY, "breakers"] as const;
 export const BOARD_RAMP_KEY = [...BOARD_QUERY_KEY, "ramp"] as const;
+export const BOARD_STAGING_KEY = [...BOARD_QUERY_KEY, "staging"] as const;
 
 export function reviewWrongMutationOptions(qc: QueryClient) {
   return {
@@ -85,6 +89,21 @@ export function breakerResetMutationOptions(qc: QueryClient) {
   };
 }
 
+export function stagingPromoteMutationOptions(qc: QueryClient) {
+  return {
+    mutationFn: async () => {
+      return adminFetchJson<{ approval: { readonly approvalId: string }; preview: BoardStagingPreview }>(
+        boardCodePromotePath(),
+        { method: "POST", body: JSON.stringify({}) },
+      );
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: BOARD_STAGING_KEY });
+      void qc.invalidateQueries({ queryKey: BOARD_QUERY_KEY });
+    },
+  };
+}
+
 export function rampPromoteMutationOptions(qc: QueryClient) {
   return {
     mutationFn: async (classKey: string) => {
@@ -136,11 +155,20 @@ export function useBoardReview(enabled: boolean) {
     },
     enabled,
   });
+  const staging = useQuery({
+    queryKey: BOARD_STAGING_KEY,
+    queryFn: async () => {
+      const res = await adminFetchJson<{ staging: BoardStagingPreview }>(boardCodeStagingPath());
+      return res.staging;
+    },
+    enabled,
+  });
   return {
     review: review.data,
     lessons: lessons.data ?? [],
     breakers: breakers.data ?? [],
     ramp: ramp.data ?? [],
+    staging: staging.data,
     isLoading: review.isLoading,
     isError: review.isError,
     error: review.error,
@@ -149,5 +177,6 @@ export function useBoardReview(enabled: boolean) {
     dismissLesson: useMutation(lessonDismissMutationOptions(qc)),
     resetBreaker: useMutation(breakerResetMutationOptions(qc)),
     promote: useMutation(rampPromoteMutationOptions(qc)),
+    promoteStaging: useMutation(stagingPromoteMutationOptions(qc)),
   };
 }

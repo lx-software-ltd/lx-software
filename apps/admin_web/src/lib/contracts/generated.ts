@@ -466,6 +466,22 @@ export const BOARD_TOOL_DEFINITIONS: readonly BoardToolDefinition[] = [
     }
   },
   {
+    "id": "code",
+    "label": "Engineering runner",
+    "description": "Dispatch the coding runner on board/* draft PRs, review diffs, merge to staging under policy, and propose a staging→main promotion. The board never merges to main.",
+    "maxLevel": "act",
+    "defaults": {
+      "ceo": "off",
+      "cfo": "off",
+      "coo": "off",
+      "cpo": "propose",
+      "cto": "act",
+      "cio": "off",
+      "ciso": "off",
+      "cmo": "off"
+    }
+  },
+  {
     "id": "newsletter",
     "label": "Newsletter",
     "description": "Draft fortnightly parent and provider issues and send them after a publish hold. Public subscribe is double opt-in; unsubscribe is one click.",
@@ -599,12 +615,13 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cpo",
     "title": "Product Developer",
     "modelTier": "senior",
-    "isActiveDefault": false,
+    "isActiveDefault": true,
     "tools": {
       "product": "propose",
       "stores": "propose",
       "web": "read",
-      "github": "propose"
+      "github": "propose",
+      "code": "propose"
     },
     "brief": "You turn funnel data and market-analyst ideas into specs, store listing copy, and prototype pull requests. You protect the minimum viable product from feature creep. Report facts you verified with tools; say clearly what you could not verify."
   },
@@ -620,7 +637,8 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
       "research": "read",
       "github": "propose",
       "content": "act",
-      "newsletter": "act"
+      "newsletter": "act",
+      "code": "act"
     },
     "brief": "You fill the content calendar, write posts and stories in English and Traditional Chinese, render template cards, and draft newsletters and SEO articles. You never invent photos of children and you never publish a claim the catalog does not support. Report facts you verified with tools; say clearly what you could not verify."
   },
@@ -656,23 +674,34 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cto",
     "title": "Software Architect",
     "modelTier": "senior",
-    "isActiveDefault": false,
+    "isActiveDefault": true,
     "tools": {
       "github": "propose",
       "aws": "propose",
       "security": "read",
-      "research": "read"
+      "research": "read",
+      "code": "read"
     },
-    "brief": "You write design notes, ADRs and issue breakdowns with acceptance criteria, and you triage CI failures and dependencies. You never merge to main. Report facts you verified with tools; say clearly what you could not verify."
+    "brief": "You write design notes, ADRs and issue breakdowns with acceptance criteria, and you triage CI failures and dependencies. You never merge to main. Report facts you verified with tools; say clearly what you could not verify.",
+    "duties": [
+      {
+        "id": "groom-backlog",
+        "cron": "0 11 * * MON",
+        "brief": "Groom the GitHub backlog. Write acceptance criteria on ready issues and label them board-ready. Markdown list of issues you labelled.",
+        "deliverableType": "issues",
+        "tier": "senior"
+      }
+    ]
   },
   {
     "id": "engineer-1",
     "reportsTo": "cto",
     "title": "Senior Engineer",
     "modelTier": "senior",
-    "isActiveDefault": false,
+    "isActiveDefault": true,
     "tools": {
-      "github": "act"
+      "github": "act",
+      "code": "act"
     },
     "brief": "You implement one GitHub issue at a time through the coding runner: a draft pull request with CI green and a short summary for the architect. You never merge to main or touch protected paths. Report facts you verified with tools; say clearly what you could not verify."
   },
@@ -681,9 +710,10 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "reportsTo": "cto",
     "title": "Senior Engineer",
     "modelTier": "senior",
-    "isActiveDefault": false,
+    "isActiveDefault": true,
     "tools": {
-      "github": "act"
+      "github": "act",
+      "code": "act"
     },
     "brief": "You implement one GitHub issue at a time through the coding runner: a draft pull request with CI green and a short summary for the architect. You never merge to main or touch protected paths. Report facts you verified with tools; say clearly what you could not verify."
   },

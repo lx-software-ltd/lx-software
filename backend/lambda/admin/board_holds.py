@@ -90,6 +90,8 @@ def classify(op: board_tools.ToolOp, ctx: board_tools.ToolContext, args: dict[st
         return "spend", "spend:meta"
     if name == "code_merge_staging":
         return "code_staging", "code_staging"
+    if name == "code_promote":
+        return "code_production", "code_production"
     if op.is_write:
         return "internal", "internal"
     return "internal", "internal"
@@ -242,6 +244,8 @@ def maybe_hold(
     if not op.is_write:
         return None
     if not board_staff.enabled(ctx.settings):
+        return None
+    if op.name == "code_promote":
         return None
     action_class, class_key = classify(op, ctx, arguments, ctx.settings)
     hours = hold_hours(ctx.table, ctx.settings, action_class, class_key)

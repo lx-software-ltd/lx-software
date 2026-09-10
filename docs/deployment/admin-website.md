@@ -479,6 +479,15 @@ function calling. Design:
   minutes may include `boundarySuggestions` that prepend the daily
   review suggestions list.
 
+- **Engineering runner (WP10):** `GET /siu-tin-dei/board/code/staging`,
+  `POST …/code/promote`. Tool ops `code_run_task`, `code_get_run`,
+  `code_review_pr`, `code_merge_staging`, `code_promote`. Widen the board
+  GitHub token to **Actions: write**. Workflows
+  `board-agent.yml` / `board-merge-staging.yml` / `board-promote.yml` must
+  exist on **lx-software-ltd/siutindei** (see appendix A). Daily review
+  **Promote** queues an Approval; the owner merges the GitHub
+  `staging → main` PR. Architect weekly duty grooms `board-ready` issues.
+
 Smoke test after deploy: open the tab, save a company vision/mission, edit one
 member's mandate, send a chat message to the CEO (reply arrives within ~30 s),
 then **Run stand-up** and confirm minutes and action items appear. For tools:

@@ -59,6 +59,45 @@ function AssistedPosts({ items }: { readonly items: readonly BoardContentItem[] 
   );
 }
 
+function StagingPromote({ data }: { readonly data: ReturnType<typeof useBoardReview> }) {
+  const staging = data.staging;
+  const commits = staging?.commits ?? [];
+  const behind = staging?.behindBy ?? 0;
+  return (
+    <div>
+      {staging?.error ? <p className="text-danger small">{staging.error}</p> : null}
+      {behind > 0 ? (
+        <p className="small text-warning">staging is {behind} commit(s) behind main. Rebase before promoting.</p>
+      ) : null}
+      {commits.length === 0 ? (
+        <p className="text-muted small mb-2">No staging commits ahead of main.</p>
+      ) : (
+        <ul className="small mb-3">
+          {commits.map((c) => (
+            <li key={c.sha || c.message}>
+              <code>{c.sha}</code> {c.message}
+            </li>
+          ))}
+        </ul>
+      )}
+      <button
+        type="button"
+        className="btn btn-sm btn-primary"
+        disabled={data.promoteStaging.isPending || !staging?.canPromote}
+        onClick={() => data.promoteStaging.mutate()}
+      >
+        Promote
+      </button>
+      {data.promoteStaging.isSuccess ? (
+        <p className="small text-muted mt-2 mb-0">Queued an Approval. Confirm it under Approvals to open the staging→main PR.</p>
+      ) : null}
+      {data.promoteStaging.isError ? (
+        <p className="small text-danger mt-2 mb-0">{errorText(data.promoteStaging.error)}</p>
+      ) : null}
+    </div>
+  );
+}
+
 function Headline({ review }: { readonly review: BoardReviewSnapshot }) {
   const h = review.headline;
   const channels = Object.entries(h.messagesByChannel ?? {});
@@ -292,7 +331,7 @@ export function BoardReviewSection() {
       </Section>
 
       <Section id="promotion" title="Production promotion">
-        <p className="text-muted small mb-0">Staging promotion lands in WP10.</p>
+        <StagingPromote data={data} />
       </Section>
     </div>
   );

@@ -59,12 +59,14 @@ class StaffEngineTests(BoardTestCase):
 
     def test_inactive_seat_is_off(self) -> None:
         settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "architect", {"isActive": False})
         roster = board_staff.seats_by_id(self.table, settings)
         self.assertFalse(roster["architect"]["isActive"])
         self.assertEqual(board_staff.seat_level(settings, roster, "architect", "mail"), "off")
 
     def test_create_task_validates_and_defaults_budget(self) -> None:
         settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "architect", {"isActive": False})
         with self.assertRaises(board_staff.StaffError):
             board_staff.create_task(self.table, settings, assignee="nope", origin="owner", brief="x", deliverable_type="markdown", created_by="t")
         with self.assertRaises(board_staff.StaffError):

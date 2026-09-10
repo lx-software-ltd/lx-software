@@ -352,6 +352,26 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   if (p.startsWith(`${board}/ramp/`) && p.endsWith("/promote") && method === "POST") {
     return json({ classKey: decodeURIComponent(p.slice(`${board}/ramp/`.length, -"/promote".length)), holdOverrides: { "publish:facebook": 0 } });
   }
+  if (p === `${board}/code/staging`) {
+    return json({
+      staging: {
+        status: "ahead",
+        behindBy: 0,
+        aheadBy: 1,
+        canPromote: true,
+        commits: [{ sha: "a1b2c3d4", message: "board: #42 add booking" }],
+      },
+    });
+  }
+  if (p === `${board}/code/promote` && method === "POST") {
+    return json(
+      {
+        approval: { approvalId: "appr-promote-1", op: "code_promote", status: "pending" },
+        preview: { status: "ahead", aheadBy: 1, behindBy: 0, canPromote: true, commits: [] },
+      },
+      201,
+    );
+  }
   if (p === `${board}/review`) {
     return json({ review: boardReviewFixture });
   }
