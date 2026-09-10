@@ -98,6 +98,30 @@ function tryLocalPythonBundle(entry: string, outputDir: string): boolean {
 }
 
 /**
+ * Bash script run inside the SAM build image (`bash -c "$SCRIPT"`) when a
+ * requirements.txt has packages. Lines must be newline-joined: bash needs
+ * statement separators, so a space-joined script is a syntax error.
+ * Mirrors `copyDirRecursive` (skips `__pycache__` / `.pytest_cache`).
+ */
+export const DOCKER_BUNDLE_SCRIPT = [
+  "set -euo pipefail",
+  "export PIP_ROOT_USER_ACTION=ignore PIP_NO_CACHE_DIR=1",
+  "if [[ -f requirements.txt ]]; then",
+  "  pip install -r requirements.txt -t /asset-output",
+  "fi",
+  "shopt -s dotglob nullglob",
+  "for item in *; do",
+  '  case "$item" in requirements.txt|__pycache__|.pytest_cache) continue ;; esac',
+  '  if [[ -d "$item" ]]; then',
+  '    cp -a "$item" /asset-output/',
+  '    find /asset-output/"$item" -type d \\( -name __pycache__ -o -name .pytest_cache \\) -prune -exec rm -rf {} +',
+  '  elif [[ "$item" == *.py ]]; then',
+  '    cp -a "$item" /asset-output/',
+  "  fi",
+  "done",
+].join("\n");
+
+/**
  * Creates a Python 3.12 Lambda with Docker-based bundling (recursive copy of
  * sources + pip when requirements.txt has packages). Local bundling only runs
  * when there are no pip dependencies so macOS wheels are never copied into a
@@ -145,23 +169,7 @@ export function createPythonLambda(
             return tryLocalPythonBundle(entry, outputDir);
           },
         },
-        command: [
-          "bash",
-          "-c",
-          [
-            "set -euo pipefail",
-            "export PIP_ROOT_USER_ACTION=ignore",
-            "if [[ -f requirements.txt ]]; then pip install -r requirements.txt -t /asset-output; fi",
-            "shopt -s dotglob nullglob",
-            "for item in *; do",
-            "  if [[ \"$item\" == requirements.txt ]]; then continue; fi",
-            "  if [[ -d \"$item\" ]]; then cp -a \"$item\" /asset-output/; fi",
-            "done",
-            "for f in *.py; do",
-            "  [[ -f \"$f\" ]] && cp -a \"$f\" /asset-output/",
-            "done",
-          ].join(" "),
-        ],
+        command: ["bash", "-c", DOCKER_BUNDLE_SCRIPT],
       },
     }),
     memorySize: props.memorySize ?? 512,
