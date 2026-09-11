@@ -14,6 +14,7 @@ import board_hk
 import board_staff
 import board_store
 from contract_constants import (
+    BOARD_KEY,
     BOARD_STAFF_CONTENT_CHANNELS,
     BOARD_STAFF_CONTENT_STATUSES,
     BOARD_STAFF_IG_PUBLISHES_PER_DAY,
@@ -167,14 +168,14 @@ def render_item(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     cid = str(doc["contentId"])
     if channel == "instagram_story":
         png = board_creative.render_story(template, fields, lang="zh-HK" if doc.get("copyZh") and not doc.get("copyEn") else "en")
-        key = f"board/siuTinDei/content/{cid}/0.png"
+        key = f"board/{BOARD_KEY}/content/{cid}/0.png"
         board_staff._blob_put(key, png)  # noqa: SLF001
         keys.append(key)
     else:
         en = board_creative.render_card(template, fields, lang="en")
         zh = board_creative.render_card(template, {**fields, "title": fields.get("titleZh") or fields.get("title"), "body": doc.get("copyZh") or fields.get("body")}, lang="zh-HK")
-        key0 = f"board/siuTinDei/content/{cid}/0.png"
-        key1 = f"board/siuTinDei/content/{cid}/1.png"
+        key0 = f"board/{BOARD_KEY}/content/{cid}/0.png"
+        key1 = f"board/{BOARD_KEY}/content/{cid}/1.png"
         board_staff._blob_put(key0, en)  # noqa: SLF001
         board_staff._blob_put(key1, zh)  # noqa: SLF001
         keys.extend([key0, key1])

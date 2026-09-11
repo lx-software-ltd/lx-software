@@ -17,6 +17,7 @@ import board_store
 import board_tools
 from contract_constants import (
     BOARD_CHAIR_DEFAULT,
+    BOARD_KEY,
     BOARD_PERSONA_IDS,
     BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
     BOARD_STAFF_DELIVERABLE_MAX_BYTES,
@@ -263,7 +264,7 @@ def drain_queue(table: Any, settings: dict[str, Any]) -> int:
         if not board_store.claim_task_step(table, task_id, 0):
             continue
         board_async.invoke_async(
-            {"internal": "board_staff_step", "boardKey": "siuTinDei", "taskId": task_id, "step": 1},
+            {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": task_id, "step": 1},
             fallback=run_step,
         )
         started += 1
@@ -296,12 +297,12 @@ def _blob_get(key: str) -> bytes:
 
 
 def _scratchpad_key(task_id: str) -> str:
-    return f"board/siuTinDei/staff/{task_id}/scratchpad.md"
+    return f"board/{BOARD_KEY}/staff/{task_id}/scratchpad.md"
 
 
 def _deliverable_key(task_id: str, deliverable_type: str) -> str:
     ext = {"markdown": "md", "csv": "csv", "json": "json", "messages": "json"}.get(deliverable_type, "md")
-    return f"board/siuTinDei/staff/{task_id}/deliverable.{ext}"
+    return f"board/{BOARD_KEY}/staff/{task_id}/deliverable.{ext}"
 
 
 def _append_scratchpad(task: dict[str, Any], text: str) -> str:
@@ -463,7 +464,7 @@ def run_step(payload: dict[str, Any]) -> None:
         return
     board_store.put_task(table, latest)
     board_async.invoke_async(
-        {"internal": "board_staff_step", "boardKey": "siuTinDei", "taskId": task_id, "step": seq + 1},
+        {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": task_id, "step": seq + 1},
         fallback=run_step,
     )
 
@@ -627,7 +628,7 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
     board_store.put_task(ctx.table, updated)
     if enabled(ctx.settings):
         board_async.invoke_async(
-            {"internal": "board_staff_review", "boardKey": "siuTinDei", "taskId": ctx.task_id},
+            {"internal": "board_staff_review", "boardKey": BOARD_KEY, "taskId": ctx.task_id},
             fallback=run_review,
         )
     return {"ok": True, "status": "review", "deliverableKey": key}
@@ -729,7 +730,7 @@ def apply_review(
         board_async.invoke_async(
             {
                 "internal": "board_staff_step",
-                "boardKey": "siuTinDei",
+                "boardKey": BOARD_KEY,
                 "taskId": task["taskId"],
                 "step": int(task.get("step") or 0) + 1,
             },
@@ -881,7 +882,7 @@ def handle_tick(event: dict[str, Any]) -> dict[str, Any]:
                 task["updatedAt"] = board_store.now_iso()
                 board_store.put_task(table, task)
                 board_async.invoke_async(
-                    {"internal": "board_staff_review", "boardKey": "siuTinDei", "taskId": task["taskId"]},
+                    {"internal": "board_staff_review", "boardKey": BOARD_KEY, "taskId": task["taskId"]},
                     fallback=run_review,
                 )
             else:

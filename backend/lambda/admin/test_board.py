@@ -7,6 +7,7 @@ import re
 import sys
 import types
 import unittest
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -41,6 +42,24 @@ _install_stubs()
 
 from botocore.exceptions import ClientError  # noqa: E402
 
+# 12:00 HKT — outside default quiet hours [22, 8]. CI around 14:00 UTC is 22:00 HKT
+# and otherwise flakes hold-window tests (quiet shift pushes executeAt past 24h).
+BOARD_DAYTIME_UTC = datetime(2026, 9, 11, 4, 0, tzinfo=timezone.utc)
+
+
+class _FrozenBoardDateTime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return BOARD_DAYTIME_UTC if tz is None else BOARD_DAYTIME_UTC.astimezone(tz)
+
+
+def freeze_board_daytime(test_case: unittest.TestCase, *module_names: str) -> None:
+    """Pin datetime.now in hold / quiet-hour modules so those tests ignore wall clock."""
+    for name in module_names or ("board_holds", "board_policy"):
+        patcher = patch(f"{name}.datetime", _FrozenBoardDateTime)
+        patcher.start()
+        test_case.addCleanup(patcher.stop)
+
 import board_actions  # noqa: E402
 import board_chat  # noqa: E402
 import board_meeting  # noqa: E402
@@ -48,6 +67,7 @@ import board_personas  # noqa: E402
 import board_store  # noqa: E402
 import openrouter_client  # noqa: E402
 from board_routes import validate_settings  # noqa: E402
+from contract_constants import BOARD_KEY  # noqa: E402
 from dispatch import lambda_handler  # noqa: E402
 
 
@@ -861,7 +881,7 @@ class TestMeetings(BoardTestCase):
         )
         self.assertEqual(board_store.list_meetings(self.table), [])
         lambda_handler(
-            {"internal": "board_meeting", "slot": "morning", "boardKey": "siuTinDei"},
+            {"internal": "board_meeting", "slot": "morning", "boardKey": BOARD_KEY},
             None,
         )
         self.assertEqual(len(board_store.list_meetings(self.table)), 1)
@@ -872,7 +892,7 @@ class TestBoardKeyRouting(unittest.TestCase):
         self.assertTrue(board_store.event_targets_this_board(None))
         self.assertTrue(board_store.event_targets_this_board({}))
         self.assertTrue(board_store.event_targets_this_board({"boardKey": ""}))
-        self.assertTrue(board_store.event_targets_this_board({"boardKey": "siuTinDei"}))
+        self.assertTrue(board_store.event_targets_this_board({"boardKey": BOARD_KEY}))
         self.assertFalse(board_store.event_targets_this_board({"boardKey": "lxSoftware"}))
 
 

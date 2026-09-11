@@ -19,7 +19,7 @@ import board_store
 import board_targets
 import board_tools
 import board_triage
-from test_board import BoardTestCase, lambda_handler
+from test_board import BoardTestCase, freeze_board_daytime, lambda_handler
 
 
 class FakeSes:
@@ -63,6 +63,7 @@ def _prospect(table: Any, **kwargs: Any) -> dict[str, Any]:
 class OutreachTests(BoardTestCase):
     def setUp(self) -> None:
         super().setUp()
+        freeze_board_daytime(self)
         os.environ["BOARD_STAFF_ENABLED"] = "true"
         os.environ["BOARD_MAIL_SENDING_ENABLED"] = "true"
         os.environ["BOARD_LINK_SIGNING_SECRET"] = "link-secret-for-tests"

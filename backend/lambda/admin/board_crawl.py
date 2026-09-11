@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 import board_mail
 import board_store
 from contract_constants import (
+    BOARD_KEY,
     BOARD_STAFF_CRAWL_MAX_BYTES,
     BOARD_STAFF_CRAWL_RPS,
 )
@@ -193,7 +194,7 @@ def host_backed_off(table: Any, host: str) -> bool:
 
 
 def put_digest(watch_id: str, url: str, date_iso: str, text: str) -> str:
-    digest_key = f"board/siuTinDei/intel/{watch_id}/{url_digest(url)}/{date_iso}.txt"
+    digest_key = f"board/{BOARD_KEY}/intel/{watch_id}/{url_digest(url)}/{date_iso}.txt"
     import board_staff
 
     board_staff._blob_put(digest_key, digest(text).encode("utf-8"))  # noqa: SLF001 - shared blob helper

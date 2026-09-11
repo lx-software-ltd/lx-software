@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import patch
 
-from test_board import BoardTestCase
+from test_board import BoardTestCase, freeze_board_daytime
 from test_board_tools import ToolsTestCase
 
 import board_holds
@@ -277,6 +277,7 @@ class RampTests(BoardTestCase):
 class HoldRouteTests(ToolsTestCase):
     def setUp(self) -> None:
         super().setUp()
+        freeze_board_daytime(self)
         os.environ["BOARD_STAFF_ENABLED"] = "true"
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
         _enable_staff(self.table)

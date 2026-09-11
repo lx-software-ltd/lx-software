@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from contract_constants import BOARD_KEY
 from test_board import BoardTestCase, FakeTable
 
 import board_crawl
@@ -64,6 +65,13 @@ class CrawlHelperTests(unittest.TestCase):
         board_store.put_cache(table, "crawl:robots:example.com", {"body": robots}, ttl_seconds=86400)
         self.assertFalse(board_crawl.robots_allows(table, "https://example.com/secret/page"))
         self.assertTrue(board_crawl.robots_allows(table, "https://example.com/public"))
+
+    def test_put_digest_key_uses_board_key(self) -> None:
+        key = board_crawl.put_digest("watch-1", "https://example.com/page", "2026-09-11", "hello")
+        self.assertEqual(
+            key,
+            f"board/{BOARD_KEY}/intel/watch-1/{board_crawl.url_digest('https://example.com/page')}/2026-09-11.txt",
+        )
 
     def test_pace_host_sleeps_when_last_fetch_is_recent(self) -> None:
         table = FakeTable()
@@ -199,8 +207,8 @@ class BriefTests(BoardTestCase):
             '"prospects":[{"name":"Kiztopia Sha Tin","type":"venue","url":"https://kiztopia.example"}]}\n'
             "```\n"
         )
-        board_staff._blob_put(f"board/siuTinDei/staff/{task['taskId']}/deliverable.md", body.encode("utf-8"))  # noqa: SLF001
-        task["deliverableKey"] = f"board/siuTinDei/staff/{task['taskId']}/deliverable.md"
+        board_staff._blob_put(f"board/{BOARD_KEY}/staff/{task['taskId']}/deliverable.md", body.encode("utf-8"))  # noqa: SLF001
+        task["deliverableKey"] = f"board/{BOARD_KEY}/staff/{task['taskId']}/deliverable.md"
         task["summary"] = "STEM gap in Sha Tin"
         board_store.put_task(self.table, task)
         first = board_intel.on_brief_delivered(self.table, task)
@@ -231,8 +239,8 @@ class BriefTests(BoardTestCase):
             status="review",
         )
         body = 'Done.\n\n```json\n{"gaps":[],"ideas":[{"title":"Weekend camp pack","why":"season","effort":"M"}],"prospects":[]}\n```\n'
-        board_staff._blob_put(f"board/siuTinDei/staff/{task['taskId']}/deliverable.md", body.encode("utf-8"))  # noqa: SLF001
-        task["deliverableKey"] = f"board/siuTinDei/staff/{task['taskId']}/deliverable.md"
+        board_staff._blob_put(f"board/{BOARD_KEY}/staff/{task['taskId']}/deliverable.md", body.encode("utf-8"))  # noqa: SLF001
+        task["deliverableKey"] = f"board/{BOARD_KEY}/staff/{task['taskId']}/deliverable.md"
         board_store.put_task(self.table, task)
         board_staff.apply_review(self.table, self.settings, task, verdict="accept", notes="ok", by="manager")
         titles = [a.get("title") for a in board_store.list_actions(self.table)]

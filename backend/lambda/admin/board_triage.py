@@ -18,6 +18,7 @@ import board_staff
 import board_store
 import board_templates
 import board_tools
+from contract_constants import BOARD_KEY
 from http_common import _log_event
 
 AUDIENCES = ("parent", "provider", "vendor", "unknown")
@@ -404,7 +405,7 @@ def _send_ack(
         board_async.invoke_async(
             {
                 "internal": "board_triage_ack",
-                "boardKey": "siuTinDei",
+                "boardKey": BOARD_KEY,
                 "op": op_name,
                 "args": payload,
                 "taskId": str(task.get("taskId") or ""),
