@@ -25,6 +25,17 @@ _RETRYABLE = (
     "DatabaseUnavailableException",
     "ThrottlingException",
 )
+# EnableHttpEndpoint returns before the Data API accepts calls; the custom
+# resource that runs this handler is created right after it. Keep retrying
+# for this long (Lambda timeout is 180 s).
+_RETRY_WINDOW_SECONDS = 120
+
+
+def _is_retryable(code: str, message: str) -> bool:
+    if code in _RETRYABLE:
+        return True
+    # Data API reports a just-enabled endpoint as a plain BadRequest too.
+    return code == "BadRequestException" and "httpendpoint" in message.replace(" ", "").lower()
 
 
 def _env(name: str, fallback: str = "") -> str:
@@ -44,8 +55,9 @@ def apply_schema(*, cluster_arn: str, secret_arn: str, database: str) -> dict[st
     rds = boto3.client("rds-data")
     sm = boto3.client("secretsmanager")
     statements = receivables_statements()
-    last_error = ""
-    for attempt in range(8):
+    started = time.monotonic()
+    attempt = 0
+    while True:
         applied = 0
         try:
             for sql in statements:
@@ -67,13 +79,15 @@ def apply_schema(*, cluster_arn: str, secret_arn: str, database: str) -> dict[st
             return {"applied": applied, "grantedTo": username}
         except ClientError as exc:
             code = exc.response.get("Error", {}).get("Code") or ""
-            last_error = exc.response.get("Error", {}).get("Message") or str(exc)
-            if code not in _RETRYABLE or attempt == 7:
+            message = exc.response.get("Error", {}).get("Message") or str(exc)
+            elapsed = time.monotonic() - started
+            if not _is_retryable(code, message) or elapsed > _RETRY_WINDOW_SECONDS:
                 raise RuntimeError(
-                    f"receivables.sql failed after {applied} statements ({code}): {last_error[:400]}"
+                    f"receivables.sql failed after {applied} statements ({code}): {message[:400]}"
                 ) from exc
-            time.sleep(min(8, 2**attempt))
-    raise RuntimeError(f"receivables.sql failed: {last_error[:400]}")
+            print("receivables_retry", code, f"attempt={attempt}", f"elapsed={int(elapsed)}s")
+            time.sleep(min(10, 2**attempt))
+            attempt += 1
 
 
 def _cfn_respond(event: dict[str, Any], context: Any, status: str, data: dict[str, Any], reason: str = "") -> None:
