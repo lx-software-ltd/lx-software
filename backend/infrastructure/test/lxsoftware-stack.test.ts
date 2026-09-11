@@ -271,7 +271,7 @@ describe("Admin Lambda IAM policies", () => {
     expect(sendStatements).toHaveLength(1);
 
     const resources = asArray(sendStatements[0].Resource);
-    expect(resources).toHaveLength(3);
+    expect(resources).toHaveLength(4);
     expect(resources.every((r) => r !== "*")).toBe(true);
     // formatArn() emits a Fn::Join whose literal pieces include the
     // `:identity/` resource segment followed by the SiutindeiBoardMailDomain parameter.
@@ -279,6 +279,7 @@ describe("Admin Lambda IAM policies", () => {
     expect(serialized).toContain(":ses:");
     expect(serialized).toContain(":identity/");
     expect(serialized).toContain('"Ref":"SiutindeiBoardMailDomain"');
+    expect(serialized).toContain("*@");
     expect(serialized).toContain("configuration-set/lxsoftware-admin-siutindei-outreach");
     expect(serialized).toContain("configuration-set/lxsoftware-admin-siutindei-newsletter");
   });

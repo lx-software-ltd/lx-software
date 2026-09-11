@@ -858,11 +858,25 @@ def send_plan(table: Any, plan: dict[str, Any], *, sent_by: str) -> dict[str, An
             filename=filename,
         )
     raw = msg.as_bytes()
-    response = _ses_client().send_email(
-        FromEmailAddress=str(msg["From"]),
-        Destination={"ToAddresses": to, "CcAddresses": cc},
-        Content={"Raw": {"Data": raw}},
-    )
+    # SES IAM matches FromEmailAddress to identity/<addr> or identity/<domain>.
+    # A display-name form ("siutindei <hello@…>") is authorized as a different
+    # identity and AccessDenied's even when the domain identity is allowed.
+    try:
+        response = _ses_client().send_email(
+            FromEmailAddress=from_mailbox,
+            Destination={"ToAddresses": to, "CcAddresses": cc},
+            Content={"Raw": {"Data": raw}},
+        )
+    except Exception as exc:
+        # Catch broader than botocore.ClientError: unit tests stub that class,
+        # and any SES failure must become MailError instead of crashing approve.
+        resp = getattr(exc, "response", None)
+        err = resp.get("Error") if isinstance(resp, dict) else {}
+        if not isinstance(err, dict):
+            err = {}
+        code = str(err.get("Code") or type(exc).__name__)
+        detail = str(err.get("Message") or exc)[:240]
+        raise MailError(f"SES refused to send ({code}): {detail}") from exc
     indexed = ingest_bytes(table, raw, direction="out", source=f"board:{sent_by}"[:80])
     if indexed.get("threadId"):
         board_store.set_mail_thread_unread(table, str(indexed["threadId"]), unread=False)
