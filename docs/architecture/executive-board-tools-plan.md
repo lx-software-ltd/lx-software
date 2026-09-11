@@ -27,7 +27,7 @@ Where T1 lives in the code:
 | GitHub operations (7 read, 3 write) | `backend/lambda/admin/board_github.py` (`op_*`) |
 | Persistence (`BOARD#APPROVAL#`, `BOARD#TOOLCALL#`, `settings.tools`) | `backend/lambda/admin/board_store.py` |
 | Routes `/board/tools`, `/board/tools/calls`, `/board/approvals[/{id}/approve\|reject]` | `backend/lambda/admin/board_routes.py`, `lxsoftware-stack.ts` |
-| Kill switch | `BoardToolsEnabled` stack parameter → `BOARD_TOOLS_ENABLED` on `AdminApiFn` |
+| Kill switch | `SiutindeiBoardToolsEnabled` stack parameter → `BOARD_TOOLS_ENABLED` on `AdminApiFn` |
 | SPA | `BoardToolsCard`, `BoardApprovalsList`, `BoardToolCallList`, `BoardMailView`, `BoardReceivablesView`; hooks `useBoardTools`, `useBoardApprovals`, `useBoardMail`, `useBoardReceivables` |
 | Mail ingest, SES send, PII aliases | `backend/lambda/admin/board_mail.py`, `board_pii.py`; S3 prefix `inbound-raw/siutindei/` |
 | Cloudflare fan-out | `scripts/cloudflare/siutindei-mail-fanout.js` |
@@ -365,8 +365,8 @@ Google into the `meta` tool.
 
 - **`web` (this milestone):** GA4 sessions / conversions / top pages /
   referrers and GTM live-version **read**. Several properties and containers
-  are first-class: `Ga4PropertyIds` is a CSV (`123,456` or
-  `properties/123,properties/456`); `GtmContainers` is
+  are first-class: `SiutindeiBoardGa4PropertyIds` is a CSV (`123,456` or
+  `properties/123,properties/456`); `SiutindeiBoardGtmContainers` is
   `account:container` pairs. CEO / CPO / CTO / CIO / CMO default to `read`.
   A **dedicated** service account lives in
   `lxsoftware-admin-siutindei-board-google-analytics-sa` (not the Play publisher key).
@@ -421,7 +421,7 @@ default global mode is `propose`, so nothing acts until the owner flips it.
 | Routes | `GET /siu-tin-dei/board/approvals`, `POST …/approvals/{id}/approve|reject`, `GET …/board/tools` (matrix), `PUT …/board/tools` (matrix), `GET …/board/tools/calls` (audit log), `GET …/board/mail`, `GET …/board/mail/{threadId}`, `POST …/board/mail/{threadId}/read`, `GET …/board/receivables` (aging for the owner), `POST /webhooks/meta/siutindei` (no JWT, HMAC-verified, throttled; `/webhooks/meta` still accepted), `GET /webhooks/meta/siutindei` (verify). Proposals are created only by the tool loop, never by a `POST …/approvals` route. |
 | DynamoDB | `BOARD#TOOLCALL#`, `BOARD#APPROVAL#`, `BOARD#MAIL#`, `BOARD#META#`, `BOARD#CACHE#`, `BOARD#USAGE#` prefixes; all covered by the existing `BOARD#` scan filter |
 | Contracts | `contracts/board-tools.json`: tool ids, default matrix, `maxToolRoundsPerTurn`, `toolResultMaxChars`, cap names; synced to Python, TS and CDK |
-| Secrets / params | CDK imports the existing Siu Tin Dei Secrets Manager secrets (`lxsoftware-admin-siutindei-board-*`) and grants `AdminApiFn` read. The earlier `lxsoftware-admin-{github-read-token,search-api-key,meta-board-token,meta-app-secret,app-store-connect-key,google-play-sa,google-analytics-sa}` set stays reserved for a future LX Software board. Ids stay as CfnParameters (`Ga4PropertyIds`, `GtmContainers`, `SiutindeiClusterArn`, `SiutindeiDbSecretArn`). OpenRouter stays the existing parameter. |
+| Secrets / params | CDK imports the existing Siu Tin Dei Secrets Manager secrets (`lxsoftware-admin-siutindei-board-*`) and grants `AdminApiFn` read. The earlier `lxsoftware-admin-{github-read-token,search-api-key,meta-board-token,meta-app-secret,app-store-connect-key,google-play-sa,google-analytics-sa}` set stays reserved for a future LX Software board. Ids stay as CfnParameters (`SiutindeiBoardGa4PropertyIds`, `SiutindeiBoardGtmContainers`, `SiutindeiClusterArn`, `SiutindeiDbSecretArn`). OpenRouter stays the existing parameter. |
 | SES | Receipt rule for `siutindei-board@inbound.lx-software.com` → S3 prefix `inbound-raw/siutindei/`; sending identity `siutindei.com` |
 | Cloudflare (siutindei zone) | Email Worker on the catch-all that fans out to the owner's inbox and the SES address; DKIM/SPF/DMARC records for SES sending |
 | Scheduler | `lxsoftware-admin-siutindei-board-*` (`SiutindeiBoardCacheRefreshSchedule` hourly, `SiutindeiBoardReceivablesMirrorSchedule` nightly, `SiutindeiBoardDunningSchedule` daily 09:00 HKT, plus morning/evening stand-ups). Each payload includes `boardKey: "siuTinDei"`. Role-based invokes, no Lambda resource-policy statements |

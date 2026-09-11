@@ -1153,7 +1153,7 @@ def _repo_snapshot_refresh(event: dict[str, Any], user_sub: str | None) -> dict[
     if not board_github.snapshot_enabled():
         return _json_response(
             400,
-            {"message": "GitHub access is not configured (set the BoardGitHubRepo stack parameter)"},
+            {"message": "GitHub access is not configured (set the SiutindeiBoardGitHubRepo stack parameter)"},
         )
     table = board_store.records_table()
     try:

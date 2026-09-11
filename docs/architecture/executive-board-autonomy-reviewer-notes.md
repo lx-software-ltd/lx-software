@@ -248,7 +248,7 @@ Owner decisions from plan §6, applied as specified:
   authorizer. Staff flags are not required so a person can still opt out
   after the feature is switched off.
 - **Outreach SES identity is always created** (not gated on
-  `BoardMailSendingEnabled`). `outreach_send` still refuses with
+  `SiutindeiBoardMailSendingEnabled`). `outreach_send` still refuses with
   `sending identity not verified` until
   `GetEmailIdentity.VerifiedForSendingStatus` is true (cached 1 h). Tests
   can set `OUTREACH_IDENTITY_VERIFIED=true`.
@@ -328,7 +328,7 @@ Owner decisions from plan §6, applied as specified:
   WP9. The WP9 duty list did not add one; drafting stays an op.
 - **No new admin tab.** Sends appear as `publish:newsletter` holds on
   Approvals. Subscriber counts are not yet an owner UI.
-- **Confirm/issue send require `BoardMailSendingEnabled`.** That is the
+- **Confirm/issue send require `SiutindeiBoardMailSendingEnabled`.** That is the
   spec kill-switch for all email. Subscribe still stores a pending row
   when sending is off.
 - **SES template is created lazily** (`CreateEmailTemplate` on first

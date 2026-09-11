@@ -133,7 +133,7 @@ export function BoardToolsCard({
       {envDisabled ? (
         <div className="alert alert-warning py-2 small">
           <i className="bi bi-exclamation-triangle me-1" aria-hidden="true" />
-          Tools are switched off at the stack level (<code>BoardToolsEnabled=false</code>). Settings here are kept
+          Tools are switched off at the stack level (<code>SiutindeiBoardToolsEnabled=false</code>). Settings here are kept
           but no member can call anything until that parameter is set back to <code>true</code>.
         </div>
       ) : null}
@@ -239,7 +239,7 @@ export function BoardToolsCard({
                       ) : (
                         <div className="small text-warning mt-1">
                           <i className="bi bi-send-slash me-1" aria-hidden="true" />
-                          Sending is off (<code>BoardMailSendingEnabled=false</code>): writes are drafted for you but
+                          Sending is off (<code>SiutindeiBoardMailSendingEnabled=false</code>): writes are drafted for you but
                           cannot be sent until the domain is verified in SES.
                         </div>
                       )
@@ -298,8 +298,8 @@ export function BoardToolsCard({
                         <div className="small text-warning mt-1">
                           Replace the dummy JSON in{" "}
                           <code>lxsoftware-admin-siutindei-board-google-analytics-sa</code> (dedicated SA, not the
-                          Play key), then set <code>Ga4PropertyIds</code> and{" "}
-                          <code>GtmContainers</code> (<code>account:container</code> pairs).
+                          Play key), then set <code>SiutindeiBoardGa4PropertyIds</code> and{" "}
+                          <code>SiutindeiBoardGtmContainers</code> (<code>account:container</code> pairs).
                         </div>
                       )
                     ) : null}
