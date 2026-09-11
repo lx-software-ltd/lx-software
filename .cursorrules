@@ -48,6 +48,12 @@ repo root
 - Use descriptive names with auxiliary verbs (e.g., isLoading, hasError).
 - Prefer small, reusable components over duplication.
 
+### CDK parameters (Siu Tin Dei)
+- Board-only `CfnParameter`s are `SiutindeiBoard*` (kill switches, models, outreach, mail, Meta / stores / web ids).
+- Product resources the stack integrates with are `Siutindei*` (`SiutindeiClusterArn`, `SiutindeiDbSecretArn`, `SiutindeiDbSecretName`).
+- Stack-wide knobs stay unprefixed (`PublicSiteOrigins`, `PublicApiBaseUrl`, Cognito, OpenRouter, inbound mail, Enable Banking).
+- Lambda env vars stay short (`BOARD_*`, `OUTREACH_*`); do not rename them when adding a second prefix.
+
 ### Admin web (`apps/admin_web`) — currencies standard
 - Supported ISO 4217 codes are a **fixed list**: GBP, HKD, USD, EUR, CNY, SGD, AED (`src/lib/currencies.ts` and the admin Lambda must stay aligned).
 - **Global default** currency is **HKD**. Each **house** (e.g. finance tabs) may set its own `defaultCurrency` stored with that house’s finance payload.

@@ -549,28 +549,29 @@ export class LxsoftwareStack extends cdk.Stack {
       description:
         "Kill switch for Executive Board staff tasks. Default false until the task engine and daily review are live. Also requires settings.staff.enabled.",
     });
-    const outreachSendingDomain = new cdk.CfnParameter(this, "OutreachSendingDomain", {
+    const outreachSendingDomain = new cdk.CfnParameter(this, "SiutindeiBoardOutreachSendingDomain", {
       type: "String",
       default: "partners.siutindei.com",
       description:
         "SES From domain for Executive Board cold outreach. Owner must add DKIM CNAMEs, MAIL FROM MX+TXT and DMARC before sending succeeds.",
     });
-    const outreachFromLocalPart = new cdk.CfnParameter(this, "OutreachFromLocalPart", {
+    const outreachFromLocalPart = new cdk.CfnParameter(this, "SiutindeiBoardOutreachFromLocalPart", {
       type: "String",
       default: "partnerships",
-      description: "Local part of the outreach From address (partnerships@OutreachSendingDomain).",
+      description:
+        "Local part of the outreach From address (partnerships@SiutindeiBoardOutreachSendingDomain).",
     });
     const publicSiteOrigins = new cdk.CfnParameter(this, "PublicSiteOrigins", {
       type: "String",
       default: "https://lx-software.com,https://www.lx-software.com,https://siutindei.com,https://www.siutindei.com",
       description:
-        "CSV of extra CORS origins for public newsletter subscribe (LX Software and Siu Tin Dei public sites).",
+        "CSV of extra browser origins allowed on the HTTP API CORS list (admin origin is always included). Stack-wide; used by public newsletter subscribe and any other unauthenticated browser client.",
     });
     const publicApiBaseUrl = new cdk.CfnParameter(this, "PublicApiBaseUrl", {
       type: "String",
       default: "",
       description:
-        "Public base URL for unsubscribe and newsletter confirm links. Leave blank to use this stack's HTTP API URL.",
+        "Public base URL of this stack's HTTP API. Used today for board unsubscribe and newsletter confirm links. Leave blank to use the API endpoint CloudFormation assigns.",
     });
     const boardGitHubRepo = new cdk.CfnParameter(this, "SiutindeiBoardGitHubRepo", {
       type: "String",
