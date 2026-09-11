@@ -1,3 +1,6 @@
+import * as crypto from "node:crypto";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import * as cdk from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
 import { LxsoftwareStack } from "../lib/lxsoftware-stack";
@@ -649,6 +652,17 @@ describe("Siu Tin Dei Data API setup", () => {
     // A provider that never answers must fail well inside the CI token's
     // one-hour lifetime instead of CloudFormation's default one-hour wait.
     expect(Number(schema?.[1].Properties?.ServiceTimeout)).toBe(900);
+    const sqlOnlyHash = crypto
+      .createHash("sha256")
+      .update(
+        fs.readFileSync(
+          path.join(__dirname, "../../lambda/siutindei_schema/receivables.sql")
+        )
+      )
+      .digest("hex")
+      .slice(0, 16);
+    expect(schema?.[1].Properties?.sqlHash).toEqual(expect.stringMatching(/^[0-9a-f]{16}$/));
+    expect(schema?.[1].Properties?.sqlHash).not.toBe(sqlOnlyHash);
 
     const schemaFn = Object.entries(resourcesOfType("AWS::Lambda::Function")).find(
       ([id]) => id.includes("ReceivablesSchemaFn")

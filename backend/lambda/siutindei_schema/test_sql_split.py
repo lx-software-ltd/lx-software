@@ -51,6 +51,26 @@ class SplitTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertGreaterEqual(int(proc.stdout.strip()), 10)
 
+    def test_keeps_newline_between_as_and_with(self) -> None:
+        # Live failure after #364: "".join(lines) turned
+        # `CREATE VIEW … AS\nWITH …` into `ASWITH`.
+        stmts = sql_split.split_sql(
+            """
+            CREATE OR REPLACE VIEW v_catalog_health AS
+            WITH activity_completeness AS (
+                SELECT 1 AS activity_id
+            )
+            SELECT * FROM activity_completeness;
+            CREATE OR REPLACE VIEW v_funnel_daily AS
+            SELECT 1 AS day;
+            """
+        )
+        self.assertEqual(len(stmts), 2)
+        self.assertRegex(stmts[0], r"AS\s+WITH")
+        self.assertNotIn("ASWITH", stmts[0])
+        self.assertRegex(stmts[1], r"AS\s+SELECT")
+        self.assertNotIn("ASSELECT", stmts[1])
+
     def test_skips_begin_commit_and_keeps_dollar_quoted_do(self) -> None:
         stmts = sql_split.split_sql(
             """
@@ -85,6 +105,15 @@ class SplitTests(unittest.TestCase):
         self.assertIn("CREATE ROLE board_api", joined)
         self.assertNotIn("\nBEGIN;", "\n" + joined)
         self.assertNotIn("\nCOMMIT;", "\n" + joined)
+        catalog = next(s for s in stmts if "v_catalog_health" in s)
+        self.assertRegex(catalog, r"AS\s+WITH")
+        self.assertNotIn("ASWITH", catalog)
+        funnel = next(s for s in stmts if "v_funnel_daily" in s)
+        self.assertRegex(funnel, r"AS\s+SELECT")
+        self.assertNotIn("ASSELECT", funnel)
+        pipeline = next(s for s in stmts if "v_provider_pipeline" in s)
+        self.assertRegex(pipeline, r"AS\s+SELECT")
+        self.assertNotIn("ASSELECT", pipeline)
 
 
 if __name__ == "__main__":
