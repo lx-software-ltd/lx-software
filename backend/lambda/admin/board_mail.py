@@ -39,7 +39,6 @@ from email.utils import formataddr, getaddresses, make_msgid, parsedate_to_datet
 from typing import Any
 
 import boto3
-from botocore.exceptions import ClientError
 
 import board_pii
 import board_store
@@ -868,9 +867,15 @@ def send_plan(table: Any, plan: dict[str, Any], *, sent_by: str) -> dict[str, An
             Destination={"ToAddresses": to, "CcAddresses": cc},
             Content={"Raw": {"Data": raw}},
         )
-    except ClientError as exc:
-        code = exc.response.get("Error", {}).get("Code") or "ClientError"
-        detail = (exc.response.get("Error", {}).get("Message") or str(exc))[:240]
+    except Exception as exc:
+        # Catch broader than botocore.ClientError: unit tests stub that class,
+        # and any SES failure must become MailError instead of crashing approve.
+        resp = getattr(exc, "response", None)
+        err = resp.get("Error") if isinstance(resp, dict) else {}
+        if not isinstance(err, dict):
+            err = {}
+        code = str(err.get("Code") or type(exc).__name__)
+        detail = str(err.get("Message") or exc)[:240]
         raise MailError(f"SES refused to send ({code}): {detail}") from exc
     indexed = ingest_bytes(table, raw, direction="out", source=f"board:{sent_by}"[:80])
     if indexed.get("threadId"):
