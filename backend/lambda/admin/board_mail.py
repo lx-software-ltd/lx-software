@@ -39,6 +39,7 @@ from email.utils import formataddr, getaddresses, make_msgid, parsedate_to_datet
 from typing import Any
 
 import boto3
+from botocore.exceptions import ClientError
 
 import board_pii
 import board_store
@@ -858,11 +859,19 @@ def send_plan(table: Any, plan: dict[str, Any], *, sent_by: str) -> dict[str, An
             filename=filename,
         )
     raw = msg.as_bytes()
-    response = _ses_client().send_email(
-        FromEmailAddress=str(msg["From"]),
-        Destination={"ToAddresses": to, "CcAddresses": cc},
-        Content={"Raw": {"Data": raw}},
-    )
+    # SES IAM matches FromEmailAddress to identity/<addr> or identity/<domain>.
+    # A display-name form ("siutindei <hello@…>") is authorized as a different
+    # identity and AccessDenied's even when the domain identity is allowed.
+    try:
+        response = _ses_client().send_email(
+            FromEmailAddress=from_mailbox,
+            Destination={"ToAddresses": to, "CcAddresses": cc},
+            Content={"Raw": {"Data": raw}},
+        )
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code") or "ClientError"
+        detail = (exc.response.get("Error", {}).get("Message") or str(exc))[:240]
+        raise MailError(f"SES refused to send ({code}): {detail}") from exc
     indexed = ingest_bytes(table, raw, direction="out", source=f"board:{sent_by}"[:80])
     if indexed.get("threadId"):
         board_store.set_mail_thread_unread(table, str(indexed["threadId"]), unread=False)

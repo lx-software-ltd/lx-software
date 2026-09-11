@@ -450,8 +450,9 @@ class TestMailTools(MailTestCase):
         self.assertEqual(len(self.ses.sent), 1)
         sent = self.ses.sent[0]
         self.assertEqual(sent["Destination"]["ToAddresses"], ["wendy.chan@gmail.com"])
-        self.assertIn("hello@siutindei.com", sent["FromEmailAddress"])
+        self.assertEqual(sent["FromEmailAddress"], "hello@siutindei.com")
         raw = self.ses.last_raw()
+        self.assertIn("hello@siutindei.com", raw["From"])
         self.assertEqual(raw["In-Reply-To"], "<abc123@mail.gmail.com>")
         self.assertIn("<abc123@mail.gmail.com>", raw["References"])
         self.assertEqual(raw["Subject"], "Re: Swimming class for my daughter")
@@ -558,6 +559,28 @@ class TestMailTools(MailTestCase):
         self.assertEqual(job["message"]["toolCalls"][0]["status"], "error")
         self.assertIn("switched off", job["message"]["toolCalls"][0]["error"])
         self.assertEqual(len(scripted.requests), 2)
+
+    def test_ses_access_denied_becomes_mail_error(self) -> None:
+        from botocore.exceptions import ClientError
+
+        thread_id = self.seed_thread()
+        self.call("/siu-tin-dei/board/tools", "PUT", {"globalMode": "act", "allowList": ["@gmail.com"]})
+        self.ses.fail_with = ClientError(
+            {
+                "Error": {
+                    "Code": "AccessDeniedException",
+                    "Message": "not authorized to perform ses:SendRawEmail on identity/hello@siutindei.com",
+                }
+            },
+            "SendEmail",
+        )
+        self.use_script([[("mail_reply", {"threadId": thread_id, "body": "x", "reason": "r"})]], "Failed.")
+        job = self.chat("coo")
+        call = job["message"]["toolCalls"][0]
+        self.assertEqual(call["status"], "error")
+        self.assertIn("SES refused to send", call["error"])
+        self.assertIn("AccessDeniedException", call["error"])
+        self.assertEqual(self.ses.sent, [])
 
     def test_contact_history(self) -> None:
         self.seed_thread()

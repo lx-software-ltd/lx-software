@@ -1852,6 +1852,11 @@ export class LxsoftwareStack extends cdk.Stack {
               }),
               cdk.Stack.of(this).formatArn({
                 service: "ses",
+                resource: "identity",
+                resourceName: `*@${boardMailDomain.valueAsString}`,
+              }),
+              cdk.Stack.of(this).formatArn({
+                service: "ses",
                 resource: "configuration-set",
                 resourceName: "lxsoftware-admin-siutindei-outreach",
               }),
