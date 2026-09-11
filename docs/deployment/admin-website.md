@@ -704,9 +704,13 @@ Data API (no VPC). Design:
 2. The stack attaches a conditional `rds-data:ExecuteStatement` /
    `BatchExecuteStatement` policy plus `secretsmanager:GetSecretValue` on the
    resolved DB secret.
-3. A later **siutindei** deploy can turn the HTTP endpoint back off unless that
-   repo sets `enableDataApi: true` on its `DatabaseCluster`. This stack will
-   re-enable it on the next admin deploy.
+3. Scheduler `lxsoftware-admin-siutindei-data-api-ensure` (every 15 minutes)
+   calls `rds.enableHttpEndpoint` and reapplies the script. A later **siutindei**
+   deploy that omits `enableDataApi: true` can turn HTTP off for at most one
+   interval; this stack turns it back on without waiting for an admin deploy.
+   The product CDK should still set `enableDataApi: true`. A SQL error during
+   the deploy custom resource does not roll the stack back — `AdminApiFn` keeps
+   the cluster/secret env and the scheduler retries the script.
 4. Invoice numbers are `STD-{year}-0001`; each draft also gets a unique FPS
    reference. Drafts also write a PDF to `board/siuTinDei/invoices/` on the assets
    bucket (`pdf_key` on the invoice). `finance_send_invoice` / `finance_send_reminder` email from

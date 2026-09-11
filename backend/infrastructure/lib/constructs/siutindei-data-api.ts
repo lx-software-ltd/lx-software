@@ -3,6 +3,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as cdk from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as scheduler from "aws-cdk-lib/aws-scheduler";
+import * as schedulerTargets from "aws-cdk-lib/aws-scheduler-targets";
 import * as cr from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
 import { createPythonLambda } from "./python-lambda";
@@ -26,9 +28,10 @@ export interface SiutindeiDataApiSetupProps {
  * Turns on the RDS HTTP Data API for an existing Aurora cluster (owned by
  * the ``lxsoftware-siutindei`` stack) and applies ``receivables.sql``.
  *
- * The product CDK should also set ``enableDataApi: true`` on its
- * ``DatabaseCluster`` so a later siutindei deploy does not drift this back
- * off. Until then this custom resource is the enable switch.
+ * A 15-minute EventBridge Scheduler re-enables the HTTP endpoint and
+ * reapplies the script so a later siutindei deploy (which still creates the
+ * cluster without ``enableDataApi: true``) cannot leave Data API off.
+ * The product CDK should still set that flag; the schedule is the guard.
  *
  * Delete is a no-op: we do not disable the HTTP endpoint or drop tables.
  */
@@ -154,6 +157,18 @@ export class SiutindeiDataApiSetup extends Construct {
     );
     schemaFn.addToRolePolicy(
       new iam.PolicyStatement({
+        actions: ["rds:EnableHttpEndpoint"],
+        resources: [props.clusterArn],
+      })
+    );
+    schemaFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["rds:DescribeDBClusters"],
+        resources: ["*"],
+      })
+    );
+    schemaFn.addToRolePolicy(
+      new iam.PolicyStatement({
         actions: ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
         resources: [this.resolvedSecretArn, ...secretNameArns],
       })
@@ -186,6 +201,22 @@ export class SiutindeiDataApiSetup extends Construct {
     });
     schema.node.addDependency(enableHttp);
     schema.node.addDependency(describeSecret);
+
+    // IAM-role target (no scheduler.amazonaws.com resource policy on the
+    // function). Conditioned with the rest of this construct.
+    new scheduler.Schedule(this, "EnsureHttpEndpoint", {
+      scheduleName: "lxsoftware-admin-siutindei-data-api-ensure",
+      description:
+        "Re-enable the siutindei Aurora HTTP Data API and reapply receivables.sql so a product-stack deploy cannot drift it off.",
+      schedule: scheduler.ScheduleExpression.rate(cdk.Duration.minutes(15)),
+      target: new schedulerTargets.LambdaInvoke(schemaFn, {
+        input: scheduler.ScheduleTargetInput.fromObject({
+          internal: "siutindei_data_api_ensure",
+          boardKey: "siuTinDei",
+        }),
+        retryAttempts: 2,
+      }),
+    });
 
     for (const child of this.node.findAll()) {
       if (

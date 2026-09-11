@@ -68,6 +68,91 @@ class ApplySchemaTests(unittest.TestCase):
         sleep.assert_not_called()
         self.assertIn("organizations", str(ctx.exception))
 
+    def test_cfn_sql_error_still_acks_success_so_the_stack_commits(self) -> None:
+        rds = MagicMock()
+        rds.enable_http_endpoint.return_value = {"HttpEndpointEnabled": True}
+        data = MagicMock()
+        data.execute_statement.side_effect = ClientError(
+            {"Error": {"Code": "BadRequestException", "Message": 'ERROR: relation "organizations" does not exist'}},
+            "ExecuteStatement",
+        )
+
+        def clients(name: str, **_kwargs: object) -> MagicMock:
+            return rds if name == "rds" else data
+
+        event = {
+            "RequestType": "Create",
+            "ResponseURL": "https://example.test/cfn",
+            "StackId": "arn:stack",
+            "RequestId": "req-1",
+            "LogicalResourceId": "ReceivablesSchema",
+            "ResourceProperties": {
+                "clusterArn": "arn:cluster",
+                "secretArn": "arn:secret",
+                "database": "siutindei",
+            },
+        }
+        with (
+            patch("handler.boto3.client", side_effect=clients),
+            patch("handler.urllib.request.urlopen") as urlopen,
+        ):
+            urlopen.return_value.read.return_value = b""
+            out = handler.lambda_handler(event, MagicMock(log_stream_name="log"))
+        body = json.loads(urlopen.call_args[0][0].data.decode())
+        self.assertEqual(body["Status"], "SUCCESS")
+        self.assertIn("organizations", body["Data"]["schemaError"])
+        self.assertEqual(out["Data"]["schemaError"], body["Data"]["schemaError"])
+        rds.enable_http_endpoint.assert_called_once_with(ResourceArn="arn:cluster")
+
+    def test_scheduler_ensure_enables_http_then_applies(self) -> None:
+        rds = MagicMock()
+        rds.enable_http_endpoint.return_value = {"HttpEndpointEnabled": True}
+        data = MagicMock()
+        sm = MagicMock()
+        sm.get_secret_value.return_value = {"SecretString": json.dumps({"username": "postgres"})}
+
+        def clients(name: str, **_kwargs: object) -> MagicMock:
+            if name == "rds":
+                return rds
+            if name == "rds-data":
+                return data
+            return sm
+
+        with (
+            patch("handler.boto3.client", side_effect=clients),
+            patch.dict(
+                "os.environ",
+                {"SIUTINDEI_CLUSTER_ARN": "arn:c", "SIUTINDEI_DB_SECRET_ARN": "arn:s"},
+            ),
+        ):
+            out = handler.lambda_handler(
+                {"internal": "siutindei_data_api_ensure", "boardKey": "siuTinDei"},
+                MagicMock(),
+            )
+        rds.enable_http_endpoint.assert_called_once_with(ResourceArn="arn:c")
+        self.assertGreaterEqual(out["Data"]["applied"], 10)
+        self.assertTrue(out["Data"]["httpEndpointEnabled"])
+
+    def test_scheduler_ensure_raises_when_sql_fails(self) -> None:
+        rds = MagicMock()
+        rds.enable_http_endpoint.return_value = {"HttpEndpointEnabled": True}
+        data = MagicMock()
+        data.execute_statement.side_effect = ClientError(
+            {"Error": {"Code": "BadRequestException", "Message": "syntax error"}},
+            "ExecuteStatement",
+        )
+
+        def clients(name: str, **_kwargs: object) -> MagicMock:
+            return rds if name == "rds" else data
+
+        with (
+            patch("handler.boto3.client", side_effect=clients),
+            patch.dict("os.environ", {"SIUTINDEI_CLUSTER_ARN": "arn:c", "SIUTINDEI_DB_SECRET_ARN": "arn:s"}),
+        ):
+            with self.assertRaises(RuntimeError):
+                handler.lambda_handler({"internal": "siutindei_data_api_ensure"}, MagicMock())
+        rds.enable_http_endpoint.assert_called_once_with(ResourceArn="arn:c")
+
     def test_delete_acks_without_touching_rds(self) -> None:
         event = {
             "RequestType": "Delete",

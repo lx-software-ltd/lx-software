@@ -224,6 +224,7 @@ describe("EventBridge Scheduler wiring", () => {
       "lxsoftware-admin-siutindei-board-targets": "board_targets",
       "lxsoftware-admin-siutindei-board-content-plan": "board_content_plan",
       "lxsoftware-admin-siutindei-board-content-readout": "board_content_readout",
+      "lxsoftware-admin-siutindei-data-api-ensure": "siutindei_data_api_ensure",
     };
     const schedules = Object.values(resourcesOfType("AWS::Scheduler::Schedule"));
     const byName = Object.fromEntries(
@@ -664,13 +665,23 @@ describe("Siu Tin Dei Data API setup", () => {
     });
   });
 
-  test("schema apply is a CustomResource, not an EventBridge target", () => {
+  test("a Scheduler re-enables the HTTP endpoint; no EventBridge Rule targets the schema Lambda", () => {
     const rules = JSON.stringify(Object.values(resourcesOfType("AWS::Events::Rule")));
     expect(rules).not.toContain("ReceivablesSchemaFn");
-    const schedules = JSON.stringify(
-      Object.values(resourcesOfType("AWS::Scheduler::Schedule"))
+    const schedules = Object.values(resourcesOfType("AWS::Scheduler::Schedule"));
+    const ensure = schedules.find(
+      (s) => s.Properties?.Name === "lxsoftware-admin-siutindei-data-api-ensure"
     );
-    expect(schedules).not.toContain("ReceivablesSchemaFn");
+    expect(ensure).toBeDefined();
+    expect(ensure?.Condition).toBe("HasSiutindeiDataApi");
+    expect(ensure?.Properties?.Target?.RoleArn).toBeDefined();
+    expect(JSON.stringify(ensure?.Properties?.Target?.Input ?? "")).toContain(
+      "siutindei_data_api_ensure"
+    );
+    const schemaFn = Object.keys(resourcesOfType("AWS::Lambda::Function")).find((id) =>
+      id.includes("ReceivablesSchemaFn")
+    );
+    expect(JSON.stringify(ensure?.Properties?.Target?.Arn ?? "")).toContain(schemaFn);
   });
 });
 

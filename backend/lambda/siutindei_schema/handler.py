@@ -1,8 +1,13 @@
-"""Enable-path companion: apply ``receivables.sql`` through the RDS Data API.
+"""Enable the RDS HTTP Data API and apply ``receivables.sql``.
 
-CloudFormation custom resource. Create/Update apply the script (idempotent
-``IF NOT EXISTS`` / ``CREATE OR REPLACE``). Delete is a no-op — the tables
-belong to the siutindei product cluster.
+Used as a CloudFormation custom resource (create/update) and as the
+EventBridge Scheduler target that keeps the endpoint on after a later
+siutindei product deploy drifts it off.
+
+Delete is a no-op — the tables and the HTTP endpoint belong to the product
+cluster. A SQL error during the CFN path still ACKs SUCCESS so the stack
+update commits (AdminApiFn keeps the cluster/secret env); the scheduler
+retries until the script applies.
 """
 
 from __future__ import annotations
@@ -25,8 +30,7 @@ _RETRYABLE = (
     "DatabaseUnavailableException",
     "ThrottlingException",
 )
-# EnableHttpEndpoint returns before the Data API accepts calls; the custom
-# resource that runs this handler is created right after it. Keep retrying
+# EnableHttpEndpoint returns before the Data API accepts calls. Keep retrying
 # for this long (Lambda timeout is 180 s).
 _RETRY_WINDOW_SECONDS = 120
 
@@ -34,12 +38,15 @@ _RETRY_WINDOW_SECONDS = 120
 def _is_retryable(code: str, message: str) -> bool:
     if code in _RETRYABLE:
         return True
-    # Data API reports a just-enabled endpoint as a plain BadRequest too.
     return code == "BadRequestException" and "httpendpoint" in message.replace(" ", "").lower()
 
 
 def _env(name: str, fallback: str = "") -> str:
     return (os.environ.get(name) or fallback).strip()
+
+
+def _is_cfn(event: dict[str, Any]) -> bool:
+    return bool(event.get("RequestType") and event.get("ResponseURL"))
 
 
 def _secret_username(sm: Any, secret_arn: str) -> str:
@@ -49,6 +56,13 @@ def _secret_username(sm: Any, secret_arn: str) -> str:
     except json.JSONDecodeError:
         return ""
     return str(doc.get("username") or "").strip()
+
+
+def enable_http_endpoint(cluster_arn: str) -> dict[str, Any]:
+    """Idempotent: RDS returns HttpEndpointEnabled=true when it is already on."""
+    rds = boto3.client("rds")
+    resp = rds.enable_http_endpoint(ResourceArn=cluster_arn)
+    return {"httpEndpointEnabled": bool(resp.get("HttpEndpointEnabled", True))}
 
 
 def apply_schema(*, cluster_arn: str, secret_arn: str, database: str) -> dict[str, Any]:
@@ -90,6 +104,14 @@ def apply_schema(*, cluster_arn: str, secret_arn: str, database: str) -> dict[st
             attempt += 1
 
 
+def ensure_data_api(*, cluster_arn: str, secret_arn: str, database: str) -> dict[str, Any]:
+    enabled = enable_http_endpoint(cluster_arn)
+    applied = apply_schema(
+        cluster_arn=cluster_arn, secret_arn=secret_arn, database=database
+    )
+    return {**enabled, **applied}
+
+
 def _cfn_respond(event: dict[str, Any], context: Any, status: str, data: dict[str, Any], reason: str = "") -> None:
     body = json.dumps(
         {
@@ -107,8 +129,6 @@ def _cfn_respond(event: dict[str, Any], context: Any, status: str, data: dict[st
     try:
         urllib.request.urlopen(req, timeout=30).read()
     except urllib.error.URLError:
-        # CloudFormation still waits the timeout if the ACK is lost; logging
-        # is enough — do not raise or the platform retries the whole apply.
         print("cfn_respond_failed", status)
 
 
@@ -120,12 +140,25 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if event.get("RequestType") == "Delete":
         _cfn_respond(event, context, "SUCCESS", {})
         return {"PhysicalResourceId": event.get("PhysicalResourceId") or "siutindei-receivables-schema"}
+    if not cluster_arn or not secret_arn:
+        error = "clusterArn and secretArn are required"
+        if _is_cfn(event):
+            _cfn_respond(event, context, "FAILED", {}, error)
+        raise RuntimeError(error)
     try:
-        if not cluster_arn or not secret_arn:
-            raise RuntimeError("clusterArn and secretArn are required")
-        data = apply_schema(cluster_arn=cluster_arn, secret_arn=secret_arn, database=database)
-    except Exception as exc:  # noqa: BLE001 — must ACK CloudFormation
-        _cfn_respond(event, context, "FAILED", {}, str(exc))
+        data = ensure_data_api(
+            cluster_arn=cluster_arn, secret_arn=secret_arn, database=database
+        )
+    except Exception as exc:  # noqa: BLE001 — CFN must ACK; scheduler should retry
+        if _is_cfn(event):
+            # Keep HTTP + AdminApiFn env from rolling back; the 15-minute
+            # scheduler retries until receivables.sql applies.
+            _cfn_respond(event, context, "SUCCESS", {"schemaError": str(exc)[:800]}, str(exc))
+            return {
+                "PhysicalResourceId": "siutindei-receivables-schema",
+                "Data": {"schemaError": str(exc)[:800]},
+            }
         raise
-    _cfn_respond(event, context, "SUCCESS", data)
+    if _is_cfn(event):
+        _cfn_respond(event, context, "SUCCESS", data)
     return {"PhysicalResourceId": "siutindei-receivables-schema", "Data": data}

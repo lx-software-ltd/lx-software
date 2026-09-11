@@ -426,7 +426,7 @@ default global mode is `propose`, so nothing acts until the owner flips it.
 | Cloudflare (siutindei zone) | Email Worker on the catch-all that fans out to the owner's inbox and the SES address; DKIM/SPF/DMARC records for SES sending |
 | Scheduler | `lxsoftware-admin-siutindei-board-*` (`SiutindeiBoardCacheRefreshSchedule` hourly, `SiutindeiBoardReceivablesMirrorSchedule` nightly, `SiutindeiBoardDunningSchedule` daily 09:00 HKT, plus morning/evening stand-ups). Each payload includes `boardKey: "siuTinDei"`. Role-based invokes, no Lambda resource-policy statements |
 | IAM | Read-only Cost Explorer/CloudWatch/Security Hub policy on `AdminApiFn`; `rds-data:ExecuteStatement`/`BatchExecuteStatement` on the siutindei cluster; `ses:SendEmail` restricted to `siutindei.com` identities |
-| siutindei repo | Migration for §5.4 tables, SQL views for §5.7, `enableDataApi: true` on the Aurora cluster so a later product deploy does not drift the HTTP endpoint off (this admin stack also enables it when `SiutindeiClusterArn` is set) |
+| siutindei repo | Migration for §5.4 tables, SQL views for §5.7, `enableDataApi: true` on the Aurora cluster (optional; this admin stack enables HTTP on deploy and the 15-minute `lxsoftware-admin-siutindei-data-api-ensure` schedule turns it back on if a product deploy drifts it off) |
 
 ## 9. Frontend changes (`apps/admin_web`)
 
