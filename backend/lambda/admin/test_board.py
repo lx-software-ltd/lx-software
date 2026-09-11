@@ -7,6 +7,7 @@ import re
 import sys
 import types
 import unittest
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -40,6 +41,24 @@ def _install_stubs() -> None:
 _install_stubs()
 
 from botocore.exceptions import ClientError  # noqa: E402
+
+# 12:00 HKT — outside default quiet hours [22, 8]. CI around 14:00 UTC is 22:00 HKT
+# and otherwise flakes hold-window tests (quiet shift pushes executeAt past 24h).
+BOARD_DAYTIME_UTC = datetime(2026, 9, 11, 4, 0, tzinfo=timezone.utc)
+
+
+class _FrozenBoardDateTime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return BOARD_DAYTIME_UTC if tz is None else BOARD_DAYTIME_UTC.astimezone(tz)
+
+
+def freeze_board_daytime(test_case: unittest.TestCase, *module_names: str) -> None:
+    """Pin datetime.now in hold / quiet-hour modules so those tests ignore wall clock."""
+    for name in module_names or ("board_holds", "board_policy"):
+        patcher = patch(f"{name}.datetime", _FrozenBoardDateTime)
+        patcher.start()
+        test_case.addCleanup(patcher.stop)
 
 import board_actions  # noqa: E402
 import board_chat  # noqa: E402
