@@ -260,7 +260,7 @@ describe("Admin Lambda IAM policies", () => {
     expect(serialized).toContain('"Ref":"InboundMailDomain"');
   });
 
-  test("the SES send statement is scoped to the board mail identity, not *", () => {
+  test("board mail send is Resource * constrained by ses:FromAddress", () => {
     const [policy, ...rest] = findPoliciesByConstructId("SiutindeiBoardMailSendPolicy");
     expect(policy).toBeDefined();
     expect(rest).toHaveLength(0);
@@ -268,18 +268,18 @@ describe("Admin Lambda IAM policies", () => {
     const sendStatements = policyStatements(policy).filter((s) =>
       asArray<string>(s.Action).includes("ses:SendEmail")
     );
-    expect(sendStatements).toHaveLength(1);
+    expect(sendStatements).toHaveLength(2);
 
-    const resources = asArray(sendStatements[0].Resource);
-    expect(resources).toHaveLength(4);
-    expect(resources.every((r) => r !== "*")).toBe(true);
-    // formatArn() emits a Fn::Join whose literal pieces include the
-    // `:identity/` resource segment followed by the SiutindeiBoardMailDomain parameter.
-    const serialized = JSON.stringify(resources);
-    expect(serialized).toContain(":ses:");
-    expect(serialized).toContain(":identity/");
-    expect(serialized).toContain('"Ref":"SiutindeiBoardMailDomain"');
-    expect(serialized).toContain("*@");
+    const fromAddress = sendStatements.find((s) => asArray(s.Resource).includes("*"));
+    expect(fromAddress).toBeDefined();
+    const fromCond = JSON.stringify(fromAddress?.Condition ?? {});
+    expect(fromCond).toContain("ses:FromAddress");
+    expect(fromCond).toContain("*@");
+    expect(fromCond).toContain('"Ref":"SiutindeiBoardMailDomain"');
+
+    const configSets = sendStatements.find((s) => !asArray(s.Resource).includes("*"));
+    expect(configSets).toBeDefined();
+    const serialized = JSON.stringify(asArray(configSets?.Resource));
     expect(serialized).toContain("configuration-set/lxsoftware-admin-siutindei-outreach");
     expect(serialized).toContain("configuration-set/lxsoftware-admin-siutindei-newsletter");
   });
@@ -586,6 +586,7 @@ describe("Board staff kill switches on both lambdas", () => {
       expect(env.BOARD_STAFF_ENABLED).toBeDefined();
       expect(env.BOARD_TOOLS_ENABLED).toBeDefined();
       expect(env.BOARD_MAIL_SENDING_ENABLED).toBeDefined();
+      expect(env.BOARD_MAIL_IDENTITY_ARN).toBeDefined();
       expect(env.OUTREACH_SENDING_DOMAIN).toBeDefined();
       expect(env.OUTREACH_FROM_LOCAL_PART).toBeDefined();
     }

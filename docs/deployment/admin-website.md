@@ -864,7 +864,9 @@ Worker copies every message to the board as well. Design:
 
 1. Set `lxsoftware:SiutindeiBoardMailSendingEnabled=true` and redeploy. The stack
    creates an SES email identity for `SiutindeiBoardMailDomain` and attaches
-   `ses:SendEmail` on that domain to `AdminApiFn`.
+   `ses:SendEmail` / `ses:SendRawEmail` on `AdminApiFn`, constrained to
+   `ses:FromAddress` `*@SiutindeiBoardMailDomain` (SendRawEmail authorizes the
+   mailbox identity, not the verified domain ARN).
 2. Add the three `SiutindeiBoardMailDkimCnameN` outputs as CNAMEs on the
    `siutindei.com` zone (Cloudflare proxy **off**).
 3. Extend SPF to

@@ -134,7 +134,7 @@ Gates:
 
 ### R-11 [HIGH] SES IAM grants omit the configuration-set resource, so real sends are denied
 
-- **Where:** `lxsoftware-stack.ts`: the outreach `PolicyStatement` (`ses:SendEmail`, `ses:SendRawEmail`, `ses:GetEmailIdentity` on `identity/<OutreachSendingDomain>` only) and `SiutindeiBoardMailSendPolicy` (identity only); `board_outreach.send`, `board_newsletter._send_confirm` / `send_issue` all pass `ConfigurationSetName`.
+- **Where:** `lxsoftware-stack.ts`: the outreach `PolicyStatement` (`ses:SendEmail`, `ses:SendRawEmail`, `ses:GetEmailIdentity` on `identity/<OutreachSendingDomain>` only) and `SiutindeiBoardMailSendPolicy` (`ses:FromAddress` `*@SiutindeiBoardMailDomain`, plus the outreach/newsletter configuration sets); `board_outreach.send`, `board_newsletter._send_confirm` / `send_issue` all pass `ConfigurationSetName`.
 - **Spec:** WP6 "`ses:SendEmail` on the new identity ARN"; WP6/WP8 configuration sets; §7 "PR description lists every IAM grant".
 - **Evidence:** The SES v2 authorization reference lists `configuration-set` as a resource type for `SendEmail`; AWS's own example policy includes both `identity/…` and `configuration-set/…` ARNs, and CDK issue #34402 documents `AccessDenied` when only the identity is granted. Unit tests use fakes and cannot catch this.
 - **Remediation:** Add `formatArn({service:"ses", resource:"configuration-set", resourceName:"lxsoftware-admin-siutindei-outreach"})` and `…-newsletter` to the two statements (also `ses:SendBulkEmail` to the outreach statement if bulk is ever used there). Scope the template statement (`ses:CreateEmailTemplate` etc., currently `*`) to `template/lxsoftware-admin-siutindei-*`.

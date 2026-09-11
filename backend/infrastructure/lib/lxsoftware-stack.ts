@@ -1791,6 +1791,14 @@ export class LxsoftwareStack extends cdk.Stack {
       fn.addEnvironment("BOARD_STAFF_ENABLED", boardStaffEnabled.valueAsString);
       fn.addEnvironment("BOARD_TOOLS_ENABLED", boardToolsEnabled.valueAsString);
       fn.addEnvironment("BOARD_MAIL_SENDING_ENABLED", boardMailSendingEnabled.valueAsString);
+      fn.addEnvironment(
+        "BOARD_MAIL_IDENTITY_ARN",
+        cdk.Stack.of(this).formatArn({
+          service: "ses",
+          resource: "identity",
+          resourceName: boardMailDomain.valueAsString,
+        })
+      );
       fn.addEnvironment("OUTREACH_SENDING_DOMAIN", outreachSendingDomain.valueAsString);
       fn.addEnvironment("OUTREACH_FROM_LOCAL_PART", outreachFromLocalPart.valueAsString);
     }
@@ -1840,21 +1848,32 @@ export class LxsoftwareStack extends cdk.Stack {
       mailFromAttributes: { behaviorOnMxFailure: "USE_DEFAULT_VALUE" },
     });
     boardMailIdentity.cfnOptions.condition = hasBoardMailSending;
+    // SendRawEmail authorizes identity/<mailbox>, not the verified domain.
+    // `identity/*@domain` still misses hello%40domain and display-name From
+    // forms. AWS's documented pattern is Resource * plus ses:FromAddress.
+    const boardMailFromPattern = cdk.Fn.join("", [
+      "*@",
+      boardMailDomain.valueAsString,
+    ]);
+    const boardMailFromDisplayPattern = cdk.Fn.join("", [
+      "*@",
+      boardMailDomain.valueAsString,
+      ">",
+    ]);
     const boardMailSendPolicy = new iam.Policy(this, "SiutindeiBoardMailSendPolicy", {
         statements: [
           new iam.PolicyStatement({
             actions: ["ses:SendEmail", "ses:SendRawEmail", "ses:SendBulkEmail"],
+            resources: ["*"],
+            conditions: {
+              StringLike: {
+                "ses:FromAddress": [boardMailFromPattern, boardMailFromDisplayPattern],
+              },
+            },
+          }),
+          new iam.PolicyStatement({
+            actions: ["ses:SendEmail", "ses:SendRawEmail", "ses:SendBulkEmail"],
             resources: [
-              cdk.Stack.of(this).formatArn({
-                service: "ses",
-                resource: "identity",
-                resourceName: boardMailDomain.valueAsString,
-              }),
-              cdk.Stack.of(this).formatArn({
-                service: "ses",
-                resource: "identity",
-                resourceName: `*@${boardMailDomain.valueAsString}`,
-              }),
               cdk.Stack.of(this).formatArn({
                 service: "ses",
                 resource: "configuration-set",

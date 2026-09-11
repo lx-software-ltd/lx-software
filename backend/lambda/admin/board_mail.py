@@ -858,15 +858,21 @@ def send_plan(table: Any, plan: dict[str, Any], *, sent_by: str) -> dict[str, An
             filename=filename,
         )
     raw = msg.as_bytes()
-    # SES IAM matches FromEmailAddress to identity/<addr> or identity/<domain>.
-    # A display-name form ("siutindei <hello@…>") is authorized as a different
-    # identity and AccessDenied's even when the domain identity is allowed.
+    # FromEmailAddress must be the bare mailbox. SES IAM for SendRawEmail
+    # authorizes identity/<mailbox> (sometimes identity/<local>%40<domain>),
+    # not the verified domain identity. The stack policy therefore uses
+    # Resource * + ses:FromAddress; FromEmailAddressIdentityArn points SES
+    # verification at the domain identity we actually created.
+    send_kwargs: dict[str, Any] = {
+        "FromEmailAddress": from_mailbox,
+        "Destination": {"ToAddresses": to, "CcAddresses": cc},
+        "Content": {"Raw": {"Data": raw}},
+    }
+    identity_arn = (os.environ.get("BOARD_MAIL_IDENTITY_ARN") or "").strip()
+    if identity_arn:
+        send_kwargs["FromEmailAddressIdentityArn"] = identity_arn
     try:
-        response = _ses_client().send_email(
-            FromEmailAddress=from_mailbox,
-            Destination={"ToAddresses": to, "CcAddresses": cc},
-            Content={"Raw": {"Data": raw}},
-        )
+        response = _ses_client().send_email(**send_kwargs)
     except Exception as exc:
         # Catch broader than botocore.ClientError: unit tests stub that class,
         # and any SES failure must become MailError instead of crashing approve.
@@ -876,6 +882,14 @@ def send_plan(table: Any, plan: dict[str, Any], *, sent_by: str) -> dict[str, An
             err = {}
         code = str(err.get("Code") or type(exc).__name__)
         detail = str(err.get("Message") or exc)[:240]
+        _log_event(
+            "error",
+            tag="board_mail_send_failed",
+            code=code,
+            detail=detail,
+            frm=from_mailbox,
+            to=len(to),
+        )
         raise MailError(f"SES refused to send ({code}): {detail}") from exc
     indexed = ingest_bytes(table, raw, direction="out", source=f"board:{sent_by}"[:80])
     if indexed.get("threadId"):

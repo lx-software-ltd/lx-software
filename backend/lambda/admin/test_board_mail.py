@@ -110,6 +110,7 @@ class MailTestCase(ToolsTestCase):
             "BOARD_MAIL_SENDING_ENABLED": "true",
             "BOARD_MAIL_DOMAIN": "siutindei.com",
             "BOARD_MAIL_INBOUND_ADDRESS": "siutindei-board@inbound.lx-software.com",
+            "BOARD_MAIL_IDENTITY_ARN": "arn:aws:ses:ap-southeast-1:123456789012:identity/siutindei.com",
         }
         patcher_env = patch.dict("os.environ", env, clear=False)
         patcher_env.start()
@@ -451,6 +452,10 @@ class TestMailTools(MailTestCase):
         sent = self.ses.sent[0]
         self.assertEqual(sent["Destination"]["ToAddresses"], ["wendy.chan@gmail.com"])
         self.assertEqual(sent["FromEmailAddress"], "hello@siutindei.com")
+        self.assertEqual(
+            sent["FromEmailAddressIdentityArn"],
+            "arn:aws:ses:ap-southeast-1:123456789012:identity/siutindei.com",
+        )
         raw = self.ses.last_raw()
         self.assertIn("hello@siutindei.com", raw["From"])
         self.assertEqual(raw["In-Reply-To"], "<abc123@mail.gmail.com>")
