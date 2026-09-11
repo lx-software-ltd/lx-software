@@ -13,6 +13,7 @@ import board_holds
 import board_staff
 import board_store
 import board_tools
+from contract_constants import BOARD_KEY
 from test_board import BoardTestCase
 
 
@@ -94,10 +95,10 @@ class ContentTests(BoardTestCase):
                 }
             )
         board_staff._blob_put(  # noqa: SLF001
-            f"board/siuTinDei/staff/{task['taskId']}/deliverable.json",
+            f"board/{BOARD_KEY}/staff/{task['taskId']}/deliverable.json",
             __import__("json").dumps({"items": items}).encode("utf-8"),
         )
-        task["deliverableKey"] = f"board/siuTinDei/staff/{task['taskId']}/deliverable.json"
+        task["deliverableKey"] = f"board/{BOARD_KEY}/staff/{task['taskId']}/deliverable.json"
         board_store.put_task(self.table, task)
         out = board_content.on_plan_delivered(self.table, self.settings, task)
         self.assertEqual(out["items"], 21)
@@ -145,6 +146,7 @@ class ContentTests(BoardTestCase):
         )
         story = board_content.render_item(self.table, story)
         self.assertTrue(str(story["creativeKeys"][0]).endswith("/0.png"))
+        self.assertTrue(str(story["creativeKeys"][0]).startswith(f"board/{BOARD_KEY}/content/"))
         self.assertEqual(len(story["creativeKeys"]), 1)
         sent_story = board_content.publish(self.table, self.settings, story["contentId"])
         self.assertTrue(sent_story.get("ok"))

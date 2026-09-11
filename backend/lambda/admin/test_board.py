@@ -48,6 +48,7 @@ import board_personas  # noqa: E402
 import board_store  # noqa: E402
 import openrouter_client  # noqa: E402
 from board_routes import validate_settings  # noqa: E402
+from contract_constants import BOARD_KEY  # noqa: E402
 from dispatch import lambda_handler  # noqa: E402
 
 
@@ -861,7 +862,7 @@ class TestMeetings(BoardTestCase):
         )
         self.assertEqual(board_store.list_meetings(self.table), [])
         lambda_handler(
-            {"internal": "board_meeting", "slot": "morning", "boardKey": "siuTinDei"},
+            {"internal": "board_meeting", "slot": "morning", "boardKey": BOARD_KEY},
             None,
         )
         self.assertEqual(len(board_store.list_meetings(self.table)), 1)
@@ -872,7 +873,7 @@ class TestBoardKeyRouting(unittest.TestCase):
         self.assertTrue(board_store.event_targets_this_board(None))
         self.assertTrue(board_store.event_targets_this_board({}))
         self.assertTrue(board_store.event_targets_this_board({"boardKey": ""}))
-        self.assertTrue(board_store.event_targets_this_board({"boardKey": "siuTinDei"}))
+        self.assertTrue(board_store.event_targets_this_board({"boardKey": BOARD_KEY}))
         self.assertFalse(board_store.event_targets_this_board({"boardKey": "lxSoftware"}))
 
 

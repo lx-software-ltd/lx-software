@@ -15,7 +15,7 @@ import board_hk
 import board_staff
 import board_store
 import board_watch
-from contract_constants import BOARD_STAFF_CRAWL_MAX_PAGES_PER_RUN
+from contract_constants import BOARD_KEY, BOARD_STAFF_CRAWL_MAX_PAGES_PER_RUN
 from http_common import _log_event
 
 PAGES_PER_INVOKE = 40
@@ -83,7 +83,7 @@ def daily_crawl(table: Any, settings: dict[str, Any], cursor: dict[str, Any] | N
     for watch, url in jobs[start:]:
         if pages_run >= PAGES_PER_INVOKE:
             board_async.invoke_async(
-                {"internal": "board_intel_crawl", "boardKey": "siuTinDei", "cursor": {"offset": start + pages_run}},
+                {"internal": "board_intel_crawl", "boardKey": BOARD_KEY, "cursor": {"offset": start + pages_run}},
                 fallback=lambda payload: daily_crawl(table, settings, payload.get("cursor")),
             )
             break

@@ -16,7 +16,7 @@ import board_personas
 import board_staff
 import board_store
 import board_tools
-from contract_constants import BOARD_STAFF_MAX_STEPS_PER_TASK, BOARD_STAFF_TASK_BUDGET_DESK_USD
+from contract_constants import BOARD_KEY, BOARD_STAFF_MAX_STEPS_PER_TASK, BOARD_STAFF_TASK_BUDGET_DESK_USD
 
 
 def _enable_staff(table: Any, **staff: Any) -> dict[str, Any]:
@@ -87,6 +87,7 @@ class StaffEngineTests(BoardTestCase):
         self.assertEqual(task["assigneeKind"], "persona")
         self.assertEqual(len(self.async_payloads), 1)
         self.assertEqual(self.async_payloads[0]["internal"], "board_staff_step")
+        self.assertEqual(self.async_payloads[0]["boardKey"], BOARD_KEY)
 
     def test_drain_queue_respects_max_running(self) -> None:
         settings = _enable_staff(self.table, maxRunningTasks=1)
@@ -107,6 +108,16 @@ class StaffEngineTests(BoardTestCase):
         prompt = board_personas.render_seat_prompt(seat, {"displayName": "Pat", "title": "COO"}, {}, ["Be brief."])
         self.assertIn("reporting to Pat", prompt)
         self.assertIn("STANDING INSTRUCTIONS", prompt)
+
+    def test_blob_keys_use_board_key(self) -> None:
+        self.assertEqual(
+            board_staff._scratchpad_key("t1"),  # noqa: SLF001
+            f"board/{BOARD_KEY}/staff/t1/scratchpad.md",
+        )
+        self.assertEqual(
+            board_staff._deliverable_key("t1", "markdown"),  # noqa: SLF001
+            f"board/{BOARD_KEY}/staff/t1/deliverable.md",
+        )
 
 
 class StaffStepTests(ToolsTestCase):
@@ -133,7 +144,7 @@ class StaffStepTests(ToolsTestCase):
     def test_run_step_idempotent_duplicate_payload(self) -> None:
         task = self._queued_task()
         board_store.claim_task_step(self.table, task["taskId"], 0)
-        board_staff.run_step({"internal": "board_staff_step", "boardKey": "siuTinDei", "taskId": task["taskId"], "step": 2})
+        board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": task["taskId"], "step": 2})
         latest = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(latest["step"], 0)
 
@@ -173,7 +184,7 @@ class StaffStepTests(ToolsTestCase):
         self.assertEqual(latest["status"], "review")
         self.assertEqual(latest["evidence"], ["aws-1", "fin-1"])
         self.use_script([], '{"verdict":"accept","notes":"Good."}')
-        board_staff.run_review({"internal": "board_staff_review", "boardKey": "siuTinDei", "taskId": task["taskId"]})
+        board_staff.run_review({"internal": "board_staff_review", "boardKey": BOARD_KEY, "taskId": task["taskId"]})
         done = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(done["status"], "delivered")
         reviews = board_store.list_task_reviews(self.table, task["taskId"])
@@ -204,7 +215,7 @@ class StaffStepTests(ToolsTestCase):
                 },
             )
         self.use_script([], "not json at all")
-        board_staff.run_review({"internal": "board_staff_review", "boardKey": "siuTinDei", "taskId": task["taskId"]})
+        board_staff.run_review({"internal": "board_staff_review", "boardKey": BOARD_KEY, "taskId": task["taskId"]})
         done = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(done["lastReview"]["verdict"], "return")
 
@@ -233,7 +244,7 @@ class StaffStepTests(ToolsTestCase):
                 },
             )
         self.use_script([], "")
-        board_staff.run_review({"internal": "board_staff_review", "boardKey": "siuTinDei", "taskId": task["taskId"]})
+        board_staff.run_review({"internal": "board_staff_review", "boardKey": BOARD_KEY, "taskId": task["taskId"]})
         done = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(done["lastReview"]["verdict"], "return")
 
@@ -317,7 +328,7 @@ class StaffStepTests(ToolsTestCase):
         board_store.put_task(self.table, task)
         scripted = ScriptedOpenRouter([], "Still working.")
         self.router.openrouter = scripted
-        board_staff.run_step({"internal": "board_staff_step", "boardKey": "siuTinDei", "taskId": task["taskId"], "step": BOARD_STAFF_MAX_STEPS_PER_TASK})
+        board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": task["taskId"], "step": BOARD_STAFF_MAX_STEPS_PER_TASK})
         latest = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(latest["status"], "failed")
         self.assertEqual(latest["failureReason"], "step limit")
@@ -330,7 +341,7 @@ class StaffStepTests(ToolsTestCase):
         stale = board_store.get_task(self.table, task["taskId"])
         stale["updatedAt"] = (datetime.now(timezone.utc) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
         board_store.put_task(self.table, stale)
-        board_staff.handle_tick({"internal": "board_staff_tick", "boardKey": "siuTinDei"})
+        board_staff.handle_tick({"internal": "board_staff_tick", "boardKey": BOARD_KEY})
         self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "failed")
         self.assertEqual(board_store.get_task(self.table, task["taskId"])["failureReason"], "stuck")
 
@@ -396,7 +407,7 @@ class StaffAccountingTests(StaffStepTests):
         board_store.claim_task_step(self.table, task["taskId"], 0)
         os.environ["BOARD_STAFF_ENABLED"] = "false"
         board_staff.run_step(
-            {"internal": "board_staff_step", "boardKey": "siuTinDei", "taskId": task["taskId"], "step": 1}
+            {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": task["taskId"], "step": 1}
         )
         latest = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(latest["step"], 0)
@@ -412,16 +423,16 @@ class StaffAccountingTests(StaffStepTests):
         with patch.object(board_async, "invoke_async", side_effect=lambda payload, *, fallback=None: None):
             with patch.object(board_tools, "run_tool_loop", return_value=FakeResult()):
                 board_staff.run_step(
-                    {"internal": "board_staff_step", "boardKey": "siuTinDei", "taskId": task["taskId"], "step": 1}
+                    {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": task["taskId"], "step": 1}
                 )
                 board_staff.run_step(
-                    {"internal": "board_staff_step", "boardKey": "siuTinDei", "taskId": task["taskId"], "step": 2}
+                    {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": task["taskId"], "step": 2}
                 )
         latest = board_store.get_task(self.table, task["taskId"])
         self.assertAlmostEqual(float((latest.get("usage") or {}).get("cost") or 0), 0.02)
         with patch.object(board_tools, "run_tool_loop", return_value=FakeResult()):
             board_staff.run_step(
-                {"internal": "board_staff_step", "boardKey": "siuTinDei", "taskId": task["taskId"], "step": 3}
+                {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": task["taskId"], "step": 3}
             )
         failed = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(failed["status"], "failed")

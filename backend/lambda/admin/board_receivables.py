@@ -21,7 +21,7 @@ import board_meta
 import board_store
 import runtime
 from board_data_api import Date, Numeric, Uuid
-from contract_constants import BOARD_INVOICE_NUMBER_PREFIX, BOARD_RECEIVABLES_LIST_MAX
+from contract_constants import BOARD_INVOICE_NUMBER_PREFIX, BOARD_KEY, BOARD_RECEIVABLES_LIST_MAX
 from finance_store import (
     _finance_owner_ddb_key,
     _load_finance_owner,
@@ -30,7 +30,7 @@ from finance_store import (
 from ddb_convert import _to_ddb_nested
 from http_common import _log_event
 
-BOOK = "siuTinDei"
+BOOK = BOARD_KEY
 DUNNING_OFFSETS = (7, 21, 35)
 LINE_SOURCE = "receivables"
 LINE_ID_PREFIXES = ("recv-inv-", "recv-pay-")

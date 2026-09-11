@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import patch
 
+from contract_constants import BOARD_KEY
 from test_board import BoardTestCase
 from test_board_mail import build_mail
 
@@ -117,7 +118,7 @@ class TriageTests(BoardTestCase):
         tasks = [t for status in ("queued", "running") for t in board_store.list_tasks(self.table, status)]
         self.assertEqual(len({t["taskId"] for t in tasks}), 1)
         task = tasks[0]
-        pad = board_staff._blob_get(task.get("scratchpadKey") or f"board/siuTinDei/staff/{task['taskId']}/scratchpad.md").decode()
+        pad = board_staff._blob_get(task.get("scratchpadKey") or f"board/{BOARD_KEY}/staff/{task['taskId']}/scratchpad.md").decode()
         self.assertIn("NEW MESSAGE", pad)
 
     def test_injury_is_needs_owner_and_sends_ack(self) -> None:
@@ -134,6 +135,7 @@ class TriageTests(BoardTestCase):
         self.assertTrue(
             any(
                 p.get("internal") == "board_triage_ack"
+                and p.get("boardKey") == BOARD_KEY
                 and p.get("op") == "mail_reply"
                 and (p.get("args") or {}).get("templateId") == "ack_escalation"
                 for p in seen
