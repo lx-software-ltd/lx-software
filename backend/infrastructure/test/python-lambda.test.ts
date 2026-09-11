@@ -31,6 +31,7 @@ describe("DOCKER_BUNDLE_SCRIPT", () => {
     fs.mkdirSync(output);
     fs.writeFileSync(path.join(input, "handler.py"), "def lambda_handler(e, c): return e\n");
     fs.writeFileSync(path.join(input, "board_x.py"), "");
+    fs.writeFileSync(path.join(input, "receivables.sql"), "CREATE TABLE t (id int);\n");
     fs.writeFileSync(path.join(input, "README.md"), "not copied");
     fs.writeFileSync(path.join(input, "fonts", "NotoSans-Regular.ttf"), "ttf");
     fs.writeFileSync(path.join(input, "brand", "logo.png"), "png");
@@ -53,6 +54,7 @@ describe("DOCKER_BUNDLE_SCRIPT", () => {
       "fonts",
       path.join("fonts", "NotoSans-Regular.ttf"),
       "handler.py",
+      "receivables.sql",
     ]);
   });
 });

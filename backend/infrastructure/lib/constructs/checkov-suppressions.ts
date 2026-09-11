@@ -68,7 +68,8 @@ export class CheckovSuppressionAspect implements cdk.IAspect {
         nodePath.endsWith("/AdminApiFn/Resource") ||
         nodePath.endsWith("/InboundStatementMailFn/Resource") ||
         nodePath.endsWith("/PreTokenGenerationFn/Resource") ||
-        nodePath.endsWith("/PublicApiKeyAuthorizerFn/Resource");
+        nodePath.endsWith("/PublicApiKeyAuthorizerFn/Resource") ||
+        nodePath.endsWith("/ReceivablesSchemaFn/Resource");
 
       if (isAppLambda) {
         node.addMetadata("checkov", {

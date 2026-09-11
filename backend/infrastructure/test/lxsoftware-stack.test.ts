@@ -224,6 +224,7 @@ describe("EventBridge Scheduler wiring", () => {
       "lxsoftware-admin-siutindei-board-targets": "board_targets",
       "lxsoftware-admin-siutindei-board-content-plan": "board_content_plan",
       "lxsoftware-admin-siutindei-board-content-readout": "board_content_readout",
+      "lxsoftware-admin-siutindei-data-api-ensure": "siutindei_data_api_ensure",
     };
     const schedules = Object.values(resourcesOfType("AWS::Scheduler::Schedule"));
     const byName = Object.fromEntries(
@@ -615,6 +616,72 @@ describe("Board staff kill switches on both lambdas", () => {
       expect(env.OUTREACH_SENDING_DOMAIN).toBeDefined();
       expect(env.OUTREACH_FROM_LOCAL_PART).toBeDefined();
     }
+  });
+});
+
+describe("Siu Tin Dei Data API setup", () => {
+  test("HasSiutindeiDataApi is cluster ARN only", () => {
+    const cond = template.toJSON().Conditions.HasSiutindeiDataApi;
+    const serialized = JSON.stringify(cond);
+    expect(serialized).toContain("SiutindeiClusterArn");
+    expect(serialized).not.toContain("SiutindeiDbSecretArn");
+    expect(template.toJSON().Parameters.SiutindeiDbSecretName).toBeDefined();
+  });
+
+  test("enables the HTTP endpoint and applies receivables.sql when the cluster ARN is set", () => {
+    const custom = Object.entries(resources).filter(
+      ([, r]) =>
+        r.Type === "Custom::AWS" || r.Type === "AWS::CloudFormation::CustomResource"
+    );
+    const enable = custom.find(([, r]) =>
+      JSON.stringify(r.Properties ?? {}).includes("enableHttpEndpoint")
+    );
+    expect(enable).toBeDefined();
+    expect(enable?.[1].Condition).toBe("HasSiutindeiDataApi");
+
+    const schema = custom.find(
+      ([id, r]) =>
+        id.includes("ReceivablesSchema") &&
+        r.Type === "AWS::CloudFormation::CustomResource"
+    );
+    expect(schema).toBeDefined();
+    expect(schema?.[1].Condition).toBe("HasSiutindeiDataApi");
+
+    const schemaFn = Object.entries(resourcesOfType("AWS::Lambda::Function")).find(
+      ([id]) => id.includes("ReceivablesSchemaFn")
+    );
+    expect(schemaFn).toBeDefined();
+    expect(schemaFn?.[1].Condition).toBe("HasSiutindeiDataApi");
+    expect(schemaFn?.[1].Properties?.Timeout).toBe(180);
+    expect(schemaFn?.[1].Properties?.MemorySize).toBe(256);
+
+    const adminFn = Object.entries(resourcesOfType("AWS::Lambda::Function")).find(
+      ([id]) => id.startsWith("AdminApiFn")
+    );
+    const secretEnv =
+      adminFn?.[1].Properties?.Environment?.Variables?.SIUTINDEI_DB_SECRET_ARN;
+    expect(secretEnv).toEqual({
+      "Fn::If": ["HasSiutindeiDataApi", expect.anything(), ""],
+    });
+  });
+
+  test("a Scheduler re-enables the HTTP endpoint; no EventBridge Rule targets the schema Lambda", () => {
+    const rules = JSON.stringify(Object.values(resourcesOfType("AWS::Events::Rule")));
+    expect(rules).not.toContain("ReceivablesSchemaFn");
+    const schedules = Object.values(resourcesOfType("AWS::Scheduler::Schedule"));
+    const ensure = schedules.find(
+      (s) => s.Properties?.Name === "lxsoftware-admin-siutindei-data-api-ensure"
+    );
+    expect(ensure).toBeDefined();
+    expect(ensure?.Condition).toBe("HasSiutindeiDataApi");
+    expect(ensure?.Properties?.Target?.RoleArn).toBeDefined();
+    expect(JSON.stringify(ensure?.Properties?.Target?.Input ?? "")).toContain(
+      "siutindei_data_api_ensure"
+    );
+    const schemaFn = Object.keys(resourcesOfType("AWS::Lambda::Function")).find((id) =>
+      id.includes("ReceivablesSchemaFn")
+    );
+    expect(JSON.stringify(ensure?.Properties?.Target?.Arn ?? "")).toContain(schemaFn);
   });
 });
 

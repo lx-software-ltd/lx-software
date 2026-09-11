@@ -28,6 +28,10 @@ import * as cr from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
 import { AuthConstruct } from "./constructs/auth";
 import { createPythonLambda } from "./constructs/python-lambda";
+import {
+  SIUTINDEI_DB_SECRET_NAME_DEFAULT,
+  SiutindeiDataApiSetup,
+} from "./constructs/siutindei-data-api";
 import { ADMIN_WEB_HOSTNAME, PARSE_TIMEOUTS } from "./shared-contracts";
 
 /**
@@ -418,7 +422,17 @@ export class LxsoftwareStack extends cdk.Stack {
         type: "String",
         default: "",
         description:
-          "Secrets Manager ARN of the siutindei DB credentials used by the RDS Data API.",
+          "Secrets Manager ARN of the siutindei DB credentials used by the RDS Data API. Leave blank to resolve SiutindeiDbSecretName.",
+      }
+    );
+    const siutindeiDbSecretName = new cdk.CfnParameter(
+      this,
+      "SiutindeiDbSecretName",
+      {
+        type: "String",
+        default: SIUTINDEI_DB_SECRET_NAME_DEFAULT,
+        description:
+          "Secrets Manager name of the siutindei DB credentials when SiutindeiDbSecretArn is blank (RDS-owned; do not recreate).",
       }
     );
     const metaVerifyToken = new cdk.CfnParameter(this, "SiutindeiBoardMetaVerifyToken", {
@@ -973,6 +987,24 @@ export class LxsoftwareStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
 
+    // Cluster ARN only: CDK enables the HTTP Data API and applies
+    // receivables.sql. Secret ARN is optional — blank resolves the
+    // default siutindei master-secret name.
+    const hasSiutindeiDataApi = new cdk.CfnCondition(this, "HasSiutindeiDataApi", {
+      expression: cdk.Fn.conditionNot(
+        cdk.Fn.conditionEquals(siutindeiClusterArn.valueAsString, "")
+      ),
+    });
+    const siutindeiDataApi = new SiutindeiDataApiSetup(this, "SiutindeiDataApi", {
+      clusterArn: siutindeiClusterArn.valueAsString,
+      secretArn: siutindeiDbSecretArn.valueAsString,
+      secretName: siutindeiDbSecretName.valueAsString,
+      condition: hasSiutindeiDataApi,
+      environmentEncryptionKey: this.sharedEncryptionKey,
+      logEncryptionKey: this.sharedEncryptionKey,
+      deadLetterQueue: this.lambdaDeadLetterQueue,
+    });
+
     const adminFn = createPythonLambda(this, "AdminApiFn", {
       entryDir: path.join(__dirname, "..", "..", "lambda", "admin"),
       timeout: adminStatementParseLambdaTimeout,
@@ -1010,7 +1042,11 @@ export class LxsoftwareStack extends cdk.Stack {
         BOARD_AWS_LAMBDA_NAMES: boardAwsLambdaNames.valueAsString,
         USER_POOL_ID: this.auth.userPool.userPoolId,
         SIUTINDEI_CLUSTER_ARN: siutindeiClusterArn.valueAsString,
-        SIUTINDEI_DB_SECRET_ARN: siutindeiDbSecretArn.valueAsString,
+        SIUTINDEI_DB_SECRET_ARN: cdk.Fn.conditionIf(
+          hasSiutindeiDataApi.logicalId,
+          siutindeiDataApi.resolvedSecretArn,
+          ""
+        ).toString(),
         META_BOARD_TOKEN_SECRET_ARN: siutindeiBoardSecrets.metaToken.secretArn,
         META_APP_SECRET_SECRET_ARN: siutindeiBoardSecrets.metaAppSecret.secretArn,
         META_VERIFY_TOKEN: metaVerifyToken.valueAsString,
@@ -1472,12 +1508,6 @@ export class LxsoftwareStack extends cdk.Stack {
       ],
     }).attachToRole(adminFn.role!);
 
-    const hasSiutindeiDataApi = new cdk.CfnCondition(this, "HasSiutindeiDataApi", {
-      expression: cdk.Fn.conditionAnd(
-        cdk.Fn.conditionNot(cdk.Fn.conditionEquals(siutindeiClusterArn.valueAsString, "")),
-        cdk.Fn.conditionNot(cdk.Fn.conditionEquals(siutindeiDbSecretArn.valueAsString, ""))
-      ),
-    });
     const dataApiPolicy = new iam.Policy(this, "AdminSiutindeiDataApiPolicy", {
       statements: [
         new iam.PolicyStatement({
@@ -1485,8 +1515,25 @@ export class LxsoftwareStack extends cdk.Stack {
           resources: [siutindeiClusterArn.valueAsString],
         }),
         new iam.PolicyStatement({
-          actions: ["secretsmanager:GetSecretValue"],
-          resources: [siutindeiDbSecretArn.valueAsString],
+          actions: ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+          resources: [
+            siutindeiDataApi.resolvedSecretArn,
+            this.formatArn({
+              service: "secretsmanager",
+              resource: "secret",
+              resourceName: `${siutindeiDbSecretName.valueAsString}*`,
+              arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+            }),
+          ],
+        }),
+        new iam.PolicyStatement({
+          actions: ["kms:Decrypt", "kms:DescribeKey"],
+          resources: ["*"],
+          conditions: {
+            StringEquals: {
+              "kms:ViaService": `secretsmanager.${this.region}.amazonaws.com`,
+            },
+          },
         }),
       ],
     });

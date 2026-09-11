@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "preview:mock": "vite preview --mode mock --port 4173",
     "lint": "eslint . --max-warnings=0",
-    "test": "vitest run && (cd ../../backend/lambda/admin && python3 -m pip install -q -r requirements.txt && python3 -m unittest discover -p 'test_*.py' -v) && (cd ../../backend/lambda/public_api_authorizer && python3 -m unittest discover -p 'test_*.py' -v)",
+    "test": "vitest run && (cd ../../backend/lambda/admin && python3 -m pip install -q -r requirements.txt && python3 -m unittest discover -p 'test_*.py' -v) && (cd ../../backend/lambda/public_api_authorizer && python3 -m unittest discover -p 'test_*.py' -v) && (cd ../../backend/lambda/siutindei_schema && python3 -m unittest discover -p 'test_*.py' -v)",
     "test:e2e": "playwright test"
   },
   "dependencies": {
