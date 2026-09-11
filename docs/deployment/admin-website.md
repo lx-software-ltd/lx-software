@@ -257,7 +257,15 @@ Everything runs on the existing `lxsoftware` stack (`AdminApiFn` + the records
 table); there is no new Lambda, table, or bucket. Board rows use the
 `BOARD#` prefix and are excluded from the generic `/records` scan.
 
-Stack parameters (all optional, set in `backend/infrastructure/params/*.json`):
+Stack parameters (all optional, set in `backend/infrastructure/params/*.json`).
+Keys must match the names below; an unknown `lxsoftware:*` key fails
+`cdk deploy`. Naming: board-only knobs are `SiutindeiBoard*` (kill
+switches, models, outreach, mail, Meta / stores / web ids); Siu Tin Dei
+product resources the stack integrates with are `Siutindei*` (`SiutindeiClusterArn`,
+`SiutindeiDbSecretArn`, `SiutindeiDbSecretName`); stack-wide knobs stay
+unprefixed (`PublicSiteOrigins`, `PublicApiBaseUrl`, Cognito, OpenRouter,
+inbound mail, Enable Banking). Lambda env vars stay short (`BOARD_*`,
+`OUTREACH_*`).
 
 | Parameter | Purpose |
 |-----------|---------|
@@ -265,10 +273,10 @@ Stack parameters (all optional, set in `backend/infrastructure/params/*.json`):
 | `lxsoftware:SiutindeiBoardGitHubRepo` | `owner/name` of the repository to read (default `lx-software-ltd/siutindei`). |
 | `lxsoftware:SiutindeiBoardToolsEnabled` | `true` (default) / `false`. Deploy-time kill switch for every board tool call, independent of the in-app settings. |
 | `lxsoftware:SiutindeiBoardStaffEnabled` | `false` (default) / `true`. Deploy-time kill switch for Executive Board staff tasks. `board_staff.env_enabled()` is fail-closed: only `1` / `true` / `yes` / `on` count as on (unset is off). The same env is set on **both** `AdminApiFn` and `InboundStatementMailFn`. Also requires `settings.staff.enabled` in the app. |
-| `lxsoftware:PublicSiteOrigins` | CSV of extra browser origins allowed on the HTTP API CORS list (admin origin is always included). Required for the public newsletter form (`apps/public_www`). Example: `https://lx-software.com,https://www.lx-software.com`. |
-| `lxsoftware:OutreachSendingDomain` | SES From domain for cold outreach (default `partners.siutindei.com`). Owner adds DKIM CNAMEs, MAIL FROM MX+TXT and DMARC before `outreach_send` will send. |
-| `lxsoftware:OutreachFromLocalPart` | Local part of the outreach From address (default `partnerships`). |
-| `lxsoftware:PublicApiBaseUrl` | Base URL for unsubscribe / newsletter confirm links. Blank uses this stack's HTTP API URL. |
+| `lxsoftware:PublicSiteOrigins` | CSV of extra browser origins allowed on the HTTP API CORS list (admin origin is always included). Stack-wide; used by the public newsletter form (`apps/public_www`) and any other unauthenticated browser client. Default includes the LX Software and Siu Tin Dei public origins. |
+| `lxsoftware:SiutindeiBoardOutreachSendingDomain` | SES From domain for cold outreach (default `partners.siutindei.com`). Owner adds DKIM CNAMEs, MAIL FROM MX+TXT and DMARC before `outreach_send` will send. |
+| `lxsoftware:SiutindeiBoardOutreachFromLocalPart` | Local part of the outreach From address (default `partnerships`). |
+| `lxsoftware:PublicApiBaseUrl` | Public base URL of this stack's HTTP API. Used today for board unsubscribe / newsletter confirm links. Blank uses the API endpoint CloudFormation assigns. |
 | `lxsoftware:SiutindeiBoardAwsStackPrefix` | CloudFormation stack-name prefix used to filter Cost Explorer / CloudWatch results (default `siutindei`). When no cost rows carry the tag, `aws_monthly_cost` falls back to the whole account and labels the result `scope: account`. |
 | `lxsoftware:SiutindeiBoardAwsLambdaNames` | Comma-separated Lambda function names (the siutindei stack lives in another repo, so they cannot be derived here). `aws_lambda_health` reports 24h errors/duration for exactly these; empty means "no functions configured". |
 | `lxsoftware:SiutindeiClusterArn` | Aurora cluster ARN for the siutindei database (RDS Data API). When set, CDK enables the HTTP endpoint on that cluster and applies `scripts/siutindei/receivables.sql`. Required for Executive Board `finance` and `product` tools. Leave blank to keep those tools returning a clear "not configured" error. |
@@ -584,7 +592,7 @@ function calling. Design:
   Schedule `lxsoftware-admin-siutindei-board-targets` (08:00 HKT).
   Secrets `lxsoftware-admin-siutindei-board-google-places-key` (replace
   dummy) and `lxsoftware-admin-siutindei-board-link-signing-key`
-  (generated) are imported by name, like the connector set. SES identity for `OutreachSendingDomain` is created
+  (generated) are imported by name, like the connector set. SES identity for `SiutindeiBoardOutreachSendingDomain` is created
   pending DNS; sends refuse until `VerifiedForSendingStatus`.
   Configuration set `lxsoftware-admin-siutindei-outreach` → SNS → SQS.
   Outreach and board-mail IAM include both `configuration-set/…-outreach`

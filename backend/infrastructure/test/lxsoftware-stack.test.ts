@@ -303,9 +303,9 @@ describe("Admin Lambda IAM policies", () => {
     const rolePolicies = Object.values(resourcesOfType("AWS::IAM::Policy"));
     const outreachSends = rolePolicies
       .flatMap((p) => sendStatementsOf(p))
-      .filter((s) => JSON.stringify(s.Condition ?? {}).includes('"Ref":"OutreachSendingDomain"'));
+      .filter((s) => JSON.stringify(s.Condition ?? {}).includes('"Ref":"SiutindeiBoardOutreachSendingDomain"'));
     expect(outreachSends).toHaveLength(1);
-    expectSesSendScopedToDomain(outreachSends[0], "OutreachSendingDomain");
+    expectSesSendScopedToDomain(outreachSends[0], "SiutindeiBoardOutreachSendingDomain");
 
     // Nothing anywhere grants SES sending without a FromAddress condition.
     const unconditional = rolePolicies
@@ -513,6 +513,51 @@ describe("Executive Board placeholder secrets", () => {
     }
     for (const logicalId of reservedIds) {
       expect(serialized).not.toContain(logicalId);
+    }
+  });
+});
+
+describe("Siu Tin Dei parameter naming", () => {
+  const boardFamily = /Board|Outreach|Meta|Ga4|Gtm|AppStoreConnect|GooglePlay/;
+  const retiredUnprefixed = [
+    "BoardStaffEnabled",
+    "BoardToolsEnabled",
+    "BoardMailSendingEnabled",
+    "BoardGitHubRepo",
+    "BoardMailDomain",
+    "BoardChatModel",
+    "BoardMeetingModel",
+    "BoardDeepDiveModel",
+    "BoardAwsStackPrefix",
+    "BoardAwsLambdaNames",
+    "MetaVerifyToken",
+    "MetaPageId",
+    "MetaIgUserId",
+    "MetaWaPhoneNumberId",
+    "MetaWabaId",
+    "MetaAdAccountId",
+    "Ga4PropertyIds",
+    "GtmContainers",
+    "AppStoreConnectAppId",
+    "AppStoreConnectVendorNumber",
+    "GooglePlayPackageName",
+    "OutreachSendingDomain",
+    "OutreachFromLocalPart",
+  ];
+
+  test("board-scoped CfnParameters use the SiutindeiBoard prefix", () => {
+    const parameters = Object.keys(template.toJSON().Parameters as Record<string, unknown>);
+    const boardScoped = parameters.filter((name) => boardFamily.test(name));
+    expect(boardScoped.length).toBeGreaterThan(0);
+    for (const name of boardScoped) {
+      expect(name).toMatch(/^SiutindeiBoard/);
+    }
+  });
+
+  test("retired unprefixed board parameter names are absent", () => {
+    const parameters = template.toJSON().Parameters as Record<string, unknown>;
+    for (const name of retiredUnprefixed) {
+      expect(parameters[name]).toBeUndefined();
     }
   });
 });
