@@ -22,8 +22,6 @@ from typing import Any
 import boto3
 from botocore.exceptions import ClientError
 
-from sql_split import receivables_statements
-
 _RETRYABLE = (
     "HttpEndpointNotEnabledException",
     "DatabaseResumingException",
@@ -58,6 +56,15 @@ def _secret_username(sm: Any, secret_arn: str) -> str:
     return str(doc.get("username") or "").strip()
 
 
+def _receivables_statements() -> list[str]:
+    # Imported here, not at module level: an init-phase exception never
+    # reaches lambda_handler, so CloudFormation would get no response and
+    # wait an hour. Inside the handler the CFN path can still ACK.
+    from sql_split import receivables_statements
+
+    return receivables_statements()
+
+
 def enable_http_endpoint(cluster_arn: str) -> dict[str, Any]:
     """Idempotent: RDS returns HttpEndpointEnabled=true when it is already on."""
     rds = boto3.client("rds")
@@ -68,7 +75,7 @@ def enable_http_endpoint(cluster_arn: str) -> dict[str, Any]:
 def apply_schema(*, cluster_arn: str, secret_arn: str, database: str) -> dict[str, Any]:
     rds = boto3.client("rds-data")
     sm = boto3.client("secretsmanager")
-    statements = receivables_statements()
+    statements = _receivables_statements()
     started = time.monotonic()
     attempt = 0
     while True:

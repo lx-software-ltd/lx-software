@@ -710,7 +710,15 @@ Data API (no VPC). Design:
    interval; this stack turns it back on without waiting for an admin deploy.
    The product CDK should still set `enableDataApi: true`. A SQL error during
    the deploy custom resource does not roll the stack back — `AdminApiFn` keeps
-   the cluster/secret env and the scheduler retries the script.
+   the cluster/secret env and the scheduler retries the script. The custom
+   resource carries a 15-minute `ServiceTimeout`, so a provider Lambda that
+   never answers (for example a failure at import) fails the deploy in
+   minutes instead of CloudFormation's default one-hour wait. If a stack ever
+   ends in `UPDATE_ROLLBACK_FAILED` on `SiutindeiDataApiReceivablesSchema*`,
+   run **Continue update rollback** on the `lxsoftware` stack and skip that
+   logical id (`aws cloudformation continue-update-rollback --stack-name
+   lxsoftware --resources-to-skip <logical-id>`); the resource has no
+   physical counterpart, so skipping it loses nothing.
 4. Invoice numbers are `STD-{year}-0001`; each draft also gets a unique FPS
    reference. Drafts also write a PDF to `board/siuTinDei/invoices/` on the assets
    bucket (`pdf_key` on the invoice). `finance_send_invoice` / `finance_send_reminder` email from

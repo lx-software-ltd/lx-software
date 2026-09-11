@@ -10,16 +10,25 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-SQL_FILE_CANDIDATES = (
-    Path(__file__).with_name("receivables.sql"),
-    Path(__file__).resolve().parents[3] / "scripts" / "siutindei" / "receivables.sql",
-)
-
 _SKIP_HEAD = re.compile(r"^(begin|commit|end)\s*;?\s*$", re.IGNORECASE)
 
 
+def candidate_sql_paths(module_file: str | Path = __file__) -> tuple[Path, ...]:
+    """Packaged copy first, then the repo source when running from a checkout.
+
+    Never index ``parents`` directly: inside Lambda the module lives at
+    ``/var/task/sql_split.py`` and only has three parents.
+    """
+    here = Path(module_file).resolve()
+    candidates = [here.with_name("receivables.sql")]
+    repo_root = here.parents[3] if len(here.parents) > 3 else None
+    if repo_root is not None:
+        candidates.append(repo_root / "scripts" / "siutindei" / "receivables.sql")
+    return tuple(candidates)
+
+
 def load_receivables_sql() -> str:
-    for path in SQL_FILE_CANDIDATES:
+    for path in candidate_sql_paths():
         if path.is_file():
             return path.read_text(encoding="utf-8")
     raise FileNotFoundError("receivables.sql not packaged next to sql_split.py")
