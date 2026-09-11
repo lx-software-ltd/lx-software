@@ -262,24 +262,24 @@ Stack parameters (all optional, set in `backend/infrastructure/params/*.json`):
 | Parameter | Purpose |
 |-----------|---------|
 | `lxsoftware:OpenRouterApiKeySecretArn` | Already required for statement parsing; the board reuses the same key. This secret already exists in the account — CDK does not create it. |
-| `lxsoftware:BoardGitHubRepo` | `owner/name` of the repository to read (default `lx-software-ltd/siutindei`). |
-| `lxsoftware:BoardToolsEnabled` | `true` (default) / `false`. Deploy-time kill switch for every board tool call, independent of the in-app settings. |
-| `lxsoftware:BoardStaffEnabled` | `false` (default) / `true`. Deploy-time kill switch for Executive Board staff tasks. `board_staff.env_enabled()` is fail-closed: only `1` / `true` / `yes` / `on` count as on (unset is off). The same env is set on **both** `AdminApiFn` and `InboundStatementMailFn`. Also requires `settings.staff.enabled` in the app. |
+| `lxsoftware:SiutindeiBoardGitHubRepo` | `owner/name` of the repository to read (default `lx-software-ltd/siutindei`). |
+| `lxsoftware:SiutindeiBoardToolsEnabled` | `true` (default) / `false`. Deploy-time kill switch for every board tool call, independent of the in-app settings. |
+| `lxsoftware:SiutindeiBoardStaffEnabled` | `false` (default) / `true`. Deploy-time kill switch for Executive Board staff tasks. `board_staff.env_enabled()` is fail-closed: only `1` / `true` / `yes` / `on` count as on (unset is off). The same env is set on **both** `AdminApiFn` and `InboundStatementMailFn`. Also requires `settings.staff.enabled` in the app. |
 | `lxsoftware:PublicSiteOrigins` | CSV of extra browser origins allowed on the HTTP API CORS list (admin origin is always included). Required for the public newsletter form (`apps/public_www`). Example: `https://lx-software.com,https://www.lx-software.com`. |
 | `lxsoftware:OutreachSendingDomain` | SES From domain for cold outreach (default `partners.siutindei.com`). Owner adds DKIM CNAMEs, MAIL FROM MX+TXT and DMARC before `outreach_send` will send. |
 | `lxsoftware:OutreachFromLocalPart` | Local part of the outreach From address (default `partnerships`). |
 | `lxsoftware:PublicApiBaseUrl` | Base URL for unsubscribe / newsletter confirm links. Blank uses this stack's HTTP API URL. |
-| `lxsoftware:BoardAwsStackPrefix` | CloudFormation stack-name prefix used to filter Cost Explorer / CloudWatch results (default `siutindei`). When no cost rows carry the tag, `aws_monthly_cost` falls back to the whole account and labels the result `scope: account`. |
-| `lxsoftware:BoardAwsLambdaNames` | Comma-separated Lambda function names (the siutindei stack lives in another repo, so they cannot be derived here). `aws_lambda_health` reports 24h errors/duration for exactly these; empty means "no functions configured". |
+| `lxsoftware:SiutindeiBoardAwsStackPrefix` | CloudFormation stack-name prefix used to filter Cost Explorer / CloudWatch results (default `siutindei`). When no cost rows carry the tag, `aws_monthly_cost` falls back to the whole account and labels the result `scope: account`. |
+| `lxsoftware:SiutindeiBoardAwsLambdaNames` | Comma-separated Lambda function names (the siutindei stack lives in another repo, so they cannot be derived here). `aws_lambda_health` reports 24h errors/duration for exactly these; empty means "no functions configured". |
 | `lxsoftware:SiutindeiClusterArn` | Aurora cluster ARN for the siutindei database (RDS Data API). Required for Executive Board `finance` and `product` tools. Leave blank to keep those tools returning a clear "not configured" error. |
 | `lxsoftware:SiutindeiDbSecretArn` | Secrets Manager ARN of the siutindei DB credentials the Data API uses (RDS-owned; do not recreate). |
-| `lxsoftware:MetaVerifyToken` | Token Meta sends on the GET verify handshake (`hub.verify_token`). Not a Secrets Manager secret. |
-| `lxsoftware:MetaPageId` / `MetaIgUserId` / `MetaWaPhoneNumberId` / `MetaAdAccountId` / `MetaWabaId` | Graph ids the `meta` tools call. |
-| `lxsoftware:AppStoreConnectAppId` / `GooglePlayPackageName` | App id / package if they are not already inside the secrets. |
-| `lxsoftware:AppStoreConnectVendorNumber` | App Store Connect vendor number (Payments and Financial Reports page). Needed for Apple download counts, which come from yesterday's daily `SALES`/`SUMMARY` report; may also be stored as `vendorNumber` inside the key secret. Installs are not exposed by either store API and are reported as `null`. |
-| `lxsoftware:BoardMailDomain` | Domain the board indexes (default `siutindei.com`). Every mailbox at this domain is copied to the board's SES inbound address by the Cloudflare Email Worker. |
-| `lxsoftware:BoardMailSendingEnabled` | `false` (default) / `true`. Flip to `true` only after the DKIM CNAMEs, SPF `include:amazonses.com`, and DMARC are in the `BoardMailDomain` zone. Creates the SES sending identity and the IAM send policy; until then mail tools stay read-only. |
-| `lxsoftware:BoardChatModel` / `BoardMeetingModel` / `BoardDeepDiveModel` | Default OpenRouter model slugs (`openai/gpt-4.1-mini`, `openai/gpt-4.1-mini`, `anthropic/claude-sonnet-4`). The owner can override them per board in **Settings**. |
+| `lxsoftware:SiutindeiBoardMetaVerifyToken` | Token Meta sends on the GET verify handshake (`hub.verify_token`). Not a Secrets Manager secret. |
+| `lxsoftware:SiutindeiBoardMetaPageId` / `SiutindeiBoardMetaIgUserId` / `SiutindeiBoardMetaWaPhoneNumberId` / `SiutindeiBoardMetaAdAccountId` / `SiutindeiBoardMetaWabaId` | Graph ids the `meta` tools call. |
+| `lxsoftware:SiutindeiBoardAppStoreConnectAppId` / `SiutindeiBoardGooglePlayPackageName` | App id / package if they are not already inside the secrets. |
+| `lxsoftware:SiutindeiBoardAppStoreConnectVendorNumber` | App Store Connect vendor number (Payments and Financial Reports page). Needed for Apple download counts, which come from yesterday's daily `SALES`/`SUMMARY` report; may also be stored as `vendorNumber` inside the key secret. Installs are not exposed by either store API and are reported as `null`. |
+| `lxsoftware:SiutindeiBoardMailDomain` | Domain the board indexes (default `siutindei.com`). Every mailbox at this domain is copied to the board's SES inbound address by the Cloudflare Email Worker. |
+| `lxsoftware:SiutindeiBoardMailSendingEnabled` | `false` (default) / `true`. Flip to `true` only after the DKIM CNAMEs, SPF `include:amazonses.com`, and DMARC are in the `SiutindeiBoardMailDomain` zone. Creates the SES sending identity and the IAM send policy; until then mail tools stay read-only. |
+| `lxsoftware:SiutindeiBoardChatModel` / `SiutindeiBoardMeetingModel` / `SiutindeiBoardDeepDiveModel` | Default OpenRouter model slugs (`openai/gpt-4.1-mini`, `openai/gpt-4.1-mini`, `anthropic/claude-sonnet-4`). The owner can override them per board in **Settings**. |
 
 The **Siu Tin Dei** connector secrets (`lxsoftware-admin-siutindei-board-*`)
 already exist in the account. The first #328 deploy created them, then
@@ -518,10 +518,10 @@ function calling. Design:
   Admin-group JWT only. `GET/POST /webhooks/meta/siutindei` is the
   canonical **unauthenticated** admin-API route (`/webhooks/meta` stays
   for an already-subscribed Meta app; HMAC / verify-token only).
-- **Emergency stop:** set `lxsoftware:BoardToolsEnabled=false` and redeploy,
+- **Emergency stop:** set `lxsoftware:SiutindeiBoardToolsEnabled=false` and redeploy,
   or flip **Tools enabled** off in the app. Both leave the matrix intact.
   Staff tasks have a second ladder: `settings.staff.enabled` (UI / settings
-  PUT), then `lxsoftware:BoardStaffEnabled=false` (redeploy), then the tools
+  PUT), then `lxsoftware:SiutindeiBoardStaffEnabled=false` (redeploy), then the tools
   kill switch. `BOARD_STAFF_ENABLED` unset or any value other than
   `1`/`true`/`yes`/`on` is off. With either staff flag off,
   `POST /siu-tin-dei/board/tasks` returns 409
@@ -559,7 +559,7 @@ function calling. Design:
   Schedules `lxsoftware-admin-siutindei-board-review-compile` (07:15 HKT)
   and `…-board-review-send` (07:30 HKT). Set `settings.review.digestTo`
   (Settings card) before expecting the digest; sending still requires
-  `BoardMailSendingEnabled`. **Daily review** is the default board section
+  `SiutindeiBoardMailSendingEnabled`. **Daily review** is the default board section
   once `settings.staff.enabled` is on. Confirming a lesson injects it into
   the next staff-task prompt. A budget breaker at 100% of
   `settings.staff.dailyBudgetUsd` flips `settings.staff.enabled` off.
@@ -607,7 +607,7 @@ function calling. Design:
 - **Newsletter (WP8):** Public `POST /public/newsletter/subscribe`,
   `GET /public/newsletter/confirm/{token}`,
   `GET/POST /public/newsletter/unsubscribe/{token}` (no JWT; HMAC token).
-  Sends from `news@siutindei.com` when `BoardMailSendingEnabled=true`.
+  Sends from `news@siutindei.com` when `SiutindeiBoardMailSendingEnabled=true`.
   Config set `lxsoftware-admin-siutindei-newsletter` → same SNS/SQS as
   outreach, plus OPEN/CLICK (records are routed by configuration-set /
   `issueId` so newsletter bounces do not trip the outreach breaker).
@@ -649,8 +649,8 @@ function calling. Design:
 `maxRunningTasksDefault` is 3. Flip others on from **Staff** (or
 `PUT /siu-tin-dei/board/staff/{id}`) at these steps:
 
-1. Deploy with `BoardStaffEnabled=false`. No seats needed.
-2. After WP2–WP4: set `review.digestTo`, then `BoardStaffEnabled=true` and
+1. Deploy with `SiutindeiBoardStaffEnabled=false`. No seats needed.
+2. After WP2–WP4: set `review.digestTo`, then `SiutindeiBoardStaffEnabled=true` and
    `settings.staff.enabled=true`. Default-on seats handle triage and the
    daily review. Leave `maxRunningTasks` at 3.
 3. WP5: activate `market-analyst`; add ~five watchlist entries.
@@ -727,10 +727,10 @@ Facebook Page and Instagram account. Design:
 3. Subscribe the app to `GET/POST https://<admin-api>/webhooks/meta/siutindei`
    (or the legacy `/webhooks/meta` path). This is the first admin-API route
    **without** a Cognito JWT: GET checks
-   `MetaVerifyToken`; POST checks `X-Hub-Signature-256`. The handler stores
+   `SiutindeiBoardMetaVerifyToken`; POST checks `X-Hub-Signature-256`. The handler stores
    masked `BOARD#…#meta#` rows and returns 200 without calling OpenRouter.
-4. Set `MetaPageId`, `MetaIgUserId`, `MetaWaPhoneNumberId`,
-   `MetaAdAccountId`, and optionally `MetaWabaId` (used by
+4. Set `SiutindeiBoardMetaPageId`, `SiutindeiBoardMetaIgUserId`, `SiutindeiBoardMetaWaPhoneNumberId`,
+   `SiutindeiBoardMetaAdAccountId`, and optionally `SiutindeiBoardMetaWabaId` (used by
    `meta_list_whatsapp_templates`; otherwise the phone-number id is asked
    for its WhatsApp Business Account). Until they are set the `meta` tools
    return a clear "not configured" error.
@@ -756,9 +756,9 @@ Design: [`docs/architecture/executive-board-tools-plan.md`](../architecture/exec
    parameters. The Lambda signs a 20-minute ES256 JWT on each call.
 2. Edit `lxsoftware-admin-siutindei-board-google-play-sa` with the real Play
    service-account JSON (standard GCP key; add `packageName` if it is not
-   passed as `GooglePlayPackageName`).
-3. Set `AppStoreConnectAppId` and `GooglePlayPackageName` if they are not
-   inside the secrets, plus `AppStoreConnectVendorNumber` for Apple
+   passed as `SiutindeiBoardGooglePlayPackageName`).
+3. Set `SiutindeiBoardAppStoreConnectAppId` and `SiutindeiBoardGooglePlayPackageName` if they are not
+   inside the secrets, plus `SiutindeiBoardAppStoreConnectVendorNumber` for Apple
    downloads. Until at least one store is configured the `stores`
    tools return a clear error; the hourly cache refresh skips them.
 4. Reads (`stores_metrics`, `stores_crashes`, `stores_ratings`,
@@ -778,8 +778,8 @@ Dedicated Analytics service account — not the Play publisher key. Design:
    `tagmanager.readonly`. Grant it Viewer on every GA4 property and GTM
    container the board should see. After deploy, replace the dummy JSON in
    `lxsoftware-admin-siutindei-board-google-analytics-sa`.
-2. Set `Ga4PropertyIds` to a comma-separated list (`123456789,987654321` or
-   `properties/123456789,…`). Set `GtmContainers` to
+2. Set `SiutindeiBoardGa4PropertyIds` to a comma-separated list (`123456789,987654321` or
+   `properties/123456789,…`). Set `SiutindeiBoardGtmContainers` to
    `accountId:containerId` pairs. Both can also live inside the secret as
    `propertyIds` / `gtmContainers`.
 3. Until the SA plus at least one property or container is set, `web` tools
@@ -862,10 +862,10 @@ Worker copies every message to the board as well. Design:
 
 **Send path (optional, after DKIM/SPF/DMARC):**
 
-1. Set `lxsoftware:BoardMailSendingEnabled=true` and redeploy. The stack
-   creates an SES email identity for `BoardMailDomain` and attaches
+1. Set `lxsoftware:SiutindeiBoardMailSendingEnabled=true` and redeploy. The stack
+   creates an SES email identity for `SiutindeiBoardMailDomain` and attaches
    `ses:SendEmail` on that domain to `AdminApiFn`.
-2. Add the three `BoardMailDkimCnameN` outputs as CNAMEs on the
+2. Add the three `SiutindeiBoardMailDkimCnameN` outputs as CNAMEs on the
    `siutindei.com` zone (Cloudflare proxy **off**).
 3. Extend SPF to
    `v=spf1 include:_spf.mx.cloudflare.net include:amazonses.com ~all`.

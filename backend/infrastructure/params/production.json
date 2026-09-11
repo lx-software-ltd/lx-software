@@ -4,6 +4,6 @@
   "lxsoftware:CognitoCustomDomainName": "auth.lx-software.com",
   "lxsoftware:CognitoCustomDomainCertificateArn": "arn:aws:acm:us-east-1:588024549699:certificate/ea553e5a-e7af-43ba-bdd4-d46e2f8458aa",
   "lxsoftware:OpenRouterApiKeySecretArn": "arn:aws:secretsmanager:ap-southeast-1:588024549699:secret:lxsoftware-admin-openrouter-api-secret-Hzerh6",
-  "lxsoftware:BoardMailSendingEnabled": "true",
+  "lxsoftware:SiutindeiBoardMailSendingEnabled": "true",
   "lxsoftware-admin-web:CspCognitoConnectOrigin": "https://auth.lx-software.com"
 }

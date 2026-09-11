@@ -337,7 +337,7 @@ creation from chat).
 
 | Change | Detail |
 |---|---|
-| New `CfnParameter`s | `BoardChatModel`, `BoardMeetingModel`, `BoardDeepDiveModel` (defaults set in code), `GitHubReadTokenSecretArn` (optional, default `""`), `BoardDailyMeetingCron` (default `cron(30 22 * * ? *)`) |
+| New `CfnParameter`s | `SiutindeiBoardChatModel`, `SiutindeiBoardMeetingModel`, `SiutindeiBoardDeepDiveModel` (defaults set in code), `GitHubReadTokenSecretArn` (optional, default `""`), `BoardDailyMeetingCron` (default `cron(30 22 * * ? *)`) |
 | `AdminApiFn` env | `BOARD_CHAT_MODEL`, `BOARD_MEETING_MODEL`, `BOARD_DEEP_DIVE_MODEL`, `GITHUB_READ_TOKEN_SECRET_ARN`, `BOARD_*` timeouts from the new contract |
 | IAM | Conditional `secretsmanager:GetSecretValue` on the GitHub secret (copy of `AdminOpenRouterSecretPolicy` pattern) |
 | EventBridge | `SiutindeiBoardMorningMeetingSchedule` and `SiutindeiBoardEveningMeetingSchedule` (`lxsoftware-admin-siutindei-board-standup-{morning,evening}`; EventBridge **Scheduler**, `Asia/Hong_Kong` cron, IAM-role target) invoking `AdminApiFn` with `{ internal: "board_meeting", trigger: "schedule", slot: "morning"|"evening", boardKey: "siuTinDei" }`. Implementation note: plain `events.Rule` targets were replaced because each adds a statement to the Lambda resource policy, which hit the 20 KB limit on first deploy. |

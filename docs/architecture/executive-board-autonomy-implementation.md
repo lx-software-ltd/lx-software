@@ -27,7 +27,7 @@ Scheduler), contracts are synced with `scripts/sync-contracts.py`.
   alternative silently.
 - Names in backticks are exact: file names, function names, DynamoDB keys,
   settings paths, environment variables, contract keys.
-- Every WP ships behind `BoardStaffEnabled` (stack parameter, default
+- Every WP ships behind `SiutindeiBoardStaffEnabled` (stack parameter, default
   `false` until WP4 is live) **and** `settings.staff.enabled` (default
   `false`). With both off, nothing in this document runs and the existing
   board behaves exactly as today.
@@ -50,7 +50,7 @@ Scheduler), contracts are synced with `scripts/sync-contracts.py`.
 | 12 | Retention | Tasks, steps, holds, lessons, crawl digests, review snapshots: 90 days TTL. Content rows: 180 days. Prospects, suppression list, watchlist: no TTL. |
 | 13 | Models | `desk` = `board_budget.model_for("standup")`, `senior` = `board_budget.model_for("deepDive")`. No new model parameters. |
 | 14 | Times (HKT) | Tick every 5 minutes; daily review compiled 07:15 and emailed 07:30; target check 08:00; crawl 03:00; content windows 10:00 and 20:00; quiet hours 22:00–08:00 for all outbound. |
-| 15 | Review recipient | `settings.review.digestTo` (one address, owner-set); digest is sent from `board@siutindei.com` via the existing SES identity; not sent while `BoardMailSendingEnabled` is `false`. |
+| 15 | Review recipient | `settings.review.digestTo` (one address, owner-set); digest is sent from `board@siutindei.com` via the existing SES identity; not sent while `SiutindeiBoardMailSendingEnabled` is `false`. |
 | 16 | Roster in v1 | Seats arrive per WP: none (WP1), `support` `provider-success` `community-manager` (WP3), `business-analyst` (WP4), `market-analyst` (WP5), `prospector` (WP6), `content-marketer` `growth-specialist` (WP7), `accountant` `data-analyst` `security-analyst` (WP9), `architect` `engineer-1` `engineer-2` `product-dev` (WP10). All sixteen are in the contract from WP1; unused ones are `isActive=false` by default. |
 
 ## 2. Conventions the developer must follow
@@ -256,7 +256,7 @@ Default `fitRubric` (ship verbatim, owner edits later):
 
 | Parameter / env | Default | Used by |
 |---|---|---|
-| `BoardStaffEnabled` → `BOARD_STAFF_ENABLED` | `false` | every staff path (`board_staff.env_enabled()`) |
+| `SiutindeiBoardStaffEnabled` → `BOARD_STAFF_ENABLED` | `false` | every staff path (`board_staff.env_enabled()`) |
 | `OutreachSendingDomain` → `OUTREACH_SENDING_DOMAIN` | `partners.siutindei.com` | WP6 |
 | `OutreachFromLocalPart` → `OUTREACH_FROM_LOCAL_PART` | `partnerships` | WP6 |
 | `PublicApiBaseUrl` → `PUBLIC_API_BASE_URL` | existing HTTP API URL | unsubscribe links (WP6), newsletter confirm (WP8) |
@@ -420,7 +420,7 @@ Contract row in `board-tools.json`: `{"id":"staff","label":"Staff","maxLevel":"a
 | POST | `/siu-tin-dei/board/tasks/{taskId}/cancel` | audit `BOARD_TASK_CANCEL` |
 | POST | `/siu-tin-dei/board/tasks/{taskId}/review` | `{verdict, notes}` owner override; audit `BOARD_TASK_REVIEW` |
 
-**CDK.** `BoardStaffEnabled` parameter → env; `SiutindeiBoardStaffTickSchedule`
+**CDK.** `SiutindeiBoardStaffEnabled` parameter → env; `SiutindeiBoardStaffTickSchedule`
 (`lxsoftware-admin-siutindei-board-staff-tick`, `rate(5 minutes)`, input
 `{internal: "board_staff_tick"}`, retry 0); `adminFn` needs
 `s3:PutObject/GetObject` on `board/siuTinDei/staff/*` of the assets bucket
@@ -1375,8 +1375,8 @@ Promote button listing the staging commits.
   prompts; parent data follows the existing masking; the review page and
   drawers show real values to the owner only.
 - **Kill switches, in order of reach.** `settings.staff.enabled` (UI),
-  `BoardStaffEnabled` (deploy), `BoardToolsEnabled` (all tools),
-  `BoardMailSendingEnabled` (all email). Document this ladder in
+  `SiutindeiBoardStaffEnabled` (deploy), `SiutindeiBoardToolsEnabled` (all tools),
+  `SiutindeiBoardMailSendingEnabled` (all email). Document this ladder in
   `admin-website.md`.
 - **Playwright and mocks.** Every new section must render from fixtures in
   `dev:mock`; the viewport smoke test must include `staff`, `review`,
@@ -1384,9 +1384,9 @@ Promote button listing the staging commits.
 
 ## 6. Rollout runbook (owner steps interleaved)
 
-1. Deploy WP1 with `BoardStaffEnabled=false`. Owner: nothing.
+1. Deploy WP1 with `SiutindeiBoardStaffEnabled=false`. Owner: nothing.
 2. Deploy WP2–WP4. Owner: set `review.digestTo`, read one digest, set
-   `BoardStaffEnabled=true` and `settings.staff.enabled=true`; all holds
+   `SiutindeiBoardStaffEnabled=true` and `settings.staff.enabled=true`; all holds
    at defaults; `maxRunningTasks=3`. Seats already on: `support`,
    `provider-success`, `community-manager`, `business-analyst`.
 3. Deploy WP5. Owner: activate `market-analyst`; add five watchlist
@@ -1417,6 +1417,6 @@ Promote button listing the staging commits.
 - `docs/deployment/admin-website.md` has the setup steps and the kill
   switches; `AGENTS.md` has one gotcha line; `UI_COMPONENTS.md` lists new
   components.
-- The feature is inert with `BoardStaffEnabled=false`.
+- The feature is inert with `SiutindeiBoardStaffEnabled=false`.
 - PR description lists every new route, schedule, secret, parameter and
   IAM grant.

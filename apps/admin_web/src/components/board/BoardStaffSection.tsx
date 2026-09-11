@@ -48,7 +48,7 @@ export function BoardStaffSection() {
     <div>
       {!staff.enabled ? (
         <p className="small text-muted">
-          Staff tasks are off. Turn on <code>settings.staff.enabled</code> after <code>BoardStaffEnabled</code> is true
+          Staff tasks are off. Turn on <code>settings.staff.enabled</code> after <code>SiutindeiBoardStaffEnabled</code> is true
           on the stack.
         </p>
       ) : null}

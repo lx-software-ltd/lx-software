@@ -811,7 +811,7 @@ def send_plan(table: Any, plan: dict[str, Any], *, sent_by: str) -> dict[str, An
     """Send through SES v2 and index the outbound copy."""
     if not sending_enabled():
         raise MailError(
-            "Email sending is switched off for this deployment (BoardMailSendingEnabled). "
+            "Email sending is switched off for this deployment (SiutindeiBoardMailSendingEnabled). "
             "The founder can send it manually from their mail client."
         )
     from_mailbox = resolve_mailbox(plan.get("fromMailbox"))

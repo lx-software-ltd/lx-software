@@ -484,7 +484,7 @@ reset only from the review page:
 - Meta or Google API warnings about automation or rate limits → channel
   paused.
 
-`BoardStaffEnabled` (stack parameter) and `settings.staff.enabled` remain
+`SiutindeiBoardStaffEnabled` (stack parameter) and `settings.staff.enabled` remain
 the hard stops.
 
 ## 9. The daily review
@@ -553,7 +553,7 @@ from the daily review. SEO articles (§7.3) use the same path with a
 content-only path rule, so they can graduate to auto-merge earlier than
 code.
 
-## 12. Milestones (each shippable alone, all behind `BoardStaffEnabled`)
+## 12. Milestones (each shippable alone, all behind `SiutindeiBoardStaffEnabled`)
 
 No dates, no commitment. Core (A) and growth (G) tracks can proceed in
 parallel once A1 and A3 exist.

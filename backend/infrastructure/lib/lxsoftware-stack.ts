@@ -399,26 +399,26 @@ export class LxsoftwareStack extends cdk.Stack {
           "Secrets Manager ARN of the siutindei DB credentials used by the RDS Data API.",
       }
     );
-    const metaVerifyToken = new cdk.CfnParameter(this, "MetaVerifyToken", {
+    const metaVerifyToken = new cdk.CfnParameter(this, "SiutindeiBoardMetaVerifyToken", {
       type: "String",
       default: "",
       noEcho: true,
       description:
         "Verify token Meta sends on GET /webhooks/meta/siutindei (hub.verify_token). Leave blank to keep the handshake rejected.",
     });
-    const metaPageId = new cdk.CfnParameter(this, "MetaPageId", {
+    const metaPageId = new cdk.CfnParameter(this, "SiutindeiBoardMetaPageId", {
       type: "String",
       default: "",
       description: "Facebook Page id for Executive Board meta tools.",
     });
-    const metaIgUserId = new cdk.CfnParameter(this, "MetaIgUserId", {
+    const metaIgUserId = new cdk.CfnParameter(this, "SiutindeiBoardMetaIgUserId", {
       type: "String",
       default: "",
       description: "Instagram professional-account id for Executive Board meta tools.",
     });
     const metaWaPhoneNumberId = new cdk.CfnParameter(
       this,
-      "MetaWaPhoneNumberId",
+      "SiutindeiBoardMetaWaPhoneNumberId",
       {
         type: "String",
         default: "",
@@ -426,12 +426,12 @@ export class LxsoftwareStack extends cdk.Stack {
           "WhatsApp Cloud API phone-number id. Enable coexistence so the owner's phone keeps working.",
       }
     );
-    const metaAdAccountId = new cdk.CfnParameter(this, "MetaAdAccountId", {
+    const metaAdAccountId = new cdk.CfnParameter(this, "SiutindeiBoardMetaAdAccountId", {
       type: "String",
       default: "",
       description: "Meta ad account id (with or without act_ prefix).",
     });
-    const metaWabaId = new cdk.CfnParameter(this, "MetaWabaId", {
+    const metaWabaId = new cdk.CfnParameter(this, "SiutindeiBoardMetaWabaId", {
       type: "String",
       default: "",
       description:
@@ -439,7 +439,7 @@ export class LxsoftwareStack extends cdk.Stack {
     });
     const appStoreConnectAppId = new cdk.CfnParameter(
       this,
-      "AppStoreConnectAppId",
+      "SiutindeiBoardAppStoreConnectAppId",
       {
         type: "String",
         default: "",
@@ -449,7 +449,7 @@ export class LxsoftwareStack extends cdk.Stack {
     );
     const appStoreConnectVendorNumber = new cdk.CfnParameter(
       this,
-      "AppStoreConnectVendorNumber",
+      "SiutindeiBoardAppStoreConnectVendorNumber",
       {
         type: "String",
         default: "",
@@ -459,7 +459,7 @@ export class LxsoftwareStack extends cdk.Stack {
     );
     const googlePlayPackageName = new cdk.CfnParameter(
       this,
-      "GooglePlayPackageName",
+      "SiutindeiBoardGooglePlayPackageName",
       {
         type: "String",
         default: "",
@@ -467,13 +467,13 @@ export class LxsoftwareStack extends cdk.Stack {
           "Google Play package name (e.g. com.siutindei.app). May also live inside the service-account secret.",
       }
     );
-    const ga4PropertyIds = new cdk.CfnParameter(this, "Ga4PropertyIds", {
+    const ga4PropertyIds = new cdk.CfnParameter(this, "SiutindeiBoardGa4PropertyIds", {
       type: "String",
       default: "",
       description:
         "Comma-separated GA4 property ids (numeric, with or without a properties/ prefix). Several properties are supported.",
     });
-    const gtmContainers = new cdk.CfnParameter(this, "GtmContainers", {
+    const gtmContainers = new cdk.CfnParameter(this, "SiutindeiBoardGtmContainers", {
       type: "String",
       default: "",
       description:
@@ -481,7 +481,7 @@ export class LxsoftwareStack extends cdk.Stack {
     });
     const boardAwsStackPrefix = new cdk.CfnParameter(
       this,
-      "BoardAwsStackPrefix",
+      "SiutindeiBoardAwsStackPrefix",
       {
         type: "String",
         default: "siutindei",
@@ -491,7 +491,7 @@ export class LxsoftwareStack extends cdk.Stack {
     );
     const boardAwsLambdaNames = new cdk.CfnParameter(
       this,
-      "BoardAwsLambdaNames",
+      "SiutindeiBoardAwsLambdaNames",
       {
         type: "String",
         default: "",
@@ -499,14 +499,14 @@ export class LxsoftwareStack extends cdk.Stack {
           "Comma-separated Lambda function names (siutindei stack) whose 24h errors/duration the Executive Board aws_lambda_health tool reports. Empty disables the read.",
       }
     );
-    const boardToolsEnabled = new cdk.CfnParameter(this, "BoardToolsEnabled", {
+    const boardToolsEnabled = new cdk.CfnParameter(this, "SiutindeiBoardToolsEnabled", {
       type: "String",
       default: "true",
       allowedValues: ["true", "false"],
       description:
         "Kill switch for Executive Board tool calls (GitHub, board, mail, research, AWS, security). Set to false to stop every tool call without touching the admin settings.",
     });
-    const boardStaffEnabled = new cdk.CfnParameter(this, "BoardStaffEnabled", {
+    const boardStaffEnabled = new cdk.CfnParameter(this, "SiutindeiBoardStaffEnabled", {
       type: "String",
       default: "false",
       allowedValues: ["true", "false"],
@@ -536,12 +536,12 @@ export class LxsoftwareStack extends cdk.Stack {
       description:
         "Public base URL for unsubscribe and newsletter confirm links. Leave blank to use this stack's HTTP API URL.",
     });
-    const boardGitHubRepo = new cdk.CfnParameter(this, "BoardGitHubRepo", {
+    const boardGitHubRepo = new cdk.CfnParameter(this, "SiutindeiBoardGitHubRepo", {
       type: "String",
       default: "lx-software-ltd/siutindei",
       description: "owner/name of the repository the Executive Board reads.",
     });
-    const boardMailDomain = new cdk.CfnParameter(this, "BoardMailDomain", {
+    const boardMailDomain = new cdk.CfnParameter(this, "SiutindeiBoardMailDomain", {
       type: "String",
       default: "siutindei.com",
       description:
@@ -549,26 +549,26 @@ export class LxsoftwareStack extends cdk.Stack {
     });
     const boardMailSendingEnabled = new cdk.CfnParameter(
       this,
-      "BoardMailSendingEnabled",
+      "SiutindeiBoardMailSendingEnabled",
       {
         type: "String",
         default: "false",
         allowedValues: ["true", "false"],
         description:
-          "Set to true once BoardMailDomain is verified for sending in SES (DKIM CNAMEs, SPF include:amazonses.com, DMARC). Creates the SES identity and lets the board's mail tools send replies from that domain; false keeps mail read-only.",
+          "Set to true once SiutindeiBoardMailDomain is verified for sending in SES (DKIM CNAMEs, SPF include:amazonses.com, DMARC). Creates the SES identity and lets the board's mail tools send replies from that domain; false keeps mail read-only.",
       }
     );
-    const boardChatModel = new cdk.CfnParameter(this, "BoardChatModel", {
+    const boardChatModel = new cdk.CfnParameter(this, "SiutindeiBoardChatModel", {
       type: "String",
       default: "openai/gpt-4.1-mini",
       description: "OpenRouter model slug for Executive Board chats (overridable in the admin settings).",
     });
-    const boardMeetingModel = new cdk.CfnParameter(this, "BoardMeetingModel", {
+    const boardMeetingModel = new cdk.CfnParameter(this, "SiutindeiBoardMeetingModel", {
       type: "String",
       default: "openai/gpt-4.1-mini",
       description: "OpenRouter model slug for Executive Board stand-up meetings.",
     });
-    const boardDeepDiveModel = new cdk.CfnParameter(this, "BoardDeepDiveModel", {
+    const boardDeepDiveModel = new cdk.CfnParameter(this, "SiutindeiBoardDeepDiveModel", {
       type: "String",
       default: "anthropic/claude-sonnet-4",
       description: "OpenRouter model slug for Executive Board deep-dive meetings.",
@@ -1645,7 +1645,7 @@ export class LxsoftwareStack extends cdk.Stack {
     }
 
     // ------------------------------------------------------------------
-    // Executive Board mail: every BoardMailDomain mailbox is copied here by a
+    // Executive Board mail: every SiutindeiBoardMailDomain mailbox is copied here by a
     // Cloudflare Email Worker (scripts/cloudflare/siutindei-mail-fanout.js).
     // Same SES → S3 → InboundStatementMailFn path; the handler branches on the
     // ``inbound-raw/<boardMailRawSegment>/`` prefix into board_mail.py.
@@ -1824,11 +1824,11 @@ export class LxsoftwareStack extends cdk.Stack {
     );
     statementParseNotifyPolicy.attachToRole(adminFn.role!);
 
-    // Sending identity for BoardMailDomain, created only once the owner flips
-    // BoardMailSendingEnabled (DNS must carry the DKIM CNAMEs first). The send
+    // Sending identity for SiutindeiBoardMailDomain, created only once the owner flips
+    // SiutindeiBoardMailSendingEnabled (DNS must carry the DKIM CNAMEs first). The send
     // policy is scoped to that single identity so the board can never send
     // from anything but the company domain.
-    const hasBoardMailSending = new cdk.CfnCondition(this, "HasBoardMailSending", {
+    const hasBoardMailSending = new cdk.CfnCondition(this, "HasSiutindeiBoardMailSending", {
       expression: cdk.Fn.conditionEquals(
         boardMailSendingEnabled.valueAsString,
         "true"
@@ -2654,17 +2654,17 @@ export class LxsoftwareStack extends cdk.Stack {
     new cdk.CfnOutput(this, "SiutindeiBoardMailInboundAddress", {
       value: boardMailInboundAddress,
       description:
-        "Destination the Cloudflare Email Worker forwards every BoardMailDomain message to (verify it once in Cloudflare; the verification mail lands in the inbound bucket).",
+        "Destination the Cloudflare Email Worker forwards every SiutindeiBoardMailDomain message to (verify it once in Cloudflare; the verification mail lands in the inbound bucket).",
       exportName: "lxsoftware-SiutindeiBoardMailInboundAddress",
     });
 
     for (const n of [1, 2, 3] as const) {
-      const output = new cdk.CfnOutput(this, `BoardMailDkimCname${n}`, {
+      const output = new cdk.CfnOutput(this, `SiutindeiBoardMailDkimCname${n}`, {
         value: cdk.Fn.join(" CNAME ", [
           boardMailIdentity.getAtt(`DkimDNSTokenName${n}`).toString(),
           boardMailIdentity.getAtt(`DkimDNSTokenValue${n}`).toString(),
         ]),
-        description: `DKIM CNAME ${n} of 3 to add to the BoardMailDomain zone (name CNAME value).`,
+        description: `DKIM CNAME ${n} of 3 to add to the SiutindeiBoardMailDomain zone (name CNAME value).`,
       });
       output.condition = hasBoardMailSending;
     }

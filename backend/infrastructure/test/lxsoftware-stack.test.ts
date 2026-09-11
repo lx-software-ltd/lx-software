@@ -274,11 +274,11 @@ describe("Admin Lambda IAM policies", () => {
     expect(resources).toHaveLength(3);
     expect(resources.every((r) => r !== "*")).toBe(true);
     // formatArn() emits a Fn::Join whose literal pieces include the
-    // `:identity/` resource segment followed by the BoardMailDomain parameter.
+    // `:identity/` resource segment followed by the SiutindeiBoardMailDomain parameter.
     const serialized = JSON.stringify(resources);
     expect(serialized).toContain(":ses:");
     expect(serialized).toContain(":identity/");
-    expect(serialized).toContain('"Ref":"BoardMailDomain"');
+    expect(serialized).toContain('"Ref":"SiutindeiBoardMailDomain"');
     expect(serialized).toContain("configuration-set/lxsoftware-admin-siutindei-outreach");
     expect(serialized).toContain("configuration-set/lxsoftware-admin-siutindei-newsletter");
   });
@@ -286,7 +286,7 @@ describe("Admin Lambda IAM policies", () => {
   test.each([
     ["AdminOpenRouterSecretPolicy", "HasOpenRouterSecret"],
     ["AdminSiutindeiDataApiPolicy", "HasSiutindeiDataApi"],
-    ["SiutindeiBoardMailSendPolicy", "HasBoardMailSending"],
+    ["SiutindeiBoardMailSendPolicy", "HasSiutindeiBoardMailSending"],
   ])("%s keeps its %s condition", (constructId, conditionName) => {
     const policies = findPoliciesByConstructId(constructId);
     expect(policies).toHaveLength(1);

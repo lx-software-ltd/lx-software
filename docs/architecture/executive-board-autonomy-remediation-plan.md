@@ -21,7 +21,7 @@ omitted.
 ## 1. Verdict
 
 The branch is functionally complete against a 1,400-line specification and
-is inert with `BoardStaffEnabled=false`, so it is **safe to merge as is** but
+is inert with `SiutindeiBoardStaffEnabled=false`, so it is **safe to merge as is** but
 **must not be enabled in production** until the P0 items below are fixed. The
 recurring theme is that safety checks are applied at *proposal* time but not at
 *execution* time, and that several multi-writer paths use unconditional writes
@@ -30,15 +30,15 @@ product decision; five items need an owner answer and are listed in §6.
 
 | Severity | Count | Meaning |
 |---|---|---|
-| BLOCKER | 1 | Undermines the control model; fix before `BoardStaffEnabled=true` |
+| BLOCKER | 1 | Undermines the control model; fix before `SiutindeiBoardStaffEnabled=true` |
 | HIGH | 11 | Safety, kill-switch, PDPO or "feature cannot work" gaps |
 | MEDIUM | 14 | Correctness under concurrency, accounting, spec deviations |
 | LOW | 12 | Hygiene, robustness, small spec gaps |
 
 Gates:
 
-- **P0 — before `BoardStaffEnabled=true`:** R-01, R-02, R-03, R-04, R-09, R-10, R-13, R-14, R-20, R-21.
-- **P1 — before any outbound email (`BoardMailSendingEnabled=true`, outreach identity verified):** R-05, R-06, R-07, R-08, R-11, R-16, R-17, R-18, R-19, R-25.
+- **P0 — before `SiutindeiBoardStaffEnabled=true`:** R-01, R-02, R-03, R-04, R-09, R-10, R-13, R-14, R-20, R-21.
+- **P1 — before any outbound email (`SiutindeiBoardMailSendingEnabled=true`, outreach identity verified):** R-05, R-06, R-07, R-08, R-11, R-16, R-17, R-18, R-19, R-25.
 - **P2 — before enabling WP10 `code_merge_staging` at `act`:** R-01 (merge part), R-22.
 - **P3 — before the public newsletter form goes live:** R-12, R-18.
 - **P4 — hardening and hygiene:** everything else.
@@ -49,7 +49,7 @@ Gates:
 
 - **Where:** `backend/lambda/admin/board_tools.py` `execute_call` (the `else: level = "act"` branch for non-persona actors; `act_guard`, `board_breakers.write_blocked` and `effective_level` are evaluated only when `ctx.actor == "persona"`); `board_holds.py` `_execute_one` (builds `ToolContext(actor="hold")`), `execute_due` (gates on `board_staff.enabled` only, never `tools_enabled`); `board_staff.handle_tick` (runs `execute_due` before `board_breakers.evaluate`); `board_code.py` `op_merge_staging` / `architect_accepted`; `board_meta._record_ads_commitment`.
 - **Spec:** WP2 "executes due holds through the existing act path so audit, masking and caps apply unchanged" and "Potential issues → hold executes with stale data"; WP4 "Every write op checks `is_tripped(...)` in `execute_call`"; WP10 `code_merge_staging` guard (CI success, architect accept, ≤ 400 lines, no `PROTECTED_PATHS`); §5 kill-switch ladder.
-- **Evidence:** A hold created at T executes at T+24 h with `level="act"` unconditionally. Between T and T+24 h any of the following is ignored: `BoardToolsEnabled=false` / `settings.tools.enabled=false` / `globalMode=readOnly`; a matrix or seat downgrade below `act`; a `channel:` / `tool:` / `outreach` breaker trip; a Meta spend-cap or allow-list change; a WhatsApp 24-hour window closing; for `code_staging`, new commits on the PR (red CI, protected paths, > 400 lines) because `merge_guard` ran once as `act_guard` and `architect_accepted` is keyed on PR number, not head SHA. N `spend:meta` holds each pass the cap check against the same snapshot and all execute (aggregate cap bypass). Only `mail_reply` (thread-changed) and `outreach_send` (its own breaker inside `send`) re-check anything. A reproduction with a tripped `channel:facebook` breaker and an injected failing guard executed the hold with `act_guard consulted: False`.
+- **Evidence:** A hold created at T executes at T+24 h with `level="act"` unconditionally. Between T and T+24 h any of the following is ignored: `SiutindeiBoardToolsEnabled=false` / `settings.tools.enabled=false` / `globalMode=readOnly`; a matrix or seat downgrade below `act`; a `channel:` / `tool:` / `outreach` breaker trip; a Meta spend-cap or allow-list change; a WhatsApp 24-hour window closing; for `code_staging`, new commits on the PR (red CI, protected paths, > 400 lines) because `merge_guard` ran once as `act_guard` and `architect_accepted` is keyed on PR number, not head SHA. N `spend:meta` holds each pass the cap check against the same snapshot and all execute (aggregate cap bypass). Only `mail_reply` (thread-changed) and `outreach_send` (its own breaker inside `send`) re-check anything. A reproduction with a tripped `channel:facebook` breaker and an injected failing guard executed the hold with `act_guard consulted: False`.
 - **Remediation:**
   1. In `execute_call`, treat `ctx.actor == "hold"` like a persona for safety: re-derive `level` from the current matrix and seat roster for the stored `personaId` / `seatId`; run `op.act_guard` and `board_breakers.write_blocked`; check `tools_enabled(ctx.settings)`. If any check fails, return a `ToolOutcome(status="error", result={"error": reason})` and have `_execute_one` mark the hold `failed` with that reason (never silently convert a hold to an Approval; the owner sees it on the review page).
   2. In `handle_tick`, call `board_breakers.evaluate` (and reload settings) **before** `execute_due`.
@@ -69,8 +69,8 @@ Gates:
 ### R-03 [HIGH] Deploy-level kill switches do not reach the inbound-mail Lambda; `env_enabled()` fails open
 
 - **Where:** `backend/infrastructure/lib/lxsoftware-stack.ts` `InboundStatementMailFn` environment block (no `BOARD_STAFF_ENABLED`, `BOARD_TOOLS_ENABLED`, `BOARD_MAIL_SENDING_ENABLED`, `OUTREACH_SENDING_DOMAIN`; only the `BOARD_MAIL_DOMAIN/_RAW_SEGMENT/_INBOUND_ADDRESS` loop is shared); `board_staff.env_enabled` (unset → `True`); `board_mail.ingest_bytes` → `board_triage.on_mail_ingested`; `board_triage._send_ack`; `board_staff.run_step` / `run_review` (no `enabled(settings)` check).
-- **Spec:** §0 "With both off, nothing in this document runs"; §3.4 `BoardStaffEnabled` "every staff path"; WP3 acceptance (escalation ack sent).
-- **Evidence:** Triage (classifier LLM call, task creation, `drain_queue` → `invoke_async` into `AdminApiFn`) runs inside `InboundStatementMailFn`, where the flag is unset and therefore read as enabled; `run_step` in `AdminApiFn` never consults the flag, so `BoardStaffEnabled=false` does not stop mail-driven task steps. In the same Lambda `sending_enabled()` reads an unset `BOARD_MAIL_SENDING_ENABLED` (fail-closed) and the role lacks `SiutindeiBoardMailSendPolicy`, so the escalation acknowledgement can never send in production. `own_domains()` there excludes the partners domain, so outreach replies are threaded as external.
+- **Spec:** §0 "With both off, nothing in this document runs"; §3.4 `SiutindeiBoardStaffEnabled` "every staff path"; WP3 acceptance (escalation ack sent).
+- **Evidence:** Triage (classifier LLM call, task creation, `drain_queue` → `invoke_async` into `AdminApiFn`) runs inside `InboundStatementMailFn`, where the flag is unset and therefore read as enabled; `run_step` in `AdminApiFn` never consults the flag, so `SiutindeiBoardStaffEnabled=false` does not stop mail-driven task steps. In the same Lambda `sending_enabled()` reads an unset `BOARD_MAIL_SENDING_ENABLED` (fail-closed) and the role lacks `SiutindeiBoardMailSendPolicy`, so the escalation acknowledgement can never send in production. `own_domains()` there excludes the partners domain, so outreach replies are threaded as external.
 - **Remediation:**
   1. Extend the existing `for (const fn of [adminFn, inboundStatementFn])` loop to add `BOARD_STAFF_ENABLED`, `BOARD_TOOLS_ENABLED`, `BOARD_MAIL_SENDING_ENABLED`, `OUTREACH_SENDING_DOMAIN`, `OUTREACH_FROM_LOCAL_PART` and any other env `board_triage`/`board_mail` read.
   2. Make `env_enabled()` fail closed: `return env in ("1", "true", "yes", "on")`. Update the WP1 reviewer note and the tests that rely on the unset default.
@@ -94,10 +94,10 @@ Gates:
 - **Remediation:** In `upsert`, promote `email` to `contact` only when `_is_business_address(email, allow_personal=_personal_allowed(settings))`; otherwise keep it in `raw` and set `contactRejected="personal"` so the row lands in "needs a contact". In `send()`, add a final `_refuse("personal address not allowed")`. Refuse `type` changes on existing rows unless `source="owner"` (`owner_put` remains the audited override).
 - **Tests:** both entry points in `test_board_prospects.py` / `test_board_outreach.py`; type rewrite refused.
 
-### R-06 [HIGH] `outreach_send` ignores `BoardMailSendingEnabled`
+### R-06 [HIGH] `outreach_send` ignores `SiutindeiBoardMailSendingEnabled`
 
 - **Where:** `board_outreach.py` `send` (checks breaker, identity, stage, suppression, cap; never `board_mail.sending_enabled()`); `board_newsletter.send_issue` and `board_review.send_digest` do check it.
-- **Spec:** §5 "`BoardMailSendingEnabled` (all email)".
+- **Spec:** §5 "`SiutindeiBoardMailSendingEnabled` (all email)".
 - **Remediation:** `if not board_mail.sending_enabled(): return _refuse("email sending is switched off")` before the SES call.
 - **Tests:** `test_board_outreach.py` with `BOARD_MAIL_SENDING_ENABLED=false`.
 
@@ -308,7 +308,7 @@ Work in this order; each step is one PR against the feature branch with its own 
 11. **Hygiene** — R-23, R-29, R-31, R-32, R-35 (font de-duplication should land before merge to `main` to keep the blobs out of history).
 12. **Docs** — update `executive-board-autonomy-reviewer-notes.md` (close each item or record the owner decision), `docs/deployment/admin-website.md` (CORS parameter, configuration-set grants, `env_enabled` semantics, hold-of-`always_propose` behaviour), `AGENTS.md` gotchas, and the §6 runbook (which seat to enable at each step).
 
-Definition of done for the whole plan: every `R-nn` above is either fixed with a named test or closed with a recorded owner decision; the reproductions in this document (hold executes past a tripped breaker, personal address mailed, Gmail prospect match, quoted-footer suppression, task usage stays zero) all fail as tests before and pass after; `BoardStaffEnabled=true` is exercised on a dev stack end to end (inbound mail → triage → task → manager review → digest; one outreach send; one newsletter confirm) with the CloudWatch log lines named in the spec's acceptance sections captured in the PR.
+Definition of done for the whole plan: every `R-nn` above is either fixed with a named test or closed with a recorded owner decision; the reproductions in this document (hold executes past a tripped breaker, personal address mailed, Gmail prospect match, quoted-footer suppression, task usage stays zero) all fail as tests before and pass after; `SiutindeiBoardStaffEnabled=true` is exercised on a dev stack end to end (inbound mail → triage → task → manager review → digest; one outreach send; one newsletter confirm) with the CloudWatch log lines named in the spec's acceptance sections captured in the PR.
 
 ## 6. Decisions needed from the owner (do not reopen §1; these are ambiguities the spec leaves open)
 
