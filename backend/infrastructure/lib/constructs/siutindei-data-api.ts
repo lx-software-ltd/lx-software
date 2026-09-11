@@ -44,13 +44,14 @@ export class SiutindeiDataApiSetup extends Construct {
 
     const stack = cdk.Stack.of(this);
     const databaseName = props.databaseName ?? "siutindei";
-    const sqlPath = path.join(
-      __dirname,
-      "../../../lambda/siutindei_schema/receivables.sql"
-    );
+    const schemaDir = path.join(__dirname, "../../../lambda/siutindei_schema");
+    const sqlPath = path.join(schemaDir, "receivables.sql");
+    // Hash the script and the splitter so a packaging/split fix retriggers
+    // the custom resource (sql-only hash missed the ASWITH bugfix).
     const sqlHash = crypto
       .createHash("sha256")
       .update(fs.readFileSync(sqlPath))
+      .update(fs.readFileSync(path.join(schemaDir, "sql_split.py")))
       .digest("hex")
       .slice(0, 16);
     const hasExplicitSecret = new cdk.CfnCondition(this, "HasExplicitSecret", {
@@ -199,7 +200,7 @@ export class SiutindeiDataApiSetup extends Construct {
         clusterArn: props.clusterArn,
         secretArn: this.resolvedSecretArn,
         database: databaseName,
-        // Re-run when the script changes.
+        // Re-run when the script or splitter changes.
         sqlHash,
       },
     });

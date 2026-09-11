@@ -70,7 +70,10 @@ def split_sql(sql: str) -> list[str]:
                 i += len(dollar)
                 continue
             if text[i] == ";" and dollar is None:
-                stmt = _normalize("".join(buf)[: -(len(text) - i)])
+                # buf is one entry per source line; join with newlines so
+                # `AS\nWITH` stays two tokens. "".join glued them into ASWITH
+                # and PostgreSQL rejected the catalog view.
+                stmt = _normalize("\n".join(buf[:-1] + [text[:i]]))
                 buf = [text[i + 1 :]]
                 if stmt:
                     out.append(stmt)
@@ -78,7 +81,7 @@ def split_sql(sql: str) -> list[str]:
                 i = 0
                 continue
             i += 1
-    tail = _normalize("".join(buf))
+    tail = _normalize("\n".join(buf))
     if tail:
         out.append(tail)
     return out
