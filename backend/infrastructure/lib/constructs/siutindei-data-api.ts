@@ -3,9 +3,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as cdk from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as cr from "aws-cdk-lib/custom-resources";
-import type { Construct } from "constructs";
+import { Construct } from "constructs";
 import { createPythonLambda } from "./python-lambda";
 
 export const SIUTINDEI_DB_SECRET_NAME_DEFAULT =
@@ -100,8 +99,6 @@ export class SiutindeiDataApiSetup extends Construct {
         physicalResourceId: cr.PhysicalResourceId.fromResponse("ARN"),
       },
     });
-    (describeSecret.node.defaultChild as cdk.CfnResource).cfnOptions.condition =
-      props.condition;
 
     this.resolvedSecretArn = describeSecret.getResponseField("ARN");
 
@@ -134,8 +131,6 @@ export class SiutindeiDataApiSetup extends Construct {
         ),
       },
     });
-    (enableHttp.node.defaultChild as cdk.CfnResource).cfnOptions.condition =
-      props.condition;
 
     const schemaFn = createPythonLambda(this, "ReceivablesSchemaFn", {
       entryDir: path.join(__dirname, "../../../lambda/siutindei_schema"),
@@ -178,10 +173,6 @@ export class SiutindeiDataApiSetup extends Construct {
       principal: new iam.ServicePrincipal("cloudformation.amazonaws.com"),
       action: "lambda:InvokeFunction",
     });
-    const schemaFnCfn = schemaFn.node.defaultChild as lambda.CfnFunction;
-    schemaFnCfn.cfnOptions.condition = props.condition;
-    const schemaLog = schemaFn.logGroup.node.defaultChild as cdk.CfnResource;
-    if (schemaLog) schemaLog.cfnOptions.condition = props.condition;
 
     const schema = new cdk.CustomResource(this, "ReceivablesSchema", {
       serviceToken: schemaFn.functionArn,
@@ -193,8 +184,6 @@ export class SiutindeiDataApiSetup extends Construct {
         sqlHash,
       },
     });
-    (schema.node.defaultChild as cdk.CfnResource).cfnOptions.condition =
-      props.condition;
     schema.node.addDependency(enableHttp);
     schema.node.addDependency(describeSecret);
 
