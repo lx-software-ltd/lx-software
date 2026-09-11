@@ -646,6 +646,9 @@ describe("Siu Tin Dei Data API setup", () => {
     );
     expect(schema).toBeDefined();
     expect(schema?.[1].Condition).toBe("HasSiutindeiDataApi");
+    // A provider that never answers must fail well inside the CI token's
+    // one-hour lifetime instead of CloudFormation's default one-hour wait.
+    expect(Number(schema?.[1].Properties?.ServiceTimeout)).toBe(900);
 
     const schemaFn = Object.entries(resourcesOfType("AWS::Lambda::Function")).find(
       ([id]) => id.includes("ReceivablesSchemaFn")

@@ -191,6 +191,10 @@ export class SiutindeiDataApiSetup extends Construct {
 
     const schema = new cdk.CustomResource(this, "ReceivablesSchema", {
       serviceToken: schemaFn.functionArn,
+      // Without this CloudFormation waits an hour for a provider that never
+      // responds (e.g. the Lambda failed at init), which outlives the CI
+      // OIDC token. The Lambda times out at 3 min and async retries twice.
+      serviceTimeout: cdk.Duration.minutes(15),
       properties: {
         clusterArn: props.clusterArn,
         secretArn: this.resolvedSecretArn,

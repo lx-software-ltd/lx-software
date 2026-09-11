@@ -104,6 +104,31 @@ class ApplySchemaTests(unittest.TestCase):
         self.assertEqual(out["Data"]["schemaError"], body["Data"]["schemaError"])
         rds.enable_http_endpoint.assert_called_once_with(ResourceArn="arn:cluster")
 
+    def test_cfn_acks_when_the_sql_package_cannot_be_loaded(self) -> None:
+        # A module-level import failure hung the first deploy for an hour; the
+        # helper is now imported inside the handler so CFN still gets an answer.
+        rds = MagicMock()
+        rds.enable_http_endpoint.return_value = {"HttpEndpointEnabled": True}
+        event = {
+            "RequestType": "Create",
+            "ResponseURL": "https://example.test/cfn",
+            "StackId": "arn:stack",
+            "RequestId": "req-1",
+            "LogicalResourceId": "ReceivablesSchema",
+            "ResourceProperties": {"clusterArn": "arn:cluster", "secretArn": "arn:secret"},
+        }
+        with (
+            patch("handler.boto3.client", return_value=rds),
+            patch("handler._receivables_statements", side_effect=ImportError("receivables.sql missing")),
+            patch("handler.urllib.request.urlopen") as urlopen,
+        ):
+            urlopen.return_value.read.return_value = b""
+            out = handler.lambda_handler(event, MagicMock(log_stream_name="log"))
+        body = json.loads(urlopen.call_args[0][0].data.decode())
+        self.assertEqual(body["Status"], "SUCCESS")
+        self.assertIn("receivables.sql missing", body["Data"]["schemaError"])
+        self.assertIn("receivables.sql missing", out["Data"]["schemaError"])
+
     def test_scheduler_ensure_enables_http_then_applies(self) -> None:
         rds = MagicMock()
         rds.enable_http_endpoint.return_value = {"HttpEndpointEnabled": True}
