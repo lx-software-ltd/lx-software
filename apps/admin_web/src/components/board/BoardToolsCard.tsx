@@ -310,9 +310,9 @@ export function BoardToolsCard({
                         </div>
                       ) : (
                         <div className="small text-warning mt-1">
-                          Data API is off until <code>SiutindeiClusterArn</code> and{" "}
-                          <code>SiutindeiDbSecretArn</code> are set and{" "}
-                          <code>scripts/siutindei/receivables.sql</code> is applied.
+                          Data API is off until <code>SiutindeiClusterArn</code> is
+                          set. Deploy then enables the HTTP endpoint and applies{" "}
+                          <code>scripts/siutindei/receivables.sql</code>.
                         </div>
                       )
                     ) : null}

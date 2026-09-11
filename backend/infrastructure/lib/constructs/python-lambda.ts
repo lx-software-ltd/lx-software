@@ -115,7 +115,7 @@ export const DOCKER_BUNDLE_SCRIPT = [
   '  if [[ -d "$item" ]]; then',
   '    cp -a "$item" /asset-output/',
   '    find /asset-output/"$item" -type d \\( -name __pycache__ -o -name .pytest_cache \\) -prune -exec rm -rf {} +',
-  '  elif [[ "$item" == *.py ]]; then',
+  '  elif [[ "$item" == *.py || "$item" == *.sql ]]; then',
   '    cp -a "$item" /asset-output/',
   "  fi",
   "done",

@@ -271,8 +271,9 @@ Stack parameters (all optional, set in `backend/infrastructure/params/*.json`):
 | `lxsoftware:PublicApiBaseUrl` | Base URL for unsubscribe / newsletter confirm links. Blank uses this stack's HTTP API URL. |
 | `lxsoftware:SiutindeiBoardAwsStackPrefix` | CloudFormation stack-name prefix used to filter Cost Explorer / CloudWatch results (default `siutindei`). When no cost rows carry the tag, `aws_monthly_cost` falls back to the whole account and labels the result `scope: account`. |
 | `lxsoftware:SiutindeiBoardAwsLambdaNames` | Comma-separated Lambda function names (the siutindei stack lives in another repo, so they cannot be derived here). `aws_lambda_health` reports 24h errors/duration for exactly these; empty means "no functions configured". |
-| `lxsoftware:SiutindeiClusterArn` | Aurora cluster ARN for the siutindei database (RDS Data API). Required for Executive Board `finance` and `product` tools. Leave blank to keep those tools returning a clear "not configured" error. |
-| `lxsoftware:SiutindeiDbSecretArn` | Secrets Manager ARN of the siutindei DB credentials the Data API uses (RDS-owned; do not recreate). |
+| `lxsoftware:SiutindeiClusterArn` | Aurora cluster ARN for the siutindei database (RDS Data API). When set, CDK enables the HTTP endpoint on that cluster and applies `scripts/siutindei/receivables.sql`. Required for Executive Board `finance` and `product` tools. Leave blank to keep those tools returning a clear "not configured" error. |
+| `lxsoftware:SiutindeiDbSecretArn` | Optional Secrets Manager ARN of the siutindei DB credentials. Leave blank to resolve `SiutindeiDbSecretName` (default `lxsoftware-siutindei-database-credentials`). RDS-owned; do not recreate. |
+| `lxsoftware:SiutindeiDbSecretName` | Secrets Manager name used when `SiutindeiDbSecretArn` is blank (default `lxsoftware-siutindei-database-credentials`). |
 | `lxsoftware:SiutindeiBoardMetaVerifyToken` | Token Meta sends on the GET verify handshake (`hub.verify_token`). Not a Secrets Manager secret. |
 | `lxsoftware:SiutindeiBoardMetaPageId` / `SiutindeiBoardMetaIgUserId` / `SiutindeiBoardMetaWaPhoneNumberId` / `SiutindeiBoardMetaAdAccountId` / `SiutindeiBoardMetaWabaId` | Graph ids the `meta` tools call. |
 | `lxsoftware:SiutindeiBoardAppStoreConnectAppId` / `SiutindeiBoardGooglePlayPackageName` | App id / package if they are not already inside the secrets. |
@@ -675,8 +676,9 @@ last month?" and the CISO "any HIGH findings?" — both should cite cached
 reads after the hourly `SiutindeiBoardCacheRefreshSchedule` has run once. For mail: open **Mail**, confirm
 mailbox chips and threads, toggle **Board's view** (addresses become
 `contact#N`), then ask the CMO "what's unread?" and confirm a `Listed threads`
-row. For receivables: apply `scripts/siutindei/receivables.sql` on the
-siutindei cluster, set the two Data API parameters, open **Receivables**, and
+row. For receivables: set `lxsoftware:SiutindeiClusterArn` and redeploy
+(CDK enables the HTTP Data API and applies `scripts/siutindei/receivables.sql`),
+open **Receivables**, and
 ask the CFO to draft the first listing plan (`finance_propose_price_change`).
 Nightly `SiutindeiBoardReceivablesMirrorSchedule` (00:30 HKT) writes `[receivables]`
 lines into the Siu Tin Dei book; daily `SiutindeiBoardDunningSchedule` (09:00 HKT)
@@ -690,16 +692,21 @@ show billing state later; this admin app only reaches them through the RDS
 Data API (no VPC). Design:
 [`docs/architecture/executive-board-tools-plan.md`](../architecture/executive-board-tools-plan.md) §5.4–§5.7.
 
-1. Enable the Data API on the siutindei Aurora cluster if it is not already on.
-2. Apply `scripts/siutindei/receivables.sql` in that repo (tables
-   `listing_plans`, `listing_subscriptions`, `invoices`, `payments`, plus
-   views `v_catalog_health`, `v_funnel_daily`, `v_provider_pipeline` aligned
-   to the live siutindei Alembic schema, plus `listing_events_daily` for
-   funnel rows the product does not yet write).
-3. Set `lxsoftware:SiutindeiClusterArn` and `lxsoftware:SiutindeiDbSecretArn`
-   and redeploy. The stack attaches a conditional `rds-data:ExecuteStatement`
-   / `BatchExecuteStatement` policy plus `secretsmanager:GetSecretValue` on
-   the DB secret.
+1. Set `lxsoftware:SiutindeiClusterArn` to the existing
+   `lxsoftware-siutindei-db-cluster` ARN (production.json already has it) and
+   redeploy. The stack turns on the RDS HTTP Data API and applies
+   `scripts/siutindei/receivables.sql` (tables `listing_plans`,
+   `listing_subscriptions`, `invoices`, `payments`, plus views
+   `v_catalog_health`, `v_funnel_daily`, `v_provider_pipeline` aligned to the
+   live siutindei Alembic schema, plus `listing_events_daily` for funnel rows
+   the product does not yet write). Secret ARN is optional: blank resolves
+   `lxsoftware-siutindei-database-credentials`.
+2. The stack attaches a conditional `rds-data:ExecuteStatement` /
+   `BatchExecuteStatement` policy plus `secretsmanager:GetSecretValue` on the
+   resolved DB secret.
+3. A later **siutindei** deploy can turn the HTTP endpoint back off unless that
+   repo sets `enableDataApi: true` on its `DatabaseCluster`. This stack will
+   re-enable it on the next admin deploy.
 4. Invoice numbers are `STD-{year}-0001`; each draft also gets a unique FPS
    reference. Drafts also write a PDF to `board/siuTinDei/invoices/` on the assets
    bucket (`pdf_key` on the invoice). `finance_send_invoice` / `finance_send_reminder` email from

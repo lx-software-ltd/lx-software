@@ -172,7 +172,8 @@ def execute(sql: str, parameters: list[dict[str, Any]] | None = None) -> list[di
     if not configured():
         raise DataApiError(
             "siutindei Data API is not configured. Set SiutindeiClusterArn and "
-            "SiutindeiDbSecretArn and apply scripts/siutindei/receivables.sql."
+            "redeploy so CDK can enable the HTTP endpoint, resolve the DB secret, "
+            "and apply scripts/siutindei/receivables.sql."
         )
     client = boto3.client("rds-data")
     try:

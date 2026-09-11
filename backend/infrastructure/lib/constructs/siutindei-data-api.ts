@@ -1,0 +1,211 @@
+import * as crypto from "node:crypto";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as cdk from "aws-cdk-lib";
+import * as iam from "aws-cdk-lib/aws-iam";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as cr from "aws-cdk-lib/custom-resources";
+import type { Construct } from "constructs";
+import { createPythonLambda } from "./python-lambda";
+
+export const SIUTINDEI_DB_SECRET_NAME_DEFAULT =
+  "lxsoftware-siutindei-database-credentials";
+
+export interface SiutindeiDataApiSetupProps {
+  readonly clusterArn: string;
+  /** Complete secret ARN when known; otherwise leave blank and pass secretName. */
+  readonly secretArn: string;
+  readonly secretName: string;
+  readonly databaseName?: string;
+  readonly condition: cdk.CfnCondition;
+  readonly environmentEncryptionKey: cdk.aws_kms.IKey;
+  readonly logEncryptionKey: cdk.aws_kms.IKey;
+  readonly deadLetterQueue: cdk.aws_sqs.IQueue;
+}
+
+/**
+ * Turns on the RDS HTTP Data API for an existing Aurora cluster (owned by
+ * the ``lxsoftware-siutindei`` stack) and applies ``receivables.sql``.
+ *
+ * The product CDK should also set ``enableDataApi: true`` on its
+ * ``DatabaseCluster`` so a later siutindei deploy does not drift this back
+ * off. Until then this custom resource is the enable switch.
+ *
+ * Delete is a no-op: we do not disable the HTTP endpoint or drop tables.
+ */
+export class SiutindeiDataApiSetup extends Construct {
+  /** Secrets Manager ARN Data API / AdminApiFn should use. */
+  public readonly resolvedSecretArn: string;
+
+  constructor(scope: Construct, id: string, props: SiutindeiDataApiSetupProps) {
+    super(scope, id);
+
+    const stack = cdk.Stack.of(this);
+    const databaseName = props.databaseName ?? "siutindei";
+    const sqlPath = path.join(
+      __dirname,
+      "../../../lambda/siutindei_schema/receivables.sql"
+    );
+    const sqlHash = crypto
+      .createHash("sha256")
+      .update(fs.readFileSync(sqlPath))
+      .digest("hex")
+      .slice(0, 16);
+    const hasExplicitSecret = new cdk.CfnCondition(this, "HasExplicitSecret", {
+      expression: cdk.Fn.conditionNot(cdk.Fn.conditionEquals(props.secretArn, "")),
+    });
+    const secretLookupId = cdk.Fn.conditionIf(
+      hasExplicitSecret.logicalId,
+      props.secretArn,
+      props.secretName
+    );
+    const secretNameArns = [
+      stack.formatArn({
+        service: "secretsmanager",
+        resource: "secret",
+        resourceName: `${props.secretName}-??????`,
+        arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+      }),
+      stack.formatArn({
+        service: "secretsmanager",
+        resource: "secret",
+        resourceName: `${props.secretName}*`,
+        arnFormat: cdk.ArnFormat.COLON_RESOURCE_NAME,
+      }),
+      cdk.Fn.conditionIf(
+        hasExplicitSecret.logicalId,
+        props.secretArn,
+        cdk.Aws.NO_VALUE
+      ).toString(),
+    ];
+
+    const describeSecret = new cr.AwsCustomResource(this, "DescribeDbSecret", {
+      policy: cr.AwsCustomResourcePolicy.fromStatements([
+        new iam.PolicyStatement({
+          actions: ["secretsmanager:DescribeSecret"],
+          resources: secretNameArns,
+        }),
+      ]),
+      installLatestAwsSdk: false,
+      onCreate: {
+        service: "SecretsManager",
+        action: "describeSecret",
+        parameters: { SecretId: secretLookupId },
+        physicalResourceId: cr.PhysicalResourceId.fromResponse("ARN"),
+      },
+      onUpdate: {
+        service: "SecretsManager",
+        action: "describeSecret",
+        parameters: { SecretId: secretLookupId },
+        physicalResourceId: cr.PhysicalResourceId.fromResponse("ARN"),
+      },
+    });
+    (describeSecret.node.defaultChild as cdk.CfnResource).cfnOptions.condition =
+      props.condition;
+
+    this.resolvedSecretArn = describeSecret.getResponseField("ARN");
+
+    const enableHttp = new cr.AwsCustomResource(this, "EnableHttpEndpoint", {
+      policy: cr.AwsCustomResourcePolicy.fromStatements([
+        new iam.PolicyStatement({
+          actions: ["rds:EnableHttpEndpoint"],
+          resources: [props.clusterArn],
+        }),
+        new iam.PolicyStatement({
+          actions: ["rds:DescribeDBClusters"],
+          resources: ["*"],
+        }),
+      ]),
+      installLatestAwsSdk: false,
+      onCreate: {
+        service: "RDS",
+        action: "enableHttpEndpoint",
+        parameters: { ResourceArn: props.clusterArn },
+        physicalResourceId: cr.PhysicalResourceId.of(
+          "siutindei-aurora-http-endpoint"
+        ),
+      },
+      onUpdate: {
+        service: "RDS",
+        action: "enableHttpEndpoint",
+        parameters: { ResourceArn: props.clusterArn },
+        physicalResourceId: cr.PhysicalResourceId.of(
+          "siutindei-aurora-http-endpoint"
+        ),
+      },
+    });
+    (enableHttp.node.defaultChild as cdk.CfnResource).cfnOptions.condition =
+      props.condition;
+
+    const schemaFn = createPythonLambda(this, "ReceivablesSchemaFn", {
+      entryDir: path.join(__dirname, "../../../lambda/siutindei_schema"),
+      handler: "handler.lambda_handler",
+      timeout: cdk.Duration.minutes(3),
+      memorySize: 256,
+      environmentEncryptionKey: props.environmentEncryptionKey,
+      logEncryptionKey: props.logEncryptionKey,
+      deadLetterQueue: props.deadLetterQueue,
+      environment: {
+        SIUTINDEI_CLUSTER_ARN: props.clusterArn,
+        SIUTINDEI_DB_SECRET_ARN: this.resolvedSecretArn,
+        SIUTINDEI_DB_NAME: databaseName,
+      },
+    });
+    schemaFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["rds-data:ExecuteStatement"],
+        resources: [props.clusterArn],
+      })
+    );
+    schemaFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+        resources: [this.resolvedSecretArn, ...secretNameArns],
+      })
+    );
+    schemaFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["kms:Decrypt", "kms:DescribeKey"],
+        resources: ["*"],
+        conditions: {
+          StringEquals: {
+            "kms:ViaService": `secretsmanager.${stack.region}.amazonaws.com`,
+          },
+        },
+      })
+    );
+    schemaFn.addPermission("CloudFormationInvoke", {
+      principal: new iam.ServicePrincipal("cloudformation.amazonaws.com"),
+      action: "lambda:InvokeFunction",
+    });
+    const schemaFnCfn = schemaFn.node.defaultChild as lambda.CfnFunction;
+    schemaFnCfn.cfnOptions.condition = props.condition;
+    const schemaLog = schemaFn.logGroup.node.defaultChild as cdk.CfnResource;
+    if (schemaLog) schemaLog.cfnOptions.condition = props.condition;
+
+    const schema = new cdk.CustomResource(this, "ReceivablesSchema", {
+      serviceToken: schemaFn.functionArn,
+      properties: {
+        clusterArn: props.clusterArn,
+        secretArn: this.resolvedSecretArn,
+        database: databaseName,
+        // Re-run when the script changes.
+        sqlHash,
+      },
+    });
+    (schema.node.defaultChild as cdk.CfnResource).cfnOptions.condition =
+      props.condition;
+    schema.node.addDependency(enableHttp);
+    schema.node.addDependency(describeSecret);
+
+    for (const child of this.node.findAll()) {
+      if (
+        child instanceof cdk.CfnResource &&
+        !(child instanceof cdk.CfnCondition) &&
+        !child.cfnOptions.condition
+      ) {
+        child.cfnOptions.condition = props.condition;
+      }
+    }
+  }
+}

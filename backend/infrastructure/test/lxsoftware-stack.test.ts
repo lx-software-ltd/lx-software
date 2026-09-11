@@ -618,6 +618,62 @@ describe("Board staff kill switches on both lambdas", () => {
   });
 });
 
+describe("Siu Tin Dei Data API setup", () => {
+  test("HasSiutindeiDataApi is cluster ARN only", () => {
+    const cond = template.toJSON().Conditions.HasSiutindeiDataApi;
+    const serialized = JSON.stringify(cond);
+    expect(serialized).toContain("SiutindeiClusterArn");
+    expect(serialized).not.toContain("SiutindeiDbSecretArn");
+    expect(template.toJSON().Parameters.SiutindeiDbSecretName).toBeDefined();
+  });
+
+  test("enables the HTTP endpoint and applies receivables.sql when the cluster ARN is set", () => {
+    const custom = Object.entries(resources).filter(
+      ([, r]) =>
+        r.Type === "Custom::AWS" || r.Type === "AWS::CloudFormation::CustomResource"
+    );
+    const enable = custom.find(([, r]) =>
+      JSON.stringify(r.Properties ?? {}).includes("enableHttpEndpoint")
+    );
+    expect(enable).toBeDefined();
+    expect(enable?.[1].Condition).toBe("HasSiutindeiDataApi");
+
+    const schema = custom.find(
+      ([id, r]) =>
+        id.includes("ReceivablesSchema") &&
+        r.Type === "AWS::CloudFormation::CustomResource"
+    );
+    expect(schema).toBeDefined();
+    expect(schema?.[1].Condition).toBe("HasSiutindeiDataApi");
+
+    const schemaFn = Object.entries(resourcesOfType("AWS::Lambda::Function")).find(
+      ([id]) => id.includes("ReceivablesSchemaFn")
+    );
+    expect(schemaFn).toBeDefined();
+    expect(schemaFn?.[1].Condition).toBe("HasSiutindeiDataApi");
+    expect(schemaFn?.[1].Properties?.Timeout).toBe(180);
+    expect(schemaFn?.[1].Properties?.MemorySize).toBe(256);
+
+    const adminFn = Object.entries(resourcesOfType("AWS::Lambda::Function")).find(
+      ([id]) => id.startsWith("AdminApiFn")
+    );
+    const secretEnv =
+      adminFn?.[1].Properties?.Environment?.Variables?.SIUTINDEI_DB_SECRET_ARN;
+    expect(secretEnv).toEqual({
+      "Fn::If": ["HasSiutindeiDataApi", expect.anything(), ""],
+    });
+  });
+
+  test("schema apply is a CustomResource, not an EventBridge target", () => {
+    const rules = JSON.stringify(Object.values(resourcesOfType("AWS::Events::Rule")));
+    expect(rules).not.toContain("ReceivablesSchemaFn");
+    const schedules = JSON.stringify(
+      Object.values(resourcesOfType("AWS::Scheduler::Schedule"))
+    );
+    expect(schedules).not.toContain("ReceivablesSchemaFn");
+  });
+});
+
 describe("SQS event sources on AdminApiFn", () => {
   test("every source queue's visibility timeout covers the function timeout", () => {
     const fns = resourcesOfType("AWS::Lambda::Function");
