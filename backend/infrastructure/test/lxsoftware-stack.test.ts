@@ -241,47 +241,73 @@ describe("EventBridge Scheduler wiring", () => {
 });
 
 describe("Admin Lambda IAM policies", () => {
-  test("statement parse notify send is scoped to the inbound mail identity", () => {
+  /**
+   * Every SES send grant is `Resource: *` constrained by `ses:FromAddress`
+   * on one domain parameter. SES authorizes SendRawEmail against the mailbox
+   * identity, so identity-ARN resource lists deny in production.
+   */
+  function expectSesSendScopedToDomain(statement: Record<string, any>, domainParam: string): void {
+    expect(asArray<string>(statement.Action)).toEqual(
+      expect.arrayContaining(["ses:SendEmail", "ses:SendRawEmail"])
+    );
+    expect(asArray(statement.Resource)).toEqual(["*"]);
+    const patterns = asArray(statement.Condition?.StringLike?.["ses:FromAddress"]);
+    expect(patterns.length).toBeGreaterThanOrEqual(1);
+    const serialized = JSON.stringify(patterns);
+    expect(serialized).toContain("*@");
+    expect(serialized).toContain(`"Ref":"${domainParam}"`);
+    expect(serialized).not.toContain("*@*");
+  }
+
+  function sendStatementsOf(policy: CfnResource): Record<string, any>[] {
+    return policyStatements(policy).filter((s) => asArray<string>(s.Action).includes("ses:SendEmail"));
+  }
+
+  test("statement parse notify may only send from the inbound mail domain", () => {
     const [policy, ...rest] = findPoliciesByConstructId("StatementParseNotifySendPolicy");
     expect(policy).toBeDefined();
     expect(rest).toHaveLength(0);
-
-    const sendStatements = policyStatements(policy).filter((s) =>
-      asArray<string>(s.Action).includes("ses:SendEmail")
-    );
-    expect(sendStatements).toHaveLength(1);
-
-    const resources = asArray(sendStatements[0].Resource);
-    expect(resources).toHaveLength(1);
-    expect(resources[0]).not.toBe("*");
-    const serialized = JSON.stringify(resources[0]);
-    expect(serialized).toContain(":ses:");
-    expect(serialized).toContain(":identity/");
-    expect(serialized).toContain('"Ref":"InboundMailDomain"');
+    const sends = sendStatementsOf(policy);
+    expect(sends).toHaveLength(1);
+    expectSesSendScopedToDomain(sends[0], "InboundMailDomain");
   });
 
-  test("board mail send is Resource * constrained by ses:FromAddress", () => {
+  test("board mail may only send from the board mail domain and can read its SES health", () => {
     const [policy, ...rest] = findPoliciesByConstructId("SiutindeiBoardMailSendPolicy");
     expect(policy).toBeDefined();
     expect(rest).toHaveLength(0);
+    const sends = sendStatementsOf(policy);
+    expect(sends).toHaveLength(1);
+    expectSesSendScopedToDomain(sends[0], "SiutindeiBoardMailDomain");
 
-    const sendStatements = policyStatements(policy).filter((s) =>
-      asArray<string>(s.Action).includes("ses:SendEmail")
-    );
-    expect(sendStatements).toHaveLength(2);
+    const statements = policyStatements(policy);
+    const identityRead = statements.find((s) => asArray<string>(s.Action).includes("ses:GetEmailIdentity"));
+    expect(identityRead).toBeDefined();
+    expect(JSON.stringify(identityRead?.Resource)).toContain('"Ref":"SiutindeiBoardMailDomain"');
+    const accountRead = statements.find((s) => asArray<string>(s.Action).includes("ses:GetAccount"));
+    expect(accountRead).toBeDefined();
+    // No statement in this policy hands out ses:* or admin actions.
+    for (const s of statements) {
+      for (const action of asArray<string>(s.Action)) {
+        expect(action).not.toBe("ses:*");
+        expect(action.startsWith("ses:")).toBe(true);
+      }
+    }
+  });
 
-    const fromAddress = sendStatements.find((s) => asArray(s.Resource).includes("*"));
-    expect(fromAddress).toBeDefined();
-    const fromCond = JSON.stringify(fromAddress?.Condition ?? {});
-    expect(fromCond).toContain("ses:FromAddress");
-    expect(fromCond).toContain("*@");
-    expect(fromCond).toContain('"Ref":"SiutindeiBoardMailDomain"');
+  test("outreach may only send from the outreach domain", () => {
+    const rolePolicies = Object.values(resourcesOfType("AWS::IAM::Policy"));
+    const outreachSends = rolePolicies
+      .flatMap((p) => sendStatementsOf(p))
+      .filter((s) => JSON.stringify(s.Condition ?? {}).includes('"Ref":"OutreachSendingDomain"'));
+    expect(outreachSends).toHaveLength(1);
+    expectSesSendScopedToDomain(outreachSends[0], "OutreachSendingDomain");
 
-    const configSets = sendStatements.find((s) => !asArray(s.Resource).includes("*"));
-    expect(configSets).toBeDefined();
-    const serialized = JSON.stringify(asArray(configSets?.Resource));
-    expect(serialized).toContain("configuration-set/lxsoftware-admin-siutindei-outreach");
-    expect(serialized).toContain("configuration-set/lxsoftware-admin-siutindei-newsletter");
+    // Nothing anywhere grants SES sending without a FromAddress condition.
+    const unconditional = rolePolicies
+      .flatMap((p) => sendStatementsOf(p))
+      .filter((s) => !s.Condition?.StringLike?.["ses:FromAddress"]);
+    expect(unconditional).toEqual([]);
   });
 
   test.each([
@@ -586,7 +612,6 @@ describe("Board staff kill switches on both lambdas", () => {
       expect(env.BOARD_STAFF_ENABLED).toBeDefined();
       expect(env.BOARD_TOOLS_ENABLED).toBeDefined();
       expect(env.BOARD_MAIL_SENDING_ENABLED).toBeDefined();
-      expect(env.BOARD_MAIL_IDENTITY_ARN).toBeDefined();
       expect(env.OUTREACH_SENDING_DOMAIN).toBeDefined();
       expect(env.OUTREACH_FROM_LOCAL_PART).toBeDefined();
     }
@@ -611,10 +636,16 @@ describe("SQS event sources on AdminApiFn", () => {
 });
 
 describe("Board SES configuration-set IAM and public CORS", () => {
-  test("outreach and board-mail policies include configuration-set ARNs", () => {
+  test("outreach and newsletter configuration sets exist and templates stay prefixed", () => {
+    const configSets = Object.values(resourcesOfType("AWS::SES::ConfigurationSet")).map(
+      (r) => r.Properties?.Name
+    );
+    expect(configSets).toEqual(
+      expect.arrayContaining(["lxsoftware-admin-siutindei-outreach", "lxsoftware-admin-siutindei-newsletter"])
+    );
+    // Send grants are `Resource: *` + ses:FromAddress (see the IAM tests), which
+    // already covers the configuration-set resource SendEmail checks.
     const serialized = JSON.stringify(template.toJSON());
-    expect(serialized).toContain("configuration-set/lxsoftware-admin-siutindei-outreach");
-    expect(serialized).toContain("configuration-set/lxsoftware-admin-siutindei-newsletter");
     expect(serialized).toContain("template/lxsoftware-admin-siutindei-*");
     expect(serialized).toContain("ReportBatchItemFailures");
   });

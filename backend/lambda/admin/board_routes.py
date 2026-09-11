@@ -34,7 +34,7 @@ from contract_constants import (
     BOARD_TOOL_GLOBAL_MODES,
     BOARD_TOOL_LEVELS,
 )
-from http_common import _audit, _json_response, _log_event, _parse_json_body
+from http_common import _audit, _claims, _json_response, _log_event, _parse_json_body
 
 BOARD_BASE_PATH = "/siu-tin-dei/board"
 ALLOW_LIST_EMAIL_RE = re.compile(r"^(?:[a-z0-9._%+\-]+)?@[a-z0-9.\-]+\.[a-z]{2,}$")
@@ -133,6 +133,8 @@ def handle_board_route(
     if head == "mail":
         if len(rest) == 1 and method == "GET":
             return _mail_list(event)
+        if len(rest) == 2 and rest[1] == "selftest" and method == "POST":
+            return _mail_selftest(event, user_sub)
         if len(rest) == 2 and method == "GET":
             return _mail_thread_get(event, rest[1])
         if len(rest) == 3 and rest[2] == "read" and method == "POST":
@@ -420,7 +422,33 @@ def _mail_list(event: dict[str, Any]) -> dict[str, Any]:
         unread_only=(qs.get("unread") or [""])[0] in ("1", "true"),
         limit=limit,
     )
-    return _json_response(200, {**listing, "status": board_mail.status_summary(table)})
+    return _json_response(200, {**listing, "status": board_mail.status_summary(table, include_health=True)})
+
+
+def _mail_selftest(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
+    """Owner-only: send one test mail from hello@ to the signed-in address.
+
+    Turns "no email received" into a one-click check that surfaces the exact
+    SES refusal instead of spending a persona proposal and an approval.
+    """
+    to_address = str(_claims(event).get("email") or "").strip()
+    table = board_store.records_table()
+    try:
+        result = board_mail.send_selftest(table, to_address, sent_by=f"selftest:{user_sub or 'owner'}")
+    except board_mail.MailError as exc:
+        _audit(user_sub, "BOARD_MAIL_SELFTEST_FAILED", "selftest", event)
+        return _json_response(502, {"message": str(exc), "health": board_mail.sending_health(force=True)})
+    _audit(user_sub, "BOARD_MAIL_SELFTEST", "selftest", event)
+    return _json_response(
+        200,
+        {
+            "ok": True,
+            "to": result["to"][0],
+            "from": result["from"],
+            "sesMessageId": result["sesMessageId"],
+            "health": board_mail.sending_health(force=True),
+        },
+    )
 
 
 def _mail_thread_get(event: dict[str, Any], thread_id: str) -> dict[str, Any]:

@@ -512,7 +512,8 @@ function calling. Design:
   approvals; approvals expire after 60 days and call-log rows after 90.
 - **Routes:** `GET/PUT /siu-tin-dei/board/tools`, `GET /siu-tin-dei/board/tools/calls`,
   `GET /siu-tin-dei/board/approvals`, `POST …/approvals/{id}/approve|reject`,
-  `GET /siu-tin-dei/board/mail`, `GET /siu-tin-dei/board/mail/{threadId}`,
+  `GET /siu-tin-dei/board/mail`, `POST /siu-tin-dei/board/mail/selftest`,
+  `GET /siu-tin-dei/board/mail/{threadId}`,
   `POST /siu-tin-dei/board/mail/{threadId}/read`,
   `GET /siu-tin-dei/board/receivables`.
   Admin-group JWT only. `GET/POST /webhooks/meta/siutindei` is the
@@ -866,7 +867,9 @@ Worker copies every message to the board as well. Design:
    creates an SES email identity for `SiutindeiBoardMailDomain` and attaches
    `ses:SendEmail` / `ses:SendRawEmail` on `AdminApiFn`, constrained to
    `ses:FromAddress` `*@SiutindeiBoardMailDomain` (SendRawEmail authorizes the
-   mailbox identity, not the verified domain ARN).
+   mailbox identity, not the verified domain ARN, so identity-ARN resource
+   lists deny in production). Every SES send grant in the stack uses this
+   shape (`sesSendFromDomainStatement`).
 2. Add the three `SiutindeiBoardMailDkimCnameN` outputs as CNAMEs on the
    `siutindei.com` zone (Cloudflare proxy **off**).
 3. Extend SPF to
@@ -876,6 +879,13 @@ Worker copies every message to the board as well. Design:
    **Recipient allow-list** (`@siutindei.com`, known vendor addresses, and
    WhatsApp numbers). Sends to anyone else stay in **Approvals** even when
    the member is at `act`.
+6. Open **Executive Board → Mail**. The header shows what SES itself reports
+   (`GetEmailIdentity` + `GetAccount`, cached 10 min): domain verified, DKIM
+   status, production access (sandbox accounts can only reach verified
+   recipients). Click **Send test email**: one message goes from `hello@` to
+   your sign-in address and is not indexed. A refusal shows the full SES
+   error, including the resource ARN, inline and in CloudWatch as
+   `board_mail_send_failed`. Do this before asking a persona to reply.
 
 Replies go out from the mailbox the thread was addressed to. Every outbound
 message is indexed as `direction=out` so it appears in **Mail**. Bodies and

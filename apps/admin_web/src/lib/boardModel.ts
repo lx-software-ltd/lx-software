@@ -541,12 +541,32 @@ export type BoardMailboxSummary = {
   readonly lastMessageAt: string;
 };
 
+/** What SES itself says about our ability to send (mail list only; cached 10 min server-side). */
+export type BoardMailSendHealth = {
+  readonly checkedAt: string;
+  readonly identityVerified: boolean | null;
+  readonly dkimStatus: string | null;
+  readonly productionAccess: boolean | null;
+  readonly dailyQuota?: number;
+  readonly sentLast24h?: number;
+  readonly errors: readonly string[];
+};
+
 export type BoardMailStatus = {
   readonly threadCount: number;
   readonly unreadCount: number;
   readonly domain: string;
   readonly sendEnabled: boolean;
   readonly inboundAddress: string;
+  readonly sendHealth?: BoardMailSendHealth;
+};
+
+export type BoardMailSelfTestResult = {
+  readonly ok: true;
+  readonly to: string;
+  readonly from: string;
+  readonly sesMessageId: string;
+  readonly health: BoardMailSendHealth;
 };
 
 export type BoardMailListPayload = {

@@ -5,6 +5,7 @@ import {
   boardMailThreadPath,
   type BoardMailListPayload,
   type BoardMailMaskedMessage,
+  type BoardMailSelfTestResult,
   type BoardMailThread,
   type BoardMailThreadPayload,
 } from "../lib/boardModel";
@@ -53,6 +54,18 @@ export function useBoardMailThreadMasked(threadId: string | null, enabled: boole
       adminFetchJson<{ thread: unknown; messages: BoardMailMaskedMessage[] }>(
         `${boardMailThreadPath(threadId ?? "")}?view=board`,
       ),
+  });
+}
+
+/** Owner-only: one test mail from hello@ to the signed-in address; surfaces the SES refusal verbatim. */
+export function useBoardMailSelfTest() {
+  const qc = useQueryClient();
+  return useMutation<BoardMailSelfTestResult, Error, void>({
+    mutationFn: () =>
+      adminFetchJson<BoardMailSelfTestResult>(`${BOARD_API_BASE}/mail/selftest`, { method: "POST", body: "{}" }),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: [...BOARD_MAIL_KEY, "list"] });
+    },
   });
 }
 

@@ -7,12 +7,14 @@ import {
   type BoardMailListPayload,
   type BoardMailMaskedMessage,
   type BoardMailMessage,
+  type BoardMailSendHealth,
   type BoardMailStatus,
   type BoardMailThread,
   type BoardMailThreadPayload,
 } from "../../lib/boardModel";
 import {
   useBoardMailRead,
+  useBoardMailSelfTest,
   useBoardMailThread,
   useBoardMailThreadMasked,
   useBoardMailThreads,
@@ -94,6 +96,88 @@ function SetupHint({ status }: { readonly status: BoardMailStatus }) {
   );
 }
 
+function healthBadge(label: string, ok: boolean | null, detail?: string | null) {
+  const cls = ok === null ? "text-bg-light border text-muted" : ok ? "text-bg-success" : "text-bg-danger";
+  const icon = ok === null ? "bi-question-circle" : ok ? "bi-check-circle" : "bi-x-circle";
+  return (
+    <span className={`badge fw-normal ${cls}`} title={detail ?? undefined}>
+      <i className={`bi ${icon} me-1`} aria-hidden="true" />
+      {label}
+      {detail ? <span className="ms-1 opacity-75">{detail}</span> : null}
+    </span>
+  );
+}
+
+/**
+ * "sending on" used to mirror the stack flag alone, which stayed green while
+ * SES refused every message. These badges come from SES itself, and the test
+ * button sends one real message to the signed-in owner and shows the exact
+ * refusal instead of spending a persona proposal plus an approval per attempt.
+ */
+function SendHealthStrip({
+  status,
+  health,
+  errorText,
+}: {
+  readonly status: BoardMailStatus;
+  readonly health: BoardMailSendHealth | undefined;
+  readonly errorText: (err: unknown) => string | null;
+}) {
+  const selfTest = useBoardMailSelfTest();
+  if (!status.sendEnabled) return null;
+  const dkim = health?.dkimStatus ?? null;
+  return (
+    <div className="border rounded p-2 mb-3 small">
+      <div className="d-flex flex-wrap align-items-center gap-2">
+        <span className="text-muted">SES:</span>
+        {healthBadge("domain verified", health ? health.identityVerified : null)}
+        {healthBadge("DKIM", health ? (dkim === "SUCCESS" ? true : dkim ? false : null) : null, dkim)}
+        {healthBadge(
+          "production access",
+          health ? health.productionAccess : null,
+          health?.productionAccess === false ? "sandbox: only verified recipients" : null,
+        )}
+        {health?.dailyQuota ? (
+          <span className="text-muted">
+            {health.sentLast24h ?? 0}/{health.dailyQuota} sent today
+          </span>
+        ) : null}
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-primary ms-auto"
+          disabled={selfTest.isPending}
+          onClick={() => selfTest.mutate()}
+          title={`Send one test message from hello@${status.domain} to your sign-in address`}
+        >
+          <i className="bi bi-send me-1" aria-hidden="true" />
+          {selfTest.isPending ? "Sending…" : "Send test email"}
+        </button>
+      </div>
+      {health?.errors.length ? (
+        <ul className="mb-0 mt-2 text-danger">
+          {health.errors.map((e) => (
+            <li key={e}>{e}</li>
+          ))}
+        </ul>
+      ) : null}
+      {selfTest.isSuccess ? (
+        <div className="alert alert-success py-1 px-2 mt-2 mb-0">
+          Sent to <code>{selfTest.data.to}</code> from <code>{selfTest.data.from}</code>
+          {selfTest.data.sesMessageId ? (
+            <span className="text-muted"> · SES id {selfTest.data.sesMessageId}</span>
+          ) : null}
+          . Check your inbox (and spam) in the next minute.
+        </div>
+      ) : null}
+      {selfTest.isError ? (
+        <div className="alert alert-danger py-1 px-2 mt-2 mb-0" style={{ overflowWrap: "anywhere" }}>
+          {errorText(selfTest.error) ?? "The test message was refused."}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function BoardMailView({ status, focusThreadId, onFocusConsumed, errorText }: BoardMailViewProps) {
   const [mailbox, setMailbox] = useState("");
   const [searchText, setSearchText] = useState("");
@@ -132,6 +216,9 @@ export function BoardMailView({ status, focusThreadId, onFocusConsumed, errorTex
   const threads = payload?.threads ?? [];
   const mailboxes = payload?.mailboxes ?? [];
   const totalIndexed = payload?.status.threadCount ?? status.threadCount;
+  const health = payload?.status.sendHealth;
+  const sendHealthy =
+    !!health && health.identityVerified === true && health.productionAccess !== false && health.errors.length === 0;
 
   return (
     <div className="card shadow-sm mb-4">
@@ -141,9 +228,9 @@ export function BoardMailView({ status, focusThreadId, onFocusConsumed, errorTex
           <div className="small text-muted">
             {totalIndexed} thread{totalIndexed === 1 ? "" : "s"} · {payload?.status.unreadCount ?? status.unreadCount} unread ·{" "}
             {status.sendEnabled ? (
-              <span className="text-success">
-                <i className="bi bi-send-check me-1" aria-hidden="true" />
-                sending on
+              <span className={health ? (sendHealthy ? "text-success" : "text-danger") : "text-muted"}>
+                <i className={`bi ${health && !sendHealthy ? "bi-send-exclamation" : "bi-send-check"} me-1`} aria-hidden="true" />
+                {health ? (sendHealthy ? "sending on" : "sending not ready") : "sending enabled"}
               </span>
             ) : (
               <span>
@@ -157,6 +244,7 @@ export function BoardMailView({ status, focusThreadId, onFocusConsumed, errorTex
           Everything sent to <code>@{status.domain}</code>, as the board sees it — except that you see real names and
           addresses. Replies the board sends (or you approve) appear here as <span className="badge text-bg-primary">sent</span>.
         </p>
+        <SendHealthStrip status={status} health={health} errorText={errorText} />
         {list.isError ? <div className="alert alert-danger py-2 small">{errorText(list.error)}</div> : null}
         {markRead.isError ? <div className="alert alert-danger py-2 small">{errorText(markRead.error)}</div> : null}
 

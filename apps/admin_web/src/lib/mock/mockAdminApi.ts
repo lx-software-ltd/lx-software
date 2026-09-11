@@ -276,6 +276,15 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   if (p === `${board}/mail`) {
     return json({ threads: [], total: 0, mailboxes: [], status: boardOverviewFixture.mail });
   }
+  if (p === `${board}/mail/selftest` && method === "POST") {
+    return json({
+      ok: true,
+      to: "mock.admin@example.com",
+      from: `hello@${boardOverviewFixture.mail.domain}`,
+      sesMessageId: "mock-ses-1",
+      health: boardOverviewFixture.mail.sendHealth,
+    });
+  }
   if (p === `${board}/staff`) {
     return json({
       ...boardStaffFixture,
