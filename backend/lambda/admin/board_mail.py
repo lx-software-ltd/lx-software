@@ -572,15 +572,18 @@ def mark_read(table: Any, thread_id: str, *, read: bool) -> bool:
     return True
 
 
-def status_summary(table: Any) -> dict[str, Any]:
+def status_summary(table: Any, *, include_health: bool = False) -> dict[str, Any]:
     threads = board_store.list_mail_threads(table)
-    return {
+    out = {
         "threadCount": len(threads),
         "unreadCount": sum(1 for t in threads if t.get("unread")),
         "domain": mail_domain(),
         "sendEnabled": sending_enabled(),
         "inboundAddress": inbound_address(),
     }
+    if include_health:
+        out["sendHealth"] = sending_health()
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -807,8 +810,8 @@ def outgoing_plan(table: Any, op: str, args: dict[str, Any]) -> dict[str, Any]:
 # Sending
 # ---------------------------------------------------------------------------
 
-def send_plan(table: Any, plan: dict[str, Any], *, sent_by: str) -> dict[str, Any]:
-    """Send through SES v2 and index the outbound copy."""
+def send_plan(table: Any, plan: dict[str, Any], *, sent_by: str, index: bool = True) -> dict[str, Any]:
+    """Send through SES v2 and (unless ``index`` is false) index the outbound copy."""
     if not sending_enabled():
         raise MailError(
             "Email sending is switched off for this deployment (SiutindeiBoardMailSendingEnabled). "
@@ -858,9 +861,10 @@ def send_plan(table: Any, plan: dict[str, Any], *, sent_by: str) -> dict[str, An
             filename=filename,
         )
     raw = msg.as_bytes()
-    # SES IAM matches FromEmailAddress to identity/<addr> or identity/<domain>.
-    # A display-name form ("siutindei <hello@…>") is authorized as a different
-    # identity and AccessDenied's even when the domain identity is allowed.
+    # FromEmailAddress must be the bare mailbox: SES authorizes SendRawEmail
+    # against identity/<mailbox>, and a display-name form is a different
+    # identity again. The stack policy therefore grants on Resource * with a
+    # ses:FromAddress condition instead of guessing identity ARNs.
     try:
         response = _ses_client().send_email(
             FromEmailAddress=from_mailbox,
@@ -870,20 +874,37 @@ def send_plan(table: Any, plan: dict[str, Any], *, sent_by: str) -> dict[str, An
     except Exception as exc:
         # Catch broader than botocore.ClientError: unit tests stub that class,
         # and any SES failure must become MailError instead of crashing approve.
-        resp = getattr(exc, "response", None)
-        err = resp.get("Error") if isinstance(resp, dict) else {}
-        if not isinstance(err, dict):
-            err = {}
-        code = str(err.get("Code") or type(exc).__name__)
-        detail = str(err.get("Message") or exc)[:240]
+        code, detail, resource = describe_ses_error(exc)
+        _log_event(
+            "error",
+            tag="board_mail_send_failed",
+            code=code,
+            detail=detail,
+            resource=resource,
+            frm=from_mailbox,
+            to=len(to),
+        )
         raise MailError(f"SES refused to send ({code}): {detail}") from exc
+    ses_message_id = str((response or {}).get("MessageId") or "")
+    if not index:
+        _log_event("info", tag="board_mail_sent", to=len(to), by=sent_by, indexed=False)
+        return {
+            "ok": True,
+            "sesMessageId": ses_message_id,
+            "threadId": None,
+            "messageId": None,
+            "from": from_mailbox,
+            "to": to,
+            "cc": cc,
+            "subject": str(msg["Subject"]),
+        }
     indexed = ingest_bytes(table, raw, direction="out", source=f"board:{sent_by}"[:80])
     if indexed.get("threadId"):
         board_store.set_mail_thread_unread(table, str(indexed["threadId"]), unread=False)
     _log_event("info", tag="board_mail_sent", to=len(to), thread=indexed.get("threadId"), by=sent_by)
     return {
         "ok": True,
-        "sesMessageId": str((response or {}).get("MessageId") or ""),
+        "sesMessageId": ses_message_id,
         "threadId": indexed.get("threadId"),
         "messageId": indexed.get("messageId"),
         "from": from_mailbox,
@@ -891,6 +912,111 @@ def send_plan(table: Any, plan: dict[str, Any], *, sent_by: str) -> dict[str, An
         "cc": cc,
         "subject": str(msg["Subject"]),
     }
+
+
+_SES_RESOURCE_RE = re.compile(r"on resource:?\s*'?(arn:[^'\s]+)")
+SES_ERROR_DETAIL_MAX = 700
+
+
+def describe_ses_error(exc: BaseException) -> tuple[str, str, str]:
+    """``(code, message, resourceArn)`` from a boto3 error, kept long enough to read.
+
+    The IAM deny text puts the resource ARN *after* the ~170-char role ARN, so a
+    short cap hides the one field that says which identity SES checked.
+    """
+    resp = getattr(exc, "response", None)
+    if not isinstance(resp, dict) and exc.args and isinstance(exc.args[0], dict):
+        # Some test suites replace botocore's ClientError with a bare Exception
+        # subclass; the error dict is then the first positional argument.
+        resp = exc.args[0]
+    err = resp.get("Error") if isinstance(resp, dict) else {}
+    if not isinstance(err, dict):
+        err = {}
+    code = str(err.get("Code") or type(exc).__name__)
+    detail = " ".join(str(err.get("Message") or exc).split())[:SES_ERROR_DETAIL_MAX]
+    match = _SES_RESOURCE_RE.search(detail)
+    return code, detail, match.group(1) if match else ""
+
+
+SELFTEST_SUBJECT = "Siu Tin Dei board mail self-test"
+
+
+def send_selftest(table: Any, to_address: str, *, sent_by: str) -> dict[str, Any]:
+    """Send one plain message from ``hello@`` to the signed-in owner.
+
+    Not indexed into the company mail, so a test never shows up in the
+    board's thread list. Raises :class:`MailError` with the SES reason.
+    """
+    to = board_pii.normalize_email(to_address)
+    if not to or not board_pii.EMAIL_RE.fullmatch(to):
+        raise MailError("Your sign-in has no usable email address to send the test to.")
+    now = _utc_iso_z(datetime.now(timezone.utc))
+    plan = {
+        "fromMailbox": "hello",
+        "to": [to],
+        "cc": [],
+        "subject": SELFTEST_SUBJECT,
+        "text": (
+            "This is a test message from the Siu Tin Dei Executive Board mail sender.\n\n"
+            f"Sent {now} from hello@{mail_domain()} through Amazon SES. "
+            "If you can read this, DKIM, SPF and the sending policy are working.\n"
+        ),
+    }
+    return send_plan(table, plan, sent_by=sent_by, index=False)
+
+
+# ---------------------------------------------------------------------------
+# Sending health (owner view)
+# ---------------------------------------------------------------------------
+
+HEALTH_CACHE_TTL_SECONDS = 600
+_health_cache: tuple[float, dict[str, Any]] | None = None
+
+
+def sending_health(*, force: bool = False) -> dict[str, Any]:
+    """What SES says about our ability to send, for the Mail header.
+
+    ``sendEnabled`` alone only mirrors the stack flag; a deploy can flip it
+    while the identity is still unverified or the account is sandboxed.
+    Cached for ten minutes; read failures are reported, never raised.
+    """
+    global _health_cache
+    now = datetime.now(timezone.utc).timestamp()
+    if not force and _health_cache and now - _health_cache[0] < HEALTH_CACHE_TTL_SECONDS:
+        return _health_cache[1]
+    checked_at = _utc_iso_z(datetime.now(timezone.utc))
+    out: dict[str, Any] = {
+        "checkedAt": checked_at,
+        "identityVerified": None,
+        "dkimStatus": None,
+        "productionAccess": None,
+        "errors": [],
+    }
+    if not sending_enabled():
+        out["errors"].append("Sending is switched off (SiutindeiBoardMailSendingEnabled).")
+        _health_cache = (now, out)
+        return out
+    client = _ses_client()
+    try:
+        ident = client.get_email_identity(EmailIdentity=mail_domain())
+        out["identityVerified"] = bool(ident.get("VerifiedForSendingStatus"))
+        dkim = ident.get("DkimAttributes") or {}
+        out["dkimStatus"] = str(dkim.get("Status") or "") or None
+    except Exception as exc:
+        code, detail, _ = describe_ses_error(exc)
+        out["errors"].append(f"GetEmailIdentity: {code}: {detail[:200]}")
+    try:
+        account = client.get_account()
+        out["productionAccess"] = bool(account.get("ProductionAccessEnabled"))
+        sending = account.get("SendQuota") or {}
+        if sending:
+            out["dailyQuota"] = int(sending.get("Max24HourSend") or 0)
+            out["sentLast24h"] = int(sending.get("SentLast24Hours") or 0)
+    except Exception as exc:
+        code, detail, _ = describe_ses_error(exc)
+        out["errors"].append(f"GetAccount: {code}: {detail[:200]}")
+    _health_cache = (now, out)
+    return out
 
 
 # ---------------------------------------------------------------------------

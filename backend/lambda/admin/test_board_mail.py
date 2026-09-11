@@ -15,6 +15,7 @@ import board_pii
 import board_store
 import board_tools
 import inbound_email_handler
+from dispatch import lambda_handler
 from test_board import BoardTestCase, FakeTable
 from test_board_tools import ToolsTestCase
 
@@ -85,12 +86,30 @@ class FakeSES:
     def __init__(self) -> None:
         self.sent: list[dict[str, Any]] = []
         self.fail_with: Exception | None = None
+        self.identity: dict[str, Any] | Exception = {
+            "VerifiedForSendingStatus": True,
+            "DkimAttributes": {"Status": "SUCCESS"},
+        }
+        self.account: dict[str, Any] | Exception = {
+            "ProductionAccessEnabled": True,
+            "SendQuota": {"Max24HourSend": 50000.0, "SentLast24Hours": 12.0},
+        }
 
     def send_email(self, **kwargs: Any) -> dict[str, Any]:
         if self.fail_with:
             raise self.fail_with
         self.sent.append(kwargs)
         return {"MessageId": f"ses-{len(self.sent)}"}
+
+    def get_email_identity(self, **kwargs: Any) -> dict[str, Any]:
+        if isinstance(self.identity, Exception):
+            raise self.identity
+        return self.identity
+
+    def get_account(self) -> dict[str, Any]:
+        if isinstance(self.account, Exception):
+            raise self.account
+        return self.account
 
     def last_raw(self) -> EmailMessage:
         from email import policy
@@ -114,6 +133,8 @@ class MailTestCase(ToolsTestCase):
         patcher_env = patch.dict("os.environ", env, clear=False)
         patcher_env.start()
         self.addCleanup(patcher_env.stop)
+        board_mail._health_cache = None  # noqa: SLF001
+        self.addCleanup(setattr, board_mail, "_health_cache", None)
 
     def ingest(self, **kwargs: Any) -> dict[str, Any]:
         return board_mail.ingest_bytes(self.table, build_mail(**kwargs))
@@ -296,6 +317,13 @@ class TestMailRoutes(MailTestCase):
         self.assertTrue(all(m["lastMessageAt"] for m in body["mailboxes"]))
         self.assertEqual(body["status"]["unreadCount"], 2)
         self.assertTrue(body["status"]["sendEnabled"])
+        # The list carries live SES health so "sending on" means something.
+        health = body["status"]["sendHealth"]
+        self.assertTrue(health["identityVerified"])
+        self.assertEqual(health["dkimStatus"], "SUCCESS")
+        self.assertTrue(health["productionAccess"])
+        self.assertEqual(health["dailyQuota"], 50000)
+        self.assertEqual(health["errors"], [])
         # The owner sees real addresses.
         self.assertIn("wendy.chan@gmail.com", [t["lastFrom"] for t in body["threads"]])
 
@@ -305,6 +333,81 @@ class TestMailRoutes(MailTestCase):
         self.assertEqual([t["threadId"] for t in body["threads"]], [a])
         status, body = self.call("/siu-tin-dei/board/mail", query="q=lam")
         self.assertEqual([t["threadId"] for t in body["threads"]], [b])
+
+    def test_send_health_reports_unverified_identity_and_read_denials(self) -> None:
+        from botocore.exceptions import ClientError
+
+        self.ses.identity = {"VerifiedForSendingStatus": False, "DkimAttributes": {"Status": "PENDING"}}
+        self.ses.account = ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "not authorized to perform ses:GetAccount"}},
+            "GetAccount",
+        )
+        health = board_mail.sending_health(force=True)
+        self.assertFalse(health["identityVerified"])
+        self.assertEqual(health["dkimStatus"], "PENDING")
+        self.assertIsNone(health["productionAccess"])
+        self.assertEqual(len(health["errors"]), 1)
+        self.assertIn("GetAccount: AccessDeniedException", health["errors"][0])
+        # Cached: a fixed account is not visible until the TTL passes or force=True.
+        self.ses.account = {"ProductionAccessEnabled": True}
+        self.assertIsNone(board_mail.sending_health()["productionAccess"])
+        self.assertTrue(board_mail.sending_health(force=True)["productionAccess"])
+        # Sending switched off short-circuits without calling SES.
+        with patch.dict(os.environ, {"BOARD_MAIL_SENDING_ENABLED": "false"}):
+            off = board_mail.sending_health(force=True)
+        self.assertIsNone(off["identityVerified"])
+        self.assertIn("switched off", off["errors"][0])
+
+    def test_selftest_sends_to_the_signed_in_owner_without_indexing(self) -> None:
+        ev = self.event("/siu-tin-dei/board/mail/selftest", "POST", {})
+        ev["requestContext"]["authorizer"]["jwt"]["claims"]["email"] = "Owner@Example.com"
+        out = lambda_handler(ev, None)
+        body = json.loads(out["body"])
+        self.assertEqual(out["statusCode"], 200, body)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["to"], "owner@example.com")
+        self.assertEqual(body["from"], "hello@siutindei.com")
+        self.assertEqual(body["sesMessageId"], "ses-1")
+        self.assertTrue(body["health"]["identityVerified"])
+        sent = self.ses.sent[0]
+        self.assertEqual(sent["FromEmailAddress"], "hello@siutindei.com")
+        self.assertEqual(sent["Destination"]["ToAddresses"], ["owner@example.com"])
+        raw = self.ses.last_raw()
+        self.assertEqual(raw["Subject"], board_mail.SELFTEST_SUBJECT)
+        self.assertIn("hello@siutindei.com", raw.get_content())
+        # A test never lands in the company mail index.
+        self.assertEqual(board_store.list_mail_threads(self.table), [])
+
+    def test_selftest_surfaces_the_ses_refusal(self) -> None:
+        from botocore.exceptions import ClientError
+
+        deny = (
+            "User: arn:aws:sts::588024549699:assumed-role/lxsoftware-AdminApiFnServiceRole3DBF280A-R5kCD57g90Z1/"
+            "lxsoftware-AdminApiFnA81506EE-Dtien8OG6FVk is not authorized to perform: ses:SendRawEmail on resource: "
+            "arn:aws:ses:ap-southeast-1:588024549699:identity/hello@siutindei.com because no identity-based policy "
+            "allows the ses:SendRawEmail action"
+        )
+        self.ses.fail_with = ClientError({"Error": {"Code": "AccessDeniedException", "Message": deny}}, "SendEmail")
+        ev = self.event("/siu-tin-dei/board/mail/selftest", "POST", {})
+        ev["requestContext"]["authorizer"]["jwt"]["claims"]["email"] = "owner@example.com"
+        out = lambda_handler(ev, None)
+        body = json.loads(out["body"])
+        self.assertEqual(out["statusCode"], 502)
+        self.assertIn("AccessDeniedException", body["message"])
+        # The resource ARN survives: it is the field the earlier 300-char cap lost.
+        self.assertIn("identity/hello@siutindei.com", body["message"])
+        self.assertIn("health", body)
+        code, detail, resource = board_mail.describe_ses_error(self.ses.fail_with)
+        self.assertEqual(code, "AccessDeniedException")
+        self.assertEqual(resource, "arn:aws:ses:ap-southeast-1:588024549699:identity/hello@siutindei.com")
+        self.assertIn("because no identity-based policy", detail)
+
+        # No email claim: refused before SES is called.
+        self.ses.fail_with = None
+        status, body = self.call("/siu-tin-dei/board/mail/selftest", "POST", {})
+        self.assertEqual(status, 502)
+        self.assertIn("no usable email", body["message"])
+        self.assertEqual(self.ses.sent, [])
 
     def test_thread_detail_owner_and_board_views(self) -> None:
         a, _ = self.seed()
@@ -451,6 +554,7 @@ class TestMailTools(MailTestCase):
         sent = self.ses.sent[0]
         self.assertEqual(sent["Destination"]["ToAddresses"], ["wendy.chan@gmail.com"])
         self.assertEqual(sent["FromEmailAddress"], "hello@siutindei.com")
+        self.assertNotIn("FromEmailAddressIdentityArn", sent)
         raw = self.ses.last_raw()
         self.assertIn("hello@siutindei.com", raw["From"])
         self.assertEqual(raw["In-Reply-To"], "<abc123@mail.gmail.com>")

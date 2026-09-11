@@ -231,6 +231,28 @@ class SharedPermissionLambdaIntegration extends HttpLambdaIntegration {
 }
 
 /**
+ * SES send grant restricted to one sending domain.
+ *
+ * SES authorizes `SendRawEmail` against `identity/<mailbox>` (not the verified
+ * domain identity), and a display-name From is treated as yet another
+ * identity, so identity-ARN resource lists AccessDenied in production while
+ * unit tests pass. AWS's documented way to scope senders is `Resource: *`
+ * plus the `ses:FromAddress` condition; `*` also covers the configuration-set
+ * resource that `SendEmail` checks when a ConfigurationSetName is passed.
+ */
+function sesSendFromDomainStatement(domain: string): iam.PolicyStatement {
+  return new iam.PolicyStatement({
+    actions: ["ses:SendEmail", "ses:SendRawEmail", "ses:SendBulkEmail"],
+    resources: ["*"],
+    conditions: {
+      StringLike: {
+        "ses:FromAddress": [`*@${domain}`, `*@${domain}>`],
+      },
+    },
+  });
+}
+
+/**
  * Consolidated admin backend stack: Cognito user pool (with Pre Token
  * Generation Lambda + Google IdP), DynamoDB tables, private uploads
  * bucket (with its own S3 access logs bucket), and the HTTP API plus
@@ -1280,24 +1302,15 @@ export class LxsoftwareStack extends cdk.Stack {
         behaviorOnMxFailure: "USE_DEFAULT_VALUE",
       },
     });
+    adminFn.addToRolePolicy(sesSendFromDomainStatement(outreachSendingDomain.valueAsString));
     adminFn.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ["ses:SendEmail", "ses:SendRawEmail", "ses:SendBulkEmail", "ses:GetEmailIdentity"],
+        actions: ["ses:GetEmailIdentity"],
         resources: [
           cdk.Stack.of(this).formatArn({
             service: "ses",
             resource: "identity",
             resourceName: outreachSendingDomain.valueAsString,
-          }),
-          cdk.Stack.of(this).formatArn({
-            service: "ses",
-            resource: "configuration-set",
-            resourceName: "lxsoftware-admin-siutindei-outreach",
-          }),
-          cdk.Stack.of(this).formatArn({
-            service: "ses",
-            resource: "configuration-set",
-            resourceName: "lxsoftware-admin-siutindei-newsletter",
           }),
         ],
       })
@@ -1808,18 +1821,7 @@ export class LxsoftwareStack extends cdk.Stack {
       this,
       "StatementParseNotifySendPolicy",
       {
-        statements: [
-          new iam.PolicyStatement({
-            actions: ["ses:SendEmail", "ses:SendRawEmail"],
-            resources: [
-              cdk.Stack.of(this).formatArn({
-                service: "ses",
-                resource: "identity",
-                resourceName: inboundMailDomain.valueAsString,
-              }),
-            ],
-          }),
-        ],
+        statements: [sesSendFromDomainStatement(inboundMailDomain.valueAsString)],
       }
     );
     statementParseNotifyPolicy.attachToRole(adminFn.role!);
@@ -1842,30 +1844,22 @@ export class LxsoftwareStack extends cdk.Stack {
     boardMailIdentity.cfnOptions.condition = hasBoardMailSending;
     const boardMailSendPolicy = new iam.Policy(this, "SiutindeiBoardMailSendPolicy", {
         statements: [
+          sesSendFromDomainStatement(boardMailDomain.valueAsString),
+          // Mail header health: is the identity verified, are we out of the
+          // sandbox. GetAccount only supports Resource *.
           new iam.PolicyStatement({
-            actions: ["ses:SendEmail", "ses:SendRawEmail", "ses:SendBulkEmail"],
+            actions: ["ses:GetEmailIdentity"],
             resources: [
               cdk.Stack.of(this).formatArn({
                 service: "ses",
                 resource: "identity",
                 resourceName: boardMailDomain.valueAsString,
               }),
-              cdk.Stack.of(this).formatArn({
-                service: "ses",
-                resource: "identity",
-                resourceName: `*@${boardMailDomain.valueAsString}`,
-              }),
-              cdk.Stack.of(this).formatArn({
-                service: "ses",
-                resource: "configuration-set",
-                resourceName: "lxsoftware-admin-siutindei-outreach",
-              }),
-              cdk.Stack.of(this).formatArn({
-                service: "ses",
-                resource: "configuration-set",
-                resourceName: "lxsoftware-admin-siutindei-newsletter",
-              }),
             ],
+          }),
+          new iam.PolicyStatement({
+            actions: ["ses:GetAccount"],
+            resources: ["*"],
           }),
           new iam.PolicyStatement({
             actions: ["ses:CreateEmailTemplate", "ses:GetEmailTemplate", "ses:UpdateEmailTemplate"],
@@ -2324,6 +2318,10 @@ export class LxsoftwareStack extends cdk.Stack {
       },
       // Company mail index (owner view; personas use the mail tools)
       { path: "/siu-tin-dei/board/mail", methods: [apigwv2.HttpMethod.GET] },
+      {
+        path: "/siu-tin-dei/board/mail/selftest",
+        methods: [apigwv2.HttpMethod.POST],
+      },
       {
         path: "/siu-tin-dei/board/mail/{threadId}",
         methods: [apigwv2.HttpMethod.GET],

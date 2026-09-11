@@ -431,7 +431,22 @@ export const boardOverviewFixture: BoardOverview = {
   toolsEnabled: true,
   unreadMailCount: 3,
   overdueInvoiceCount: 2,
-  mail: { threadCount: 11, unreadCount: 3, domain: "siutindei.com", sendEnabled: false, inboundAddress: "siutindei-board@mail.example.com" },
+  mail: {
+    threadCount: 11,
+    unreadCount: 3,
+    domain: "siutindei.com",
+    sendEnabled: true,
+    inboundAddress: "siutindei-board@mail.example.com",
+    sendHealth: {
+      checkedAt: "2026-09-11T08:00:00.000Z",
+      identityVerified: true,
+      dkimStatus: "SUCCESS",
+      productionAccess: true,
+      dailyQuota: 50000,
+      sentLast24h: 12,
+      errors: [],
+    },
+  },
   receivables: { outstandingHkd: 7200, overdue: 2 },
 };
 
