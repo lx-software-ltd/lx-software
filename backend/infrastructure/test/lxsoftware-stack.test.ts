@@ -560,6 +560,23 @@ describe("Siu Tin Dei parameter naming", () => {
       expect(parameters[name]).toBeUndefined();
     }
   });
+
+  test("production.json lxsoftware keys name existing CfnParameters", () => {
+    const raw = fs.readFileSync(
+      path.join(__dirname, "../params/production.json"),
+      "utf8",
+    );
+    const file = JSON.parse(raw) as Record<string, string>;
+    const parameters = template.toJSON().Parameters as Record<string, unknown>;
+    const lxsoftwareKeys = Object.keys(file).filter((key) =>
+      key.startsWith("lxsoftware:"),
+    );
+    expect(lxsoftwareKeys).toContain("lxsoftware:SiutindeiBoardStaffEnabled");
+    expect(file["lxsoftware:SiutindeiBoardStaffEnabled"]).toBe("true");
+    for (const key of lxsoftwareKeys) {
+      expect(parameters[key.slice("lxsoftware:".length)]).toBeDefined();
+    }
+  });
 });
 
 describe("Siu Tin Dei board mail outputs", () => {
