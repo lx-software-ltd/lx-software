@@ -188,6 +188,9 @@ export class SiutindeiDataApiSetup extends Construct {
     schemaFn.addPermission("CloudFormationInvoke", {
       principal: new iam.ServicePrincipal("cloudformation.amazonaws.com"),
       action: "lambda:InvokeFunction",
+      // CKV_AWS_364: a service principal without SourceAccount/SourceArn
+      // lets any account's CloudFormation invoke this function.
+      sourceAccount: cdk.Aws.ACCOUNT_ID,
     });
 
     const schema = new cdk.CustomResource(this, "ReceivablesSchema", {

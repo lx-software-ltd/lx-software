@@ -272,7 +272,7 @@ inbound mail, Enable Banking). Lambda env vars stay short (`BOARD_*`,
 | `lxsoftware:OpenRouterApiKeySecretArn` | Already required for statement parsing; the board reuses the same key. This secret already exists in the account — CDK does not create it. |
 | `lxsoftware:SiutindeiBoardGitHubRepo` | `owner/name` of the repository to read (default `lx-software-ltd/siutindei`). |
 | `lxsoftware:SiutindeiBoardToolsEnabled` | `true` (default) / `false`. Deploy-time kill switch for every board tool call, independent of the in-app settings. |
-| `lxsoftware:SiutindeiBoardStaffEnabled` | `false` (default) / `true`. Deploy-time kill switch for Executive Board staff tasks. `board_staff.env_enabled()` is fail-closed: only `1` / `true` / `yes` / `on` count as on (unset is off). The same env is set on **both** `AdminApiFn` and `InboundStatementMailFn`. Also requires `settings.staff.enabled` in the app. |
+| `lxsoftware:SiutindeiBoardStaffEnabled` | `false` (CDK default) / `true`. Deploy-time kill switch for Executive Board staff tasks. `board_staff.env_enabled()` is fail-closed: only `1` / `true` / `yes` / `on` count as on (unset is off). The same env is set on **both** `AdminApiFn` and `InboundStatementMailFn`. Also requires `settings.staff.enabled` in the app. Production (`params/production.json`) sets `true`; the Staff UI toggle is still required before any seat runs. |
 | `lxsoftware:PublicSiteOrigins` | CSV of extra browser origins allowed on the HTTP API CORS list (admin origin is always included). Stack-wide; used by the public newsletter form (`apps/public_www`) and any other unauthenticated browser client. Default includes the LX Software and Siu Tin Dei public origins. |
 | `lxsoftware:SiutindeiBoardOutreachSendingDomain` | SES From domain for cold outreach (default `partners.siutindei.com`). Owner adds DKIM CNAMEs, MAIL FROM MX+TXT and DMARC before `outreach_send` will send. |
 | `lxsoftware:SiutindeiBoardOutreachFromLocalPart` | Local part of the outreach From address (default `partnerships`). |
@@ -659,10 +659,10 @@ function calling. Design:
 `maxRunningTasksDefault` is 3. Flip others on from **Staff** (or
 `PUT /siu-tin-dei/board/staff/{id}`) at these steps:
 
-1. Deploy with `SiutindeiBoardStaffEnabled=false`. No seats needed.
-2. After WP2–WP4: set `review.digestTo`, then `SiutindeiBoardStaffEnabled=true` and
-   `settings.staff.enabled=true`. Default-on seats handle triage and the
-   daily review. Leave `maxRunningTasks` at 3.
+1. Deploy with `SiutindeiBoardStaffEnabled=false` (CDK default). No seats needed.
+2. After WP2–WP4: set `review.digestTo`, then deploy `SiutindeiBoardStaffEnabled=true`
+   (`params/production.json` already does) and flip `settings.staff.enabled=true`.
+   Default-on seats handle triage and the daily review. Leave `maxRunningTasks` at 3.
 3. WP5: activate `market-analyst`; add ~five watchlist entries.
 4. WP6: activate `prospector` after `partners.siutindei.com` DNS and SES
    identity verify. First sends are 24 h holds.
