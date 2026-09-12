@@ -762,6 +762,34 @@ describe("Siu Tin Dei Data API setup", () => {
     );
     expect(JSON.stringify(ensure?.Properties?.Target?.Arn ?? "")).toContain(schemaFn);
   });
+
+  test("CloudFormation invoke on the schema Lambda is limited to this account", () => {
+    const permissions = Object.values(resourcesOfType("AWS::Lambda::Permission"));
+    const cfnInvoke = permissions.find(
+      (p) =>
+        p.Properties?.Principal === "cloudformation.amazonaws.com" &&
+        JSON.stringify(p.Properties?.FunctionName ?? "").includes("ReceivablesSchemaFn"),
+    );
+    expect(cfnInvoke).toBeDefined();
+    expect(cfnInvoke?.Properties?.SourceAccount).toEqual({ Ref: "AWS::AccountId" });
+    expect(cfnInvoke?.Properties?.Action).toBe("lambda:InvokeFunction");
+  });
+});
+
+describe("Lambda service-principal permissions", () => {
+  test("every AWS service invoke grant sets SourceArn or SourceAccount", () => {
+    const permissions = Object.values(resourcesOfType("AWS::Lambda::Permission"));
+    expect(permissions.length).toBeGreaterThan(0);
+    for (const permission of permissions) {
+      const principal = permission.Properties?.Principal;
+      if (typeof principal !== "string" || !principal.endsWith(".amazonaws.com")) {
+        continue;
+      }
+      expect(
+        permission.Properties?.SourceArn || permission.Properties?.SourceAccount,
+      ).toBeTruthy();
+    }
+  });
 });
 
 describe("SQS event sources on AdminApiFn", () => {
