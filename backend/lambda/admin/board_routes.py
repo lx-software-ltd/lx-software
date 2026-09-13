@@ -668,6 +668,16 @@ def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
             if not board_staff.enabled(settings):
                 return _staff_disabled()
             body = _parse_json_body(event)
+            action_id = str(body.get("actionId") or "").strip() or None
+            action = board_store.get_action(table, action_id) if action_id else None
+            if action_id and not action:
+                return _json_response(400, {"message": "actionId does not match a board action"})
+            if action and action.get("status") != "open":
+                return _json_response(409, {"message": "That action is already closed"})
+            if action and action.get("staffTaskId"):
+                open_task = board_store.get_task(table, str(action["staffTaskId"]))
+                if open_task and open_task.get("status") in ("queued", "running", "review", "needs_owner"):
+                    return _json_response(409, {"message": "A staff task is already working on that action"})
             try:
                 task = board_staff.create_task(
                     table,
@@ -678,6 +688,8 @@ def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
                     deliverable_type=str(body.get("deliverableType") or "markdown"),
                     budget_usd=body.get("budgetUsd"),
                     sla_hours=int(body.get("slaHours") or 24),
+                    action_id=action_id,
+                    meeting_id=str((action or {}).get("meetingId") or "") or None,
                     created_by=user_sub or "",
                 )
             except board_staff.StaffError as exc:

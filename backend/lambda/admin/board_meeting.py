@@ -58,10 +58,14 @@ MEETING_ROLE_MEMBER = (
 )
 MEETING_ROLE_CHAIR = (
     "You chair this meeting. You set the agenda, surface disagreements, and write "
-    "the minutes with a prioritised list of next actions for the founder. Prefer "
-    "fewer, sharper actions over long lists; every action must be something one "
-    "person can start this week."
+    "the minutes with a prioritised list of next actions. Prefer fewer, sharper "
+    "actions over long lists; every action must be something one assignee can "
+    "start this week. Hand work to staff seats or executives whenever they can do "
+    "it; reserve the founder for decisions, money, signatures and account access."
 )
+
+# Values the chair may use for ``assignee`` that mean "the owner does this".
+FOUNDER_ASSIGNEES = frozenset({"founder", "owner", "none", ""})
 
 
 class MeetingError(RuntimeError):
@@ -625,7 +629,19 @@ def normalize_positions(raw: dict[str, Any], *, agenda_len: int) -> dict[str, An
     return {"items": items_out}
 
 
-def normalize_action_proposal(raw: Any, *, persona: str | None = None) -> dict[str, Any] | None:
+def normalize_action_proposal(
+    raw: Any,
+    *,
+    persona: str | None = None,
+    active_seat_ids: set[str] | None = None,
+) -> dict[str, Any] | None:
+    """Clean one action proposal.
+
+    ``assignee`` is kept only for a persona id or an active staff seat; the founder
+    words in ``FOUNDER_ASSIGNEES`` (and anything unknown) leave it empty, which the
+    rest of the board reads as "the owner does this". Pass ``active_seat_ids`` to
+    avoid a roster read per action; without it the roster is loaded on demand.
+    """
     if not isinstance(raw, dict):
         return None
     title = _clean(raw.get("title"), 120)
@@ -664,8 +680,13 @@ def normalize_action_proposal(raw: Any, *, persona: str | None = None) -> dict[s
     assignee_raw = raw.get("assignee")
     if isinstance(assignee_raw, str):
         assignee = assignee_raw.strip().lower()
-        if board_personas.is_persona_id(assignee):
+        if assignee in FOUNDER_ASSIGNEES:
+            pass
+        elif board_personas.is_persona_id(assignee):
             out["assignee"] = assignee
+        elif active_seat_ids is not None:
+            if assignee in active_seat_ids:
+                out["assignee"] = assignee
         else:
             try:
                 import board_staff
@@ -679,6 +700,41 @@ def normalize_action_proposal(raw: Any, *, persona: str | None = None) -> dict[s
             except Exception:
                 pass
     return out
+
+
+def active_seat_ids(table: Any, settings: dict[str, Any]) -> set[str]:
+    """Ids of staff seats the chair may assign to (empty when staff is off)."""
+    try:
+        import board_staff
+
+        if not board_staff.enabled(settings):
+            return set()
+        return {str(s["id"]) for s in board_staff.seats(table, settings) if s.get("isActive")}
+    except Exception as exc:
+        _log_event("warning", tag="board_meeting_seat_roster_failed", error=str(exc)[:200])
+        return set()
+
+
+def _assignee_roster_text(table: Any, settings: dict[str, Any], persona_ids: list[str]) -> tuple[str, set[str]]:
+    """Prompt lines describing who the chair can hand actions to, plus the active seat ids."""
+    seat_ids = active_seat_ids(table, settings)
+    lines = ["Executives (persona ids): " + ", ".join(sorted(persona_ids)) + "."]
+    if seat_ids:
+        import board_staff
+
+        seats = [s for s in board_staff.seats(table, settings) if str(s["id"]) in seat_ids]
+        lines.append("Active staff seats (seat id — what they do):")
+        for seat in seats:
+            brief = " ".join(str(seat.get("brief") or "").split())[:200]
+            lines.append(f"- {seat['id']} — {seat.get('title')}: {brief}")
+    else:
+        lines.append("No staff seats are active; assign to an executive or the founder.")
+    lines.append(
+        "Pick assignee as: the active seat whose remit covers the work; else the executive "
+        "who owns that area; else \"founder\" only when the work needs a decision, money, a "
+        "signature, or an account only the owner has. Founder-only decisions also belong in questionsForOwner."
+    )
+    return "\n".join(lines), seat_ids
 
 
 def render_position_text(data: dict[str, Any], agenda: list[dict[str, Any]]) -> str:
@@ -828,14 +884,18 @@ def _phase_synthesis(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     discussion = _turns_text(table, doc, phases=("positions", "challenge"))
     open_actions = [a for a in board_store.list_actions(table) if a.get("status") == "open"]
     open_text = "\n".join(
-        f"- id {a.get('actionId')}: [{a.get('priority')}] ({a.get('persona')}) {a.get('title')}" for a in open_actions[:40]
+        f"- id {a.get('actionId')}: [{a.get('priority')}] ({a.get('persona')}; assignee {a.get('assignee') or 'founder'}) {a.get('title')}"
+        for a in open_actions[:40]
     ) or "(none)"
+    settings = board_store.load_settings(table)
+    roster_text, seat_ids = _assignee_roster_text(table, settings, sorted(profiles))
     schema = (
         "{\"headline\": \"one sentence\", "
         "\"discussion\": [{\"agendaIndex\": 1, \"summary\": \"<= 80 words\", \"consensus\": \"agree|split|deferred\"}], "
         "\"decisions\": [{\"text\": \"<= 200 chars\", \"proposedBy\": \"persona id\", \"rationale\": \"<= 200 chars\"}], "
         "\"risks\": [{\"text\": \"<= 200 chars\", \"owner\": \"persona id\", \"severity\": \"high|medium|low\"}], "
-        "\"actions\": [{\"title\": \"imperative, <= 100 chars\", \"detail\": \"what done looks like\", \"persona\": \"persona id\", "
+        "\"actions\": [{\"title\": \"imperative, <= 100 chars\", \"detail\": \"what done looks like\", \"persona\": \"persona id who sponsors it\", "
+        "\"assignee\": \"active seat id | persona id | founder\", "
         "\"priority\": \"now|next|later\", \"effort\": \"S|M|L\", \"dueInDays\": 7, \"dependsOn\": [\"titles\"], "
         "\"metric\": \"how we know it worked\", \"existingActionId\": \"optional id of an open action this reaffirms\"}], "
         "\"questionsForOwner\": [\"decisions only the founder can make\"], "
@@ -848,10 +908,11 @@ def _phase_synthesis(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
             "role": "user",
             "content": (
                 "Agenda:\n" + _agenda_text(doc) + "\n\nDiscussion transcript:\n" + discussion +
-                "\n\nOpen action items already assigned to the founder (reference by id instead of re-creating):\n" + open_text +
+                "\n\nOpen action items (reference by id instead of re-creating):\n" + open_text +
+                "\n\nWho can take an action:\n" + roster_text +
                 "\n\nWrite the minutes. Rules: at most 7 actions in total, at most 3 with priority \"now\"; each action is one "
-                "concrete thing the founder can start this week; use persona ids for owners (" + ", ".join(sorted(profiles)) + "); "
-                "no duplicate of an open action unless you set existingActionId. "
+                "concrete thing its assignee can start this week; every action has an assignee; persona is the executive "
+                "who sponsors it; no duplicate of an open action unless you set existingActionId. "
                 "If a hold class is ready to change, add boundarySuggestions with classKey, change and evidence. "
                 "Return strict JSON only matching: " + schema
             ),
@@ -859,7 +920,13 @@ def _phase_synthesis(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     ]
     completion = _call(table, doc, messages=messages, json_mode=True, max_tokens=2200, temperature=0.3, tag="board_meeting_synthesis")
     raw = parse_json_object_text(completion.text)
-    minutes = normalize_minutes(raw, agenda=doc.get("agenda") or [], persona_ids=set(profiles), default_persona=chair_id)
+    minutes = normalize_minutes(
+        raw,
+        agenda=doc.get("agenda") or [],
+        persona_ids=set(profiles),
+        default_persona=chair_id,
+        active_seat_ids=seat_ids,
+    )
     text = board_context.render_minutes_brief(minutes)
     return _append_turn(
         table,
@@ -883,6 +950,7 @@ def normalize_minutes(
     agenda: list[dict[str, Any]],
     persona_ids: set[str],
     default_persona: str,
+    active_seat_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     def _pid(value: Any) -> str:
         p = str(value or "").strip().lower()
@@ -929,7 +997,7 @@ def normalize_minutes(
     now_count = 0
     if isinstance(raw.get("actions"), list):
         for a in raw["actions"]:
-            norm = normalize_action_proposal(a)
+            norm = normalize_action_proposal(a, active_seat_ids=active_seat_ids)
             if not norm:
                 continue
             norm["persona"] = _pid(a.get("persona") if isinstance(a, dict) else None)

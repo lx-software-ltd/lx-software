@@ -438,8 +438,8 @@ class FakeOpenRouter:
                         "decisions": [{"text": "Closed beta in six weeks", "proposedBy": "ceo", "rationale": "Runway"}],
                         "risks": [{"text": "Provider supply too thin", "owner": "coo", "severity": "high"}],
                         "actions": [
-                            {"title": "Pick the beta launch date", "detail": "Calendar it.", "persona": "ceo", "priority": "now", "effort": "S", "dueInDays": 3, "metric": "Date set"},
-                            {"title": "Call 10 activity providers", "detail": "Book calls.", "persona": "coo", "priority": "now", "effort": "M", "dueInDays": 7, "metric": "10 calls"},
+                            {"title": "Pick the beta launch date", "detail": "Calendar it.", "persona": "ceo", "assignee": "founder", "priority": "now", "effort": "S", "dueInDays": 3, "metric": "Date set"},
+                            {"title": "Call 10 activity providers", "detail": "Book calls.", "persona": "coo", "assignee": "prospector", "priority": "now", "effort": "M", "dueInDays": 7, "metric": "10 calls"},
                             {"title": "Draft privacy notice", "detail": "PDPO.", "persona": "ciso", "priority": "now", "effort": "M", "dueInDays": 14, "metric": "Published"},
                             {"title": "Set pricing experiment", "detail": "Two tiers.", "persona": "cfo", "priority": "now", "effort": "S", "dueInDays": 10, "metric": "Live"},
                             {"title": "Publish the launch waitlist page", "detail": "Landing page.", "persona": "cmo", "priority": "next", "effort": "S", "dueInDays": 14, "metric": "50 sign-ups"},
@@ -800,7 +800,14 @@ class TestMeetings(BoardTestCase):
         status, actions = self.call("/siu-tin-dei/board/actions", query="status=open")
         self.assertEqual(len(actions["actions"]), 5)
         self.assertEqual(actions["actions"][0]["priority"], "now")
+        # Staff is off, so "prospector" is not an active seat: every action stays with the founder.
+        self.assertEqual([a["assignee"] for a in actions["actions"]], [""] * 5)
         self.assertEqual(len(board_store.load_decision_log(self.table)), 1)
+        minutes_request = next(r for r in self.openrouter.requests if "Write the minutes" in r["messages"][-1]["content"])
+        prompt = minutes_request["messages"][-1]["content"]
+        self.assertIn("Who can take an action:", prompt)
+        self.assertIn("No staff seats are active", prompt)
+        self.assertIn('"assignee": "active seat id | persona id | founder"', prompt)
         # Every persona was briefed with its own system prompt and the context pack.
         position_requests = [r for r in self.openrouter.requests if "For EACH agenda item" in r["messages"][-1]["content"]]
         self.assertEqual(len(position_requests), 8)
@@ -939,6 +946,36 @@ class TestNormalizers(unittest.TestCase):
         self.assertEqual(minutes["actions"][0]["effort"], "M")
         self.assertIsNone(minutes["actions"][0]["dueInDays"])
         self.assertEqual(minutes["risks"][0]["severity"], "medium")
+
+    def test_normalize_minutes_keeps_only_valid_assignees(self) -> None:
+        minutes = board_meeting.normalize_minutes(
+            {
+                "actions": [
+                    {"title": "Founder decides", "assignee": "founder"},
+                    {"title": "Seat works", "assignee": " Prospector "},
+                    {"title": "Inactive seat", "assignee": "architect"},
+                    {"title": "Executive works", "assignee": "cfo"},
+                    {"title": "Unknown", "assignee": "intern"},
+                    {"title": "Missing"},
+                ]
+            },
+            agenda=[],
+            persona_ids={"ceo", "cfo"},
+            default_persona="ceo",
+            active_seat_ids={"prospector"},
+        )
+        by_title = {a["title"]: a.get("assignee") for a in minutes["actions"]}
+        self.assertEqual(
+            by_title,
+            {
+                "Founder decides": None,
+                "Seat works": "prospector",
+                "Inactive seat": None,
+                "Executive works": "cfo",
+                "Unknown": None,
+                "Missing": None,
+            },
+        )
 
     def test_similarity(self) -> None:
         self.assertEqual(board_actions.similarity("Pick the beta launch date", "pick the beta launch date!"), 1.0)

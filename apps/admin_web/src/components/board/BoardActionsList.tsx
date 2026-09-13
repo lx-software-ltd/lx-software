@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
 import { DateTimeDisplay, TableIconButton } from "../ui";
+import { BoardNewTaskForm } from "./BoardNewTaskForm";
 import {
+  actionAssigneeLabel,
+  actionTaskBrief,
   groupActionsByPriority,
   memberLabel,
   PRIORITY_BADGE_CLASS,
@@ -8,6 +11,8 @@ import {
   type BoardAction,
   type BoardActionPriority,
   type BoardMember,
+  type BoardSeat,
+  type BoardTaskCreate,
 } from "../../lib/boardModel";
 import { BOARD_MAX_ACTION_NOTE_LEN } from "../../lib/contracts/generated";
 import type { UpdateActionVariables } from "../../hooks/useBoardActions";
@@ -18,15 +23,36 @@ export type BoardActionsListProps = {
   readonly isLoading: boolean;
   readonly onUpdate: (vars: UpdateActionVariables) => void;
   readonly onOpenMeeting: (meetingId: string) => void;
+  /** Staff hand-off; omit (or pass `isStaffEnabled: false`) to hide the control. */
+  readonly seats?: readonly BoardSeat[];
+  readonly isStaffEnabled?: boolean;
+  readonly isAssigning?: boolean;
+  readonly assignErrorMessage?: string | null;
+  readonly onAssignToStaff?: (body: BoardTaskCreate) => void;
+  readonly onOpenStaffTask?: (taskId: string) => void;
 };
 
 const PRIORITY_ORDER: readonly BoardActionPriority[] = ["now", "next", "later"];
 
-export function BoardActionsList({ actions, members, isLoading, onUpdate, onOpenMeeting }: BoardActionsListProps) {
+export function BoardActionsList({
+  actions,
+  members,
+  isLoading,
+  onUpdate,
+  onOpenMeeting,
+  seats = [],
+  isStaffEnabled = false,
+  isAssigning = false,
+  assignErrorMessage,
+  onAssignToStaff,
+  onOpenStaffTask,
+}: BoardActionsListProps) {
   const [showClosed, setShowClosed] = useState(false);
   const [noteDraftId, setNoteDraftId] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
+  const [assignDraftId, setAssignDraftId] = useState<string | null>(null);
   const [renderedAt] = useState(() => Date.now());
+  const canAssign = isStaffEnabled && Boolean(onAssignToStaff);
 
   const open = useMemo(() => actions.filter((a) => a.status === "open"), [actions]);
   const closed = useMemo(
@@ -67,6 +93,19 @@ export function BoardActionsList({ actions, members, isLoading, onUpdate, onOpen
               <span>
                 <i className="bi bi-person" aria-hidden="true" /> {memberLabel(members, a.persona)}
               </span>
+              {a.assignee ? (
+                <span title="Working on it">
+                  <i className="bi bi-people" aria-hidden="true" /> staff: {actionAssigneeLabel(members, seats, a.assignee)}
+                  {a.staffTaskId && onOpenStaffTask ? (
+                    <>
+                      {" "}
+                      <button type="button" className="btn btn-link btn-sm p-0 align-baseline" onClick={() => onOpenStaffTask(a.staffTaskId ?? "")}>
+                        open task
+                      </button>
+                    </>
+                  ) : null}
+                </span>
+              ) : null}
               {a.dueAt ? (
                 <span className={isDue && a.status === "open" ? "text-danger" : ""}>
                   <i className="bi bi-calendar-event" aria-hidden="true" /> due <DateTimeDisplay iso={a.dueAt} />
@@ -104,10 +143,33 @@ export function BoardActionsList({ actions, members, isLoading, onUpdate, onOpen
                 <i className="bi bi-chat-left-text" aria-hidden="true" /> {a.note}
               </div>
             ) : null}
+            {assignDraftId === a.actionId && canAssign && onAssignToStaff ? (
+              <div className="mt-2">
+                <BoardNewTaskForm
+                  seats={seats}
+                  disabled={isAssigning}
+                  errorMessage={assignErrorMessage}
+                  title="Hand to staff"
+                  description="The assignee works this action in the background; accepting the deliverable marks it done. Anything external still needs your approval."
+                  initialBrief={actionTaskBrief(a)}
+                  actionId={a.actionId}
+                  submitLabel="Assign task"
+                  idPrefix={`board-action-task-${a.actionId}`}
+                  onCancel={() => setAssignDraftId(null)}
+                  onCreate={(body) => {
+                    onAssignToStaff(body);
+                    setAssignDraftId(null);
+                  }}
+                />
+              </div>
+            ) : null}
           </div>
           <div className="text-nowrap">
             {a.status === "open" ? (
               <>
+                {canAssign && !a.staffTaskId ? (
+                  <TableIconButton iconClassName="bi bi-people" ariaLabel="Hand to staff" onClick={() => setAssignDraftId(a.actionId)} />
+                ) : null}
                 <TableIconButton iconClassName="bi bi-check2-circle" ariaLabel="Mark done" onClick={() => onUpdate({ actionId: a.actionId, status: "done" })} />
                 <TableIconButton iconClassName="bi bi-x-circle" ariaLabel="Dismiss" variant="danger" onClick={() => onUpdate({ actionId: a.actionId, status: "dismissed" })} />
               </>

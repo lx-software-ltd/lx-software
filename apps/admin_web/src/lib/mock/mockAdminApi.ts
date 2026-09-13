@@ -39,6 +39,7 @@ import {
 } from "./fixtures";
 import {
   DEFAULT_BOARD_BOUNDARIES,
+  type BoardAction,
   type BoardApproval,
   type BoardBoundaries,
   type BoardBreaker,
@@ -89,6 +90,7 @@ type MockState = {
   books: Record<string, HouseFinanceData>;
   seats: BoardSeat[];
   tasks: BoardTask[];
+  actions: BoardAction[];
   holds: BoardHold[];
   boundaries: BoardBoundaries;
   lessons: BoardLesson[];
@@ -108,6 +110,7 @@ const state: MockState = {
   },
   seats: structuredClone(boardStaffFixture.seats) as BoardSeat[],
   tasks: structuredClone(boardTasksFixture),
+  actions: structuredClone(boardActionsFixture) as BoardAction[],
   holds: structuredClone(boardHoldsFixture) as BoardHold[],
   boundaries: structuredClone(DEFAULT_BOARD_BOUNDARIES),
   lessons: structuredClone(boardLessonsFixture) as BoardLesson[],
@@ -266,7 +269,20 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
 
   const board = "/siu-tin-dei/board";
   if (p === board) return json(boardOverviewFixture);
-  if (p === `${board}/actions`) return json({ actions: boardActionsFixture });
+  if (p === `${board}/actions`) return json({ actions: state.actions });
+  if (p.startsWith(`${board}/actions/`) && method === "PUT") {
+    const actionId = p.slice(`${board}/actions/`.length);
+    const idx = state.actions.findIndex((a) => a.actionId === actionId);
+    if (idx < 0) return json({ message: "Action not found" }, 404);
+    const body = parseBody(init);
+    state.actions[idx] = {
+      ...state.actions[idx],
+      ...(typeof body.status === "string" ? { status: body.status as BoardAction["status"] } : {}),
+      ...(typeof body.note === "string" ? { note: body.note } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+    return json({ action: state.actions[idx] });
+  }
   if (p === `${board}/approvals`) return json({ approvals: state.approvals });
   if (p === `${board}/meetings`) return json({ meetings: boardMeetingsFixture });
   if (p === `${board}/tools`) return json(boardToolsFixture);
@@ -336,10 +352,16 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
         assigneeKind: String(body.assignee || "").includes("-") ? "seat" : "persona",
         brief: String(body.brief || "Untitled"),
         deliverableType: (body.deliverableType as BoardTask["deliverableType"]) || "markdown",
+        actionId: typeof body.actionId === "string" && body.actionId ? body.actionId : null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
       state.tasks = [created, ...state.tasks];
+      if (created.actionId) {
+        state.actions = state.actions.map((a) =>
+          a.actionId === created.actionId ? { ...a, assignee: created.assignee, staffTaskId: created.taskId } : a,
+        );
+      }
       return json({ task: created }, 201);
     }
     return json({ tasks: state.tasks, counts: countsFromTasks(state.tasks) });
