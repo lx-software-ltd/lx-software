@@ -669,6 +669,89 @@ def op_get_file(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_ALERT_KIND_PATH = {
+    "dependabot": ("dependabot", "dependabot"),
+    "codeScanning": ("code-scanning", "codeScanning"),
+    "code-scanning": ("code-scanning", "codeScanning"),
+    "secretScanning": ("secret-scanning", "secretScanning"),
+    "secret-scanning": ("secret-scanning", "secretScanning"),
+}
+
+
+def _alert_number(value: Any) -> int:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise GitHubSnapshotError("number must be a positive alert number") from None
+    if number <= 0:
+        raise GitHubSnapshotError("number must be a positive alert number")
+    return number
+
+
+def _patched_version(vuln: Any) -> str | None:
+    if not isinstance(vuln, dict):
+        return None
+    first = vuln.get("first_patched_version")
+    if isinstance(first, dict):
+        ident = str(first.get("identifier") or "").strip()
+        return ident or None
+    return None
+
+
+def _dependabot_summary(alert: dict[str, Any], *, detail: bool = False) -> dict[str, Any]:
+    adv = alert.get("security_advisory") if isinstance(alert.get("security_advisory"), dict) else {}
+    vuln = alert.get("security_vulnerability") if isinstance(alert.get("security_vulnerability"), dict) else {}
+    dep = alert.get("dependency") if isinstance(alert.get("dependency"), dict) else {}
+    pkg = dep.get("package") if isinstance(dep.get("package"), dict) else {}
+    out: dict[str, Any] = {
+        "number": alert.get("number"),
+        "state": alert.get("state"),
+        "severity": adv.get("severity") or vuln.get("severity"),
+        "package": pkg.get("name"),
+        "ecosystem": pkg.get("ecosystem"),
+        "summary": _cap(str(adv.get("summary") or ""), 200),
+        "manifest": dep.get("manifest_path"),
+        "ghsaId": adv.get("ghsa_id") or None,
+        "cveId": adv.get("cve_id") or None,
+        "vulnerableVersionRange": (str(vuln.get("vulnerable_version_range") or "").strip() or None),
+        "firstPatchedVersion": _patched_version(vuln),
+        "createdAt": alert.get("created_at"),
+        "url": alert.get("html_url"),
+    }
+    if detail:
+        out["description"] = _cap(str(adv.get("description") or ""), 1500)
+    return out
+
+
+def _code_scanning_summary(alert: dict[str, Any], *, detail: bool = False) -> dict[str, Any]:
+    rule = alert.get("rule") if isinstance(alert.get("rule"), dict) else {}
+    instance = alert.get("most_recent_instance") if isinstance(alert.get("most_recent_instance"), dict) else {}
+    loc = instance.get("location") if isinstance(instance.get("location"), dict) else {}
+    out: dict[str, Any] = {
+        "number": alert.get("number"),
+        "state": alert.get("state"),
+        "severity": rule.get("security_severity_level") or rule.get("severity"),
+        "rule": rule.get("id"),
+        "description": _cap(str(rule.get("description") or ""), 200),
+        "path": loc.get("path"),
+        "createdAt": alert.get("created_at"),
+        "url": alert.get("html_url"),
+    }
+    if detail:
+        out["description"] = _cap(str(rule.get("full_description") or rule.get("description") or ""), 1500)
+    return out
+
+
+def _secret_scanning_summary(alert: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "number": alert.get("number"),
+        "secretType": alert.get("secret_type_display_name") or alert.get("secret_type"),
+        "state": alert.get("state"),
+        "createdAt": alert.get("created_at"),
+        "url": alert.get("html_url"),
+    }
+
+
 def op_list_security_alerts(args: dict[str, Any]) -> dict[str, Any]:
     repo = repo_full_name()
     limit = _clamp_int(args.get("limit"), default=20, low=1, high=50)
@@ -680,23 +763,8 @@ def op_list_security_alerts(args: dict[str, Any]) -> dict[str, Any]:
         out["notes"].append(f"Dependabot alerts unavailable: {exc}")
     if isinstance(dep, list):
         for a in dep:
-            if not isinstance(a, dict):
-                continue
-            adv = a.get("security_advisory") or {}
-            dep_info = a.get("dependency") or {}
-            pkg = dep_info.get("package") or {} if isinstance(dep_info, dict) else {}
-            out["dependabot"].append(
-                {
-                    "number": a.get("number"),
-                    "severity": (adv.get("severity") if isinstance(adv, dict) else None),
-                    "package": (pkg.get("name") if isinstance(pkg, dict) else None),
-                    "ecosystem": (pkg.get("ecosystem") if isinstance(pkg, dict) else None),
-                    "summary": _cap(str(adv.get("summary") or "") if isinstance(adv, dict) else "", 200),
-                    "manifest": (dep_info.get("manifest_path") if isinstance(dep_info, dict) else None),
-                    "createdAt": a.get("created_at"),
-                    "url": a.get("html_url"),
-                }
-            )
+            if isinstance(a, dict):
+                out["dependabot"].append(_dependabot_summary(a))
     elif dep is None and not out["notes"]:
         out["notes"].append("Dependabot alerts are not enabled or not visible for this repository.")
     try:
@@ -706,22 +774,30 @@ def op_list_security_alerts(args: dict[str, Any]) -> dict[str, Any]:
         out["notes"].append(f"Code scanning alerts unavailable: {exc}")
     if isinstance(cs, list):
         for a in cs:
-            if not isinstance(a, dict):
-                continue
-            rule = a.get("rule") or {}
-            loc = ((a.get("most_recent_instance") or {}).get("location") or {}) if isinstance(a.get("most_recent_instance"), dict) else {}
-            out["codeScanning"].append(
-                {
-                    "number": a.get("number"),
-                    "severity": (rule.get("security_severity_level") or rule.get("severity")) if isinstance(rule, dict) else None,
-                    "rule": (rule.get("id") if isinstance(rule, dict) else None),
-                    "description": _cap(str(rule.get("description") or "") if isinstance(rule, dict) else "", 200),
-                    "path": (loc.get("path") if isinstance(loc, dict) else None),
-                    "createdAt": a.get("created_at"),
-                    "url": a.get("html_url"),
-                }
-            )
+            if isinstance(a, dict):
+                out["codeScanning"].append(_code_scanning_summary(a))
     return out
+
+
+def op_get_security_alert(args: dict[str, Any]) -> dict[str, Any]:
+    """Fetch one GitHub security alert by family and number (e.g. dependabot #153)."""
+    repo = repo_full_name()
+    kind_raw = str(args.get("kind") or "dependabot").strip()
+    mapped = _ALERT_KIND_PATH.get(kind_raw)
+    if mapped is None:
+        raise GitHubSnapshotError("kind must be dependabot, codeScanning or secretScanning")
+    path_kind, family = mapped
+    number = _alert_number(args.get("number"))
+    data = _get(f"/repos/{repo}/{path_kind}/alerts/{number}")
+    if not isinstance(data, dict):
+        raise GitHubSnapshotError(f"{family} alert #{number} was not found")
+    if family == "dependabot":
+        summary = _dependabot_summary(data, detail=True)
+    elif family == "codeScanning":
+        summary = _code_scanning_summary(data, detail=True)
+    else:
+        summary = _secret_scanning_summary(data)
+    return {"repo": repo, "kind": family, **summary}
 
 
 def _clean_labels(raw: Any) -> list[str]:

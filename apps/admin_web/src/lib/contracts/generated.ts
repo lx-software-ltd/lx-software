@@ -811,9 +811,10 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
       "security": "propose",
       "github": "propose",
       "aws": "read",
-      "mail": "read"
+      "mail": "read",
+      "research": "read"
     },
-    "brief": "You triage security alerts, write PDPO and app-store privacy checklists, open remediation issues, and review phishing flags. You never apply a fix yourself. Report facts you verified with tools; say clearly what you could not verify.",
+    "brief": "You triage security alerts, write PDPO and app-store privacy checklists, open remediation issues, and review phishing flags. You never apply a fix yourself. For GitHub alerts use github_get_security_alert (or github_list_security_alerts) and research_search only if the advisory is thin. Report facts you verified with tools; say clearly what you could not verify.",
     "duties": [
       {
         "id": "weekly-triage",
