@@ -53,6 +53,8 @@ _IDLE_NUDGE = (
     "NUDGE: That step only wrote a note. Call a real tool next, or call "
     "task_finish with the deliverable. Notes-only steps burn the step budget."
 )
+_SALVAGE_MIN_CHARS = 200
+_CANNOT_CALL_RE = re.compile(r"cannot call [`']?task_(?:note|finish)", re.I)
 _PLACEHOLDER_RE = re.compile(r"\[(?:insert|todo|tbd|placeholder)[^\]]*\]", re.I)
 _EVIDENCE_TOOL_TOKENS = (
     "finance_cash_snapshot",
@@ -466,17 +468,19 @@ def run_step(payload: dict[str, Any]) -> None:
         actor="persona",
         usage_sink=_sink,
     )
+    require_finish = _should_require_finish(task)
     try:
         result = board_tools.run_tool_loop(
             ctx=ctx,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
             model=model,
             timeout=min(90, BOARD_STAFF_STEP_MAX_SECONDS),
-            max_tokens=2500,
+            max_tokens=4000 if require_finish else 2500,
             temperature=0.3,
             json_mode=False,
             tag="board_staff_step",
             max_seconds=BOARD_STAFF_STEP_MAX_SECONDS,
+            require_op="task_finish" if require_finish else None,
         )
     except Exception as exc:
         _on_step_exception(table, task, payload, wanted, exc)
@@ -578,6 +582,68 @@ def _productive_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [c for c in calls if str(c.get("op") or "") not in _IDLE_TOOL_OPS]
 
 
+def _should_require_finish(task: dict[str, Any]) -> bool:
+    """Last idle step or last step: force the model to call task_finish."""
+    idle = int(task.get("idleSteps") or 0)
+    steps_used = int(task.get("step") or 0)
+    return idle >= BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK - 1 or steps_used >= BOARD_STAFF_MAX_STEPS_PER_TASK - 1
+
+
+def _scratch_without_nudges(task_id: str, note: str) -> str:
+    raw = _blob_get(_scratchpad_key(task_id)).decode("utf-8", errors="replace")
+    lines = [line for line in (raw or "").splitlines() if not line.strip().startswith("NUDGE:")]
+    text = "\n".join(lines).strip()
+    extra = (note or "").strip()
+    if extra and extra not in text:
+        text = f"{text}\n\n{extra}".strip() if text else extra
+    return text
+
+
+def _looks_like_stuck_finish(text: str) -> bool:
+    return bool(_CANNOT_CALL_RE.search(text or ""))
+
+
+def _salvage_to_review(table: Any, latest: dict[str, Any], reason: str, note: str) -> bool:
+    """Submit scratchpad prose as a low-confidence deliverable instead of failing.
+
+    Seats sometimes dump the report in the step text and write that they cannot
+    call task_note / task_finish. The work is still usable for manager review.
+    """
+    task_id = str(latest.get("taskId") or "")
+    text = _scratch_without_nudges(task_id, note)
+    if len(text) < _SALVAGE_MIN_CHARS:
+        return False
+    dtype = str(latest.get("deliverableType") or "markdown")
+    key = _deliverable_key(task_id, dtype)
+    encoded = text.encode("utf-8")
+    _blob_put(key, encoded)
+    flags = [str(f) for f in (latest.get("flags") or []) if f]
+    for flag in ("salvaged", "no_evidence"):
+        if flag not in flags:
+            flags.append(flag)
+    now = board_store.now_iso()
+    latest["status"] = "review"
+    latest["idleSteps"] = 0
+    latest["summary"] = (note or text).strip()[:800]
+    latest["confidence"] = "low"
+    latest["flags"] = flags
+    latest["deliverableKey"] = key
+    latest["deliverableBytes"] = len(encoded)
+    latest["deliverableType"] = dtype
+    latest["openQuestions"] = [f"Salvaged after {reason}; no task_finish tool call."]
+    latest["updatedAt"] = now
+    _align_step_claim(latest)
+    board_store.put_task(table, latest)
+    settings = board_store.load_settings(table)
+    if enabled(settings):
+        board_async.invoke_async(
+            {"internal": "board_staff_review", "boardKey": BOARD_KEY, "taskId": task_id},
+            fallback=run_review,
+        )
+    _log_event("warning", tag="board_staff_salvaged", taskId=task_id, reason=reason[:200], chars=len(text))
+    return True
+
+
 def _task_attempt(task: dict[str, Any]) -> int:
     return max(1, int(task.get("attempt") or 1))
 
@@ -647,12 +713,18 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
         combined = _append_scratchpad(latest, _IDLE_NUDGE)
         latest["scratchpadKey"] = _scratchpad_key(task_id)
         latest["scratchpadChars"] = len(combined)
+        if _looks_like_stuck_finish(note) and _salvage_to_review(table, latest, "missing task_finish call", note):
+            return
         if idle >= BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK:
+            if _salvage_to_review(table, latest, "idle step limit", note):
+                return
             _finish_incomplete(table, latest, "idle step limit")
             return
     else:
         latest["idleSteps"] = 0
     if seq >= BOARD_STAFF_MAX_STEPS_PER_TASK:
+        if _salvage_to_review(table, latest, "step limit", note):
+            return
         _finish_incomplete(table, latest, "step limit")
         return
     board_store.put_task(table, latest)

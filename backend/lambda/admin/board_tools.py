@@ -2431,15 +2431,18 @@ def available_ops(
 ) -> list[tuple[ToolOp, str]]:
     """Operations this member may call now, each with its effective level."""
     out: list[tuple[ToolOp, str]] = []
-    if not tools_enabled(settings):
-        return out
+    tools_on = tools_enabled(settings)
     for op in REGISTRY.values():
         if context not in op.contexts:
             continue
         if op.tool_id == "task":
             # Staff lifecycle ops are not in the owner matrix; they are only
             # legal on the current task. execute_call uses the same rule.
+            # Offer them even when the tools kill-switch is off so a duty can
+            # still finish (the prompt tells the seat to call them).
             level = task_ops_level(context)
+        elif not tools_on:
+            continue
         elif op.tool_id in ("staff", "intel", "outreach", "content", "newsletter", "code"):
             import board_staff
 
@@ -2455,6 +2458,9 @@ def available_ops(
             level = effective_level(settings, op.tool_id, persona_id)
         if allows(level, op.min_level):
             out.append((op, level))
+    # Lifecycle ops are registered last; models with long tool lists often miss
+    # them and write "I cannot call task_note / task_finish" in prose instead.
+    out.sort(key=lambda pair: 0 if pair[0].tool_id == "task" else 1)
     return out
 
 
@@ -2470,8 +2476,21 @@ def tools_preamble(ops: list[tuple[ToolOp, str]]) -> str:
         f"{BOARD_MAX_TOOL_CALLS_PER_TURN} calls per reply. If a fact cannot be verified with the "
         "offered functions, say so and finish with what you have.",
     ]
+    if any(op.tool_id == "task" for op, _lvl in ops):
+        lines.append(
+            "TASK CONTROL: task_note and task_finish are in this turn's function list. "
+            "You must invoke them as tool calls. Do not write that you cannot call them. "
+            "Call task_note to record progress, or task_finish with the deliverable when done. "
+            "That is how the task completes; a prose report is not a finish."
+        )
     proposes = sorted({TOOL_LABELS.get(op.tool_id, op.tool_id) for op, lvl in ops if op.is_write and lvl == "propose"})
-    acts = sorted({TOOL_LABELS.get(op.tool_id, op.tool_id) for op, lvl in ops if op.is_write and lvl == "act"})
+    acts = sorted(
+        {
+            TOOL_LABELS.get(op.tool_id, op.tool_id)
+            for op, lvl in ops
+            if op.is_write and lvl == "act" and op.tool_id != "task"
+        }
+    )
     if proposes:
         lines.append(
             f"Write operations on {', '.join(proposes)} only RECORD A PROPOSAL for the founder to approve; "
@@ -2945,12 +2964,15 @@ def run_tool_loop(
     tag: str,
     max_seconds: int,
     on_progress: Callable[[list[dict[str, Any]]], None] | None = None,
+    require_op: str | None = None,
 ) -> ToolLoopResult:
     """Call the model, execute any requested tools, repeat, then return the final text.
 
     Falls back to a single plain completion when the member has no tools.
     The final answer is always produced by a call where the model was not
     allowed to request more tools, so the loop terminates deterministically.
+    ``require_op`` sets OpenAI ``tool_choice`` to that function (staff last
+    step: force ``task_finish`` so the seat cannot stall in prose).
     """
     seats = None
     if ctx.seat_id:
@@ -2980,6 +3002,9 @@ def run_tool_loop(
 
     by_name = {op.name: op for op, _lvl in ops}
     schemas = [op.schema() for op, _lvl in ops]
+    choice: str | dict[str, Any] = "auto"
+    if require_op and require_op in by_name:
+        choice = {"type": "function", "function": {"name": require_op}}
     convo: list[dict[str, Any]] = [*messages]
     preamble = tools_preamble(ops)
     if preamble:
@@ -3024,7 +3049,7 @@ def run_tool_loop(
             max_tokens=max_tokens,
             tag=tag,
             tools=schemas,
-            tool_choice="auto",
+            tool_choice=choice,
             usage_sink=ctx.usage_sink,
         )
         usage = add_usage(usage, completion.usage)
