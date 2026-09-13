@@ -104,9 +104,11 @@ jobs:
 
       - name: Upload SARIF results
         uses: github/codeql-action/upload-sarif@v4
+        # The Checkov step is the gate (365 passed / 0 failed on main). GitHub's
+        # code-scanning upload API 5xx must not fail Security Scanning.
+        continue-on-error: true
         with:
           sarif_file: ${{ steps.filter_checkov_sarif.outputs.filtered_sarif }}
-          # Checkov SARIF can be large; do not fail on processing wait jitter.
           wait-for-processing: false
 
   codeql:
@@ -136,8 +138,6 @@ jobs:
         uses: github/codeql-action/analyze@v4
         with:
           category: /language:${{ matrix.language }}
-          # Same as Checkov: do not fail the job when GitHub's SARIF
-          # processing wait returns 5xx / times out after a clean scan.
           wait-for-processing: false
 
   secrets-scan:
@@ -226,8 +226,10 @@ jobs:
       - name: Upload SARIF results
         uses: github/codeql-action/upload-sarif@v4
         if: always()
+        continue-on-error: true
         with:
           sarif_file: semgrep-results.sarif
+          wait-for-processing: false
 
   security-summary:
     name: Security Summary
