@@ -106,7 +106,8 @@ from runtime import PARSE_JOB_PK_PREFIX, RECORD_PK_PREFIX
 # Read-only mirrors of the admin GET endpoints, served under /public/* and
 # authenticated by the API key Lambda authorizer instead of Cognito. Assets
 # and parse-job endpoints are deliberately excluded (they presign S3 access
-# to bank statements / are owner-scoped).
+# to bank statements / are owner-scoped). Board GETs are mirrored under
+# ``PUBLIC_BOARD_PREFIX`` (see ``_is_public_read_path``).
 PUBLIC_READ_PATHS = frozenset(
     {
         "/public/finance",
@@ -115,6 +116,13 @@ PUBLIC_READ_PATHS = frozenset(
         "/public/fx/v2/rates",
     }
 )
+PUBLIC_BOARD_PREFIX = "/public/siu-tin-dei/board"
+
+
+def _is_public_read_path(path: str) -> bool:
+    if path in PUBLIC_READ_PATHS:
+        return True
+    return path == PUBLIC_BOARD_PREFIX or path.startswith(PUBLIC_BOARD_PREFIX + "/")
 
 STATEMENT_BOOK_DISPLAY_LABEL = {
     "siuTinDei": "Siu Tin Dei",
@@ -222,7 +230,7 @@ def _handle_public_read(
         )
         return _json_response(401, {"message": "Unauthorized"})
 
-    if method != "GET" or path not in PUBLIC_READ_PATHS:
+    if method != "GET" or not _is_public_read_path(path):
         _log_event(
             "warning",
             tag="public_api_denied",
@@ -242,6 +250,12 @@ def _handle_public_read(
         request_id=_request_id(event),
     )
 
+    if path == PUBLIC_BOARD_PREFIX or path.startswith(PUBLIC_BOARD_PREFIX + "/"):
+        board_path = path[len("/public") :]
+        board_response = handle_board_route(event, "GET", board_path, None)
+        if board_response is None:
+            return _json_response(404, {"message": "Not found"})
+        return board_response
     if path == "/public/finance":
         return _finance_get_response()
     if path == "/public/finance/quotes":

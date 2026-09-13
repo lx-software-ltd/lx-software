@@ -116,6 +116,13 @@ describe("HTTP API routes", () => {
       );
     });
     expect(publicMirrors.length).toBeGreaterThan(0);
+    const keys = publicMirrors.map((r) => String(r.Properties?.RouteKey));
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        "GET /public/siu-tin-dei/board",
+        "GET /public/siu-tin-dei/board/{proxy+}",
+      ])
+    );
     for (const route of publicMirrors) {
       expect(String(route.Properties?.RouteKey)).toMatch(/^GET /);
       expect(route.Properties?.AuthorizationType).toBe("CUSTOM");

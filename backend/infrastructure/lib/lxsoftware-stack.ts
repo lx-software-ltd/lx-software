@@ -2574,14 +2574,18 @@ export class LxsoftwareStack extends cdk.Stack {
      * Read-only mirrors of the admin GET endpoints under /public/*,
      * authenticated with a static API key (`x-api-key` header) instead of a
      * Cognito JWT. The handler enforces the same allowlist
-     * (`PUBLIC_READ_PATHS` in backend/lambda/admin/dispatch.py) as defense
-     * in depth. Assets and parse-job routes are intentionally not mirrored.
+     * (`PUBLIC_READ_PATHS` / `PUBLIC_BOARD_PREFIX` in
+     * backend/lambda/admin/dispatch.py) as defense in depth. Assets and
+     * parse-job routes are intentionally not mirrored. Board writes stay on
+     * the Cognito JWT authorizer.
      */
     const publicReadOnlyPaths = [
       "/public/finance",
       "/public/finance/quotes",
       "/public/records",
       "/public/fx/v2/rates",
+      "/public/siu-tin-dei/board",
+      "/public/siu-tin-dei/board/{proxy+}",
     ];
     for (const publicPath of publicReadOnlyPaths) {
       this.httpApi.addRoutes({

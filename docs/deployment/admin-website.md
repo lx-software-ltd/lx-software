@@ -149,11 +149,19 @@ instead of a Cognito JWT:
 | `GET /public/finance/quotes` | `GET /finance/quotes` |
 | `GET /public/records` | `GET /records` |
 | `GET /public/fx/v2/rates` | `GET /fx/v2/rates` |
+| `GET /public/siu-tin-dei/board` | `GET /siu-tin-dei/board` |
+| `GET /public/siu-tin-dei/board/{proxy+}` | every existing JWT GET under `/siu-tin-dei/board` |
 
 Assets and parse-job endpoints are **not** mirrored (they presign S3 access to
-bank statements / are owner-scoped). Every write route stays on the Cognito
-JWT authorizer, and the Lambda handler enforces the same GET allowlist as
-defense in depth (`PUBLIC_READ_PATHS` in `backend/lambda/admin/dispatch.py`).
+bank statements / are owner-scoped). Board content creatives still return the
+same short-lived presigned URL as the admin GET. Every write route stays on
+the Cognito JWT authorizer, and the Lambda handler enforces the same GET
+allowlist as defense in depth (`PUBLIC_READ_PATHS` /
+`PUBLIC_BOARD_PREFIX` in `backend/lambda/admin/dispatch.py`).
+
+A leaked key that can read finance can also read owner-unmasked board mail,
+chat, meetings, prospects, allow-lists, and staff tasks. `/public/records`
+still excludes `BOARD#` rows.
 
 Keys are validated by the `PublicApiKeyAuthorizerFn` Lambda authorizer, which
 looks up the scrypt digest of the presented key in the records table
@@ -201,6 +209,7 @@ Call the API:
 
 ```bash
 curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/finance"
+curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/siu-tin-dei/board/breakers"
 ```
 
 A `.gitleaks.toml` rule flags any `lxpk_…` value committed to the repo.
