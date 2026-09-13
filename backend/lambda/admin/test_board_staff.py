@@ -138,7 +138,7 @@ class StaffEngineTests(BoardTestCase):
         self.assertIn("finance_aging_report", review)
         self.assertIn("Do not return asking for accounting software", review)
         self.assertIn("book of record", board_tools.REGISTRY["finance_aging_report"].description)
-        self.assertIn("not QuickBooks", board_tools.REGISTRY["finance_list_invoices"].description)
+        self.assertIn("no QuickBooks/Xero", board_tools.REGISTRY["finance_list_invoices"].description)
 
     def test_blob_keys_use_board_key(self) -> None:
         self.assertEqual(
