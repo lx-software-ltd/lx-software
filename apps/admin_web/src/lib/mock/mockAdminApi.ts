@@ -21,6 +21,7 @@ import {
   boardHoldsFixture,
   boardLessonsFixture,
   boardReviewFixture,
+  boardProgressFixture,
   boardStaffFixture,
   boardTaskDetailFixture,
   boardTasksFixture,
@@ -475,6 +476,9 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   }
   if (p === `${board}/review`) {
     return json({ review: boardReviewFixture });
+  }
+  if (p === `${board}/progress`) {
+    return json(boardProgressFixture);
   }
   if (p.startsWith(`${board}/review/sample/`) && p.endsWith("/wrong") && method === "POST") {
     const callId = decodeURIComponent(p.slice(`${board}/review/sample/`.length, -"/wrong".length));

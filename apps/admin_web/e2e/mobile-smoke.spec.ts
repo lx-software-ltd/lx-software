@@ -100,6 +100,15 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByRole("button", { name: "Promote" })).toBeVisible();
     await expect(page.getByText(/board: #42 add booking/i)).toBeVisible();
     if (testInfo.project.name === "phone") {
+      await page.locator("#board-section-select").selectOption("progress");
+    } else {
+      await page.getByRole("tab", { name: /Progress/ }).click();
+    }
+    await expect(page.getByRole("heading", { name: "Progress" })).toBeVisible();
+    await expect(page.getByText("Live listings")).toBeVisible();
+    await expect(page.getByText("Sha Tin Playhouse")).toBeVisible();
+    await expect(page.getByText(/Listing gap in Tai Po/i)).toBeVisible();
+    if (testInfo.project.name === "phone") {
       await expect(page.locator("#board-section-select")).toBeVisible();
       await page.locator("#board-section-select").selectOption("market");
     } else {
