@@ -8,7 +8,6 @@ from collections.abc import Callable
 from typing import Any
 
 import boto3
-from botocore.config import Config
 
 from admin_runtime import _get_lambda_client
 
@@ -51,15 +50,20 @@ def try_invoke_event(payload: dict[str, Any]) -> bool:
     fn_name = _function_name()
     if not fn_name:
         return False
-    client = boto3.client(
-        "lambda",
-        config=Config(
+    client_kwargs: dict[str, Any] = {}
+    try:
+        from botocore.config import Config
+
+        client_kwargs["config"] = Config(
             connect_timeout=INVOKE_EVENT_TIMEOUT_SECONDS,
             read_timeout=INVOKE_EVENT_TIMEOUT_SECONDS,
             retries={"max_attempts": 1, "mode": "standard"},
-        ),
-    )
+        )
+    except Exception:
+        # Unit-test stubs replace ``botocore`` with a bare module (not a package).
+        pass
     try:
+        client = boto3.client("lambda", **client_kwargs)
         client.invoke(
             FunctionName=fn_name,
             InvocationType="Event",

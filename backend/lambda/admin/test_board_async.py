@@ -6,7 +6,11 @@ import os
 import unittest
 from unittest.mock import MagicMock, patch
 
-import board_async
+from test_board import _install_botocore_config_stub
+
+_install_botocore_config_stub()
+
+import board_async  # noqa: E402
 
 
 class TryInvokeEventTests(unittest.TestCase):

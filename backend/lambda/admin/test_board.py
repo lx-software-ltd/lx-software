@@ -13,6 +13,27 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 
+def _install_botocore_config_stub() -> None:
+    """Make the test ``botocore`` stub importable as a package (``botocore.config``)."""
+    if "botocore.config" in sys.modules and hasattr(sys.modules["botocore.config"], "Config"):
+        return
+    botocore = sys.modules.get("botocore")
+    if botocore is None or not isinstance(botocore, types.ModuleType):
+        botocore = types.ModuleType("botocore")
+        sys.modules["botocore"] = botocore
+    botocore.__path__ = []  # type: ignore[attr-defined]
+    config = types.ModuleType("botocore.config")
+
+    class Config:
+        def __init__(self, **kwargs: Any) -> None:
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+    config.Config = Config
+    botocore.config = config
+    sys.modules["botocore.config"] = config
+
+
 def _install_stubs() -> None:
     if "boto3" not in sys.modules or not isinstance(sys.modules["boto3"], MagicMock):
         sys.modules["boto3"] = MagicMock()
@@ -36,6 +57,7 @@ def _install_stubs() -> None:
             pass
 
         sys.modules["botocore.exceptions"].BotoCoreError = BotoCoreError
+    _install_botocore_config_stub()
 
 
 _install_stubs()
