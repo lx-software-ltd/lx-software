@@ -1,13 +1,14 @@
 """Executive Board ``aws`` tool: Cost Explorer, CloudWatch, Health.
 
 Reads are cached under ``BOARD#…#cache`` and refreshed hourly by
-``board_cache``. Results are filtered to resources tagged for the siutindei
-stacks (``BOARD_AWS_STACK_PREFIX``, default ``siutindei``); when the tag
-filter matches nothing the cost read falls back to the whole account and
-says so (``scope: "account"``). Lambda health queries only the function
-names listed in ``BOARD_AWS_LAMBDA_NAMES``. The board never
-creates IAM, DNS or Cognito changes; ``aws_propose_budget_alert`` only
-queues an action item for the founder.
+``board_cache``. Monthly cost is filtered by the activated ``Project``
+cost-allocation tag (Siu Tin Dei, from ``contracts/aws-billing.json``);
+when that filter matches nothing the cost read falls back to the whole
+account and says so (``scope: "account"``). Alarm names are still matched
+against ``BOARD_AWS_STACK_PREFIX`` (default ``siutindei``). Lambda health
+queries only the function names listed in ``BOARD_AWS_LAMBDA_NAMES``. The
+board never creates IAM, DNS or Cognito changes; ``aws_propose_budget_alert``
+only queues an action item for the founder.
 
 Plan: docs/architecture/executive-board-tools-plan.md §4 ``aws``.
 """
@@ -22,6 +23,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 import board_store
+from contract_constants import AWS_BILLING_COMPANIES
 from http_common import _log_event, _utc_iso_z
 
 STACK_PREFIX_DEFAULT = "siutindei"
@@ -32,9 +34,10 @@ HEALTH_CACHE = "aws:health"
 COST_SCOPE_STACK = "siutindei"
 COST_SCOPE_ACCOUNT = "account"
 COST_ACCOUNT_NOTE = (
-    "The aws:cloudformation:stack-name tag filter matched no cost, so this is the whole account's spend, "
-    "not just the siutindei stacks."
+    "The Project cost-allocation tag filter matched no cost, so this is the whole account's spend, "
+    "not just Siu Tin Dei."
 )
+COST_PROJECT_TAG = "Project"
 # The siutindei product stacks live in a separate repository, so their deployed
 # Lambda function names are not known here. Operators set them with
 # ``BOARD_AWS_LAMBDA_NAMES`` (comma-separated, real function names as shown in
@@ -50,6 +53,14 @@ class AwsToolError(RuntimeError):
 
 def stack_prefix() -> str:
     return (os.environ.get("BOARD_AWS_STACK_PREFIX") or STACK_PREFIX_DEFAULT).strip() or STACK_PREFIX_DEFAULT
+
+
+def cost_project_tag() -> str:
+    """Exact ``Project`` tag value for Siu Tin Dei spend (aws-billing contract)."""
+    for row in AWS_BILLING_COMPANIES:
+        if str(row.get("id") or "") == "siuTinDei":
+            return str(row.get("project") or "Siu Tin Dei")
+    return "Siu Tin Dei"
 
 
 def lambda_function_names() -> list[str]:
@@ -114,9 +125,8 @@ def _cost_query(start: str, end: str, *, filtered: bool) -> dict[str, Any]:
     if filtered:
         kwargs["Filter"] = {
             "Tags": {
-                "Key": "aws:cloudformation:stack-name",
-                "Values": [stack_prefix()],
-                "MatchOptions": ["STARTS_WITH"],
+                "Key": COST_PROJECT_TAG,
+                "Values": [cost_project_tag()],
             }
         }
     return _ce().get_cost_and_usage(**kwargs)

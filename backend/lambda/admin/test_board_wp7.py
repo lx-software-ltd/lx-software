@@ -70,6 +70,20 @@ class RecordingCW(FakeCW):
         return super().get_metric_data(**kwargs)
 
 
+class InsightsLimitCW(RecordingCW):
+    """CloudWatch Metrics Insights: one SQL Expression per GetMetricData."""
+
+    def get_metric_data(self, **kwargs: Any) -> dict[str, Any]:
+        queries = kwargs.get("MetricDataQueries") or []
+        if sum(1 for q in queries if q.get("Expression")) > 1:
+            raise _client_error(
+                "ValidationException",
+                "Maximum number of queries (1) exceeded",
+                "GetMetricData",
+            )
+        return super().get_metric_data(**kwargs)
+
+
 class AwsTestCase(ToolsTestCase):
     def setUp(self) -> None:
         super().setUp()
@@ -97,6 +111,8 @@ class TestAwsCostScope(AwsTestCase):
         self.assertIn("whole account", cost["note"])
         self.assertEqual(len(self.ce.calls), 2)
         self.assertIn("Filter", self.ce.calls[0])
+        self.assertEqual(self.ce.calls[0]["Filter"]["Tags"]["Key"], "Project")
+        self.assertEqual(self.ce.calls[0]["Filter"]["Tags"]["Values"], ["Siu Tin Dei"])
         self.assertNotIn("Filter", self.ce.calls[1])
 
     def test_filtered_rows_are_labelled_siutindei(self) -> None:
@@ -106,6 +122,11 @@ class TestAwsCostScope(AwsTestCase):
         self.assertEqual(cost["note"], "")
         self.assertEqual(cost["totalUsd"], 2.0)
         self.assertEqual(len(self.ce.calls), 1)
+        self.assertEqual(self.ce.calls[0]["Filter"]["Tags"]["Key"], "Project")
+        self.assertEqual(self.ce.calls[0]["Filter"]["Tags"]["Values"], ["Siu Tin Dei"])
+
+    def test_cost_project_tag_comes_from_billing_contract(self) -> None:
+        self.assertEqual(board_aws.cost_project_tag(), "Siu Tin Dei")
 
     def test_validation_error_on_filter_also_falls_back(self) -> None:
         self.ce.filtered_error = "ValidationException"
@@ -172,7 +193,7 @@ class TestSecurityCognito(ToolsTestCase):
         super().setUp()
         os.environ["USER_POOL_ID"] = "ap-southeast-1_modern"
         self.addCleanup(lambda: os.environ.pop("USER_POOL_ID", None))
-        self.cw: Any = RecordingCW()
+        self.cw: Any = InsightsLimitCW()
         p = patch.object(board_security, "_client", self._client)
         p.start()
         self.addCleanup(p.stop)
@@ -194,10 +215,16 @@ class TestSecurityCognito(ToolsTestCase):
         self.assertEqual(out["signInThrottles24h"], 2)
         self.assertEqual(out["signInSuccesses24h"], 40)
         self.assertIn("no failed-sign-in metric", out["note"])
-        queries = self.cw.metric_calls[0]["MetricDataQueries"]
-        self.assertTrue(all("Expression" in q for q in queries))
-        self.assertIn("UserPool = 'ap-southeast-1_modern'", queries[0]["Expression"])
-        self.assertIn("SignInThrottles", queries[0]["Expression"])
+        self.assertEqual(len(self.cw.metric_calls), 2)
+        ids = []
+        for call in self.cw.metric_calls:
+            queries = call["MetricDataQueries"]
+            self.assertEqual(len(queries), 1, "Metrics Insights allows one SQL query per GetMetricData")
+            self.assertIn("Expression", queries[0])
+            self.assertIn("UserPool = 'ap-southeast-1_modern'", queries[0]["Expression"])
+            ids.append(queries[0]["Id"])
+        self.assertEqual(ids, ["signInThrottles", "signInSuccesses"])
+        self.assertIn("SignInThrottles", self.cw.metric_calls[0]["MetricDataQueries"][0]["Expression"])
 
     def test_cloudwatch_failure_keeps_posture_and_explains(self) -> None:
         self.cw = FailingCW()
