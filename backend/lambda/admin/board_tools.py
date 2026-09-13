@@ -2351,6 +2351,15 @@ def public_registry() -> list[dict[str, Any]]:
     return out
 
 
+def task_ops_level(context: str) -> str:
+    """``task_note`` / ``task_finish`` are act-only while running a task.
+
+    They are not a matrix tool (no seat or persona has ``tools.task``), so
+    ``effective_level`` would return ``off`` and refuse every finish.
+    """
+    return "act" if context == "task" else "off"
+
+
 def available_ops(
     settings: dict[str, Any],
     persona_id: str,
@@ -2367,7 +2376,9 @@ def available_ops(
         if context not in op.contexts:
             continue
         if op.tool_id == "task":
-            level = "act" if context == "task" else "off"
+            # Staff lifecycle ops are not in the owner matrix; they are only
+            # legal on the current task. execute_call uses the same rule.
+            level = task_ops_level(context)
         elif op.tool_id in ("staff", "intel", "outreach", "content", "newsletter", "code"):
             import board_staff
 
@@ -2615,7 +2626,9 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         # Keep the (bounded) raw arguments so the audit row shows what was asked.
         arguments = raw if len(json.dumps(raw, default=str)) <= MAX_ARGUMENT_CHARS else {}
     safety_actor = ctx.actor in ("persona", "hold")
-    if safety_actor:
+    if safety_actor and op.tool_id == "task":
+        level = task_ops_level(ctx.kind)
+    elif safety_actor:
         seats = None
         if ctx.seat_id:
             import board_staff

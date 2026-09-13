@@ -188,6 +188,10 @@ class FakeTable:
         key = self._key(Key)
         item = dict(self.items.get(key) or {"pk": Key["pk"], "sk": Key["sk"]})
         names = ExpressionAttributeNames or {}
+        for value in ExpressionAttributeValues.values():
+            # boto3 resource + DynamoDB reject Python float; Decimal/int are ok.
+            if type(value) is float:
+                raise TypeError("Float types are not supported. Use Decimal types instead.")
         if ConditionExpression and not self._evaluate(ConditionExpression, item, names, ExpressionAttributeValues):
             raise self._conditional_error()
         for section in re.split(r"\b(?=SET\b|ADD\b)", UpdateExpression):

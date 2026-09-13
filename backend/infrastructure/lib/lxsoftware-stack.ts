@@ -522,7 +522,7 @@ export class LxsoftwareStack extends cdk.Stack {
         type: "String",
         default: "siutindei",
         description:
-          "CloudFormation stack-name prefix used to filter Cost Explorer and CloudWatch results for the Executive Board aws tool.",
+          "Name prefix used to match CloudWatch alarms for the Executive Board aws tool. Monthly cost uses the Project cost-allocation tag, not this prefix.",
       }
     );
     const boardAwsLambdaNames = new cdk.CfnParameter(

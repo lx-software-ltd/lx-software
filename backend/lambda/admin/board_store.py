@@ -40,6 +40,7 @@ import re
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any
 
 from botocore.exceptions import ClientError
@@ -1717,7 +1718,7 @@ def load_staff_usage_day(table: Any, date_iso: str | None = None) -> dict[str, A
 
 
 def add_staff_usage_day(table: Any, seat_or_persona: str, usage: dict[str, Any]) -> None:
-    cost = float(usage.get("cost") or 0.0)
+    cost = Decimal(str(round(float(usage.get("cost") or 0.0), 6)))
     calls = int(usage.get("calls") or 1)
     prompt = int(usage.get("promptTokens") or 0)
     completion = int(usage.get("completionTokens") or 0)

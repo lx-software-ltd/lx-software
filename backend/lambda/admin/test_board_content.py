@@ -14,7 +14,7 @@ import board_staff
 import board_store
 import board_tools
 from contract_constants import BOARD_KEY
-from test_board import BoardTestCase
+from test_board import BoardTestCase, freeze_board_daytime
 
 
 def _enable_staff(table: Any) -> dict[str, Any]:
@@ -67,6 +67,7 @@ class ContentTests(BoardTestCase):
         self.addCleanup(ig_patch.stop)
 
     def test_plan_json_creates_rows_and_hold(self) -> None:
+        freeze_board_daytime(self)
         slot = "2026-09-14T02:00:00+00:00"
         task = board_staff.create_task(
             self.table,
