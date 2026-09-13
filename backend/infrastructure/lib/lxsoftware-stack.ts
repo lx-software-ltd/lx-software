@@ -2472,6 +2472,10 @@ export class LxsoftwareStack extends cdk.Stack {
         path: "/siu-tin-dei/board/tasks/{taskId}/review",
         methods: [apigwv2.HttpMethod.POST],
       },
+      {
+        path: "/siu-tin-dei/board/tasks/{taskId}/retry",
+        methods: [apigwv2.HttpMethod.POST],
+      },
       { path: "/siu-tin-dei/board/holds", methods: [apigwv2.HttpMethod.GET] },
       {
         path: "/siu-tin-dei/board/holds/{holdId}/veto",

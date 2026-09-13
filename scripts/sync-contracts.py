@@ -183,6 +183,7 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "_BOARD_STAFF_LIMITS = BOARD_STAFF_CONTRACT[\"limits\"]",
         "BOARD_STAFF_STEP_MAX_SECONDS = int(_BOARD_STAFF_LIMITS[\"staffStepMaxSeconds\"])",
         "BOARD_STAFF_MAX_STEPS_PER_TASK = int(_BOARD_STAFF_LIMITS[\"maxStepsPerTask\"])",
+        "BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK = int(_BOARD_STAFF_LIMITS[\"maxIdleStepsPerTask\"])",
         "BOARD_STAFF_MAX_REVISIONS = int(_BOARD_STAFF_LIMITS[\"maxRevisions\"])",
         "BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = int(_BOARD_STAFF_LIMITS[\"maxRunningTasksDefault\"])",
         "BOARD_STAFF_TASK_STUCK_SECONDS = int(_BOARD_STAFF_LIMITS[\"staffTaskStuckSeconds\"])",
@@ -406,6 +407,7 @@ export const BOARD_STAFF_CONTENT_CHANNELS = {json.dumps(board_staff["contentChan
 export const BOARD_STAFF_CONTENT_STATUSES = {json.dumps(board_staff["contentStatuses"])} as const;
 export const BOARD_STAFF_NEWSLETTER_LISTS = {json.dumps(board_staff["newsletterLists"])} as const;
 export const BOARD_STAFF_MAX_STEPS_PER_TASK = {staff_limits["maxStepsPerTask"]};
+export const BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK = {staff_limits["maxIdleStepsPerTask"]};
 export const BOARD_STAFF_MAX_REVISIONS = {staff_limits["maxRevisions"]};
 export const BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = {staff_limits["maxRunningTasksDefault"]};
 export const BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD = {staff_limits["staffDailyBudgetDefaultUsd"]};

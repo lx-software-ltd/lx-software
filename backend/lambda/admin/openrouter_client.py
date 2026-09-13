@@ -10,6 +10,7 @@ can be tagged across this admin and sibling products.
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 import os
 import re
@@ -25,6 +26,14 @@ DEFAULT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_TIMEOUT_SECONDS = 60
 _RETRYABLE_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
 _MAX_RETRIES_DEFAULT = 2
+# A full-call TimeoutError is a deadline, not a truncated body — do not
+# retry it with the same timeout (that doubles a hung 90 s call).
+_TRANSIENT_READ_ERRORS = (
+    http.client.IncompleteRead,
+    http.client.RemoteDisconnected,
+    ConnectionResetError,
+    BrokenPipeError,
+)
 _ADMIN_ORIGIN = "https://admin.lx-software.com"
 _OWNER_SAFE_RE = re.compile(r"[^a-zA-Z0-9_-]+")
 
@@ -330,6 +339,14 @@ def post_json(
             raise OpenRouterError(
                 f"OpenRouter request transport error: {exc.reason}"
             ) from exc
+        except _TRANSIENT_READ_ERRORS as exc:
+            if attempt < max_retries:
+                attempt += 1
+                time.sleep(min(8.0, 1.5 * (2 ** (attempt - 1))))
+                continue
+            raise OpenRouterError(f"OpenRouter response was truncated: {exc}") from exc
+        except TimeoutError as exc:
+            raise OpenRouterError(f"OpenRouter request timed out: {exc}") from exc
 
 
 def extract_message_text(payload: dict[str, Any]) -> str:

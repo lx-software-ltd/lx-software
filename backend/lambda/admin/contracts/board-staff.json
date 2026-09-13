@@ -372,6 +372,7 @@
   "limits": {
     "staffStepMaxSeconds": 150,
     "maxStepsPerTask": 12,
+    "maxIdleStepsPerTask": 3,
     "maxRevisions": 2,
     "maxRunningTasksDefault": 3,
     "staffTaskStuckSeconds": 900,

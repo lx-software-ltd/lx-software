@@ -16,7 +16,12 @@ import board_personas
 import board_staff
 import board_store
 import board_tools
-from contract_constants import BOARD_KEY, BOARD_STAFF_MAX_STEPS_PER_TASK, BOARD_STAFF_TASK_BUDGET_DESK_USD
+from contract_constants import (
+    BOARD_KEY,
+    BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK,
+    BOARD_STAFF_MAX_STEPS_PER_TASK,
+    BOARD_STAFF_TASK_BUDGET_DESK_USD,
+)
 
 
 def _enable_staff(table: Any, **staff: Any) -> dict[str, Any]:
@@ -273,7 +278,7 @@ class StaffStepTests(ToolsTestCase):
         self.assertEqual(latest["confidence"], "medium")
         self.assertIn("no_evidence", latest["flags"])
 
-    def test_review_return_then_second_return_delivers(self) -> None:
+    def test_review_return_then_max_revisions_needs_owner(self) -> None:
         task = self._queued_task()
         board_store.claim_task_step(self.table, task["taskId"], 0)
         task = board_store.get_task(self.table, task["taskId"])
@@ -292,7 +297,7 @@ class StaffStepTests(ToolsTestCase):
             second["status"] = "review"
             board_store.put_task(self.table, second)
             third = board_staff.apply_review(self.table, settings, second, verdict="return", notes="Stop", by="manager")
-            self.assertEqual(third["status"], "delivered")
+            self.assertEqual(third["status"], "needs_owner")
             self.assertEqual(third["lastReview"]["verdict"], "return")
 
     def test_review_accept_closes_action(self) -> None:
@@ -348,6 +353,209 @@ class StaffStepTests(ToolsTestCase):
     def test_ceo_task_reviewed_by_cfo(self) -> None:
         task = {"assigneeKind": "persona", "assignee": "ceo", "managerId": "ceo"}
         self.assertEqual(board_staff._reviewer_id(task), "cfo")
+
+    def test_task_finish_records_step_so_return_can_resume(self) -> None:
+        task = self._queued_task()
+        tid = task["taskId"]
+        self.use_script(
+            [
+                [
+                    (
+                        "task_finish",
+                        {
+                            "summary": "Draft",
+                            "deliverableType": "markdown",
+                            "deliverable": "# Draft",
+                            "evidence": [],
+                            "openQuestions": [],
+                            "confidence": "low",
+                        },
+                    )
+                ]
+            ],
+            "",
+        )
+        payloads: list[dict[str, Any]] = []
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: payloads.append(payload)):
+            board_staff.run_step(
+                {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1}
+            )
+        latest = board_store.get_task(self.table, tid)
+        self.assertEqual(latest["status"], "review")
+        self.assertEqual(latest["step"], 1)
+        settings = board_store.load_settings(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: payloads.append(payload)):
+            board_staff.apply_review(self.table, settings, latest, verdict="return", notes="more", by="manager")
+        latest = board_store.get_task(self.table, tid)
+        self.assertEqual(latest["status"], "running")
+        self.assertEqual(latest["stepClaimed"], 1)
+        self.assertEqual(payloads[-1]["step"], 2)
+        self.assertTrue(board_store.claim_task_step(self.table, tid, 1))
+
+    def test_return_repairs_stale_step_claim(self) -> None:
+        task = self._queued_task()
+        tid = task["taskId"]
+        self.assertTrue(board_store.claim_task_step(self.table, tid, 0))
+        latest = board_store.get_task(self.table, tid)
+        latest.update({"status": "review", "step": 0, "stepClaimed": 1, "deliverableKey": "x"})
+        board_store.put_task(self.table, latest)
+        settings = board_store.load_settings(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff.apply_review(self.table, settings, latest, verdict="return", notes="more", by="manager")
+        self.assertTrue(board_store.claim_task_step(self.table, tid, 0))
+
+    def test_idle_steps_nudge_then_fail(self) -> None:
+        task = self._queued_task()
+        tid = task["taskId"]
+        self.use_script([], "Just a thought.")
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            for seq in range(1, BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK + 1):
+                board_staff.run_step(
+                    {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": seq}
+                )
+        latest = board_store.get_task(self.table, tid)
+        self.assertEqual(latest["status"], "failed")
+        self.assertEqual(latest["failureReason"], "idle step limit")
+        self.assertEqual(latest["idleSteps"], BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK)
+        scratch = board_staff._blob_get(board_staff._scratchpad_key(tid)).decode()  # noqa: SLF001
+        self.assertIn("NUDGE", scratch)
+
+    def test_step_exception_retries_once_then_fails(self) -> None:
+        task = self._queued_task()
+        tid = task["taskId"]
+        payloads: list[dict[str, Any]] = []
+
+        def boom(*_a: Any, **_k: Any) -> None:
+            raise RuntimeError("IncompleteRead(220 bytes read)")
+
+        with (
+            patch.object(board_tools, "run_tool_loop", boom),
+            patch.object(board_async, "invoke_async", lambda payload, fallback=None: payloads.append(payload)),
+        ):
+            board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
+        latest = board_store.get_task(self.table, tid)
+        self.assertEqual(latest["status"], "running")
+        self.assertTrue(payloads[-1].get("retried"))
+        with (
+            patch.object(board_tools, "run_tool_loop", boom),
+            patch.object(board_async, "invoke_async", lambda payload, fallback=None: payloads.append(payload)),
+        ):
+            board_staff.run_step(payloads[-1])
+        latest = board_store.get_task(self.table, tid)
+        self.assertEqual(latest["status"], "failed")
+        self.assertIn("IncompleteRead", latest["failureReason"])
+
+    def test_tool_loop_stops_after_task_finish(self) -> None:
+        task = self._queued_task()
+        tid = task["taskId"]
+        scripted = self.use_script(
+            [
+                [
+                    (
+                        "task_finish",
+                        {
+                            "summary": "Draft",
+                            "deliverableType": "markdown",
+                            "deliverable": "# Draft",
+                            "evidence": [],
+                            "openQuestions": [],
+                            "confidence": "low",
+                        },
+                    )
+                ]
+            ],
+            "should not be requested",
+        )
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff.run_step(
+                {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1}
+            )
+        self.assertEqual(len(scripted.requests), 1)
+        self.assertNotEqual(scripted.requests[0].get("tool_choice"), "none")
+        latest = board_store.get_task(self.table, tid)
+        self.assertEqual(latest["status"], "review")
+        self.assertEqual(latest["step"], 1)
+
+    def test_permanent_openrouter_4xx_does_not_retry(self) -> None:
+        from openrouter_client import OpenRouterError
+
+        task = self._queued_task()
+        tid = task["taskId"]
+        payloads: list[dict[str, Any]] = []
+
+        def boom(*_a: Any, **_k: Any) -> None:
+            raise OpenRouterError("OpenRouter request failed with status 400", status=400)
+
+        with (
+            patch.object(board_tools, "run_tool_loop", boom),
+            patch.object(board_async, "invoke_async", lambda payload, fallback=None: payloads.append(payload)),
+        ):
+            board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
+        latest = board_store.get_task(self.table, tid)
+        self.assertEqual(latest["status"], "failed")
+        self.assertTrue(latest["failureReason"].startswith("step error:"))
+        self.assertFalse(any(p.get("retried") for p in payloads))
+
+    def test_openrouter_402_trips_budget_breaker(self) -> None:
+        from openrouter_client import OpenRouterError
+
+        task = self._queued_task()
+        tid = task["taskId"]
+
+        def boom(*_a: Any, **_k: Any) -> None:
+            raise OpenRouterError("OpenRouter request failed with status 402", status=402)
+
+        with (
+            patch.object(board_tools, "run_tool_loop", boom),
+            patch.object(board_async, "invoke_async", lambda payload, fallback=None: None),
+        ):
+            board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
+        latest = board_store.get_task(self.table, tid)
+        self.assertEqual(latest["status"], "failed")
+        breaker = board_store.get_breaker(self.table, "budget")
+        self.assertTrue(breaker and breaker.get("tripped"))
+
+    def test_daily_budget_requeues_instead_of_failing(self) -> None:
+        task = self._queued_task()
+        tid = task["taskId"]
+        settings = board_store.load_settings(self.table)
+        settings["staff"]["dailyBudgetUsd"] = 0.01
+        board_store.save_settings(self.table, settings)
+        board_store.add_staff_usage_day(self.table, "cfo", {"cost": 0.02, "calls": 1})
+        self.assertEqual(board_store.get_task(self.table, tid)["status"], "running")
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
+        latest = board_store.get_task(self.table, tid)
+        self.assertEqual(latest["status"], "queued")
+        self.assertIn("daily budget", latest.get("parkedReason") or "")
+        self.assertEqual(board_staff.drain_queue(self.table, board_store.load_settings(self.table)), 0)
+
+    def test_stale_step_claim_reinvokes_once_then_fails(self) -> None:
+        settings = _enable_staff(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table, settings, assignee="cfo", origin="owner", brief="Hung", deliverable_type="markdown", created_by="a"
+            )
+        board_store.claim_task_step(self.table, task["taskId"], 0)
+        stale = board_store.get_task(self.table, task["taskId"])
+        stale_at = (datetime.now(timezone.utc) - timedelta(minutes=6)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        stale["stepClaimedAt"] = stale_at
+        stale["updatedAt"] = board_store.now_iso()
+        board_store.put_task(self.table, stale)
+        payloads: list[dict[str, Any]] = []
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: payloads.append(payload)):
+            board_staff.handle_tick({"internal": "board_staff_tick", "boardKey": BOARD_KEY})
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "running")
+        self.assertTrue(latest.get("stuckRetried"))
+        self.assertTrue(any(p.get("internal") == "board_staff_step" for p in payloads))
+        latest["stepClaimedAt"] = stale_at
+        latest["updatedAt"] = stale_at
+        board_store.put_task(self.table, latest)
+        board_staff.handle_tick({"internal": "board_staff_tick", "boardKey": BOARD_KEY})
+        failed = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(failed["failureReason"], "stuck")
 
 
 class StaffRouteTests(BoardTestCase):
@@ -430,6 +638,127 @@ class StaffRouteTests(BoardTestCase):
             status, listed = self.call("/siu-tin-dei/board/tasks")
             self.assertEqual(status, 200)
             self.assertGreaterEqual(len(listed["tasks"]), 1)
+
+    def test_retry_failed_task_requeues(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            _enable_staff(self.table)
+            status, created = self.call(
+                "/siu-tin-dei/board/tasks",
+                "POST",
+                {"assignee": "cfo", "brief": "List our three biggest monthly costs from AWS and finance", "deliverableType": "markdown"},
+            )
+            self.assertEqual(status, 201)
+            task_id = created["task"]["taskId"]
+            row = board_store.get_task(self.table, task_id)
+            row.update({"status": "failed", "failureReason": "stuck", "stepClaimed": 1})
+            board_store.put_task(self.table, row)
+            status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
+            self.assertEqual(status, 200)
+            self.assertIn(body["task"]["status"], ("queued", "running"))
+            self.assertEqual(body["task"].get("failureReason") or "", "")
+            status, again = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
+            self.assertEqual(status, 409)
+
+    def test_retry_resets_usage_after_task_budget(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            _enable_staff(self.table)
+            status, created = self.call(
+                "/siu-tin-dei/board/tasks",
+                "POST",
+                {"assignee": "cfo", "brief": "List our three biggest monthly costs from AWS and finance", "deliverableType": "markdown"},
+            )
+            self.assertEqual(status, 201)
+            task_id = created["task"]["taskId"]
+            row = board_store.get_task(self.table, task_id)
+            row.update({
+                "status": "failed",
+                "failureReason": "Task budget exhausted",
+                "usage": {"promptTokens": 10, "completionTokens": 5, "cost": 1.0, "calls": 2},
+                "budgetUsd": 1.0,
+            })
+            board_store.put_task(self.table, row)
+            status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
+            self.assertEqual(status, 200)
+            self.assertEqual((body["task"].get("usage") or {}).get("cost") or 0, 0)
+            self.assertEqual((body["task"].get("previousUsage") or {}).get("cost"), 1.0)
+            self.assertEqual(body["task"].get("attempt"), 2)
+
+    def test_retry_refuses_inactive_seat_and_closed_action(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            _enable_staff(self.table)
+            board_store.save_staff_override(self.table, "support", {"isActive": True})
+            status, created = self.call(
+                "/siu-tin-dei/board/tasks",
+                "POST",
+                {"assignee": "support", "brief": "Reply to the parent who asked about lunch", "deliverableType": "markdown"},
+            )
+            self.assertEqual(status, 201)
+            task_id = created["task"]["taskId"]
+            row = board_store.get_task(self.table, task_id)
+            row.update({"status": "failed", "failureReason": "stuck"})
+            board_store.put_task(self.table, row)
+            board_store.save_staff_override(self.table, "support", {"isActive": False})
+            status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
+            self.assertEqual(status, 409)
+            self.assertIn("not active", body["message"])
+            board_store.save_staff_override(self.table, "support", {"isActive": True})
+            action_id = board_store.new_id()
+            board_store.put_action(
+                self.table,
+                {
+                    "actionId": action_id,
+                    "title": "Closed",
+                    "status": "done",
+                    "createdAt": board_store.now_iso(),
+                    "updatedAt": board_store.now_iso(),
+                },
+            )
+            row = board_store.get_task(self.table, task_id)
+            row["actionId"] = action_id
+            board_store.put_task(self.table, row)
+            status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
+            self.assertEqual(status, 409)
+            self.assertIn("closed", body["message"])
+
+    def test_list_keeps_failed_when_many_delivered(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        settings = _enable_staff(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            failed_ids = []
+            for i in range(3):
+                task = board_staff.create_task(
+                    self.table,
+                    settings,
+                    assignee="cfo",
+                    origin="owner",
+                    brief=f"Failed item number {i} needs a long enough brief",
+                    deliverable_type="markdown",
+                    created_by="t",
+                )
+                row = board_store.get_task(self.table, task["taskId"])
+                row.update({"status": "failed", "failureReason": "stuck", "finishedAt": board_store.now_iso()})
+                board_store.put_task(self.table, row)
+                failed_ids.append(task["taskId"])
+            for i in range(40):
+                task = board_staff.create_task(
+                    self.table,
+                    settings,
+                    assignee="cfo",
+                    origin="owner",
+                    brief=f"Delivered item number {i} needs a long enough brief",
+                    deliverable_type="markdown",
+                    created_by="t",
+                )
+                row = board_store.get_task(self.table, task["taskId"])
+                row.update({"status": "delivered", "finishedAt": board_store.now_iso()})
+                board_store.put_task(self.table, row)
+        listed = board_staff.list_tasks_for_api(self.table, limit=20)
+        listed_ids = {t["taskId"] for t in listed}
+        for tid in failed_ids:
+            self.assertIn(tid, listed_ids)
 
 
 class StaffKillSwitchTests(BoardTestCase):

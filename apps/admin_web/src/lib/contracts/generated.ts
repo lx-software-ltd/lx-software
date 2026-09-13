@@ -846,6 +846,7 @@ export const BOARD_STAFF_CONTENT_CHANNELS = ["facebook", "instagram", "instagram
 export const BOARD_STAFF_CONTENT_STATUSES = ["idea", "drafted", "creative", "scheduled", "published", "vetoed", "failed"] as const;
 export const BOARD_STAFF_NEWSLETTER_LISTS = ["parents", "providers"] as const;
 export const BOARD_STAFF_MAX_STEPS_PER_TASK = 12;
+export const BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK = 3;
 export const BOARD_STAFF_MAX_REVISIONS = 2;
 export const BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = 3;
 export const BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD = 20;

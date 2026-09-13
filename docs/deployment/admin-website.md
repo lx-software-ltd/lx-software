@@ -747,7 +747,13 @@ starts on the next drain. Any open action can also be handed over from
 `closedBy: staff:<taskId>`) when the deliverable is accepted. A second
 hand-off while that task is open returns 409. Outbound work inside the task
 still follows the seat's tool levels, holds and the allow-list, so "propose
-only" holds as long as the global mode stays `propose`.
+only" holds as long as the global mode stays `propose`. Failed tasks stay
+on **Staff → Failed** with the reason (`step limit`, `stuck`, `idle step
+limit`, or a step error); **Retry** re-queues the same brief
+(`POST /siu-tin-dei/board/tasks/{id}/retry`), resets per-task usage so a
+budget miss can be tried again, and refuses if the seat is inactive or the
+linked action is closed. A daily staff-budget miss parks the task back on
+the queue instead of failing it.
 
 Smoke test after deploy: open the tab, save a company vision/mission, edit one
 member's mandate, send a chat message to the CEO (reply arrives within ~30 s),

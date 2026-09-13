@@ -364,7 +364,9 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
       }
       return json({ task: created }, 201);
     }
-    return json({ tasks: state.tasks, counts: countsFromTasks(state.tasks) });
+    const status = url.searchParams.get("status");
+    const tasks = status ? state.tasks.filter((t) => t.status === status) : state.tasks;
+    return json({ tasks, counts: countsFromTasks(state.tasks) });
   }
   if (p.startsWith(`${board}/tasks/`)) {
     const rest = p.slice(`${board}/tasks/`.length).split("/");
@@ -384,7 +386,24 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
       });
       return json({ task });
     }
-    return json(boardTaskDetailFixture(taskId) ?? { task, steps: [], reviews: [], deliverable: "", deliverableUrl: "" });
+    if (rest[1] === "retry" && method === "POST") {
+      if (task.status !== "failed") return json({ message: "Only failed tasks can be retried" }, 409);
+      Object.assign(task, {
+        status: "queued",
+        step: 0,
+        stepsUsed: 0,
+        failureReason: "",
+        finishedAt: null,
+        startedAt: null,
+        updatedAt: new Date().toISOString(),
+      });
+      return json({ task });
+    }
+    const detail = boardTaskDetailFixture(taskId);
+    return json({
+      ...(detail ?? { steps: [], reviews: [], deliverable: "", deliverableUrl: "" }),
+      task,
+    });
   }
   if (p === `${board}/holds`) {
     return json({ holds: state.holds.filter((h) => h.status === "scheduled") });
