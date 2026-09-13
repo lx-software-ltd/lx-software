@@ -36,7 +36,11 @@ FINANCE_PATHS = frozenset(
 BOARD_OPS_HEADS = frozenset(
     {"staff", "tasks", "breakers", "review", "holds", "ramp", "tools"}
 )
+# Third-party contact / billing data that has no alias layer, so it cannot be
+# masked like mail; these heads need `siutindei-pii` on top of board-full.
+PII_HEADS = frozenset({"prospects", "outreach", "receivables"})
 NOTIFY_COALESCE_SECONDS = 60
+NOTIFY_ROW_TTL = timedelta(days=1)
 NOTIFY_SUBJECT = "Public API key used"
 
 
@@ -93,7 +97,12 @@ def path_allowed(path: str, scopes: list[str]) -> bool:
         return SCOPE_FINANCE in have
     if needed == SCOPE_BOARD_OPS:
         return SCOPE_BOARD_OPS in have or SCOPE_BOARD_FULL in have
-    return SCOPE_BOARD_FULL in have
+    if SCOPE_BOARD_FULL not in have:
+        return False
+    rest = _board_rest(path)
+    if rest[:1] and rest[0] in PII_HEADS:
+        return SCOPE_PII in have
+    return True
 
 
 def _source_ip(event: dict[str, Any]) -> str:
@@ -190,19 +199,25 @@ def try_claim_notify_slot(
     now = now or datetime.now(timezone.utc)
     cutoff = (now - timedelta(seconds=NOTIFY_COALESCE_SECONDS)).isoformat()
     now_iso = now.isoformat()
+    # `expiresAt` is the table TTL attribute (epoch seconds); one row per
+    # (key, class, ip) would otherwise accumulate for every client address.
+    ttl_epoch = int((now + NOTIFY_ROW_TTL).timestamp())
     try:
         table.update_item(
             Key={
                 "pk": f"BOARD#{BOARD_KEY}#publicapi#notify",
                 "sk": _notify_sk(key_id, path_cls, source_ip),
             },
-            UpdateExpression="SET lastSentAt = :now, sourceIp = :ip, pathClass = :cls",
+            UpdateExpression=(
+                "SET lastSentAt = :now, sourceIp = :ip, pathClass = :cls, expiresAt = :ttl"
+            ),
             ConditionExpression="attribute_not_exists(lastSentAt) OR lastSentAt < :cutoff",
             ExpressionAttributeValues={
                 ":now": now_iso,
                 ":ip": source_ip or "unknown",
                 ":cls": path_cls,
                 ":cutoff": cutoff,
+                ":ttl": ttl_epoch,
             },
         )
         return True

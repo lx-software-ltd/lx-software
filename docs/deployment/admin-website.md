@@ -169,12 +169,14 @@ allowlist as defense in depth (`PUBLIC_READ_PATHS` /
 |-------|--------|
 | `finance` | `/public/finance`, quotes, records, FX |
 | `siutindei-board-ops` | overview, staff, tasks, breakers, review, holds, ramp, tools, tool-calls |
-| `siutindei-board-full` | every JWT GET under `/siu-tin-dei/board` (includes ops paths) |
-| `siutindei-pii` | unmasked mail; `allowList` / `digestTo` on overview |
+| `siutindei-board-full` | every JWT GET under `/siu-tin-dei/board` (includes ops paths) except the PII heads below |
+| `siutindei-pii` | unmasked mail; `allowList` / `digestTo` on overview; `prospects`, `outreach`, `receivables` (with board-full) |
 | `siutindei-assets` | content creative presigned URLs |
 
-Without `siutindei-pii`, mail is aliased and allow-list / digest addresses are
-stripped. Without `siutindei-assets`, creative GETs return the object key only.
+Without `siutindei-pii`, mail is aliased, allow-list / digest addresses are
+stripped, and `prospects` / `outreach` / `receivables` return 404 (they carry
+third-party contact and billing data with no alias layer). Without
+`siutindei-assets`, creative GETs return the object key only.
 
 New keys expire in **90 days** unless `--expires-at` is set. Optional
 `--allowed-cidrs` fail-closed when the client IP is missing or outside the
@@ -194,8 +196,8 @@ looks up the scrypt digest of the presented key in the records table
 (`pk = APIKEY#<digest>`, `sk = META`; see
 `backend/lambda/public_api_authorizer/api_key_hash.py` for the digest
 rationale). Only the digest is ever stored or logged. API Gateway caches
-authorizer verdicts for up to **5 minutes**, so revocation takes up to that
-long to propagate.
+authorizer verdicts for up to **60 seconds** per key + source IP, so
+revocation and CIDR changes take up to that long to propagate.
 
 Manage keys with admin AWS credentials (needs table read/write + CMK access):
 

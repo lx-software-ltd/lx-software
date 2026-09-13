@@ -36,6 +36,21 @@ class PathClassTests(unittest.TestCase):
         )
         self.assertFalse(board_public_api.path_allowed("/public/siu-tin-dei/board", ["finance"]))
 
+    def test_contact_heavy_heads_need_pii_on_top_of_full(self) -> None:
+        for path in (
+            "/public/siu-tin-dei/board/prospects",
+            "/public/siu-tin-dei/board/outreach/stats",
+            "/public/siu-tin-dei/board/receivables",
+        ):
+            self.assertFalse(board_public_api.path_allowed(path, ["siutindei-board-full"]))
+            self.assertFalse(board_public_api.path_allowed(path, ["siutindei-pii"]))
+            self.assertTrue(
+                board_public_api.path_allowed(path, ["siutindei-board-full", "siutindei-pii"])
+            )
+        self.assertTrue(
+            board_public_api.path_allowed("/public/siu-tin-dei/board/mail", ["siutindei-board-full"])
+        )
+
 
 class RedactAndNotifyTests(BoardTestCase):
     def test_overview_strips_allow_list_without_pii(self) -> None:
@@ -111,3 +126,10 @@ class RedactAndNotifyTests(BoardTestCase):
                 table, key_id="k1", path_cls="allowed:finance", source_ip="1.1.1.1", now=now
             )
         )
+        row = table.get_item(
+            Key={
+                "pk": f"BOARD#{board_public_api.BOARD_KEY}#publicapi#notify",
+                "sk": "k1#allowed:finance#1.1.1.1",
+            }
+        )["Item"]
+        self.assertEqual(row["expiresAt"], int(now.timestamp()) + 86400)

@@ -877,10 +877,13 @@ export class LxsoftwareStack extends cdk.Stack {
       {
         responseTypes: [HttpLambdaResponseType.SIMPLE],
         // Cache key is header + client IP so a CIDR-bound key cannot be
-        // reused from another address via the authorizer cache.
+        // reused from another address via the authorizer cache. Only
+        // `$context.identity.sourceIp` is a supported HTTP API context
+        // variable; a missing identity source makes API Gateway return 401
+        // without invoking the authorizer.
         identitySource: [
           "$request.header.x-api-key",
-          "$context.http.sourceIp",
+          "$context.identity.sourceIp",
         ],
         // Revocation / CIDR changes take up to this TTL to propagate.
         resultsCacheTtl: cdk.Duration.seconds(60),
@@ -1423,9 +1426,12 @@ export class LxsoftwareStack extends cdk.Stack {
       ],
     }).attachToRole(publicApiKeyAuthorizerFn.role!);
 
+    // Term patterns, not JSON patterns: the Python runtime prefixes each
+    // line with "[LEVEL]\ttimestamp\trequest-id\t", so the event is not a
+    // JSON document and `{ $.tag = ... }` would never match.
     new logs.MetricFilter(this, "PublicApiKeyDeniedFilter", {
       logGroup: publicApiKeyAuthorizerFn.logGroup,
-      filterPattern: logs.FilterPattern.literal('{ $.tag = "public_api_key_denied" }'),
+      filterPattern: logs.FilterPattern.allTerms("public_api_key_denied"),
       metricNamespace: "lxsoftware/public-api",
       metricName: "ApiKeyDenied",
       metricValue: "1",
@@ -1446,8 +1452,9 @@ export class LxsoftwareStack extends cdk.Stack {
     });
     new logs.MetricFilter(this, "PublicApiBoardFullFilter", {
       logGroup: adminFn.logGroup,
-      filterPattern: logs.FilterPattern.literal(
-        '{ $.tag = "public_api_access" && $.path_class = "siutindei-board-full" }'
+      filterPattern: logs.FilterPattern.allTerms(
+        "public_api_access",
+        "siutindei-board-full"
       ),
       metricNamespace: "lxsoftware/public-api",
       metricName: "BoardFullAccess",
