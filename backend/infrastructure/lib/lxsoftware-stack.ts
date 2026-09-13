@@ -1013,6 +1013,9 @@ export class LxsoftwareStack extends cdk.Stack {
       deadLetterQueue: this.lambdaDeadLetterQueue,
     });
 
+    // Asset hash includes backend/lambda/admin. Deploy Backend must watch that
+    // tree (see .github/workflows/deploy-backend.yml) so a Lambda-only merge
+    // still replaces AdminApiFn — otherwise the SPA can call routes that 404.
     const adminFn = createPythonLambda(this, "AdminApiFn", {
       entryDir: path.join(__dirname, "..", "..", "lambda", "admin"),
       timeout: adminStatementParseLambdaTimeout,

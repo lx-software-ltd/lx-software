@@ -3,7 +3,13 @@ name: Deploy Backend
 on:
   push:
     branches: [main]
-    paths: ["backend/infrastructure/**"]
+    # AdminApiFn / inbound-mail / authorizer code lives next to the CDK app.
+    # A Lambda-only PR (no stack.ts change) must still roll the function, or
+    # the admin SPA can ship a button whose route 404s on the previous build.
+    paths:
+      - "backend/infrastructure/**"
+      - "backend/lambda/**"
+      - "contracts/**"
   workflow_dispatch:
 
 permissions:
