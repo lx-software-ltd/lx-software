@@ -1,8 +1,8 @@
-"""Executive Board: aggregated finance summary for the context pack.
+"""Executive Board: aggregated finance summary and cash snapshot.
 
 Only totals are produced (per statement book, fiscal year and trailing three
-months, by currency). No individual lines, payees or account data leave the
-table.
+months, by currency; cash by account type and currency). No individual lines,
+payees or account names leave the table.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from finance_store import _load_finance_owner
+from finance_store import _load_accounts_records, _load_finance_owner
 
 BOOKS = ("siuTinDei", "lxSoftware")
 BOOK_LABELS = {"siuTinDei": "Siu Tin Dei", "lxSoftware": "LX Software"}
@@ -106,6 +106,72 @@ def build_finance_summary(table: Any, *, now: datetime | None = None) -> dict[st
             continue
         books[book] = summarize_book(data, now=now)
     return {"generatedAt": (now or datetime.now(timezone.utc)).strftime("%Y-%m-%d"), "books": books}
+
+
+def cash_snapshot(table: Any, *, now: datetime | None = None) -> dict[str, Any]:
+    """Aggregated cash position and statement-book flow for month-end memos.
+
+    Account names, numbers and payees are omitted. Liquid cash is Bank Account
+    plus Debit Card ``recordedValue``; credit-card balances are outstanding debt.
+    """
+    now = now or datetime.now(timezone.utc)
+    records = _load_accounts_records(table) if table is not None else []
+    by_type: dict[tuple[str, str], dict[str, Any]] = defaultdict(
+        lambda: {"amount": 0.0, "count": 0, "latestUpdated": None}
+    )
+    liquid: dict[str, float] = defaultdict(float)
+    credit: dict[str, float] = defaultdict(float)
+    for row in records:
+        account_type = str(row.get("accountType") or "")
+        currency = str(row.get("currency") or "HKD").upper()
+        try:
+            amount = float(row.get("recordedValue") or 0)
+        except (TypeError, ValueError):
+            continue
+        bucket = by_type[(account_type, currency)]
+        bucket["amount"] = round(bucket["amount"] + amount, 2)
+        bucket["count"] += 1
+        last_updated = row.get("lastUpdated")
+        if isinstance(last_updated, str) and (
+            bucket["latestUpdated"] is None or last_updated > str(bucket["latestUpdated"])
+        ):
+            bucket["latestUpdated"] = last_updated
+        if account_type == "Credit Card":
+            credit[currency] += amount
+        else:
+            liquid[currency] += amount
+
+    def _currency_rows(values: dict[str, float]) -> list[dict[str, Any]]:
+        return [{"currency": code, "amount": round(total, 2)} for code, total in sorted(values.items())]
+
+    return {
+        "asOf": now.strftime("%Y-%m-%d"),
+        "cash": {
+            "liquidByCurrency": _currency_rows(liquid),
+            "creditCardByCurrency": _currency_rows(credit),
+            "byType": [
+                {
+                    "accountType": account_type,
+                    "currency": currency,
+                    "amount": data["amount"],
+                    "count": data["count"],
+                    "latestUpdated": data["latestUpdated"],
+                }
+                for (account_type, currency), data in sorted(by_type.items())
+            ],
+            "accountCount": len(records),
+            "note": (
+                "Liquid cash is Bank Account + Debit Card recordedValue. "
+                "Credit cards are outstanding balances, not cash. "
+                "Account names and numbers are omitted."
+            ),
+        },
+        "statementBooks": build_finance_summary(table, now=now) if table is not None else {"books": {}},
+    }
+
+
+def op_cash_snapshot(ctx: Any, _args: dict[str, Any]) -> dict[str, Any]:
+    return cash_snapshot(getattr(ctx, "table", None))
 
 
 def render_finance_summary(summary: dict[str, Any]) -> str:

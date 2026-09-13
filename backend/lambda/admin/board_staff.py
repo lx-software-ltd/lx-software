@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -51,6 +52,14 @@ _IDLE_TOOL_OPS = frozenset({"task_note"})
 _IDLE_NUDGE = (
     "NUDGE: That step only wrote a note. Call a real tool next, or call "
     "task_finish with the deliverable. Notes-only steps burn the step budget."
+)
+_PLACEHOLDER_RE = re.compile(r"\[(?:insert|todo|tbd|placeholder)[^\]]*\]", re.I)
+_EVIDENCE_TOOL_TOKENS = (
+    "finance_cash_snapshot",
+    "finance_aging_report",
+    "finance_unit_economics",
+    "aws_monthly_cost",
+    "meta_ad_spend",
 )
 
 
@@ -573,6 +582,15 @@ def _task_attempt(task: dict[str, Any]) -> int:
     return max(1, int(task.get("attempt") or 1))
 
 
+def _deliverable_has_placeholders(text: str) -> bool:
+    return bool(_PLACEHOLDER_RE.search(text or ""))
+
+
+def _brief_required_evidence_tools(brief: str) -> list[str]:
+    lower = (brief or "").lower()
+    return [token for token in _EVIDENCE_TOOL_TOKENS if token in lower]
+
+
 def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, wanted: int) -> None:
     usage = result.usage or {}
     latest = board_store.get_task(table, task_id) or task
@@ -771,6 +789,13 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
         raise StaffError(
             f"deliverable is larger than {BOARD_STAFF_DELIVERABLE_MAX_BYTES} bytes; split it"
         )
+    if _deliverable_has_placeholders(deliverable):
+        raise StaffError(
+            "Deliverable still has placeholder text such as [Insert …]. "
+            "Call finance_cash_snapshot, finance_aging_report, aws_monthly_cost and "
+            "meta_ad_spend (or finance_unit_economics), then write the verified figures. "
+            "If a tool cannot verify a number, write 'unavailable' and why."
+        )
     evidence = [str(x) for x in (args.get("evidence") or []) if isinstance(x, (str, int))]
     known = {str(c.get("callId")) for c in board_store.list_tool_calls_for_task(ctx.table, ctx.task_id)}
     for step in board_store.list_task_steps(ctx.table, ctx.task_id):
@@ -779,6 +804,13 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
                 known.add(str(cid))
     attempt = _task_attempt(task)
     evidence = [e for e in evidence if e in known]
+    needed = _brief_required_evidence_tools(str(task.get("brief") or ""))
+    if needed and not evidence:
+        raise StaffError(
+            "This brief requires evidence from "
+            + ", ".join(needed)
+            + ". Call those tools first and pass their call ids in evidence."
+        )
     confidence = str(args.get("confidence") or "medium")
     flags = list(task.get("flags") or [])
     if not evidence and confidence == "high":
@@ -837,8 +869,12 @@ def _review_user_prompt(task: dict[str, Any], raw: str, evidence_lines: list[str
         f"Deliverable:\n{raw}\n\n"
         "Books of record: there is no QuickBooks or Xero. For receivables aging, "
         "accept a report backed by finance_aging_report (including zero outstanding "
-        "or a Data API not-configured error from that tool). Do not return asking "
-        "for accounting software or credentials.\n"
+        "or a Data API not-configured error from that tool). Cash and statement-book "
+        "flow come from finance_cash_snapshot; AWS from aws_monthly_cost; Meta from "
+        "meta_ad_spend or finance_unit_economics. Return if the deliverable still has "
+        "[Insert …] placeholders or 0-30/31-60 aging buckets instead of current / D+7 / "
+        "D+21 / D+35. Accept a memo that states a figure is unavailable with the tool error. "
+        "Do not return asking for accounting software or credentials.\n"
         'Return JSON {"verdict":"accept"|"return","notes":"…"}.'
     )
 

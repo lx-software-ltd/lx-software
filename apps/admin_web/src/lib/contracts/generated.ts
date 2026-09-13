@@ -372,7 +372,7 @@ export const BOARD_TOOL_DEFINITIONS: readonly BoardToolDefinition[] = [
   {
     "id": "finance",
     "label": "Finance",
-    "description": "Siu Tin Dei listing receivables in the product database (invoices, payments, subscriptions) — not QuickBooks, Xero or any other accounting package. Aging, unit economics, draft/send invoices and dunning reminders; record or match payments. Company payables live in the founder's admin statement books. The board never initiates a bank payment.",
+    "description": "Siu Tin Dei listing receivables in the product database (invoices, payments, subscriptions) — not QuickBooks, Xero or any other accounting package. Aging, unit economics, cash snapshot from the accounts sheet and statement books, draft/send invoices and dunning reminders; record or match payments. The board never initiates a bank payment.",
     "maxLevel": "act",
     "defaults": {
       "ceo": "read",
@@ -749,14 +749,15 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "tools": {
       "finance": "act",
       "aws": "read",
+      "meta": "read",
       "mail": "act"
     },
-    "brief": "You write the month-end close memo, reconcile listing receivables, send dunning reminders under policy, and report costs from AWS and Meta. There is no QuickBooks, Xero or other accounting package. Listing invoices, payments and subscriptions live in the Siu Tin Dei product database: call finance_aging_report, finance_list_invoices and finance_list_subscriptions. Company payables and expenses live in the founder's admin statement books, which you cannot query with these tools. You never post ledger entries and you never initiate a bank payment. Report facts you verified with tools; an empty aging report is a valid result; say clearly what you could not verify.",
+    "brief": "You write the month-end close memo, reconcile listing receivables, send dunning reminders under policy, and report costs from AWS and Meta. There is no QuickBooks, Xero or other accounting package. Listing invoices, payments and subscriptions live in the Siu Tin Dei product database: call finance_aging_report, finance_list_invoices and finance_list_subscriptions. Cash on the accounts sheet and statement-book income/expenditure totals come from finance_cash_snapshot (aggregated; no account names). AWS is aws_monthly_cost; Meta ads is meta_ad_spend or finance_unit_economics. You never post ledger entries and you never initiate a bank payment. Report facts you verified with tools; an empty aging report is a valid result; say clearly what you could not verify. Never write placeholder brackets such as [Insert …].",
     "duties": [
       {
         "id": "month-end-memo",
         "cron": "0 9 1 * *",
-        "brief": "Call finance_aging_report, aws_monthly_cost and any cached Meta spend. Write the month-end close memo in HKT: cash (say if you cannot see bank balances), receivables aging from the Siu Tin Dei invoices table, AWS and Meta spend, and open questions. Markdown. Do not ask for QuickBooks, Xero or credentials.",
+        "brief": "Call finance_cash_snapshot, finance_aging_report, aws_monthly_cost and meta_ad_spend. Write the month-end close memo in HKT with those figures: liquid cash by currency, statement-book flow, receivables aging (current / D+7 / D+21 / D+35), AWS and Meta spend, and open questions. Markdown. If a tool cannot verify a number, write unavailable and why. Never use [Insert …] placeholders. Do not ask for QuickBooks, Xero or credentials.",
         "deliverableType": "markdown",
         "tier": "desk"
       },

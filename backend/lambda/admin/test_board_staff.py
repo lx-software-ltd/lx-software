@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -120,11 +121,15 @@ class StaffEngineTests(BoardTestCase):
         cfo = board_personas.persona_default("cfo") or {}
         prompt = board_personas.render_seat_prompt(seat, cfo, {}, [])
         self.assertIn("finance_aging_report", prompt)
+        self.assertIn("finance_cash_snapshot", prompt)
         self.assertIn("Siu Tin Dei product database", prompt)
         self.assertIn("no QuickBooks", prompt)
         duties = {str(d["id"]): d for d in (seat.get("duties") or [])}
         self.assertIn("finance_aging_report", duties["weekly-aging"]["brief"])
+        self.assertIn("finance_cash_snapshot", duties["month-end-memo"]["brief"])
         self.assertIn("finance_aging_report", duties["month-end-memo"]["brief"])
+        self.assertIn("meta_ad_spend", duties["month-end-memo"]["brief"])
+        self.assertEqual((seat.get("tools") or {}).get("meta"), "read")
         review = board_staff._review_user_prompt(  # noqa: SLF001
             {
                 "assignee": "accountant",
@@ -137,6 +142,8 @@ class StaffEngineTests(BoardTestCase):
         )
         self.assertIn("finance_aging_report", review)
         self.assertIn("Do not return asking for accounting software", review)
+        self.assertIn("finance_cash_snapshot", review)
+        self.assertIn("[Insert", review)
         self.assertIn("book of record", board_tools.REGISTRY["finance_aging_report"].description)
         self.assertIn("no QuickBooks/Xero", board_tools.REGISTRY["finance_list_invoices"].description)
 
@@ -303,6 +310,88 @@ class StaffStepTests(ToolsTestCase):
         latest = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(latest["confidence"], "medium")
         self.assertIn("no_evidence", latest["flags"])
+
+    def test_task_finish_rejects_placeholder_memo(self) -> None:
+        task = self._queued_task()
+        board_store.claim_task_step(self.table, task["taskId"], 0)
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=board_store.load_settings(self.table),
+            persona_id="cfo",
+            kind="task",
+            task_id=task["taskId"],
+        )
+        with self.assertRaises(board_staff.StaffError) as raised:
+            board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "Month-end close",
+                    "deliverableType": "markdown",
+                    "deliverable": (
+                        "# Month-End Close Memo\n"
+                        "- Current Balance: [Insert verified cash balance]\n"
+                        "- 0-30 Days: [Insert amount]"
+                    ),
+                    "evidence": [],
+                    "openQuestions": [],
+                    "confidence": "low",
+                },
+            )
+        self.assertIn("placeholder", str(raised.exception).lower())
+        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "running")
+
+    def test_task_finish_requires_evidence_when_brief_names_tools(self) -> None:
+        settings = _enable_staff(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="cfo",
+                origin="duty",
+                brief=(
+                    "Call finance_cash_snapshot, finance_aging_report, aws_monthly_cost "
+                    "and meta_ad_spend. Write the month-end close memo."
+                ),
+                deliverable_type="markdown",
+                created_by="board_duties",
+            )
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="cfo",
+            kind="task",
+            task_id=task["taskId"],
+        )
+        with self.assertRaises(board_staff.StaffError) as raised:
+            board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "Close",
+                    "deliverableType": "markdown",
+                    "deliverable": "Cash HKD 1.00. Aging current 0.",
+                    "evidence": [],
+                    "openQuestions": [],
+                    "confidence": "low",
+                },
+            )
+        self.assertIn("finance_cash_snapshot", str(raised.exception))
+        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "running")
+
+    def test_accountant_can_read_cash_and_meta(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "accountant", {"isActive": True})
+        roster = board_staff.seats_by_id(self.table, settings)
+        self.assertEqual(board_staff.seat_level(settings, roster, "accountant", "meta"), "read")
+        ops = {
+            op.name
+            for op, _ in board_tools.available_ops(
+                settings, "cfo", context="task", seat_id="accountant", seats_by_id=roster
+            )
+        }
+        self.assertIn("finance_cash_snapshot", ops)
+        self.assertIn("meta_ad_spend", ops)
+        self.assertIn("aws_monthly_cost", ops)
+        self.assertIn("finance_aging_report", ops)
 
     def test_review_return_then_max_revisions_needs_owner(self) -> None:
         task = self._queued_task()
@@ -879,6 +968,10 @@ class StaffToolAvailabilityTests(unittest.TestCase):
         self.assertIn("task_finish", task)
         self.assertIn("staff_assign", chat)
         self.assertIn("staff_assign", task)
+        self.assertIn("finance_aging_report", task)
+        self.assertIn("finance_cash_snapshot", task)
+        self.assertIn("aws_monthly_cost", task)
+        self.assertIn("meta_ad_spend", task)
         settings["staff"]["enabled"] = False
         off = {op.name for op, _ in board_tools.available_ops(settings, "cfo", context="chat")}
         self.assertNotIn("staff_assign", off)
@@ -1096,3 +1189,86 @@ class StaffActionHandoffTests(BoardTestCase):
         self.assertEqual(tasks[0]["origin"], "minutes")
         status, approvals = self.call("/siu-tin-dei/board/approvals", query="status=pending")
         self.assertEqual(approvals["approvals"], [])
+
+
+class CashSnapshotTests(BoardTestCase):
+    def test_cash_snapshot_aggregates_without_account_names(self) -> None:
+        import board_finance
+        from ddb_convert import _to_ddb_nested
+        from finance_store import _finance_owner_ddb_key, _finance_sheet_ddb_key, _normalize_finance_payload
+
+        self.table.put_item(
+            Item={
+                **_finance_sheet_ddb_key("accounts"),
+                **_to_ddb_nested(
+                    {
+                        "records": [
+                            {
+                                "id": "ac-hsbc",
+                                "description": "HSBC HK current 123-456",
+                                "accountType": "Bank Account",
+                                "billingCycleDay": 1,
+                                "recordedValue": 1000.0,
+                                "currency": "HKD",
+                                "lastUpdated": "2026-09-12",
+                            },
+                            {
+                                "id": "ac-monzo",
+                                "description": "Monzo",
+                                "accountType": "Bank Account",
+                                "billingCycleDay": 1,
+                                "recordedValue": 50.0,
+                                "currency": "GBP",
+                                "lastUpdated": "2026-09-11",
+                            },
+                            {
+                                "id": "ac-amex",
+                                "description": "Amex Platinum",
+                                "accountType": "Credit Card",
+                                "billingCycleDay": 14,
+                                "recordedValue": 200.0,
+                                "currency": "HKD",
+                                "lastUpdated": "2026-09-01",
+                            },
+                        ]
+                    }
+                ),
+            }
+        )
+        payload = _normalize_finance_payload(
+            {
+                "defaultCurrency": "HKD",
+                "float": {"amount": 0, "currency": "HKD"},
+                "lines": [
+                    {
+                        "id": "inc-1",
+                        "dateUtc": "2026-09-01T00:00:00.000Z",
+                        "type": "income",
+                        "description": "Listing fee",
+                        "netAmount": 388,
+                        "vat": 0,
+                        "grossAmount": 388,
+                        "currency": "HKD",
+                    }
+                ],
+            }
+        )
+        self.table.put_item(Item={**_finance_owner_ddb_key("siuTinDei"), **_to_ddb_nested(payload)})
+        snap = board_finance.cash_snapshot(self.table, now=datetime(2026, 9, 13, tzinfo=timezone.utc))
+        self.assertEqual(snap["asOf"], "2026-09-13")
+        self.assertEqual(snap["cash"]["accountCount"], 3)
+        self.assertEqual(snap["cash"]["liquidByCurrency"], [{"currency": "GBP", "amount": 50.0}, {"currency": "HKD", "amount": 1000.0}])
+        self.assertEqual(snap["cash"]["creditCardByCurrency"], [{"currency": "HKD", "amount": 200.0}])
+        blob = json.dumps(snap)
+        self.assertNotIn("HSBC", blob)
+        self.assertNotIn("123-456", blob)
+        self.assertNotIn("Amex", blob)
+        fy = (snap["statementBooks"]["books"]["siuTinDei"].get("fiscalYear") or [])
+        self.assertTrue(any(row["currency"] == "HKD" and row["income"] == 388.0 for row in fy))
+        ctx = board_tools.ToolContext(table=self.table, settings=board_store.default_settings(), persona_id="cfo")
+        out = board_tools.REGISTRY["finance_cash_snapshot"].run(ctx, {})
+        self.assertEqual(out["cash"]["accountCount"], 3)
+
+
+if __name__ == "__main__":
+    unittest.main()

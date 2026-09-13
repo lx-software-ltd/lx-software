@@ -134,7 +134,7 @@
     {
       "id": "finance",
       "label": "Finance",
-      "description": "Siu Tin Dei listing receivables in the product database (invoices, payments, subscriptions) — not QuickBooks, Xero or any other accounting package. Aging, unit economics, draft/send invoices and dunning reminders; record or match payments. Company payables live in the founder's admin statement books. The board never initiates a bank payment.",
+      "description": "Siu Tin Dei listing receivables in the product database (invoices, payments, subscriptions) — not QuickBooks, Xero or any other accounting package. Aging, unit economics, cash snapshot from the accounts sheet and statement books, draft/send invoices and dunning reminders; record or match payments. The board never initiates a bank payment.",
       "maxLevel": "act",
       "defaults": {
         "ceo": "read",

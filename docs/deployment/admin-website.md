@@ -692,7 +692,8 @@ function calling. Design:
   seat). Until that workflow has run, use the 5-minute schedule or
   **Actions → Deploy Backend → Run workflow**. HKT crons on the 5-minute
   staff tick: BA weekly KPI
-  (Mon 08:00), accountant month-end (1st 09:00) and weekly aging (Thu
+  (Mon 08:00), accountant month-end (1st 09:00; `finance_cash_snapshot`,
+  `finance_aging_report`, `aws_monthly_cost`, `meta_ad_spend`) and weekly aging (Thu
   09:00; `finance_aging_report` against Siu Tin Dei Aurora invoices, not
   QuickBooks/Xero), security weekly triage (Tue 09:00), data-analyst attribution
   (Mon 10:00). Hourly `board_cache_refresh` opens architect/CTO tasks for

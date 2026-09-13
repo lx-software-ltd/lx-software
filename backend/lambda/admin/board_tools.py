@@ -32,6 +32,7 @@ import board_actions
 import board_aws
 import board_budget
 import board_deadline
+import board_finance
 import board_github
 import board_mail
 import board_meta
@@ -169,7 +170,9 @@ class ToolOp:
     parameters: dict[str, Any]
     run: Callable[[ToolContext, dict[str, Any]], dict[str, Any]]
     summarize: Callable[[dict[str, Any]], str]
-    contexts: tuple[str, ...] = ("chat", "meeting")
+    # Staff steps use ``ctx.kind == "task"``. Default includes it so finance /
+    # AWS / Meta reads are offered to seats (month-end memo, aging, etc.).
+    contexts: tuple[str, ...] = ("chat", "meeting", "task")
     # Write ops only. ``act_guard`` returns a reason why an ``act``-level call
     # must still be approved (e.g. recipient not allow-listed); ``preview``
     # renders the owner-facing, un-masked payload stored on the approval.
@@ -1607,6 +1610,19 @@ def build_registry() -> dict[str, ToolOp]:
             summarize=_summ("Relay lead for {parentEmail}"),
             act_guard=board_meta.act_guard_relay,
             preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_relay_lead"),
+        ),
+        ToolOp(
+            name="finance_cash_snapshot",
+            tool_id="finance",
+            kind="read",
+            description=(
+                "Month-end cash pack: liquid cash and credit-card totals by currency from the "
+                "accounts sheet (no account names), plus statement-book income/expenditure totals. "
+                "Use this for cash balance and cash flow in the close memo."
+            ),
+            parameters=_obj({}),
+            run=board_finance.op_cash_snapshot,
+            summarize=_summ("Read cash snapshot"),
         ),
         ToolOp(
             name="finance_list_subscriptions",
