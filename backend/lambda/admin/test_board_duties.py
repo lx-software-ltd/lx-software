@@ -213,13 +213,32 @@ class OpsTriageTests(BoardTestCase):
         board_store.put_cache(
             self.table,
             "security:github",
-            {"dependabot": [{"number": 9, "summary": "lodash"}], "codeScanning": [], "secretScanning": []},
+            {
+                "dependabot": [
+                    {
+                        "number": 9,
+                        "summary": "lodash",
+                        "package": "lodash",
+                        "ecosystem": "npm",
+                        "severity": "high",
+                        "cveId": "CVE-2021-23337",
+                        "manifest": "package-lock.json",
+                    }
+                ],
+                "codeScanning": [],
+                "secretScanning": [],
+            },
         )
         out = board_duties.triage_ops_signals(self.table, self.settings)
         self.assertEqual(out["alerts"], 2)
         tasks = board_store.list_tasks(self.table, "queued") + board_store.list_tasks(self.table, "running")
         assignees = {t["assignee"] for t in tasks if (t.get("eventRef") or {}).get("kind") == "ops"}
         self.assertEqual(assignees, {"security-analyst"})
+        dep = [t for t in tasks if (t.get("eventRef") or {}).get("id") == "alert:gh:dependabot:9"]
+        self.assertEqual(len(dep), 1)
+        self.assertIn("github_get_security_alert kind=dependabot number=9", dep[0]["brief"])
+        self.assertIn("CVE-2021-23337", dep[0]["brief"])
+        self.assertIn("package lodash (npm)", dep[0]["brief"])
         again = board_duties.triage_ops_signals(self.table, self.settings)
         self.assertEqual(again["alerts"], 0)
 

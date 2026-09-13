@@ -337,6 +337,8 @@ class PreambleTests(unittest.TestCase):
         text = board_tools.tools_preamble(ops)
         self.assertIn("held", text)
         self.assertIn("I have scheduled", text)
+        self.assertIn("read_github", text)
+        self.assertIn("complete list", text)
 
 
 class HoldSafetyTests(BoardTestCase):

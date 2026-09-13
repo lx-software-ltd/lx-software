@@ -144,7 +144,9 @@ class ToolOp:
     parameters: dict[str, Any]
     run: Callable[[ToolContext, dict[str, Any]], dict[str, Any]]
     summarize: Callable[[dict[str, Any]], str]
-    contexts: tuple[str, ...] = ("chat", "meeting")
+    # Staff tasks use kind="task". Seat tools (github, mail, …) must be offered
+    # there; only task_note / task_finish stay task-exclusive.
+    contexts: tuple[str, ...] = ("chat", "meeting", "task")
     # Write ops only. ``act_guard`` returns a reason why an ``act``-level call
     # must still be approved (e.g. recipient not allow-listed); ``preview``
     # renders the owner-facing, un-masked payload stored on the approval.
@@ -883,6 +885,25 @@ def build_registry() -> dict[str, ToolOp]:
             parameters=_obj({"limit": _int_param("Max alerts per kind (1-50).", maximum=50)}),
             run=_gh(board_github.op_list_security_alerts),
             summarize=_summ("Checked security alerts"),
+            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
+        ),
+        ToolOp(
+            name="github_get_security_alert",
+            tool_id="github",
+            kind="read",
+            description="Read one Dependabot, code-scanning or secret-scanning alert by number, including CVE/GHSA, vulnerable range and patched version.",
+            parameters=_obj(
+                {
+                    "kind": _str_param(
+                        "Alert family from the task brief (gh:dependabot:N → dependabot).",
+                        enum=["dependabot", "codeScanning", "secretScanning"],
+                    ),
+                    "number": _int_param("Alert number from GitHub (e.g. 153).", maximum=100000),
+                },
+                ["kind", "number"],
+            ),
+            run=_gh(board_github.op_get_security_alert),
+            summarize=_summ("Read {kind} alert #{number}"),
             timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
         ),
         ToolOp(
@@ -2290,7 +2311,7 @@ def build_registry() -> dict[str, ToolOp]:
             name="task_finish",
             tool_id="task",
             kind="write",
-            description="Finish the current task. Provide the deliverable and evidence call ids. Do not call this without evidence unless the brief needs none.",
+            description="Finish the current task. Provide the deliverable and evidence call ids. If no offered function can verify more, finish anyway with confidence low and openQuestions.",
             parameters=_obj(
                 {
                     "summary": _str_param("One-paragraph summary of the result.", max_len=800),
@@ -2402,9 +2423,12 @@ def tools_preamble(ops: list[tuple[ToolOp, str]]) -> str:
     if not ops:
         return ""
     lines = [
-        "TOOLS: you can call the functions offered to you. Use read tools to check live facts "
-        "before asserting them; cite what you found. Never call the same function twice with the "
-        f"same arguments, and make at most {BOARD_MAX_TOOL_CALLS_PER_TURN} calls per reply.",
+        "TOOLS: you can call the functions offered to you. Those names are the complete list; "
+        "never invent others (there is no read_github, read_npm or read_cve). Use read tools to "
+        "check live facts before asserting them; cite what you found. Never call the same function "
+        "twice with the same arguments, and make at most "
+        f"{BOARD_MAX_TOOL_CALLS_PER_TURN} calls per reply. If a fact cannot be verified with the "
+        "offered functions, say so and finish with what you have.",
     ]
     proposes = sorted({TOOL_LABELS.get(op.tool_id, op.tool_id) for op, lvl in ops if op.is_write and lvl == "propose"})
     acts = sorted({TOOL_LABELS.get(op.tool_id, op.tool_id) for op, lvl in ops if op.is_write and lvl == "act"})

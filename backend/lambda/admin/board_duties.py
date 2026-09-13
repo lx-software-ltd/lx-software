@@ -243,9 +243,7 @@ def triage_ops_signals(table: Any, settings: dict[str, Any]) -> dict[str, int]:
                 if not fid:
                     continue
                 alert_ids.append(fid)
-                new_alerts.append(
-                    (fid, str((row or {}).get("title") or (row or {}).get("summary") or fid))
-                )
+                new_alerts.append((fid, _alert_task_brief(fid, row if isinstance(row, dict) else {})))
     github = board_store.get_cache(table, "security:github")
     if github and isinstance(github.get("payload"), dict):
         for key in ("dependabot", "codeScanning", "secretScanning"):
@@ -254,33 +252,76 @@ def triage_ops_signals(table: Any, settings: dict[str, Any]) -> dict[str, int]:
                 if not fid:
                     continue
                 alert_ids.append(f"gh:{key}:{fid}")
-                new_alerts.append(
-                    (
-                        f"gh:{key}:{fid}",
-                        str(
-                            (row or {}).get("title")
-                            or (row or {}).get("summary")
-                            or (row or {}).get("description")
-                            or (row or {}).get("secretType")
-                            or fid
-                        ),
-                    )
-                )
+                new_alerts.append((f"gh:{key}:{fid}", _alert_task_brief(f"gh:{key}:{fid}", row if isinstance(row, dict) else {})))
     seen_alerts = _seen_payload(table, "seen:alerts")
     security_assignee = "security-analyst" if (roster.get("security-analyst") or {}).get("isActive") else "ciso"
-    for fid, title in new_alerts:
+    for fid, brief in new_alerts:
         if fid in seen_alerts:
             continue
         _maybe_task(
             table,
             settings,
             assignee=security_assignee,
-            brief=f"New security alert {fid}: {title[:300]}",
+            brief=brief,
             event_id=f"alert:{fid}",
         )
         created_alerts += 1
     _save_seen(table, "seen:alerts", alert_ids)
     return {"alarms": created_alarms, "alerts": created_alerts}
+
+
+def _alert_task_brief(fid: str, row: dict[str, Any]) -> str:
+    """Give the analyst the cached advisory fields plus which GitHub op to call."""
+    title = str(
+        row.get("title")
+        or row.get("summary")
+        or row.get("description")
+        or row.get("secretType")
+        or fid
+    ).strip()
+    head = f"New security alert {fid}"
+    severity = str(row.get("severity") or "").strip()
+    if severity:
+        head += f" ({severity})"
+    if title:
+        head += f": {title}"
+    extras: list[str] = []
+    pkg = str(row.get("package") or "").strip()
+    ecosystem = str(row.get("ecosystem") or "").strip()
+    manifest = str(row.get("manifest") or row.get("path") or "").strip()
+    if pkg:
+        extras.append(f"package {pkg}" + (f" ({ecosystem})" if ecosystem else ""))
+    if manifest:
+        extras.append(f"manifest {manifest}")
+    cve = str(row.get("cveId") or row.get("cve_id") or "").strip()
+    ghsa = str(row.get("ghsaId") or row.get("ghsa_id") or "").strip()
+    if cve:
+        extras.append(cve)
+    if ghsa:
+        extras.append(ghsa)
+    rng = str(row.get("vulnerableVersionRange") or "").strip()
+    patched = str(row.get("firstPatchedVersion") or "").strip()
+    if rng:
+        extras.append(f"vulnerable {rng}")
+    if patched:
+        extras.append(f"patched {patched}")
+    url = str(row.get("url") or "").strip()
+    if url:
+        extras.append(url)
+    parts = [head]
+    if extras:
+        parts.append("; ".join(extras) + ".")
+    if fid.startswith("gh:"):
+        pieces = fid.split(":")
+        kind = pieces[1] if len(pieces) > 1 else "dependabot"
+        number = pieces[2] if len(pieces) > 2 else ""
+        if number:
+            parts.append(
+                f"Verify with github_get_security_alert kind={kind} number={number} "
+                "(CVE, GHSA, patched version) then github_get_file on the manifest if needed. "
+                "Propose a remediation issue; do not apply a fix."
+            )
+    return " ".join(parts)[:4000]
 
 
 def _maybe_task(table: Any, settings: dict[str, Any], *, assignee: str, brief: str, event_id: str) -> None:

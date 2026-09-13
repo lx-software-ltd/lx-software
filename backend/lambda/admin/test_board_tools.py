@@ -203,6 +203,11 @@ class TestLevels(unittest.TestCase):
         self.assertIn("github_get_file", cto_meeting)
         self.assertIn("board_add_action", cto_meeting)
         self.assertIn("board_update_action", cto_meeting)
+        cto_task = {op.name for op, _ in board_tools.available_ops(settings, "cto", context="task")}
+        self.assertIn("github_get_file", cto_task)
+        self.assertIn("github_list_security_alerts", cto_task)
+        self.assertIn("github_get_security_alert", cto_task)
+        self.assertIn("task_finish", cto_task)
         cfo_chat = {op.name for op, _ in board_tools.available_ops(settings, "cfo", context="chat")}
         self.assertFalse(any(n.startswith("github_") for n in cfo_chat))
         self.assertIn("board_list_actions", cfo_chat)
@@ -635,6 +640,53 @@ class TestGitHubOps(ToolsTestCase):
         self.assertEqual(out["dependabot"], [])
         self.assertTrue(any("403" in n for n in out["notes"]))
         self.assertEqual(out["codeScanning"], [])
+
+    def test_get_security_alert_returns_cve_and_range(self) -> None:
+        inner = self.github
+        payload = {
+            "number": 153,
+            "state": "open",
+            "html_url": "https://github.com/lx-software-ltd/siutindei/security/dependabot/153",
+            "created_at": "2026-09-13T00:00:00Z",
+            "dependency": {
+                "package": {"name": "js-yaml", "ecosystem": "npm"},
+                "manifest_path": "package-lock.json",
+            },
+            "security_advisory": {
+                "ghsa_id": "GHSA-mh29-5h37-fv8m",
+                "cve_id": "CVE-2025-64718",
+                "severity": "high",
+                "summary": "js-yaml: maxTotalMergeKeys does not limit CPU use for empty merge sources",
+                "description": "A crafted YAML merge key can pin a CPU core.",
+            },
+            "security_vulnerability": {
+                "severity": "high",
+                "vulnerable_version_range": "< 4.1.1",
+                "first_patched_version": {"identifier": "4.1.1"},
+            },
+        }
+
+        def with_alert(req, timeout=None):
+            path = req.full_url.replace(board_github.API_ORIGIN, "")
+            if "/dependabot/alerts/153" in path:
+                inner.requests.append((req.get_method(), path, dict(req.headers), None))
+                return _FakeResp(json.dumps(payload).encode("utf-8"))
+            if path.endswith("/dependabot/alerts?state=open&per_page=20"):
+                inner.requests.append((req.get_method(), path, dict(req.headers), None))
+                return _FakeResp(json.dumps([payload]).encode("utf-8"))
+            return inner(req, timeout)
+
+        self.router.github = with_alert
+        one = board_github.op_get_security_alert({"kind": "dependabot", "number": 153})
+        self.assertEqual(one["package"], "js-yaml")
+        self.assertEqual(one["cveId"], "CVE-2025-64718")
+        self.assertEqual(one["ghsaId"], "GHSA-mh29-5h37-fv8m")
+        self.assertEqual(one["vulnerableVersionRange"], "< 4.1.1")
+        self.assertEqual(one["firstPatchedVersion"], "4.1.1")
+        listed = board_github.op_list_security_alerts({})
+        self.assertEqual(listed["dependabot"][0]["cveId"], "CVE-2025-64718")
+        with self.assertRaises(board_github.GitHubSnapshotError):
+            board_github.op_get_security_alert({"kind": "npm", "number": 1})
 
     def test_writes_require_token(self) -> None:
         with self.assertRaises(board_github.GitHubSnapshotError) as ctx:
