@@ -5,10 +5,17 @@
  * container edge (no sideways scroll).
  */
 
+.admin-tab-list-wrap {
+  max-width: 100%;
+  min-width: 0;
+}
+
 .admin-tab-list {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 0.375rem;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .admin-tab-list .nav-item {
@@ -81,6 +88,8 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.375rem;
+    max-width: 100%;
+    min-width: 0;
   }
 
   /* Phone grid uses min-width: 0 so pills wrap text. At md+ that shrinks
