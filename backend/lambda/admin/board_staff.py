@@ -22,6 +22,7 @@ from contract_constants import (
     BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
     BOARD_STAFF_DELIVERABLE_MAX_BYTES,
     BOARD_STAFF_DELIVERABLE_TYPES,
+    BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK,
     BOARD_STAFF_MAX_REVISIONS,
     BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
     BOARD_STAFF_MAX_STEPS_PER_TASK,
@@ -46,6 +47,11 @@ _LEVEL_RANK = {lvl: i for i, lvl in enumerate(BOARD_TOOL_LEVELS)}
 TERMINAL_STATUSES = frozenset({"delivered", "failed", "cancelled"})
 NON_TERMINAL_STATUSES = frozenset(s for s in BOARD_STAFF_TASK_STATUSES if s not in TERMINAL_STATUSES)
 _MEMORY_BLOBS: dict[str, bytes] = {}
+_IDLE_TOOL_OPS = frozenset({"task_note"})
+_IDLE_NUDGE = (
+    "NUDGE: That step only wrote a note. Call a real tool next, or call "
+    "task_finish with the deliverable. Notes-only steps burn the step budget."
+)
 
 
 class StaffError(ValueError):
@@ -218,6 +224,7 @@ def create_task(
         "slaAt": sla_at,
         "step": 0,
         "stepsUsed": 0,
+        "idleSteps": 0,
         "revisions": 0,
         "usage": {"promptTokens": 0, "completionTokens": 0, "cost": 0.0, "calls": 0},
         "scratchpadKey": "",
@@ -436,23 +443,76 @@ def run_step(payload: dict[str, Any]) -> None:
         actor="persona",
         usage_sink=_sink,
     )
-    result = board_tools.run_tool_loop(
-        ctx=ctx,
-        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-        model=model,
-        timeout=min(90, BOARD_STAFF_STEP_MAX_SECONDS),
-        max_tokens=2500,
-        temperature=0.3,
-        json_mode=False,
-        tag="board_staff_step",
-        max_seconds=BOARD_STAFF_STEP_MAX_SECONDS,
-    )
-    usage = result.usage or {}
-    task = board_store.get_task(table, task_id) or task
-    if task.get("status") != "running":
+    try:
+        result = board_tools.run_tool_loop(
+            ctx=ctx,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            model=model,
+            timeout=min(90, BOARD_STAFF_STEP_MAX_SECONDS),
+            max_tokens=2500,
+            temperature=0.3,
+            json_mode=False,
+            tag="board_staff_step",
+            max_seconds=BOARD_STAFF_STEP_MAX_SECONDS,
+        )
+    except Exception as exc:
+        _on_step_exception(table, task, payload, wanted, exc)
         return
+    _complete_step(table, task_id, task, result)
+
+
+def _on_step_exception(
+    table: Any,
+    task: dict[str, Any],
+    payload: dict[str, Any],
+    wanted: int,
+    exc: BaseException,
+) -> None:
+    task_id = str(task.get("taskId") or payload.get("taskId") or "")
+    _log_event("error", tag="board_staff_step_failed", taskId=task_id, step=wanted, error=str(exc)[:300])
     latest = board_store.get_task(table, task_id) or task
-    if latest.get("status") == "review":
+    if latest.get("status") != "running":
+        return
+    if not payload.get("retried"):
+        _release_step_claim(table, latest, wanted)
+        board_async.invoke_async(
+            {
+                "internal": "board_staff_step",
+                "boardKey": BOARD_KEY,
+                "taskId": task_id,
+                "step": wanted,
+                "retried": True,
+            },
+            fallback=run_step,
+        )
+        return
+    _finish_incomplete(table, latest, f"step error: {exc}"[:300])
+
+
+def _release_step_claim(table: Any, task: dict[str, Any], claimed_step: int) -> None:
+    """Drop a held step claim so a retry (or a return verdict) can take it again."""
+    latest = board_store.get_task(table, str(task.get("taskId") or "")) or task
+    latest["stepClaimed"] = max(0, int(claimed_step) - 1)
+    latest.pop("stepClaimedAt", None)
+    latest["updatedAt"] = board_store.now_iso()
+    board_store.put_task(table, latest)
+
+
+def _align_step_claim(task: dict[str, Any]) -> None:
+    """Make ``stepClaimed`` match the last completed step so the next seq can be claimed."""
+    task["stepClaimed"] = int(task.get("step") or 0)
+    task.pop("stepClaimedAt", None)
+
+
+def _productive_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [c for c in calls if str(c.get("op") or "") not in _IDLE_TOOL_OPS]
+
+
+def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any) -> None:
+    usage = result.usage or {}
+    latest = board_store.get_task(table, task_id) or task
+    status = str(latest.get("status") or "")
+    if status not in ("running", "review"):
         return
     latest["usage"] = _task_usage_add(latest, usage)
     note = (result.text or "").strip()
@@ -461,13 +521,14 @@ def run_step(payload: dict[str, Any]) -> None:
         latest["scratchpadKey"] = _scratchpad_key(task_id)
         latest["scratchpadChars"] = len(combined)
     seq = int(latest.get("step") or 0) + 1
+    calls = list(result.calls or [])
     board_store.put_task_step(
         table,
         task_id,
         {
             "seq": seq,
             "plan": note[:2000],
-            "callIds": [c.get("callId") for c in result.calls if c.get("callId")],
+            "callIds": [c.get("callId") for c in calls if c.get("callId")],
             "usage": usage,
             "at": board_store.now_iso(),
         },
@@ -475,6 +536,21 @@ def run_step(payload: dict[str, Any]) -> None:
     latest["step"] = seq
     latest["stepsUsed"] = seq
     latest["updatedAt"] = board_store.now_iso()
+    if status == "review":
+        latest["idleSteps"] = 0
+        board_store.put_task(table, latest)
+        return
+    if not _productive_calls(calls):
+        idle = int(latest.get("idleSteps") or 0) + 1
+        latest["idleSteps"] = idle
+        combined = _append_scratchpad(latest, _IDLE_NUDGE)
+        latest["scratchpadKey"] = _scratchpad_key(task_id)
+        latest["scratchpadChars"] = len(combined)
+        if idle >= BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK:
+            _finish_incomplete(table, latest, "idle step limit")
+            return
+    else:
+        latest["idleSteps"] = 0
     if seq >= BOARD_STAFF_MAX_STEPS_PER_TASK:
         _finish_incomplete(table, latest, "step limit")
         return
@@ -742,6 +818,9 @@ def apply_review(
         _append_scratchpad(task, f"MANAGER NOTES: {notes}")
         task["revisions"] = revisions + 1
         task["status"] = "running"
+        task["idleSteps"] = 0
+        task["failureReason"] = ""
+        _align_step_claim(task)
         board_store.put_task(table, task)
         board_async.invoke_async(
             {
@@ -808,6 +887,34 @@ def _accept_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
         except Exception as exc:
             _log_event("warning", tag="board_code_review_deliver_failed", error=str(exc)[:200])
     return task
+
+
+def retry_task(table: Any, settings: dict[str, Any], task_id: str, by_sub: str) -> dict[str, Any]:
+    """Re-queue a failed task with the same brief so the seat can try again."""
+    task = board_store.get_task(table, task_id)
+    if not task:
+        raise StaffError("Task not found")
+    if task.get("status") != "failed":
+        raise StaffError("Only failed tasks can be retried")
+    now = board_store.now_iso()
+    task["status"] = "queued"
+    task["step"] = 0
+    task["stepsUsed"] = 0
+    task["idleSteps"] = 0
+    task["revisions"] = 0
+    task["failureReason"] = ""
+    task["finishedAt"] = None
+    task["startedAt"] = None
+    task["reviewRetried"] = False
+    task.pop("stepClaimed", None)
+    task.pop("stepClaimedAt", None)
+    task["updatedAt"] = now
+    task["retriedBy"] = by_sub
+    task["retriedAt"] = now
+    board_store.put_task(table, task)
+    if enabled(settings):
+        drain_queue(table, settings)
+    return board_store.get_task(table, task_id) or task
 
 
 def cancel_task(table: Any, task_id: str, by_sub: str) -> dict[str, Any]:

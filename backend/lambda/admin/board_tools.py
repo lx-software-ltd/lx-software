@@ -83,6 +83,31 @@ MAX_RESULT_PREVIEW = 400
 # meeting 60 + 45 = 105 s per member (members run in parallel per phase).
 MODEL_CALL_TIMEOUT_FLOOR_SECONDS = 15
 FINAL_CALL_TIMEOUT_FLOOR_SECONDS = 45
+
+
+def completion_timeout(
+    requested: int,
+    left: float,
+    floor: int,
+    *,
+    allow_floor_overrun: bool = False,
+) -> int:
+    """Clamp an OpenRouter timeout to the remaining tool-loop budget.
+
+    When enough time remains, keep the usual floor so a short leftover does
+    not become a 1-second call. When leftover is positive but below the
+    floor, use the leftover instead of inflating it past the deadline.
+    ``allow_floor_overrun`` is for the final answer call, which may run
+    briefly past the loop budget the same way it does today.
+    """
+    remaining = int(left)
+    if remaining >= floor:
+        return max(floor, min(requested, remaining))
+    if remaining > 0:
+        return min(max(1, requested), remaining)
+    if allow_floor_overrun:
+        return max(1, floor)
+    return 0
 OP_TIMEOUT_FLOOR_SECONDS = 2
 
 
@@ -2937,6 +2962,9 @@ def run_tool_loop(
         calls_left = BOARD_MAX_TOOL_CALLS_PER_TURN - len(calls)
         if left <= 0 or calls_left <= 0:
             break
+        timeout_s = completion_timeout(timeout, left, MODEL_CALL_TIMEOUT_FLOOR_SECONDS)
+        if timeout_s <= 0:
+            break
         if rounds:
             # The caller checked the daily cap before the turn; every further
             # round is another paid call, so re-check between rounds.
@@ -2951,7 +2979,7 @@ def run_tool_loop(
             table=ctx.table,
             messages=convo,
             model=model,
-            timeout=max(MODEL_CALL_TIMEOUT_FLOOR_SECONDS, min(timeout, int(left))),
+            timeout=timeout_s,
             json_mode=False,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -2985,11 +3013,19 @@ def run_tool_loop(
         # The answer call may run past the loop budget, but only up to the
         # OpenRouter timeout; the sums in the module header rely on that.
         left = max_seconds - (time.monotonic() - started)
+        timeout_s = completion_timeout(
+            timeout,
+            left,
+            FINAL_CALL_TIMEOUT_FLOOR_SECONDS,
+            allow_floor_overrun=True,
+        )
+        if timeout_s <= 0:
+            return ToolLoopResult(text="", usage=usage, model=model, calls=calls, rounds=rounds)
         final = board_budget.board_completion(
             table=ctx.table,
             messages=convo,
             model=model,
-            timeout=max(FINAL_CALL_TIMEOUT_FLOOR_SECONDS, min(timeout, int(left))),
+            timeout=timeout_s,
             json_mode=json_mode,
             temperature=temperature,
             max_tokens=max_tokens,

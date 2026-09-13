@@ -744,6 +744,18 @@ def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
             return _json_response(404 if "not found" in str(exc).lower() else 400, {"message": str(exc)})
         _audit(user_sub, "BOARD_TASK_REVIEW", rest[1], event)
         return _json_response(200, {"task": board_staff.public_task(task)})
+    if len(rest) == 3 and rest[2] == "retry" and method == "POST":
+        if not board_staff.enabled(settings):
+            return _staff_disabled()
+        try:
+            task = board_staff.retry_task(table, settings, rest[1], user_sub or "")
+        except board_staff.StaffError as exc:
+            message = str(exc)
+            if "not found" in message.lower():
+                return _json_response(404, {"message": message})
+            return _json_response(409 if "only failed" in message.lower() else 400, {"message": message})
+        _audit(user_sub, "BOARD_TASK_RETRY", rest[1], event)
+        return _json_response(200, {"task": board_staff.public_task(task)})
     return _json_response(404, {"message": "Not found"})
 
 
