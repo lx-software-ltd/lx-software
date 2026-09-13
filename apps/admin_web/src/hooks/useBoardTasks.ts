@@ -89,11 +89,24 @@ export function reviewTaskMutationOptions(qc: QueryClient) {
   };
 }
 
+async function fetchTaskList(): Promise<BoardTaskListPayload> {
+  const [main, failed] = await Promise.all([
+    adminFetchJson<BoardTaskListPayload>(boardTasksPath()),
+    adminFetchJson<BoardTaskListPayload>(boardTasksPath({ status: "failed", limit: 50 })),
+  ]);
+  const seen = new Set(main.tasks.map((task) => task.taskId));
+  const extra = failed.tasks.filter((task) => !seen.has(task.taskId));
+  return {
+    tasks: extra.length ? [...main.tasks, ...extra] : main.tasks,
+    counts: main.counts,
+  };
+}
+
 export function useBoardTasks() {
   const qc = useQueryClient();
   const query = useQuery({
     queryKey: BOARD_TASKS_KEY,
-    queryFn: () => adminFetchJson<BoardTaskListPayload>(boardTasksPath()),
+    queryFn: fetchTaskList,
     refetchInterval: (q) => (tasksNeedPolling(q.state.data?.tasks ?? []) ? 10_000 : false),
   });
   const create = useMutation(createTaskMutationOptions(qc));

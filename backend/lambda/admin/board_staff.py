@@ -57,6 +57,10 @@ _IDLE_NUDGE = (
 class StaffError(ValueError):
     """Staff is disabled or the request is invalid."""
 
+    def __init__(self, message: str, *, code: str = "") -> None:
+        super().__init__(message)
+        self.code = code
+
 
 def env_enabled() -> bool:
     env = (os.environ.get("BOARD_STAFF_ENABLED") or "").strip().lower()
@@ -225,6 +229,7 @@ def create_task(
         "step": 0,
         "stepsUsed": 0,
         "idleSteps": 0,
+        "attempt": 1,
         "revisions": 0,
         "usage": {"promptTokens": 0, "completionTokens": 0, "cost": 0.0, "calls": 0},
         "scratchpadKey": "",
@@ -268,8 +273,18 @@ def _link_action_to_task(table: Any, action_id: str, task: dict[str, Any]) -> No
         _log_event("warning", tag="board_staff_action_link_failed", action_id=action_id, error=str(exc)[:200])
 
 
+def _staff_daily_budget_exhausted(table: Any, settings: dict[str, Any]) -> str:
+    staff_usage = board_store.load_staff_usage_day(table)
+    staff_cap = float((settings.get("staff") or {}).get("dailyBudgetUsd") or BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD)
+    if staff_cap > 0 and float(staff_usage.get("cost") or 0) >= staff_cap:
+        return f"Staff daily budget of USD {staff_cap:.2f} is exhausted"
+    return ""
+
+
 def drain_queue(table: Any, settings: dict[str, Any]) -> int:
     if not enabled(settings):
+        return 0
+    if _staff_daily_budget_exhausted(table, settings):
         return 0
     cap = int((settings.get("staff") or {}).get("maxRunningTasks") or BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT)
     running = [t for t in board_store.list_tasks(table, "running") if t.get("status") == "running"]
@@ -391,10 +406,9 @@ def run_step(payload: dict[str, Any]) -> None:
     except board_budget.BudgetExceeded as exc:
         _finish_incomplete(table, task, str(exc))
         return
-    staff_usage = board_store.load_staff_usage_day(table)
-    staff_cap = float((settings.get("staff") or {}).get("dailyBudgetUsd") or BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD)
-    if staff_cap > 0 and staff_usage["cost"] >= staff_cap:
-        _finish_incomplete(table, task, f"Staff daily budget of USD {staff_cap:.2f} is exhausted")
+    parked = _staff_daily_budget_exhausted(table, settings)
+    if parked:
+        _requeue_for_budget(table, task, wanted, parked)
         return
     if float((task.get("usage") or {}).get("cost") or 0.0) >= float(task.get("budgetUsd") or 0):
         _finish_incomplete(table, task, "Task budget exhausted")
@@ -458,7 +472,34 @@ def run_step(payload: dict[str, Any]) -> None:
     except Exception as exc:
         _on_step_exception(table, task, payload, wanted, exc)
         return
-    _complete_step(table, task_id, task, result)
+    _complete_step(table, task_id, task, result, wanted)
+
+
+def _is_retryable_step_error(exc: BaseException) -> bool:
+    try:
+        from openrouter_client import OpenRouterError
+    except Exception:
+        return True
+    if not isinstance(exc, OpenRouterError) or exc.status is None:
+        return True
+    if exc.status == 402:
+        return False
+    if 400 <= exc.status < 500 and exc.status not in (408, 409, 425, 429):
+        return False
+    return True
+
+
+def _trip_openrouter_credits(table: Any, exc: BaseException) -> None:
+    try:
+        from openrouter_client import OpenRouterError
+
+        if not isinstance(exc, OpenRouterError) or exc.status != 402:
+            return
+        import board_breakers
+
+        board_breakers.trip(table, "budget", f"OpenRouter 402: {exc}"[:200])
+    except Exception as trip_exc:
+        _log_event("warning", tag="board_staff_402_breaker_failed", error=str(trip_exc)[:200])
 
 
 def _on_step_exception(
@@ -473,7 +514,8 @@ def _on_step_exception(
     latest = board_store.get_task(table, task_id) or task
     if latest.get("status") != "running":
         return
-    if not payload.get("retried"):
+    _trip_openrouter_credits(table, exc)
+    if _is_retryable_step_error(exc) and not payload.get("retried"):
         _release_step_claim(table, latest, wanted)
         board_async.invoke_async(
             {
@@ -487,6 +529,25 @@ def _on_step_exception(
         )
         return
     _finish_incomplete(table, latest, f"step error: {exc}"[:300])
+
+
+def _requeue_for_budget(table: Any, task: dict[str, Any], claimed_step: int, reason: str) -> None:
+    """Put a running task back on the queue when the daily cap is hit.
+
+    The day resets; failing the task would make Retry a no-op until someone
+    edits the row by hand.
+    """
+    latest = board_store.get_task(table, str(task.get("taskId") or "")) or task
+    if latest.get("status") != "running":
+        return
+    latest["status"] = "queued"
+    latest["stepClaimed"] = max(0, int(claimed_step) - 1)
+    latest.pop("stepClaimedAt", None)
+    latest["startedAt"] = None
+    latest["updatedAt"] = board_store.now_iso()
+    latest["parkedReason"] = reason[:300]
+    board_store.put_task(table, latest)
+    _log_event("warning", tag="board_staff_parked_budget", taskId=latest.get("taskId"), reason=reason[:200])
 
 
 def _release_step_claim(table: Any, task: dict[str, Any], claimed_step: int) -> None:
@@ -508,11 +569,15 @@ def _productive_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [c for c in calls if str(c.get("op") or "") not in _IDLE_TOOL_OPS]
 
 
-def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any) -> None:
+def _task_attempt(task: dict[str, Any]) -> int:
+    return max(1, int(task.get("attempt") or 1))
+
+
+def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, wanted: int) -> None:
     usage = result.usage or {}
     latest = board_store.get_task(table, task_id) or task
     status = str(latest.get("status") or "")
-    if status not in ("running", "review"):
+    if status not in ("running", "review", "needs_owner", "delivered"):
         return
     latest["usage"] = _task_usage_add(latest, usage)
     note = (result.text or "").strip()
@@ -520,25 +585,43 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any) 
         combined = _append_scratchpad(latest, note)
         latest["scratchpadKey"] = _scratchpad_key(task_id)
         latest["scratchpadChars"] = len(combined)
-    seq = int(latest.get("step") or 0) + 1
+    already = int(latest.get("step") or 0) >= wanted
+    seq = wanted if already else int(latest.get("step") or 0) + 1
     calls = list(result.calls or [])
     board_store.put_task_step(
         table,
         task_id,
         {
             "seq": seq,
+            "attempt": _task_attempt(latest),
             "plan": note[:2000],
             "callIds": [c.get("callId") for c in calls if c.get("callId")],
             "usage": usage,
             "at": board_store.now_iso(),
         },
     )
-    latest["step"] = seq
-    latest["stepsUsed"] = seq
+    if not already:
+        latest["step"] = seq
+        latest["stepsUsed"] = seq
     latest["updatedAt"] = board_store.now_iso()
-    if status == "review":
+    latest["stuckRetried"] = False
+    if status in ("review", "needs_owner", "delivered"):
         latest["idleSteps"] = 0
-        board_store.put_task(table, latest)
+        board_store.patch_task_if_status(
+            table,
+            task_id,
+            status,
+            {
+                "usage": latest["usage"],
+                "step": latest["step"],
+                "stepsUsed": latest["stepsUsed"],
+                "idleSteps": 0,
+                "scratchpadKey": latest.get("scratchpadKey") or "",
+                "scratchpadChars": latest.get("scratchpadChars") or 0,
+                "updatedAt": latest["updatedAt"],
+                "stuckRetried": False,
+            },
+        )
         return
     if not _productive_calls(calls):
         idle = int(latest.get("idleSteps") or 0) + 1
@@ -694,6 +777,7 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
         for cid in step.get("callIds") or []:
             if cid:
                 known.add(str(cid))
+    attempt = _task_attempt(task)
     evidence = [e for e in evidence if e in known]
     confidence = str(args.get("confidence") or "medium")
     flags = list(task.get("flags") or [])
@@ -704,9 +788,24 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
     key = _deliverable_key(ctx.task_id, dtype)
     _blob_put(key, encoded)
     now = board_store.now_iso()
+    seq = int(task.get("step") or 0) + 1
+    board_store.put_task_step(
+        ctx.table,
+        ctx.task_id,
+        {
+            "seq": seq,
+            "attempt": attempt,
+            "plan": str(args.get("summary") or "")[:2000],
+            "callIds": evidence,
+            "at": now,
+        },
+    )
     updated = {
         **task,
         "status": "review",
+        "step": seq,
+        "stepsUsed": seq,
+        "idleSteps": 0,
         "summary": str(args.get("summary") or "")[:800],
         "evidence": evidence,
         "openQuestions": [str(x) for x in (args.get("openQuestions") or []) if x][:10],
@@ -717,6 +816,7 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
         "deliverableType": dtype,
         "updatedAt": now,
     }
+    _align_step_claim(updated)
     board_store.put_task(ctx.table, updated)
     if enabled(ctx.settings):
         board_async.invoke_async(
@@ -832,9 +932,8 @@ def apply_review(
             fallback=run_step,
         )
         return task
-    task["status"] = "delivered"
-    task["finishedAt"] = now
-    task["expiresAt"] = int(datetime.now(timezone.utc).timestamp()) + BOARD_STAFF_RETENTION_DAYS * 86400
+    task["status"] = "needs_owner"
+    task["finishedAt"] = None
     board_store.put_task(table, task)
     return task
 
@@ -893,19 +992,34 @@ def retry_task(table: Any, settings: dict[str, Any], task_id: str, by_sub: str) 
     """Re-queue a failed task with the same brief so the seat can try again."""
     task = board_store.get_task(table, task_id)
     if not task:
-        raise StaffError("Task not found")
+        raise StaffError("Task not found", code="not_found")
     if task.get("status") != "failed":
-        raise StaffError("Only failed tasks can be retried")
+        raise StaffError("Only failed tasks can be retried", code="conflict")
+    try:
+        _resolve_assignee(table, settings, str(task.get("assignee") or ""))
+    except StaffError as exc:
+        raise StaffError(str(exc), code="conflict") from exc
+    action_id = str(task.get("actionId") or "")
+    if action_id:
+        action = board_store.get_action(table, action_id)
+        if action and action.get("status") != "open":
+            raise StaffError("Linked action is closed", code="conflict")
     now = board_store.now_iso()
+    previous = dict(task.get("usage") or {})
     task["status"] = "queued"
     task["step"] = 0
     task["stepsUsed"] = 0
     task["idleSteps"] = 0
+    task["attempt"] = _task_attempt(task) + 1
     task["revisions"] = 0
+    task["previousUsage"] = previous
+    task["usage"] = {"promptTokens": 0, "completionTokens": 0, "cost": 0.0, "calls": 0}
     task["failureReason"] = ""
+    task["parkedReason"] = ""
     task["finishedAt"] = None
     task["startedAt"] = None
     task["reviewRetried"] = False
+    task["stuckRetried"] = False
     task.pop("stepClaimed", None)
     task.pop("stepClaimedAt", None)
     task["updatedAt"] = now
@@ -995,8 +1109,33 @@ def handle_tick(event: dict[str, Any]) -> dict[str, Any]:
     started = drain_queue(table, settings)
     stuck_cut = datetime.now(timezone.utc) - timedelta(seconds=BOARD_STAFF_TASK_STUCK_SECONDS)
     cut_iso = _utc_iso_z(stuck_cut)
+    # AdminApiFn timeout is 300 s; only re-invoke after that plus a margin so
+    # a live hung step cannot race a replacement invocation.
+    claim_stale_cut = datetime.now(timezone.utc) - timedelta(seconds=BOARD_STAFF_STEP_MAX_SECONDS + 180)
+    claim_stale_iso = _utc_iso_z(claim_stale_cut)
     for task in board_store.list_tasks(table, "running"):
-        if str(task.get("updatedAt") or "") < cut_iso:
+        claimed_at = str(task.get("stepClaimedAt") or "")
+        updated = str(task.get("updatedAt") or "")
+        claim_is_stale = bool(claimed_at and claimed_at < claim_stale_iso)
+        if claim_is_stale and not task.get("stuckRetried"):
+            wanted = int(task.get("step") or 0) + 1
+            _release_step_claim(table, task, wanted)
+            latest = board_store.get_task(table, str(task.get("taskId") or "")) or task
+            latest["stuckRetried"] = True
+            latest["updatedAt"] = board_store.now_iso()
+            board_store.put_task(table, latest)
+            board_async.invoke_async(
+                {
+                    "internal": "board_staff_step",
+                    "boardKey": BOARD_KEY,
+                    "taskId": latest.get("taskId"),
+                    "step": wanted,
+                },
+                fallback=run_step,
+            )
+        elif (claim_is_stale or updated < claim_stale_iso) and task.get("stuckRetried"):
+            _finish_incomplete(table, task, "stuck")
+        elif updated < cut_iso:
             _finish_incomplete(table, task, "stuck")
     for task in board_store.list_tasks(table, "review"):
         if str(task.get("updatedAt") or "") < cut_iso:
@@ -1024,19 +1163,35 @@ def list_tasks_for_api(
 ) -> list[dict[str, Any]]:
     if status:
         items = board_store.list_tasks(table, status, limit=max(limit, 50))
-    else:
-        items = []
-        for st in NON_TERMINAL_STATUSES:
-            items.extend(board_store.list_tasks(table, st, limit=200))
-        terminal: list[dict[str, Any]] = []
-        for st in TERMINAL_STATUSES:
-            terminal.extend(board_store.list_tasks(table, st, limit=50))
-        terminal.sort(key=lambda t: str(t.get("finishedAt") or t.get("updatedAt") or ""), reverse=True)
-        items.extend(terminal[:50])
+        if assignee:
+            items = [t for t in items if t.get("assignee") == assignee]
+        items.sort(key=lambda t: str(t.get("slaAt") or t.get("createdAt") or ""))
+        return items[:limit]
+    inflight: list[dict[str, Any]] = []
+    for st in NON_TERMINAL_STATUSES:
+        inflight.extend(board_store.list_tasks(table, st, limit=200))
+    inflight.sort(key=lambda t: str(t.get("slaAt") or t.get("createdAt") or ""))
+    failed = board_store.list_tasks(table, "failed", limit=50)
+    failed.sort(key=lambda t: str(t.get("finishedAt") or t.get("updatedAt") or ""), reverse=True)
+    delivered = board_store.list_tasks(table, "delivered", limit=30)
+    cancelled = board_store.list_tasks(table, "cancelled", limit=10)
+    terminal = delivered + cancelled
+    terminal.sort(key=lambda t: str(t.get("finishedAt") or t.get("updatedAt") or ""), reverse=True)
     if assignee:
-        items = [t for t in items if t.get("assignee") == assignee]
-    items.sort(key=lambda t: str(t.get("slaAt") or t.get("createdAt") or ""))
-    return items[:limit]
+        inflight = [t for t in inflight if t.get("assignee") == assignee]
+        failed = [t for t in failed if t.get("assignee") == assignee]
+        terminal = [t for t in terminal if t.get("assignee") == assignee]
+    seen: set[str] = set()
+    items: list[dict[str, Any]] = []
+    for row in (*failed, *inflight, *terminal):
+        tid = str(row.get("taskId") or "")
+        if not tid or tid in seen:
+            continue
+        seen.add(tid)
+        items.append(row)
+        if len(items) >= limit:
+            break
+    return items
 
 
 def staff_counts(table: Any) -> dict[str, int]:

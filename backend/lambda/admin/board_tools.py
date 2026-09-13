@@ -83,6 +83,7 @@ MAX_RESULT_PREVIEW = 400
 # meeting 60 + 45 = 105 s per member (members run in parallel per phase).
 MODEL_CALL_TIMEOUT_FLOOR_SECONDS = 15
 FINAL_CALL_TIMEOUT_FLOOR_SECONDS = 45
+OP_TIMEOUT_FLOOR_SECONDS = 2
 
 
 def completion_timeout(
@@ -108,7 +109,6 @@ def completion_timeout(
     if allow_floor_overrun:
         return max(1, floor)
     return 0
-OP_TIMEOUT_FLOOR_SECONDS = 2
 
 
 class ToolPermissionError(RuntimeError):
@@ -3000,6 +3000,11 @@ def run_tool_loop(
                 convo.append(_tool_message(tc, {"error": "Time budget for this reply is exhausted; answer with what you have."}))
             else:
                 convo.append(_run_one(ctx, by_name, tc, calls))
+        if any(c.get("op") == "task_finish" and c.get("status") == "ok" for c in calls):
+            # The task is already in review; a paid final-answer call would
+            # race the manager review and overwrite the row.
+            final = completion
+            break
         if on_progress:
             try:
                 on_progress(list(calls))

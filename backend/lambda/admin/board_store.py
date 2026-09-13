@@ -1567,6 +1567,45 @@ def put_task(table: Any, doc: dict[str, Any]) -> None:
     table.put_item(Item={**task_key(str(doc["taskId"])), **_task_gsi(doc), **_to_ddb_nested(doc)})
 
 
+def patch_task_if_status(
+    table: Any,
+    task_id: str,
+    expected_status: str,
+    fields: dict[str, Any],
+) -> bool:
+    """SET selected fields only while ``status`` is still ``expected_status``.
+
+    Used after ``task_finish`` so a manager review that already moved the
+    row cannot be overwritten by the finishing step's late write.
+    """
+    names = {"#st": "status"}
+    values: dict[str, Any] = {":expected": expected_status}
+    assigns: list[str] = []
+    for index, (key, value) in enumerate(fields.items()):
+        if key in {"pk", "sk", "gsi1pk", "gsi1sk", "status", "taskId"}:
+            continue
+        name_key = f"#k{index}"
+        value_key = f":v{index}"
+        names[name_key] = key
+        values[value_key] = _to_ddb_nested(value)
+        assigns.append(f"{name_key} = {value_key}")
+    if not assigns:
+        return True
+    try:
+        table.update_item(
+            Key=task_key(task_id),
+            UpdateExpression="SET " + ", ".join(assigns),
+            ConditionExpression="#st = :expected",
+            ExpressionAttributeNames=names,
+            ExpressionAttributeValues=values,
+        )
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return False
+        raise
+    return True
+
+
 def get_task(table: Any, task_id: str) -> dict[str, Any] | None:
     res = table.get_item(Key=task_key(task_id))
     item = res.get("Item") if isinstance(res, dict) else None
@@ -1644,10 +1683,11 @@ def claim_task_step(table: Any, task_id: str, expected_step: int) -> bool:
 
 def put_task_step(table: Any, task_id: str, step: dict[str, Any]) -> None:
     seq = int(step["seq"])
+    attempt = max(1, int(step.get("attempt") or 1))
     table.put_item(
         Item={
             "pk": board_pk(f"task#{task_id}"),
-            "sk": f"STEP#{seq:03d}",
+            "sk": f"STEP#{attempt:02d}#{seq:03d}",
             "expiresAt": int(time.time()) + BOARD_STAFF_RETENTION_DAYS * 86400,
             **_to_ddb_nested(step),
         }

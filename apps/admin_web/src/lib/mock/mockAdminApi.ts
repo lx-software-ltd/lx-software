@@ -364,7 +364,9 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
       }
       return json({ task: created }, 201);
     }
-    return json({ tasks: state.tasks, counts: countsFromTasks(state.tasks) });
+    const status = url.searchParams.get("status");
+    const tasks = status ? state.tasks.filter((t) => t.status === status) : state.tasks;
+    return json({ tasks, counts: countsFromTasks(state.tasks) });
   }
   if (p.startsWith(`${board}/tasks/`)) {
     const rest = p.slice(`${board}/tasks/`.length).split("/");
