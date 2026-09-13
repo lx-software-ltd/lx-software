@@ -594,3 +594,150 @@ class StaffExecuteCallTests(StaffStepTests):
         )
         self.assertEqual(out.status, "error")
         self.assertIn("not available", str(out.result.get("error") or "").lower())
+
+
+class StaffActionHandoffTests(BoardTestCase):
+    """Founder actions handed to staff: from the minutes (via Approvals) and from the owner."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        os.environ.pop("ASSETS_BUCKET_NAME", None)
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        self.async_payloads: list[dict[str, Any]] = []
+
+        # Meetings run their phases inline (as in test_board); staff steps stay captured.
+        def capture_or_run(payload: dict[str, Any], *, fallback: Any = None) -> None:
+            if str(payload.get("internal") or "").startswith("board_meeting") and fallback is not None:
+                fallback(payload)
+                return
+            self.async_payloads.append(payload)
+
+        patcher = patch.object(board_async, "invoke_async", side_effect=capture_or_run)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _open_action(self, **extra: Any) -> dict[str, Any]:
+        action = {
+            "actionId": board_store.new_id(),
+            "title": "Call 10 activity providers",
+            "detail": "Book calls with providers in Sha Tin.",
+            "persona": "coo",
+            "assignee": "",
+            "priority": "now",
+            "effort": "M",
+            "metric": "10 calls booked",
+            "dependsOn": [],
+            "status": "open",
+            "note": "",
+            "meetingId": "m-1",
+            "reaffirmedByMeetingIds": [],
+            "dueAt": None,
+            "createdAt": board_store.now_iso(),
+            "updatedAt": board_store.now_iso(),
+            **extra,
+        }
+        board_store.put_action(self.table, action)
+        return action
+
+    def test_owner_hands_action_to_seat_and_accept_closes_it(self) -> None:
+        _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "prospector", {"isActive": True})
+        action = self._open_action()
+        status, body = self.call(
+            "/siu-tin-dei/board/tasks",
+            "POST",
+            {"assignee": "prospector", "brief": "Call 10 providers", "deliverableType": "markdown", "actionId": action["actionId"]},
+        )
+        self.assertEqual(status, 201, body)
+        task = body["task"]
+        self.assertEqual(task["actionId"], action["actionId"])
+        self.assertEqual(task["meetingId"], "m-1")
+        linked = board_store.get_action(self.table, action["actionId"])
+        self.assertEqual(linked["assignee"], "prospector")
+        self.assertEqual(linked["staffTaskId"], task["taskId"])
+        self.assertEqual(linked["status"], "open")
+        # A second hand-off while the first task is open is refused.
+        status, body = self.call(
+            "/siu-tin-dei/board/tasks",
+            "POST",
+            {"assignee": "prospector", "brief": "Again", "deliverableType": "markdown", "actionId": action["actionId"]},
+        )
+        self.assertEqual(status, 409, body)
+        # Deliver and accept: the founder action closes with the task reference.
+        stored = board_store.get_task(self.table, task["taskId"])
+        stored["status"] = "review"
+        board_store.put_task(self.table, stored)
+        status, body = self.call(f"/siu-tin-dei/board/tasks/{task['taskId']}/review", "POST", {"verdict": "accept", "notes": "Good"})
+        self.assertEqual(status, 200, body)
+        closed = board_store.get_action(self.table, action["actionId"])
+        self.assertEqual(closed["status"], "done")
+        self.assertEqual(closed["closedBy"], f"staff:{task['taskId']}")
+        self.assertIn(task["taskId"], closed["note"])
+
+    def test_owner_hand_off_validates_action(self) -> None:
+        _enable_staff(self.table)
+        status, body = self.call(
+            "/siu-tin-dei/board/tasks",
+            "POST",
+            {"assignee": "cfo", "brief": "x", "deliverableType": "markdown", "actionId": "does-not-exist"},
+        )
+        self.assertEqual(status, 400, body)
+        done = self._open_action(status="done")
+        status, body = self.call(
+            "/siu-tin-dei/board/tasks",
+            "POST",
+            {"assignee": "cfo", "brief": "x", "deliverableType": "markdown", "actionId": done["actionId"]},
+        )
+        self.assertEqual(status, 409, body)
+
+    def test_minutes_assignee_becomes_approval_then_task(self) -> None:
+        _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "prospector", {"isActive": True})
+        status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
+        self.assertEqual(status, 202, body)
+        _, meeting = self.call(f"/siu-tin-dei/board/meetings/{body['meetingId']}")
+        self.assertEqual(meeting["meeting"]["status"], "succeeded")
+        minutes_request = next(r for r in self.openrouter.requests if "Write the minutes" in r["messages"][-1]["content"])
+        prompt = minutes_request["messages"][-1]["content"]
+        self.assertIn("Active staff seats", prompt)
+        self.assertIn("- prospector —", prompt)
+        _, actions = self.call("/siu-tin-dei/board/actions", query="status=open")
+        by_title = {a["title"]: a for a in actions["actions"]}
+        self.assertEqual(by_title["Pick the beta launch date"]["assignee"], "")
+        self.assertEqual(by_title["Call 10 activity providers"]["assignee"], "prospector")
+        action = by_title["Call 10 activity providers"]
+        # The chair's staff tool defaults to propose: the hand-off waits for the owner.
+        self.assertEqual(board_store.list_tasks(self.table, None), [])
+        status, approvals = self.call("/siu-tin-dei/board/approvals", query="status=pending")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(approvals["approvals"]), 1)
+        approval = approvals["approvals"][0]
+        self.assertEqual(approval["op"], "staff_assign")
+        self.assertEqual(approval["personaId"], "ceo")
+        self.assertEqual(approval["arguments"]["assignee"], "prospector")
+        self.assertEqual(approval["arguments"]["actionId"], action["actionId"])
+        self.assertIn("Done looks like: Book calls.", approval["arguments"]["brief"])
+        self.assertIn("Success metric: 10 calls", approval["arguments"]["brief"])
+        status, body = self.call(f"/siu-tin-dei/board/approvals/{approval['approvalId']}/approve", "POST", {})
+        self.assertEqual(status, 200, body)
+        tasks = board_store.list_tasks(self.table, None)
+        self.assertEqual(len(tasks), 1)
+        self.assertEqual(tasks[0]["assignee"], "prospector")
+        self.assertEqual(tasks[0]["actionId"], action["actionId"])
+        linked = board_store.get_action(self.table, action["actionId"])
+        self.assertEqual(linked["staffTaskId"], tasks[0]["taskId"])
+
+    def test_minutes_assignee_starts_task_when_chair_may_act(self) -> None:
+        settings = _enable_staff(self.table)
+        settings["tools"]["globalMode"] = "act"
+        settings["tools"]["matrix"]["staff"]["ceo"] = "act"
+        board_store.save_settings(self.table, settings)
+        board_store.save_staff_override(self.table, "prospector", {"isActive": True})
+        status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
+        self.assertEqual(status, 202, body)
+        tasks = board_store.list_tasks(self.table, None)
+        self.assertEqual([t["assignee"] for t in tasks], ["prospector"])
+        self.assertEqual(tasks[0]["origin"], "minutes")
+        status, approvals = self.call("/siu-tin-dei/board/approvals", query="status=pending")
+        self.assertEqual(approvals["approvals"], [])

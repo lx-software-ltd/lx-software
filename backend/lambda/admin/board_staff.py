@@ -240,9 +240,25 @@ def create_task(
         "failureReason": "",
     }
     board_store.put_task(table, doc)
+    if action_id:
+        _link_action_to_task(table, str(action_id), doc)
     if status == "queued":
         drain_queue(table, settings)
     return board_store.get_task(table, task_id) or doc
+
+
+def _link_action_to_task(table: Any, action_id: str, task: dict[str, Any]) -> None:
+    """Record on the founder action which staff task is working it (closed on accept)."""
+    try:
+        action = board_store.get_action(table, action_id)
+        if not action or action.get("status") != "open":
+            return
+        action["assignee"] = str(task.get("assignee") or "")
+        action["staffTaskId"] = str(task.get("taskId") or "")
+        action["updatedAt"] = board_store.now_iso()
+        board_store.put_action(table, action)
+    except Exception as exc:
+        _log_event("warning", tag="board_staff_action_link_failed", action_id=action_id, error=str(exc)[:200])
 
 
 def drain_queue(table: Any, settings: dict[str, Any]) -> int:
@@ -964,12 +980,25 @@ def assign_from_minutes(table: Any, settings: dict[str, Any], *, action: dict[st
         op,
         {
             "assignee": assignee,
-            "brief": str(action.get("title") or "") + (f": {action.get('detail')}" if action.get("detail") else ""),
+            "brief": minutes_action_brief(action),
             "deliverableType": "markdown",
             "slaHours": 24,
             "actionId": action.get("actionId"),
+            "reason": "Assigned in the board minutes.",
         },
     )
+
+
+def minutes_action_brief(action: dict[str, Any]) -> str:
+    """Task brief for a founder action: title, what done looks like, and the metric."""
+    parts = [str(action.get("title") or "").strip()]
+    detail = str(action.get("detail") or "").strip()
+    if detail:
+        parts.append(f"Done looks like: {detail}")
+    metric = str(action.get("metric") or "").strip()
+    if metric:
+        parts.append(f"Success metric: {metric}")
+    return "\n".join(parts)[:4000]
 
 
 def validate_seat_override(body: Any) -> dict[str, Any]:
