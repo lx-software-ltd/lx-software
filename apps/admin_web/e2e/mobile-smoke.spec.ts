@@ -128,6 +128,13 @@ test.describe("admin viewport smoke", () => {
       await page.getByRole("tab", { name: /Staff/ }).click();
     }
     await expect(page.getByText("Parent Support").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Run staff tick now" })).toBeVisible();
+    if (testInfo.project.name === "phone") {
+      await page.locator("#board-section-select").selectOption("tasks");
+    } else {
+      await page.getByRole("tab", { name: /Tasks/ }).click();
+    }
+    await expect(page.getByText("New task")).toBeVisible();
     await expect(page.getByText(/List our three biggest monthly costs/i)).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });

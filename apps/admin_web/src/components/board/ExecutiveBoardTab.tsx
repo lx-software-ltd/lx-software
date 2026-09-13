@@ -22,6 +22,7 @@ import { BoardMarketSection } from "./BoardMarketSection";
 import { BoardContentSection } from "./BoardContentSection";
 import { BoardPipelineSection } from "./BoardPipelineSection";
 import { BoardStaffSection } from "./BoardStaffSection";
+import { BoardTasksSection } from "./BoardTasksSection";
 import { BoardToolsCard } from "./BoardToolsCard";
 import { BoardUpdatesComposer } from "./BoardUpdatesComposer";
 import { StartMeetingForm } from "./StartMeetingForm";
@@ -46,7 +47,7 @@ import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { adminTabButtonId } from "../../lib/adminTabs";
 import { DEFAULT_BOARD_BOUNDARIES, effectiveToolLevel, type BoardMeetingMode, type BoardOverview } from "../../lib/boardModel";
 
-type BoardSection = "review" | "market" | "pipeline" | "content" | "actions" | "staff" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
+type BoardSection = "review" | "market" | "pipeline" | "content" | "actions" | "staff" | "tasks" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
 
 const CLOSED_MEETING = "__closed__";
 const SECTION_ID_PREFIX = "board-section";
@@ -59,6 +60,7 @@ const SECTIONS: readonly { readonly id: BoardSection; readonly label: string; re
   { id: "content", label: "Content", icon: "bi-calendar3" },
   { id: "actions", label: "Next actions", icon: "bi-list-check" },
   { id: "staff", label: "Staff", icon: "bi-people-fill" },
+  { id: "tasks", label: "Tasks", icon: "bi-kanban" },
   { id: "approvals", label: "Approvals", icon: "bi-shield-check" },
   { id: "mail", label: "Mail", icon: "bi-envelope" },
   { id: "receivables", label: "Receivables", icon: "bi-receipt" },
@@ -79,7 +81,7 @@ function sectionTabs(
 ): readonly AdminTabItem<BoardSection>[] {
   const counts: Partial<Record<BoardSection, { value: number; tone: "neutral" | "warning" }>> = {
     actions: { value: overview?.openActionCount ?? 0, tone: "neutral" },
-    staff: { value: needsOwner, tone: "warning" },
+    tasks: { value: needsOwner, tone: "warning" },
     approvals: { value: overview?.pendingApprovalCount ?? 0, tone: "warning" },
     mail: { value: overview?.unreadMailCount ?? 0, tone: "neutral" },
     receivables: { value: overview?.overdueInvoiceCount ?? 0, tone: "warning" },
@@ -156,7 +158,7 @@ export function ExecutiveBoardTab() {
 
   const openStaffTask = useCallback((taskId: string) => {
     setFocusTaskId(taskId);
-    setSection("staff");
+    setSection("tasks");
   }, [setSection]);
 
   const openApproval = useCallback((approvalId: string) => {
@@ -269,7 +271,9 @@ export function ExecutiveBoardTab() {
             />
           ) : null}
 
-          {overview && section === "staff" ? <BoardStaffSection focusTaskId={focusTaskId} /> : null}
+          {overview && section === "staff" ? <BoardStaffSection /> : null}
+
+          {overview && section === "tasks" ? <BoardTasksSection focusTaskId={focusTaskId} /> : null}
 
           {overview && section === "approvals" ? (
             <>

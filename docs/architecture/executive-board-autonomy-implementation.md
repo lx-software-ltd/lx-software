@@ -456,12 +456,13 @@ mutations) and `useBoardTasks` (list with 10 s polling while any task is
 `running`/`review`; detail query; cancel/review/create mutations).
 Components: `BoardStaffSection.tsx` (org chart grouped by manager: seat
 card with active toggle, tier select, brief editor via `AdminEditorSection`;
-task board as five columns `Queued / Running / Review / Needs owner /
-Delivered` with cost per card; "New task" form), `BoardTaskDrawer.tsx`
+**Run staff tick now**), `BoardTasksSection.tsx` (task board as six columns
+`Queued / Running / Review / Needs owner / Delivered / Failed` with cost
+per card; "New task" form), `BoardTaskDrawer.tsx`
 (`BoardOffcanvas` with brief, step log with collapsible tool calls reusing
 `BoardToolCallList` rows, deliverable preview via `BoardMarkdown` or a
-CSV table, review verdict, Accept / Return / Cancel). New section id
-`staff` in `ExecutiveBoardTab`, count badge = tasks in `needs_owner`.
+CSV table, review verdict, Accept / Return / Cancel / Retry). Section ids
+`staff` and `tasks` in `ExecutiveBoardTab`; Tasks count badge = `needs_owner`.
 Fixtures: three seats, five tasks across statuses.
 
 **Tests.** `test_board_staff.py`: seat level derivation (seat ≤ manager ≤
@@ -471,8 +472,8 @@ defaults; `drain_queue` respects `maxRunningTasks`; `run_step` idempotency
 `task_finish` evidence rule; review accept closes action; return → revision
 → second return → delivered; stuck sweep; routes (200/400/404) with
 `FakeTable` and a `FakeOpenRouter` that returns scripted tool calls.
-Vitest: `useBoardTasks` polling predicate. Playwright: Staff tab renders in
-`dev:mock`.
+Vitest: `useBoardTasks` polling predicate. Playwright: Staff and Tasks tabs
+render in `dev:mock`.
 
 **Acceptance.** With both flags on, `POST /tasks` for `cfo` with brief
 "List our three biggest monthly costs from AWS and finance" produces a
