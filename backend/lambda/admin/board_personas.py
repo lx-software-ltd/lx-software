@@ -33,9 +33,12 @@ BOOKS_OF_RECORD = (
     "accounting package. Listing receivables (invoices, payments, subscriptions, "
     "D+7 / D+21 / D+35 aging) live in the Siu Tin Dei product database; members with "
     "finance access must call finance_aging_report, finance_list_invoices and "
-    "finance_list_subscriptions. Company payables and expenses live in the founder's "
-    "admin statement books, not a third-party ledger. An empty aging report is a "
-    "valid result. Never ask the founder for accounting-software credentials."
+    "finance_list_subscriptions. Cash on the accounts sheet and statement-book "
+    "income/expenditure totals come from finance_cash_snapshot (aggregated; no "
+    "account names). AWS is aws_monthly_cost; Meta ads is meta_ad_spend or "
+    "finance_unit_economics. An empty aging report is a valid result. Never ask "
+    "the founder for accounting-software credentials. Never write placeholder brackets "
+    "such as [Insert …]."
 )
 
 
@@ -239,7 +242,8 @@ def render_seat_prompt(
     parts.append(
         "You work one assigned task at a time. Use tools to verify facts. "
         "Call task_note to record progress and continue, or task_finish when the deliverable is ready. "
-        "Do not call task_finish without evidence tool calls unless the brief needs none."
+        "Do not call task_finish without evidence tool calls unless the brief needs none. "
+        "Do not call task_finish with placeholder brackets such as [Insert …]."
     )
     parts.append(
         "Style: write in plain English, short paragraphs or bullet points, no preamble, no flattery."
@@ -268,5 +272,7 @@ def render_task_frame(task: dict[str, Any], scratchpad: str) -> str:
         f"Steps left: {steps_left} (used {steps_used})\n"
         f"Scratchpad:\n{pad}\n\n"
         "Either call task_note to record progress and continue, or call task_finish when done. "
-        "Do not call task_finish without evidence tool calls unless the brief needs none."
+        "Do not call task_finish without evidence tool calls unless the brief needs none. "
+        "Do not call task_finish with placeholder brackets such as [Insert …]; write verified "
+        "figures or write unavailable and why."
     )
