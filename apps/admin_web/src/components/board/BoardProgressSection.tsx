@@ -55,30 +55,6 @@ function ProgressBody({
         <span className="small text-muted">Updated {snap.fetchedAt.replace("T", " ").replace("Z", " UTC")}</span>
       </div>
 
-      {snap.bottlenecks.length ? (
-        <div className="alert alert-warning py-2 small">
-          <div className="fw-semibold mb-1">Bottlenecks</div>
-          <ul className="mb-0 ps-3">
-            {snap.bottlenecks.map((row) => (
-              <li key={row.id}>
-                {row.summary}{" "}
-                {onOpenSection ? (
-                  <button
-                    type="button"
-                    className="btn btn-link btn-sm p-0 align-baseline"
-                    onClick={() => onOpenSection(row.section)}
-                  >
-                    {row.section === "progress" ? "this view" : row.section}
-                  </button>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : (
-        <p className="small text-muted">No bottlenecks in the current snapshot.</p>
-      )}
-
       <div className="row g-3 mb-3">
         <Kpi
           label="Live listings"
@@ -107,9 +83,33 @@ function ProgressBody({
         />
       </div>
 
-      <div className="progress mb-4" role="img" aria-label="Partnerships versus weekly target">
+      <div className="progress mb-3" role="img" aria-label="Partnerships versus weekly target">
         <div className="progress-bar" style={{ width: `${Math.min(100, Math.round((warm / Math.max(target, 1)) * 100))}%` }} />
       </div>
+
+      {snap.bottlenecks.length ? (
+        <div className="alert alert-warning py-2 small mb-4">
+          <div className="fw-semibold mb-1">Bottlenecks</div>
+          <ul className="mb-0 ps-3">
+            {snap.bottlenecks.map((row) => (
+              <li key={row.id}>
+                {row.summary}{" "}
+                {onOpenSection ? (
+                  <button
+                    type="button"
+                    className="btn btn-link btn-sm p-0 align-baseline"
+                    onClick={() => onOpenSection(row.section)}
+                  >
+                    {row.section === "progress" ? "this view" : row.section}
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="small text-muted">No bottlenecks in the current snapshot.</p>
+      )}
 
       <div className="row g-3">
         <div className="col-12 col-xl-6">

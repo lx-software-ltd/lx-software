@@ -106,7 +106,7 @@ test.describe("admin viewport smoke", () => {
     }
     await expect(page.getByRole("heading", { name: "Progress" })).toBeVisible();
     await expect(page.getByText("Live listings")).toBeVisible();
-    await expect(page.getByText("Sha Tin Playhouse")).toBeVisible();
+    await expect(page.getByRole("cell", { name: "Sha Tin Playhouse" })).toBeVisible();
     await expect(page.getByText(/Listing gap in Tai Po/i)).toBeVisible();
     if (testInfo.project.name === "phone") {
       await expect(page.locator("#board-section-select")).toBeVisible();
