@@ -41,15 +41,37 @@ export function staffResetMutationOptions(qc: QueryClient) {
 /** The tick runs in the background; refetch again once it has had time to move tasks. */
 export const STAFF_TICK_REFETCH_DELAY_MS = 8000;
 
+export type StaffTickResult = {
+  readonly ok?: boolean;
+  readonly queued?: boolean;
+  readonly invoked?: boolean;
+  readonly droppedByBrowser?: boolean;
+};
+
 export function staffTickErrorMessage(err: unknown): string | null {
   if (!err) return null;
   if (err instanceof AdminApiError && err.status === 404) {
     return "The tick API is not on this stack yet. Run Actions → Deploy Backend, or wait for the 5-minute schedule.";
   }
-  if (err instanceof TypeError) {
-    return "The tick request did not complete (Safari shows this as Load failed). Try again, or wait for the 5-minute schedule.";
-  }
   return getAdminApiErrorMessage(err) ?? (err instanceof Error ? err.message : "Request failed.");
+}
+
+/** POST with no body. Retry a dropped fetch once; then treat it as queued. */
+export async function postStaffTick(): Promise<StaffTickResult> {
+  const init = { method: "POST" as const };
+  try {
+    return await adminFetchJson<StaffTickResult>(boardStaffTickPath(), init);
+  } catch (err) {
+    if (!(err instanceof TypeError)) throw err;
+    try {
+      return await adminFetchJson<StaffTickResult>(boardStaffTickPath(), init);
+    } catch (err2) {
+      if (err2 instanceof TypeError) {
+        return { ok: true, queued: true, droppedByBrowser: true };
+      }
+      throw err2;
+    }
+  }
 }
 
 export function staffTickMutationOptions(qc: QueryClient) {
@@ -58,12 +80,7 @@ export function staffTickMutationOptions(qc: QueryClient) {
     void qc.invalidateQueries({ queryKey: [...BOARD_QUERY_KEY, "tasks"] });
   };
   return {
-    mutationFn: async () => {
-      return adminFetchJson<{ ok?: boolean; queued?: boolean }>(boardStaffTickPath(), {
-        method: "POST",
-        body: JSON.stringify({}),
-      });
-    },
+    mutationFn: postStaffTick,
     onSuccess: () => {
       refetch();
       window.setTimeout(refetch, STAFF_TICK_REFETCH_DELAY_MS);

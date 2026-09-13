@@ -682,9 +682,11 @@ function calling. Design:
   `settings.staff.dutiesEnabled` (Settings → Run scheduled seat duties)
   after staff is on. **Staff → Run staff tick now** (`POST /siu-tin-dei/board/staff/tick`)
   queues the same work as the 5-minute schedule (due duties, due holds, drain
-  the queue) on the `AdminApiFn` self-invoke path and returns `200 {queued}` —
-  a full tick can outlive API Gateway's 30 s cap, so the SPA never waits for
-  it. **Deploy Backend** watches `backend/lambda/**` as well as the CDK app;
+  the queue) via a 2-second `Event` invoke (`try_invoke_event`) and returns
+  `200 {queued}` even if that invoke times out — the default boto client
+  retried past API Gateway's 30 s cap and Safari reported TypeError
+  "Load failed". The SPA retries a dropped fetch once, then treats it as
+  queued. The 5-minute schedule still drains the queue either way. **Deploy Backend** watches `backend/lambda/**` as well as the CDK app;
   a Lambda-only merge used to ship the admin SPA button while leaving the
   previous `AdminApiFn` live (`POST /staff/tick` then 404s as an unknown
   seat). Until that workflow has run, use the 5-minute schedule or

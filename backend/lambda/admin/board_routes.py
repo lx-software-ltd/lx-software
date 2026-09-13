@@ -617,21 +617,14 @@ def _staff_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
             return _staff_disabled()
         import board_async
 
-        # Never run handle_tick inline: a busy tick (due holds, GitHub polls)
-        # outlives API Gateway's 30 s cap and Safari surfaces the drop as
-        # "Load failed". The fallback is a no-op so unit tests / missing
-        # function name cannot block the HTTP response.
         payload = {"internal": "board_staff_tick", "boardKey": board_store.BOARD_KEY, "requestedBy": "owner"}
-        try:
-            board_async.invoke_async(payload, fallback=lambda _body: None)
-        except Exception as exc:
-            _log_event("error", tag="board_staff_tick_enqueue_failed", error=str(exc)[:300])
-            return _json_response(
-                503,
-                {"message": "Could not queue the staff tick. Try again, or wait for the 5-minute schedule."},
-            )
+        # Bounded Event invoke: the default boto client can retry past API
+        # Gateway's 30 s cap; Safari then reports TypeError "Load failed".
+        invoked = board_async.try_invoke_event(payload)
+        if not invoked:
+            _log_event("warning", tag="board_staff_tick_enqueue_deferred", reason="invoke_timeout_or_unavailable")
         _audit(user_sub, "BOARD_STAFF_TICK", "tick", event)
-        return _json_response(200, {"ok": True, "queued": True})
+        return _json_response(200, {"ok": True, "queued": True, "invoked": invoked})
     if len(rest) == 2:
         seat_id = rest[1]
         if not board_staff.is_seat_id(seat_id):
