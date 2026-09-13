@@ -27,7 +27,15 @@ on:
         required: false
         type: string
       expires_at:
-        description: "Expiry, ISO date e.g. 2027-01-01 (create only, optional)"
+        description: "Expiry, ISO date e.g. 2027-01-01 (create only; default 90 days)"
+        required: false
+        type: string
+      scopes:
+        description: "Comma-separated scopes (create only; default finance)"
+        required: false
+        type: string
+      allowed_cidrs:
+        description: "Comma-separated CIDRs (create only, optional)"
         required: false
         type: string
       key_id:
@@ -89,6 +97,8 @@ jobs:
         env:
           LABEL: ${{ inputs.label }}
           EXPIRES_AT: ${{ inputs.expires_at }}
+          SCOPES: ${{ inputs.scopes }}
+          ALLOWED_CIDRS: ${{ inputs.allowed_cidrs }}
           GPG_PASSPHRASE: ${{ secrets.PUBLIC_API_KEY_GPG_PASSPHRASE }}
           AWS_REGION: ${{ vars.AWS_REGION }}
         run: |
@@ -97,6 +107,12 @@ jobs:
           ARGS=(create --label "$LABEL" --plaintext-out "$KEY_FILE" --region "$AWS_REGION")
           if [ -n "$EXPIRES_AT" ]; then
             ARGS+=(--expires-at "$EXPIRES_AT")
+          fi
+          if [ -n "$SCOPES" ]; then
+            ARGS+=(--scopes "$SCOPES")
+          fi
+          if [ -n "$ALLOWED_CIDRS" ]; then
+            ARGS+=(--allowed-cidrs "$ALLOWED_CIDRS")
           fi
           python3 scripts/manage-public-api-keys.py "${ARGS[@]}"
 

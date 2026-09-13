@@ -7,8 +7,9 @@ the scrypt digest of a key is ever persisted or logged (see
 once at mint time (see ``scripts/manage-public-api-keys.py``).
 
 Returns the API Gateway v2 "simple" authorizer response. The authorizer
-result is cached by API Gateway keyed on the ``x-api-key`` header, so the
-DynamoDB lookup does not run on every request.
+result is cached by API Gateway keyed on ``x-api-key`` + source IP, so the
+DynamoDB lookup does not run on every request. Revocation takes up to the
+configured TTL (60s).
 """
 
 from __future__ import annotations
@@ -16,22 +17,38 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
 
 from api_key_hash import hash_api_key
+from api_key_scopes import (
+    LEGACY_READ_SCOPE,
+    ip_allowed,
+    normalize_scopes,
+    parse_cidrs,
+    scopes_csv,
+    source_ip_from_event,
+)
 
 API_KEY_PK_PREFIX = "APIKEY#"
-API_KEY_SCOPE_READ = "read"
 MAX_API_KEY_LEN = 256
+LAST_USED_MIN_INTERVAL = timedelta(seconds=60)
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 _ddb = boto3.resource("dynamodb")
+_lambda = None
+
+
+def _lambda_client() -> Any:
+    global _lambda
+    if _lambda is None:
+        _lambda = boto3.client("lambda")
+    return _lambda
 
 
 def _deny() -> dict[str, Any]:
@@ -75,11 +92,65 @@ def _is_expired(expires_at: Any, now: datetime) -> bool:
     return parsed <= now
 
 
+def _should_touch_last_used(item: dict[str, Any], now: datetime) -> bool:
+    raw = item.get("lastUsedAt")
+    if not raw:
+        return True
+    try:
+        parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return now - parsed >= LAST_USED_MIN_INTERVAL
+
+
+def _touch_last_used(table: Any, item: dict[str, Any], source_ip: str, now: datetime) -> None:
+    if not _should_touch_last_used(item, now):
+        return
+    try:
+        table.update_item(
+            Key={"pk": item["pk"], "sk": item.get("sk") or "META"},
+            UpdateExpression="SET lastUsedAt = :t, lastSourceIp = :ip",
+            ExpressionAttributeValues={":t": now.isoformat(), ":ip": source_ip or "unknown"},
+        )
+    except Exception as exc:
+        _log("warning", tag="public_api_key_last_used_failed", error=str(exc)[:200], key_id=item.get("keyId"))
+
+
+def _enqueue_denied_notify(item: dict[str, Any], reason: str, source_ip: str, request_id: Any) -> None:
+    fn_name = (os.environ.get("ADMIN_API_FUNCTION_NAME") or "").strip()
+    if not fn_name:
+        return
+    payload = {
+        "internal": "public_api_key_notify",
+        "kind": "denied",
+        "keyId": item.get("keyId"),
+        "label": item.get("label"),
+        "scopes": normalize_scopes(item),
+        "reason": reason,
+        "sourceIp": source_ip,
+        "path": "",
+        "pathClass": "denied",
+        "method": "GET",
+        "requestContext": {"requestId": request_id, "http": {"sourceIp": source_ip}},
+    }
+    try:
+        _lambda_client().invoke(
+            FunctionName=fn_name,
+            InvocationType="Event",
+            Payload=json.dumps(payload).encode("utf-8"),
+        )
+    except Exception as exc:
+        _log("warning", tag="public_api_denied_notify_enqueue_failed", error=str(exc)[:200], key_id=item.get("keyId"))
+
+
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     key = _extract_api_key(event)
     request_id = (event.get("requestContext") or {}).get("requestId")
+    source_ip = source_ip_from_event(event)
     if key is None:
-        _log("info", tag="public_api_key_denied", reason="missing_key", request_id=request_id)
+        _log("info", tag="public_api_key_denied", reason="missing_key", request_id=request_id, source_ip=source_ip)
         return _deny()
 
     digest = hash_api_key(key)
@@ -96,6 +167,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             error_code=exc.response.get("Error", {}).get("Code"),
             digest_prefix=digest_prefix,
             request_id=request_id,
+            source_ip=source_ip,
         )
         return _deny()
 
@@ -107,46 +179,41 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             reason="unknown_key",
             digest_prefix=digest_prefix,
             request_id=request_id,
+            source_ip=source_ip,
         )
         return _deny()
 
     key_id = item.get("keyId")
+    now = datetime.now(timezone.utc)
     if item.get("revoked"):
-        _log(
-            "info",
-            tag="public_api_key_denied",
-            reason="revoked",
-            key_id=key_id,
-            request_id=request_id,
-        )
+        _log("info", tag="public_api_key_denied", reason="revoked", key_id=key_id, request_id=request_id, source_ip=source_ip)
+        _enqueue_denied_notify(item, "revoked", source_ip, request_id)
         return _deny()
 
-    if _is_expired(item.get("expiresAt"), datetime.now(timezone.utc)):
-        _log(
-            "info",
-            tag="public_api_key_denied",
-            reason="expired",
-            key_id=key_id,
-            request_id=request_id,
-        )
+    if _is_expired(item.get("expiresAt"), now):
+        _log("info", tag="public_api_key_denied", reason="expired", key_id=key_id, request_id=request_id, source_ip=source_ip)
+        _enqueue_denied_notify(item, "expired", source_ip, request_id)
         return _deny()
 
-    if item.get("scope") != API_KEY_SCOPE_READ:
-        _log(
-            "info",
-            tag="public_api_key_denied",
-            reason="bad_scope",
-            key_id=key_id,
-            request_id=request_id,
-        )
+    scopes = normalize_scopes(item)
+    if not scopes:
+        _log("info", tag="public_api_key_denied", reason="bad_scope", key_id=key_id, request_id=request_id, source_ip=source_ip)
         return _deny()
 
-    _log("info", tag="public_api_key_allowed", key_id=key_id, request_id=request_id)
+    cidrs = parse_cidrs(item.get("allowedCidrs"))
+    if not ip_allowed(source_ip, cidrs):
+        _log("info", tag="public_api_key_denied", reason="cidr", key_id=key_id, request_id=request_id, source_ip=source_ip)
+        _enqueue_denied_notify(item, "cidr", source_ip, request_id)
+        return _deny()
+
+    _touch_last_used(table, item, source_ip, now)
+    _log("info", tag="public_api_key_allowed", key_id=key_id, request_id=request_id, source_ip=source_ip)
     return {
         "isAuthorized": True,
         "context": {
-            "keyId": key_id,
-            "label": item.get("label"),
-            "scope": API_KEY_SCOPE_READ,
+            "keyId": str(key_id or ""),
+            "label": str(item.get("label") or ""),
+            "scope": LEGACY_READ_SCOPE,
+            "scopes": scopes_csv(scopes),
         },
     }

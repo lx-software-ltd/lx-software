@@ -176,6 +176,22 @@ describe("HTTP API stage throttling", () => {
     });
   });
 
+  test("public API-key routes are throttled tighter than the stage default", () => {
+    template.hasResourceProperties("AWS::ApiGatewayV2::Stage", {
+      StageName: "$default",
+      RouteSettings: Match.objectLike({
+        "GET /public/finance": {
+          ThrottlingRateLimit: 2,
+          ThrottlingBurstLimit: 10,
+        },
+        "GET /public/siu-tin-dei/board/{proxy+}": {
+          ThrottlingRateLimit: 2,
+          ThrottlingBurstLimit: 10,
+        },
+      }),
+    });
+  });
+
   test("the default stage waits for Meta webhook routes before RouteSettings", () => {
     const [, stage] = Object.entries(resourcesOfType("AWS::ApiGatewayV2::Stage")).find(
       ([, r]) => r.Properties?.StageName === "$default"

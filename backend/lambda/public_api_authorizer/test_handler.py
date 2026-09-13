@@ -34,9 +34,15 @@ _KEY = "lxpk_test-key-value"
 _DIGEST = hash_api_key(_KEY)
 
 
-def _event(key: str | None = _KEY) -> dict:
+def _event(key: str | None = _KEY, source_ip: str = "203.0.113.10") -> dict:
     headers = {} if key is None else {"x-api-key": key}
-    return {"headers": headers, "requestContext": {"requestId": "req-1"}}
+    return {
+        "headers": headers,
+        "requestContext": {
+            "requestId": "req-1",
+            "http": {"sourceIp": source_ip, "method": "GET", "path": "/public/finance"},
+        },
+    }
 
 
 def _valid_item(**overrides) -> dict:
@@ -87,9 +93,34 @@ class TestAuthorizer(unittest.TestCase):
         self.assertTrue(out["isAuthorized"])
         self.assertEqual(out["context"]["keyId"], "k123")
         self.assertEqual(out["context"]["scope"], "read")
+        self.assertEqual(out["context"]["scopes"], "finance")
         self.table.get_item.assert_called_once_with(
             Key={"pk": f"APIKEY#{_DIGEST}", "sk": "META"}
         )
+        self.table.update_item.assert_called()
+
+    def test_explicit_scopes_allowed(self) -> None:
+        self.table.get_item.return_value = {
+            "Item": _valid_item(scopes=["finance", "siutindei-board-ops"])
+        }
+        out = lambda_handler(_event(), None)
+        self.assertTrue(out["isAuthorized"])
+        self.assertEqual(out["context"]["scopes"], "finance,siutindei-board-ops")
+
+    def test_cidr_blocks_other_ip(self) -> None:
+        self.table.get_item.return_value = {
+            "Item": _valid_item(allowedCidrs=["10.0.0.0/8"])
+        }
+        self.assertFalse(lambda_handler(_event(source_ip="203.0.113.10"), None)["isAuthorized"])
+        self.assertTrue(lambda_handler(_event(source_ip="10.1.2.3"), None)["isAuthorized"])
+
+    def test_cidr_without_source_ip_denied(self) -> None:
+        self.table.get_item.return_value = {
+            "Item": _valid_item(allowedCidrs=["10.0.0.0/8"])
+        }
+        ev = _event()
+        ev["requestContext"]["http"] = {}
+        self.assertFalse(lambda_handler(ev, None)["isAuthorized"])
 
     def test_revoked_key_denied(self) -> None:
         self.table.get_item.return_value = {"Item": _valid_item(revoked=True)}

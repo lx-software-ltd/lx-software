@@ -14,6 +14,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
 import * as lambdaEventSources from "aws-cdk-lib/aws-lambda-event-sources";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as logs from "aws-cdk-lib/aws-logs";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as scheduler from "aws-cdk-lib/aws-scheduler";
@@ -851,14 +852,14 @@ export class LxsoftwareStack extends cdk.Stack {
     );
     this.lambdaDeadLetterQueue.grantSendMessages(publicApiKeyAuthorizerFn);
 
-    // Narrow read grant: the authorizer can only GetItem on APIKEY#* rows,
-    // never finance/asset records. The table uses the shared CMK, so a
-    // matching kms:Decrypt grant is required for reads to succeed.
+    // Narrow grant: the authorizer can only GetItem/UpdateItem on APIKEY#*
+    // rows (lastUsedAt), never finance/asset/board records. The table uses
+    // the shared CMK, so a matching kms:Decrypt grant is required.
     new iam.Policy(this, "PublicApiKeyAuthorizerReadPolicy", {
       statements: [
         new iam.PolicyStatement({
           effect: iam.Effect.ALLOW,
-          actions: ["dynamodb:GetItem"],
+          actions: ["dynamodb:GetItem", "dynamodb:UpdateItem"],
           resources: [this.recordsTable.tableArn],
           conditions: {
             "ForAllValues:StringLike": {
@@ -875,11 +876,14 @@ export class LxsoftwareStack extends cdk.Stack {
       publicApiKeyAuthorizerFn,
       {
         responseTypes: [HttpLambdaResponseType.SIMPLE],
-        identitySource: ["$request.header.x-api-key"],
-        // Cache authorizer verdicts per key so the DynamoDB lookup (and its
-        // KMS decrypt) does not run on every request. Revocation therefore
-        // takes up to this TTL to propagate.
-        resultsCacheTtl: cdk.Duration.minutes(5),
+        // Cache key is header + client IP so a CIDR-bound key cannot be
+        // reused from another address via the authorizer cache.
+        identitySource: [
+          "$request.header.x-api-key",
+          "$context.http.sourceIp",
+        ],
+        // Revocation / CIDR changes take up to this TTL to propagate.
+        resultsCacheTtl: cdk.Duration.seconds(60),
       }
     );
 
@@ -1402,6 +1406,67 @@ export class LxsoftwareStack extends cdk.Stack {
         }),
       ],
     }).attachToRole(adminFn.role!);
+
+    // Identity-based invoke only (do not grantInvoke on AdminApiFn — that
+    // adds a resource-based statement and the function policy is size-capped).
+    publicApiKeyAuthorizerFn.addEnvironment(
+      "ADMIN_API_FUNCTION_NAME",
+      adminFn.functionName
+    );
+    new iam.Policy(this, "PublicApiKeyAuthorizerInvokeAdminPolicy", {
+      statements: [
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ["lambda:InvokeFunction"],
+          resources: [adminFn.functionArn],
+        }),
+      ],
+    }).attachToRole(publicApiKeyAuthorizerFn.role!);
+
+    new logs.MetricFilter(this, "PublicApiKeyDeniedFilter", {
+      logGroup: publicApiKeyAuthorizerFn.logGroup,
+      filterPattern: logs.FilterPattern.literal('{ $.tag = "public_api_key_denied" }'),
+      metricNamespace: "lxsoftware/public-api",
+      metricName: "ApiKeyDenied",
+      metricValue: "1",
+    });
+    new cloudwatch.Alarm(this, "PublicApiKeyDeniedAlarm", {
+      metric: new cloudwatch.Metric({
+        namespace: "lxsoftware/public-api",
+        metricName: "ApiKeyDenied",
+        statistic: "Sum",
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 20,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      alarmDescription: "Burst of denied public API key attempts.",
+    });
+    new logs.MetricFilter(this, "PublicApiBoardFullFilter", {
+      logGroup: adminFn.logGroup,
+      filterPattern: logs.FilterPattern.literal(
+        '{ $.tag = "public_api_access" && $.path_class = "siutindei-board-full" }'
+      ),
+      metricNamespace: "lxsoftware/public-api",
+      metricName: "BoardFullAccess",
+      metricValue: "1",
+    });
+    new cloudwatch.Alarm(this, "PublicApiBoardFullAlarm", {
+      metric: new cloudwatch.Metric({
+        namespace: "lxsoftware/public-api",
+        metricName: "BoardFullAccess",
+        statistic: "Sum",
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 30,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      alarmDescription: "Jump in siutindei-board-full public API reads.",
+    });
 
     // Allow async-invocation DLQ writes from this function.
     this.lambdaDeadLetterQueue.grantSendMessages(adminFn);
@@ -2587,13 +2652,30 @@ export class LxsoftwareStack extends cdk.Stack {
       "/public/siu-tin-dei/board",
       "/public/siu-tin-dei/board/{proxy+}",
     ];
+    const publicKeyThrottle = {
+      ThrottlingRateLimit: 2,
+      ThrottlingBurstLimit: 10,
+    };
+    const publicReadRoutes: apigwv2.HttpRoute[] = [];
     for (const publicPath of publicReadOnlyPaths) {
-      this.httpApi.addRoutes({
-        path: publicPath,
-        methods: [apigwv2.HttpMethod.GET],
-        integration,
-        authorizer: publicApiKeyAuthorizer,
-      });
+      publicReadRoutes.push(
+        ...this.httpApi.addRoutes({
+          path: publicPath,
+          methods: [apigwv2.HttpMethod.GET],
+          integration,
+          authorizer: publicApiKeyAuthorizer,
+        })
+      );
+    }
+    const routeSettings = {
+      ...(defaultStage.routeSettings ?? {}),
+    };
+    for (const publicPath of publicReadOnlyPaths) {
+      routeSettings[`GET ${publicPath}`] = publicKeyThrottle;
+    }
+    defaultStage.routeSettings = routeSettings;
+    for (const route of publicReadRoutes) {
+      defaultStage.addResourceDependency(route.node.defaultChild as apigwv2.CfnRoute);
     }
 
     // ------------------------------------------------------------------

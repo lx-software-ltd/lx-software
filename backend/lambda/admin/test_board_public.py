@@ -21,7 +21,12 @@ class PublicBoardReadTests(BoardTestCase):
     ) -> tuple[int, Any]:
         ev = self.event(path, method, query=query)
         ev["requestContext"]["authorizer"] = {
-            "lambda": {"keyId": "k123", "label": "test", "scope": "read"}
+            "lambda": {
+                "keyId": "k123",
+                "label": "test",
+                "scope": "read",
+                "scopes": "finance,siutindei-board-ops,siutindei-board-full,siutindei-pii,siutindei-assets",
+            }
         }
         out = lambda_handler(ev, None)
         return out["statusCode"], json.loads(out["body"])
@@ -98,6 +103,28 @@ class PublicBoardReadTests(BoardTestCase):
     def test_api_key_cannot_use_jwt_board_path(self) -> None:
         status, _ = self.public_call("/siu-tin-dei/board")
         self.assertEqual(status, 401)
+
+    def test_finance_only_key_cannot_read_board(self) -> None:
+        ev = self.event("/public/siu-tin-dei/board/breakers")
+        ev["requestContext"]["authorizer"] = {
+            "lambda": {"keyId": "k-fin", "label": "fin", "scope": "read", "scopes": "finance"}
+        }
+        out = lambda_handler(ev, None)
+        self.assertEqual(out["statusCode"], 404)
+
+    def test_legacy_read_scope_is_finance_only(self) -> None:
+        ev = self.event("/public/siu-tin-dei/board")
+        ev["requestContext"]["authorizer"] = {
+            "lambda": {"keyId": "k-legacy", "label": "old", "scope": "read"}
+        }
+        out = lambda_handler(ev, None)
+        self.assertEqual(out["statusCode"], 404)
+        ev = self.event("/public/finance")
+        ev["requestContext"]["authorizer"] = {
+            "lambda": {"keyId": "k-legacy", "label": "old", "scope": "read"}
+        }
+        out = lambda_handler(ev, None)
+        self.assertEqual(out["statusCode"], 200)
 
     def test_public_records_still_hides_board_rows(self) -> None:
         import board_store

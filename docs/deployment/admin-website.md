@@ -141,7 +141,8 @@ to attach it.
 
 The HTTP API exposes read-only mirrors of the admin GET endpoints under
 `/public/*`, authenticated with a static API key in the `x-api-key` header
-instead of a Cognito JWT:
+instead of a Cognito JWT. Keys are scoped; a leaked key only unlocks the
+scopes it was minted with.
 
 | Route | Mirrors |
 |-------|---------|
@@ -159,9 +160,34 @@ the Cognito JWT authorizer, and the Lambda handler enforces the same GET
 allowlist as defense in depth (`PUBLIC_READ_PATHS` /
 `PUBLIC_BOARD_PREFIX` in `backend/lambda/admin/dispatch.py`).
 
-A leaked key that can read finance can also read owner-unmasked board mail,
-chat, meetings, prospects, allow-lists, and staff tasks. `/public/records`
-still excludes `BOARD#` rows.
+`/public/records` still excludes `BOARD#` rows. Legacy keys with only
+`scope=read` (no `scopes` list) are **finance-only**.
+
+### Key scopes
+
+| Scope | Routes |
+|-------|--------|
+| `finance` | `/public/finance`, quotes, records, FX |
+| `siutindei-board-ops` | overview, staff, tasks, breakers, review, holds, ramp, tools, tool-calls |
+| `siutindei-board-full` | every JWT GET under `/siu-tin-dei/board` (includes ops paths) |
+| `siutindei-pii` | unmasked mail; `allowList` / `digestTo` on overview |
+| `siutindei-assets` | content creative presigned URLs |
+
+Without `siutindei-pii`, mail is aliased and allow-list / digest addresses are
+stripped. Without `siutindei-assets`, creative GETs return the object key only.
+
+New keys expire in **90 days** unless `--expires-at` is set. Optional
+`--allowed-cidrs` fail-closed when the client IP is missing or outside the
+list. Authorizer cache is **60 seconds**, keyed on `x-api-key` + source IP.
+
+Each successful use (and each denied known key: revoked / expired / CIDR)
+emails `settings.review.digestTo` from `hello@`, coalesced to **one mail per
+60 seconds** per `(keyId, path class, source IP)`. Set `digestTo` and
+`SiutindeiBoardMailSendingEnabled` or the notify is skipped (the GET still
+succeeds). `/public/*` key routes are throttled at 2 req/s, burst 10.
+
+Mint a Cloud Agent key as `finance,siutindei-board-ops` — not `siutindei-board-full`.
+After deploy, replace `PUBLIC_API_KEY` and revoke or shrink the old key.
 
 Keys are validated by the `PublicApiKeyAuthorizerFn` Lambda authorizer, which
 looks up the scrypt digest of the presented key in the records table
@@ -176,7 +202,8 @@ Manage keys with admin AWS credentials (needs table read/write + CMK access):
 ```bash
 # Mint (prints the key exactly once; keys look like lxpk_…)
 python3 scripts/manage-public-api-keys.py create --label "reporting" \
-  --expires-at 2027-01-01
+  --scopes finance,siutindei-board-ops --expires-at 2027-01-01 \
+  --allowed-cidrs 203.0.113.0/24
 
 # List / revoke
 python3 scripts/manage-public-api-keys.py list

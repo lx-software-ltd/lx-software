@@ -15,6 +15,7 @@ import bank_sync as bank_sync_mod
 import board_cache as board_cache_mod
 import board_chat as board_chat_mod
 import board_meeting as board_meeting_mod
+import board_public_api as board_public_api_mod
 import board_receivables as board_receivables_mod
 import board_intel as board_intel_mod
 import board_review as board_review_mod
@@ -219,7 +220,8 @@ def _handle_public_read(
     """
     key_ctx = _api_key_auth_context(event)
     key_id = key_ctx.get("keyId")
-    if not key_id or key_ctx.get("scope") != "read":
+    scopes = board_public_api_mod.scopes_from_key_context(key_ctx)
+    if not key_id or not scopes:
         _log_event(
             "warning",
             tag="public_api_denied",
@@ -242,11 +244,25 @@ def _handle_public_read(
         )
         return _json_response(404, {"message": "Not found"})
 
+    if not board_public_api_mod.path_allowed(path, scopes):
+        _log_event(
+            "warning",
+            tag="public_api_denied",
+            reason="scope",
+            key_id=key_id,
+            path=path,
+            path_class=board_public_api_mod.path_class(path),
+            request_id=_request_id(event),
+        )
+        return _json_response(404, {"message": "Not found"})
+
+    path_cls = board_public_api_mod.path_class(path)
     _log_event(
         "info",
         tag="public_api_access",
         key_id=key_id,
         path=path,
+        path_class=path_cls,
         request_id=_request_id(event),
     )
 
@@ -255,20 +271,29 @@ def _handle_public_read(
         board_response = handle_board_route(event, "GET", board_path, None)
         if board_response is None:
             return _json_response(404, {"message": "Not found"})
+        board_response = board_public_api_mod.redact_board_response(path, board_response, scopes)
+        board_public_api_mod.notify_key_use(
+            event, key_ctx=key_ctx, path=path, method=method, path_cls=path_cls
+        )
         return board_response
     if path == "/public/finance":
-        return _finance_get_response()
-    if path == "/public/finance/quotes":
-        return _proxy_finance_quotes(
+        response = _finance_get_response()
+    elif path == "/public/finance/quotes":
+        response = _proxy_finance_quotes(
             event.get("queryStringParameters"),
             _request_id(event),
         )
-    if path == "/public/fx/v2/rates":
-        return _proxy_fx_v2_rates(
+    elif path == "/public/fx/v2/rates":
+        response = _proxy_fx_v2_rates(
             event.get("queryStringParameters"),
             _request_id(event),
         )
-    return _records_get_response(event)
+    else:
+        response = _records_get_response(event)
+    board_public_api_mod.notify_key_use(
+        event, key_ctx=key_ctx, path=path, method=method, path_cls=path_cls
+    )
+    return response
 
 
 def _ses_record_route(record: dict[str, Any]) -> str:
@@ -395,6 +420,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if isinstance(event, dict) and event.get("internal") == "board_dunning":
         board_receivables_mod.handle_dunning_trigger(event)
         return {}
+
+    if isinstance(event, dict) and event.get("internal") == "public_api_key_notify":
+        return board_public_api_mod.handle_internal_notify(event)
 
     method, path = _route(event)
 
