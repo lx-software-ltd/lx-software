@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import html
-import os
+import json
 import random
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -12,7 +12,7 @@ import board_hk
 import board_mail
 import board_staff
 import board_store
-from contract_constants import ADMIN_WEB_HOSTNAME, BOARD_STAFF_REVIEW_SAMPLE_SIZE, BOARD_STAFF_TASK_STATUSES
+from contract_constants import BOARD_STAFF_REVIEW_SAMPLE_SIZE, BOARD_STAFF_TASK_STATUSES
 from http_common import _log_event
 
 SECTION_IDS = (
@@ -28,15 +28,19 @@ SECTION_IDS = (
 )
 
 
-def _origin() -> str:
-    origin = (os.environ.get("ADMIN_WEB_ORIGIN") or "").strip().rstrip("/")
-    if origin:
-        return origin
-    return f"https://{ADMIN_WEB_HOSTNAME}"
-
-
-def spa_url(fragment: str) -> str:
-    return f"{_origin()}/siu-tin-dei?tab=board&section=review#{fragment}"
+DIGEST_LIST_LIMIT = 12
+DIGEST_TEXT_LIMIT = 280
+SECTION_LABELS = {
+    "headline": "Headline numbers",
+    "holdsDue": "On hold, executing soon",
+    "escalations": "Escalations",
+    "assisted": "Assisted posts",
+    "sample": "Sample of what ran",
+    "market": "Market and ideas",
+    "breakers": "Tripped breakers",
+    "suggestions": "Boundary suggestions",
+    "promotion": "Production promotion",
+}
 
 
 def _hkt_day_bounds(date_hkt: str) -> tuple[str, str]:
@@ -239,6 +243,17 @@ def _market_section(table: Any) -> dict[str, Any]:
     return {"changes": changes, "latestBrief": brief}
 
 
+def _promotion_section() -> dict[str, Any]:
+    """Live GitHub compare; only called from ``send_digest`` so ``compile`` (GET /review) stays a table read."""
+    try:
+        import board_code
+
+        preview = board_code.staging_preview()
+    except Exception as exc:
+        return {"error": f"staging check failed: {str(exc)[:160]}"}
+    return preview if isinstance(preview, dict) else {"error": "staging check returned no data"}
+
+
 def compile(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, Any]:
     narrative = _narrative(table, date_hkt)
     try:
@@ -270,44 +285,200 @@ def compile(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, An
         "market": _market_section(table),
         "promotion": [],
     }
+    doc["digestHtml"] = render_digest_html(doc)
     board_store.put_review_snapshot(table, date_hkt, doc)
     return doc
 
 
+def _clip(text: Any, limit: int = DIGEST_TEXT_LIMIT) -> str:
+    raw = " ".join(str(text or "").split())
+    if len(raw) <= limit:
+        return raw
+    return raw[: limit - 1].rstrip() + "…"
+
+
+def _preview_blob(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return _clip(value)
+    if isinstance(value, dict):
+        for key in ("summary", "text", "body", "message", "preview"):
+            if value.get(key):
+                return _clip(value.get(key))
+        try:
+            return _clip(json.dumps(value, ensure_ascii=False, default=str))
+        except TypeError:
+            return _clip(str(value))
+    return _clip(str(value))
+
+
+def _as_list(value: Any) -> list[Any]:
+    return [row for row in value] if isinstance(value, list) else []
+
+
+def _headline_lines(review: dict[str, Any]) -> list[str]:
+    headline = review.get("headline") or {}
+    tasks = headline.get("tasks") or {}
+    holds = headline.get("holds") or {}
+    spend = headline.get("spend") or {}
+    lines = [
+        (
+            f"Delivered {tasks.get('delivered') or 0} · running {tasks.get('running') or 0} · "
+            f"blocked {tasks.get('blocked') or 0}."
+        ),
+        f"Holds executed/vetoed {holds.get('executed') or 0}/{holds.get('vetoed') or 0}.",
+        f"Staff spend {spend.get('staffUsd') or 0} / {spend.get('budgetUsd') or 0} USD.",
+    ]
+    narrative = str(review.get("narrative") or "").strip()
+    if narrative:
+        lines.insert(0, _clip(narrative, 2000))
+    channels = headline.get("messagesByChannel") or {}
+    if isinstance(channels, dict) and channels:
+        bits = [f"{k} {v}" for k, v in channels.items()]
+        lines.append("Messages: " + " · ".join(bits))
+    return lines
+
+
+def _hold_line(row: dict[str, Any]) -> str:
+    parts = [
+        _clip(row.get("summary") or row.get("op") or "Hold", 160),
+        str(row.get("classKey") or row.get("actionClass") or "").strip(),
+        str(row.get("executeAt") or "").strip(),
+    ]
+    line = " · ".join(p for p in parts if p)
+    preview = _preview_blob(row.get("preview"))
+    if preview:
+        line = f"{line} — {preview}"
+    return line
+
+
+def _escalation_line(row: dict[str, Any]) -> str:
+    brief = _clip(row.get("brief") or row.get("taskId") or "Escalation", 200)
+    assignee = str(row.get("assignee") or "").strip()
+    line = f"{brief} ({assignee})" if assignee else brief
+    reply = row.get("suggestedReply") or {}
+    if isinstance(reply, dict) and (reply.get("summary") or reply.get("preview")):
+        line = f"{line} Suggested: {_preview_blob(reply.get('summary') or reply.get('preview'))}"
+    return line
+
+
+def _assisted_line(row: dict[str, Any]) -> str:
+    slot = str(row.get("slotAt") or "")[:16]
+    copy = _clip(row.get("copyZh") or row.get("copyEn") or "", 160)
+    head = " · ".join(p for p in (str(row.get("channel") or "").strip(), slot) if p)
+    return " — ".join(p for p in (head, copy) if p) or str(row.get("contentId") or "Post")
+
+
+def _sample_line(row: dict[str, Any]) -> str:
+    return _clip(row.get("summary") or row.get("op") or row.get("callId") or "Action", 200)
+
+
+def _market_lines(review: dict[str, Any]) -> list[str]:
+    market = review.get("market")
+    if not isinstance(market, dict):
+        return ["No market notes yet."]
+    lines: list[str] = []
+    changes = _as_list(market.get("changes"))[:DIGEST_LIST_LIMIT]
+    if not changes:
+        lines.append("No watchlist changes this week.")
+    else:
+        for change in changes:
+            if isinstance(change, dict):
+                lines.append(_clip(change.get("summary") or change.get("url") or "Change", 200))
+    brief = market.get("latestBrief")
+    if isinstance(brief, dict):
+        lines.append(
+            "Latest brief: " + _clip(brief.get("summary") or brief.get("taskId") or "available", 200)
+        )
+    return lines
+
+
+def _breaker_line(row: dict[str, Any]) -> str:
+    name = str(row.get("name") or "breaker")
+    reason = _clip(row.get("reason") or "tripped", 200)
+    return f"{name}: {reason}"
+
+
+def _suggestion_line(row: dict[str, Any]) -> str:
+    key = str(row.get("classKey") or "class")
+    try:
+        rate = float(row.get("rate") or 0) * 100
+    except (TypeError, ValueError):
+        rate = 0.0
+    return f"{key}: {row.get('actions') or 0} actions, {rate:.1f}% veto"
+
+
+def _promotion_lines(review: dict[str, Any]) -> list[str]:
+    promo = review.get("promotion")
+    if isinstance(promo, list):
+        promo = promo[0] if promo and isinstance(promo[0], dict) else {}
+    if not isinstance(promo, dict) or not promo:
+        return ["Staging status is checked against GitHub when the digest is sent."]
+    if promo.get("error"):
+        return [_clip(promo.get("error"), 200)]
+    lines: list[str] = []
+    behind = promo.get("behindBy") or 0
+    if behind:
+        lines.append(f"staging is {behind} commit(s) behind main. Rebase before promoting.")
+    commits = [c for c in _as_list(promo.get("commits")) if isinstance(c, dict)]
+    if not commits:
+        lines.append("No staging commits ahead of main.")
+    else:
+        for commit in commits[:DIGEST_LIST_LIMIT]:
+            sha = str(commit.get("sha") or "")[:8]
+            msg = _clip(commit.get("message") or "", 160)
+            lines.append(" ".join(p for p in (sha, msg) if p))
+    return lines
+
+
+def digest_section_lines(review: dict[str, Any]) -> list[tuple[str, str, list[str]]]:
+    """(section id, title, body lines) — same data the Daily review page shows."""
+    holds = [_hold_line(row) for row in _as_list(review.get("holdsDue"))[:DIGEST_LIST_LIMIT] if isinstance(row, dict)]
+    escalations = [
+        _escalation_line(row) for row in _as_list(review.get("escalations"))[:DIGEST_LIST_LIMIT] if isinstance(row, dict)
+    ]
+    assisted = [
+        _assisted_line(row) for row in _as_list(review.get("assisted"))[:DIGEST_LIST_LIMIT] if isinstance(row, dict)
+    ]
+    sample = [_sample_line(row) for row in _as_list(review.get("sample"))[:DIGEST_LIST_LIMIT] if isinstance(row, dict)]
+    breakers = [
+        _breaker_line(row)
+        for row in _as_list(review.get("breakers"))[:DIGEST_LIST_LIMIT]
+        if isinstance(row, dict) and row.get("tripped")
+    ]
+    suggestions = [
+        _suggestion_line(row) for row in _as_list(review.get("suggestions"))[:DIGEST_LIST_LIMIT] if isinstance(row, dict)
+    ]
+    return [
+        ("headline", SECTION_LABELS["headline"], _headline_lines(review)),
+        ("holdsDue", SECTION_LABELS["holdsDue"], holds or ["None waiting."]),
+        ("escalations", SECTION_LABELS["escalations"], escalations or ["None waiting."]),
+        ("assisted", SECTION_LABELS["assisted"], assisted or ["No assisted packs are due."]),
+        ("sample", SECTION_LABELS["sample"], sample or ["No hold-0 actions yesterday."]),
+        ("market", SECTION_LABELS["market"], _market_lines(review)),
+        ("breakers", SECTION_LABELS["breakers"], breakers or ["None tripped."]),
+        ("suggestions", SECTION_LABELS["suggestions"], suggestions or ["No class is eligible to drop its hold yet."]),
+        ("promotion", SECTION_LABELS["promotion"], _promotion_lines(review)),
+    ]
+
+
 def render_digest_html(review: dict[str, Any]) -> str:
     date = html.escape(str(review.get("date") or ""))
-    narrative = html.escape(str(review.get("narrative") or "").strip())
-    headline = review.get("headline") or {}
-    rows = [
-        ("headline", "Headline numbers"),
-        ("holdsDue", "On hold, executing soon"),
-        ("escalations", "Escalations"),
-        ("assisted", "Assisted posts"),
-        ("sample", "Sample of what ran"),
-        ("market", "Market and ideas"),
-        ("breakers", "Tripped breakers"),
-        ("suggestions", "Boundary suggestions"),
-        ("promotion", "Production promotion"),
-    ]
-    links = "".join(
-        f'<tr><td style="padding:8px 0;"><a href="{html.escape(spa_url(sid))}">{html.escape(label)}</a></td></tr>'
-        for sid, label in rows
-    )
-    tasks = headline.get("tasks") or {}
-    spend = headline.get("spend") or {}
-    summary = (
-        f"Delivered {tasks.get('delivered') or 0} · running {tasks.get('running') or 0} · "
-        f"blocked {tasks.get('blocked') or 0}. Staff spend "
-        f"{spend.get('staffUsd') or 0} / {spend.get('budgetUsd') or 0} USD."
-    )
-    narrative_html = f"<p>{narrative}</p>" if narrative else ""
+    blocks: list[str] = []
+    for _sid, title, lines in digest_section_lines(review):
+        items = "".join(f"<li>{html.escape(line)}</li>" for line in lines)
+        blocks.append(
+            "<tr><td style=\"padding:12px 0 4px 0;\">"
+            f"<h2 style=\"font-size:15px;margin:0 0 6px 0;\">{html.escape(title)}</h2>"
+            f"<ul style=\"margin:0;padding-left:18px;\">{items}</ul>"
+            "</td></tr>"
+        )
     return (
         '<table role="presentation" cellpadding="0" cellspacing="0" width="100%" '
         'style="max-width:640px;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111;">'
         f"<tr><td style=\"padding:16px 0;\"><h1 style=\"font-size:18px;margin:0;\">Siu Tin Dei daily review {date}</h1></td></tr>"
-        f"<tr><td style=\"padding:0 0 12px 0;\">{html.escape(summary)}</td></tr>"
-        f"<tr><td>{narrative_html}</td></tr>"
-        f"<tr><td><table width=\"100%\">{links}</table></td></tr>"
+        f"{''.join(blocks)}"
         "</table>"
     )
 
@@ -315,22 +486,12 @@ def render_digest_html(review: dict[str, Any]) -> str:
 def render_digest_text(review: dict[str, Any]) -> str:
     date = str(review.get("date") or "")
     lines = [f"Siu Tin Dei daily review {date}", ""]
-    if review.get("narrative"):
-        lines.extend([str(review["narrative"]), ""])
-    labels = {
-        "headline": "Headline numbers",
-        "holdsDue": "On hold, executing soon",
-        "escalations": "Escalations",
-        "assisted": "Assisted posts",
-        "sample": "Sample of what ran",
-        "market": "Market and ideas",
-        "breakers": "Tripped breakers",
-        "suggestions": "Boundary suggestions",
-        "promotion": "Production promotion",
-    }
-    for sid in SECTION_IDS:
-        lines.append(f"{labels[sid]}: {spa_url(sid)}")
-    return "\n".join(lines)
+    for _sid, title, body in digest_section_lines(review):
+        lines.append(title)
+        for item in body:
+            lines.append(f"- {item}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def send_digest(table: Any, settings: dict[str, Any], review: dict[str, Any]) -> dict[str, Any]:
@@ -341,6 +502,7 @@ def send_digest(table: Any, settings: dict[str, Any], review: dict[str, Any]) ->
     if not board_mail.sending_enabled():
         _log_event("info", tag="board_review_digest_skipped", reason="sending disabled")
         return {"ok": True, "skipped": "sending disabled"}
+    review = {**review, "promotion": _promotion_section()}
     html_body = render_digest_html(review)
     text = render_digest_text(review)
     date = str(review.get("date") or "")
@@ -381,8 +543,6 @@ def maybe_create_headline_duty(table: Any, settings: dict[str, Any]) -> dict[str
             if ref.get("kind") == "duty" and str(ref.get("id") or "") == duty_id:
                 return None
     pack = headline_pack(table, settings, date_hkt)
-    import json
-
     brief = (
         "Write the three-sentence headline for today's review from this JSON\n\n"
         + json.dumps(pack, ensure_ascii=False)[:3500]

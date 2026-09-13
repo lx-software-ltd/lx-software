@@ -10,6 +10,8 @@ from unittest.mock import patch
 
 from test_board import BoardTestCase
 
+import board_code
+import board_github
 import board_hk
 import board_mail
 import board_review
@@ -32,7 +34,8 @@ class ReviewCompileTests(BoardTestCase):
 
     def test_compile_has_every_section(self) -> None:
         date = board_hk.today_hkt()
-        review = board_review.compile(self.table, self.settings, date)
+        with patch.object(board_github, "_request", side_effect=AssertionError("compile must not call GitHub")):
+            review = board_review.compile(self.table, self.settings, date)
         for key in (
             "headline",
             "holdsDue",
@@ -51,6 +54,9 @@ class ReviewCompileTests(BoardTestCase):
         self.assertIn("messagesByChannel", headline)
         self.assertIn("holds", headline)
         self.assertIn("spend", headline)
+        self.assertIn("digestHtml", review)
+        self.assertIn("Headline numbers", review["digestHtml"])
+        self.assertNotIn("section=review#", review["digestHtml"])
 
     def test_sample_is_deterministic_under_seeded_rng(self) -> None:
         yesterday = board_hk.now_hkt() - timedelta(days=1)
@@ -77,17 +83,59 @@ class ReviewCompileTests(BoardTestCase):
         self.assertEqual([row["callId"] for row in first], [row["callId"] for row in second])
         self.assertEqual(len(first), 2)
 
-    def test_digest_html_contains_every_section_link(self) -> None:
+    def test_digest_html_inlines_section_summaries_not_spa_links(self) -> None:
         date = "2026-09-09"
         review = {
             "date": date,
             "narrative": "Quiet morning.",
-            "headline": {"tasks": {"delivered": 1, "running": 0, "blocked": 0}, "spend": {"staffUsd": 1, "budgetUsd": 20}},
+            "headline": {
+                "tasks": {"delivered": 1, "running": 0, "blocked": 0},
+                "holds": {"executed": 1, "vetoed": 0},
+                "spend": {"staffUsd": 1, "budgetUsd": 20},
+                "messagesByChannel": {"mail": 2},
+            },
+            "holdsDue": [
+                {
+                    "summary": "Propose Page post",
+                    "classKey": "publish:facebook",
+                    "executeAt": "2026-09-09T10:00:00+08:00",
+                    "preview": {"text": "Saturday swimming"},
+                }
+            ],
+            "escalations": [
+                {
+                    "taskId": "t1",
+                    "assignee": "support",
+                    "brief": "Parent asked about a refund.",
+                    "suggestedReply": {"summary": "Offer a credit"},
+                }
+            ],
+            "assisted": [{"channel": "assisted_xiaohongshu", "slotAt": "2026-09-09T12:00:00", "copyZh": "沙田週末"}],
+            "sample": [{"callId": "c1", "summary": "Replied to a parent", "op": "mail_reply"}],
+            "market": {
+                "changes": [{"summary": "Saturday class price rose."}],
+                "latestBrief": {"summary": "Weekly market brief"},
+            },
+            "breakers": [{"name": "tool:task", "tripped": True, "reason": "too many failures"}],
+            "suggestions": [{"classKey": "publish:facebook", "actions": 32, "rate": 0}],
+            "promotion": {"behindBy": 0, "commits": [{"sha": "abcdef12", "message": "fix booking copy"}]},
         }
         html = board_review.render_digest_html(review)
-        for fragment in board_review.SECTION_IDS:
-            self.assertIn(f"section=review#{fragment}", html)
-            self.assertIn("/siu-tin-dei?tab=board", html)
+        text = board_review.render_digest_text(review)
+        self.assertNotIn("section=review#", html)
+        self.assertNotIn("http", html)
+        for title in board_review.SECTION_LABELS.values():
+            self.assertIn(title, html)
+            self.assertIn(title, text)
+        self.assertIn("Quiet morning.", html)
+        self.assertIn("Delivered 1", html)
+        self.assertIn("Propose Page post", html)
+        self.assertIn("Parent asked about a refund", html)
+        self.assertIn("Offer a credit", html)
+        self.assertIn("Replied to a parent", html)
+        self.assertIn("tool:task", html)
+        self.assertIn("fix booking copy", html)
+        self.assertIn("Saturday class price rose.", text)
 
     def test_send_digest_skips_empty_digest_to(self) -> None:
         review = board_review.compile(self.table, self.settings, board_hk.today_hkt())
@@ -111,16 +159,35 @@ class ReviewCompileTests(BoardTestCase):
             captured["sent_by"] = sent_by
             return {"ok": True}
 
+        staging = {"behindBy": 0, "aheadBy": 1, "commits": [{"sha": "abcdef12", "message": "fix booking copy"}]}
         with patch.object(board_mail, "sending_enabled", return_value=True), patch.object(
             board_mail, "send_plan", side_effect=fake_send
-        ):
+        ), patch.object(board_code, "staging_preview", return_value=staging) as preview:
             result = board_review.send_digest(self.table, self.settings, review)
         self.assertTrue(result.get("ok"))
+        self.assertEqual(preview.call_count, 1)
         self.assertEqual(captured["plan"]["fromMailbox"], "board")
         self.assertEqual(captured["plan"]["to"], ["founder@example.com"])
-        self.assertIn("headline", captured["plan"]["html"])
-        for fragment in board_review.SECTION_IDS:
-            self.assertIn(f"#{fragment}", captured["plan"]["html"])
+        self.assertIn("Headline numbers", captured["plan"]["html"])
+        self.assertIn("fix booking copy", captured["plan"]["html"])
+        self.assertNotIn("section=review#", captured["plan"]["html"])
+        self.assertIn("Headline numbers", captured["plan"]["text"])
+        self.assertIn("fix booking copy", captured["plan"]["text"])
+
+    def test_send_digest_reports_staging_error_inline(self) -> None:
+        self.settings["review"] = board_store.normalize_review_config({"digestTo": "founder@example.com"})
+        review = board_review.compile(self.table, self.settings, "2026-09-09")
+        captured: dict[str, Any] = {}
+
+        def fake_send(table: Any, plan: dict[str, Any], *, sent_by: str) -> dict[str, Any]:
+            captured["plan"] = plan
+            return {"ok": True}
+
+        with patch.object(board_mail, "sending_enabled", return_value=True), patch.object(
+            board_mail, "send_plan", side_effect=fake_send
+        ), patch.object(board_code, "staging_preview", side_effect=RuntimeError("boom")):
+            board_review.send_digest(self.table, self.settings, review)
+        self.assertIn("staging check failed", captured["plan"]["text"])
 
     def test_headline_duty_at_07_00(self) -> None:
         board_store.save_staff_override(self.table, "business-analyst", {"isActive": True})

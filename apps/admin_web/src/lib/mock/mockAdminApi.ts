@@ -292,6 +292,10 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
       counts: countsFromTasks(state.tasks),
     });
   }
+  if (p === `${board}/staff/tick`) {
+    if (method !== "POST") return json({ message: "Method not allowed" }, 405);
+    return json({ ok: true, queued: true }, 202);
+  }
   if (p.startsWith(`${board}/staff/`)) {
     const seatId = p.slice(`${board}/staff/`.length);
     const idx = state.seats.findIndex((s) => s.id === seatId);

@@ -160,8 +160,8 @@ export function BoardReviewSection() {
             <div dangerouslySetInnerHTML={{ __html: review.digestHtml }} />
           ) : (
             <p className="mb-0 text-muted">
-              Digest is emailed at 07:30 HKT to <code>settings.review.digestTo</code>. Section links
-              match the headings on this page.
+              Digest is emailed at 07:30 HKT to <code>settings.review.digestTo</code>. The mail
+              includes the same section summaries as this page (not links).
             </p>
           )}
         </div>

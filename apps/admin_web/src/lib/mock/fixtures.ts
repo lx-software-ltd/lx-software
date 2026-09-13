@@ -598,6 +598,8 @@ export const boardReviewFixture: BoardReviewSnapshot = {
   date: dateDaysAgo(0),
   compiledAt: isoDaysAgo(0),
   narrative: "Three parent threads closed. One Facebook post is waiting out its hold. Spend is inside the staff cap.",
+  digestHtml:
+    "<h1>Siu Tin Dei daily review</h1><h2>Headline numbers</h2><ul><li>Three parent threads closed. One Facebook post is waiting out its hold. Spend is inside the staff cap.</li><li>Delivered 1 · running 1 · blocked 1.</li></ul><h2>On hold, executing soon</h2><ul><li>Propose Page post · publish:facebook</li></ul><h2>Escalations</h2><ul><li>Reconcile last week's unmatched payments. (accountant)</li></ul>",
   headline: {
     tasks: { delivered: 1, running: 1, blocked: 1 },
     messagesByChannel: { mail: 2, meta: 1 },

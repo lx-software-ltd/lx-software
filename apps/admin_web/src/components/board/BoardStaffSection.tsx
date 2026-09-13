@@ -46,6 +46,28 @@ export function BoardStaffSection() {
 
   return (
     <div>
+      <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <button
+          type="button"
+          className="btn btn-sm btn-outline-secondary"
+          disabled={!staff.enabled || staff.tick.isPending}
+          onClick={() => staff.tick.mutate()}
+        >
+          {staff.tick.isPending ? "Queuing tick…" : "Run staff tick now"}
+        </button>
+        <span className="small text-muted">
+          Same work as the 5-minute schedule: due duties, due holds, then drain the queue. Runs in the background.
+        </span>
+      </div>
+      {staff.tick.isSuccess ? (
+        <p className="small text-muted">
+          Tick queued. Queued work should move into Running within a few seconds if a seat is free; this list refreshes
+          on its own.
+        </p>
+      ) : null}
+      {errorText(staff.tick.error) ? (
+        <div className="alert alert-danger py-2 small">{errorText(staff.tick.error)}</div>
+      ) : null}
       {!staff.enabled ? (
         <p className="small text-muted">
           Staff tasks are off. Turn on <code>settings.staff.enabled</code> after <code>SiutindeiBoardStaffEnabled</code> is true

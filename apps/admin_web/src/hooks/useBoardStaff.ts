@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tansta
 import { adminFetchJson } from "../lib/apiAdminClient";
 import {
   boardStaffPath,
+  boardStaffTickPath,
   type BoardSeat,
   type BoardSeatOverride,
   type BoardStaffPayload,
@@ -37,6 +38,28 @@ export function staffResetMutationOptions(qc: QueryClient) {
   };
 }
 
+/** The tick runs in the background (202); refetch again once it has had time to move tasks. */
+export const STAFF_TICK_REFETCH_DELAY_MS = 8000;
+
+export function staffTickMutationOptions(qc: QueryClient) {
+  const refetch = () => {
+    void qc.invalidateQueries({ queryKey: BOARD_STAFF_KEY });
+    void qc.invalidateQueries({ queryKey: BOARD_QUERY_KEY });
+  };
+  return {
+    mutationFn: async () => {
+      return adminFetchJson<{ ok?: boolean; queued?: boolean }>(boardStaffTickPath(), {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+    },
+    onSuccess: () => {
+      refetch();
+      window.setTimeout(refetch, STAFF_TICK_REFETCH_DELAY_MS);
+    },
+  };
+}
+
 export function useBoardStaff() {
   const qc = useQueryClient();
   const query = useQuery({
@@ -45,6 +68,7 @@ export function useBoardStaff() {
   });
   const override = useMutation(staffOverrideMutationOptions(qc));
   const reset = useMutation(staffResetMutationOptions(qc));
+  const tick = useMutation(staffTickMutationOptions(qc));
   return {
     seats: query.data?.seats ?? [],
     counts: query.data?.counts ?? {},
@@ -55,5 +79,6 @@ export function useBoardStaff() {
     error: query.error,
     override,
     reset,
+    tick,
   };
 }
