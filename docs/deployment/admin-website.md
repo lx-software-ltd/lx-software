@@ -607,7 +607,9 @@ function calling. Design:
   Schedules `lxsoftware-admin-siutindei-board-review-compile` (07:15 HKT)
   and `…-board-review-send` (07:30 HKT). The digest email inlines the same
   section summaries as the Daily review page (holds, escalations, sample,
-  breakers, and the rest) rather than SPA fragment links. Set
+  breakers, and the rest) rather than SPA fragment links; the staging /
+  promotion section is fetched from GitHub at send time only, so `compile`
+  and `GET …/review` stay pure table reads. Set
   `settings.review.digestTo` (Settings card) before expecting the digest;
   sending still requires
   `SiutindeiBoardMailSendingEnabled`. **Daily review** is the default board section
@@ -674,8 +676,10 @@ function calling. Design:
   and `security-analyst` on at runbook step 6, then enable
   `settings.staff.dutiesEnabled` (Settings → Run scheduled seat duties)
   after staff is on. **Staff → Run staff tick now** (`POST /siu-tin-dei/board/staff/tick`)
-  runs the same work as the 5-minute schedule (due duties, due holds, drain
-  the queue). HKT crons on the 5-minute staff tick: BA weekly KPI
+  queues the same work as the 5-minute schedule (due duties, due holds, drain
+  the queue) on the `AdminApiFn` self-invoke path and returns `202` — a
+  full tick can outlive API Gateway's 30 s cap, so the SPA refetches a few
+  seconds later. HKT crons on the 5-minute staff tick: BA weekly KPI
   (Mon 08:00), accountant month-end (1st 09:00) and weekly aging (Thu
   09:00), security weekly triage (Tue 09:00), data-analyst attribution
   (Mon 10:00). Hourly `board_cache_refresh` opens architect/CTO tasks for

@@ -38,17 +38,24 @@ export function staffResetMutationOptions(qc: QueryClient) {
   };
 }
 
+/** The tick runs in the background (202); refetch again once it has had time to move tasks. */
+export const STAFF_TICK_REFETCH_DELAY_MS = 8000;
+
 export function staffTickMutationOptions(qc: QueryClient) {
+  const refetch = () => {
+    void qc.invalidateQueries({ queryKey: BOARD_STAFF_KEY });
+    void qc.invalidateQueries({ queryKey: BOARD_QUERY_KEY });
+  };
   return {
     mutationFn: async () => {
-      return adminFetchJson<{ ok?: boolean; started?: unknown; skipped?: string }>(boardStaffTickPath(), {
+      return adminFetchJson<{ ok?: boolean; queued?: boolean }>(boardStaffTickPath(), {
         method: "POST",
         body: JSON.stringify({}),
       });
     },
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: BOARD_STAFF_KEY });
-      void qc.invalidateQueries({ queryKey: BOARD_QUERY_KEY });
+      refetch();
+      window.setTimeout(refetch, STAFF_TICK_REFETCH_DELAY_MS);
     },
   };
 }

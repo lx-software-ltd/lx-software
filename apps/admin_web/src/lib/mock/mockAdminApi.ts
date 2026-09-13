@@ -294,7 +294,7 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   }
   if (p === `${board}/staff/tick`) {
     if (method !== "POST") return json({ message: "Method not allowed" }, 405);
-    return json({ ok: true, started: [] });
+    return json({ ok: true, queued: true }, 202);
   }
   if (p.startsWith(`${board}/staff/`)) {
     const seatId = p.slice(`${board}/staff/`.length);

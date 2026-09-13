@@ -53,14 +53,17 @@ export function BoardStaffSection() {
           disabled={!staff.enabled || staff.tick.isPending}
           onClick={() => staff.tick.mutate()}
         >
-          {staff.tick.isPending ? "Running tick…" : "Run staff tick now"}
+          {staff.tick.isPending ? "Queuing tick…" : "Run staff tick now"}
         </button>
         <span className="small text-muted">
-          Same work as the 5-minute schedule: due duties, due holds, then drain the queue.
+          Same work as the 5-minute schedule: due duties, due holds, then drain the queue. Runs in the background.
         </span>
       </div>
       {staff.tick.isSuccess ? (
-        <p className="small text-muted">Tick finished. Queued work should move into Running if a seat is free.</p>
+        <p className="small text-muted">
+          Tick queued. Queued work should move into Running within a few seconds if a seat is free; this list refreshes
+          on its own.
+        </p>
       ) : null}
       {errorText(staff.tick.error) ? (
         <div className="alert alert-danger py-2 small">{errorText(staff.tick.error)}</div>

@@ -10,6 +10,8 @@ from unittest.mock import patch
 
 from test_board import BoardTestCase
 
+import board_code
+import board_github
 import board_hk
 import board_mail
 import board_review
@@ -32,7 +34,8 @@ class ReviewCompileTests(BoardTestCase):
 
     def test_compile_has_every_section(self) -> None:
         date = board_hk.today_hkt()
-        review = board_review.compile(self.table, self.settings, date)
+        with patch.object(board_github, "_request", side_effect=AssertionError("compile must not call GitHub")):
+            review = board_review.compile(self.table, self.settings, date)
         for key in (
             "headline",
             "holdsDue",
@@ -156,16 +159,35 @@ class ReviewCompileTests(BoardTestCase):
             captured["sent_by"] = sent_by
             return {"ok": True}
 
+        staging = {"behindBy": 0, "aheadBy": 1, "commits": [{"sha": "abcdef12", "message": "fix booking copy"}]}
         with patch.object(board_mail, "sending_enabled", return_value=True), patch.object(
             board_mail, "send_plan", side_effect=fake_send
-        ):
+        ), patch.object(board_code, "staging_preview", return_value=staging) as preview:
             result = board_review.send_digest(self.table, self.settings, review)
         self.assertTrue(result.get("ok"))
+        self.assertEqual(preview.call_count, 1)
         self.assertEqual(captured["plan"]["fromMailbox"], "board")
         self.assertEqual(captured["plan"]["to"], ["founder@example.com"])
         self.assertIn("Headline numbers", captured["plan"]["html"])
+        self.assertIn("fix booking copy", captured["plan"]["html"])
         self.assertNotIn("section=review#", captured["plan"]["html"])
         self.assertIn("Headline numbers", captured["plan"]["text"])
+        self.assertIn("fix booking copy", captured["plan"]["text"])
+
+    def test_send_digest_reports_staging_error_inline(self) -> None:
+        self.settings["review"] = board_store.normalize_review_config({"digestTo": "founder@example.com"})
+        review = board_review.compile(self.table, self.settings, "2026-09-09")
+        captured: dict[str, Any] = {}
+
+        def fake_send(table: Any, plan: dict[str, Any], *, sent_by: str) -> dict[str, Any]:
+            captured["plan"] = plan
+            return {"ok": True}
+
+        with patch.object(board_mail, "sending_enabled", return_value=True), patch.object(
+            board_mail, "send_plan", side_effect=fake_send
+        ), patch.object(board_code, "staging_preview", side_effect=RuntimeError("boom")):
+            board_review.send_digest(self.table, self.settings, review)
+        self.assertIn("staging check failed", captured["plan"]["text"])
 
     def test_headline_duty_at_07_00(self) -> None:
         board_store.save_staff_override(self.table, "business-analyst", {"isActive": True})

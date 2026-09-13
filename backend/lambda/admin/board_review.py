@@ -244,13 +244,14 @@ def _market_section(table: Any) -> dict[str, Any]:
 
 
 def _promotion_section() -> dict[str, Any]:
+    """Live GitHub compare; only called from ``send_digest`` so ``compile`` (GET /review) stays a table read."""
     try:
         import board_code
 
         preview = board_code.staging_preview()
-    except Exception:
-        return {}
-    return preview if isinstance(preview, dict) else {}
+    except Exception as exc:
+        return {"error": f"staging check failed: {str(exc)[:160]}"}
+    return preview if isinstance(preview, dict) else {"error": "staging check returned no data"}
 
 
 def compile(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, Any]:
@@ -282,7 +283,7 @@ def compile(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, An
         "suggestions": suggestions,
         "assisted": _assisted_section(table, settings),
         "market": _market_section(table),
-        "promotion": _promotion_section(),
+        "promotion": [],
     }
     doc["digestHtml"] = render_digest_html(doc)
     board_store.put_review_snapshot(table, date_hkt, doc)
@@ -413,7 +414,7 @@ def _promotion_lines(review: dict[str, Any]) -> list[str]:
     if isinstance(promo, list):
         promo = promo[0] if promo and isinstance(promo[0], dict) else {}
     if not isinstance(promo, dict) or not promo:
-        return ["No staging commits ahead of main."]
+        return ["Staging status is checked against GitHub when the digest is sent."]
     if promo.get("error"):
         return [_clip(promo.get("error"), 200)]
     lines: list[str] = []
@@ -501,7 +502,7 @@ def send_digest(table: Any, settings: dict[str, Any], review: dict[str, Any]) ->
     if not board_mail.sending_enabled():
         _log_event("info", tag="board_review_digest_skipped", reason="sending disabled")
         return {"ok": True, "skipped": "sending disabled"}
-    review = {**review, "promotion": _promotion_section() or review.get("promotion") or {}}
+    review = {**review, "promotion": _promotion_section()}
     html_body = render_digest_html(review)
     text = render_digest_text(review)
     date = str(review.get("date") or "")

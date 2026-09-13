@@ -615,9 +615,14 @@ def _staff_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
             return _json_response(405, {"message": "Method not allowed"})
         if not board_staff.enabled(settings):
             return _staff_disabled()
-        result = board_staff.handle_tick({"internal": "board_staff_tick"})
+        import board_async
+
+        # A full tick (due holds, duties, GitHub polls) can outlive API Gateway's
+        # 30 s integration cap, so run it on the scheduler's self-invoke path.
+        payload = {"internal": "board_staff_tick", "boardKey": board_store.BOARD_KEY, "requestedBy": "owner"}
+        board_async.invoke_async(payload, fallback=lambda body: board_staff.handle_tick(body))
         _audit(user_sub, "BOARD_STAFF_TICK", "tick", event)
-        return _json_response(200, result)
+        return _json_response(202, {"ok": True, "queued": True})
     if len(rest) == 2:
         seat_id = rest[1]
         if not board_staff.is_seat_id(seat_id):

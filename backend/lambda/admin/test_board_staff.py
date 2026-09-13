@@ -378,11 +378,27 @@ class StaffRouteTests(BoardTestCase):
     def test_post_staff_tick_runs_handle_tick(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"
         _enable_staff(self.table)
-        with patch.object(board_staff, "handle_tick", return_value={"ok": True, "started": []}) as tick:
+        queued: list[dict[str, Any]] = []
+
+        def fake_invoke(payload: dict[str, Any], *, fallback: Any = None) -> None:
+            queued.append(payload)
+
+        with patch.object(board_async, "invoke_async", side_effect=fake_invoke), patch.object(
+            board_staff, "handle_tick"
+        ) as tick:
             status, body = self.call("/siu-tin-dei/board/staff/tick", "POST", {})
-        self.assertEqual(status, 200)
-        self.assertTrue(body.get("ok"))
-        tick.assert_called_once()
+        self.assertEqual(status, 202)
+        self.assertTrue(body.get("queued"))
+        tick.assert_not_called()
+        self.assertEqual(len(queued), 1)
+        self.assertEqual(queued[0]["internal"], "board_staff_tick")
+        self.assertEqual(queued[0]["boardKey"], board_store.BOARD_KEY)
+        # Without a Lambda name (unit tests, local runs) the inline fallback runs the tick.
+        with patch.object(board_staff, "handle_tick", return_value={"ok": True}) as inline:
+            status, _ = self.call("/siu-tin-dei/board/staff/tick", "POST", {})
+        self.assertEqual(status, 202)
+        inline.assert_called_once()
+        self.assertEqual(inline.call_args.args[0]["internal"], "board_staff_tick")
         status, _ = self.call("/siu-tin-dei/board/staff/tick", "GET")
         self.assertEqual(status, 405)
 
