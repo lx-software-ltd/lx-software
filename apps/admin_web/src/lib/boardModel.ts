@@ -1498,6 +1498,8 @@ export type BoardReviewSnapshot = {
     readonly spend: { readonly boardUsd: number; readonly staffUsd: number; readonly budgetUsd: number };
     readonly pipeline?: Readonly<Record<string, unknown>>;
     readonly content?: Readonly<Record<string, unknown>>;
+    readonly listings?: Readonly<Record<string, unknown>>;
+    readonly signings?: Readonly<Record<string, unknown>>;
     readonly market?: Readonly<Record<string, unknown>>;
   };
   readonly holdsDue: readonly BoardHold[];
