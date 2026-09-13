@@ -610,6 +610,14 @@ def _staff_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
                 },
             )
         return _json_response(405, {"message": "Method not allowed"})
+    if len(rest) == 2 and rest[1] == "tick":
+        if method != "POST":
+            return _json_response(405, {"message": "Method not allowed"})
+        if not board_staff.enabled(settings):
+            return _staff_disabled()
+        result = board_staff.handle_tick({"internal": "board_staff_tick"})
+        _audit(user_sub, "BOARD_STAFF_TICK", "tick", event)
+        return _json_response(200, result)
     if len(rest) == 2:
         seat_id = rest[1]
         if not board_staff.is_seat_id(seat_id):

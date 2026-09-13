@@ -1042,6 +1042,10 @@ export function boardStaffPath(seatId?: string): string {
   return seatId ? `${BOARD_API_BASE}/staff/${encodeURIComponent(seatId)}` : `${BOARD_API_BASE}/staff`;
 }
 
+export function boardStaffTickPath(): string {
+  return `${BOARD_API_BASE}/staff/tick`;
+}
+
 export function boardTasksPath(query?: { status?: string; assignee?: string; limit?: number }): string {
   const params = new URLSearchParams();
   if (query?.status) params.set("status", query.status);

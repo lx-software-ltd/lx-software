@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tansta
 import { adminFetchJson } from "../lib/apiAdminClient";
 import {
   boardStaffPath,
+  boardStaffTickPath,
   type BoardSeat,
   type BoardSeatOverride,
   type BoardStaffPayload,
@@ -37,6 +38,21 @@ export function staffResetMutationOptions(qc: QueryClient) {
   };
 }
 
+export function staffTickMutationOptions(qc: QueryClient) {
+  return {
+    mutationFn: async () => {
+      return adminFetchJson<{ ok?: boolean; started?: unknown; skipped?: string }>(boardStaffTickPath(), {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: BOARD_STAFF_KEY });
+      void qc.invalidateQueries({ queryKey: BOARD_QUERY_KEY });
+    },
+  };
+}
+
 export function useBoardStaff() {
   const qc = useQueryClient();
   const query = useQuery({
@@ -45,6 +61,7 @@ export function useBoardStaff() {
   });
   const override = useMutation(staffOverrideMutationOptions(qc));
   const reset = useMutation(staffResetMutationOptions(qc));
+  const tick = useMutation(staffTickMutationOptions(qc));
   return {
     seats: query.data?.seats ?? [],
     counts: query.data?.counts ?? {},
@@ -55,5 +72,6 @@ export function useBoardStaff() {
     error: query.error,
     override,
     reset,
+    tick,
   };
 }

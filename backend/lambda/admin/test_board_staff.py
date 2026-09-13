@@ -375,6 +375,23 @@ class StaffRouteTests(BoardTestCase):
         status, body = self.call("/siu-tin-dei/board/tasks/missing")
         self.assertEqual(status, 404)
 
+    def test_post_staff_tick_runs_handle_tick(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        _enable_staff(self.table)
+        with patch.object(board_staff, "handle_tick", return_value={"ok": True, "started": []}) as tick:
+            status, body = self.call("/siu-tin-dei/board/staff/tick", "POST", {})
+        self.assertEqual(status, 200)
+        self.assertTrue(body.get("ok"))
+        tick.assert_called_once()
+        status, _ = self.call("/siu-tin-dei/board/staff/tick", "GET")
+        self.assertEqual(status, 405)
+
+    def test_post_staff_tick_disabled_is_409(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "false"
+        status, body = self.call("/siu-tin-dei/board/staff/tick", "POST", {})
+        self.assertEqual(status, 409)
+        self.assertEqual(body["message"], "Staff is disabled")
+
     def test_get_staff_and_create_task(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
