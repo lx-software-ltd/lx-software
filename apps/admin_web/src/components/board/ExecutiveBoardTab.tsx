@@ -21,6 +21,7 @@ import { BoardSettingsCard } from "./BoardSettingsCard";
 import { BoardMarketSection } from "./BoardMarketSection";
 import { BoardContentSection } from "./BoardContentSection";
 import { BoardPipelineSection } from "./BoardPipelineSection";
+import { BoardProgressSection } from "./BoardProgressSection";
 import { BoardStaffSection } from "./BoardStaffSection";
 import { BoardTasksSection } from "./BoardTasksSection";
 import { BoardToolsCard } from "./BoardToolsCard";
@@ -47,7 +48,7 @@ import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { adminTabButtonId } from "../../lib/adminTabs";
 import { DEFAULT_BOARD_BOUNDARIES, effectiveToolLevel, type BoardMeetingMode, type BoardOverview } from "../../lib/boardModel";
 
-type BoardSection = "review" | "market" | "pipeline" | "content" | "actions" | "staff" | "tasks" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
+type BoardSection = "review" | "progress" | "market" | "pipeline" | "content" | "actions" | "staff" | "tasks" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
 
 const CLOSED_MEETING = "__closed__";
 const SECTION_ID_PREFIX = "board-section";
@@ -55,6 +56,7 @@ const SECTION_PANEL_ID = "board-section-panel";
 
 const SECTIONS: readonly { readonly id: BoardSection; readonly label: string; readonly icon: string }[] = [
   { id: "review", label: "Daily review", icon: "bi-sun" },
+  { id: "progress", label: "Progress", icon: "bi-speedometer2" },
   { id: "market", label: "Market", icon: "bi-binoculars" },
   { id: "pipeline", label: "Pipeline", icon: "bi-funnel" },
   { id: "content", label: "Content", icon: "bi-calendar3" },
@@ -248,6 +250,15 @@ export function ExecutiveBoardTab() {
             aria-labelledby={adminTabButtonId(SECTION_ID_PREFIX, section)}
           >
           {overview && section === "review" ? <BoardReviewSection /> : null}
+
+          {overview && section === "progress" ? (
+            <BoardProgressSection
+              onOpenSection={(id) => {
+                const next = SECTIONS.find((s) => s.id === id);
+                if (next) setSection(next.id);
+              }}
+            />
+          ) : null}
 
           {overview && section === "market" ? <BoardMarketSection /> : null}
 

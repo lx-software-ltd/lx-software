@@ -1128,6 +1128,10 @@ export function boardReviewPath(date?: string): string {
   return qs ? `${BOARD_API_BASE}/review?${qs}` : `${BOARD_API_BASE}/review`;
 }
 
+export function boardProgressPath(): string {
+  return `${BOARD_API_BASE}/progress`;
+}
+
 export function boardReviewWrongPath(callId: string): string {
   return `${BOARD_API_BASE}/review/sample/${encodeURIComponent(callId)}/wrong`;
 }
@@ -1409,6 +1413,79 @@ export type BoardLesson = {
   readonly createdAt?: string;
 };
 
+export type BoardProgressGap = {
+  readonly kind?: string;
+  readonly label: string;
+  readonly detail: string;
+};
+
+export type BoardProgressStalledSigning = {
+  readonly id: string;
+  readonly name: string;
+  readonly step: string;
+  readonly status: string;
+  readonly daysSinceLastEdit: number;
+  readonly signedUpOn?: string;
+};
+
+export type BoardProgressStalledProspect = {
+  readonly id: string;
+  readonly name: string;
+  readonly stage: string;
+  readonly district?: string;
+  readonly nextTouchAt?: string;
+};
+
+export type BoardProgressBottleneck = {
+  readonly id: string;
+  readonly area: "listings" | "signings" | "partnerships" | "content" | string;
+  readonly severity: "warning" | "danger" | string;
+  readonly summary: string;
+  readonly section: string;
+};
+
+export type BoardProgressSnapshot = {
+  readonly fetchedAt: string;
+  readonly listings: {
+    readonly activities: number;
+    readonly providers: number;
+    readonly stores: number;
+    readonly completenessAvg: number | null;
+    readonly byDistrict: readonly {
+      readonly label: string;
+      readonly activities: number;
+      readonly providers: number;
+      readonly stores: number;
+      readonly completenessAvg: number | null;
+    }[];
+    readonly funnel7d: { readonly listingViews: number; readonly leads: number; readonly bookings: number };
+    readonly gaps: readonly BoardProgressGap[];
+    readonly error?: string;
+  };
+  readonly signings: {
+    readonly count: number;
+    readonly byOnboardingStep: Readonly<Record<string, number>>;
+    readonly bySubscription: Readonly<Record<string, number>>;
+    readonly stalled: readonly BoardProgressStalledSigning[];
+    readonly error?: string;
+  };
+  readonly partnerships: {
+    readonly byStage: Readonly<Record<string, number>>;
+    readonly qualifiedThisWeek: number;
+    readonly weeklyTarget: number;
+    readonly needsContact: number;
+    readonly stalled: readonly BoardProgressStalledProspect[];
+  };
+  readonly content: {
+    readonly byStatus: Readonly<Record<string, number>>;
+    readonly scheduledNext7: number;
+    readonly emptyChannels: readonly string[];
+    readonly stalledDrafts: readonly { readonly id: string; readonly channel: string; readonly status: string; readonly slotAt: string; readonly title: string }[];
+    readonly horizonDays: number;
+  };
+  readonly bottlenecks: readonly BoardProgressBottleneck[];
+};
+
 export type BoardReviewSnapshot = {
   readonly date: string;
   readonly compiledAt?: string;
@@ -1421,6 +1498,8 @@ export type BoardReviewSnapshot = {
     readonly spend: { readonly boardUsd: number; readonly staffUsd: number; readonly budgetUsd: number };
     readonly pipeline?: Readonly<Record<string, unknown>>;
     readonly content?: Readonly<Record<string, unknown>>;
+    readonly listings?: Readonly<Record<string, unknown>>;
+    readonly signings?: Readonly<Record<string, unknown>>;
     readonly market?: Readonly<Record<string, unknown>>;
   };
   readonly holdsDue: readonly BoardHold[];

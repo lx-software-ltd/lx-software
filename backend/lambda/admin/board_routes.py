@@ -164,6 +164,9 @@ def handle_board_route(
     if head == "review":
         return _review_route(event, method, rest, user_sub)
 
+    if head == "progress" and len(rest) == 1 and method == "GET":
+        return _progress_get()
+
     if head == "lessons":
         return _lessons_route(event, method, rest, user_sub)
 
@@ -845,6 +848,16 @@ def _ramp_promote(event: dict[str, Any], class_key: str, user_sub: str | None) -
     result = board_holds.promote(table, class_key)
     _audit(user_sub, "BOARD_RAMP_PROMOTE", class_key, event)
     return _json_response(200, result)
+
+
+def _progress_get() -> dict[str, Any]:
+    if not board_staff.env_enabled():
+        return _staff_disabled()
+    import board_progress
+
+    table = board_store.records_table()
+    settings = board_store.load_settings(table)
+    return _json_response(200, board_progress.public_snapshot(table, settings))
 
 
 def _review_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:

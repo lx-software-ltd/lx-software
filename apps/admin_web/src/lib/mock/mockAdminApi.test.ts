@@ -9,12 +9,12 @@ describe("mockAdminFetch", () => {
     expect(body.accountRecords.map((r) => r.id)).toContain("ac-1");
   });
 
-  it("serves the Siu Tin Dei book and board overview", async () => {
-    const book = await mockAdminFetch("/siu-tin-dei");
-    expect(book.ok).toBe(true);
-    const board = await mockAdminFetch("/siu-tin-dei/board");
-    const overview = (await board.json()) as { openActionCount: number };
-    expect(overview.openActionCount).toBeGreaterThan(0);
+  it("serves listing and partnership progress", async () => {
+    const res = await mockAdminFetch("/siu-tin-dei/board/progress");
+    expect(res.ok).toBe(true);
+    const body = (await res.json()) as { listings: { activities: number }; bottlenecks: unknown[] };
+    expect(body.listings.activities).toBe(12);
+    expect(body.bottlenecks.length).toBeGreaterThan(0);
   });
 
   it("serves the OpenRouter usage split for the LX Software dashboard", async () => {

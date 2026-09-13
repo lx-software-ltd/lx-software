@@ -82,7 +82,7 @@ def headline_pack(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[s
     board_usage = board_store.load_usage_day(table, utc_day)
     staff_usage = board_store.load_staff_usage_day(table, utc_day)
     hkt_usage = board_store.load_staff_usage_day(table, date_hkt)
-    return {
+    out = {
         "tasks": {
             "delivered": counts.get("delivered") or 0,
             "running": counts.get("running") or 0,
@@ -99,6 +99,13 @@ def headline_pack(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[s
         "content": {},
         "market": {},
     }
+    try:
+        import board_progress
+
+        out.update(board_progress.headline_pack(table, settings))
+    except Exception as exc:
+        _log_event("warning", tag="board_progress_headline_failed", error=str(exc)[:200])
+    return out
 
 
 def _holds_due(table: Any) -> list[dict[str, Any]]:
@@ -330,6 +337,17 @@ def _headline_lines(review: dict[str, Any]) -> list[str]:
         f"Holds executed/vetoed {holds.get('executed') or 0}/{holds.get('vetoed') or 0}.",
         f"Staff spend {spend.get('staffUsd') or 0} / {spend.get('budgetUsd') or 0} USD.",
     ]
+    pipeline = headline.get("pipeline") or {}
+    if pipeline.get("weeklyTarget"):
+        lines.append(
+            f"Partnerships this week {pipeline.get('qualifiedThisWeek') or 0} / {pipeline.get('weeklyTarget')}."
+        )
+    content = headline.get("content") or {}
+    if content:
+        lines.append(
+            f"Content next 7 days {content.get('scheduledNext7') or 0}; "
+            f"{content.get('emptyChannels') or 0} empty channel(s)."
+        )
     narrative = str(review.get("narrative") or "").strip()
     if narrative:
         lines.insert(0, _clip(narrative, 2000))

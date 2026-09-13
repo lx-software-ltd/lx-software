@@ -20,6 +20,7 @@ import type {
   BoardBreaker,
   BoardHold,
   BoardLesson,
+  BoardProgressSnapshot,
   BoardReviewSnapshot,
   BoardStaffPayload,
   BoardTask,
@@ -611,6 +612,10 @@ export const boardReviewFixture: BoardReviewSnapshot = {
     messagesByChannel: { mail: 2, meta: 1 },
     holds: { executed: 0, vetoed: 0 },
     spend: { boardUsd: 0.4, staffUsd: 0.12, budgetUsd: 20 },
+    pipeline: { qualifiedThisWeek: 1, weeklyTarget: 50, listed: 0, stalled: 1 },
+    content: { scheduledNext7: 1, emptyChannels: 1, drafted: 1 },
+    listings: { activities: 12, providers: 6, lowCompleteness: 1, error: "" },
+    signings: { count: 2, stalled: 1, error: "" },
   },
   holdsDue: [...boardHoldsFixture],
   escalations: [
@@ -648,6 +653,48 @@ export const boardReviewFixture: BoardReviewSnapshot = {
     latestBrief: { taskId: "task-review", status: "review", summary: "Weekly market brief", createdAt: isoDaysAgo(0) },
   },
   promotion: [],
+};
+
+export const boardProgressFixture: BoardProgressSnapshot = {
+  fetchedAt: isoDaysAgo(0),
+  listings: {
+    activities: 12,
+    providers: 6,
+    stores: 4,
+    completenessAvg: 0.45,
+    byDistrict: [
+      { label: "Sha Tin", activities: 12, providers: 4, stores: 4, completenessAvg: 0.8 },
+      { label: "Tai Po", activities: 0, providers: 2, stores: 0, completenessAvg: 0.1 },
+    ],
+    funnel7d: { listingViews: 20, leads: 3, bookings: 1 },
+    gaps: [{ kind: "district", label: "Tai Po", detail: "0 listings · completeness 10%" }],
+  },
+  signings: {
+    count: 2,
+    byOnboardingStep: { photos: 1, live: 1 },
+    bySubscription: { incomplete: 1, active: 1 },
+    stalled: [{ id: "org-1", name: "Sha Tin Playhouse", step: "photos", status: "incomplete", daysSinceLastEdit: 18, signedUpOn: "2026-08-01" }],
+  },
+  partnerships: {
+    byStage: { discovered: 0, qualified: 1, contacted: 1, listed: 0 },
+    qualifiedThisWeek: 1,
+    weeklyTarget: 50,
+    needsContact: 1,
+    stalled: [{ id: "pros-stall", name: "Tai Po Hall", stage: "contacted", district: "Tai Po" }],
+  },
+  content: {
+    byStatus: { drafted: 1, scheduled: 2 },
+    scheduledNext7: 1,
+    emptyChannels: ["instagram"],
+    stalledDrafts: [{ id: "cnt-old", channel: "facebook", status: "drafted", slotAt: isoDaysAgo(5), title: "Old draft" }],
+    horizonDays: 7,
+  },
+  bottlenecks: [
+    { id: "listings-gap", area: "listings", severity: "warning", summary: "Listing gap in Tai Po: 0 listings · completeness 10%", section: "progress" },
+    { id: "signings-stalled", area: "signings", severity: "warning", summary: "1 vendor onboarding(s) idle ≥ 7 days (e.g. Sha Tin Playhouse on photos)", section: "receivables" },
+    { id: "partnerships-target", area: "partnerships", severity: "danger", summary: "Partnership pipeline 1 this week vs target 50", section: "pipeline" },
+    { id: "content-empty", area: "content", severity: "warning", summary: "No posts scheduled in the next 7 days on instagram", section: "content" },
+  ],
 };
 
 export const boardWatchesFixture: BoardWatch[] = [

@@ -54,6 +54,8 @@ class ReviewCompileTests(BoardTestCase):
         self.assertIn("messagesByChannel", headline)
         self.assertIn("holds", headline)
         self.assertIn("spend", headline)
+        self.assertIn("pipeline", headline)
+        self.assertIn("qualifiedThisWeek", headline["pipeline"])
         self.assertIn("digestHtml", review)
         self.assertIn("Headline numbers", review["digestHtml"])
         self.assertNotIn("section=review#", review["digestHtml"])
