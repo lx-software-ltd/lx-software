@@ -21,7 +21,7 @@ This document defines **reusable patterns** for the LX Software admin SPA (`apps
 | `AdminCell` | Body cell bound to a column key. Applies that column’s priority class so headers and cells hide together. |
 | `AdminPageIntro` | Explanatory copy under a page title. Collapsed behind a disclosure on phones; inline from `md`. |
 | `AdminTableTotalLabel` / `AdminTableTotalCurrency` | Render the FX note and display-currency picker **once** in a finance table footer (never a mobile duplicate). |
-| `AdminTabList` | WAI-ARIA tablist (arrow / Home / End). On phones, up to six tabs fill a **two-column grid**; longer lists become a native `<select>`. From `md` they are a horizontally scrollable row of pills. Pass `disabled` when the backing query failed. |
+| `AdminTabList` | WAI-ARIA tablist (arrow / Home / End). On phones, up to six tabs fill a **two-column grid**; longer lists become a native `<select>`. From `md` they are content-sized pills that **wrap** at the container edge (no sideways scroll). Pass `disabled` when the backing query failed. |
 | `TableIconButton` | Icon-only button for the operations column. |
 
 Import from the barrel: `import { MoneyAmount, … } from "../components/ui"` (adjust path).

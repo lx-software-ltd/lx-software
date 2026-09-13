@@ -137,5 +137,15 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByText("New task")).toBeVisible();
     await expect(page.getByText(/List our three biggest monthly costs/i)).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
+    if (testInfo.project.name !== "phone") {
+      const tablist = page.getByRole("tablist", { name: "Board sections" });
+      const lastTab = page.getByRole("tab", { name: /Settings/ });
+      await expect(lastTab).toBeInViewport();
+      const listBox = await tablist.boundingBox();
+      const tabBox = await lastTab.boundingBox();
+      expect(listBox).toBeTruthy();
+      expect(tabBox).toBeTruthy();
+      expect(tabBox!.x + tabBox!.width).toBeLessThanOrEqual(listBox!.x + listBox!.width + 2);
+    }
   });
 });
