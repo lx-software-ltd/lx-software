@@ -370,11 +370,41 @@ class StaffStepTests(ToolsTestCase):
             task = board_staff.create_task(self.table, settings, assignee="cfo", origin="owner", brief="Stuck", deliverable_type="markdown", created_by="a")
         board_store.claim_task_step(self.table, task["taskId"], 0)
         stale = board_store.get_task(self.table, task["taskId"])
-        stale["updatedAt"] = (datetime.now(timezone.utc) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        stale_at = (datetime.now(timezone.utc) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        stale["updatedAt"] = stale_at
+        stale.pop("stepClaimedAt", None)
         board_store.put_task(self.table, stale)
+        payloads: list[dict[str, Any]] = []
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: payloads.append(payload)):
+            board_staff.handle_tick({"internal": "board_staff_tick", "boardKey": BOARD_KEY})
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "running")
+        self.assertTrue(latest.get("stuckRetried"))
+        self.assertTrue(any(p.get("internal") == "board_staff_step" for p in payloads))
+        latest["updatedAt"] = stale_at
+        latest.pop("stepClaimedAt", None)
+        board_store.put_task(self.table, latest)
         board_staff.handle_tick({"internal": "board_staff_tick", "boardKey": BOARD_KEY})
-        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "failed")
-        self.assertEqual(board_store.get_task(self.table, task["taskId"])["failureReason"], "stuck")
+        failed = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(failed["status"], "failed")
+        self.assertEqual(failed["failureReason"], "stuck")
+
+    def test_drain_requeues_when_invoke_raises(self) -> None:
+        settings = _enable_staff(self.table)
+        calls: list[dict[str, Any]] = []
+
+        def boom(payload: dict[str, Any], fallback: Any = None) -> None:
+            calls.append(payload)
+            raise RuntimeError("Lambda.Invoke failed")
+
+        with patch.object(board_async, "invoke_async", boom):
+            task = board_staff.create_task(
+                self.table, settings, assignee="cfo", origin="owner", brief="Start me", deliverable_type="markdown", created_by="a"
+            )
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "queued")
+        self.assertIsNone(latest.get("startedAt"))
+        self.assertTrue(any(p.get("internal") == "board_staff_step" for p in calls))
 
     def test_ceo_task_reviewed_by_cfo(self) -> None:
         task = {"assigneeKind": "persona", "assignee": "ceo", "managerId": "ceo"}

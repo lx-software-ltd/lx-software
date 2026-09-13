@@ -301,10 +301,15 @@ def drain_queue(table: Any, settings: dict[str, Any]) -> int:
             continue
         if not board_store.claim_task_step(table, task_id, 0):
             continue
-        board_async.invoke_async(
-            {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": task_id, "step": 1},
-            fallback=run_step,
-        )
+        try:
+            board_async.invoke_async(
+                {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": task_id, "step": 1},
+                fallback=run_step,
+            )
+        except Exception as exc:
+            _log_event("error", tag="board_staff_step_invoke_failed", taskId=task_id, error=str(exc)[:300])
+            _requeue_unstarted(table, task_id)
+            continue
         started += 1
     return started
 
@@ -351,6 +356,21 @@ def _append_scratchpad(task: dict[str, Any], text: str) -> str:
         combined = combined[-BOARD_STAFF_SCRATCHPAD_MAX_CHARS:]
     _blob_put(key, combined.encode("utf-8"))
     return combined
+
+
+def _requeue_unstarted(table: Any, task_id: str) -> None:
+    """Put a just-claimed running task back on the queue when the worker never started."""
+    latest = board_store.get_task(table, task_id)
+    if not latest or latest.get("status") != "running":
+        return
+    if int(latest.get("step") or 0) != 0:
+        return
+    latest["status"] = "queued"
+    latest["startedAt"] = None
+    latest.pop("stepClaimed", None)
+    latest.pop("stepClaimedAt", None)
+    latest["updatedAt"] = board_store.now_iso()
+    board_store.put_task(table, latest)
 
 
 def _finish_incomplete(table: Any, task: dict[str, Any], reason: str) -> dict[str, Any]:
@@ -1126,23 +1146,34 @@ def handle_tick(event: dict[str, Any]) -> dict[str, Any]:
         claimed_at = str(task.get("stepClaimedAt") or "")
         updated = str(task.get("updatedAt") or "")
         claim_is_stale = bool(claimed_at and claimed_at < claim_stale_iso)
-        if claim_is_stale and not task.get("stuckRetried"):
+        # Drain promotes queued→running without stepClaimedAt. If the Event
+        # invoke never ran, retry once the same way as a hung claim.
+        never_started = (not claimed_at) and int(task.get("step") or 0) == 0 and updated < claim_stale_iso
+        if (claim_is_stale or never_started) and not task.get("stuckRetried"):
             wanted = int(task.get("step") or 0) + 1
             _release_step_claim(table, task, wanted)
             latest = board_store.get_task(table, str(task.get("taskId") or "")) or task
             latest["stuckRetried"] = True
             latest["updatedAt"] = board_store.now_iso()
             board_store.put_task(table, latest)
-            board_async.invoke_async(
-                {
-                    "internal": "board_staff_step",
-                    "boardKey": BOARD_KEY,
-                    "taskId": latest.get("taskId"),
-                    "step": wanted,
-                },
-                fallback=run_step,
-            )
-        elif (claim_is_stale or updated < claim_stale_iso) and task.get("stuckRetried"):
+            try:
+                board_async.invoke_async(
+                    {
+                        "internal": "board_staff_step",
+                        "boardKey": BOARD_KEY,
+                        "taskId": latest.get("taskId"),
+                        "step": wanted,
+                    },
+                    fallback=run_step,
+                )
+            except Exception as exc:
+                _log_event(
+                    "error",
+                    tag="board_staff_stuck_reinvoke_failed",
+                    taskId=latest.get("taskId"),
+                    error=str(exc)[:300],
+                )
+        elif (claim_is_stale or never_started or updated < claim_stale_iso) and task.get("stuckRetried"):
             _finish_incomplete(table, task, "stuck")
         elif updated < cut_iso:
             _finish_incomplete(table, task, "stuck")
