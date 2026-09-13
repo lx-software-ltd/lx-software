@@ -13,6 +13,7 @@ export type BoardTaskDrawerProps = {
   readonly onClose: () => void;
   readonly onCancel: (taskId: string) => void;
   readonly onReview: (taskId: string, verdict: "accept" | "return", notes: string) => void;
+  readonly onRetry?: (taskId: string) => void;
 };
 
 const OPEN_STATUSES = new Set(["queued", "running", "review", "returned", "needs_owner"]);
@@ -32,6 +33,7 @@ export function BoardTaskDrawer({
   onClose,
   onCancel,
   onReview,
+  onRetry,
 }: BoardTaskDrawerProps) {
   const [notes, setNotes] = useState("");
   const task = detail?.task;
@@ -69,7 +71,7 @@ export function BoardTaskDrawer({
       subtitle={task ? `${task.assignee} · ${task.status} · ${formatUsageCost(task.usage.cost)}` : undefined}
       onClose={onClose}
       footer={
-        task && OPEN_STATUSES.has(task.status) ? (
+        task && (OPEN_STATUSES.has(task.status) || task.status === "failed") ? (
           <>
             {task.status === "review" || task.status === "needs_owner" ? (
               <>
@@ -91,14 +93,26 @@ export function BoardTaskDrawer({
                 </button>
               </>
             ) : null}
-            <button
-              type="button"
-              className="btn btn-outline-danger btn-sm"
-              disabled={isMutating}
-              onClick={() => onCancel(task.taskId)}
-            >
-              Cancel
-            </button>
+            {task.status === "failed" && onRetry ? (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={isMutating}
+                onClick={() => onRetry(task.taskId)}
+              >
+                Retry
+              </button>
+            ) : null}
+            {OPEN_STATUSES.has(task.status) ? (
+              <button
+                type="button"
+                className="btn btn-outline-danger btn-sm"
+                disabled={isMutating}
+                onClick={() => onCancel(task.taskId)}
+              >
+                Cancel
+              </button>
+            ) : null}
           </>
         ) : null
       }
@@ -132,6 +146,12 @@ function TaskBody({
         <div className="small text-muted text-uppercase">Brief</div>
         <p className="mb-0">{task.brief}</p>
       </div>
+      {task.status === "failed" && task.failureReason ? (
+        <div>
+          <div className="small text-muted text-uppercase">Failure</div>
+          <p className="mb-0 text-danger">{task.failureReason}</p>
+        </div>
+      ) : null}
       {task.lastReview ? (
         <div>
           <div className="small text-muted text-uppercase">Last review</div>

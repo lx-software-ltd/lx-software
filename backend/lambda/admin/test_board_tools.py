@@ -738,5 +738,14 @@ class TestGitHubOps(ToolsTestCase):
         self.assertEqual(self.github.requests[0][1], "/repos/lx-software-ltd/siutindei/releases?per_page=5")
 
 
+class TestCompletionTimeout(unittest.TestCase):
+    def test_uses_leftover_when_below_the_floor(self) -> None:
+        self.assertEqual(board_tools.completion_timeout(90, 10, 45), 10)
+        self.assertEqual(board_tools.completion_timeout(90, 80, 15), 80)
+        self.assertEqual(board_tools.completion_timeout(90, 200, 15), 90)
+        self.assertEqual(board_tools.completion_timeout(90, 0, 45), 0)
+        self.assertEqual(board_tools.completion_timeout(90, -5, 45, allow_floor_overrun=True), 45)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -158,6 +158,9 @@ class DutyRunTests(BoardTestCase):
         created = board_duties.run_due(self.table, self.settings, now=now)
         ids = [(t.get("eventRef") or {}).get("id") for t in created]
         self.assertIn("accountant:month-end-memo:2026-09-01", ids)
+        memo = next(t for t in created if (t.get("eventRef") or {}).get("id") == "accountant:month-end-memo:2026-09-01")
+        self.assertIn("finance_aging_report", memo["brief"])
+        self.assertIn("finance_cash_snapshot", memo["brief"])
 
     def test_inactive_seat_is_skipped(self) -> None:
         now = SEPT_MONDAY_0810_HKT

@@ -100,7 +100,7 @@ but not added or removed in v1, like the eight board roles.
 | `architect` | CTO | Software Architect | Design notes, ADRs, issue breakdowns, dependency and CI triage | `github`, `aws`, `security`, `research` |
 | `engineer-1`, `engineer-2` | CTO | Senior Engineer | One issue at a time via the coding runner (§11) | `github`, `code` |
 | `data-analyst` | CIO | Data / Analytics Engineer | KPI packs, GA4 + product SQL analyses, pipeline and content attribution, tracking plans | `product`, `web`, `aws`, `research` |
-| `accountant` | CFO | Bookkeeper / Accountant | Month-end memo, receivables reconciliation, dunning, cost report | `finance`, `aws`, `mail` |
+| `accountant` | CFO | Bookkeeper / Accountant | Month-end memo, receivables reconciliation, dunning, cost report | `finance`, `aws`, `meta`, `mail` |
 | `business-analyst` | CEO | Chief of Staff | Daily digest draft, weekly KPI pack, go-live checklist | every tool at `read` |
 | `security-analyst` | CISO | Security Analyst | Alert triage, PDPO and store-privacy checklists, remediation issues, phishing review | `security`, `github`, `aws`, `mail` (read) |
 

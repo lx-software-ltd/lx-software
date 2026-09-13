@@ -32,6 +32,7 @@ import board_actions
 import board_aws
 import board_budget
 import board_deadline
+import board_finance
 import board_github
 import board_mail
 import board_meta
@@ -84,6 +85,31 @@ MAX_RESULT_PREVIEW = 400
 MODEL_CALL_TIMEOUT_FLOOR_SECONDS = 15
 FINAL_CALL_TIMEOUT_FLOOR_SECONDS = 45
 OP_TIMEOUT_FLOOR_SECONDS = 2
+
+
+def completion_timeout(
+    requested: int,
+    left: float,
+    floor: int,
+    *,
+    allow_floor_overrun: bool = False,
+) -> int:
+    """Clamp an OpenRouter timeout to the remaining tool-loop budget.
+
+    When enough time remains, keep the usual floor so a short leftover does
+    not become a 1-second call. When leftover is positive but below the
+    floor, use the leftover instead of inflating it past the deadline.
+    ``allow_floor_overrun`` is for the final answer call, which may run
+    briefly past the loop budget the same way it does today.
+    """
+    remaining = int(left)
+    if remaining >= floor:
+        return max(floor, min(requested, remaining))
+    if remaining > 0:
+        return min(max(1, requested), remaining)
+    if allow_floor_overrun:
+        return max(1, floor)
+    return 0
 
 
 class ToolPermissionError(RuntimeError):
@@ -144,8 +170,9 @@ class ToolOp:
     parameters: dict[str, Any]
     run: Callable[[ToolContext, dict[str, Any]], dict[str, Any]]
     summarize: Callable[[dict[str, Any]], str]
-    # Staff tasks use kind="task". Seat tools (github, mail, …) must be offered
-    # there; only task_note / task_finish stay task-exclusive.
+    # Staff steps use kind="task". Default includes it so seat tools
+    # (github, mail, finance, AWS, Meta, …) are offered; only task_note /
+    # task_finish stay task-exclusive.
     contexts: tuple[str, ...] = ("chat", "meeting", "task")
     # Write ops only. ``act_guard`` returns a reason why an ``act``-level call
     # must still be approved (e.g. recipient not allow-listed); ``preview``
@@ -1605,10 +1632,23 @@ def build_registry() -> dict[str, ToolOp]:
             preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_relay_lead"),
         ),
         ToolOp(
+            name="finance_cash_snapshot",
+            tool_id="finance",
+            kind="read",
+            description=(
+                "Month-end cash pack: liquid cash and credit-card totals by currency from the "
+                "accounts sheet (no account names), plus statement-book income/expenditure totals. "
+                "Use this for cash balance and cash flow in the close memo."
+            ),
+            parameters=_obj({}),
+            run=board_finance.op_cash_snapshot,
+            summarize=_summ("Read cash snapshot"),
+        ),
+        ToolOp(
             name="finance_list_subscriptions",
             tool_id="finance",
             kind="read",
-            description="Listing subscriptions with plan name, price and payer contact.",
+            description="Listing subscriptions from the Siu Tin Dei product database (not QuickBooks/Xero), with plan name, price and payer contact.",
             parameters=_obj({"status": _str_param("Optional status.", enum=["trial", "active", "past_due", "cancelled"])}),
             run=board_receivables.op_list_subscriptions,
             summarize=_summ("Listed subscriptions"),
@@ -1617,7 +1657,7 @@ def build_registry() -> dict[str, ToolOp]:
             name="finance_list_invoices",
             tool_id="finance",
             kind="read",
-            description="Invoices with FPS reference, amount and status.",
+            description="Invoices from the Siu Tin Dei product database (the book of record; there is no QuickBooks/Xero), with FPS reference, amount and status.",
             parameters=_obj({"status": _str_param("Optional status.", enum=["draft", "sent", "paid", "overdue", "void"])}),
             run=board_receivables.op_list_invoices,
             summarize=_summ("Listed invoices"),
@@ -1626,7 +1666,7 @@ def build_registry() -> dict[str, ToolOp]:
             name="finance_aging_report",
             tool_id="finance",
             kind="read",
-            description="Receivables aging: current / D+7 / D+21 / D+35, DSO (trailing 90-day paid revenue) and past-due by provider.",
+            description="Receivables aging from the Siu Tin Dei invoices table (the book of record; there is no QuickBooks/Xero): current / D+7 / D+21 / D+35, DSO (trailing 90-day paid revenue) and past-due by provider. An empty report is valid.",
             parameters=_obj({}),
             run=board_receivables.op_aging_report,
             summarize=_summ("Ran aging report"),
@@ -2961,6 +3001,9 @@ def run_tool_loop(
         calls_left = BOARD_MAX_TOOL_CALLS_PER_TURN - len(calls)
         if left <= 0 or calls_left <= 0:
             break
+        timeout_s = completion_timeout(timeout, left, MODEL_CALL_TIMEOUT_FLOOR_SECONDS)
+        if timeout_s <= 0:
+            break
         if rounds:
             # The caller checked the daily cap before the turn; every further
             # round is another paid call, so re-check between rounds.
@@ -2975,7 +3018,7 @@ def run_tool_loop(
             table=ctx.table,
             messages=convo,
             model=model,
-            timeout=max(MODEL_CALL_TIMEOUT_FLOOR_SECONDS, min(timeout, int(left))),
+            timeout=timeout_s,
             json_mode=False,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -2996,6 +3039,11 @@ def run_tool_loop(
                 convo.append(_tool_message(tc, {"error": "Time budget for this reply is exhausted; answer with what you have."}))
             else:
                 convo.append(_run_one(ctx, by_name, tc, calls))
+        if any(c.get("op") == "task_finish" and c.get("status") == "ok" for c in calls):
+            # The task is already in review; a paid final-answer call would
+            # race the manager review and overwrite the row.
+            final = completion
+            break
         if on_progress:
             try:
                 on_progress(list(calls))
@@ -3009,11 +3057,19 @@ def run_tool_loop(
         # The answer call may run past the loop budget, but only up to the
         # OpenRouter timeout; the sums in the module header rely on that.
         left = max_seconds - (time.monotonic() - started)
+        timeout_s = completion_timeout(
+            timeout,
+            left,
+            FINAL_CALL_TIMEOUT_FLOOR_SECONDS,
+            allow_floor_overrun=True,
+        )
+        if timeout_s <= 0:
+            return ToolLoopResult(text="", usage=usage, model=model, calls=calls, rounds=rounds)
         final = board_budget.board_completion(
             table=ctx.table,
             messages=convo,
             model=model,
-            timeout=max(FINAL_CALL_TIMEOUT_FLOOR_SECONDS, min(timeout, int(left))),
+            timeout=timeout_s,
             json_mode=json_mode,
             temperature=temperature,
             max_tokens=max_tokens,

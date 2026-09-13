@@ -196,6 +196,72 @@ class TestOpenRouterAttribution(unittest.TestCase):
         self.assertEqual(product.title, "Siu Tin Dei")
         self.assertEqual(product.referer, "https://siutindei.com")
 
+    def test_post_json_retries_incomplete_read(self) -> None:
+        import http.client
+
+        calls = {"n": 0}
+        payload = json.dumps({"ok": True}).encode("utf-8")
+
+        class Boom:
+            def read(self) -> bytes:
+                raise http.client.IncompleteRead(b"x")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                return False
+
+        def fake_urlopen(req, timeout=None):  # noqa: ARG001
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return Boom()
+            return _FakeResp(payload)
+
+        with (
+            patch("openrouter_client.urlrequest.urlopen", fake_urlopen),
+            patch("openrouter_client.time.sleep", lambda *_a, **_k: None),
+        ):
+            text = openrouter_client.post_json(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                api_key="sk-test",
+                payload={"model": "m"},
+                timeout=5,
+            )
+        self.assertEqual(calls["n"], 2)
+        self.assertEqual(json.loads(text), {"ok": True})
+
+    def test_post_json_does_not_retry_timeout(self) -> None:
+        calls = {"n": 0}
+
+        class Boom:
+            def read(self) -> bytes:
+                raise TimeoutError("timed out")
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                return False
+
+        def fake_urlopen(req, timeout=None):  # noqa: ARG001
+            calls["n"] += 1
+            return Boom()
+
+        with (
+            patch("openrouter_client.urlrequest.urlopen", fake_urlopen),
+            patch("openrouter_client.time.sleep", lambda *_a, **_k: None),
+        ):
+            with self.assertRaises(openrouter_client.OpenRouterError) as ctx:
+                openrouter_client.post_json(
+                    url="https://openrouter.ai/api/v1/chat/completions",
+                    api_key="sk-test",
+                    payload={"model": "m"},
+                    timeout=5,
+                )
+        self.assertEqual(calls["n"], 1)
+        self.assertIn("timed out", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

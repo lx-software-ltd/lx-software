@@ -305,13 +305,14 @@ export function BoardMarketSection() {
         <BoardTaskDrawer
           detail={briefDetail.data}
           isLoading={briefDetail.isLoading}
-          isMutating={tasks.review.isPending || tasks.cancel.isPending}
-          errorMessage={errorText(briefDetail.error) ?? errorText(tasks.review.error)}
+          isMutating={tasks.review.isPending || tasks.cancel.isPending || tasks.retry.isPending}
+          errorMessage={errorText(briefDetail.error) ?? errorText(tasks.review.error) ?? errorText(tasks.retry.error)}
           onClose={() => setBriefId(null)}
           onCancel={(taskId) => tasks.cancel.mutate(taskId, { onSuccess: () => setBriefId(null) })}
           onReview={(taskId, verdict, notes) =>
             tasks.review.mutate({ taskId, verdict, notes }, { onSuccess: () => setBriefId(null) })
           }
+          onRetry={(taskId) => tasks.retry.mutate(taskId)}
         />
       ) : null}
     </div>

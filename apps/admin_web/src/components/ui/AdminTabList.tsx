@@ -48,7 +48,8 @@ function badgeClass(tone: AdminTabBadge["tone"]): string {
  *
  * Phones: up to {@link ADMIN_TAB_SELECT_THRESHOLD} tabs fill a two-column grid;
  * longer lists render a native `<select>` so the content is not pushed below
- * the fold. From `md` the tabs are a single horizontally scrollable row.
+ * the fold. From `md` the tabs are content-sized pills that wrap at the
+ * container edge.
  */
 export function AdminTabList<T extends string>({
   tabs,

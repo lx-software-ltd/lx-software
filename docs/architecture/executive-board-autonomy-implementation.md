@@ -343,8 +343,9 @@ updatedAt, startedAt, finishedAt, failureReason, expiresAt (set on terminal)
      (idempotency; a duplicate async delivery is a no-op).
   2. Check `board_budget.check_budget` **and** staff daily budget
      (`load_staff_usage_day().cost < settings.staff.dailyBudgetUsd`) and
-     `task.usage.cost < task.budgetUsd`; on any failure call
-     `_finish_incomplete(reason)`.
+     `task.usage.cost < task.budgetUsd`. Daily-cap exhaustion re-queues
+     the task (`parkedReason`) instead of failing it; a per-task budget
+     miss still calls `_finish_incomplete("Task budget exhausted")`.
   3. Load scratchpad from S3 (`board/siuTinDei/staff/{taskId}/scratchpad.md`,
      empty if none). Build messages: system = seat or persona prompt; user =
      `render_task_frame`.
@@ -352,21 +353,27 @@ updatedAt, startedAt, finishedAt, failureReason, expiresAt (set on terminal)
      assignee, seat_id=..., task_id=..., display_name=...)`; call
      `run_tool_loop(ctx=ctx, messages=..., model=tier model,
      max_seconds=BOARD_STAFF_STEP_MAX_SECONDS, ...)`.
-  5. The loop returns text plus recorded calls. If `task_finish` was
-     called, `_on_finish` (below). Else append the model's text to the
-     scratchpad (cap `scratchpadMaxChars`, keep the tail), write it, record
-     `STEP#{seq}` with `plan` (model text ≤ 2000 chars), `callIds`,
-     `usage`, `add_staff_usage_day`, increment `task.step`, and if
-     `task.step >= maxStepsPerTask` → `_finish_incomplete("step limit")`
-     else `invoke_async` for `step + 1`.
+  5. The loop returns text plus recorded calls. `task_finish` records
+     `STEP#{attempt}#{seq}` and increments `step` before invoking review;
+     `run_tool_loop` then stops (no paid final-answer call). `_complete_step`
+     writes the same step row with plan/callIds and patches the task only
+     while `status` is still `review` / `needs_owner` / `delivered`. If the
+     only tool was `task_note` (or none), increment `idleSteps` and append
+     a nudge; `idleSteps >= maxIdleStepsPerTask` → `_finish_incomplete
+     ("idle step limit")`. Else if `task.step >= maxStepsPerTask` →
+     `_finish_incomplete("step limit")`. A thrown completion retries once
+     when the error is transient (truncated body, 408/429/5xx);
+     permanent OpenRouter 4xx fails immediately, and 402 trips the
+     `budget` breaker. Otherwise `invoke_async` for `step + 1`.
 - `op task_note(text)`: appends to the scratchpad; returns `{ok: true,
   chars}`. `op task_finish(summary, deliverableType, deliverable (string,
   ≤ deliverableMaxBytes when UTF-8 encoded), evidence[], openQuestions[],
   confidence)`: validates `evidence` ⊆ call ids recorded in this task; if
   empty and `confidence == "high"`, sets `confidence = "medium"` and
   `flags += ["no_evidence"]`; writes the deliverable to
-  `board/siuTinDei/staff/{taskId}/deliverable.{md|csv|json}`; sets task to
-  `review`; `invoke_async({"internal": "board_staff_review", ...})`.
+  `board/siuTinDei/staff/{taskId}/deliverable.{md|csv|json}`; records the
+  finishing step, aligns `stepClaimed`, sets task to `review`;
+  `invoke_async({"internal": "board_staff_review", ...})`.
 - `run_review(payload)`: manager persona (the chair when the assignee is a
   persona — the CEO by default — otherwise `seat.reportsTo`), JSON mode,
   prompt: brief, deliverable (≤ 12 000 chars, rest summarised as "[…
@@ -376,13 +383,20 @@ updatedAt, startedAt, finishedAt, failureReason, expiresAt (set on terminal)
   and `deliverableType` in (`markdown`, `csv`, `json`, `issues`, `pr`) →
   append a note to the action and set `status="done"`,
   `closedBy="staff:{taskId}"`. `return` → if `revisions <
-  maxRevisions`: `revisions += 1`, status `running`, scratchpad gets
-  "MANAGER NOTES: …", next step invoked; else `delivered` with
-  `lastReview.verdict="return"` kept.
-- `handle_tick(event)`: `drain_queue`; stuck sweep: tasks `running` whose
-  `updatedAt` is older than `staffTaskStuckSeconds` are `_finish_incomplete
-  ("stuck")`; tasks in `review` older than the same → re-invoke review once,
-  then `needs_owner`.
+  maxRevisions`: `revisions += 1`, status `running`, `stepClaimed` reset
+  to the last completed `step` so the revision payload can be claimed,
+  scratchpad gets "MANAGER NOTES: …", next step invoked; else `needs_owner`
+  with `lastReview.verdict="return"` kept. Failed tasks stay listed; the
+  owner retries via `POST /siu-tin-dei/board/tasks/{id}/retry` (same brief,
+  status back to `queued`, `usage` reset and `attempt += 1` so new step
+  rows do not overwrite the previous try). Retry refuses an inactive seat
+  or a closed linked action.
+- `handle_tick(event)`: `drain_queue` (no-ops when the daily staff cap is
+  exhausted); stuck sweep: a running task whose `stepClaimedAt` is older
+  than `staffStepMaxSeconds + 180` is re-invoked once (`stuckRetried`),
+  then `_finish_incomplete("stuck")`; `updatedAt` older than
+  `staffTaskStuckSeconds` still fails as `stuck`; tasks in `review` older
+  than the same → re-invoke review once, then `needs_owner`.
 - `cancel_task(table, task_id, by_sub)`; `owner_review(table, task_id,
   verdict, notes, by_sub)` (overrides).
 - Context pack: `board_context.build_context_pack` gets a new capped source
@@ -442,12 +456,13 @@ mutations) and `useBoardTasks` (list with 10 s polling while any task is
 `running`/`review`; detail query; cancel/review/create mutations).
 Components: `BoardStaffSection.tsx` (org chart grouped by manager: seat
 card with active toggle, tier select, brief editor via `AdminEditorSection`;
-task board as five columns `Queued / Running / Review / Needs owner /
-Delivered` with cost per card; "New task" form), `BoardTaskDrawer.tsx`
+**Run staff tick now**), `BoardTasksSection.tsx` (task board as six columns
+`Queued / Running / Review / Needs owner / Delivered / Failed` with cost
+per card; "New task" form), `BoardTaskDrawer.tsx`
 (`BoardOffcanvas` with brief, step log with collapsible tool calls reusing
 `BoardToolCallList` rows, deliverable preview via `BoardMarkdown` or a
-CSV table, review verdict, Accept / Return / Cancel). New section id
-`staff` in `ExecutiveBoardTab`, count badge = tasks in `needs_owner`.
+CSV table, review verdict, Accept / Return / Cancel / Retry). Section ids
+`staff` and `tasks` in `ExecutiveBoardTab`; Tasks count badge = `needs_owner`.
 Fixtures: three seats, five tasks across statuses.
 
 **Tests.** `test_board_staff.py`: seat level derivation (seat ≤ manager ≤
@@ -457,8 +472,8 @@ defaults; `drain_queue` respects `maxRunningTasks`; `run_step` idempotency
 `task_finish` evidence rule; review accept closes action; return → revision
 → second return → delivered; stuck sweep; routes (200/400/404) with
 `FakeTable` and a `FakeOpenRouter` that returns scripted tool calls.
-Vitest: `useBoardTasks` polling predicate. Playwright: Staff tab renders in
-`dev:mock`.
+Vitest: `useBoardTasks` polling predicate. Playwright: Staff and Tasks tabs
+render in `dev:mock`.
 
 **Acceptance.** With both flags on, `POST /tasks` for `cfo` with brief
 "List our three biggest monthly costs from AWS and finance" produces a

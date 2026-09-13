@@ -542,6 +542,12 @@ export const boardTasksFixture: BoardTask[] = [
   fixtureTask("task-review", "review", "provider-success", "Summarise the two warm provider threads."),
   fixtureTask("task-owner", "needs_owner", "accountant", "Reconcile last week's unmatched payments."),
   fixtureTask("task-done", "delivered", "cfo", "Month-end cost snapshot for the founder."),
+  fixtureTask("task-failed", "failed", "engineer-1", "Complete backend integration and performance tuning.", {
+    failureReason: "step limit",
+    stepsUsed: 12,
+    step: 12,
+    managerId: "cto",
+  }),
 ];
 
 export const boardStaffFixture: BoardStaffPayload = {
@@ -555,7 +561,7 @@ export const boardStaffFixture: BoardStaffPayload = {
     returned: 0,
     delivered: 1,
     needs_owner: 1,
-    failed: 0,
+    failed: 1,
     cancelled: 0,
   },
 };

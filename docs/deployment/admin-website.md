@@ -692,8 +692,10 @@ function calling. Design:
   seat). Until that workflow has run, use the 5-minute schedule or
   **Actions → Deploy Backend → Run workflow**. HKT crons on the 5-minute
   staff tick: BA weekly KPI
-  (Mon 08:00), accountant month-end (1st 09:00) and weekly aging (Thu
-  09:00), security weekly triage (Tue 09:00), data-analyst attribution
+  (Mon 08:00), accountant month-end (1st 09:00; `finance_cash_snapshot`,
+  `finance_aging_report`, `aws_monthly_cost`, `meta_ad_spend`) and weekly aging (Thu
+  09:00; `finance_aging_report` against Siu Tin Dei Aurora invoices, not
+  QuickBooks/Xero), security weekly triage (Tue 09:00), data-analyst attribution
   (Mon 10:00). Hourly `board_cache_refresh` opens architect/CTO tasks for
   new CloudWatch ALARMs and security-analyst tasks for new Hub /
   Analyzer / GitHub alerts. Daily dunning creates an accountant task
@@ -747,7 +749,13 @@ starts on the next drain. Any open action can also be handed over from
 `closedBy: staff:<taskId>`) when the deliverable is accepted. A second
 hand-off while that task is open returns 409. Outbound work inside the task
 still follows the seat's tool levels, holds and the allow-list, so "propose
-only" holds as long as the global mode stays `propose`.
+only" holds as long as the global mode stays `propose`. Failed tasks stay
+on **Tasks → Failed** with the reason (`step limit`, `stuck`, `idle step`
+limit`, or a step error); **Retry** re-queues the same brief
+(`POST /siu-tin-dei/board/tasks/{id}/retry`), resets per-task usage so a
+budget miss can be tried again, and refuses if the seat is inactive or the
+linked action is closed. A daily staff-budget miss parks the task back on
+the queue instead of failing it.
 
 Smoke test after deploy: open the tab, save a company vision/mission, edit one
 member's mandate, send a chat message to the CEO (reply arrives within ~30 s),
