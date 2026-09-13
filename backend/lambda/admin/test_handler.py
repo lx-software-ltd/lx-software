@@ -2325,6 +2325,24 @@ class TestPublicReadRoutes(unittest.TestCase):
         )
         self.assertEqual(out["statusCode"], 404)
 
+    def test_public_board_write_not_found(self) -> None:
+        out = lambda_handler(
+            self._event(
+                "/public/siu-tin-dei/board/tasks",
+                method="POST",
+                key_ctx=self._key_ctx(),
+            ),
+            None,
+        )
+        self.assertEqual(out["statusCode"], 404)
+
+    def test_public_board_unknown_get_not_found(self) -> None:
+        out = lambda_handler(
+            self._event("/public/siu-tin-dei/board/charter", key_ctx=self._key_ctx()),
+            None,
+        )
+        self.assertEqual(out["statusCode"], 404)
+
     def test_bare_public_prefix_not_found(self) -> None:
         out = lambda_handler(
             self._event("/public", key_ctx=self._key_ctx()), None

@@ -2,7 +2,8 @@
 """Mint, list, and revoke public read-only API keys.
 
 Keys authenticate the /public/* GET routes on the admin HTTP API via the
-`x-api-key` header. Only the scrypt digest of a key is stored (as
+`x-api-key` header (finance, records, FX, and GET /public/siu-tin-dei/board*).
+Only the scrypt digest of a key is stored (as
 ``pk = APIKEY#<digest>``, ``sk = META`` in the records table); the plaintext
 key is printed exactly once by ``create``.
 
@@ -106,6 +107,7 @@ def cmd_create(args: argparse.Namespace) -> None:
     print()
     print("Example:")
     print(f'  curl -H "x-api-key: {plaintext}" <AdminApiBaseUrl>/public/finance')
+    print(f'  curl -H "x-api-key: {plaintext}" <AdminApiBaseUrl>/public/siu-tin-dei/board')
 
 
 def _scan_keys(args: argparse.Namespace) -> list[dict]:
