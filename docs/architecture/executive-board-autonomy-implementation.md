@@ -388,12 +388,21 @@ updatedAt, startedAt, finishedAt, failureReason, expiresAt (set on terminal)
 - Context pack: `board_context.build_context_pack` gets a new capped source
   `staffDelivered` (last 10 delivered summaries since the last meeting) and
   `staffInFlight` (count and titles), rendered under "STAFF WORK".
-- Minutes: `board_meeting.normalize_action_proposal` accepts `assignee`
-  (persona or active seat id; anything else dropped). In `_phase_persist`,
-  for each created action with `assignee`, when `enabled(settings)` and the
-  chair's `staff` level allows: call `staff_assign` through `execute_call`
-  with a chair `ToolContext` (so `propose` yields an Approval and `act`
-  creates the task).
+- Minutes: `_phase_synthesis` lists the active seats (id, title, brief) and
+  the executives under "Who can take an action" and requires an `assignee`
+  per action (`active seat id | persona id | founder`).
+  `board_meeting.normalize_action_proposal` keeps `assignee` only for a
+  persona or an active seat id (`founder` / unknown → empty, meaning the
+  owner). In `_phase_persist`, for each created action with `assignee`, when
+  `enabled(settings)` and the chair's `staff` level allows: call
+  `staff_assign` through `execute_call` with a chair `ToolContext` (so
+  `propose` yields an Approval and `act` creates the task). The brief is
+  `board_staff.minutes_action_brief` (title, "Done looks like", metric).
+- Owner hand-off: `POST /siu-tin-dei/board/tasks` accepts `actionId`
+  (400 unknown, 409 closed or already worked by an open task).
+  `create_task` with `action_id` stamps `assignee` and `staffTaskId` on the
+  action; `_accept_task` closes it with `closedBy: staff:<taskId>`. The
+  **Next actions** list exposes this as "Hand to staff".
 
 **`staff` tool ops** (all `contexts=("chat","meeting","task")`):
 

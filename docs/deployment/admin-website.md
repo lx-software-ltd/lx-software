@@ -733,6 +733,22 @@ function calling. Design:
    `engineer-1`, `engineer-2`, `product-dev`. First staging merges stay
    Approvals until `code_merge_staging` is taken off `always_propose`.
 
+**Founder actions → staff.** The minutes carry an `assignee` per action:
+the chair is shown the active seats (id, title, brief) and the executives
+and asked to hand work to a seat where its remit fits, to an executive
+otherwise, and to `founder` only for decisions, money, signatures or account
+access. Assigned actions are created through the chair's `staff_assign`
+level: at the default `propose` they appear in **Approvals** (approve to
+start the task, reject to keep the action with you); at `act` the task
+starts on the next drain. Any open action can also be handed over from
+**Next actions → Hand to staff**, which pre-fills the brief and sends
+`actionId` on `POST /siu-tin-dei/board/tasks`; the action then shows
+`staff: <seat>` with a link to the task and is marked done (with
+`closedBy: staff:<taskId>`) when the deliverable is accepted. A second
+hand-off while that task is open returns 409. Outbound work inside the task
+still follows the seat's tool levels, holds and the allow-list, so "propose
+only" holds as long as the global mode stays `propose`.
+
 Smoke test after deploy: open the tab, save a company vision/mission, edit one
 member's mandate, send a chat message to the CEO (reply arrives within ~30 s),
 then **Run stand-up** and confirm minutes and action items appear. For tools:
