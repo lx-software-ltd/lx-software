@@ -375,7 +375,7 @@ class StaffRouteTests(BoardTestCase):
         status, body = self.call("/siu-tin-dei/board/tasks/missing")
         self.assertEqual(status, 404)
 
-    def test_post_staff_tick_runs_handle_tick(self) -> None:
+    def test_post_staff_tick_enqueues_and_never_runs_inline(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"
         _enable_staff(self.table)
         queued: list[dict[str, Any]] = []
@@ -387,20 +387,28 @@ class StaffRouteTests(BoardTestCase):
             board_staff, "handle_tick"
         ) as tick:
             status, body = self.call("/siu-tin-dei/board/staff/tick", "POST", {})
-        self.assertEqual(status, 202)
+        self.assertEqual(status, 200)
         self.assertTrue(body.get("queued"))
         tick.assert_not_called()
         self.assertEqual(len(queued), 1)
         self.assertEqual(queued[0]["internal"], "board_staff_tick")
         self.assertEqual(queued[0]["boardKey"], board_store.BOARD_KEY)
-        # Without a Lambda name (unit tests, local runs) the inline fallback runs the tick.
-        with patch.object(board_staff, "handle_tick", return_value={"ok": True}) as inline:
-            status, _ = self.call("/siu-tin-dei/board/staff/tick", "POST", {})
-        self.assertEqual(status, 202)
-        inline.assert_called_once()
-        self.assertEqual(inline.call_args.args[0]["internal"], "board_staff_tick")
+        # Missing function name must not run handle_tick on the HTTP thread.
+        with patch.object(board_staff, "handle_tick") as inline:
+            status, body = self.call("/siu-tin-dei/board/staff/tick", "POST", {})
+        self.assertEqual(status, 200)
+        self.assertTrue(body.get("queued"))
+        inline.assert_not_called()
         status, _ = self.call("/siu-tin-dei/board/staff/tick", "GET")
         self.assertEqual(status, 405)
+
+    def test_post_staff_tick_enqueue_failure_is_503(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        _enable_staff(self.table)
+        with patch.object(board_async, "invoke_async", side_effect=RuntimeError("no invoke")):
+            status, body = self.call("/siu-tin-dei/board/staff/tick", "POST", {})
+        self.assertEqual(status, 503)
+        self.assertIn("Could not queue", body["message"])
 
     def test_post_staff_tick_disabled_is_409(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "false"
