@@ -549,6 +549,16 @@ class TestPersonas(unittest.TestCase):
         self.assertIn("Your mandate: MANDATE-Z", prompt)
         self.assertIn("Company vision: Company V", prompt)
         self.assertIn("Company mission: Company M", prompt)
+        self.assertIn(board_personas.BOOKS_OF_RECORD, prompt)
+        self.assertIn("finance_aging_report", prompt)
+        self.assertIn("QuickBooks", prompt)
+
+    def test_context_pack_receivables_name_the_product_database(self) -> None:
+        import board_context
+
+        text = board_context.render_context_pack({"receivables": {"outstandingHkd": 10, "overdue": 2}})
+        self.assertIn("not QuickBooks/Xero", text)
+        self.assertIn("finance_aging_report", text)
 
     def test_validate_override_rejects_long_and_non_string(self) -> None:
         with self.assertRaises(ValueError):

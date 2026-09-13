@@ -113,6 +113,32 @@ class StaffEngineTests(BoardTestCase):
         prompt = board_personas.render_seat_prompt(seat, {"displayName": "Pat", "title": "COO"}, {}, ["Be brief."])
         self.assertIn("reporting to Pat", prompt)
         self.assertIn("STANDING INSTRUCTIONS", prompt)
+        self.assertIn(board_personas.BOOKS_OF_RECORD, prompt)
+
+    def test_accountant_prompt_points_at_product_database_not_xero(self) -> None:
+        seat = board_staff.seat_default("accountant") or {}
+        cfo = board_personas.persona_default("cfo") or {}
+        prompt = board_personas.render_seat_prompt(seat, cfo, {}, [])
+        self.assertIn("finance_aging_report", prompt)
+        self.assertIn("Siu Tin Dei product database", prompt)
+        self.assertIn("no QuickBooks", prompt)
+        duties = {str(d["id"]): d for d in (seat.get("duties") or [])}
+        self.assertIn("finance_aging_report", duties["weekly-aging"]["brief"])
+        self.assertIn("finance_aging_report", duties["month-end-memo"]["brief"])
+        review = board_staff._review_user_prompt(  # noqa: SLF001
+            {
+                "assignee": "accountant",
+                "brief": duties["weekly-aging"]["brief"],
+                "deliverableType": "markdown",
+                "confidence": "low",
+            },
+            "Need QuickBooks.",
+            [],
+        )
+        self.assertIn("finance_aging_report", review)
+        self.assertIn("Do not return asking for accounting software", review)
+        self.assertIn("book of record", board_tools.REGISTRY["finance_aging_report"].description)
+        self.assertIn("no QuickBooks/Xero", board_tools.REGISTRY["finance_list_invoices"].description)
 
     def test_blob_keys_use_board_key(self) -> None:
         self.assertEqual(
