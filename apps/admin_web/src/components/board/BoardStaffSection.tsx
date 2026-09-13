@@ -61,8 +61,9 @@ export function BoardStaffSection() {
       </div>
       {staff.tick.isSuccess ? (
         <p className="small text-muted">
-          Tick queued. Queued work should move into Running within a few seconds if a seat is free; this list refreshes
-          on its own.
+          {staff.tick.data?.droppedByBrowser
+            ? "The browser dropped the response. If nothing moves into Running within five minutes, the scheduled tick will still run."
+            : "Tick queued. Queued work should move into Running within a few seconds if a seat is free; this list refreshes on its own."}
         </p>
       ) : null}
       {staffTickErrorMessage(staff.tick.error) ? (
