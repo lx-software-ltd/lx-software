@@ -3,7 +3,7 @@ import { AdminEditorSection } from "../ui";
 import { BoardTaskDrawer } from "./BoardTaskDrawer";
 import { formatUsageCost, type BoardSeat, type BoardTask, type BoardTaskCreate } from "../../lib/boardModel";
 import { BOARD_PERSONA_DEFAULTS, BOARD_STAFF_DELIVERABLE_TYPES, BOARD_STAFF_MODEL_TIERS } from "../../lib/contracts/generated";
-import { useBoardStaff } from "../../hooks/useBoardStaff";
+import { staffTickErrorMessage, useBoardStaff } from "../../hooks/useBoardStaff";
 import { useBoardTask, useBoardTasks } from "../../hooks/useBoardTasks";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 
@@ -65,8 +65,8 @@ export function BoardStaffSection() {
           on its own.
         </p>
       ) : null}
-      {errorText(staff.tick.error) ? (
-        <div className="alert alert-danger py-2 small">{errorText(staff.tick.error)}</div>
+      {staffTickErrorMessage(staff.tick.error) ? (
+        <div className="alert alert-danger py-2 small">{staffTickErrorMessage(staff.tick.error)}</div>
       ) : null}
       {!staff.enabled ? (
         <p className="small text-muted">

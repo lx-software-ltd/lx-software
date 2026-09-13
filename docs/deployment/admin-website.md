@@ -6,6 +6,11 @@ then deploy the SPA.
 
 ## Pre-deploy checklist (junior dev)
 
+**Deploy Backend** runs on `main` when `backend/infrastructure/**`,
+`backend/lambda/**`, or `contracts/**` change (or via **Run workflow**).
+Lambda-only PRs used to skip this job and leave the previous `AdminApiFn`
+live.
+
 Before triggering **Deploy Backend**:
 
 1. **GitHub environment** — set `AWS_ACCOUNT_ID`, `AWS_REGION`, optional
@@ -677,9 +682,14 @@ function calling. Design:
   `settings.staff.dutiesEnabled` (Settings → Run scheduled seat duties)
   after staff is on. **Staff → Run staff tick now** (`POST /siu-tin-dei/board/staff/tick`)
   queues the same work as the 5-minute schedule (due duties, due holds, drain
-  the queue) on the `AdminApiFn` self-invoke path and returns `202` — a
-  full tick can outlive API Gateway's 30 s cap, so the SPA refetches a few
-  seconds later. HKT crons on the 5-minute staff tick: BA weekly KPI
+  the queue) on the `AdminApiFn` self-invoke path and returns `200 {queued}` —
+  a full tick can outlive API Gateway's 30 s cap, so the SPA never waits for
+  it. **Deploy Backend** watches `backend/lambda/**` as well as the CDK app;
+  a Lambda-only merge used to ship the admin SPA button while leaving the
+  previous `AdminApiFn` live (`POST /staff/tick` then 404s as an unknown
+  seat). Until that workflow has run, use the 5-minute schedule or
+  **Actions → Deploy Backend → Run workflow**. HKT crons on the 5-minute
+  staff tick: BA weekly KPI
   (Mon 08:00), accountant month-end (1st 09:00) and weekly aging (Thu
   09:00), security weekly triage (Tue 09:00), data-analyst attribution
   (Mon 10:00). Hourly `board_cache_refresh` opens architect/CTO tasks for

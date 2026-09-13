@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { adminFetchJson } from "../lib/apiAdminClient";
+import { AdminApiError, adminFetchJson, getAdminApiErrorMessage } from "../lib/apiAdminClient";
 import {
   boardStaffPath,
   boardStaffTickPath,
@@ -38,13 +38,24 @@ export function staffResetMutationOptions(qc: QueryClient) {
   };
 }
 
-/** The tick runs in the background (202); refetch again once it has had time to move tasks. */
+/** The tick runs in the background; refetch again once it has had time to move tasks. */
 export const STAFF_TICK_REFETCH_DELAY_MS = 8000;
+
+export function staffTickErrorMessage(err: unknown): string | null {
+  if (!err) return null;
+  if (err instanceof AdminApiError && err.status === 404) {
+    return "The tick API is not on this stack yet. Run Actions → Deploy Backend, or wait for the 5-minute schedule.";
+  }
+  if (err instanceof TypeError) {
+    return "The tick request did not complete (Safari shows this as Load failed). Try again, or wait for the 5-minute schedule.";
+  }
+  return getAdminApiErrorMessage(err) ?? (err instanceof Error ? err.message : "Request failed.");
+}
 
 export function staffTickMutationOptions(qc: QueryClient) {
   const refetch = () => {
     void qc.invalidateQueries({ queryKey: BOARD_STAFF_KEY });
-    void qc.invalidateQueries({ queryKey: BOARD_QUERY_KEY });
+    void qc.invalidateQueries({ queryKey: [...BOARD_QUERY_KEY, "tasks"] });
   };
   return {
     mutationFn: async () => {
