@@ -316,6 +316,8 @@ export type BoardTaskCreate = {
   readonly deliverableType: BoardDeliverableType;
   readonly slaHours?: number;
   readonly budgetUsd?: number;
+  /** Founder action this task works on; accepted deliverables close it. */
+  readonly actionId?: string;
 };
 
 export type BoardToolOperation = {
@@ -712,7 +714,27 @@ export type BoardAction = {
   readonly dueAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+  /** Seat or persona working this action; empty means the founder. */
+  readonly assignee?: string;
+  /** Staff task currently (or last) working this action. */
+  readonly staffTaskId?: string;
+  readonly closedBy?: string;
 };
+
+/** Display name for an action's assignee: a staff seat first, then a board member. */
+export function actionAssigneeLabel(members: readonly BoardMember[], seats: readonly BoardSeat[], assignee: string): string {
+  const seat = seats.find((s) => s.id === assignee);
+  if (seat) return seat.displayName;
+  return memberLabel(members, assignee);
+}
+
+/** Brief for a staff task that takes over a founder action. */
+export function actionTaskBrief(action: Pick<BoardAction, "title" | "detail" | "metric">): string {
+  const parts = [action.title.trim()];
+  if (action.detail.trim()) parts.push(`Done looks like: ${action.detail.trim()}`);
+  if (action.metric.trim()) parts.push(`Success metric: ${action.metric.trim()}`);
+  return parts.join("\n");
+}
 
 export type BoardChatMessage = {
   readonly messageId: string;

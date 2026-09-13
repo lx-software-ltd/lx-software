@@ -1,3 +1,4 @@
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 import { FinanceDataLoadOrError } from "../FinanceDataStatus";
 import { BoardActionsList } from "./BoardActionsList";
@@ -31,6 +32,7 @@ import { useBoardApprovals } from "../../hooks/useBoardApprovals";
 import { useBoardBoundaries } from "../../hooks/useBoardBoundaries";
 import { useBoardHolds } from "../../hooks/useBoardHolds";
 import { useBoardReview } from "../../hooks/useBoardReview";
+import { createTaskMutationOptions } from "../../hooks/useBoardTasks";
 import { useBoardToolCalls, useBoardTools } from "../../hooks/useBoardTools";
 import {
   useBoardMeeting,
@@ -105,6 +107,8 @@ export function ExecutiveBoardTab() {
   const boundaries = useBoardBoundaries();
   const tools = useBoardTools();
   const staff = useBoardStaff();
+  const qc = useQueryClient();
+  const handToStaff = useMutation(createTaskMutationOptions(qc));
   const lessons = useBoardReview(true);
 
   const urlSection = useMemo(() => {
@@ -120,6 +124,7 @@ export function ExecutiveBoardTab() {
   const [startForm, setStartForm] = useState<{ mode: BoardMeetingMode; topic: string } | null>(null);
   const [focusApprovalId, setFocusApprovalId] = useState<string | null>(null);
   const [focusThreadId, setFocusThreadId] = useState<string | null>(null);
+  const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
   const [showCallLog, setShowCallLog] = useState(false);
 
   const overview = board.overview;
@@ -147,6 +152,11 @@ export function ExecutiveBoardTab() {
   const openMeeting = useCallback((meetingId: string) => {
     setSelectedMeeting(meetingId);
     setSection("meetings");
+  }, [setSection]);
+
+  const openStaffTask = useCallback((taskId: string) => {
+    setFocusTaskId(taskId);
+    setSection("staff");
   }, [setSection]);
 
   const openApproval = useCallback((approvalId: string) => {
@@ -250,10 +260,16 @@ export function ExecutiveBoardTab() {
               isLoading={actions.isLoading}
               onUpdate={(vars) => actions.update.mutate(vars)}
               onOpenMeeting={openMeeting}
+              seats={staff.seats}
+              isStaffEnabled={staff.enabled}
+              isAssigning={handToStaff.isPending}
+              assignErrorMessage={errorText(handToStaff.error)}
+              onAssignToStaff={(body) => handToStaff.mutate(body)}
+              onOpenStaffTask={openStaffTask}
             />
           ) : null}
 
-          {overview && section === "staff" ? <BoardStaffSection /> : null}
+          {overview && section === "staff" ? <BoardStaffSection focusTaskId={focusTaskId} /> : null}
 
           {overview && section === "approvals" ? (
             <>

@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { AdminEditorSection } from "../ui";
 import { BoardTaskDrawer } from "./BoardTaskDrawer";
-import { formatUsageCost, type BoardSeat, type BoardTask, type BoardTaskCreate } from "../../lib/boardModel";
-import { BOARD_PERSONA_DEFAULTS, BOARD_STAFF_DELIVERABLE_TYPES, BOARD_STAFF_MODEL_TIERS } from "../../lib/contracts/generated";
+import { BoardNewTaskForm } from "./BoardNewTaskForm";
+import { formatUsageCost, type BoardSeat, type BoardTask } from "../../lib/boardModel";
+import { BOARD_PERSONA_DEFAULTS, BOARD_STAFF_MODEL_TIERS } from "../../lib/contracts/generated";
 import { staffTickErrorMessage, useBoardStaff } from "../../hooks/useBoardStaff";
 import { useBoardTask, useBoardTasks } from "../../hooks/useBoardTasks";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
@@ -29,10 +30,11 @@ function errorText(err: unknown): string | null {
   return getAdminApiErrorMessage(err) ?? (err instanceof Error ? err.message : "Request failed.");
 }
 
-export function BoardStaffSection() {
+export function BoardStaffSection({ focusTaskId = null }: { readonly focusTaskId?: string | null }) {
   const staff = useBoardStaff();
   const tasks = useBoardTasks();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // The section unmounts when the owner leaves it, so the initial focus is enough.
+  const [selectedId, setSelectedId] = useState<string | null>(focusTaskId);
   const detail = useBoardTask(selectedId);
   const byManager = useMemo(() => {
     const groups = new Map<string, BoardSeat[]>();
@@ -98,7 +100,7 @@ export function BoardStaffSection() {
         })}
       </div>
 
-      <NewTaskForm
+      <BoardNewTaskForm
         seats={staff.seats}
         disabled={!staff.enabled || tasks.create.isPending}
         errorMessage={errorText(tasks.create.error)}
@@ -226,85 +228,5 @@ function TaskCard({ task, onOpen }: { readonly task: BoardTask; readonly onOpen:
         </div>
       </div>
     </button>
-  );
-}
-
-function NewTaskForm({
-  seats,
-  disabled,
-  errorMessage,
-  onCreate,
-}: {
-  readonly seats: readonly BoardSeat[];
-  readonly disabled: boolean;
-  readonly errorMessage?: string | null;
-  readonly onCreate: (body: BoardTaskCreate) => void;
-}) {
-  const [assignee, setAssignee] = useState("cfo");
-  const [brief, setBrief] = useState("");
-  const [deliverableType, setDeliverableType] = useState<(typeof BOARD_STAFF_DELIVERABLE_TYPES)[number]>("markdown");
-  const personas = BOARD_PERSONA_DEFAULTS.map((p) => ({ id: p.id, label: `${p.shortName} (${p.title})` }));
-  const activeSeats = seats.filter((s) => s.isActive).map((s) => ({ id: s.id, label: `${s.displayName} · seat` }));
-  return (
-    <AdminEditorSection title="New task" description="Assign work to an executive or an active seat.">
-      <div className="row g-3">
-        <div className="col-md-4">
-          <label className="form-label small">
-            Assignee
-            <select className="form-select form-select-sm" value={assignee} onChange={(ev) => setAssignee(ev.target.value)}>
-              <optgroup label="Board">
-                {personas.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </optgroup>
-              {activeSeats.length ? (
-                <optgroup label="Staff">
-                  {activeSeats.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.label}
-                    </option>
-                  ))}
-                </optgroup>
-              ) : null}
-            </select>
-          </label>
-        </div>
-        <div className="col-md-3">
-          <label className="form-label small">
-            Deliverable
-            <select
-              className="form-select form-select-sm"
-              value={deliverableType}
-              onChange={(ev) => setDeliverableType(ev.target.value as (typeof BOARD_STAFF_DELIVERABLE_TYPES)[number])}
-            >
-              {BOARD_STAFF_DELIVERABLE_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="col-12">
-          <label className="form-label small">
-            Brief
-            <textarea className="form-control form-control-sm" rows={2} value={brief} onChange={(ev) => setBrief(ev.target.value)} />
-          </label>
-        </div>
-        <div className="col-12">
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            disabled={disabled || !brief.trim()}
-            onClick={() => onCreate({ assignee, brief: brief.trim(), deliverableType, slaHours: 24 })}
-          >
-            Create task
-          </button>
-          {errorMessage ? <span className="small text-danger ms-2">{errorMessage}</span> : null}
-        </div>
-      </div>
-    </AdminEditorSection>
   );
 }

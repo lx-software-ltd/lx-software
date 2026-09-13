@@ -12,6 +12,7 @@ import {
   type BoardTaskListPayload,
 } from "../lib/boardModel";
 import { BOARD_QUERY_KEY } from "./useBoard";
+import { BOARD_ACTIONS_KEY } from "./useBoardActions";
 import { BOARD_STAFF_KEY } from "./useBoardStaff";
 
 export const BOARD_TASKS_KEY = [...BOARD_QUERY_KEY, "tasks"] as const;
@@ -23,6 +24,8 @@ export function boardTaskDetailKey(taskId: string) {
 function invalidateTasks(qc: QueryClient) {
   void qc.invalidateQueries({ queryKey: BOARD_TASKS_KEY });
   void qc.invalidateQueries({ queryKey: BOARD_STAFF_KEY });
+  // Tasks linked to a founder action change its assignee / status.
+  void qc.invalidateQueries({ queryKey: BOARD_ACTIONS_KEY });
 }
 
 export function createTaskMutationOptions(qc: QueryClient) {
