@@ -70,6 +70,41 @@ class StaffEngineTests(BoardTestCase):
         self.assertFalse(roster["architect"]["isActive"])
         self.assertEqual(board_staff.seat_level(settings, roster, "architect", "mail"), "off")
 
+    def test_security_analyst_task_exposes_github_security_and_research(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "security-analyst", {"isActive": True})
+        board_store.save_staff_override(self.table, "support", {"isActive": True})
+        roster = board_staff.seats_by_id(self.table, settings)
+        analyst = {
+            op.name
+            for op, _ in board_tools.available_ops(
+                settings, "ciso", context="task", seat_id="security-analyst", seats_by_id=roster
+            )
+        }
+        self.assertIn("github_list_security_alerts", analyst)
+        self.assertIn("github_get_security_alert", analyst)
+        self.assertIn("github_get_file", analyst)
+        self.assertIn("security_github_alerts", analyst)
+        self.assertIn("research_search", analyst)
+        self.assertIn("task_finish", analyst)
+        self.assertNotIn("code_run_task", analyst)
+        support = {
+            op.name
+            for op, _ in board_tools.available_ops(
+                settings, "coo", context="task", seat_id="support", seats_by_id=roster
+            )
+        }
+        self.assertTrue(any(name.startswith("mail_") for name in support))
+        self.assertNotIn("github_list_security_alerts", support)
+        chat = {
+            op.name
+            for op, _ in board_tools.available_ops(
+                settings, "ciso", context="chat", seat_id="security-analyst", seats_by_id=roster
+            )
+        }
+        self.assertIn("github_list_security_alerts", chat)
+        self.assertNotIn("task_finish", chat)
+
     def test_create_task_validates_and_defaults_budget(self) -> None:
         settings = _enable_staff(self.table)
         board_store.save_staff_override(self.table, "architect", {"isActive": False})
@@ -110,10 +145,13 @@ class StaffEngineTests(BoardTestCase):
         )
         self.assertIn("Either call task_note", frame)
         self.assertIn("Do the work", frame)
+        self.assertIn("do not invent tool names", frame)
+        self.assertIn("[Insert", frame)
         seat = {"id": "support", "title": "Parent Support", "displayName": "Sam", "reportsTo": "coo", "brief": "Help parents."}
         prompt = board_personas.render_seat_prompt(seat, {"displayName": "Pat", "title": "COO"}, {}, ["Be brief."])
         self.assertIn("reporting to Pat", prompt)
         self.assertIn("STANDING INSTRUCTIONS", prompt)
+        self.assertIn("never invent tool names", prompt)
         self.assertIn(board_personas.BOOKS_OF_RECORD, prompt)
 
     def test_accountant_prompt_points_at_product_database_not_xero(self) -> None:
@@ -452,6 +490,42 @@ class StaffStepTests(ToolsTestCase):
         latest = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(latest["status"], "failed")
         self.assertEqual(latest["failureReason"], "step limit")
+
+    def test_security_analyst_step_offers_github_and_research_tools(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "security-analyst", {"isActive": True})
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="security-analyst",
+                origin="event",
+                brief="New security alert gh:dependabot:153: js-yaml: maxTotalMergeKeys does not limit CPU use",
+                deliverable_type="markdown",
+                created_by="board_duties",
+            )
+        scripted = self.use_script([], "Checking the advisory.")
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff.run_step(
+                {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": task["taskId"], "step": 1}
+            )
+        self.assertTrue(scripted.requests)
+        offered = {tool["function"]["name"] for tool in scripted.requests[0].get("tools") or []}
+        self.assertIn("github_get_security_alert", offered)
+        self.assertIn("github_list_security_alerts", offered)
+        self.assertIn("github_get_file", offered)
+        self.assertIn("security_github_alerts", offered)
+        self.assertIn("research_search", offered)
+        self.assertIn("task_finish", offered)
+        preamble = " ".join(
+            str(msg.get("content") or "")
+            for msg in scripted.requests[0].get("messages") or []
+            if msg.get("role") == "system"
+        )
+        self.assertIn("read_github", preamble)
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["step"], 1)
+        self.assertNotEqual(latest.get("failureReason"), "step limit")
 
     def test_stuck_sweep(self) -> None:
         settings = _enable_staff(self.table)

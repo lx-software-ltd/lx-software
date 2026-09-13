@@ -240,9 +240,12 @@ def render_seat_prompt(
         parts.append(brief)
     parts.append("")
     parts.append(
-        "You work one assigned task at a time. Use tools to verify facts. "
-        "Call task_note to record progress and continue, or task_finish when the deliverable is ready. "
-        "Do not call task_finish without evidence tool calls unless the brief needs none. "
+        "You work one assigned task at a time. Use only the functions offered this turn; "
+        "never invent tool names. Call those functions to verify facts. "
+        "Call task_note only when a useful next function call remains. "
+        "Call task_finish when the deliverable is ready, or as soon as the offered functions "
+        "cannot verify more — set confidence low, list openQuestions, and include what you did verify. "
+        "Do not loop asking for tools that were not offered. "
         "Do not call task_finish with placeholder brackets such as [Insert …]."
     )
     parts.append(
@@ -272,7 +275,8 @@ def render_task_frame(task: dict[str, Any], scratchpad: str) -> str:
         f"Steps left: {steps_left} (used {steps_used})\n"
         f"Scratchpad:\n{pad}\n\n"
         "Either call task_note to record progress and continue, or call task_finish when done. "
-        "Do not call task_finish without evidence tool calls unless the brief needs none. "
+        "If the offered functions cannot verify more, task_finish with confidence low and openQuestions; "
+        "do not invent tool names or loop. "
         "Do not call task_finish with placeholder brackets such as [Insert …]; write verified "
         "figures or write unavailable and why."
     )
