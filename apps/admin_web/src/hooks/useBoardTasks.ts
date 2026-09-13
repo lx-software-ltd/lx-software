@@ -4,6 +4,7 @@ import {
   boardTaskCancelPath,
   boardTaskPath,
   boardTaskReviewPath,
+  boardTaskRetryPath,
   boardTasksPath,
   tasksNeedPolling,
   type BoardTask,
@@ -54,6 +55,19 @@ export function cancelTaskMutationOptions(qc: QueryClient) {
   };
 }
 
+export function retryTaskMutationOptions(qc: QueryClient) {
+  return {
+    mutationFn: async (taskId: string) => {
+      const res = await adminFetchJson<{ task: BoardTask }>(boardTaskRetryPath(taskId), {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      return res.task;
+    },
+    onSuccess: () => invalidateTasks(qc),
+  };
+}
+
 export function reviewTaskMutationOptions(qc: QueryClient) {
   return {
     mutationFn: async ({
@@ -85,6 +99,7 @@ export function useBoardTasks() {
   const create = useMutation(createTaskMutationOptions(qc));
   const cancel = useMutation(cancelTaskMutationOptions(qc));
   const review = useMutation(reviewTaskMutationOptions(qc));
+  const retry = useMutation(retryTaskMutationOptions(qc));
   return {
     tasks: query.data?.tasks ?? [],
     counts: query.data?.counts ?? {},
@@ -94,6 +109,7 @@ export function useBoardTasks() {
     create,
     cancel,
     review,
+    retry,
   };
 }
 

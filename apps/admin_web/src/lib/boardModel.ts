@@ -1089,6 +1089,10 @@ export function boardTaskReviewPath(taskId: string): string {
   return `${boardTaskPath(taskId)}/review`;
 }
 
+export function boardTaskRetryPath(taskId: string): string {
+  return `${boardTaskPath(taskId)}/retry`;
+}
+
 export function boardHoldsPath(query?: { status?: string; limit?: number }): string {
   const params = new URLSearchParams();
   if (query?.status) params.set("status", query.status);

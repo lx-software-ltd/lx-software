@@ -384,6 +384,19 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
       });
       return json({ task });
     }
+    if (rest[1] === "retry" && method === "POST") {
+      if (task.status !== "failed") return json({ message: "Only failed tasks can be retried" }, 409);
+      Object.assign(task, {
+        status: "queued",
+        step: 0,
+        stepsUsed: 0,
+        failureReason: "",
+        finishedAt: null,
+        startedAt: null,
+        updatedAt: new Date().toISOString(),
+      });
+      return json({ task });
+    }
     return json(boardTaskDetailFixture(taskId) ?? { task, steps: [], reviews: [], deliverable: "", deliverableUrl: "" });
   }
   if (p === `${board}/holds`) {

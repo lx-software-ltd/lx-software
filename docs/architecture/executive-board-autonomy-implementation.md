@@ -352,13 +352,16 @@ updatedAt, startedAt, finishedAt, failureReason, expiresAt (set on terminal)
      assignee, seat_id=..., task_id=..., display_name=...)`; call
      `run_tool_loop(ctx=ctx, messages=..., model=tier model,
      max_seconds=BOARD_STAFF_STEP_MAX_SECONDS, ...)`.
-  5. The loop returns text plus recorded calls. If `task_finish` was
-     called, `_on_finish` (below). Else append the model's text to the
-     scratchpad (cap `scratchpadMaxChars`, keep the tail), write it, record
-     `STEP#{seq}` with `plan` (model text ≤ 2000 chars), `callIds`,
-     `usage`, `add_staff_usage_day`, increment `task.step`, and if
-     `task.step >= maxStepsPerTask` → `_finish_incomplete("step limit")`
-     else `invoke_async` for `step + 1`.
+  5. The loop returns text plus recorded calls. Always record `STEP#{seq}`
+     and increment `task.step`, including when `task_finish` already moved
+     the row to `review` (so `step` and `stepClaimed` stay aligned). If the
+     only tool was `task_note` (or none), increment `idleSteps` and append
+     a nudge; `idleSteps >= maxIdleStepsPerTask` → `_finish_incomplete
+     ("idle step limit")`. Else if `task.step >= maxStepsPerTask` →
+     `_finish_incomplete("step limit")`. A thrown completion (truncated
+     OpenRouter body, timeout) releases the claim and re-invokes the same
+     step once (`retried: true`); a second failure records `step error: …`.
+     Otherwise `invoke_async` for `step + 1`.
 - `op task_note(text)`: appends to the scratchpad; returns `{ok: true,
   chars}`. `op task_finish(summary, deliverableType, deliverable (string,
   ≤ deliverableMaxBytes when UTF-8 encoded), evidence[], openQuestions[],
@@ -376,9 +379,12 @@ updatedAt, startedAt, finishedAt, failureReason, expiresAt (set on terminal)
   and `deliverableType` in (`markdown`, `csv`, `json`, `issues`, `pr`) →
   append a note to the action and set `status="done"`,
   `closedBy="staff:{taskId}"`. `return` → if `revisions <
-  maxRevisions`: `revisions += 1`, status `running`, scratchpad gets
-  "MANAGER NOTES: …", next step invoked; else `delivered` with
-  `lastReview.verdict="return"` kept.
+  maxRevisions`: `revisions += 1`, status `running`, `stepClaimed` reset
+  to the last completed `step` so the revision payload can be claimed,
+  scratchpad gets "MANAGER NOTES: …", next step invoked; else `delivered`
+  with `lastReview.verdict="return"` kept. Failed tasks stay listed; the
+  owner retries via `POST /siu-tin-dei/board/tasks/{id}/retry` (same brief,
+  status back to `queued`).
 - `handle_tick(event)`: `drain_queue`; stuck sweep: tasks `running` whose
   `updatedAt` is older than `staffTaskStuckSeconds` are `_finish_incomplete
   ("stuck")`; tasks in `review` older than the same → re-invoke review once,
