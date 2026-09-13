@@ -136,6 +136,9 @@ jobs:
         uses: github/codeql-action/analyze@v4
         with:
           category: /language:${{ matrix.language }}
+          # Same as Checkov: do not fail the job when GitHub's SARIF
+          # processing wait returns 5xx / times out after a clean scan.
+          wait-for-processing: false
 
   secrets-scan:
     name: Secret Scanning
