@@ -450,6 +450,15 @@ class StaffAccountingTests(StaffStepTests):
         self.assertAlmostEqual(day["cost"], 0.03)
         self.assertEqual(day["calls"], 2)
 
+    def test_fake_table_rejects_python_float_like_dynamodb(self) -> None:
+        with self.assertRaises(TypeError) as ctx:
+            self.table.update_item(
+                Key={"pk": "BOARD#siuTinDei#staffusage#test", "sk": "STATE"},
+                UpdateExpression="ADD cost :c",
+                ExpressionAttributeValues={":c": 0.01},
+            )
+        self.assertIn("Decimal", str(ctx.exception))
+
     def test_settings_conflict_then_retry(self) -> None:
         first = board_store.load_settings(self.table)
         board_store.save_settings(self.table, first)
@@ -481,3 +490,70 @@ class StaffToolAvailabilityTests(unittest.TestCase):
         settings["staff"]["enabled"] = False
         off = {op.name for op, _ in board_tools.available_ops(settings, "cfo", context="chat")}
         self.assertNotIn("staff_assign", off)
+
+
+class StaffExecuteCallTests(StaffStepTests):
+    def test_execute_call_task_finish_allowed_for_seat_without_task_tool(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "business-analyst", {"isActive": True})
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="business-analyst",
+                origin="duty",
+                brief="Write the three-sentence headline",
+                deliverable_type="markdown",
+                created_by="board_review",
+            )
+        roster = board_staff.seats_by_id(self.table, settings)
+        self.assertEqual(board_staff.seat_level(settings, roster, "business-analyst", "task"), "off")
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=board_store.load_settings(self.table),
+            persona_id="ceo",
+            display_name="Business analyst",
+            kind="task",
+            task_id=task["taskId"],
+            seat_id="business-analyst",
+            actor="persona",
+        )
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            out = board_tools.execute_call(
+                ctx,
+                board_tools.REGISTRY["task_finish"],
+                {
+                    "summary": "Quiet day with no tasks delivered.",
+                    "deliverableType": "markdown",
+                    "deliverable": "Quiet day. No tasks delivered, running, or blocked.",
+                    "evidence": [],
+                    "openQuestions": [],
+                    "confidence": "low",
+                    "reason": "Duty headline.",
+                },
+            )
+        self.assertEqual(out.status, "ok", out.result)
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "review")
+
+    def test_execute_call_task_finish_refused_outside_task_context(self) -> None:
+        settings = _enable_staff(self.table)
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="ceo",
+            kind="chat",
+            actor="persona",
+        )
+        out = board_tools.execute_call(
+            ctx,
+            board_tools.REGISTRY["task_finish"],
+            {
+                "summary": "Nope",
+                "deliverableType": "markdown",
+                "deliverable": "no",
+                "confidence": "low",
+            },
+        )
+        self.assertEqual(out.status, "error")
+        self.assertIn("not available", str(out.result.get("error") or "").lower())
