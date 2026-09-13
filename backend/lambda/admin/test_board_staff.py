@@ -109,6 +109,7 @@ class StaffEngineTests(BoardTestCase):
             "earlier note",
         )
         self.assertIn("Either call task_note", frame)
+        self.assertIn("tool calls", frame)
         self.assertIn("Do the work", frame)
         seat = {"id": "support", "title": "Parent Support", "displayName": "Sam", "reportsTo": "coo", "brief": "Help parents."}
         prompt = board_personas.render_seat_prompt(seat, {"displayName": "Pat", "title": "COO"}, {}, ["Be brief."])
@@ -296,17 +297,18 @@ class StaffStepTests(ToolsTestCase):
             kind="task",
             task_id=task["taskId"],
         )
-        board_staff.op_task_finish(
-            ctx,
-            {
-                "summary": "Guessing.",
-                "deliverableType": "markdown",
-                "deliverable": "none",
-                "evidence": [],
-                "openQuestions": [],
-                "confidence": "high",
-            },
-        )
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "Guessing.",
+                    "deliverableType": "markdown",
+                    "deliverable": "none",
+                    "evidence": [],
+                    "openQuestions": [],
+                    "confidence": "high",
+                },
+            )
         latest = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(latest["confidence"], "medium")
         self.assertIn("no_evidence", latest["flags"])
@@ -534,6 +536,60 @@ class StaffStepTests(ToolsTestCase):
         self.assertEqual(latest["idleSteps"], BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK)
         scratch = board_staff._blob_get(board_staff._scratchpad_key(tid)).decode()  # noqa: SLF001
         self.assertIn("NUDGE", scratch)
+
+    def test_prose_cannot_call_task_finish_is_salvaged(self) -> None:
+        task = self._queued_task()
+        tid = task["taskId"]
+        report = (
+            "Since I cannot call `task_note` or `task_finish`, I will document the findings here.\n\n"
+            "### Security Alert Triage\n"
+            "**GitHub Repository**: No open HIGH/CRITICAL security alerts found.\n"
+            "**Security Hub**: No active HIGH/CRITICAL findings found.\n"
+            "Proposed Remediations: None needed at this time.\n"
+            "**Summary**: No open HIGH/CRITICAL security alerts found in GitHub or Security Hub.\n"
+            "**Confidence**: High\n"
+        )
+        self.use_script([], report)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
+        latest = board_store.get_task(self.table, tid)
+        self.assertEqual(latest["status"], "review", latest.get("failureReason"))
+        self.assertIn("salvaged", latest.get("flags") or [])
+        body = board_staff._blob_get(str(latest.get("deliverableKey") or "")).decode()  # noqa: SLF001
+        self.assertIn("Security Alert Triage", body)
+
+    def test_last_idle_step_requires_task_finish_tool_choice(self) -> None:
+        task = self._queued_task()
+        tid = task["taskId"]
+        latest = board_store.get_task(self.table, tid)
+        latest["idleSteps"] = BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK - 1
+        board_store.put_task(self.table, latest)
+        scripted = self.use_script(
+            [
+                [
+                    (
+                        "task_finish",
+                        {
+                            "summary": "No high-severity alerts.",
+                            "deliverableType": "markdown",
+                            "deliverable": "# Triage\n\nNo HIGH/CRITICAL GitHub or Security Hub alerts.",
+                            "evidence": [],
+                            "openQuestions": [],
+                            "confidence": "low",
+                        },
+                    )
+                ]
+            ]
+        )
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
+        self.assertEqual(
+            scripted.requests[0]["tool_choice"],
+            {"type": "function", "function": {"name": "task_finish"}},
+        )
+        names = [str(t.get("function", {}).get("name")) for t in scripted.requests[0]["tools"]]
+        self.assertEqual(names[:2], ["task_note", "task_finish"])
+        self.assertEqual(board_store.get_task(self.table, tid)["status"], "review")
 
     def test_step_exception_retries_once_then_fails(self) -> None:
         task = self._queued_task()
@@ -972,9 +1028,49 @@ class StaffToolAvailabilityTests(unittest.TestCase):
         self.assertIn("finance_cash_snapshot", task)
         self.assertIn("aws_monthly_cost", task)
         self.assertIn("meta_ad_spend", task)
+        self.assertEqual([op.name for op, _ in board_tools.available_ops(settings, "cfo", context="task")[:2]], ["task_note", "task_finish"])
+        preamble = board_tools.tools_preamble(board_tools.available_ops(settings, "cfo", context="task"))
+        self.assertIn("TASK CONTROL", preamble)
+        self.assertNotIn("Write operations on task", preamble)
         settings["staff"]["enabled"] = False
         off = {op.name for op, _ in board_tools.available_ops(settings, "cfo", context="chat")}
         self.assertNotIn("staff_assign", off)
+
+    def test_task_ops_offered_when_tools_kill_switch_is_off(self) -> None:
+        settings = board_store.default_settings()
+        settings["tools"]["enabled"] = False
+        chat = board_tools.available_ops(settings, "cfo", context="chat")
+        self.assertEqual(chat, [])
+        names = [op.name for op, _ in board_tools.available_ops(settings, "cfo", context="task")]
+        self.assertEqual(names, ["task_note", "task_finish"])
+
+    def test_security_analyst_task_context_includes_github_and_finish(self) -> None:
+        settings = board_store.default_settings()
+        settings["tools"]["enabled"] = True
+        settings["staff"]["enabled"] = True
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        seat = board_staff.seat_default("security-analyst") or {}
+        roster = {
+            "security-analyst": {
+                **seat,
+                "isActive": True,
+                "tools": dict(seat.get("tools") or {}),
+            }
+        }
+        names = {
+            op.name
+            for op, _ in board_tools.available_ops(
+                settings,
+                "ciso",
+                context="task",
+                seat_id="security-analyst",
+                seats_by_id=roster,
+            )
+        }
+        self.assertIn("task_finish", names)
+        self.assertIn("task_note", names)
+        self.assertIn("github_list_security_alerts", names)
+        self.assertIn("security_aws_findings", names)
 
 
 class StaffExecuteCallTests(StaffStepTests):

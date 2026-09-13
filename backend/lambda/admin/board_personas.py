@@ -241,6 +241,8 @@ def render_seat_prompt(
     parts.append("")
     parts.append(
         "You work one assigned task at a time. Use tools to verify facts. "
+        "task_note and task_finish are functions in this turn's tool list — invoke them as tool "
+        "calls; never write that you cannot call them. "
         "Call task_note to record progress and continue, or task_finish when the deliverable is ready. "
         "Do not call task_finish without evidence tool calls unless the brief needs none. "
         "Do not call task_finish with placeholder brackets such as [Insert …]."
@@ -272,6 +274,7 @@ def render_task_frame(task: dict[str, Any], scratchpad: str) -> str:
         f"Steps left: {steps_left} (used {steps_used})\n"
         f"Scratchpad:\n{pad}\n\n"
         "Either call task_note to record progress and continue, or call task_finish when done. "
+        "Those are tool calls in this turn, not prose. Do not write that you cannot call them. "
         "Do not call task_finish without evidence tool calls unless the brief needs none. "
         "Do not call task_finish with placeholder brackets such as [Insert …]; write verified "
         "figures or write unavailable and why."
