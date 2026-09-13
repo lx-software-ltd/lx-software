@@ -372,7 +372,7 @@ export const BOARD_TOOL_DEFINITIONS: readonly BoardToolDefinition[] = [
   {
     "id": "finance",
     "label": "Finance",
-    "description": "Listing subscriptions, invoices, aging and unit economics. Draft/send invoices and dunning reminders; record or match payments. The board never initiates a bank payment.",
+    "description": "Siu Tin Dei listing receivables in the product database (invoices, payments, subscriptions) — not QuickBooks, Xero or any other accounting package. Aging, unit economics, draft/send invoices and dunning reminders; record or match payments. Company payables live in the founder's admin statement books. The board never initiates a bank payment.",
     "maxLevel": "act",
     "defaults": {
       "ceo": "read",
@@ -751,19 +751,19 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
       "aws": "read",
       "mail": "act"
     },
-    "brief": "You write the month-end close memo, reconcile receivables, send dunning reminders under policy, and report costs from AWS and Meta. You never post ledger entries and you never initiate a bank payment. Report facts you verified with tools; say clearly what you could not verify.",
+    "brief": "You write the month-end close memo, reconcile listing receivables, send dunning reminders under policy, and report costs from AWS and Meta. There is no QuickBooks, Xero or other accounting package. Listing invoices, payments and subscriptions live in the Siu Tin Dei product database: call finance_aging_report, finance_list_invoices and finance_list_subscriptions. Company payables and expenses live in the founder's admin statement books, which you cannot query with these tools. You never post ledger entries and you never initiate a bank payment. Report facts you verified with tools; an empty aging report is a valid result; say clearly what you could not verify.",
     "duties": [
       {
         "id": "month-end-memo",
         "cron": "0 9 1 * *",
-        "brief": "Write the month-end close memo in HKT: cash, receivables aging, AWS and Meta spend, and open questions. Markdown.",
+        "brief": "Call finance_aging_report, aws_monthly_cost and any cached Meta spend. Write the month-end close memo in HKT: cash (say if you cannot see bank balances), receivables aging from the Siu Tin Dei invoices table, AWS and Meta spend, and open questions. Markdown. Do not ask for QuickBooks, Xero or credentials.",
         "deliverableType": "markdown",
         "tier": "desk"
       },
       {
         "id": "weekly-aging",
         "cron": "0 9 * * THU",
-        "brief": "Write this week's receivables aging and which invoices are at D+7 / D+21 / D+35. Markdown.",
+        "brief": "Call finance_aging_report (the Siu Tin Dei invoices table is the book of record; there is no QuickBooks/Xero). Write this week's receivables aging and which invoices are at D+7 / D+21 / D+35. Markdown. Zero outstanding is a valid report.",
         "deliverableType": "markdown",
         "tier": "desk"
       }

@@ -826,6 +826,23 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
     return {"ok": True, "status": "review", "deliverableKey": key}
 
 
+def _review_user_prompt(task: dict[str, Any], raw: str, evidence_lines: list[str]) -> str:
+    """User message for the manager review call."""
+    return (
+        f"You are reviewing work assigned to {task.get('assignee')}.\n"
+        f"Brief: {task.get('brief')}\n"
+        f"Deliverable type: {task.get('deliverableType')}\n"
+        f"Confidence: {task.get('confidence')}\n"
+        f"Evidence:\n" + ("\n".join(evidence_lines) or "(none)") + "\n\n"
+        f"Deliverable:\n{raw}\n\n"
+        "Books of record: there is no QuickBooks or Xero. For receivables aging, "
+        "accept a report backed by finance_aging_report (including zero outstanding "
+        "or a Data API not-configured error from that tool). Do not return asking "
+        "for accounting software or credentials.\n"
+        'Return JSON {"verdict":"accept"|"return","notes":"…"}.'
+    )
+
+
 def run_review(payload: dict[str, Any]) -> None:
     if not board_store.event_targets_this_board(payload):
         return
@@ -849,15 +866,7 @@ def run_review(payload: dict[str, Any]) -> None:
     evidence_lines = [
         f"- {c.get('op')}: {c.get('summary')}" for c in calls if str(c.get("callId")) in set(task.get("evidence") or [])
     ]
-    prompt = (
-        f"You are reviewing work assigned to {task.get('assignee')}.\n"
-        f"Brief: {task.get('brief')}\n"
-        f"Deliverable type: {task.get('deliverableType')}\n"
-        f"Confidence: {task.get('confidence')}\n"
-        f"Evidence:\n" + ("\n".join(evidence_lines) or "(none)") + "\n\n"
-        f"Deliverable:\n{raw}\n\n"
-        'Return JSON {"verdict":"accept"|"return","notes":"…"}.'
-    )
+    prompt = _review_user_prompt(task, raw, evidence_lines)
     system = board_personas.render_system_prompt(profile, charter)
     model = board_budget.model_for("standup", settings)
     completion = board_budget.board_completion(

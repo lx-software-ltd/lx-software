@@ -271,7 +271,9 @@ def render_context_pack(pack: dict[str, Any]) -> str:
         parts.append("")
         parts.append(
             f"--- Receivables: HK${recv.get('outstandingHkd')} outstanding, "
-            f"{recv.get('overdue') or 0} past due — members with finance access use finance_aging_report ---"
+            f"{recv.get('overdue') or 0} past due — listing receivables live in the Siu Tin Dei "
+            "product database, not QuickBooks/Xero; members with finance access use "
+            "finance_aging_report ---"
         )
 
     meta = pack.get("meta") or {}
