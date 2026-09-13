@@ -178,6 +178,7 @@ def fetch_cognito_sign_in_metrics(pool_id: str) -> dict[str, Any]:
     start = end - timedelta(hours=24)
     safe_pool = pool_id.replace("'", "")
     schema = 'SCHEMA("AWS/Cognito", UserPool,UserPoolClient)'
+    # Metrics Insights allows only one SQL query per GetMetricData call.
     queries = [
         {
             "Id": "signInThrottles",
@@ -199,14 +200,20 @@ def fetch_cognito_sign_in_metrics(pool_id: str) -> dict[str, Any]:
             "CloudWatch AWS/Cognito. Per-user auth events are not read (PII)."
         ),
     }
-    try:
-        resp = _client("cloudwatch").get_metric_data(MetricDataQueries=queries, StartTime=start, EndTime=end)
-    except ClientError as exc:
-        message = str(exc.response.get("Error", {}).get("Message", exc))[:160]
-        out["note"] = f"CloudWatch AWS/Cognito metrics unavailable: {message}. Failed sign-ins are not measured."
-        _log_event("warning", tag="board_security_cognito_metrics_failed", error=message)
+    results: list[dict[str, Any]] = []
+    failed = ""
+    cw = _client("cloudwatch")
+    for query in queries:
+        try:
+            resp = cw.get_metric_data(MetricDataQueries=[query], StartTime=start, EndTime=end)
+        except ClientError as exc:
+            failed = str(exc.response.get("Error", {}).get("Message", exc))[:160]
+            _log_event("warning", tag="board_security_cognito_metrics_failed", error=failed)
+            continue
+        results.extend(resp.get("MetricDataResults") or [])
+    if failed and not results:
+        out["note"] = f"CloudWatch AWS/Cognito metrics unavailable: {failed}. Failed sign-ins are not measured."
         return out
-    results = resp.get("MetricDataResults") or []
     out["signInThrottles24h"] = _metric_sum(results, "signInThrottles")
     out["signInSuccesses24h"] = _metric_sum(results, "signInSuccesses")
     return out
