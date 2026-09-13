@@ -397,7 +397,11 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
       });
       return json({ task });
     }
-    return json(boardTaskDetailFixture(taskId) ?? { task, steps: [], reviews: [], deliverable: "", deliverableUrl: "" });
+    const detail = boardTaskDetailFixture(taskId);
+    return json({
+      ...(detail ?? { steps: [], reviews: [], deliverable: "", deliverableUrl: "" }),
+      task,
+    });
   }
   if (p === `${board}/holds`) {
     return json({ holds: state.holds.filter((h) => h.status === "scheduled") });
