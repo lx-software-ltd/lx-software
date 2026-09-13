@@ -7,13 +7,18 @@ Only the scrypt digest of a key is stored (as
 ``pk = APIKEY#<digest>``, ``sk = META`` in the records table); the plaintext
 key is printed exactly once by ``create``.
 
+New keys expire in 90 days unless ``--expires-at`` is set. Scopes default to
+``finance``. Legacy rows with ``scope=read`` and no ``scopes`` list are
+treated as finance-only by the authorizer.
+
 Requires AWS credentials with GetItem/PutItem/UpdateItem/Scan on the records
 table (plus kms:Decrypt/GenerateDataKey on its CMK) — i.e. an admin identity,
 not the read-only cloud-agent user.
 
 Usage:
-  python3 scripts/manage-public-api-keys.py create --label "grafana" \
-      [--expires-at 2027-01-01] [--table lxsoftware-admin-records] [--region ap-southeast-1]
+  python3 scripts/manage-public-api-keys.py create --label "grafana" \\
+      [--scopes finance,siutindei-board-ops] [--expires-at 2027-01-01] \\
+      [--allowed-cidrs 203.0.113.0/24]
   python3 scripts/manage-public-api-keys.py list
   python3 scripts/manage-public-api-keys.py revoke --key-id <keyId>
 """
@@ -21,10 +26,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import secrets
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import boto3
@@ -39,20 +45,22 @@ _AUTHORIZER_DIR = (
 )
 sys.path.insert(0, str(_AUTHORIZER_DIR))
 from api_key_hash import hash_api_key  # noqa: E402
+from api_key_scopes import ALL_SCOPES, SCOPE_FINANCE  # noqa: E402
 
 API_KEY_PK_PREFIX = "APIKEY#"
 KEY_PLAINTEXT_PREFIX = "lxpk_"
 DEFAULT_TABLE = "lxsoftware-admin-records"
 DEFAULT_REGION = "ap-southeast-1"
+DEFAULT_EXPIRY_DAYS = 90
 
 
 def _table(args: argparse.Namespace):
     return boto3.resource("dynamodb", region_name=args.region).Table(args.table)
 
 
-def _validate_expires_at(raw: str | None) -> str | None:
+def _validate_expires_at(raw: str | None) -> str:
     if raw is None:
-        return None
+        return (datetime.now(timezone.utc) + timedelta(days=DEFAULT_EXPIRY_DAYS)).date().isoformat()
     try:
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
@@ -64,8 +72,37 @@ def _validate_expires_at(raw: str | None) -> str | None:
     return raw
 
 
+def _parse_scopes(raw: str | None) -> list[str]:
+    text = (raw or SCOPE_FINANCE).strip()
+    scopes = sorted({part.strip() for part in text.split(",") if part.strip()})
+    if not scopes:
+        sys.exit("error: --scopes must list at least one scope")
+    unknown = [s for s in scopes if s not in ALL_SCOPES]
+    if unknown:
+        sys.exit(f"error: unknown scopes {unknown}; allowed: {', '.join(sorted(ALL_SCOPES))}")
+    return scopes
+
+
+def _parse_cidrs(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    out: list[str] = []
+    for part in raw.split(","):
+        cidr = part.strip()
+        if not cidr:
+            continue
+        try:
+            ipaddress.ip_network(cidr, strict=False)
+        except ValueError:
+            sys.exit(f"error: --allowed-cidrs entry {cidr!r} is not a CIDR")
+        out.append(cidr)
+    return out
+
+
 def cmd_create(args: argparse.Namespace) -> None:
     expires_at = _validate_expires_at(args.expires_at)
+    scopes = _parse_scopes(args.scopes)
+    cidrs = _parse_cidrs(args.allowed_cidrs)
     plaintext = KEY_PLAINTEXT_PREFIX + secrets.token_urlsafe(36)
     digest = hash_api_key(plaintext)
     key_id = uuid.uuid4().hex[:12]
@@ -75,11 +112,13 @@ def cmd_create(args: argparse.Namespace) -> None:
         "keyId": key_id,
         "label": args.label,
         "scope": "read",
+        "scopes": scopes,
         "revoked": False,
         "createdAt": datetime.now(timezone.utc).isoformat(),
+        "expiresAt": expires_at,
     }
-    if expires_at:
-        item["expiresAt"] = expires_at
+    if cidrs:
+        item["allowedCidrs"] = cidrs
     try:
         _table(args).put_item(
             Item=item,
@@ -92,7 +131,10 @@ def cmd_create(args: argparse.Namespace) -> None:
         raise
     print(f"keyId:  {key_id}")
     print(f"label:  {args.label}")
-    print(f"expires: {expires_at or 'never'}")
+    print(f"scopes: {','.join(scopes)}")
+    print(f"expires: {expires_at}")
+    if cidrs:
+        print(f"cidrs:  {','.join(cidrs)}")
     if args.plaintext_out:
         # CI mode (public repo — logs are world-readable): never print the
         # key; write it to a file for the caller to encrypt/deliver.
@@ -107,7 +149,8 @@ def cmd_create(args: argparse.Namespace) -> None:
     print()
     print("Example:")
     print(f'  curl -H "x-api-key: {plaintext}" <AdminApiBaseUrl>/public/finance')
-    print(f'  curl -H "x-api-key: {plaintext}" <AdminApiBaseUrl>/public/siu-tin-dei/board')
+    if "siutindei-board-ops" in scopes or "siutindei-board-full" in scopes:
+        print(f'  curl -H "x-api-key: {plaintext}" <AdminApiBaseUrl>/public/siu-tin-dei/board')
 
 
 def _scan_keys(args: argparse.Namespace) -> list[dict]:
@@ -134,9 +177,14 @@ def cmd_list(args: argparse.Namespace) -> None:
     for it in sorted(items, key=lambda x: str(x.get("createdAt", ""))):
         state = "revoked" if it.get("revoked") else "active"
         expires = it.get("expiresAt") or "never"
+        scopes = it.get("scopes") or ([SCOPE_FINANCE] if it.get("scope") == "read" else [])
+        if isinstance(scopes, list):
+            scopes_s = ",".join(str(s) for s in scopes)
+        else:
+            scopes_s = str(scopes)
         print(
             f"{it.get('keyId')}  {state:8}  label={it.get('label')!r}  "
-            f"created={it.get('createdAt')}  expires={expires}"
+            f"scopes={scopes_s}  created={it.get('createdAt')}  expires={expires}"
         )
 
 
@@ -152,7 +200,7 @@ def cmd_revoke(args: argparse.Namespace) -> None:
             ExpressionAttributeValues={":t": True},
         )
         print(f"revoked keyId {args.key_id} (label={it.get('label')!r})")
-    print("note: API Gateway caches authorizer verdicts for up to 5 minutes")
+    print("note: API Gateway caches authorizer verdicts for up to 60 seconds")
 
 
 def main() -> None:
@@ -167,7 +215,20 @@ def main() -> None:
     )
     p_create.add_argument("--label", required=True, help="human-readable key name")
     p_create.add_argument(
-        "--expires-at", default=None, help="ISO date/datetime, e.g. 2027-01-01"
+        "--scopes",
+        default=SCOPE_FINANCE,
+        help="comma-separated scopes (default: finance). "
+        f"Allowed: {', '.join(sorted(ALL_SCOPES))}",
+    )
+    p_create.add_argument(
+        "--expires-at",
+        default=None,
+        help=f"ISO date/datetime (default: now + {DEFAULT_EXPIRY_DAYS} days)",
+    )
+    p_create.add_argument(
+        "--allowed-cidrs",
+        default=None,
+        help="comma-separated CIDRs; when set, other source IPs are denied",
     )
     p_create.add_argument(
         "--plaintext-out",

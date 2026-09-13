@@ -176,6 +176,46 @@ describe("HTTP API stage throttling", () => {
     });
   });
 
+  test("public API-key routes are throttled tighter than the stage default", () => {
+    template.hasResourceProperties("AWS::ApiGatewayV2::Stage", {
+      StageName: "$default",
+      RouteSettings: Match.objectLike({
+        "GET /public/finance": {
+          ThrottlingRateLimit: 2,
+          ThrottlingBurstLimit: 10,
+        },
+        "GET /public/siu-tin-dei/board/{proxy+}": {
+          ThrottlingRateLimit: 2,
+          ThrottlingBurstLimit: 10,
+        },
+      }),
+    });
+  });
+
+  test("public API-key authorizer caches on key + a supported source-IP context variable", () => {
+    template.hasResourceProperties("AWS::ApiGatewayV2::Authorizer", {
+      AuthorizerType: "REQUEST",
+      EnableSimpleResponses: true,
+      AuthorizerResultTtlInSeconds: 60,
+      IdentitySource: ["$request.header.x-api-key", "$context.identity.sourceIp"],
+    });
+  });
+
+  test("public API-key metric filters use term patterns (Lambda log lines are not JSON)", () => {
+    const filters = Object.values(resourcesOfType("AWS::Logs::MetricFilter"));
+    const patterns = filters
+      .filter((f) =>
+        ["ApiKeyDenied", "BoardFullAccess"].includes(
+          f.Properties?.MetricTransformations?.[0]?.MetricName
+        )
+      )
+      .map((f) => f.Properties?.FilterPattern as string);
+    expect(patterns).toHaveLength(2);
+    for (const pattern of patterns) {
+      expect(pattern.trim().startsWith("{")).toBe(false);
+    }
+  });
+
   test("the default stage waits for Meta webhook routes before RouteSettings", () => {
     const [, stage] = Object.entries(resourcesOfType("AWS::ApiGatewayV2::Stage")).find(
       ([, r]) => r.Properties?.StageName === "$default"
