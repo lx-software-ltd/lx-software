@@ -581,7 +581,34 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
                     fallback_models=["openai/gpt-4.1-mini"],
                 )
         self.assertEqual(ctx.exception.status, 429)
-        self.assertEqual(timeouts, [7])
+        self.assertEqual(timeouts, [8])
+
+    def test_chat_completion_first_attempt_keeps_caller_timeout(self) -> None:
+        timeouts: list[int] = []
+        clocks = iter([0.0, 0.2])
+
+        def fake_post_json(**kwargs: Any) -> str:
+            timeouts.append(int(kwargs.get("timeout") or 0))
+            return json.dumps(
+                {
+                    "model": "m",
+                    "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+                }
+            )
+
+        with (
+            patch.object(openrouter_client, "post_json", fake_post_json),
+            patch.object(openrouter_client, "_clock", side_effect=lambda: next(clocks)),
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
+        ):
+            openrouter_client.chat_completion(
+                messages=[{"role": "user", "content": "hi"}],
+                model="m",
+                secrets_client=None,
+                timeout=45,
+                max_retries=0,
+            )
+        self.assertEqual(timeouts, [45])
 
     def test_retry_after_helpers(self) -> None:
         self.assertEqual(

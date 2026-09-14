@@ -245,12 +245,15 @@ def chat_completion(
             payload["models"] = rest[:_MAX_FALLBACK_MODELS]
         else:
             payload.pop("models", None)
+        # First attempt keeps the caller's timeout so two clock reads cannot
+        # truncate a 45 s floor to 44. Later models share the leftover budget.
+        attempt_timeout = timeout if index == 0 else max(1, int(remaining))
         try:
             body_text = post_json(
                 url=endpoint_url(),
                 api_key=api_key,
                 payload=payload,
-                timeout=max(1, int(remaining)),
+                timeout=attempt_timeout,
                 max_retries=max_retries if index == 0 else min(1, max_retries),
                 service=service,
             )
