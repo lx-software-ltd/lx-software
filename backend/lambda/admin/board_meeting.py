@@ -176,7 +176,7 @@ def maybe_retry_failed_schedule(table: Any, settings: dict[str, Any]) -> dict[st
     cutoff_iso = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
     for meeting in board_store.list_meetings(table, limit=8):
         meeting = _finalize_stuck(table, meeting)
-        if meeting.get("status") != "failed":
+        if meeting.get("status") != "failed" or meeting.get("retriedByMeetingId"):
             continue
         trigger = str(meeting.get("trigger") or "")
         if not trigger.startswith("schedule:") or trigger.endswith(":retry"):
@@ -190,6 +190,10 @@ def maybe_retry_failed_schedule(table: Any, settings: dict[str, Any]) -> dict[st
         enabled = bool((settings.get("schedule") or {}).get(f"{slot}Enabled"))
         if not enabled:
             continue
+        # Claim the failed row first so the tick cannot retry the same meeting twice.
+        meeting["retriedByMeetingId"] = "pending"
+        meeting["retriedAt"] = board_store.now_iso()
+        board_store.put_meeting(table, meeting)
         try:
             doc = start_meeting(
                 table,
@@ -203,8 +207,12 @@ def maybe_retry_failed_schedule(table: Any, settings: dict[str, Any]) -> dict[st
                 trigger=f"schedule:{slot}:retry",
             )
         except (board_budget.BudgetExceeded, MeetingError) as exc:
+            meeting["retriedByMeetingId"] = f"skipped:{str(exc)[:120]}"
+            board_store.put_meeting(table, meeting)
             _log_event("warning", tag="board_schedule_retry_skipped", slot=slot, reason=str(exc)[:200])
             return None
+        meeting["retriedByMeetingId"] = str(doc.get("meetingId") or "")
+        board_store.put_meeting(table, meeting)
         _log_event("info", tag="board_schedule_retried", slot=slot, meeting_id=doc["meetingId"])
         return doc
     return None

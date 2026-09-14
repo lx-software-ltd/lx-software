@@ -707,16 +707,24 @@ def _deliverable_has_placeholders(text: str) -> bool:
 
 
 def _park_waiting_approval(table: Any, task: dict[str, Any], approval_ids: list[str]) -> None:
-    latest = board_store.get_task(table, str(task.get("taskId") or "")) or task
-    if latest.get("status") != "running":
+    """Park ``task`` (the caller's in-memory row, including the step it just completed).
+
+    Only the stored *status* is re-checked so a cancel that landed mid-step wins;
+    the step counter, usage and scratchpad pointers come from ``task`` so the
+    completed step is not lost and ``resume_after_approval`` continues from it.
+    """
+    stored = board_store.get_task(table, str(task.get("taskId") or ""))
+    if stored is not None and stored.get("status") != "running":
         return
-    latest["status"] = "waiting_approval"
-    latest["blockedOn"] = approval_ids
-    latest["idleSteps"] = 0
-    latest["updatedAt"] = board_store.now_iso()
-    _align_step_claim(latest)
-    board_store.put_task(table, latest)
-    _log_event("info", tag="board_staff_waiting_approval", taskId=latest.get("taskId"), approvals=approval_ids)
+    if stored is None and task.get("status") != "running":
+        return
+    task["status"] = "waiting_approval"
+    task["blockedOn"] = approval_ids
+    task["idleSteps"] = 0
+    task["updatedAt"] = board_store.now_iso()
+    _align_step_claim(task)
+    board_store.put_task(table, task)
+    _log_event("info", tag="board_staff_waiting_approval", taskId=task.get("taskId"), approvals=approval_ids)
 
 
 def resume_after_approval(table: Any, settings: dict[str, Any], approval: dict[str, Any]) -> None:

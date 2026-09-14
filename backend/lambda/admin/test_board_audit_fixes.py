@@ -99,6 +99,45 @@ class PauseAndDedupeTests(BoardTestCase):
         resumed = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(resumed["status"], "running")
 
+    def test_parking_keeps_completed_step_progress(self) -> None:
+        from types import SimpleNamespace
+
+        task = _running_task(self.table, self.settings)
+        self.assertEqual(int(task.get("step") or 0), 0)
+        result = SimpleNamespace(
+            usage={"promptTokens": 10, "completionTokens": 5, "cost": 0.01},
+            text="Proposing the action now",
+            calls=[{"callId": "c1", "status": "pending_approval", "approvalId": "ap-1"}],
+        )
+        with patch.object(board_async, "invoke_async", side_effect=lambda payload, *, fallback=None: None) as inv:
+            board_staff._complete_step(self.table, task["taskId"], task, result, 1)
+            inv.assert_not_called()
+        parked = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(parked["status"], "waiting_approval")
+        self.assertEqual(parked["blockedOn"], ["ap-1"])
+        self.assertEqual(int(parked["step"]), 1)
+        self.assertEqual(int(parked["stepsUsed"]), 1)
+        self.assertTrue(parked.get("scratchpadKey"))
+        self.assertEqual(int((parked.get("usage") or {}).get("calls") or 0), 1)
+        self.assertEqual(int((parked.get("usage") or {}).get("promptTokens") or 0), 10)
+        steps = board_store.list_task_steps(self.table, task["taskId"])
+        self.assertEqual(len(steps), 1)
+        with patch.object(board_async, "invoke_async") as inv:
+            board_staff.resume_after_approval(
+                self.table,
+                self.settings,
+                {"approvalId": "ap-1", "status": "rejected", "context": {"taskId": task["taskId"]}},
+            )
+            self.assertEqual(inv.call_args.args[0]["step"], 2)
+
+    def test_parking_yields_to_cancel_that_landed_mid_step(self) -> None:
+        task = _running_task(self.table, self.settings)
+        stored = board_store.get_task(self.table, task["taskId"])
+        stored["status"] = "cancelled"
+        board_store.put_task(self.table, stored)
+        board_staff._park_waiting_approval(self.table, task, ["ap-x"])
+        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "cancelled")
+
 
 class ValidateProposalTests(BoardTestCase):
     def test_content_publish_missing_and_stale_slot(self) -> None:
@@ -392,6 +431,32 @@ class ProseToolCallAndStuckTests(BoardTestCase):
             out = board_meeting.maybe_retry_failed_schedule(self.table, settings)
         self.assertEqual(out["meetingId"], "m-retry")
         self.assertEqual(start.call_args.kwargs["trigger"], "schedule:morning:retry")
+        original = board_store.get_meeting(self.table, "m-fail")
+        self.assertEqual(original["retriedByMeetingId"], "m-retry")
+        # A second tick inside the two-hour window must not spawn another standup.
+        with patch.object(board_meeting, "start_meeting") as start_again:
+            self.assertIsNone(board_meeting.maybe_retry_failed_schedule(self.table, settings))
+            start_again.assert_not_called()
+
+    def test_failed_schedule_retry_refused_is_not_retried_again(self) -> None:
+        settings = board_store.load_settings(self.table)
+        settings["schedule"] = {"morningEnabled": True, "eveningEnabled": False}
+        board_store.put_meeting(
+            self.table,
+            {
+                "meetingId": "m-fail2",
+                "status": "failed",
+                "trigger": "schedule:morning",
+                "createdAt": board_store.now_iso(),
+                "updatedAt": board_store.now_iso(),
+            },
+        )
+        with patch.object(board_meeting, "start_meeting", side_effect=board_meeting.MeetingError("busy")):
+            self.assertIsNone(board_meeting.maybe_retry_failed_schedule(self.table, settings))
+        self.assertTrue(str(board_store.get_meeting(self.table, "m-fail2")["retriedByMeetingId"]).startswith("skipped:"))
+        with patch.object(board_meeting, "start_meeting") as start_again:
+            self.assertIsNone(board_meeting.maybe_retry_failed_schedule(self.table, settings))
+            start_again.assert_not_called()
 
 
 class DutiesBatchTests(BoardTestCase):
