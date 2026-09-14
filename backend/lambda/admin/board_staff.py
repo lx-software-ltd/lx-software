@@ -72,6 +72,35 @@ _EVIDENCE_TOOL_TOKENS = (
     "finance_unit_economics",
     "aws_monthly_cost",
     "meta_ad_spend",
+    "web_sessions",
+    "web_conversions",
+    "web_gtm_status",
+)
+# Briefs that name GA4 / visitor sources without the tool ids still require
+# those reads — otherwise a seat finishes with "no analytics access" and the
+# manager returns asking for a console login.
+_EVIDENCE_BRIEF_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "web_sessions",
+        (
+            "ga4",
+            "google analytics",
+            "visitor source",
+            "channel attribution",
+            "organic traffic",
+            "session source",
+            "tracking setup",
+            "utm_",
+        ),
+    ),
+    (
+        "web_conversions",
+        ("event tracking", "key events"),
+    ),
+    (
+        "web_gtm_status",
+        ("google tag manager", "gtm"),
+    ),
 )
 
 
@@ -762,9 +791,27 @@ def resume_after_approval(table: Any, settings: dict[str, Any], approval: dict[s
         )
 
 
+def _brief_has_alias(lower: str, alias: str) -> bool:
+    if " " in alias or "_" in alias:
+        return alias in lower
+    return bool(re.search(rf"\b{re.escape(alias)}\b", lower))
+
+
 def _brief_required_evidence_tools(brief: str) -> list[str]:
     lower = (brief or "").lower()
-    return [token for token in _EVIDENCE_TOOL_TOKENS if token in lower]
+    needed: list[str] = []
+    seen: set[str] = set()
+    for token in _EVIDENCE_TOOL_TOKENS:
+        if token in lower and token not in seen:
+            needed.append(token)
+            seen.add(token)
+    for tool, aliases in _EVIDENCE_BRIEF_ALIASES:
+        if tool in seen:
+            continue
+        if any(_brief_has_alias(lower, alias) for alias in aliases):
+            needed.append(tool)
+            seen.add(tool)
+    return needed
 
 
 def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, wanted: int) -> None:
@@ -1077,6 +1124,11 @@ def _review_user_prompt(task: dict[str, Any], raw: str, evidence_lines: list[str
         "If the deliverable claims an action (label, publish, reply, create, send) "
         "and Evidence is (none), you MUST return.\n"
         "If the deliverable uses Campaign A / Article 1 / screenshotN.png template data, return.\n"
+        "Visitor sources and tracking: proof is web_sessions (referrers / sessionSource), "
+        "web_conversions (events), and web_gtm_status when GTM is in the brief. Zero "
+        "sessions or empty referrers is a valid connected result. A not-configured or "
+        "WebError from those tools is a valid unavailable. Do not return asking for GA4 "
+        "console access, analytics credentials, or direct access to analytics tools.\n"
         'Return JSON {"verdict":"accept"|"return","notes":"…"}.'
     )
 

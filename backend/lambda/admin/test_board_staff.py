@@ -188,6 +188,83 @@ class StaffEngineTests(BoardTestCase):
         self.assertIn("LX Software statement book", duties["month-end-memo"]["brief"])
         self.assertIn("Siu Tin Dei", duties["month-end-memo"]["brief"])
 
+    def test_community_manager_can_verify_ga4_visitor_sources(self) -> None:
+        seat = board_staff.seat_default("community-manager") or {}
+        cmo = board_personas.persona_default("cmo") or {}
+        prompt = board_personas.render_seat_prompt(seat, cmo, {}, [])
+        self.assertIn("web_sessions", prompt)
+        self.assertIn("web_conversions", prompt)
+        self.assertIn("Never ask for GA4 console", prompt)
+        self.assertEqual((seat.get("tools") or {}).get("web"), "read")
+        brief = (
+            "Verify analytics and tracking setup for visitor source measurement. "
+            "Done looks like: GA4 fully integrated with channel attribution and "
+            "event tracking to measure organic traffic. Success metric: Analytics "
+            "data shows visitor sources post-launch."
+        )
+        needed = board_staff._brief_required_evidence_tools(brief)  # noqa: SLF001
+        self.assertEqual(needed, ["web_sessions", "web_conversions"])
+        self.assertEqual(
+            board_staff._brief_required_evidence_tools("Reply to the WhatsApp thread."),  # noqa: SLF001
+            [],
+        )
+        review = board_staff._review_user_prompt(  # noqa: SLF001
+            {
+                "assignee": "community-manager",
+                "brief": brief,
+                "deliverableType": "markdown",
+                "confidence": "low",
+            },
+            "Unable to verify GA4; no access to analytics tools.",
+            [],
+        )
+        self.assertIn("web_sessions", review)
+        self.assertIn("Do not return asking for GA4", review)
+        self.assertIn("book of record for visitor sources", board_tools.REGISTRY["web_sessions"].description)
+        settings = _enable_staff(self.table)
+        roster = board_staff.seats_by_id(self.table, settings)
+        self.assertEqual(board_staff.seat_level(settings, roster, "community-manager", "web"), "read")
+        ops = {
+            op.name
+            for op, _ in board_tools.available_ops(
+                settings, "cmo", context="task", seat_id="community-manager", seats_by_id=roster
+            )
+        }
+        self.assertTrue(set(needed) <= ops, ops)
+        self.assertIn("web_gtm_status", ops)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="community-manager",
+                origin="owner",
+                brief=brief,
+                deliverable_type="markdown",
+                created_by="a",
+            )
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="cmo",
+            kind="task",
+            task_id=task["taskId"],
+            seat_id="community-manager",
+        )
+        with self.assertRaises(board_staff.StaffError) as raised:
+            board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "Could not verify.",
+                    "deliverableType": "markdown",
+                    "deliverable": "Unable to verify GA4 integration due to lack of access.",
+                    "evidence": [],
+                    "openQuestions": ["Need GA4 console access"],
+                    "confidence": "low",
+                },
+            )
+        self.assertIn("web_sessions", str(raised.exception))
+        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "running")
+
     def test_weekly_kpi_pack_is_siu_tin_dei_only(self) -> None:
         seat = board_staff.seat_default("business-analyst") or {}
         duties = {str(d["id"]): d for d in (seat.get("duties") or [])}

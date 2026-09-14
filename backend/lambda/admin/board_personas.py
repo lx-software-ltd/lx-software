@@ -39,8 +39,10 @@ BOOKS_OF_RECORD = (
     "is company overhead and is not on this board — do not report it. AWS is "
     "aws_monthly_cost (Project=Siu Tin Dei); Meta ads is meta_ad_spend or "
     "finance_unit_economics. An empty aging report is a valid result. Never ask "
-    "the founder for accounting-software credentials. Never write placeholder brackets "
-    "such as [Insert …]."
+    "the founder for accounting-software credentials. Visitor sources and GA4 are "
+    "web_sessions (referrers), web_conversions (events) and web_gtm_status; zero "
+    "sessions is a valid connected result. Never ask the founder for GA4 console "
+    "access. Never write placeholder brackets such as [Insert …]."
 )
 
 
