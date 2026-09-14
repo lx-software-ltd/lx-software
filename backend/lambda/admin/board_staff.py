@@ -956,7 +956,9 @@ def op_staff_cancel_task(ctx: board_tools.ToolContext, args: dict[str, Any]) -> 
     reason = str(args.get("reason") or "").strip()
     cancelled = cancel_task(ctx.table, str(task["taskId"]), ctx.owner_sub or ctx.persona_id)
     if reason:
-        cancelled["failureReason"] = f"cancelled by {ctx.persona_id or ctx.owner_sub}: {reason}"[:300]
+        prior = str(cancelled.get("failureReason") or "").strip()
+        extra = f"{ctx.persona_id or ctx.owner_sub}: {reason}"
+        cancelled["failureReason"] = (f"{prior}; {extra}" if prior else f"cancelled by {extra}")[:300]
         board_store.put_task(ctx.table, cancelled)
     return public_task(cancelled)
 
@@ -1309,13 +1311,21 @@ def cancel_task(table: Any, task_id: str, by_sub: str) -> dict[str, Any]:
     task = board_store.get_task(table, task_id)
     if not task:
         raise StaffError("Task not found")
-    if task.get("status") in TERMINAL_STATUSES:
+    status = str(task.get("status") or "")
+    if status == "cancelled":
         return task
+    if status == "delivered":
+        raise StaffError("Delivered tasks cannot be cancelled", code="conflict")
     now = board_store.now_iso()
+    if status == "failed":
+        task["cancelledFrom"] = "failed"
+        prior = str(task.get("failureReason") or "").strip()
+        task["failureReason"] = (f"{prior}; cancelled by {by_sub}" if prior else f"cancelled by {by_sub}")[:300]
+    else:
+        task["failureReason"] = f"cancelled by {by_sub}"
     task["status"] = "cancelled"
     task["finishedAt"] = now
     task["updatedAt"] = now
-    task["failureReason"] = f"cancelled by {by_sub}"
     task["expiresAt"] = int(datetime.now(timezone.utc).timestamp()) + BOARD_STAFF_RETENTION_DAYS * 86400
     board_store.put_task(table, task)
     return task

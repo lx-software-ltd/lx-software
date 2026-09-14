@@ -375,7 +375,16 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
     const task = state.tasks.find((t) => t.taskId === taskId);
     if (!task) return json({ message: "Task not found" }, 404);
     if (rest[1] === "cancel" && method === "POST") {
-      Object.assign(task, { status: "cancelled", updatedAt: new Date().toISOString() });
+      if (task.status === "cancelled") return json({ task });
+      if (task.status === "delivered") return json({ message: "Delivered tasks cannot be cancelled" }, 409);
+      const prior = String(task.failureReason || "").trim();
+      const fromFailed = task.status === "failed";
+      Object.assign(task, {
+        status: "cancelled",
+        cancelledFrom: fromFailed ? "failed" : undefined,
+        failureReason: fromFailed && prior ? `${prior}; cancelled by mock` : `cancelled by mock`,
+        updatedAt: new Date().toISOString(),
+      });
       return json({ task });
     }
     if (rest[1] === "review" && method === "POST") {

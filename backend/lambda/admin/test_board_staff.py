@@ -974,6 +974,70 @@ class StaffRouteTests(BoardTestCase):
             status, again = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
             self.assertEqual(status, 409)
 
+    def test_cancel_failed_task_dismisses_it(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            _enable_staff(self.table)
+            status, created = self.call(
+                "/siu-tin-dei/board/tasks",
+                "POST",
+                {"assignee": "cfo", "brief": "List our three biggest monthly costs from AWS and finance", "deliverableType": "markdown"},
+            )
+            self.assertEqual(status, 201)
+            task_id = created["task"]["taskId"]
+            row = board_store.get_task(self.table, task_id)
+            row.update({"status": "failed", "failureReason": "step limit"})
+            board_store.put_task(self.table, row)
+            status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/cancel", "POST", {})
+            self.assertEqual(status, 200)
+            self.assertEqual(body["task"]["status"], "cancelled")
+            self.assertIn("step limit", body["task"].get("failureReason") or "")
+            self.assertEqual(board_store.get_task(self.table, task_id)["cancelledFrom"], "failed")
+            row = board_store.get_task(self.table, task_id)
+            row["status"] = "delivered"
+            row.pop("failureReason", None)
+            board_store.put_task(self.table, row)
+            status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/cancel", "POST", {})
+            self.assertEqual(status, 409)
+
+    def test_persona_cancel_appends_reason_and_refuses_delivered(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            settings = _enable_staff(self.table)
+            status, created = self.call(
+                "/siu-tin-dei/board/tasks",
+                "POST",
+                {"assignee": "cfo", "brief": "List our three biggest monthly costs from AWS and finance", "deliverableType": "markdown"},
+            )
+            self.assertEqual(status, 201)
+            task_id = created["task"]["taskId"]
+            row = board_store.get_task(self.table, task_id)
+            row.update({"status": "failed", "failureReason": "step limit", "managerId": "cfo"})
+            board_store.put_task(self.table, row)
+            ctx = board_tools.ToolContext(
+                table=self.table,
+                settings=settings,
+                persona_id="cfo",
+                display_name="CFO",
+                kind="chat",
+                actor="persona",
+                owner_sub="cfo",
+            )
+            out = board_staff.op_staff_cancel_task(ctx, {"taskId": task_id, "reason": "superseded"})
+            self.assertEqual(out["status"], "cancelled")
+            reason = out.get("failureReason") or ""
+            self.assertIn("step limit", reason)
+            self.assertIn("superseded", reason)
+            stored = board_store.get_task(self.table, task_id)
+            self.assertEqual(stored["cancelledFrom"], "failed")
+            self.assertIn("step limit", stored.get("failureReason") or "")
+            stored["status"] = "delivered"
+            stored.pop("failureReason", None)
+            board_store.put_task(self.table, stored)
+            with self.assertRaises(board_staff.StaffError) as raised:
+                board_staff.op_staff_cancel_task(ctx, {"taskId": task_id})
+            self.assertEqual(raised.exception.code, "conflict")
+
     def test_retry_resets_usage_after_task_budget(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
