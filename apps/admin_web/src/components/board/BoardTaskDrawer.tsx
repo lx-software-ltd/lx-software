@@ -110,7 +110,7 @@ export function BoardTaskDrawer({
                 disabled={isMutating}
                 onClick={() => onCancel(task.taskId)}
               >
-                Cancel
+                {task.status === "failed" ? "Dismiss" : "Cancel"}
               </button>
             ) : null}
           </>

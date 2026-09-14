@@ -5,6 +5,7 @@ import { BoardTasksSection } from "./BoardTasksSection";
 
 const retryMutate = vi.fn();
 const cancelMutate = vi.fn();
+const cancelState = { isPending: false, error: null as unknown, mutate: cancelMutate };
 
 const failedTask: BoardTask = {
   taskId: "task-failed",
@@ -56,7 +57,7 @@ vi.mock("../../hooks/useBoardTasks", () => ({
     isError: false,
     error: null,
     create: { isPending: false, error: null, mutate: vi.fn() },
-    cancel: { isPending: false, error: null, mutate: cancelMutate },
+    cancel: cancelState,
     review: { isPending: false, error: null, mutate: vi.fn() },
     retry: { isPending: false, error: null, mutate: retryMutate },
   }),
@@ -64,7 +65,7 @@ vi.mock("../../hooks/useBoardTasks", () => ({
 }));
 
 describe("BoardTasksSection", () => {
-  it("shows failed tasks and can retry or cancel them", () => {
+  it("shows failed tasks and can retry or dismiss them", () => {
     render(<BoardTasksSection />);
     expect(screen.getByText("New task")).toBeInTheDocument();
     expect(screen.getByText(/Failed \(1\)/)).toBeInTheDocument();
@@ -72,7 +73,14 @@ describe("BoardTasksSection", () => {
     expect(screen.getByText("step limit")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(retryMutate).toHaveBeenCalledWith("task-failed");
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(cancelMutate).toHaveBeenCalledWith("task-failed");
+  });
+
+  it("surfaces a dismiss error above the board when the drawer is closed", () => {
+    cancelState.error = new Error("Delivered tasks cannot be cancelled");
+    render(<BoardTasksSection />);
+    expect(screen.getByText("Delivered tasks cannot be cancelled")).toBeInTheDocument();
+    cancelState.error = null;
   });
 });

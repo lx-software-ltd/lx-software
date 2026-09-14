@@ -58,6 +58,7 @@ export function BoardTasksSection({ focusTaskId = null }: { readonly focusTaskId
 
       {errorText(tasks.error) ? <div className="alert alert-danger py-2 small">{errorText(tasks.error)}</div> : null}
       {errorText(tasks.retry.error) ? <div className="alert alert-danger py-2 small">{errorText(tasks.retry.error)}</div> : null}
+      {errorText(tasks.cancel.error) ? <div className="alert alert-danger py-2 small">{errorText(tasks.cancel.error)}</div> : null}
       <div className="row g-3">
         {COLUMNS.map((col) => {
           const items = tasks.tasks.filter((t) => t.status === col.id);
@@ -140,7 +141,7 @@ function TaskCard({
           ) : null}
           {onCancel ? (
             <button type="button" className="btn btn-sm btn-outline-danger" disabled={busy} onClick={onCancel}>
-              {isCancelling ? "Cancelling…" : "Cancel"}
+              {isCancelling ? "Dismissing…" : "Dismiss"}
             </button>
           ) : null}
         </div>

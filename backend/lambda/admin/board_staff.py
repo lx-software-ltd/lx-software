@@ -956,7 +956,9 @@ def op_staff_cancel_task(ctx: board_tools.ToolContext, args: dict[str, Any]) -> 
     reason = str(args.get("reason") or "").strip()
     cancelled = cancel_task(ctx.table, str(task["taskId"]), ctx.owner_sub or ctx.persona_id)
     if reason:
-        cancelled["failureReason"] = f"cancelled by {ctx.persona_id or ctx.owner_sub}: {reason}"[:300]
+        prior = str(cancelled.get("failureReason") or "").strip()
+        extra = f"{ctx.persona_id or ctx.owner_sub}: {reason}"
+        cancelled["failureReason"] = (f"{prior}; {extra}" if prior else f"cancelled by {extra}")[:300]
         board_store.put_task(ctx.table, cancelled)
     return public_task(cancelled)
 
