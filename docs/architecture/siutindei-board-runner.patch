@@ -1,0 +1,127 @@
+diff --git a/.github/workflows/board-agent.yml b/.github/workflows/board-agent.yml
+index 1b11172..6e3365e 100644
+--- a/.github/workflows/board-agent.yml
++++ b/.github/workflows/board-agent.yml
+@@ -17,10 +17,13 @@ on:
+         required: true
+         type: string
+ 
+-# Secrets on this runner: only CURSOR_API_KEY and GITHUB_TOKEN. No AWS.
++# Secrets: CURSOR_API_KEY. Optional BOARD_PR_TOKEN (PAT or GitHub App) so the
++# draft PR is not opened with GITHUB_TOKEN — those PRs do not start lint/test
++# and often sit in action_required. No AWS.
+ permissions:
+   contents: write
+   pull-requests: write
++  actions: write
+ 
+ concurrency:
+   group: board-agent-${{ inputs.task_id }}
+@@ -40,6 +43,7 @@ jobs:
+         with:
+           ref: staging
+           fetch-depth: 0
++          token: ${{ secrets.BOARD_PR_TOKEN || secrets.GITHUB_TOKEN }}
+ 
+       - name: Branch
+         env:
+@@ -121,7 +125,7 @@ jobs:
+ 
+       - name: Commit and draft PR
+         env:
+-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          GH_TOKEN: ${{ secrets.BOARD_PR_TOKEN || secrets.GITHUB_TOKEN }}
+           TASK_ID: ${{ inputs.task_id }}
+           ISSUE: ${{ inputs.issue }}
+         run: |
+diff --git a/docs/architecture/executive-board-autonomy-siutindei-appendix-a.md b/docs/architecture/executive-board-autonomy-siutindei-appendix-a.md
+index 6cc688a..109f3bf 100644
+--- a/docs/architecture/executive-board-autonomy-siutindei-appendix-a.md
++++ b/docs/architecture/executive-board-autonomy-siutindei-appendix-a.md
+@@ -7,6 +7,11 @@ Cursor CLI is pinned in `board-agent.yml` via `CURSOR_CLI_VERSION`.
+ `board-agent` skips the draft PR when the agent makes no commits
+ (GitHub rejects empty `staging` ↔ `board/*` PRs). Org Actions must
+ allow read/write `GITHUB_TOKEN` and “create and approve pull requests”.
++Set repo secret `BOARD_PR_TOKEN` (fine-grained PAT or GitHub App) so
++`board-agent` opens the draft PR as that actor; PRs opened with
++`GITHUB_TOKEN` often never start lint/test (or sit in `action_required`).
++Lockfile diffs (`package-lock.json`, `pubspec.lock`, …) are excluded from
++the 400-line runner cap so Dependabot bumps can land.
+ 
+ This file is for whoever owns **lx-software-ltd/siutindei**. The lx-software
+ admin stack dispatches these workflows; it cannot create them from this
+diff --git a/scripts/ci/board_policy.py b/scripts/ci/board_policy.py
+index 81daad0..140eeef 100755
+--- a/scripts/ci/board_policy.py
++++ b/scripts/ci/board_policy.py
+@@ -20,6 +20,23 @@ CONTENT_ROOT = "content"
+ LINE_LIMIT = 400
+ CONTENT_LINE_LIMIT = 2000
+ CI_OK = frozenset({"success", "neutral", "skipped"})
++LOCKFILE_NAMES = frozenset(
++    {
++        "package-lock.json",
++        "yarn.lock",
++        "pnpm-lock.yaml",
++        "npm-shrinkwrap.json",
++        "poetry.lock",
++        "Pipfile.lock",
++        "Cargo.lock",
++        "Gemfile.lock",
++        "composer.lock",
++        "pubspec.lock",
++        "go.sum",
++        "uv.lock",
++        "flake.lock",
++    }
++)
+ 
+ 
+ def path_parts(path: str) -> list[str]:
+@@ -52,9 +69,16 @@ def file_paths(row: dict[str, Any]) -> list[str]:
+     return out
+ 
+ 
++def path_is_lockfile(path: str) -> bool:
++    parts = path_parts(path)
++    return bool(parts) and parts[-1] in LOCKFILE_NAMES
++
++
+ def changed_lines(files: list[dict[str, Any]]) -> int:
+     total = 0
+     for row in files:
++        if any(path_is_lockfile(path) for path in file_paths(row)):
++            continue
+         if row.get("changes") is not None:
+             try:
+                 total += int(row.get("changes") or 0)
+diff --git a/tests/test_board_policy.py b/tests/test_board_policy.py
+index 3ad584f..75d1496 100644
+--- a/tests/test_board_policy.py
++++ b/tests/test_board_policy.py
+@@ -64,6 +64,25 @@ def test_rename_from_protected_path_is_blocked() -> None:
+     )
+ 
+ 
++def test_lockfile_lines_are_excluded() -> None:
++    files = [
++        {
++            "filename": "apps/public_www/package-lock.json",
++            "additions": 1800,
++            "deletions": 165,
++            "changes": 1965,
++        },
++        {
++            "filename": "apps/public_www/package.json",
++            "additions": 1,
++            "deletions": 1,
++            "changes": 2,
++        },
++    ]
++    assert board_policy.changed_lines(files) == 2
++    assert board_policy.evaluate_files(files, kind="fix") is None
++
++
+ def test_feature_line_limit() -> None:
+     files = [
+         {

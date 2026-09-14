@@ -4,6 +4,31 @@ This file is for whoever owns **lx-software-ltd/siutindei**. The lx-software
 admin stack dispatches these workflows; it cannot create them from this
 repository.
 
+Live copies live in that repo:
+`.github/workflows/board-agent.yml`,
+`board-merge-staging.yml`,
+`board-promote.yml`, and
+`scripts/ci/board_policy.py` (mirrors `board_code.py` path/size guards).
+
+Set repo secret `BOARD_PR_TOKEN` (fine-grained PAT or GitHub App with
+contents + pull-requests) so `board-agent` opens the draft PR as that
+actor. PRs opened with `GITHUB_TOKEN` often never start lint/test and
+sit in `action_required`. Org Actions must allow read/write
+`GITHUB_TOKEN` and “create and approve pull requests”.
+
+Lockfile diffs (`package-lock.json`, `pubspec.lock`, `yarn.lock`, …)
+are excluded from the 400-line runner cap so Dependabot bumps can land.
+
+This admin repo cannot push to `lx-software-ltd/siutindei`. Apply the
+lockfile + `BOARD_PR_TOKEN` change set from
+[`siutindei-board-runner.patch`](siutindei-board-runner.patch):
+
+```
+git -C /path/to/siutindei apply /path/to/lx-software/docs/architecture/siutindei-board-runner.patch
+```
+
+Then set the `BOARD_PR_TOKEN` repo secret.
+
 ## Branch protection
 
 1. Create `staging` from `main`. Protect it: no force push; allow merges by
@@ -33,6 +58,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 jobs:
   run:
     timeout-minutes: 30
@@ -41,6 +67,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: staging
+          token: ${{ secrets.BOARD_PR_TOKEN || secrets.GITHUB_TOKEN }}
       - name: Branch
         run: git checkout -B "board/${{ inputs.task_id }}"
       - name: Write brief
@@ -56,7 +83,7 @@ jobs:
         run: # repo test command
       - name: Commit and draft PR
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.BOARD_PR_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           git add -A
           git commit -m "board: #${{ inputs.issue }} $(head -n 1 brief.txt)" || true
@@ -68,8 +95,8 @@ jobs:
 Task: ${{ inputs.task_id }}"
 ```
 
-Secrets on the runner: **only** `CURSOR_API_KEY` and `GITHUB_TOKEN`. No AWS
-credentials.
+Secrets on the runner: `CURSOR_API_KEY` plus `BOARD_PR_TOKEN` (falls back
+to `GITHUB_TOKEN`). No AWS credentials.
 
 Repo-level `AGENTS.md` must require acceptance-criteria discipline and forbid
 touching `**/auth/**`, `**/payments/**`, `**/migrations/**`, `infra/**`,

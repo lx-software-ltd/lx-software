@@ -18,10 +18,25 @@ _IGNORABLE_TOOL_ERROR_MARKERS = (
     " not found in ",
     "was not found",
     "not found or token lacks",
+    "breaker tripped",
+    "this brief requires evidence",
+    "you already have those tools",
+    "deliverable still has placeholder",
+    "deliverable is larger than",
+    "wait for it to resume before continuing",
 )
+_INTERNAL_TOOLS = frozenset({"task"})
 _TOOL_TRIP_ERRORS = 10
 _TOOL_RESET_ERRORS = 5
 _TOOL_RESET_MIN_AGE = timedelta(minutes=30)
+_TOOL_AUTO_RESET_LIMIT = 1
+
+
+def _auto_reset_count(row: dict[str, Any] | None) -> int:
+    try:
+        return max(0, int((row or {}).get("autoResetCount") or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def trip(table: Any, name: str, reason: str) -> dict[str, Any]:
@@ -36,6 +51,7 @@ def trip(table: Any, name: str, reason: str) -> dict[str, Any]:
         "trippedAt": now,
         "resetBy": "",
         "resetAt": None,
+        "autoResetCount": _auto_reset_count(existing),
     }
     board_store.put_breaker(table, name, doc)
     try:
@@ -48,12 +64,18 @@ def trip(table: Any, name: str, reason: str) -> dict[str, Any]:
 
 def reset(table: Any, name: str, by_sub: str) -> dict[str, Any]:
     existing = board_store.get_breaker(table, name) or {"name": name}
+    count = _auto_reset_count(existing)
+    if by_sub == "auto":
+        count += 1
+    else:
+        count = 0
     doc = {
         **existing,
         "name": name,
         "tripped": False,
         "resetBy": by_sub,
         "resetAt": board_store.now_iso(),
+        "autoResetCount": count,
     }
     board_store.put_breaker(table, name, doc)
     try:
@@ -77,7 +99,7 @@ def is_tripped(table: Any, name: str) -> bool:
 def write_blocked(table: Any, op: Any) -> dict[str, Any] | None:
     """Structured error when a write op is stopped by a channel or tool breaker."""
     tool_id = str(getattr(op, "tool_id", "") or "")
-    if tool_id and is_tripped(table, f"tool:{tool_id}"):
+    if tool_id and tool_id not in _INTERNAL_TOOLS and is_tripped(table, f"tool:{tool_id}"):
         return {"error": "breaker tripped", "breaker": f"tool:{tool_id}"}
     channel = _op_channel(op)
     if channel and is_tripped(table, f"channel:{channel}"):
@@ -191,11 +213,13 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
         if any(marker in preview for marker in _IGNORABLE_TOOL_ERROR_MARKERS):
             continue
         tool_id = str(call.get("toolId") or "")
-        if not tool_id:
+        if not tool_id or tool_id in _INTERNAL_TOOLS:
             continue
         errors[tool_id] = errors.get(tool_id, 0) + 1
     now = datetime.now(timezone.utc)
     for tool_id, count in errors.items():
+        if tool_id in _INTERNAL_TOOLS:
+            continue
         if count >= _TOOL_TRIP_ERRORS and not is_tripped(table, f"tool:{tool_id}"):
             trip(table, f"tool:{tool_id}", f"{count} errors in the last hour")
             tripped.append(f"tool:{tool_id}")
@@ -204,6 +228,11 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
         if not name.startswith("tool:") or not row.get("tripped"):
             continue
         tool_id = name[5:]
+        if tool_id in _INTERNAL_TOOLS:
+            reset(table, name, "auto")
+            continue
+        if _auto_reset_count(row) >= _TOOL_AUTO_RESET_LIMIT:
+            continue
         if errors.get(tool_id, 0) >= _TOOL_RESET_ERRORS:
             continue
         tripped_at = _parse_iso(str(row.get("trippedAt") or ""))

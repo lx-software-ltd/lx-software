@@ -488,6 +488,66 @@ class StaffStepTests(ToolsTestCase):
         reviews = board_store.list_task_reviews(self.table, task["taskId"])
         self.assertEqual(reviews[0]["verdict"], "accept")
 
+    def test_task_finish_accepts_openrouter_tool_call_id_alias(self) -> None:
+        task = self._queued_task()
+        board_store.claim_task_step(self.table, task["taskId"], 0)
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "aws-hex",
+                "toolCallId": "call_xBcJqwPl7xTCkUM4TCnz6XgI",
+                "op": "aws_monthly_cost",
+                "context": {"taskId": task["taskId"]},
+                "taskId": task["taskId"],
+            },
+        )
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "fin-hex",
+                "toolCallId": "call_c5cyCLCJraBvdZ3cR9qcuNep",
+                "op": "finance_aging_report",
+                "context": {"taskId": task["taskId"]},
+                "taskId": task["taskId"],
+            },
+        )
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=board_store.load_settings(self.table),
+            persona_id="cfo",
+            display_name="CFO",
+            kind="task",
+            task_id=task["taskId"],
+            actor="persona",
+        )
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "Cited model tool_call_ids.",
+                    "deliverableType": "markdown",
+                    "deliverable": "# Costs\n\n- Lambda",
+                    "evidence": ["call_xBcJqwPl7xTCkUM4TCnz6XgI", "call_c5cyCLCJraBvdZ3cR9qcuNep"],
+                    "openQuestions": [],
+                    "confidence": "high",
+                },
+            )
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "review")
+        self.assertEqual(latest["evidence"], ["aws-hex", "fin-hex"])
+
+    def test_canonical_evidence_keeps_step_only_call_ids(self) -> None:
+        task = self._queued_task()
+        board_store.put_task_step(
+            self.table,
+            task["taskId"],
+            {"seq": 0, "attempt": 1, "callIds": ["step-only-hex"]},
+        )
+        kept = board_staff._canonical_evidence_ids(  # noqa: SLF001
+            self.table, task, ["step-only-hex", "unknown"]
+        )
+        self.assertEqual(kept, ["step-only-hex"])
+
     def test_review_unparsable_verdict_returns(self) -> None:
         task = self._queued_task()
         board_store.claim_task_step(self.table, task["taskId"], 0)

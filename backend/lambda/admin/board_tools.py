@@ -25,7 +25,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Callable
@@ -138,6 +138,8 @@ class ToolContext:
     owner_sub: str = ""
     task_id: str = ""
     seat_id: str = ""
+    # OpenRouter / model ``tool_call_id`` for this invocation (staff evidence alias).
+    llm_tool_call_id: str = ""
     usage_sink: Callable[[dict[str, Any]], None] | None = None
     # ``time.monotonic()`` value after which no new op should start and running
     # ops are cut short; 0 means "no loop deadline" (owner approvals, jobs).
@@ -3075,9 +3077,12 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
             "taskId": ctx.task_id,
             "seatId": ctx.seat_id,
             "classKey": class_key,
+            **({"toolCallId": ctx.llm_tool_call_id} if ctx.llm_tool_call_id else {}),
         },
     )
     outcome.call_id = str(record["callId"])
+    if isinstance(outcome.result, dict) and outcome.call_id:
+        outcome.result = {**outcome.result, "callId": outcome.call_id}
     _log_event(
         "info",
         tag="board_tool_call",
@@ -3141,6 +3146,16 @@ def create_approval(
             new_args = {k: v for k, v in (arguments or {}).items() if k != "reason"}
             if existing_args == new_args:
                 return existing
+            if op.name == "code_run_task" and _same_code_run_target(existing.get("arguments") or {}, arguments):
+                return _refresh_pending_approval(
+                    ctx,
+                    op,
+                    existing,
+                    arguments,
+                    summary=summary,
+                    downgrade_reason=downgrade_reason,
+                    fingerprint=fingerprint,
+                )
     if len(pending) >= BOARD_MAX_PENDING_APPROVALS:
         raise ToolPermissionError("Too many pending approvals; ask the founder to review the queue first.")
     now = board_store.now_iso()
@@ -3379,6 +3394,44 @@ def parse_prose_tool_calls(text: str) -> list[ToolCall]:
     ]
 
 
+def _same_code_run_target(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    try:
+        left_issue = int(left.get("issueNumber") or 0)
+        right_issue = int(right.get("issueNumber") or 0)
+    except (TypeError, ValueError):
+        return False
+    return bool(left_issue) and left_issue == right_issue
+
+
+def _refresh_pending_approval(
+    ctx: ToolContext,
+    op: ToolOp,
+    existing: dict[str, Any],
+    arguments: dict[str, Any],
+    *,
+    summary: str,
+    downgrade_reason: str,
+    fingerprint: str,
+) -> dict[str, Any]:
+    """Keep one pending row but show the latest brief/args to the founder."""
+    now = board_store.now_iso()
+    updated = {
+        **existing,
+        "arguments": arguments,
+        "summary": summary,
+        "reason": str(arguments.get("reason") or existing.get("reason") or "")[:400],
+        "fingerprint": fingerprint,
+        "updatedAt": now,
+    }
+    preview = render_preview(ctx, op, arguments)
+    if preview is not None:
+        updated["preview"] = preview
+    if downgrade_reason:
+        updated["downgradeReason"] = downgrade_reason[:300]
+    board_store.put_approval(ctx.table, updated)
+    return updated
+
+
 def _run_one(
     ctx: ToolContext,
     by_name: dict[str, ToolOp],
@@ -3388,8 +3441,9 @@ def _run_one(
     op = by_name.get(tc.name)
     if op is None:
         return _tool_message(tc, {"error": f"Unknown tool {tc.name}"})
+    bound = replace(ctx, llm_tool_call_id=str(tc.id or ""))
     try:
-        outcome = execute_call(ctx, op, tc.arguments)
+        outcome = execute_call(bound, op, tc.arguments)
     except ToolPermissionError as exc:
         return _tool_message(tc, {"error": str(exc)})
     calls.append(outcome.public(op))
