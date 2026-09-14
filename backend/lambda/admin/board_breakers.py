@@ -9,6 +9,14 @@ import board_hk
 import board_store
 from http_common import _log_event
 
+_IGNORABLE_TOOL_ERROR_MARKERS = (
+    "not configured",
+    "is not set",
+    "invalid arguments",
+    "unknown argument",
+    "not found",
+)
+
 
 def trip(table: Any, name: str, reason: str) -> dict[str, Any]:
     existing = board_store.get_breaker(table, name) or {}
@@ -169,7 +177,7 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
         preview = " ".join(
             str(call.get(k) or "") for k in ("resultPreview", "summary", "error")
         ).lower()
-        if "not configured" in preview or "is not set" in preview:
+        if any(marker in preview for marker in _IGNORABLE_TOOL_ERROR_MARKERS):
             continue
         tool_id = str(call.get("toolId") or "")
         if not tool_id:
@@ -179,6 +187,13 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
         if count >= 10 and not is_tripped(table, f"tool:{tool_id}"):
             trip(table, f"tool:{tool_id}", f"{count} errors in the last hour")
             tripped.append(f"tool:{tool_id}")
+    for row in board_store.list_breakers(table):
+        name = str(row.get("name") or "")
+        if not name.startswith("tool:") or not row.get("tripped"):
+            continue
+        tool_id = name[5:]
+        if errors.get(tool_id, 0) < 10:
+            reset(table, name, "auto")
 
     try:
         import board_outreach

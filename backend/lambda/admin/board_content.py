@@ -518,6 +518,27 @@ def assisted_due(table: Any, settings: dict[str, Any], *, now_iso: str | None = 
     return out
 
 
+def _readout_unconfigured_reason() -> str | None:
+    missing: list[str] = []
+    try:
+        import board_meta
+
+        if not board_meta.page_id() and not board_meta.ig_user_id():
+            missing.append("Meta page/IG")
+    except Exception:
+        missing.append("Meta page/IG")
+    try:
+        import board_web
+
+        if not board_web.configured():
+            missing.append("GA4")
+    except Exception:
+        missing.append("GA4")
+    if not missing:
+        return None
+    return " and ".join(missing) + " not configured"
+
+
 def weekly_readout(table: Any, settings: dict[str, Any]) -> dict[str, Any] | None:
     if not board_staff.enabled(settings):
         return None
@@ -525,6 +546,22 @@ def weekly_readout(table: Any, settings: dict[str, Any]) -> dict[str, Any] | Non
     from board_triage import find_open_event_task
 
     if find_open_event_task(table, "duty", f"content-readout:{today}"):
+        return None
+    skip = _readout_unconfigured_reason()
+    if skip:
+        try:
+            import board_duties
+
+            board_duties._maybe_config_gap_task(  # noqa: SLF001
+                table,
+                settings,
+                assignee="cmo",
+                gap_id="content-readout",
+                brief=f"{skip}. Skipped weekly content readout. Configure Meta page/IG and GA4 or deactivate growth-specialist.",
+            )
+        except Exception as exc:
+            _log_event("info", tag="board_content_readout_config_gap_failed", error=str(exc)[:200])
+        _log_event("info", tag="board_content_readout_skipped_unconfigured", reason=skip[:200])
         return None
     brief = (
         "Write last week's content readout in Markdown. End with JSON "

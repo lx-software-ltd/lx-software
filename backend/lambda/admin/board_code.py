@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import board_github
@@ -302,7 +303,7 @@ def parse_review_verdict(text: str) -> dict[str, Any]:
 
 
 def _find_task(table: Any, kind: str, event_id: str, *, statuses: tuple[str, ...] | None = None) -> dict[str, Any] | None:
-    wanted = statuses or ("queued", "running", "review", "delivered", "needs_owner")
+    wanted = statuses or ("queued", "running", "waiting_approval", "review", "delivered", "needs_owner")
     for status in wanted:
         for task in board_store.list_tasks(table, status, limit=200):
             ref = task.get("eventRef") or {}
@@ -525,12 +526,12 @@ def _sync_staging_brief(preview: dict[str, Any], delegates: list[str]) -> str:
             "You may staff_assign this same brief to "
             + ", ".join(delegates)
             + " (your staff tool is propose by default, so that hand-off lands in Approvals "
-            "unless the founder has given you act), then task_finish naming who you handed it to."
+            "unless the founder has given you act)."
         )
     else:
         handoff = (
-            "No architect or engineer seat is active. Do the rebase yourself, ask the founder "
-            "to activate a seat, or task_finish with the exact git commands and open questions."
+            "No architect or engineer seat is active. Call code_sync_staging yourself or ask "
+            "the founder to activate a seat."
         )
     diverge = ""
     if ahead and behind:
@@ -542,10 +543,12 @@ def _sync_staging_brief(preview: dict[str, Any], delegates: list[str]) -> str:
         f"siutindei staging is {behind} commit(s) behind main "
         f"(compare status={status}, aheadBy={ahead}).{compare}{diverge} "
         "You own keeping staging current with main so the promote path can run. "
-        "Fast-forward or rebase staging onto main, then confirm github compare "
-        "main...staging reports behindBy=0. "
+        "Call code_sync_staging (merges main into staging; a propose-level call becomes an "
+        "Approval). Then call github_compare base=main head=staging and only task_finish when "
+        "behindBy=0. github_list_commits without sha lists the default branch — do not use it "
+        "to claim staging is current. "
         f"{handoff} "
-        "Deliverable: markdown with behind/ahead counts, what you did or who you delegated to, "
+        "Deliverable: markdown with behind/ahead counts from github_compare, the merge result, "
         "and the compare URL."
     )
 
@@ -629,6 +632,16 @@ def staging_preview() -> dict[str, Any]:
         return {"error": str(exc)[:200], "commits": [], "canPromote": False, "behindBy": 0, "aheadBy": 0}
 
 
+def staging_still_behind() -> dict[str, Any] | None:
+    """Live compare used when accepting a sync-staging task. None means current or unreadable."""
+    preview = staging_preview()
+    if preview.get("error"):
+        return None
+    if int(preview.get("behindBy") or 0) > 0:
+        return preview
+    return None
+
+
 def queue_promote_approval(table: Any, settings: dict[str, Any], user_sub: str) -> dict[str, Any]:
     import board_tools
 
@@ -696,6 +709,78 @@ def poll_runs(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
     return created
 
 
+_SKIP_ISSUE_LABELS = frozenset({"wontfix", "duplicate", "invalid"})
+_IMPLEMENT_ISSUE_LABELS = frozenset(
+    {"security", "high", "high-priority", "bug", "enhancement", "backend", "performance", "dependencies"}
+)
+_AUTO_FILED_TITLE_PREFIXES = ("NOTE:", "TODO:", "SECURITY NOTE:")
+BOARD_READY_LABEL = "board-ready"
+
+
+def _issue_label_names(issue: dict[str, Any]) -> set[str]:
+    names: set[str] = set()
+    for lab in issue.get("labels") or []:
+        if isinstance(lab, dict):
+            names.add(str(lab.get("name") or "").strip().lower())
+        elif isinstance(lab, str):
+            names.add(lab.strip().lower())
+    return {n for n in names if n}
+
+
+def _issue_assignable(issue: dict[str, Any]) -> bool:
+    if not isinstance(issue, dict) or issue.get("pull_request"):
+        return False
+    labels = _issue_label_names(issue)
+    if labels & _SKIP_ISSUE_LABELS:
+        return False
+    title = str(issue.get("title") or "")
+    if title.startswith(_AUTO_FILED_TITLE_PREFIXES):
+        return False
+    if BOARD_READY_LABEL in labels:
+        return True
+    if "documentation" in labels and not (labels & _IMPLEMENT_ISSUE_LABELS):
+        return False
+    if labels & _IMPLEMENT_ISSUE_LABELS:
+        return True
+    created = str(issue.get("created_at") or "")[:10]
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).strftime("%Y-%m-%d")
+    return bool(created) and created >= cutoff
+
+
+def ensure_board_ready_label() -> None:
+    repo = _repo()
+    existing = _gh("GET", f"/repos/{repo}/labels/{BOARD_READY_LABEL}")
+    if isinstance(existing, dict) and existing.get("name"):
+        return
+    try:
+        _gh(
+            "POST",
+            f"/repos/{repo}/labels",
+            {
+                "name": BOARD_READY_LABEL,
+                "color": "0E8A16",
+                "description": "Ready for an engineer to implement via code_run_task",
+            },
+        )
+    except board_github.GitHubSnapshotError as exc:
+        _log_event("info", tag="board_code_label_ensure_failed", error=str(exc)[:200])
+
+
+def _list_ready_issues() -> list[dict[str, Any]]:
+    repo = _repo()
+    labeled = _gh(
+        "GET",
+        f"/repos/{repo}/issues?state=open&labels={BOARD_READY_LABEL}&sort=created&direction=asc&per_page=20",
+    ) or []
+    ready = [i for i in labeled if isinstance(i, dict) and not i.get("pull_request")] if isinstance(labeled, list) else []
+    if ready:
+        return ready
+    raw = _gh("GET", f"/repos/{repo}/issues?state=open&sort=created&direction=asc&per_page=50") or []
+    if not isinstance(raw, list):
+        return []
+    return [i for i in raw if _issue_assignable(i)]
+
+
 def maybe_assign_ready_issues(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
     if not board_staff.enabled(settings):
         return []
@@ -706,13 +791,12 @@ def maybe_assign_ready_issues(table: Any, settings: dict[str, Any]) -> list[dict
         return []
     if len(open_prs) >= MAX_OPEN_BOARD_PRS:
         return []
-    repo = _repo()
     try:
-        raw = _gh("GET", f"/repos/{repo}/issues?state=open&labels=board-ready&sort=created&direction=asc&per_page=20") or []
+        ensure_board_ready_label()
+        issues = _list_ready_issues()
     except board_github.GitHubSnapshotError as exc:
         _log_event("warning", tag="board_code_list_issues_failed", error=str(exc)[:200])
         return []
-    issues = [i for i in raw if isinstance(i, dict) and not i.get("pull_request")] if isinstance(raw, list) else []
     roster = board_staff.seats_by_id(table, settings)
     engineers = [sid for sid in ("engineer-1", "engineer-2") if (roster.get(sid) or {}).get("isActive")]
     if not engineers:
@@ -750,9 +834,37 @@ def maybe_assign_ready_issues(table: Any, settings: dict[str, Any]) -> list[dict
     return created
 
 
+def op_sync_staging(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
+    """Merge ``main`` into ``staging`` so promote has a current integration branch."""
+    del ctx, args
+    preview = staging_preview()
+    if preview.get("error"):
+        return {"error": preview["error"], "preview": preview}
+    if int(preview.get("behindBy") or 0) <= 0:
+        return {"ok": True, "alreadyCurrent": True, "preview": preview}
+    repo = _repo()
+    try:
+        merged = _gh(
+            "POST",
+            f"/repos/{repo}/merges",
+            {
+                "base": "staging",
+                "head": "main",
+                "commit_message": "board: sync staging with main",
+            },
+        )
+    except board_github.GitHubSnapshotError as exc:
+        return {"error": str(exc)[:200], "preview": preview}
+    after = staging_preview()
+    sha = ""
+    if isinstance(merged, dict):
+        sha = str(merged.get("sha") or "")[:12]
+    return {"ok": True, "mergedSha": sha, "before": preview, "preview": after}
+
+
 def _pick_engineer(table: Any, engineers: list[str]) -> str:
     counts: dict[str, int] = {sid: 0 for sid in engineers}
-    for status in ("queued", "running", "review"):
+    for status in ("queued", "running", "waiting_approval", "review"):
         for task in board_store.list_tasks(table, status, limit=80):
             assignee = str(task.get("assignee") or "")
             if assignee in counts:

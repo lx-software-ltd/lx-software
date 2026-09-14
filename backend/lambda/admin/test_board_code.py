@@ -42,6 +42,8 @@ class FakeActions:
         self.checks: dict[str, list[dict[str, Any]]] = {}
         self.runs: list[dict[str, Any]] = []
         self.issues: list[dict[str, Any]] = []
+        self.labels: set[str] = set()
+        self.merges: list[dict[str, Any]] = []
         self.compare: dict[str, Any] = {"status": "ahead", "ahead_by": 2, "behind_by": 0, "commits": []}
         self.diff = "diff --git a/app.py b/app.py\n+ok\n"
 
@@ -75,7 +77,29 @@ class FakeActions:
         if method == "GET" and path.endswith("/status"):
             return {"state": "pending"}
         if method == "GET" and "/issues?" in path:
-            return list(self.issues)
+            items = [i for i in self.issues if isinstance(i, dict)]
+            if "labels=board-ready" in path:
+                items = [
+                    i
+                    for i in items
+                    if any(
+                        (lab.get("name") if isinstance(lab, dict) else lab) == "board-ready"
+                        for lab in (i.get("labels") or [])
+                    )
+                ]
+            return items
+        if method == "GET" and "/labels/" in path:
+            name = path.rstrip("/").rsplit("/", 1)[-1]
+            return {"name": name} if name in self.labels else None
+        if method == "POST" and path.endswith("/labels"):
+            name = str((body or {}).get("name") or "")
+            if name:
+                self.labels.add(name)
+            return body or {}
+        if method == "POST" and path.endswith("/merges"):
+            self.merges.append(body or {})
+            self.compare = {"status": "identical", "ahead_by": 0, "behind_by": 0, "commits": []}
+            return {"sha": "abcmerged000"}
         if method == "GET" and "/compare/" in path:
             return self.compare
         return {}
@@ -236,7 +260,7 @@ class RunnerTests(BoardTestCase):
         match = next(t for t in tasks if (t.get("eventRef") or {}).get("id") == "rebase-staging")
         self.assertEqual(match["assignee"], "cto")
         self.assertEqual(match["assigneeKind"], "persona")
-        self.assertIn("staff_assign", match["brief"])
+        self.assertIn("code_sync_staging", match["brief"])
         self.assertIn("engineer-1", match["brief"])
         self.assertEqual(self.gh.dispatches, [])
 
@@ -264,8 +288,8 @@ class RunnerTests(BoardTestCase):
 
     def test_assign_oldest_board_ready_when_under_two_prs(self) -> None:
         self.gh.issues = [
-            {"number": 9, "title": "Older ready", "pull_request": None},
-            {"number": 11, "title": "Newer ready"},
+            {"number": 9, "title": "Older ready", "labels": [{"name": "board-ready"}]},
+            {"number": 11, "title": "Newer ready", "labels": [{"name": "board-ready"}]},
         ]
         created = board_code.maybe_assign_ready_issues(self.table, self.settings)
         self.assertEqual(created[0]["eventRef"]["issueNumber"], 9)
@@ -294,6 +318,66 @@ class RunnerTests(BoardTestCase):
             len([t for t in open_again if (t.get("eventRef") or {}).get("id") == "rebase-staging"]),
             1,
         )
+
+    def test_assign_falls_back_to_security_issues_without_board_ready(self) -> None:
+        self.gh.issues = [
+            {
+                "number": 169,
+                "title": "TODO: Replace with area-based filter",
+                "created_at": "2026-02-09T00:00:00Z",
+            },
+            {
+                "number": 486,
+                "title": "Upgrade js-yaml",
+                "labels": [{"name": "security"}, {"name": "high"}],
+                "created_at": "2026-09-14T00:00:00Z",
+            },
+            {
+                "number": 485,
+                "title": "Create Documentation",
+                "labels": [{"name": "documentation"}],
+                "created_at": "2026-09-14T00:00:00Z",
+            },
+        ]
+        created = board_code.maybe_assign_ready_issues(self.table, self.settings)
+        self.assertEqual([t["eventRef"]["issueNumber"] for t in created], [486])
+        self.assertIn(board_code.BOARD_READY_LABEL, self.gh.labels)
+
+    def test_github_compare_and_sync_ops_are_registered(self) -> None:
+        self.assertIn("github_compare", REGISTRY)
+        self.assertIn("code_sync_staging", REGISTRY)
+        self.assertTrue(REGISTRY["code_sync_staging"].is_write)
+        out = board_github.op_compare({"base": "main", "head": "staging"})
+        self.assertEqual(out["behindBy"], int(self.gh.compare.get("behind_by") or 0))
+        self.assertEqual(out["aheadBy"], int(self.gh.compare.get("ahead_by") or 0))
+
+    def test_sync_staging_merges_main_into_staging(self) -> None:
+        self.gh.compare = {"status": "diverged", "ahead_by": 1, "behind_by": 12, "commits": []}
+        out = board_code.op_sync_staging(self.ctx, {"reason": "Keep staging current."})
+        self.assertTrue(out["ok"])
+        self.assertEqual(self.gh.merges[0]["base"], "staging")
+        self.assertEqual(self.gh.merges[0]["head"], "main")
+        self.assertEqual(out["preview"]["behindBy"], 0)
+
+    def test_accept_sync_task_holds_when_staging_still_behind(self) -> None:
+        self.gh.compare = {"status": "diverged", "ahead_by": 1, "behind_by": 12, "commits": []}
+        task = board_staff.create_task(
+            self.table,
+            self.settings,
+            assignee="cto",
+            origin="event",
+            brief="sync staging",
+            deliverable_type="markdown",
+            event_ref={"kind": "ops", "id": "rebase-staging"},
+            created_by="t",
+        )
+        task["status"] = "review"
+        task["flags"] = []
+        task["lastReview"] = {"verdict": "accept"}
+        board_store.put_task(self.table, task)
+        out = board_staff._accept_task(self.table, task, board_store.now_iso())  # noqa: SLF001
+        self.assertEqual(out["status"], "needs_owner")
+        self.assertIn("staging_behind", out.get("flags") or [])
 
     def test_daily_tick_skips_when_staging_current(self) -> None:
         self.gh.compare = {"status": "identical", "ahead_by": 0, "behind_by": 0, "commits": []}

@@ -468,7 +468,7 @@ export const BOARD_TOOL_DEFINITIONS: readonly BoardToolDefinition[] = [
   {
     "id": "code",
     "label": "Engineering runner",
-    "description": "Dispatch the coding runner on board/* draft PRs, review diffs, merge to staging under policy, and propose a staging→main promotion. The board never merges to main.",
+    "description": "Dispatch the coding runner on board/* draft PRs, review diffs, merge to staging under policy, sync staging with main (code_sync_staging), and propose a staging→main promotion. The board never merges to main.",
     "maxLevel": "act",
     "defaults": {
       "ceo": "off",
@@ -688,7 +688,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
       {
         "id": "groom-backlog",
         "cron": "0 11 * * MON",
-        "brief": "Groom the GitHub backlog. Write acceptance criteria on ready issues and label them board-ready. Markdown list of issues you labelled.",
+        "brief": "Groom open GitHub issues. Search github_search_issues query='is:issue is:open -label:board-ready -label:wontfix'. Skip NOTE:/TODO: leftovers and documentation-only issues. For each implementable issue write acceptance criteria (github_comment_issue) and github_set_labels including board-ready plus the existing labels. Markdown list of issues you labelled. There is no backlog label.",
         "deliverableType": "issues",
         "tier": "senior"
       }

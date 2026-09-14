@@ -738,6 +738,12 @@ def _code_promote(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     return board_code.op_promote(ctx, args)
 
 
+def _code_sync_staging(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_code
+
+    return board_code.op_sync_staging(ctx, args)
+
+
 def _code_merge_guard(ctx: ToolContext, args: dict[str, Any]) -> str | None:
     import board_code
 
@@ -898,15 +904,31 @@ def build_registry() -> dict[str, ToolOp]:
             name="github_list_commits",
             tool_id="github",
             kind="read",
-            description="List recent commits on the default branch, optionally for one path.",
+            description="List recent commits. Pass sha or branch (e.g. staging) — without it this is the default branch only.",
             parameters=_obj(
                 {
                     "path": _str_param("Optional file or directory path.", max_len=200),
+                    "sha": _str_param("Commit SHA or branch name (GitHub sha=).", max_len=100),
+                    "branch": _str_param("Alias for sha.", max_len=100),
                     "limit": _int_param("Max results (1-20).", maximum=20),
                 }
             ),
             run=_gh(board_github.op_list_commits),
             summarize=_summ("Listed recent commits"),
+        ),
+        ToolOp(
+            name="github_compare",
+            tool_id="github",
+            kind="read",
+            description="Compare two refs (behindBy / aheadBy / commits). Defaults to main...staging. Use this to verify a staging sync.",
+            parameters=_obj(
+                {
+                    "base": _str_param("Base ref (default main).", max_len=100),
+                    "head": _str_param("Head ref (default staging).", max_len=100),
+                }
+            ),
+            run=_gh(board_github.op_compare),
+            summarize=_summ("Compared {base}...{head}"),
         ),
         ToolOp(
             name="github_get_file",
@@ -992,7 +1014,7 @@ def build_registry() -> dict[str, ToolOp]:
             name="github_set_labels",
             tool_id="github",
             kind="write",
-            description="Replace the labels on an issue or pull request.",
+            description="Replace the labels on an issue or pull request. Include board-ready (keep existing labels) when an issue is ready for code_run_task.",
             parameters=_obj(
                 {
                     "number": _int_param("Issue or PR number.", maximum=100000),
@@ -2271,6 +2293,16 @@ def build_registry() -> dict[str, ToolOp]:
             contexts=("chat", "meeting", "task"),
             always_propose=True,
             action_class="code_production",
+        ),
+        ToolOp(
+            name="code_sync_staging",
+            tool_id="code",
+            kind="write",
+            description="Merge main into staging so staging is current (GitHub merges API). Confirm with github_compare. Does not force-push.",
+            parameters=_obj({"reason": REASON_PARAM}),
+            run=_code_sync_staging,
+            summarize=_summ("Synced staging with main"),
+            contexts=("chat", "meeting", "task"),
         ),
         ToolOp(
             name="staff_assign",

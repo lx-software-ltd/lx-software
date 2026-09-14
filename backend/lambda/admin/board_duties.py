@@ -164,6 +164,29 @@ def run_due(table: Any, settings: dict[str, Any], now: datetime | None = None) -
                 continue
             if not board_store.claim_duty_marker(table, f"duty:{seat_id}:{duty_id}:{date_label}"):
                 continue
+            skip_reason = _duty_unconfigured_reason(duty_id)
+            if skip_reason:
+                board_store.put_cache(
+                    table,
+                    _cache_name(seat_id, duty_id),
+                    {
+                        "ranAt": board_store.now_iso(),
+                        "scheduledAt": board_hk.to_iso(scheduled or when),
+                        "skipped": skip_reason,
+                    },
+                    ttl_seconds=40 * 86400,
+                )
+                gap = _maybe_config_gap_task(
+                    table,
+                    settings,
+                    assignee=str(live.get("reportsTo") or seat_id),
+                    gap_id=duty_id,
+                    brief=f"{skip_reason}. Skipped duty {duty_id} for {seat_id}. Configure the integration or deactivate the duty.",
+                )
+                if gap:
+                    created.append(gap)
+                _log_event("info", tag="board_duty_skipped_unconfigured", seat=seat_id, duty=duty_id, reason=skip_reason[:200])
+                continue
             try:
                 task = board_staff.create_task(
                     table,
@@ -280,6 +303,7 @@ def triage_ops_signals(table: Any, settings: dict[str, Any]) -> dict[str, int]:
             assignee=security_assignee,
             brief=brief,
             event_id=f"alert:{fid}",
+            alert_ids=[fid],
         ):
             created_alerts += 1
             kept_alerts.append(fid)
@@ -291,6 +315,7 @@ def triage_ops_signals(table: Any, settings: dict[str, Any]) -> dict[str, int]:
             assignee=security_assignee,
             brief=brief,
             event_id=f"alert:{fid}",
+            alert_ids=[fid],
         ):
             created_alerts += 1
             kept_alerts.append(fid)
@@ -304,6 +329,7 @@ def triage_ops_signals(table: Any, settings: dict[str, Any]) -> dict[str, int]:
             assignee=security_assignee,
             brief=combined[:4000],
             event_id=f"alert:gh:batch:{board_hk.today_hkt()}",
+            alert_ids=[fid for fid, _brief in new_gh],
         ):
             created_alerts += 1
             kept_alerts.extend(fid for fid, _brief in new_gh)
@@ -380,7 +406,82 @@ def _event_tasks_this_hour(table: Any, assignee: str) -> int:
     return n
 
 
-def _maybe_task(table: Any, settings: dict[str, Any], *, assignee: str, brief: str, event_id: str) -> bool:
+def _duty_unconfigured_reason(duty_id: str) -> str | None:
+    if duty_id != "weekly-attribution":
+        return None
+    try:
+        import board_web
+
+        if not board_web.configured():
+            return "GA4 is not configured"
+    except Exception:
+        return "GA4 is not configured"
+    return None
+
+
+def _iso_week_id() -> str:
+    return datetime.now(timezone.utc).strftime("%G-W%V")
+
+
+def _maybe_config_gap_task(
+    table: Any,
+    settings: dict[str, Any],
+    *,
+    assignee: str,
+    gap_id: str,
+    brief: str,
+) -> dict[str, Any] | None:
+    from board_triage import find_open_event_task
+
+    event_id = f"config:{gap_id}:{_iso_week_id()}"
+    if find_open_event_task(table, "ops", event_id):
+        return None
+    try:
+        return board_staff.create_task(
+            table,
+            settings,
+            assignee=assignee,
+            origin="event",
+            brief=brief[:4000],
+            deliverable_type="markdown",
+            sla_hours=72,
+            event_ref={"kind": "ops", "id": event_id},
+            created_by="board_duties",
+        )
+    except board_staff.StaffError as exc:
+        _log_event("info", tag="board_config_gap_skipped", error=str(exc)[:200])
+        return None
+
+
+def forget_alert_ids(table: Any, ids: list[str]) -> None:
+    wanted = {str(i) for i in ids if i}
+    if not wanted:
+        return
+    remaining = [i for i in _seen_payload(table, "seen:alerts") if i not in wanted]
+    _save_seen(table, "seen:alerts", remaining)
+
+
+def forget_seen_for_task(table: Any, task: dict[str, Any]) -> None:
+    ref = task.get("eventRef") or {}
+    if ref.get("kind") != "ops":
+        return
+    ids = [str(x) for x in (ref.get("alertIds") or []) if x]
+    eid = str(ref.get("id") or "")
+    if eid.startswith("alert:") and not eid.startswith("alert:gh:batch:"):
+        ids.append(eid[len("alert:") :])
+    if ids:
+        forget_alert_ids(table, ids)
+
+
+def _maybe_task(
+    table: Any,
+    settings: dict[str, Any],
+    *,
+    assignee: str,
+    brief: str,
+    event_id: str,
+    alert_ids: list[str] | None = None,
+) -> bool:
     from board_triage import find_open_event_task
 
     if find_open_event_task(table, "ops", event_id):
@@ -388,6 +489,9 @@ def _maybe_task(table: Any, settings: dict[str, Any], *, assignee: str, brief: s
     if _event_tasks_this_hour(table, assignee) >= BOARD_STAFF_MAX_EVENT_TASKS_PER_SEAT_PER_HOUR:
         _log_event("info", tag="board_ops_task_capped", assignee=assignee, eventId=event_id)
         return False
+    event_ref: dict[str, Any] = {"kind": "ops", "id": event_id}
+    if alert_ids:
+        event_ref["alertIds"] = list(alert_ids)
     try:
         board_staff.create_task(
             table,
@@ -397,7 +501,7 @@ def _maybe_task(table: Any, settings: dict[str, Any], *, assignee: str, brief: s
             brief=brief[:4000],
             deliverable_type="markdown",
             sla_hours=24,
-            event_ref={"kind": "ops", "id": event_id},
+            event_ref=event_ref,
             created_by="board_duties",
         )
     except board_staff.StaffError as exc:
