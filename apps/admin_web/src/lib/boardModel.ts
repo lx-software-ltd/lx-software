@@ -262,6 +262,10 @@ export type BoardTask = {
   readonly failureReason?: string;
   readonly actionId?: string | null;
   readonly meetingId?: string | null;
+  readonly parentTaskId?: string | null;
+  readonly helpTaskIds?: readonly string[];
+  readonly blockedOn?: readonly string[];
+  readonly parkedReason?: string;
   readonly eventRef?: { readonly kind?: string; readonly id?: string; readonly channel?: string; readonly subject?: string; readonly stars?: number } | null;
   readonly deliverableKey?: string;
   readonly deliverableBytes?: number;
@@ -1542,7 +1546,13 @@ export type BoardReviewSnapshot = {
 };
 
 export function tasksNeedPolling(tasks: readonly BoardTask[]): boolean {
-  return tasks.some((t) => t.status === "running" || t.status === "review");
+  return tasks.some(
+    (t) =>
+      t.status === "running" ||
+      t.status === "review" ||
+      t.status === "waiting_approval" ||
+      t.status === "waiting_subtask",
+  );
 }
 
 /** `hello@siutindei.com` → `hello@`; keeps full addresses from other domains. */

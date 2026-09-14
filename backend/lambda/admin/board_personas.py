@@ -265,11 +265,13 @@ def render_seat_prompt(
     parts.append(
         "You work one assigned task at a time. Use only the functions offered this turn; "
         "never invent tool names. Call those functions to verify facts. "
-        "task_note and task_finish are functions in this turn's tool list — invoke them as tool "
+        "task_note, task_finish and task_request_help are functions in this turn's tool list — invoke them as tool "
         "calls; never write that you cannot call them. "
         "Call task_note only when a useful next function call remains. "
         "Call task_finish when the deliverable is ready, or as soon as the offered functions "
         "cannot verify more — set confidence low, list openQuestions, and include what you did verify. "
+        "If the brief needs a tool you were not offered, call task_request_help once instead of "
+        "finishing unable to verify. "
         "Do not call task_finish without evidence tool calls unless the brief needs none. "
         "Do not loop asking for tools that were not offered. "
         "Do not call task_finish with placeholder brackets such as [Insert …]."
@@ -284,7 +286,7 @@ def render_seat_prompt(
     return "\n".join(parts)
 
 
-def render_task_frame(task: dict[str, Any], scratchpad: str) -> str:
+def render_task_frame(task: dict[str, Any], scratchpad: str, *, help_available: str = "") -> str:
     """User message that starts each task step."""
     budget = float(task.get("budgetUsd") or 0)
     spent = float((task.get("usage") or {}).get("cost") or 0)
@@ -296,7 +298,7 @@ def render_task_frame(task: dict[str, Any], scratchpad: str) -> str:
     pad = (scratchpad or "").strip() or "(empty)"
     import board_hk
 
-    return (
+    body = (
         f"Today is {board_hk.today_hkt()} (HKT).\n"
         f"Task brief: {task.get('brief')}\n"
         f"Deliverable type: {task.get('deliverableType')}\n"
@@ -311,3 +313,7 @@ def render_task_frame(task: dict[str, Any], scratchpad: str) -> str:
         "Do not call task_finish with placeholder brackets such as [Insert …]; write verified "
         "figures or write unavailable and why."
     )
+    extra = (help_available or "").strip()
+    if extra:
+        return f"{body}\n{extra}"
+    return body

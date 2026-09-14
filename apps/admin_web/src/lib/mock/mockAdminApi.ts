@@ -690,6 +690,7 @@ function countsFromTasks(tasks: readonly BoardTask[]): Record<string, number> {
     queued: 0,
     running: 0,
     waiting_approval: 0,
+    waiting_subtask: 0,
     review: 0,
     returned: 0,
     delivered: 0,

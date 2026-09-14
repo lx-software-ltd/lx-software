@@ -812,6 +812,36 @@ def _task_finish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     return board_staff.op_task_finish(ctx, args)
 
 
+def _task_request_help(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_staff
+
+    return board_staff.op_task_request_help(ctx, args)
+
+
+def _task_request_help_guard(ctx: ToolContext, args: dict[str, Any]) -> str | None:
+    import board_staff
+
+    return board_staff.act_guard_task_request_help(ctx, args)
+
+
+def _validate_task_request_help(ctx: ToolContext, args: dict[str, Any]) -> str | None:
+    import board_staff
+
+    return board_staff.validate_task_request_help(ctx, args)
+
+
+def _preview_task_request_help(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any] | None:
+    import board_staff
+
+    return board_staff.preview_task_request_help(ctx, args)
+
+
+def _summ_request_help(args: dict[str, Any]) -> str:
+    tools = ", ".join(str(x) for x in (args.get("toolIds") or []) if x) or "tools"
+    helper = str(args.get("suggestedAssignee") or "a helper")
+    return f"Ask {helper} for {tools}: {_short(args.get('need') or '', 80)}"
+
+
 def _summ_staff_assign(args: dict[str, Any]) -> str:
     return f"Assigned {args.get('assignee')}: {_short(args.get('brief') or '', 80)}"
 
@@ -2403,6 +2433,39 @@ def build_registry() -> dict[str, ToolOp]:
             summarize=_summ("Finished the task"),
             contexts=("task",),
         ),
+        ToolOp(
+            name="task_request_help",
+            tool_id="task",
+            kind="write",
+            description=(
+                "Ask another active seat that has tools you were not offered to gather that "
+                "information. Use tool ids such as web or finance, not operation names. "
+                "The founder must usually approve. Do not call this when you already have "
+                "the tools, and do not call it from a help task."
+            ),
+            parameters=_obj(
+                {
+                    "need": _str_param("What information to obtain, specifically.", max_len=2000),
+                    "toolIds": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Board tool ids you need (web, finance, aws), not operation names.",
+                    },
+                    "suggestedAssignee": _str_param(
+                        "Optional active seat id you believe has those tools.",
+                        max_len=40,
+                    ),
+                    "reason": REASON_PARAM,
+                },
+                ["need", "toolIds"],
+            ),
+            run=_task_request_help,
+            summarize=_summ_request_help,
+            act_guard=_task_request_help_guard,
+            validate=_validate_task_request_help,
+            preview=_preview_task_request_help,
+            contexts=("task",),
+        ),
     ]
     return {op.name: op for op in ops}
 
@@ -2541,12 +2604,22 @@ def tools_preamble(ops: list[tuple[ToolOp, str]]) -> str:
         "offered functions, say so and finish with what you have.",
     ]
     if any(op.tool_id == "task" for op, _lvl in ops):
-        lines.append(
-            "TASK CONTROL: task_note and task_finish are in this turn's function list. "
-            "You must invoke them as tool calls. Do not write that you cannot call them. "
-            "Call task_note to record progress, or task_finish with the deliverable when done. "
-            "That is how the task completes; a prose report is not a finish."
-        )
+        if any(op.name == "task_request_help" for op, _ in ops):
+            lines.append(
+                "TASK CONTROL: task_note, task_finish and task_request_help are in this turn's "
+                "function list. You must invoke them as tool calls. Do not write that you cannot "
+                "call them. Call task_note to record progress, or task_finish with the deliverable "
+                "when done. If the brief needs a tool you were not offered, call task_request_help "
+                "once instead of finishing unable to verify. That is how the task completes; a "
+                "prose report is not a finish."
+            )
+        else:
+            lines.append(
+                "TASK CONTROL: task_note and task_finish are in this turn's function list. "
+                "You must invoke them as tool calls. Do not write that you cannot call them. "
+                "Call task_note to record progress, or task_finish with the deliverable when done. "
+                "That is how the task completes; a prose report is not a finish."
+            )
     proposes = sorted({TOOL_LABELS.get(op.tool_id, op.tool_id) for op, lvl in ops if op.is_write and lvl == "propose"})
     acts = sorted(
         {
@@ -3093,6 +3166,10 @@ def run_tool_loop(
         seat_id=ctx.seat_id,
         seats_by_id=seats,
     )
+    if ctx.task_id:
+        current = board_store.get_task(ctx.table, ctx.task_id)
+        if current and current.get("parentTaskId"):
+            ops = [(op, lvl) for op, lvl in ops if op.name != "task_request_help"]
     if not ops:
         completion = board_budget.board_completion(
             table=ctx.table,
@@ -3348,6 +3425,8 @@ def decide_approval(
         display_name=str(doc.get("displayName") or profile.get("shortName") or ""),
         kind=str((doc.get("context") or {}).get("kind") or "approval"),
         meeting_id=str((doc.get("context") or {}).get("meetingId") or ""),
+        task_id=str((doc.get("context") or {}).get("taskId") or ""),
+        seat_id=str((doc.get("context") or {}).get("seatId") or ""),
         actor="owner",
         owner_sub=owner_sub,
     )

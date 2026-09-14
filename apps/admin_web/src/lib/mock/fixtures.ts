@@ -549,6 +549,16 @@ export const boardTasksFixture: BoardTask[] = [
     step: 12,
     managerId: "cto",
   }),
+  fixtureTask("task-help-parent", "waiting_subtask", "support", "Verify visitor sources without web access.", {
+    helpTaskIds: ["task-help-child"],
+    blockedOn: ["task-help-child"],
+    parkedReason: "waiting on help task task-help-child",
+  }),
+  fixtureTask("task-help-child", "running", "data-analyst", "Need: GA4 sessions and referrers for the parent task.", {
+    parentTaskId: "task-help-parent",
+    origin: "task",
+    managerId: "cio",
+  }),
 ];
 
 export const boardStaffFixture: BoardStaffPayload = {
@@ -557,8 +567,9 @@ export const boardStaffFixture: BoardStaffPayload = {
   seats: boardStaffSeatsFixture,
   counts: {
     queued: 1,
-    running: 1,
+    running: 2,
     waiting_approval: 0,
+    waiting_subtask: 1,
     review: 1,
     returned: 0,
     delivered: 1,
