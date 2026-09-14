@@ -194,7 +194,7 @@ class TestLevels(unittest.TestCase):
             self.assertEqual(board_tools.available_ops(settings, "cto", context="chat"), [])
             self.assertEqual(
                 {op.name for op, _ in board_tools.available_ops(settings, "cto", context="task")},
-                {"task_note", "task_finish"},
+                {"task_note", "task_finish", "task_request_help"},
             )
         with patch.dict("os.environ", {"BOARD_TOOLS_ENABLED": "true"}):
             self.assertTrue(board_tools.tools_enabled(settings))
