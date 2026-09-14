@@ -198,6 +198,27 @@ class TestOpenRouterAttribution(unittest.TestCase):
         self.assertEqual(product.title, "Siu Tin Dei")
         self.assertEqual(product.referer, "https://siutindei.com")
 
+    def test_post_json_success_does_not_read_monotonic(self) -> None:
+        """Tool-loop tests patch time.monotonic as a fake clock; do not steal ticks."""
+
+        def fake_urlopen(req, timeout=None):  # noqa: ARG001
+            return _FakeResp(json.dumps({"ok": True}).encode("utf-8"))
+
+        with (
+            patch("openrouter_client.urlrequest.urlopen", fake_urlopen),
+            patch(
+                "openrouter_client.time.monotonic",
+                side_effect=AssertionError("post_json must not read time.monotonic"),
+            ),
+        ):
+            text = openrouter_client.post_json(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                api_key="sk-test",
+                payload={"model": "m"},
+                timeout=5,
+            )
+        self.assertEqual(json.loads(text), {"ok": True})
+
     def test_post_json_retries_incomplete_read(self) -> None:
         import http.client
 

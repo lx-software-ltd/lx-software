@@ -343,9 +343,19 @@ def _retry_after_seconds(exc: urlerror.HTTPError) -> float | None:
         return None
 
 
+def _clock() -> float:
+    """Retry-budget clock.
+
+    Tool-loop tests patch ``time.monotonic`` to simulate spend. Using that
+    here would steal their loop budget on every OpenRouter call. ``perf_counter``
+    is the same kind of clock in production and stays real in those tests.
+    """
+    return time.perf_counter()
+
+
 def _can_retry(*, deadline: float, sleep_s: float) -> bool:
     """True when sleep plus another attempt can still finish before ``deadline``."""
-    return time.monotonic() + max(0.0, sleep_s) + _MIN_RETRY_REMAINING_SECONDS < deadline
+    return _clock() + max(0.0, sleep_s) + _MIN_RETRY_REMAINING_SECONDS < deadline
 
 
 def post_json(
@@ -360,12 +370,18 @@ def post_json(
     # ``timeout`` is the wall-clock budget for this call, including backoff
     # and retries. Each attempt uses only the time left so a late 5xx cannot
     # stack another full OpenRouter timeout and kill the Lambda.
-    deadline = time.monotonic() + max(1.0, float(timeout))
+    deadline = _clock() + max(1.0, float(timeout))
     attempt = 0
     while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise OpenRouterError("OpenRouter request timed out: retry budget exhausted")
+        # First attempt keeps the caller's timeout. Later attempts use only
+        # the leftover budget so retries cannot stack another full timeout.
+        if attempt == 0:
+            req_timeout = max(1, int(timeout))
+        else:
+            remaining = deadline - _clock()
+            if remaining <= 0:
+                raise OpenRouterError("OpenRouter request timed out: retry budget exhausted")
+            req_timeout = max(1, int(remaining))
         data = json.dumps(payload).encode("utf-8")
         req = urlrequest.Request(  # noqa: S310 - URL is trusted (env-configured)
             url=url,
@@ -378,7 +394,7 @@ def post_json(
             },
         )
         try:
-            with urlrequest.urlopen(req, timeout=max(1, int(remaining))) as resp:  # noqa: S310
+            with urlrequest.urlopen(req, timeout=req_timeout) as resp:  # noqa: S310
                 return resp.read().decode("utf-8")
         except urlerror.HTTPError as exc:
             body = ""
