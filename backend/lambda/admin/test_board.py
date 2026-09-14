@@ -554,6 +554,7 @@ class TestPersonas(unittest.TestCase):
         self.assertIn("Company vision: Company V", prompt)
         self.assertIn("Company mission: Company M", prompt)
         self.assertIn(board_personas.BOOKS_OF_RECORD, prompt)
+        self.assertIn(board_personas.ANALYTICS_OF_RECORD, prompt)
         self.assertIn("finance_aging_report", prompt)
         self.assertIn("finance_cash_snapshot", prompt)
         self.assertIn("web_sessions", prompt)

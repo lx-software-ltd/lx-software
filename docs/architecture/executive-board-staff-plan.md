@@ -95,7 +95,7 @@ but not added or removed in v1, like the eight board roles.
 | `market-analyst` | CPO | Market and Competitive Intelligence | Watchlist upkeep, change detection, weekly market brief, activity gap analysis, feature ideas with evidence | `research`, `crawl`, `stores` (public data), `product`, `web` |
 | `product-dev` | CPO | Product Developer | Funnel analyses, specs from market-analyst ideas, store listing copy, prototype PRs | `product`, `stores`, `web`, `github`, `code` |
 | `content-marketer` | CMO | Content Marketer | Content calendar, posts and stories in EN and zh-HK, creatives, newsletter, SEO articles, release notes | `meta`, `creative`, `newsletter`, `stores`, `research`, `github` (SEO articles as PRs) |
-| `community-manager` | CMO | Community Manager | Comment and DM replies on own surfaces, review replies, assisted-post packs for channels without an API, engagement reports | `meta`, `stores`, `mail` |
+| `community-manager` | CMO | Community Manager | Comment and DM replies on own surfaces, review replies, assisted-post packs for channels without an API, engagement reports | `meta`, `stores`, `mail`, `web` (read) |
 | `growth-specialist` | CMO | Growth / Paid Social | Campaign briefs, ad sets and boosts within caps, UTM discipline, weekly performance readout | `meta`, `web`, `research` |
 | `architect` | CTO | Software Architect | Design notes, ADRs, issue breakdowns, dependency and CI triage | `github`, `aws`, `security`, `research` |
 | `engineer-1`, `engineer-2` | CTO | Senior Engineer | One issue at a time via the coding runner (§11) | `github`, `code` |

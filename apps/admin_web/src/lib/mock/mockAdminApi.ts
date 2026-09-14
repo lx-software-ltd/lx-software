@@ -397,7 +397,9 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
       return json({ task });
     }
     if (rest[1] === "retry" && method === "POST") {
-      if (task.status !== "failed") return json({ message: "Only failed tasks can be retried" }, 409);
+      if (task.status !== "failed" && task.status !== "needs_owner") {
+        return json({ message: "Only failed or needs_owner tasks can be retried" }, 409);
+      }
       Object.assign(task, {
         status: "queued",
         step: 0,

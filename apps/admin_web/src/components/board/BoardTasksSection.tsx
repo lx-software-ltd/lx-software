@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { BoardTaskDrawer } from "./BoardTaskDrawer";
 import { BoardNewTaskForm } from "./BoardNewTaskForm";
-import { formatUsageCost, type BoardTask } from "../../lib/boardModel";
+import { canRetryBoardTask, formatUsageCost, type BoardTask } from "../../lib/boardModel";
 import { useBoardStaff } from "../../hooks/useBoardStaff";
 import { useBoardTask, useBoardTasks } from "../../hooks/useBoardTasks";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
@@ -74,7 +74,7 @@ export function BoardTasksSection({ focusTaskId = null }: { readonly focusTaskId
                   isRetrying={tasks.retry.isPending}
                   isCancelling={tasks.cancel.isPending}
                   onOpen={() => setSelectedId(task.taskId)}
-                  onRetry={task.status === "failed" ? () => tasks.retry.mutate(task.taskId) : undefined}
+                  onRetry={canRetryBoardTask(task.status) ? () => tasks.retry.mutate(task.taskId) : undefined}
                   onCancel={task.status === "failed" ? () => tasks.cancel.mutate(task.taskId) : undefined}
                 />
               ))}

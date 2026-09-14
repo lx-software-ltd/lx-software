@@ -2276,7 +2276,7 @@ def build_registry() -> dict[str, ToolOp]:
             name="staff_assign",
             tool_id="staff",
             kind="write",
-            description="Assign a background task to a board member or an active staff seat. The assignee works in steps and produces a deliverable for review.",
+            description="Assign a background task to a board member or an active staff seat. The assignee works in steps and produces a deliverable for review. GA4 / visitor-source / event-tracking / GTM briefs go to data-analyst (or business-analyst if that seat is inactive), not community-manager.",
             parameters=_obj(
                 {
                     "assignee": _str_param("Persona id or active seat id.", max_len=40),

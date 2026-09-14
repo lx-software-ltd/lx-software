@@ -87,10 +87,7 @@ _EVIDENCE_BRIEF_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "google analytics",
             "visitor source",
             "channel attribution",
-            "organic traffic",
             "session source",
-            "tracking setup",
-            "utm_",
         ),
     ),
     (
@@ -102,6 +99,17 @@ _EVIDENCE_BRIEF_ALIASES: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("google tag manager", "gtm"),
     ),
 )
+_GA4_ASSIGN_ALIASES = (
+    "ga4",
+    "google analytics",
+    "visitor source",
+    "channel attribution",
+    "session source",
+    "event tracking",
+    "google tag manager",
+    "gtm",
+)
+RETRYABLE_STATUSES = frozenset({"failed", "needs_owner"})
 
 
 class StaffError(ValueError):
@@ -797,7 +805,7 @@ def _brief_has_alias(lower: str, alias: str) -> bool:
     return bool(re.search(rf"\b{re.escape(alias)}\b", lower))
 
 
-def _brief_required_evidence_tools(brief: str) -> list[str]:
+def _brief_required_evidence_tools(brief: str, *, offered: set[str] | None = None) -> list[str]:
     lower = (brief or "").lower()
     needed: list[str] = []
     seen: set[str] = set()
@@ -811,7 +819,63 @@ def _brief_required_evidence_tools(brief: str) -> list[str]:
         if any(_brief_has_alias(lower, alias) for alias in aliases):
             needed.append(tool)
             seen.add(tool)
+    if offered is not None:
+        needed = [tool for tool in needed if tool in offered]
     return needed
+
+
+def _offered_task_ops(ctx: board_tools.ToolContext) -> set[str]:
+    roster = seats_by_id(ctx.table, ctx.settings) if ctx.seat_id else None
+    return {
+        op.name
+        for op, _ in board_tools.available_ops(
+            ctx.settings,
+            ctx.persona_id,
+            context="task",
+            seat_id=ctx.seat_id,
+            seats_by_id=roster,
+        )
+    }
+
+
+def _cited_evidence_ops(table: Any, task_id: str, evidence: list[str]) -> set[str]:
+    wanted = set(evidence)
+    ops: set[str] = set()
+    for call in board_store.list_tool_calls_for_task(table, task_id):
+        if str(call.get("callId")) in wanted:
+            op = str(call.get("op") or "")
+            if op:
+                ops.add(op)
+    return ops
+
+
+def preferred_assignee_for_brief(
+    table: Any, settings: dict[str, Any], brief: str
+) -> str | None:
+    """Active seat that should own a GA4 / visitor-source brief, if any."""
+    lower = (brief or "").lower()
+    if not any(_brief_has_alias(lower, alias) for alias in _GA4_ASSIGN_ALIASES):
+        return None
+    roster = seats_by_id(table, settings)
+    for seat_id in ("data-analyst", "business-analyst"):
+        seat = roster.get(seat_id)
+        if seat and seat.get("isActive"):
+            return seat_id
+    return None
+
+
+def ga4_assignee_hint(table: Any, settings: dict[str, Any]) -> str:
+    roster = seats_by_id(table, settings)
+    if roster.get("data-analyst", {}).get("isActive"):
+        target = "data-analyst"
+    elif roster.get("business-analyst", {}).get("isActive"):
+        target = "business-analyst"
+    else:
+        target = "an executive with web read"
+    return (
+        f"GA4 / visitor sources / event tracking / GTM: assign {target}. "
+        "Do not assign community-manager."
+    )
 
 
 def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, wanted: int) -> None:
@@ -1048,8 +1112,10 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
                 known.add(str(cid))
     attempt = _task_attempt(task)
     evidence = [e for e in evidence if e in known]
-    needed = _brief_required_evidence_tools(str(task.get("brief") or ""))
-    if needed and not evidence:
+    needed = _brief_required_evidence_tools(str(task.get("brief") or ""), offered=_offered_task_ops(ctx))
+    cited = _cited_evidence_ops(ctx.table, ctx.task_id, evidence)
+    missing = [tool for tool in needed if tool not in cited]
+    if missing:
         raise StaffError(
             "This brief requires evidence from "
             + ", ".join(needed)
@@ -1321,8 +1387,8 @@ def retry_task(table: Any, settings: dict[str, Any], task_id: str, by_sub: str) 
     task = board_store.get_task(table, task_id)
     if not task:
         raise StaffError("Task not found", code="not_found")
-    if task.get("status") != "failed":
-        raise StaffError("Only failed tasks can be retried", code="conflict")
+    if task.get("status") not in RETRYABLE_STATUSES:
+        raise StaffError("Only failed or needs_owner tasks can be retried", code="conflict")
     try:
         _resolve_assignee(table, settings, str(task.get("assignee") or ""))
     except StaffError as exc:

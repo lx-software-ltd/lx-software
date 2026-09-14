@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { BOARD_PERSONA_DEFAULTS } from "./contracts/generated";
 import {
   approvalEditableFields,
+  canRetryBoardTask,
   formatUsageCost,
   groupActionsByPriority,
   MAIL_ALLOW_LIST_ENTRY_RE,
@@ -168,5 +169,14 @@ describe("formatting helpers", () => {
     const members = [{ id: "cto", displayName: "Ada", shortName: "CTO" }];
     expect(memberLabel(members, "cto")).toBe("Ada (CTO)");
     expect(memberLabel(members, "cfo")).toBe("CFO");
+  });
+});
+
+describe("canRetryBoardTask", () => {
+  it("allows retry from failed and needs_owner only", () => {
+    expect(canRetryBoardTask("failed")).toBe(true);
+    expect(canRetryBoardTask("needs_owner")).toBe(true);
+    expect(canRetryBoardTask("review")).toBe(false);
+    expect(canRetryBoardTask("delivered")).toBe(false);
   });
 });

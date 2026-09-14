@@ -33,6 +33,20 @@ const failedTask: BoardTask = {
   failureReason: "step limit",
 };
 
+const ownerTask: BoardTask = {
+  ...failedTask,
+  taskId: "task-owner",
+  status: "needs_owner",
+  assignee: "community-manager",
+  managerId: "cmo",
+  brief: "Verify GA4 visitor sources.",
+  step: 3,
+  stepsUsed: 3,
+  revisions: 2,
+  failureReason: "",
+  lastReview: { verdict: "return", notes: "Need evidence.", at: "2026-09-14T00:00:00Z" },
+};
+
 vi.mock("../../hooks/useBoardStaff", () => ({
   useBoardStaff: () => ({
     enabled: true,
@@ -51,8 +65,8 @@ vi.mock("../../hooks/useBoardStaff", () => ({
 
 vi.mock("../../hooks/useBoardTasks", () => ({
   useBoardTasks: () => ({
-    tasks: [failedTask],
-    counts: { failed: 1 },
+    tasks: [failedTask, ownerTask],
+    counts: { failed: 1, needs_owner: 1 },
     isLoading: false,
     isError: false,
     error: null,
@@ -69,9 +83,14 @@ describe("BoardTasksSection", () => {
     render(<BoardTasksSection />);
     expect(screen.getByText("New task")).toBeInTheDocument();
     expect(screen.getByText(/Failed \(1\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Needs owner \(1\)/)).toBeInTheDocument();
     expect(screen.getByText(/Waiting approval \(0\)/)).toBeInTheDocument();
     expect(screen.getByText("step limit")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    const retries = screen.getAllByRole("button", { name: "Retry" });
+    expect(retries).toHaveLength(2);
+    fireEvent.click(retries[0]);
+    expect(retryMutate).toHaveBeenCalledWith("task-owner");
+    fireEvent.click(retries[1]);
     expect(retryMutate).toHaveBeenCalledWith("task-failed");
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(cancelMutate).toHaveBeenCalledWith("task-failed");

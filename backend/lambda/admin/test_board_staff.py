@@ -154,6 +154,7 @@ class StaffEngineTests(BoardTestCase):
         self.assertIn("STANDING INSTRUCTIONS", prompt)
         self.assertIn("never invent tool names", prompt)
         self.assertIn(board_personas.BOOKS_OF_RECORD, prompt)
+        self.assertIn(board_personas.ANALYTICS_OF_RECORD, prompt)
 
     def test_accountant_prompt_points_at_product_database_not_xero(self) -> None:
         seat = board_staff.seat_default("accountant") or {}
@@ -203,9 +204,13 @@ class StaffEngineTests(BoardTestCase):
             "data shows visitor sources post-launch."
         )
         needed = board_staff._brief_required_evidence_tools(brief)  # noqa: SLF001
-        self.assertEqual(needed, ["web_sessions", "web_conversions"])
+        self.assertEqual(set(needed), {"web_sessions", "web_conversions"})
         self.assertEqual(
             board_staff._brief_required_evidence_tools("Reply to the WhatsApp thread."),  # noqa: SLF001
+            [],
+        )
+        self.assertEqual(
+            board_staff._brief_required_evidence_tools(brief, offered={"task_finish", "meta_list_dms"}),  # noqa: SLF001
             [],
         )
         review = board_staff._review_user_prompt(  # noqa: SLF001
@@ -264,6 +269,98 @@ class StaffEngineTests(BoardTestCase):
             )
         self.assertIn("web_sessions", str(raised.exception))
         self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "running")
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "meta-1",
+                "op": "meta_list_dms",
+                "context": {"taskId": task["taskId"]},
+                "taskId": task["taskId"],
+            },
+        )
+        with self.assertRaises(board_staff.StaffError) as wrong_tool:
+            board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "Cited the wrong tool.",
+                    "deliverableType": "markdown",
+                    "deliverable": "Unable to verify GA4 integration due to lack of access.",
+                    "evidence": ["meta-1"],
+                    "openQuestions": [],
+                    "confidence": "low",
+                },
+            )
+        self.assertIn("web_sessions", str(wrong_tool.exception))
+        self.assertEqual(board_staff.preferred_assignee_for_brief(self.table, settings, brief), "data-analyst")
+        self.assertIn("data-analyst", board_staff.ga4_assignee_hint(self.table, settings))
+        import board_meeting
+
+        roster_text, seat_ids = board_meeting._assignee_roster_text(  # noqa: SLF001
+            self.table, settings, ["cmo", "cio"]
+        )
+        self.assertIn("data-analyst", seat_ids)
+        self.assertIn("assign data-analyst", roster_text)
+        self.assertIn("Do not assign community-manager", roster_text)
+
+    def test_ga4_brief_does_not_deadlock_seats_without_web(self) -> None:
+        settings = _enable_staff(self.table)
+        brief = "Verify GA4 visitor sources and event tracking."
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="support",
+                origin="owner",
+                brief=brief,
+                deliverable_type="markdown",
+                created_by="a",
+            )
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="coo",
+            kind="task",
+            task_id=task["taskId"],
+            seat_id="support",
+        )
+        offered = board_staff._offered_task_ops(ctx)  # noqa: SLF001
+        self.assertNotIn("web_sessions", offered)
+        self.assertEqual(board_staff._brief_required_evidence_tools(brief, offered=offered), [])  # noqa: SLF001
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            out = board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "No web tools on this seat.",
+                    "deliverableType": "markdown",
+                    "deliverable": "This seat cannot read GA4; hand the brief to data-analyst.",
+                    "evidence": [],
+                    "openQuestions": ["Reassign to data-analyst"],
+                    "confidence": "low",
+                },
+            )
+        self.assertEqual(out["status"], "review")
+
+    def test_retry_needs_owner_requeues(self) -> None:
+        settings = _enable_staff(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="community-manager",
+                origin="owner",
+                brief="Verify GA4 visitor sources.",
+                deliverable_type="markdown",
+                created_by="a",
+            )
+        task["status"] = "needs_owner"
+        task["revisions"] = 2
+        board_store.put_task(self.table, task)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            retried = board_staff.retry_task(self.table, settings, task["taskId"], "owner-1")
+        self.assertIn(retried["status"], ("queued", "running"))
+        self.assertEqual(retried["revisions"], 0)
+        self.assertEqual(retried.get("retriedBy"), "owner-1")
+        self.assertNotEqual(retried["status"], "needs_owner")
 
     def test_weekly_kpi_pack_is_siu_tin_dei_only(self) -> None:
         seat = board_staff.seat_default("business-analyst") or {}

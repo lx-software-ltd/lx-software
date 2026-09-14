@@ -1105,6 +1105,10 @@ export function boardTaskRetryPath(taskId: string): string {
   return `${boardTaskPath(taskId)}/retry`;
 }
 
+export function canRetryBoardTask(status: string): boolean {
+  return status === "failed" || status === "needs_owner";
+}
+
 export function boardHoldsPath(query?: { status?: string; limit?: number }): string {
   const params = new URLSearchParams();
   if (query?.status) params.set("status", query.status);
