@@ -27,6 +27,26 @@ LINE_LIMIT = 400
 CONTENT_LINE_LIMIT = 2000
 MAX_DIFF_CHARS = 30_000
 MAX_OPEN_BOARD_PRS = 2
+LOCKFILE_NAMES = frozenset(
+    {
+        "package-lock.json",
+        "yarn.lock",
+        "pnpm-lock.yaml",
+        "npm-shrinkwrap.json",
+        "poetry.lock",
+        "Pipfile.lock",
+        "Cargo.lock",
+        "Gemfile.lock",
+        "composer.lock",
+        "pubspec.lock",
+        "go.sum",
+        "uv.lock",
+        "flake.lock",
+    }
+)
+_RUN_DONE = frozenset(
+    {"completed", "failure", "cancelled", "timed_out", "startup_failure", "action_required", "success", "skipped", "neutral"}
+)
 MAX_REVIEW_ROUNDS = 2
 KINDS = frozenset({"feature", "fix", "content"})
 CI_OK = frozenset({"success", "neutral", "skipped"})
@@ -77,9 +97,16 @@ def file_paths(row: dict[str, Any]) -> list[str]:
     return out
 
 
+def path_is_lockfile(path: str) -> bool:
+    parts = _path_parts(path)
+    return bool(parts) and parts[-1] in LOCKFILE_NAMES
+
+
 def changed_lines(files: list[dict[str, Any]]) -> int:
     total = 0
     for row in files:
+        if any(path_is_lockfile(path) for path in file_paths(row)):
+            continue
         if row.get("changes") is not None:
             try:
                 total += int(row.get("changes") or 0)
@@ -164,6 +191,19 @@ def _issue_from_pr(pr: dict[str, Any]) -> int | None:
     return int(match.group(1))
 
 
+def _run_in_flight(row: dict[str, Any]) -> bool:
+    """True while a dispatched runner has neither a PR nor a terminal conclusion."""
+    if not row or row.get("prNumber"):
+        return False
+    status = str(row.get("runStatus") or "").lower()
+    conclusion = str(row.get("conclusion") or "").lower()
+    if status == "completed" or conclusion in _RUN_DONE:
+        return False
+    if row.get("failedAt"):
+        return False
+    return True
+
+
 def issue_has_open_board_pr(issue_number: int, table: Any | None = None) -> bool:
     for pr in list_open_board_prs():
         if _issue_from_pr(pr) == issue_number:
@@ -171,7 +211,9 @@ def issue_has_open_board_pr(issue_number: int, table: Any | None = None) -> bool
     if table is not None:
         for task_id in _run_index(table):
             row = _get_run(table, task_id)
-            if int(row.get("issue") or 0) == issue_number and not row.get("prNumber"):
+            if int(row.get("issue") or 0) != issue_number:
+                continue
+            if _run_in_flight(row):
                 return True
     return False
 
@@ -448,10 +490,15 @@ def op_get_run(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         "prUrl": (pr or {}).get("html_url"),
         "prDraft": (pr or {}).get("draft"),
     }
+    stored["runStatus"] = out["runStatus"]
+    if out.get("conclusion"):
+        stored["conclusion"] = out["conclusion"]
     if out.get("prNumber"):
         stored["prNumber"] = out["prNumber"]
-        stored["runStatus"] = out["runStatus"]
-        stored["conclusion"] = out["conclusion"]
+        stored["prUrl"] = out.get("prUrl") or stored.get("prUrl")
+    if stored.get("runStatus") == "completed" and not stored.get("prNumber") and out.get("conclusion") not in CI_OK:
+        stored["failedAt"] = stored.get("failedAt") or board_store.now_iso()
+    if stored:
         _put_run(ctx.table, task_id, stored)
     return out
 

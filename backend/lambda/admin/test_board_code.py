@@ -190,6 +190,31 @@ class RunnerTests(BoardTestCase):
         with self.assertRaises(board_code.CodeError):
             board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "again", "kind": "feature"})
 
+    def test_failed_run_without_pr_does_not_block_retry(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
+        self.assertTrue(board_code.issue_has_open_board_pr(42, self.table))
+        self.gh.runs.append(
+            {
+                "name": "board-agent task-1",
+                "status": "completed",
+                "conclusion": "failure",
+                "html_url": "https://example/run-fail",
+            }
+        )
+        out = board_code.op_get_run(self.ctx, {"taskId": "task-1"})
+        self.assertEqual(out["conclusion"], "failure")
+        stored = board_code._get_run(self.table, "task-1")  # noqa: SLF001
+        self.assertEqual(stored["conclusion"], "failure")
+        self.assertFalse(board_code.issue_has_open_board_pr(42, self.table))
+
+    def test_lockfile_changes_do_not_count_toward_line_limit(self) -> None:
+        files = [
+            {"filename": "apps/public_www/package-lock.json", "changes": 1800},
+            {"filename": "apps/public_www/src/lib/uuid.ts", "changes": 12},
+        ]
+        self.assertEqual(board_code.changed_lines(files), 12)
+        self.assertTrue(board_code.path_is_lockfile("apps/public_www/package-lock.json"))
+
     def test_get_run_matches_task_id_in_run_name(self) -> None:
         self.gh.runs.append({"name": "board-agent task-1", "status": "completed", "conclusion": "success", "html_url": "https://example/run"})
         self.gh.prs.append(_pr())
