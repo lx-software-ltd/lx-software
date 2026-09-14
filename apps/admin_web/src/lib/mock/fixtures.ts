@@ -654,7 +654,14 @@ export const boardReviewFixture: BoardReviewSnapshot = {
     latestBrief: { taskId: "task-review", status: "review", summary: "Weekly market brief", createdAt: isoDaysAgo(0) },
   },
   promotion: [],
-  configGaps: [],
+  configGaps: [
+    {
+      gapId: "weekly-attribution",
+      week: "2026-W37",
+      reason: "GA4 is not configured. Skipped duty weekly-attribution for data-analyst.",
+      at: isoDaysAgo(0),
+    },
+  ],
 };
 
 export const boardProgressFixture: BoardProgressSnapshot = {
