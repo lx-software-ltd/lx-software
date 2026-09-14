@@ -2343,7 +2343,7 @@ def build_registry() -> dict[str, ToolOp]:
             name="staff_cancel_task",
             tool_id="staff",
             kind="write",
-            description="Cancel a queued or running staff task. Manager or founder only.",
+            description="Cancel a queued, running, waiting, or failed staff task. Manager or founder only. Delivered tasks cannot be cancelled.",
             parameters=_obj(
                 {
                     "taskId": _str_param("Task id.", max_len=40),

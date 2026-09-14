@@ -4,6 +4,7 @@ import type { BoardTask } from "../../lib/boardModel";
 import { BoardTasksSection } from "./BoardTasksSection";
 
 const retryMutate = vi.fn();
+const cancelMutate = vi.fn();
 
 const failedTask: BoardTask = {
   taskId: "task-failed",
@@ -55,7 +56,7 @@ vi.mock("../../hooks/useBoardTasks", () => ({
     isError: false,
     error: null,
     create: { isPending: false, error: null, mutate: vi.fn() },
-    cancel: { isPending: false, error: null, mutate: vi.fn() },
+    cancel: { isPending: false, error: null, mutate: cancelMutate },
     review: { isPending: false, error: null, mutate: vi.fn() },
     retry: { isPending: false, error: null, mutate: retryMutate },
   }),
@@ -63,7 +64,7 @@ vi.mock("../../hooks/useBoardTasks", () => ({
 }));
 
 describe("BoardTasksSection", () => {
-  it("shows failed tasks and retries them", () => {
+  it("shows failed tasks and can retry or cancel them", () => {
     render(<BoardTasksSection />);
     expect(screen.getByText("New task")).toBeInTheDocument();
     expect(screen.getByText(/Failed \(1\)/)).toBeInTheDocument();
@@ -71,5 +72,7 @@ describe("BoardTasksSection", () => {
     expect(screen.getByText("step limit")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(retryMutate).toHaveBeenCalledWith("task-failed");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(cancelMutate).toHaveBeenCalledWith("task-failed");
   });
 });

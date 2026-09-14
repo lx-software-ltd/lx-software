@@ -1309,13 +1309,21 @@ def cancel_task(table: Any, task_id: str, by_sub: str) -> dict[str, Any]:
     task = board_store.get_task(table, task_id)
     if not task:
         raise StaffError("Task not found")
-    if task.get("status") in TERMINAL_STATUSES:
+    status = str(task.get("status") or "")
+    if status == "cancelled":
         return task
+    if status == "delivered":
+        raise StaffError("Delivered tasks cannot be cancelled", code="conflict")
     now = board_store.now_iso()
+    if status == "failed":
+        task["cancelledFrom"] = "failed"
+        prior = str(task.get("failureReason") or "").strip()
+        task["failureReason"] = (f"{prior}; cancelled by {by_sub}" if prior else f"cancelled by {by_sub}")[:300]
+    else:
+        task["failureReason"] = f"cancelled by {by_sub}"
     task["status"] = "cancelled"
     task["finishedAt"] = now
     task["updatedAt"] = now
-    task["failureReason"] = f"cancelled by {by_sub}"
     task["expiresAt"] = int(datetime.now(timezone.utc).timestamp()) + BOARD_STAFF_RETENTION_DAYS * 86400
     board_store.put_task(table, task)
     return task

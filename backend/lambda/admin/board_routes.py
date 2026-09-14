@@ -738,7 +738,12 @@ def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
         try:
             task = board_staff.cancel_task(table, rest[1], user_sub or "")
         except board_staff.StaffError as exc:
-            return _json_response(404 if "not found" in str(exc).lower() else 400, {"message": str(exc)})
+            message = str(exc)
+            if "not found" in message.lower():
+                return _json_response(404, {"message": message})
+            if exc.code == "conflict":
+                return _json_response(409, {"message": message})
+            return _json_response(400, {"message": message})
         _audit(user_sub, "BOARD_TASK_CANCEL", rest[1], event)
         return _json_response(200, {"task": board_staff.public_task(task)})
     if len(rest) == 3 and rest[2] == "review" and method == "POST":

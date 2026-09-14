@@ -71,8 +71,10 @@ export function BoardTasksSection({ focusTaskId = null }: { readonly focusTaskId
                   key={task.taskId}
                   task={task}
                   isRetrying={tasks.retry.isPending}
+                  isCancelling={tasks.cancel.isPending}
                   onOpen={() => setSelectedId(task.taskId)}
                   onRetry={task.status === "failed" ? () => tasks.retry.mutate(task.taskId) : undefined}
+                  onCancel={task.status === "failed" ? () => tasks.cancel.mutate(task.taskId) : undefined}
                 />
               ))}
             </div>
@@ -92,7 +94,7 @@ export function BoardTasksSection({ focusTaskId = null }: { readonly focusTaskId
             errorText(tasks.retry.error)
           }
           onClose={() => setSelectedId(null)}
-          onCancel={(id) => tasks.cancel.mutate(id)}
+          onCancel={(id) => tasks.cancel.mutate(id, { onSuccess: () => setSelectedId(null) })}
           onReview={(id, verdict, notes) => tasks.review.mutate({ taskId: id, verdict, notes })}
           onRetry={(id) => tasks.retry.mutate(id)}
         />
@@ -104,14 +106,19 @@ export function BoardTasksSection({ focusTaskId = null }: { readonly focusTaskId
 function TaskCard({
   task,
   isRetrying,
+  isCancelling,
   onOpen,
   onRetry,
+  onCancel,
 }: {
   readonly task: BoardTask;
   readonly isRetrying: boolean;
+  readonly isCancelling: boolean;
   readonly onOpen: () => void;
   readonly onRetry?: () => void;
+  readonly onCancel?: () => void;
 }) {
+  const busy = isRetrying || isCancelling;
   return (
     <div className={`card shadow-sm mb-2 text-start w-100 ${task.status === "failed" ? "border-danger-subtle" : "border"}`}>
       <button type="button" className="card-body py-2 px-3 btn text-start border-0" onClick={onOpen}>
@@ -124,11 +131,18 @@ function TaskCard({
           <div className="small text-danger mt-1">{task.failureReason}</div>
         ) : null}
       </button>
-      {onRetry ? (
-        <div className="card-footer py-1 px-2 bg-transparent border-0">
-          <button type="button" className="btn btn-sm btn-outline-primary" disabled={isRetrying} onClick={onRetry}>
-            {isRetrying ? "Retrying…" : "Retry"}
-          </button>
+      {onRetry || onCancel ? (
+        <div className="card-footer py-1 px-2 bg-transparent border-0 d-flex gap-2">
+          {onRetry ? (
+            <button type="button" className="btn btn-sm btn-outline-primary" disabled={busy} onClick={onRetry}>
+              {isRetrying ? "Retrying…" : "Retry"}
+            </button>
+          ) : null}
+          {onCancel ? (
+            <button type="button" className="btn btn-sm btn-outline-danger" disabled={busy} onClick={onCancel}>
+              {isCancelling ? "Cancelling…" : "Cancel"}
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>
