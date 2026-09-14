@@ -2997,6 +2997,7 @@ def run_tool_loop(
             max_tokens=max_tokens,
             tag=tag,
             usage_sink=ctx.usage_sink,
+            settings=ctx.settings,
         )
         return ToolLoopResult(text=completion.text, usage=completion.usage, model=completion.model, rounds=1, completion=completion)
 
@@ -3051,6 +3052,7 @@ def run_tool_loop(
             tools=schemas,
             tool_choice=choice,
             usage_sink=ctx.usage_sink,
+            settings=ctx.settings,
         )
         usage = add_usage(usage, completion.usage)
         if not completion.tool_calls:
@@ -3102,6 +3104,7 @@ def run_tool_loop(
             tools=schemas,
             tool_choice="none",
             usage_sink=ctx.usage_sink,
+            settings=ctx.settings,
         )
         usage = add_usage(usage, final.usage)
     return ToolLoopResult(text=final.text, usage=usage, model=final.model, calls=calls, rounds=rounds, completion=final)

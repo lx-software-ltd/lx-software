@@ -5,6 +5,7 @@ import { BoardTranscript } from "./BoardTranscript";
 import {
   formatTokens,
   formatUsageCost,
+  uniqueTurnModels,
   MEETING_MODE_LABELS,
   MEETING_STATUS_BADGE_CLASS,
   meetingPhaseProgress,
@@ -40,6 +41,8 @@ export function BoardMeetingPanel({ data, isLoading, members, onCancel, isCancel
   const isRunning = meeting.status === "running";
   const progress = meetingPhaseProgress(meeting);
   const activeView: View = meeting.minutes && !isRunning ? view : "transcript";
+  const servedModels = uniqueTurnModels(turns);
+  const configuredModels = Object.values(meeting.models).filter(Boolean);
   const roster = meeting.roster.length > 0
     ? meeting.roster.map((r) => ({ id: r.id, displayName: r.displayName, shortName: r.id.toUpperCase() }))
     : members;
@@ -129,7 +132,8 @@ export function BoardMeetingPanel({ data, isLoading, members, onCancel, isCancel
         {meeting.contextPackHash ? (
           <div className="small text-muted mt-3 border-top pt-2">
             Context pack {meeting.contextPackHash} ({(meeting.contextPackChars ?? 0).toLocaleString()} chars) ·
-            models {Object.values(meeting.models).filter(Boolean).join(", ") || "default"}
+            models {configuredModels.join(", ") || "default"}
+            {servedModels.length ? ` · served ${servedModels.join(", ")}` : null}
           </div>
         ) : null}
       </div>

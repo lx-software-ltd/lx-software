@@ -387,6 +387,7 @@ def _call(
         max_tokens=max_tokens,
         max_retries=1,
         tag=tag,
+        settings=board_store.load_settings(table),
     )
 
 

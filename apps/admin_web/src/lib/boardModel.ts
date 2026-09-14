@@ -1018,6 +1018,18 @@ export function meetingPhaseProgress(
   };
 }
 
+export function uniqueTurnModels(turns: readonly BoardTurn[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const turn of turns) {
+    const slug = (turn.model || "").trim();
+    if (!slug || seen.has(slug)) continue;
+    seen.add(slug);
+    out.push(slug);
+  }
+  return out;
+}
+
 export function formatUsageCost(usd: number | undefined | null): string {
   const value = typeof usd === "number" && Number.isFinite(usd) ? usd : 0;
   if (value === 0) return "USD 0.00";

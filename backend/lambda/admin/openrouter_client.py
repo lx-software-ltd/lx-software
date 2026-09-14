@@ -26,6 +26,11 @@ DEFAULT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_TIMEOUT_SECONDS = 60
 _RETRYABLE_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
 _MAX_RETRIES_DEFAULT = 2
+_MAX_FALLBACK_MODELS = 3
+# Cap wait so a 429 cannot eat a whole meeting-phase timeout (100s).
+_MAX_RETRY_SLEEP_SECONDS = 20.0
+# Skip a retry when sleep plus another attempt cannot finish inside ``timeout``.
+_MIN_RETRY_REMAINING_SECONDS = 1.0
 # A full-call TimeoutError is a deadline, not a truncated body — do not
 # retry it with the same timeout (that doubles a hung 90 s call).
 _TRANSIENT_READ_ERRORS = (
@@ -144,6 +149,22 @@ def endpoint_url() -> str:
     return os.getenv("OPENROUTER_CHAT_COMPLETIONS_URL", "").strip() or DEFAULT_ENDPOINT
 
 
+def normalize_fallback_models(primary: str, candidates: list[str] | tuple[str, ...] | None) -> list[str]:
+    """Deduped fallback slugs, excluding the primary, capped for the OpenRouter ``models`` field."""
+    primary_slug = (primary or "").strip()
+    seen = {primary_slug} if primary_slug else set()
+    out: list[str] = []
+    for raw in candidates or ():
+        slug = str(raw or "").strip()
+        if not slug or slug in seen:
+            continue
+        seen.add(slug)
+        out.append(slug)
+        if len(out) >= _MAX_FALLBACK_MODELS:
+            break
+    return out
+
+
 def chat_completion(
     *,
     messages: list[dict[str, Any]],
@@ -161,12 +182,17 @@ def chat_completion(
     tool_choice: str | dict[str, Any] | None = None,
     service: str = SERVICE_STATEMENT_PARSER,
     owner: str | None = None,
+    fallback_models: list[str] | tuple[str, ...] | None = None,
 ) -> ChatCompletion:
     """POST one chat completion and return the assistant text plus usage.
 
     With ``deny_data_collection`` (the default) OpenRouter only routes to
     providers that do not retain prompts. ``tools`` follows the OpenAI
     function-calling schema; requested calls come back in ``tool_calls``.
+
+    ``fallback_models`` is sent as OpenRouter's ``models`` list so a
+    rate-limited or down primary (typical for DeepSeek's shared pool) fails
+    over to the next slug in the same request.
 
     ``service`` selects app-attribution headers and the named API key for
     that catalog app (``contracts/openrouter-apps.json``). The secret JSON
@@ -176,6 +202,9 @@ def chat_completion(
     user_id = attribution_user(service=service, owner=owner)
     if user_id:
         payload["user"] = user_id
+    fallbacks = normalize_fallback_models(model, fallback_models)
+    if fallbacks:
+        payload["models"] = fallbacks
     provider: dict[str, Any] = {}
     if deny_data_collection:
         provider["data_collection"] = "deny"
@@ -288,6 +317,47 @@ def attribution_headers(service: str) -> dict[str, str]:
     }
 
 
+def _retry_sleep_seconds(attempt: int, *, status: int | None, retry_after: float | None) -> float:
+    """Backoff for one retry. ``attempt`` is 1-based after increment."""
+    base = 3.0 if status == 429 else 1.5
+    exponential = min(_MAX_RETRY_SLEEP_SECONDS, base * (2 ** (attempt - 1)))
+    if retry_after is not None and retry_after > 0:
+        return min(_MAX_RETRY_SLEEP_SECONDS, max(exponential, retry_after))
+    return exponential
+
+
+def _retry_after_seconds(exc: urlerror.HTTPError) -> float | None:
+    headers = getattr(exc, "headers", None)
+    if headers is None:
+        return None
+    raw = ""
+    try:
+        raw = str(headers.get("Retry-After") or headers.get("retry-after") or "").strip()
+    except Exception:
+        return None
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return None
+
+
+def _clock() -> float:
+    """Retry-budget clock.
+
+    Tool-loop tests patch ``time.monotonic`` to simulate spend. Using that
+    here would steal their loop budget on every OpenRouter call. ``perf_counter``
+    is the same kind of clock in production and stays real in those tests.
+    """
+    return time.perf_counter()
+
+
+def _can_retry(*, deadline: float, sleep_s: float) -> bool:
+    """True when sleep plus another attempt can still finish before ``deadline``."""
+    return _clock() + max(0.0, sleep_s) + _MIN_RETRY_REMAINING_SECONDS < deadline
+
+
 def post_json(
     *,
     url: str,
@@ -297,9 +367,22 @@ def post_json(
     max_retries: int = _MAX_RETRIES_DEFAULT,
     service: str = SERVICE_STATEMENT_PARSER,
 ) -> str:
-    data = json.dumps(payload).encode("utf-8")
+    # ``timeout`` is the wall-clock budget for this call, including backoff
+    # and retries. Each attempt uses only the time left so a late 5xx cannot
+    # stack another full OpenRouter timeout and kill the Lambda.
+    deadline = _clock() + max(1.0, float(timeout))
     attempt = 0
     while True:
+        # First attempt keeps the caller's timeout. Later attempts use only
+        # the leftover budget so retries cannot stack another full timeout.
+        if attempt == 0:
+            req_timeout = max(1, int(timeout))
+        else:
+            remaining = deadline - _clock()
+            if remaining <= 0:
+                raise OpenRouterError("OpenRouter request timed out: retry budget exhausted")
+            req_timeout = max(1, int(remaining))
+        data = json.dumps(payload).encode("utf-8")
         req = urlrequest.Request(  # noqa: S310 - URL is trusted (env-configured)
             url=url,
             data=data,
@@ -311,7 +394,7 @@ def post_json(
             },
         )
         try:
-            with urlrequest.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+            with urlrequest.urlopen(req, timeout=req_timeout) as resp:  # noqa: S310
                 return resp.read().decode("utf-8")
         except urlerror.HTTPError as exc:
             body = ""
@@ -320,9 +403,13 @@ def post_json(
             except Exception:  # pragma: no cover - defensive
                 body = ""
             if exc.code in _RETRYABLE_STATUSES and attempt < max_retries:
-                attempt += 1
-                time.sleep(min(8.0, 1.5 * (2 ** (attempt - 1))))
-                continue
+                sleep_s = _retry_sleep_seconds(
+                    attempt + 1, status=exc.code, retry_after=_retry_after_seconds(exc)
+                )
+                if _can_retry(deadline=deadline, sleep_s=sleep_s):
+                    attempt += 1
+                    time.sleep(sleep_s)
+                    continue
             preview = body.replace("\n", " ").strip()
             if len(preview) > 500:
                 preview = f"{preview[:500]}..."
@@ -332,17 +419,19 @@ def post_json(
                 status=exc.code,
             ) from exc
         except urlerror.URLError as exc:
-            if attempt < max_retries:
+            sleep_s = _retry_sleep_seconds(attempt + 1, status=None, retry_after=None)
+            if attempt < max_retries and _can_retry(deadline=deadline, sleep_s=sleep_s):
                 attempt += 1
-                time.sleep(min(8.0, 1.5 * (2 ** (attempt - 1))))
+                time.sleep(sleep_s)
                 continue
             raise OpenRouterError(
                 f"OpenRouter request transport error: {exc.reason}"
             ) from exc
         except _TRANSIENT_READ_ERRORS as exc:
-            if attempt < max_retries:
+            sleep_s = _retry_sleep_seconds(attempt + 1, status=None, retry_after=None)
+            if attempt < max_retries and _can_retry(deadline=deadline, sleep_s=sleep_s):
                 attempt += 1
-                time.sleep(min(8.0, 1.5 * (2 ** (attempt - 1))))
+                time.sleep(sleep_s)
                 continue
             raise OpenRouterError(f"OpenRouter response was truncated: {exc}") from exc
         except TimeoutError as exc:
