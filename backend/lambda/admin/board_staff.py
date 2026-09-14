@@ -905,12 +905,20 @@ def _evidence_task_ids(task: dict[str, Any]) -> list[str]:
     return [tid for tid in ids if tid]
 
 
+def _call_evidence_aliases(call: dict[str, Any]) -> set[str]:
+    aliases: set[str] = set()
+    for key in ("callId", "toolCallId", "tool_call_id"):
+        value = str(call.get(key) or "").strip()
+        if value:
+            aliases.add(value)
+    return aliases
+
+
 def _known_evidence_ids(table: Any, task: dict[str, Any]) -> set[str]:
     known: set[str] = set()
     for tid in _evidence_task_ids(task):
         for call in board_store.list_tool_calls_for_task(table, tid):
-            if call.get("callId"):
-                known.add(str(call.get("callId")))
+            known.update(_call_evidence_aliases(call))
         for step in board_store.list_task_steps(table, tid):
             for cid in step.get("callIds") or []:
                 if cid:
@@ -923,11 +931,30 @@ def _cited_evidence_ops(table: Any, task: dict[str, Any], evidence: list[str]) -
     ops: set[str] = set()
     for tid in _evidence_task_ids(task):
         for call in board_store.list_tool_calls_for_task(table, tid):
-            if str(call.get("callId")) in wanted:
+            if wanted & _call_evidence_aliases(call):
                 op = str(call.get("op") or "")
                 if op:
                     ops.add(op)
     return ops
+
+
+def _canonical_evidence_ids(table: Any, task: dict[str, Any], evidence: list[str]) -> list[str]:
+    alias_to_id: dict[str, str] = {}
+    for tid in _evidence_task_ids(task):
+        for call in board_store.list_tool_calls_for_task(table, tid):
+            cid = str(call.get("callId") or "").strip()
+            if not cid:
+                continue
+            for alias in _call_evidence_aliases(call):
+                alias_to_id.setdefault(alias, cid)
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in evidence:
+        cid = alias_to_id.get(str(raw))
+        if cid and cid not in seen:
+            out.append(cid)
+            seen.add(cid)
+    return out
 
 
 def _offered_evidence_ops(ctx: board_tools.ToolContext, task: dict[str, Any]) -> set[str]:
@@ -1740,7 +1767,7 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
     evidence = [str(x) for x in (args.get("evidence") or []) if isinstance(x, (str, int))]
     known = _known_evidence_ids(ctx.table, task)
     attempt = _task_attempt(task)
-    evidence = [e for e in evidence if e in known]
+    evidence = _canonical_evidence_ids(ctx.table, task, [e for e in evidence if e in known])
     needed = _brief_required_evidence_tools(
         str(task.get("brief") or ""), offered=_offered_evidence_ops(ctx, task)
     )

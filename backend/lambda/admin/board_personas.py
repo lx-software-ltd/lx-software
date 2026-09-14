@@ -310,6 +310,8 @@ def render_task_frame(task: dict[str, Any], scratchpad: str, *, help_available: 
         "If the offered functions cannot verify more, task_finish with confidence low and openQuestions; "
         "do not invent tool names or loop. "
         "Do not call task_finish without evidence tool calls unless the brief needs none. "
+        "Each successful tool result includes callId; pass those callId values in task_finish evidence "
+        "(not the model's tool_call_id). "
         "Do not call task_finish with placeholder brackets such as [Insert …]; write verified "
         "figures or write unavailable and why."
     )

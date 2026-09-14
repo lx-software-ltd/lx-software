@@ -652,5 +652,55 @@ class DutiesBatchTests(BoardTestCase):
         self.assertIn("minimist", batch[0]["brief"])
 
 
+class ApprovalAndCallIdTests(BoardTestCase):
+    def test_code_run_task_dedupes_pending_by_issue(self) -> None:
+        settings = board_store.default_settings()
+        settings["tools"]["globalMode"] = "propose"
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="cto",
+            display_name="CTO",
+            kind="task",
+            actor="persona",
+            task_id="impl-1",
+        )
+        first = board_tools.create_approval(
+            ctx,
+            board_tools.REGISTRY["code_run_task"],
+            {"issueNumber": 484, "brief": "Fix extract-zip", "kind": "fix", "reason": "first"},
+            summary="Dispatched the coding runner",
+        )
+        second = board_tools.create_approval(
+            ctx,
+            board_tools.REGISTRY["code_run_task"],
+            {"issueNumber": 484, "brief": "Different wording", "kind": "fix", "reason": "again"},
+            summary="Dispatched the coding runner",
+        )
+        self.assertEqual(first["approvalId"], second["approvalId"])
+        pending = [a for a in board_store.list_approvals(self.table) if a.get("status") == "pending"]
+        self.assertEqual(len(pending), 1)
+
+    def test_execute_call_returns_internal_call_id(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        settings = _enable_staff(self.table)
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="ceo",
+            display_name="CEO",
+            kind="task",
+            actor="persona",
+            task_id="t-1",
+            llm_tool_call_id="call_xBcJqwPl7xTCkUM4TCnz6XgI",
+        )
+        outcome = board_tools.execute_call(ctx, board_tools.REGISTRY["staff_list_tasks"], {"limit": 5})
+        self.assertTrue(outcome.call_id)
+        self.assertEqual(outcome.result.get("callId"), outcome.call_id)
+        stored = board_store.list_tool_calls_for_task(self.table, "t-1")
+        self.assertEqual(stored[0]["toolCallId"], "call_xBcJqwPl7xTCkUM4TCnz6XgI")
+
+
 if __name__ == "__main__":
     unittest.main()
