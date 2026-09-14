@@ -385,8 +385,9 @@ def _call(
         json_mode=json_mode,
         temperature=temperature,
         max_tokens=max_tokens,
-        max_retries=1,
+        max_retries=2,
         tag=tag,
+        settings=board_store.load_settings(table),
     )
 
 

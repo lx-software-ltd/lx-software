@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import io
 import json
 import sys
 import types
 import unittest
 from unittest.mock import MagicMock, patch
+from urllib import error as urlerror
 
 
 def _install_stubs() -> None:
@@ -261,6 +263,155 @@ class TestOpenRouterAttribution(unittest.TestCase):
                 )
         self.assertEqual(calls["n"], 1)
         self.assertIn("timed out", str(ctx.exception))
+
+
+class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
+    def setUp(self) -> None:
+        openrouter_client.reset_api_key_cache_for_tests()
+
+    def test_normalize_fallback_models_excludes_primary_and_caps(self) -> None:
+        self.assertEqual(
+            openrouter_client.normalize_fallback_models(
+                "deepseek/deepseek-chat",
+                [
+                    "deepseek/deepseek-chat",
+                    " openai/gpt-4.1-mini ",
+                    "openai/gpt-4.1-mini",
+                    "anthropic/claude-sonnet-4",
+                    "google/gemini-2.5-flash",
+                    "meta-llama/unused",
+                ],
+            ),
+            ["openai/gpt-4.1-mini", "anthropic/claude-sonnet-4", "google/gemini-2.5-flash"],
+        )
+        self.assertEqual(openrouter_client.normalize_fallback_models("m", None), [])
+        self.assertEqual(openrouter_client.normalize_fallback_models("m", ["", "m"]), [])
+
+    def test_chat_completion_sends_fallback_models(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_urlopen(req, timeout=None):  # noqa: ARG001
+            captured["body"] = json.loads(req.data.decode("utf-8"))
+            return _FakeResp(
+                json.dumps(
+                    {
+                        "model": "openai/gpt-4.1-mini",
+                        "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+                    }
+                ).encode("utf-8")
+            )
+
+        with patch("openrouter_client.urlrequest.urlopen", fake_urlopen), patch.dict(
+            "os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False
+        ):
+            completion = openrouter_client.chat_completion(
+                messages=[{"role": "user", "content": "hi"}],
+                model="deepseek/deepseek-chat",
+                secrets_client=None,
+                timeout=5,
+                fallback_models=["deepseek/deepseek-chat", "openai/gpt-4.1-mini", "anthropic/claude-sonnet-4"],
+            )
+        body = captured["body"]
+        self.assertEqual(body["model"], "deepseek/deepseek-chat")
+        self.assertEqual(body["models"], ["openai/gpt-4.1-mini", "anthropic/claude-sonnet-4"])
+        self.assertEqual(completion.model, "openai/gpt-4.1-mini")
+
+    def test_post_json_retries_429_and_ignores_upstream_provider(self) -> None:
+        error_body = json.dumps(
+            {
+                "error": {
+                    "message": "Provider returned error",
+                    "code": 429,
+                    "metadata": {
+                        "raw": "deepseek/deepseek-chat is temporarily rate-limited upstream.",
+                        "provider_name": "StreamLake",
+                        "limit_source": "upstream_provider_shared_pool",
+                    },
+                }
+            }
+        ).encode("utf-8")
+        calls: dict[str, object] = {"n": 0, "bodies": []}
+
+        def fake_urlopen(req, timeout=None):  # noqa: ARG001
+            calls["n"] = int(calls["n"]) + 1
+            bodies: list = calls["bodies"]  # type: ignore[assignment]
+            bodies.append(json.loads(req.data.decode("utf-8")))
+            if calls["n"] == 1:
+                raise urlerror.HTTPError(
+                    req.full_url,
+                    429,
+                    "Too Many Requests",
+                    {"Retry-After": "7"},
+                    io.BytesIO(error_body),
+                )
+            return _FakeResp(json.dumps({"ok": True}).encode("utf-8"))
+
+        slept: list[float] = []
+        with (
+            patch("openrouter_client.urlrequest.urlopen", fake_urlopen),
+            patch("openrouter_client.time.sleep", lambda seconds: slept.append(seconds)),
+        ):
+            text = openrouter_client.post_json(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                api_key="sk-test",
+                payload={"model": "deepseek/deepseek-chat", "provider": {"data_collection": "deny"}},
+                timeout=5,
+            )
+        self.assertEqual(calls["n"], 2)
+        bodies = calls["bodies"]
+        self.assertEqual(bodies[0]["provider"], {"data_collection": "deny"})
+        self.assertEqual(
+            bodies[1]["provider"],
+            {"data_collection": "deny", "ignore": ["streamlake"]},
+        )
+        self.assertEqual(slept, [7.0])
+        self.assertEqual(json.loads(text), {"ok": True})
+
+    def test_post_json_gives_up_after_429_retries(self) -> None:
+        def fake_urlopen(req, timeout=None):  # noqa: ARG001
+            raise urlerror.HTTPError(
+                req.full_url,
+                429,
+                "Too Many Requests",
+                {},
+                io.BytesIO(b'{"error":{"message":"rate limited","code":429}}'),
+            )
+
+        with (
+            patch("openrouter_client.urlrequest.urlopen", fake_urlopen),
+            patch("openrouter_client.time.sleep", lambda *_a, **_k: None),
+        ):
+            with self.assertRaises(openrouter_client.OpenRouterError) as ctx:
+                openrouter_client.post_json(
+                    url="https://openrouter.ai/api/v1/chat/completions",
+                    api_key="sk-test",
+                    payload={"model": "m"},
+                    timeout=5,
+                    max_retries=2,
+                )
+        self.assertEqual(ctx.exception.status, 429)
+        self.assertIn("rate limited", str(ctx.exception))
+
+    def test_provider_slug_and_retry_after_helpers(self) -> None:
+        self.assertEqual(
+            openrouter_client._openrouter_provider_slug(
+                json.dumps({"error": {"metadata": {"provider_name": "StreamLake"}}})
+            ),
+            "streamlake",
+        )
+        self.assertEqual(openrouter_client._openrouter_provider_slug("not json"), "")
+        self.assertEqual(
+            openrouter_client._retry_sleep_seconds(1, status=429, retry_after=7),
+            7.0,
+        )
+        self.assertEqual(
+            openrouter_client._retry_sleep_seconds(1, status=500, retry_after=None),
+            1.5,
+        )
+        self.assertEqual(
+            openrouter_client._retry_sleep_seconds(3, status=429, retry_after=99),
+            20.0,
+        )
 
 
 if __name__ == "__main__":

@@ -41,6 +41,30 @@ def model_for(kind: str, settings: dict[str, Any]) -> str:
     }.get(kind, DEFAULT_CHAT_MODEL)
 
 
+def fallback_models_for(model: str, settings: dict[str, Any] | None = None) -> list[str]:
+    """Stack and board models to try when the primary is rate-limited or down.
+
+    Cheap DeepSeek endpoints often share one upstream pool (a 429 from
+    StreamLake is typical). OpenRouter only fails over to another *model*
+    when ``models`` is set, so board calls always include the stack defaults.
+    """
+    candidates: list[str] = []
+    if isinstance(settings, dict):
+        for kind in ("chat", "standup", "deepDive"):
+            candidates.append(model_for(kind, settings))
+    candidates.extend(
+        [
+            (os.environ.get("BOARD_CHAT_MODEL") or "").strip(),
+            (os.environ.get("BOARD_MEETING_MODEL") or "").strip(),
+            (os.environ.get("BOARD_DEEP_DIVE_MODEL") or "").strip(),
+            DEFAULT_CHAT_MODEL,
+            DEFAULT_STANDUP_MODEL,
+            DEFAULT_DEEP_DIVE_MODEL,
+        ]
+    )
+    return openrouter_client.normalize_fallback_models(model, candidates)
+
+
 def daily_budget_usd(settings: dict[str, Any]) -> float:
     try:
         value = float(settings.get("dailyBudgetUsd") or 0.0)
@@ -76,13 +100,17 @@ def board_completion(
     json_mode: bool = False,
     temperature: float | None = 0.4,
     max_tokens: int | None = None,
-    max_retries: int = 1,
+    max_retries: int = 2,
     tag: str = "board_completion",
     tools: list[dict[str, Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,
     usage_sink: Callable[[dict[str, Any]], None] | None = None,
+    fallback_models: list[str] | None = None,
+    settings: dict[str, Any] | None = None,
 ) -> openrouter_client.ChatCompletion:
     """One board LLM call with usage recorded against today's budget."""
+    if fallback_models is None:
+        fallback_models = fallback_models_for(model, settings)
     completion = openrouter_client.chat_completion(
         messages=messages,
         model=model,
@@ -98,6 +126,7 @@ def board_completion(
         tool_choice=tool_choice,
         service=openrouter_client.SERVICE_EXECUTIVE_BOARD,
         owner=board_store.BOARD_KEY,
+        fallback_models=fallback_models,
     )
     try:
         board_store.add_usage_day(table, completion.usage)

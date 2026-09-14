@@ -177,7 +177,11 @@ export function BoardSettingsCard({
               />
             </div>
           ))}
-          <div className="form-text">Leave blank to use the stack defaults. Requests are routed only to providers that do not retain prompts.</div>
+          <div className="form-text">
+            Leave blank to use the stack defaults. Requests are routed only to providers that do not retain prompts.
+            If a model is rate-limited upstream (common for DeepSeek shared pools), the board automatically tries
+            the other board models, then openai/gpt-4.1-mini and anthropic/claude-sonnet-4.
+          </div>
 
           <h3 className="h6 mt-4">Staff and daily review</h3>
           <div className="form-check form-switch">

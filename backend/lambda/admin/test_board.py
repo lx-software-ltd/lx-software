@@ -83,6 +83,7 @@ def freeze_board_daytime(test_case: unittest.TestCase, *module_names: str) -> No
         test_case.addCleanup(patcher.stop)
 
 import board_actions  # noqa: E402
+import board_budget  # noqa: E402
 import board_chat  # noqa: E402
 import board_meeting  # noqa: E402
 import board_personas  # noqa: E402
@@ -815,6 +816,8 @@ class TestMeetings(BoardTestCase):
         self.assertEqual([a["assignee"] for a in actions["actions"]], [""] * 5)
         self.assertEqual(len(board_store.load_decision_log(self.table)), 1)
         minutes_request = next(r for r in self.openrouter.requests if "Write the minutes" in r["messages"][-1]["content"])
+        self.assertEqual(minutes_request["model"], "openai/gpt-4.1-mini")
+        self.assertEqual(minutes_request["models"], ["anthropic/claude-sonnet-4"])
         prompt = minutes_request["messages"][-1]["content"]
         self.assertIn("Who can take an action:", prompt)
         self.assertIn("No staff seats are active", prompt)
@@ -1012,6 +1015,30 @@ class TestNormalizers(unittest.TestCase):
         self.assertEqual(parsed, {"a": 1})
         with self.assertRaises(openrouter_client.OpenRouterError):
             openrouter_client.parse_json_object_text("no json here")
+
+
+class TestBoardModelFallbacks(unittest.TestCase):
+    def test_fallback_models_skip_primary_and_include_stack_defaults(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {"BOARD_CHAT_MODEL": "", "BOARD_MEETING_MODEL": "", "BOARD_DEEP_DIVE_MODEL": ""},
+            clear=False,
+        ):
+            self.assertEqual(
+                board_budget.fallback_models_for("deepseek/deepseek-chat"),
+                ["openai/gpt-4.1-mini", "anthropic/claude-sonnet-4"],
+            )
+            self.assertEqual(
+                board_budget.fallback_models_for("openai/gpt-4.1-mini"),
+                ["anthropic/claude-sonnet-4"],
+            )
+            self.assertEqual(
+                board_budget.fallback_models_for(
+                    "deepseek/deepseek-chat",
+                    {"models": {"chat": "google/gemini-2.5-flash", "standup": "deepseek/deepseek-chat"}},
+                ),
+                ["google/gemini-2.5-flash", "openai/gpt-4.1-mini", "anthropic/claude-sonnet-4"],
+            )
 
 
 if __name__ == "__main__":

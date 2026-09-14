@@ -26,6 +26,9 @@ DEFAULT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_TIMEOUT_SECONDS = 60
 _RETRYABLE_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
 _MAX_RETRIES_DEFAULT = 2
+_MAX_FALLBACK_MODELS = 3
+# Cap wait so a 429 cannot eat a whole meeting-phase timeout (100s).
+_MAX_RETRY_SLEEP_SECONDS = 20.0
 # A full-call TimeoutError is a deadline, not a truncated body — do not
 # retry it with the same timeout (that doubles a hung 90 s call).
 _TRANSIENT_READ_ERRORS = (
@@ -144,6 +147,22 @@ def endpoint_url() -> str:
     return os.getenv("OPENROUTER_CHAT_COMPLETIONS_URL", "").strip() or DEFAULT_ENDPOINT
 
 
+def normalize_fallback_models(primary: str, candidates: list[str] | tuple[str, ...] | None) -> list[str]:
+    """Deduped fallback slugs, excluding the primary, capped for the OpenRouter ``models`` field."""
+    primary_slug = (primary or "").strip()
+    seen = {primary_slug} if primary_slug else set()
+    out: list[str] = []
+    for raw in candidates or ():
+        slug = str(raw or "").strip()
+        if not slug or slug in seen:
+            continue
+        seen.add(slug)
+        out.append(slug)
+        if len(out) >= _MAX_FALLBACK_MODELS:
+            break
+    return out
+
+
 def chat_completion(
     *,
     messages: list[dict[str, Any]],
@@ -161,12 +180,17 @@ def chat_completion(
     tool_choice: str | dict[str, Any] | None = None,
     service: str = SERVICE_STATEMENT_PARSER,
     owner: str | None = None,
+    fallback_models: list[str] | tuple[str, ...] | None = None,
 ) -> ChatCompletion:
     """POST one chat completion and return the assistant text plus usage.
 
     With ``deny_data_collection`` (the default) OpenRouter only routes to
     providers that do not retain prompts. ``tools`` follows the OpenAI
     function-calling schema; requested calls come back in ``tool_calls``.
+
+    ``fallback_models`` is sent as OpenRouter's ``models`` list so a
+    rate-limited or down primary (typical for DeepSeek's shared pool) fails
+    over to the next slug in the same request.
 
     ``service`` selects app-attribution headers and the named API key for
     that catalog app (``contracts/openrouter-apps.json``). The secret JSON
@@ -176,6 +200,9 @@ def chat_completion(
     user_id = attribution_user(service=service, owner=owner)
     if user_id:
         payload["user"] = user_id
+    fallbacks = normalize_fallback_models(model, fallback_models)
+    if fallbacks:
+        payload["models"] = fallbacks
     provider: dict[str, Any] = {}
     if deny_data_collection:
         provider["data_collection"] = "deny"
@@ -288,6 +315,65 @@ def attribution_headers(service: str) -> dict[str, str]:
     }
 
 
+def _retry_sleep_seconds(attempt: int, *, status: int | None, retry_after: float | None) -> float:
+    """Backoff for one retry. ``attempt`` is 1-based after increment."""
+    base = 3.0 if status == 429 else 1.5
+    exponential = min(_MAX_RETRY_SLEEP_SECONDS, base * (2 ** (attempt - 1)))
+    if retry_after is not None and retry_after > 0:
+        return min(_MAX_RETRY_SLEEP_SECONDS, max(exponential, retry_after))
+    return exponential
+
+
+def _retry_after_seconds(exc: urlerror.HTTPError) -> float | None:
+    headers = getattr(exc, "headers", None)
+    if headers is None:
+        return None
+    raw = ""
+    try:
+        raw = str(headers.get("Retry-After") or headers.get("retry-after") or "").strip()
+    except Exception:
+        return None
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return None
+
+
+def _openrouter_provider_slug(body: str) -> str:
+    """Provider slug from an OpenRouter error body, if present."""
+    if not body.strip().startswith("{"):
+        return ""
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    err = payload.get("error")
+    if not isinstance(err, dict):
+        return ""
+    meta = err.get("metadata")
+    if not isinstance(meta, dict):
+        return ""
+    name = str(meta.get("provider_name") or "").strip()
+    if not name:
+        return ""
+    return name.lower().replace(" ", "-")
+
+
+def _with_ignored_provider(payload: dict[str, Any], slug: str) -> dict[str, Any]:
+    if not slug:
+        return payload
+    provider = dict(payload.get("provider") or {})
+    ignore = [str(item) for item in (provider.get("ignore") or []) if str(item).strip()]
+    if slug in ignore:
+        return payload
+    provider["ignore"] = [*ignore, slug]
+    return {**payload, "provider": provider}
+
+
 def post_json(
     *,
     url: str,
@@ -297,9 +383,10 @@ def post_json(
     max_retries: int = _MAX_RETRIES_DEFAULT,
     service: str = SERVICE_STATEMENT_PARSER,
 ) -> str:
-    data = json.dumps(payload).encode("utf-8")
+    working = dict(payload)
     attempt = 0
     while True:
+        data = json.dumps(working).encode("utf-8")
         req = urlrequest.Request(  # noqa: S310 - URL is trusted (env-configured)
             url=url,
             data=data,
@@ -321,7 +408,13 @@ def post_json(
                 body = ""
             if exc.code in _RETRYABLE_STATUSES and attempt < max_retries:
                 attempt += 1
-                time.sleep(min(8.0, 1.5 * (2 ** (attempt - 1))))
+                if exc.code == 429:
+                    working = _with_ignored_provider(working, _openrouter_provider_slug(body))
+                time.sleep(
+                    _retry_sleep_seconds(
+                        attempt, status=exc.code, retry_after=_retry_after_seconds(exc)
+                    )
+                )
                 continue
             preview = body.replace("\n", " ").strip()
             if len(preview) > 500:
@@ -334,7 +427,7 @@ def post_json(
         except urlerror.URLError as exc:
             if attempt < max_retries:
                 attempt += 1
-                time.sleep(min(8.0, 1.5 * (2 ** (attempt - 1))))
+                time.sleep(_retry_sleep_seconds(attempt, status=None, retry_after=None))
                 continue
             raise OpenRouterError(
                 f"OpenRouter request transport error: {exc.reason}"
@@ -342,7 +435,7 @@ def post_json(
         except _TRANSIENT_READ_ERRORS as exc:
             if attempt < max_retries:
                 attempt += 1
-                time.sleep(min(8.0, 1.5 * (2 ** (attempt - 1))))
+                time.sleep(_retry_sleep_seconds(attempt, status=None, retry_after=None))
                 continue
             raise OpenRouterError(f"OpenRouter response was truncated: {exc}") from exc
         except TimeoutError as exc:
