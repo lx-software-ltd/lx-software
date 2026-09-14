@@ -1,7 +1,7 @@
 name: Manage Public API Keys
 
-# Mint / list / revoke the public read-only API keys served by the /public/*
-# routes (see docs/deployment/admin-website.md, "Public read-only API keys").
+# Mint / list / revoke / set-write the public API keys served by the /public/*
+# routes (see docs/deployment/admin-website.md, "Public API keys").
 #
 # SECURITY: this repository is PUBLIC, so workflow logs are world-readable.
 # A newly minted key is therefore never printed; it is written to a file and
@@ -21,7 +21,7 @@ on:
         description: "What to do"
         required: true
         type: choice
-        options: [create, list, revoke]
+        options: [create, list, revoke, set-write]
       label:
         description: "Key label (create only)"
         required: false
@@ -38,8 +38,13 @@ on:
         description: "Comma-separated CIDRs (create only, optional)"
         required: false
         type: string
+      allow_write:
+        description: "Opt the key into PUT/POST/DELETE (create and set-write)"
+        required: false
+        type: boolean
+        default: false
       key_id:
-        description: "keyId to revoke (revoke only)"
+        description: "keyId to revoke or set-write"
         required: false
         type: string
 
@@ -81,6 +86,10 @@ jobs:
             echo "::error::'key_id' is required for action=revoke"
             exit 1
           fi
+          if [ "$ACTION" = "set-write" ] && [ -z "$KEY_ID" ]; then
+            echo "::error::'key_id' is required for action=set-write"
+            exit 1
+          fi
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
@@ -99,6 +108,7 @@ jobs:
           EXPIRES_AT: ${{ inputs.expires_at }}
           SCOPES: ${{ inputs.scopes }}
           ALLOWED_CIDRS: ${{ inputs.allowed_cidrs }}
+          ALLOW_WRITE: ${{ inputs.allow_write }}
           GPG_PASSPHRASE: ${{ secrets.PUBLIC_API_KEY_GPG_PASSPHRASE }}
           AWS_REGION: ${{ vars.AWS_REGION }}
         run: |
@@ -113,6 +123,9 @@ jobs:
           fi
           if [ -n "$ALLOWED_CIDRS" ]; then
             ARGS+=(--allowed-cidrs "$ALLOWED_CIDRS")
+          fi
+          if [ "$ALLOW_WRITE" = "true" ]; then
+            ARGS+=(--allow-write)
           fi
           python3 scripts/manage-public-api-keys.py "${ARGS[@]}"
 
@@ -155,3 +168,17 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/manage-public-api-keys.py revoke --key-id "$KEY_ID" --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Set write
+        if: ${{ inputs.action == 'set-write' }}
+        env:
+          KEY_ID: ${{ inputs.key_id }}
+          ALLOW_WRITE: ${{ inputs.allow_write }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          FLAG="--read-only"
+          if [ "$ALLOW_WRITE" = "true" ]; then
+            FLAG="--allow-write"
+          fi
+          python3 scripts/manage-public-api-keys.py set-write --key-id "$KEY_ID" "$FLAG" --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"

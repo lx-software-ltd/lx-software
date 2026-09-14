@@ -28,6 +28,7 @@ _install_stubs()
 
 import handler  # noqa: E402
 from api_key_hash import hash_api_key  # noqa: E402
+from api_key_scopes import key_allows_write  # noqa: E402
 from handler import _is_expired, lambda_handler  # noqa: E402
 
 _KEY = "lxpk_test-key-value"
@@ -94,6 +95,7 @@ class TestAuthorizer(unittest.TestCase):
         self.assertEqual(out["context"]["keyId"], "k123")
         self.assertEqual(out["context"]["scope"], "read")
         self.assertEqual(out["context"]["scopes"], "finance")
+        self.assertEqual(out["context"]["write"], "0")
         self.table.get_item.assert_called_once_with(
             Key={"pk": f"APIKEY#{_DIGEST}", "sk": "META"}
         )
@@ -140,6 +142,29 @@ class TestAuthorizer(unittest.TestCase):
         self.table.get_item.return_value = {"Item": _valid_item(scope="write")}
         self.assertFalse(lambda_handler(_event(), None)["isAuthorized"])
 
+    def test_allow_write_flag_is_forwarded_not_method_gated(self) -> None:
+        # Cache is key + IP, so POST must stay authorized; the handler checks write.
+        self.table.get_item.return_value = {
+            "Item": _valid_item(scopes=["siutindei-board-ops"], allowWrite=True)
+        }
+        get_out = lambda_handler(_event(), None)
+        self.assertTrue(get_out["isAuthorized"])
+        self.assertEqual(get_out["context"]["write"], "1")
+        post_ev = _event()
+        post_ev["requestContext"]["http"]["method"] = "POST"
+        post_out = lambda_handler(post_ev, None)
+        self.assertTrue(post_out["isAuthorized"])
+        self.assertEqual(post_out["context"]["write"], "1")
+
+    def test_legacy_read_scope_never_sets_write(self) -> None:
+        self.table.get_item.return_value = {"Item": _valid_item()}
+        post_ev = _event()
+        post_ev["requestContext"]["http"]["method"] = "POST"
+        out = lambda_handler(post_ev, None)
+        self.assertTrue(out["isAuthorized"])
+        self.assertEqual(out["context"]["write"], "0")
+        self.assertEqual(out["context"]["scopes"], "finance")
+
     def test_ddb_error_denied(self) -> None:
         from botocore.exceptions import ClientError
 
@@ -147,6 +172,18 @@ class TestAuthorizer(unittest.TestCase):
             {"Error": {"Code": "InternalServerError"}}, "GetItem"
         )
         self.assertFalse(lambda_handler(_event(), None)["isAuthorized"])
+
+
+class TestKeyAllowsWrite(unittest.TestCase):
+    def test_absent_is_read_only(self) -> None:
+        self.assertFalse(key_allows_write({}))
+        self.assertFalse(key_allows_write({"allowWrite": False}))
+        self.assertFalse(key_allows_write({"allowWrite": "no"}))
+
+    def test_truthy_values(self) -> None:
+        self.assertTrue(key_allows_write({"allowWrite": True}))
+        self.assertTrue(key_allows_write({"allowWrite": "true"}))
+        self.assertTrue(key_allows_write({"allowWrite": "1"}))
 
 
 class TestHashApiKey(unittest.TestCase):

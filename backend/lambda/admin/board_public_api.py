@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from contract_constants import BOARD_KEY
@@ -39,6 +40,10 @@ BOARD_OPS_HEADS = frozenset(
 # Third-party contact / billing data that has no alias layer, so it cannot be
 # masked like mail; these heads need `siutindei-pii` on top of board-full.
 PII_HEADS = frozenset({"prospects", "outreach", "receivables"})
+# PUT settings / PUT boundaries must not let a key rewrite tool act-mode,
+# allow-list, spend caps, or the digest mailbox that reports key use.
+SETTINGS_WRITE_BLOCKED_KEYS = frozenset({"tools", "review"})
+WRITE_METHODS = frozenset({"PUT", "POST", "DELETE"})
 NOTIFY_COALESCE_SECONDS = 60
 NOTIFY_ROW_TTL = timedelta(days=1)
 NOTIFY_SUBJECT = "Public API key used"
@@ -105,6 +110,76 @@ def path_allowed(path: str, scopes: list[str]) -> bool:
     return True
 
 
+def writes_enabled() -> bool:
+    """Fail-closed stack kill switch (``PublicApiWritesEnabled``)."""
+    return (os.environ.get("PUBLIC_API_WRITES_ENABLED") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def key_context_allows_write(key_ctx: dict[str, Any]) -> bool:
+    """Authorizer forwards ``write`` as ``1``/``0`` (API Gateway context is strings)."""
+    raw = key_ctx.get("write")
+    if raw in (True, 1, "1"):
+        return True
+    if isinstance(raw, str) and raw.strip().lower() in ("true", "yes", "on"):
+        return True
+    allow = key_ctx.get("allowWrite")
+    if allow in (True, 1, "1"):
+        return True
+    if isinstance(allow, str) and allow.strip().lower() in ("true", "yes", "on"):
+        return True
+    return False
+
+
+def write_blocked(method: str, path: str) -> bool:
+    """Owner-only (JWT) writes: approvals, production promote, ramp, tools, mail selftest."""
+    rest = _board_rest(path)
+    if not rest:
+        return True
+    head = rest[0]
+    if method == "POST" and head == "approvals" and len(rest) == 3 and rest[2] in ("approve", "reject"):
+        return True
+    if method == "POST" and rest == ["code", "promote"]:
+        return True
+    if method == "POST" and head == "ramp" and len(rest) == 3 and rest[2] == "promote":
+        return True
+    if method == "PUT" and rest == ["tools"]:
+        return True
+    if method == "POST" and rest == ["mail", "selftest"]:
+        return True
+    return False
+
+
+def write_allowed(
+    method: str, path: str, key_ctx: dict[str, Any], scopes: list[str]
+) -> bool:
+    if method not in WRITE_METHODS:
+        return False
+    if not writes_enabled():
+        return False
+    if not key_context_allows_write(key_ctx):
+        return False
+    needed = path_class(path)
+    if needed is None or needed == SCOPE_FINANCE:
+        return False
+    if write_blocked(method, path):
+        return False
+    return path_allowed(path, scopes)
+
+
+def blocked_settings_fields(path: str, body: Any) -> list[str]:
+    rest = _board_rest(path)
+    if rest not in (["settings"], ["boundaries"]):
+        return []
+    if not isinstance(body, dict):
+        return []
+    return sorted(SETTINGS_WRITE_BLOCKED_KEYS & set(body.keys()))
+
+
 def _source_ip(event: dict[str, Any]) -> str:
     http = (event.get("requestContext") or {}).get("http") or {}
     return str(http.get("sourceIp") or "").strip()
@@ -131,7 +206,7 @@ def redact_board_response(
     if not isinstance(body, dict):
         return response
     changed = False
-    if path == PUBLIC_BOARD_PREFIX and SCOPE_PII not in have:
+    if SCOPE_PII not in have:
         settings = body.get("settings")
         if isinstance(settings, dict):
             tools = settings.get("tools")
@@ -255,7 +330,11 @@ def notify_key_use(
     path_cls = path_cls or path_class(path) or "unknown"
     source_ip = _source_ip(event) or str(key_ctx.get("sourceIp") or "")
     table = board_store.records_table()
-    if not try_claim_notify_slot(table, key_id=key_id, path_cls=f"{kind}:{path_cls}", source_ip=source_ip):
+    # Every write mails digestTo; reads stay coalesced 60s per (key, class, ip).
+    coalesce = kind not in ("write",)
+    if coalesce and not try_claim_notify_slot(
+        table, key_id=key_id, path_cls=f"{kind}:{path_cls}", source_ip=source_ip
+    ):
         _log_event(
             "info",
             tag="public_api_notify_coalesced",

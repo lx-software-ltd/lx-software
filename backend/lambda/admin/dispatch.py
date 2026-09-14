@@ -104,11 +104,11 @@ from proxies import _proxy_finance_quotes, _proxy_fx_v2_rates
 from runtime import PARSE_JOB_PK_PREFIX, RECORD_PK_PREFIX
 
 
-# Read-only mirrors of the admin GET endpoints, served under /public/* and
-# authenticated by the API key Lambda authorizer instead of Cognito. Assets
-# and parse-job endpoints are deliberately excluded (they presign S3 access
-# to bank statements / are owner-scoped). Board GETs are mirrored under
-# ``PUBLIC_BOARD_PREFIX`` (see ``_is_public_read_path``).
+# API-key mirrors of the admin endpoints, served under /public/* and
+# authenticated by the Lambda authorizer instead of Cognito. Finance and
+# records stay GET-only. Board GETs and (when the key has allowWrite plus
+# PublicApiWritesEnabled) PUT/POST/DELETE are mirrored under
+# ``PUBLIC_BOARD_PREFIX``. Assets and parse-job endpoints are excluded.
 PUBLIC_READ_PATHS = frozenset(
     {
         "/public/finance",
@@ -120,10 +120,14 @@ PUBLIC_READ_PATHS = frozenset(
 PUBLIC_BOARD_PREFIX = "/public/siu-tin-dei/board"
 
 
-def _is_public_read_path(path: str) -> bool:
+def _is_public_path(path: str) -> bool:
     if path in PUBLIC_READ_PATHS:
         return True
     return path == PUBLIC_BOARD_PREFIX or path.startswith(PUBLIC_BOARD_PREFIX + "/")
+
+
+def _is_public_board_write_path(path: str) -> bool:
+    return path.startswith(PUBLIC_BOARD_PREFIX + "/")
 
 STATEMENT_BOOK_DISPLAY_LABEL = {
     "siuTinDei": "Siu Tin Dei",
@@ -209,14 +213,16 @@ def _finance_get_response() -> dict[str, Any]:
     )
 
 
-def _handle_public_read(
+def _handle_public(
     event: dict[str, Any], method: str, path: str
 ) -> dict[str, Any]:
-    """Serve /public/* routes for API key principals (read-only, GET only).
+    """Serve /public/* routes for API key principals.
 
     API Gateway already enforced the key via the Lambda authorizer; the
     context check here is defense in depth against direct Lambda invocation
-    or a route being wired to the wrong authorizer.
+    or a route being wired to the wrong authorizer. Writes need allowWrite
+    on the key, PublicApiWritesEnabled, and a board path that is not
+    owner-only (approvals, code/promote, ramp/promote, PUT tools).
     """
     key_ctx = _api_key_auth_context(event)
     key_id = key_ctx.get("keyId")
@@ -232,7 +238,29 @@ def _handle_public_read(
         )
         return _json_response(401, {"message": "Unauthorized"})
 
-    if method != "GET" or not _is_public_read_path(path):
+    is_write = method in board_public_api_mod.WRITE_METHODS
+    if is_write:
+        if not _is_public_board_write_path(path) or not board_public_api_mod.write_allowed(
+            method, path, key_ctx, scopes
+        ):
+            _log_event(
+                "warning",
+                tag="public_api_denied",
+                reason="not_allowlisted" if not _is_public_board_write_path(path) else "scope",
+                key_id=key_id,
+                method=method,
+                path=path,
+                path_class=board_public_api_mod.path_class(path),
+                request_id=_request_id(event),
+            )
+            return _json_response(404, {"message": "Not found"})
+        blocked = board_public_api_mod.blocked_settings_fields(path, _parse_json_body(event))
+        if blocked:
+            return _json_response(
+                400,
+                {"message": f"cannot set {', '.join(blocked)} via API key"},
+            )
+    elif method != "GET" or not _is_public_path(path):
         _log_event(
             "warning",
             tag="public_api_denied",
@@ -243,8 +271,7 @@ def _handle_public_read(
             request_id=_request_id(event),
         )
         return _json_response(404, {"message": "Not found"})
-
-    if not board_public_api_mod.path_allowed(path, scopes):
+    elif not board_public_api_mod.path_allowed(path, scopes):
         _log_event(
             "warning",
             tag="public_api_denied",
@@ -259,8 +286,9 @@ def _handle_public_read(
     path_cls = board_public_api_mod.path_class(path)
     _log_event(
         "info",
-        tag="public_api_access",
+        tag="public_api_write" if is_write else "public_api_access",
         key_id=key_id,
+        method=method,
         path=path,
         path_class=path_cls,
         request_id=_request_id(event),
@@ -268,12 +296,18 @@ def _handle_public_read(
 
     if path == PUBLIC_BOARD_PREFIX or path.startswith(PUBLIC_BOARD_PREFIX + "/"):
         board_path = path[len("/public") :]
-        board_response = handle_board_route(event, "GET", board_path, None)
+        actor = f"apikey:{key_id}" if is_write else None
+        board_response = handle_board_route(event, method, board_path, actor)
         if board_response is None:
             return _json_response(404, {"message": "Not found"})
         board_response = board_public_api_mod.redact_board_response(path, board_response, scopes)
         board_public_api_mod.notify_key_use(
-            event, key_ctx=key_ctx, path=path, method=method, path_cls=path_cls
+            event,
+            key_ctx=key_ctx,
+            path=path,
+            method=method,
+            kind="write" if is_write else "allowed",
+            path_cls=path_cls,
         )
         return board_response
     if path == "/public/finance":
@@ -458,7 +492,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         return _json_response(200, {"status": "ok"})
 
     if path == "/public" or path.startswith("/public/"):
-        return _handle_public_read(event, method, path)
+        return _handle_public(event, method, path)
 
     admin_claims = _require_admin(event)
     if admin_claims is None:

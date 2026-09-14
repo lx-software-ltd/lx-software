@@ -574,6 +574,13 @@ export class LxsoftwareStack extends cdk.Stack {
       description:
         "Public base URL of this stack's HTTP API. Used today for board unsubscribe and newsletter confirm links. Leave blank to use the API endpoint CloudFormation assigns.",
     });
+    const publicApiWritesEnabled = new cdk.CfnParameter(this, "PublicApiWritesEnabled", {
+      type: "String",
+      default: "false",
+      allowedValues: ["true", "false"],
+      description:
+        "Kill switch for public API-key PUT/POST/DELETE under /public/siu-tin-dei/board. Default false (fail-closed). Keys also need allowWrite on the APIKEY# row. Finance /public/* stays GET-only.",
+    });
     const boardGitHubRepo = new cdk.CfnParameter(this, "SiutindeiBoardGitHubRepo", {
       type: "String",
       default: "lx-software-ltd/siutindei",
@@ -827,13 +834,12 @@ export class LxsoftwareStack extends cdk.Stack {
     });
 
     /**
-     * Public read-only API key authorizer. Validates the `x-api-key` header
-     * against scrypt key digests stored in the records table
-     * (`pk = APIKEY#<digest>`, `sk = META`; minted via
-     * scripts/manage-public-api-keys.py). Guards only the /public/* GET
-     * routes below — every write route stays on the Cognito JWT authorizer,
-     * so a leaked key can never mutate state even if the handler-level
-     * allowlist regressed.
+     * Public API key authorizer. Validates the `x-api-key` header against
+     * scrypt key digests stored in the records table (`pk = APIKEY#<digest>`,
+     * `sk = META`; minted via scripts/manage-public-api-keys.py). Guards
+     * /public/* GET mirrors and (when allowWrite + PublicApiWritesEnabled)
+     * board PUT/POST/DELETE. Cache is key + source IP, so this Lambda never
+     * denies by HTTP method — the handler re-checks write_allowed.
      */
     const publicApiKeyAuthorizerFn = createPythonLambda(
       this,
@@ -847,6 +853,7 @@ export class LxsoftwareStack extends cdk.Stack {
         deadLetterQueue: this.lambdaDeadLetterQueue,
         environment: {
           RECORDS_TABLE_NAME: this.recordsTable.tableName,
+          PUBLIC_API_WRITES_ENABLED: publicApiWritesEnabled.valueAsString,
         },
       }
     );
@@ -1044,6 +1051,7 @@ export class LxsoftwareStack extends cdk.Stack {
         BOARD_DEEP_DIVE_MODEL: boardDeepDiveModel.valueAsString,
         BOARD_TOOLS_ENABLED: boardToolsEnabled.valueAsString,
         BOARD_STAFF_ENABLED: boardStaffEnabled.valueAsString,
+        PUBLIC_API_WRITES_ENABLED: publicApiWritesEnabled.valueAsString,
         OUTREACH_SENDING_DOMAIN: outreachSendingDomain.valueAsString,
         OUTREACH_FROM_LOCAL_PART: outreachFromLocalPart.valueAsString,
         NEWSLETTER_CONFIG_SET: "lxsoftware-admin-siutindei-newsletter",
@@ -1462,6 +1470,27 @@ export class LxsoftwareStack extends cdk.Stack {
       metricNamespace: "lxsoftware/public-api",
       metricName: "BoardFullAccess",
       metricValue: "1",
+    });
+    new logs.MetricFilter(this, "PublicApiWriteFilter", {
+      logGroup: adminFn.logGroup,
+      filterPattern: logs.FilterPattern.allTerms("public_api_write"),
+      metricNamespace: "lxsoftware/public-api",
+      metricName: "PublicApiWrite",
+      metricValue: "1",
+    });
+    new cloudwatch.Alarm(this, "PublicApiWriteAlarm", {
+      metric: new cloudwatch.Metric({
+        namespace: "lxsoftware/public-api",
+        metricName: "PublicApiWrite",
+        statistic: "Sum",
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 20,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      alarmDescription: "Burst of public API-key board writes.",
     });
     new cloudwatch.Alarm(this, "PublicApiBoardFullAlarm", {
       metric: new cloudwatch.Metric({
@@ -2651,13 +2680,10 @@ export class LxsoftwareStack extends cdk.Stack {
     });
 
     /**
-     * Read-only mirrors of the admin GET endpoints under /public/*,
-     * authenticated with a static API key (`x-api-key` header) instead of a
-     * Cognito JWT. The handler enforces the same allowlist
-     * (`PUBLIC_READ_PATHS` / `PUBLIC_BOARD_PREFIX` in
-     * backend/lambda/admin/dispatch.py) as defense in depth. Assets and
-     * parse-job routes are intentionally not mirrored. Board writes stay on
-     * the Cognito JWT authorizer.
+     * API-key mirrors of admin endpoints under /public/*. Finance / records /
+     * FX stay GET-only. Board GET plus PUT/POST/DELETE on the proxy path use
+     * the same authorizer; the handler enforces scopes, allowWrite, and
+     * PublicApiWritesEnabled (`dispatch.py` / `board_public_api.py`).
      */
     const publicReadOnlyPaths = [
       "/public/finance",
@@ -2667,13 +2693,23 @@ export class LxsoftwareStack extends cdk.Stack {
       "/public/siu-tin-dei/board",
       "/public/siu-tin-dei/board/{proxy+}",
     ];
+    const publicBoardWritePath = "/public/siu-tin-dei/board/{proxy+}";
+    const publicWriteMethods = [
+      apigwv2.HttpMethod.PUT,
+      apigwv2.HttpMethod.POST,
+      apigwv2.HttpMethod.DELETE,
+    ];
     const publicKeyThrottle = {
       ThrottlingRateLimit: 2,
       ThrottlingBurstLimit: 10,
     };
-    const publicReadRoutes: apigwv2.HttpRoute[] = [];
+    const publicWriteThrottle = {
+      ThrottlingRateLimit: 1,
+      ThrottlingBurstLimit: 5,
+    };
+    const publicKeyRoutes: apigwv2.HttpRoute[] = [];
     for (const publicPath of publicReadOnlyPaths) {
-      publicReadRoutes.push(
+      publicKeyRoutes.push(
         ...this.httpApi.addRoutes({
           path: publicPath,
           methods: [apigwv2.HttpMethod.GET],
@@ -2682,14 +2718,25 @@ export class LxsoftwareStack extends cdk.Stack {
         })
       );
     }
+    publicKeyRoutes.push(
+      ...this.httpApi.addRoutes({
+        path: publicBoardWritePath,
+        methods: publicWriteMethods,
+        integration,
+        authorizer: publicApiKeyAuthorizer,
+      })
+    );
     const routeSettings = {
       ...(defaultStage.routeSettings ?? {}),
     };
     for (const publicPath of publicReadOnlyPaths) {
       routeSettings[`GET ${publicPath}`] = publicKeyThrottle;
     }
+    for (const method of ["PUT", "POST", "DELETE"]) {
+      routeSettings[`${method} ${publicBoardWritePath}`] = publicWriteThrottle;
+    }
     defaultStage.routeSettings = routeSettings;
-    for (const route of publicReadRoutes) {
+    for (const route of publicKeyRoutes) {
       defaultStage.addResourceDependency(route.node.defaultChild as apigwv2.CfnRoute);
     }
 

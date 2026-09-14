@@ -1,4 +1,4 @@
-"""HTTP API Lambda authorizer for the public read-only API key routes.
+"""HTTP API Lambda authorizer for the public API key routes.
 
 Validates the ``x-api-key`` header against hashed key records stored in the
 records DynamoDB table (``pk = APIKEY#<scrypt-hex>``, ``sk = META``). Only
@@ -7,9 +7,11 @@ the scrypt digest of a key is ever persisted or logged (see
 once at mint time (see ``scripts/manage-public-api-keys.py``).
 
 Returns the API Gateway v2 "simple" authorizer response. The authorizer
-result is cached by API Gateway keyed on ``x-api-key`` + source IP, so the
-DynamoDB lookup does not run on every request. Revocation takes up to the
-configured TTL (60s).
+result is cached by API Gateway keyed on ``x-api-key`` + source IP (not
+method), so this function never denies based on HTTP method — a POST deny
+would poison GETs for 60s. Write methods are enforced in
+``board_public_api.write_allowed`` using the forwarded ``write`` flag.
+Revocation takes up to the configured TTL (60s).
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from api_key_hash import hash_api_key
 from api_key_scopes import (
     LEGACY_READ_SCOPE,
     ip_allowed,
+    key_allows_write,
     normalize_scopes,
     parse_cidrs,
     scopes_csv,
@@ -132,7 +135,7 @@ def _enqueue_denied_notify(item: dict[str, Any], reason: str, source_ip: str, re
         "sourceIp": source_ip,
         "path": "",
         "pathClass": "denied",
-        "method": "GET",
+        "method": "",
         "requestContext": {"requestId": request_id, "http": {"sourceIp": source_ip}},
     }
     try:
@@ -207,7 +210,15 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         return _deny()
 
     _touch_last_used(table, item, source_ip, now)
-    _log("info", tag="public_api_key_allowed", key_id=key_id, request_id=request_id, source_ip=source_ip)
+    write_flag = "1" if key_allows_write(item) else "0"
+    _log(
+        "info",
+        tag="public_api_key_allowed",
+        key_id=key_id,
+        request_id=request_id,
+        source_ip=source_ip,
+        write=write_flag,
+    )
     return {
         "isAuthorized": True,
         "context": {
@@ -215,5 +226,6 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "label": str(item.get("label") or ""),
             "scope": LEGACY_READ_SCOPE,
             "scopes": scopes_csv(scopes),
+            "write": write_flag,
         },
     }

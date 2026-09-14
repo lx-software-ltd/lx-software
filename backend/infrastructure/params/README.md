@@ -50,6 +50,8 @@ Set the repository variable `CDK_PARAM_FILE` to the path you want CI to use
 Typical committed values include:
 
 - `PublicWebsiteDomainName`, `PublicWebsiteCertificateArn` (public site)
+- **`lxsoftware:PublicApiWritesEnabled`** — `false` (default) until a write-capable
+  API key is minted (`--allow-write`). Finance `/public/*` stays GET-only.
 - Optional Cognito custom Hosted UI on `lxsoftware`: `lxsoftware:CognitoCustomDomainName`
   and `lxsoftware:CognitoCustomDomainCertificateArn` (ACM in **us-east-1**)
 - **`lxsoftware-admin-web:CspCognitoConnectOrigin`** — full HTTPS origin for Cognito OAuth
