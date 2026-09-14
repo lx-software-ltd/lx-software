@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from contract_constants import BOARD_KEY
@@ -39,6 +40,7 @@ BOARD_OPS_HEADS = frozenset(
 # Third-party contact / billing data that has no alias layer, so it cannot be
 # masked like mail; these heads need `siutindei-pii` on top of board-full.
 PII_HEADS = frozenset({"prospects", "outreach", "receivables"})
+WRITE_METHODS = frozenset({"PUT", "POST", "DELETE"})
 NOTIFY_COALESCE_SECONDS = 60
 NOTIFY_ROW_TTL = timedelta(days=1)
 NOTIFY_SUBJECT = "Public API key used"
@@ -105,6 +107,83 @@ def path_allowed(path: str, scopes: list[str]) -> bool:
     return True
 
 
+def writes_enabled() -> bool:
+    """Fail-closed stack kill switch (``PublicApiWritesEnabled``)."""
+    return (os.environ.get("PUBLIC_API_WRITES_ENABLED") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def key_context_allows_write(key_ctx: dict[str, Any]) -> bool:
+    """Authorizer forwards ``write`` as ``1``/``0`` (API Gateway context is strings)."""
+    raw = key_ctx.get("write")
+    if raw in (True, 1, "1"):
+        return True
+    if isinstance(raw, str) and raw.strip().lower() in ("true", "yes", "on"):
+        return True
+    return False
+
+
+def write_blocked(method: str, path: str) -> bool:
+    """Owner-only (JWT) writes even when the key has allowWrite.
+
+    Cost/safety knobs (settings, boundaries, tools), production promote,
+    approvals, mail selftest, and non-reversible live-state mutations
+    (chat wipe, meeting/task cancel, staff tick, ramp pause).
+    """
+    rest = _board_rest(path)
+    if not rest:
+        return True
+    head = rest[0]
+    tail = rest[-1]
+    if method == "PUT" and rest in (["settings"], ["boundaries"], ["tools"]):
+        return True
+    if method == "POST" and rest in (["code", "promote"], ["mail", "selftest"], ["staff", "tick"]):
+        return True
+    if method == "POST" and head == "approvals" and len(rest) == 3 and tail in ("approve", "reject"):
+        return True
+    if method == "POST" and head == "ramp" and len(rest) == 3 and tail in ("promote", "pause"):
+        return True
+    if method == "POST" and head == "meetings" and len(rest) == 3 and tail == "cancel":
+        return True
+    if method == "POST" and head == "tasks" and len(rest) == 3 and tail == "cancel":
+        return True
+    if method == "DELETE" and head == "chat" and len(rest) == 2:
+        return True
+    return False
+
+
+def write_deny_reason(
+    method: str, path: str, key_ctx: dict[str, Any], scopes: list[str]
+) -> str | None:
+    """None when the write is allowed; otherwise a stable ``public_api_denied`` reason."""
+    if method not in WRITE_METHODS:
+        return "not_write"
+    if not writes_enabled():
+        return "writes_disabled"
+    if not key_context_allows_write(key_ctx):
+        return "key_read_only"
+    needed = path_class(path)
+    if needed is None:
+        return "not_allowlisted"
+    if needed == SCOPE_FINANCE:
+        return "finance_read_only"
+    if write_blocked(method, path):
+        return "owner_only"
+    if not path_allowed(path, scopes):
+        return "scope"
+    return None
+
+
+def write_allowed(
+    method: str, path: str, key_ctx: dict[str, Any], scopes: list[str]
+) -> bool:
+    return write_deny_reason(method, path, key_ctx, scopes) is None
+
+
 def _source_ip(event: dict[str, Any]) -> str:
     http = (event.get("requestContext") or {}).get("http") or {}
     return str(http.get("sourceIp") or "").strip()
@@ -131,17 +210,9 @@ def redact_board_response(
     if not isinstance(body, dict):
         return response
     changed = False
-    if path == PUBLIC_BOARD_PREFIX and SCOPE_PII not in have:
-        settings = body.get("settings")
-        if isinstance(settings, dict):
-            tools = settings.get("tools")
-            if isinstance(tools, dict) and tools.get("allowList"):
-                tools["allowList"] = []
-                changed = True
-            review = settings.get("review")
-            if isinstance(review, dict) and review.get("digestTo"):
-                review["digestTo"] = ""
-                changed = True
+    if SCOPE_PII not in have:
+        if _redact_owner_pii(body):
+            changed = True
     rest = _board_rest(path)
     if rest[:1] == ["mail"] and SCOPE_PII not in have:
         body = _mask_mail_payload(body)
@@ -158,6 +229,38 @@ def redact_board_response(
     if not changed:
         return response
     return {**response, "body": json.dumps(body, default=str)}
+
+
+def _strip_allow_list(tools: Any) -> bool:
+    if not isinstance(tools, dict) or not tools.get("allowList"):
+        return False
+    raw = tools["allowList"]
+    if isinstance(raw, dict):
+        tools["allowList"] = {k: [] if isinstance(v, list) else v for k, v in raw.items()}
+    else:
+        tools["allowList"] = []
+    return True
+
+
+def _strip_digest_to(review: Any) -> bool:
+    if not isinstance(review, dict) or not review.get("digestTo"):
+        return False
+    review["digestTo"] = ""
+    return True
+
+
+def _redact_owner_pii(body: dict[str, Any]) -> bool:
+    """Strip allow-list / digest mailbox from overview, settings, and GET /tools."""
+    changed = False
+    settings = body.get("settings")
+    if isinstance(settings, dict):
+        changed = _strip_allow_list(settings.get("tools")) or changed
+        changed = _strip_digest_to(settings.get("review")) or changed
+    # GET /tools puts the same config under ``config``, not ``settings``.
+    changed = _strip_allow_list(body.get("config")) or changed
+    changed = _strip_allow_list(body.get("tools")) or changed
+    changed = _strip_digest_to(body.get("review")) or changed
+    return changed
 
 
 def _mask_mail_payload(body: dict[str, Any]) -> dict[str, Any]:
@@ -255,7 +358,11 @@ def notify_key_use(
     path_cls = path_cls or path_class(path) or "unknown"
     source_ip = _source_ip(event) or str(key_ctx.get("sourceIp") or "")
     table = board_store.records_table()
-    if not try_claim_notify_slot(table, key_id=key_id, path_cls=f"{kind}:{path_cls}", source_ip=source_ip):
+    # Every write mails digestTo; reads stay coalesced 60s per (key, class, ip).
+    coalesce = kind not in ("write",)
+    if coalesce and not try_claim_notify_slot(
+        table, key_id=key_id, path_cls=f"{kind}:{path_cls}", source_ip=source_ip
+    ):
         _log_event(
             "info",
             tag="public_api_notify_coalesced",
@@ -318,7 +425,7 @@ def handle_internal_notify(event: dict[str, Any]) -> dict[str, Any]:
             "sourceIp": event.get("sourceIp"),
         },
         path=str(event.get("path") or ""),
-        method=str(event.get("method") or "GET"),
+        method=str(event["method"]) if "method" in event else "GET",
         kind=str(event.get("kind") or "denied"),
         reason=str(event.get("reason") or ""),
         path_cls=str(event.get("pathClass") or "denied"),

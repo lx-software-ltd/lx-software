@@ -148,7 +148,7 @@ in board settings, off by default until you enable them.
 `dispatch.py` gains two internal event types next to the existing ones:
 `internal == "board_chat"` and `internal == "board_meeting"`.
 
-### 4.2 Routes (all Cognito JWT, `admin` group; never mirrored under `/public/*`)
+### 4.2 Routes (Cognito JWT, `admin` group; GETs mirrored under `/public/siu-tin-dei/board`; writes only with `allowWrite` + `PublicApiWritesEnabled`)
 
 | Method | Path | Purpose |
 |---|---|---|

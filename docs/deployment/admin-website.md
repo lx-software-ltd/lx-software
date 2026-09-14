@@ -142,12 +142,13 @@ admin DynamoDB tables using the `cursor-cloud-agent` IAM identity, see
 lists the exact inline IAM policy needed and the AWS CLI / Console commands
 to attach it.
 
-## Public read-only API keys
+## Public API keys
 
-The HTTP API exposes read-only mirrors of the admin GET endpoints under
-`/public/*`, authenticated with a static API key in the `x-api-key` header
-instead of a Cognito JWT. Keys are scoped; a leaked key only unlocks the
-scopes it was minted with.
+The HTTP API exposes mirrors of the admin endpoints under `/public/*`,
+authenticated with a static API key in the `x-api-key` header instead of a
+Cognito JWT. Keys are scoped; a leaked key only unlocks the scopes it was
+minted with. Existing keys stay **GET-only** unless minted or updated with
+`allowWrite`.
 
 | Route | Mirrors |
 |-------|---------|
@@ -157,13 +158,14 @@ scopes it was minted with.
 | `GET /public/fx/v2/rates` | `GET /fx/v2/rates` |
 | `GET /public/siu-tin-dei/board` | `GET /siu-tin-dei/board` |
 | `GET /public/siu-tin-dei/board/{proxy+}` | every existing JWT GET under `/siu-tin-dei/board` |
+| `PUT` / `POST` / `DELETE /public/siu-tin-dei/board/{proxy+}` | the matching JWT write, when the key has `allowWrite` and `PublicApiWritesEnabled` is `true` |
 
 Assets and parse-job endpoints are **not** mirrored (they presign S3 access to
 bank statements / are owner-scoped). Board content creatives still return the
-same short-lived presigned URL as the admin GET. Every write route stays on
-the Cognito JWT authorizer, and the Lambda handler enforces the same GET
-allowlist as defense in depth (`PUBLIC_READ_PATHS` /
-`PUBLIC_BOARD_PREFIX` in `backend/lambda/admin/dispatch.py`).
+same short-lived presigned URL as the admin GET. Finance `/public/*` stays
+GET-only. The Lambda handler enforces scopes, the write flag, and the kill
+switch (`PUBLIC_READ_PATHS` / `PUBLIC_BOARD_PREFIX` in
+`backend/lambda/admin/dispatch.py`).
 
 `/public/records` still excludes `BOARD#` rows. Legacy keys with only
 `scope=read` (no `scopes` list) are **finance-only**.
@@ -172,30 +174,57 @@ allowlist as defense in depth (`PUBLIC_READ_PATHS` /
 
 | Scope | Routes |
 |-------|--------|
-| `finance` | `/public/finance`, quotes, records, FX |
-| `siutindei-board-ops` | overview, staff, tasks, breakers, review, holds, ramp, tools, tool-calls |
-| `siutindei-board-full` | every JWT GET under `/siu-tin-dei/board` (includes ops paths) except the PII heads below |
-| `siutindei-pii` | unmasked mail; `allowList` / `digestTo` on overview; `prospects`, `outreach`, `receivables` (with board-full) |
-| `siutindei-assets` | content creative presigned URLs |
+| `finance` | `/public/finance`, quotes, records, FX (GET only) |
+| `siutindei-board-ops` | overview, staff, tasks, breakers, review, holds, ramp, tools, tool-calls; writes on those heads when `allowWrite` is set (except owner-only, below) |
+| `siutindei-board-full` | every JWT GET under `/siu-tin-dei/board` (includes ops paths) except the PII heads below; matching writes when `allowWrite` is set |
+| `siutindei-pii` | unmasked mail; `allowList` / `digestTo` on overview and `GET /tools` `config.allowList`; `prospects`, `outreach`, `receivables` (with board-full); prospect import / PUT / merge |
+| `siutindei-assets` | content creative presigned URLs (GET only; no write routes) |
+
+Writes also need **`allowWrite`** on the key row (create `--allow-write` or
+`set-write`) **and** stack parameter **`PublicApiWritesEnabled=true`**
+(default `false`). Authorizer cache is key + source IP, so the write flag is
+enforced in the handler, not by denying the method at the authorizer.
+
+These writes stay **Cognito JWT only** even for a write key:
+
+- Cost / safety knobs: `PUT settings`, `PUT boundaries`, `PUT tools`
+- Owner decide / promote: `POST approvals/{id}/approve|reject`, `POST code/promote`, `POST ramp/{classKey}/promote`
+- Mail self-test: `POST mail/selftest`
+- Non-reversible live state: `DELETE chat/{persona}`, `POST meetings/{id}/cancel`, `POST tasks/{id}/cancel`, `POST staff/tick`, `POST ramp/{classKey}/pause`
+
+`PUT charter` / `brief` / `members` and `POST updates` / `tasks` / `chat` feed
+persona and staff prompts. A leaked write key can steer what the board says
+and what seats do (within existing propose / act / hold boundaries). Mint
+write keys with `--allowed-cidrs` and a short `--expires-at`. `POST` is not
+idempotent — a retried `POST tasks` or `POST meetings` creates a second row;
+the 1 req/s write throttle limits accidental duplicates.
+
+Every **write** emails `settings.review.digestTo` from `hello@` (no 60s
+coalesce). Successful **reads** (and denied known keys) still coalesce to one
+mail per 60 seconds per `(keyId, path class, source IP)`. Audit rows for key
+writes use `USER#apikey:<keyId>`.
 
 Without `siutindei-pii`, mail is aliased, allow-list / digest addresses are
-stripped, and `prospects` / `outreach` / `receivables` return 404 (they carry
-third-party contact and billing data with no alias layer). A blank
-`settings.review.digestTo` on the public overview means the key lacks
-`siutindei-pii`, not that the recipient is unset. Without
-`siutindei-assets`, creative GETs return the object key only.
+stripped (including `GET /tools` `config.allowList`), and `prospects` /
+`outreach` / `receivables` return 404 (they carry third-party contact and
+billing data with no alias layer). A blank `settings.review.digestTo` on the
+public overview means the key lacks `siutindei-pii`, not that the recipient
+is unset. Without `siutindei-assets`, creative GETs return the object key
+only.
 
 New keys expire in **90 days** unless `--expires-at` is set. Optional
 `--allowed-cidrs` fail-closed when the client IP is missing or outside the
 list. Authorizer cache is **60 seconds**, keyed on `x-api-key` + source IP.
 
-Each successful use (and each denied known key: revoked / expired / CIDR)
+Each successful **read** (and each denied known key: revoked / expired / CIDR)
 emails `settings.review.digestTo` from `hello@`, coalesced to **one mail per
-60 seconds** per `(keyId, path class, source IP)`. Set `digestTo` and
-`SiutindeiBoardMailSendingEnabled` or the notify is skipped (the GET still
-succeeds). `/public/*` key routes are throttled at 2 req/s, burst 10.
+60 seconds** per `(keyId, path class, source IP)`. Writes mail every time.
+Set `digestTo` and `SiutindeiBoardMailSendingEnabled` or the notify is skipped
+(the request still succeeds). `/public/*` GET routes are throttled at 2 req/s,
+burst 10; board writes at 1 req/s, burst 5.
 
 Mint a Cloud Agent key as `finance,siutindei-board-ops` — not `siutindei-board-full`.
+Do **not** pass `--allow-write` unless that agent should mutate board state.
 After deploy, replace `PUBLIC_API_KEY` and revoke or shrink the old key.
 
 Keys are validated by the `PublicApiKeyAuthorizerFn` Lambda authorizer, which
@@ -213,6 +242,14 @@ Manage keys with admin AWS credentials (needs table read/write + CMK access):
 python3 scripts/manage-public-api-keys.py create --label "reporting" \
   --scopes finance,siutindei-board-ops --expires-at 2027-01-01 \
   --allowed-cidrs 203.0.113.0/24
+
+# Write-capable key (also flip lxsoftware:PublicApiWritesEnabled=true)
+python3 scripts/manage-public-api-keys.py create --label "board-writer" \
+  --scopes finance,siutindei-board-ops --allow-write
+
+# Toggle write without re-minting
+python3 scripts/manage-public-api-keys.py set-write --key-id <keyId> --allow-write
+python3 scripts/manage-public-api-keys.py set-write --key-id <keyId> --read-only
 
 # List / revoke
 python3 scripts/manage-public-api-keys.py list
@@ -246,6 +283,9 @@ Call the API:
 ```bash
 curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/finance"
 curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/siu-tin-dei/board/breakers"
+curl -X POST -H "x-api-key: lxpk_..." -H "Content-Type: application/json" \
+  -d '{"assignee":"support","brief":"Triage inbound"}' \
+  "$ADMIN_API_BASE_URL/public/siu-tin-dei/board/tasks"
 ```
 
 A `.gitleaks.toml` rule flags any `lxpk_…` value committed to the repo.

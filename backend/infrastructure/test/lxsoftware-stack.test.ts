@@ -105,7 +105,7 @@ describe("HTTP API routes", () => {
     }
   });
 
-  test("/public/* mirrors are GET-only and use the API key (CUSTOM) authorizer", () => {
+  test("/public/* finance mirrors are GET-only; board proxy accepts writes", () => {
     const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
     const publicMirrors = routes.filter((r) => {
       const key = String(r.Properties?.RouteKey);
@@ -121,11 +121,28 @@ describe("HTTP API routes", () => {
       expect.arrayContaining([
         "GET /public/siu-tin-dei/board",
         "GET /public/siu-tin-dei/board/{proxy+}",
+        "PUT /public/siu-tin-dei/board/{proxy+}",
+        "POST /public/siu-tin-dei/board/{proxy+}",
+        "DELETE /public/siu-tin-dei/board/{proxy+}",
       ])
     );
+    const boardProxyWrites = keys
+      .filter(
+        (key) =>
+          key.includes("/public/siu-tin-dei/board/{proxy+}") && !key.startsWith("GET ")
+      )
+      .sort();
+    expect(boardProxyWrites).toEqual([
+      "DELETE /public/siu-tin-dei/board/{proxy+}",
+      "POST /public/siu-tin-dei/board/{proxy+}",
+      "PUT /public/siu-tin-dei/board/{proxy+}",
+    ]);
     for (const route of publicMirrors) {
-      expect(String(route.Properties?.RouteKey)).toMatch(/^GET /);
+      const key = String(route.Properties?.RouteKey);
       expect(route.Properties?.AuthorizationType).toBe("CUSTOM");
+      if (!key.includes("/public/siu-tin-dei/board/{proxy+}")) {
+        expect(key).toMatch(/^GET /);
+      }
     }
   });
 
@@ -188,6 +205,18 @@ describe("HTTP API stage throttling", () => {
           ThrottlingRateLimit: 2,
           ThrottlingBurstLimit: 10,
         },
+        "POST /public/siu-tin-dei/board/{proxy+}": {
+          ThrottlingRateLimit: 1,
+          ThrottlingBurstLimit: 5,
+        },
+        "PUT /public/siu-tin-dei/board/{proxy+}": {
+          ThrottlingRateLimit: 1,
+          ThrottlingBurstLimit: 5,
+        },
+        "DELETE /public/siu-tin-dei/board/{proxy+}": {
+          ThrottlingRateLimit: 1,
+          ThrottlingBurstLimit: 5,
+        },
       }),
     });
   });
@@ -205,12 +234,12 @@ describe("HTTP API stage throttling", () => {
     const filters = Object.values(resourcesOfType("AWS::Logs::MetricFilter"));
     const patterns = filters
       .filter((f) =>
-        ["ApiKeyDenied", "BoardFullAccess"].includes(
+        ["ApiKeyDenied", "BoardFullAccess", "PublicApiWrite"].includes(
           f.Properties?.MetricTransformations?.[0]?.MetricName
         )
       )
       .map((f) => f.Properties?.FilterPattern as string);
-    expect(patterns).toHaveLength(2);
+    expect(patterns).toHaveLength(3);
     for (const pattern of patterns) {
       expect(pattern.trim().startsWith("{")).toBe(false);
     }
@@ -608,6 +637,35 @@ describe("Siu Tin Dei parameter naming", () => {
     }
   });
 
+  test("PublicApiWritesEnabled is unprefixed and defaults off", () => {
+    const parameters = template.toJSON().Parameters as Record<
+      string,
+      { Default?: string; AllowedValues?: string[] }
+    >;
+    expect(parameters.PublicApiWritesEnabled?.Default).toBe("false");
+    expect(parameters.PublicApiWritesEnabled?.AllowedValues).toEqual(["true", "false"]);
+    expect(parameters.SiutindeiBoardPublicApiWritesEnabled).toBeUndefined();
+  });
+
+  test("PublicApiWritesEnabled is on AdminApiFn only, not the authorizer", () => {
+    const fns = Object.entries(resourcesOfType("AWS::Lambda::Function"));
+    const authorizer = fns.find(([id]) =>
+      id.startsWith("PublicApiKeyAuthorizerFn")
+    );
+    expect(authorizer).toBeDefined();
+    expect(
+      authorizer?.[1].Properties?.Environment?.Variables
+        ?.PUBLIC_API_WRITES_ENABLED
+    ).toBeUndefined();
+    const withWrites = fns.filter(
+      ([, r]) =>
+        r.Properties?.Environment?.Variables?.PUBLIC_API_WRITES_ENABLED !==
+        undefined
+    );
+    expect(withWrites.length).toBeGreaterThanOrEqual(1);
+    expect(withWrites.every(([id]) => id.startsWith("AdminApiFn"))).toBe(true);
+  });
+
   test("production.json lxsoftware keys name existing CfnParameters", () => {
     const raw = fs.readFileSync(
       path.join(__dirname, "../params/production.json"),
@@ -620,6 +678,8 @@ describe("Siu Tin Dei parameter naming", () => {
     );
     expect(lxsoftwareKeys).toContain("lxsoftware:SiutindeiBoardStaffEnabled");
     expect(file["lxsoftware:SiutindeiBoardStaffEnabled"]).toBe("true");
+    expect(lxsoftwareKeys).toContain("lxsoftware:PublicApiWritesEnabled");
+    expect(file["lxsoftware:PublicApiWritesEnabled"]).toBe("false");
     for (const key of lxsoftwareKeys) {
       expect(parameters[key.slice("lxsoftware:".length)]).toBeDefined();
     }

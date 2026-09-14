@@ -28,6 +28,16 @@ ALL_SCOPES = frozenset(
 LEGACY_READ_SCOPE = "read"
 
 
+def key_allows_write(item: dict[str, Any]) -> bool:
+    """True when the key row opts in to PUT/POST/DELETE. Existing keys stay read-only."""
+    raw = item.get("allowWrite")
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, str):
+        return raw.strip().lower() in ("1", "true", "yes", "on")
+    return False
+
+
 def normalize_scopes(item: dict[str, Any]) -> list[str]:
     """Return allowed scopes. Legacy ``scope=read`` is finance only."""
     raw = item.get("scopes")

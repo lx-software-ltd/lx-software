@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Mint, list, and revoke public read-only API keys.
+"""Mint, list, revoke, and toggle write on public API keys.
 
-Keys authenticate the /public/* GET routes on the admin HTTP API via the
-`x-api-key` header (finance, records, FX, and GET /public/siu-tin-dei/board*).
-Only the scrypt digest of a key is stored (as
-``pk = APIKEY#<digest>``, ``sk = META`` in the records table); the plaintext
-key is printed exactly once by ``create``.
+Keys authenticate the /public/* routes on the admin HTTP API via the
+`x-api-key` header (finance GET, records, FX, and GET/PUT/POST/DELETE
+``/public/siu-tin-dei/board*``). Only the scrypt digest of a key is stored
+(as ``pk = APIKEY#<digest>``, ``sk = META`` in the records table); the
+plaintext key is printed exactly once by ``create``.
 
 New keys expire in 90 days unless ``--expires-at`` is set. Scopes default to
 ``finance``. Legacy rows with ``scope=read`` and no ``scopes`` list are
-treated as finance-only by the authorizer.
+treated as finance-only by the authorizer. Writes require ``allowWrite`` on
+the row plus stack parameter ``PublicApiWritesEnabled``.
 
 Requires AWS credentials with GetItem/PutItem/UpdateItem/Scan on the records
 table (plus kms:Decrypt/GenerateDataKey on its CMK) — i.e. an admin identity,
@@ -17,10 +18,12 @@ not the read-only cloud-agent user.
 
 Usage:
   python3 scripts/manage-public-api-keys.py create --label "grafana" \\
-      [--scopes finance,siutindei-board-ops] [--expires-at 2027-01-01] \\
-      [--allowed-cidrs 203.0.113.0/24]
+      [--scopes finance,siutindei-board-ops] [--allow-write] \\
+      [--expires-at 2027-01-01] [--allowed-cidrs 203.0.113.0/24]
   python3 scripts/manage-public-api-keys.py list
   python3 scripts/manage-public-api-keys.py revoke --key-id <keyId>
+  python3 scripts/manage-public-api-keys.py set-write --key-id <keyId> --allow-write
+  python3 scripts/manage-public-api-keys.py set-write --key-id <keyId> --read-only
 """
 
 from __future__ import annotations
@@ -45,7 +48,7 @@ _AUTHORIZER_DIR = (
 )
 sys.path.insert(0, str(_AUTHORIZER_DIR))
 from api_key_hash import hash_api_key  # noqa: E402
-from api_key_scopes import ALL_SCOPES, SCOPE_FINANCE  # noqa: E402
+from api_key_scopes import ALL_SCOPES, SCOPE_FINANCE, key_allows_write  # noqa: E402
 
 API_KEY_PK_PREFIX = "APIKEY#"
 KEY_PLAINTEXT_PREFIX = "lxpk_"
@@ -113,6 +116,7 @@ def cmd_create(args: argparse.Namespace) -> None:
         "label": args.label,
         "scope": "read",
         "scopes": scopes,
+        "allowWrite": bool(args.allow_write),
         "revoked": False,
         "createdAt": datetime.now(timezone.utc).isoformat(),
         "expiresAt": expires_at,
@@ -132,6 +136,7 @@ def cmd_create(args: argparse.Namespace) -> None:
     print(f"keyId:  {key_id}")
     print(f"label:  {args.label}")
     print(f"scopes: {','.join(scopes)}")
+    print(f"write:  {'yes' if item['allowWrite'] else 'no'}")
     print(f"expires: {expires_at}")
     if cidrs:
         print(f"cidrs:  {','.join(cidrs)}")
@@ -182,9 +187,10 @@ def cmd_list(args: argparse.Namespace) -> None:
             scopes_s = ",".join(str(s) for s in scopes)
         else:
             scopes_s = str(scopes)
+        write = "yes" if key_allows_write(it) else "no"
         print(
             f"{it.get('keyId')}  {state:8}  label={it.get('label')!r}  "
-            f"scopes={scopes_s}  created={it.get('createdAt')}  expires={expires}"
+            f"scopes={scopes_s}  write={write}  created={it.get('createdAt')}  expires={expires}"
         )
 
 
@@ -203,6 +209,28 @@ def cmd_revoke(args: argparse.Namespace) -> None:
     print("note: API Gateway caches authorizer verdicts for up to 60 seconds")
 
 
+def cmd_set_write(args: argparse.Namespace) -> None:
+    if args.allow_write == args.read_only:
+        sys.exit("error: pass exactly one of --allow-write or --read-only")
+    allow = bool(args.allow_write)
+    matches = [i for i in _scan_keys(args) if i.get("keyId") == args.key_id]
+    if not matches:
+        sys.exit(f"error: no API key with keyId {args.key_id!r}")
+    table = _table(args)
+    for it in matches:
+        table.update_item(
+            Key={"pk": it["pk"], "sk": it["sk"]},
+            UpdateExpression="SET allowWrite = :w",
+            ExpressionAttributeValues={":w": allow},
+        )
+        print(
+            f"{'enabled' if allow else 'disabled'} write on keyId {args.key_id} "
+            f"(label={it.get('label')!r})"
+        )
+    print("note: API Gateway caches authorizer verdicts for up to 60 seconds")
+    print("note: stack PublicApiWritesEnabled must be true for writes to succeed")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     common = argparse.ArgumentParser(add_help=False)
@@ -211,7 +239,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_create = sub.add_parser(
-        "create", parents=[common], help="mint a new read-only API key"
+        "create", parents=[common], help="mint a new API key"
     )
     p_create.add_argument("--label", required=True, help="human-readable key name")
     p_create.add_argument(
@@ -219,6 +247,11 @@ def main() -> None:
         default=SCOPE_FINANCE,
         help="comma-separated scopes (default: finance). "
         f"Allowed: {', '.join(sorted(ALL_SCOPES))}",
+    )
+    p_create.add_argument(
+        "--allow-write",
+        action="store_true",
+        help="opt this key into PUT/POST/DELETE (still needs PublicApiWritesEnabled)",
     )
     p_create.add_argument(
         "--expires-at",
@@ -246,6 +279,24 @@ def main() -> None:
     p_revoke = sub.add_parser("revoke", parents=[common], help="revoke a key by keyId")
     p_revoke.add_argument("--key-id", required=True)
     p_revoke.set_defaults(func=cmd_revoke)
+
+    p_set_write = sub.add_parser(
+        "set-write",
+        parents=[common],
+        help="enable or disable writes on an existing key without re-minting",
+    )
+    p_set_write.add_argument("--key-id", required=True)
+    p_set_write.add_argument(
+        "--allow-write",
+        action="store_true",
+        help="allow PUT/POST/DELETE for this key",
+    )
+    p_set_write.add_argument(
+        "--read-only",
+        action="store_true",
+        help="clear allowWrite (GET only)",
+    )
+    p_set_write.set_defaults(func=cmd_set_write)
 
     args = parser.parse_args()
     args.func(args)

@@ -1,4 +1,4 @@
-"""Deterministic scrypt digest for public read-only API keys.
+"""Deterministic scrypt digest for public API keys.
 
 Shared by the Lambda authorizer (`handler.py`) and
 `scripts/manage-public-api-keys.py` so mint and verify can never drift.
