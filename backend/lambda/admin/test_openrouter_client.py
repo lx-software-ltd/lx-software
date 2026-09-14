@@ -7,6 +7,7 @@ import json
 import sys
 import types
 import unittest
+from typing import Any
 from unittest.mock import MagicMock, patch
 from urllib import error as urlerror
 
@@ -438,6 +439,46 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
                 )
         self.assertEqual(ctx.exception.status, 429)
         self.assertIn("rate limited", str(ctx.exception))
+
+    def test_chat_completion_walks_fallback_model_after_429(self) -> None:
+        calls: list[dict[str, Any]] = []
+
+        def fake_urlopen(req, timeout=None):  # noqa: ARG001
+            body = json.loads(req.data.decode("utf-8"))
+            calls.append(body)
+            if body.get("model") == "deepseek/deepseek-chat":
+                raise urlerror.HTTPError(
+                    req.full_url,
+                    429,
+                    "Too Many Requests",
+                    {},
+                    io.BytesIO(b'{"error":{"message":"rate limited","code":429}}'),
+                )
+            return _FakeResp(
+                json.dumps(
+                    {
+                        "model": body.get("model"),
+                        "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+                    }
+                ).encode("utf-8")
+            )
+
+        with (
+            patch("openrouter_client.urlrequest.urlopen", fake_urlopen),
+            patch("openrouter_client.time.sleep", lambda *_a, **_k: None),
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
+        ):
+            completion = openrouter_client.chat_completion(
+                messages=[{"role": "user", "content": "hi"}],
+                model="deepseek/deepseek-chat",
+                secrets_client=None,
+                timeout=8,
+                max_retries=0,
+                fallback_models=["openai/gpt-4.1-mini"],
+            )
+        self.assertEqual(completion.model, "openai/gpt-4.1-mini")
+        self.assertEqual(calls[0]["model"], "deepseek/deepseek-chat")
+        self.assertEqual(calls[-1]["model"], "openai/gpt-4.1-mini")
 
     def test_retry_after_helpers(self) -> None:
         self.assertEqual(

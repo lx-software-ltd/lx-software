@@ -25,6 +25,7 @@ from contract_constants import OPENROUTER_APPS as OPENROUTER_APP_CATALOG
 DEFAULT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_TIMEOUT_SECONDS = 60
 _RETRYABLE_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
+_MODEL_WALK_STATUSES = frozenset({429, 502, 503})
 _MAX_RETRIES_DEFAULT = 2
 _MAX_FALLBACK_MODELS = 3
 # Cap wait so a 429 cannot eat a whole meeting-phase timeout (100s).
@@ -203,8 +204,6 @@ def chat_completion(
     if user_id:
         payload["user"] = user_id
     fallbacks = normalize_fallback_models(model, fallback_models)
-    if fallbacks:
-        payload["models"] = fallbacks
     provider: dict[str, Any] = {}
     if deny_data_collection:
         provider["data_collection"] = "deny"
@@ -229,19 +228,41 @@ def chat_completion(
         payload["usage"] = {"include": True}
 
     api_key = resolve_api_key(secrets_client, service=service)
-    body_text = post_json(
-        url=endpoint_url(),
-        api_key=api_key,
-        payload=payload,
-        timeout=timeout,
-        max_retries=max_retries,
-        service=service,
-    )
-    raw = _load_json_object(body_text, what="OpenRouter response")
+    chain = [model, *fallbacks] if str(model or "").strip() else list(fallbacks)
+    last_error: OpenRouterError | None = None
+    raw: dict[str, Any] | None = None
+    current = model
+    for index, current in enumerate(chain):
+        payload["model"] = current
+        rest = chain[index + 1 :]
+        if rest:
+            payload["models"] = rest[:_MAX_FALLBACK_MODELS]
+        else:
+            payload.pop("models", None)
+        try:
+            body_text = post_json(
+                url=endpoint_url(),
+                api_key=api_key,
+                payload=payload,
+                timeout=timeout,
+                max_retries=max_retries if index == 0 else min(1, max_retries),
+                service=service,
+            )
+            raw = _load_json_object(body_text, what="OpenRouter response")
+            break
+        except OpenRouterError as exc:
+            last_error = exc
+            if exc.status in _MODEL_WALK_STATUSES and index < len(chain) - 1:
+                continue
+            raise
+    if raw is None:
+        if last_error:
+            raise last_error
+        raise OpenRouterError("OpenRouter request failed: no model produced a response")
     text = extract_message_text(raw)
     return ChatCompletion(
         text=text,
-        model=str(raw.get("model") or model),
+        model=str(raw.get("model") or current),
         usage=normalize_usage(raw.get("usage")),
         raw=raw,
         tool_calls=extract_tool_calls(raw),
