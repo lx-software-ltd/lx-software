@@ -20,6 +20,7 @@ import board_tools
 from contract_constants import (
     BOARD_KEY,
     BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK,
+    BOARD_STAFF_MAX_REVISIONS,
     BOARD_STAFF_MAX_STEPS_PER_TASK,
     BOARD_STAFF_TASK_BUDGET_DESK_USD,
 )
@@ -153,8 +154,15 @@ class StaffEngineTests(BoardTestCase):
         self.assertIn("reporting to Pat", prompt)
         self.assertIn("STANDING INSTRUCTIONS", prompt)
         self.assertIn("never invent tool names", prompt)
+        self.assertIn("task_request_help", prompt)
         self.assertIn(board_personas.BOOKS_OF_RECORD, prompt)
         self.assertIn(board_personas.ANALYTICS_OF_RECORD, prompt)
+        with_help = board_personas.render_task_frame(
+            {"brief": "Do the work", "deliverableType": "markdown", "budgetUsd": 1, "usage": {"cost": 0}, "step": 0},
+            "",
+            help_available="Help available: data-analyst (web).",
+        )
+        self.assertIn("Help available: data-analyst (web).", with_help)
 
     def test_accountant_prompt_points_at_product_database_not_xero(self) -> None:
         seat = board_staff.seat_default("accountant") or {}
@@ -1403,6 +1411,8 @@ class StaffToolAvailabilityTests(unittest.TestCase):
         task = {op.name for op, _ in board_tools.available_ops(settings, "cfo", context="task")}
         self.assertNotIn("task_finish", chat)
         self.assertIn("task_finish", task)
+        self.assertIn("task_request_help", task)
+        self.assertNotIn("task_request_help", chat)
         self.assertIn("staff_assign", chat)
         self.assertIn("staff_assign", task)
         self.assertIn("finance_aging_report", task)
@@ -1423,7 +1433,7 @@ class StaffToolAvailabilityTests(unittest.TestCase):
         chat = board_tools.available_ops(settings, "cfo", context="chat")
         self.assertEqual(chat, [])
         names = [op.name for op, _ in board_tools.available_ops(settings, "cfo", context="task")]
-        self.assertEqual(names, ["task_note", "task_finish"])
+        self.assertEqual(names, ["task_note", "task_finish", "task_request_help"])
 
     def test_security_analyst_task_context_includes_github_and_finish(self) -> None:
         settings = board_store.default_settings()
@@ -1666,6 +1676,487 @@ class StaffActionHandoffTests(BoardTestCase):
         self.assertEqual(tasks[0]["origin"], "minutes")
         status, approvals = self.call("/siu-tin-dei/board/approvals", query="status=pending")
         self.assertEqual(approvals["approvals"], [])
+
+
+class StaffHelpTests(ToolsTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        os.environ.pop("ASSETS_BUCKET_NAME", None)
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        patcher = patch.object(board_async, "invoke_async", side_effect=lambda payload, fallback=None: None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _support_task(self, brief: str = "Verify analytics and tracking setup for visitor source measurement") -> tuple[dict[str, Any], dict[str, Any]]:
+        settings = _enable_staff(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="support",
+                origin="owner",
+                brief=brief,
+                deliverable_type="markdown",
+                created_by="admin",
+            )
+        return board_store.get_task(self.table, task["taskId"]) or task, settings
+
+    def _help_ctx(self, task: dict[str, Any], settings: dict[str, Any], *, actor: str = "persona") -> board_tools.ToolContext:
+        return board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="coo",
+            display_name="Support",
+            kind="task",
+            task_id=str(task["taskId"]),
+            seat_id="support",
+            actor=actor,
+            owner_sub="owner-1" if actor == "owner" else "",
+        )
+
+    def test_pick_helper_prefers_read_only_web_seat(self) -> None:
+        settings = _enable_staff(self.table)
+        parent = {"assignee": "support", "managerId": "coo"}
+        assignee, kind = board_staff.pick_helper(self.table, settings, parent, ["web"])
+        self.assertEqual(kind, "seat")
+        self.assertEqual(assignee, "data-analyst")
+        assignee, kind = board_staff.pick_helper(
+            self.table, settings, parent, ["web"], suggested="business-analyst"
+        )
+        self.assertEqual(assignee, "business-analyst")
+
+    def test_request_help_proposes_then_child_feeds_parent(self) -> None:
+        task, settings = self._support_task()
+        ctx = self._help_ctx(task, settings)
+        outcome = board_tools.execute_call(
+            ctx,
+            board_tools.REGISTRY["task_request_help"],
+            {
+                "need": "GA4 sessions and referrers for visitor sources",
+                "toolIds": ["web"],
+                "reason": "Support was not offered web reads",
+            },
+        )
+        self.assertEqual(outcome.status, "pending_approval", outcome.result)
+        self.assertTrue(outcome.approval_id)
+        board_staff._park_waiting_approval(self.table, task, [outcome.approval_id])  # noqa: SLF001
+        parked = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(parked["status"], "waiting_approval")
+        decided = board_tools.decide_approval(
+            self.table, settings, outcome.approval_id, approve=True, owner_sub="owner-1"
+        )
+        self.assertEqual(decided["status"], "executed", decided)
+        self.assertIn("data-analyst", str(decided.get("summary") or ""))
+        parent = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(parent["status"], "waiting_subtask")
+        child_id = parent["helpTaskIds"][0]
+        child = board_store.get_task(self.table, child_id)
+        self.assertEqual(child["origin"], "task")
+        self.assertEqual(child["parentTaskId"], task["taskId"])
+        self.assertEqual(child["assignee"], "data-analyst")
+        self.assertFalse(child.get("actionId"))
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "web-1",
+                "op": "web_sessions",
+                "summary": "12 sessions, google / organic",
+                "context": {"taskId": child_id},
+                "taskId": child_id,
+                "status": "ok",
+            },
+        )
+        child["deliverableKey"] = board_staff._deliverable_key(child_id, "markdown")  # noqa: SLF001
+        board_staff._blob_put(child["deliverableKey"], b"GA4 connected. 12 sessions from google/organic.")  # noqa: SLF001
+        child["summary"] = "GA4 sessions look live"
+        child["evidence"] = ["web-1"]
+        board_store.put_task(self.table, child)
+        board_staff._accept_task(self.table, child, board_store.now_iso())  # noqa: SLF001
+        parent = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(parent["status"], "running")
+        scratch = board_staff._blob_get(parent["scratchpadKey"]).decode()  # noqa: SLF001
+        self.assertIn("HELP FROM data-analyst", scratch)
+        self.assertIn("12 sessions", scratch)
+        self.assertIn("EVIDENCE: web-1 (web_sessions)", scratch)
+        child_ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="coo",
+            display_name="Support",
+            kind="task",
+            task_id=str(parent["taskId"]),
+            seat_id="support",
+            actor="persona",
+        )
+        fetched = board_staff.op_staff_get_deliverable(child_ctx, {"taskId": child_id})
+        self.assertEqual(fetched["evidence"], ["web-1"])
+        self.assertEqual(fetched["evidenceCalls"][0]["op"], "web_sessions")
+        parent_ctx = self._help_ctx(parent, settings)
+        with self.assertRaises(board_staff.StaffError) as missing:
+            board_staff.op_task_finish(
+                parent_ctx,
+                {
+                    "summary": "Tried to finish without citing help.",
+                    "deliverableType": "markdown",
+                    "deliverable": "GA4 is connected.",
+                    "evidence": [],
+                    "openQuestions": [],
+                    "confidence": "medium",
+                },
+            )
+        self.assertIn("EVIDENCE", str(missing.exception))
+        cited = [
+            line.split()[1]
+            for line in scratch.splitlines()
+            if line.startswith("EVIDENCE:")
+        ]
+        self.assertEqual(cited, ["web-1"])
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff.op_task_finish(
+                parent_ctx,
+                {
+                    "summary": "Visitor sources verified via data-analyst.",
+                    "deliverableType": "markdown",
+                    "deliverable": "GA4 is connected. Sources: google/organic.",
+                    "evidence": cited,
+                    "openQuestions": [],
+                    "confidence": "high",
+                },
+            )
+        finished = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(finished["status"], "review")
+        self.assertEqual(finished["evidence"], ["web-1"])
+
+    def test_request_help_act_creates_child_without_approval(self) -> None:
+        task, settings = self._support_task()
+        settings["tools"]["globalMode"] = "act"
+        settings["tools"]["matrix"]["staff"]["coo"] = "act"
+        board_store.save_settings(self.table, settings)
+        settings = board_store.load_settings(self.table)
+        ctx = self._help_ctx(task, settings)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            outcome = board_tools.execute_call(
+                ctx,
+                board_tools.REGISTRY["task_request_help"],
+                {"need": "Sessions by source", "toolIds": ["web"], "reason": "Need GA4"},
+            )
+        self.assertEqual(outcome.status, "ok", outcome.result)
+        parent = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(parent["status"], "waiting_subtask")
+        self.assertEqual(board_store.list_approvals(self.table), [])
+
+    def test_reject_help_resumes_parent(self) -> None:
+        task, settings = self._support_task()
+        ctx = self._help_ctx(task, settings)
+        outcome = board_tools.execute_call(
+            ctx,
+            board_tools.REGISTRY["task_request_help"],
+            {"need": "Sessions", "toolIds": ["web"], "reason": "Need GA4"},
+        )
+        board_staff._park_waiting_approval(self.table, task, [outcome.approval_id])  # noqa: SLF001
+        board_tools.decide_approval(
+            self.table, settings, outcome.approval_id, approve=False, owner_sub="owner-1"
+        )
+        parent = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(parent["status"], "running")
+        scratch = board_staff._blob_get(parent["scratchpadKey"]).decode()  # noqa: SLF001
+        self.assertIn("founder declined", scratch)
+        self.assertEqual(int(parent.get("helpRequests") or 0), 1)
+        again = board_staff.validate_task_request_help(
+            self._help_ctx(parent, settings),
+            {"need": "Sessions", "toolIds": ["web"]},
+        )
+        self.assertIn("already used", again)
+
+    def test_help_refuses_tools_the_seat_already_has(self) -> None:
+        task, settings = self._support_task(brief="Reply to the parent")
+        reason = board_staff.validate_task_request_help(
+            self._help_ctx(task, settings),
+            {"need": "Send the reply", "toolIds": ["mail"]},
+        )
+        self.assertIn("already have those tools", reason)
+
+    def test_help_refuses_when_nobody_covers_the_tools(self) -> None:
+        task, settings = self._support_task()
+        reason = board_staff.validate_task_request_help(
+            self._help_ctx(task, settings),
+            {"need": "Dispatch the coding runner", "toolIds": ["code"]},
+        )
+        self.assertIn("No active seat has those tools", reason)
+
+    def test_help_child_cannot_request_further_help(self) -> None:
+        task, settings = self._support_task()
+        settings["tools"]["globalMode"] = "act"
+        settings["tools"]["matrix"]["staff"]["coo"] = "act"
+        board_store.save_settings(self.table, settings)
+        settings = board_store.load_settings(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_tools.execute_call(
+                self._help_ctx(task, settings),
+                board_tools.REGISTRY["task_request_help"],
+                {"need": "Sessions", "toolIds": ["web"], "reason": "Need GA4"},
+            )
+        parent = board_store.get_task(self.table, task["taskId"])
+        child = board_store.get_task(self.table, parent["helpTaskIds"][0])
+        child_ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="cio",
+            display_name="Data",
+            kind="task",
+            task_id=str(child["taskId"]),
+            seat_id="data-analyst",
+            actor="persona",
+        )
+        reason = board_staff.validate_task_request_help(
+            child_ctx, {"need": "More", "toolIds": ["finance"]}
+        )
+        self.assertIn("cannot request further help", reason)
+
+    def test_cancel_parent_cancels_open_child(self) -> None:
+        task, settings = self._support_task()
+        settings["tools"]["globalMode"] = "act"
+        settings["tools"]["matrix"]["staff"]["coo"] = "act"
+        board_store.save_settings(self.table, settings)
+        settings = board_store.load_settings(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_tools.execute_call(
+                self._help_ctx(task, settings),
+                board_tools.REGISTRY["task_request_help"],
+                {"need": "Sessions", "toolIds": ["web"], "reason": "Need GA4"},
+            )
+        parent = board_store.get_task(self.table, task["taskId"])
+        child_id = parent["helpTaskIds"][0]
+        cancelled = board_staff.cancel_task(self.table, task["taskId"], "owner-1")
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertEqual(board_store.get_task(self.table, child_id)["status"], "cancelled")
+        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "cancelled")
+
+    def test_waiting_subtask_expires(self) -> None:
+        task, settings = self._support_task()
+        settings["tools"]["globalMode"] = "act"
+        settings["tools"]["matrix"]["staff"]["coo"] = "act"
+        board_store.save_settings(self.table, settings)
+        settings = board_store.load_settings(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_tools.execute_call(
+                self._help_ctx(task, settings),
+                board_tools.REGISTRY["task_request_help"],
+                {"need": "Sessions", "toolIds": ["web"], "reason": "Need GA4"},
+            )
+        parent = board_store.get_task(self.table, task["taskId"])
+        child_id = parent["helpTaskIds"][0]
+        parent["parkedAt"] = "2000-01-01T00:00:00Z"
+        parent["updatedAt"] = board_store.now_iso()
+        board_store.put_task(self.table, parent)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            expired = board_staff.expire_waiting_help(self.table, settings)
+        self.assertGreaterEqual(expired, 1)
+        self.assertEqual(board_store.get_task(self.table, child_id)["status"], "cancelled")
+        resumed = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(resumed["status"], "running")
+        scratch = board_staff._blob_get(resumed["scratchpadKey"]).decode()  # noqa: SLF001
+        self.assertIn("no answer", scratch)
+
+    def test_help_available_line_lists_missing_tools(self) -> None:
+        task, settings = self._support_task()
+        line = board_staff.help_available_line(self.table, settings, task)
+        self.assertIn("data-analyst", line)
+        self.assertIn("web", line)
+        self.assertIn("task_request_help", line)
+        self.assertNotIn("board,", line)
+        self.assertNotIn("staff)", line)
+        self.assertNotIn("(board)", line)
+
+    def test_child_failure_resumes_parent(self) -> None:
+        task, settings = self._support_task()
+        settings["tools"]["globalMode"] = "act"
+        settings["tools"]["matrix"]["staff"]["coo"] = "act"
+        board_store.save_settings(self.table, settings)
+        settings = board_store.load_settings(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_tools.execute_call(
+                self._help_ctx(task, settings),
+                board_tools.REGISTRY["task_request_help"],
+                {"need": "Sessions", "toolIds": ["web"], "reason": "Need GA4"},
+            )
+        parent = board_store.get_task(self.table, task["taskId"])
+        child = board_store.get_task(self.table, parent["helpTaskIds"][0])
+        board_staff._finish_incomplete(self.table, child, "step error")  # noqa: SLF001
+        resumed = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(resumed["status"], "running")
+        scratch = board_staff._blob_get(resumed["scratchpadKey"]).decode()  # noqa: SLF001
+        self.assertIn("help unavailable", scratch)
+
+    def _act_help(self, brief: str = "Verify analytics and tracking setup for visitor source measurement") -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        task, settings = self._support_task(brief=brief)
+        settings["tools"]["globalMode"] = "act"
+        settings["tools"]["matrix"]["staff"]["coo"] = "act"
+        board_store.save_settings(self.table, settings)
+        settings = board_store.load_settings(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_tools.execute_call(
+                self._help_ctx(task, settings),
+                board_tools.REGISTRY["task_request_help"],
+                {"need": "Sessions", "toolIds": ["web"], "reason": "Need GA4"},
+            )
+        parent = board_store.get_task(self.table, task["taskId"])
+        child = board_store.get_task(self.table, parent["helpTaskIds"][0])
+        return parent, child, settings
+
+    def test_finish_refused_while_waiting_on_help(self) -> None:
+        parent, child, settings = self._act_help()
+        with self.assertRaises(board_staff.StaffError) as cm:
+            board_staff.op_task_finish(
+                self._help_ctx(parent, settings),
+                {
+                    "summary": "Skipping the helper",
+                    "deliverableType": "markdown",
+                    "deliverable": "Unable to verify.",
+                    "evidence": [],
+                    "openQuestions": [],
+                    "confidence": "low",
+                },
+            )
+        self.assertIn("waiting_subtask", str(cm.exception))
+        self.assertNotIn(board_store.get_task(self.table, child["taskId"])["status"], {"cancelled", "delivered", "failed"})
+        self.assertEqual(board_store.get_task(self.table, parent["taskId"])["status"], "waiting_subtask")
+
+    def test_child_needs_owner_keeps_parent_parked(self) -> None:
+        parent, child, settings = self._act_help()
+        child["revisions"] = BOARD_STAFF_MAX_REVISIONS
+        child["status"] = "review"
+        board_store.put_task(self.table, child)
+        board_staff.apply_review(
+            self.table,
+            settings,
+            child,
+            verdict="return",
+            notes="Still no GA4 proof.",
+            by="cio",
+        )
+        child = board_store.get_task(self.table, child["taskId"])
+        self.assertEqual(child["status"], "needs_owner")
+        parked = board_store.get_task(self.table, parent["taskId"])
+        self.assertEqual(parked["status"], "waiting_subtask")
+        self.assertIn("founder review", parked.get("parkedReason") or "")
+        scratch = board_staff._blob_get(parked["scratchpadKey"]).decode()  # noqa: SLF001
+        self.assertIn("waiting for founder review", scratch)
+        parked["parkedAt"] = "2000-01-01T00:00:00Z"
+        parked["updatedAt"] = "2000-01-01T00:00:00Z"
+        board_store.put_task(self.table, parked)
+        expired = board_staff.expire_waiting_help(self.table, settings)
+        self.assertEqual(expired, 0)
+        self.assertEqual(board_store.get_task(self.table, child["taskId"])["status"], "needs_owner")
+        self.assertEqual(board_store.get_task(self.table, parent["taskId"])["status"], "waiting_subtask")
+
+    def test_failed_help_approval_resumes_parent(self) -> None:
+        task, settings = self._support_task()
+        ctx = self._help_ctx(task, settings)
+        outcome = board_tools.execute_call(
+            ctx,
+            board_tools.REGISTRY["task_request_help"],
+            {"need": "Sessions", "toolIds": ["web"], "reason": "Need GA4"},
+        )
+        board_staff._park_waiting_approval(self.table, task, [outcome.approval_id])  # noqa: SLF001
+        for seat_id in ("data-analyst", "community-manager", "business-analyst"):
+            board_store.save_staff_override(self.table, seat_id, {"isActive": False})
+        settings = board_store.load_settings(self.table)
+        decided = board_tools.decide_approval(
+            self.table, settings, outcome.approval_id, approve=True, owner_sub="owner-1"
+        )
+        self.assertEqual(decided["status"], "failed", decided)
+        parent = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(parent["status"], "running")
+        self.assertEqual(int(parent.get("helpRequests") or 0), 1)
+        scratch = board_staff._blob_get(parent["scratchpadKey"]).decode()  # noqa: SLF001
+        self.assertIn("help request failed", scratch)
+        again = board_staff.validate_task_request_help(
+            self._help_ctx(parent, settings),
+            {"need": "Sessions", "toolIds": ["web"]},
+        )
+        self.assertIn("already used", again)
+
+    def test_expired_help_approval_is_rejected(self) -> None:
+        task, settings = self._support_task()
+        ctx = self._help_ctx(task, settings)
+        outcome = board_tools.execute_call(
+            ctx,
+            board_tools.REGISTRY["task_request_help"],
+            {"need": "Sessions", "toolIds": ["web"], "reason": "Need GA4"},
+        )
+        board_staff._park_waiting_approval(self.table, task, [outcome.approval_id])  # noqa: SLF001
+        parked = board_store.get_task(self.table, task["taskId"])
+        parked["parkedAt"] = "2000-01-01T00:00:00Z"
+        board_store.put_task(self.table, parked)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            expired = board_staff.expire_waiting_help(self.table, settings)
+        self.assertGreaterEqual(expired, 1)
+        approval = board_store.get_approval(self.table, outcome.approval_id)
+        self.assertEqual(approval["status"], "rejected")
+        self.assertEqual(approval.get("decidedBySub"), "system:expiry")
+        resumed = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(resumed["status"], "running")
+        self.assertEqual(int(resumed.get("helpRequests") or 0), 1)
+        with self.assertRaises(ValueError):
+            board_tools.decide_approval(
+                self.table, settings, outcome.approval_id, approve=True, owner_sub="owner-1"
+            )
+
+    def test_updated_at_does_not_extend_help_wait(self) -> None:
+        parent, child, settings = self._act_help()
+        parent["parkedAt"] = board_store.now_iso()
+        parent["updatedAt"] = "2000-01-01T00:00:00Z"
+        board_store.put_task(self.table, parent)
+        expired = board_staff.expire_waiting_help(self.table, settings)
+        self.assertEqual(expired, 0)
+        self.assertEqual(board_store.get_task(self.table, parent["taskId"])["status"], "waiting_subtask")
+        self.assertNotIn(board_store.get_task(self.table, child["taskId"])["status"], {"cancelled", "delivered", "failed"})
+
+    def test_help_refuses_internal_tool_ids(self) -> None:
+        task, settings = self._support_task()
+        reason = board_staff.validate_task_request_help(
+            self._help_ctx(task, settings),
+            {"need": "Read board records", "toolIds": ["board", "staff"]},
+        )
+        self.assertIn("toolIds must be one or more board tools", reason)
+
+    def test_pick_helper_falls_back_to_manager_persona(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "business-analyst", {"isActive": False})
+        parent = {"assignee": "support", "managerId": "coo"}
+        assignee, kind = board_staff.pick_helper(self.table, settings, parent, ["finance"])
+        self.assertEqual(kind, "persona")
+        self.assertEqual(assignee, "coo")
+
+    def test_waiting_subtask_blocks_second_hand_off(self) -> None:
+        _enable_staff(self.table)
+        action = {
+            "actionId": board_store.new_id(),
+            "title": "Verify visitor sources",
+            "status": "open",
+            "assignee": "support",
+            "createdAt": board_store.now_iso(),
+            "updatedAt": board_store.now_iso(),
+        }
+        board_store.put_action(self.table, action)
+        parent, _child, _settings = self._act_help()
+        parent["actionId"] = action["actionId"]
+        board_store.put_task(self.table, parent)
+        action["staffTaskId"] = parent["taskId"]
+        board_store.put_action(self.table, action)
+        status, body = self.call(
+            "/siu-tin-dei/board/tasks",
+            "POST",
+            {
+                "assignee": "support",
+                "brief": "Again",
+                "deliverableType": "markdown",
+                "actionId": action["actionId"],
+            },
+        )
+        self.assertEqual(status, 409, body)
 
 
 class CashSnapshotTests(BoardTestCase):

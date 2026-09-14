@@ -131,7 +131,15 @@ Deliverables and large scratchpads live in the assets bucket under
 `board/siuTinDei/staff/{taskId}/`; rows store keys and sizes only.
 
 Statuses: `queued → running → review → delivered | returned → running …`,
-plus `needs_owner`, `failed`, `cancelled`. `maxRevisions` (2).
+plus `waiting_approval`, `waiting_subtask`, `needs_owner`, `failed`,
+`cancelled`. `maxRevisions` (2). A seat that lacks a tool calls
+`task_request_help` once; the manager's `staff` level parks an Approval
+(`propose`) or starts a depth-1 child (`act`, `origin: task`). The parent
+waits; on accept the child's deliverable and `EVIDENCE: callId (op)` lines
+are appended to the parent scratchpad so `task_finish` can cite them.
+A child in `review` / `needs_owner` stays owner-held (parent remains
+`waiting_subtask`). Help waits expire from `parkedAt`, and a pending help
+Approval is rejected at the same time.
 
 ### 5.2 Execution
 

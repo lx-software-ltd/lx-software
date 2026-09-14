@@ -56,7 +56,9 @@ def _yesterday_hkt(date_hkt: str) -> str:
     return (day - timedelta(days=1)).date().isoformat()
 
 
-_HEADLINE_OPEN = frozenset({"queued", "running", "waiting_approval", "review", "needs_owner"})
+_HEADLINE_OPEN = frozenset(
+    {"queued", "running", "waiting_approval", "waiting_subtask", "review", "needs_owner"}
+)
 
 
 def headline_pack(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, Any]:
@@ -100,7 +102,9 @@ def headline_pack(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[s
     out = {
         "tasks": {
             "delivered": counts.get("delivered") or 0,
-            "running": (counts.get("running") or 0) + (counts.get("waiting_approval") or 0),
+            "running": (counts.get("running") or 0)
+            + (counts.get("waiting_approval") or 0)
+            + (counts.get("waiting_subtask") or 0),
             "blocked": counts.get("needs_owner") or 0,
         },
         "messagesByChannel": messages,

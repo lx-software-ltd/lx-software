@@ -684,13 +684,7 @@ def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
                 return _json_response(409, {"message": "That action is already closed"})
             if action and action.get("staffTaskId"):
                 open_task = board_store.get_task(table, str(action["staffTaskId"]))
-                if open_task and open_task.get("status") in (
-                    "queued",
-                    "running",
-                    "waiting_approval",
-                    "review",
-                    "needs_owner",
-                ):
+                if open_task and open_task.get("status") in board_staff.NON_TERMINAL_STATUSES:
                     return _json_response(409, {"message": "A staff task is already working on that action"})
             try:
                 task = board_staff.create_task(
