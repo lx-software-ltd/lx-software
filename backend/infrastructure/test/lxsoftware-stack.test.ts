@@ -647,6 +647,25 @@ describe("Siu Tin Dei parameter naming", () => {
     expect(parameters.SiutindeiBoardPublicApiWritesEnabled).toBeUndefined();
   });
 
+  test("PublicApiWritesEnabled is on AdminApiFn only, not the authorizer", () => {
+    const fns = Object.entries(resourcesOfType("AWS::Lambda::Function"));
+    const authorizer = fns.find(([id]) =>
+      id.startsWith("PublicApiKeyAuthorizerFn")
+    );
+    expect(authorizer).toBeDefined();
+    expect(
+      authorizer?.[1].Properties?.Environment?.Variables
+        ?.PUBLIC_API_WRITES_ENABLED
+    ).toBeUndefined();
+    const withWrites = fns.filter(
+      ([, r]) =>
+        r.Properties?.Environment?.Variables?.PUBLIC_API_WRITES_ENABLED !==
+        undefined
+    );
+    expect(withWrites.length).toBeGreaterThanOrEqual(1);
+    expect(withWrites.every(([id]) => id.startsWith("AdminApiFn"))).toBe(true);
+  });
+
   test("production.json lxsoftware keys name existing CfnParameters", () => {
     const raw = fs.readFileSync(
       path.join(__dirname, "../params/production.json"),

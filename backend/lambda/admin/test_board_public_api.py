@@ -43,69 +43,135 @@ class PathClassTests(unittest.TestCase):
         full = ["siutindei-board-full"]
         full_pii = ["siutindei-board-full", "siutindei-pii"]
         with patch.dict("os.environ", {"PUBLIC_API_WRITES_ENABLED": "true"}):
-            self.assertTrue(
-                board_public_api.write_allowed(
+            self.assertIsNone(
+                board_public_api.write_deny_reason(
                     "POST", "/public/siu-tin-dei/board/tasks", write_ctx, ops
                 )
             )
-            self.assertFalse(
-                board_public_api.write_allowed(
+            self.assertEqual(
+                board_public_api.write_deny_reason(
                     "POST", "/public/siu-tin-dei/board/tasks", read_ctx, ops
-                )
+                ),
+                "key_read_only",
             )
-            self.assertFalse(
-                board_public_api.write_allowed(
+            self.assertEqual(
+                board_public_api.write_deny_reason(
                     "PUT", "/public/siu-tin-dei/board/charter", write_ctx, ops
-                )
+                ),
+                "scope",
             )
             self.assertTrue(
                 board_public_api.write_allowed(
                     "PUT", "/public/siu-tin-dei/board/charter", write_ctx, full
                 )
             )
-            self.assertFalse(
-                board_public_api.write_allowed(
+            self.assertEqual(
+                board_public_api.write_deny_reason(
                     "POST",
                     "/public/siu-tin-dei/board/approvals/a1/approve",
                     write_ctx,
                     full,
-                )
+                ),
+                "owner_only",
             )
-            self.assertFalse(
-                board_public_api.write_allowed(
+            self.assertEqual(
+                board_public_api.write_deny_reason(
                     "POST", "/public/siu-tin-dei/board/code/promote", write_ctx, full
-                )
+                ),
+                "owner_only",
             )
-            self.assertFalse(
-                board_public_api.write_allowed(
+            self.assertEqual(
+                board_public_api.write_deny_reason(
                     "POST",
                     "/public/siu-tin-dei/board/ramp/mail_reply/promote",
                     write_ctx,
                     ops,
-                )
+                ),
+                "owner_only",
             )
-            self.assertFalse(
-                board_public_api.write_allowed(
+            self.assertEqual(
+                board_public_api.write_deny_reason(
+                    "POST",
+                    "/public/siu-tin-dei/board/ramp/mail_reply/pause",
+                    write_ctx,
+                    ops,
+                ),
+                "owner_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
                     "PUT", "/public/siu-tin-dei/board/tools", write_ctx, ops
-                )
+                ),
+                "owner_only",
             )
-            self.assertFalse(
-                board_public_api.write_allowed(
+            self.assertEqual(
+                board_public_api.write_deny_reason(
+                    "PUT",
+                    "/public/siu-tin-dei/board/settings",
+                    write_ctx,
+                    full,
+                ),
+                "owner_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
+                    "PUT",
+                    "/public/siu-tin-dei/board/boundaries",
+                    write_ctx,
+                    full,
+                ),
+                "owner_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
+                    "POST", "/public/siu-tin-dei/board/staff/tick", write_ctx, ops
+                ),
+                "owner_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
+                    "DELETE", "/public/siu-tin-dei/board/chat/ceo", write_ctx, full
+                ),
+                "owner_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
+                    "POST",
+                    "/public/siu-tin-dei/board/meetings/m1/cancel",
+                    write_ctx,
+                    full,
+                ),
+                "owner_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
+                    "POST",
+                    "/public/siu-tin-dei/board/tasks/t1/cancel",
+                    write_ctx,
+                    ops,
+                ),
+                "owner_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
                     "POST", "/public/siu-tin-dei/board/mail/selftest", write_ctx, full
-                )
+                ),
+                "owner_only",
             )
-            self.assertFalse(
-                board_public_api.write_allowed(
+            self.assertEqual(
+                board_public_api.write_deny_reason(
                     "PUT", "/public/finance", write_ctx, ["finance"]
-                )
+                ),
+                "finance_read_only",
             )
-            self.assertFalse(
-                board_public_api.write_allowed(
+            self.assertEqual(
+                board_public_api.write_deny_reason(
                     "PUT",
                     "/public/siu-tin-dei/board/prospects/p1",
                     write_ctx,
                     full,
-                )
+                ),
+                "scope",
             )
             self.assertTrue(
                 board_public_api.write_allowed(
@@ -115,35 +181,17 @@ class PathClassTests(unittest.TestCase):
                     full_pii,
                 )
             )
-        with patch.dict("os.environ", {"PUBLIC_API_WRITES_ENABLED": "false"}):
             self.assertFalse(
-                board_public_api.write_allowed(
-                    "POST", "/public/siu-tin-dei/board/tasks", write_ctx, ops
-                )
+                board_public_api.key_context_allows_write({"allowWrite": True})
             )
-
-    def test_blocked_settings_fields(self) -> None:
-        self.assertEqual(
-            board_public_api.blocked_settings_fields(
-                "/public/siu-tin-dei/board/settings",
-                {"schedule": {"morningEnabled": True}, "tools": {"globalMode": "act"}},
-            ),
-            ["tools"],
-        )
-        self.assertEqual(
-            board_public_api.blocked_settings_fields(
-                "/public/siu-tin-dei/board/boundaries",
-                {"review": {"digestTo": "x@y.z"}},
-            ),
-            ["review"],
-        )
-        self.assertEqual(
-            board_public_api.blocked_settings_fields(
-                "/public/siu-tin-dei/board/settings",
-                {"schedule": {"morningEnabled": True}},
-            ),
-            [],
-        )
+            self.assertTrue(board_public_api.key_context_allows_write({"write": "1"}))
+        with patch.dict("os.environ", {"PUBLIC_API_WRITES_ENABLED": "false"}):
+            self.assertEqual(
+                board_public_api.write_deny_reason(
+                    "POST", "/public/siu-tin-dei/board/tasks", write_ctx, ops
+                ),
+                "writes_disabled",
+            )
 
     def test_contact_heavy_heads_need_pii_on_top_of_full(self) -> None:
         for path in (
@@ -212,6 +260,25 @@ class RedactAndNotifyTests(BoardTestCase):
         body = json.loads(redacted["body"])
         self.assertEqual(body["settings"]["tools"]["allowList"], [])
         self.assertEqual(body["settings"]["review"]["digestTo"], "")
+
+    def test_tools_config_allow_list_stripped_without_pii(self) -> None:
+        response = {
+            "statusCode": 200,
+            "body": json.dumps({"config": {"allowList": ["owner@example.com", "+85291234567"]}}),
+        }
+        redacted = board_public_api.redact_board_response(
+            "/public/siu-tin-dei/board/tools", response, ["siutindei-board-ops"]
+        )
+        self.assertEqual(json.loads(redacted["body"])["config"]["allowList"], [])
+        kept = board_public_api.redact_board_response(
+            "/public/siu-tin-dei/board/tools",
+            response,
+            ["siutindei-board-ops", "siutindei-pii"],
+        )
+        self.assertEqual(
+            json.loads(kept["body"])["config"]["allowList"],
+            ["owner@example.com", "+85291234567"],
+        )
 
     def test_write_notify_does_not_coalesce(self) -> None:
         settings = board_store.load_settings(self.table)
@@ -283,6 +350,41 @@ class RedactAndNotifyTests(BoardTestCase):
         self.assertEqual(len(sent), 1)
         self.assertEqual(sent[0]["to"], ["owner@example.com"])
         self.assertEqual(sent[0]["fromMailbox"], "hello")
+
+    def test_denied_notify_keeps_empty_method(self) -> None:
+        settings = board_store.load_settings(self.table)
+        settings["review"]["digestTo"] = "owner@example.com"
+        board_store.save_settings(self.table, settings)
+        sent: list[dict] = []
+
+        def fake_send(table, plan, *, sent_by, index=True):
+            sent.append(plan)
+            return {"ok": True}
+
+        with (
+            patch("board_mail.sending_enabled", lambda: True),
+            patch("board_mail.send_plan", fake_send),
+        ):
+            board_public_api.handle_internal_notify(
+                {
+                    "keyId": "k-deny",
+                    "label": "d",
+                    "scopes": ["finance"],
+                    "kind": "denied",
+                    "reason": "revoked",
+                    "sourceIp": "203.0.113.9",
+                    "path": "",
+                    "pathClass": "denied",
+                    "method": "",
+                    "requestContext": {
+                        "requestId": "req-d1",
+                        "http": {"sourceIp": "203.0.113.9"},
+                    },
+                }
+            )
+        self.assertEqual(len(sent), 1)
+        self.assertIn("method: \n", sent[0]["text"])
+        self.assertNotIn("method: GET", sent[0]["text"])
 
     def test_claim_slot_uses_fake_table_condition(self) -> None:
         table = FakeTable()

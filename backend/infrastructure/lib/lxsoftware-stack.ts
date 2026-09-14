@@ -853,7 +853,6 @@ export class LxsoftwareStack extends cdk.Stack {
         deadLetterQueue: this.lambdaDeadLetterQueue,
         environment: {
           RECORDS_TABLE_NAME: this.recordsTable.tableName,
-          PUBLIC_API_WRITES_ENABLED: publicApiWritesEnabled.valueAsString,
         },
       }
     );

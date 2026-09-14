@@ -222,7 +222,8 @@ def _handle_public(
     context check here is defense in depth against direct Lambda invocation
     or a route being wired to the wrong authorizer. Writes need allowWrite
     on the key, PublicApiWritesEnabled, and a board path that is not
-    owner-only (approvals, code/promote, ramp/promote, PUT tools).
+    owner-only (settings, boundaries, tools, approvals, promote, selftest,
+    chat delete, meeting/task cancel, staff tick, ramp pause).
     """
     key_ctx = _api_key_auth_context(event)
     key_id = key_ctx.get("keyId")
@@ -240,13 +241,16 @@ def _handle_public(
 
     is_write = method in board_public_api_mod.WRITE_METHODS
     if is_write:
-        if not _is_public_board_write_path(path) or not board_public_api_mod.write_allowed(
-            method, path, key_ctx, scopes
-        ):
+        deny_reason = (
+            "not_allowlisted"
+            if not _is_public_board_write_path(path)
+            else board_public_api_mod.write_deny_reason(method, path, key_ctx, scopes)
+        )
+        if deny_reason:
             _log_event(
                 "warning",
                 tag="public_api_denied",
-                reason="not_allowlisted" if not _is_public_board_write_path(path) else "scope",
+                reason=deny_reason,
                 key_id=key_id,
                 method=method,
                 path=path,
@@ -254,12 +258,6 @@ def _handle_public(
                 request_id=_request_id(event),
             )
             return _json_response(404, {"message": "Not found"})
-        blocked = board_public_api_mod.blocked_settings_fields(path, _parse_json_body(event))
-        if blocked:
-            return _json_response(
-                400,
-                {"message": f"cannot set {', '.join(blocked)} via API key"},
-            )
     elif method != "GET" or not _is_public_path(path):
         _log_event(
             "warning",

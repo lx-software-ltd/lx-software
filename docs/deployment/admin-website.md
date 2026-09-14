@@ -177,7 +177,7 @@ switch (`PUBLIC_READ_PATHS` / `PUBLIC_BOARD_PREFIX` in
 | `finance` | `/public/finance`, quotes, records, FX (GET only) |
 | `siutindei-board-ops` | overview, staff, tasks, breakers, review, holds, ramp, tools, tool-calls; writes on those heads when `allowWrite` is set (except owner-only, below) |
 | `siutindei-board-full` | every JWT GET under `/siu-tin-dei/board` (includes ops paths) except the PII heads below; matching writes when `allowWrite` is set |
-| `siutindei-pii` | unmasked mail; `allowList` / `digestTo` on overview; `prospects`, `outreach`, `receivables` (with board-full); prospect import / PUT / merge |
+| `siutindei-pii` | unmasked mail; `allowList` / `digestTo` on overview and `GET /tools` `config.allowList`; `prospects`, `outreach`, `receivables` (with board-full); prospect import / PUT / merge |
 | `siutindei-assets` | content creative presigned URLs (GET only; no write routes) |
 
 Writes also need **`allowWrite`** on the key row (create `--allow-write` or
@@ -185,11 +185,19 @@ Writes also need **`allowWrite`** on the key row (create `--allow-write` or
 (default `false`). Authorizer cache is key + source IP, so the write flag is
 enforced in the handler, not by denying the method at the authorizer.
 
-These writes stay **Cognito JWT only** even for a write key: `POST
-approvals/{id}/approve|reject`, `POST code/promote`, `POST ramp/{classKey}/promote`,
-`PUT tools`, and `POST mail/selftest`. `PUT settings` / `PUT boundaries` reject
-bodies that include `tools` or `review` (a key must not rewrite `allowList`,
-`globalMode`, `spendCaps`, or `digestTo`).
+These writes stay **Cognito JWT only** even for a write key:
+
+- Cost / safety knobs: `PUT settings`, `PUT boundaries`, `PUT tools`
+- Owner decide / promote: `POST approvals/{id}/approve|reject`, `POST code/promote`, `POST ramp/{classKey}/promote`
+- Mail self-test: `POST mail/selftest`
+- Non-reversible live state: `DELETE chat/{persona}`, `POST meetings/{id}/cancel`, `POST tasks/{id}/cancel`, `POST staff/tick`, `POST ramp/{classKey}/pause`
+
+`PUT charter` / `brief` / `members` and `POST updates` / `tasks` / `chat` feed
+persona and staff prompts. A leaked write key can steer what the board says
+and what seats do (within existing propose / act / hold boundaries). Mint
+write keys with `--allowed-cidrs` and a short `--expires-at`. `POST` is not
+idempotent — a retried `POST tasks` or `POST meetings` creates a second row;
+the 1 req/s write throttle limits accidental duplicates.
 
 Every **write** emails `settings.review.digestTo` from `hello@` (no 60s
 coalesce). Successful **reads** (and denied known keys) still coalesce to one
@@ -197,11 +205,12 @@ mail per 60 seconds per `(keyId, path class, source IP)`. Audit rows for key
 writes use `USER#apikey:<keyId>`.
 
 Without `siutindei-pii`, mail is aliased, allow-list / digest addresses are
-stripped, and `prospects` / `outreach` / `receivables` return 404 (they carry
-third-party contact and billing data with no alias layer). A blank
-`settings.review.digestTo` on the public overview means the key lacks
-`siutindei-pii`, not that the recipient is unset. Without
-`siutindei-assets`, creative GETs return the object key only.
+stripped (including `GET /tools` `config.allowList`), and `prospects` /
+`outreach` / `receivables` return 404 (they carry third-party contact and
+billing data with no alias layer). A blank `settings.review.digestTo` on the
+public overview means the key lacks `siutindei-pii`, not that the recipient
+is unset. Without `siutindei-assets`, creative GETs return the object key
+only.
 
 New keys expire in **90 days** unless `--expires-at` is set. Optional
 `--allowed-cidrs` fail-closed when the client IP is missing or outside the
