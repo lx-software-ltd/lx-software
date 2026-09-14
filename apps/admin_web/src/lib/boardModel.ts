@@ -265,6 +265,7 @@ export type BoardTask = {
   readonly parentTaskId?: string | null;
   readonly helpTaskIds?: readonly string[];
   readonly blockedOn?: readonly string[];
+  readonly parkedAt?: string;
   readonly parkedReason?: string;
   readonly eventRef?: { readonly kind?: string; readonly id?: string; readonly channel?: string; readonly subject?: string; readonly stars?: number } | null;
   readonly deliverableKey?: string;

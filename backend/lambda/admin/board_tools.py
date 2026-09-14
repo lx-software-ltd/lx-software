@@ -837,9 +837,9 @@ def _preview_task_request_help(ctx: ToolContext, args: dict[str, Any]) -> dict[s
 
 
 def _summ_request_help(args: dict[str, Any]) -> str:
-    tools = ", ".join(str(x) for x in (args.get("toolIds") or []) if x) or "tools"
-    helper = str(args.get("suggestedAssignee") or "a helper")
-    return f"Ask {helper} for {tools}: {_short(args.get('need') or '', 80)}"
+    import board_staff
+
+    return board_staff.summarize_help_request(args=args)
 
 
 def _summ_staff_assign(args: dict[str, Any]) -> str:
@@ -2872,6 +2872,15 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
     else:
         level = "act"
     summary = op.summarize(arguments)
+    if not invalid and op.name == "task_request_help":
+        try:
+            import board_staff as _staff_help
+
+            summary = _staff_help.summarize_help_request(
+                prepared=_staff_help.prepare_help_request(ctx, arguments)
+            )
+        except Exception:
+            pass
     approval_id = ""
     guard_reason = ""
     hold_fail = ""

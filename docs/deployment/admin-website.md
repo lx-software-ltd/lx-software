@@ -762,9 +762,13 @@ linked action is closed. A daily staff-budget miss parks the task back on
 the queue instead of failing it. When a seat cannot finish because it
 lacks a tool, it calls `task_request_help` (once per task) and the
 founder sees **Approvals** then **Tasks → Waiting help**; accepting the
-helper's deliverable writes back into the original task. Cancel or retry
-of the parent cancels any open child. A help wait older than 24 hours
-resumes with no answer.
+helper's deliverable writes the memo plus `EVIDENCE: <callId> (op)` lines
+into the original scratchpad so the parent can cite those ids. A child
+that lands on **needs owner** leaves the parent parked and notes the
+scratchpad; expiry does not cancel that child. Cancel or retry of the
+parent cancels any open child. A help wait older than 24 hours (from
+`parkedAt`) resumes with no answer and rejects a still-pending help
+Approval.
 
 Smoke test after deploy: open the tab, save a company vision/mission, edit one
 member's mandate, send a chat message to the CEO (reply arrives within ~30 s),

@@ -50,6 +50,8 @@ from http_common import _log_event, _utc_iso_z
 _LEVEL_RANK = {lvl: i for i, lvl in enumerate(BOARD_TOOL_LEVELS)}
 TERMINAL_STATUSES = frozenset({"delivered", "failed", "cancelled"})
 NON_TERMINAL_STATUSES = frozenset(s for s in BOARD_STAFF_TASK_STATUSES if s not in TERMINAL_STATUSES)
+OWNER_HELD_CHILD_STATUSES = frozenset({"review", "needs_owner"})
+_HELP_INTERNAL_TOOLS = frozenset({"board", "staff"})
 _MEMORY_BLOBS: dict[str, bytes] = {}
 _IDLE_TOOL_OPS = frozenset({"task_note"})
 _IDLE_NUDGE = (
@@ -301,6 +303,8 @@ def create_task(
         "helpTaskIds": [],
         "helpRequests": 0,
         "blockedOn": [],
+        "parkedAt": "",
+        "parkedReason": "",
         "brief": text,
         "deliverableType": deliverable_type,
         "budgetUsd": budget,
@@ -546,7 +550,9 @@ def run_step(payload: dict[str, Any]) -> None:
         tier = "desk"
     scratch = _blob_get(_scratchpad_key(task_id)).decode("utf-8", errors="replace")
     user = board_personas.render_task_frame(
-        task, scratch, help_available=help_available_line(table, settings, task)
+        task,
+        scratch,
+        help_available=help_available_line(table, settings, task, roster=list(roster.values())),
     )
     kind = "standup" if tier != "senior" else "deepDive"
     if (settings.get("staff") or {}).get("seniorPaused") and kind == "deepDive":
@@ -767,6 +773,20 @@ def _deliverable_has_placeholders(text: str) -> bool:
     return bool(_PLACEHOLDER_RE.search(raw) or _TEMPLATE_DATA_RE.search(raw))
 
 
+def _stamp_parked(task: dict[str, Any], *, reason: str, reset_clock: bool = True) -> None:
+    now = board_store.now_iso()
+    task["parkedReason"] = reason[:300]
+    if reset_clock or not task.get("parkedAt"):
+        task["parkedAt"] = now
+    task["updatedAt"] = now
+
+
+def _clear_parked(task: dict[str, Any]) -> None:
+    task["blockedOn"] = []
+    task["parkedReason"] = ""
+    task["parkedAt"] = ""
+
+
 def _park_waiting_approval(table: Any, task: dict[str, Any], approval_ids: list[str]) -> None:
     """Park ``task`` (the caller's in-memory row, including the step it just completed).
 
@@ -782,7 +802,7 @@ def _park_waiting_approval(table: Any, task: dict[str, Any], approval_ids: list[
     task["status"] = "waiting_approval"
     task["blockedOn"] = approval_ids
     task["idleSteps"] = 0
-    task["updatedAt"] = board_store.now_iso()
+    _stamp_parked(task, reason=f"waiting on approval {','.join(approval_ids)}", reset_clock=True)
     _align_step_claim(task)
     board_store.put_task(table, task)
     _log_event("info", tag="board_staff_waiting_approval", taskId=task.get("taskId"), approvals=approval_ids)
@@ -806,16 +826,20 @@ def resume_after_approval(table: Any, settings: dict[str, Any], approval: dict[s
         task["updatedAt"] = board_store.now_iso()
         board_store.put_task(table, task)
         return
-    if str(approval.get("op") or "") == "task_request_help" and approval.get("status") == "rejected":
-        _append_scratchpad(
-            task,
-            "HELP: founder declined the help request. Finish with what you have; set confidence low.",
-        )
+    if str(approval.get("op") or "") == "task_request_help" and approval.get("status") in (
+        "rejected",
+        "failed",
+    ):
+        if approval.get("status") == "rejected":
+            note = "HELP: founder declined the help request. Finish with what you have; set confidence low."
+        else:
+            err = str(approval.get("errorMessage") or "execution failed")[:200]
+            note = f"HELP: the help request failed ({err}). Finish with what you have; set confidence low."
+        _append_scratchpad(task, note)
         task["scratchpadKey"] = _scratchpad_key(str(task.get("taskId") or ""))
         task["helpRequests"] = int(task.get("helpRequests") or 0) + 1
     task["status"] = "running"
-    task["blockedOn"] = []
-    task["parkedReason"] = ""
+    _clear_parked(task)
     task["updatedAt"] = board_store.now_iso()
     _align_step_claim(task)
     board_store.put_task(table, task)
@@ -983,7 +1007,7 @@ def _normalize_help_tool_ids(raw: Any) -> list[str]:
     items = raw if isinstance(raw, list) else []
     for item in items:
         tid = str(item or "").strip()
-        if tid and tid in BOARD_TOOL_IDS and tid not in ids:
+        if tid and tid in BOARD_TOOL_IDS and tid not in _HELP_INTERNAL_TOOLS and tid not in ids:
             ids.append(tid)
     return ids
 
@@ -1023,6 +1047,8 @@ def pick_helper(
     if candidates:
         best = min(candidates, key=_score)
         return str(best["id"]), "seat"
+    # Last resort: the parent's manager persona at desk tier. Their reviewer
+    # is the chair (see ``_reviewer_id``), so they do not accept their own work.
     if (
         parent_manager
         and parent_manager != parent_assignee
@@ -1155,8 +1181,7 @@ def _park_waiting_subtask(table: Any, task: dict[str, Any], child_id: str) -> No
     task["helpTaskIds"] = help_ids
     task["helpRequests"] = int(task.get("helpRequests") or 0) + 1
     task["idleSteps"] = 0
-    task["parkedReason"] = f"waiting on help task {child_id}"[:300]
-    task["updatedAt"] = board_store.now_iso()
+    _stamp_parked(task, reason=f"waiting on help task {child_id}", reset_clock=True)
     _align_step_claim(task)
     board_store.put_task(table, task)
     _log_event("info", tag="board_staff_waiting_subtask", taskId=task.get("taskId"), childTaskId=child_id)
@@ -1206,30 +1231,53 @@ def preview_task_request_help(ctx: board_tools.ToolContext, args: dict[str, Any]
     }
 
 
-def help_available_line(table: Any, settings: dict[str, Any], task: dict[str, Any]) -> str:
+def summarize_help_request(
+    *, prepared: dict[str, Any] | None = None, args: dict[str, Any] | None = None
+) -> str:
+    payload = args or {}
+    tool_ids = list((prepared or {}).get("toolIds") or _normalize_help_tool_ids(payload.get("toolIds")))
+    tools = ", ".join(str(t) for t in tool_ids if t) or "tools"
+    helper = str((prepared or {}).get("assignee") or "a helper")
+    need = str((prepared or {}).get("need") or payload.get("need") or "")
+    return f"Ask {helper} for {tools}: {need[:80]}"
+
+
+def help_available_line(
+    table: Any,
+    settings: dict[str, Any],
+    task: dict[str, Any],
+    *,
+    roster: list[dict[str, Any]] | None = None,
+) -> str:
     if task.get("parentTaskId"):
         return ""
     if int(task.get("helpRequests") or 0) >= BOARD_STAFF_MAX_HELP_REQUESTS_PER_TASK:
         return ""
-    roster = seats(table, settings)
+    seats_list = roster if roster is not None else seats(table, settings)
     self_id = str(task.get("assignee") or "")
-    self_seat = next((seat for seat in roster if str(seat.get("id")) == self_id), None)
+    self_seat = next((seat for seat in seats_list if str(seat.get("id")) == self_id), None)
     if self_seat:
         self_tools = {
-            tid for tid, lvl in (self_seat.get("effectiveLevels") or {}).items() if str(lvl or "off") != "off"
+            tid
+            for tid, lvl in (self_seat.get("effectiveLevels") or {}).items()
+            if str(lvl or "off") != "off" and tid not in _HELP_INTERNAL_TOOLS
         }
     elif board_personas.is_persona_id(self_id):
-        self_tools = {tid for tid in BOARD_TOOL_IDS if board_tools.effective_level(settings, tid, self_id) != "off"}
+        self_tools = {
+            tid
+            for tid in BOARD_TOOL_IDS
+            if tid not in _HELP_INTERNAL_TOOLS and board_tools.effective_level(settings, tid, self_id) != "off"
+        }
     else:
         self_tools = set()
     parts: list[str] = []
-    for seat in roster:
+    for seat in seats_list:
         if not seat.get("isActive") or str(seat.get("id")) == self_id:
             continue
         extras = sorted(
             tid
             for tid, lvl in (seat.get("effectiveLevels") or {}).items()
-            if str(lvl or "off") != "off" and tid not in self_tools
+            if str(lvl or "off") != "off" and tid not in self_tools and tid not in _HELP_INTERNAL_TOOLS
         )
         if extras:
             parts.append(f"{seat.get('id')} ({', '.join(extras)})")
@@ -1241,6 +1289,63 @@ def help_available_line(table: Any, settings: dict[str, Any], task: dict[str, An
         + ".\nIf the brief needs a tool you were not offered, call task_request_help once "
         "with those tool ids instead of finishing unable to verify."
     )
+
+
+def _child_evidence_records(table: Any, child: dict[str, Any]) -> list[dict[str, str]]:
+    """Call ids the parent can cite from a help child's tool work."""
+    child_id = str(child.get("taskId") or "")
+    if not child_id:
+        return []
+    wanted = [str(x) for x in (child.get("evidence") or []) if x]
+    calls = board_store.list_tool_calls_for_task(table, child_id)
+    by_id = {str(c.get("callId")): c for c in calls if c.get("callId")}
+    records: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for cid in wanted:
+        if cid in seen:
+            continue
+        seen.add(cid)
+        call = by_id.get(cid) or {}
+        records.append(
+            {
+                "callId": cid,
+                "op": str(call.get("op") or ""),
+                "summary": str(call.get("summary") or "")[:200],
+            }
+        )
+    for call in calls:
+        cid = str(call.get("callId") or "")
+        op = str(call.get("op") or "")
+        if not cid or cid in seen or op.startswith("task_"):
+            continue
+        if str(call.get("status") or "ok") not in ("ok", ""):
+            continue
+        seen.add(cid)
+        records.append(
+            {
+                "callId": cid,
+                "op": op,
+                "summary": str(call.get("summary") or "")[:200],
+            }
+        )
+    return records
+
+
+def _help_evidence_block(table: Any, child: dict[str, Any]) -> str:
+    lines = [
+        f"HELP FROM {child.get('assignee')} (task {child.get('taskId')}): "
+        f"{child.get('summary') or ''}".strip(),
+        "",
+        read_deliverable(child, limit=6000),
+    ]
+    records = _child_evidence_records(table, child)
+    if records:
+        lines.append("")
+        lines.append("Cite these call ids in task_finish evidence:")
+        for rec in records:
+            extra = f" {rec['summary']}" if rec.get("summary") else ""
+            lines.append(f"EVIDENCE: {rec['callId']} ({rec['op']}){extra}".rstrip())
+    return "\n".join(line for line in lines if line is not None).strip()
 
 
 def _resume_parent_after_help(
@@ -1256,19 +1361,14 @@ def _resume_parent_after_help(
     if not parent or parent.get("status") != "waiting_subtask":
         return
     if success and child:
-        deliverable = read_deliverable(child, limit=6000)
-        text = (
-            f"HELP FROM {child.get('assignee')} (task {child.get('taskId')}): "
-            f"{child.get('summary') or ''}\n\n{deliverable}"
-        ).strip()
+        text = _help_evidence_block(table, child)
     else:
         text = f"HELP: {message}"
     combined = _append_scratchpad(parent, text)
     parent["scratchpadKey"] = _scratchpad_key(parent_id)
     parent["scratchpadChars"] = len(combined)
     parent["status"] = "running"
-    parent["blockedOn"] = []
-    parent["parkedReason"] = ""
+    _clear_parked(parent)
     parent["updatedAt"] = board_store.now_iso()
     _align_step_claim(parent)
     board_store.put_task(table, parent)
@@ -1292,6 +1392,51 @@ def _notify_parent_of_child(table: Any, child: dict[str, Any], message: str) -> 
     _resume_parent_after_help(table, settings, parent_id, message, child=child, success=False)
 
 
+def _note_parent_child_waiting(table: Any, child: dict[str, Any], message: str, *, reason: str) -> None:
+    """Leave the parent parked and tell it a child is waiting on the founder."""
+    parent_id = str(child.get("parentTaskId") or "")
+    if not parent_id:
+        return
+    parent = board_store.get_task(table, parent_id)
+    if not parent or parent.get("status") != "waiting_subtask":
+        return
+    combined = _append_scratchpad(parent, message)
+    parent["scratchpadKey"] = _scratchpad_key(parent_id)
+    parent["scratchpadChars"] = len(combined)
+    _stamp_parked(parent, reason=reason, reset_clock=False)
+    board_store.put_task(table, parent)
+
+
+def _help_children_held_for_owner(table: Any, task: dict[str, Any]) -> list[dict[str, Any]]:
+    held: list[dict[str, Any]] = []
+    for hid in task.get("helpTaskIds") or []:
+        child = board_store.get_task(table, str(hid))
+        if child and child.get("status") in OWNER_HELD_CHILD_STATUSES:
+            held.append(child)
+    return held
+
+
+def _reject_pending_help_approvals(table: Any, task_id: str, note: str) -> None:
+    now = board_store.now_iso()
+    for approval in _pending_help_approvals(table, task_id):
+        approval_id = str(approval.get("approvalId") or "")
+        if not approval_id:
+            continue
+        if not board_store.claim_approval_decision(table, approval_id, status="rejected"):
+            continue
+        board_store.put_approval(
+            table,
+            {
+                **approval,
+                "status": "rejected",
+                "note": note[:1000],
+                "decidedAt": now,
+                "decidedBySub": "system:expiry",
+                "updatedAt": now,
+            },
+        )
+
+
 def _cancel_open_help_children(table: Any, parent: dict[str, Any], by_sub: str) -> None:
     for hid in list(parent.get("helpTaskIds") or []):
         child = board_store.get_task(table, str(hid))
@@ -1303,6 +1448,8 @@ def _cancel_open_help_children(table: Any, parent: dict[str, Any], by_sub: str) 
 def _expire_help_wait(table: Any, settings: dict[str, Any], task: dict[str, Any]) -> None:
     status = str(task.get("status") or "")
     if status == "waiting_subtask":
+        if _help_children_held_for_owner(table, task):
+            return
         _cancel_open_help_children(table, task, "system:expiry")
         _resume_parent_after_help(
             table, settings, str(task.get("taskId") or ""), "help unavailable: no answer"
@@ -1310,14 +1457,17 @@ def _expire_help_wait(table: Any, settings: dict[str, Any], task: dict[str, Any]
         return
     if status != "waiting_approval":
         return
-    if not _pending_help_approvals(table, str(task.get("taskId") or "")):
+    task_id = str(task.get("taskId") or "")
+    if not _pending_help_approvals(table, task_id):
         return
+    _reject_pending_help_approvals(
+        table, task_id, "Help request expired with no founder decision."
+    )
     _append_scratchpad(task, "HELP: the help request expired with no founder decision. Finish with what you have.")
-    task["scratchpadKey"] = _scratchpad_key(str(task.get("taskId") or ""))
+    task["scratchpadKey"] = _scratchpad_key(task_id)
     task["helpRequests"] = int(task.get("helpRequests") or 0) + 1
     task["status"] = "running"
-    task["blockedOn"] = []
-    task["parkedReason"] = ""
+    _clear_parked(task)
     task["updatedAt"] = board_store.now_iso()
     _align_step_claim(task)
     board_store.put_task(table, task)
@@ -1339,9 +1489,13 @@ def expire_waiting_help(table: Any, settings: dict[str, Any]) -> int:
     expired = 0
     for status in ("waiting_approval", "waiting_subtask"):
         for task in board_store.list_tasks(table, status):
-            if str(task.get("updatedAt") or "") < cut_iso:
+            parked = str(task.get("parkedAt") or task.get("updatedAt") or "")
+            if parked < cut_iso:
+                before = str(task.get("status") or "")
                 _expire_help_wait(table, settings, task)
-                expired += 1
+                latest = board_store.get_task(table, str(task.get("taskId") or "")) or task
+                if str(latest.get("status") or "") != before:
+                    expired += 1
     return expired
 
 
@@ -1507,11 +1661,14 @@ def op_staff_get_deliverable(ctx: board_tools.ToolContext, args: dict[str, Any])
         parent = board_store.get_task(ctx.table, str(task.get("parentTaskId") or ""))
         if not parent or parent.get("assignee") != ctx.seat_id:
             raise StaffError("You cannot read another seat's deliverable")
+    evidence = _child_evidence_records(ctx.table, task)
     return {
         "summary": task.get("summary") or "",
         "deliverable": read_deliverable(task, limit=6000),
         "deliverableType": task.get("deliverableType"),
         "status": task.get("status"),
+        "evidence": [row["callId"] for row in evidence],
+        "evidenceCalls": evidence,
     }
 
 
@@ -1543,10 +1700,17 @@ def op_staff_cancel_task(ctx: board_tools.ToolContext, args: dict[str, Any]) -> 
     return public_task(cancelled)
 
 
-def op_task_note(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    task = board_store.get_task(ctx.table, ctx.task_id)
+def _require_running_task(task: dict[str, Any] | None) -> dict[str, Any]:
     if not task:
         raise StaffError("Task not found")
+    status = str(task.get("status") or "")
+    if status != "running":
+        raise StaffError(f"Task is {status}; wait for it to resume before continuing")
+    return task
+
+
+def op_task_note(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    task = _require_running_task(board_store.get_task(ctx.table, ctx.task_id))
     text = str(args.get("text") or "").strip()
     combined = _append_scratchpad(task, text)
     task["scratchpadKey"] = _scratchpad_key(ctx.task_id)
@@ -1557,9 +1721,7 @@ def op_task_note(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str
 
 
 def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    task = board_store.get_task(ctx.table, ctx.task_id)
-    if not task:
-        raise StaffError("Task not found")
+    task = _require_running_task(board_store.get_task(ctx.table, ctx.task_id))
     deliverable = str(args.get("deliverable") or "")
     encoded = deliverable.encode("utf-8")
     if len(encoded) > BOARD_STAFF_DELIVERABLE_MAX_BYTES:
@@ -1583,11 +1745,14 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
     cited = _cited_evidence_ops(ctx.table, task, evidence)
     missing = [tool for tool in needed if tool not in cited]
     if missing:
-        raise StaffError(
-            "This brief requires evidence from "
-            + ", ".join(needed)
-            + ". Call those tools first and pass their call ids in evidence."
+        borrowed = bool(task.get("helpTaskIds"))
+        hint = (
+            " Cite the help task's EVIDENCE call ids from the scratchpad "
+            "(or staff_get_deliverable)."
+            if borrowed
+            else " Call those tools first and pass their call ids in evidence."
         )
+        raise StaffError("This brief requires evidence from " + ", ".join(needed) + "." + hint)
     confidence = str(args.get("confidence") or "medium")
     flags = list(task.get("flags") or [])
     if not evidence and confidence == "high":
@@ -1753,6 +1918,7 @@ def apply_review(
             task["status"] = "needs_owner"
             task["finishedAt"] = None
             board_store.put_task(table, task)
+            _note_parent_if_child_needs_owner(table, task)
             return task
         return _accept_task(table, task, now)
     revisions = int(task.get("revisions") or 0)
@@ -1786,7 +1952,22 @@ def apply_review(
     task["status"] = "needs_owner"
     task["finishedAt"] = None
     board_store.put_task(table, task)
+    _note_parent_if_child_needs_owner(table, task)
     return task
+
+
+def _note_parent_if_child_needs_owner(table: Any, task: dict[str, Any]) -> None:
+    if not task.get("parentTaskId") or task.get("status") != "needs_owner":
+        return
+    notes = str((task.get("lastReview") or {}).get("notes") or "").strip()
+    extra = f" Last review: {notes[:200]}" if notes else ""
+    _note_parent_child_waiting(
+        table,
+        task,
+        f"HELP: task {task.get('taskId')} is waiting for founder review.{extra} "
+        "Stay parked until the founder accepts or cancels that help task.",
+        reason=f"help task {task.get('taskId')} needs founder review",
+    )
 
 
 def _should_hold_unverified_accept(task: dict[str, Any]) -> bool:
@@ -1804,12 +1985,14 @@ def _accept_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
         task["finishedAt"] = None
         task["updatedAt"] = now
         board_store.put_task(table, task)
+        _note_parent_if_child_needs_owner(table, task)
         return task
     if _should_hold_unverified_accept(task):
         task["status"] = "needs_owner"
         task["finishedAt"] = None
         task["updatedAt"] = now
         board_store.put_task(table, task)
+        _note_parent_if_child_needs_owner(table, task)
         return task
     task["status"] = "delivered"
     task["finishedAt"] = now
@@ -1908,8 +2091,7 @@ def retry_task(table: Any, settings: dict[str, Any], task_id: str, by_sub: str) 
     task["retriedBy"] = by_sub
     task["retriedAt"] = now
     _cancel_open_help_children(table, task, by_sub)
-    task["blockedOn"] = []
-    task["parkedReason"] = ""
+    _clear_parked(task)
     task["helpRequests"] = 0
     board_store.put_task(table, task)
     if enabled(settings):
@@ -2063,6 +2245,7 @@ def handle_tick(event: dict[str, Any]) -> dict[str, Any]:
                 task["status"] = "needs_owner"
                 task["updatedAt"] = board_store.now_iso()
                 board_store.put_task(table, task)
+                _note_parent_if_child_needs_owner(table, task)
     return {"ok": True, "started": started}
 
 
