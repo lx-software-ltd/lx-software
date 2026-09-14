@@ -828,6 +828,9 @@ def resume_after_approval(table: Any, settings: dict[str, Any], approval: dict[s
         task["updatedAt"] = board_store.now_iso()
         board_store.put_task(table, task)
         return
+    if _is_code_implement(task) and str(approval.get("op") or "") == "code_run_task":
+        _settle_code_implement_approval(table, task, approval)
+        return
     if str(approval.get("op") or "") == "task_request_help" and approval.get("status") in (
         "rejected",
         "failed",
@@ -855,6 +858,77 @@ def resume_after_approval(table: Any, settings: dict[str, Any], approval: dict[s
             },
             fallback=run_step,
         )
+
+
+def _is_code_implement(task: dict[str, Any]) -> bool:
+    return str((task.get("eventRef") or {}).get("kind") or "") == "code-implement"
+
+
+def _pending_code_run_approvals(table: Any, task: dict[str, Any]) -> list[dict[str, Any]]:
+    tid = str(task.get("taskId") or "")
+    if not tid:
+        return []
+    return [
+        a
+        for a in board_store.list_approvals(table)
+        if a.get("status") == "pending"
+        and a.get("op") == "code_run_task"
+        and str((a.get("context") or {}).get("taskId") or "") == tid
+    ]
+
+
+def _code_run_dispatched(table: Any, task: dict[str, Any]) -> bool:
+    tid = str(task.get("taskId") or "")
+    if not tid:
+        return False
+    for approval in board_store.list_approvals(table):
+        if approval.get("op") != "code_run_task":
+            continue
+        if str((approval.get("context") or {}).get("taskId") or "") != tid:
+            continue
+        if approval.get("status") == "executed":
+            return True
+    for call in board_store.list_tool_calls_for_task(table, tid):
+        if call.get("op") == "code_run_task" and call.get("status") == "ok":
+            return True
+    try:
+        import board_code
+
+        row = board_code._get_run(table, tid)  # noqa: SLF001
+    except Exception:
+        row = {}
+    return bool(row.get("dispatchedAt") or row.get("runStatus"))
+
+
+def _mark_code_runner_dispatched(task: dict[str, Any]) -> None:
+    flags = [str(f) for f in (task.get("flags") or []) if f]
+    if "code_runner_dispatched" not in flags:
+        flags.append("code_runner_dispatched")
+    task["flags"] = flags
+
+
+def _settle_code_implement_approval(table: Any, task: dict[str, Any], approval: dict[str, Any]) -> None:
+    """A code-implement task's job is to dispatch the runner, not wait for a PR."""
+    now = board_store.now_iso()
+    status = str(approval.get("status") or "")
+    _clear_parked(task)
+    task["updatedAt"] = now
+    if status == "executed":
+        task["status"] = "delivered"
+        task["finishedAt"] = now
+        task["summary"] = str(task.get("summary") or "Coding runner dispatched.")[:800]
+        _mark_code_runner_dispatched(task)
+        board_store.put_task(table, task)
+        return
+    reason = (
+        "founder rejected the code_run_task proposal"
+        if status == "rejected"
+        else f"code_run_task failed: {str(approval.get('errorMessage') or 'execution failed')[:200]}"
+    )
+    task["status"] = "needs_owner"
+    task["failureReason"] = reason[:300]
+    task["finishedAt"] = None
+    board_store.put_task(table, task)
 
 
 def _brief_has_alias(lower: str, alias: str) -> bool:
@@ -1810,7 +1884,7 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
     )
     updated = {
         **task,
-        "status": "review",
+        "status": "running",
         "step": seq,
         "stepsUsed": seq,
         "idleSteps": 0,
@@ -1825,6 +1899,23 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
         "updatedAt": now,
     }
     _align_step_claim(updated)
+    if _is_code_implement(task):
+        pending = _pending_code_run_approvals(ctx.table, updated)
+        if pending:
+            board_store.put_task(ctx.table, updated)
+            _park_waiting_approval(
+                ctx.table,
+                updated,
+                [str(a.get("approvalId") or "") for a in pending if a.get("approvalId")],
+            )
+            return {"ok": True, "status": "waiting_approval", "deliverableKey": key}
+        if _code_run_dispatched(ctx.table, updated):
+            updated["status"] = "delivered"
+            updated["finishedAt"] = now
+            _mark_code_runner_dispatched(updated)
+            board_store.put_task(ctx.table, updated)
+            return {"ok": True, "status": "delivered", "deliverableKey": key}
+    updated["status"] = "review"
     board_store.put_task(ctx.table, updated)
     if enabled(ctx.settings):
         board_async.invoke_async(
@@ -1855,6 +1946,8 @@ def _review_user_prompt(task: dict[str, Any], raw: str, evidence_lines: list[str
         "Do not return asking for accounting software or credentials.\n"
         "If the deliverable claims an action (label, publish, reply, create, send, rebase, merge, sync, implement, fix) "
         "and Evidence is (none), you MUST return.\n"
+        "code-implement briefs: a pending or executed code_run_task (approval or dispatched runner) "
+        "is the deliverable. Accept. Do not return asking for a PR, merge, or founder approval.\n"
         "If the deliverable uses Campaign A / Article 1 / screenshotN.png template data, return.\n"
         "Visitor sources and tracking: proof is web_sessions (referrers / sessionSource), "
         "web_conversions (events), and web_gtm_status when GTM is in the brief. Zero "

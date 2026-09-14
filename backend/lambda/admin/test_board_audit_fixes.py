@@ -652,6 +652,104 @@ class DutiesBatchTests(BoardTestCase):
         self.assertIn("minimist", batch[0]["brief"])
 
 
+class CodeImplementHandoffTests(BoardTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        patcher = patch.object(board_async, "invoke_async", side_effect=lambda payload, *, fallback=None: None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.settings = _enable_staff(self.table)
+        self.settings["tools"]["globalMode"] = "propose"
+        board_store.save_settings(self.table, self.settings)
+        board_store.save_staff_override(self.table, "engineer-1", {"isActive": True})
+
+    def _implement(self) -> dict[str, Any]:
+        task = board_staff.create_task(
+            self.table,
+            self.settings,
+            assignee="engineer-1",
+            origin="event",
+            brief="Implement board-ready issue #484. Call code_run_task with issueNumber=484.",
+            deliverable_type="pr",
+            event_ref={"kind": "code-implement", "id": "issue:484", "issueNumber": 484},
+            created_by="test",
+        )
+        latest = board_store.get_task(self.table, task["taskId"]) or task
+        latest["status"] = "running"
+        board_store.put_task(self.table, latest)
+        return board_store.get_task(self.table, task["taskId"]) or latest
+
+    def _ctx(self, task: dict[str, Any]) -> board_tools.ToolContext:
+        return board_tools.ToolContext(
+            table=self.table,
+            settings=self.settings,
+            persona_id="cto",
+            display_name="CTO",
+            kind="task",
+            actor="persona",
+            task_id=task["taskId"],
+            seat_id="engineer-1",
+        )
+
+    def test_task_finish_parks_when_code_run_is_pending(self) -> None:
+        task = self._implement()
+        board_tools.create_approval(
+            self._ctx(task),
+            board_tools.REGISTRY["code_run_task"],
+            {"issueNumber": 484, "brief": "Fix extract-zip", "kind": "fix", "reason": "sec"},
+            summary="Dispatched the coding runner",
+        )
+        out = board_staff.op_task_finish(
+            self._ctx(task),
+            {
+                "summary": "Proposed the runner.",
+                "deliverableType": "markdown",
+                "deliverable": "Awaiting founder approval to dispatch.",
+                "evidence": [],
+                "confidence": "low",
+            },
+        )
+        self.assertEqual(out["status"], "waiting_approval")
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "waiting_approval")
+
+    def test_reject_code_run_ends_implement_task(self) -> None:
+        task = self._implement()
+        approval = board_tools.create_approval(
+            self._ctx(task),
+            board_tools.REGISTRY["code_run_task"],
+            {"issueNumber": 484, "brief": "Fix extract-zip", "kind": "fix", "reason": "sec"},
+            summary="Dispatched the coding runner",
+        )
+        board_staff._park_waiting_approval(self.table, task, [approval["approvalId"]])
+        approval["status"] = "rejected"
+        approval["context"] = {"taskId": task["taskId"]}
+        board_store.put_approval(self.table, approval)
+        board_staff.resume_after_approval(self.table, self.settings, approval)
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "needs_owner")
+        self.assertIn("rejected", latest.get("failureReason") or "")
+
+    def test_approve_code_run_delivers_implement_task(self) -> None:
+        task = self._implement()
+        approval = board_tools.create_approval(
+            self._ctx(task),
+            board_tools.REGISTRY["code_run_task"],
+            {"issueNumber": 484, "brief": "Fix extract-zip", "kind": "fix", "reason": "sec"},
+            summary="Dispatched the coding runner",
+        )
+        board_staff._park_waiting_approval(self.table, task, [approval["approvalId"]])
+        approval["status"] = "executed"
+        approval["context"] = {"taskId": task["taskId"]}
+        board_store.put_approval(self.table, approval)
+        board_staff.resume_after_approval(self.table, self.settings, approval)
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "delivered")
+        self.assertIn("code_runner_dispatched", latest.get("flags") or [])
+
+
 class ApprovalAndCallIdTests(BoardTestCase):
     def test_code_run_task_dedupes_pending_by_issue(self) -> None:
         settings = board_store.default_settings()
