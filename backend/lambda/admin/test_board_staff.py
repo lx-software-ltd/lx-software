@@ -185,6 +185,32 @@ class StaffEngineTests(BoardTestCase):
         self.assertIn("[Insert", review)
         self.assertIn("book of record", board_tools.REGISTRY["finance_aging_report"].description)
         self.assertIn("no QuickBooks/Xero", board_tools.REGISTRY["finance_list_invoices"].description)
+        self.assertIn("LX Software statement book", duties["month-end-memo"]["brief"])
+        self.assertIn("Siu Tin Dei", duties["month-end-memo"]["brief"])
+
+    def test_weekly_kpi_pack_is_siu_tin_dei_only(self) -> None:
+        seat = board_staff.seat_default("business-analyst") or {}
+        duties = {str(d["id"]): d for d in (seat.get("duties") or [])}
+        brief = duties["weekly-kpi-pack"]["brief"]
+        self.assertIn("Siu Tin Dei", brief)
+        self.assertIn("aws_monthly_cost", brief)
+        self.assertIn("meta_ad_spend", brief)
+        self.assertIn("do not include LX Software", brief)
+        self.assertIn("accounts-sheet cash", brief)
+        self.assertIn("LX Software", board_tools.REGISTRY["finance_cash_snapshot"].description)
+        self.assertIn("Siu Tin Dei", board_tools.REGISTRY["finance_cash_snapshot"].description)
+        review = board_staff._review_user_prompt(  # noqa: SLF001
+            {
+                "assignee": "business-analyst",
+                "brief": brief,
+                "deliverableType": "markdown",
+                "confidence": "medium",
+            },
+            "LX Software: HKD -2235.00",
+            [],
+        )
+        self.assertIn("LX Software statement book", review)
+        self.assertIn("Siu Tin Dei", review)
 
     def test_blob_keys_use_board_key(self) -> None:
         self.assertEqual(
@@ -1454,20 +1480,49 @@ class CashSnapshotTests(BoardTestCase):
             }
         )
         self.table.put_item(Item={**_finance_owner_ddb_key("siuTinDei"), **_to_ddb_nested(payload)})
+        lx_payload = _normalize_finance_payload(
+            {
+                "defaultCurrency": "HKD",
+                "float": {"amount": 0, "currency": "HKD"},
+                "lines": [
+                    {
+                        "id": "lx-exp-1",
+                        "dateUtc": "2026-09-01T00:00:00.000Z",
+                        "type": "expenditure",
+                        "description": "AWS admin console",
+                        "netAmount": 2235,
+                        "vat": 0,
+                        "grossAmount": 2235,
+                        "currency": "HKD",
+                    }
+                ],
+            }
+        )
+        self.table.put_item(Item={**_finance_owner_ddb_key("lxSoftware"), **_to_ddb_nested(lx_payload)})
         snap = board_finance.cash_snapshot(self.table, now=datetime(2026, 9, 13, tzinfo=timezone.utc))
         self.assertEqual(snap["asOf"], "2026-09-13")
         self.assertEqual(snap["cash"]["accountCount"], 3)
         self.assertEqual(snap["cash"]["liquidByCurrency"], [{"currency": "GBP", "amount": 50.0}, {"currency": "HKD", "amount": 1000.0}])
         self.assertEqual(snap["cash"]["creditCardByCurrency"], [{"currency": "HKD", "amount": 200.0}])
+        self.assertIn("all houses", snap["cash"]["note"])
         blob = json.dumps(snap)
         self.assertNotIn("HSBC", blob)
         self.assertNotIn("123-456", blob)
         self.assertNotIn("Amex", blob)
+        self.assertEqual(snap["statementBooks"]["scope"], "siuTinDei")
+        self.assertEqual(list(snap["statementBooks"]["books"]), ["siuTinDei"])
+        self.assertNotIn("lxSoftware", snap["statementBooks"]["books"])
+        self.assertIn("LX Software", snap["statementBooks"]["note"])
         fy = (snap["statementBooks"]["books"]["siuTinDei"].get("fiscalYear") or [])
         self.assertTrue(any(row["currency"] == "HKD" and row["income"] == 388.0 for row in fy))
         ctx = board_tools.ToolContext(table=self.table, settings=board_store.default_settings(), persona_id="cfo")
         out = board_tools.REGISTRY["finance_cash_snapshot"].run(ctx, {})
         self.assertEqual(out["cash"]["accountCount"], 3)
+        self.assertNotIn("lxSoftware", out["statementBooks"]["books"])
+        rendered = board_finance.render_finance_summary(snap["statementBooks"])
+        self.assertIn("Siu Tin Dei", rendered)
+        self.assertNotIn("LX Software", rendered)
+        self.assertNotIn("2235", rendered)
 
 
 if __name__ == "__main__":

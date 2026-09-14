@@ -122,7 +122,7 @@ source is size-capped so token cost is predictable.
 | **Owner updates** — free-text "since last meeting" notes | Chat with the chair, or a dedicated "Update the board" box | Ad hoc | Stored as owner messages; latest N included |
 | **Open / done action items** from previous meetings | `BOARD#siuTinDei#action#…` | Live | Lets the board iterate instead of restarting |
 | **Last meeting minutes** and a rolling **decision log** | Meeting rows | After each meeting | Only the latest minutes plus the decision log summary go in |
-| **Finance summary** (opt-in toggle) | Derived from `FINANCE#book#siuTinDei` and `FINANCE#book#lxSoftware` | Computed at meeting time | Aggregates only (fiscal-year gains, expenses, net, monthly run-rate, top categories). No individual lines, no bank data |
+| **Finance summary** (opt-in toggle) | Derived from `FINANCE#book#siuTinDei` only | Computed at meeting time | Aggregates only (fiscal-year gains, expenses, net, monthly run-rate). No individual lines, no bank data. The LX Software statement book is company overhead and is not on this board. |
 | **Repository snapshot** of `lx-software-ltd/siutindei` | `pk=BOARD#siuTinDei#repo-snapshot`, `sk=STATE` | Daily by the meeting job, or "Refresh" button | `README.md`, `AGENTS.md`, `docs/architecture/*.md` (capped), open issue titles, last 20 commit subjects, latest CI conclusion. Fetched via GitHub REST API. If the repo is private, a fine-grained read-only PAT (metadata, contents, issues, actions: read) stored in Secrets Manager and referenced by a new `GitHubReadTokenSecretArn` stack parameter |
 
 The finance summary and repository snapshot are both behind explicit toggles

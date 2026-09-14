@@ -1,8 +1,9 @@
 """Executive Board: aggregated finance summary and cash snapshot.
 
-Only totals are produced (per statement book, fiscal year and trailing three
-months, by currency; cash by account type and currency). No individual lines,
-payees or account names leave the table.
+Only totals are produced (Siu Tin Dei statement book, fiscal year and trailing
+three months, by currency; cash by account type and currency). No individual
+lines, payees or account names leave the table. The LX Software statement book
+is company overhead and is not on this board.
 """
 
 from __future__ import annotations
@@ -13,8 +14,18 @@ from typing import Any
 
 from finance_store import _load_accounts_records, _load_finance_owner
 
-BOOKS = ("siuTinDei", "lxSoftware")
-BOOK_LABELS = {"siuTinDei": "Siu Tin Dei", "lxSoftware": "LX Software"}
+BOOKS = ("siuTinDei",)
+BOOK_LABELS = {"siuTinDei": "Siu Tin Dei"}
+STATEMENT_BOOK_SCOPE_NOTE = (
+    "Siu Tin Dei product P&L only. The LX Software statement book is company "
+    "overhead (admin, public site, untagged) and is not on this board."
+)
+ACCOUNTS_SHEET_NOTE = (
+    "Liquid cash is Bank Account + Debit Card recordedValue from the owner's "
+    "accounts sheet (all houses, not Siu Tin Dei operating cash). "
+    "Credit cards are outstanding balances, not cash. "
+    "Account names and numbers are omitted."
+)
 
 
 def _fiscal_year_start(now: datetime) -> datetime:
@@ -105,7 +116,12 @@ def build_finance_summary(table: Any, *, now: datetime | None = None) -> dict[st
         except Exception:  # pragma: no cover - defensive: summary is optional
             continue
         books[book] = summarize_book(data, now=now)
-    return {"generatedAt": (now or datetime.now(timezone.utc)).strftime("%Y-%m-%d"), "books": books}
+    return {
+        "generatedAt": (now or datetime.now(timezone.utc)).strftime("%Y-%m-%d"),
+        "scope": "siuTinDei",
+        "note": STATEMENT_BOOK_SCOPE_NOTE,
+        "books": books,
+    }
 
 
 def cash_snapshot(table: Any, *, now: datetime | None = None) -> dict[str, Any]:
@@ -160,13 +176,16 @@ def cash_snapshot(table: Any, *, now: datetime | None = None) -> dict[str, Any]:
                 for (account_type, currency), data in sorted(by_type.items())
             ],
             "accountCount": len(records),
-            "note": (
-                "Liquid cash is Bank Account + Debit Card recordedValue. "
-                "Credit cards are outstanding balances, not cash. "
-                "Account names and numbers are omitted."
-            ),
+            "note": ACCOUNTS_SHEET_NOTE,
         },
-        "statementBooks": build_finance_summary(table, now=now) if table is not None else {"books": {}},
+        "statementBooks": build_finance_summary(table, now=now)
+        if table is not None
+        else {
+            "generatedAt": now.strftime("%Y-%m-%d"),
+            "scope": "siuTinDei",
+            "note": STATEMENT_BOOK_SCOPE_NOTE,
+            "books": {},
+        },
     }
 
 
@@ -178,7 +197,9 @@ def render_finance_summary(summary: dict[str, Any]) -> str:
     books = summary.get("books") or {}
     if not books:
         return ""
-    lines = ["Finance summary (aggregated totals from the admin statement books):"]
+    lines = [
+        "Finance summary (aggregated totals from the Siu Tin Dei statement book):"
+    ]
     for book, data in books.items():
         label = BOOK_LABELS.get(book, book)
         lines.append(
