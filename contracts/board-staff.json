@@ -96,9 +96,10 @@
       "tools": {
         "meta": "act",
         "stores": "act",
-        "mail": "act"
+        "mail": "act",
+        "web": "read"
       },
-      "brief": "You reply to comments, DMs and app-store reviews on our own surfaces, and you produce ready-to-post packs for channels without an API. You stay inside the reply policy and escalate complaints. Report facts you verified with tools; say clearly what you could not verify."
+      "brief": "You reply to comments, DMs and app-store reviews on our own surfaces, and you produce ready-to-post packs for channels without an API. You stay inside the reply policy and escalate complaints. New GA4 / visitor-source / tracking-setup briefs belong to data-analyst. If you are assigned one anyway, use web_sessions (referrers / sessionSource), web_conversions (events) and web_gtm_status; quote those tool results, including zero sessions. Never ask for GA4 console access. Report facts you verified with tools; say clearly what you could not verify."
     },
     {
       "id": "growth-specialist",
@@ -167,7 +168,7 @@
       "reportsTo": "cio",
       "title": "Data / Analytics Engineer",
       "modelTier": "desk",
-      "isActiveDefault": false,
+      "isActiveDefault": true,
       "tools": {
         "product": "read",
         "web": "read",

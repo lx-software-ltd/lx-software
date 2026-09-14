@@ -3,7 +3,7 @@ import { BoardMarkdown } from "./BoardMarkdown";
 import { BoardOffcanvas } from "./BoardOffcanvas";
 import { BoardToolCallList } from "./BoardToolCallList";
 import { DateTimeDisplay } from "../ui";
-import { formatUsageCost, type BoardTask, type BoardTaskDetailPayload, type BoardToolCallLogEntry } from "../../lib/boardModel";
+import { canRetryBoardTask, formatUsageCost, type BoardTask, type BoardTaskDetailPayload, type BoardToolCallLogEntry } from "../../lib/boardModel";
 
 export type BoardTaskDrawerProps = {
   readonly detail: BoardTaskDetailPayload | undefined;
@@ -93,7 +93,7 @@ export function BoardTaskDrawer({
                 </button>
               </>
             ) : null}
-            {task.status === "failed" && onRetry ? (
+            {canRetryBoardTask(task.status) && onRetry ? (
               <button
                 type="button"
                 className="btn btn-primary btn-sm"

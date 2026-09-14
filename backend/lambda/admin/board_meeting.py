@@ -778,6 +778,7 @@ def _assignee_roster_text(table: Any, settings: dict[str, Any], persona_ids: lis
         for seat in seats:
             brief = " ".join(str(seat.get("brief") or "").split())[:200]
             lines.append(f"- {seat['id']} — {seat.get('title')}: {brief}")
+        lines.append(board_staff.ga4_assignee_hint(table, settings))
     else:
         lines.append("No staff seats are active; assign to an executive or the founder.")
     lines.append(

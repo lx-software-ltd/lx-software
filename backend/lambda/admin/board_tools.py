@@ -1896,7 +1896,7 @@ def build_registry() -> dict[str, ToolOp]:
             name="web_sessions",
             tool_id="web",
             kind="read",
-            description="GA4 sessions, users, top pages and referrers for the last 7 days (cached). Optional propertyId when several properties are configured.",
+            description="GA4 sessions, users, top pages and referrers (sessionSource / sessionMedium) for the last 7 days (cached). This is the book of record for visitor sources; do not ask for GA4 console access. Zero sessions is a valid connected result. Optional propertyId when several properties are configured.",
             parameters=_obj(
                 {
                     "propertyId": _str_param("GA4 property id. Omit to read every configured property.", max_len=32),
@@ -1910,7 +1910,7 @@ def build_registry() -> dict[str, ToolOp]:
             name="web_conversions",
             tool_id="web",
             kind="read",
-            description="GA4 event counts and conversions for the last 7 days (cached).",
+            description="GA4 event counts and key events for the last 7 days (cached). This is the book of record for event tracking; do not ask for GA4 console access.",
             parameters=_obj(
                 {
                     "propertyId": _str_param("GA4 property id. Omit to read every configured property.", max_len=32),
@@ -1924,7 +1924,7 @@ def build_registry() -> dict[str, ToolOp]:
             name="web_gtm_status",
             tool_id="web",
             kind="read",
-            description="GTM container name, public id and live version (cached). Publish is a later milestone.",
+            description="GTM container name, public id and live version (cached). This is the book of record for tag-manager setup; do not ask for GA4 or GTM console access. Publish is a later milestone.",
             parameters=_obj(
                 {"containerId": _str_param("GTM container id. Omit to read every configured container.", max_len=32)}
             ),
@@ -2276,7 +2276,7 @@ def build_registry() -> dict[str, ToolOp]:
             name="staff_assign",
             tool_id="staff",
             kind="write",
-            description="Assign a background task to a board member or an active staff seat. The assignee works in steps and produces a deliverable for review.",
+            description="Assign a background task to a board member or an active staff seat. The assignee works in steps and produces a deliverable for review. GA4 / visitor-source / event-tracking / GTM briefs go to data-analyst (or business-analyst if that seat is inactive), not community-manager.",
             parameters=_obj(
                 {
                     "assignee": _str_param("Persona id or active seat id.", max_len=40),

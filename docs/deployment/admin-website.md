@@ -677,8 +677,9 @@ function calling. Design:
   and set `PublicSiteOrigins`. Confirm `ADMIN_API_BASE_URL` is set on the
   production GitHub environment (already required for the admin SPA).
 
-- **Duties and remaining desks (WP9):** Flip `accountant`, `data-analyst`
-  and `security-analyst` on at runbook step 6, then enable
+- **Duties and remaining desks (WP9):** `data-analyst` is default-on for
+  GA4 assignment. Flip `accountant` and `security-analyst` on at runbook
+  step 6, then enable
   `settings.staff.dutiesEnabled` (Settings → Run scheduled seat duties)
   after staff is on. **Staff → Run staff tick now** (`POST /siu-tin-dei/board/staff/tick`)
   queues the same work as the 5-minute schedule (due duties, due holds, drain
@@ -717,7 +718,8 @@ function calling. Design:
   engineer-2 / product-dev on (runbook step 7).
 
 **Staff seat rollout (R-24).** Default-on seats: `support`,
-`provider-success`, `community-manager`, `business-analyst`.
+`provider-success`, `community-manager`, `business-analyst`,
+`data-analyst`.
 `maxRunningTasksDefault` is 3. Flip others on from **Staff** (or
 `PUT /siu-tin-dei/board/staff/{id}`) at these steps:
 
@@ -730,8 +732,9 @@ function calling. Design:
    identity verify. First sends are 24 h holds.
 5. WP7: activate `content-marketer` and `growth-specialist`; raise
    `maxRunningTasks` to 6 after the first content week is stable.
-6. WP8–WP9: set `PublicSiteOrigins`; activate `accountant`,
-   `data-analyst`, `security-analyst`; then `settings.staff.dutiesEnabled`.
+6. WP8–WP9: set `PublicSiteOrigins`; activate `accountant` and
+   `security-analyst` (`data-analyst` is already default-on for assignment);
+   then `settings.staff.dutiesEnabled` (weekly attribution and other duties).
 7. After Appendix A is live in siutindei: activate `architect`,
    `engineer-1`, `engineer-2`, `product-dev`. First staging merges stay
    Approvals until `code_merge_staging` is taken off `always_propose`.
