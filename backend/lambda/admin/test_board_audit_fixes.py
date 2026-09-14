@@ -675,11 +675,13 @@ class ApprovalAndCallIdTests(BoardTestCase):
             ctx,
             board_tools.REGISTRY["code_run_task"],
             {"issueNumber": 484, "brief": "Different wording", "kind": "fix", "reason": "again"},
-            summary="Dispatched the coding runner",
+            summary="Retry extract-zip with a tighter brief",
         )
         self.assertEqual(first["approvalId"], second["approvalId"])
         pending = [a for a in board_store.list_approvals(self.table) if a.get("status") == "pending"]
         self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["arguments"]["brief"], "Different wording")
+        self.assertEqual(pending[0]["summary"], "Retry extract-zip with a tighter brief")
 
     def test_execute_call_returns_internal_call_id(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"

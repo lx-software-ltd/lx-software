@@ -947,6 +947,11 @@ def _canonical_evidence_ids(table: Any, task: dict[str, Any], evidence: list[str
                 continue
             for alias in _call_evidence_aliases(call):
                 alias_to_id.setdefault(alias, cid)
+        for step in board_store.list_task_steps(table, tid):
+            for cid in step.get("callIds") or []:
+                value = str(cid or "").strip()
+                if value:
+                    alias_to_id.setdefault(value, value)
     out: list[str] = []
     seen: set[str] = set()
     for raw in evidence:

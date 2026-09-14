@@ -196,6 +196,36 @@ class BreakerRuleTests(BoardTestCase):
         tripped = board_breakers.evaluate(self.table, self.settings)
         self.assertNotIn("tool:web", tripped)
 
+    def test_auto_reset_only_once_until_owner_clears(self) -> None:
+        board_breakers.trip(self.table, "tool:mail", "10 errors in the last hour")
+        row = board_store.get_breaker(self.table, "tool:mail")
+        row["trippedAt"] = (datetime.now(timezone.utc) - timedelta(minutes=31)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        board_store.put_breaker(self.table, "tool:mail", row)
+        board_breakers.evaluate(self.table, self.settings)
+        self.assertFalse(board_breakers.is_tripped(self.table, "tool:mail"))
+        self.assertEqual(board_store.get_breaker(self.table, "tool:mail").get("autoResetCount"), 1)
+
+        board_breakers.trip(self.table, "tool:mail", "10 errors in the last hour")
+        row = board_store.get_breaker(self.table, "tool:mail")
+        self.assertEqual(row.get("autoResetCount"), 1)
+        row["trippedAt"] = (datetime.now(timezone.utc) - timedelta(minutes=31)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        board_store.put_breaker(self.table, "tool:mail", row)
+        board_breakers.evaluate(self.table, self.settings)
+        self.assertTrue(board_breakers.is_tripped(self.table, "tool:mail"))
+
+        board_breakers.reset(self.table, "tool:mail", "owner")
+        self.assertEqual(board_store.get_breaker(self.table, "tool:mail").get("autoResetCount"), 0)
+
+    def test_task_tool_still_blocked_by_channel_breaker(self) -> None:
+        board_breakers.trip(self.table, "channel:mail", "escalation")
+        task_reply = type("Op", (), {"tool_id": "task", "name": "mail_reply"})()
+        task_finish = type("Op", (), {"tool_id": "task", "name": "task_finish"})()
+        self.assertEqual(
+            board_breakers.write_blocked(self.table, task_reply),
+            {"error": "breaker tripped", "breaker": "channel:mail"},
+        )
+        self.assertIsNone(board_breakers.write_blocked(self.table, task_finish))
+
     def test_reset(self) -> None:
         board_breakers.trip(self.table, "tool:mail", "test")
         board_breakers.reset(self.table, "tool:mail", "owner")

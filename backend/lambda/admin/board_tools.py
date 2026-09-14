@@ -3147,7 +3147,15 @@ def create_approval(
             if existing_args == new_args:
                 return existing
             if op.name == "code_run_task" and _same_code_run_target(existing.get("arguments") or {}, arguments):
-                return existing
+                return _refresh_pending_approval(
+                    ctx,
+                    op,
+                    existing,
+                    arguments,
+                    summary=summary,
+                    downgrade_reason=downgrade_reason,
+                    fingerprint=fingerprint,
+                )
     if len(pending) >= BOARD_MAX_PENDING_APPROVALS:
         raise ToolPermissionError("Too many pending approvals; ask the founder to review the queue first.")
     now = board_store.now_iso()
@@ -3393,6 +3401,35 @@ def _same_code_run_target(left: dict[str, Any], right: dict[str, Any]) -> bool:
     except (TypeError, ValueError):
         return False
     return bool(left_issue) and left_issue == right_issue
+
+
+def _refresh_pending_approval(
+    ctx: ToolContext,
+    op: ToolOp,
+    existing: dict[str, Any],
+    arguments: dict[str, Any],
+    *,
+    summary: str,
+    downgrade_reason: str,
+    fingerprint: str,
+) -> dict[str, Any]:
+    """Keep one pending row but show the latest brief/args to the founder."""
+    now = board_store.now_iso()
+    updated = {
+        **existing,
+        "arguments": arguments,
+        "summary": summary,
+        "reason": str(arguments.get("reason") or existing.get("reason") or "")[:400],
+        "fingerprint": fingerprint,
+        "updatedAt": now,
+    }
+    preview = render_preview(ctx, op, arguments)
+    if preview is not None:
+        updated["preview"] = preview
+    if downgrade_reason:
+        updated["downgradeReason"] = downgrade_reason[:300]
+    board_store.put_approval(ctx.table, updated)
+    return updated
 
 
 def _run_one(

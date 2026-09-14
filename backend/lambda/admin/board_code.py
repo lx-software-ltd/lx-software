@@ -45,8 +45,10 @@ LOCKFILE_NAMES = frozenset(
     }
 )
 _RUN_DONE = frozenset(
-    {"completed", "failure", "cancelled", "timed_out", "startup_failure", "action_required", "success", "skipped", "neutral"}
+    {"completed", "failure", "cancelled", "timed_out", "startup_failure", "success", "skipped", "neutral"}
 )
+_RUN_FAILED = frozenset({"failure", "cancelled", "timed_out", "startup_failure"})
+_RUN_WAITING_STATUS = frozenset({"queued", "in_progress", "waiting", "pending", "requested"})
 MAX_REVIEW_ROUNDS = 2
 KINDS = frozenset({"feature", "fix", "content"})
 CI_OK = frozenset({"success", "neutral", "skipped"})
@@ -195,11 +197,13 @@ def _run_in_flight(row: dict[str, Any]) -> bool:
     """True while a dispatched runner has neither a PR nor a terminal conclusion."""
     if not row or row.get("prNumber"):
         return False
+    if row.get("failedAt"):
+        return False
     status = str(row.get("runStatus") or "").lower()
     conclusion = str(row.get("conclusion") or "").lower()
+    if conclusion == "action_required" or status in _RUN_WAITING_STATUS:
+        return True
     if status == "completed" or conclusion in _RUN_DONE:
-        return False
-    if row.get("failedAt"):
         return False
     return True
 
@@ -476,6 +480,7 @@ def op_get_run(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if not task_id:
         raise CodeError("taskId is required")
     stored = _get_run(ctx.table, task_id)
+    had_stored = bool(stored)
     runs = _runs_for_task(task_id)
     latest = runs[0] if runs else {}
     pr = _pr_for_branch(task_id)
@@ -490,16 +495,18 @@ def op_get_run(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         "prUrl": (pr or {}).get("html_url"),
         "prDraft": (pr or {}).get("draft"),
     }
+    if not had_stored:
+        return out
     stored["runStatus"] = out["runStatus"]
     if out.get("conclusion"):
         stored["conclusion"] = out["conclusion"]
     if out.get("prNumber"):
         stored["prNumber"] = out["prNumber"]
         stored["prUrl"] = out.get("prUrl") or stored.get("prUrl")
-    if stored.get("runStatus") == "completed" and not stored.get("prNumber") and out.get("conclusion") not in CI_OK:
+    conclusion = str(out.get("conclusion") or "").lower()
+    if stored.get("runStatus") == "completed" and not stored.get("prNumber") and conclusion in _RUN_FAILED:
         stored["failedAt"] = stored.get("failedAt") or board_store.now_iso()
-    if stored:
-        _put_run(ctx.table, task_id, stored)
+    _put_run(ctx.table, task_id, stored)
     return out
 
 

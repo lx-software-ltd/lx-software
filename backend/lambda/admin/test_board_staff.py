@@ -536,6 +536,18 @@ class StaffStepTests(ToolsTestCase):
         self.assertEqual(latest["status"], "review")
         self.assertEqual(latest["evidence"], ["aws-hex", "fin-hex"])
 
+    def test_canonical_evidence_keeps_step_only_call_ids(self) -> None:
+        task = self._queued_task()
+        board_store.put_task_step(
+            self.table,
+            task["taskId"],
+            {"seq": 0, "attempt": 1, "callIds": ["step-only-hex"]},
+        )
+        kept = board_staff._canonical_evidence_ids(  # noqa: SLF001
+            self.table, task, ["step-only-hex", "unknown"]
+        )
+        self.assertEqual(kept, ["step-only-hex"])
+
     def test_review_unparsable_verdict_returns(self) -> None:
         task = self._queued_task()
         board_store.claim_task_step(self.table, task["taskId"], 0)

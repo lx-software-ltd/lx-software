@@ -29,6 +29,14 @@ _INTERNAL_TOOLS = frozenset({"task"})
 _TOOL_TRIP_ERRORS = 10
 _TOOL_RESET_ERRORS = 5
 _TOOL_RESET_MIN_AGE = timedelta(minutes=30)
+_TOOL_AUTO_RESET_LIMIT = 1
+
+
+def _auto_reset_count(row: dict[str, Any] | None) -> int:
+    try:
+        return max(0, int((row or {}).get("autoResetCount") or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def trip(table: Any, name: str, reason: str) -> dict[str, Any]:
@@ -43,6 +51,7 @@ def trip(table: Any, name: str, reason: str) -> dict[str, Any]:
         "trippedAt": now,
         "resetBy": "",
         "resetAt": None,
+        "autoResetCount": _auto_reset_count(existing),
     }
     board_store.put_breaker(table, name, doc)
     try:
@@ -55,12 +64,18 @@ def trip(table: Any, name: str, reason: str) -> dict[str, Any]:
 
 def reset(table: Any, name: str, by_sub: str) -> dict[str, Any]:
     existing = board_store.get_breaker(table, name) or {"name": name}
+    count = _auto_reset_count(existing)
+    if by_sub == "auto":
+        count += 1
+    else:
+        count = 0
     doc = {
         **existing,
         "name": name,
         "tripped": False,
         "resetBy": by_sub,
         "resetAt": board_store.now_iso(),
+        "autoResetCount": count,
     }
     board_store.put_breaker(table, name, doc)
     try:
@@ -84,9 +99,7 @@ def is_tripped(table: Any, name: str) -> bool:
 def write_blocked(table: Any, op: Any) -> dict[str, Any] | None:
     """Structured error when a write op is stopped by a channel or tool breaker."""
     tool_id = str(getattr(op, "tool_id", "") or "")
-    if tool_id in _INTERNAL_TOOLS:
-        return None
-    if tool_id and is_tripped(table, f"tool:{tool_id}"):
+    if tool_id and tool_id not in _INTERNAL_TOOLS and is_tripped(table, f"tool:{tool_id}"):
         return {"error": "breaker tripped", "breaker": f"tool:{tool_id}"}
     channel = _op_channel(op)
     if channel and is_tripped(table, f"channel:{channel}"):
@@ -217,6 +230,8 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
         tool_id = name[5:]
         if tool_id in _INTERNAL_TOOLS:
             reset(table, name, "auto")
+            continue
+        if _auto_reset_count(row) >= _TOOL_AUTO_RESET_LIMIT:
             continue
         if errors.get(tool_id, 0) >= _TOOL_RESET_ERRORS:
             continue

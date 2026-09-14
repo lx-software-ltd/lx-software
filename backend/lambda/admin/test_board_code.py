@@ -206,6 +206,29 @@ class RunnerTests(BoardTestCase):
         stored = board_code._get_run(self.table, "task-1")  # noqa: SLF001
         self.assertEqual(stored["conclusion"], "failure")
         self.assertFalse(board_code.issue_has_open_board_pr(42, self.table))
+        self.assertTrue(stored.get("failedAt"))
+
+    def test_action_required_run_still_blocks_issue(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
+        self.gh.runs.append(
+            {
+                "name": "board-agent task-1",
+                "status": "completed",
+                "conclusion": "action_required",
+                "html_url": "https://example/run-wait",
+            }
+        )
+        out = board_code.op_get_run(self.ctx, {"taskId": "task-1"})
+        self.assertEqual(out["conclusion"], "action_required")
+        stored = board_code._get_run(self.table, "task-1")  # noqa: SLF001
+        self.assertFalse(stored.get("failedAt"))
+        self.assertTrue(board_code.issue_has_open_board_pr(42, self.table))
+
+    def test_get_run_does_not_create_row_for_unknown_task(self) -> None:
+        out = board_code.op_get_run(self.ctx, {"taskId": "never-dispatched"})
+        self.assertEqual(out["runStatus"], "unknown")
+        self.assertEqual(board_code._get_run(self.table, "never-dispatched"), {})  # noqa: SLF001
+        self.assertNotIn("never-dispatched", board_code._run_index(self.table))  # noqa: SLF001
 
     def test_lockfile_changes_do_not_count_toward_line_limit(self) -> None:
         files = [
