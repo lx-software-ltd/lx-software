@@ -2489,7 +2489,13 @@ def available_ops(
 
 
 def _op_is_configured(op: ToolOp) -> bool:
-    """Hide tools whose backing credentials are missing so seats do not burn steps."""
+    """Hide writes whose backing credentials are missing so seats do not propose junk.
+
+    Reads stay visible so duty briefs can still call them and get a structured
+    'not configured' result (those errors are ignored by tool breakers).
+    """
+    if not op.is_write:
+        return True
     if op.tool_id == "meta":
         name = op.name
         if "ig_" in name or name.endswith("_ig_insights"):

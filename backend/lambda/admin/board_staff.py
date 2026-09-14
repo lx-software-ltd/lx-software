@@ -624,7 +624,8 @@ def _productive_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _norm_plan(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "").strip().lower())[:400]
+    cleaned = re.sub(r"[^\w\s]", " ", (text or "").lower())
+    return re.sub(r"\s+", " ", cleaned).strip()[:400]
 
 
 def _plans_similar(left: str, right: str) -> bool:

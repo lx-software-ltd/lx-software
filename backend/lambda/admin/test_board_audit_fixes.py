@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from test_board import BoardTestCase
 
+import board_async
 import board_breakers
 import board_code
 import board_content
@@ -59,6 +60,9 @@ class PauseAndDedupeTests(BoardTestCase):
         super().setUp()
         os.environ["BOARD_STAFF_ENABLED"] = "true"
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        patcher = patch.object(board_async, "invoke_async", side_effect=lambda payload, *, fallback=None: None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.settings = _enable_staff(self.table)
         board_store.save_staff_override(self.table, "support", {"isActive": True})
 
@@ -168,13 +172,16 @@ class BreakerAndUnconfiguredTests(BoardTestCase):
         tripped = board_breakers.evaluate(self.table, board_store.load_settings(self.table))
         self.assertNotIn("tool:meta", tripped)
 
-    def test_web_ops_hidden_when_unconfigured(self) -> None:
+    def test_unconfigured_writes_are_hidden(self) -> None:
         os.environ.pop("GOOGLE_ANALYTICS_ACCESS_TOKEN", None)
         os.environ.pop("GA4_PROPERTY_IDS", None)
         settings = board_store.default_settings()
-        names = {op.name for op, _ in board_tools.available_ops(settings, "ceo", context="chat")}
-        self.assertNotIn("web_sessions", names)
-        self.assertIn("github_search_issues", names)
+        settings["tools"]["globalMode"] = "act"
+        cmo = {op.name for op, _ in board_tools.available_ops(settings, "cmo", context="chat")}
+        ceo = {op.name for op, _ in board_tools.available_ops(settings, "ceo", context="chat")}
+        self.assertNotIn("meta_propose_post", cmo)
+        self.assertNotIn("stores_reply_review", cmo)
+        self.assertIn("github_search_issues", ceo)
 
 
 class BulkMailAndChatMaskTests(BoardTestCase):
@@ -223,6 +230,9 @@ class LessonAndReviewTests(BoardTestCase):
         super().setUp()
         os.environ["BOARD_STAFF_ENABLED"] = "true"
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        patcher = patch.object(board_async, "invoke_async", side_effect=lambda payload, *, fallback=None: None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.settings = _enable_staff(self.table)
 
     def test_lesson_upsert_and_skip_salvaged(self) -> None:
@@ -356,9 +366,10 @@ class ProseToolCallAndStuckTests(BoardTestCase):
     def test_stuck_writes_failure_detail(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
-        settings = _enable_staff(self.table)
-        board_store.save_staff_override(self.table, "support", {"isActive": True})
-        task = _running_task(self.table, settings)
+        with patch.object(board_async, "invoke_async", side_effect=lambda payload, *, fallback=None: None):
+            settings = _enable_staff(self.table)
+            board_store.save_staff_override(self.table, "support", {"isActive": True})
+            task = _running_task(self.table, settings)
         failed = board_staff._finish_incomplete(self.table, task, "stuck")
         self.assertEqual(failed["status"], "failed")
         self.assertEqual(failed["failureReason"], "stuck")
@@ -388,6 +399,9 @@ class DutiesBatchTests(BoardTestCase):
         super().setUp()
         os.environ["BOARD_STAFF_ENABLED"] = "true"
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        patcher = patch.object(board_async, "invoke_async", side_effect=lambda payload, *, fallback=None: None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.settings = _enable_staff(self.table, dutiesEnabled=False)
         board_store.save_staff_override(self.table, "security-analyst", {"isActive": True})
 
