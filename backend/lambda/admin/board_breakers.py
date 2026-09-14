@@ -18,7 +18,14 @@ _IGNORABLE_TOOL_ERROR_MARKERS = (
     " not found in ",
     "was not found",
     "not found or token lacks",
+    "breaker tripped",
+    "this brief requires evidence",
+    "you already have those tools",
+    "deliverable still has placeholder",
+    "deliverable is larger than",
+    "wait for it to resume before continuing",
 )
+_INTERNAL_TOOLS = frozenset({"task"})
 _TOOL_TRIP_ERRORS = 10
 _TOOL_RESET_ERRORS = 5
 _TOOL_RESET_MIN_AGE = timedelta(minutes=30)
@@ -77,6 +84,8 @@ def is_tripped(table: Any, name: str) -> bool:
 def write_blocked(table: Any, op: Any) -> dict[str, Any] | None:
     """Structured error when a write op is stopped by a channel or tool breaker."""
     tool_id = str(getattr(op, "tool_id", "") or "")
+    if tool_id in _INTERNAL_TOOLS:
+        return None
     if tool_id and is_tripped(table, f"tool:{tool_id}"):
         return {"error": "breaker tripped", "breaker": f"tool:{tool_id}"}
     channel = _op_channel(op)
@@ -191,11 +200,13 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
         if any(marker in preview for marker in _IGNORABLE_TOOL_ERROR_MARKERS):
             continue
         tool_id = str(call.get("toolId") or "")
-        if not tool_id:
+        if not tool_id or tool_id in _INTERNAL_TOOLS:
             continue
         errors[tool_id] = errors.get(tool_id, 0) + 1
     now = datetime.now(timezone.utc)
     for tool_id, count in errors.items():
+        if tool_id in _INTERNAL_TOOLS:
+            continue
         if count >= _TOOL_TRIP_ERRORS and not is_tripped(table, f"tool:{tool_id}"):
             trip(table, f"tool:{tool_id}", f"{count} errors in the last hour")
             tripped.append(f"tool:{tool_id}")
@@ -204,6 +215,9 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
         if not name.startswith("tool:") or not row.get("tripped"):
             continue
         tool_id = name[5:]
+        if tool_id in _INTERNAL_TOOLS:
+            reset(table, name, "auto")
+            continue
         if errors.get(tool_id, 0) >= _TOOL_RESET_ERRORS:
             continue
         tripped_at = _parse_iso(str(row.get("trippedAt") or ""))

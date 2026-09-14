@@ -11,9 +11,11 @@ from unittest.mock import patch
 from test_board import BoardTestCase
 from test_board_tools import ToolsTestCase
 
+import board_async
 import board_breakers
 import board_hk
 import board_holds
+import board_staff
 import board_store
 import board_tools
 
@@ -157,6 +159,43 @@ class BreakerRuleTests(BoardTestCase):
         tripped = board_breakers.evaluate(self.table, self.settings)
         self.assertIn("class:publish:facebook", tripped)
 
+    def test_task_errors_never_trip_and_clear_existing(self) -> None:
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for i in range(12):
+            board_store.add_tool_call(
+                self.table,
+                {
+                    "callId": f"task-err-{i}",
+                    "op": "task_finish",
+                    "toolId": "task",
+                    "status": "error",
+                    "resultPreview": '{"error": "breaker tripped", "breaker": "tool:task"}',
+                    "createdAt": now,
+                },
+            )
+        tripped = board_breakers.evaluate(self.table, self.settings)
+        self.assertNotIn("tool:task", tripped)
+        board_breakers.trip(self.table, "tool:task", "11 errors in the last hour")
+        board_breakers.evaluate(self.table, self.settings)
+        self.assertFalse(board_breakers.is_tripped(self.table, "tool:task"))
+
+    def test_evidence_validation_errors_do_not_trip_mail_or_web(self) -> None:
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for i in range(12):
+            board_store.add_tool_call(
+                self.table,
+                {
+                    "callId": f"ev-{i}",
+                    "op": "task_finish",
+                    "toolId": "web",
+                    "status": "error",
+                    "resultPreview": "This brief requires evidence from web_sessions, web_conversions.",
+                    "createdAt": now,
+                },
+            )
+        tripped = board_breakers.evaluate(self.table, self.settings)
+        self.assertNotIn("tool:web", tripped)
+
     def test_reset(self) -> None:
         board_breakers.trip(self.table, "tool:mail", "test")
         board_breakers.reset(self.table, "tool:mail", "owner")
@@ -207,6 +246,43 @@ class BreakerExecuteCallTests(ToolsTestCase):
             {"limit": 5},
         )
         self.assertNotEqual(outcome.result.get("breaker"), "tool:staff")
+
+    def test_task_finish_still_runs_when_task_breaker_tripped(self) -> None:
+        board_breakers.trip(self.table, "tool:task", "test")
+        settings = board_store.load_settings(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="support",
+                origin="owner",
+                brief="Write a one-line status. No tools required.",
+                deliverable_type="markdown",
+                created_by="test",
+            )
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="ceo",
+            display_name="CEO",
+            kind="task",
+            actor="persona",
+            task_id=task["taskId"],
+            seat_id="support",
+        )
+        outcome = board_tools.execute_call(
+            ctx,
+            board_tools.REGISTRY["task_finish"],
+            {
+                "summary": "Done",
+                "deliverableType": "markdown",
+                "deliverable": "Status is green.",
+                "evidence": [],
+                "confidence": "low",
+            },
+        )
+        self.assertNotEqual(outcome.result.get("breaker"), "tool:task")
+        self.assertNotEqual(outcome.status, "error")
 
 
 if __name__ == "__main__":
