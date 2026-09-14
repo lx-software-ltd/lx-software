@@ -211,6 +211,19 @@ class StaffEngineTests(BoardTestCase):
         )
         self.assertIn("LX Software statement book", review)
         self.assertIn("Siu Tin Dei", review)
+        # Naming spend tools in the brief makes task_finish demand evidence from
+        # them, so the seat must be able to call both in task context.
+        needed = board_staff._brief_required_evidence_tools(brief)  # noqa: SLF001
+        self.assertEqual(needed, ["aws_monthly_cost", "meta_ad_spend"])
+        settings = _enable_staff(self.table)
+        roster = board_staff.seats_by_id(self.table, settings)
+        ops = {
+            op.name
+            for op, _ in board_tools.available_ops(
+                settings, "ceo", context="task", seat_id="business-analyst", seats_by_id=roster
+            )
+        }
+        self.assertTrue(set(needed) <= ops, ops)
 
     def test_blob_keys_use_board_key(self) -> None:
         self.assertEqual(
