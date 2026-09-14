@@ -68,9 +68,11 @@ _TEMPLATE_DATA_RE = re.compile(
     re.I,
 )
 _CLAIMED_ACTION_RE = re.compile(
-    r"\b(label|labelled|labeled|publish|published|reply|replied|create|created|open|opened|send|sent)\b",
+    r"\b(label|labelled|labeled|publish|published|reply|replied|create|created|"
+    r"open|opened|send|sent|rebase|merge|sync|fast-forward|implement|implemented|fix|fixed)\b",
     re.I,
 )
+_EVIDENCE_REQUIRED_ORIGINS = frozenset({"event", "duty", "target"})
 _EVIDENCE_TOOL_TOKENS = (
     "finance_cash_snapshot",
     "finance_aging_report",
@@ -1819,7 +1821,7 @@ def _review_user_prompt(task: dict[str, Any], raw: str, evidence_lines: list[str
         "[Insert …] placeholders or 0-30/31-60 aging buckets instead of current / D+7 / "
         "D+21 / D+35. Accept a memo that states a figure is unavailable with the tool error. "
         "Do not return asking for accounting software or credentials.\n"
-        "If the deliverable claims an action (label, publish, reply, create, send) "
+        "If the deliverable claims an action (label, publish, reply, create, send, rebase, merge, sync, implement, fix) "
         "and Evidence is (none), you MUST return.\n"
         "If the deliverable uses Campaign A / Article 1 / screenshotN.png template data, return.\n"
         "Visitor sources and tracking: proof is web_sessions (referrers / sessionSource), "
@@ -1914,7 +1916,7 @@ def apply_review(
     task["lastReview"] = {"verdict": verdict, "notes": notes, "at": now, "by": by}
     task["updatedAt"] = now
     if verdict == "accept":
-        if _should_hold_unverified_accept(task):
+        if _should_hold_unverified_accept(table, task):
             task["status"] = "needs_owner"
             task["finishedAt"] = None
             board_store.put_task(table, task)
@@ -1956,6 +1958,22 @@ def apply_review(
     return task
 
 
+def _task_attempted_required_tools(table: Any, task: dict[str, Any]) -> bool:
+    """True when the seat called every tool the brief names, even if those calls errored."""
+    needed = _brief_required_evidence_tools(str(task.get("brief") or ""))
+    if not needed:
+        return False
+    task_id = str(task.get("taskId") or "")
+    if not task_id:
+        return False
+    ops: set[str] = set()
+    for call in board_store.list_tool_calls_for_task(table, task_id):
+        op = str(call.get("op") or "")
+        if op and op not in _IDLE_TOOL_OPS:
+            ops.add(op)
+    return all(tool in ops for tool in needed)
+
+
 def _note_parent_if_child_needs_owner(table: Any, task: dict[str, Any]) -> None:
     if not task.get("parentTaskId") or task.get("status") != "needs_owner":
         return
@@ -1970,12 +1988,41 @@ def _note_parent_if_child_needs_owner(table: Any, task: dict[str, Any]) -> None:
     )
 
 
-def _should_hold_unverified_accept(task: dict[str, Any]) -> bool:
+def _should_hold_unverified_accept(table: Any, task: dict[str, Any]) -> bool:
     flags = {str(f) for f in (task.get("flags") or [])}
     if "no_evidence" not in flags and "salvaged" not in flags:
         return False
+    if "salvaged" not in flags and _task_attempted_required_tools(table, task):
+        return False
+    if str(task.get("origin") or "") in _EVIDENCE_REQUIRED_ORIGINS:
+        return True
     brief = str(task.get("brief") or "")
     return bool(_CLAIMED_ACTION_RE.search(brief))
+
+
+def _task_has_open_approvals(table: Any, task: dict[str, Any]) -> bool:
+    task_id = str(task.get("taskId") or "")
+    if not task_id:
+        return False
+    blocked = [str(x) for x in (task.get("blockedOn") or []) if x]
+    if blocked:
+        return True
+    for approval in board_store.list_approvals(table):
+        if str(approval.get("status") or "") != "pending":
+            continue
+        ctx = approval.get("context") or {}
+        if str(ctx.get("taskId") or "") == task_id:
+            return True
+    return False
+
+
+def _should_close_linked_action(table: Any, task: dict[str, Any]) -> bool:
+    flags = {str(f) for f in (task.get("flags") or [])}
+    if flags & {"no_evidence", "salvaged", "staging_behind"}:
+        return False
+    if _task_has_open_approvals(table, task):
+        return False
+    return True
 
 
 def _accept_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
@@ -1987,19 +2034,46 @@ def _accept_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
         board_store.put_task(table, task)
         _note_parent_if_child_needs_owner(table, task)
         return task
-    if _should_hold_unverified_accept(task):
+    if _should_hold_unverified_accept(table, task):
         task["status"] = "needs_owner"
         task["finishedAt"] = None
         task["updatedAt"] = now
         board_store.put_task(table, task)
         _note_parent_if_child_needs_owner(table, task)
         return task
+    ref = task.get("eventRef") or {}
+    if ref.get("kind") == "ops" and str(ref.get("id") or "") == "rebase-staging":
+        try:
+            import board_code
+
+            still = board_code.staging_still_behind()
+        except Exception as exc:
+            still = {"error": str(exc)[:200], "behindBy": "?"}
+        if still:
+            flags = [str(f) for f in (task.get("flags") or [])]
+            if "staging_behind" not in flags:
+                flags.append("staging_behind")
+            task["flags"] = flags
+            questions = [str(q) for q in (task.get("openQuestions") or []) if q]
+            if still.get("error"):
+                note = f"could not verify staging vs main: {still.get('error')}"
+            else:
+                note = f"staging is still {still.get('behindBy')} commit(s) behind main"
+            if note not in questions:
+                questions.append(note)
+            task["openQuestions"] = questions
+            task["status"] = "needs_owner"
+            task["finishedAt"] = None
+            task["updatedAt"] = now
+            board_store.put_task(table, task)
+            _note_parent_if_child_needs_owner(table, task)
+            return task
     task["status"] = "delivered"
     task["finishedAt"] = now
     task["expiresAt"] = int(datetime.now(timezone.utc).timestamp()) + BOARD_STAFF_RETENTION_DAYS * 86400
     action_id = task.get("actionId")
     dtype = str(task.get("deliverableType") or "")
-    if action_id and dtype in ("markdown", "csv", "json", "issues", "pr"):
+    if action_id and dtype in ("markdown", "csv", "json", "issues", "pr") and _should_close_linked_action(table, task):
         action = board_store.get_action(table, str(action_id))
         if action:
             action["note"] = (
@@ -2120,6 +2194,12 @@ def cancel_task(table: Any, task_id: str, by_sub: str, *, notify_parent: bool = 
     task["updatedAt"] = now
     task["expiresAt"] = int(datetime.now(timezone.utc).timestamp()) + BOARD_STAFF_RETENTION_DAYS * 86400
     board_store.put_task(table, task)
+    try:
+        import board_duties
+
+        board_duties.forget_seen_for_task(table, task)
+    except Exception as exc:
+        _log_event("warning", tag="board_staff_forget_seen_failed", error=str(exc)[:200])
     _cancel_open_help_children(table, task, by_sub)
     if notify_parent:
         _notify_parent_of_child(table, task, f"help unavailable: cancelled by {by_sub}")

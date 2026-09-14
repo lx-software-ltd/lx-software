@@ -330,6 +330,21 @@ export function BoardReviewSection() {
         )}
       </Section>
 
+      <Section id="configGaps" title="Unconfigured integrations">
+        {(review.configGaps ?? []).length === 0 ? (
+          <p className="text-muted small mb-0">None.</p>
+        ) : (
+          <ul className="list-unstyled mb-0">
+            {(review.configGaps ?? []).map((row) => (
+              <li key={`${row.gapId || "gap"}-${row.week || row.at || ""}`} className="border-bottom py-2">
+                <div className="small fw-semibold">{row.gapId}</div>
+                <div className="small">{row.reason}</div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
       <Section id="promotion" title="Production promotion">
         <StagingPromote data={data} />
       </Section>

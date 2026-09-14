@@ -171,6 +171,17 @@ class DutyRunTests(BoardTestCase):
         ids = [(t.get("eventRef") or {}).get("id") for t in created]
         self.assertNotIn("business-analyst:weekly-kpi-pack:2026-09-07", ids)
 
+    def test_attribution_duty_skips_when_ga4_unconfigured(self) -> None:
+        now = datetime(2026, 9, 7, 10, 0, tzinfo=MONDAY_HKT)
+        _seed_duties_current(self.table, now)
+        board_store.put_cache(self.table, "duty:data-analyst:weekly-attribution", {})
+        created = board_duties.run_due(self.table, self.settings, now=now)
+        duty_ids = [(t.get("eventRef") or {}).get("id") for t in created]
+        self.assertFalse(any(str(i).startswith("data-analyst:weekly-attribution:") for i in duty_ids))
+        self.assertFalse(any(str(i).startswith("config:weekly-attribution:") for i in duty_ids))
+        gaps = board_duties.list_config_gaps(self.table)
+        self.assertTrue(any(g.get("gapId") == "weekly-attribution" for g in gaps))
+
 
 class OpsTriageTests(BoardTestCase):
     def setUp(self) -> None:
@@ -244,6 +255,24 @@ class OpsTriageTests(BoardTestCase):
         self.assertIn("package lodash (npm)", dep[0]["brief"])
         again = board_duties.triage_ops_signals(self.table, self.settings)
         self.assertEqual(again["alerts"], 0)
+
+    def test_cancel_event_alert_forgets_seen(self) -> None:
+        board_store.put_cache(
+            self.table,
+            "security:github",
+            {"dependabot": [{"number": 56, "severity": "high", "package": "uuid"}], "codeScanning": [], "secretScanning": []},
+        )
+        first = board_duties.triage_ops_signals(self.table, self.settings)
+        self.assertEqual(first["alerts"], 1)
+        tasks = board_store.list_tasks(self.table, "queued") + board_store.list_tasks(self.table, "running")
+        match = next(t for t in tasks if (t.get("eventRef") or {}).get("id") == "alert:gh:dependabot:56")
+        self.assertEqual((match.get("eventRef") or {}).get("alertIds"), ["gh:dependabot:56"])
+        board_staff.cancel_task(self.table, match["taskId"], "owner")
+        seen = board_store.get_cache(self.table, "seen:alerts")
+        ids = (seen.get("payload") or {}).get("ids") if seen else []
+        self.assertNotIn("gh:dependabot:56", ids or [])
+        again = board_duties.triage_ops_signals(self.table, self.settings)
+        self.assertEqual(again["alerts"], 1)
 
     def test_staff_off_skips_ops_triage(self) -> None:
         self.settings["staff"]["enabled"] = False

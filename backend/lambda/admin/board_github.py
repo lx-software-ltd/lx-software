@@ -607,6 +607,11 @@ def op_list_commits(args: dict[str, Any]) -> dict[str, Any]:
         if not _SAFE_PATH_RE.match(path) or ".." in path:
             raise GitHubSnapshotError("path contains unsupported characters")
         query += f"&path={urlparse.quote(path)}"
+    sha = str(args.get("sha") or args.get("branch") or "").strip()
+    if sha:
+        if not _SAFE_PATH_RE.match(sha) or ".." in sha:
+            raise GitHubSnapshotError("sha/branch contains unsupported characters")
+        query += f"&sha={urlparse.quote(sha)}"
     raw = _get(f"/repos/{repo}/commits?{query}")
     commits: list[dict[str, Any]] = []
     if isinstance(raw, list):
@@ -624,7 +629,38 @@ def op_list_commits(args: dict[str, Any]) -> dict[str, Any]:
                     "url": c.get("html_url"),
                 }
             )
-    return {"repo": repo, "path": path or None, "items": commits}
+    return {"repo": repo, "path": path or None, "sha": sha or None, "items": commits}
+
+
+def op_compare(args: dict[str, Any]) -> dict[str, Any]:
+    """Compare two refs (GitHub ``base...head``). Defaults to ``main...staging``."""
+    repo = repo_full_name()
+    base = str(args.get("base") or "main").strip() or "main"
+    head = str(args.get("head") or "staging").strip() or "staging"
+    if not _SAFE_PATH_RE.match(base) or not _SAFE_PATH_RE.match(head) or ".." in base or ".." in head:
+        raise GitHubSnapshotError("base and head may only contain letters, digits, '.', '_', '-', '/'")
+    raw = _get(f"/repos/{repo}/compare/{urlparse.quote(base)}...{urlparse.quote(head)}") or {}
+    if not isinstance(raw, dict):
+        raw = {}
+    commits: list[dict[str, Any]] = []
+    for row in raw.get("commits") or []:
+        if not isinstance(row, dict):
+            continue
+        commit = row.get("commit") or {}
+        message = str((commit.get("message") or "")).splitlines()[0] if isinstance(commit, dict) else ""
+        commits.append({"sha": str(row.get("sha") or "")[:8], "message": message[:160]})
+    behind = int(raw.get("behind_by") or 0)
+    ahead = int(raw.get("ahead_by") or 0)
+    return {
+        "repo": repo,
+        "base": base,
+        "head": head,
+        "status": raw.get("status") or "unknown",
+        "behindBy": behind,
+        "aheadBy": ahead,
+        "commits": commits[:40],
+        "htmlUrl": raw.get("html_url") or raw.get("permalink_url"),
+    }
 
 
 def op_get_file(args: dict[str, Any]) -> dict[str, Any]:

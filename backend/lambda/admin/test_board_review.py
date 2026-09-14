@@ -46,6 +46,7 @@ class ReviewCompileTests(BoardTestCase):
             "assisted",
             "market",
             "promotion",
+            "configGaps",
             "narrative",
         ):
             self.assertIn(key, review)
@@ -58,7 +59,19 @@ class ReviewCompileTests(BoardTestCase):
         self.assertIn("qualifiedThisWeek", headline["pipeline"])
         self.assertIn("digestHtml", review)
         self.assertIn("Headline numbers", review["digestHtml"])
+        self.assertIn("Unconfigured integrations", review["digestHtml"])
         self.assertNotIn("section=review#", review["digestHtml"])
+
+    def test_compile_uses_cached_staging_preview(self) -> None:
+        board_store.put_cache(
+            self.table,
+            "github:compare:main-staging",
+            {"behindBy": 12, "aheadBy": 1, "canPromote": False, "status": "diverged", "commits": []},
+        )
+        with patch.object(board_github, "_request", side_effect=AssertionError("compile must not call GitHub")):
+            review = board_review.compile(self.table, self.settings, board_hk.today_hkt())
+        self.assertEqual(review["promotion"]["behindBy"], 12)
+        self.assertIn("12 commit", review["digestHtml"])
 
     def test_sample_is_deterministic_under_seeded_rng(self) -> None:
         yesterday = board_hk.now_hkt() - timedelta(days=1)

@@ -24,6 +24,7 @@ SECTION_IDS = (
     "market",
     "breakers",
     "suggestions",
+    "configGaps",
     "promotion",
 )
 
@@ -39,6 +40,7 @@ SECTION_LABELS = {
     "market": "Market and ideas",
     "breakers": "Tripped breakers",
     "suggestions": "Boundary suggestions",
+    "configGaps": "Unconfigured integrations",
     "promotion": "Production promotion",
 }
 
@@ -267,6 +269,25 @@ def _market_section(table: Any) -> dict[str, Any]:
     return {"changes": changes, "latestBrief": brief}
 
 
+def _cached_promotion(table: Any) -> dict[str, Any] | list[Any]:
+    try:
+        import board_code
+
+        preview = board_code.cached_staging_preview(table)
+    except Exception:
+        return []
+    return preview if isinstance(preview, dict) and preview else []
+
+
+def _config_gaps_section(table: Any) -> list[dict[str, Any]]:
+    try:
+        import board_duties
+
+        return board_duties.list_config_gaps(table)
+    except Exception:
+        return []
+
+
 def _promotion_section() -> dict[str, Any]:
     """Live GitHub compare; only called from ``send_digest`` so ``compile`` (GET /review) stays a table read."""
     try:
@@ -309,7 +330,8 @@ def compile(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, An
         "suggestions": suggestions,
         "assisted": _assisted_section(table, settings),
         "market": _market_section(table),
-        "promotion": [],
+        "configGaps": _config_gaps_section(table),
+        "promotion": _cached_promotion(table),
     }
     doc["digestHtml"] = render_digest_html(doc)
     board_store.put_review_snapshot(table, date_hkt, doc)
@@ -446,6 +468,18 @@ def _suggestion_line(row: dict[str, Any]) -> str:
     return f"{key}: {row.get('actions') or 0} actions, {rate:.1f}% veto"
 
 
+def _config_gap_lines(review: dict[str, Any]) -> list[str]:
+    items = [row for row in _as_list(review.get("configGaps")) if isinstance(row, dict)]
+    if not items:
+        return ["None."]
+    lines: list[str] = []
+    for row in items[:DIGEST_LIST_LIMIT]:
+        gap = str(row.get("gapId") or "gap")
+        reason = _clip(row.get("reason") or "", 200)
+        lines.append(f"{gap}: {reason}" if reason else gap)
+    return lines
+
+
 def _promotion_lines(review: dict[str, Any]) -> list[str]:
     promo = review.get("promotion")
     if isinstance(promo, list):
@@ -456,16 +490,18 @@ def _promotion_lines(review: dict[str, Any]) -> list[str]:
         return [_clip(promo.get("error"), 200)]
     lines: list[str] = []
     behind = promo.get("behindBy") or 0
+    can_promote = bool(promo.get("canPromote"))
     if behind:
         lines.append(f"staging is {behind} commit(s) behind main. Rebase before promoting.")
-    commits = [c for c in _as_list(promo.get("commits")) if isinstance(c, dict)]
-    if not commits:
-        lines.append("No staging commits ahead of main.")
+    elif can_promote:
+        lines.append("staging is current with main and has commits to promote.")
     else:
-        for commit in commits[:DIGEST_LIST_LIMIT]:
-            sha = str(commit.get("sha") or "")[:8]
-            msg = _clip(commit.get("message") or "", 160)
-            lines.append(" ".join(p for p in (sha, msg) if p))
+        lines.append("staging is current with main.")
+    commits = [c for c in _as_list(promo.get("commits")) if isinstance(c, dict)]
+    for commit in commits[:DIGEST_LIST_LIMIT]:
+        sha = str(commit.get("sha") or "")[:8]
+        msg = _clip(commit.get("message") or "", 160)
+        lines.append(" ".join(p for p in (sha, msg) if p))
     fetched = str(promo.get("fetchedAt") or "").strip()
     if fetched:
         lines.append(f"Fetched at {fetched}.")
@@ -499,6 +535,7 @@ def digest_section_lines(review: dict[str, Any]) -> list[tuple[str, str, list[st
         ("market", SECTION_LABELS["market"], _market_lines(review)),
         ("breakers", SECTION_LABELS["breakers"], breakers or ["None tripped."]),
         ("suggestions", SECTION_LABELS["suggestions"], suggestions or ["No class is eligible to drop its hold yet."]),
+        ("configGaps", SECTION_LABELS["configGaps"], _config_gap_lines(review)),
         ("promotion", SECTION_LABELS["promotion"], _promotion_lines(review)),
     ]
 
