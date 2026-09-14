@@ -168,6 +168,56 @@ def handle_schedule_trigger(event: dict[str, Any]) -> None:
     _log_event("info", tag="board_schedule_started", slot=slot, meeting_id=doc["meetingId"])
 
 
+def maybe_retry_failed_schedule(table: Any, settings: dict[str, Any]) -> dict[str, Any] | None:
+    """Re-run a scheduled standup that died within the last two hours, once."""
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=2)
+    cutoff_iso = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
+    for meeting in board_store.list_meetings(table, limit=8):
+        meeting = _finalize_stuck(table, meeting)
+        if meeting.get("status") != "failed" or meeting.get("retriedByMeetingId"):
+            continue
+        trigger = str(meeting.get("trigger") or "")
+        if not trigger.startswith("schedule:") or trigger.endswith(":retry"):
+            continue
+        created = str(meeting.get("createdAt") or "")
+        if created < cutoff_iso:
+            continue
+        slot = trigger.split(":", 1)[1]
+        if slot not in ("morning", "evening"):
+            continue
+        enabled = bool((settings.get("schedule") or {}).get(f"{slot}Enabled"))
+        if not enabled:
+            continue
+        # Claim the failed row first so the tick cannot retry the same meeting twice.
+        meeting["retriedByMeetingId"] = "pending"
+        meeting["retriedAt"] = board_store.now_iso()
+        board_store.put_meeting(table, meeting)
+        try:
+            doc = start_meeting(
+                table,
+                settings=settings,
+                mode=str(settings.get("defaultMode") or "standup")
+                if settings.get("defaultMode") in BOARD_MEETING_MODES
+                else "standup",
+                chair=str(settings.get("defaultChair") or BOARD_CHAIR_DEFAULT),
+                topic="",
+                owner_sub="schedule",
+                trigger=f"schedule:{slot}:retry",
+            )
+        except (board_budget.BudgetExceeded, MeetingError) as exc:
+            meeting["retriedByMeetingId"] = f"skipped:{str(exc)[:120]}"
+            board_store.put_meeting(table, meeting)
+            _log_event("warning", tag="board_schedule_retry_skipped", slot=slot, reason=str(exc)[:200])
+            return None
+        meeting["retriedByMeetingId"] = str(doc.get("meetingId") or "")
+        board_store.put_meeting(table, meeting)
+        _log_event("info", tag="board_schedule_retried", slot=slot, meeting_id=doc["meetingId"])
+        return doc
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle
 # ---------------------------------------------------------------------------

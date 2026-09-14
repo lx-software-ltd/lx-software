@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
@@ -44,8 +45,40 @@ IGNORED_DOMAINS = frozenset(
         "wikipedia.org",
         "gov.hk",
         "data.gov.hk",
+        "tripadvisor.com",
+        "tripadvisor.com.hk",
+        "klook.com",
+        "trip.com",
+        "ctrip.com",
+        "moneyhero.com.hk",
+        "moneyhero.com",
+        "scmp.com",
+        "timeout.com",
+        "timeout.com.hk",
+        "lonelyplanet.com",
+        "booking.com",
+        "expedia.com",
+        "airbnb.com",
+        "yelp.com",
+        "opentable.com",
+        "eventbrite.com",
+        "meetup.com",
+        "reddit.com",
+        "medium.com",
+        "linkedin.com",
+        "pinterest.com",
+        "tiktok.com",
+        "xiaohongshu.com",
+        "openrice.com",
+        "info.gov.hk",
+        "news.gov.hk",
     }
 )
+REJECTED_TLDS = (".tw", ".cn", ".sg")
+HK_HOST_HINTS = (".hk",)
+HK_TEXT_HINTS = ("hong kong", "hongkong", "香港", "kowloon", "new territories", "九龍", "新界")
+MAX_ADDS_PER_WEEK = 10
+_LISTICLE_RE = re.compile(r"^\s*\d+\s+(best|top)|^\s*(best|top)\s+\d+", re.I)
 
 
 class WatchError(ValueError):
@@ -61,6 +94,35 @@ def _domain(url: str) -> str:
 
 def _ignored(host: str) -> bool:
     return any(host == d or host.endswith("." + d) for d in IGNORED_DOMAINS)
+
+
+def _rejected_tld(host: str) -> bool:
+    return any(host.endswith(tld) for tld in REJECTED_TLDS)
+
+
+def _has_hk_signal(item: dict[str, Any], host: str) -> bool:
+    if any(host == hint.lstrip(".") or host.endswith(hint) for hint in HK_HOST_HINTS):
+        return True
+    blob = " ".join(
+        str(item.get(k) or "") for k in ("title", "snippet", "description", "text")
+    ).lower()
+    return any(hint in blob or hint in host for hint in HK_TEXT_HINTS)
+
+
+def _candidate_name(item: dict[str, Any], host: str) -> str:
+    title = str(item.get("title") or "").strip()
+    if not title or _LISTICLE_RE.search(title) or len(title) > 80:
+        return host
+    return title[:200]
+
+
+def _adds_this_week(existing: list[dict[str, Any]], week: str) -> int:
+    n = 0
+    for watch in existing:
+        weeks = list(watch.get("seenWeeks") or [])
+        if weeks and weeks[0] == week:
+            n += 1
+    return n
 
 
 def _utc_now() -> datetime:
@@ -137,6 +199,7 @@ def discover(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
     week = _utc_now().strftime("%G-W%V")
     existing = list_watchlist(table)
     known_hosts = {_domain(u) for w in existing for u in (w.get("urls") or [])}
+    already_this_week = _adds_this_week(existing, week)
     added = 0
     promoted = 0
     ctx = type("Ctx", (), {"table": table, "settings": settings})()
@@ -149,7 +212,11 @@ def discover(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
         for item in payload.get("results") or []:
             url = str(item.get("url") or "")
             host = _domain(url)
-            if not host or _ignored(host):
+            if not host or _ignored(host) or _rejected_tld(host):
+                continue
+            if not _has_hk_signal(item if isinstance(item, dict) else {}, host):
+                continue
+            if added >= max(0, MAX_ADDS_PER_WEEK - already_this_week):
                 continue
             homepage = f"https://{host}/"
             match = next((w for w in existing if host in {_domain(u) for u in (w.get("urls") or [])}), None)
@@ -169,7 +236,7 @@ def discover(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
             doc = add_watch(
                 table,
                 {
-                    "name": str(item.get("title") or host)[:200],
+                    "name": _candidate_name(item if isinstance(item, dict) else {}, host),
                     "kind": "candidate",
                     "urls": [homepage],
                     "seenWeeks": [week],

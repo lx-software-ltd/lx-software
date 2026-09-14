@@ -16,7 +16,7 @@ export type BoardTaskDrawerProps = {
   readonly onRetry?: (taskId: string) => void;
 };
 
-const OPEN_STATUSES = new Set(["queued", "running", "review", "returned", "needs_owner"]);
+const OPEN_STATUSES = new Set(["queued", "running", "waiting_approval", "review", "returned", "needs_owner"]);
 
 function csvRows(text: string): string[][] {
   return text

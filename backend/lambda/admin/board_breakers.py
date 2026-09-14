@@ -166,6 +166,11 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
             continue
         if call.get("status") != "error":
             continue
+        preview = " ".join(
+            str(call.get(k) or "") for k in ("resultPreview", "summary", "error")
+        ).lower()
+        if "not configured" in preview or "is not set" in preview:
+            continue
         tool_id = str(call.get("toolId") or "")
         if not tool_id:
             continue

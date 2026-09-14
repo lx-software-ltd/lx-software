@@ -186,6 +186,7 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK = int(_BOARD_STAFF_LIMITS[\"maxIdleStepsPerTask\"])",
         "BOARD_STAFF_MAX_REVISIONS = int(_BOARD_STAFF_LIMITS[\"maxRevisions\"])",
         "BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = int(_BOARD_STAFF_LIMITS[\"maxRunningTasksDefault\"])",
+        "BOARD_STAFF_MAX_EVENT_TASKS_PER_SEAT_PER_HOUR = int(_BOARD_STAFF_LIMITS[\"maxEventTasksPerSeatPerHour\"])",
         "BOARD_STAFF_TASK_STUCK_SECONDS = int(_BOARD_STAFF_LIMITS[\"staffTaskStuckSeconds\"])",
         "BOARD_STAFF_TASK_BUDGET_DESK_USD = float(_BOARD_STAFF_LIMITS[\"taskBudgetDeskUsd\"])",
         "BOARD_STAFF_TASK_BUDGET_SENIOR_USD = float(_BOARD_STAFF_LIMITS[\"taskBudgetSeniorUsd\"])",
@@ -410,6 +411,7 @@ export const BOARD_STAFF_MAX_STEPS_PER_TASK = {staff_limits["maxStepsPerTask"]};
 export const BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK = {staff_limits["maxIdleStepsPerTask"]};
 export const BOARD_STAFF_MAX_REVISIONS = {staff_limits["maxRevisions"]};
 export const BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = {staff_limits["maxRunningTasksDefault"]};
+export const BOARD_STAFF_MAX_EVENT_TASKS_PER_SEAT_PER_HOUR = {staff_limits["maxEventTasksPerSeatPerHour"]};
 export const BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD = {staff_limits["staffDailyBudgetDefaultUsd"]};
 export const BOARD_STAFF_REVIEW_SAMPLE_SIZE = {staff_limits["reviewSampleSize"]};
 export const BOARD_STAFF_OUTREACH_DAILY_CAP_START = {staff_limits["outreachDailyCapStart"]};

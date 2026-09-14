@@ -41,7 +41,7 @@ def qualified_this_week(table: Any, now: datetime | None = None) -> list[dict[st
 def prorated_target(settings: dict[str, Any], now: datetime | None = None) -> int:
     weekly = int(
         (((settings.get("boundaries") or {}).get("outreach") or {}).get("targets") or {}).get("qualifiedPerWeek")
-        or 50
+        or 15
     )
     local = board_hk.as_hkt(now or datetime.now())
     # Monday = day 1 of 7.
@@ -131,6 +131,7 @@ def check(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
                 origin="target",
                 brief=brief[:4000],
                 deliverable_type="prospects",
+                budget_usd=3,
                 sla_hours=12,
                 event_ref={"kind": "duty", "id": f"target-qualify:{today}"},
                 created_by="board_targets",

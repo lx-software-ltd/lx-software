@@ -67,6 +67,7 @@ describe("BoardTasksSection", () => {
     render(<BoardTasksSection />);
     expect(screen.getByText("New task")).toBeInTheDocument();
     expect(screen.getByText(/Failed \(1\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Waiting approval \(0\)/)).toBeInTheDocument();
     expect(screen.getByText("step limit")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(retryMutate).toHaveBeenCalledWith("task-failed");

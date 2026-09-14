@@ -678,5 +678,29 @@ def op_get(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     return {"item": public_row(row)}
 
 
+def validate_publish(table: Any, args: dict[str, Any]) -> str | None:
+    content_id = str(args.get("contentId") or args.get("id") or "").strip()
+    if not content_id:
+        return "contentId is required"
+    if not board_store.get_content(table, content_id):
+        return f"contentId {content_id} does not exist"
+    slot = str(args.get("slotAt") or "").strip()
+    if not slot:
+        return None
+    try:
+        from datetime import datetime, timezone
+
+        text = slot.replace("Z", "+00:00")
+        when = datetime.fromisoformat(text)
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        if when < now - __import__("datetime").timedelta(days=1):
+            return f"slotAt {slot} is in the past"
+    except ValueError:
+        return f"slotAt {slot} is not a valid ISO timestamp"
+    return None
+
+
 def op_publish(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     return publish(ctx.table, ctx.settings, str(args.get("contentId") or args.get("id") or ""))

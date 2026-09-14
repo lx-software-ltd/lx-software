@@ -7,11 +7,12 @@ import { useBoardTask, useBoardTasks } from "../../hooks/useBoardTasks";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 
 const COLUMNS: readonly {
-  readonly id: "queued" | "running" | "review" | "needs_owner" | "delivered" | "failed";
+  readonly id: "queued" | "running" | "waiting_approval" | "review" | "needs_owner" | "delivered" | "failed";
   readonly label: string;
 }[] = [
   { id: "queued", label: "Queued" },
   { id: "running", label: "Running" },
+  { id: "waiting_approval", label: "Waiting approval" },
   { id: "review", label: "Review" },
   { id: "needs_owner", label: "Needs owner" },
   { id: "delivered", label: "Delivered" },

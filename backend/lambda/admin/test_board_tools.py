@@ -152,7 +152,10 @@ class ToolsTestCase(BoardTestCase):
         call = job["message"]["toolCalls"][0]
         self.assertEqual(call["status"], "pending_approval")
         self.assertTrue(call["approvalId"])
-        self.assertEqual([r[0] for r in self.github.requests], [], "nothing must reach GitHub at propose level")
+        self.assertFalse(
+            any(r[0] not in ("GET", "HEAD") for r in self.github.requests),
+            "writes must not reach GitHub at propose level",
+        )
         status, body = self.call("/siu-tin-dei/board/approvals", query="status=pending")
         self.assertEqual(status, 200)
         self.assertEqual(len(body["approvals"]), 1)

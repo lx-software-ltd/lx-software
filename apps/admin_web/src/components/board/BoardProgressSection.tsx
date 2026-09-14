@@ -42,7 +42,7 @@ function ProgressBody({
   const partnerships = snap.partnerships;
   const content = snap.content;
   const warm = partnerships.qualifiedThisWeek;
-  const target = partnerships.weeklyTarget || 50;
+  const target = partnerships.weeklyTarget || 15;
   return (
     <div>
       <div className="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">

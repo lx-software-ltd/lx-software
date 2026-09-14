@@ -357,7 +357,12 @@ def _tool_calls_get(event: dict[str, Any]) -> dict[str, Any]:
     except ValueError:
         limit = 50
     table = board_store.records_table()
-    return _json_response(200, {"calls": board_store.list_tool_calls(table, limit=limit)})
+    task_id = (qs.get("taskId") or [""])[0].strip()
+    if task_id:
+        calls = board_store.list_tool_calls_for_task(table, task_id, limit=limit)
+    else:
+        calls = board_store.list_tool_calls(table, limit=limit)
+    return _json_response(200, {"calls": calls})
 
 
 def _approvals_get(event: dict[str, Any]) -> dict[str, Any]:
@@ -679,7 +684,13 @@ def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
                 return _json_response(409, {"message": "That action is already closed"})
             if action and action.get("staffTaskId"):
                 open_task = board_store.get_task(table, str(action["staffTaskId"]))
-                if open_task and open_task.get("status") in ("queued", "running", "review", "needs_owner"):
+                if open_task and open_task.get("status") in (
+                    "queued",
+                    "running",
+                    "waiting_approval",
+                    "review",
+                    "needs_owner",
+                ):
                     return _json_response(409, {"message": "A staff task is already working on that action"})
             try:
                 task = board_staff.create_task(

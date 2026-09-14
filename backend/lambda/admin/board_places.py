@@ -169,9 +169,19 @@ def text_search(
     if hit and isinstance(hit.get("payload"), dict) and isinstance(hit["payload"].get("places"), list):
         return list(hit["payload"]["places"])
     _charge(table, settings, TEXT_SEARCH_USD, kind="search")
-    payload = json.dumps(
-        {"textQuery": q, "regionCode": region.upper(), "maxResultCount": limit}
-    ).encode("utf-8")
+    body: dict[str, Any] = {
+        "textQuery": q,
+        "regionCode": region.upper(),
+        "maxResultCount": limit,
+    }
+    if region == "hk":
+        body["locationRestriction"] = {
+            "rectangle": {
+                "low": {"latitude": 22.15, "longitude": 113.82},
+                "high": {"latitude": 22.56, "longitude": 114.41},
+            }
+        }
+    payload = json.dumps(body).encode("utf-8")
     data = _http(
         "POST",
         TEXT_SEARCH_URL,
@@ -183,6 +193,8 @@ def text_search(
         body=payload,
     )
     places = [_normalise_place(p) for p in (data.get("places") or []) if isinstance(p, dict)]
+    if region == "hk":
+        places = [p for p in places if board_hk.is_hk_address(str(p.get("address") or ""))]
     board_store.put_cache(table, cache_name, {"places": places}, ttl_seconds=CACHE_TTL_SECONDS)
     for place in places:
         pid = place.get("placeId") or ""

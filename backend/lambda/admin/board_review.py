@@ -54,10 +54,23 @@ def _yesterday_hkt(date_hkt: str) -> str:
     return (day - timedelta(days=1)).date().isoformat()
 
 
+_HEADLINE_OPEN = frozenset({"queued", "running", "waiting_approval", "review", "needs_owner"})
+
+
 def headline_pack(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, Any]:
+    day_start, day_end = _hkt_day_bounds(date_hkt)
     counts = {status: 0 for status in BOARD_STAFF_TASK_STATUSES}
     for status in BOARD_STAFF_TASK_STATUSES:
-        counts[status] = len(board_store.list_tasks(table, status, limit=200))
+        rows = board_store.list_tasks(table, status, limit=200)
+        if status in _HEADLINE_OPEN:
+            counts[status] = len(rows)
+            continue
+        n = 0
+        for task in rows:
+            stamp = str(task.get("finishedAt") or task.get("updatedAt") or "")
+            if day_start <= stamp < day_end:
+                n += 1
+        counts[status] = n
     start, end = _hkt_day_bounds(_yesterday_hkt(date_hkt))
     messages: dict[str, int] = {}
     for call in board_store.list_tool_calls(table, limit=400):
@@ -85,7 +98,7 @@ def headline_pack(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[s
     out = {
         "tasks": {
             "delivered": counts.get("delivered") or 0,
-            "running": counts.get("running") or 0,
+            "running": (counts.get("running") or 0) + (counts.get("waiting_approval") or 0),
             "blocked": counts.get("needs_owner") or 0,
         },
         "messagesByChannel": messages,
@@ -257,8 +270,10 @@ def _promotion_section() -> dict[str, Any]:
 
         preview = board_code.staging_preview()
     except Exception as exc:
-        return {"error": f"staging check failed: {str(exc)[:160]}"}
-    return preview if isinstance(preview, dict) else {"error": "staging check returned no data"}
+        return {"error": f"staging check failed: {str(exc)[:160]}", "fetchedAt": board_store.now_iso()}
+    if isinstance(preview, dict):
+        return {**preview, "fetchedAt": board_store.now_iso()}
+    return {"error": "staging check returned no data", "fetchedAt": board_store.now_iso()}
 
 
 def compile(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, Any]:
@@ -447,6 +462,9 @@ def _promotion_lines(review: dict[str, Any]) -> list[str]:
             sha = str(commit.get("sha") or "")[:8]
             msg = _clip(commit.get("message") or "", 160)
             lines.append(" ".join(p for p in (sha, msg) if p))
+    fetched = str(promo.get("fetchedAt") or "").strip()
+    if fetched:
+        lines.append(f"Fetched at {fetched}.")
     return lines
 
 
@@ -543,10 +561,7 @@ def send_digest(table: Any, settings: dict[str, Any], review: dict[str, Any]) ->
 
 
 def maybe_create_headline_duty(table: Any, settings: dict[str, Any]) -> dict[str, Any] | None:
-    now = board_hk.now_hkt()
-    if now.hour != 7 or now.minute > 14:
-        return None
-    date_hkt = now.date().isoformat()
+    date_hkt = board_hk.today_hkt()
     duty_id = f"review-headline:{date_hkt}"
     try:
         import board_triage
@@ -591,6 +606,10 @@ def handle_compile(event: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True, "skipped": "disabled"}
     date_hkt = str(event.get("date") or board_hk.today_hkt())
     review = compile(table, settings, date_hkt)
+    try:
+        maybe_create_headline_duty(table, settings)
+    except Exception as exc:
+        _log_event("warning", tag="board_review_headline_duty_failed", error=str(exc)[:200])
     return {"ok": True, "date": date_hkt, "compiledAt": review.get("compiledAt")}
 
 

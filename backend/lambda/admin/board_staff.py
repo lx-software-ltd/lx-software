@@ -56,6 +56,16 @@ _IDLE_NUDGE = (
 _SALVAGE_MIN_CHARS = 200
 _CANNOT_CALL_RE = re.compile(r"cannot call [`']?task_(?:note|finish)", re.I)
 _PLACEHOLDER_RE = re.compile(r"\[(?:insert|todo|tbd|placeholder)[^\]]*\]", re.I)
+_TEMPLATE_DATA_RE = re.compile(
+    r"\bCampaign [A-C]\b|\bArticle [123]\b|\bSource [A-C]\b"
+    r"|screenshot\d+\.png"
+    r"|\b(?:123|456|789)\b.{0,40}\b(?:sessions|views|clicks)\b",
+    re.I,
+)
+_CLAIMED_ACTION_RE = re.compile(
+    r"\b(label|labelled|labeled|publish|published|reply|replied|create|created|open|opened|send|sent)\b",
+    re.I,
+)
 _EVIDENCE_TOOL_TOKENS = (
     "finance_cash_snapshot",
     "finance_aging_report",
@@ -390,6 +400,13 @@ def _finish_incomplete(table: Any, task: dict[str, Any], reason: str) -> dict[st
         **task,
         "status": "failed",
         "failureReason": reason[:300],
+        "failureDetail": {
+            "reason": reason[:300],
+            "step": task.get("step"),
+            "stepClaimed": task.get("stepClaimed"),
+            "stepClaimedAt": task.get("stepClaimedAt"),
+            "updatedAt": task.get("updatedAt"),
+        },
         "finishedAt": now,
         "updatedAt": now,
         "expiresAt": int(datetime.now(timezone.utc).timestamp()) + BOARD_STAFF_RETENTION_DAYS * 86400,
@@ -599,7 +616,23 @@ def _align_step_claim(task: dict[str, Any]) -> None:
 
 
 def _productive_calls(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [c for c in calls if str(c.get("op") or "") not in _IDLE_TOOL_OPS]
+    return [
+        c
+        for c in calls
+        if str(c.get("op") or "") not in _IDLE_TOOL_OPS and str(c.get("status") or "") == "ok"
+    ]
+
+
+def _norm_plan(text: str) -> str:
+    cleaned = re.sub(r"[^\w\s]", " ", (text or "").lower())
+    return re.sub(r"\s+", " ", cleaned).strip()[:400]
+
+
+def _plans_similar(left: str, right: str) -> bool:
+    a, b = _norm_plan(left), _norm_plan(right)
+    if not a or not b:
+        return False
+    return a[:200] == b[:200]
 
 
 def _should_require_finish(task: dict[str, Any]) -> bool:
@@ -669,7 +702,64 @@ def _task_attempt(task: dict[str, Any]) -> int:
 
 
 def _deliverable_has_placeholders(text: str) -> bool:
-    return bool(_PLACEHOLDER_RE.search(text or ""))
+    raw = text or ""
+    return bool(_PLACEHOLDER_RE.search(raw) or _TEMPLATE_DATA_RE.search(raw))
+
+
+def _park_waiting_approval(table: Any, task: dict[str, Any], approval_ids: list[str]) -> None:
+    """Park ``task`` (the caller's in-memory row, including the step it just completed).
+
+    Only the stored *status* is re-checked so a cancel that landed mid-step wins;
+    the step counter, usage and scratchpad pointers come from ``task`` so the
+    completed step is not lost and ``resume_after_approval`` continues from it.
+    """
+    stored = board_store.get_task(table, str(task.get("taskId") or ""))
+    if stored is not None and stored.get("status") != "running":
+        return
+    if stored is None and task.get("status") != "running":
+        return
+    task["status"] = "waiting_approval"
+    task["blockedOn"] = approval_ids
+    task["idleSteps"] = 0
+    task["updatedAt"] = board_store.now_iso()
+    _align_step_claim(task)
+    board_store.put_task(table, task)
+    _log_event("info", tag="board_staff_waiting_approval", taskId=task.get("taskId"), approvals=approval_ids)
+
+
+def resume_after_approval(table: Any, settings: dict[str, Any], approval: dict[str, Any]) -> None:
+    """Continue a task parked on a proposal once the founder decides it."""
+    task_id = str((approval.get("context") or {}).get("taskId") or "")
+    if not task_id:
+        return
+    task = board_store.get_task(table, task_id)
+    if not task or task.get("status") != "waiting_approval":
+        return
+    pending = [
+        a
+        for a in board_store.list_approvals(table)
+        if a.get("status") == "pending" and str((a.get("context") or {}).get("taskId") or "") == task_id
+    ]
+    if pending:
+        task["blockedOn"] = [str(a.get("approvalId") or "") for a in pending if a.get("approvalId")]
+        task["updatedAt"] = board_store.now_iso()
+        board_store.put_task(table, task)
+        return
+    task["status"] = "running"
+    task["blockedOn"] = []
+    task["updatedAt"] = board_store.now_iso()
+    _align_step_claim(task)
+    board_store.put_task(table, task)
+    if enabled(settings):
+        board_async.invoke_async(
+            {
+                "internal": "board_staff_step",
+                "boardKey": BOARD_KEY,
+                "taskId": task_id,
+                "step": int(task.get("step") or 0) + 1,
+            },
+            fallback=run_step,
+        )
 
 
 def _brief_required_evidence_tools(brief: str) -> list[str]:
@@ -727,7 +817,20 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
             },
         )
         return
-    if not _productive_calls(calls):
+    approval_ids = [
+        str(c.get("approvalId"))
+        for c in calls
+        if str(c.get("status") or "") == "pending_approval" and c.get("approvalId")
+    ]
+    if approval_ids:
+        _park_waiting_approval(table, latest, approval_ids)
+        return
+    similar_to_last = False
+    if seq > 1:
+        prior = board_store.list_task_steps(table, task_id)
+        if len(prior) >= 2:
+            similar_to_last = _plans_similar(note, str(prior[-2].get("plan") or ""))
+    if not _productive_calls(calls) or similar_to_last:
         idle = int(latest.get("idleSteps") or 0) + 1
         latest["idleSteps"] = idle
         combined = _append_scratchpad(latest, _IDLE_NUDGE)
@@ -969,6 +1072,9 @@ def _review_user_prompt(task: dict[str, Any], raw: str, evidence_lines: list[str
         "[Insert …] placeholders or 0-30/31-60 aging buckets instead of current / D+7 / "
         "D+21 / D+35. Accept a memo that states a figure is unavailable with the tool error. "
         "Do not return asking for accounting software or credentials.\n"
+        "If the deliverable claims an action (label, publish, reply, create, send) "
+        "and Evidence is (none), you MUST return.\n"
+        "If the deliverable uses Campaign A / Article 1 / screenshotN.png template data, return.\n"
         'Return JSON {"verdict":"accept"|"return","notes":"…"}.'
     )
 
@@ -1045,14 +1151,22 @@ def apply_review(
     task["lastReview"] = {"verdict": verdict, "notes": notes, "at": now, "by": by}
     task["updatedAt"] = now
     if verdict == "accept":
+        if _should_hold_unverified_accept(task):
+            task["status"] = "needs_owner"
+            task["finishedAt"] = None
+            board_store.put_task(table, task)
+            return task
         return _accept_task(table, task, now)
-    try:
-        import board_lessons
-
-        board_lessons.create_from_return(table, task)
-    except Exception as exc:
-        _log_event("warning", tag="board_lesson_from_return_failed", error=str(exc)[:200])
     revisions = int(task.get("revisions") or 0)
+    is_owner = str(by or "").startswith("owner")
+    is_final = revisions >= BOARD_STAFF_MAX_REVISIONS
+    if is_owner or is_final:
+        try:
+            import board_lessons
+
+            board_lessons.create_from_return(table, task)
+        except Exception as exc:
+            _log_event("warning", tag="board_lesson_from_return_failed", error=str(exc)[:200])
     if revisions < BOARD_STAFF_MAX_REVISIONS:
         _append_scratchpad(task, f"MANAGER NOTES: {notes}")
         task["revisions"] = revisions + 1
@@ -1077,7 +1191,28 @@ def apply_review(
     return task
 
 
+def _should_hold_unverified_accept(task: dict[str, Any]) -> bool:
+    flags = {str(f) for f in (task.get("flags") or [])}
+    if "no_evidence" not in flags and "salvaged" not in flags:
+        return False
+    brief = str(task.get("brief") or "")
+    return bool(_CLAIMED_ACTION_RE.search(brief))
+
+
 def _accept_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
+    last = task.get("lastReview") or {}
+    if last.get("verdict") and last.get("verdict") != "accept":
+        task["status"] = "needs_owner"
+        task["finishedAt"] = None
+        task["updatedAt"] = now
+        board_store.put_task(table, task)
+        return task
+    if _should_hold_unverified_accept(task):
+        task["status"] = "needs_owner"
+        task["finishedAt"] = None
+        task["updatedAt"] = now
+        board_store.put_task(table, task)
+        return task
     task["status"] = "delivered"
     task["finishedAt"] = now
     task["expiresAt"] = int(datetime.now(timezone.utc).timestamp()) + BOARD_STAFF_RETENTION_DAYS * 86400
@@ -1228,12 +1363,6 @@ def handle_tick(event: dict[str, Any]) -> dict[str, Any]:
     except Exception as exc:
         _log_event("error", tag="board_holds_tick_failed", error=str(exc)[:300])
     try:
-        import board_review
-
-        board_review.maybe_create_headline_duty(table, settings)
-    except Exception as exc:
-        _log_event("warning", tag="board_review_duty_failed", error=str(exc)[:300])
-    try:
         import board_duties
 
         board_duties.run_due(table, settings)
@@ -1245,6 +1374,12 @@ def handle_tick(event: dict[str, Any]) -> dict[str, Any]:
         board_code.handle_tick(table, settings)
     except Exception as exc:
         _log_event("warning", tag="board_code_tick_failed", error=str(exc)[:300])
+    try:
+        import board_meeting
+
+        board_meeting.maybe_retry_failed_schedule(table, settings)
+    except Exception as exc:
+        _log_event("warning", tag="board_meeting_retry_failed", error=str(exc)[:300])
     started = drain_queue(table, settings)
     stuck_cut = datetime.now(timezone.utc) - timedelta(seconds=BOARD_STAFF_TASK_STUCK_SECONDS)
     cut_iso = _utc_iso_z(stuck_cut)
@@ -1311,6 +1446,8 @@ def list_tasks_for_api(
     assignee: str | None = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
+    if status == "done":
+        status = "delivered"
     if status:
         items = board_store.list_tasks(table, status, limit=max(limit, 50))
         if assignee:
@@ -1357,7 +1494,7 @@ def context_staff_pack(table: Any) -> dict[str, Any]:
         for t in board_store.list_tasks(table, "delivered", limit=10)
     ]
     inflight = []
-    for status in ("queued", "running", "review"):
+    for status in ("queued", "running", "waiting_approval", "review"):
         for t in board_store.list_tasks(table, status, limit=20):
             inflight.append({"taskId": t.get("taskId"), "assignee": t.get("assignee"), "brief": str(t.get("brief") or "")[:80], "status": status})
     return {"staffDelivered": delivered[:10], "staffInFlight": inflight}

@@ -412,7 +412,7 @@ def default_boundaries() -> dict[str, Any]:
             ],
             "dailyCap": BOARD_STAFF_OUTREACH_DAILY_CAP_START,
             "capRaisedAt": "",
-            "targets": {"qualifiedPerWeek": 50},
+            "targets": {"qualifiedPerWeek": 15},
             "personalAddressesAllowed": False,
             "webFormsAllowed": False,
         },
@@ -571,7 +571,7 @@ def normalize_boundaries(raw: Any) -> dict[str, Any]:
         if isinstance(targets, dict):
             try:
                 out["outreach"]["targets"]["qualifiedPerWeek"] = max(
-                    1, min(500, int(targets.get("qualifiedPerWeek") or 50))
+                    1, min(500, int(targets.get("qualifiedPerWeek") or 15))
                 )
             except (TypeError, ValueError):
                 pass

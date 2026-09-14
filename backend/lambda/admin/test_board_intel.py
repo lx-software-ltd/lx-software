@@ -158,7 +158,7 @@ class DiscoverTests(BoardTestCase):
         self.settings = board_store.default_settings()
 
     def test_candidate_promoted_after_two_weeks(self) -> None:
-        payload = {"results": [{"url": "https://newkids.example/classes", "title": "New Kids"}]}
+        payload = {"results": [{"url": "https://newkids.example/classes", "title": "New Kids Hong Kong"}]}
 
         def _search(_ctx: Any, _args: dict[str, Any]) -> dict[str, Any]:
             return payload

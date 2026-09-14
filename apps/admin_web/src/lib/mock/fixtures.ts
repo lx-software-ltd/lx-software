@@ -558,6 +558,7 @@ export const boardStaffFixture: BoardStaffPayload = {
   counts: {
     queued: 1,
     running: 1,
+    waiting_approval: 0,
     review: 1,
     returned: 0,
     delivered: 1,

@@ -157,9 +157,12 @@ def roster_hashes(roster: list[dict[str, Any]]) -> dict[str, str]:
 
 
 def common_preamble(charter: dict[str, Any]) -> str:
+    import board_hk
+
     vision = str(charter.get("vision") or "").strip()
     mission = str(charter.get("mission") or "").strip()
     lines = [
+        f"Today is {board_hk.today_hkt()} (HKT).",
         f"You are a member of the executive board of {COMPANY_NAME}, the company "
         f"building {PRODUCT_NAME}, {PRODUCT_ONE_LINER}.",
         "The company is run by a solo founder with limited time and money. Your job "
@@ -182,6 +185,18 @@ def common_preamble(charter: dict[str, Any]) -> str:
             "Reconcile your own vision and mission with the company charter; where "
             "they conflict, say so explicitly."
         )
+    try:
+        import board_tools
+
+        missing = board_tools.unconfigured_notes()
+        if missing:
+            lines.append(
+                "Not configured (do not invent calls or loop asking for them): "
+                + ", ".join(missing)
+                + "."
+            )
+    except Exception:
+        pass
     return "\n".join(lines)
 
 
@@ -273,7 +288,10 @@ def render_task_frame(task: dict[str, Any], scratchpad: str) -> str:
     steps_used = int(task.get("step") or 0)
     steps_left = max(0, BOARD_STAFF_MAX_STEPS_PER_TASK - steps_used)
     pad = (scratchpad or "").strip() or "(empty)"
+    import board_hk
+
     return (
+        f"Today is {board_hk.today_hkt()} (HKT).\n"
         f"Task brief: {task.get('brief')}\n"
         f"Deliverable type: {task.get('deliverableType')}\n"
         f"Budget left: USD {left:.2f} of {budget:.2f}\n"

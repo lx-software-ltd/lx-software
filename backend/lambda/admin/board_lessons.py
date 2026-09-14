@@ -59,6 +59,9 @@ def _desk_instruction(
     return _FALLBACK[:200]
 
 
+_SKIP_RETURN_FLAGS = frozenset({"no_evidence", "salvaged"})
+
+
 def _write(
     table: Any,
     *,
@@ -70,6 +73,18 @@ def _write(
     source_ref: str,
 ) -> dict[str, Any]:
     now = board_store.now_iso()
+    for existing in board_store.list_lessons(table, subject or None, limit=80):
+        if str(existing.get("sourceRef") or "") != source_ref:
+            continue
+        if str(existing.get("subject") or "") != subject:
+            continue
+        existing["kind"] = kind
+        existing["classKey"] = class_key
+        existing["what"] = what[:400]
+        existing["instruction"] = instruction[:200]
+        existing["updatedAt"] = now
+        board_store.put_lesson(table, existing)
+        return existing
     doc = {
         "lessonId": board_store.new_id(),
         "kind": kind,
@@ -141,6 +156,9 @@ def create_from_correction(table: Any, call_id: str, note: str) -> dict[str, Any
 
 
 def create_from_return(table: Any, task: dict[str, Any]) -> dict[str, Any]:
+    flags = {str(f) for f in (task.get("flags") or [])}
+    if flags & _SKIP_RETURN_FLAGS:
+        return {}
     settings = board_store.load_settings(table)
     notes = str((task.get("lastReview") or {}).get("notes") or "")
     what = str(task.get("summary") or task.get("brief") or task.get("taskId") or "returned task")

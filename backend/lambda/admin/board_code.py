@@ -373,6 +373,28 @@ def _kind_for_pr(table: Any, pr_number: int, bundle: dict[str, Any]) -> str:
     return "feature"
 
 
+def validate_run_task(args: dict[str, Any]) -> str | None:
+    """Refuse a runner dispatch that names a missing or closed GitHub issue."""
+    try:
+        issue = int(args.get("issueNumber") or 0)
+    except (TypeError, ValueError):
+        return "issueNumber is required"
+    if issue <= 0:
+        return "issueNumber is required"
+    try:
+        import board_github
+
+        found = board_github.op_get_issue({"number": issue})
+    except Exception:
+        return None
+    if isinstance(found, dict) and found.get("error"):
+        return str(found.get("error") or f"GitHub issue #{issue} was not found")
+    state = str((found or {}).get("state") or "").lower()
+    if state and state != "open":
+        return f"GitHub issue #{issue} is {state}, not open"
+    return None
+
+
 def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     try:
         issue = int(args.get("issueNumber") or 0)

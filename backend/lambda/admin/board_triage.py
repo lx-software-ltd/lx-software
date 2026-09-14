@@ -23,7 +23,7 @@ from http_common import _log_event
 
 AUDIENCES = ("parent", "provider", "vendor", "unknown")
 INTENTS = ("question", "booking", "complaint", "billing", "partnership", "spam", "other")
-OPEN_TASK_STATUSES = ("queued", "running", "review", "needs_owner")
+OPEN_TASK_STATUSES = ("queued", "running", "waiting_approval", "review", "needs_owner")
 FINANCE_LOCAL_PARTS = frozenset({"finance", "billing"})
 LATIN_WORD_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 '\-]{0,80}$")
 
