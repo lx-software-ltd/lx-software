@@ -193,7 +193,9 @@ def chat_completion(
 
     ``fallback_models`` is sent as OpenRouter's ``models`` list so a
     rate-limited or down primary (typical for DeepSeek's shared pool) fails
-    over to the next slug in the same request.
+    over inside the same request. After a 429/502/503 the client also walks
+    the remaining slugs as the next primary, sharing the same wall-clock
+    ``timeout`` so the walk cannot stack another full request.
 
     ``service`` selects app-attribution headers and the named API key for
     that catalog app (``contracts/openrouter-apps.json``). The secret JSON
@@ -232,7 +234,11 @@ def chat_completion(
     last_error: OpenRouterError | None = None
     raw: dict[str, Any] | None = None
     current = model
+    deadline = _clock() + max(1.0, float(timeout))
     for index, current in enumerate(chain):
+        remaining = deadline - _clock()
+        if remaining < _MIN_RETRY_REMAINING_SECONDS:
+            break
         payload["model"] = current
         rest = chain[index + 1 :]
         if rest:
@@ -244,7 +250,7 @@ def chat_completion(
                 url=endpoint_url(),
                 api_key=api_key,
                 payload=payload,
-                timeout=timeout,
+                timeout=max(1, int(remaining)),
                 max_retries=max_retries if index == 0 else min(1, max_retries),
                 service=service,
             )

@@ -877,7 +877,32 @@ def _pending_code_run_approvals(table: Any, task: dict[str, Any]) -> list[dict[s
     ]
 
 
+def _after_this_attempt(task: dict[str, Any], when: Any) -> bool:
+    """True when ``when`` is on the current attempt (after ``retriedAt``)."""
+    floor = str(task.get("retriedAt") or "").strip()
+    if not floor:
+        return True
+    return str(when or "") >= floor
+
+
+def _run_row_failed(row: dict[str, Any]) -> bool:
+    if row.get("failedAt"):
+        return True
+    return str(row.get("conclusion") or "").lower() in {
+        "failure",
+        "cancelled",
+        "timed_out",
+        "startup_failure",
+    }
+
+
 def _code_run_dispatched(table: Any, task: dict[str, Any]) -> bool:
+    """True when this attempt already dispatched a coding runner.
+
+    Approvals, tool calls and the ``code:run`` cache from a previous
+    attempt (before ``retriedAt``) do not count. A run row with
+    ``failedAt`` or a failed conclusion is not a live dispatch.
+    """
     tid = str(task.get("taskId") or "")
     if not tid:
         return False
@@ -886,10 +911,15 @@ def _code_run_dispatched(table: Any, task: dict[str, Any]) -> bool:
             continue
         if str((approval.get("context") or {}).get("taskId") or "") != tid:
             continue
-        if approval.get("status") == "executed":
+        if approval.get("status") != "executed":
+            continue
+        when = approval.get("decidedAt") or approval.get("updatedAt") or approval.get("createdAt")
+        if _after_this_attempt(task, when):
             return True
     for call in board_store.list_tool_calls_for_task(table, tid):
-        if call.get("op") == "code_run_task" and call.get("status") == "ok":
+        if call.get("op") != "code_run_task" or call.get("status") != "ok":
+            continue
+        if _after_this_attempt(task, call.get("createdAt") or call.get("updatedAt")):
             return True
     try:
         import board_code
@@ -897,7 +927,12 @@ def _code_run_dispatched(table: Any, task: dict[str, Any]) -> bool:
         row = board_code._get_run(table, tid)  # noqa: SLF001
     except Exception:
         row = {}
-    return bool(row.get("dispatchedAt") or row.get("runStatus"))
+    if not row or _run_row_failed(row):
+        return False
+    when = row.get("dispatchedAt") or row.get("updatedAt") or ""
+    if not when:
+        return False
+    return _after_this_attempt(task, when)
 
 
 def _mark_code_runner_dispatched(task: dict[str, Any]) -> None:
@@ -914,11 +949,9 @@ def _settle_code_implement_approval(table: Any, task: dict[str, Any], approval: 
     _clear_parked(task)
     task["updatedAt"] = now
     if status == "executed":
-        task["status"] = "delivered"
-        task["finishedAt"] = now
         task["summary"] = str(task.get("summary") or "Coding runner dispatched.")[:800]
         _mark_code_runner_dispatched(task)
-        board_store.put_task(table, task)
+        _mark_delivered(table, task, now)
         return
     reason = (
         "founder rejected the code_run_task proposal"
@@ -1910,11 +1943,9 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
             )
             return {"ok": True, "status": "waiting_approval", "deliverableKey": key}
         if _code_run_dispatched(ctx.table, updated):
-            updated["status"] = "delivered"
-            updated["finishedAt"] = now
             _mark_code_runner_dispatched(updated)
-            board_store.put_task(ctx.table, updated)
-            return {"ok": True, "status": "delivered", "deliverableKey": key}
+            delivered = _mark_delivered(ctx.table, updated, now)
+            return {"ok": True, "status": str(delivered.get("status") or "delivered"), "deliverableKey": key}
     updated["status"] = "review"
     board_store.put_task(ctx.table, updated)
     if enabled(ctx.settings):
@@ -1946,8 +1977,6 @@ def _review_user_prompt(task: dict[str, Any], raw: str, evidence_lines: list[str
         "Do not return asking for accounting software or credentials.\n"
         "If the deliverable claims an action (label, publish, reply, create, send, rebase, merge, sync, implement, fix) "
         "and Evidence is (none), you MUST return.\n"
-        "code-implement briefs: a pending or executed code_run_task (approval or dispatched runner) "
-        "is the deliverable. Accept. Do not return asking for a PR, merge, or founder approval.\n"
         "If the deliverable uses Campaign A / Article 1 / screenshotN.png template data, return.\n"
         "Visitor sources and tracking: proof is web_sessions (referrers / sessionSource), "
         "web_conversions (events), and web_gtm_status when GTM is in the brief. Zero "
@@ -2150,51 +2179,11 @@ def _should_close_linked_action(table: Any, task: dict[str, Any]) -> bool:
     return True
 
 
-def _accept_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
-    last = task.get("lastReview") or {}
-    if last.get("verdict") and last.get("verdict") != "accept":
-        task["status"] = "needs_owner"
-        task["finishedAt"] = None
-        task["updatedAt"] = now
-        board_store.put_task(table, task)
-        _note_parent_if_child_needs_owner(table, task)
-        return task
-    if _should_hold_unverified_accept(table, task):
-        task["status"] = "needs_owner"
-        task["finishedAt"] = None
-        task["updatedAt"] = now
-        board_store.put_task(table, task)
-        _note_parent_if_child_needs_owner(table, task)
-        return task
-    ref = task.get("eventRef") or {}
-    if ref.get("kind") == "ops" and str(ref.get("id") or "") == "rebase-staging":
-        try:
-            import board_code
-
-            still = board_code.staging_still_behind()
-        except Exception as exc:
-            still = {"error": str(exc)[:200], "behindBy": "?"}
-        if still:
-            flags = [str(f) for f in (task.get("flags") or [])]
-            if "staging_behind" not in flags:
-                flags.append("staging_behind")
-            task["flags"] = flags
-            questions = [str(q) for q in (task.get("openQuestions") or []) if q]
-            if still.get("error"):
-                note = f"could not verify staging vs main: {still.get('error')}"
-            else:
-                note = f"staging is still {still.get('behindBy')} commit(s) behind main"
-            if note not in questions:
-                questions.append(note)
-            task["openQuestions"] = questions
-            task["status"] = "needs_owner"
-            task["finishedAt"] = None
-            task["updatedAt"] = now
-            board_store.put_task(table, task)
-            _note_parent_if_child_needs_owner(table, task)
-            return task
+def _mark_delivered(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
+    """Persist a delivered task, TTL, linked-action close, and parent/duty hooks."""
     task["status"] = "delivered"
     task["finishedAt"] = now
+    task["updatedAt"] = now
     task["expiresAt"] = int(datetime.now(timezone.utc).timestamp()) + BOARD_STAFF_RETENTION_DAYS * 86400
     action_id = task.get("actionId")
     dtype = str(task.get("deliverableType") or "")
@@ -2250,6 +2239,52 @@ def _accept_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
         except Exception as exc:
             _log_event("warning", tag="board_code_review_deliver_failed", error=str(exc)[:200])
     return task
+
+
+def _accept_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
+    last = task.get("lastReview") or {}
+    if last.get("verdict") and last.get("verdict") != "accept":
+        task["status"] = "needs_owner"
+        task["finishedAt"] = None
+        task["updatedAt"] = now
+        board_store.put_task(table, task)
+        _note_parent_if_child_needs_owner(table, task)
+        return task
+    if _should_hold_unverified_accept(table, task):
+        task["status"] = "needs_owner"
+        task["finishedAt"] = None
+        task["updatedAt"] = now
+        board_store.put_task(table, task)
+        _note_parent_if_child_needs_owner(table, task)
+        return task
+    ref = task.get("eventRef") or {}
+    if ref.get("kind") == "ops" and str(ref.get("id") or "") == "rebase-staging":
+        try:
+            import board_code
+
+            still = board_code.staging_still_behind()
+        except Exception as exc:
+            still = {"error": str(exc)[:200], "behindBy": "?"}
+        if still:
+            flags = [str(f) for f in (task.get("flags") or [])]
+            if "staging_behind" not in flags:
+                flags.append("staging_behind")
+            task["flags"] = flags
+            questions = [str(q) for q in (task.get("openQuestions") or []) if q]
+            if still.get("error"):
+                note = f"could not verify staging vs main: {still.get('error')}"
+            else:
+                note = f"staging is still {still.get('behindBy')} commit(s) behind main"
+            if note not in questions:
+                questions.append(note)
+            task["openQuestions"] = questions
+            task["status"] = "needs_owner"
+            task["finishedAt"] = None
+            task["updatedAt"] = now
+            board_store.put_task(table, task)
+            _note_parent_if_child_needs_owner(table, task)
+            return task
+    return _mark_delivered(table, task, now)
 
 
 def retry_task(table: Any, settings: dict[str, Any], task_id: str, by_sub: str) -> dict[str, Any]:
