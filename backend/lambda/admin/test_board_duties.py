@@ -178,7 +178,9 @@ class DutyRunTests(BoardTestCase):
         created = board_duties.run_due(self.table, self.settings, now=now)
         duty_ids = [(t.get("eventRef") or {}).get("id") for t in created]
         self.assertFalse(any(str(i).startswith("data-analyst:weekly-attribution:") for i in duty_ids))
-        self.assertTrue(any(str(i).startswith("config:weekly-attribution:") for i in duty_ids))
+        self.assertFalse(any(str(i).startswith("config:weekly-attribution:") for i in duty_ids))
+        gaps = board_duties.list_config_gaps(self.table)
+        self.assertTrue(any(g.get("gapId") == "weekly-attribution" for g in gaps))
 
 
 class OpsTriageTests(BoardTestCase):

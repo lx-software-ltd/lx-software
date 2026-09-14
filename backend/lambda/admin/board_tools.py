@@ -2298,11 +2298,12 @@ def build_registry() -> dict[str, ToolOp]:
             name="code_sync_staging",
             tool_id="code",
             kind="write",
-            description="Merge main into staging so staging is current (GitHub merges API). Confirm with github_compare. Does not force-push.",
+            description="Merge main into staging so staging is current (GitHub merges API). Confirm with github_compare. Does not force-push. Act-level calls follow the code_staging hold.",
             parameters=_obj({"reason": REASON_PARAM}),
             run=_code_sync_staging,
             summarize=_summ("Synced staging with main"),
             contexts=("chat", "meeting", "task"),
+            action_class="code_staging",
         ),
         ToolOp(
             name="staff_assign",

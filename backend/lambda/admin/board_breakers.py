@@ -14,8 +14,14 @@ _IGNORABLE_TOOL_ERROR_MARKERS = (
     "is not set",
     "invalid arguments",
     "unknown argument",
-    "not found",
+    "github api returned status 404",
+    " not found in ",
+    "was not found",
+    "not found or token lacks",
 )
+_TOOL_TRIP_ERRORS = 10
+_TOOL_RESET_ERRORS = 5
+_TOOL_RESET_MIN_AGE = timedelta(minutes=30)
 
 
 def trip(table: Any, name: str, reason: str) -> dict[str, Any]:
@@ -50,6 +56,11 @@ def reset(table: Any, name: str, by_sub: str) -> dict[str, Any]:
         "resetAt": board_store.now_iso(),
     }
     board_store.put_breaker(table, name, doc)
+    try:
+        board_store.add_update(table, text=f"BREAKER {name} reset ({by_sub})", owner_sub=None)
+    except Exception as exc:
+        _log_event("warning", tag="board_breaker_reset_update_failed", error=str(exc)[:200], name=name)
+    _log_event("info", tag="board_breaker_reset", name=name, by=by_sub)
     if name == "budget":
         try:
             _fresh_save_staff(table, seniorPaused=False, disabledReason="")
@@ -183,8 +194,9 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
         if not tool_id:
             continue
         errors[tool_id] = errors.get(tool_id, 0) + 1
+    now = datetime.now(timezone.utc)
     for tool_id, count in errors.items():
-        if count >= 10 and not is_tripped(table, f"tool:{tool_id}"):
+        if count >= _TOOL_TRIP_ERRORS and not is_tripped(table, f"tool:{tool_id}"):
             trip(table, f"tool:{tool_id}", f"{count} errors in the last hour")
             tripped.append(f"tool:{tool_id}")
     for row in board_store.list_breakers(table):
@@ -192,8 +204,12 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
         if not name.startswith("tool:") or not row.get("tripped"):
             continue
         tool_id = name[5:]
-        if errors.get(tool_id, 0) < 10:
-            reset(table, name, "auto")
+        if errors.get(tool_id, 0) >= _TOOL_RESET_ERRORS:
+            continue
+        tripped_at = _parse_iso(str(row.get("trippedAt") or ""))
+        if tripped_at is None or now - tripped_at < _TOOL_RESET_MIN_AGE:
+            continue
+        reset(table, name, "auto")
 
     try:
         import board_outreach
@@ -215,3 +231,15 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
 
 def list_all(table: Any) -> list[dict[str, Any]]:
     return board_store.list_breakers(table)
+
+
+def _parse_iso(value: str) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        if raw.endswith("Z"):
+            return datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None

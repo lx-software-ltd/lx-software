@@ -93,7 +93,7 @@ def classify(op: board_tools.ToolOp, ctx: board_tools.ToolContext, args: dict[st
         return "publish", f"publish:{PUBLISH_OPS[name]}"
     if name in SPEND_OPS:
         return "spend", "spend:meta"
-    if name == "code_merge_staging":
+    if name in ("code_merge_staging", "code_sync_staging"):
         return "code_staging", "code_staging"
     if name == "code_promote":
         return "code_production", "code_production"

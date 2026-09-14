@@ -1539,6 +1539,12 @@ export type BoardReviewSnapshot = {
     readonly latestBrief?: BoardMarketBrief | null;
   };
   readonly promotion?: BoardStagingPreview | readonly unknown[];
+  readonly configGaps?: readonly {
+    readonly gapId?: string;
+    readonly week?: string;
+    readonly reason?: string;
+    readonly at?: string;
+  }[];
 };
 
 export function tasksNeedPolling(tasks: readonly BoardTask[]): boolean {

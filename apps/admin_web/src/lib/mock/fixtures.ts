@@ -654,6 +654,7 @@ export const boardReviewFixture: BoardReviewSnapshot = {
     latestBrief: { taskId: "task-review", status: "review", summary: "Weekly market brief", createdAt: isoDaysAgo(0) },
   },
   promotion: [],
+  configGaps: [],
 };
 
 export const boardProgressFixture: BoardProgressSnapshot = {

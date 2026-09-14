@@ -229,7 +229,49 @@ class BreakerAndUnconfiguredTests(BoardTestCase):
         self.assertNotIn("tool:github", tripped)
         board_breakers.trip(self.table, "tool:github", "10 errors in the last hour")
         board_breakers.evaluate(self.table, board_store.load_settings(self.table))
+        self.assertTrue(board_breakers.is_tripped(self.table, "tool:github"))
+        old = datetime.now(timezone.utc) - timedelta(minutes=31)
+        row = board_store.get_breaker(self.table, "tool:github")
+        row["trippedAt"] = old.strftime("%Y-%m-%dT%H:%M:%SZ")
+        board_store.put_breaker(self.table, "tool:github", row)
+        board_breakers.evaluate(self.table, board_store.load_settings(self.table))
         self.assertFalse(board_breakers.is_tripped(self.table, "tool:github"))
+        updates = board_store.list_updates(self.table)
+        self.assertTrue(any("reset (auto)" in str(u.get("text") or "") for u in updates))
+
+    def test_generic_not_found_still_counts_toward_breaker(self) -> None:
+        now = board_store.now_iso()
+        for i in range(10):
+            board_store.add_tool_call(
+                self.table,
+                {
+                    "callId": f"nf-{i}",
+                    "op": "board_update_action",
+                    "toolId": "board",
+                    "status": "error",
+                    "resultPreview": "Action act-dash not found",
+                    "createdAt": now,
+                },
+            )
+        tripped = board_breakers.evaluate(self.table, board_store.load_settings(self.table))
+        self.assertIn("tool:board", tripped)
+
+    def test_github_404_does_not_trip_tool_breaker(self) -> None:
+        now = board_store.now_iso()
+        for i in range(12):
+            board_store.add_tool_call(
+                self.table,
+                {
+                    "callId": f"404-{i}",
+                    "op": "github_get_file",
+                    "toolId": "github",
+                    "status": "error",
+                    "resultPreview": "apps/missing.ts not found in lx-software-ltd/siutindei",
+                    "createdAt": now,
+                },
+            )
+        tripped = board_breakers.evaluate(self.table, board_store.load_settings(self.table))
+        self.assertNotIn("tool:github", tripped)
 
     def test_unconfigured_writes_are_hidden(self) -> None:
         os.environ.pop("GOOGLE_ANALYTICS_ACCESS_TOKEN", None)
@@ -400,6 +442,37 @@ class LessonAndReviewTests(BoardTestCase):
         self.assertEqual(out["status"], "needs_owner")
         self.assertEqual(board_store.get_action(self.table, "act-dash")["status"], "open")
 
+    def test_duty_tool_error_accept_is_not_held(self) -> None:
+        board_store.save_staff_override(self.table, "data-analyst", {"isActive": True})
+        task = board_staff.create_task(
+            self.table,
+            self.settings,
+            assignee="data-analyst",
+            origin="duty",
+            brief="Write this week's attribution pack using web_sessions by utm_campaign.",
+            deliverable_type="markdown",
+            created_by="test",
+        )
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "web-1",
+                "op": "web_sessions",
+                "toolId": "web",
+                "status": "error",
+                "resultPreview": "GA4 is not configured",
+                "taskId": task["taskId"],
+                "createdAt": board_store.now_iso(),
+            },
+        )
+        task["status"] = "review"
+        task["flags"] = ["no_evidence"]
+        board_store.put_task(self.table, task)
+        out = board_staff.apply_review(
+            self.table, self.settings, task, verdict="accept", notes="unavailable with tool error", by="manager"
+        )
+        self.assertEqual(out["status"], "delivered")
+
     def test_weekly_readout_skips_when_meta_and_ga4_unconfigured(self) -> None:
         board_store.save_staff_override(self.table, "growth-specialist", {"isActive": True})
         with (
@@ -409,9 +482,12 @@ class LessonAndReviewTests(BoardTestCase):
             out = board_content.weekly_readout(self.table, self.settings)
         self.assertIsNone(out)
         tasks = board_store.list_tasks(self.table, "queued") + board_store.list_tasks(self.table, "running")
-        gaps = [t for t in tasks if str((t.get("eventRef") or {}).get("id") or "").startswith("config:content-readout:")]
+        self.assertFalse(any(str((t.get("eventRef") or {}).get("id") or "").startswith("config:") for t in tasks))
+        gaps = board_duties.list_config_gaps(self.table)
         self.assertEqual(len(gaps), 1)
-        self.assertEqual(gaps[0]["assignee"], "cmo")
+        self.assertEqual(gaps[0]["gapId"], "content-readout")
+        updates = board_store.list_updates(self.table)
+        self.assertTrue(any("CONFIG content-readout" in str(u.get("text") or "") for u in updates))
 
     def test_pending_approval_blocks_action_close(self) -> None:
         board_store.save_staff_override(self.table, "architect", {"isActive": True})

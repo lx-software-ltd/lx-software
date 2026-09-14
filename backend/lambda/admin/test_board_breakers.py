@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import patch
 
@@ -67,6 +67,51 @@ class BreakerRuleTests(BoardTestCase):
             )
         tripped = board_breakers.evaluate(self.table, self.settings)
         self.assertIn("tool:mail", tripped)
+        self.assertTrue(board_breakers.is_tripped(self.table, "tool:mail"))
+
+    def test_auto_reset_waits_for_age_and_low_count(self) -> None:
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for i in range(4):
+            board_store.add_tool_call(
+                self.table,
+                {
+                    "callId": f"low-{i}",
+                    "op": "mail_reply",
+                    "toolId": "mail",
+                    "status": "error",
+                    "summary": "failed",
+                    "createdAt": now,
+                },
+            )
+        board_breakers.trip(self.table, "tool:mail", "10 errors in the last hour")
+        board_breakers.evaluate(self.table, self.settings)
+        self.assertTrue(board_breakers.is_tripped(self.table, "tool:mail"))
+        row = board_store.get_breaker(self.table, "tool:mail")
+        row["trippedAt"] = (datetime.now(timezone.utc) - timedelta(minutes=31)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        board_store.put_breaker(self.table, "tool:mail", row)
+        board_breakers.evaluate(self.table, self.settings)
+        self.assertFalse(board_breakers.is_tripped(self.table, "tool:mail"))
+        self.assertTrue(any("reset (auto)" in str(u.get("text") or "") for u in board_store.list_updates(self.table)))
+
+    def test_auto_reset_skips_when_countable_errors_still_high(self) -> None:
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for i in range(8):
+            board_store.add_tool_call(
+                self.table,
+                {
+                    "callId": f"mid-{i}",
+                    "op": "mail_reply",
+                    "toolId": "mail",
+                    "status": "error",
+                    "summary": "failed",
+                    "createdAt": now,
+                },
+            )
+        board_breakers.trip(self.table, "tool:mail", "10 errors in the last hour")
+        row = board_store.get_breaker(self.table, "tool:mail")
+        row["trippedAt"] = (datetime.now(timezone.utc) - timedelta(minutes=31)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        board_store.put_breaker(self.table, "tool:mail", row)
+        board_breakers.evaluate(self.table, self.settings)
         self.assertTrue(board_breakers.is_tripped(self.table, "tool:mail"))
 
     def test_channel_after_reply_then_escalation(self) -> None:

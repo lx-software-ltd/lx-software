@@ -1273,7 +1273,7 @@ def apply_review(
     task["lastReview"] = {"verdict": verdict, "notes": notes, "at": now, "by": by}
     task["updatedAt"] = now
     if verdict == "accept":
-        if _should_hold_unverified_accept(task):
+        if _should_hold_unverified_accept(table, task):
             task["status"] = "needs_owner"
             task["finishedAt"] = None
             board_store.put_task(table, task)
@@ -1313,9 +1313,27 @@ def apply_review(
     return task
 
 
-def _should_hold_unverified_accept(task: dict[str, Any]) -> bool:
+def _task_attempted_required_tools(table: Any, task: dict[str, Any]) -> bool:
+    """True when the seat called every tool the brief names, even if those calls errored."""
+    needed = _brief_required_evidence_tools(str(task.get("brief") or ""))
+    if not needed:
+        return False
+    task_id = str(task.get("taskId") or "")
+    if not task_id:
+        return False
+    ops: set[str] = set()
+    for call in board_store.list_tool_calls_for_task(table, task_id):
+        op = str(call.get("op") or "")
+        if op and op not in _IDLE_TOOL_OPS:
+            ops.add(op)
+    return all(tool in ops for tool in needed)
+
+
+def _should_hold_unverified_accept(table: Any, task: dict[str, Any]) -> bool:
     flags = {str(f) for f in (task.get("flags") or [])}
     if "no_evidence" not in flags and "salvaged" not in flags:
+        return False
+    if "salvaged" not in flags and _task_attempted_required_tools(table, task):
         return False
     if str(task.get("origin") or "") in _EVIDENCE_REQUIRED_ORIGINS:
         return True
@@ -1356,7 +1374,7 @@ def _accept_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
         task["updatedAt"] = now
         board_store.put_task(table, task)
         return task
-    if _should_hold_unverified_accept(task):
+    if _should_hold_unverified_accept(table, task):
         task["status"] = "needs_owner"
         task["finishedAt"] = None
         task["updatedAt"] = now
@@ -1368,15 +1386,18 @@ def _accept_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
             import board_code
 
             still = board_code.staging_still_behind()
-        except Exception:
-            still = None
+        except Exception as exc:
+            still = {"error": str(exc)[:200], "behindBy": "?"}
         if still:
             flags = [str(f) for f in (task.get("flags") or [])]
             if "staging_behind" not in flags:
                 flags.append("staging_behind")
             task["flags"] = flags
             questions = [str(q) for q in (task.get("openQuestions") or []) if q]
-            note = f"staging is still {still.get('behindBy')} commit(s) behind main"
+            if still.get("error"):
+                note = f"could not verify staging vs main: {still.get('error')}"
+            else:
+                note = f"staging is still {still.get('behindBy')} commit(s) behind main"
             if note not in questions:
                 questions.append(note)
             task["openQuestions"] = questions

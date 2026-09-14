@@ -552,12 +552,10 @@ def weekly_readout(table: Any, settings: dict[str, Any]) -> dict[str, Any] | Non
         try:
             import board_duties
 
-            board_duties._maybe_config_gap_task(  # noqa: SLF001
+            board_duties.note_config_gap(
                 table,
-                settings,
-                assignee="cmo",
                 gap_id="content-readout",
-                brief=f"{skip}. Skipped weekly content readout. Configure Meta page/IG and GA4 or deactivate growth-specialist.",
+                reason=f"{skip}. Skipped weekly content readout. Configure Meta page/IG and GA4 or deactivate growth-specialist.",
             )
         except Exception as exc:
             _log_event("info", tag="board_content_readout_config_gap_failed", error=str(exc)[:200])

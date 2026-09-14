@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import board_github
@@ -544,9 +543,9 @@ def _sync_staging_brief(preview: dict[str, Any], delegates: list[str]) -> str:
         f"(compare status={status}, aheadBy={ahead}).{compare}{diverge} "
         "You own keeping staging current with main so the promote path can run. "
         "Call code_sync_staging (merges main into staging; a propose-level call becomes an "
-        "Approval). Then call github_compare base=main head=staging and only task_finish when "
-        "behindBy=0. github_list_commits without sha lists the default branch — do not use it "
-        "to claim staging is current. "
+        "Approval, and act is a code_staging hold). Then call github_compare base=main "
+        "head=staging and only task_finish when behindBy=0. github_list_commits without sha "
+        "lists the default branch — do not use it to claim staging is current. "
         f"{handoff} "
         "Deliverable: markdown with behind/ahead counts from github_compare, the merge result, "
         "and the compare URL."
@@ -583,7 +582,9 @@ def _ensure_rebase_task(
         return None
 
 
-def maybe_daily_staging_sync(table: Any, settings: dict[str, Any]) -> dict[str, Any] | None:
+def maybe_daily_staging_sync(
+    table: Any, settings: dict[str, Any], preview: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
     """Once per HKT day, open a CTO task when staging is behind main."""
     if not board_staff.enabled(settings):
         return None
@@ -592,7 +593,7 @@ def maybe_daily_staging_sync(table: Any, settings: dict[str, Any]) -> dict[str, 
     payload = hit.get("payload") if isinstance(hit, dict) else None
     if isinstance(payload, dict) and payload.get("dateHkt") == date_hkt:
         return None
-    preview = staging_preview()
+    preview = preview if isinstance(preview, dict) else staging_preview()
     if preview.get("error"):
         _log_event("warning", tag="board_code_staging_sync_preview_failed", error=str(preview.get("error"))[:200])
         return None
@@ -633,13 +634,28 @@ def staging_preview() -> dict[str, Any]:
 
 
 def staging_still_behind() -> dict[str, Any] | None:
-    """Live compare used when accepting a sync-staging task. None means current or unreadable."""
+    """Live compare used when accepting a sync-staging task. None means current."""
     preview = staging_preview()
-    if preview.get("error"):
-        return None
-    if int(preview.get("behindBy") or 0) > 0:
+    if preview.get("error") or int(preview.get("behindBy") or 0) > 0:
         return preview
     return None
+
+
+_COMPARE_CACHE = "github:compare:main-staging"
+_LABEL_CACHE = "github:label:board-ready"
+
+
+def cache_staging_preview(table: Any, preview: dict[str, Any] | None = None) -> dict[str, Any]:
+    snap = dict(preview if isinstance(preview, dict) else staging_preview())
+    snap["fetchedAt"] = board_store.now_iso()
+    board_store.put_cache(table, _COMPARE_CACHE, snap, ttl_seconds=6 * 3600)
+    return snap
+
+
+def cached_staging_preview(table: Any) -> dict[str, Any] | None:
+    hit = board_store.get_cache(table, _COMPARE_CACHE)
+    payload = hit.get("payload") if isinstance(hit, dict) else None
+    return payload if isinstance(payload, dict) and payload else None
 
 
 def queue_promote_approval(table: Any, settings: dict[str, Any], user_sub: str) -> dict[str, Any]:
@@ -740,17 +756,20 @@ def _issue_assignable(issue: dict[str, Any]) -> bool:
         return True
     if "documentation" in labels and not (labels & _IMPLEMENT_ISSUE_LABELS):
         return False
-    if labels & _IMPLEMENT_ISSUE_LABELS:
-        return True
-    created = str(issue.get("created_at") or "")[:10]
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).strftime("%Y-%m-%d")
-    return bool(created) and created >= cutoff
+    return bool(labels & _IMPLEMENT_ISSUE_LABELS)
 
 
-def ensure_board_ready_label() -> None:
+def ensure_board_ready_label(table: Any) -> None:
+    hit = board_store.get_cache(table, _LABEL_CACHE)
+    payload = hit.get("payload") if isinstance(hit, dict) else None
+    if isinstance(payload, dict) and payload.get("exists") is True:
+        return
+    if isinstance(payload, dict) and payload.get("exists") is False:
+        return
     repo = _repo()
     existing = _gh("GET", f"/repos/{repo}/labels/{BOARD_READY_LABEL}")
     if isinstance(existing, dict) and existing.get("name"):
+        board_store.put_cache(table, _LABEL_CACHE, {"exists": True}, ttl_seconds=7 * 86400)
         return
     try:
         _gh(
@@ -762,8 +781,18 @@ def ensure_board_ready_label() -> None:
                 "description": "Ready for an engineer to implement via code_run_task",
             },
         )
+        board_store.put_cache(table, _LABEL_CACHE, {"exists": True}, ttl_seconds=7 * 86400)
     except board_github.GitHubSnapshotError as exc:
+        board_store.put_cache(table, _LABEL_CACHE, {"exists": False}, ttl_seconds=86400)
         _log_event("info", tag="board_code_label_ensure_failed", error=str(exc)[:200])
+
+
+def _add_board_ready_label(number: int) -> None:
+    repo = _repo()
+    try:
+        _gh("POST", f"/repos/{repo}/issues/{int(number)}/labels", {"labels": [BOARD_READY_LABEL]})
+    except board_github.GitHubSnapshotError as exc:
+        _log_event("info", tag="board_code_label_issue_failed", issue=number, error=str(exc)[:200])
 
 
 def _list_ready_issues() -> list[dict[str, Any]]:
@@ -792,7 +821,7 @@ def maybe_assign_ready_issues(table: Any, settings: dict[str, Any]) -> list[dict
     if len(open_prs) >= MAX_OPEN_BOARD_PRS:
         return []
     try:
-        ensure_board_ready_label()
+        ensure_board_ready_label(table)
         issues = _list_ready_issues()
     except board_github.GitHubSnapshotError as exc:
         _log_event("warning", tag="board_code_list_issues_failed", error=str(exc)[:200])
@@ -826,6 +855,8 @@ def maybe_assign_ready_issues(table: Any, settings: dict[str, Any]) -> list[dict
                 created_by="board_code",
             )
             created.append(task)
+            if BOARD_READY_LABEL not in _issue_label_names(issue):
+                _add_board_ready_label(number)
         except board_staff.StaffError as exc:
             _log_event("info", tag="board_code_assign_skipped", error=str(exc)[:200])
             continue
@@ -836,11 +867,16 @@ def maybe_assign_ready_issues(table: Any, settings: dict[str, Any]) -> list[dict
 
 def op_sync_staging(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Merge ``main`` into ``staging`` so promote has a current integration branch."""
-    del ctx, args
+    del args
     preview = staging_preview()
+    table = getattr(ctx, "table", None)
     if preview.get("error"):
+        if table is not None:
+            cache_staging_preview(table, preview)
         return {"error": preview["error"], "preview": preview}
     if int(preview.get("behindBy") or 0) <= 0:
+        if table is not None:
+            cache_staging_preview(table, preview)
         return {"ok": True, "alreadyCurrent": True, "preview": preview}
     repo = _repo()
     try:
@@ -856,6 +892,8 @@ def op_sync_staging(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     except board_github.GitHubSnapshotError as exc:
         return {"error": str(exc)[:200], "preview": preview}
     after = staging_preview()
+    if table is not None:
+        cache_staging_preview(table, after)
     sha = ""
     if isinstance(merged, dict):
         sha = str(merged.get("sha") or "")[:12]
@@ -945,7 +983,8 @@ def handle_tick(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True, "skipped": "disabled"}
     reviews = poll_runs(table, settings)
     assigned = maybe_assign_ready_issues(table, settings)
-    sync = maybe_daily_staging_sync(table, settings)
+    preview = cache_staging_preview(table)
+    sync = maybe_daily_staging_sync(table, settings, preview=preview)
     return {
         "ok": True,
         "reviews": len(reviews),
