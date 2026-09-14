@@ -506,7 +506,14 @@ def compare_staging() -> dict[str, Any]:
 _SYNC_STAGING_CACHE = "duty:cto:sync-staging"
 _SYNC_STAGING_EVENT_ID = "rebase-staging"
 _DELEGATE_SEATS = ("architect", "engineer-1", "engineer-2")
-_OPEN_SYNC_STATUSES = ("queued", "running", "waiting_approval", "review", "needs_owner")
+_OPEN_SYNC_STATUSES = (
+    "queued",
+    "running",
+    "waiting_approval",
+    "waiting_subtask",
+    "review",
+    "needs_owner",
+)
 
 
 def _active_delegate_ids(table: Any, settings: dict[str, Any]) -> list[str]:

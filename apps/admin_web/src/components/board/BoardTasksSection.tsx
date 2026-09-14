@@ -7,12 +7,13 @@ import { useBoardTask, useBoardTasks } from "../../hooks/useBoardTasks";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 
 const COLUMNS: readonly {
-  readonly id: "queued" | "running" | "waiting_approval" | "review" | "needs_owner" | "delivered" | "failed";
+  readonly id: "queued" | "running" | "waiting_approval" | "waiting_subtask" | "review" | "needs_owner" | "delivered" | "failed";
   readonly label: string;
 }[] = [
   { id: "queued", label: "Queued" },
   { id: "running", label: "Running" },
   { id: "waiting_approval", label: "Waiting approval" },
+  { id: "waiting_subtask", label: "Waiting help" },
   { id: "review", label: "Review" },
   { id: "needs_owner", label: "Needs owner" },
   { id: "delivered", label: "Delivered" },
@@ -126,6 +127,8 @@ function TaskCard({
         <div className="small fw-semibold">{task.brief.slice(0, 90)}</div>
         <div className="small text-muted">
           {eventSourceLabel(task)}
+          {task.parentTaskId ? "help · " : ""}
+          {task.helpTaskIds?.length ? "asked help · " : ""}
           {task.assignee} · {formatUsageCost(task.usage.cost)}
         </div>
         {task.status === "failed" && task.failureReason ? (

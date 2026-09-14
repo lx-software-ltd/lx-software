@@ -178,5 +178,6 @@ describe("canRetryBoardTask", () => {
     expect(canRetryBoardTask("needs_owner")).toBe(true);
     expect(canRetryBoardTask("review")).toBe(false);
     expect(canRetryBoardTask("delivered")).toBe(false);
+    expect(canRetryBoardTask("waiting_subtask")).toBe(false);
   });
 });

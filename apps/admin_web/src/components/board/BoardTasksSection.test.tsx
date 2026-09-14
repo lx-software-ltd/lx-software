@@ -85,6 +85,7 @@ describe("BoardTasksSection", () => {
     expect(screen.getByText(/Failed \(1\)/)).toBeInTheDocument();
     expect(screen.getByText(/Needs owner \(1\)/)).toBeInTheDocument();
     expect(screen.getByText(/Waiting approval \(0\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Waiting help \(0\)/)).toBeInTheDocument();
     expect(screen.getByText("step limit")).toBeInTheDocument();
     const retries = screen.getAllByRole("button", { name: "Retry" });
     expect(retries).toHaveLength(2);

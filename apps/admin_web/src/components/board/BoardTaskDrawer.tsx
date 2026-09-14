@@ -16,7 +16,15 @@ export type BoardTaskDrawerProps = {
   readonly onRetry?: (taskId: string) => void;
 };
 
-const OPEN_STATUSES = new Set(["queued", "running", "waiting_approval", "review", "returned", "needs_owner"]);
+const OPEN_STATUSES = new Set([
+  "queued",
+  "running",
+  "waiting_approval",
+  "waiting_subtask",
+  "review",
+  "returned",
+  "needs_owner",
+]);
 
 function csvRows(text: string): string[][] {
   return text
@@ -150,6 +158,26 @@ function TaskBody({
         <div>
           <div className="small text-muted text-uppercase">Failure</div>
           <p className="mb-0 text-danger">{task.failureReason}</p>
+        </div>
+      ) : null}
+      {task.parentTaskId ? (
+        <div>
+          <div className="small text-muted text-uppercase">Help for</div>
+          <p className="mb-0">
+            Parent task <code>{task.parentTaskId}</code>
+          </p>
+        </div>
+      ) : null}
+      {task.helpTaskIds && task.helpTaskIds.length > 0 ? (
+        <div>
+          <div className="small text-muted text-uppercase">Help tasks</div>
+          <p className="mb-0">
+            {task.helpTaskIds.map((id) => (
+              <code key={id} className="me-2">
+                {id}
+              </code>
+            ))}
+          </p>
         </div>
       ) : null}
       {task.lastReview ? (
