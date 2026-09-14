@@ -232,8 +232,12 @@ class RunnerTests(BoardTestCase):
         self.gh.compare = {"status": "behind", "ahead_by": 0, "behind_by": 3, "commits": []}
         out = board_code.op_promote(self.ctx, {"kind": "production"})
         self.assertIn("behind", out["error"])
-        tasks = board_store.list_tasks(self.table, "needs_owner")
-        self.assertTrue(any((t.get("eventRef") or {}).get("id") == "rebase-staging" for t in tasks))
+        tasks = board_store.list_tasks(self.table, "queued") + board_store.list_tasks(self.table, "running")
+        match = next(t for t in tasks if (t.get("eventRef") or {}).get("id") == "rebase-staging")
+        self.assertEqual(match["assignee"], "cto")
+        self.assertEqual(match["assigneeKind"], "persona")
+        self.assertIn("staff_assign", match["brief"])
+        self.assertIn("engineer-1", match["brief"])
         self.assertEqual(self.gh.dispatches, [])
 
     def test_promote_dispatches_when_ahead(self) -> None:
@@ -266,6 +270,38 @@ class RunnerTests(BoardTestCase):
         created = board_code.maybe_assign_ready_issues(self.table, self.settings)
         self.assertEqual(created[0]["eventRef"]["issueNumber"], 9)
         self.assertIn(created[0]["assignee"], ("engineer-1", "engineer-2"))
+
+    def test_daily_tick_opens_cto_sync_when_behind(self) -> None:
+        self.gh.compare = {
+            "status": "diverged",
+            "ahead_by": 1,
+            "behind_by": 12,
+            "html_url": "https://github.com/lx-software-ltd/siutindei/compare/main...staging",
+            "commits": [],
+        }
+        out = board_code.handle_tick(self.table, self.settings)
+        self.assertTrue(out["stagingSync"])
+        open_tasks = board_store.list_tasks(self.table, "queued") + board_store.list_tasks(self.table, "running")
+        tasks = [t for t in open_tasks if (t.get("eventRef") or {}).get("id") == "rebase-staging"]
+        self.assertEqual(len(tasks), 1)
+        self.assertEqual(tasks[0]["assignee"], "cto")
+        self.assertIn("12 commit", tasks[0]["brief"])
+        self.assertIn("do not force-push", tasks[0]["brief"])
+        again = board_code.handle_tick(self.table, self.settings)
+        self.assertFalse(again["stagingSync"])
+        open_again = board_store.list_tasks(self.table, "queued") + board_store.list_tasks(self.table, "running")
+        self.assertEqual(
+            len([t for t in open_again if (t.get("eventRef") or {}).get("id") == "rebase-staging"]),
+            1,
+        )
+
+    def test_daily_tick_skips_when_staging_current(self) -> None:
+        self.gh.compare = {"status": "identical", "ahead_by": 0, "behind_by": 0, "commits": []}
+        out = board_code.handle_tick(self.table, self.settings)
+        self.assertFalse(out["stagingSync"])
+        self.assertFalse(
+            any((t.get("eventRef") or {}).get("id") == "rebase-staging" for t in board_store.list_tasks(self.table, "queued"))
+        )
 
     def test_classify_merge_and_promote(self) -> None:
         merge = REGISTRY["code_merge_staging"]

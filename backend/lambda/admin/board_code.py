@@ -503,34 +503,120 @@ def compare_staging() -> dict[str, Any]:
     }
 
 
-def _ensure_rebase_task(table: Any, settings: dict[str, Any]) -> dict[str, Any] | None:
-    if _find_task(table, "ops", "rebase-staging"):
-        return None
+_SYNC_STAGING_CACHE = "duty:cto:sync-staging"
+_SYNC_STAGING_EVENT_ID = "rebase-staging"
+_DELEGATE_SEATS = ("architect", "engineer-1", "engineer-2")
+_OPEN_SYNC_STATUSES = ("queued", "running", "waiting_approval", "review", "needs_owner")
+
+
+def _active_delegate_ids(table: Any, settings: dict[str, Any]) -> list[str]:
     roster = board_staff.seats_by_id(table, settings)
-    assignee = "architect" if (roster.get("architect") or {}).get("isActive") else "cto"
+    return [seat_id for seat_id in _DELEGATE_SEATS if (roster.get(seat_id) or {}).get("isActive")]
+
+
+def _sync_staging_brief(preview: dict[str, Any], delegates: list[str]) -> str:
+    behind = int(preview.get("behindBy") or 0)
+    ahead = int(preview.get("aheadBy") or 0)
+    status = str(preview.get("status") or "unknown")
+    url = str(preview.get("htmlUrl") or "").strip()
+    compare = f" Compare: {url}." if url else ""
+    if delegates:
+        handoff = (
+            "You may staff_assign this same brief to "
+            + ", ".join(delegates)
+            + " (your staff tool is propose by default, so that hand-off lands in Approvals "
+            "unless the founder has given you act), then task_finish naming who you handed it to."
+        )
+    else:
+        handoff = (
+            "No architect or engineer seat is active. Do the rebase yourself, ask the founder "
+            "to activate a seat, or task_finish with the exact git commands and open questions."
+        )
+    diverge = ""
+    if ahead and behind:
+        diverge = (
+            " Staging has commits that are not on main: rebase or merge, do not force-push "
+            "those commits away."
+        )
+    return (
+        f"siutindei staging is {behind} commit(s) behind main "
+        f"(compare status={status}, aheadBy={ahead}).{compare}{diverge} "
+        "You own keeping staging current with main so the promote path can run. "
+        "Fast-forward or rebase staging onto main, then confirm github compare "
+        "main...staging reports behindBy=0. "
+        f"{handoff} "
+        "Deliverable: markdown with behind/ahead counts, what you did or who you delegated to, "
+        "and the compare URL."
+    )
+
+
+def _ensure_rebase_task(
+    table: Any,
+    settings: dict[str, Any],
+    preview: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    if _find_task(table, "ops", _SYNC_STAGING_EVENT_ID, statuses=_OPEN_SYNC_STATUSES):
+        return None
+    snapshot = preview if isinstance(preview, dict) else staging_preview()
+    if snapshot.get("error"):
+        return None
+    if int(snapshot.get("behindBy") or 0) <= 0:
+        return None
+    delegates = _active_delegate_ids(table, settings)
     try:
         return board_staff.create_task(
             table,
             settings,
-            assignee=assignee,
+            assignee="cto",
             origin="event",
-            brief="staging is behind main. Rebase staging onto main before promoting. Manual in v1.",
+            brief=_sync_staging_brief(snapshot, delegates)[:4000],
             deliverable_type="markdown",
             sla_hours=24,
-            event_ref={"kind": "ops", "id": "rebase-staging"},
+            event_ref={"kind": "ops", "id": _SYNC_STAGING_EVENT_ID},
             created_by="board_code",
-            status="needs_owner",
         )
     except board_staff.StaffError as exc:
         _log_event("info", tag="board_code_rebase_skipped", error=str(exc)[:200])
         return None
 
 
+def maybe_daily_staging_sync(table: Any, settings: dict[str, Any]) -> dict[str, Any] | None:
+    """Once per HKT day, open a CTO task when staging is behind main."""
+    if not board_staff.enabled(settings):
+        return None
+    date_hkt = board_hk.today_hkt()
+    hit = board_store.get_cache(table, _SYNC_STAGING_CACHE)
+    payload = hit.get("payload") if isinstance(hit, dict) else None
+    if isinstance(payload, dict) and payload.get("dateHkt") == date_hkt:
+        return None
+    preview = staging_preview()
+    if preview.get("error"):
+        _log_event("warning", tag="board_code_staging_sync_preview_failed", error=str(preview.get("error"))[:200])
+        return None
+    if not board_store.claim_duty_marker(table, f"duty:cto:sync-staging:{date_hkt}"):
+        return None
+    behind = int(preview.get("behindBy") or 0)
+    board_store.put_cache(
+        table,
+        _SYNC_STAGING_CACHE,
+        {
+            "dateHkt": date_hkt,
+            "behindBy": behind,
+            "aheadBy": int(preview.get("aheadBy") or 0),
+            "status": preview.get("status") or "",
+        },
+        ttl_seconds=3 * 86400,
+    )
+    if behind <= 0:
+        return None
+    return _ensure_rebase_task(table, settings, preview=preview)
+
+
 def op_promote(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     kind = str(args.get("kind") or "production").strip() or "production"
     preview = compare_staging()
     if int(preview.get("behindBy") or 0) > 0:
-        _ensure_rebase_task(ctx.table, ctx.settings)
+        _ensure_rebase_task(ctx.table, ctx.settings, preview=preview)
         return {"error": "staging is behind main; rebase first", "preview": preview}
     dispatched = dispatch_workflow(WORKFLOW_PROMOTE, {"kind": kind}, ref="main")
     return {**dispatched, "preview": preview}
@@ -550,7 +636,7 @@ def queue_promote_approval(table: Any, settings: dict[str, Any], user_sub: str) 
     if preview.get("error"):
         raise CodeError(str(preview["error"]))
     if int(preview.get("behindBy") or 0) > 0:
-        _ensure_rebase_task(table, settings)
+        _ensure_rebase_task(table, settings, preview=preview)
         raise CodeError("staging is behind main; rebase first")
     ctx = board_tools.ToolContext(
         table=table,
@@ -747,4 +833,10 @@ def handle_tick(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True, "skipped": "disabled"}
     reviews = poll_runs(table, settings)
     assigned = maybe_assign_ready_issues(table, settings)
-    return {"ok": True, "reviews": len(reviews), "assigned": len(assigned)}
+    sync = maybe_daily_staging_sync(table, settings)
+    return {
+        "ok": True,
+        "reviews": len(reviews),
+        "assigned": len(assigned),
+        "stagingSync": bool(sync),
+    }
