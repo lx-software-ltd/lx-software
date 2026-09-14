@@ -542,6 +542,9 @@ def _readout_unconfigured_reason() -> str | None:
 def weekly_readout(table: Any, settings: dict[str, Any]) -> dict[str, Any] | None:
     if not board_staff.enabled(settings):
         return None
+    roster = board_staff.seats_by_id(table, settings)
+    if not (roster.get("growth-specialist") or {}).get("isActive"):
+        return None
     today = board_hk.today_hkt()
     from board_triage import find_open_event_task
 

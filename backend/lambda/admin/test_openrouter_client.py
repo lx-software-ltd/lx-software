@@ -7,6 +7,7 @@ import json
 import sys
 import types
 import unittest
+from typing import Any
 from unittest.mock import MagicMock, patch
 from urllib import error as urlerror
 
@@ -438,6 +439,176 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
                 )
         self.assertEqual(ctx.exception.status, 429)
         self.assertIn("rate limited", str(ctx.exception))
+
+    def test_chat_completion_walks_fallback_model_after_429(self) -> None:
+        calls: list[dict[str, Any]] = []
+
+        def fake_urlopen(req, timeout=None):  # noqa: ARG001
+            body = json.loads(req.data.decode("utf-8"))
+            calls.append(body)
+            if body.get("model") == "deepseek/deepseek-chat":
+                raise urlerror.HTTPError(
+                    req.full_url,
+                    429,
+                    "Too Many Requests",
+                    {},
+                    io.BytesIO(b'{"error":{"message":"rate limited","code":429}}'),
+                )
+            return _FakeResp(
+                json.dumps(
+                    {
+                        "model": body.get("model"),
+                        "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+                    }
+                ).encode("utf-8")
+            )
+
+        with (
+            patch("openrouter_client.urlrequest.urlopen", fake_urlopen),
+            patch("openrouter_client.time.sleep", lambda *_a, **_k: None),
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
+        ):
+            completion = openrouter_client.chat_completion(
+                messages=[{"role": "user", "content": "hi"}],
+                model="deepseek/deepseek-chat",
+                secrets_client=None,
+                timeout=8,
+                max_retries=0,
+                fallback_models=["openai/gpt-4.1-mini"],
+            )
+        self.assertEqual(completion.model, "openai/gpt-4.1-mini")
+        self.assertEqual(calls[0]["model"], "deepseek/deepseek-chat")
+        self.assertEqual(calls[-1]["model"], "openai/gpt-4.1-mini")
+
+    def test_chat_completion_does_not_walk_on_400(self) -> None:
+        calls: list[str] = []
+
+        def fake_post_json(**kwargs: Any) -> str:
+            calls.append(str((kwargs.get("payload") or {}).get("model")))
+            raise openrouter_client.OpenRouterError("bad request", status=400)
+
+        with (
+            patch.object(openrouter_client, "post_json", fake_post_json),
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
+        ):
+            with self.assertRaises(openrouter_client.OpenRouterError) as ctx:
+                openrouter_client.chat_completion(
+                    messages=[{"role": "user", "content": "hi"}],
+                    model="deepseek/deepseek-chat",
+                    secrets_client=None,
+                    timeout=8,
+                    max_retries=0,
+                    fallback_models=["openai/gpt-4.1-mini"],
+                )
+        self.assertEqual(ctx.exception.status, 400)
+        self.assertEqual(calls, ["deepseek/deepseek-chat"])
+
+    def test_chat_completion_does_not_walk_on_500(self) -> None:
+        calls: list[str] = []
+
+        def fake_post_json(**kwargs: Any) -> str:
+            calls.append(str((kwargs.get("payload") or {}).get("model")))
+            raise openrouter_client.OpenRouterError("upstream", status=500)
+
+        with (
+            patch.object(openrouter_client, "post_json", fake_post_json),
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
+        ):
+            with self.assertRaises(openrouter_client.OpenRouterError) as ctx:
+                openrouter_client.chat_completion(
+                    messages=[{"role": "user", "content": "hi"}],
+                    model="deepseek/deepseek-chat",
+                    secrets_client=None,
+                    timeout=8,
+                    max_retries=0,
+                    fallback_models=["openai/gpt-4.1-mini"],
+                )
+        self.assertEqual(ctx.exception.status, 500)
+        self.assertEqual(calls, ["deepseek/deepseek-chat"])
+
+    def test_chat_completion_walk_uses_one_retry_on_fallback(self) -> None:
+        seen: list[tuple[str, int]] = []
+
+        def fake_post_json(**kwargs: Any) -> str:
+            model = str((kwargs.get("payload") or {}).get("model"))
+            retries = int(kwargs.get("max_retries") or 0)
+            seen.append((model, retries))
+            if model == "deepseek/deepseek-chat":
+                raise openrouter_client.OpenRouterError("rate limited", status=429)
+            return json.dumps(
+                {
+                    "model": model,
+                    "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+                }
+            )
+
+        with (
+            patch.object(openrouter_client, "post_json", fake_post_json),
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
+        ):
+            completion = openrouter_client.chat_completion(
+                messages=[{"role": "user", "content": "hi"}],
+                model="deepseek/deepseek-chat",
+                secrets_client=None,
+                timeout=8,
+                max_retries=2,
+                fallback_models=["openai/gpt-4.1-mini"],
+            )
+        self.assertEqual(completion.model, "openai/gpt-4.1-mini")
+        self.assertEqual(seen[0], ("deepseek/deepseek-chat", 2))
+        self.assertEqual(seen[1], ("openai/gpt-4.1-mini", 1))
+
+    def test_chat_completion_walk_shares_deadline(self) -> None:
+        timeouts: list[int] = []
+        clocks = iter([0.0, 0.5, 7.5])
+
+        def fake_post_json(**kwargs: Any) -> str:
+            timeouts.append(int(kwargs.get("timeout") or 0))
+            raise openrouter_client.OpenRouterError("rate limited", status=429)
+
+        with (
+            patch.object(openrouter_client, "post_json", fake_post_json),
+            patch.object(openrouter_client, "_clock", side_effect=lambda: next(clocks)),
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
+        ):
+            with self.assertRaises(openrouter_client.OpenRouterError) as ctx:
+                openrouter_client.chat_completion(
+                    messages=[{"role": "user", "content": "hi"}],
+                    model="deepseek/deepseek-chat",
+                    secrets_client=None,
+                    timeout=8,
+                    max_retries=0,
+                    fallback_models=["openai/gpt-4.1-mini"],
+                )
+        self.assertEqual(ctx.exception.status, 429)
+        self.assertEqual(timeouts, [8])
+
+    def test_chat_completion_first_attempt_keeps_caller_timeout(self) -> None:
+        timeouts: list[int] = []
+        clocks = iter([0.0, 0.2])
+
+        def fake_post_json(**kwargs: Any) -> str:
+            timeouts.append(int(kwargs.get("timeout") or 0))
+            return json.dumps(
+                {
+                    "model": "m",
+                    "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+                }
+            )
+
+        with (
+            patch.object(openrouter_client, "post_json", fake_post_json),
+            patch.object(openrouter_client, "_clock", side_effect=lambda: next(clocks)),
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
+        ):
+            openrouter_client.chat_completion(
+                messages=[{"role": "user", "content": "hi"}],
+                model="m",
+                secrets_client=None,
+                timeout=45,
+                max_retries=0,
+            )
+        self.assertEqual(timeouts, [45])
 
     def test_retry_after_helpers(self) -> None:
         self.assertEqual(

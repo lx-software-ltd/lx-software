@@ -489,6 +489,17 @@ class LessonAndReviewTests(BoardTestCase):
         updates = board_store.list_updates(self.table)
         self.assertTrue(any("CONFIG content-readout" in str(u.get("text") or "") for u in updates))
 
+    def test_weekly_readout_skips_when_growth_specialist_inactive(self) -> None:
+        board_store.save_staff_override(self.table, "growth-specialist", {"isActive": False})
+        with patch.object(
+            board_content, "_readout_unconfigured_reason", return_value="should not run"
+        ):
+            out = board_content.weekly_readout(self.table, self.settings)
+        self.assertIsNone(out)
+        self.assertEqual(board_duties.list_config_gaps(self.table), [])
+        tasks = board_store.list_tasks(self.table, "queued") + board_store.list_tasks(self.table, "running")
+        self.assertFalse(any(str((t.get("eventRef") or {}).get("kind") or "") == "duty" for t in tasks))
+
     def test_pending_approval_blocks_action_close(self) -> None:
         board_store.save_staff_override(self.table, "architect", {"isActive": True})
         board_store.put_action(
@@ -650,6 +661,216 @@ class DutiesBatchTests(BoardTestCase):
         self.assertEqual(len(batch), 1)
         self.assertIn("lodash", batch[0]["brief"])
         self.assertIn("minimist", batch[0]["brief"])
+
+
+class CodeImplementHandoffTests(BoardTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        patcher = patch.object(board_async, "invoke_async", side_effect=lambda payload, *, fallback=None: None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.settings = _enable_staff(self.table)
+        self.settings["tools"]["globalMode"] = "propose"
+        board_store.save_settings(self.table, self.settings)
+        board_store.save_staff_override(self.table, "engineer-1", {"isActive": True})
+
+    def _implement(self) -> dict[str, Any]:
+        task = board_staff.create_task(
+            self.table,
+            self.settings,
+            assignee="engineer-1",
+            origin="event",
+            brief="Implement board-ready issue #484. Call code_run_task with issueNumber=484.",
+            deliverable_type="pr",
+            event_ref={"kind": "code-implement", "id": "issue:484", "issueNumber": 484},
+            created_by="test",
+        )
+        latest = board_store.get_task(self.table, task["taskId"]) or task
+        latest["status"] = "running"
+        board_store.put_task(self.table, latest)
+        return board_store.get_task(self.table, task["taskId"]) or latest
+
+    def _ctx(self, task: dict[str, Any]) -> board_tools.ToolContext:
+        return board_tools.ToolContext(
+            table=self.table,
+            settings=self.settings,
+            persona_id="cto",
+            display_name="CTO",
+            kind="task",
+            actor="persona",
+            task_id=task["taskId"],
+            seat_id="engineer-1",
+        )
+
+    def test_task_finish_parks_when_code_run_is_pending(self) -> None:
+        task = self._implement()
+        board_tools.create_approval(
+            self._ctx(task),
+            board_tools.REGISTRY["code_run_task"],
+            {"issueNumber": 484, "brief": "Fix extract-zip", "kind": "fix", "reason": "sec"},
+            summary="Dispatched the coding runner",
+        )
+        out = board_staff.op_task_finish(
+            self._ctx(task),
+            {
+                "summary": "Proposed the runner.",
+                "deliverableType": "markdown",
+                "deliverable": "Awaiting founder approval to dispatch.",
+                "evidence": [],
+                "confidence": "low",
+            },
+        )
+        self.assertEqual(out["status"], "waiting_approval")
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "waiting_approval")
+
+    def test_reject_code_run_ends_implement_task(self) -> None:
+        task = self._implement()
+        approval = board_tools.create_approval(
+            self._ctx(task),
+            board_tools.REGISTRY["code_run_task"],
+            {"issueNumber": 484, "brief": "Fix extract-zip", "kind": "fix", "reason": "sec"},
+            summary="Dispatched the coding runner",
+        )
+        board_staff._park_waiting_approval(self.table, task, [approval["approvalId"]])
+        approval["status"] = "rejected"
+        approval["context"] = {"taskId": task["taskId"]}
+        board_store.put_approval(self.table, approval)
+        board_staff.resume_after_approval(self.table, self.settings, approval)
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "needs_owner")
+        self.assertIn("rejected", latest.get("failureReason") or "")
+
+    def test_approve_code_run_delivers_implement_task(self) -> None:
+        task = self._implement()
+        approval = board_tools.create_approval(
+            self._ctx(task),
+            board_tools.REGISTRY["code_run_task"],
+            {"issueNumber": 484, "brief": "Fix extract-zip", "kind": "fix", "reason": "sec"},
+            summary="Dispatched the coding runner",
+        )
+        board_staff._park_waiting_approval(self.table, task, [approval["approvalId"]])
+        approval["status"] = "executed"
+        approval["context"] = {"taskId": task["taskId"]}
+        board_store.put_approval(self.table, approval)
+        board_staff.resume_after_approval(self.table, self.settings, approval)
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "delivered")
+        self.assertIn("code_runner_dispatched", latest.get("flags") or [])
+        self.assertTrue(latest.get("expiresAt"))
+
+    def _finish(self, task: dict[str, Any]) -> dict[str, Any]:
+        return board_staff.op_task_finish(
+            self._ctx(task),
+            {
+                "summary": "Runner handed off.",
+                "deliverableType": "markdown",
+                "deliverable": "code_run_task dispatched.",
+                "evidence": [],
+                "confidence": "low",
+            },
+        )
+
+    def test_task_finish_delivers_when_runner_already_dispatched(self) -> None:
+        task = self._implement()
+        approval = board_tools.create_approval(
+            self._ctx(task),
+            board_tools.REGISTRY["code_run_task"],
+            {"issueNumber": 484, "brief": "Fix extract-zip", "kind": "fix", "reason": "sec"},
+            summary="Dispatched the coding runner",
+        )
+        approval["status"] = "executed"
+        approval["decidedAt"] = board_store.now_iso()
+        approval["context"] = {"taskId": task["taskId"]}
+        board_store.put_approval(self.table, approval)
+        out = self._finish(task)
+        self.assertEqual(out["status"], "delivered")
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "delivered")
+        self.assertTrue(latest.get("expiresAt"))
+        self.assertIn("code_runner_dispatched", latest.get("flags") or [])
+
+    def test_task_finish_delivers_when_run_cache_dispatched(self) -> None:
+        task = self._implement()
+        board_code._put_run(  # noqa: SLF001
+            self.table,
+            task["taskId"],
+            {
+                "taskId": task["taskId"],
+                "dispatchedAt": board_store.now_iso(),
+                "runStatus": "in_progress",
+            },
+        )
+        out = self._finish(task)
+        self.assertEqual(out["status"], "delivered")
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "delivered")
+        self.assertTrue(latest.get("expiresAt"))
+
+    def test_task_finish_delivers_when_tool_call_ok(self) -> None:
+        task = self._implement()
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "run-ok",
+                "op": "code_run_task",
+                "toolId": "code",
+                "status": "ok",
+                "taskId": task["taskId"],
+                "createdAt": board_store.now_iso(),
+            },
+        )
+        out = self._finish(task)
+        self.assertEqual(out["status"], "delivered")
+
+    def test_task_finish_after_retry_ignores_prior_failed_run(self) -> None:
+        task = self._implement()
+        old = "2026-09-14T09:21:59.000Z"
+        approval = board_tools.create_approval(
+            self._ctx(task),
+            board_tools.REGISTRY["code_run_task"],
+            {"issueNumber": 484, "brief": "Fix extract-zip", "kind": "fix", "reason": "sec"},
+            summary="Dispatched the coding runner",
+        )
+        approval["status"] = "executed"
+        approval["decidedAt"] = old
+        approval["updatedAt"] = old
+        approval["context"] = {"taskId": task["taskId"]}
+        board_store.put_approval(self.table, approval)
+        board_code._put_run(  # noqa: SLF001
+            self.table,
+            task["taskId"],
+            {
+                "taskId": task["taskId"],
+                "dispatchedAt": old,
+                "failedAt": "2026-09-14T09:25:00.000Z",
+                "conclusion": "failure",
+                "runStatus": "completed",
+            },
+        )
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "run-old",
+                "op": "code_run_task",
+                "toolId": "code",
+                "status": "ok",
+                "taskId": task["taskId"],
+                "createdAt": old,
+            },
+        )
+        task["status"] = "needs_owner"
+        board_store.put_task(self.table, task)
+        retried = board_staff.retry_task(self.table, self.settings, task["taskId"], "owner")
+        retried["status"] = "running"
+        board_store.put_task(self.table, retried)
+        out = self._finish(retried)
+        self.assertEqual(out["status"], "review")
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "review")
+        self.assertFalse(latest.get("expiresAt"))
 
 
 class ApprovalAndCallIdTests(BoardTestCase):

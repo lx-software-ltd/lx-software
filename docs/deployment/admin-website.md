@@ -180,7 +180,9 @@ allowlist as defense in depth (`PUBLIC_READ_PATHS` /
 
 Without `siutindei-pii`, mail is aliased, allow-list / digest addresses are
 stripped, and `prospects` / `outreach` / `receivables` return 404 (they carry
-third-party contact and billing data with no alias layer). Without
+third-party contact and billing data with no alias layer). A blank
+`settings.review.digestTo` on the public overview means the key lacks
+`siutindei-pii`, not that the recipient is unset. Without
 `siutindei-assets`, creative GETs return the object key only.
 
 New keys expire in **90 days** unless `--expires-at` is set. Optional
@@ -997,7 +999,9 @@ Worker copies every message to the board as well. Design:
    `siutindei.com` zone (Cloudflare proxy **off**).
 3. Extend SPF to
    `v=spf1 include:_spf.mx.cloudflare.net include:amazonses.com ~all`.
-4. Add `_dmarc` TXT (`v=DMARC1; p=quarantine; rua=mailto:hello@siutindei.com`).
+4. Add `_dmarc` TXT (`v=DMARC1; p=quarantine; rua=mailto:dmarc@siutindei.com`).
+   Aggregate reports go to the dedicated `dmarc@` mailbox (fan-out copies
+   the owner and the board). Do not point `rua` at `hello@`.
 5. In **Executive Board → Settings → Tools & permissions**, set the
    **Recipient allow-list** (`@siutindei.com`, known vendor addresses, and
    WhatsApp numbers). Sends to anyone else stay in **Approvals** even when
