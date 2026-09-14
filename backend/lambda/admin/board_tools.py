@@ -1637,8 +1637,9 @@ def build_registry() -> dict[str, ToolOp]:
             kind="read",
             description=(
                 "Month-end cash pack: liquid cash and credit-card totals by currency from the "
-                "accounts sheet (no account names), plus statement-book income/expenditure totals. "
-                "Use this for cash balance and cash flow in the close memo."
+                "owner's accounts sheet (all houses, no account names), plus Siu Tin Dei "
+                "statement-book income/expenditure totals. The LX Software statement book is "
+                "not included. Use this for cash balance and Siu Tin Dei cash flow in the close memo."
             ),
             parameters=_obj({}),
             run=board_finance.op_cash_snapshot,

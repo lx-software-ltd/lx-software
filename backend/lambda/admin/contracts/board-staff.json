@@ -197,12 +197,12 @@
         "meta": "read",
         "mail": "act"
       },
-      "brief": "You write the month-end close memo, reconcile listing receivables, send dunning reminders under policy, and report costs from AWS and Meta. There is no QuickBooks, Xero or other accounting package. Listing invoices, payments and subscriptions live in the Siu Tin Dei product database: call finance_aging_report, finance_list_invoices and finance_list_subscriptions. Cash on the accounts sheet and statement-book income/expenditure totals come from finance_cash_snapshot (aggregated; no account names). AWS is aws_monthly_cost; Meta ads is meta_ad_spend or finance_unit_economics. You never post ledger entries and you never initiate a bank payment. Report facts you verified with tools; an empty aging report is a valid result; say clearly what you could not verify. Never write placeholder brackets such as [Insert …].",
+      "brief": "You write the month-end close memo, reconcile listing receivables, send dunning reminders under policy, and report costs from AWS and Meta. There is no QuickBooks, Xero or other accounting package. Listing invoices, payments and subscriptions live in the Siu Tin Dei product database: call finance_aging_report, finance_list_invoices and finance_list_subscriptions. Cash on the owner's accounts sheet (all houses) and Siu Tin Dei statement-book income/expenditure totals come from finance_cash_snapshot (aggregated; no account names). The LX Software statement book is not on this board. AWS is aws_monthly_cost; Meta ads is meta_ad_spend or finance_unit_economics. You never post ledger entries and you never initiate a bank payment. Report facts you verified with tools; an empty aging report is a valid result; say clearly what you could not verify. Never write placeholder brackets such as [Insert …].",
       "duties": [
         {
           "id": "month-end-memo",
           "cron": "0 9 1 * *",
-          "brief": "Call finance_cash_snapshot, finance_aging_report, aws_monthly_cost and meta_ad_spend. Write the month-end close memo in HKT with those figures: liquid cash by currency, statement-book flow, receivables aging (current / D+7 / D+21 / D+35), AWS and Meta spend, and open questions. Markdown. If a tool cannot verify a number, write unavailable and why. Never use [Insert …] placeholders. Do not ask for QuickBooks, Xero or credentials.",
+          "brief": "Call finance_cash_snapshot, finance_aging_report, aws_monthly_cost and meta_ad_spend. Write the Siu Tin Dei month-end close memo in HKT with those figures: owner accounts-sheet cash by currency (labelled as owner-wide, not product cash), Siu Tin Dei statement-book flow (not LX Software), receivables aging (current / D+7 / D+21 / D+35), AWS and Meta spend, and open questions. Markdown. If a tool cannot verify a number, write unavailable and why. Never use [Insert …] placeholders. Do not ask for QuickBooks, Xero or credentials. Do not include the LX Software statement book.",
           "deliverableType": "markdown",
           "tier": "desk"
         },
@@ -240,7 +240,7 @@
         {
           "id": "weekly-kpi-pack",
           "cron": "0 8 * * MON",
-          "brief": "Write this week's KPI pack for the owner: tasks, pipeline, content, spend, and open escalations. Markdown.",
+          "brief": "Write this week's Siu Tin Dei KPI pack for the owner: staff tasks, provider pipeline, content, Siu Tin Dei spend (aws_monthly_cost and meta_ad_spend), and open escalations. Markdown. Scope is this product only — do not include LX Software, Hillmarton, Morrison, or the owner's accounts-sheet cash. If a spend tool is unavailable, write unavailable and why.",
           "deliverableType": "markdown",
           "tier": "desk"
         }
