@@ -1677,7 +1677,16 @@ class StaffActionHandoffTests(BoardTestCase):
         self.assertEqual(approvals["approvals"], [])
 
 
-class StaffHelpTests(StaffStepTests):
+class StaffHelpTests(ToolsTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        os.environ.pop("ASSETS_BUCKET_NAME", None)
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        patcher = patch.object(board_async, "invoke_async", side_effect=lambda payload, fallback=None: None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def _support_task(self, brief: str = "Verify analytics and tracking setup for visitor source measurement") -> tuple[dict[str, Any], dict[str, Any]]:
         settings = _enable_staff(self.table)
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
