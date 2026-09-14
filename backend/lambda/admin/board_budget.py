@@ -100,7 +100,7 @@ def board_completion(
     json_mode: bool = False,
     temperature: float | None = 0.4,
     max_tokens: int | None = None,
-    max_retries: int = 2,
+    max_retries: int = 1,
     tag: str = "board_completion",
     tools: list[dict[str, Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = None,

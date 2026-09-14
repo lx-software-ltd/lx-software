@@ -474,6 +474,9 @@ class BoardTestCase(unittest.TestCase):
             "AUDIT_LOG_TABLE_NAME": "audit-test",
             "ASSETS_BUCKET_NAME": "assets-test",
             "OPENROUTER_API_KEY": "sk-test",
+            "BOARD_CHAT_MODEL": "",
+            "BOARD_MEETING_MODEL": "",
+            "BOARD_DEEP_DIVE_MODEL": "",
         }
         patcher_env = patch.dict("os.environ", env, clear=False)
         patcher_env.start()
@@ -818,6 +821,9 @@ class TestMeetings(BoardTestCase):
         minutes_request = next(r for r in self.openrouter.requests if "Write the minutes" in r["messages"][-1]["content"])
         self.assertEqual(minutes_request["model"], "openai/gpt-4.1-mini")
         self.assertEqual(minutes_request["models"], ["anthropic/claude-sonnet-4"])
+        spoken = [t for t in body["turns"] if t.get("kind") != "tool"]
+        self.assertTrue(spoken)
+        self.assertEqual({t.get("model") for t in spoken}, {"test/model"})
         prompt = minutes_request["messages"][-1]["content"]
         self.assertIn("Who can take an action:", prompt)
         self.assertIn("No staff seats are active", prompt)

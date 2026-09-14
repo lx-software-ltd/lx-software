@@ -31,6 +31,7 @@ export function BoardTranscript({ turns, isRunning, currentPhaseLabel, onOpenApp
                   <span className="fw-semibold">{t.displayName}</span>
                   <span className="text-muted"> · {t.title}</span>
                   {t.usage ? <span className="text-muted"> · {formatUsageCost(t.usage.cost)}</span> : null}
+                  {t.model ? <span className="text-muted"> · {t.model}</span> : null}
                 </div>
                 {t.kind === "tool" ? (
                   toolCalls.length > 0 ? (

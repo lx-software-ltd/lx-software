@@ -316,7 +316,7 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
         self.assertEqual(body["models"], ["openai/gpt-4.1-mini", "anthropic/claude-sonnet-4"])
         self.assertEqual(completion.model, "openai/gpt-4.1-mini")
 
-    def test_post_json_retries_429_and_ignores_upstream_provider(self) -> None:
+    def test_post_json_retries_429_without_mutating_provider(self) -> None:
         error_body = json.dumps(
             {
                 "error": {
@@ -341,7 +341,7 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
                     req.full_url,
                     429,
                     "Too Many Requests",
-                    {"Retry-After": "7"},
+                    {"Retry-After": "1"},
                     io.BytesIO(error_body),
                 )
             return _FakeResp(json.dumps({"ok": True}).encode("utf-8"))
@@ -355,17 +355,43 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
                 url="https://openrouter.ai/api/v1/chat/completions",
                 api_key="sk-test",
                 payload={"model": "deepseek/deepseek-chat", "provider": {"data_collection": "deny"}},
-                timeout=5,
+                timeout=20,
             )
         self.assertEqual(calls["n"], 2)
         bodies = calls["bodies"]
         self.assertEqual(bodies[0]["provider"], {"data_collection": "deny"})
-        self.assertEqual(
-            bodies[1]["provider"],
-            {"data_collection": "deny", "ignore": ["streamlake"]},
-        )
-        self.assertEqual(slept, [7.0])
+        self.assertEqual(bodies[1]["provider"], {"data_collection": "deny"})
+        self.assertEqual(slept, [3.0])
         self.assertEqual(json.loads(text), {"ok": True})
+
+    def test_post_json_skips_retry_when_backoff_exceeds_timeout(self) -> None:
+        calls = {"n": 0}
+
+        def fake_urlopen(req, timeout=None):  # noqa: ARG001
+            calls["n"] += 1
+            raise urlerror.HTTPError(
+                req.full_url,
+                429,
+                "Too Many Requests",
+                {"Retry-After": "30"},
+                io.BytesIO(b'{"error":{"message":"rate limited","code":429}}'),
+            )
+
+        with (
+            patch("openrouter_client.urlrequest.urlopen", fake_urlopen),
+            patch("openrouter_client.time.sleep", lambda *_a, **_k: None),
+        ):
+            with self.assertRaises(openrouter_client.OpenRouterError) as ctx:
+                openrouter_client.post_json(
+                    url="https://openrouter.ai/api/v1/chat/completions",
+                    api_key="sk-test",
+                    payload={"model": "m"},
+                    timeout=5,
+                    max_retries=2,
+                )
+        self.assertEqual(calls["n"], 1)
+        self.assertEqual(ctx.exception.status, 429)
+        self.assertIn("rate limited", str(ctx.exception))
 
     def test_post_json_gives_up_after_429_retries(self) -> None:
         def fake_urlopen(req, timeout=None):  # noqa: ARG001
@@ -392,14 +418,7 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
         self.assertEqual(ctx.exception.status, 429)
         self.assertIn("rate limited", str(ctx.exception))
 
-    def test_provider_slug_and_retry_after_helpers(self) -> None:
-        self.assertEqual(
-            openrouter_client._openrouter_provider_slug(
-                json.dumps({"error": {"metadata": {"provider_name": "StreamLake"}}})
-            ),
-            "streamlake",
-        )
-        self.assertEqual(openrouter_client._openrouter_provider_slug("not json"), "")
+    def test_retry_after_helpers(self) -> None:
         self.assertEqual(
             openrouter_client._retry_sleep_seconds(1, status=429, retry_after=7),
             7.0,

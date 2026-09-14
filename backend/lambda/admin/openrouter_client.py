@@ -29,6 +29,8 @@ _MAX_RETRIES_DEFAULT = 2
 _MAX_FALLBACK_MODELS = 3
 # Cap wait so a 429 cannot eat a whole meeting-phase timeout (100s).
 _MAX_RETRY_SLEEP_SECONDS = 20.0
+# Skip a retry when sleep plus another attempt cannot finish inside ``timeout``.
+_MIN_RETRY_REMAINING_SECONDS = 1.0
 # A full-call TimeoutError is a deadline, not a truncated body — do not
 # retry it with the same timeout (that doubles a hung 90 s call).
 _TRANSIENT_READ_ERRORS = (
@@ -341,37 +343,9 @@ def _retry_after_seconds(exc: urlerror.HTTPError) -> float | None:
         return None
 
 
-def _openrouter_provider_slug(body: str) -> str:
-    """Provider slug from an OpenRouter error body, if present."""
-    if not body.strip().startswith("{"):
-        return ""
-    try:
-        payload = json.loads(body)
-    except json.JSONDecodeError:
-        return ""
-    if not isinstance(payload, dict):
-        return ""
-    err = payload.get("error")
-    if not isinstance(err, dict):
-        return ""
-    meta = err.get("metadata")
-    if not isinstance(meta, dict):
-        return ""
-    name = str(meta.get("provider_name") or "").strip()
-    if not name:
-        return ""
-    return name.lower().replace(" ", "-")
-
-
-def _with_ignored_provider(payload: dict[str, Any], slug: str) -> dict[str, Any]:
-    if not slug:
-        return payload
-    provider = dict(payload.get("provider") or {})
-    ignore = [str(item) for item in (provider.get("ignore") or []) if str(item).strip()]
-    if slug in ignore:
-        return payload
-    provider["ignore"] = [*ignore, slug]
-    return {**payload, "provider": provider}
+def _can_retry(*, deadline: float, sleep_s: float) -> bool:
+    """True when sleep plus another attempt can still finish before ``deadline``."""
+    return time.monotonic() + max(0.0, sleep_s) + _MIN_RETRY_REMAINING_SECONDS < deadline
 
 
 def post_json(
@@ -383,10 +357,16 @@ def post_json(
     max_retries: int = _MAX_RETRIES_DEFAULT,
     service: str = SERVICE_STATEMENT_PARSER,
 ) -> str:
-    working = dict(payload)
+    # ``timeout`` is the wall-clock budget for this call, including backoff
+    # and retries. Each attempt uses only the time left so a late 5xx cannot
+    # stack another full OpenRouter timeout and kill the Lambda.
+    deadline = time.monotonic() + max(1.0, float(timeout))
     attempt = 0
     while True:
-        data = json.dumps(working).encode("utf-8")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise OpenRouterError("OpenRouter request timed out: retry budget exhausted")
+        data = json.dumps(payload).encode("utf-8")
         req = urlrequest.Request(  # noqa: S310 - URL is trusted (env-configured)
             url=url,
             data=data,
@@ -398,7 +378,7 @@ def post_json(
             },
         )
         try:
-            with urlrequest.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+            with urlrequest.urlopen(req, timeout=max(1, int(remaining))) as resp:  # noqa: S310
                 return resp.read().decode("utf-8")
         except urlerror.HTTPError as exc:
             body = ""
@@ -407,15 +387,13 @@ def post_json(
             except Exception:  # pragma: no cover - defensive
                 body = ""
             if exc.code in _RETRYABLE_STATUSES and attempt < max_retries:
-                attempt += 1
-                if exc.code == 429:
-                    working = _with_ignored_provider(working, _openrouter_provider_slug(body))
-                time.sleep(
-                    _retry_sleep_seconds(
-                        attempt, status=exc.code, retry_after=_retry_after_seconds(exc)
-                    )
+                sleep_s = _retry_sleep_seconds(
+                    attempt + 1, status=exc.code, retry_after=_retry_after_seconds(exc)
                 )
-                continue
+                if _can_retry(deadline=deadline, sleep_s=sleep_s):
+                    attempt += 1
+                    time.sleep(sleep_s)
+                    continue
             preview = body.replace("\n", " ").strip()
             if len(preview) > 500:
                 preview = f"{preview[:500]}..."
@@ -425,17 +403,19 @@ def post_json(
                 status=exc.code,
             ) from exc
         except urlerror.URLError as exc:
-            if attempt < max_retries:
+            sleep_s = _retry_sleep_seconds(attempt + 1, status=None, retry_after=None)
+            if attempt < max_retries and _can_retry(deadline=deadline, sleep_s=sleep_s):
                 attempt += 1
-                time.sleep(_retry_sleep_seconds(attempt, status=None, retry_after=None))
+                time.sleep(sleep_s)
                 continue
             raise OpenRouterError(
                 f"OpenRouter request transport error: {exc.reason}"
             ) from exc
         except _TRANSIENT_READ_ERRORS as exc:
-            if attempt < max_retries:
+            sleep_s = _retry_sleep_seconds(attempt + 1, status=None, retry_after=None)
+            if attempt < max_retries and _can_retry(deadline=deadline, sleep_s=sleep_s):
                 attempt += 1
-                time.sleep(_retry_sleep_seconds(attempt, status=None, retry_after=None))
+                time.sleep(sleep_s)
                 continue
             raise OpenRouterError(f"OpenRouter response was truncated: {exc}") from exc
         except TimeoutError as exc:

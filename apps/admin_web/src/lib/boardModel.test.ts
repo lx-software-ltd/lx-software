@@ -10,6 +10,7 @@ import {
   memberLabel,
   mergeMemberProfile,
   parseAllowListText,
+  uniqueTurnModels,
   type BoardAction,
 } from "./boardModel";
 
@@ -148,6 +149,17 @@ describe("formatting helpers", () => {
     expect(formatUsageCost(0)).toBe("USD 0.00");
     expect(formatUsageCost(0.0042)).toBe("USD 0.0042");
     expect(formatUsageCost(1.234)).toBe("USD 1.23");
+  });
+
+  it("lists unique served models from transcript turns", () => {
+    expect(
+      uniqueTurnModels([
+        { seq: 1, phase: "agenda", personaId: "ceo", displayName: "CEO", title: "CEO", text: "a", createdAt: "t", model: "deepseek/deepseek-chat" },
+        { seq: 2, phase: "positions", personaId: "cfo", displayName: "CFO", title: "CFO", text: "b", createdAt: "t", model: " openai/gpt-4.1-mini " },
+        { seq: 3, phase: "positions", personaId: "cto", displayName: "CTO", title: "CTO", text: "c", createdAt: "t", model: "openai/gpt-4.1-mini" },
+        { seq: 4, phase: "positions", personaId: "coo", displayName: "COO", title: "COO", text: "d", createdAt: "t", kind: "tool" },
+      ]),
+    ).toEqual(["deepseek/deepseek-chat", "openai/gpt-4.1-mini"]);
   });
 
   it("derives initials and labels", () => {

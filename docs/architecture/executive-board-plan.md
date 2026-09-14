@@ -134,7 +134,7 @@ in board settings, off by default until you enable them.
 
 | File | Responsibility |
 |---|---|
-| `openrouter_client.py` (new, extracted) | `chat_completion(..., fallback_models)`; key lookup and cache; retry with backoff on 429/5xx (max 2), ignore the rate-limited provider and honour `Retry-After`; board calls set OpenRouter `models` so a shared-pool 429 (DeepSeek/StreamLake) fails over to stack defaults; returns text plus `usage`; sets `provider.data_collection = "deny"` |
+| `openrouter_client.py` (new, extracted) | `chat_completion(..., fallback_models)`; key lookup and cache; retry with backoff on 429/5xx inside the caller's timeout (honour `Retry-After`, skip a retry that cannot finish); board calls set OpenRouter `models` so a shared-pool 429 (DeepSeek/StreamLake) fails over to stack defaults; returns text plus `usage`; sets `provider.data_collection = "deny"` |
 | `openrouter_statement_parser.py` | Unchanged behaviour, now calls `openrouter_client` |
 | `board_personas.py` | Loads `contracts/executive-board.json`; merges owner overrides (vision, mission, mandate, display name, active flag); builds per-persona system prompts and profile hashes |
 | `board_context.py` | Builds the context pack: brief, updates, actions, minutes, finance summary, repo snapshot; enforces per-source caps and returns a content hash |
