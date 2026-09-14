@@ -35,7 +35,7 @@ from datetime import datetime, timezone
 from email import policy
 from email.message import EmailMessage
 from email.parser import BytesParser
-from email.utils import formataddr, getaddresses, make_msgid, parsedate_to_datetime
+from email.utils import formataddr, getaddresses, make_msgid, parseaddr, parsedate_to_datetime
 from typing import Any
 
 import boto3
@@ -305,13 +305,56 @@ def parse_mime(raw: bytes, *, domain: str | None = None) -> ParsedMail:
 # Ingest
 # ---------------------------------------------------------------------------
 
+_BULK_LOCAL_PARTS = frozenset(
+    {
+        "noreply",
+        "no-reply",
+        "no_reply",
+        "donotreply",
+        "do-not-reply",
+        "dmarc",
+        "postmaster",
+        "mailer-daemon",
+        "mailerdaemon",
+        "bounce",
+        "bounces",
+        "notifications",
+        "notify",
+    }
+)
+_BULK_SUBJECT_MARKERS = (
+    "report domain:",
+    "report-id:",
+    "report-id ",
+    "amazon ses setup",
+    "finish setting up amazon ses",
+    "amazon ses identity",
+    "verify your domain",
+    "verify your email",
+    "cloudflare email routing",
+    "email routing address verification",
+    "confirm your email address",
+)
+
+
 def _is_bulk_mail(msg: EmailMessage) -> bool:
     auto = str(msg.get("Auto-Submitted") or "").strip().lower()
     if auto and auto != "no":
         return True
     if msg.get("List-Unsubscribe"):
         return True
-    return str(msg.get("Precedence") or "").strip().lower() == "bulk"
+    if str(msg.get("Precedence") or "").strip().lower() in ("bulk", "junk", "list"):
+        return True
+    if str(msg.get("X-Auto-Response-Suppress") or "").strip():
+        return True
+    _from_name, from_addr = parseaddr(str(msg.get("From") or ""))
+    local = from_addr.split("@", 1)[0].strip().lower()
+    if local in _BULK_LOCAL_PARTS or local.startswith("noreply") or local.startswith("bounce"):
+        return True
+    subject = str(msg.get("Subject") or "").strip().lower()
+    if any(marker in subject for marker in _BULK_SUBJECT_MARKERS):
+        return True
+    return False
 
 
 def _is_own(address: str) -> bool:
@@ -516,13 +559,53 @@ def ingest_raw_object(bucket: str, key: str, *, s3: Any = None, table: Any = Non
 # Owner views (unmasked)
 # ---------------------------------------------------------------------------
 
-def _matches(thread: dict[str, Any], words: list[str]) -> bool:
+def _thread_hay(thread: dict[str, Any], table: Any | None = None) -> str:
     hay = " ".join(
         str(thread.get(k) or "")
         for k in ("subject", "snippet", "lastFrom", "lastFromName", "mailbox")
     ).lower()
-    hay += " " + " ".join(str(p) for p in (thread.get("participants") or [])).lower()
-    return all(w in hay for w in words)
+    participants = [str(p) for p in (thread.get("participants") or []) if p]
+    hay += " " + " ".join(participants).lower()
+    if table is None:
+        return hay
+    try:
+        pseud = pseudonymizer(table)
+    except Exception:
+        return hay
+    extras: list[str] = []
+    for addr in participants + [str(thread.get("lastFrom") or "")]:
+        if "@" in addr:
+            extras.append(str(pseud.alias_for_address(addr) or "").lower())
+    return hay + " " + " ".join(x for x in extras if x)
+
+
+def _query_groups(table: Any, query: str) -> list[list[str]]:
+    """AND-groups of OR-alternatives so an email also matches its contact# alias."""
+    words = [w for w in " ".join(str(query or "").lower().split()).split() if w]
+    if not words:
+        return []
+    try:
+        pseud = pseudonymizer(table)
+    except Exception:
+        pseud = None
+    groups: list[list[str]] = []
+    for word in words:
+        alts = [word]
+        if pseud and "@" in word:
+            alias = str(pseud.alias_for_address(word) or "").lower()
+            if alias and alias not in alts:
+                alts.append(alias)
+        if pseud and word.startswith("contact#"):
+            resolved = str(pseud.resolve(word) or "").lower()
+            if resolved and resolved not in alts:
+                alts.append(resolved)
+        groups.append(alts)
+    return groups
+
+
+def _matches(thread: dict[str, Any], groups: list[list[str]], table: Any | None = None) -> bool:
+    hay = _thread_hay(thread, table)
+    return all(any(alt in hay for alt in group) for group in groups)
 
 
 def thread_list(
@@ -547,9 +630,9 @@ def thread_list(
         threads = [t for t in threads if str(t.get("mailbox") or "") == mailbox]
     if unread_only:
         threads = [t for t in threads if t.get("unread")]
-    words = [w for w in " ".join(str(query or "").lower().split()).split() if w]
-    if words:
-        threads = [t for t in threads if _matches(t, words)]
+    groups = _query_groups(table, query)
+    if groups:
+        threads = [t for t in threads if _matches(t, groups, table)]
     limit = max(1, min(int(limit or 50), BOARD_MAIL_LIST_MAX_THREADS))
     return {
         "threads": threads[:limit],

@@ -820,6 +820,29 @@ def _require_write_token() -> None:
         )
 
 
+def validate_create_issue(args: dict[str, Any]) -> str | None:
+    title = str(args.get("title") or "").strip()
+    if not title:
+        return "title is required"
+    try:
+        found = op_search_issues({"query": title, "type": "issue", "limit": 5})
+    except Exception:
+        return None
+    items = found.get("items") or found.get("results") or []
+    title_l = title.lower()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        other = str(item.get("title") or "").strip().lower()
+        state = str(item.get("state") or "open").lower()
+        if state != "open":
+            continue
+        if other == title_l or (len(other) > 12 and (other in title_l or title_l in other)):
+            number = item.get("number")
+            return f"similar open issue already exists: #{number} {item.get('title')}"
+    return None
+
+
 def op_create_issue(args: dict[str, Any]) -> dict[str, Any]:
     _require_write_token()
     repo = repo_full_name()

@@ -112,6 +112,17 @@ def district_from_address(address: str) -> str:
     return "unknown"
 
 
+def is_hk_address(address: str) -> bool:
+    """True when an address looks like it is in Hong Kong."""
+    text = (address or "").strip()
+    if not text:
+        return False
+    lower = text.lower()
+    if "hong kong" in lower or "hongkong" in lower or "香港" in text:
+        return True
+    return district_from_address(text) != "unknown"
+
+
 def parse_iso(value: str) -> datetime:
     text = (value or "").strip()
     if text.endswith("Z"):

@@ -829,7 +829,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
 export const BOARD_STAFF_SEAT_IDS = BOARD_STAFF_SEAT_DEFAULTS.map((s) => s.id);
 export const BOARD_STAFF_MODEL_TIERS = ["desk", "senior"] as const;
 export type BoardStaffModelTier = (typeof BOARD_STAFF_MODEL_TIERS)[number];
-export const BOARD_STAFF_TASK_STATUSES = ["queued", "running", "review", "delivered", "needs_owner", "failed", "cancelled"] as const;
+export const BOARD_STAFF_TASK_STATUSES = ["queued", "running", "waiting_approval", "review", "delivered", "needs_owner", "failed", "cancelled"] as const;
 export type BoardTaskStatus = (typeof BOARD_STAFF_TASK_STATUSES)[number];
 export const BOARD_STAFF_TASK_ORIGINS = ["event", "duty", "target", "minutes", "chat", "owner", "task"] as const;
 export type BoardTaskOrigin = (typeof BOARD_STAFF_TASK_ORIGINS)[number];

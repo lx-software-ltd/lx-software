@@ -17,9 +17,11 @@ Design (see docs/architecture/executive-board-tools-plan.md):
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
@@ -186,6 +188,8 @@ class ToolOp:
     # Writes that the plan keeps in Approvals even when the member is at ``act``.
     always_propose: bool = False
     action_class: str | None = None
+    # Return a reason string to refuse a propose/act before it is queued.
+    validate: Callable[["ToolContext", dict[str, Any]], str | None] | None = None
 
     @property
     def is_write(self) -> bool:
@@ -688,6 +692,22 @@ def _newsletter_send(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     return board_newsletter.op_send(ctx, args)
 
 
+def _validate_content_publish(ctx: ToolContext, args: dict[str, Any]) -> str | None:
+    import board_content
+
+    return board_content.validate_publish(ctx.table, args)
+
+
+def _validate_code_run_task(_ctx: ToolContext, args: dict[str, Any]) -> str | None:
+    import board_code
+
+    return board_code.validate_run_task(args)
+
+
+def _validate_github_create_issue(_ctx: ToolContext, args: dict[str, Any]) -> str | None:
+    return board_github.validate_create_issue(args)
+
+
 def _code_run_task(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     import board_code
 
@@ -950,6 +970,7 @@ def build_registry() -> dict[str, ToolOp]:
             ),
             run=_gh(board_github.op_create_issue),
             summarize=_summ("Open GitHub issue: {title}"),
+            validate=_validate_github_create_issue,
         ),
         ToolOp(
             name="github_comment_issue",
@@ -2139,6 +2160,7 @@ def build_registry() -> dict[str, ToolOp]:
             run=_content_publish,
             summarize=_summ("Published a calendar item"),
             contexts=("chat", "meeting", "task"),
+            validate=_validate_content_publish,
         ),
         ToolOp(
             name="newsletter_draft_issue",
@@ -2191,6 +2213,7 @@ def build_registry() -> dict[str, ToolOp]:
             run=_code_run_task,
             summarize=_summ("Dispatched the coding runner"),
             contexts=("chat", "meeting", "task"),
+            validate=_validate_code_run_task,
         ),
         ToolOp(
             name="code_get_run",
@@ -2457,12 +2480,46 @@ def available_ops(
             level = effective_level(settings, op.tool_id, persona_id, seat_id=seat_id, seats_by_id=seats_by_id)
         else:
             level = effective_level(settings, op.tool_id, persona_id)
-        if allows(level, op.min_level):
+        if allows(level, op.min_level) and _op_is_configured(op):
             out.append((op, level))
     # Lifecycle ops are registered last; models with long tool lists often miss
     # them and write "I cannot call task_note / task_finish" in prose instead.
     out.sort(key=lambda pair: 0 if pair[0].tool_id == "task" else 1)
     return out
+
+
+def _op_is_configured(op: ToolOp) -> bool:
+    """Hide tools whose backing credentials are missing so seats do not burn steps."""
+    if op.tool_id == "meta":
+        name = op.name
+        if "ig_" in name or name.endswith("_ig_insights"):
+            return bool(board_meta.ig_user_id())
+        if "ad_" in name or "boost" in name:
+            return bool(board_meta.ad_account_id())
+        if any(token in name for token in ("page_", "comment", "dm", "whatsapp", "post")):
+            return bool(board_meta.page_id() or board_meta.wa_phone_id())
+        return board_meta.configured()
+    if op.tool_id == "web":
+        return board_web.configured()
+    if op.tool_id == "stores":
+        return board_stores.configured()
+    return True
+
+
+def unconfigured_notes() -> list[str]:
+    """Owner-facing list of integrations the seat should treat as unavailable."""
+    notes: list[str] = []
+    if not board_meta.page_id():
+        notes.append("meta page (META_PAGE_ID)")
+    if not board_meta.ig_user_id():
+        notes.append("instagram (META_IG_USER_ID)")
+    if not board_meta.ad_account_id():
+        notes.append("meta ads (META_AD_ACCOUNT_ID)")
+    if not board_web.configured():
+        notes.append("GA4 / GTM")
+    if not board_stores.configured():
+        notes.append("app stores")
+    return notes
 
 
 def tools_preamble(ops: list[tuple[ToolOp, str]]) -> str:
@@ -2492,10 +2549,18 @@ def tools_preamble(ops: list[tuple[ToolOp, str]]) -> str:
             if op.is_write and lvl == "act" and op.tool_id != "task"
         }
     )
+    missing = unconfigured_notes()
+    if missing:
+        lines.append(
+            "Not configured (do not invent calls or loop asking for them): "
+            + ", ".join(missing)
+            + ". Write 'unavailable' and finish."
+        )
     if proposes:
         lines.append(
             f"Write operations on {', '.join(proposes)} only RECORD A PROPOSAL for the founder to approve; "
-            "nothing happens until they approve it. Say 'I have proposed ...' and never claim it is done."
+            "nothing happens until they approve it. After you propose, stop and wait — do not propose again. "
+            "Say 'I have proposed ...' and never claim it is done."
         )
     if acts:
         lines.append(
@@ -2792,6 +2857,8 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         # Never queue a malformed proposal: the model gets the schema problem back
         # and can retry with corrected arguments.
         outcome = ToolOutcome(status="error", result={"error": invalid[:500]}, summary=summary)
+    elif (world_error := _validate_world(ctx, op, arguments)):
+        outcome = ToolOutcome(status="error", result={"error": world_error[:500]}, summary=summary)
     elif breaker_error:
         outcome = ToolOutcome(status="error", result=breaker_error, summary=summary)
     elif hold_doc:
@@ -2912,6 +2979,25 @@ def render_preview(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> d
         return {"error": "Preview unavailable"}
 
 
+def _validate_world(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> str:
+    """Refuse a propose/act that cannot succeed even if the founder approves."""
+    if op.validate is None:
+        return ""
+    try:
+        return str(op.validate(ctx, arguments) or "")
+    except Exception as exc:
+        _log_event("warning", tag="board_tool_validate_failed", op=op.name, error=str(exc)[:200])
+        return ""
+
+
+def approval_fingerprint(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> str:
+    payload = {k: v for k, v in (arguments or {}).items() if k != "reason"}
+    payload["_task"] = ctx.task_id or ""
+    payload["_op"] = op.name
+    raw = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+
+
 def create_approval(
     ctx: ToolContext,
     op: ToolOp,
@@ -2921,6 +3007,19 @@ def create_approval(
     downgrade_reason: str = "",
 ) -> dict[str, Any]:
     pending = [a for a in board_store.list_approvals(ctx.table) if a.get("status") == "pending"]
+    fingerprint = approval_fingerprint(ctx, op, arguments)
+    for existing in pending:
+        if str(existing.get("fingerprint") or "") == fingerprint:
+            return existing
+        if (
+            str(existing.get("op") or "") == op.name
+            and str((existing.get("context") or {}).get("taskId") or "") == (ctx.task_id or "")
+            and ctx.task_id
+        ):
+            existing_args = {k: v for k, v in (existing.get("arguments") or {}).items() if k != "reason"}
+            new_args = {k: v for k, v in (arguments or {}).items() if k != "reason"}
+            if existing_args == new_args:
+                return existing
     if len(pending) >= BOARD_MAX_PENDING_APPROVALS:
         raise ToolPermissionError("Too many pending approvals; ask the founder to review the queue first.")
     now = board_store.now_iso()
@@ -2937,6 +3036,7 @@ def create_approval(
         "arguments": arguments,
         "summary": summary,
         "reason": str(arguments.get("reason") or "")[:400],
+        "fingerprint": fingerprint,
         "context": ctx.public(),
         "createdAt": now,
         "updatedAt": now,
@@ -3021,6 +3121,7 @@ def run_tool_loop(
     started = time.monotonic()
     ctx.deadline = started + max_seconds
     rounds = 0
+    synthetic_rounds = 0
     final: ChatCompletion | None = None
     stop_reason = ""
     while rounds < BOARD_MAX_TOOL_ROUNDS_PER_TURN:
@@ -3056,11 +3157,20 @@ def run_tool_loop(
             settings=ctx.settings,
         )
         usage = add_usage(usage, completion.usage)
-        if not completion.tool_calls:
+        tool_calls = list(completion.tool_calls or [])
+        if not tool_calls:
+            tool_calls = parse_prose_tool_calls(completion.text)
+            if tool_calls:
+                synthetic_rounds += 1
+                if synthetic_rounds >= 2:
+                    fallbacks = board_budget.fallback_models_for(model, ctx.settings)
+                    if fallbacks:
+                        model = fallbacks[0]
+        if not tool_calls:
             final = completion
             break
-        convo.append(completion.assistant_message())
-        for index, tc in enumerate(completion.tool_calls):
+        convo.append(completion.assistant_message() if completion.tool_calls else {"role": "assistant", "content": completion.text or "", "tool_calls": [tc.as_message_entry() for tc in tool_calls]})
+        for index, tc in enumerate(tool_calls):
             if index >= calls_left:
                 convo.append(_tool_message(tc, {"error": "Call budget for this reply is exhausted; answer with what you have."}))
             elif time.monotonic() >= ctx.deadline:
@@ -3109,6 +3219,39 @@ def run_tool_loop(
         )
         usage = add_usage(usage, final.usage)
     return ToolLoopResult(text=final.text, usage=usage, model=final.model, calls=calls, rounds=rounds, completion=final)
+
+
+_PROSE_FC_RE = re.compile(r"!function_call:\s*(\{.*\})\s*$", re.S)
+
+
+def parse_prose_tool_calls(text: str) -> list[ToolCall]:
+    """Recover a DeepSeek-style ``!function_call:{...}`` line as a real tool call."""
+    raw = (text or "").strip()
+    match = _PROSE_FC_RE.search(raw)
+    blob = match.group(1) if match else ""
+    if not blob:
+        fence = re.search(r"```(?:json)?\s*(\{\s*\"(?:id|call|name)\".*?\})\s*```", raw, re.S)
+        blob = fence.group(1) if fence else ""
+    if not blob:
+        return []
+    try:
+        data = json.loads(blob)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, dict):
+        return []
+    name = str(data.get("call") or data.get("name") or "").strip()
+    args = data.get("arguments") if isinstance(data.get("arguments"), dict) else {}
+    if not name:
+        return []
+    return [
+        ToolCall(
+            id=str(data.get("id") or "prose-call"),
+            name=name,
+            arguments=args,
+            raw_arguments=json.dumps(args),
+        )
+    ]
 
 
 def _run_one(
@@ -3184,6 +3327,7 @@ def decide_approval(
     }
     if not approve:
         board_store.put_approval(table, decided)
+        _resume_waiting_staff(table, settings, decided)
         return decided
 
     if op is None:
@@ -3219,7 +3363,17 @@ def decide_approval(
     else:
         decided.update({"status": "failed", "errorMessage": str(outcome.result.get("error") or "Execution failed")[:500]})
     board_store.put_approval(table, decided)
+    _resume_waiting_staff(table, settings, decided)
     return decided
+
+
+def _resume_waiting_staff(table: Any, settings: dict[str, Any], approval: dict[str, Any]) -> None:
+    try:
+        import board_staff
+
+        board_staff.resume_after_approval(table, settings, approval)
+    except Exception as exc:
+        _log_event("warning", tag="board_staff_resume_after_approval_failed", error=str(exc)[:200])
 
 
 def public_approval(doc: dict[str, Any]) -> dict[str, Any]:

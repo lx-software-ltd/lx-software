@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import board_hk
 import board_staff
 import board_store
-from contract_constants import BOARD_STAFF_ACTION_CLASSES, BOARD_STAFF_SEATS
+from contract_constants import (
+    BOARD_STAFF_ACTION_CLASSES,
+    BOARD_STAFF_MAX_EVENT_TASKS_PER_SEAT_PER_HOUR,
+    BOARD_STAFF_SEATS,
+    BOARD_STAFF_TASK_STATUSES,
+)
 from http_common import _log_event
 
 DOW = {"MON": 0, "TUE": 1, "WED": 2, "THU": 3, "FRI": 4, "SAT": 5, "SUN": 6}
@@ -215,22 +220,25 @@ def triage_ops_signals(table: Any, settings: dict[str, Any]) -> dict[str, int]:
     seen_alarms = _seen_payload(table, "seen:alarms")
     current_alarm_ids: list[str] = []
     architect = _assignee_architect_or_cto(roster)
+    kept_alarms: list[str] = []
     for row in alarms:
         name = str((row or {}).get("name") or "")
         if not name:
             continue
         current_alarm_ids.append(name)
         if name in seen_alarms:
+            kept_alarms.append(name)
             continue
-        _maybe_task(
+        if _maybe_task(
             table,
             settings,
             assignee=architect,
             brief=f"CloudWatch alarm in ALARM: {name}. {str((row or {}).get('reason') or '')[:300]}",
             event_id=f"alarm:{name}",
-        )
-        created_alarms += 1
-    _save_seen(table, "seen:alarms", current_alarm_ids)
+        ):
+            created_alarms += 1
+            kept_alarms.append(name)
+    _save_seen(table, "seen:alarms", kept_alarms)
 
     alert_ids: list[str] = []
     new_alerts: list[tuple[str, str]] = []
@@ -255,18 +263,51 @@ def triage_ops_signals(table: Any, settings: dict[str, Any]) -> dict[str, int]:
                 new_alerts.append((f"gh:{key}:{fid}", _alert_task_brief(f"gh:{key}:{fid}", row if isinstance(row, dict) else {})))
     seen_alerts = _seen_payload(table, "seen:alerts")
     security_assignee = "security-analyst" if (roster.get("security-analyst") or {}).get("isActive") else "ciso"
+    new_gh: list[tuple[str, str]] = []
+    new_other: list[tuple[str, str]] = []
     for fid, brief in new_alerts:
         if fid in seen_alerts:
             continue
-        _maybe_task(
+        if fid.startswith("gh:"):
+            new_gh.append((fid, brief))
+        else:
+            new_other.append((fid, brief))
+    kept_alerts = [i for i in alert_ids if i in seen_alerts]
+    for fid, brief in new_other:
+        if _maybe_task(
             table,
             settings,
             assignee=security_assignee,
             brief=brief,
             event_id=f"alert:{fid}",
+        ):
+            created_alerts += 1
+            kept_alerts.append(fid)
+    if len(new_gh) == 1:
+        fid, brief = new_gh[0]
+        if _maybe_task(
+            table,
+            settings,
+            assignee=security_assignee,
+            brief=brief,
+            event_id=f"alert:{fid}",
+        ):
+            created_alerts += 1
+            kept_alerts.append(fid)
+    elif len(new_gh) > 1:
+        combined = "Review these GitHub security alerts in one pass.\n\n" + "\n\n".join(
+            brief for _fid, brief in new_gh
         )
-        created_alerts += 1
-    _save_seen(table, "seen:alerts", alert_ids)
+        if _maybe_task(
+            table,
+            settings,
+            assignee=security_assignee,
+            brief=combined[:4000],
+            event_id=f"alert:gh:batch:{board_hk.today_hkt()}",
+        ):
+            created_alerts += 1
+            kept_alerts.extend(fid for fid, _brief in new_gh)
+    _save_seen(table, "seen:alerts", kept_alerts)
     return {"alarms": created_alarms, "alerts": created_alerts}
 
 
@@ -324,11 +365,29 @@ def _alert_task_brief(fid: str, row: dict[str, Any]) -> str:
     return " ".join(parts)[:4000]
 
 
-def _maybe_task(table: Any, settings: dict[str, Any], *, assignee: str, brief: str, event_id: str) -> None:
+def _event_tasks_this_hour(table: Any, assignee: str) -> int:
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
+    cutoff_iso = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
+    n = 0
+    for status in BOARD_STAFF_TASK_STATUSES:
+        for task in board_store.list_tasks(table, status, limit=80):
+            if task.get("assignee") != assignee:
+                continue
+            if task.get("origin") != "event":
+                continue
+            if str(task.get("createdAt") or "") >= cutoff_iso:
+                n += 1
+    return n
+
+
+def _maybe_task(table: Any, settings: dict[str, Any], *, assignee: str, brief: str, event_id: str) -> bool:
     from board_triage import find_open_event_task
 
     if find_open_event_task(table, "ops", event_id):
-        return
+        return False
+    if _event_tasks_this_hour(table, assignee) >= BOARD_STAFF_MAX_EVENT_TASKS_PER_SEAT_PER_HOUR:
+        _log_event("info", tag="board_ops_task_capped", assignee=assignee, eventId=event_id)
+        return False
     try:
         board_staff.create_task(
             table,
@@ -343,6 +402,8 @@ def _maybe_task(table: Any, settings: dict[str, Any], *, assignee: str, brief: s
         )
     except board_staff.StaffError as exc:
         _log_event("info", tag="board_ops_task_skipped", error=str(exc)[:200])
+        return False
+    return True
 
 
 def validate_boundary_suggestions(table: Any, raw: Any) -> list[dict[str, Any]]:

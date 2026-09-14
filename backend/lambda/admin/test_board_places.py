@@ -50,6 +50,8 @@ class PlacesTests(BoardTestCase):
         self.assertEqual(http.call_count, 1)
         self.assertEqual(first[0]["placeId"], "ChIJtest")
         self.assertEqual(second[0]["name"], "Playhouse")
+        body = json.loads(http.call_args.kwargs["body"].decode("utf-8"))
+        self.assertIn("locationRestriction", body)
         month = board_store.get_cache(self.table, board_places._month_key())
         self.assertAlmostEqual(float(month["payload"]["usd"]), board_places.TEXT_SEARCH_USD)
 

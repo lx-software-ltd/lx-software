@@ -257,11 +257,25 @@ def generate_reply(
         {"role": "system", "content": system_prompt},
         {"role": "system", "content": pack["text"]},
     ]
+    try:
+        import board_mail
+
+        _pseud = board_mail.pseudonymizer(table)
+    except Exception:
+        _pseud = None
     for msg in history:
         role = "assistant" if msg.get("role") == "assistant" else "user"
         text = str(msg.get("text") or "").strip()
-        if text:
-            messages.append({"role": role, "content": text})
+        if not text:
+            continue
+        if role == "user" and _pseud is not None:
+            text = _pseud.mask_text(text)
+        messages.append({"role": role, "content": text})
+    if _pseud is not None:
+        try:
+            _pseud.save()
+        except Exception:
+            pass
     if not history or history[-1].get("role") != "user":
         messages.append(
             {"role": "user", "content": "(The founder is waiting for your reply to the thread above.)"}

@@ -278,6 +278,7 @@
   "taskStatuses": [
     "queued",
     "running",
+    "waiting_approval",
     "review",
     "delivered",
     "needs_owner",
@@ -377,6 +378,7 @@
     "maxIdleStepsPerTask": 3,
     "maxRevisions": 2,
     "maxRunningTasksDefault": 3,
+    "maxEventTasksPerSeatPerHour": 2,
     "staffTaskStuckSeconds": 900,
     "taskBudgetDeskUsd": 1.0,
     "taskBudgetSeniorUsd": 3.0,
