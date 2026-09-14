@@ -1037,7 +1037,7 @@ class TestBoardModelFallbacks(unittest.TestCase):
                     "deepseek/deepseek-chat",
                     {"models": {"chat": "google/gemini-2.5-flash", "standup": "deepseek/deepseek-chat"}},
                 ),
-                ["google/gemini-2.5-flash", "openai/gpt-4.1-mini", "anthropic/claude-sonnet-4"],
+                ["google/gemini-2.5-flash", "anthropic/claude-sonnet-4", "openai/gpt-4.1-mini"],
             )
 
 
