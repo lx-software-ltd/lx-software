@@ -1,5 +1,7 @@
 import {
   BOARD_PERSONA_DEFAULTS,
+  BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
+  BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
   BOARD_STAFF_MAX_STEPS_PER_TASK,
   BOARD_STAFF_SEAT_DEFAULTS,
   BOARD_TOOL_DEFINITIONS,
@@ -111,6 +113,23 @@ export type BoardSettings = {
   readonly updatedAt?: string | null;
   readonly version?: number;
 };
+
+/** Matches `normalize_staff_config` in `board_store.py`. */
+export function staffDraft(
+  current: BoardSettings,
+  patch: Partial<NonNullable<BoardSettings["staff"]>>,
+): NonNullable<BoardSettings["staff"]> {
+  return {
+    enabled: Boolean(current.staff?.enabled),
+    maxRunningTasks: current.staff?.maxRunningTasks ?? BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
+    dailyBudgetUsd: current.staff?.dailyBudgetUsd ?? BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
+    dutiesEnabled: current.staff?.dutiesEnabled,
+    seniorPaused: current.staff?.seniorPaused,
+    disabledReason: current.staff?.disabledReason,
+    modelBySeat: current.staff?.modelBySeat,
+    ...patch,
+  };
+}
 
 export type BoardBoundaries = {
   readonly reply: {

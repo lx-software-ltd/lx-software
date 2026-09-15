@@ -756,6 +756,10 @@ class TestGitHubOps(ToolsTestCase):
 
 
 class LoopHygieneToolTests(ToolsTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.settings = board_store.load_settings(self.table)
+
     def test_code_refused_is_recorded_as_refused(self) -> None:
         import board_code
 
@@ -765,9 +769,8 @@ class LoopHygieneToolTests(ToolsTestCase):
             "cto",
             display_name="CTO",
             kind="task",
-            actor="persona",
+            actor="owner",
             task_id="t1",
-            seat_id="engineer-1",
         )
         with patch.object(board_code, "validate_run_task", return_value=None), patch.object(
             board_code, "op_run_task", side_effect=board_code.CodeRefused("already in flight")

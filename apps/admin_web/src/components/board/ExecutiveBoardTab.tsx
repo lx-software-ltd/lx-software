@@ -50,6 +50,7 @@ import {
   DEFAULT_BOARD_BOUNDARIES,
   effectiveToolLevel,
   readBoardTaskIdFromSearch,
+  staffDraft,
   syncBoardTaskSearchParams,
   type BoardMeetingMode,
   type BoardOverview,
@@ -305,7 +306,7 @@ export function ExecutiveBoardTab() {
                 if (model) next[seatId] = model;
                 else delete next[seatId];
                 board.saveSettings.mutate({
-                  staff: { ...overview.settings.staff, modelBySeat: next },
+                  staff: staffDraft(overview.settings, { modelBySeat: next }),
                 });
               }}
             />

@@ -272,6 +272,7 @@ class BreakerExecuteCallTests(ToolsTestCase):
     def setUp(self) -> None:
         super().setUp()
         os.environ["BOARD_STAFF_ENABLED"] = "true"
+        os.environ.pop("ASSETS_BUCKET_NAME", None)
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
         self.settings = _enable_staff(self.table)
 
@@ -395,7 +396,9 @@ class PolicyRefusalTests(BoardTestCase):
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             board_breakers.reset(self.table, "tool:code", "owner")
         queued = board_store.get_task(self.table, task["taskId"])
-        self.assertEqual(queued["status"], "queued")
+        self.assertIn(queued["status"], ("queued", "running"))
+        self.assertEqual(queued.get("retriedBy"), "system:breaker-reset")
+        self.assertFalse(queued.get("parkedReason"))
 
 
 if __name__ == "__main__":
