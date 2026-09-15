@@ -90,8 +90,9 @@ class PublicBoardReadTests(BoardTestCase):
             ("/public/siu-tin-dei/board/charter", "PUT"),
         ):
             status, body = self.public_call(path, method)
-            self.assertEqual(status, 404, msg=f"{method} {path}")
-            self.assertEqual(body["message"], "Not found")
+            self.assertEqual(status, 403, msg=f"{method} {path} {body}")
+            self.assertEqual(body["message"], "Forbidden")
+            self.assertEqual(body["reason"], "writes_disabled")
 
     def test_put_only_board_paths_are_not_gettable(self) -> None:
         for path in (
@@ -256,7 +257,8 @@ class PublicBoardWriteTests(BoardTestCase):
             body={"note": "from key"},
             scopes="siutindei-board-full",
         )
-        self.assertEqual(status, 404, msg=body)
+        self.assertEqual(status, 403, msg=body)
+        self.assertEqual(body["reason"], "scope")
         status, body = self.public_call(
             "/public/siu-tin-dei/board/prospects/p1",
             "PUT",
@@ -282,8 +284,9 @@ class PublicBoardWriteTests(BoardTestCase):
             ("/public/siu-tin-dei/board/mail/selftest", "POST", {}),
         ):
             status, resp = self.public_call(path, method, body=body)
-            self.assertEqual(status, 404, msg=f"{method} {path} {resp}")
-            self.assertEqual(resp["message"], "Not found")
+            self.assertEqual(status, 403, msg=f"{method} {path} {resp}")
+            self.assertEqual(resp["message"], "Forbidden")
+            self.assertEqual(resp["reason"], "owner_only")
 
     def test_ops_key_cannot_put_member(self) -> None:
         status, body = self.public_call(
@@ -292,7 +295,8 @@ class PublicBoardWriteTests(BoardTestCase):
             body={"mandate": "Steer"},
             scopes="siutindei-board-ops",
         )
-        self.assertEqual(status, 404, msg=body)
+        self.assertEqual(status, 403, msg=body)
+        self.assertEqual(body["reason"], "scope")
         status, body = self.public_call(
             "/public/siu-tin-dei/board/members/ceo",
             "PUT",
@@ -359,22 +363,25 @@ class PublicBoardWriteTests(BoardTestCase):
         self.assertIn("not_allowlisted", reasons)
 
     def test_kill_switch_and_missing_write_flag(self) -> None:
-        status, _ = self.public_call(
+        status, body = self.public_call(
             "/public/siu-tin-dei/board/tasks",
             "POST",
             body={"assignee": "support", "brief": "x"},
             write="0",
         )
-        self.assertEqual(status, 404)
+        self.assertEqual(status, 403)
+        self.assertEqual(body["reason"], "key_read_only")
         os.environ["PUBLIC_API_WRITES_ENABLED"] = "false"
-        status, _ = self.public_call(
+        status, body = self.public_call(
             "/public/siu-tin-dei/board/charter",
             "PUT",
             body={"vision": "V", "mission": "M"},
         )
-        self.assertEqual(status, 404)
+        self.assertEqual(status, 403)
+        self.assertEqual(body["reason"], "writes_disabled")
 
     def test_finance_write_stays_closed(self) -> None:
         status, body = self.public_call("/public/finance", "PUT", body={})
-        self.assertEqual(status, 404)
-        self.assertEqual(body["message"], "Not found")
+        self.assertEqual(status, 403)
+        self.assertEqual(body["message"], "Forbidden")
+        self.assertEqual(body["reason"], "not_allowlisted")

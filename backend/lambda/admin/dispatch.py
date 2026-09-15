@@ -257,7 +257,11 @@ def _handle_public(
                 path_class=board_public_api_mod.path_class(path),
                 request_id=_request_id(event),
             )
-            return _json_response(404, {"message": "Not found"})
+            # Authenticated keys already passed the authorizer. Return 403 with
+            # the deny reason so a write key can tell writes_disabled /
+            # key_read_only / owner_only from a missing route. Unknown keys
+            # never reach here (API Gateway 401/403).
+            return _json_response(403, {"message": "Forbidden", "reason": deny_reason})
     elif method != "GET" or not _is_public_path(path):
         _log_event(
             "warning",

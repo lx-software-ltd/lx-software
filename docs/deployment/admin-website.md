@@ -182,8 +182,12 @@ switch (`PUBLIC_READ_PATHS` / `PUBLIC_BOARD_PREFIX` in
 
 Writes also need **`allowWrite`** on the key row (create `--allow-write` or
 `set-write`) **and** stack parameter **`PublicApiWritesEnabled=true`**
-(default `false`). Authorizer cache is key + source IP, so the write flag is
-enforced in the handler, not by denying the method at the authorizer.
+(CDK default `false`; production is `true`). Authorizer cache is key +
+source IP, so the write flag is enforced in the handler, not by denying the
+method at the authorizer. A valid key that is not allowed to write gets
+**403** `{"message": "Forbidden", "reason": "writes_disabled"|"key_read_only"|"owner_only"|"scope"}`
+instead of a generic 404. Unknown keys still get API Gateway 401/403.
+GET denials stay 404.
 
 These writes stay **Cognito JWT only** even for a write key:
 
