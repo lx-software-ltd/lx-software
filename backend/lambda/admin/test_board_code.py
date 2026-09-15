@@ -1017,6 +1017,39 @@ class GithubRequestTests(unittest.TestCase):
         self.assertEqual(out, "pull request changes 439 lines (max 400)\n")
         self.assertTrue(str(opener.accept).endswith("raw"))
 
+    def test_urlopen_patch_does_not_bypass_opener(self) -> None:
+        class _Resp:
+            def __init__(self) -> None:
+                self._sent = False
+
+            def read(self, n: int = -1) -> bytes:  # noqa: ARG002
+                if self._sent:
+                    return b""
+                self._sent = True
+                return b'{"ok": true}'
+
+            def __enter__(self) -> "_Resp":
+                return self
+
+            def __exit__(self, *_a: object) -> bool:
+                return False
+
+        class _Opener:
+            def open(self, req: Any, timeout: Any = None) -> _Resp:  # noqa: ARG002
+                return _Resp()
+
+        def boom(*_a: object, **_k: object) -> None:
+            raise AssertionError("urlopen must not be used by _request")
+
+        opener = _Opener()
+        with (
+            patch.object(board_github, "_token", return_value="tok"),
+            patch.object(board_github, "_opener", return_value=opener),
+            patch.object(board_github.urlrequest, "urlopen", boom),
+        ):
+            out = board_github._request("GET", "/repos/x/y")  # noqa: SLF001
+        self.assertEqual(out, {"ok": True})
+
 
 if __name__ == "__main__":
     unittest.main()

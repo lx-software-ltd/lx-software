@@ -176,19 +176,11 @@ def _opener() -> Any:
     return urlrequest.build_opener(_StripAuthOnHostChange)
 
 
-# Captured at import so unit tests that patch ``urllib.request.urlopen``
-# (``ToolsTestCase.HostRouter``) still intercept GitHub calls.
-_STDLIB_URLOPEN = urlrequest.urlopen
-
-
 def _urlopen(req: urlrequest.Request, timeout: float | None = None) -> Any:
-    """Open a GitHub request.
+    """Open a GitHub request, dropping Authorization on the job-log blob redirect.
 
-    Production uses an opener that drops Authorization on the job-log blob
-    redirect. Tests patch ``urllib.request.urlopen``; those fakes must win.
+    Tests patch this function (``board_github._urlopen``), not ``urlopen``.
     """
-    if urlrequest.urlopen is not _STDLIB_URLOPEN:
-        return urlrequest.urlopen(req, timeout=timeout)
     return _opener().open(req, timeout=timeout)
 
 

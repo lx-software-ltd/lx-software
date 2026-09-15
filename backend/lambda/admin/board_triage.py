@@ -52,8 +52,11 @@ def archive_reason(thread: dict[str, Any], message: dict[str, Any]) -> str:
         return "list-unsubscribe"
     sender = str((message.get("from") or {}).get("address") or message.get("from") or "")
     local = sender.split("@", 1)[0].strip().lower()
-    bulk_locals = getattr(board_mail, "_BULK_LOCAL_PARTS", frozenset())
-    if local in bulk_locals or local.startswith("noreply") or local.startswith("bounce"):
+    if (
+        local in board_mail.ARCHIVE_LOCAL_PARTS
+        or local.startswith("noreply")
+        or local.startswith("bounce")
+    ):
         return f"no-action sender {local or 'unknown'}"
     subject = str(thread.get("subject") or message.get("subject") or "").lower()
     text = str(message.get("text") or "")[:400].lower()

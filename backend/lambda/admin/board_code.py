@@ -467,10 +467,7 @@ def validate_run_task(args: dict[str, Any]) -> str | None:
 
 
 def _code_run_limits() -> tuple[int, int]:
-    try:
-        return int(BOARD_CODE_RUN_COOLDOWN_SECONDS), int(BOARD_CODE_RUN_MAX_ROUNDS)
-    except Exception:
-        return 900, 2
+    return int(BOARD_CODE_RUN_COOLDOWN_SECONDS), int(BOARD_CODE_RUN_MAX_ROUNDS)
 
 
 def _parse_iso(value: str) -> datetime | None:

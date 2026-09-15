@@ -311,6 +311,10 @@ class BulkMailAndChatMaskTests(BoardTestCase):
         human["From"] = "parent@example.com"
         human["Subject"] = "Class on Saturday"
         self.assertFalse(board_mail._is_bulk_mail(human))
+        partner = EmailMessage()
+        partner["From"] = "complaints@partner.example"
+        partner["Subject"] = "A parent complaint about a listing"
+        self.assertFalse(board_mail._is_bulk_mail(partner))
 
     def test_thread_search_matches_alias_and_raw_email(self) -> None:
         board_store.put_mail_thread(

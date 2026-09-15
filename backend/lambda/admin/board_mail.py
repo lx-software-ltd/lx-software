@@ -309,7 +309,7 @@ def parse_mime(raw: bytes, *, domain: str | None = None) -> ParsedMail:
 # Ingest
 # ---------------------------------------------------------------------------
 
-_BULK_LOCAL_PARTS = frozenset(
+BULK_LOCAL_PARTS = frozenset(
     {
         "noreply",
         "no-reply",
@@ -323,11 +323,13 @@ _BULK_LOCAL_PARTS = frozenset(
         "bounce",
         "bounces",
         "ses-bounces",
-        "complaints",
         "notifications",
         "notify",
     }
 )
+# Archive at triage, but do not mark ingest as bulk (a partner
+# complaints@ mailbox can be a real sender).
+ARCHIVE_LOCAL_PARTS = BULK_LOCAL_PARTS | frozenset({"complaints"})
 _BULK_SUBJECT_MARKERS = (
     "report domain:",
     "report-id:",
@@ -355,7 +357,7 @@ def _is_bulk_mail(msg: EmailMessage) -> bool:
         return True
     _from_name, from_addr = parseaddr(str(msg.get("From") or ""))
     local = from_addr.split("@", 1)[0].strip().lower()
-    if local in _BULK_LOCAL_PARTS or local.startswith("noreply") or local.startswith("bounce"):
+    if local in BULK_LOCAL_PARTS or local.startswith("noreply") or local.startswith("bounce"):
         return True
     subject = str(msg.get("Subject") or "").strip().lower()
     if any(marker in subject for marker in _BULK_SUBJECT_MARKERS):

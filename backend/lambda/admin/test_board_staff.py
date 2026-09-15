@@ -1404,6 +1404,18 @@ class StaffRouteTests(BoardTestCase):
             self.assertIn("run already scheduled", scratch)
             self.assertLess(scratch.find("RETRY —"), scratch.find("run already scheduled"))
 
+    def test_prepend_scratchpad_drops_existing_when_banner_fills_cap(self) -> None:
+        task = {"taskId": "t-pre", "scratchpadKey": "pad/t-pre"}
+        board_staff._blob_put("pad/t-pre", b"old notes that must not survive")  # noqa: SLF001
+        with patch.object(board_staff, "BOARD_STAFF_SCRATCHPAD_MAX_CHARS", 12):
+            out = board_staff._prepend_scratchpad(task, "BANNER-HERE")  # noqa: SLF001
+        self.assertEqual(out, "BANNER-HERE")
+        self.assertNotIn("old notes", out)
+        with patch.object(board_staff, "BOARD_STAFF_SCRATCHPAD_MAX_CHARS", 8):
+            trimmed = board_staff._prepend_scratchpad(task, "BANNER-HERE")  # noqa: SLF001
+        self.assertEqual(trimmed, "BANNER-H")
+        self.assertLessEqual(len(trimmed), 8)
+
     def test_cancel_failed_task_dismisses_it(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
@@ -1974,6 +1986,18 @@ class StaffHelpTests(ToolsTestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
+    def test_help_in_flight_and_json_brief_regexes(self) -> None:
+        help_re = board_staff._HELP_IN_FLIGHT_RE  # noqa: SLF001
+        self.assertTrue(help_re.search("help is in flight"))
+        self.assertTrue(help_re.search("help request is still in flight"))
+        self.assertTrue(help_re.search("Help request in flight."))
+        self.assertFalse(help_re.search("opened a help request yesterday"))
+        json_re = board_staff._JSON_BRIEF_RE  # noqa: SLF001
+        self.assertFalse(json_re.search("Read the config in JSON and summarise in markdown."))
+        self.assertFalse(json_re.search("Summarise contracts/board-staff.json for the founder."))
+        self.assertTrue(json_re.search("Return a valid JSON object"))
+        self.assertTrue(json_re.search("deliver the answer as JSON"))
+
     def _support_task(self, brief: str = "Verify analytics and tracking setup for visitor source measurement") -> tuple[dict[str, Any], dict[str, Any]]:
         settings = _enable_staff(self.table)
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
@@ -2024,7 +2048,7 @@ class StaffHelpTests(ToolsTestCase):
                 ctx,
                 {
                     "summary": "waiting",
-                    "deliverable": "help is in flight",
+                    "deliverable": "help request is still in flight",
                     "deliverableType": "markdown",
                     "evidence": [],
                     "confidence": "low",
@@ -2079,7 +2103,7 @@ class StaffHelpTests(ToolsTestCase):
                 settings,
                 assignee="support",
                 origin="owner",
-                brief="Summarise contracts/board-staff.json for the founder.",
+                brief="Read the config in JSON and summarise in markdown.",
                 deliverable_type="markdown",
                 created_by="a",
             )

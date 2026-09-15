@@ -267,6 +267,10 @@ class PolicyTests(BoardTestCase):
             ),
             "dmarc/ses report",
         )
+        self.assertEqual(
+            board_triage.archive_reason({}, {"from": {"address": "complaints@partner.example"}}),
+            "no-action sender complaints",
+        )
 
     def test_mail_event_brief_names_archive_prefix(self) -> None:
         brief = board_triage.render_event_brief(

@@ -61,9 +61,12 @@ _IDLE_NUDGE = (
 _FINISH_NUDGE = "NUDGE: Two steps left — call task_finish now with the deliverable."
 MAIL_ARCHIVE_FINISH_PREFIX = "ARCHIVED — no action:"
 _FC_LINE_RE = re.compile(r"^!function_call:.*$", re.M)
-_HELP_IN_FLIGHT_RE = re.compile(r"help (request|is) in flight", re.I)
+_HELP_IN_FLIGHT_RE = re.compile(
+    r"help(?:\s+request)?(?:\s+is)?(?:\s+still)?\s+in flight",
+    re.I,
+)
 _JSON_BRIEF_RE = re.compile(
-    r"(?i)\b(?:return|as|in|valid|deliver(?:able)?)\b(?:\s+\w+){0,3}\s+json\b"
+    r"(?i)\b(?:return|as|valid|deliver(?:able)?)\b(?:\s+\w+){0,3}\s+json\b"
     r"|\bjson\s+(?:object|array|document)\b"
 )
 _SALVAGE_MIN_CHARS = 200
@@ -457,9 +460,21 @@ def _prepend_scratchpad(task: dict[str, Any], text: str) -> str:
     banner = str(text or "").strip()
     if not banner:
         return existing
-    keep = BOARD_STAFF_SCRATCHPAD_MAX_CHARS - len(banner) - 2
-    tail = existing[-max(keep, 0) :] if keep < len(existing) else existing
+    limit = BOARD_STAFF_SCRATCHPAD_MAX_CHARS
+    if len(banner) >= limit:
+        combined = banner[:limit]
+        _blob_put(key, combined.encode("utf-8"))
+        return combined
+    keep = limit - len(banner) - 2
+    if keep <= 0:
+        tail = ""
+    elif keep < len(existing):
+        tail = existing[-keep:]
+    else:
+        tail = existing
     combined = (banner + ("\n\n" if tail else "") + tail).strip()
+    if len(combined) > limit:
+        combined = combined[:limit]
     _blob_put(key, combined.encode("utf-8"))
     return combined
 
