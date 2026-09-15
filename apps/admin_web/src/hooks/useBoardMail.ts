@@ -17,6 +17,7 @@ export type MailListFilters = {
   readonly mailbox?: string;
   readonly query?: string;
   readonly unreadOnly?: boolean;
+  readonly archived?: boolean;
 };
 
 function listPath(filters: MailListFilters): string {
@@ -24,13 +25,15 @@ function listPath(filters: MailListFilters): string {
   if (filters.mailbox) params.set("mailbox", filters.mailbox);
   if (filters.query?.trim()) params.set("q", filters.query.trim());
   if (filters.unreadOnly) params.set("unread", "1");
+  if (filters.archived === true) params.set("archived", "1");
+  else if (filters.archived === false) params.set("archived", "0");
   params.set("limit", "100");
   return `${BOARD_API_BASE}/mail?${params.toString()}`;
 }
 
 export function useBoardMailThreads(filters: MailListFilters, enabled = true) {
   return useQuery({
-    queryKey: [...BOARD_MAIL_KEY, "list", filters.mailbox ?? "", filters.query?.trim() ?? "", !!filters.unreadOnly],
+    queryKey: [...BOARD_MAIL_KEY, "list", filters.mailbox ?? "", filters.query?.trim() ?? "", !!filters.unreadOnly, !!filters.archived],
     enabled,
     queryFn: () => adminFetchJson<BoardMailListPayload>(listPath(filters)),
     refetchInterval: 60_000,

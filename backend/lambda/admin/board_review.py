@@ -61,6 +61,21 @@ _HEADLINE_OPEN = frozenset(
 )
 
 
+def _mail_disposition_counts(table: Any) -> dict[str, int]:
+    replied = 0
+    archived = 0
+    open_n = 0
+    for thread in board_store.list_mail_threads(table):
+        disposition = str(thread.get("disposition") or "")
+        if disposition == "archived":
+            archived += 1
+        elif disposition == "replied" or str(thread.get("lastDirection") or "") == "out":
+            replied += 1
+        else:
+            open_n += 1
+    return {"replied": replied, "archived": archived, "open": open_n}
+
+
 def headline_pack(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, Any]:
     day_start, day_end = _hkt_day_bounds(date_hkt)
     counts = {status: 0 for status in BOARD_STAFF_TASK_STATUSES}
@@ -117,6 +132,7 @@ def headline_pack(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[s
         "pipeline": {},
         "content": {},
         "market": {},
+        "mail": _mail_disposition_counts(table),
     }
     try:
         import board_progress
@@ -388,6 +404,12 @@ def _headline_lines(review: dict[str, Any]) -> list[str]:
         lines.append(
             f"Content next 7 days {content.get('scheduledNext7') or 0}; "
             f"{content.get('emptyChannels') or 0} empty channel(s)."
+        )
+    mail = headline.get("mail") or {}
+    if mail:
+        lines.append(
+            f"Mail: {mail.get('replied') or 0} replied / {mail.get('archived') or 0} archived / "
+            f"{mail.get('open') or 0} open."
         )
     narrative = str(review.get("narrative") or "").strip()
     if narrative:

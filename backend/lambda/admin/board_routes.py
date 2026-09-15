@@ -428,6 +428,13 @@ def _mail_list(event: dict[str, Any]) -> dict[str, Any]:
         mailbox=(qs.get("mailbox") or [""])[0],
         query=(qs.get("q") or [""])[0][:200],
         unread_only=(qs.get("unread") or [""])[0] in ("1", "true"),
+        archived=(
+            True
+            if (qs.get("archived") or [""])[0] in ("1", "true")
+            else False
+            if (qs.get("archived") or [""])[0] in ("0", "false")
+            else None
+        ),
         limit=limit,
     )
     return _json_response(200, {**listing, "status": board_mail.status_summary(table, include_health=True)})

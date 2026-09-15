@@ -183,10 +183,11 @@ export function BoardMailView({ status, focusThreadId, onFocusConsumed, errorTex
   const [searchText, setSearchText] = useState("");
   const [query, setQuery] = useState("");
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [archivedOnly, setArchivedOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showMasked, setShowMasked] = useState(false);
 
-  const list = useBoardMailThreads({ mailbox, query, unreadOnly });
+  const list = useBoardMailThreads({ mailbox, query, unreadOnly, archived: archivedOnly });
   const activeId = focusThreadId ?? selectedId;
   const thread = useBoardMailThread(activeId);
   const maskedThread = useBoardMailThreadMasked(activeId, showMasked);
@@ -293,6 +294,15 @@ export function BoardMailView({ status, focusThreadId, onFocusConsumed, errorTex
                   onClick={() => setUnreadOnly((v) => !v)}
                 >
                   <i className="bi bi-envelope-fill" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className={`btn ${archivedOnly ? "btn-secondary" : "btn-outline-secondary"}`}
+                  title="Archived"
+                  aria-pressed={archivedOnly}
+                  onClick={() => setArchivedOnly((v) => !v)}
+                >
+                  Archived
                 </button>
               </div>
               {list.isLoading ? (

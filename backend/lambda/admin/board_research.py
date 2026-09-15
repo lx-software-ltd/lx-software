@@ -281,3 +281,43 @@ def op_venues(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     kind_of = str(args.get("kind") or "children's activity venue").strip()[:80]
     where = f" in {district}" if district else " Hong Kong"
     return _run_search(ctx, f"{kind_of} listing{where}", kind="venues", count=args.get("limit"))
+
+
+RESEARCH_FETCH_CAP = 6
+RESEARCH_FETCH_MAX_BYTES = 200_000
+RESEARCH_FETCH_TIMEOUT = 20
+_RESEARCH_FETCH_TYPES = ("text/html", "text/plain", "application/xhtml")
+
+
+def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
+    """Fetch a public page. Refuses private/link-local hosts. Cap 6 per task."""
+    import urllib.error
+
+    import board_crawl
+
+    url = str(args.get("url") or "").strip()
+    if not url:
+        return {"error": "url is required"}
+    task_id = str(getattr(ctx, "task_id", "") or "")
+    if task_id:
+        used = sum(
+            1
+            for call in board_store.list_tool_calls_for_task(ctx.table, task_id)
+            if str(call.get("op") or "") == "research_fetch_page" and str(call.get("status") or "") == "ok"
+        )
+        if used >= RESEARCH_FETCH_CAP:
+            return {"error": f"per-task fetch cap ({RESEARCH_FETCH_CAP}) reached"}
+    try:
+        result = board_crawl.fetch(url, max_bytes=RESEARCH_FETCH_MAX_BYTES, timeout=RESEARCH_FETCH_TIMEOUT)
+    except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+        return {"error": str(exc)[:200]}
+    ctype = str(result.content_type or "").split(";", 1)[0].strip().lower()
+    if ctype and not any(ctype.startswith(allowed) for allowed in _RESEARCH_FETCH_TYPES):
+        return {"error": f"content type {ctype} is not text/html or text/plain"}
+    text = board_crawl.html_to_text(result.text) if "html" in ctype or "<html" in result.text[:200].lower() else result.text
+    return {
+        "status": result.status,
+        "finalUrl": result.final_url,
+        "text": text[:8000],
+        "hash": result.hash,
+    }

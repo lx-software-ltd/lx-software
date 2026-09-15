@@ -34,6 +34,7 @@ DEFAULT_REPO = "lx-software-ltd/siutindei"
 API_ORIGIN = "https://api.github.com"
 HTTP_TIMEOUT_SECONDS = 25
 MAX_DOC_CHARS = 6000
+RAW_LOG_TAIL_BYTES = 400_000
 MAX_TOTAL_CHARS = 32000
 MAX_DOC_FILES = 6
 MAX_ISSUES = 30
@@ -145,6 +146,58 @@ def _token() -> str:
     return _token_cache
 
 
+class _StripAuthOnHostChange(urlrequest.HTTPRedirectHandler):
+    """Follow GitHub 302s to the job-log blob without forwarding the token."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        followed = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if followed is None:
+            return None
+        old_host = urlparse.urlparse(req.full_url).netloc.lower()
+        new_host = urlparse.urlparse(followed.full_url).netloc.lower()
+        if old_host == new_host:
+            return followed
+        cleaned = {
+            key: value
+            for key, value in followed.headers.items()
+            if key.lower() != "authorization"
+        }
+        return urlrequest.Request(
+            followed.full_url,
+            data=followed.data,
+            headers=cleaned,
+            origin_req_host=followed.origin_req_host,
+            unverifiable=True,
+            method=followed.get_method(),
+        )
+
+
+def _opener() -> Any:
+    return urlrequest.build_opener(_StripAuthOnHostChange)
+
+
+def _urlopen(req: urlrequest.Request, timeout: float | None = None) -> Any:
+    """Open a GitHub request, dropping Authorization on the job-log blob redirect.
+
+    Tests patch this function (``board_github._urlopen``), not ``urlopen``.
+    """
+    return _opener().open(req, timeout=timeout)
+
+
+def _read_body(resp: Any, *, raw: bool) -> str:
+    if not raw:
+        return resp.read().decode("utf-8", errors="replace")
+    buf = bytearray()
+    while True:
+        chunk = resp.read(65536)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > RAW_LOG_TAIL_BYTES:
+            del buf[:-RAW_LOG_TAIL_BYTES]
+    return bytes(buf).decode("utf-8", errors="replace")
+
+
 def _request(
     method: str,
     path: str,
@@ -167,9 +220,10 @@ def _request(
         data = json.dumps(body).encode("utf-8")
         headers["Content-Type"] = "application/json"
     req = urlrequest.Request(url, data=data, method=method, headers=headers)  # noqa: S310 - fixed API origin
+    raw = accept.endswith("raw") or accept == "application/vnd.github.diff"
     try:
-        with urlrequest.urlopen(req, timeout=board_deadline.remaining(timeout)) as resp:  # noqa: S310
-            text = resp.read().decode("utf-8", errors="replace")
+        with _urlopen(req, timeout=board_deadline.remaining(timeout)) as resp:  # noqa: S310
+            text = _read_body(resp, raw=raw)
     except urlerror.HTTPError as exc:
         if exc.code == 404 and method == "GET":
             return None

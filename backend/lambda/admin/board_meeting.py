@@ -789,6 +789,19 @@ def _assignee_roster_text(table: Any, settings: dict[str, Any], persona_ids: lis
     return "\n".join(lines), seat_ids
 
 
+def _open_task_roster_text(table: Any) -> str:
+    lines: list[str] = []
+    for status in ("queued", "running", "review", "waiting_approval", "waiting_subtask"):
+        for task in board_store.list_tasks(table, status, limit=80):
+            brief = " ".join(str(task.get("brief") or "").split())[:80]
+            lines.append(f"- {task.get('taskId')} ({task.get('assignee')}, {status}): {brief}")
+            if len(lines) >= 40:
+                break
+        if len(lines) >= 40:
+            break
+    return "\n".join(lines) or "(none)"
+
+
 def render_position_text(data: dict[str, Any], agenda: list[dict[str, Any]]) -> str:
     lines: list[str] = []
     for item in data.get("items") or []:
@@ -941,6 +954,7 @@ def _phase_synthesis(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     ) or "(none)"
     settings = board_store.load_settings(table)
     roster_text, seat_ids = _assignee_roster_text(table, settings, sorted(profiles))
+    open_task_text = _open_task_roster_text(table)
     schema = (
         "{\"headline\": \"one sentence\", "
         "\"discussion\": [{\"agendaIndex\": 1, \"summary\": \"<= 80 words\", \"consensus\": \"agree|split|deferred\"}], "
@@ -962,6 +976,7 @@ def _phase_synthesis(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
                 "Agenda:\n" + _agenda_text(doc) + "\n\nDiscussion transcript:\n" + discussion +
                 "\n\nOpen action items (reference by id instead of re-creating):\n" + open_text +
                 "\n\nWho can take an action:\n" + roster_text +
+                "\n\nOpen staff tasks (do not create an action for work already in that list):\n" + open_task_text +
                 "\n\nWrite the minutes. Rules: at most 7 actions in total, at most 3 with priority \"now\"; each action is one "
                 "concrete thing its assignee can start this week; every action has an assignee; persona is the executive "
                 "who sponsors it; no duplicate of an open action unless you set existingActionId. "

@@ -14,6 +14,7 @@ from test_board import BoardTestCase, FakeTable
 
 import board_crawl
 import board_intel
+import board_research
 import board_opendata
 import board_staff
 import board_store
@@ -47,6 +48,33 @@ class SsrfTests(BoardTestCase):
         with patch.object(board_crawl, "fetch", return_value=fetched), patch.object(board_crawl, "robots_allows", return_value=True):
             allowed = board_intel.op_fetch_page(ctx, {"url": "https://ok.example/home"})
         self.assertEqual(allowed.get("status"), 200)
+
+    def test_research_fetch_page_refuses_private_and_caps(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        settings = _enable_staff(self.table)
+        ctx = type("C", (), {"table": self.table, "settings": settings, "task_id": "t-fetch"})()
+        refused = board_research.op_fetch_page(ctx, {"url": "http://127.0.0.1/"})
+        self.assertIn("error", refused)
+        fetched = board_crawl.FetchResult(
+            status=200, final_url="https://ok.example/", content_type="text/html", text="<p>hi</p>", hash="h"
+        )
+        with patch.object(board_crawl, "fetch", return_value=fetched):
+            first = board_research.op_fetch_page(ctx, {"url": "https://ok.example/"})
+        self.assertEqual(first.get("status"), 200)
+        for i in range(6):
+            board_store.add_tool_call(
+                self.table,
+                {
+                    "callId": f"rf-{i}",
+                    "op": "research_fetch_page",
+                    "toolId": "research",
+                    "status": "ok",
+                    "taskId": "t-fetch",
+                    "context": {"taskId": "t-fetch"},
+                },
+            )
+        capped = board_research.op_fetch_page(ctx, {"url": "https://ok.example/"})
+        self.assertIn("cap", capped.get("error") or "")
 
 
 class CrawlHelperTests(unittest.TestCase):

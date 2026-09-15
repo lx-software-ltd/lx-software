@@ -35,6 +35,45 @@ FINANCE_LOCAL_PARTS = frozenset({"finance", "billing"})
 LATIN_WORD_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 '\-]{0,80}$")
 
 
+def archive_reason(thread: dict[str, Any], message: dict[str, Any]) -> str:
+    """Second-pass skip list for inbound mail that needs no staff reply.
+
+    Ingest already marks Auto-Submitted / List-Unsubscribe / noreply as bulk.
+    This catches stored messages that skipped that path, plus DMARC report
+    bodies. The word "dmarc" in a human subject is not enough.
+    """
+    if message.get("bulk") or message.get("skipTriage"):
+        return "bulk"
+    headers = message.get("headers") if isinstance(message.get("headers"), dict) else {}
+    auto = str(message.get("autoSubmitted") or headers.get("Auto-Submitted") or "").strip().lower()
+    if auto and auto != "no":
+        return "auto-submitted"
+    if message.get("listUnsubscribe") or headers.get("List-Unsubscribe"):
+        return "list-unsubscribe"
+    sender = str((message.get("from") or {}).get("address") or message.get("from") or "")
+    local = sender.split("@", 1)[0].strip().lower()
+    if (
+        local in board_mail.ARCHIVE_LOCAL_PARTS
+        or local.startswith("noreply")
+        or local.startswith("bounce")
+    ):
+        return f"no-action sender {local or 'unknown'}"
+    subject = str(thread.get("subject") or message.get("subject") or "").lower()
+    text = str(message.get("text") or "")[:400].lower()
+    if "report-type=" in text or "report domain:" in subject:
+        return "dmarc/ses report"
+    return ""
+
+
+def _archive_mail(table: Any, thread: dict[str, Any], message: dict[str, Any], reason: str) -> None:
+    thread = dict(thread)
+    thread["disposition"] = "archived"
+    thread["archivedReason"] = str(reason or "archived")[:200]
+    thread["updatedAt"] = board_store.now_iso()
+    board_store.put_mail_thread(table, thread)
+    return None
+
+
 def _mask_prompt_text(table: Any, text: str) -> str:
     try:
         return board_mail.pseudonymizer(table).mask_text(text or "")
@@ -56,7 +95,10 @@ def on_mail_ingested(
     if str(message.get("direction") or "") not in ("in", "inbound"):
         return None
     if message.get("skipTriage") or message.get("bulk"):
-        return None
+        return _archive_mail(table, thread, message, "bulk")
+    archived_reason = archive_reason(thread, message)
+    if archived_reason:
+        return _archive_mail(table, thread, message, archived_reason)
     sender = str((message.get("from") or {}).get("address") or message.get("from") or "")
     if sender and board_mail._is_own(sender):  # noqa: SLF001 - same-domain outbound copies
         return None
@@ -242,7 +284,13 @@ def classify_text(
 def render_event_brief(kind: str, source: dict[str, Any], message: dict[str, Any], classified: dict[str, Any]) -> str:
     if kind == "mail":
         subject = str(source.get("subject") or message.get("subject") or "(no subject)")
-        return f"Reply to inbound email «{subject}». Audience={classified.get('audience')}; intent={classified.get('intent')}."
+        prefix = board_staff.MAIL_ARCHIVE_FINISH_PREFIX
+        return (
+            f"Reply to inbound email «{subject}». "
+            f"Audience={classified.get('audience')}; intent={classified.get('intent')}. "
+            f"If this is a bounce, DMARC/SES report, or other automated notice that needs "
+            f'no reply, call task_finish with "{prefix} <reason>" instead of writing back.'
+        )
     if kind == "review":
         stars = source.get("rating") or source.get("stars") or ""
         return f"Reply to a {stars}-star store review. Intent={classified.get('intent')}."

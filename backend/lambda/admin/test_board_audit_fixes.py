@@ -182,6 +182,13 @@ class IdleAndDateTests(BoardTestCase):
     def test_similar_plans(self) -> None:
         self.assertTrue(board_staff._plans_similar("Search GitHub for the issue", "Search github for the issue."))
         self.assertFalse(board_staff._plans_similar("Search GitHub", "Publish the weekend guide"))
+        self.assertGreaterEqual(
+            board_staff._token_overlap("Call 10 activity providers Book calls", "Call 10 activity providers Book calls now"),
+            0.6,
+        )
+        self.assertFalse(
+            board_staff._same_as_previous_step(self.table, "missing", [{"op": "code_review_pr", "status": "ok"}])
+        )
 
     def test_preamble_and_task_frame_include_hkt_date(self) -> None:
         text = board_personas.common_preamble({})
@@ -304,6 +311,10 @@ class BulkMailAndChatMaskTests(BoardTestCase):
         human["From"] = "parent@example.com"
         human["Subject"] = "Class on Saturday"
         self.assertFalse(board_mail._is_bulk_mail(human))
+        partner = EmailMessage()
+        partner["From"] = "complaints@partner.example"
+        partner["Subject"] = "A parent complaint about a listing"
+        self.assertFalse(board_mail._is_bulk_mail(partner))
 
     def test_thread_search_matches_alias_and_raw_email(self) -> None:
         board_store.put_mail_thread(
@@ -408,6 +419,21 @@ class LessonAndReviewTests(BoardTestCase):
         board_store.put_task(self.table, fresh)
         pack = board_review.headline_pack(self.table, self.settings, board_hk.today_hkt())
         self.assertEqual(pack["tasks"]["delivered"], 1)
+
+    def test_headline_mail_counts_archived(self) -> None:
+        board_store.put_mail_thread(
+            self.table, {"threadId": "m-arch", "subject": "DMARC", "disposition": "archived"}
+        )
+        board_store.put_mail_thread(
+            self.table, {"threadId": "m-out", "subject": "Hi", "disposition": "", "lastDirection": "out"}
+        )
+        board_store.put_mail_thread(self.table, {"threadId": "m-open", "subject": "Q", "disposition": ""})
+        pack = board_review.headline_pack(self.table, self.settings, board_hk.today_hkt())
+        self.assertEqual(pack["mail"]["archived"], 1)
+        self.assertEqual(pack["mail"]["replied"], 1)
+        self.assertEqual(pack["mail"]["open"], 1)
+        digest = "\n".join(board_review._headline_lines({"headline": pack}))  # noqa: SLF001
+        self.assertIn("Mail: 1 replied / 1 archived / 1 open", digest)
 
     def test_template_data_is_placeholder(self) -> None:
         self.assertTrue(board_staff._deliverable_has_placeholders("Campaign A reached 123 sessions"))
@@ -575,6 +601,13 @@ class ProseToolCallAndStuckTests(BoardTestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0].name, "task_finish")
         self.assertEqual(calls[0].arguments["summary"], "done")
+
+    def test_parse_mid_text_function_call(self) -> None:
+        calls = board_tools.parse_prose_tool_calls(
+            'scratch notes\n!function_call:{"name":"task_note","arguments":{"text":"x"}}\nthen more prose'
+        )
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0].name, "task_note")
 
     def test_stuck_writes_failure_detail(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"
