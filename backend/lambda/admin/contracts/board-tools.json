@@ -230,7 +230,7 @@
     {
       "id": "code",
       "label": "Engineering runner",
-      "description": "Dispatch the coding runner on board/* draft PRs, review diffs, merge to staging under policy, sync staging with main (code_sync_staging), and propose a staging→main promotion. The board never merges to main.",
+      "description": "Dispatch the coding runner on board/* draft PRs, review diffs, close a board/* PR without merging (code_close_pr), merge to staging under policy, sync staging with main (code_sync_staging), and propose a staging→main promotion. The board never merges to main.",
       "maxLevel": "act",
       "defaults": {
         "ceo": "off",

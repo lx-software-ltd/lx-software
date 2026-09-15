@@ -411,7 +411,7 @@ rate limit):
 
 1. On GitHub create a fine-grained personal access token scoped to the
    `siutindei` repository only, with **Contents: read**, **Issues: read and
-   write**, **Actions: read**, **Metadata: read** and, if you want the CISO to
+   write**, **Pull requests: write**, **Actions: read and write**, **Metadata: read** and, if you want the CISO to
    see Dependabot / code-scanning findings, **Security events: read**. Set an
    expiry and rotate it like any other secret.
 2. After the stack is deployed, open
@@ -753,8 +753,10 @@ function calling. Design:
 
 - **Engineering runner (WP10):** `GET /siu-tin-dei/board/code/staging`,
   `POST …/code/promote`. Tool ops `code_run_task`, `code_get_run`,
-  `code_review_pr`, `code_merge_staging`, `code_promote`. Widen the board
-  GitHub token to **Actions: write**. Workflows
+  `code_review_pr`, `code_merge_staging`, `code_close_pr`, `code_promote`.
+  `code_close_pr` stays an Approval (`action_class` `code_close`) and
+  relabels the linked issue (`board-closed`, drop `board-ready`). Widen the board
+  GitHub token to **Actions: write** and **Pull requests: write**. Workflows
   `board-agent.yml` / `board-merge-staging.yml` / `board-promote.yml` must
   exist on **lx-software-ltd/siutindei** (see appendix A). Daily review
   **Promote** queues an Approval; the owner merges the GitHub

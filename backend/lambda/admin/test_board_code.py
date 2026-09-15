@@ -46,6 +46,9 @@ class FakeActions:
         self.labelCreates = 0
         self.issueLabels: list[tuple[int, list[str]]] = []
         self.merges: list[dict[str, Any]] = []
+        self.patches: list[dict[str, Any]] = []
+        self.comments: list[dict[str, Any]] = []
+        self.writeOrder: list[str] = []
         self.compare: dict[str, Any] = {"status": "ahead", "ahead_by": 2, "behind_by": 0, "commits": []}
         self.diff = "diff --git a/app.py b/app.py\n+ok\n"
 
@@ -57,7 +60,7 @@ class FakeActions:
             self.dispatches.append({"workflow": name, "body": body or {}})
             return {}
         if method == "GET" and path.endswith("/pulls?state=open&per_page=50"):
-            return list(self.prs)
+            return [p for p in self.prs if str(p.get("state") or "open") != "closed"]
         if method == "GET" and "/pulls?head=" in path:
             head = path.split("head=", 1)[1].split("&", 1)[0]
             ref = head.split(":", 1)[-1]
@@ -68,6 +71,21 @@ class FakeActions:
             page = int((parse_qs(urlparse(path).query).get("page") or ["1"])[0])
             start = (page - 1) * 100
             return all_files[start : start + 100]
+        if method == "PATCH" and "/pulls/" in path:
+            number = int(path.rstrip("/").rsplit("/", 1)[-1].split("?")[0])
+            pr = next((p for p in self.prs if p.get("number") == number), None)
+            if pr is None:
+                return None
+            self.patches.append({"number": number, "body": body or {}})
+            self.writeOrder.append("patch")
+            if isinstance(body, dict) and body.get("state"):
+                pr["state"] = body["state"]
+            return pr
+        if method == "POST" and "/issues/" in path and path.endswith("/comments"):
+            number = int(path.split("/issues/", 1)[1].split("/", 1)[0])
+            self.comments.append({"number": number, "body": (body or {}).get("body")})
+            self.writeOrder.append("comment")
+            return {"id": 1, "html_url": f"https://github.com/x/{number}#issuecomment-1"}
         if method == "GET" and "/pulls/" in path:
             number = int(path.rstrip("/").rsplit("/", 1)[-1].split("?")[0])
             return next((p for p in self.prs if p.get("number") == number), None)
@@ -78,6 +96,19 @@ class FakeActions:
             return {"check_runs": list(self.checks.get(sha) or [])}
         if method == "GET" and path.endswith("/status"):
             return {"state": "pending"}
+        if method == "PUT" and "/issues/" in path and path.endswith("/labels"):
+            number = int(path.split("/issues/", 1)[1].split("/", 1)[0])
+            names = [str(x) for x in ((body or {}).get("labels") or []) if x]
+            self.issueLabels.append((number, names))
+            self.writeOrder.append("labels")
+            for issue in self.issues:
+                if int(issue.get("number") or 0) != number:
+                    continue
+                issue["labels"] = [{"name": n} for n in names]
+            return [{"name": n} for n in names]
+        if method == "GET" and "/issues/" in path and "/comments" not in path and "/labels" not in path and "?" not in path:
+            number = int(path.rstrip("/").rsplit("/", 1)[-1])
+            return next((i for i in self.issues if int(i.get("number") or 0) == number), None)
         if method == "GET" and "/issues?" in path:
             items = [i for i in self.issues if isinstance(i, dict)]
             if "labels=board-ready" in path:
@@ -130,6 +161,8 @@ def _pr(number: int = 7, *, issue: int = 42, base: str = "staging", sha: str = "
         "title": f"board: #{issue} add booking",
         "body": f"Implements #{issue}\n\nTask: task-1",
         "draft": True,
+        "state": "open",
+        "merged": False,
         "html_url": f"https://github.com/lx-software-ltd/siutindei/pull/{number}",
         "base": {"ref": base},
         "head": {"ref": "board/task-1", "sha": sha},
@@ -173,6 +206,10 @@ class RunnerTests(BoardTestCase):
         gh_patch = patch.object(board_github, "_request", side_effect=self.gh)
         gh_patch.start()
         self.addCleanup(gh_patch.stop)
+        os.environ["GITHUB_READ_TOKEN"] = "ghp_test"
+        board_github.reset_token_cache_for_tests()
+        self.addCleanup(lambda: os.environ.pop("GITHUB_READ_TOKEN", None))
+        self.addCleanup(board_github.reset_token_cache_for_tests)
         self.settings = _enable_staff(self.table)
         self.ctx = ToolContext(self.table, self.settings, "cto", display_name="CTO", kind="task", task_id="task-1")
 
@@ -268,6 +305,13 @@ class RunnerTests(BoardTestCase):
 
         self.gh.files[7] = [{"filename": "lib/app.py", "changes": 12}]
         self.assertIsNone(board_code.merge_guard(self.ctx, {"prNumber": 7}))
+
+        self.gh.prs[0]["state"] = "closed"
+        self.assertIn("not open", board_code.merge_guard(self.ctx, {"prNumber": 7}) or "")
+        self.gh.prs[0]["state"] = "open"
+        self.gh.prs[0]["merged"] = True
+        self.gh.prs[0]["merged_at"] = "2026-09-15T00:00:00Z"
+        self.assertIn("already merged", board_code.merge_guard(self.ctx, {"prNumber": 7}) or "")
 
     def test_content_kind_allows_2000_lines_inside_content(self) -> None:
         self.gh.prs.append(_pr())
@@ -493,7 +537,163 @@ class RunnerTests(BoardTestCase):
             board_holds.classify(REGISTRY["code_sync_staging"], self.ctx, {"reason": "Keep staging current."}, self.settings),
             ("code_staging", "code_staging"),
         )
-        self.assertEqual(board_holds.classify(promote, self.ctx, {"kind": "production"}, self.settings), ("code_production", "code_production"))
+        self.assertEqual(
+            board_holds.classify(REGISTRY["code_close_pr"], self.ctx, {"prNumber": 7, "reason": "Veto."}, self.settings),
+            ("code_close", "code_close"),
+        )
+        self.assertTrue(REGISTRY["code_close_pr"].always_propose)
+        self.assertTrue(REGISTRY["code_close_pr"].is_write)
+        self.assertTrue(board_holds.action_class_exempt(REGISTRY["code_close_pr"]))
+        self.assertEqual(REGISTRY["code_close_pr"].action_class, "code_close")
+
+    def test_close_guard_matrix(self) -> None:
+        self.assertIn("prNumber", board_code.close_guard(self.ctx, {}) or "")
+        self.gh.prs.append(_pr())
+        self.assertIsNone(board_code.close_guard(self.ctx, {"prNumber": 7}))
+
+        self.gh.prs[0]["head"] = {"ref": "cursor/human-branch", "sha": "abc123"}
+        self.assertIn("board/*", board_code.close_guard(self.ctx, {"prNumber": 7}) or "")
+        self.gh.prs[0]["head"] = {"ref": "board/task-1", "sha": "abc123"}
+
+        self.gh.prs[0]["base"] = {"ref": "main"}
+        self.assertIn("staging", board_code.close_guard(self.ctx, {"prNumber": 7}) or "")
+        self.gh.prs[0]["base"] = {"ref": "staging"}
+
+        self.gh.prs[0]["merged"] = True
+        self.assertIn("already merged", board_code.close_guard(self.ctx, {"prNumber": 7}) or "")
+        self.gh.prs[0]["merged"] = False
+
+        self.gh.prs[0]["state"] = "closed"
+        self.assertIn("not open", board_code.close_guard(self.ctx, {"prNumber": 7}) or "")
+
+    def test_close_pr_closes_board_branch_and_comments(self) -> None:
+        self.gh.prs.append(_pr())
+        out = board_code.op_close_pr(self.ctx, {"prNumber": 7, "reason": "Founder vetoed the merge."})
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["state"], "closed")
+        self.assertEqual(self.gh.patches[0]["body"]["state"], "closed")
+        self.assertEqual(self.gh.prs[0]["state"], "closed")
+        self.assertTrue(out["commented"])
+        self.assertEqual(self.gh.comments[0]["number"], 7)
+        self.assertIn("Founder vetoed the merge.", self.gh.comments[0]["body"])
+        self.assertFalse(board_code.issue_has_open_board_pr(42, self.table))
+        self.assertEqual(self.gh.writeOrder[:2], ["patch", "comment"])
+        self.assertEqual([row["number"] for row in self.gh.comments], [7])
+
+    def test_close_pr_abandons_linked_issue(self) -> None:
+        self.gh.prs.append(_pr())
+        self.gh.issues.append(
+            {
+                "number": 42,
+                "title": "Update uuid",
+                "labels": [{"name": "board-ready"}, {"name": "security"}],
+                "created_at": "2026-09-14T00:00:00Z",
+            }
+        )
+        out = board_code.op_close_pr(self.ctx, {"prNumber": 7, "reason": "Founder vetoed the merge."})
+        self.assertEqual(out["issue"], 42)
+        self.assertTrue(out["issueRelabeled"])
+        self.assertTrue(out["issueCommented"])
+        labels = {str(lab.get("name")) for lab in self.gh.issues[0]["labels"]}
+        self.assertIn(board_code.BOARD_CLOSED_LABEL, labels)
+        self.assertNotIn(board_code.BOARD_READY_LABEL, labels)
+        self.assertEqual([c["number"] for c in self.gh.comments], [7, 42])
+        self.assertEqual(board_code.maybe_assign_ready_issues(self.table, self.settings), [])
+
+    def test_board_closed_label_skips_assign(self) -> None:
+        self.gh.issues.append(
+            {
+                "number": 42,
+                "title": "Update uuid",
+                "labels": [{"name": "security"}, {"name": board_code.BOARD_CLOSED_LABEL}],
+                "created_at": "2026-09-14T00:00:00Z",
+            }
+        )
+        self.assertEqual(board_code.maybe_assign_ready_issues(self.table, self.settings), [])
+
+    def test_close_pr_rejects_pending_merge_approval(self) -> None:
+        self.gh.prs.append(_pr())
+        merge_task = board_staff.create_task(
+            self.table,
+            self.settings,
+            assignee="engineer-1",
+            origin="event",
+            brief="Architect accepted PR #7. Call code_merge_staging.",
+            deliverable_type="pr",
+            event_ref={"kind": "code-merge", "id": "pr:7", "prNumber": 7},
+            created_by="t",
+        )
+        merge_ctx = ToolContext(
+            self.table,
+            self.settings,
+            "cto",
+            display_name="CTO",
+            kind="task",
+            task_id=str(merge_task["taskId"]),
+            actor="persona",
+        )
+        approval = board_tools.create_approval(
+            merge_ctx,
+            REGISTRY["code_merge_staging"],
+            {"prNumber": 7, "reason": "Merge to staging."},
+            summary="Merge PR #7",
+        )
+        merge_task["status"] = "waiting_approval"
+        merge_task["blockedOn"] = [approval["approvalId"]]
+        board_store.put_task(self.table, merge_task)
+        out = board_code.op_close_pr(self.ctx, {"prNumber": 7, "reason": "Founder vetoed the merge."})
+        self.assertEqual(out["rejectedMergeApprovals"], 1)
+        saved = board_store.get_approval(self.table, approval["approvalId"])
+        self.assertEqual(saved["status"], "rejected")
+        self.assertEqual(saved["decidedBySub"], "system:close-pr")
+        resumed = board_store.get_task(self.table, merge_task["taskId"])
+        self.assertEqual(resumed["status"], "running")
+
+    def test_close_pr_is_always_an_approval(self) -> None:
+        self.gh.prs.append(_pr())
+        ctx = ToolContext(self.table, self.settings, "cto", display_name="CTO", kind="chat", actor="persona")
+        out = execute_call(ctx, REGISTRY["code_close_pr"], {"prNumber": 7, "reason": "Founder vetoed the merge."})
+        self.assertEqual(out.status, "pending_approval")
+        self.assertEqual(self.gh.patches, [])
+        pending = [a for a in board_store.list_approvals(self.table) if a.get("op") == "code_close_pr"]
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["preview"]["head"], "board/task-1")
+
+    def test_close_pr_stays_approval_when_internal_holds_are_on(self) -> None:
+        self.gh.prs.append(_pr())
+        holds = ((self.settings.get("boundaries") or {}).get("holds") or {})
+        holds["internal"] = 24
+        holds["code_close"] = 24
+        ctx = ToolContext(self.table, self.settings, "cto", display_name="CTO", kind="chat", actor="persona")
+        hold = board_holds.maybe_hold(
+            ctx, REGISTRY["code_close_pr"], {"prNumber": 7, "reason": "Veto."}, summary="Close PR #7"
+        )
+        self.assertIsNone(hold)
+        out = execute_call(ctx, REGISTRY["code_close_pr"], {"prNumber": 7, "reason": "Founder vetoed the merge."})
+        self.assertEqual(out.status, "pending_approval")
+        self.assertEqual(self.gh.patches, [])
+
+    def test_owner_approve_close_pr_executes(self) -> None:
+        self.gh.prs.append(_pr())
+        ctx = ToolContext(self.table, self.settings, "cto", display_name="CTO", kind="chat", actor="persona")
+        queued = execute_call(ctx, REGISTRY["code_close_pr"], {"prNumber": 7, "reason": "Founder vetoed the merge."})
+        self.assertEqual(queued.status, "pending_approval")
+        decided = board_tools.decide_approval(
+            self.table, self.settings, queued.approval_id, approve=True, owner_sub="admin-sub"
+        )
+        self.assertEqual(decided["status"], "executed")
+        self.assertEqual(self.gh.patches[0]["body"]["state"], "closed")
+        self.assertTrue((decided.get("result") or {}).get("ok"))
+        self.assertEqual(self.gh.prs[0]["state"], "closed")
+
+    def test_close_pr_refuses_without_write_token(self) -> None:
+        self.gh.prs.append(_pr())
+        os.environ.pop("GITHUB_READ_TOKEN", None)
+        board_github.reset_token_cache_for_tests()
+        with self.assertRaises(board_code.CodeError) as raised:
+            board_code.op_close_pr(self.ctx, {"prNumber": 7, "reason": "Veto."})
+        self.assertIn("token", str(raised.exception))
+        self.assertEqual(self.gh.patches, [])
 
     def _deliver_accept(self, pr_number: int) -> None:
         task = board_staff.create_task(

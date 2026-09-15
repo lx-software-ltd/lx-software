@@ -10,7 +10,7 @@ Two uses share this module:
 The repository is public, so reads work without credentials (subject to
 GitHub's anonymous rate limit). A fine-grained token in Secrets Manager
 (``GITHUB_READ_TOKEN_SECRET_ARN``) raises the limit and is required for
-writes (``issues: write``) and security alerts (``security_events: read``).
+writes (``issues: write``, ``pull-requests: write``) and security alerts (``security_events: read``).
 """
 
 from __future__ import annotations
@@ -852,7 +852,7 @@ def _require_write_token() -> None:
         raise GitHubSnapshotError(
             "GitHub writes need a token: replace the dummy value in the "
             "lxsoftware-admin-siutindei-board-github-token secret with a fine-grained token "
-            "that has issues: write on the repository"
+            "that has issues: write and pull-requests: write on the repository"
         )
 
 

@@ -165,7 +165,7 @@ Reuses `board_github.py`. The snapshot stays as the cheap always-on view;
 tools add on-demand `search_issues`, `get_issue`, `list_pull_requests`,
 `get_workflow_runs`, `get_file`, `list_security_alerts`. Writes use one
 fine-grained token restricted to the `siutindei` repo with `issues: write`,
-`pull_requests: read`, `contents: read`, `security_events: read`. The
+`pull-requests: write`, `contents: read`, `security_events: read`. The
 CDK-owned `lxsoftware-admin-siutindei-board-github-token` secret **is** the
 board token (dummy value on first deploy; replace it in Secrets Manager).
 `lxsoftware-admin-github-read-token` is reserved for a future LX Software
