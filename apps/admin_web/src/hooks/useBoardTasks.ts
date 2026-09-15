@@ -89,24 +89,39 @@ export function reviewTaskMutationOptions(qc: QueryClient) {
   };
 }
 
-async function fetchTaskList(): Promise<BoardTaskListPayload> {
-  const [main, failed] = await Promise.all([
+async function fetchTaskList(includeFinished: boolean): Promise<BoardTaskListPayload> {
+  const requests: Promise<BoardTaskListPayload>[] = [
     adminFetchJson<BoardTaskListPayload>(boardTasksPath()),
     adminFetchJson<BoardTaskListPayload>(boardTasksPath({ status: "failed", limit: 50 })),
-  ]);
-  const seen = new Set(main.tasks.map((task) => task.taskId));
-  const extra = failed.tasks.filter((task) => !seen.has(task.taskId));
+  ];
+  if (includeFinished) {
+    requests.push(
+      adminFetchJson<BoardTaskListPayload>(boardTasksPath({ status: "delivered", limit: 50 })),
+      adminFetchJson<BoardTaskListPayload>(boardTasksPath({ status: "cancelled", limit: 50 })),
+    );
+  }
+  const pages = await Promise.all(requests);
+  const seen = new Set<string>();
+  const tasks: BoardTask[] = [];
+  for (const page of pages) {
+    for (const task of page.tasks) {
+      if (seen.has(task.taskId)) continue;
+      seen.add(task.taskId);
+      tasks.push(task);
+    }
+  }
   return {
-    tasks: extra.length ? [...main.tasks, ...extra] : main.tasks,
-    counts: main.counts,
+    tasks,
+    counts: pages[0]?.counts ?? {},
   };
 }
 
-export function useBoardTasks() {
+export function useBoardTasks(opts?: { includeFinished?: boolean }) {
+  const includeFinished = opts?.includeFinished ?? false;
   const qc = useQueryClient();
   const query = useQuery({
-    queryKey: BOARD_TASKS_KEY,
-    queryFn: fetchTaskList,
+    queryKey: [...BOARD_TASKS_KEY, includeFinished ? "finished" : "open"] as const,
+    queryFn: () => fetchTaskList(includeFinished),
     refetchInterval: (q) => (tasksNeedPolling(q.state.data?.tasks ?? []) ? 10_000 : false),
   });
   const create = useMutation(createTaskMutationOptions(qc));
@@ -117,6 +132,8 @@ export function useBoardTasks() {
     tasks: query.data?.tasks ?? [],
     counts: query.data?.counts ?? {},
     isLoading: query.isLoading,
+    isFetching: query.isFetching,
+    dataUpdatedAt: query.dataUpdatedAt,
     isError: query.isError,
     error: query.error,
     create,

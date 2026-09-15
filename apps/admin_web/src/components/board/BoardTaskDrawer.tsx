@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { BoardMarkdown } from "./BoardMarkdown";
 import { BoardOffcanvas } from "./BoardOffcanvas";
+import { BoardTaskId } from "./BoardTaskId";
 import { BoardToolCallList } from "./BoardToolCallList";
 import { DateTimeDisplay } from "../ui";
-import { canRetryBoardTask, formatUsageCost, type BoardTask, type BoardTaskDetailPayload, type BoardToolCallLogEntry } from "../../lib/boardModel";
+import { canRetryBoardTask, formatUsageCost, shortTaskId, type BoardTask, type BoardTaskDetailPayload, type BoardToolCallLogEntry } from "../../lib/boardModel";
 
 export type BoardTaskDrawerProps = {
   readonly detail: BoardTaskDetailPayload | undefined;
@@ -14,6 +15,7 @@ export type BoardTaskDrawerProps = {
   readonly onCancel: (taskId: string) => void;
   readonly onReview: (taskId: string, verdict: "accept" | "return", notes: string) => void;
   readonly onRetry?: (taskId: string) => void;
+  readonly onOpenTask?: (taskId: string) => void;
 };
 
 const OPEN_STATUSES = new Set([
@@ -42,6 +44,7 @@ export function BoardTaskDrawer({
   onCancel,
   onReview,
   onRetry,
+  onOpenTask,
 }: BoardTaskDrawerProps) {
   const [notes, setNotes] = useState("");
   const task = detail?.task;
@@ -76,7 +79,16 @@ export function BoardTaskDrawer({
       isOpen
       wide
       title={task ? task.brief.slice(0, 80) || task.taskId : "Task"}
-      subtitle={task ? `${task.assignee} · ${task.status} · ${formatUsageCost(task.usage.cost)}` : undefined}
+      subtitle={
+        task ? (
+          <span className="d-flex flex-wrap align-items-center gap-2">
+            <BoardTaskId taskId={task.taskId} full />
+            <span>
+              {task.assignee} · {task.status} · {formatUsageCost(task.usage.cost)}
+            </span>
+          </span>
+        ) : undefined
+      }
       onClose={onClose}
       footer={
         task && (OPEN_STATUSES.has(task.status) || task.status === "failed") ? (
@@ -127,7 +139,9 @@ export function BoardTaskDrawer({
     >
       {isLoading && !task ? <p className="text-muted small">Loading task…</p> : null}
       {errorMessage ? <div className="alert alert-danger py-2 small">{errorMessage}</div> : null}
-      {task ? <TaskBody task={task} detail={detail} calls={calls} notes={notes} onNotes={setNotes} /> : null}
+      {task ? (
+        <TaskBody task={task} detail={detail} calls={calls} notes={notes} onNotes={setNotes} onOpenTask={onOpenTask} />
+      ) : null}
     </BoardOffcanvas>
   );
 }
@@ -138,12 +152,14 @@ function TaskBody({
   calls,
   notes,
   onNotes,
+  onOpenTask,
 }: {
   readonly task: BoardTask;
   readonly detail: BoardTaskDetailPayload | undefined;
   readonly calls: readonly BoardToolCallLogEntry[];
   readonly notes: string;
   readonly onNotes: (value: string) => void;
+  readonly onOpenTask?: (taskId: string) => void;
 }) {
   const deliverable = detail?.deliverable ?? "";
   const isCsv = task.deliverableType === "csv";
@@ -164,7 +180,8 @@ function TaskBody({
         <div>
           <div className="small text-muted text-uppercase">Help for</div>
           <p className="mb-0">
-            Parent task <code>{task.parentTaskId}</code>
+            Parent task{" "}
+            <RelatedTaskId taskId={task.parentTaskId} onOpenTask={onOpenTask} />
           </p>
         </div>
       ) : null}
@@ -173,9 +190,7 @@ function TaskBody({
           <div className="small text-muted text-uppercase">Help tasks</div>
           <p className="mb-0">
             {task.helpTaskIds.map((id) => (
-              <code key={id} className="me-2">
-                {id}
-              </code>
+              <RelatedTaskId key={id} taskId={id} onOpenTask={onOpenTask} />
             ))}
           </p>
         </div>
@@ -239,6 +254,27 @@ function TaskBody({
         </label>
       ) : null}
     </div>
+  );
+}
+
+function RelatedTaskId({
+  taskId,
+  onOpenTask,
+}: {
+  readonly taskId: string;
+  readonly onOpenTask?: (taskId: string) => void;
+}) {
+  if (!onOpenTask) {
+    return (
+      <code className="me-2" title={taskId}>
+        #{shortTaskId(taskId)}
+      </code>
+    );
+  }
+  return (
+    <button type="button" className="btn btn-link btn-sm p-0 me-2 align-baseline" onClick={() => onOpenTask(taskId)}>
+      #{shortTaskId(taskId)}
+    </button>
   );
 }
 

@@ -2,17 +2,30 @@ import { describe, expect, it } from "vitest";
 import { BOARD_PERSONA_DEFAULTS } from "./contracts/generated";
 import {
   approvalEditableFields,
+  boardTaskHref,
+  boardTaskSearchParams,
   canRetryBoardTask,
+  filterBoardTasks,
+  formatRelativeTime,
   formatUsageCost,
   groupActionsByPriority,
+  groupTasksByLane,
   MAIL_ALLOW_LIST_ENTRY_RE,
   meetingPhaseProgress,
   memberInitials,
   memberLabel,
   mergeMemberProfile,
   parseAllowListText,
+  readBoardTaskIdFromSearch,
+  shortTaskId,
+  taskActorLabel,
+  taskLane,
+  taskSlaState,
+  taskStatusLabel,
+  taskStatusTone,
   uniqueTurnModels,
   type BoardAction,
+  type BoardTask,
 } from "./boardModel";
 
 const cto = BOARD_PERSONA_DEFAULTS.find((p) => p.id === "cto")!;
@@ -179,5 +192,102 @@ describe("canRetryBoardTask", () => {
     expect(canRetryBoardTask("review")).toBe(false);
     expect(canRetryBoardTask("delivered")).toBe(false);
     expect(canRetryBoardTask("waiting_subtask")).toBe(false);
+  });
+});
+
+function task(overrides: Partial<BoardTask>): BoardTask {
+  return {
+    taskId: "abcdef0123456789",
+    status: "queued",
+    assignee: "support",
+    assigneeKind: "seat",
+    managerId: "coo",
+    origin: "owner",
+    brief: "Draft a reply",
+    deliverableType: "markdown",
+    budgetUsd: 1,
+    slaAt: "2026-09-16T00:00:00Z",
+    step: 1,
+    stepsUsed: 1,
+    revisions: 0,
+    usage: { promptTokens: 10, completionTokens: 4, cost: 0.02, calls: 1 },
+    summary: "",
+    evidence: [],
+    openQuestions: [],
+    confidence: "",
+    reviews: 0,
+    lastReview: null,
+    createdAt: "2026-09-14T00:00:00Z",
+    updatedAt: "2026-09-14T12:00:00Z",
+    ...overrides,
+  };
+}
+
+describe("task dashboard helpers", () => {
+  it("shortens task ids to eight characters", () => {
+    expect(shortTaskId("abcdef0123456789")).toBe("abcdef01");
+    expect(shortTaskId("short")).toBe("short");
+  });
+
+  it("maps statuses onto lanes and tones", () => {
+    expect(taskLane("needs_owner")).toBe("attention");
+    expect(taskLane("review")).toBe("attention");
+    expect(taskLane("running")).toBe("in_progress");
+    expect(taskLane("waiting_subtask")).toBe("in_progress");
+    expect(taskLane("queued")).toBe("queued");
+    expect(taskLane("failed")).toBe("done");
+    expect(taskLane("delivered")).toBe("done");
+    expect(taskStatusTone("failed")).toBe("danger");
+    expect(taskStatusLabel("waiting_subtask")).toBe("Waiting help");
+  });
+
+  it("classifies SLA and formats relative time", () => {
+    const now = Date.parse("2026-09-15T12:00:00Z");
+    expect(taskSlaState("2026-09-15T10:00:00Z", now)).toBe("overdue");
+    expect(taskSlaState("2026-09-15T16:00:00Z", now)).toBe("soon");
+    expect(taskSlaState("2026-09-16T12:00:00Z", now)).toBe("ok");
+    expect(formatRelativeTime("2026-09-15T10:00:00Z", now)).toBe("2h ago");
+    expect(formatRelativeTime("2026-09-15T18:00:00Z", now)).toBe("in 6h");
+  });
+
+  it("resolves seat and persona labels", () => {
+    expect(taskActorLabel("support", [{ id: "support", displayName: "Parent Support" }])).toBe("Parent Support");
+    expect(taskActorLabel("cfo")).toBe("CFO");
+    expect(taskActorLabel("unknown-seat")).toBe("unknown-seat");
+  });
+
+  it("filters by query, assignee, status, and finished visibility", () => {
+    const rows = [
+      task({ taskId: "task-owner-aa", status: "needs_owner", brief: "Reconcile payments", assignee: "accountant" }),
+      task({ taskId: "task-done-bb", status: "delivered", brief: "Month-end snapshot", assignee: "cfo" }),
+      task({ taskId: "task-mail-cc", status: "queued", brief: "Reply to parent", assignee: "support" }),
+    ];
+    expect(filterBoardTasks(rows).map((t) => t.taskId)).toEqual(["task-owner-aa", "task-mail-cc"]);
+    expect(filterBoardTasks(rows, { includeFinished: true, status: "delivered" }).map((t) => t.taskId)).toEqual([
+      "task-done-bb",
+    ]);
+    expect(filterBoardTasks(rows, { query: "task-own" }).map((t) => t.taskId)).toEqual(["task-owner-aa"]);
+    expect(filterBoardTasks(rows, { query: "parent support" }).map((t) => t.taskId)).toEqual(["task-mail-cc"]);
+    expect(filterBoardTasks(rows, { assignee: "cfo", includeFinished: true }).map((t) => t.taskId)).toEqual([
+      "task-done-bb",
+    ]);
+  });
+
+  it("groups lanes with attention and failed first", () => {
+    const grouped = groupTasksByLane([
+      task({ taskId: "r", status: "review", updatedAt: "2026-09-14T10:00:00Z" }),
+      task({ taskId: "o", status: "needs_owner", updatedAt: "2026-09-14T10:00:00Z" }),
+      task({ taskId: "d", status: "delivered", finishedAt: "2026-09-14T18:00:00Z" }),
+      task({ taskId: "f", status: "failed", updatedAt: "2026-09-14T11:00:00Z" }),
+    ]);
+    expect(grouped.attention.map((t) => t.taskId)).toEqual(["o", "r"]);
+    expect(grouped.done.map((t) => t.taskId)).toEqual(["f", "d"]);
+  });
+
+  it("builds a shareable task deep link", () => {
+    expect(readBoardTaskIdFromSearch("?tab=dashboard&task=abc123")).toBe("abc123");
+    expect(readBoardTaskIdFromSearch("?section=tasks")).toBeNull();
+    expect(boardTaskHref("abc123", "?tab=dashboard")).toBe("?tab=board&section=tasks&task=abc123");
+    expect(boardTaskSearchParams(null, "?tab=board&section=tasks&task=abc123").get("task")).toBeNull();
   });
 });
