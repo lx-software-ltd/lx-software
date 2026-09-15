@@ -58,7 +58,6 @@ KINDS = frozenset({"feature", "fix", "content"})
 CI_OK = frozenset({"success", "neutral", "skipped"})
 REVIEW_PENDING_GRACE_SECONDS = 60 * 60
 _LOOKUP_CACHE_TTL_SECONDS = 60
-_ci_state_cache: dict[str, tuple[float, str]] = {}
 _issue_cache: dict[int, tuple[float, dict[str, Any]]] = {}
 _ISSUE_RE = re.compile(r"#(\d+)")
 _JSON_BLOCK = re.compile(r"```json\s*(\{.*?\})\s*```", re.S)
@@ -298,7 +297,6 @@ def _runs_for_task(task_id: str) -> list[dict[str, Any]]:
 
 
 def reset_lookup_caches_for_tests() -> None:
-    _ci_state_cache.clear()
     _issue_cache.clear()
 
 
@@ -321,31 +319,23 @@ def ci_state(sha: str) -> str:
     """Return ``success``, ``failure``, or ``pending`` for a head SHA."""
     if not sha:
         return "pending"
-    now = time.monotonic()
-    cached = _ci_state_cache.get(sha)
-    if cached and now - cached[0] < _LOOKUP_CACHE_TTL_SECONDS:
-        return cached[1]
     repo = _repo()
     checks = _gh("GET", f"/repos/{repo}/commits/{sha}/check-runs") or {}
     runs = checks.get("check_runs") if isinstance(checks, dict) else None
-    result = "pending"
     if isinstance(runs, list) and runs:
         items = [r for r in runs if isinstance(r, dict)]
         if any(str(r.get("status") or "") != "completed" for r in items):
-            result = "pending"
-        elif all(str(r.get("conclusion") or "") in CI_OK for r in items):
-            result = "success"
-        else:
-            result = "failure"
-    else:
-        status = _gh("GET", f"/repos/{repo}/commits/{sha}/status") or {}
-        state = str((status or {}).get("state") or "") if isinstance(status, dict) else ""
-        if state == "success":
-            result = "success"
-        elif state in ("failure", "error"):
-            result = "failure"
-    _ci_state_cache[sha] = (now, result)
-    return result
+            return "pending"
+        if all(str(r.get("conclusion") or "") in CI_OK for r in items):
+            return "success"
+        return "failure"
+    status = _gh("GET", f"/repos/{repo}/commits/{sha}/status") or {}
+    state = str((status or {}).get("state") or "") if isinstance(status, dict) else ""
+    if state == "success":
+        return "success"
+    if state in ("failure", "error"):
+        return "failure"
+    return "pending"
 
 
 def ci_success(sha: str) -> bool:
