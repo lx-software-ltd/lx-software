@@ -913,6 +913,20 @@ describe("AdminApiFn recursive loop detection", () => {
     );
     expect(authorizer?.[1].Properties?.RecursiveLoop).toBeUndefined();
   });
+
+  test("invocations alarm is named for the siutindei board alarm filter", () => {
+    const alarms = Object.values(resourcesOfType("AWS::CloudWatch::Alarm"));
+    const alarm = alarms.find(
+      (r) => r.Properties?.AlarmName === "lxsoftware-admin-siutindei-admin-api-invocations"
+    );
+    expect(alarm).toBeDefined();
+    expect(alarm?.Properties?.Threshold).toBe(250);
+    expect(alarm?.Properties?.Namespace ?? alarm?.Properties?.Metrics).toBeDefined();
+    const serialized = JSON.stringify(alarm?.Properties ?? {});
+    expect(serialized).toContain("AWS/Lambda");
+    expect(serialized).toContain("Invocations");
+    expect(String(alarm?.Properties?.AlarmName)).toContain("siutindei");
+  });
 });
 
 describe("SQS event sources on AdminApiFn", () => {

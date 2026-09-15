@@ -439,12 +439,23 @@ steps, meeting phases, chat/parse workers and intel crawl pages. AWS
 Lambda counts each hop and, with the default `Terminate` setting, drops
 the invoke after ~16 and emails `AWS_LAMBDA_RUNAWAY_TERMINATION_NOTIFICATION`
 (CloudWatch metric `RecursiveInvocationsDropped`). That is expected for
-this worker pattern, not an S3/SQS miswire. CDK sets
-`RecursiveLoop = Allow` on `AdminApiFn` only; inbound-mail
-and the public authorizer stay on Terminate. Cost is still bounded by
-`maxStepsPerTask` (12), idle-step limits, meeting phase lists, the crawl
-page budget, and the daily OpenRouter staff/board budgets. Do not set
-Allow on a function that writes back to its own S3/SQS trigger.
+this worker pattern, not an S3/SQS miswire. Production confirmed the
+15 Sep 2026 Health email against
+`lxsoftware-AdminApiFnA81506EE-Dtien8OG6FVk`: drops at 09:52 and 10:20
+UTC (around the 18:00 HKT evening standup); the 12:53 UTC mail is the
+notification, not the drop time. CDK sets `RecursiveLoop = Allow` on
+`AdminApiFn` only; inbound-mail and the public authorizer stay on
+Terminate. Cost is still bounded by `maxStepsPerTask` (12), idle-step
+limits, meeting phase lists, the crawl page budget, and the daily
+OpenRouter staff/board budgets. Do not set Allow on a function that
+writes back to its own S3/SQS trigger.
+
+After Allow, `RecursiveInvocationsDropped` no longer fires. Alarm
+`lxsoftware-admin-siutindei-admin-api-invocations` trips when
+`AdminApiFn` Invocations exceed 250 in 5 minutes (observed peak 145
+during standup). The name includes `siutindei` so
+`board_cache_refresh` / `aws_list_alarms` can open an architect/CTO
+task.
 
 Cost controls: every OpenRouter call records usage under the board's daily
 usage row, and chats/meetings stop when the configured daily budget

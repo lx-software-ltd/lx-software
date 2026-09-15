@@ -1511,6 +1511,24 @@ export class LxsoftwareStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
       alarmDescription: "Jump in siutindei-board-full public API reads.",
     });
+    // Replaces RecursiveInvocationsDropped after RecursiveLoop Allow.
+    // Observed 5-min peak on 2026-09-14/15 was 145 (evening standup). The
+    // name includes "siutindei" so hourly board_cache_refresh / aws_list_alarms
+    // surfaces a new ALARM as an architect/CTO task.
+    new cloudwatch.Alarm(this, "AdminApiInvocationsAlarm", {
+      alarmName: "lxsoftware-admin-siutindei-admin-api-invocations",
+      metric: adminFn.metricInvocations({
+        period: cdk.Duration.minutes(5),
+        statistic: "Sum",
+      }),
+      threshold: 250,
+      evaluationPeriods: 1,
+      datapointsToAlarm: 1,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      alarmDescription:
+        "AdminApiFn invoke burst (tight self-invoke runaway). 5-min peak before Allow was 145.",
+    });
 
     // Allow async-invocation DLQ writes from this function.
     this.lambdaDeadLetterQueue.grantSendMessages(adminFn);
