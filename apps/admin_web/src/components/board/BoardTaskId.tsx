@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { shortTaskId } from "../../lib/boardModel";
+import { BoardCopyableId } from "./BoardCopyableId";
 
 export function BoardTaskId({
   taskId,
@@ -10,58 +9,5 @@ export function BoardTaskId({
   readonly compact?: boolean;
   readonly full?: boolean;
 }) {
-  const [copied, setCopied] = useState(false);
-  const short = shortTaskId(taskId);
-  const label = full ? taskId : `#${short}`;
-  return (
-    <span className={`board-task-id ${compact ? "board-task-id-compact" : ""}`.trim()}>
-      <code className="board-task-id-code" title={taskId} aria-label={`Task ${taskId}`}>
-        {label}
-      </code>
-      <button
-        type="button"
-        className="btn btn-sm btn-link p-0 ms-1 lh-1 board-task-id-copy"
-        aria-label={`Copy task id ${taskId}`}
-        title={copied ? "Copied" : "Copy task id"}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          void copyTaskId(taskId).then((ok) => {
-            if (!ok) return;
-            setCopied(true);
-            window.setTimeout(() => setCopied(false), 1500);
-          });
-        }}
-      >
-        <i className={copied ? "bi bi-check2" : "bi bi-clipboard"} aria-hidden="true" />
-      </button>
-    </span>
-  );
-}
-
-async function copyTaskId(taskId: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(taskId);
-      return true;
-    }
-  } catch {
-    // HTTP or denied clipboard: fall through to execCommand.
-  }
-  try {
-    const el = document.createElement("textarea");
-    el.value = taskId;
-    el.setAttribute("readonly", "");
-    el.style.position = "fixed";
-    el.style.top = "0";
-    el.style.left = "-9999px";
-    document.body.appendChild(el);
-    el.select();
-    el.setSelectionRange(0, taskId.length);
-    const ok = document.execCommand("copy");
-    document.body.removeChild(el);
-    return ok;
-  } catch {
-    return false;
-  }
+  return <BoardCopyableId id={taskId} noun="Task" compact={compact} full={full} />;
 }

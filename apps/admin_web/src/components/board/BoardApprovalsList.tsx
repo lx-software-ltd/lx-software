@@ -14,6 +14,7 @@ import {
 } from "../../lib/boardModel";
 import { BOARD_MAX_APPROVAL_NOTE_LEN } from "../../lib/contracts/generated";
 import type { ApprovalDecisionVariables } from "../../hooks/useBoardApprovals";
+import { BoardCopyableId } from "./BoardCopyableId";
 
 export type BoardApprovalsListProps = {
   readonly approvals: readonly BoardApproval[];
@@ -186,6 +187,7 @@ export function BoardApprovalsList({
         <div className="d-flex flex-wrap align-items-center gap-2">
           <span className={`badge ${APPROVAL_STATUS_BADGE_CLASS[a.status] ?? "text-bg-secondary"}`}>{a.status}</span>
           <span className="badge text-bg-light border">{a.toolLabel}</span>
+          <BoardCopyableId id={a.approvalId} noun="Approval" full />
           <span className="fw-semibold">{a.summary}</span>
         </div>
         <div className="small text-muted mt-1 d-flex flex-wrap gap-3">
