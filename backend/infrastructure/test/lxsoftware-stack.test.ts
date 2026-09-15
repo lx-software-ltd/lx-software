@@ -899,6 +899,24 @@ describe("Lambda service-principal permissions", () => {
   });
 });
 
+describe("AdminApiFn recursive loop detection", () => {
+  test("allows intentional self-invoke; other app Lambdas stay on Terminate", () => {
+    const fns = resourcesOfType("AWS::Lambda::Function");
+    const admin = Object.entries(fns).find(([id]) => id.startsWith("AdminApiFn"));
+    expect(admin?.[1].Properties?.RecursionConfig).toEqual({
+      RecursiveLoop: "Allow",
+    });
+    const inbound = Object.entries(fns).find(([id]) =>
+      id.startsWith("InboundStatementMailFn")
+    );
+    expect(inbound?.[1].Properties?.RecursionConfig).toBeUndefined();
+    const authorizer = Object.entries(fns).find(([id]) =>
+      id.startsWith("PublicApiKeyAuthorizerFn")
+    );
+    expect(authorizer?.[1].Properties?.RecursionConfig).toBeUndefined();
+  });
+});
+
 describe("SQS event sources on AdminApiFn", () => {
   test("every source queue's visibility timeout covers the function timeout", () => {
     const fns = resourcesOfType("AWS::Lambda::Function");

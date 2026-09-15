@@ -1026,6 +1026,12 @@ export class LxsoftwareStack extends cdk.Stack {
       entryDir: path.join(__dirname, "..", "..", "lambda", "admin"),
       timeout: adminStatementParseLambdaTimeout,
       memorySize: 1536,
+      // Staff steps, meeting phases, chat/parse workers and intel crawl
+      // continue via Event invoke of this same function. Lambda's default
+      // Terminate drops the chain after ~16 hops and sends
+      // AWS_LAMBDA_RUNAWAY_TERMINATION_NOTIFICATION. Application caps
+      // (maxStepsPerTask, meeting phases, crawl pages) still bound work.
+      recursiveLoop: lambda.RecursiveLoop.ALLOW,
       environmentEncryptionKey: this.sharedEncryptionKey,
       logEncryptionKey: this.sharedEncryptionKey,
       deadLetterQueue: this.lambdaDeadLetterQueue,

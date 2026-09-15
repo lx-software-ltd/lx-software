@@ -434,6 +434,18 @@ for the same reason. When adding new triggers for `AdminApiFn`, prefer
 role-based invocation (Scheduler, Step Functions) or widen an existing
 statement rather than adding new resource-policy statements.
 
+Recursive loop detection: `AdminApiFn` Event-invokes itself for staff
+steps, meeting phases, chat/parse workers and intel crawl pages. AWS
+Lambda counts each hop and, with the default `Terminate` setting, drops
+the invoke after ~16 and emails `AWS_LAMBDA_RUNAWAY_TERMINATION_NOTIFICATION`
+(CloudWatch metric `RecursiveInvocationsDropped`). That is expected for
+this worker pattern, not an S3/SQS miswire. CDK sets
+`RecursionConfig.RecursiveLoop = Allow` on `AdminApiFn` only; inbound-mail
+and the public authorizer stay on Terminate. Cost is still bounded by
+`maxStepsPerTask` (12), idle-step limits, meeting phase lists, the crawl
+page budget, and the daily OpenRouter staff/board budgets. Do not set
+Allow on a function that writes back to its own S3/SQS trigger.
+
 Cost controls: every OpenRouter call records usage under the board's daily
 usage row, and chats/meetings stop when the configured daily budget
 (default USD 15) is reached. OpenRouter requests are sent with data
