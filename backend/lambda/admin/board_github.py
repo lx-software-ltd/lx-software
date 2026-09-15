@@ -176,6 +176,22 @@ def _opener() -> Any:
     return urlrequest.build_opener(_StripAuthOnHostChange)
 
 
+# Captured at import so unit tests that patch ``urllib.request.urlopen``
+# (``ToolsTestCase.HostRouter``) still intercept GitHub calls.
+_STDLIB_URLOPEN = urlrequest.urlopen
+
+
+def _urlopen(req: urlrequest.Request, timeout: float | None = None) -> Any:
+    """Open a GitHub request.
+
+    Production uses an opener that drops Authorization on the job-log blob
+    redirect. Tests patch ``urllib.request.urlopen``; those fakes must win.
+    """
+    if urlrequest.urlopen is not _STDLIB_URLOPEN:
+        return urlrequest.urlopen(req, timeout=timeout)
+    return _opener().open(req, timeout=timeout)
+
+
 def _read_body(resp: Any, *, raw: bool) -> str:
     if not raw:
         return resp.read().decode("utf-8", errors="replace")
@@ -214,7 +230,7 @@ def _request(
     req = urlrequest.Request(url, data=data, method=method, headers=headers)  # noqa: S310 - fixed API origin
     raw = accept.endswith("raw") or accept == "application/vnd.github.diff"
     try:
-        with _opener().open(req, timeout=board_deadline.remaining(timeout)) as resp:  # noqa: S310
+        with _urlopen(req, timeout=board_deadline.remaining(timeout)) as resp:  # noqa: S310
             text = _read_body(resp, raw=raw)
     except urlerror.HTTPError as exc:
         if exc.code == 404 and method == "GET":
