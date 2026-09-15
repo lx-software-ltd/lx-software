@@ -117,6 +117,8 @@ export function useBoardTasks() {
     tasks: query.data?.tasks ?? [],
     counts: query.data?.counts ?? {},
     isLoading: query.isLoading,
+    isFetching: query.isFetching,
+    dataUpdatedAt: query.dataUpdatedAt,
     isError: query.isError,
     error: query.error,
     create,

@@ -5,7 +5,7 @@ import { BoardTasksSection } from "./BoardTasksSection";
 
 const retryMutate = vi.fn();
 const cancelMutate = vi.fn();
-const cancelState = { isPending: false, error: null as unknown, mutate: cancelMutate };
+const cancelState = { isPending: false, error: null as unknown, mutate: cancelMutate, variables: undefined as string | undefined };
 
 const failedTask: BoardTask = {
   taskId: "task-failed",
@@ -68,6 +68,8 @@ vi.mock("../../hooks/useBoardTasks", () => ({
     tasks: [failedTask, ownerTask],
     counts: { failed: 1, needs_owner: 1 },
     isLoading: false,
+    isFetching: false,
+    dataUpdatedAt: Date.parse("2026-09-15T12:00:00Z"),
     isError: false,
     error: null,
     create: { isPending: false, error: null, mutate: vi.fn() },
@@ -81,12 +83,14 @@ vi.mock("../../hooks/useBoardTasks", () => ({
 describe("BoardTasksSection", () => {
   it("shows failed tasks and can retry or dismiss them", () => {
     render(<BoardTasksSection />);
-    expect(screen.getByText("New task")).toBeInTheDocument();
-    expect(screen.getByText(/Failed \(1\)/)).toBeInTheDocument();
-    expect(screen.getByText(/Needs owner \(1\)/)).toBeInTheDocument();
-    expect(screen.getByText(/Waiting approval \(0\)/)).toBeInTheDocument();
-    expect(screen.getByText(/Waiting help \(0\)/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New task" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Failed \(1\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Needs owner \(1\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Waiting approval \(0\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Waiting help \(0\)/ })).toBeInTheDocument();
     expect(screen.getByText("step limit")).toBeInTheDocument();
+    expect(screen.getByLabelText("Task task-failed")).toHaveAttribute("title", "task-failed");
+    expect(screen.getByLabelText("Task task-owner")).toHaveAttribute("title", "task-owner");
     const retries = screen.getAllByRole("button", { name: "Retry" });
     expect(retries).toHaveLength(2);
     fireEvent.click(retries[0]);
@@ -97,10 +101,25 @@ describe("BoardTasksSection", () => {
     expect(cancelMutate).toHaveBeenCalledWith("task-failed");
   });
 
+  it("filters cards by task id prefix", () => {
+    render(<BoardTasksSection />);
+    fireEvent.change(screen.getByLabelText("Search tasks"), { target: { value: "task-fai" } });
+    expect(screen.getByText(/Complete backend integration/)).toBeInTheDocument();
+    expect(screen.queryByText(/Verify GA4 visitor sources/)).not.toBeInTheDocument();
+  });
+
   it("surfaces a dismiss error above the board when the drawer is closed", () => {
     cancelState.error = new Error("Delivered tasks cannot be cancelled");
     render(<BoardTasksSection />);
     expect(screen.getByText("Delivered tasks cannot be cancelled")).toBeInTheDocument();
     cancelState.error = null;
+  });
+
+  it("opens a focused task and tells the parent the focus was consumed", () => {
+    const onFocusConsumed = vi.fn();
+    render(<BoardTasksSection focusTaskId="task-owner" onFocusConsumed={onFocusConsumed} />);
+    expect(onFocusConsumed).toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getAllByLabelText("Task task-owner").length).toBeGreaterThan(0);
   });
 });

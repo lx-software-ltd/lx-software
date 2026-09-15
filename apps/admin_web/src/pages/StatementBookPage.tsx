@@ -47,8 +47,11 @@ export function StatementBookPage({
     saveErrorDetail,
   } = useStatementBook(bookKey);
   const [tab, setTab] = useState<StatementBookTab>(() => {
-    const requested = new URLSearchParams(window.location.search).get("tab");
-    if (requested === "board" && hasExecutiveBoard) return "board";
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get("tab");
+    if (hasExecutiveBoard && (requested === "board" || params.get("section") || params.get("task"))) {
+      return "board";
+    }
     if (requested === "expenses" || requested === "gains" || requested === "dashboard") return requested;
     return "dashboard";
   });

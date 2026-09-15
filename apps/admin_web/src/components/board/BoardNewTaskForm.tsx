@@ -17,6 +17,7 @@ export type BoardNewTaskFormProps = {
   readonly submitLabel?: string;
   readonly onCancel?: () => void;
   readonly idPrefix?: string;
+  readonly embedded?: boolean;
 };
 
 export function BoardNewTaskForm({
@@ -32,6 +33,7 @@ export function BoardNewTaskForm({
   submitLabel = "Create task",
   onCancel,
   idPrefix = "board-new-task",
+  embedded = false,
 }: BoardNewTaskFormProps) {
   const activeSeats = seats.filter((s) => s.isActive).map((s) => ({ id: s.id, label: `${s.displayName} · seat` }));
   const personas = BOARD_PERSONA_DEFAULTS.map((p) => ({ id: p.id, label: `${p.shortName} (${p.title})` }));
@@ -42,7 +44,7 @@ export function BoardNewTaskForm({
   const deliverableId = `${idPrefix}-deliverable`;
   const briefId = `${idPrefix}-brief`;
   return (
-    <AdminEditorSection title={title} description={description}>
+    <AdminEditorSection title={title} description={description} embedded={embedded}>
       <div className="row g-3">
         <div className="col-md-4">
           <label className="form-label small" htmlFor={assigneeId}>

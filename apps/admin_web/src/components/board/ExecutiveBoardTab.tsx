@@ -46,7 +46,14 @@ import {
 import { AdminTabList, type AdminTabItem } from "../ui";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { adminTabButtonId } from "../../lib/adminTabs";
-import { DEFAULT_BOARD_BOUNDARIES, effectiveToolLevel, type BoardMeetingMode, type BoardOverview } from "../../lib/boardModel";
+import {
+  DEFAULT_BOARD_BOUNDARIES,
+  effectiveToolLevel,
+  readBoardTaskIdFromSearch,
+  syncBoardTaskSearchParams,
+  type BoardMeetingMode,
+  type BoardOverview,
+} from "../../lib/boardModel";
 
 type BoardSection = "review" | "progress" | "market" | "pipeline" | "content" | "actions" | "staff" | "tasks" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
 
@@ -116,8 +123,10 @@ export function ExecutiveBoardTab() {
   const lessons = useBoardReview(true);
 
   const urlSection = useMemo(() => {
-    const requested = new URLSearchParams(window.location.search).get("section");
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get("section");
     if (requested && SECTIONS.some((s) => s.id === requested)) return requested as BoardSection;
+    if (readBoardTaskIdFromSearch(window.location.search)) return "tasks" as const;
     return null;
   }, []);
   const [pinnedSection, setPinnedSection] = useState<BoardSection | null>(urlSection);
@@ -128,7 +137,9 @@ export function ExecutiveBoardTab() {
   const [startForm, setStartForm] = useState<{ mode: BoardMeetingMode; topic: string } | null>(null);
   const [focusApprovalId, setFocusApprovalId] = useState<string | null>(null);
   const [focusThreadId, setFocusThreadId] = useState<string | null>(null);
-  const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
+  const [focusTaskId, setFocusTaskId] = useState<string | null>(() =>
+    readBoardTaskIdFromSearch(window.location.search),
+  );
   const [showCallLog, setShowCallLog] = useState(false);
 
   const overview = board.overview;
@@ -161,6 +172,7 @@ export function ExecutiveBoardTab() {
   const openStaffTask = useCallback((taskId: string) => {
     setFocusTaskId(taskId);
     setSection("tasks");
+    syncBoardTaskSearchParams(taskId);
   }, [setSection]);
 
   const openApproval = useCallback((approvalId: string) => {
@@ -284,7 +296,9 @@ export function ExecutiveBoardTab() {
 
           {overview && section === "staff" ? <BoardStaffSection /> : null}
 
-          {overview && section === "tasks" ? <BoardTasksSection focusTaskId={focusTaskId} /> : null}
+          {overview && section === "tasks" ? (
+            <BoardTasksSection focusTaskId={focusTaskId} onFocusConsumed={() => setFocusTaskId(null)} />
+          ) : null}
 
           {overview && section === "approvals" ? (
             <>
