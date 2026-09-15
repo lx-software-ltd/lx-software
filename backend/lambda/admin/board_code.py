@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import re
-import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -57,8 +56,6 @@ MAX_REVIEW_ROUNDS = 2
 KINDS = frozenset({"feature", "fix", "content"})
 CI_OK = frozenset({"success", "neutral", "skipped"})
 REVIEW_PENDING_GRACE_SECONDS = 60 * 60
-_LOOKUP_CACHE_TTL_SECONDS = 60
-_issue_cache: dict[int, tuple[float, dict[str, Any]]] = {}
 _ISSUE_RE = re.compile(r"#(\d+)")
 _JSON_BLOCK = re.compile(r"```json\s*(\{.*?\})\s*```", re.S)
 _RUN_INDEX = "code:runs"
@@ -297,22 +294,17 @@ def _runs_for_task(task_id: str) -> list[dict[str, Any]]:
 
 
 def reset_lookup_caches_for_tests() -> None:
-    _issue_cache.clear()
+    """Kept so runner tests can isolate GitHub lookups; no process cache remains."""
+    return
 
 
-def _cached_issue(number: int) -> dict[str, Any]:
-    now = time.monotonic()
-    cached = _issue_cache.get(number)
-    if cached and now - cached[0] < _LOOKUP_CACHE_TTL_SECONDS:
-        return cached[1]
+def _lookup_issue(number: int) -> dict[str, Any]:
+    """Fetch an issue. Empty dict on transport error so callers can fail open."""
     try:
         found = board_github.op_get_issue({"number": number})
     except Exception:
         return {}
-    if isinstance(found, dict):
-        _issue_cache[number] = (now, found)
-        return found
-    return {}
+    return found if isinstance(found, dict) else {}
 
 
 def ci_state(sha: str) -> str:
@@ -549,7 +541,7 @@ def validate_run_task(args: dict[str, Any], ctx: Any | None = None) -> str | Non
             f"#{issue} is the pull request. Pass the GitHub issue number it implements"
             + (f" (stored issue #{stored_issue})." if stored_issue else ".")
         )
-    found = _cached_issue(issue)
+    found = _lookup_issue(issue)
     if not found:
         return None
     if isinstance(found, dict) and found.get("error"):
@@ -698,7 +690,7 @@ def _brief_mismatches_issue(issue: int, brief: str) -> bool:
     """True when the dispatch brief shares no key nouns with the issue title."""
     if issue <= 0:
         return False
-    found = _cached_issue(issue)
+    found = _lookup_issue(issue)
     if not isinstance(found, dict) or found.get("error") or found.get("isPullRequest"):
         return False
     nouns = _issue_title_nouns(str(found.get("title") or ""))
