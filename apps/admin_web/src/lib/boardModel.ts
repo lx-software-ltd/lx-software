@@ -1,5 +1,7 @@
 import {
   BOARD_PERSONA_DEFAULTS,
+  BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
+  BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
   BOARD_STAFF_MAX_STEPS_PER_TASK,
   BOARD_STAFF_SEAT_DEFAULTS,
   BOARD_TOOL_DEFINITIONS,
@@ -104,12 +106,30 @@ export type BoardSettings = {
     readonly dutiesEnabled?: boolean;
     readonly seniorPaused?: boolean;
     readonly disabledReason?: string;
+    readonly modelBySeat?: Readonly<Record<string, string>>;
   };
   readonly review?: { readonly digestTo: string; readonly digestHourHkt: number; readonly sampleSize: number };
   readonly boundaries?: BoardBoundaries;
   readonly updatedAt?: string | null;
   readonly version?: number;
 };
+
+/** Matches `normalize_staff_config` in `board_store.py`. */
+export function staffDraft(
+  current: BoardSettings,
+  patch: Partial<NonNullable<BoardSettings["staff"]>>,
+): NonNullable<BoardSettings["staff"]> {
+  return {
+    enabled: Boolean(current.staff?.enabled),
+    maxRunningTasks: current.staff?.maxRunningTasks ?? BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
+    dailyBudgetUsd: current.staff?.dailyBudgetUsd ?? BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
+    dutiesEnabled: current.staff?.dutiesEnabled,
+    seniorPaused: current.staff?.seniorPaused,
+    disabledReason: current.staff?.disabledReason,
+    modelBySeat: current.staff?.modelBySeat,
+    ...patch,
+  };
+}
 
 export type BoardBoundaries = {
   readonly reply: {
@@ -325,6 +345,8 @@ export type BoardTaskCreate = {
   readonly budgetUsd?: number;
   /** Founder action this task works on; accepted deliverables close it. */
   readonly actionId?: string;
+  /** Existing board PR to revise (sets eventRef.prNumber). */
+  readonly prNumber?: number;
 };
 
 export type BoardToolOperation = {

@@ -5,15 +5,28 @@ import {
   BOARD_PERSONA_DEFAULTS,
   BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
   BOARD_STAFF_MODEL_TIERS,
+  BOARD_STAFF_STEP_MODELS,
 } from "../../lib/contracts/generated";
 import { staffTickErrorMessage, useBoardStaff } from "../../hooks/useBoardStaff";
+
+const SEAT_MODEL_LABELS: Record<string, string> = {
+  "qwen/qwen-2.5-72b-instruct": "Qwen 2.5 72B (tool-heavy)",
+  "deepseek/deepseek-chat": "DeepSeek Chat",
+};
+
+const SEAT_MODEL_CHOICES = [
+  { value: "", label: "Tier default" },
+  ...BOARD_STAFF_STEP_MODELS.map((id) => ({ value: id, label: SEAT_MODEL_LABELS[id] ?? id })),
+] as const;
 
 export type BoardStaffSectionProps = {
   readonly maxRunningTasks?: number;
   readonly onOpenSettings?: () => void;
+  readonly modelBySeat?: Readonly<Record<string, string>>;
+  readonly onSaveModel?: (seatId: string, model: string) => void;
 };
 
-export function BoardStaffSection({ maxRunningTasks, onOpenSettings }: BoardStaffSectionProps) {
+export function BoardStaffSection({ maxRunningTasks, onOpenSettings, modelBySeat, onSaveModel }: BoardStaffSectionProps) {
   const staff = useBoardStaff();
   const runningCap = maxRunningTasks ?? BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT;
   const byManager = useMemo(() => {
@@ -83,6 +96,8 @@ export function BoardStaffSection({ maxRunningTasks, onOpenSettings }: BoardStaf
                       isSaving={staff.override.isPending || staff.reset.isPending}
                       onSave={(override) => staff.override.mutate({ seatId: seat.id, override })}
                       onReset={() => staff.reset.mutate(seat.id)}
+                      model={modelBySeat?.[seat.id] ?? ""}
+                      onSaveModel={onSaveModel ? (model) => onSaveModel(seat.id, model) : undefined}
                     />
                   </div>
                 ))}
@@ -100,11 +115,15 @@ function SeatCard({
   isSaving,
   onSave,
   onReset,
+  model,
+  onSaveModel,
 }: {
   readonly seat: BoardSeat;
   readonly isSaving: boolean;
   readonly onSave: (override: { displayName?: string; brief?: string; isActive?: boolean; modelTier?: "desk" | "senior" }) => void;
   readonly onReset: () => void;
+  readonly model?: string;
+  readonly onSaveModel?: (model: string) => void;
 }) {
   const [brief, setBrief] = useState(seat.isOverridden.brief ? seat.brief : "");
   const [name, setName] = useState(seat.isOverridden.displayName ? seat.displayName : "");
@@ -161,6 +180,22 @@ function SeatCard({
           ))}
         </select>
       </label>
+      {onSaveModel ? (
+        <label className="form-label small">
+          Step model
+          <select
+            className="form-select form-select-sm"
+            value={model ?? ""}
+            onChange={(ev) => onSaveModel(ev.target.value)}
+          >
+            {SEAT_MODEL_CHOICES.map((choice) => (
+              <option key={choice.value || "default"} value={choice.value}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       <label className="form-label small">
         Display name
         <input className="form-control form-control-sm" value={name} onChange={(ev) => setName(ev.target.value)} placeholder={seat.defaults.displayName} />

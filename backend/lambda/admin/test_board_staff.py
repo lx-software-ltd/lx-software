@@ -13,6 +13,7 @@ from test_board import BoardTestCase
 from test_board_tools import ScriptedOpenRouter, ToolsTestCase
 
 import board_async
+import board_code
 import board_personas
 import board_staff
 import board_store
@@ -1279,6 +1280,217 @@ class StaffStepTests(ToolsTestCase):
         self.assertEqual(failed["status"], "failed")
         self.assertEqual(failed["failureReason"], "stuck")
 
+    def test_owner_accept_bypasses_unverified_hold(self) -> None:
+        task = self._queued_task()
+        board_store.claim_task_step(self.table, task["taskId"], 0)
+        task = board_store.get_task(self.table, task["taskId"])
+        task.update(
+            {
+                "status": "review",
+                "origin": "event",
+                "brief": "Implement the booking form",
+                "flags": ["no_evidence", "salvaged"],
+                "deliverableType": "markdown",
+                "summary": "Done",
+            }
+        )
+        board_store.put_task(self.table, task)
+        settings = board_store.load_settings(self.table)
+        held = board_staff.apply_review(self.table, settings, dict(task), verdict="accept", notes="ok", by="manager")
+        self.assertEqual(held["status"], "needs_owner")
+        accepted = board_staff.apply_review(
+            self.table, settings, board_store.get_task(self.table, task["taskId"]), verdict="accept", notes="merged", by="owner:founder"
+        )
+        self.assertEqual(accepted["status"], "delivered")
+        self.assertEqual(accepted.get("acceptedBy"), "owner:founder")
+
+    def test_blocked_finish_parks_without_review(self) -> None:
+        task = self._queued_task()
+        tid = task["taskId"]
+        board_store.claim_task_step(self.table, tid, 0)
+        latest = board_store.get_task(self.table, tid)
+        latest["status"] = "running"
+        board_store.put_task(self.table, latest)
+        ctx = board_tools.ToolContext(
+            self.table, board_store.load_settings(self.table), "cto", kind="task", task_id=tid, seat_id="engineer-1"
+        )
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "refused-1",
+                "op": "code_run_task",
+                "toolId": "code",
+                "status": "refused",
+                "taskId": tid,
+                "resultPreview": '{"error": "already in flight"}',
+            },
+        )
+        out = board_staff.op_task_finish(
+            ctx,
+            {
+                "summary": "Runner breaker is tripped",
+                "deliverableType": "markdown",
+                "deliverable": "Cannot dispatch; tool:code breaker is tripped.",
+                "confidence": "low",
+                "status": "blocked",
+                "blockedReason": "runner already in flight",
+            },
+        )
+        self.assertTrue(out.get("blocked"))
+        parked = board_store.get_task(self.table, tid)
+        self.assertEqual(parked["status"], "needs_owner")
+        self.assertEqual(parked["parkedReason"], "blocked:tool:code")
+        self.assertEqual(parked.get("reviews") or 0, 0)
+
+    def test_blocked_finish_without_refused_call_is_rejected(self) -> None:
+        task = self._queued_task()
+        tid = task["taskId"]
+        board_store.claim_task_step(self.table, tid, 0)
+        latest = board_store.get_task(self.table, tid)
+        latest["status"] = "running"
+        board_store.put_task(self.table, latest)
+        ctx = board_tools.ToolContext(
+            self.table, board_store.load_settings(self.table), "cto", kind="task", task_id=tid, seat_id="engineer-1"
+        )
+        with self.assertRaises(board_staff.StaffError) as raised:
+            board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "This is hard",
+                    "deliverableType": "markdown",
+                    "deliverable": "Giving up.",
+                    "confidence": "low",
+                    "status": "blocked",
+                    "blockedReason": "too hard",
+                },
+            )
+        self.assertIn("refused tool call", str(raised.exception))
+
+    def test_repeated_identical_reads_fail_with_no_progress(self) -> None:
+        task = self._queued_task()
+        tid = task["taskId"]
+        latest = board_store.get_task(self.table, tid)
+        latest["status"] = "running"
+        latest["step"] = 1
+        latest["idleSteps"] = BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK - 1
+        board_store.put_task(self.table, latest)
+        args = {"taskId": "run-1"}
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "get-1",
+                "op": "code_get_run",
+                "toolId": "code",
+                "status": "ok",
+                "taskId": tid,
+                "arguments": args,
+            },
+        )
+        board_store.put_task_step(
+            self.table, tid, {"seq": 1, "plan": "poll", "callIds": ["get-1"], "at": board_store.now_iso()}
+        )
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "get-2",
+                "op": "code_get_run",
+                "toolId": "code",
+                "status": "ok",
+                "taskId": tid,
+                "arguments": args,
+            },
+        )
+        result = type(
+            "R",
+            (),
+            {
+                "text": "still pending",
+                "usage": {},
+                "calls": [{"op": "code_get_run", "status": "ok", "callId": "get-2", "arguments": args}],
+            },
+        )()
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff._complete_step(self.table, tid, latest, result, 2)
+        out = board_store.get_task(self.table, tid)
+        self.assertEqual(out["status"], "failed")
+        self.assertEqual(out["failureReason"], "no progress")
+
+    def test_repeated_research_reads_do_not_fail_with_no_progress(self) -> None:
+        task = self._queued_task()
+        tid = task["taskId"]
+        latest = board_store.get_task(self.table, tid)
+        latest["status"] = "running"
+        latest["step"] = 1
+        latest["idleSteps"] = BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK - 1
+        board_store.put_task(self.table, latest)
+        args = {"query": "hong kong weekend activities"}
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "search-1",
+                "op": "research_search",
+                "toolId": "research",
+                "status": "ok",
+                "taskId": tid,
+                "arguments": args,
+            },
+        )
+        board_store.put_task_step(
+            self.table, tid, {"seq": 1, "plan": "search", "callIds": ["search-1"], "at": board_store.now_iso()}
+        )
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "search-2",
+                "op": "research_search",
+                "toolId": "research",
+                "status": "ok",
+                "taskId": tid,
+                "arguments": args,
+            },
+        )
+        result = type(
+            "R",
+            (),
+            {
+                "text": "same results",
+                "usage": {},
+                "calls": [{"op": "research_search", "status": "ok", "callId": "search-2", "arguments": args}],
+            },
+        )()
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff._complete_step(self.table, tid, latest, result, 2)
+        out = board_store.get_task(self.table, tid)
+        self.assertNotEqual(out.get("failureReason"), "no progress")
+
+    def test_model_for_seat_uses_override(self) -> None:
+        settings = _enable_staff(self.table, modelBySeat={"engineer-1": "qwen/qwen-2.5-72b-instruct"})
+        self.assertEqual(
+            board_staff._model_for_seat(settings, "engineer-1", "deepDive"),  # noqa: SLF001
+            "qwen/qwen-2.5-72b-instruct",
+        )
+        self.assertNotEqual(board_staff._model_for_seat(settings, "support", "standup"), "qwen/qwen-2.5-72b-instruct")  # noqa: SLF001
+        raw = {
+            **settings,
+            "staff": {**(settings.get("staff") or {}), "modelBySeat": {"engineer-1": "openai/gpt-nope"}},
+        }
+        self.assertNotEqual(board_staff._model_for_seat(raw, "engineer-1", "deepDive"), "openai/gpt-nope")  # noqa: SLF001
+        cleaned = board_store.normalize_staff_config({"modelBySeat": {"engineer-1": "openai/gpt-nope", "support": "deepseek/deepseek-chat"}})
+        self.assertNotIn("engineer-1", cleaned["modelBySeat"])
+        self.assertEqual(cleaned["modelBySeat"]["support"], "deepseek/deepseek-chat")
+
+    def test_review_flag_line_names_salvaged(self) -> None:
+        line = board_staff._review_flag_line({"flags": ["salvaged", "no_evidence"]})  # noqa: SLF001
+        self.assertIn("FLAGS: salvaged, no_evidence", line)
+        self.assertIn("official_url", line)
+
+    def test_scratchpad_frame_trims_old_chunks(self) -> None:
+        pad = "\n\n".join([f"note {i} " + ("x" * 20) for i in range(8)])
+        frame = board_personas.render_task_frame({"brief": "Do work", "budgetUsd": 3, "usage": {}, "step": 1}, pad)
+        self.assertIn("earlier scratchpad notes omitted", frame)
+        self.assertIn("note 7", frame)
+        self.assertNotIn("note 0", frame)
+
 
 class StaffRouteTests(BoardTestCase):
     def setUp(self) -> None:
@@ -1360,6 +1572,55 @@ class StaffRouteTests(BoardTestCase):
             status, listed = self.call("/siu-tin-dei/board/tasks")
             self.assertEqual(status, 200)
             self.assertGreaterEqual(len(listed["tasks"]), 1)
+
+    def test_create_task_with_pr_number_sets_revision_ref(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None), patch.object(
+            board_code,
+            "owner_revision_ref",
+            return_value={
+                "kind": "code-implement",
+                "id": "pr:498:owner",
+                "prNumber": 498,
+                "issueNumber": 489,
+                "sourceTaskId": "run-1",
+            },
+        ):
+            _enable_staff(self.table)
+            status, created = self.call(
+                "/siu-tin-dei/board/tasks",
+                "POST",
+                {
+                    "assignee": "cfo",
+                    "brief": "Fix CI on PR 498",
+                    "deliverableType": "pr",
+                    "prNumber": 498,
+                },
+            )
+        self.assertEqual(status, 201)
+        self.assertEqual(created["task"]["eventRef"]["prNumber"], 498)
+        self.assertEqual(created["task"]["eventRef"]["issueNumber"], 489)
+
+    def test_create_task_pr_without_linked_issue_returns_400(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None), patch.object(
+            board_code,
+            "owner_revision_ref",
+            side_effect=board_code.CodeRefused("PR #999 has no linked GitHub issue; pass issueNumber"),
+        ):
+            _enable_staff(self.table)
+            status, body = self.call(
+                "/siu-tin-dei/board/tasks",
+                "POST",
+                {
+                    "assignee": "cfo",
+                    "brief": "Fix CI on an orphan PR",
+                    "deliverableType": "pr",
+                    "prNumber": 999,
+                },
+            )
+        self.assertEqual(status, 400)
+        self.assertIn("issue", str(body.get("message") or "").lower())
 
     def test_retry_failed_task_requeues(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"

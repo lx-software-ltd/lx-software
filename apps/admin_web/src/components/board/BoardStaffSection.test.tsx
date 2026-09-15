@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { BoardStaffSection } from "./BoardStaffSection";
 
@@ -39,6 +39,21 @@ describe("BoardStaffSection", () => {
     expect(screen.getByText(/Open work and new assignments live on the Tasks tab/)).toBeInTheDocument();
     expect(screen.queryByText("New task")).not.toBeInTheDocument();
     expect(screen.queryByText(/Failed \(/)).not.toBeInTheDocument();
+  });
+
+  it("lets the owner set a per-seat step model", () => {
+    const onSaveModel = vi.fn();
+    render(
+      <BoardStaffSection
+        maxRunningTasks={3}
+        modelBySeat={{ support: "qwen/qwen-2.5-72b-instruct" }}
+        onSaveModel={onSaveModel}
+      />,
+    );
+    const select = screen.getByLabelText("Step model");
+    expect(select).toHaveValue("qwen/qwen-2.5-72b-instruct");
+    fireEvent.change(select, { target: { value: "deepseek/deepseek-chat" } });
+    expect(onSaveModel).toHaveBeenCalledWith("support", "deepseek/deepseek-chat");
   });
 
   it("links to Settings for the concurrent-task cap", () => {

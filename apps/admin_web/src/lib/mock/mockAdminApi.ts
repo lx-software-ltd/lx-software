@@ -300,6 +300,7 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
           BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
         dutiesEnabled: body.staff?.dutiesEnabled ?? state.settings.staff?.dutiesEnabled,
         seniorPaused: body.staff?.seniorPaused ?? state.settings.staff?.seniorPaused,
+        modelBySeat: body.staff?.modelBySeat ?? state.settings.staff?.modelBySeat,
       },
       review: body.review ?? state.settings.review,
       updatedAt: new Date().toISOString(),

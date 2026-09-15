@@ -358,6 +358,7 @@ def default_staff_config() -> dict[str, Any]:
         "dutiesEnabled": False,
         "seniorPaused": False,
         "disabledReason": "",
+        "modelBySeat": {},
     }
 
 
@@ -457,6 +458,18 @@ def normalize_staff_config(raw: Any) -> dict[str, Any]:
         out["dailyBudgetUsd"] = max(0.0, min(BOARD_STAFF_DAILY_BUDGET_MAX_USD, budget))
     except (TypeError, ValueError):
         pass
+    models = raw.get("modelBySeat")
+    if isinstance(models, dict):
+        from contract_constants import BOARD_STAFF_SEAT_IDS, BOARD_STAFF_STEP_MODELS
+
+        allowed = frozenset(BOARD_STAFF_STEP_MODELS)
+        cleaned: dict[str, str] = {}
+        for seat_id, model in models.items():
+            key = str(seat_id or "").strip()
+            value = str(model or "").strip()
+            if key in BOARD_STAFF_SEAT_IDS and value in allowed:
+                cleaned[key] = value
+        out["modelBySeat"] = cleaned
     return out
 
 

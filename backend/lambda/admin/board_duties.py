@@ -184,18 +184,34 @@ def run_due(table: Any, settings: dict[str, Any], now: datetime | None = None) -
                 _log_event("info", tag="board_duty_skipped_unconfigured", seat=seat_id, duty=duty_id, reason=skip_reason[:200])
                 continue
             try:
-                task = board_staff.create_task(
-                    table,
-                    settings,
-                    assignee=seat_id,
-                    origin="duty",
-                    brief=str(duty.get("brief") or duty_id)[:4000],
-                    deliverable_type=str(duty.get("deliverableType") or "markdown"),
-                    sla_hours=24,
-                    event_ref={"kind": "duty", "id": event_id},
-                    created_by="board_duties",
-                )
+                if duty_id == "catalog-micro-batch":
+                    import board_catalog
+
+                    task = board_catalog.create_next(table, settings, created_by="board_duties")
+                else:
+                    task = board_staff.create_task(
+                        table,
+                        settings,
+                        assignee=seat_id,
+                        origin="duty",
+                        brief=str(duty.get("brief") or duty_id)[:4000],
+                        deliverable_type=str(duty.get("deliverableType") or "markdown"),
+                        sla_hours=24,
+                        event_ref={"kind": "duty", "id": event_id},
+                        created_by="board_duties",
+                    )
             except board_staff.StaffError as exc:
+                if duty_id == "catalog-micro-batch" and "already have a sheet" in str(exc):
+                    board_store.put_cache(
+                        table,
+                        _cache_name(seat_id, duty_id),
+                        {
+                            "ranAt": board_store.now_iso(),
+                            "scheduledAt": board_hk.to_iso(scheduled or when),
+                            "skipped": "all districts claimed",
+                        },
+                        ttl_seconds=40 * 86400,
+                    )
                 _log_event("info", tag="board_duty_skipped", seat=seat_id, duty=duty_id, error=str(exc)[:200])
                 continue
             board_store.put_cache(

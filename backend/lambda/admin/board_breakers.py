@@ -88,6 +88,11 @@ def reset(table: Any, name: str, by_sub: str) -> dict[str, Any]:
             _fresh_save_staff(table, seniorPaused=False, disabledReason="")
         except Exception as exc:
             _log_event("warning", tag="board_breaker_budget_reset_staff", error=str(exc)[:200])
+    if name.startswith("tool:"):
+        try:
+            _requeue_blocked_for_tool(table, name)
+        except Exception as exc:
+            _log_event("warning", tag="board_breaker_requeue_blocked_failed", error=str(exc)[:200], name=name)
     return doc
 
 
@@ -150,6 +155,29 @@ def note_escalation_after_reply(table: Any, *, channel: str, thread_id: str) -> 
             continue
         return trip(table, f"channel:{channel}", f"escalation within 24h of {call.get('op')}")
     return None
+
+
+def _requeue_blocked_for_tool(table: Any, breaker_name: str) -> int:
+    """Retry tasks parked with ``blocked:tool:<id>`` after that breaker resets."""
+    import board_staff
+
+    settings = board_store.load_settings(table)
+    prefix = f"blocked:{breaker_name}"
+    queued = 0
+    for task in board_store.list_tasks(table, "needs_owner", limit=200):
+        if not str(task.get("parkedReason") or "").startswith(prefix):
+            continue
+        try:
+            board_staff.retry_task(table, settings, str(task.get("taskId") or ""), "system:breaker-reset")
+            queued += 1
+        except board_staff.StaffError as exc:
+            _log_event(
+                "info",
+                tag="board_breaker_requeue_skipped",
+                taskId=task.get("taskId"),
+                error=str(exc)[:200],
+            )
+    return queued
 
 
 def _fresh_save_staff(table: Any, **patch: Any) -> dict[str, Any]:

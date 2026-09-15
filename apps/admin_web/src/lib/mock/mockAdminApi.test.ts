@@ -71,4 +71,15 @@ describe("mockAdminFetch", () => {
     const overview = (await get.json()) as { settings: { staff: { maxRunningTasks: number } } };
     expect(overview.settings.staff.maxRunningTasks).toBe(8);
   });
+
+  it("persists staff.modelBySeat on PUT /siu-tin-dei/board/settings", async () => {
+    const put = await mockAdminFetch("/siu-tin-dei/board/settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        staff: { enabled: true, maxRunningTasks: 6, dailyBudgetUsd: 20, modelBySeat: { "engineer-1": "qwen/qwen-2.5-72b-instruct" } },
+      }),
+    });
+    const saved = (await put.json()) as { settings: { staff: { modelBySeat?: Record<string, string> } } };
+    expect(saved.settings.staff.modelBySeat?.["engineer-1"]).toBe("qwen/qwen-2.5-72b-instruct");
+  });
 });

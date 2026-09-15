@@ -4,6 +4,7 @@ import {
   formatUsageCost,
   MEETING_MODE_LABELS,
   memberLabel,
+  staffDraft,
   type BoardMeetingMode,
   type BoardMember,
   type BoardOverview,
@@ -18,21 +19,6 @@ import {
 /** Matches `normalize_staff_config` in `board_store.py`. */
 const STAFF_MAX_RUNNING_TASKS_CAP = 20;
 const STAFF_DAILY_BUDGET_MAX_USD = 100;
-
-function staffDraft(
-  current: BoardSettings,
-  patch: Partial<NonNullable<BoardSettings["staff"]>>,
-): NonNullable<BoardSettings["staff"]> {
-  return {
-    enabled: Boolean(current.staff?.enabled),
-    maxRunningTasks: current.staff?.maxRunningTasks ?? BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
-    dailyBudgetUsd: current.staff?.dailyBudgetUsd ?? BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
-    dutiesEnabled: current.staff?.dutiesEnabled,
-    seniorPaused: current.staff?.seniorPaused,
-    disabledReason: current.staff?.disabledReason,
-    ...patch,
-  };
-}
 
 export type BoardSettingsCardProps = {
   readonly overview: BoardOverview;

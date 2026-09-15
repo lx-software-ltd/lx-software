@@ -50,6 +50,7 @@ import {
   DEFAULT_BOARD_BOUNDARIES,
   effectiveToolLevel,
   readBoardTaskIdFromSearch,
+  staffDraft,
   syncBoardTaskSearchParams,
   type BoardMeetingMode,
   type BoardOverview,
@@ -298,6 +299,16 @@ export function ExecutiveBoardTab() {
             <BoardStaffSection
               maxRunningTasks={overview.settings.staff?.maxRunningTasks}
               onOpenSettings={() => setSection("settings")}
+              modelBySeat={overview.settings.staff?.modelBySeat}
+              onSaveModel={(seatId, model) => {
+                const current = overview.settings.staff?.modelBySeat ?? {};
+                const next = { ...current };
+                if (model) next[seatId] = model;
+                else delete next[seatId];
+                board.saveSettings.mutate({
+                  staff: staffDraft(overview.settings, { modelBySeat: next }),
+                });
+              }}
             />
           ) : null}
 

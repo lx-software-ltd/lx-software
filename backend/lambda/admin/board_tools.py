@@ -700,10 +700,10 @@ def _validate_content_publish(ctx: ToolContext, args: dict[str, Any]) -> str | N
     return board_content.validate_publish(ctx.table, args)
 
 
-def _validate_code_run_task(_ctx: ToolContext, args: dict[str, Any]) -> str | None:
+def _validate_code_run_task(ctx: ToolContext, args: dict[str, Any]) -> str | None:
     import board_code
 
-    return board_code.validate_run_task(args)
+    return board_code.validate_run_task(args, ctx)
 
 
 def _validate_github_create_issue(_ctx: ToolContext, args: dict[str, Any]) -> str | None:
@@ -2523,6 +2523,14 @@ def build_registry() -> dict[str, ToolOp]:
                         "description": "Questions you could not answer.",
                     },
                     "confidence": _str_param("How confident you are.", enum=["high", "medium", "low"]),
+                    "status": _str_param(
+                        "Use blocked when a breaker or runner guard stops the work.",
+                        enum=["ok", "blocked"],
+                    ),
+                    "blockedReason": _str_param(
+                        "Why the work cannot proceed. Required with status=blocked.",
+                        max_len=300,
+                    ),
                     "reason": REASON_PARAM,
                 },
                 ["summary", "deliverableType", "deliverable", "confidence"],
@@ -2940,6 +2948,27 @@ def _invoke_op(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> dict[
     return result if isinstance(result, dict) else {"result": result}
 
 
+_SECURITY_ISSUE_LABELS = frozenset({"security", "dependencies"})
+
+
+def _cto_security_issue(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> bool:
+    """CTO filing a security/dependencies issue may act even when globalMode is propose.
+
+    Labels are model-supplied. This is the only op that ignores the global cap;
+    see docs/architecture/executive-board-tools-plan.md.
+    """
+    if op.name != "github_create_issue" or ctx.persona_id != "cto":
+        return False
+    labels = {str(x).strip().lower() for x in (arguments.get("labels") or []) if x}
+    return bool(labels & _SECURITY_ISSUE_LABELS)
+
+
+def _should_always_propose(op: ToolOp, ctx: ToolContext, arguments: dict[str, Any]) -> bool:
+    if not op.always_propose:
+        return False
+    return not _cto_security_issue(ctx, op, arguments)
+
+
 def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> ToolOutcome:
     """Run (or record for approval) one operation and write the audit row."""
     started = time.monotonic()
@@ -2967,6 +2996,10 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
             seat_id=ctx.seat_id,
             seats_by_id=seats,
         )
+        # Intentional: security/dependencies issues skip always_propose and the
+        # globalMode cap so Dependabot / CVE tickets are filed without an Approval.
+        if _cto_security_issue(ctx, op, arguments) and level in ("propose", "act"):
+            level = "act"
     else:
         level = "act"
     summary = op.summarize(arguments)
@@ -3044,7 +3077,8 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         # and can retry with corrected arguments.
         outcome = ToolOutcome(status="error", result={"error": invalid[:500]}, summary=summary)
     elif (world_error := _validate_world(ctx, op, arguments)):
-        outcome = ToolOutcome(status="error", result={"error": world_error[:500]}, summary=summary)
+        world_status = "refused" if op.name == "code_run_task" else "error"
+        outcome = ToolOutcome(status=world_status, result={"error": world_error[:500]}, summary=summary)
     elif breaker_error:
         outcome = ToolOutcome(status="refused", result=breaker_error, summary=summary)
     elif hold_doc:
@@ -3066,7 +3100,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         else None
     ):
         outcome = ToolOutcome(status="ok", result=reused_assign, summary="Attached to an open task")
-    elif op.is_write and ctx.actor != "hold" and (level != "act" or guard_reason or (op.always_propose and ctx.actor == "persona")):
+    elif op.is_write and ctx.actor != "hold" and (level != "act" or guard_reason or (_should_always_propose(op, ctx, arguments) and ctx.actor == "persona")):
         approval = create_approval(ctx, op, arguments, summary=summary, downgrade_reason=guard_reason)
         approval_id = str(approval["approvalId"])
         message = (
@@ -3103,24 +3137,30 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
                             _holds_ramp.record_ramp(ctx.table, ctx.settings, class_key, vetoed=False)
                     except Exception:
                         pass
-        except (
-            board_github.GitHubSnapshotError,
-            board_mail.MailError,
-            board_research.ResearchError,
-            board_aws.AwsToolError,
-            board_security.SecurityToolError,
-            board_receivables.ReceivablesError,
-            board_product.ProductError,
-            board_meta.MetaError,
-            board_stores.StoresError,
-            board_web.WebError,
-            TimeoutError,
-            ValueError,
-        ) as exc:
-            outcome = ToolOutcome(status="error", result={"error": str(exc)[:500]}, summary=summary)
-        except Exception as exc:  # pragma: no cover - defensive: a tool bug must not kill the reply
-            _log_event("error", tag="board_tool_crashed", op=op.name, error=str(exc)[:300])
-            outcome = ToolOutcome(status="error", result={"error": f"Tool failed: {str(exc)[:200]}"}, summary=summary)
+        except Exception as exc:
+            if getattr(exc, "refused", False):
+                outcome = ToolOutcome(status="refused", result={"error": str(exc)[:500]}, summary=summary)
+            elif isinstance(
+                exc,
+                (
+                    board_github.GitHubSnapshotError,
+                    board_mail.MailError,
+                    board_research.ResearchError,
+                    board_aws.AwsToolError,
+                    board_security.SecurityToolError,
+                    board_receivables.ReceivablesError,
+                    board_product.ProductError,
+                    board_meta.MetaError,
+                    board_stores.StoresError,
+                    board_web.WebError,
+                    TimeoutError,
+                    ValueError,
+                ),
+            ):
+                outcome = ToolOutcome(status="error", result={"error": str(exc)[:500]}, summary=summary)
+            else:
+                _log_event("error", tag="board_tool_crashed", op=op.name, error=str(exc)[:300])
+                outcome = ToolOutcome(status="error", result={"error": f"Tool failed: {str(exc)[:200]}"}, summary=summary)
     outcome.duration_ms = int((time.monotonic() - started) * 1000)
     outcome.approval_id = approval_id or outcome.approval_id
     audit = mask_arguments(ctx, {"arguments": arguments, "summary": summary})

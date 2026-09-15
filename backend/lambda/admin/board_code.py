@@ -55,6 +55,7 @@ _RUN_WAITING_STATUS = frozenset({"queued", "in_progress", "waiting", "pending", 
 MAX_REVIEW_ROUNDS = 2
 KINDS = frozenset({"feature", "fix", "content"})
 CI_OK = frozenset({"success", "neutral", "skipped"})
+REVIEW_PENDING_GRACE_SECONDS = 60 * 60
 _ISSUE_RE = re.compile(r"#(\d+)")
 _JSON_BLOCK = re.compile(r"```json\s*(\{.*?\})\s*```", re.S)
 _RUN_INDEX = "code:runs"
@@ -63,10 +64,40 @@ _FAILURE_LINE_RE = re.compile(
     r"|error: .+|Failed .+|mypy:.+|got \".+\", expected \".+\")",
     re.I,
 )
+_PYTEST_LINE_RE = re.compile(r"^(?:FAILED |ERROR |E\s{2,})")
+_PENDING_ONLY_RE = re.compile(
+    r"\b(?:ci is pending|pending ci|ci.{0,24}pending|not ready for review yet as the ci)\b",
+    re.I,
+)
+_ISSUE_TITLE_STOPWORDS = frozenset(
+    {
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "this",
+        "that",
+        "into",
+        "issue",
+        "board",
+        "ready",
+        "add",
+        "fix",
+        "update",
+        "upgrade",
+    }
+)
 
 
 class CodeError(ValueError):
     """Runner policy or GitHub dispatch failure."""
+
+
+class CodeRefused(CodeError):
+    """Policy guard: not a GitHub / runner failure. Recorded as ``refused``."""
+
+    refused = True
 
 
 def _repo() -> str:
@@ -262,20 +293,45 @@ def _runs_for_task(task_id: str) -> list[dict[str, Any]]:
     return out
 
 
-def ci_success(sha: str) -> bool:
+def reset_lookup_caches_for_tests() -> None:
+    """Kept so runner tests can isolate GitHub lookups; no process cache remains."""
+    return
+
+
+def _lookup_issue(number: int) -> dict[str, Any]:
+    """Fetch an issue. Empty dict on transport error so callers can fail open."""
+    try:
+        found = board_github.op_get_issue({"number": number})
+    except Exception:
+        return {}
+    return found if isinstance(found, dict) else {}
+
+
+def ci_state(sha: str) -> str:
+    """Return ``success``, ``failure``, or ``pending`` for a head SHA."""
     if not sha:
-        return False
+        return "pending"
     repo = _repo()
     checks = _gh("GET", f"/repos/{repo}/commits/{sha}/check-runs") or {}
     runs = checks.get("check_runs") if isinstance(checks, dict) else None
     if isinstance(runs, list) and runs:
-        return all(
-            str(r.get("status") or "") == "completed" and str(r.get("conclusion") or "") in CI_OK
-            for r in runs
-            if isinstance(r, dict)
-        )
+        items = [r for r in runs if isinstance(r, dict)]
+        if any(str(r.get("status") or "") != "completed" for r in items):
+            return "pending"
+        if all(str(r.get("conclusion") or "") in CI_OK for r in items):
+            return "success"
+        return "failure"
     status = _gh("GET", f"/repos/{repo}/commits/{sha}/status") or {}
-    return isinstance(status, dict) and str(status.get("state") or "") == "success"
+    state = str((status or {}).get("state") or "") if isinstance(status, dict) else ""
+    if state == "success":
+        return "success"
+    if state in ("failure", "error"):
+        return "failure"
+    return "pending"
+
+
+def ci_success(sha: str) -> bool:
+    return ci_state(sha) == "success"
 
 
 def _pr_files(number: int) -> list[dict[str, Any]]:
@@ -321,6 +377,7 @@ def review_bundle(pr_number: int) -> dict[str, Any]:
     pr = _get_pr(pr_number)
     files = _pr_files(pr_number)
     sha = str((pr.get("head") or {}).get("sha") or "")
+    ci = ci_state(sha)
     return {
         "prNumber": int(pr_number),
         "title": pr.get("title"),
@@ -330,7 +387,8 @@ def review_bundle(pr_number: int) -> dict[str, Any]:
         "changedLines": changed_lines(files),
         "changedPaths": [str(f.get("filename") or "") for f in files],
         "protectedPaths": files_protected(files),
-        "ci": "success" if ci_success(sha) else "pending_or_failed",
+        "ci": "success" if ci == "success" else "pending_or_failed",
+        "ciState": ci,
         "sha": sha,
         "state": pr.get("state") or "open",
         "merged": bool(pr.get("merged") or pr.get("merged_at")),
@@ -357,6 +415,16 @@ def parse_review_verdict(text: str) -> dict[str, Any]:
         return {}
     notes = parsed.get("notes") if isinstance(parsed.get("notes"), list) else []
     return {"verdict": verdict, "notes": [str(n)[:400] for n in notes if n][:12]}
+
+
+def _notes_are_pending_only(notes: list[str]) -> bool:
+    text = " ".join(notes).strip()
+    if not text:
+        return False
+    if not _PENDING_ONLY_RE.search(text):
+        return False
+    lowered = text.lower()
+    return "fail" not in lowered and "error" not in lowered
 
 
 def _find_task(table: Any, kind: str, event_id: str, *, statuses: tuple[str, ...] | None = None) -> dict[str, Any] | None:
@@ -444,22 +512,47 @@ def _kind_for_pr(table: Any, pr_number: int, bundle: dict[str, Any]) -> str:
     return "feature"
 
 
-def validate_run_task(args: dict[str, Any]) -> str | None:
-    """Refuse a runner dispatch that names a missing or closed GitHub issue."""
+def validate_run_task(args: dict[str, Any], ctx: Any | None = None) -> str | None:
+    """Refuse a runner dispatch that names a missing, closed, or PR-number issue."""
     try:
         issue = int(args.get("issueNumber") or 0)
     except (TypeError, ValueError):
         return "issueNumber is required"
     if issue <= 0:
         return "issueNumber is required"
+    task = _calling_task(ctx) if ctx is not None else {}
+    ref = task.get("eventRef") or {}
     try:
-        import board_github
-
-        found = board_github.op_get_issue({"number": issue})
-    except Exception:
+        pr_from_ref = int(ref.get("prNumber") or 0)
+    except (TypeError, ValueError):
+        pr_from_ref = 0
+    if pr_from_ref and issue == pr_from_ref:
+        stored_issue = 0
+        if ctx is not None:
+            _source, row = _run_for_pr(ctx.table, pr_from_ref)
+            try:
+                stored_issue = int(row.get("issue") or 0)
+            except (TypeError, ValueError):
+                stored_issue = 0
+        if stored_issue > 0 and stored_issue != issue:
+            # Engineer passed the PR number; _is_revision_dispatch remaps to the stored issue.
+            return None
+        return (
+            f"#{issue} is the pull request. Pass the GitHub issue number it implements"
+            + (f" (stored issue #{stored_issue})." if stored_issue else ".")
+        )
+    found = _lookup_issue(issue)
+    if not found:
         return None
     if isinstance(found, dict) and found.get("error"):
         return str(found.get("error") or f"GitHub issue #{issue} was not found")
+    if isinstance(found, dict) and found.get("isPullRequest"):
+        hinted = int(ref.get("issueNumber") or 0) if ref else 0
+        hint = f" Use issue #{hinted} from the task brief." if hinted else ""
+        return (
+            f"#{issue} is a pull request, not an issue. Pass the GitHub issue number "
+            f"the PR implements, not the PR number.{hint}"
+        )
     state = str((found or {}).get("state") or "").lower()
     if state and state != "open":
         return f"GitHub issue #{issue} is {state}, not open"
@@ -501,40 +594,125 @@ def _calling_task(ctx: Any) -> dict[str, Any]:
     return board_store.get_task(ctx.table, task_id) or {}
 
 
-def _is_revision_dispatch(ctx: Any, issue: int) -> tuple[str, dict[str, Any]]:
-    """Reuse the original runner task id when revising an open board PR."""
+def ensure_run_for_pr(table: Any, pr_number: int) -> tuple[str, dict[str, Any]]:
+    """Return the run row for ``pr_number``, creating a stub from the live PR if needed."""
+    source_id, row = _run_for_pr(table, pr_number)
+    if source_id:
+        return source_id, row
+    try:
+        pr = _get_pr(pr_number)
+    except (CodeError, board_github.GitHubSnapshotError):
+        return "", {}
+    issue = _issue_from_pr(pr) or 0
+    head = str((pr.get("head") or {}).get("ref") or "")
+    task_id = head.split("/", 1)[1] if head.startswith("board/") else f"pr-{pr_number}"
+    row = {
+        "taskId": task_id,
+        "prNumber": pr_number,
+        "issue": issue,
+        "kind": "feature",
+        "prUrl": pr.get("html_url"),
+    }
+    _put_run(table, task_id, row)
+    return task_id, row
+
+
+def owner_revision_ref(table: Any, pr_number: int, issue_number: Any = None) -> dict[str, Any]:
+    """``eventRef`` so an owner-created task revises an existing board PR."""
+    source_id, row = ensure_run_for_pr(table, pr_number)
+    try:
+        issue = int(issue_number if issue_number not in (None, "") else (row.get("issue") or 0))
+    except (TypeError, ValueError):
+        issue = 0
+    if issue <= 0:
+        raise CodeRefused(
+            f"PR #{int(pr_number)} has no linked GitHub issue; pass issueNumber"
+        )
+    if source_id and not row.get("issue"):
+        row["issue"] = issue
+        _put_run(table, source_id, row)
+    return {
+        "kind": "code-implement",
+        "id": f"pr:{int(pr_number)}:owner",
+        "prNumber": int(pr_number),
+        "issueNumber": issue,
+        "sourceTaskId": source_id or None,
+    }
+
+
+def _is_revision_dispatch(ctx: Any, issue: int) -> tuple[str, dict[str, Any], int]:
+    """Reuse the original runner task id when revising an open board PR.
+
+    ``eventRef.prNumber`` is authoritative. A mismatched engineer ``issueNumber``
+    (often the PR number) is remapped to the stored issue instead of opening a
+    duplicate branch.
+    """
     task = _calling_task(ctx)
     ref = task.get("eventRef") or {}
     if str(ref.get("kind") or "") != "code-implement":
-        return "", {}
+        return "", {}, issue
     try:
         pr_number = int(ref.get("prNumber") or 0)
     except (TypeError, ValueError):
         pr_number = 0
     if pr_number <= 0:
-        return "", {}
-    source_id, row = _run_for_pr(ctx.table, pr_number)
+        return "", {}, issue
+    source_id, row = ensure_run_for_pr(ctx.table, pr_number)
     if not source_id:
-        return "", {}
+        return "", {}, issue
     try:
         stored_issue = int(row.get("issue") or 0)
     except (TypeError, ValueError):
         stored_issue = 0
-    if stored_issue and stored_issue != issue:
-        return "", {}
-    return source_id, row
+    if stored_issue:
+        if stored_issue != issue:
+            _log_event(
+                "warning",
+                tag="board_code_revision_issue_mismatch",
+                prNumber=pr_number,
+                storedIssue=stored_issue,
+                givenIssue=issue,
+            )
+        return source_id, row, stored_issue
+    if issue == pr_number:
+        return source_id, row, 0
+    row["issue"] = issue
+    _put_run(ctx.table, source_id, row)
+    return source_id, row, issue
+
+
+def _issue_title_nouns(title: str) -> set[str]:
+    words = re.findall(r"[a-z0-9]{4,}", str(title or "").lower())
+    return {w for w in words if w not in _ISSUE_TITLE_STOPWORDS}
+
+
+def _brief_mismatches_issue(issue: int, brief: str) -> bool:
+    """True when the dispatch brief shares no key nouns with the issue title."""
+    if issue <= 0:
+        return False
+    found = _lookup_issue(issue)
+    if not isinstance(found, dict) or found.get("error") or found.get("isPullRequest"):
+        return False
+    nouns = _issue_title_nouns(str(found.get("title") or ""))
+    if not nouns:
+        return False
+    blob = str(brief or "").lower()
+    return not any(word in blob for word in nouns)
 
 
 def extract_failure_line(log: str) -> str:
-    """Last policy / compiler line from a failed Actions job log."""
-    last = ""
+    """Last pytest or policy / compiler line from a failed Actions job log."""
+    last_policy = ""
+    last_pytest = ""
     for raw in str(log or "").splitlines():
         line = raw.strip()
         if not line:
             continue
+        if _PYTEST_LINE_RE.match(line):
+            last_pytest = line[:400]
         if _FAILURE_LINE_RE.search(line):
-            last = line[:400]
-    return last
+            last_policy = line[:400]
+    return last_pytest or last_policy
 
 
 def _failure_line_for_run(run: dict[str, Any]) -> str:
@@ -581,16 +759,20 @@ def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     try:
         issue = int(args.get("issueNumber") or 0)
     except (TypeError, ValueError):
-        raise CodeError("issueNumber is required") from None
+        raise CodeRefused("issueNumber is required") from None
     if issue <= 0:
-        raise CodeError("issueNumber is required")
+        raise CodeRefused("issueNumber is required")
     kind = str(args.get("kind") or "feature").strip().lower()
     if kind not in KINDS:
-        raise CodeError("kind must be feature, fix or content")
+        raise CodeRefused("kind must be feature, fix or content")
     brief = str(args.get("brief") or "").strip()
     if not brief:
-        raise CodeError("brief is required")
-    revision_id, revision_row = _is_revision_dispatch(ctx, issue)
+        raise CodeRefused("brief is required")
+    revision_id, revision_row, issue = _is_revision_dispatch(ctx, issue)
+    if revision_id and issue <= 0:
+        raise CodeRefused(
+            "this PR has no linked GitHub issue; pass the issue number the PR implements"
+        )
     caller = str(getattr(ctx, "task_id", "") or "")
     if revision_id:
         task_id = revision_id
@@ -602,7 +784,7 @@ def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         # this task's own run so those guards are not shadowed by the
         # one-open-PR-per-issue check.
         if issue_has_open_board_pr(issue, ctx.table, except_task_id=task_id):
-            raise CodeError(
+            raise CodeRefused(
                 f"an open board/* pull request already references #{issue}. "
                 "Reuse that branch or close the PR before starting another run."
             )
@@ -618,12 +800,12 @@ def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         # shared run row. MAX_REVIEW_ROUNDS still caps revise cycles.
         dispatch_rounds = 0
     if dispatch_rounds >= max_rounds:
-        raise CodeError("two runs already made for this task; report the failure")
+        raise CodeRefused("two runs already made for this task; report the failure")
     started = _parse_iso(str(prior.get("dispatchedAt") or ""))
     now = datetime.now(timezone.utc)
     if prior.get("dispatchedAt") and (_run_in_flight(prior) or dispatch_rounds > 0):
         if started is None or now - started < timedelta(seconds=cooldown):
-            raise CodeError("a run for this task is already in flight — call code_get_run")
+            raise CodeRefused("a run for this task is already in flight — call code_get_run")
     dispatched = dispatch_workflow(
         WORKFLOW_AGENT,
         {"task_id": task_id, "issue": str(issue), "brief": brief[:4000], "kind": kind},
@@ -641,6 +823,13 @@ def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         "dispatchedAt": board_store.now_iso(),
         "workflow": WORKFLOW_AGENT,
     }
+    mismatch = _brief_mismatches_issue(issue, brief)
+    if mismatch:
+        payload["briefMismatch"] = True
+        task = _calling_task(ctx) if ctx is not None else {}
+        if task and "brief_mismatch" not in {str(f) for f in (task.get("flags") or [])}:
+            task["flags"] = [*(task.get("flags") or []), "brief_mismatch"]
+            board_store.put_task(ctx.table, task)
     payload.pop("failedAt", None)
     payload.pop("conclusion", None)
     payload.pop("runStatus", None)
@@ -684,6 +873,21 @@ def op_get_run(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         stored["failureLine"] = _failure_line_for_run(latest)
     if stored.get("failureLine"):
         out["failureLine"] = stored["failureLine"]
+    if out.get("prNumber") and not stored.get("prSeenAt"):
+        stored["prSeenAt"] = board_store.now_iso()
+    sha = ""
+    if isinstance(pr, dict):
+        head = pr.get("head") if isinstance(pr.get("head"), dict) else {}
+        sha = str((head or {}).get("sha") or "")
+    if sha:
+        stored["ciState"] = ci_state(sha)
+        stored["headSha"] = sha
+    if stored.get("prSeenAt"):
+        out["prSeenAt"] = stored["prSeenAt"]
+    if stored.get("ciState"):
+        out["ciState"] = stored["ciState"]
+    if stored.get("briefMismatch"):
+        out["briefMismatch"] = True
     _put_run(ctx.table, task_id, stored)
     return out
 
@@ -1126,9 +1330,24 @@ def poll_runs(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
         pr_number = state.get("prNumber")
         if not pr_number:
             continue
-        event_id = f"pr:{int(pr_number)}"
+        ci = str(state.get("ciState") or "")
+        pending_note = ""
+        if ci == "pending":
+            seen = _parse_iso(str(state.get("prSeenAt") or ""))
+            now = datetime.now(timezone.utc)
+            if seen is None or now - seen < timedelta(seconds=REVIEW_PENDING_GRACE_SECONDS):
+                continue
+            pending_note = " CI still pending after 60 min — review code only."
+            event_id = f"pr:{int(pr_number)}:pending-ci"
+        elif ci in ("success", "failure"):
+            event_id = f"pr:{int(pr_number)}"
+        else:
+            continue
         if _find_task(table, "code-review", event_id):
             continue
+        failure_line = str(state.get("failureLine") or "").strip()
+        mismatch = " The runner brief may not match the issue title (brief_mismatch)." if state.get("briefMismatch") else ""
+        ci_note = f" CI failed: {failure_line}." if ci == "failure" and failure_line else ""
         try:
             task = board_staff.create_task(
                 table,
@@ -1137,6 +1356,7 @@ def poll_runs(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
                 origin="event",
                 brief=(
                     f"Review PR #{pr_number} ({state.get('runName') or task_id}). "
+                    f"{ci_note}{pending_note}{mismatch} "
                     "Call code_review_pr and deliver Markdown that ends with "
                     '```json {"verdict":"accept"|"changes","notes":[…]}```'
                 ),
@@ -1371,20 +1591,27 @@ def on_review_delivered(table: Any, settings: dict[str, Any], task: dict[str, An
         # how many times the first engineer dispatched the runner.
         if review_rounds >= MAX_REVIEW_ROUNDS - 1:
             return {"verdict": "changes", "stopped": "max rounds"}
-        notes = " ".join(parsed.get("notes") or []) or "Address the architect review notes."
+        notes_list = [str(n) for n in (parsed.get("notes") or []) if n]
+        if _notes_are_pending_only(notes_list):
+            return {"verdict": "changes", "skipped": "ci pending"}
+        notes = " ".join(notes_list) or "Address the architect review notes."
         if issue <= 0:
             return {"verdict": "changes", "skipped": "no issue"}
         failure_line = str(run.get("failureLine") or "").strip()
-        if failure_line:
-            notes = f"{notes} CI failure: {failure_line}"
         next_round = review_rounds + 2
+        brief = (
+            f"Revise PR #{pr_number} (round {next_round}). Architect notes: {notes} "
+            f"CI failure: {failure_line or 'none'}. "
+            "Call code_run_task ONCE with a brief that fixes exactly these points, then call task_finish. "
+            "Do not poll CI; the board polls it for you."
+        )
         try:
             follow = board_staff.create_task(
                 table,
                 settings,
                 assignee=engineer,
                 origin="event",
-                brief=f"Revise PR #{pr_number} (round {next_round}). {notes} Call code_run_task again.",
+                brief=brief[:4000],
                 deliverable_type="pr",
                 sla_hours=24,
                 event_ref={"kind": "code-implement", "id": f"issue:{issue}:r{next_round}", "issueNumber": issue, "prNumber": pr_number},
