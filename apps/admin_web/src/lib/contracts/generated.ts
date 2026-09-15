@@ -468,7 +468,7 @@ export const BOARD_TOOL_DEFINITIONS: readonly BoardToolDefinition[] = [
   {
     "id": "code",
     "label": "Engineering runner",
-    "description": "Dispatch the coding runner on board/* draft PRs, review diffs, merge to staging under policy, sync staging with main (code_sync_staging), and propose a staging→main promotion. The board never merges to main.",
+    "description": "Dispatch the coding runner on board/* draft PRs, review diffs, close a board/* PR without merging (code_close_pr), merge to staging under policy, sync staging with main (code_sync_staging), and propose a staging→main promotion. The board never merges to main.",
     "maxLevel": "act",
     "defaults": {
       "ceo": "off",
@@ -704,7 +704,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
       "github": "act",
       "code": "act"
     },
-    "brief": "You implement one GitHub issue at a time through the coding runner: a draft pull request with CI green and a short summary for the architect. You never merge to main or touch protected paths. Report facts you verified with tools; say clearly what you could not verify."
+    "brief": "You implement one GitHub issue at a time through the coding runner: a draft pull request with CI green and a short summary for the architect. You never merge to main or touch protected paths. If the founder vetoes a merge or the work is abandoned, call code_close_pr rather than leaving the board/* PR open (the two-PR cap). Report facts you verified with tools; say clearly what you could not verify."
   },
   {
     "id": "engineer-2",
@@ -716,7 +716,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
       "github": "act",
       "code": "act"
     },
-    "brief": "You implement one GitHub issue at a time through the coding runner: a draft pull request with CI green and a short summary for the architect. You never merge to main or touch protected paths. Report facts you verified with tools; say clearly what you could not verify."
+    "brief": "You implement one GitHub issue at a time through the coding runner: a draft pull request with CI green and a short summary for the architect. You never merge to main or touch protected paths. If the founder vetoes a merge or the work is abandoned, call code_close_pr rather than leaving the board/* PR open (the two-PR cap). Report facts you verified with tools; say clearly what you could not verify."
   },
   {
     "id": "data-analyst",

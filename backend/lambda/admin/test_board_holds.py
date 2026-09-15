@@ -63,6 +63,7 @@ class ClassifyTests(BoardTestCase):
         self.assertEqual(self._cls("github_create_issue"), ("internal", "internal"))
         self.assertEqual(self._cls("github_comment_issue"), ("internal", "internal"))
         self.assertEqual(self._cls("github_set_labels"), ("internal", "internal"))
+        self.assertEqual(self._cls("code_close_pr", {"prNumber": 7, "reason": "Veto."}), ("internal", "internal"))
         self.assertEqual(self._cls("product_flag_listing"), ("internal", "internal"))
         self.assertEqual(self._cls("security_open_remediation"), ("internal", "internal"))
         self.assertEqual(self._cls("aws_propose_budget_alert"), ("internal", "internal"))

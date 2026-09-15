@@ -752,6 +752,24 @@ def _code_merge_guard(ctx: ToolContext, args: dict[str, Any]) -> str | None:
     return board_code.merge_guard(ctx, args)
 
 
+def _code_close_pr(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_code
+
+    return board_code.op_close_pr(ctx, args)
+
+
+def _code_close_guard(ctx: ToolContext, args: dict[str, Any]) -> str | None:
+    import board_code
+
+    return board_code.close_guard(ctx, args)
+
+
+def _preview_code_close_pr(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any] | None:
+    import board_code
+
+    return board_code.preview_close_pr(ctx, args)
+
+
 def _staff_assign(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     import board_staff
 
@@ -2307,6 +2325,30 @@ def build_registry() -> dict[str, ToolOp]:
             summarize=_summ("Merged a pull request to staging"),
             contexts=("chat", "meeting", "task"),
             act_guard=_code_merge_guard,
+            always_propose=True,
+        ),
+        ToolOp(
+            name="code_close_pr",
+            tool_id="code",
+            kind="write",
+            description=(
+                "Close a board/* pull request without merging (founder veto, superseded work, "
+                "or a review that will not be revised). Does not delete the branch. Always an "
+                "Approval. After a vetoed merge, call this instead of retrying code_merge_staging."
+            ),
+            parameters=_obj(
+                {
+                    "prNumber": _int_param("Pull request number.", minimum=1, maximum=100000),
+                    "reason": REASON_PARAM,
+                },
+                ["prNumber", "reason"],
+            ),
+            run=_code_close_pr,
+            summarize=_summ("Closed pull request #{prNumber}"),
+            contexts=("chat", "meeting", "task"),
+            act_guard=_code_close_guard,
+            validate=_code_close_guard,
+            preview=_preview_code_close_pr,
             always_propose=True,
         ),
         ToolOp(

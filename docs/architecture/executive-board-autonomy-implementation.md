@@ -1306,10 +1306,14 @@ use the same path.
   this PR, `changedLines <= 400`, no path matches `PROTECTED_PATHS`
   (`**/auth/**`, `**/payments/**`, `**/migrations/**`, `infra/**`, `.github/**`),
   base is `staging`; on execute dispatches `board-merge-staging.yml`),
-  `code_promote(kind="production")` (write; `always_propose=True` — an
+  `code_close_pr(prNumber, reason)` (write; class `internal`; `always_propose=True`;
+  `act_guard` refuses unless the PR is open, unmerged, `board/*`, and based on
+  `staging`; on execute comments then `PATCH`es the pull to `closed` via the
+  GitHub API and rejects pending `code_merge_staging` approvals for that number;
+  does not delete the branch), `code_promote(kind="production")` (write; `always_propose=True` — an
   Approval whose approve action dispatches `board-promote.yml`; shown as
   the "Promote" button on the review page with the staging diff summary).
-  The board GitHub token needs `actions: write` (deployment doc).
+  The board GitHub token needs `actions: write` and `pull-requests: write` (deployment doc).
 - Engineering flow as tasks: architect duty "groom backlog" (weekly) →
   issues with acceptance criteria labelled `board-ready`; `engineer-*`
   target check: if fewer than 2 open `board/*` PRs, take the oldest
@@ -1348,8 +1352,8 @@ use the same path.
    and run a smoke test; on push to `main` deploy production (existing).
 
 **Tests (this repo).** `test_board_code.py`: guard matrix for
-`code_merge_staging`, dispatch payloads, run polling fake, review JSON
-parsing, promote is always an approval.
+`code_merge_staging` and `code_close_pr`, dispatch payloads, run polling fake, review JSON
+parsing, promote and close are always approvals.
 
 **Acceptance.** A `board-ready` issue in a test repo results in a draft PR
 on `board/<taskId>`, an architect review task, and (after accept and CI)
@@ -1366,7 +1370,8 @@ Promote button listing the staging commits.
 - *Protected paths bypass via renames.* Evaluate both old and new paths
   from the PR files API.
 - *Two engineers on one issue.* `code_run_task` refuses when an open
-  `board/*` PR references the same issue number.
+  `board/*` PR references the same issue number. A vetoed merge must
+  `code_close_pr` or the two-PR cap stays occupied.
 - *Staging drift.* `board-promote.yml` refuses when `staging` is behind
   `main`; the architect gets a task "rebase staging" (manual, `needs_owner`
   in v1).
@@ -1428,7 +1433,7 @@ Promote button listing the staging commits.
    `data-analyst`, `security-analyst`; then enable duties.
 7. siutindei repo: appendix A. Then deploy WP10. Owner: activate
    `architect`, `engineer-1`, `engineer-2`, `product-dev`; token scope
-   `actions: write`. Keep `code_merge_staging` as `always_propose` until
+   `actions: write` and `pull-requests: write`. Keep `code_merge_staging` as `always_propose` until
    those workflows exist; then first merges to staging are 12 h holds.
 8. After two weeks: act on ramp promotions from the review page.
 

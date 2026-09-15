@@ -322,6 +322,8 @@ def review_bundle(pr_number: int) -> dict[str, Any]:
         "protectedPaths": files_protected(files),
         "ci": "success" if ci_success(sha) else "pending_or_failed",
         "sha": sha,
+        "state": pr.get("state") or "open",
+        "merged": bool(pr.get("merged") or pr.get("merged_at")),
         "diff": _diff_text(pr_number),
         "url": pr.get("html_url"),
         "issue": _issue_from_pr(pr),
@@ -386,6 +388,10 @@ def merge_guard(ctx: Any, args: dict[str, Any]) -> str | None:
         return str(exc)[:200]
     if str(bundle.get("base") or "") != "staging":
         return "base branch must be staging"
+    if bundle.get("merged"):
+        return "pull request is already merged"
+    if str(bundle.get("state") or "open").lower() != "open":
+        return "pull request is not open"
     if bundle.get("ci") != "success":
         return "CI is not green"
     if not architect_accepted(ctx.table, number):
@@ -531,6 +537,122 @@ def op_merge_staging(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if reason:
         return {"error": reason}
     return dispatch_workflow(WORKFLOW_MERGE, {"pr_number": str(number)}, ref="staging")
+
+
+def close_guard(_ctx: Any, args: dict[str, Any]) -> str | None:
+    """Refuse closing anything except an open, unmerged board/* PR into staging."""
+    try:
+        number = int(args.get("prNumber") or 0)
+    except (TypeError, ValueError):
+        return "prNumber is required"
+    if number <= 0:
+        return "prNumber is required"
+    try:
+        pr = _get_pr(number)
+    except (CodeError, board_github.GitHubSnapshotError) as exc:
+        return str(exc)[:200]
+    if pr.get("merged") or pr.get("merged_at"):
+        return "pull request is already merged"
+    head = str((pr.get("head") or {}).get("ref") or "")
+    if not head.startswith("board/"):
+        return "only board/* pull requests can be closed this way"
+    if str((pr.get("base") or {}).get("ref") or "") != "staging":
+        return "base branch must be staging"
+    if str(pr.get("state") or "open").lower() != "open":
+        return "pull request is not open"
+    return None
+
+
+def preview_close_pr(_ctx: Any, args: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        number = int(args.get("prNumber") or 0)
+        pr = _get_pr(number)
+    except (TypeError, ValueError, CodeError, board_github.GitHubSnapshotError):
+        return None
+    return {
+        "prNumber": pr.get("number"),
+        "title": pr.get("title"),
+        "head": (pr.get("head") or {}).get("ref"),
+        "base": (pr.get("base") or {}).get("ref"),
+        "url": pr.get("html_url"),
+        "reason": str(args.get("reason") or "")[:400],
+    }
+
+
+def _reject_pending_merge_approvals(table: Any, pr_number: int, note: str) -> int:
+    """Drop stale merge proposals so a vetoed close cannot be merged afterwards."""
+    rejected = 0
+    now = board_store.now_iso()
+    for approval in board_store.list_approvals(table):
+        if approval.get("status") != "pending" or approval.get("op") != "code_merge_staging":
+            continue
+        try:
+            if int((approval.get("arguments") or {}).get("prNumber") or 0) != pr_number:
+                continue
+        except (TypeError, ValueError):
+            continue
+        approval_id = str(approval.get("approvalId") or "")
+        if not approval_id:
+            continue
+        if not board_store.claim_approval_decision(table, approval_id, status="rejected"):
+            continue
+        board_store.put_approval(
+            table,
+            {
+                **approval,
+                "status": "rejected",
+                "note": note[:1000],
+                "decidedAt": now,
+                "decidedBySub": "system:close-pr",
+                "updatedAt": now,
+            },
+        )
+        rejected += 1
+    return rejected
+
+
+def op_close_pr(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
+    """Close a board/* PR without merging. Does not delete the branch."""
+    reason = str(args.get("reason") or "").strip()
+    if not reason:
+        raise CodeError("reason is required")
+    blocked = close_guard(ctx, args)
+    if blocked:
+        raise CodeError(blocked)
+    number = int(args["prNumber"])
+    if not board_github.write_enabled():
+        raise CodeError(
+            "GitHub writes need a token: replace the dummy value in the "
+            "lxsoftware-admin-siutindei-board-github-token secret with a fine-grained token "
+            "that has issues: write and pull-requests: write on the repository"
+        )
+    pr = _get_pr(number)
+    commented = False
+    try:
+        board_github.op_comment_issue(
+            {"number": number, "body": f"Closed by the Executive Board: {reason[:400]}"}
+        )
+        commented = True
+    except board_github.GitHubSnapshotError as exc:
+        _log_event("warning", tag="board_code_close_comment_failed", prNumber=number, error=str(exc)[:200])
+    updated = _gh("PATCH", f"/repos/{_repo()}/pulls/{number}", {"state": "closed"})
+    if not isinstance(updated, dict) or str(updated.get("state") or "") != "closed":
+        raise CodeError(f"GitHub did not close pull request #{number}")
+    rejected = 0
+    table = getattr(ctx, "table", None)
+    if table is not None:
+        rejected = _reject_pending_merge_approvals(
+            table, number, f"PR #{number} was closed without merging: {reason[:200]}"
+        )
+    return {
+        "ok": True,
+        "prNumber": number,
+        "state": "closed",
+        "url": updated.get("html_url") or pr.get("html_url"),
+        "head": (pr.get("head") or {}).get("ref"),
+        "commented": commented,
+        "rejectedMergeApprovals": rejected,
+    }
 
 
 def compare_staging() -> dict[str, Any]:
