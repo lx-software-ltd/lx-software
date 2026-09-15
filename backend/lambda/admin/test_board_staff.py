@@ -694,16 +694,17 @@ class StaffStepTests(ToolsTestCase):
                 },
             )
         self.assertIn("JSON does not parse", str(raised.exception))
-        board_staff.op_task_finish(
-            ctx,
-            {
-                "summary": "batch",
-                "deliverable": '!function_call:{"name":"task_finish"}\n{"district":"Sha Tin","organisations":[]}',
-                "deliverableType": "markdown",
-                "evidence": [],
-                "confidence": "low",
-            },
-        )
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "batch",
+                    "deliverable": '!function_call:{"name":"task_finish"}\n{"district":"Sha Tin","organisations":[]}',
+                    "deliverableType": "markdown",
+                    "evidence": [],
+                    "confidence": "low",
+                },
+            )
         raw = board_staff.read_deliverable(board_store.get_task(self.table, task["taskId"]))
         self.assertNotIn("!function_call:", raw)
         self.assertIn("Sha Tin", raw)
