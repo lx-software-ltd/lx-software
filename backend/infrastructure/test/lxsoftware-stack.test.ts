@@ -903,17 +903,15 @@ describe("AdminApiFn recursive loop detection", () => {
   test("allows intentional self-invoke; other app Lambdas stay on Terminate", () => {
     const fns = resourcesOfType("AWS::Lambda::Function");
     const admin = Object.entries(fns).find(([id]) => id.startsWith("AdminApiFn"));
-    expect(admin?.[1].Properties?.RecursionConfig).toEqual({
-      RecursiveLoop: "Allow",
-    });
+    expect(admin?.[1].Properties?.RecursiveLoop).toBe("Allow");
     const inbound = Object.entries(fns).find(([id]) =>
       id.startsWith("InboundStatementMailFn")
     );
-    expect(inbound?.[1].Properties?.RecursionConfig).toBeUndefined();
+    expect(inbound?.[1].Properties?.RecursiveLoop).toBeUndefined();
     const authorizer = Object.entries(fns).find(([id]) =>
       id.startsWith("PublicApiKeyAuthorizerFn")
     );
-    expect(authorizer?.[1].Properties?.RecursionConfig).toBeUndefined();
+    expect(authorizer?.[1].Properties?.RecursiveLoop).toBeUndefined();
   });
 });
 

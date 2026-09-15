@@ -440,7 +440,7 @@ Lambda counts each hop and, with the default `Terminate` setting, drops
 the invoke after ~16 and emails `AWS_LAMBDA_RUNAWAY_TERMINATION_NOTIFICATION`
 (CloudWatch metric `RecursiveInvocationsDropped`). That is expected for
 this worker pattern, not an S3/SQS miswire. CDK sets
-`RecursionConfig.RecursiveLoop = Allow` on `AdminApiFn` only; inbound-mail
+`RecursiveLoop = Allow` on `AdminApiFn` only; inbound-mail
 and the public authorizer stay on Terminate. Cost is still bounded by
 `maxStepsPerTask` (12), idle-step limits, meeting phase lists, the crawl
 page budget, and the daily OpenRouter staff/board budgets. Do not set
