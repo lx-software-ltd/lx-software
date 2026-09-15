@@ -145,6 +145,14 @@ test.describe("admin viewport smoke", () => {
     }
     await expect(page.getByText("New task")).toBeVisible();
     await expect(page.getByText(/List our three biggest monthly costs/i)).toBeVisible();
+    if (testInfo.project.name === "phone") {
+      await page.locator("#board-section-select").selectOption("approvals");
+    } else {
+      await page.getByRole("tab", { name: /Approvals/ }).click();
+    }
+    await expect(page.getByRole("heading", { name: "Approvals" })).toBeVisible();
+    await expect(page.getByLabel("Approval apr-1")).toBeVisible();
+    await expect(page.getByText("Send launch confirmation to a newly onboarded provider")).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
     if (testInfo.project.name !== "phone") {
       const tablist = page.getByRole("tablist", { name: "Board sections" });
