@@ -138,6 +138,8 @@ class ParsedMail:
     # True when the body, attachment text or address lists were cut to fit.
     truncated: bool = False
     bulk: bool = False
+    auto_submitted: str = ""
+    list_unsubscribe: bool = False
 
 
 def _single_line(value: Any, limit: int) -> str:
@@ -298,6 +300,8 @@ def parse_mime(raw: bytes, *, domain: str | None = None) -> ParsedMail:
         attachments_skipped=skipped,
         truncated=body_cut or attachments_cut or to_cut or cc_cut,
         bulk=_is_bulk_mail(msg),
+        auto_submitted=str(msg.get("Auto-Submitted") or "").strip(),
+        list_unsubscribe=bool(msg.get("List-Unsubscribe")),
     )
 
 
@@ -318,6 +322,8 @@ _BULK_LOCAL_PARTS = frozenset(
         "mailerdaemon",
         "bounce",
         "bounces",
+        "ses-bounces",
+        "complaints",
         "notifications",
         "notify",
     }
@@ -458,6 +464,8 @@ def ingest_bytes(
         "rawSize": parsed.raw_size,
         "bulk": parsed.bulk,
         "skipTriage": parsed.bulk,
+        "autoSubmitted": parsed.auto_submitted,
+        "listUnsubscribe": parsed.list_unsubscribe,
     }
     if parsed.truncated:
         _log_event(

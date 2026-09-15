@@ -59,8 +59,13 @@ _IDLE_NUDGE = (
     "task_finish with the deliverable. Notes-only steps burn the step budget."
 )
 _FINISH_NUDGE = "NUDGE: Two steps left — call task_finish now with the deliverable."
+MAIL_ARCHIVE_FINISH_PREFIX = "ARCHIVED — no action:"
 _FC_LINE_RE = re.compile(r"^!function_call:.*$", re.M)
 _HELP_IN_FLIGHT_RE = re.compile(r"help (request|is) in flight", re.I)
+_JSON_BRIEF_RE = re.compile(
+    r"(?i)\b(?:return|as|in|valid|deliver(?:able)?)\b(?:\s+\w+){0,3}\s+json\b"
+    r"|\bjson\s+(?:object|array|document)\b"
+)
 _SALVAGE_MIN_CHARS = 200
 _CANNOT_CALL_RE = re.compile(r"cannot call [`']?task_(?:note|finish)", re.I)
 _PLACEHOLDER_RE = re.compile(r"\[(?:insert|todo|tbd|placeholder)[^\]]*\]", re.I)
@@ -446,6 +451,19 @@ def _append_scratchpad(task: dict[str, Any], text: str) -> str:
     return combined
 
 
+def _prepend_scratchpad(task: dict[str, Any], text: str) -> str:
+    key = str(task.get("scratchpadKey") or _scratchpad_key(str(task["taskId"])))
+    existing = _blob_get(key).decode("utf-8", errors="replace")
+    banner = str(text or "").strip()
+    if not banner:
+        return existing
+    keep = BOARD_STAFF_SCRATCHPAD_MAX_CHARS - len(banner) - 2
+    tail = existing[-max(keep, 0) :] if keep < len(existing) else existing
+    combined = (banner + ("\n\n" if tail else "") + tail).strip()
+    _blob_put(key, combined.encode("utf-8"))
+    return combined
+
+
 def _requeue_unstarted(table: Any, task_id: str) -> None:
     """Put a just-claimed running task back on the queue when the worker never started."""
     latest = board_store.get_task(table, task_id)
@@ -559,6 +577,13 @@ def run_step(payload: dict[str, Any]) -> None:
         scratch,
         help_available=help_available_line(table, settings, task, roster=list(roster.values())),
     )
+    ref = task.get("eventRef") or {}
+    if str(task.get("origin") or "") == "event" and str(ref.get("kind") or "") == "mail":
+        user += (
+            f'\nIf this inbound mail is a bounce, DMARC/SES report, or other automated notice '
+            f'that needs no reply, call task_finish with "{MAIL_ARCHIVE_FINISH_PREFIX} <reason>" '
+            "instead of writing back."
+        )
     kind = "standup" if tier != "senior" else "deepDive"
     if (settings.get("staff") or {}).get("seniorPaused") and kind == "deepDive":
         kind = "standup"
@@ -732,11 +757,11 @@ def _require_json_deliverable(text: str) -> None:
 def _deliverable_requires_json(task: dict[str, Any], dtype: str) -> bool:
     if dtype == "json":
         return True
-    return "json" in str(task.get("brief") or "").lower()
+    return bool(_JSON_BRIEF_RE.search(str(task.get("brief") or "")))
 
 
 def _maybe_archive_mail_from_finish(table: Any, task: dict[str, Any], deliverable: str) -> None:
-    if not deliverable.startswith("ARCHIVED — no action:"):
+    if not deliverable.startswith(MAIL_ARCHIVE_FINISH_PREFIX):
         return
     if str(task.get("origin") or "") != "event":
         return
@@ -753,22 +778,22 @@ def _maybe_archive_mail_from_finish(table: Any, task: dict[str, Any], deliverabl
 
 
 def _help_finish_blocked(table: Any, task: dict[str, Any], deliverable: str) -> bool:
-    """Refuse a one-line 'help is in flight' finish while help is open or was refused."""
-    short_or_waiting = len(deliverable) < 400 or bool(_HELP_IN_FLIGHT_RE.search(deliverable))
-    if not short_or_waiting:
+    """Refuse a 'help is in flight' memo while help is still open or the last ask failed."""
+    if not _HELP_IN_FLIGHT_RE.search(deliverable or ""):
         return False
-    if str(task.get("status") or "") == "waiting_subtask" or task.get("blockedOn"):
+    if task.get("blockedOn"):
         return True
     for hid in task.get("helpTaskIds") or []:
         child = board_store.get_task(table, str(hid))
         if child and str(child.get("status") or "") not in TERMINAL_STATUSES:
             return True
-    for call in board_store.list_tool_calls_for_task(table, str(task.get("taskId") or "")):
-        if str(call.get("op") or "") == "task_request_help" and str(call.get("status") or "") in (
-            "error",
-            "refused",
-        ):
-            return True
+    help_calls = [
+        call
+        for call in board_store.list_tool_calls_for_task(table, str(task.get("taskId") or ""))
+        if str(call.get("op") or "") == "task_request_help"
+    ]
+    if help_calls and str(help_calls[0].get("status") or "") in ("error", "refused"):
+        return True
     return False
 
 
@@ -1896,9 +1921,6 @@ def reuse_open_assignment(ctx: board_tools.ToolContext, args: dict[str, Any]) ->
 
 
 def op_staff_assign(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    reused = reuse_open_assignment(ctx, args)
-    if reused:
-        return reused
     task = create_task(
         ctx.table,
         ctx.settings,
@@ -2469,7 +2491,7 @@ def retry_task(table: Any, settings: dict[str, Any], task_id: str, by_sub: str) 
         "RETRY — the notes below are from a failed attempt; verify state with tools "
         "before trusting them."
     )
-    combined = _append_scratchpad(task, retry_banner)
+    combined = _prepend_scratchpad(task, retry_banner)
     task["scratchpadKey"] = _scratchpad_key(task_id)
     task["scratchpadChars"] = len(combined)
     board_store.put_task(table, task)

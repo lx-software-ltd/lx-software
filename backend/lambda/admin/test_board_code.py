@@ -44,6 +44,7 @@ class FakeActions:
         self.runs: list[dict[str, Any]] = []
         self.jobs: dict[int, list[dict[str, Any]]] = {}
         self.job_logs: dict[int, str] = {}
+        self.logAccepts: list[str] = []
         self.issues: list[dict[str, Any]] = []
         self.labels: set[str] = set()
         self.labelCreates = 0
@@ -98,6 +99,7 @@ class FakeActions:
             run_id = int(path.split("/runs/", 1)[1].split("/", 1)[0])
             return {"jobs": list(self.jobs.get(run_id) or [])}
         if method == "GET" and "/actions/jobs/" in path and path.endswith("/logs"):
+            self.logAccepts.append(accept)
             job_id = int(path.split("/jobs/", 1)[1].split("/", 1)[0])
             return self.job_logs.get(job_id, "")
         if method == "GET" and "/check-runs" in path:
@@ -298,6 +300,7 @@ class RunnerTests(BoardTestCase):
         self.gh.job_logs[7] = "pull request changes 439 lines (max 400)\n##[error]Process completed"
         out = board_code.op_get_run(self.ctx, {"taskId": "task-1"})
         self.assertEqual(out["failureLine"], "pull request changes 439 lines (max 400)")
+        self.assertEqual(self.gh.logAccepts, ["application/vnd.github.raw"])
 
     def test_extract_failure_line_picks_last_match(self) -> None:
         log = "setup\npull request changes 12 lines (max 400)\nmypy: Incompatible return value type\n"
@@ -331,8 +334,69 @@ class RunnerTests(BoardTestCase):
         )
         out = board_code.op_run_task(revise_ctx, {"issueNumber": 42, "brief": "Fix mypy on PR 498.", "kind": "fix"})
         self.assertEqual(out["taskId"], "task-1")
+        self.assertNotIn("failureLine", out)
         self.assertEqual(self.gh.dispatches[-1]["body"]["inputs"]["task_id"], "task-1")
         self.assertEqual(self.gh.dispatches[-1]["body"]["inputs"]["kind"], "fix")
+
+    def test_revision_allowed_when_original_already_used_dispatch_cap(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
+        self.gh.prs.append(_pr(issue=42))
+        stored = board_code._get_run(self.table, "task-1")  # noqa: SLF001
+        stored["prNumber"] = 7
+        stored["rounds"] = 2
+        stored["dispatchRounds"] = 2
+        stored["lastStaffTaskId"] = "task-1"
+        stored["failedAt"] = board_store.now_iso()
+        stored["conclusion"] = "failure"
+        stored["failureLine"] = "pull request changes 439 lines (max 400)"
+        board_code._put_run(self.table, "task-1", stored)  # noqa: SLF001
+        board_store.put_task(
+            self.table,
+            {
+                "taskId": "revise-cap",
+                "status": "running",
+                "assignee": "engineer-2",
+                "eventRef": {
+                    "kind": "code-implement",
+                    "id": "issue:42:r2",
+                    "issueNumber": 42,
+                    "prNumber": 7,
+                },
+            },
+        )
+        revise_ctx = ToolContext(
+            self.table, self.settings, "cto", display_name="CTO", kind="task", task_id="revise-cap"
+        )
+        out = board_code.op_run_task(revise_ctx, {"issueNumber": 42, "brief": "Split the PR.", "kind": "fix"})
+        self.assertEqual(out["taskId"], "task-1")
+        self.assertEqual(out["dispatchRounds"], 1)
+        self.assertNotIn("failureLine", board_code._get_run(self.table, "task-1"))  # noqa: SLF001
+
+    def test_review_changes_uses_review_rounds_not_dispatch_count(self) -> None:
+        board_code._put_run(  # noqa: SLF001
+            self.table,
+            "task-1",
+            {"issue": 42, "kind": "feature", "rounds": 2, "reviewRounds": 0},
+        )
+        board_staff._blob_put(  # noqa: SLF001
+            board_staff._deliverable_key("rev-rounds", "markdown"),  # noqa: SLF001
+            b'```json {"verdict":"changes","notes":["split the PR"]}\n```',
+        )
+        task = {
+            "taskId": "rev-rounds",
+            "status": "delivered",
+            "assignee": "architect",
+            "deliverableKey": board_staff._deliverable_key("rev-rounds", "markdown"),  # noqa: SLF001
+            "eventRef": {"kind": "code-review", "id": "pr:7", "prNumber": 7, "taskId": "task-1"},
+        }
+        board_store.put_task(self.table, task)
+        self.gh.prs.append(_pr())
+        self.gh.files[7] = [{"filename": "app.py", "changes": 4}]
+        self.gh.checks["abc123"] = _green()
+        out = board_code.on_review_delivered(self.table, self.settings, task)
+        self.assertEqual(out.get("verdict"), "changes")
+        self.assertNotEqual(out.get("stopped"), "max rounds")
+        self.assertEqual(board_code._get_run(self.table, "task-1").get("reviewRounds"), 1)  # noqa: SLF001
 
     def test_revise_brief_includes_failure_line(self) -> None:
         board_code._put_run(  # noqa: SLF001
@@ -895,6 +959,63 @@ class PromoteAlwaysApprovalTests(ToolsTestCase):
             out = board_code.queue_promote_approval(self.table, self.settings, "admin-sub")
         self.assertEqual(out["approval"]["op"], "code_promote")
         self.assertEqual(out["preview"]["aheadBy"], 1)
+
+
+class GithubRequestTests(unittest.TestCase):
+    def test_strips_authorization_on_cross_host_redirect(self) -> None:
+        req = board_github.urlrequest.Request(  # noqa: S310
+            "https://api.github.com/repos/x/y/actions/jobs/1/logs",
+            headers={"Authorization": "Bearer tok", "Accept": "application/vnd.github.raw"},
+        )
+
+        class _Headers(dict):
+            def get_all(self, name: str, failobj: Any = None) -> Any:
+                if name.lower() == "location":
+                    return ["https://results.blob.core.windows.net/logs/1"]
+                return failobj
+
+        location = "https://results.blob.core.windows.net/logs/1"
+        followed = board_github._StripAuthOnHostChange().redirect_request(  # noqa: SLF001
+            req, None, 302, "Found", _Headers({"Location": location}), location
+        )
+        self.assertIsNotNone(followed)
+        assert followed is not None
+        self.assertNotIn("authorization", {key.lower() for key in followed.headers})
+
+    def test_raw_accept_returns_plain_text(self) -> None:
+        class _Resp:
+            def __init__(self) -> None:
+                self._sent = False
+
+            def read(self, n: int = -1) -> bytes:
+                if self._sent:
+                    return b""
+                self._sent = True
+                return b"pull request changes 439 lines (max 400)\n"
+
+            def __enter__(self) -> "_Resp":
+                return self
+
+            def __exit__(self, *_a: object) -> bool:
+                return False
+
+        class _Opener:
+            def open(self, req: Any, timeout: Any = None) -> _Resp:  # noqa: ARG002
+                self.accept = req.get_header("Accept")
+                return _Resp()
+
+        opener = _Opener()
+        with (
+            patch.object(board_github, "_token", return_value="tok"),
+            patch.object(board_github, "_opener", return_value=opener),
+        ):
+            out = board_github._request(  # noqa: SLF001
+                "GET",
+                "/repos/x/y/actions/jobs/1/logs",
+                accept="application/vnd.github.raw",
+            )
+        self.assertEqual(out, "pull request changes 439 lines (max 400)\n")
+        self.assertTrue(str(opener.accept).endswith("raw"))
 
 
 if __name__ == "__main__":

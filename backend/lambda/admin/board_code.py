@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+from contract_constants import BOARD_CODE_RUN_COOLDOWN_SECONDS, BOARD_CODE_RUN_MAX_ROUNDS
 
 import board_github
 import board_hk
@@ -70,8 +73,8 @@ def _repo() -> str:
     return board_github.repo_full_name()
 
 
-def _gh(method: str, path: str, body: dict[str, Any] | None = None) -> Any:
-    return board_github._request(method, path, body=body)  # noqa: SLF001
+def _gh(method: str, path: str, body: dict[str, Any] | None = None, **kwargs: Any) -> Any:
+    return board_github._request(method, path, body=body, **kwargs)  # noqa: SLF001
 
 
 def _path_parts(path: str) -> list[str]:
@@ -465,19 +468,15 @@ def validate_run_task(args: dict[str, Any]) -> str | None:
 
 def _code_run_limits() -> tuple[int, int]:
     try:
-        from contract_constants import BOARD_CODE_RUN_COOLDOWN_SECONDS, BOARD_CODE_RUN_MAX_ROUNDS
-
         return int(BOARD_CODE_RUN_COOLDOWN_SECONDS), int(BOARD_CODE_RUN_MAX_ROUNDS)
     except Exception:
         return 900, 2
 
 
-def _parse_iso(value: str) -> Any:
+def _parse_iso(value: str) -> datetime | None:
     raw = str(value or "").strip()
     if not raw:
         return None
-    from datetime import datetime, timezone
-
     try:
         if raw.endswith("Z"):
             return datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
@@ -562,13 +561,19 @@ def _failure_line_for_run(run: dict[str, Any]) -> str:
         if not job_id:
             continue
         try:
-            log = _gh("GET", f"/repos/{repo}/actions/jobs/{int(job_id)}/logs")
+            log = _gh(
+                "GET",
+                f"/repos/{repo}/actions/jobs/{int(job_id)}/logs",
+                accept="application/vnd.github.raw",
+            )
         except (TypeError, ValueError, board_github.GitHubSnapshotError):
+            continue
+        if log is None:
             continue
         if isinstance(log, (bytes, bytearray)):
             text = bytes(log).decode("utf-8", errors="replace")
         else:
-            text = str(log or "")
+            text = str(log)
         line = extract_failure_line(text)
         if line:
             return line
@@ -589,6 +594,7 @@ def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if not brief:
         raise CodeError("brief is required")
     revision_id, revision_row = _is_revision_dispatch(ctx, issue)
+    caller = str(getattr(ctx, "task_id", "") or "")
     if revision_id:
         task_id = revision_id
         prior = revision_row
@@ -604,14 +610,21 @@ def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
                 "Reuse that branch or close the PR before starting another run."
             )
     cooldown, max_rounds = _code_run_limits()
-    rounds = int(prior.get("rounds") or 0)
-    if rounds >= max_rounds:
+    same_staff_task = bool(caller) and str(prior.get("lastStaffTaskId") or "") == caller
+    if same_staff_task or not revision_id:
+        if "dispatchRounds" in prior:
+            dispatch_rounds = int(prior.get("dispatchRounds") or 0)
+        else:
+            dispatch_rounds = int(prior.get("rounds") or 0)
+    else:
+        # New architect-created revise task: fresh dispatch budget on the
+        # shared run row. MAX_REVIEW_ROUNDS still caps revise cycles.
+        dispatch_rounds = 0
+    if dispatch_rounds >= max_rounds:
         raise CodeError("two runs already made for this task; report the failure")
-    if _run_in_flight(prior) and prior.get("dispatchedAt"):
-        from datetime import datetime, timedelta, timezone
-
-        started = _parse_iso(str(prior.get("dispatchedAt") or ""))
-        now = datetime.now(timezone.utc)
+    started = _parse_iso(str(prior.get("dispatchedAt") or ""))
+    now = datetime.now(timezone.utc)
+    if prior.get("dispatchedAt") and (_run_in_flight(prior) or dispatch_rounds > 0):
         if started is None or now - started < timedelta(seconds=cooldown):
             raise CodeError("a run for this task is already in flight — call code_get_run")
     dispatched = dispatch_workflow(
@@ -625,13 +638,16 @@ def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         "issue": issue,
         "kind": kind,
         "brief": brief[:4000],
-        "rounds": rounds + 1,
+        "rounds": int(prior.get("rounds") or 0) + 1,
+        "dispatchRounds": dispatch_rounds + 1,
+        "lastStaffTaskId": caller or task_id,
         "dispatchedAt": board_store.now_iso(),
         "workflow": WORKFLOW_AGENT,
     }
     payload.pop("failedAt", None)
     payload.pop("conclusion", None)
     payload.pop("runStatus", None)
+    payload.pop("failureLine", None)
     _put_run(ctx.table, task_id, payload)
     return {**dispatched, **payload}
 
@@ -1339,8 +1355,7 @@ def on_review_delivered(table: Any, settings: dict[str, Any], task: dict[str, An
     source_task = str(ref.get("taskId") or "")
     run = _get_run(table, source_task) if source_task else {}
     issue = int(run.get("issue") or 0)
-    kind = str(run.get("kind") or "feature")
-    rounds = int(run.get("rounds") or 1)
+    review_rounds = int(run.get("reviewRounds") or 0)
     roster = board_staff.seats_by_id(table, settings)
     engineer = str(task.get("eventRef", {}).get("engineer") or "")
     if not engineer:
@@ -1355,7 +1370,9 @@ def on_review_delivered(table: Any, settings: dict[str, Any], task: dict[str, An
     except (CodeError, board_github.GitHubSnapshotError) as exc:
         _log_event("warning", tag="board_code_head_sha_failed", error=str(exc)[:200])
     if parsed["verdict"] == "changes":
-        if rounds >= MAX_REVIEW_ROUNDS:
+        # Original run + one architect revise = MAX_REVIEW_ROUNDS. Independent of
+        # how many times the first engineer dispatched the runner.
+        if review_rounds >= MAX_REVIEW_ROUNDS - 1:
             return {"verdict": "changes", "stopped": "max rounds"}
         notes = " ".join(parsed.get("notes") or []) or "Address the architect review notes."
         if issue <= 0:
@@ -1363,20 +1380,24 @@ def on_review_delivered(table: Any, settings: dict[str, Any], task: dict[str, An
         failure_line = str(run.get("failureLine") or "").strip()
         if failure_line:
             notes = f"{notes} CI failure: {failure_line}"
+        next_round = review_rounds + 2
         try:
             follow = board_staff.create_task(
                 table,
                 settings,
                 assignee=engineer,
                 origin="event",
-                brief=f"Revise PR #{pr_number} (round {rounds + 1}). {notes} Call code_run_task again.",
+                brief=f"Revise PR #{pr_number} (round {next_round}). {notes} Call code_run_task again.",
                 deliverable_type="pr",
                 sla_hours=24,
-                event_ref={"kind": "code-implement", "id": f"issue:{issue}:r{rounds + 1}", "issueNumber": issue, "prNumber": pr_number},
+                event_ref={"kind": "code-implement", "id": f"issue:{issue}:r{next_round}", "issueNumber": issue, "prNumber": pr_number},
                 created_by="board_code",
             )
         except board_staff.StaffError as exc:
             return {"verdict": "changes", "error": str(exc)[:200]}
+        if source_task:
+            run["reviewRounds"] = review_rounds + 1
+            _put_run(table, source_task, run)
         return {"verdict": "changes", "taskId": follow.get("taskId")}
     try:
         follow = board_staff.create_task(

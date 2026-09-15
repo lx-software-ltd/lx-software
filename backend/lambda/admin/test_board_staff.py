@@ -1402,6 +1402,7 @@ class StaffRouteTests(BoardTestCase):
             scratch = board_staff._blob_get(body["task"]["scratchpadKey"]).decode()  # noqa: SLF001
             self.assertIn("RETRY — the notes below are from a failed attempt", scratch)
             self.assertIn("run already scheduled", scratch)
+            self.assertLess(scratch.find("RETRY —"), scratch.find("run already scheduled"))
 
     def test_cancel_failed_task_dismisses_it(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"
@@ -2031,6 +2032,77 @@ class StaffHelpTests(ToolsTestCase):
             )
         self.assertIn("wait for the help task", str(raised.exception))
         self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "running")
+
+    def test_finish_allows_short_pr_memo_after_refused_help(self) -> None:
+        task, settings = self._support_task("Open a draft PR for the booking form.")
+        board_store.claim_task_step(self.table, task["taskId"], 0)
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "help-refused",
+                "op": "task_request_help",
+                "status": "error",
+                "taskId": task["taskId"],
+            },
+        )
+        ctx = self._help_ctx(board_store.get_task(self.table, task["taskId"]), settings)
+        with self.assertRaises(board_staff.StaffError) as waiting:
+            board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "waiting",
+                    "deliverable": "help is in flight",
+                    "deliverableType": "markdown",
+                    "evidence": [],
+                    "confidence": "low",
+                },
+            )
+        self.assertIn("wait for the help task", str(waiting.exception))
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            out = board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "opened",
+                    "deliverable": "PR #7 opened, CI green.",
+                    "deliverableType": "pr",
+                    "evidence": [],
+                    "confidence": "medium",
+                },
+            )
+        self.assertEqual(out["status"], "review")
+
+    def test_json_filename_in_brief_does_not_require_json_deliverable(self) -> None:
+        settings = _enable_staff(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="support",
+                origin="owner",
+                brief="Summarise contracts/board-staff.json for the founder.",
+                deliverable_type="markdown",
+                created_by="a",
+            )
+        board_store.claim_task_step(self.table, task["taskId"], 0)
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="coo",
+            kind="task",
+            task_id=task["taskId"],
+        )
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            out = board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "notes",
+                    "deliverable": "The staff contract lists seats and step limits.",
+                    "deliverableType": "markdown",
+                    "evidence": [],
+                    "confidence": "low",
+                },
+            )
+        self.assertEqual(out["status"], "review")
 
     def test_pick_helper_prefers_read_only_web_seat(self) -> None:
         settings = _enable_staff(self.table)

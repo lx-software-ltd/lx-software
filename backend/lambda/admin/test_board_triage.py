@@ -253,6 +253,30 @@ class PolicyTests(BoardTestCase):
             "dmarc/ses report",
         )
         self.assertEqual(board_triage.archive_reason({}, {"from": {"address": "parent@example.com"}, "text": "hello"}), "")
+        self.assertEqual(
+            board_triage.archive_reason(
+                {"subject": "How do I set up DMARC for siutindei.com?"},
+                {"from": {"address": "parent@example.com"}, "text": "please advise"},
+            ),
+            "",
+        )
+        self.assertEqual(
+            board_triage.archive_reason(
+                {"subject": "Report Domain: siutindei.com"},
+                {"from": {"address": "reporter@example.com"}},
+            ),
+            "dmarc/ses report",
+        )
+
+    def test_mail_event_brief_names_archive_prefix(self) -> None:
+        brief = board_triage.render_event_brief(
+            "mail",
+            {"subject": "Saturday swimming"},
+            {},
+            {"audience": "parent", "intent": "question"},
+        )
+        self.assertIn(board_staff.MAIL_ARCHIVE_FINISH_PREFIX, brief)
+        self.assertIn("Saturday swimming", brief)
 
     def test_on_mail_ingested_archives_noreply(self) -> None:
         thread = {"threadId": "th-arch", "subject": "SES notice"}
