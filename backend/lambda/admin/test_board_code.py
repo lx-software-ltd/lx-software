@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
@@ -41,6 +42,8 @@ class FakeActions:
         self.files: dict[int, list[dict[str, Any]]] = {}
         self.checks: dict[str, list[dict[str, Any]]] = {}
         self.runs: list[dict[str, Any]] = []
+        self.jobs: dict[int, list[dict[str, Any]]] = {}
+        self.job_logs: dict[int, str] = {}
         self.issues: list[dict[str, Any]] = []
         self.labels: set[str] = set()
         self.labelCreates = 0
@@ -91,6 +94,12 @@ class FakeActions:
             return next((p for p in self.prs if p.get("number") == number), None)
         if method == "GET" and path.endswith("/actions/runs?per_page=30"):
             return {"workflow_runs": list(self.runs)}
+        if method == "GET" and "/actions/runs/" in path and path.endswith("/jobs"):
+            run_id = int(path.split("/runs/", 1)[1].split("/", 1)[0])
+            return {"jobs": list(self.jobs.get(run_id) or [])}
+        if method == "GET" and "/actions/jobs/" in path and path.endswith("/logs"):
+            job_id = int(path.split("/jobs/", 1)[1].split("/", 1)[0])
+            return self.job_logs.get(job_id, "")
         if method == "GET" and "/check-runs" in path:
             sha = path.split("/commits/", 1)[1].split("/", 1)[0]
             return {"check_runs": list(self.checks.get(sha) or [])}
@@ -245,6 +254,112 @@ class RunnerTests(BoardTestCase):
         self.assertFalse(board_code.issue_has_open_board_pr(42, self.table))
         self.assertTrue(stored.get("failedAt"))
 
+    def test_run_task_refuses_in_flight_duplicate(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
+        with self.assertRaises(board_code.CodeError) as raised:
+            board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form again.", "kind": "feature"})
+        self.assertIn("already in flight", str(raised.exception))
+        self.assertEqual(len(self.gh.dispatches), 1)
+
+    def test_run_task_cooldown_expiry_allows_retry(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
+        stored = board_code._get_run(self.table, "task-1")  # noqa: SLF001
+        stored["dispatchedAt"] = (datetime.now(timezone.utc) - timedelta(seconds=901)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        board_code._put_run(self.table, "task-1", stored)  # noqa: SLF001
+        out = board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Retry after cooldown.", "kind": "feature"})
+        self.assertEqual(out["rounds"], 2)
+        self.assertEqual(len(self.gh.dispatches), 2)
+
+    def test_run_task_caps_rounds(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
+        stored = board_code._get_run(self.table, "task-1")  # noqa: SLF001
+        stored["dispatchedAt"] = (datetime.now(timezone.utc) - timedelta(seconds=901)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        board_code._put_run(self.table, "task-1", stored)  # noqa: SLF001
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Second run.", "kind": "feature"})
+        stored = board_code._get_run(self.table, "task-1")  # noqa: SLF001
+        stored["dispatchedAt"] = (datetime.now(timezone.utc) - timedelta(seconds=901)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        board_code._put_run(self.table, "task-1", stored)  # noqa: SLF001
+        with self.assertRaises(board_code.CodeError) as raised:
+            board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Third run.", "kind": "feature"})
+        self.assertIn("two runs already made", str(raised.exception))
+
+    def test_get_run_returns_failure_line(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
+        self.gh.runs.append(
+            {
+                "id": 99,
+                "name": "board-agent task-1",
+                "status": "completed",
+                "conclusion": "failure",
+                "html_url": "https://example/run-fail",
+            }
+        )
+        self.gh.jobs[99] = [{"id": 7, "conclusion": "failure", "name": "Guard protected paths"}]
+        self.gh.job_logs[7] = "pull request changes 439 lines (max 400)\n##[error]Process completed"
+        out = board_code.op_get_run(self.ctx, {"taskId": "task-1"})
+        self.assertEqual(out["failureLine"], "pull request changes 439 lines (max 400)")
+
+    def test_extract_failure_line_picks_last_match(self) -> None:
+        log = "setup\npull request changes 12 lines (max 400)\nmypy: Incompatible return value type\n"
+        self.assertEqual(board_code.extract_failure_line(log), "mypy: Incompatible return value type")
+
+    def test_revision_reuses_original_run_task_id(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
+        self.gh.prs.append(_pr(issue=42))
+        stored = board_code._get_run(self.table, "task-1")  # noqa: SLF001
+        stored["prNumber"] = 7
+        stored["failedAt"] = board_store.now_iso()
+        stored["conclusion"] = "failure"
+        stored["failureLine"] = 'mypy: got "str", expected "UUID"'
+        board_code._put_run(self.table, "task-1", stored)  # noqa: SLF001
+        board_store.put_task(
+            self.table,
+            {
+                "taskId": "revise-1",
+                "status": "running",
+                "assignee": "engineer-2",
+                "eventRef": {
+                    "kind": "code-implement",
+                    "id": "issue:42:r2",
+                    "issueNumber": 42,
+                    "prNumber": 7,
+                },
+            },
+        )
+        revise_ctx = ToolContext(
+            self.table, self.settings, "cto", display_name="CTO", kind="task", task_id="revise-1"
+        )
+        out = board_code.op_run_task(revise_ctx, {"issueNumber": 42, "brief": "Fix mypy on PR 498.", "kind": "fix"})
+        self.assertEqual(out["taskId"], "task-1")
+        self.assertEqual(self.gh.dispatches[-1]["body"]["inputs"]["task_id"], "task-1")
+        self.assertEqual(self.gh.dispatches[-1]["body"]["inputs"]["kind"], "fix")
+
+    def test_revise_brief_includes_failure_line(self) -> None:
+        board_code._put_run(  # noqa: SLF001
+            self.table,
+            "task-1",
+            {"issue": 42, "kind": "feature", "rounds": 1, "failureLine": 'mypy: got "str", expected "UUID"'},
+        )
+        board_staff._blob_put(  # noqa: SLF001
+            board_staff._deliverable_key("rev-1", "markdown"),  # noqa: SLF001
+            b'```json {"verdict":"changes","notes":["CI failed"]}\n```',
+        )
+        task = {
+            "taskId": "rev-1",
+            "status": "delivered",
+            "assignee": "architect",
+            "deliverableKey": board_staff._deliverable_key("rev-1", "markdown"),  # noqa: SLF001
+            "eventRef": {"kind": "code-review", "id": "pr:7", "prNumber": 7, "taskId": "task-1"},
+        }
+        board_store.put_task(self.table, task)
+        self.gh.prs.append(_pr())
+        self.gh.files[7] = [{"filename": "app.py", "changes": 4}]
+        self.gh.checks["abc123"] = _green()
+        out = board_code.on_review_delivered(self.table, self.settings, task)
+        follow = board_store.get_task(self.table, out["taskId"])
+        self.assertIn("CI failure: mypy: got", follow["brief"])
+        self.assertEqual(follow["eventRef"]["kind"], "code-implement")
+
     def test_action_required_run_still_blocks_issue(self) -> None:
         board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
         self.gh.runs.append(
@@ -281,6 +396,46 @@ class RunnerTests(BoardTestCase):
         out = board_code.op_get_run(self.ctx, {"taskId": "task-1"})
         self.assertEqual(out["prNumber"], 7)
         self.assertEqual(out["conclusion"], "success")
+
+    def test_architect_accepted_salvaged_accept(self) -> None:
+        board_staff._blob_put(  # noqa: SLF001
+            board_staff._deliverable_key("rev-salvage", "markdown"),  # noqa: SLF001
+            b'```json {"verdict":"accept","notes":["looks good"]}\n```',
+        )
+        task = {
+            "taskId": "rev-salvage",
+            "status": "needs_owner",
+            "flags": ["salvaged"],
+            "assignee": "architect",
+            "deliverableKey": board_staff._deliverable_key("rev-salvage", "markdown"),  # noqa: SLF001
+            "eventRef": {"kind": "code-review", "id": "pr:7", "prNumber": 7, "headSha": "abc123"},
+        }
+        board_store.put_task(self.table, task)
+        board_store.put_task_review(
+            self.table,
+            "rev-salvage",
+            {"seq": 1, "verdict": "accept", "notes": "ok", "at": board_store.now_iso(), "by": "manager"},
+        )
+        self.gh.prs.append(_pr())
+        self.assertTrue(board_code.architect_accepted(self.table, 7))
+
+    def test_architect_accepted_needs_owner_without_salvage_is_false(self) -> None:
+        board_staff._blob_put(  # noqa: SLF001
+            board_staff._deliverable_key("rev-no", "markdown"),  # noqa: SLF001
+            b'```json {"verdict":"accept","notes":["looks good"]}\n```',
+        )
+        board_store.put_task(
+            self.table,
+            {
+                "taskId": "rev-no",
+                "status": "needs_owner",
+                "flags": [],
+                "deliverableKey": board_staff._deliverable_key("rev-no", "markdown"),  # noqa: SLF001
+                "eventRef": {"kind": "code-review", "id": "pr:7", "prNumber": 7, "headSha": "abc123"},
+            },
+        )
+        self.gh.prs.append(_pr())
+        self.assertFalse(board_code.architect_accepted(self.table, 7))
 
     def test_merge_guard_matrix(self) -> None:
         self.gh.prs.append(_pr())

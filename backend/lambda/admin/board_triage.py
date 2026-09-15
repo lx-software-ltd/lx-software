@@ -35,6 +35,53 @@ FINANCE_LOCAL_PARTS = frozenset({"finance", "billing"})
 LATIN_WORD_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 '\-]{0,80}$")
 
 
+_ARCHIVE_LOCAL_PARTS = frozenset(
+    {
+        "noreply",
+        "no-reply",
+        "no_reply",
+        "donotreply",
+        "do-not-reply",
+        "dmarc",
+        "postmaster",
+        "mailer-daemon",
+        "mailerdaemon",
+        "bounce",
+        "bounces",
+        "ses-bounces",
+        "complaints",
+    }
+)
+
+
+def archive_reason(thread: dict[str, Any], message: dict[str, Any]) -> str:
+    """Deterministic skip list for inbound mail that needs no staff reply."""
+    headers = message.get("headers") if isinstance(message.get("headers"), dict) else {}
+    auto = str(headers.get("Auto-Submitted") or message.get("autoSubmitted") or "").strip().lower()
+    if auto and auto != "no":
+        return "auto-submitted"
+    if headers.get("List-Unsubscribe") or message.get("listUnsubscribe"):
+        return "list-unsubscribe"
+    sender = str((message.get("from") or {}).get("address") or message.get("from") or "")
+    local = sender.split("@", 1)[0].strip().lower()
+    if local in _ARCHIVE_LOCAL_PARTS or local.startswith("noreply") or local.startswith("bounce"):
+        return f"no-action sender {local or 'unknown'}"
+    subject = str(thread.get("subject") or message.get("subject") or "").lower()
+    text = str(message.get("text") or "")[:400].lower()
+    if "report-type=" in text or "report domain:" in subject or "dmarc" in subject:
+        return "dmarc/ses report"
+    return ""
+
+
+def _archive_mail(table: Any, thread: dict[str, Any], message: dict[str, Any], reason: str) -> None:
+    thread = dict(thread)
+    thread["disposition"] = "archived"
+    thread["archivedReason"] = str(reason or "archived")[:200]
+    thread["updatedAt"] = board_store.now_iso()
+    board_store.put_mail_thread(table, thread)
+    return None
+
+
 def _mask_prompt_text(table: Any, text: str) -> str:
     try:
         return board_mail.pseudonymizer(table).mask_text(text or "")
@@ -56,7 +103,10 @@ def on_mail_ingested(
     if str(message.get("direction") or "") not in ("in", "inbound"):
         return None
     if message.get("skipTriage") or message.get("bulk"):
-        return None
+        return _archive_mail(table, thread, message, "bulk")
+    archived_reason = archive_reason(thread, message)
+    if archived_reason:
+        return _archive_mail(table, thread, message, archived_reason)
     sender = str((message.get("from") or {}).get("address") or message.get("from") or "")
     if sender and board_mail._is_own(sender):  # noqa: SLF001 - same-domain outbound copies
         return None

@@ -538,6 +538,9 @@ def _upsert_thread(table: Any, thread_id: str, parsed: ParsedMail, *, direction:
         thread["lastInboundAt"] = now
     if parsed.mailbox and str(thread.get("mailbox") or "").startswith("unknown@"):
         thread["mailbox"] = parsed.mailbox
+    if parsed.bulk and direction in ("in", "inbound"):
+        thread["disposition"] = "archived"
+        thread["archivedReason"] = "bulk"
     board_store.put_mail_thread(table, thread)
 
 
@@ -614,6 +617,7 @@ def thread_list(
     mailbox: str = "",
     query: str = "",
     unread_only: bool = False,
+    archived: bool | None = None,
     limit: int = 50,
 ) -> dict[str, Any]:
     threads = board_store.list_mail_threads(table)
@@ -630,6 +634,10 @@ def thread_list(
         threads = [t for t in threads if str(t.get("mailbox") or "") == mailbox]
     if unread_only:
         threads = [t for t in threads if t.get("unread")]
+    if archived is True:
+        threads = [t for t in threads if str(t.get("disposition") or "") == "archived"]
+    elif archived is False:
+        threads = [t for t in threads if str(t.get("disposition") or "") != "archived"]
     groups = _query_groups(table, query)
     if groups:
         threads = [t for t in threads if _matches(t, groups, table)]

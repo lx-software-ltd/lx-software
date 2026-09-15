@@ -292,7 +292,7 @@ export const BOARD_TOOL_DEFINITIONS: readonly BoardToolDefinition[] = [
   {
     "id": "research",
     "label": "Research",
-    "description": "Web search for competitor pages, Hong Kong market news, EDB school-holiday calendars and venue listings. Read-only; results are cached for 24 hours.",
+    "description": "Web search for competitor pages, Hong Kong market news, EDB school-holiday calendars and venue listings, plus a public page fetch (private hosts refused). Read-only; search results are cached for 24 hours.",
     "maxLevel": "read",
     "defaults": {
       "ceo": "read",
@@ -683,7 +683,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
       "research": "read",
       "code": "read"
     },
-    "brief": "You write design notes, ADRs and issue breakdowns with acceptance criteria, and you triage CI failures and dependencies. You never merge to main. Report facts you verified with tools; say clearly what you could not verify.",
+    "brief": "You write design notes, ADRs and issue breakdowns with acceptance criteria, and you triage CI failures and dependencies. You never merge to main. A coding PR over 400 lines is rejected by CI; split the brief. Report facts you verified with tools; say clearly what you could not verify.",
     "duties": [
       {
         "id": "groom-backlog",
@@ -704,7 +704,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
       "github": "act",
       "code": "act"
     },
-    "brief": "You implement one GitHub issue at a time through the coding runner: a draft pull request with CI green and a short summary for the architect. You never merge to main or touch protected paths. If the founder vetoes a merge or the work is abandoned, call code_close_pr rather than leaving the board/* PR open (the two-PR cap). That removes board-ready and adds board-closed on the linked issue so the runner will not pick it again until an architect re-adds board-ready. Report facts you verified with tools; say clearly what you could not verify."
+    "brief": "You implement one GitHub issue at a time through the coding runner: a draft pull request with CI green and a short summary for the architect. You never merge to main or touch protected paths. A PR over 400 lines is rejected by CI; split the brief. One open board PR per issue — for a second slice, open a new issue first. If the founder vetoes a merge or the work is abandoned, call code_close_pr rather than leaving the board/* PR open (the two-PR cap). That removes board-ready and adds board-closed on the linked issue so the runner will not pick it again until an architect re-adds board-ready. Report facts you verified with tools; say clearly what you could not verify."
   },
   {
     "id": "engineer-2",
@@ -716,7 +716,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
       "github": "act",
       "code": "act"
     },
-    "brief": "You implement one GitHub issue at a time through the coding runner: a draft pull request with CI green and a short summary for the architect. You never merge to main or touch protected paths. If the founder vetoes a merge or the work is abandoned, call code_close_pr rather than leaving the board/* PR open (the two-PR cap). That removes board-ready and adds board-closed on the linked issue so the runner will not pick it again until an architect re-adds board-ready. Report facts you verified with tools; say clearly what you could not verify."
+    "brief": "You implement one GitHub issue at a time through the coding runner: a draft pull request with CI green and a short summary for the architect. You never merge to main or touch protected paths. A PR over 400 lines is rejected by CI; split the brief. One open board PR per issue — for a second slice, open a new issue first. If the founder vetoes a merge or the work is abandoned, call code_close_pr rather than leaving the board/* PR open (the two-PR cap). That removes board-ready and adds board-closed on the linked issue so the runner will not pick it again until an architect re-adds board-ready. Report facts you verified with tools; say clearly what you could not verify."
   },
   {
     "id": "data-analyst",
@@ -848,7 +848,7 @@ export const BOARD_STAFF_WATCH_KINDS = ["competitor", "directory", "media", "ana
 export const BOARD_STAFF_CONTENT_CHANNELS = ["facebook", "instagram", "instagram_story", "newsletter", "seo", "assisted_xiaohongshu", "assisted_fb_group"] as const;
 export const BOARD_STAFF_CONTENT_STATUSES = ["idea", "drafted", "creative", "scheduled", "published", "vetoed", "failed"] as const;
 export const BOARD_STAFF_NEWSLETTER_LISTS = ["parents", "providers"] as const;
-export const BOARD_STAFF_MAX_STEPS_PER_TASK = 12;
+export const BOARD_STAFF_MAX_STEPS_PER_TASK = 18;
 export const BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK = 3;
 export const BOARD_STAFF_MAX_REVISIONS = 2;
 export const BOARD_STAFF_MAX_HELP_REQUESTS_PER_TASK = 1;

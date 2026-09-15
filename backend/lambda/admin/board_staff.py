@@ -58,6 +58,9 @@ _IDLE_NUDGE = (
     "NUDGE: That step only wrote a note. Call a real tool next, or call "
     "task_finish with the deliverable. Notes-only steps burn the step budget."
 )
+_FINISH_NUDGE = "NUDGE: Two steps left — call task_finish now with the deliverable."
+_FC_LINE_RE = re.compile(r"^!function_call:.*$", re.M)
+_HELP_IN_FLIGHT_RE = re.compile(r"help (request|is) in flight", re.I)
 _SALVAGE_MIN_CHARS = 200
 _CANNOT_CALL_RE = re.compile(r"cannot call [`']?task_(?:note|finish)", re.I)
 _PLACEHOLDER_RE = re.compile(r"\[(?:insert|todo|tbd|placeholder)[^\]]*\]", re.I)
@@ -581,7 +584,7 @@ def run_step(payload: dict[str, Any]) -> None:
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
             model=model,
             timeout=min(90, BOARD_STAFF_STEP_MAX_SECONDS),
-            max_tokens=4000 if require_finish else 2500,
+            max_tokens=6000 if require_finish else 2500,
             temperature=0.3,
             json_mode=False,
             tag="board_staff_step",
@@ -702,6 +705,90 @@ def _plans_similar(left: str, right: str) -> bool:
     if not a or not b:
         return False
     return a[:200] == b[:200]
+
+
+def _token_overlap(left: str, right: str) -> float:
+    a = set(_norm_plan(left).split())
+    b = set(_norm_plan(right).split())
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def _strip_function_call_leak(text: str) -> str:
+    return _FC_LINE_RE.sub("", text or "").strip()
+
+
+def _require_json_deliverable(text: str) -> None:
+    idx = (text or "").find("{")
+    if idx < 0:
+        raise StaffError("deliverable JSON does not parse: no JSON object found")
+    try:
+        json.JSONDecoder().raw_decode(text[idx:])
+    except json.JSONDecodeError as exc:
+        raise StaffError(f"deliverable JSON does not parse: {exc}") from exc
+
+
+def _deliverable_requires_json(task: dict[str, Any], dtype: str) -> bool:
+    if dtype == "json":
+        return True
+    return "json" in str(task.get("brief") or "").lower()
+
+
+def _maybe_archive_mail_from_finish(table: Any, task: dict[str, Any], deliverable: str) -> None:
+    if not deliverable.startswith("ARCHIVED — no action:"):
+        return
+    if str(task.get("origin") or "") != "event":
+        return
+    ref = task.get("eventRef") or {}
+    if str(ref.get("kind") or "") != "mail":
+        return
+    thread = board_store.get_mail_thread(table, str(ref.get("id") or ""))
+    if not thread:
+        return
+    thread["disposition"] = "archived"
+    thread["archivedReason"] = deliverable.split(":", 1)[-1].strip()[:200]
+    thread["updatedAt"] = board_store.now_iso()
+    board_store.put_mail_thread(table, thread)
+
+
+def _help_finish_blocked(table: Any, task: dict[str, Any], deliverable: str) -> bool:
+    """Refuse a one-line 'help is in flight' finish while help is open or was refused."""
+    short_or_waiting = len(deliverable) < 400 or bool(_HELP_IN_FLIGHT_RE.search(deliverable))
+    if not short_or_waiting:
+        return False
+    if str(task.get("status") or "") == "waiting_subtask" or task.get("blockedOn"):
+        return True
+    for hid in task.get("helpTaskIds") or []:
+        child = board_store.get_task(table, str(hid))
+        if child and str(child.get("status") or "") not in TERMINAL_STATUSES:
+            return True
+    for call in board_store.list_tool_calls_for_task(table, str(task.get("taskId") or "")):
+        if str(call.get("op") or "") == "task_request_help" and str(call.get("status") or "") in (
+            "error",
+            "refused",
+        ):
+            return True
+    return False
+
+
+def _call_fingerprint(call: dict[str, Any]) -> tuple[str, str]:
+    args = {k: v for k, v in (call.get("arguments") or {}).items() if k != "reason"}
+    return (str(call.get("op") or ""), json.dumps(args, sort_keys=True, default=str))
+
+
+def _same_as_previous_step(table: Any, task_id: str, calls: list[dict[str, Any]]) -> bool:
+    steps = board_store.list_task_steps(table, task_id)
+    if len(steps) < 2:
+        return False
+    prev_ids = [str(x) for x in (steps[-2].get("callIds") or []) if x]
+    if not prev_ids:
+        return False
+    by_id = {str(c.get("callId") or ""): c for c in board_store.list_tool_calls_for_task(table, task_id)}
+    previous = [by_id[i] for i in prev_ids if i in by_id]
+    left = [_call_fingerprint(c) for c in _productive_calls(previous)]
+    right = [_call_fingerprint(c) for c in _productive_calls(calls)]
+    return bool(left) and left == right
 
 
 def _should_require_finish(task: dict[str, Any]) -> bool:
@@ -1703,7 +1790,11 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
         prior = board_store.list_task_steps(table, task_id)
         if len(prior) >= 2:
             similar_to_last = _plans_similar(note, str(prior[-2].get("plan") or ""))
-    if not _productive_calls(calls) or similar_to_last:
+    repeated_review_call = (
+        str((latest.get("eventRef") or {}).get("kind") or "") == "code-review"
+        and _same_as_previous_step(table, task_id, calls)
+    )
+    if not _productive_calls(calls) or similar_to_last or repeated_review_call:
         idle = int(latest.get("idleSteps") or 0) + 1
         latest["idleSteps"] = idle
         combined = _append_scratchpad(latest, _IDLE_NUDGE)
@@ -1718,6 +1809,10 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
             return
     else:
         latest["idleSteps"] = 0
+    if seq == BOARD_STAFF_MAX_STEPS_PER_TASK - 2:
+        combined = _append_scratchpad(latest, _FINISH_NUDGE)
+        latest["scratchpadKey"] = _scratchpad_key(task_id)
+        latest["scratchpadChars"] = len(combined)
     if seq >= BOARD_STAFF_MAX_STEPS_PER_TASK:
         if _salvage_to_review(table, latest, "step limit", note):
             return
@@ -1767,7 +1862,43 @@ def act_guard_staff_assign(ctx: board_tools.ToolContext, _args: dict[str, Any]) 
     return None
 
 
+def reuse_open_assignment(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any] | None:
+    """Attach a minutes action to an existing open task instead of proposing again."""
+    if _origin_from_ctx(ctx) != "minutes":
+        return None
+    assignee = str(args.get("assignee") or "")
+    brief = str(args.get("brief") or "")
+    if not assignee or not brief:
+        return None
+    match = None
+    for status in ("queued", "running", "review", "waiting_approval", "waiting_subtask"):
+        for task in board_store.list_tasks(ctx.table, status, limit=200):
+            if str(task.get("assignee") or "") != assignee:
+                continue
+            if _token_overlap(brief, str(task.get("brief") or "")) >= 0.6:
+                match = task
+                break
+        if match:
+            break
+    if not match:
+        return None
+    action_id = str(args.get("actionId") or "")
+    if action_id and not match.get("actionId"):
+        match["actionId"] = action_id
+        match["updatedAt"] = board_store.now_iso()
+        board_store.put_task(ctx.table, match)
+        action = board_store.get_action(ctx.table, action_id)
+        if action:
+            action["taskId"] = match.get("taskId")
+            action["staffTaskId"] = match.get("taskId")
+            board_store.put_action(ctx.table, action)
+    return public_task(match)
+
+
 def op_staff_assign(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    reused = reuse_open_assignment(ctx, args)
+    if reused:
+        return reused
     task = create_task(
         ctx.table,
         ctx.settings,
@@ -1863,7 +1994,7 @@ def op_task_note(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str
 
 def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     task = _require_running_task(board_store.get_task(ctx.table, ctx.task_id))
-    deliverable = str(args.get("deliverable") or "")
+    deliverable = _strip_function_call_leak(str(args.get("deliverable") or ""))
     encoded = deliverable.encode("utf-8")
     if len(encoded) > BOARD_STAFF_DELIVERABLE_MAX_BYTES:
         raise StaffError(
@@ -1900,6 +2031,11 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
         confidence = "medium"
         flags.append("no_evidence")
     dtype = str(args.get("deliverableType") or task.get("deliverableType") or "markdown")
+    if _deliverable_requires_json(task, dtype):
+        _require_json_deliverable(deliverable)
+    if _help_finish_blocked(ctx.table, task, deliverable):
+        raise StaffError("finish the work with what you have, or wait for the help task")
+    _maybe_archive_mail_from_finish(ctx.table, task, deliverable)
     key = _deliverable_key(ctx.task_id, dtype)
     _blob_put(key, encoded)
     now = board_store.now_iso()
@@ -1985,6 +2121,8 @@ def _review_user_prompt(task: dict[str, Any], raw: str, evidence_lines: list[str
         "console access, analytics credentials, or direct access to analytics tools.\n"
         "Evidence tagged (via seat, task id) was gathered by a help subtask; accept it "
         "as if the assignee called those tools.\n"
+        "If the brief demands JSON and the Deliverable is not valid JSON, or contains "
+        "`!function_call:` text, you MUST return.\n"
         'Return JSON {"verdict":"accept"|"return","notes":"…"}.'
     )
 
@@ -2327,6 +2465,13 @@ def retry_task(table: Any, settings: dict[str, Any], task_id: str, by_sub: str) 
     _cancel_open_help_children(table, task, by_sub)
     _clear_parked(task)
     task["helpRequests"] = 0
+    retry_banner = (
+        "RETRY — the notes below are from a failed attempt; verify state with tools "
+        "before trusting them."
+    )
+    combined = _append_scratchpad(task, retry_banner)
+    task["scratchpadKey"] = _scratchpad_key(task_id)
+    task["scratchpadChars"] = len(combined)
     board_store.put_task(table, task)
     if enabled(settings):
         drain_queue(table, settings)
@@ -2641,7 +2786,7 @@ def public_task(doc: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in doc.items() if k not in ("pk", "sk", "gsi1pk", "gsi1sk")}
 
 
-def read_deliverable(task: dict[str, Any], *, limit: int = 6000) -> str:
+def read_deliverable(task: dict[str, Any], *, limit: int = 12000) -> str:
     raw = _blob_get(str(task.get("deliverableKey") or "")).decode("utf-8", errors="replace")
     return raw[:limit]
 

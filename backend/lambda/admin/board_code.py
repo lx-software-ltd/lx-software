@@ -55,6 +55,11 @@ CI_OK = frozenset({"success", "neutral", "skipped"})
 _ISSUE_RE = re.compile(r"#(\d+)")
 _JSON_BLOCK = re.compile(r"```json\s*(\{.*?\})\s*```", re.S)
 _RUN_INDEX = "code:runs"
+_FAILURE_LINE_RE = re.compile(
+    r"(?:pull request changes \d+ lines|protected path \S+|content pull request changes \d+ lines"
+    r"|error: .+|Failed .+|mypy:.+|got \".+\", expected \".+\")",
+    re.I,
+)
 
 
 class CodeError(ValueError):
@@ -208,12 +213,14 @@ def _run_in_flight(row: dict[str, Any]) -> bool:
     return True
 
 
-def issue_has_open_board_pr(issue_number: int, table: Any | None = None) -> bool:
+def issue_has_open_board_pr(issue_number: int, table: Any | None = None, *, except_task_id: str = "") -> bool:
     for pr in list_open_board_prs():
         if _issue_from_pr(pr) == issue_number:
             return True
     if table is not None:
         for task_id in _run_index(table):
+            if except_task_id and task_id == except_task_id:
+                continue
             row = _get_run(table, task_id)
             if int(row.get("issue") or 0) != issue_number:
                 continue
@@ -360,9 +367,18 @@ def _find_task(table: Any, kind: str, event_id: str, *, statuses: tuple[str, ...
 
 
 def architect_accepted(table: Any, pr_number: int) -> bool:
-    task = _find_task(table, "code-review", f"pr:{int(pr_number)}", statuses=("delivered",))
+    task = _find_task(
+        table, "code-review", f"pr:{int(pr_number)}", statuses=("delivered", "needs_owner")
+    )
     if not task:
         return False
+    if str(task.get("status") or "") == "needs_owner":
+        flags = {str(f) for f in (task.get("flags") or [])}
+        if "salvaged" not in flags:
+            return False
+        reviews = board_store.list_task_reviews(table, str(task.get("taskId") or ""))
+        if not any(str(r.get("verdict") or "").lower() == "accept" for r in reviews):
+            return False
     text = board_staff.read_deliverable(task, limit=20_000)
     parsed = parse_review_verdict(text)
     if parsed.get("verdict") != "accept":
@@ -447,6 +463,118 @@ def validate_run_task(args: dict[str, Any]) -> str | None:
     return None
 
 
+def _code_run_limits() -> tuple[int, int]:
+    try:
+        from contract_constants import BOARD_CODE_RUN_COOLDOWN_SECONDS, BOARD_CODE_RUN_MAX_ROUNDS
+
+        return int(BOARD_CODE_RUN_COOLDOWN_SECONDS), int(BOARD_CODE_RUN_MAX_ROUNDS)
+    except Exception:
+        return 900, 2
+
+
+def _parse_iso(value: str) -> Any:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    from datetime import datetime, timezone
+
+    try:
+        if raw.endswith("Z"):
+            return datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _run_for_pr(table: Any, pr_number: int) -> tuple[str, dict[str, Any]]:
+    for task_id in _run_index(table):
+        row = _get_run(table, task_id)
+        try:
+            stored = int(row.get("prNumber") or 0)
+        except (TypeError, ValueError):
+            stored = 0
+        if stored == pr_number:
+            return task_id, row
+    return "", {}
+
+
+def _calling_task(ctx: Any) -> dict[str, Any]:
+    task_id = str(getattr(ctx, "task_id", "") or "")
+    if not task_id:
+        return {}
+    return board_store.get_task(ctx.table, task_id) or {}
+
+
+def _is_revision_dispatch(ctx: Any, issue: int) -> tuple[str, dict[str, Any]]:
+    """Reuse the original runner task id when revising an open board PR."""
+    task = _calling_task(ctx)
+    ref = task.get("eventRef") or {}
+    if str(ref.get("kind") or "") != "code-implement":
+        return "", {}
+    try:
+        pr_number = int(ref.get("prNumber") or 0)
+    except (TypeError, ValueError):
+        pr_number = 0
+    if pr_number <= 0:
+        return "", {}
+    source_id, row = _run_for_pr(ctx.table, pr_number)
+    if not source_id:
+        return "", {}
+    try:
+        stored_issue = int(row.get("issue") or 0)
+    except (TypeError, ValueError):
+        stored_issue = 0
+    if stored_issue and stored_issue != issue:
+        return "", {}
+    return source_id, row
+
+
+def extract_failure_line(log: str) -> str:
+    """Last policy / compiler line from a failed Actions job log."""
+    last = ""
+    for raw in str(log or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if _FAILURE_LINE_RE.search(line):
+            last = line[:400]
+    return last
+
+
+def _failure_line_for_run(run: dict[str, Any]) -> str:
+    run_id = run.get("id") or run.get("databaseId")
+    if not run_id:
+        return ""
+    repo = _repo()
+    try:
+        jobs = _gh("GET", f"/repos/{repo}/actions/runs/{int(run_id)}/jobs") or {}
+    except (TypeError, ValueError, board_github.GitHubSnapshotError):
+        return ""
+    items = jobs.get("jobs") if isinstance(jobs, dict) else jobs
+    if not isinstance(items, list):
+        return ""
+    for job in items:
+        if not isinstance(job, dict):
+            continue
+        if str(job.get("conclusion") or "").lower() not in _RUN_FAILED:
+            continue
+        job_id = job.get("id")
+        if not job_id:
+            continue
+        try:
+            log = _gh("GET", f"/repos/{repo}/actions/jobs/{int(job_id)}/logs")
+        except (TypeError, ValueError, board_github.GitHubSnapshotError):
+            continue
+        if isinstance(log, (bytes, bytearray)):
+            text = bytes(log).decode("utf-8", errors="replace")
+        else:
+            text = str(log or "")
+        line = extract_failure_line(text)
+        if line:
+            return line
+    return ""
+
+
 def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     try:
         issue = int(args.get("issueNumber") or 0)
@@ -460,23 +588,50 @@ def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     brief = str(args.get("brief") or "").strip()
     if not brief:
         raise CodeError("brief is required")
-    if issue_has_open_board_pr(issue, ctx.table):
-        raise CodeError(f"an open board/* pull request already references #{issue}")
-    task_id = str(ctx.task_id or args.get("taskId") or board_store.new_id())
+    revision_id, revision_row = _is_revision_dispatch(ctx, issue)
+    if revision_id:
+        task_id = revision_id
+        prior = revision_row
+    else:
+        task_id = str(ctx.task_id or args.get("taskId") or board_store.new_id())
+        prior = _get_run(ctx.table, task_id)
+        # Same-task in-flight / cooldown / rounds are handled below. Exclude
+        # this task's own run so those guards are not shadowed by the
+        # one-open-PR-per-issue check.
+        if issue_has_open_board_pr(issue, ctx.table, except_task_id=task_id):
+            raise CodeError(
+                f"an open board/* pull request already references #{issue}. "
+                "Reuse that branch or close the PR before starting another run."
+            )
+    cooldown, max_rounds = _code_run_limits()
+    rounds = int(prior.get("rounds") or 0)
+    if rounds >= max_rounds:
+        raise CodeError("two runs already made for this task; report the failure")
+    if _run_in_flight(prior) and prior.get("dispatchedAt"):
+        from datetime import datetime, timedelta, timezone
+
+        started = _parse_iso(str(prior.get("dispatchedAt") or ""))
+        now = datetime.now(timezone.utc)
+        if started is None or now - started < timedelta(seconds=cooldown):
+            raise CodeError("a run for this task is already in flight — call code_get_run")
     dispatched = dispatch_workflow(
         WORKFLOW_AGENT,
         {"task_id": task_id, "issue": str(issue), "brief": brief[:4000], "kind": kind},
         ref="staging",
     )
     payload = {
+        **prior,
         "taskId": task_id,
         "issue": issue,
         "kind": kind,
         "brief": brief[:4000],
-        "rounds": int((_get_run(ctx.table, task_id).get("rounds") or 0)) + 1,
+        "rounds": rounds + 1,
         "dispatchedAt": board_store.now_iso(),
         "workflow": WORKFLOW_AGENT,
     }
+    payload.pop("failedAt", None)
+    payload.pop("conclusion", None)
+    payload.pop("runStatus", None)
     _put_run(ctx.table, task_id, payload)
     return {**dispatched, **payload}
 
@@ -512,6 +667,10 @@ def op_get_run(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     conclusion = str(out.get("conclusion") or "").lower()
     if stored.get("runStatus") == "completed" and not stored.get("prNumber") and conclusion in _RUN_FAILED:
         stored["failedAt"] = stored.get("failedAt") or board_store.now_iso()
+    if conclusion in _RUN_FAILED and not stored.get("failureLine"):
+        stored["failureLine"] = _failure_line_for_run(latest)
+    if stored.get("failureLine"):
+        out["failureLine"] = stored["failureLine"]
     _put_run(ctx.table, task_id, stored)
     return out
 
@@ -1201,6 +1360,9 @@ def on_review_delivered(table: Any, settings: dict[str, Any], task: dict[str, An
         notes = " ".join(parsed.get("notes") or []) or "Address the architect review notes."
         if issue <= 0:
             return {"verdict": "changes", "skipped": "no issue"}
+        failure_line = str(run.get("failureLine") or "").strip()
+        if failure_line:
+            notes = f"{notes} CI failure: {failure_line}"
         try:
             follow = board_staff.create_task(
                 table,

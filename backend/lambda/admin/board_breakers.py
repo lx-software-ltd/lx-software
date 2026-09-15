@@ -200,19 +200,29 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
 
     cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
     cutoff_iso = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")
+    reset_at: dict[str, str] = {}
+    for row in board_store.list_breakers(table):
+        name = str(row.get("name") or "")
+        if name.startswith("tool:") and row.get("resetAt"):
+            reset_at[name[5:]] = str(row.get("resetAt") or "")
     errors: dict[str, int] = {}
     for call in board_store.list_tool_calls(table, limit=400):
         created = str(call.get("createdAt") or "")
         if created and created < cutoff_iso:
             continue
+        if call.get("status") in ("refused", "held", "pending_approval"):
+            continue
         if call.get("status") != "error":
+            continue
+        tool_id = str(call.get("toolId") or "")
+        floor = reset_at.get(tool_id) or ""
+        if floor and created and created <= floor:
             continue
         preview = " ".join(
             str(call.get(k) or "") for k in ("resultPreview", "summary", "error")
         ).lower()
         if any(marker in preview for marker in _IGNORABLE_TOOL_ERROR_MARKERS):
             continue
-        tool_id = str(call.get("toolId") or "")
         if not tool_id or tool_id in _INTERNAL_TOOLS:
             continue
         errors[tool_id] = errors.get(tool_id, 0) + 1

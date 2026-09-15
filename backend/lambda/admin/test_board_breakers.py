@@ -71,6 +71,40 @@ class BreakerRuleTests(BoardTestCase):
         self.assertIn("tool:mail", tripped)
         self.assertTrue(board_breakers.is_tripped(self.table, "tool:mail"))
 
+    def test_reset_excludes_errors_before_reset_at(self) -> None:
+        before = (datetime.now(timezone.utc) - timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        after = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for i in range(10):
+            board_store.add_tool_call(
+                self.table,
+                {
+                    "callId": f"old-{i}",
+                    "op": "code_run_task",
+                    "toolId": "code",
+                    "status": "error",
+                    "summary": "failed",
+                    "createdAt": before,
+                    "personaId": "cto",
+                },
+            )
+        board_breakers.trip(self.table, "tool:code", "10 errors in the last hour")
+        board_breakers.reset(self.table, "tool:code", "owner")
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "refused-1",
+                "op": "code_run_task",
+                "toolId": "code",
+                "status": "refused",
+                "summary": "breaker tripped",
+                "createdAt": after,
+                "personaId": "cto",
+            },
+        )
+        tripped = board_breakers.evaluate(self.table, self.settings)
+        self.assertNotIn("tool:code", tripped)
+        self.assertFalse(board_breakers.is_tripped(self.table, "tool:code"))
+
     def test_auto_reset_waits_for_age_and_low_count(self) -> None:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         for i in range(4):
@@ -256,7 +290,7 @@ class BreakerExecuteCallTests(ToolsTestCase):
             board_tools.REGISTRY["staff_assign"],
             {"assignee": "cfo", "brief": "Write a one-line status", "deliverableType": "markdown"},
         )
-        self.assertEqual(outcome.status, "error")
+        self.assertEqual(outcome.status, "refused")
         self.assertEqual(outcome.result.get("breaker"), "tool:staff")
 
     def test_execute_call_works_after_reset(self) -> None:

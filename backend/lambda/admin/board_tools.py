@@ -239,7 +239,7 @@ class ToolOutcome:
         if self.status == "held":
             out["holdId"] = str(self.result.get("holdId") or "")
             out["executeAt"] = str(self.result.get("executeAt") or "")
-        if self.status == "error":
+        if self.status in ("error", "refused"):
             out["error"] = str(self.result.get("error") or "")[:300]
         return out
 
@@ -1346,6 +1346,18 @@ def build_registry() -> dict[str, ToolOp]:
             summarize=_summ("Looked up venues in {district}"),
         ),
         ToolOp(
+            name="research_fetch_page",
+            tool_id="research",
+            kind="read",
+            description=(
+                "Fetch a public http(s) page as text. Refuses private/link-local hosts. "
+                "At most 6 fetches per task. Prefer official venue or government pages."
+            ),
+            parameters=_obj({"url": _str_param("https URL to fetch.", max_len=500)}, ["url"]),
+            run=board_research.op_fetch_page,
+            summarize=_summ("Fetched {url}"),
+        ),
+        ToolOp(
             name="aws_monthly_cost",
             tool_id="aws",
             kind="read",
@@ -2272,7 +2284,12 @@ def build_registry() -> dict[str, ToolOp]:
             name="code_run_task",
             tool_id="code",
             kind="write",
-            description="Dispatch the coding runner. Opens a draft PR on board/{taskId} from staging. Does not merge.",
+            description=(
+                "Dispatch the coding runner. Opens a draft PR on board/{taskId} from staging. Does not merge. "
+                "CI rejects PRs over 400 lines (2000 for content/**); split the brief. "
+                "One open board PR per issue — for a second slice, open a new issue first. "
+                "If a run is already in flight, call code_get_run instead of dispatching again."
+            ),
             parameters=_obj(
                 {
                     "issueNumber": _int_param("GitHub issue number.", minimum=1, maximum=100000),
@@ -3029,7 +3046,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
     elif (world_error := _validate_world(ctx, op, arguments)):
         outcome = ToolOutcome(status="error", result={"error": world_error[:500]}, summary=summary)
     elif breaker_error:
-        outcome = ToolOutcome(status="error", result=breaker_error, summary=summary)
+        outcome = ToolOutcome(status="refused", result=breaker_error, summary=summary)
     elif hold_doc:
         execute_at = str(hold_doc.get("executeAt") or "")
         hold_id = str(hold_doc.get("holdId") or "")
@@ -3043,6 +3060,12 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
             },
             summary=f"Scheduled {summary} (executes {execute_at} unless vetoed)",
         )
+    elif (
+        (reused_assign := _reuse_staff_assign(ctx, op, arguments))
+        if op.name == "staff_assign"
+        else None
+    ):
+        outcome = ToolOutcome(status="ok", result=reused_assign, summary="Attached to an open task")
     elif op.is_write and ctx.actor != "hold" and (level != "act" or guard_reason or (op.always_propose and ctx.actor == "persona")):
         approval = create_approval(ctx, op, arguments, summary=summary, downgrade_reason=guard_reason)
         approval_id = str(approval["approvalId"])
@@ -3168,6 +3191,17 @@ def approval_fingerprint(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]
     payload["_op"] = op.name
     raw = json.dumps(payload, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
+
+
+def _reuse_staff_assign(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> dict[str, Any] | None:
+    if op.name != "staff_assign":
+        return None
+    try:
+        import board_staff as _staff_reuse
+
+        return _staff_reuse.reuse_open_assignment(ctx, arguments)
+    except Exception:
+        return None
 
 
 def create_approval(
@@ -3407,37 +3441,48 @@ def run_tool_loop(
     return ToolLoopResult(text=final.text, usage=usage, model=final.model, calls=calls, rounds=rounds, completion=final)
 
 
-_PROSE_FC_RE = re.compile(r"!function_call:\s*(\{.*\})\s*$", re.S)
+_PROSE_FC_RE = re.compile(r"!function_call:\s*")
 
 
-def parse_prose_tool_calls(text: str) -> list[ToolCall]:
-    """Recover a DeepSeek-style ``!function_call:{...}`` line as a real tool call."""
-    raw = (text or "").strip()
-    match = _PROSE_FC_RE.search(raw)
-    blob = match.group(1) if match else ""
-    if not blob:
-        fence = re.search(r"```(?:json)?\s*(\{\s*\"(?:id|call|name)\".*?\})\s*```", raw, re.S)
-        blob = fence.group(1) if fence else ""
-    if not blob:
-        return []
-    try:
-        data = json.loads(blob)
-    except json.JSONDecodeError:
-        return []
+def _tool_call_from_prose_payload(data: Any, *, call_id: str = "prose-call") -> ToolCall | None:
     if not isinstance(data, dict):
-        return []
+        return None
     name = str(data.get("call") or data.get("name") or "").strip()
     args = data.get("arguments") if isinstance(data.get("arguments"), dict) else {}
     if not name:
+        return None
+    return ToolCall(
+        id=str(data.get("id") or call_id),
+        name=name,
+        arguments=args,
+        raw_arguments=json.dumps(args),
+    )
+
+
+def parse_prose_tool_calls(text: str) -> list[ToolCall]:
+    """Recover DeepSeek-style ``!function_call:{...}`` blobs as real tool calls."""
+    raw = text or ""
+    found: list[ToolCall] = []
+    decoder = json.JSONDecoder()
+    for index, match in enumerate(_PROSE_FC_RE.finditer(raw)):
+        try:
+            data, _end = decoder.raw_decode(raw, match.end())
+        except json.JSONDecodeError:
+            continue
+        call = _tool_call_from_prose_payload(data, call_id=f"prose-call-{index}")
+        if call:
+            found.append(call)
+    if found:
+        return found
+    fence = re.search(r"```(?:json)?\s*(\{\s*\"(?:id|call|name)\".*?\})\s*```", raw, re.S)
+    if not fence:
         return []
-    return [
-        ToolCall(
-            id=str(data.get("id") or "prose-call"),
-            name=name,
-            arguments=args,
-            raw_arguments=json.dumps(args),
-        )
-    ]
+    try:
+        data = json.loads(fence.group(1))
+    except json.JSONDecodeError:
+        return []
+    call = _tool_call_from_prose_payload(data)
+    return [call] if call else []
 
 
 def _same_code_run_target(left: dict[str, Any], right: dict[str, Any]) -> bool:

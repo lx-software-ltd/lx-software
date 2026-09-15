@@ -661,6 +661,87 @@ class StaffStepTests(ToolsTestCase):
         self.assertIn("placeholder", str(raised.exception).lower())
         self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "running")
 
+    def test_task_finish_strips_function_call_and_rejects_bad_json(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="content-marketer",
+                origin="owner",
+                brief="Return a JSON object with organisations.",
+                deliverable_type="markdown",
+                created_by="a",
+            )
+        board_store.claim_task_step(self.table, task["taskId"], 0)
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=board_store.load_settings(self.table),
+            persona_id="cmo",
+            kind="task",
+            task_id=task["taskId"],
+        )
+        with self.assertRaises(board_staff.StaffError) as raised:
+            board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "batch",
+                    "deliverable": "not json at all",
+                    "deliverableType": "markdown",
+                    "evidence": [],
+                    "confidence": "low",
+                },
+            )
+        self.assertIn("JSON does not parse", str(raised.exception))
+        board_staff.op_task_finish(
+            ctx,
+            {
+                "summary": "batch",
+                "deliverable": '!function_call:{"name":"task_finish"}\n{"district":"Sha Tin","organisations":[]}',
+                "deliverableType": "markdown",
+                "evidence": [],
+                "confidence": "low",
+            },
+        )
+        raw = board_staff.read_deliverable(board_store.get_task(self.table, task["taskId"]))
+        self.assertNotIn("!function_call:", raw)
+        self.assertIn("Sha Tin", raw)
+
+    def test_task_finish_archives_mail_from_memo(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.put_mail_thread(self.table, {"threadId": "th-fin", "subject": "FYI", "disposition": ""})
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="support",
+                origin="event",
+                brief="Triage inbound mail",
+                deliverable_type="markdown",
+                created_by="board_triage",
+                event_ref={"kind": "mail", "id": "th-fin"},
+            )
+        board_store.claim_task_step(self.table, task["taskId"], 0)
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=board_store.load_settings(self.table),
+            persona_id="coo",
+            kind="task",
+            task_id=task["taskId"],
+        )
+        board_staff.op_task_finish(
+            ctx,
+            {
+                "summary": "archived",
+                "deliverable": "ARCHIVED — no action: automated SES notice",
+                "deliverableType": "markdown",
+                "evidence": [],
+                "confidence": "low",
+            },
+        )
+        self.assertEqual(board_store.get_mail_thread(self.table, "th-fin")["disposition"], "archived")
+
     def test_task_finish_requires_evidence_when_brief_names_tools(self) -> None:
         settings = _enable_staff(self.table)
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
@@ -919,6 +1000,90 @@ class StaffStepTests(ToolsTestCase):
         self.assertEqual(latest["status"], "failed")
         self.assertEqual(latest["failureReason"], "idle step limit")
         self.assertEqual(latest["idleSteps"], BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK)
+        scratch = board_staff._blob_get(board_staff._scratchpad_key(tid)).decode()  # noqa: SLF001
+        self.assertIn("NUDGE", scratch)
+
+    def test_two_steps_left_appends_finish_nudge(self) -> None:
+        task = self._queued_task()
+        tid = task["taskId"]
+        latest = board_store.get_task(self.table, tid)
+        latest["status"] = "running"
+        latest["step"] = BOARD_STAFF_MAX_STEPS_PER_TASK - 3
+        board_store.put_task(self.table, latest)
+        result = type(
+            "R",
+            (),
+            {
+                "text": "still researching",
+                "usage": {},
+                "calls": [{"op": "research_search", "status": "ok", "callId": "c1"}],
+            },
+        )()
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff._complete_step(self.table, tid, latest, result, BOARD_STAFF_MAX_STEPS_PER_TASK - 2)
+        scratch = board_staff._blob_get(board_staff._scratchpad_key(tid)).decode()  # noqa: SLF001
+        self.assertIn("Two steps left", scratch)
+
+    def test_repeated_code_review_calls_count_as_idle(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "architect", {"isActive": True})
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="architect",
+                origin="event",
+                brief="Review PR #7",
+                deliverable_type="markdown",
+                event_ref={"kind": "code-review", "id": "pr:7", "prNumber": 7},
+                created_by="board_code",
+            )
+        tid = task["taskId"]
+        latest = board_store.get_task(self.table, tid)
+        latest["status"] = "running"
+        latest["step"] = 1
+        board_store.put_task(self.table, latest)
+        args = {"prNumber": 7, "reason": "Review the pull request."}
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "rev-1",
+                "op": "code_review_pr",
+                "toolId": "code",
+                "status": "ok",
+                "taskId": tid,
+                "arguments": args,
+            },
+        )
+        board_store.put_task_step(
+            self.table,
+            tid,
+            {"seq": 1, "plan": "review", "callIds": ["rev-1"], "at": board_store.now_iso()},
+        )
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "rev-2",
+                "op": "code_review_pr",
+                "toolId": "code",
+                "status": "ok",
+                "taskId": tid,
+                "arguments": args,
+            },
+        )
+        result = type(
+            "R",
+            (),
+            {
+                "text": "reviewed again",
+                "usage": {},
+                "calls": [{"op": "code_review_pr", "status": "ok", "callId": "rev-2", "arguments": args}],
+            },
+        )()
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff._complete_step(self.table, tid, latest, result, 2)
+        out = board_store.get_task(self.table, tid)
+        self.assertEqual(out["idleSteps"], 1)
         scratch = board_staff._blob_get(board_staff._scratchpad_key(tid)).decode()  # noqa: SLF001
         self.assertIn("NUDGE", scratch)
 
@@ -1215,6 +1380,27 @@ class StaffRouteTests(BoardTestCase):
             self.assertEqual(body["task"].get("failureReason") or "", "")
             status, again = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
             self.assertEqual(status, 409)
+
+    def test_retry_labels_stale_scratchpad(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            _enable_staff(self.table)
+            status, created = self.call(
+                "/siu-tin-dei/board/tasks",
+                "POST",
+                {"assignee": "cfo", "brief": "List our three biggest monthly costs from AWS and finance", "deliverableType": "markdown"},
+            )
+            self.assertEqual(status, 201)
+            task_id = created["task"]["taskId"]
+            row = board_store.get_task(self.table, task_id)
+            board_staff._append_scratchpad(row, "run already scheduled")  # noqa: SLF001
+            row.update({"status": "needs_owner", "failureReason": "breaker tripped"})
+            board_store.put_task(self.table, row)
+            status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
+            self.assertEqual(status, 200)
+            scratch = board_staff._blob_get(body["task"]["scratchpadKey"]).decode()  # noqa: SLF001
+            self.assertIn("RETRY — the notes below are from a failed attempt", scratch)
+            self.assertIn("run already scheduled", scratch)
 
     def test_cancel_failed_task_dismisses_it(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"
@@ -1737,6 +1923,44 @@ class StaffActionHandoffTests(BoardTestCase):
         status, approvals = self.call("/siu-tin-dei/board/approvals", query="status=pending")
         self.assertEqual(approvals["approvals"], [])
 
+    def test_minutes_assign_reuses_overlapping_open_task(self) -> None:
+        settings = _enable_staff(self.table)
+        settings["tools"]["globalMode"] = "propose"
+        board_store.save_settings(self.table, settings)
+        board_store.save_staff_override(self.table, "prospector", {"isActive": True})
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            existing = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="prospector",
+                origin="owner",
+                brief="Call 10 activity providers\nDone looks like: Book calls.",
+                deliverable_type="markdown",
+                created_by="a",
+            )
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=board_store.load_settings(self.table),
+            persona_id="ceo",
+            display_name="CEO",
+            kind="meeting",
+            meeting_id="m1",
+            actor="persona",
+        )
+        outcome = board_tools.execute_call(
+            ctx,
+            board_tools.REGISTRY["staff_assign"],
+            {
+                "assignee": "prospector",
+                "brief": "Call 10 activity providers\nDone looks like: Book calls.",
+                "deliverableType": "markdown",
+                "reason": "Assigned in the board minutes.",
+            },
+        )
+        self.assertEqual(outcome.status, "ok")
+        self.assertEqual(outcome.result.get("taskId"), existing["taskId"])
+        self.assertEqual([a for a in board_store.list_approvals(self.table) if a.get("status") == "pending"], [])
+
 
 class StaffHelpTests(ToolsTestCase):
     def setUp(self) -> None:
@@ -1774,6 +1998,38 @@ class StaffHelpTests(ToolsTestCase):
             actor=actor,
             owner_sub="owner-1" if actor == "owner" else "",
         )
+
+    def test_finish_blocks_help_in_flight_memo(self) -> None:
+        task, settings = self._support_task()
+        board_store.claim_task_step(self.table, task["taskId"], 0)
+        latest = board_store.get_task(self.table, task["taskId"])
+        latest["status"] = "running"
+        latest["helpTaskIds"] = ["child-help"]
+        board_store.put_task(self.table, latest)
+        board_store.put_task(
+            self.table,
+            {
+                "taskId": "child-help",
+                "status": "running",
+                "parentTaskId": task["taskId"],
+                "assignee": "data-analyst",
+                "origin": "task",
+            },
+        )
+        ctx = self._help_ctx(latest, settings)
+        with self.assertRaises(board_staff.StaffError) as raised:
+            board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "waiting",
+                    "deliverable": "help is in flight",
+                    "deliverableType": "markdown",
+                    "evidence": [],
+                    "confidence": "low",
+                },
+            )
+        self.assertIn("wait for the help task", str(raised.exception))
+        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "running")
 
     def test_pick_helper_prefers_read_only_web_seat(self) -> None:
         settings = _enable_staff(self.table)

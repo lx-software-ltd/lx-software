@@ -108,6 +108,12 @@ function Headline({ review }: { readonly review: BoardReviewSnapshot }) {
         <div className="col-auto">Delivered <strong>{h.tasks.delivered}</strong></div>
         <div className="col-auto">Running <strong>{h.tasks.running}</strong></div>
         <div className="col-auto">Blocked <strong>{h.tasks.blocked}</strong></div>
+        {h.mail ? (
+          <div className="col-auto">
+            Mail: <strong>{h.mail.replied}</strong> replied / <strong>{h.mail.archived}</strong> archived /{" "}
+            <strong>{h.mail.open}</strong> open
+          </div>
+        ) : null}
         <div className="col-auto">Holds executed/vetoed <strong>{h.holds.executed}/{h.holds.vetoed}</strong></div>
         <div className="col-auto">
           Staff spend <strong>{h.spend.staffUsd}</strong> / {h.spend.budgetUsd} USD
