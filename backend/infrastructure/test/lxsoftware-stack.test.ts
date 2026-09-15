@@ -899,6 +899,36 @@ describe("Lambda service-principal permissions", () => {
   });
 });
 
+describe("AdminApiFn recursive loop detection", () => {
+  test("allows intentional self-invoke; other app Lambdas stay on Terminate", () => {
+    const fns = resourcesOfType("AWS::Lambda::Function");
+    const admin = Object.entries(fns).find(([id]) => id.startsWith("AdminApiFn"));
+    expect(admin?.[1].Properties?.RecursiveLoop).toBe("Allow");
+    const inbound = Object.entries(fns).find(([id]) =>
+      id.startsWith("InboundStatementMailFn")
+    );
+    expect(inbound?.[1].Properties?.RecursiveLoop).toBeUndefined();
+    const authorizer = Object.entries(fns).find(([id]) =>
+      id.startsWith("PublicApiKeyAuthorizerFn")
+    );
+    expect(authorizer?.[1].Properties?.RecursiveLoop).toBeUndefined();
+  });
+
+  test("invocations alarm is named for the siutindei board alarm filter", () => {
+    const alarms = Object.values(resourcesOfType("AWS::CloudWatch::Alarm"));
+    const alarm = alarms.find(
+      (r) => r.Properties?.AlarmName === "lxsoftware-admin-siutindei-admin-api-invocations"
+    );
+    expect(alarm).toBeDefined();
+    expect(alarm?.Properties?.Threshold).toBe(250);
+    expect(alarm?.Properties?.Namespace ?? alarm?.Properties?.Metrics).toBeDefined();
+    const serialized = JSON.stringify(alarm?.Properties ?? {});
+    expect(serialized).toContain("AWS/Lambda");
+    expect(serialized).toContain("Invocations");
+    expect(String(alarm?.Properties?.AlarmName)).toContain("siutindei");
+  });
+});
+
 describe("SQS event sources on AdminApiFn", () => {
   test("every source queue's visibility timeout covers the function timeout", () => {
     const fns = resourcesOfType("AWS::Lambda::Function");

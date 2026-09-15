@@ -1,4 +1,9 @@
-"""Executive Board: fire-and-forget self-invocation of AdminApiFn."""
+"""Executive Board: fire-and-forget self-invocation of AdminApiFn.
+
+Lambda recursive-loop detection counts each Event invoke as a hop and
+stops the chain at ~16 unless AdminApiFn's RecursiveLoop is Allow
+(see createPythonLambda recursiveLoop on that function).
+"""
 
 from __future__ import annotations
 

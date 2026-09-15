@@ -58,6 +58,11 @@ export interface PythonLambdaFactoryProps {
    * callers can pass RETAIN for compliance retention.
    */
   readonly logRemovalPolicy?: cdk.RemovalPolicy;
+  /**
+   * Recursive-loop detection. Defaults to Terminate. Pass Allow only when
+   * the function intentionally self-invokes (AdminApiFn async workers).
+   */
+  readonly recursiveLoop?: lambda.RecursiveLoop;
 }
 
 function requirementsNeedPip(reqPath: string): boolean {
@@ -183,6 +188,9 @@ export function createPythonLambda(
     // the AWS-account-level rationale for not defaulting this.
     ...(props.reservedConcurrentExecutions !== undefined
       ? { reservedConcurrentExecutions: props.reservedConcurrentExecutions }
+      : {}),
+    ...(props.recursiveLoop !== undefined
+      ? { recursiveLoop: props.recursiveLoop }
       : {}),
   });
 }
