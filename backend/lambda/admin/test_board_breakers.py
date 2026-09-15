@@ -396,6 +396,7 @@ class PolicyRefusalTests(BoardTestCase):
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             board_breakers.reset(self.table, "tool:code", "owner")
         queued = board_store.get_task(self.table, task["taskId"])
+        # retry_task calls drain_queue, which may start the task immediately.
         self.assertIn(queued["status"], ("queued", "running"))
         self.assertEqual(queued.get("retriedBy"), "system:breaker-reset")
         self.assertFalse(queued.get("parkedReason"))

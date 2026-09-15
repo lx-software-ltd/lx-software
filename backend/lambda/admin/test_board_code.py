@@ -222,6 +222,8 @@ class RunnerTests(BoardTestCase):
         self.addCleanup(lambda: os.environ.pop("GITHUB_READ_TOKEN", None))
         self.addCleanup(board_github.reset_token_cache_for_tests)
         self.settings = _enable_staff(self.table)
+        board_code.reset_lookup_caches_for_tests()
+        self.addCleanup(board_code.reset_lookup_caches_for_tests)
         self.ctx = ToolContext(self.table, self.settings, "cto", display_name="CTO", kind="task", task_id="task-1")
 
     def test_run_task_dispatch_payload(self) -> None:
@@ -390,6 +392,7 @@ class RunnerTests(BoardTestCase):
         self.assertIn("pull request", reason or "")
 
     def test_validate_run_task_allows_pr_number_on_revision_task(self) -> None:
+        board_code._put_run(self.table, "task-1", {"taskId": "task-1", "prNumber": 7, "issue": 42})  # noqa: SLF001
         board_store.put_task(
             self.table,
             {
@@ -400,6 +403,19 @@ class RunnerTests(BoardTestCase):
         )
         ctx = ToolContext(self.table, self.settings, "cto", kind="task", task_id="revise-ok")
         self.assertIsNone(board_code.validate_run_task({"issueNumber": 7}, ctx))
+
+    def test_validate_run_task_refuses_pr_number_without_stored_issue(self) -> None:
+        board_store.put_task(
+            self.table,
+            {
+                "taskId": "revise-stub",
+                "status": "running",
+                "eventRef": {"kind": "code-implement", "prNumber": 7},
+            },
+        )
+        ctx = ToolContext(self.table, self.settings, "cto", kind="task", task_id="revise-stub")
+        reason = board_code.validate_run_task({"issueNumber": 7}, ctx)
+        self.assertIn("issue number", reason or "")
 
     def test_revision_allowed_when_original_already_used_dispatch_cap(self) -> None:
         board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
@@ -516,6 +532,29 @@ class RunnerTests(BoardTestCase):
         self.assertEqual(ref["kind"], "code-implement")
         self.assertEqual(ref["prNumber"], 498)
         self.assertEqual(ref["issueNumber"], 489)
+
+    def test_owner_revision_ref_requires_issue_when_pr_has_none(self) -> None:
+        self.gh.prs.append({**_pr(number=500, issue=0), "title": "no issue", "body": "orphan"})
+        with self.assertRaises(board_code.CodeRefused):
+            board_code.owner_revision_ref(self.table, 500)
+        ref = board_code.owner_revision_ref(self.table, 500, issue_number=42)
+        self.assertEqual(ref["issueNumber"], 42)
+
+    def test_run_task_refuses_revision_when_pr_has_no_issue(self) -> None:
+        self.gh.prs.append({**_pr(number=7, issue=0), "title": "orphan", "body": "no issue"})
+        board_store.put_task(
+            self.table,
+            {
+                "taskId": "revise-stub",
+                "status": "running",
+                "eventRef": {"kind": "code-implement", "prNumber": 7},
+            },
+        )
+        ctx = ToolContext(self.table, self.settings, "cto", kind="task", task_id="revise-stub")
+        with self.assertRaises(board_code.CodeRefused) as raised:
+            board_code.op_run_task(ctx, {"issueNumber": 7, "brief": "Fix CI.", "kind": "fix"})
+        self.assertIn("no linked GitHub issue", str(raised.exception))
+        self.assertEqual(self.gh.dispatches, [])
 
     def test_brief_mismatch_flags_when_issue_nouns_absent(self) -> None:
         self.gh.issues.append(
@@ -735,6 +774,18 @@ class RunnerTests(BoardTestCase):
         created = board_code.poll_runs(self.table, self.settings)
         self.assertEqual(len(created), 1)
         self.assertIn("CI still pending after 60 min", created[0]["brief"])
+        self.assertEqual(created[0]["eventRef"]["id"], "pr:7:pending-ci")
+        created[0]["status"] = "delivered"
+        board_store.put_task(self.table, created[0])
+        board_staff._blob_put(  # noqa: SLF001
+            created[0]["deliverableKey"] or board_staff._deliverable_key(created[0]["taskId"], "markdown"),
+            b'```json\n{"verdict":"changes","notes":["CI still pending"]}\n```',
+        )
+        board_code.reset_lookup_caches_for_tests()
+        self.gh.checks["abc123"] = _green()
+        settled = board_code.poll_runs(self.table, self.settings)
+        self.assertEqual(len(settled), 1)
+        self.assertEqual(settled[0]["eventRef"]["id"], "pr:7")
 
     def test_assign_oldest_board_ready_when_under_two_prs(self) -> None:
         self.gh.issues = [

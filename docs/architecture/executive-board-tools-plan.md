@@ -72,7 +72,11 @@ Rules that hold for every tool:
 - Levels are set **per role per tool** in the Executive Board settings card.
   Defaults are in §6; the owner can lower any of them at any time.
 - A **global mode** switch (`readOnly` / `propose` / `act`) caps every role.
-  Shipping default is `propose`; `readOnly` is one click.
+  Shipping default is `propose`; `readOnly` is one click. Exception: the CTO
+  filing `github_create_issue` with labels `security` or `dependencies`
+  skips `always_propose` and may `act` even when the global mode is
+  `propose`, so Dependabot / CVE tickets are filed without an Approval.
+  Labels are model-supplied.
 - **Spend** is a separate cap, not a level: any tool that moves money (ads,
   paid API quota, SES volume) has a **daily and monthly USD ceiling** the LLM
   cannot see or change; hitting it degrades the tool to `propose`.

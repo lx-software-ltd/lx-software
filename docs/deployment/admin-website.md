@@ -753,7 +753,8 @@ function calling. Design:
   after staff is on. `content-marketer` has a daily `catalog-micro-batch`
   duty (10:00 HKT, off until the seat and duties are on) that creates one
   district curation sheet per day from `contracts/board-staff.json`
-  `catalog`. Per-seat OpenRouter models live in `settings.staff.modelBySeat`
+  `catalog`. Failed or cancelled district tasks are treated as unclaimed so
+  the next duty run retries that district. Per-seat OpenRouter models live in `settings.staff.modelBySeat`
   (Staff tab → Step model). **Staff → Run staff tick now** (`POST /siu-tin-dei/board/staff/tick`)
   queues the same work as the 5-minute schedule (due duties, due holds, drain
   the queue) via a 2-second `Event` invoke (`try_invoke_event`) and returns

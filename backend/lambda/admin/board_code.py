@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -56,6 +57,9 @@ MAX_REVIEW_ROUNDS = 2
 KINDS = frozenset({"feature", "fix", "content"})
 CI_OK = frozenset({"success", "neutral", "skipped"})
 REVIEW_PENDING_GRACE_SECONDS = 60 * 60
+_LOOKUP_CACHE_TTL_SECONDS = 60
+_ci_state_cache: dict[str, tuple[float, str]] = {}
+_issue_cache: dict[int, tuple[float, dict[str, Any]]] = {}
 _ISSUE_RE = re.compile(r"#(\d+)")
 _JSON_BLOCK = re.compile(r"```json\s*(\{.*?\})\s*```", re.S)
 _RUN_INDEX = "code:runs"
@@ -293,27 +297,55 @@ def _runs_for_task(task_id: str) -> list[dict[str, Any]]:
     return out
 
 
+def reset_lookup_caches_for_tests() -> None:
+    _ci_state_cache.clear()
+    _issue_cache.clear()
+
+
+def _cached_issue(number: int) -> dict[str, Any]:
+    now = time.monotonic()
+    cached = _issue_cache.get(number)
+    if cached and now - cached[0] < _LOOKUP_CACHE_TTL_SECONDS:
+        return cached[1]
+    try:
+        found = board_github.op_get_issue({"number": number})
+    except Exception:
+        return {}
+    if isinstance(found, dict):
+        _issue_cache[number] = (now, found)
+        return found
+    return {}
+
+
 def ci_state(sha: str) -> str:
     """Return ``success``, ``failure``, or ``pending`` for a head SHA."""
     if not sha:
         return "pending"
+    now = time.monotonic()
+    cached = _ci_state_cache.get(sha)
+    if cached and now - cached[0] < _LOOKUP_CACHE_TTL_SECONDS:
+        return cached[1]
     repo = _repo()
     checks = _gh("GET", f"/repos/{repo}/commits/{sha}/check-runs") or {}
     runs = checks.get("check_runs") if isinstance(checks, dict) else None
+    result = "pending"
     if isinstance(runs, list) and runs:
         items = [r for r in runs if isinstance(r, dict)]
         if any(str(r.get("status") or "") != "completed" for r in items):
-            return "pending"
-        if all(str(r.get("conclusion") or "") in CI_OK for r in items):
-            return "success"
-        return "failure"
-    status = _gh("GET", f"/repos/{repo}/commits/{sha}/status") or {}
-    state = str((status or {}).get("state") or "") if isinstance(status, dict) else ""
-    if state == "success":
-        return "success"
-    if state in ("failure", "error"):
-        return "failure"
-    return "pending"
+            result = "pending"
+        elif all(str(r.get("conclusion") or "") in CI_OK for r in items):
+            result = "success"
+        else:
+            result = "failure"
+    else:
+        status = _gh("GET", f"/repos/{repo}/commits/{sha}/status") or {}
+        state = str((status or {}).get("state") or "") if isinstance(status, dict) else ""
+        if state == "success":
+            result = "success"
+        elif state in ("failure", "error"):
+            result = "failure"
+    _ci_state_cache[sha] = (now, result)
+    return result
 
 
 def ci_success(sha: str) -> bool:
@@ -363,6 +395,7 @@ def review_bundle(pr_number: int) -> dict[str, Any]:
     pr = _get_pr(pr_number)
     files = _pr_files(pr_number)
     sha = str((pr.get("head") or {}).get("sha") or "")
+    ci = ci_state(sha)
     return {
         "prNumber": int(pr_number),
         "title": pr.get("title"),
@@ -372,8 +405,8 @@ def review_bundle(pr_number: int) -> dict[str, Any]:
         "changedLines": changed_lines(files),
         "changedPaths": [str(f.get("filename") or "") for f in files],
         "protectedPaths": files_protected(files),
-        "ci": "success" if ci_state(sha) == "success" else "pending_or_failed",
-        "ciState": ci_state(sha),
+        "ci": "success" if ci == "success" else "pending_or_failed",
+        "ciState": ci,
         "sha": sha,
         "state": pr.get("state") or "open",
         "merged": bool(pr.get("merged") or pr.get("merged_at")),
@@ -512,13 +545,22 @@ def validate_run_task(args: dict[str, Any], ctx: Any | None = None) -> str | Non
     except (TypeError, ValueError):
         pr_from_ref = 0
     if pr_from_ref and issue == pr_from_ref:
-        # Engineer passed the PR number; _is_revision_dispatch remaps to the stored issue.
-        return None
-    try:
-        import board_github
-
-        found = board_github.op_get_issue({"number": issue})
-    except Exception:
+        stored_issue = 0
+        if ctx is not None:
+            _source, row = _run_for_pr(ctx.table, pr_from_ref)
+            try:
+                stored_issue = int(row.get("issue") or 0)
+            except (TypeError, ValueError):
+                stored_issue = 0
+        if stored_issue > 0 and stored_issue != issue:
+            # Engineer passed the PR number; _is_revision_dispatch remaps to the stored issue.
+            return None
+        return (
+            f"#{issue} is the pull request. Pass the GitHub issue number it implements"
+            + (f" (stored issue #{stored_issue})." if stored_issue else ".")
+        )
+    found = _cached_issue(issue)
+    if not found:
         return None
     if isinstance(found, dict) and found.get("error"):
         return str(found.get("error") or f"GitHub issue #{issue} was not found")
@@ -593,18 +635,25 @@ def ensure_run_for_pr(table: Any, pr_number: int) -> tuple[str, dict[str, Any]]:
     return task_id, row
 
 
-def owner_revision_ref(table: Any, pr_number: int) -> dict[str, Any]:
+def owner_revision_ref(table: Any, pr_number: int, issue_number: Any = None) -> dict[str, Any]:
     """``eventRef`` so an owner-created task revises an existing board PR."""
     source_id, row = ensure_run_for_pr(table, pr_number)
     try:
-        issue = int(row.get("issue") or 0)
+        issue = int(issue_number if issue_number not in (None, "") else (row.get("issue") or 0))
     except (TypeError, ValueError):
         issue = 0
+    if issue <= 0:
+        raise CodeRefused(
+            f"PR #{int(pr_number)} has no linked GitHub issue; pass issueNumber"
+        )
+    if source_id and not row.get("issue"):
+        row["issue"] = issue
+        _put_run(table, source_id, row)
     return {
         "kind": "code-implement",
         "id": f"pr:{int(pr_number)}:owner",
         "prNumber": int(pr_number),
-        "issueNumber": issue or None,
+        "issueNumber": issue,
         "sourceTaskId": source_id or None,
     }
 
@@ -633,15 +682,21 @@ def _is_revision_dispatch(ctx: Any, issue: int) -> tuple[str, dict[str, Any], in
         stored_issue = int(row.get("issue") or 0)
     except (TypeError, ValueError):
         stored_issue = 0
-    if stored_issue and stored_issue != issue:
-        _log_event(
-            "warning",
-            tag="board_code_revision_issue_mismatch",
-            prNumber=pr_number,
-            storedIssue=stored_issue,
-            givenIssue=issue,
-        )
-    return source_id, row, stored_issue or issue
+    if stored_issue:
+        if stored_issue != issue:
+            _log_event(
+                "warning",
+                tag="board_code_revision_issue_mismatch",
+                prNumber=pr_number,
+                storedIssue=stored_issue,
+                givenIssue=issue,
+            )
+        return source_id, row, stored_issue
+    if issue == pr_number:
+        return source_id, row, 0
+    row["issue"] = issue
+    _put_run(ctx.table, source_id, row)
+    return source_id, row, issue
 
 
 def _issue_title_nouns(title: str) -> set[str]:
@@ -653,10 +708,7 @@ def _brief_mismatches_issue(issue: int, brief: str) -> bool:
     """True when the dispatch brief shares no key nouns with the issue title."""
     if issue <= 0:
         return False
-    try:
-        found = board_github.op_get_issue({"number": issue})
-    except Exception:
-        return False
+    found = _cached_issue(issue)
     if not isinstance(found, dict) or found.get("error") or found.get("isPullRequest"):
         return False
     nouns = _issue_title_nouns(str(found.get("title") or ""))
@@ -735,6 +787,10 @@ def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if not brief:
         raise CodeRefused("brief is required")
     revision_id, revision_row, issue = _is_revision_dispatch(ctx, issue)
+    if revision_id and issue <= 0:
+        raise CodeRefused(
+            "this PR has no linked GitHub issue; pass the issue number the PR implements"
+        )
     caller = str(getattr(ctx, "task_id", "") or "")
     if revision_id:
         task_id = revision_id
@@ -788,8 +844,7 @@ def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     mismatch = _brief_mismatches_issue(issue, brief)
     if mismatch:
         payload["briefMismatch"] = True
-        flags = list((_calling_task(ctx).get("flags") or []) if ctx is not None else [])
-        task = _calling_task(ctx)
+        task = _calling_task(ctx) if ctx is not None else {}
         if task and "brief_mismatch" not in {str(f) for f in (task.get("flags") or [])}:
             task["flags"] = [*(task.get("flags") or []), "brief_mismatch"]
             board_store.put_task(ctx.table, task)
@@ -1293,9 +1348,6 @@ def poll_runs(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
         pr_number = state.get("prNumber")
         if not pr_number:
             continue
-        event_id = f"pr:{int(pr_number)}"
-        if _find_task(table, "code-review", event_id):
-            continue
         ci = str(state.get("ciState") or "")
         pending_note = ""
         if ci == "pending":
@@ -1304,7 +1356,12 @@ def poll_runs(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
             if seen is None or now - seen < timedelta(seconds=REVIEW_PENDING_GRACE_SECONDS):
                 continue
             pending_note = " CI still pending after 60 min — review code only."
-        elif ci not in ("success", "failure"):
+            event_id = f"pr:{int(pr_number)}:pending-ci"
+        elif ci in ("success", "failure"):
+            event_id = f"pr:{int(pr_number)}"
+        else:
+            continue
+        if _find_task(table, "code-review", event_id):
             continue
         failure_line = str(state.get("failureLine") or "").strip()
         mismatch = " The runner brief may not match the issue title (brief_mismatch)." if state.get("briefMismatch") else ""

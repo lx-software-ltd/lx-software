@@ -433,7 +433,11 @@
     "postsPerChannelPerDay": 2,
     "retentionDaysDefault": 90,
     "retentionDaysContent": 180,
-    "lessonsPerSeatInPrompt": 12
+    "lessonsPerSeatInPrompt": 12,
+    "stepModels": [
+      "qwen/qwen-2.5-72b-instruct",
+      "deepseek/deepseek-chat"
+    ]
   },
   "catalog": {
     "assignee": "content-marketer",

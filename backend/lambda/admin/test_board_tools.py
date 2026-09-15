@@ -763,13 +763,14 @@ class LoopHygieneToolTests(ToolsTestCase):
     def test_code_refused_is_recorded_as_refused(self) -> None:
         import board_code
 
+        self.settings["tools"]["globalMode"] = "act"
         ctx = board_tools.ToolContext(
             self.table,
             self.settings,
             "cto",
             display_name="CTO",
             kind="task",
-            actor="owner",
+            actor="persona",
             task_id="t1",
         )
         with patch.object(board_code, "validate_run_task", return_value=None), patch.object(

@@ -2527,6 +2527,10 @@ def build_registry() -> dict[str, ToolOp]:
                         "Use blocked when a breaker or runner guard stops the work.",
                         enum=["ok", "blocked"],
                     ),
+                    "blockedReason": _str_param(
+                        "Why the work cannot proceed. Required with status=blocked.",
+                        max_len=300,
+                    ),
                     "reason": REASON_PARAM,
                 },
                 ["summary", "deliverableType", "deliverable", "confidence"],
@@ -2948,6 +2952,11 @@ _SECURITY_ISSUE_LABELS = frozenset({"security", "dependencies"})
 
 
 def _cto_security_issue(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> bool:
+    """CTO filing a security/dependencies issue may act even when globalMode is propose.
+
+    Labels are model-supplied. This is the only op that ignores the global cap;
+    see docs/architecture/executive-board-tools-plan.md.
+    """
     if op.name != "github_create_issue" or ctx.persona_id != "cto":
         return False
     labels = {str(x).strip().lower() for x in (arguments.get("labels") or []) if x}
@@ -2987,6 +2996,8 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
             seat_id=ctx.seat_id,
             seats_by_id=seats,
         )
+        # Intentional: security/dependencies issues skip always_propose and the
+        # globalMode cap so Dependabot / CVE tickets are filed without an Approval.
         if _cto_security_issue(ctx, op, arguments) and level in ("propose", "act"):
             level = "act"
     else:
@@ -3127,9 +3138,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
                     except Exception:
                         pass
         except Exception as exc:
-            import board_code
-
-            if isinstance(exc, board_code.CodeRefused) or getattr(exc, "refused", False):
+            if getattr(exc, "refused", False):
                 outcome = ToolOutcome(status="refused", result={"error": str(exc)[:500]}, summary=summary)
             elif isinstance(
                 exc,

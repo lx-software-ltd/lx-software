@@ -183,6 +183,7 @@ BOARD_STAFF_POSTS_PER_CHANNEL_PER_DAY = int(_BOARD_STAFF_LIMITS["postsPerChannel
 BOARD_STAFF_RETENTION_DAYS = int(_BOARD_STAFF_LIMITS["retentionDaysDefault"])
 BOARD_STAFF_RETENTION_DAYS_CONTENT = int(_BOARD_STAFF_LIMITS["retentionDaysContent"])
 BOARD_STAFF_LESSONS_PER_SEAT_IN_PROMPT = int(_BOARD_STAFF_LIMITS["lessonsPerSeatInPrompt"])
+BOARD_STAFF_STEP_MODELS = frozenset(_BOARD_STAFF_LIMITS.get("stepModels") or ("qwen/qwen-2.5-72b-instruct", "deepseek/deepseek-chat"))
 _BOARD_CATALOG = BOARD_STAFF_CONTRACT.get("catalog") or {}
 BOARD_CATALOG_ASSIGNEE = str(_BOARD_CATALOG.get("assignee") or "content-marketer")
 BOARD_CATALOG_BUDGET_USD = float(_BOARD_CATALOG.get("budgetUsd") or 3)

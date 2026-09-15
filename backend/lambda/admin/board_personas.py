@@ -334,7 +334,7 @@ def render_task_frame(task: dict[str, Any], scratchpad: str, *, help_available: 
         "Those are tool calls in this turn, not prose. Do not write that you cannot call them. "
         "If the offered functions cannot verify more, task_finish with confidence low and openQuestions; "
         "do not invent tool names or loop. "
-        "If a breaker or runner guard blocks the work, call task_finish with status=blocked and a short reason "
+        "If a breaker or runner guard blocks the work, call task_finish with status=blocked and blockedReason "
         "instead of looping. "
         "Do not call task_finish without evidence tool calls unless the brief needs none. "
         "Each successful tool result includes callId; pass those callId values in task_finish evidence "

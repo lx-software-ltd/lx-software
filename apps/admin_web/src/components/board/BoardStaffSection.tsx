@@ -5,13 +5,18 @@ import {
   BOARD_PERSONA_DEFAULTS,
   BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
   BOARD_STAFF_MODEL_TIERS,
+  BOARD_STAFF_STEP_MODELS,
 } from "../../lib/contracts/generated";
 import { staffTickErrorMessage, useBoardStaff } from "../../hooks/useBoardStaff";
 
+const SEAT_MODEL_LABELS: Record<string, string> = {
+  "qwen/qwen-2.5-72b-instruct": "Qwen 2.5 72B (tool-heavy)",
+  "deepseek/deepseek-chat": "DeepSeek Chat",
+};
+
 const SEAT_MODEL_CHOICES = [
   { value: "", label: "Tier default" },
-  { value: "qwen/qwen-2.5-72b-instruct", label: "Qwen 2.5 72B (tool-heavy)" },
-  { value: "deepseek/deepseek-chat", label: "DeepSeek Chat" },
+  ...BOARD_STAFF_STEP_MODELS.map((id) => ({ value: id, label: SEAT_MODEL_LABELS[id] ?? id })),
 ] as const;
 
 export type BoardStaffSectionProps = {

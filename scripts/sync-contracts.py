@@ -225,6 +225,7 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "BOARD_STAFF_RETENTION_DAYS = int(_BOARD_STAFF_LIMITS[\"retentionDaysDefault\"])",
         "BOARD_STAFF_RETENTION_DAYS_CONTENT = int(_BOARD_STAFF_LIMITS[\"retentionDaysContent\"])",
         "BOARD_STAFF_LESSONS_PER_SEAT_IN_PROMPT = int(_BOARD_STAFF_LIMITS[\"lessonsPerSeatInPrompt\"])",
+        "BOARD_STAFF_STEP_MODELS = frozenset(_BOARD_STAFF_LIMITS.get(\"stepModels\") or (\"qwen/qwen-2.5-72b-instruct\", \"deepseek/deepseek-chat\"))",
         "_BOARD_CATALOG = BOARD_STAFF_CONTRACT.get(\"catalog\") or {}",
         "BOARD_CATALOG_ASSIGNEE = str(_BOARD_CATALOG.get(\"assignee\") or \"content-marketer\")",
         "BOARD_CATALOG_BUDGET_USD = float(_BOARD_CATALOG.get(\"budgetUsd\") or 3)",
@@ -428,6 +429,7 @@ export const BOARD_STAFF_MAX_EVENT_TASKS_PER_SEAT_PER_HOUR = {staff_limits["maxE
 export const BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD = {staff_limits["staffDailyBudgetDefaultUsd"]};
 export const BOARD_STAFF_REVIEW_SAMPLE_SIZE = {staff_limits["reviewSampleSize"]};
 export const BOARD_STAFF_OUTREACH_DAILY_CAP_START = {staff_limits["outreachDailyCapStart"]};
+export const BOARD_STAFF_STEP_MODELS = {json.dumps(list(staff_limits.get("stepModels") or ["qwen/qwen-2.5-72b-instruct", "deepseek/deepseek-chat"]))} as const;
 export const BOARD_CATALOG_ASSIGNEE = {json.dumps((board_staff.get("catalog") or {}).get("assignee") or "content-marketer")};
 export const BOARD_CATALOG_OUTPUT_CONTRACT = {json.dumps((board_staff.get("catalog") or {}).get("outputContract") or "")};
 export const BOARD_CATALOG_DISTRICTS = {json.dumps((board_staff.get("catalog") or {}).get("districts") or [])} as const;

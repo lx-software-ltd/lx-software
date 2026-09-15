@@ -694,7 +694,12 @@ def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
                     return _json_response(400, {"message": "prNumber must be an integer"})
                 if pr_number <= 0:
                     return _json_response(400, {"message": "prNumber must be a positive integer"})
-                event_ref = board_code.owner_revision_ref(table, pr_number)
+                try:
+                    event_ref = board_code.owner_revision_ref(
+                        table, pr_number, body.get("issueNumber")
+                    )
+                except board_code.CodeError as exc:
+                    return _json_response(400, {"message": str(exc)})
             action = board_store.get_action(table, action_id) if action_id else None
             if action_id and not action:
                 return _json_response(400, {"message": "actionId does not match a board action"})

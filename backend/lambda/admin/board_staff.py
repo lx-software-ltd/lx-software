@@ -44,6 +44,7 @@ from contract_constants import (
     BOARD_STAFF_TASK_STATUSES,
     BOARD_TOOL_IDS,
     BOARD_TOOL_LEVELS,
+    BOARD_STAFF_STEP_MODELS,
 )
 from http_common import _log_event, _utc_iso_z
 
@@ -54,6 +55,20 @@ OWNER_HELD_CHILD_STATUSES = frozenset({"review", "needs_owner"})
 _HELP_INTERNAL_TOOLS = frozenset({"board", "staff"})
 _MEMORY_BLOBS: dict[str, bytes] = {}
 _IDLE_TOOL_OPS = frozenset({"task_note"})
+_POLL_REPEAT_OPS = frozenset(
+    {
+        "code_get_run",
+        "code_review_pr",
+        "github_get_pr",
+        "github_get_issue",
+        "github_list_prs",
+        "github_list_issues",
+        "github_search_issues",
+        "github_list_check_runs",
+    }
+)
+_BLOCK_LOOKBACK_CALLS = 12
+_TOOL_BREAKER_RE = re.compile(r"\btool:([a-z0-9_-]+)\b", re.I)
 _IDLE_NUDGE = (
     "NUDGE: That step only wrote a note. Call a real tool next, or call "
     "task_finish with the deliverable. Notes-only steps burn the step budget."
@@ -530,7 +545,7 @@ def _model_for_seat(settings: dict[str, Any], seat_id: str, kind: str) -> str:
     """Per-seat OpenRouter model override, else the meeting-kind default."""
     raw = ((settings.get("staff") or {}).get("modelBySeat") or {}).get(seat_id)
     model = str(raw or "").strip()
-    if model:
+    if model and model in BOARD_STAFF_STEP_MODELS:
         return model
     return board_budget.model_for(kind, settings)
 
@@ -850,6 +865,50 @@ def _same_as_previous_step(table: Any, task_id: str, calls: list[dict[str, Any]]
     left = [_call_fingerprint(c) for c in _productive_calls(previous)]
     right = [_call_fingerprint(c) for c in _productive_calls(calls)]
     return bool(left) and left == right
+
+
+def _counts_as_poll_loop(task: dict[str, Any], calls: list[dict[str, Any]]) -> bool:
+    """True when identical steps are CI/issue polling, not productive research."""
+    kind = str((task.get("eventRef") or {}).get("kind") or "")
+    if kind.startswith("code-"):
+        return True
+    productive = _productive_calls(calls)
+    return bool(productive) and all(str(c.get("op") or "") in _POLL_REPEAT_OPS for c in productive)
+
+
+def _block_evidence(table: Any, task: dict[str, Any]) -> dict[str, str] | None:
+    """Last refused or breaker-tripped tool call on this task, if any."""
+    tid = str(task.get("taskId") or "")
+    calls = board_store.list_tool_calls_for_task(table, tid, limit=_BLOCK_LOOKBACK_CALLS)
+    used: set[str] = set()
+    for call in calls:
+        tool_id = str(call.get("toolId") or "").strip()
+        if tool_id:
+            used.add(tool_id)
+        status = str(call.get("status") or "")
+        preview = str(call.get("resultPreview") or call.get("result") or "")
+        breaker = ""
+        if isinstance(call.get("result"), dict):
+            breaker = str((call.get("result") or {}).get("breaker") or "")
+        if not breaker:
+            match = _TOOL_BREAKER_RE.search(preview)
+            if match:
+                breaker = f"tool:{match.group(1)}"
+        if breaker.startswith("tool:"):
+            tool_id = tool_id or breaker.split(":", 1)[1]
+        if status == "refused" and tool_id:
+            return {"toolId": tool_id, "callId": str(call.get("callId") or "")}
+        if breaker.startswith("tool:") and tool_id:
+            return {"toolId": tool_id, "callId": str(call.get("callId") or "")}
+    try:
+        import board_breakers
+
+        for tool_id in used:
+            if board_breakers.is_tripped(table, f"tool:{tool_id}"):
+                return {"toolId": tool_id, "callId": ""}
+    except Exception:
+        pass
+    return None
 
 
 def _should_require_finish(task: dict[str, Any]) -> bool:
@@ -1852,6 +1911,7 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
         if len(prior) >= 2:
             similar_to_last = _plans_similar(note, str(prior[-2].get("plan") or ""))
     repeated_calls = _same_as_previous_step(table, task_id, calls)
+    poll_loop = repeated_calls and _counts_as_poll_loop(latest, calls)
     if not _productive_calls(calls) or similar_to_last or repeated_calls:
         idle = int(latest.get("idleSteps") or 0) + 1
         latest["idleSteps"] = idle
@@ -1861,7 +1921,7 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
         if _looks_like_stuck_finish(note) and _salvage_to_review(table, latest, "missing task_finish call", note):
             return
         if idle >= BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK:
-            if repeated_calls and not _looks_like_stuck_finish(note):
+            if poll_loop and not _looks_like_stuck_finish(note):
                 _finish_incomplete(table, latest, "no progress")
                 return
             if _salvage_to_review(table, latest, "idle step limit", note):
@@ -2057,10 +2117,17 @@ def _finish_blocked(
     deliverable: str,
 ) -> dict[str, Any]:
     """Park an honest 'cannot proceed' finish without manager review or a revision."""
-    reason = str(args.get("reason") or args.get("summary") or deliverable).strip()[:300]
+    evidence = _block_evidence(ctx.table, task)
+    if not evidence:
+        raise StaffError(
+            "status=blocked needs a recent refused tool call or a tripped tool breaker on this task"
+        )
+    reason = str(
+        args.get("blockedReason") or args.get("reason") or args.get("summary") or deliverable
+    ).strip()[:300]
     if not reason:
-        raise StaffError("blocked finish needs a reason")
-    parked = reason if reason.startswith("blocked:") else f"blocked:{reason}"
+        raise StaffError("blocked finish needs a blockedReason")
+    parked = f"blocked:tool:{evidence['toolId']}"
     encoded = deliverable.encode("utf-8") if deliverable else reason.encode("utf-8")
     dtype = str(args.get("deliverableType") or task.get("deliverableType") or "markdown")
     key = _deliverable_key(ctx.task_id, dtype)
