@@ -526,6 +526,27 @@ def _task_usage_add(task: dict[str, Any], usage: dict[str, Any]) -> dict[str, An
     return current
 
 
+def _model_for_seat(settings: dict[str, Any], seat_id: str, kind: str) -> str:
+    """Per-seat OpenRouter model override, else the meeting-kind default."""
+    raw = ((settings.get("staff") or {}).get("modelBySeat") or {}).get(seat_id)
+    model = str(raw or "").strip()
+    if model:
+        return model
+    return board_budget.model_for(kind, settings)
+
+
+def _review_flag_line(task: dict[str, Any]) -> str:
+    flags = [str(f) for f in (task.get("flags") or []) if f]
+    if not flags:
+        return ""
+    extra = ""
+    if "salvaged" in flags or "no_evidence" in flags:
+        extra = " — verify official_url and address fields before accepting"
+    if "brief_mismatch" in flags:
+        extra += " — runner brief may not match the GitHub issue title"
+    return f"FLAGS: {', '.join(flags)}{extra}\n"
+
+
 def _reviewer_id(task: dict[str, Any]) -> str:
     if task.get("assigneeKind") == "persona" and task.get("assignee") == BOARD_CHAIR_DEFAULT:
         return "cfo"
@@ -602,7 +623,7 @@ def run_step(payload: dict[str, Any]) -> None:
     kind = "standup" if tier != "senior" else "deepDive"
     if (settings.get("staff") or {}).get("seniorPaused") and kind == "deepDive":
         kind = "standup"
-    model = board_budget.model_for(kind, settings)
+    model = _model_for_seat(settings, seat_id, kind)
     def _sink(usage: dict[str, Any]) -> None:
         board_store.add_staff_usage_day(table, seat_id or persona_id, {**usage, "calls": 1})
 
@@ -1830,11 +1851,8 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
         prior = board_store.list_task_steps(table, task_id)
         if len(prior) >= 2:
             similar_to_last = _plans_similar(note, str(prior[-2].get("plan") or ""))
-    repeated_review_call = (
-        str((latest.get("eventRef") or {}).get("kind") or "") == "code-review"
-        and _same_as_previous_step(table, task_id, calls)
-    )
-    if not _productive_calls(calls) or similar_to_last or repeated_review_call:
+    repeated_calls = _same_as_previous_step(table, task_id, calls)
+    if not _productive_calls(calls) or similar_to_last or repeated_calls:
         idle = int(latest.get("idleSteps") or 0) + 1
         latest["idleSteps"] = idle
         combined = _append_scratchpad(latest, _IDLE_NUDGE)
@@ -1843,6 +1861,9 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
         if _looks_like_stuck_finish(note) and _salvage_to_review(table, latest, "missing task_finish call", note):
             return
         if idle >= BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK:
+            if repeated_calls and not _looks_like_stuck_finish(note):
+                _finish_incomplete(table, latest, "no progress")
+                return
             if _salvage_to_review(table, latest, "idle step limit", note):
                 return
             _finish_incomplete(table, latest, "idle step limit")
@@ -2029,21 +2050,72 @@ def op_task_note(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str
     return {"ok": True, "chars": len(combined)}
 
 
+def _finish_blocked(
+    ctx: board_tools.ToolContext,
+    task: dict[str, Any],
+    args: dict[str, Any],
+    deliverable: str,
+) -> dict[str, Any]:
+    """Park an honest 'cannot proceed' finish without manager review or a revision."""
+    reason = str(args.get("reason") or args.get("summary") or deliverable).strip()[:300]
+    if not reason:
+        raise StaffError("blocked finish needs a reason")
+    parked = reason if reason.startswith("blocked:") else f"blocked:{reason}"
+    encoded = deliverable.encode("utf-8") if deliverable else reason.encode("utf-8")
+    dtype = str(args.get("deliverableType") or task.get("deliverableType") or "markdown")
+    key = _deliverable_key(ctx.task_id, dtype)
+    _blob_put(key, encoded)
+    now = board_store.now_iso()
+    seq = int(task.get("step") or 0) + 1
+    board_store.put_task_step(
+        ctx.table,
+        ctx.task_id,
+        {
+            "seq": seq,
+            "attempt": _task_attempt(task),
+            "plan": str(args.get("summary") or reason)[:2000],
+            "callIds": [],
+            "at": now,
+        },
+    )
+    updated = {
+        **task,
+        "status": "needs_owner",
+        "step": seq,
+        "stepsUsed": seq,
+        "idleSteps": 0,
+        "summary": str(args.get("summary") or reason)[:800],
+        "deliverableKey": key,
+        "deliverableBytes": len(encoded),
+        "deliverableType": dtype,
+        "parkedReason": parked,
+        "finishedAt": None,
+        "updatedAt": now,
+    }
+    _align_step_claim(updated)
+    board_store.put_task(ctx.table, updated)
+    _note_parent_if_child_needs_owner(ctx.table, updated)
+    return {"ok": True, "status": "needs_owner", "blocked": True, "parkedReason": parked}
+
+
 def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     task = _require_running_task(board_store.get_task(ctx.table, ctx.task_id))
+    status_arg = str(args.get("status") or "").strip().lower()
     deliverable = _strip_function_call_leak(str(args.get("deliverable") or ""))
     encoded = deliverable.encode("utf-8")
     if len(encoded) > BOARD_STAFF_DELIVERABLE_MAX_BYTES:
         raise StaffError(
             f"deliverable is larger than {BOARD_STAFF_DELIVERABLE_MAX_BYTES} bytes; split it"
         )
-    if _deliverable_has_placeholders(deliverable):
+    if status_arg != "blocked" and _deliverable_has_placeholders(deliverable):
         raise StaffError(
             "Deliverable still has placeholder text such as [Insert …]. "
             "Call finance_cash_snapshot, finance_aging_report, aws_monthly_cost and "
             "meta_ad_spend (or finance_unit_economics), then write the verified figures. "
             "If a tool cannot verify a number, write 'unavailable' and why."
         )
+    if status_arg == "blocked":
+        return _finish_blocked(ctx, task, args, deliverable)
     evidence = [str(x) for x in (args.get("evidence") or []) if isinstance(x, (str, int))]
     known = _known_evidence_ids(ctx.table, task)
     attempt = _task_attempt(task)
@@ -2136,6 +2208,7 @@ def _review_user_prompt(task: dict[str, Any], raw: str, evidence_lines: list[str
         f"Brief: {task.get('brief')}\n"
         f"Deliverable type: {task.get('deliverableType')}\n"
         f"Confidence: {task.get('confidence')}\n"
+        f"{_review_flag_line(task)}"
         f"Evidence:\n" + ("\n".join(evidence_lines) or "(none)") + "\n\n"
         f"Deliverable:\n{raw}\n\n"
         "Books of record: there is no QuickBooks or Xero. This board is Siu Tin Dei "
@@ -2245,13 +2318,15 @@ def apply_review(
     task["lastReview"] = {"verdict": verdict, "notes": notes, "at": now, "by": by}
     task["updatedAt"] = now
     if verdict == "accept":
-        if _should_hold_unverified_accept(table, task):
+        is_owner_accept = str(by or "").startswith("owner")
+        if not is_owner_accept and _should_hold_unverified_accept(table, task):
             task["status"] = "needs_owner"
             task["finishedAt"] = None
             board_store.put_task(table, task)
             _note_parent_if_child_needs_owner(table, task)
             return task
-        return _accept_task(table, task, now)
+        task["acceptedBy"] = by
+        return _accept_task(table, task, now, bypass_unverified=is_owner_accept)
     revisions = int(task.get("revisions") or 0)
     is_owner = str(by or "").startswith("owner")
     is_final = revisions >= BOARD_STAFF_MAX_REVISIONS
@@ -2416,7 +2491,7 @@ def _mark_delivered(table: Any, task: dict[str, Any], now: str) -> dict[str, Any
     return task
 
 
-def _accept_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
+def _accept_task(table: Any, task: dict[str, Any], now: str, *, bypass_unverified: bool = False) -> dict[str, Any]:
     last = task.get("lastReview") or {}
     if last.get("verdict") and last.get("verdict") != "accept":
         task["status"] = "needs_owner"
@@ -2425,7 +2500,7 @@ def _accept_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
         board_store.put_task(table, task)
         _note_parent_if_child_needs_owner(table, task)
         return task
-    if _should_hold_unverified_accept(table, task):
+    if not bypass_unverified and _should_hold_unverified_accept(table, task):
         task["status"] = "needs_owner"
         task["finishedAt"] = None
         task["updatedAt"] = now
@@ -2480,6 +2555,7 @@ def retry_task(table: Any, settings: dict[str, Any], task_id: str, by_sub: str) 
             raise StaffError("Linked action is closed", code="conflict")
     now = board_store.now_iso()
     previous = dict(task.get("usage") or {})
+    task["previousFailureReason"] = str(task.get("failureReason") or "")
     task["status"] = "queued"
     task["step"] = 0
     task["stepsUsed"] = 0

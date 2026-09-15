@@ -755,6 +755,41 @@ class TestGitHubOps(ToolsTestCase):
         self.assertEqual(self.github.requests[0][1], "/repos/lx-software-ltd/siutindei/releases?per_page=5")
 
 
+class LoopHygieneToolTests(ToolsTestCase):
+    def test_code_refused_is_recorded_as_refused(self) -> None:
+        import board_code
+
+        ctx = board_tools.ToolContext(
+            self.table,
+            self.settings,
+            "cto",
+            display_name="CTO",
+            kind="task",
+            actor="persona",
+            task_id="t1",
+            seat_id="engineer-1",
+        )
+        with patch.object(board_code, "validate_run_task", return_value=None), patch.object(
+            board_code, "op_run_task", side_effect=board_code.CodeRefused("already in flight")
+        ):
+            outcome = board_tools.execute_call(
+                ctx,
+                board_tools.REGISTRY["code_run_task"],
+                {"issueNumber": 42, "brief": "Fix CI.", "kind": "fix", "reason": "retry"},
+            )
+        self.assertEqual(outcome.status, "refused")
+        self.assertIn("already in flight", str(outcome.result.get("error") or ""))
+
+    def test_cto_security_issue_skips_always_propose(self) -> None:
+        op = board_tools.REGISTRY["github_create_issue"]
+        ctx = board_tools.ToolContext(self.table, self.settings, "cto", kind="chat", actor="persona")
+        args = {"title": "Upgrade extract-zip", "body": "Fix CVE", "labels": ["security"], "reason": "alert"}
+        self.assertTrue(board_tools._cto_security_issue(ctx, op, args))  # noqa: SLF001
+        self.assertFalse(board_tools._should_always_propose(op, ctx, args))  # noqa: SLF001
+        billing = {**args, "labels": ["billing"]}
+        self.assertTrue(board_tools._should_always_propose(op, ctx, billing))  # noqa: SLF001
+
+
 class TestCompletionTimeout(unittest.TestCase):
     def test_uses_leftover_when_below_the_floor(self) -> None:
         self.assertEqual(board_tools.completion_timeout(90, 10, 45), 10)

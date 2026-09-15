@@ -85,7 +85,16 @@
         "newsletter": "act",
         "code": "act"
       },
-      "brief": "You fill the content calendar, write posts and stories in English and Traditional Chinese, render template cards, and draft newsletters and SEO articles. You never invent photos of children and you never publish a claim the catalog does not support. Report facts you verified with tools; say clearly what you could not verify."
+      "brief": "You fill the content calendar, write posts and stories in English and Traditional Chinese, render template cards, and draft newsletters and SEO articles. You never invent photos of children and you never publish a claim the catalog does not support. Report facts you verified with tools; say clearly what you could not verify.",
+      "duties": [
+        {
+          "id": "catalog-micro-batch",
+          "cron": "0 10 * * *",
+          "brief": "Create one catalog micro-batch for the next remaining Hong Kong district. The runtime fills the district name, hint and OUTPUT CONTRACT. Use research_search, then research_fetch_page on the official page. Return a fenced JSON curation sheet. No Meta, no mobile, no publishing.",
+          "deliverableType": "json",
+          "tier": "desk"
+        }
+      ]
     },
     {
       "id": "community-manager",
@@ -425,5 +434,30 @@
     "retentionDaysDefault": 90,
     "retentionDaysContent": 180,
     "lessonsPerSeatInPrompt": 12
+  },
+  "catalog": {
+    "assignee": "content-marketer",
+    "budgetUsd": 3,
+    "outputContract": "OUTPUT CONTRACT (curation sheet, NOT the importer JSON — the founder maps ids): one fenced JSON block {\"district\": \"<name>\", \"organisations\": [ {\"name_en\", \"name_zh\", \"type\": \"playground|indoor_play|class|outdoor|restaurant|event\", \"free_or_paid\", \"age_range\", \"address_en\", \"lat\", \"lng\", \"official_url\", \"phone\", \"opening_hours\", \"price_note\", \"description_en\" (max 40 words), \"description_zh\" (max 40 words), \"source_url\", \"verified_fields\": [...], \"unverified_fields\": [...]} ] }. Exactly 3 organisations. Only facts you read on the official page (LCSD / gov / the provider's own site) go into verified_fields; everything else is the string \"unverified\" and listed in unverified_fields. No invented phone numbers, hours or prices. Keep the whole deliverable under 2500 words: research one organisation, task_note a 6-line summary, next organisation; after the third, call task_finish immediately with the JSON. No Meta, no mobile, no publishing.",
+    "districts": [
+      {"id": "eastern", "name": "Eastern", "hint": "one LCSD playground or park (e.g. Quarry Bay Park area), one indoor play centre, one class provider"},
+      {"id": "wan-chai", "name": "Wan Chai", "hint": "one public playground or park, one indoor family venue, one class provider — all inside Wan Chai"},
+      {"id": "islands", "name": "Islands", "hint": "one LCSD playground or park (Tung Chung, Mui Wo or Discovery Bay), one indoor or family venue, one class or sports provider"},
+      {"id": "southern", "name": "Southern", "hint": "one beach or park playground (Repulse Bay, Stanley or Aberdeen Promenade), one indoor family venue, one class or sports provider"},
+      {"id": "sham-shui-po", "name": "Sham Shui Po", "hint": "one public playground or park (Nam Cheong Park or Lai Chi Kok Park), one indoor family venue, one class provider"},
+      {"id": "central-and-western", "name": "Central and Western", "hint": "one public playground or park (Hong Kong Park or Sun Yat Sen Memorial Park), one indoor family venue, one class provider"},
+      {"id": "kwun-tong", "name": "Kwun Tong", "hint": "one public playground or park, one indoor family venue, one class provider"},
+      {"id": "wong-tai-sin", "name": "Wong Tai Sin", "hint": "one public playground or park, one indoor family venue, one class provider"},
+      {"id": "kowloon-city", "name": "Kowloon City", "hint": "one public playground or park, one indoor family venue, one class provider"},
+      {"id": "yau-tsim-mong", "name": "Yau Tsim Mong", "hint": "one public playground or park, one indoor family venue, one class provider"},
+      {"id": "tsuen-wan", "name": "Tsuen Wan", "hint": "one public playground or park, one indoor family venue, one class provider"},
+      {"id": "kwai-tsing", "name": "Kwai Tsing", "hint": "one public playground or park, one indoor family venue, one class provider"},
+      {"id": "north", "name": "North", "hint": "one public playground or park, one indoor family venue, one class provider"},
+      {"id": "tai-po", "name": "Tai Po", "hint": "one public playground or park, one indoor family venue, one class provider"},
+      {"id": "sha-tin", "name": "Sha Tin", "hint": "one public playground or park, one indoor family venue, one class provider"},
+      {"id": "yuen-long", "name": "Yuen Long", "hint": "one public playground or park, one indoor family venue, one class provider"},
+      {"id": "tuen-mun", "name": "Tuen Mun", "hint": "one public playground or park, one indoor family venue, one class provider"},
+      {"id": "sai-kung", "name": "Sai Kung", "hint": "one public playground or park, one indoor family venue, one class provider"}
+    ]
   }
 }

@@ -640,7 +640,16 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
       "newsletter": "act",
       "code": "act"
     },
-    "brief": "You fill the content calendar, write posts and stories in English and Traditional Chinese, render template cards, and draft newsletters and SEO articles. You never invent photos of children and you never publish a claim the catalog does not support. Report facts you verified with tools; say clearly what you could not verify."
+    "brief": "You fill the content calendar, write posts and stories in English and Traditional Chinese, render template cards, and draft newsletters and SEO articles. You never invent photos of children and you never publish a claim the catalog does not support. Report facts you verified with tools; say clearly what you could not verify.",
+    "duties": [
+      {
+        "id": "catalog-micro-batch",
+        "cron": "0 10 * * *",
+        "brief": "Create one catalog micro-batch for the next remaining Hong Kong district. The runtime fills the district name, hint and OUTPUT CONTRACT. Use research_search, then research_fetch_page on the official page. Return a fenced JSON curation sheet. No Meta, no mobile, no publishing.",
+        "deliverableType": "json",
+        "tier": "desk"
+      }
+    ]
   },
   {
     "id": "community-manager",

@@ -9,6 +9,7 @@ from urllib.parse import parse_qs
 import board_actions
 import board_budget
 import board_chat
+import board_code
 import board_github
 import board_mail
 import board_meta
@@ -684,6 +685,16 @@ def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
                 return _staff_disabled()
             body = _parse_json_body(event)
             action_id = str(body.get("actionId") or "").strip() or None
+            event_ref = None
+            pr_raw = body.get("prNumber")
+            if pr_raw not in (None, ""):
+                try:
+                    pr_number = int(pr_raw)
+                except (TypeError, ValueError):
+                    return _json_response(400, {"message": "prNumber must be an integer"})
+                if pr_number <= 0:
+                    return _json_response(400, {"message": "prNumber must be a positive integer"})
+                event_ref = board_code.owner_revision_ref(table, pr_number)
             action = board_store.get_action(table, action_id) if action_id else None
             if action_id and not action:
                 return _json_response(400, {"message": "actionId does not match a board action"})
@@ -703,6 +714,7 @@ def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
                     deliverable_type=str(body.get("deliverableType") or "markdown"),
                     budget_usd=body.get("budgetUsd"),
                     sla_hours=int(body.get("slaHours") or 24),
+                    event_ref=event_ref,
                     action_id=action_id,
                     meeting_id=str((action or {}).get("meetingId") or "") or None,
                     created_by=user_sub or "",

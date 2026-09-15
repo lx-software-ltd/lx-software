@@ -750,7 +750,11 @@ function calling. Design:
   GA4 assignment. Flip `accountant` and `security-analyst` on at runbook
   step 6, then enable
   `settings.staff.dutiesEnabled` (Settings → Run scheduled seat duties)
-  after staff is on. **Staff → Run staff tick now** (`POST /siu-tin-dei/board/staff/tick`)
+  after staff is on. `content-marketer` has a daily `catalog-micro-batch`
+  duty (10:00 HKT, off until the seat and duties are on) that creates one
+  district curation sheet per day from `contracts/board-staff.json`
+  `catalog`. Per-seat OpenRouter models live in `settings.staff.modelBySeat`
+  (Staff tab → Step model). **Staff → Run staff tick now** (`POST /siu-tin-dei/board/staff/tick`)
   queues the same work as the 5-minute schedule (due duties, due holds, drain
   the queue) via a 2-second `Event` invoke (`try_invoke_event`) and returns
   `200 {queued}` even if that invoke times out — the default boto client

@@ -306,6 +306,17 @@ class RunnerTests(BoardTestCase):
         log = "setup\npull request changes 12 lines (max 400)\nmypy: Incompatible return value type\n"
         self.assertEqual(board_code.extract_failure_line(log), "mypy: Incompatible return value type")
 
+    def test_extract_failure_line_prefers_pytest_failed(self) -> None:
+        log = (
+            "mypy: Incompatible return value type\n"
+            "FAILED backend/test_x.py::test_y - AssertionError: expected 1\n"
+            "===== 1 failed =====\n"
+        )
+        self.assertEqual(
+            board_code.extract_failure_line(log),
+            "FAILED backend/test_x.py::test_y - AssertionError: expected 1",
+        )
+
     def test_revision_reuses_original_run_task_id(self) -> None:
         board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
         self.gh.prs.append(_pr(issue=42))
@@ -337,6 +348,58 @@ class RunnerTests(BoardTestCase):
         self.assertNotIn("failureLine", out)
         self.assertEqual(self.gh.dispatches[-1]["body"]["inputs"]["task_id"], "task-1")
         self.assertEqual(self.gh.dispatches[-1]["body"]["inputs"]["kind"], "fix")
+
+    def test_revision_remaps_when_engineer_passes_pr_number_as_issue(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
+        self.gh.prs.append(_pr(issue=42))
+        stored = board_code._get_run(self.table, "task-1")  # noqa: SLF001
+        stored["prNumber"] = 7
+        stored["failedAt"] = board_store.now_iso()
+        stored["conclusion"] = "failure"
+        board_code._put_run(self.table, "task-1", stored)  # noqa: SLF001
+        board_store.put_task(
+            self.table,
+            {
+                "taskId": "revise-pr-as-issue",
+                "status": "running",
+                "assignee": "engineer-1",
+                "eventRef": {
+                    "kind": "code-implement",
+                    "id": "issue:42:r2",
+                    "issueNumber": 42,
+                    "prNumber": 7,
+                },
+            },
+        )
+        revise_ctx = ToolContext(
+            self.table, self.settings, "cto", display_name="CTO", kind="task", task_id="revise-pr-as-issue"
+        )
+        out = board_code.op_run_task(
+            revise_ctx, {"issueNumber": 7, "brief": "Fix CI on this PR.", "kind": "fix"}
+        )
+        self.assertEqual(out["taskId"], "task-1")
+        self.assertEqual(out["issue"], 42)
+        self.assertEqual(self.gh.dispatches[-1]["body"]["inputs"]["issue"], "42")
+        self.assertEqual(self.gh.dispatches[-1]["body"]["inputs"]["task_id"], "task-1")
+
+    def test_validate_run_task_rejects_pull_request_number(self) -> None:
+        self.gh.issues.append(
+            {"number": 7, "title": "A pull request", "state": "open", "pull_request": {"url": "https://example"}}
+        )
+        reason = board_code.validate_run_task({"issueNumber": 7})
+        self.assertIn("pull request", reason or "")
+
+    def test_validate_run_task_allows_pr_number_on_revision_task(self) -> None:
+        board_store.put_task(
+            self.table,
+            {
+                "taskId": "revise-ok",
+                "status": "running",
+                "eventRef": {"kind": "code-implement", "prNumber": 7, "issueNumber": 42},
+            },
+        )
+        ctx = ToolContext(self.table, self.settings, "cto", kind="task", task_id="revise-ok")
+        self.assertIsNone(board_code.validate_run_task({"issueNumber": 7}, ctx))
 
     def test_revision_allowed_when_original_already_used_dispatch_cap(self) -> None:
         board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
@@ -422,7 +485,49 @@ class RunnerTests(BoardTestCase):
         out = board_code.on_review_delivered(self.table, self.settings, task)
         follow = board_store.get_task(self.table, out["taskId"])
         self.assertIn("CI failure: mypy: got", follow["brief"])
+        self.assertIn("Call code_run_task ONCE", follow["brief"])
+        self.assertIn("Do not poll CI", follow["brief"])
         self.assertEqual(follow["eventRef"]["kind"], "code-implement")
+
+    def test_review_changes_skips_pending_only_notes(self) -> None:
+        board_code._put_run(self.table, "task-1", {"issue": 42, "kind": "feature", "reviewRounds": 0})  # noqa: SLF001
+        board_staff._blob_put(  # noqa: SLF001
+            board_staff._deliverable_key("rev-pending", "markdown"),  # noqa: SLF001
+            b'```json {"verdict":"changes","notes":["CI is pending; not ready for review yet as the CI must pass"]}\n```',
+        )
+        task = {
+            "taskId": "rev-pending",
+            "status": "delivered",
+            "assignee": "architect",
+            "deliverableKey": board_staff._deliverable_key("rev-pending", "markdown"),  # noqa: SLF001
+            "eventRef": {"kind": "code-review", "id": "pr:7", "prNumber": 7, "taskId": "task-1"},
+        }
+        board_store.put_task(self.table, task)
+        self.gh.prs.append(_pr())
+        self.gh.files[7] = [{"filename": "app.py", "changes": 4}]
+        self.gh.checks["abc123"] = _green()
+        out = board_code.on_review_delivered(self.table, self.settings, task)
+        self.assertEqual(out.get("skipped"), "ci pending")
+        self.assertFalse(out.get("taskId"))
+
+    def test_owner_revision_ref_sets_event_ref(self) -> None:
+        self.gh.prs.append(_pr(number=498, issue=489))
+        ref = board_code.owner_revision_ref(self.table, 498)
+        self.assertEqual(ref["kind"], "code-implement")
+        self.assertEqual(ref["prNumber"], 498)
+        self.assertEqual(ref["issueNumber"], 489)
+
+    def test_brief_mismatch_flags_when_issue_nouns_absent(self) -> None:
+        self.gh.issues.append(
+            {"number": 42, "title": "Upgrade extract-zip for CVE-2026-99999", "state": "open"}
+        )
+        board_store.put_task(self.table, {"taskId": "task-1", "status": "running", "flags": []})
+        out = board_code.op_run_task(
+            self.ctx, {"issueNumber": 42, "brief": "Accept area_name on locations.", "kind": "feature"}
+        )
+        self.assertTrue(out.get("briefMismatch"))
+        task = board_store.get_task(self.table, "task-1")
+        self.assertIn("brief_mismatch", task.get("flags") or [])
 
     def test_action_required_run_still_blocks_issue(self) -> None:
         board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
@@ -609,12 +714,27 @@ class RunnerTests(BoardTestCase):
         board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add booking.", "kind": "feature"})
         self.gh.runs.append({"name": "board-agent task-1", "status": "completed", "conclusion": "success"})
         self.gh.prs.append(_pr())
+        self.gh.checks["abc123"] = _green()
         created = board_code.poll_runs(self.table, self.settings)
         self.assertEqual(len(created), 1)
         self.assertEqual(created[0]["assignee"], "architect")
         self.assertEqual(created[0]["eventRef"]["id"], "pr:7")
         again = board_code.poll_runs(self.table, self.settings)
         self.assertEqual(again, [])
+
+    def test_poll_skips_review_while_ci_pending(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add booking.", "kind": "feature"})
+        self.gh.runs.append({"name": "board-agent task-1", "status": "completed", "conclusion": "success"})
+        self.gh.prs.append(_pr())
+        self.gh.checks["abc123"] = [{"name": "ci", "status": "in_progress", "conclusion": ""}]
+        self.assertEqual(board_code.poll_runs(self.table, self.settings), [])
+        stored = board_code._get_run(self.table, "task-1")  # noqa: SLF001
+        stored["prSeenAt"] = (datetime.now(timezone.utc) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        stored["ciState"] = "pending"
+        board_code._put_run(self.table, "task-1", stored)  # noqa: SLF001
+        created = board_code.poll_runs(self.table, self.settings)
+        self.assertEqual(len(created), 1)
+        self.assertIn("CI still pending after 60 min", created[0]["brief"])
 
     def test_assign_oldest_board_ready_when_under_two_prs(self) -> None:
         self.gh.issues = [

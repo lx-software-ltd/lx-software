@@ -30,6 +30,7 @@ function staffDraft(
     dutiesEnabled: current.staff?.dutiesEnabled,
     seniorPaused: current.staff?.seniorPaused,
     disabledReason: current.staff?.disabledReason,
+    modelBySeat: current.staff?.modelBySeat,
     ...patch,
   };
 }

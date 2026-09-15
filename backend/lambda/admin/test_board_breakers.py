@@ -349,5 +349,54 @@ class BreakerExecuteCallTests(ToolsTestCase):
         self.assertNotEqual(outcome.status, "error")
 
 
+class PolicyRefusalTests(BoardTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        self.settings = _enable_staff(self.table)
+
+    def test_code_refusals_do_not_trip_tool_breaker(self) -> None:
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for i in range(10):
+            board_store.add_tool_call(
+                self.table,
+                {
+                    "callId": f"ref-{i}",
+                    "op": "code_run_task",
+                    "toolId": "code",
+                    "status": "refused",
+                    "summary": "a run for this task is already in flight",
+                    "createdAt": now,
+                    "personaId": "cto",
+                },
+            )
+        tripped = board_breakers.evaluate(self.table, self.settings)
+        self.assertNotIn("tool:code", tripped)
+        self.assertFalse(board_breakers.is_tripped(self.table, "tool:code"))
+
+    def test_reset_requeues_blocked_tool_tasks(self) -> None:
+        board_store.save_staff_override(self.table, "engineer-1", {"isActive": True})
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                self.settings,
+                assignee="engineer-1",
+                origin="owner",
+                brief="Revise PR #498",
+                deliverable_type="pr",
+                created_by="owner",
+            )
+        latest = board_store.get_task(self.table, task["taskId"])
+        latest["status"] = "needs_owner"
+        latest["parkedReason"] = "blocked:tool:code"
+        board_store.put_task(self.table, latest)
+        board_breakers.trip(self.table, "tool:code", "too many errors")
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_breakers.reset(self.table, "tool:code", "owner")
+        queued = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(queued["status"], "queued")
+
+
 if __name__ == "__main__":
     unittest.main()

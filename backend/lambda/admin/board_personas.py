@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 from contract_constants import (
@@ -286,6 +287,26 @@ def render_seat_prompt(
     return "\n".join(parts)
 
 
+_GUARD_FAIL_RE = re.compile(
+    r"already in flight|two runs already|open board/\* pull request|issueNumber is required|"
+    r"is a pull request, not an issue",
+    re.I,
+)
+
+
+def _trim_scratchpad_for_frame(scratchpad: str, *, keep_chunks: int = 3) -> str:
+    """Keep the last few scratchpad chunks; summarise older ones."""
+    raw = (scratchpad or "").strip()
+    if not raw:
+        return "(empty)"
+    chunks = [part.strip() for part in re.split(r"\n{2,}", raw) if part.strip()]
+    if len(chunks) <= keep_chunks:
+        return raw
+    dropped = len(chunks) - keep_chunks
+    summary = f"[{dropped} earlier scratchpad notes omitted — use tools, do not trust old notes.]"
+    return summary + "\n\n" + "\n\n".join(chunks[-keep_chunks:])
+
+
 def render_task_frame(task: dict[str, Any], scratchpad: str, *, help_available: str = "") -> str:
     """User message that starts each task step."""
     budget = float(task.get("budgetUsd") or 0)
@@ -295,7 +316,11 @@ def render_task_frame(task: dict[str, Any], scratchpad: str, *, help_available: 
 
     steps_used = int(task.get("step") or 0)
     steps_left = max(0, BOARD_STAFF_MAX_STEPS_PER_TASK - steps_used)
-    pad = (scratchpad or "").strip() or "(empty)"
+    prev_fail = str(task.get("previousFailureReason") or "")
+    if int(task.get("attempt") or 1) > 1 and _GUARD_FAIL_RE.search(prev_fail):
+        pad = "RETRY — previous attempt was blocked by a runner guard. Call tools; ignore old notes."
+    else:
+        pad = _trim_scratchpad_for_frame(scratchpad)
     import board_hk
 
     body = (
@@ -309,6 +334,8 @@ def render_task_frame(task: dict[str, Any], scratchpad: str, *, help_available: 
         "Those are tool calls in this turn, not prose. Do not write that you cannot call them. "
         "If the offered functions cannot verify more, task_finish with confidence low and openQuestions; "
         "do not invent tool names or loop. "
+        "If a breaker or runner guard blocks the work, call task_finish with status=blocked and a short reason "
+        "instead of looping. "
         "Do not call task_finish without evidence tool calls unless the brief needs none. "
         "Each successful tool result includes callId; pass those callId values in task_finish evidence "
         "(not the model's tool_call_id). "

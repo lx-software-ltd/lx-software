@@ -104,6 +104,7 @@ export type BoardSettings = {
     readonly dutiesEnabled?: boolean;
     readonly seniorPaused?: boolean;
     readonly disabledReason?: string;
+    readonly modelBySeat?: Readonly<Record<string, string>>;
   };
   readonly review?: { readonly digestTo: string; readonly digestHourHkt: number; readonly sampleSize: number };
   readonly boundaries?: BoardBoundaries;
@@ -325,6 +326,8 @@ export type BoardTaskCreate = {
   readonly budgetUsd?: number;
   /** Founder action this task works on; accepted deliverables close it. */
   readonly actionId?: string;
+  /** Existing board PR to revise (sets eventRef.prNumber). */
+  readonly prNumber?: number;
 };
 
 export type BoardToolOperation = {
