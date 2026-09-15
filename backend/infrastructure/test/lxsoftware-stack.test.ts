@@ -679,7 +679,7 @@ describe("Siu Tin Dei parameter naming", () => {
     expect(lxsoftwareKeys).toContain("lxsoftware:SiutindeiBoardStaffEnabled");
     expect(file["lxsoftware:SiutindeiBoardStaffEnabled"]).toBe("true");
     expect(lxsoftwareKeys).toContain("lxsoftware:PublicApiWritesEnabled");
-    expect(file["lxsoftware:PublicApiWritesEnabled"]).toBe("false");
+    expect(file["lxsoftware:PublicApiWritesEnabled"]).toBe("true");
     for (const key of lxsoftwareKeys) {
       expect(parameters[key.slice("lxsoftware:".length)]).toBeDefined();
     }

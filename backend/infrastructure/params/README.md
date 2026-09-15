@@ -50,8 +50,12 @@ Set the repository variable `CDK_PARAM_FILE` to the path you want CI to use
 Typical committed values include:
 
 - `PublicWebsiteDomainName`, `PublicWebsiteCertificateArn` (public site)
-- **`lxsoftware:PublicApiWritesEnabled`** — `false` (default) until a write-capable
-  API key is minted (`--allow-write`). Finance `/public/*` stays GET-only.
+- **`lxsoftware:PublicApiWritesEnabled`** — production is `true` so Cloud Agent
+  keys with `allowWrite` can POST/PUT/DELETE board routes. The CDK parameter
+  default stays `false` (fail-closed) for new stacks. Finance `/public/*`
+  stays GET-only. Keys still need `set-write --allow-write`. Authenticated
+  write denials return `403 {"reason": …}` (`writes_disabled`,
+  `key_read_only`, `owner_only`, `scope`).
 - Optional Cognito custom Hosted UI on `lxsoftware`: `lxsoftware:CognitoCustomDomainName`
   and `lxsoftware:CognitoCustomDomainCertificateArn` (ACM in **us-east-1**)
 - **`lxsoftware-admin-web:CspCognitoConnectOrigin`** — full HTTPS origin for Cognito OAuth

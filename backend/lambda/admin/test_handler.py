@@ -2318,14 +2318,15 @@ class TestPublicReadRoutes(unittest.TestCase):
         )
         self.assertEqual(out["statusCode"], 404)
 
-    def test_non_get_method_not_found(self) -> None:
+    def test_non_get_method_forbidden(self) -> None:
         out = lambda_handler(
             self._event("/public/finance", method="PUT", key_ctx=self._key_ctx()),
             None,
         )
-        self.assertEqual(out["statusCode"], 404)
+        self.assertEqual(out["statusCode"], 403)
+        self.assertEqual(json.loads(out["body"])["reason"], "not_allowlisted")
 
-    def test_public_board_write_not_found(self) -> None:
+    def test_public_board_write_forbidden_when_disabled(self) -> None:
         out = lambda_handler(
             self._event(
                 "/public/siu-tin-dei/board/tasks",
@@ -2334,7 +2335,8 @@ class TestPublicReadRoutes(unittest.TestCase):
             ),
             None,
         )
-        self.assertEqual(out["statusCode"], 404)
+        self.assertEqual(out["statusCode"], 403)
+        self.assertEqual(json.loads(out["body"])["reason"], "writes_disabled")
 
     def test_public_board_unknown_get_not_found(self) -> None:
         out = lambda_handler(
