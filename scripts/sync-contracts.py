@@ -200,6 +200,8 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "BOARD_STAFF_DELIVERABLE_MAX_BYTES = int(_BOARD_STAFF_LIMITS[\"deliverableMaxBytes\"])",
         "BOARD_STAFF_HOLD_DEFAULT_HOURS = int(_BOARD_STAFF_LIMITS[\"holdDefaultHours\"])",
         "BOARD_STAFF_HOLD_CODE_STAGING_HOURS = int(_BOARD_STAFF_LIMITS[\"holdCodeStagingHours\"])",
+        "BOARD_CODE_RUN_COOLDOWN_SECONDS = int(_BOARD_STAFF_LIMITS[\"codeRunCooldownSeconds\"])",
+        "BOARD_CODE_RUN_MAX_ROUNDS = int(_BOARD_STAFF_LIMITS[\"codeRunMaxRounds\"])",
         "BOARD_STAFF_RAMP_MIN_ACTIONS = int(_BOARD_STAFF_LIMITS[\"rampMinActions\"])",
         "BOARD_STAFF_RAMP_PROMOTE_MAX_VETO_RATE = float(_BOARD_STAFF_LIMITS[\"rampPromoteMaxVetoRate\"])",
         "BOARD_STAFF_RAMP_DEMOTE_VETO_RATE = float(_BOARD_STAFF_LIMITS[\"rampDemoteVetoRate\"])",

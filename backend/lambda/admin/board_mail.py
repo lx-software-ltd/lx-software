@@ -138,6 +138,8 @@ class ParsedMail:
     # True when the body, attachment text or address lists were cut to fit.
     truncated: bool = False
     bulk: bool = False
+    auto_submitted: str = ""
+    list_unsubscribe: bool = False
 
 
 def _single_line(value: Any, limit: int) -> str:
@@ -298,6 +300,8 @@ def parse_mime(raw: bytes, *, domain: str | None = None) -> ParsedMail:
         attachments_skipped=skipped,
         truncated=body_cut or attachments_cut or to_cut or cc_cut,
         bulk=_is_bulk_mail(msg),
+        auto_submitted=str(msg.get("Auto-Submitted") or "").strip(),
+        list_unsubscribe=bool(msg.get("List-Unsubscribe")),
     )
 
 
@@ -305,7 +309,7 @@ def parse_mime(raw: bytes, *, domain: str | None = None) -> ParsedMail:
 # Ingest
 # ---------------------------------------------------------------------------
 
-_BULK_LOCAL_PARTS = frozenset(
+BULK_LOCAL_PARTS = frozenset(
     {
         "noreply",
         "no-reply",
@@ -318,10 +322,14 @@ _BULK_LOCAL_PARTS = frozenset(
         "mailerdaemon",
         "bounce",
         "bounces",
+        "ses-bounces",
         "notifications",
         "notify",
     }
 )
+# Archive at triage, but do not mark ingest as bulk (a partner
+# complaints@ mailbox can be a real sender).
+ARCHIVE_LOCAL_PARTS = BULK_LOCAL_PARTS | frozenset({"complaints"})
 _BULK_SUBJECT_MARKERS = (
     "report domain:",
     "report-id:",
@@ -349,7 +357,7 @@ def _is_bulk_mail(msg: EmailMessage) -> bool:
         return True
     _from_name, from_addr = parseaddr(str(msg.get("From") or ""))
     local = from_addr.split("@", 1)[0].strip().lower()
-    if local in _BULK_LOCAL_PARTS or local.startswith("noreply") or local.startswith("bounce"):
+    if local in BULK_LOCAL_PARTS or local.startswith("noreply") or local.startswith("bounce"):
         return True
     subject = str(msg.get("Subject") or "").strip().lower()
     if any(marker in subject for marker in _BULK_SUBJECT_MARKERS):
@@ -458,6 +466,8 @@ def ingest_bytes(
         "rawSize": parsed.raw_size,
         "bulk": parsed.bulk,
         "skipTriage": parsed.bulk,
+        "autoSubmitted": parsed.auto_submitted,
+        "listUnsubscribe": parsed.list_unsubscribe,
     }
     if parsed.truncated:
         _log_event(
@@ -538,6 +548,9 @@ def _upsert_thread(table: Any, thread_id: str, parsed: ParsedMail, *, direction:
         thread["lastInboundAt"] = now
     if parsed.mailbox and str(thread.get("mailbox") or "").startswith("unknown@"):
         thread["mailbox"] = parsed.mailbox
+    if parsed.bulk and direction in ("in", "inbound"):
+        thread["disposition"] = "archived"
+        thread["archivedReason"] = "bulk"
     board_store.put_mail_thread(table, thread)
 
 
@@ -614,6 +627,7 @@ def thread_list(
     mailbox: str = "",
     query: str = "",
     unread_only: bool = False,
+    archived: bool | None = None,
     limit: int = 50,
 ) -> dict[str, Any]:
     threads = board_store.list_mail_threads(table)
@@ -630,6 +644,10 @@ def thread_list(
         threads = [t for t in threads if str(t.get("mailbox") or "") == mailbox]
     if unread_only:
         threads = [t for t in threads if t.get("unread")]
+    if archived is True:
+        threads = [t for t in threads if str(t.get("disposition") or "") == "archived"]
+    elif archived is False:
+        threads = [t for t in threads if str(t.get("disposition") or "") != "archived"]
     groups = _query_groups(table, query)
     if groups:
         threads = [t for t in threads if _matches(t, groups, table)]

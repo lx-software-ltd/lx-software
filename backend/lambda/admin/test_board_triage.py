@@ -239,6 +239,63 @@ class PolicyTests(BoardTestCase):
         self.assertEqual(len(holds), 1)
         self.assertTrue(holds[0]["executeAt"].startswith("2026-09-11T00:00:00"))
 
+    def test_archive_reason_skip_list(self) -> None:
+        self.assertEqual(
+            board_triage.archive_reason({}, {"from": {"address": "noreply@example.com"}}),
+            "no-action sender noreply",
+        )
+        self.assertEqual(
+            board_triage.archive_reason({"subject": "Report Domain: siutindei.com"}, {"from": {"address": "dmarc@amazon.com"}}),
+            "no-action sender dmarc",
+        )
+        self.assertEqual(
+            board_triage.archive_reason({}, {"from": {"address": "parent@example.com"}, "text": "report-type=dmarc"}),
+            "dmarc/ses report",
+        )
+        self.assertEqual(board_triage.archive_reason({}, {"from": {"address": "parent@example.com"}, "text": "hello"}), "")
+        self.assertEqual(
+            board_triage.archive_reason(
+                {"subject": "How do I set up DMARC for siutindei.com?"},
+                {"from": {"address": "parent@example.com"}, "text": "please advise"},
+            ),
+            "",
+        )
+        self.assertEqual(
+            board_triage.archive_reason(
+                {"subject": "Report Domain: siutindei.com"},
+                {"from": {"address": "reporter@example.com"}},
+            ),
+            "dmarc/ses report",
+        )
+        self.assertEqual(
+            board_triage.archive_reason({}, {"from": {"address": "complaints@partner.example"}}),
+            "no-action sender complaints",
+        )
+
+    def test_mail_event_brief_names_archive_prefix(self) -> None:
+        brief = board_triage.render_event_brief(
+            "mail",
+            {"subject": "Saturday swimming"},
+            {},
+            {"audience": "parent", "intent": "question"},
+        )
+        self.assertIn(board_staff.MAIL_ARCHIVE_FINISH_PREFIX, brief)
+        self.assertIn("Saturday swimming", brief)
+
+    def test_on_mail_ingested_archives_noreply(self) -> None:
+        thread = {"threadId": "th-arch", "subject": "SES notice"}
+        board_store.put_mail_thread(self.table, thread)
+        out = board_triage.on_mail_ingested(
+            self.table,
+            board_store.load_settings(self.table),
+            thread,
+            {"direction": "in", "from": {"address": "noreply@ses.amazonaws.com"}, "text": "bounce"},
+        )
+        self.assertIsNone(out)
+        stored = board_store.get_mail_thread(self.table, "th-arch")
+        self.assertEqual(stored["disposition"], "archived")
+        self.assertEqual(board_store.list_tasks(self.table, None), [])
+
     def test_template_render(self) -> None:
         self.assertIn("siutindei", board_templates.render("ack_escalation", "en").lower())
         self.assertIn("小天地", board_templates.render("ack_escalation", "zh-HK"))

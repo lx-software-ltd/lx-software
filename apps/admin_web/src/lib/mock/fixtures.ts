@@ -33,6 +33,7 @@ import type {
   BoardOutreachStats,
   BoardSequence,
   BoardContentItem,
+  BoardMailThread,
 } from "../boardModel";
 import { DEFAULT_BOARD_BOUNDARIES } from "../boardModel";
 import type { OpenRouterUsagePayload } from "../openrouterUsage";
@@ -613,6 +614,42 @@ export const boardBreakersFixture: BoardBreaker[] = [
   { name: "budget", tripped: false, reason: "" },
 ];
 
+export const boardMailThreadsFixture: BoardMailThread[] = [
+  {
+    threadId: "aaaaaaaaaaaaaaaaaaaa",
+    mailbox: "hello@siutindei.com",
+    subject: "Saturday swimming availability",
+    participants: ["parent@example.com"],
+    firstMessageAt: isoDaysAgo(1),
+    lastMessageAt: isoDaysAgo(0),
+    lastDirection: "in",
+    lastFrom: "parent@example.com",
+    lastFromName: "Alex Parent",
+    messageCount: 2,
+    unread: true,
+    hasAttachments: false,
+    snippet: "Is there a space this Saturday?",
+    disposition: "",
+  },
+  {
+    threadId: "bbbbbbbbbbbbbbbbbbbb",
+    mailbox: "hello@siutindei.com",
+    subject: "Report Domain: siutindei.com",
+    participants: ["noreply@amazonses.com"],
+    firstMessageAt: isoDaysAgo(2),
+    lastMessageAt: isoDaysAgo(2),
+    lastDirection: "in",
+    lastFrom: "noreply@amazonses.com",
+    lastFromName: "Amazon SES",
+    messageCount: 1,
+    unread: false,
+    hasAttachments: false,
+    snippet: "This is an automated DMARC aggregate report.",
+    disposition: "archived",
+    archivedReason: "no-action sender noreply",
+  },
+];
+
 export const boardReviewFixture: BoardReviewSnapshot = {
   date: dateDaysAgo(0),
   compiledAt: isoDaysAgo(0),
@@ -628,6 +665,7 @@ export const boardReviewFixture: BoardReviewSnapshot = {
     content: { scheduledNext7: 1, emptyChannels: 1, drafted: 1 },
     listings: { activities: 12, providers: 6, lowCompleteness: 1, error: "" },
     signings: { count: 2, stalled: 1, error: "" },
+    mail: { replied: 2, archived: 1, open: 1 },
   },
   holdsDue: [...boardHoldsFixture],
   escalations: [

@@ -32,6 +32,7 @@ import {
   boardOutreachStatsFixture,
   boardSequenceFixture,
   boardContentFixture,
+  boardMailThreadsFixture,
   financeFixture,
   lxSoftwareBookFixture,
   openrouterUsageFixture,
@@ -326,7 +327,56 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   if (p === `${board}/updates`) return json({ updates: [] });
   if (p === `${board}/receivables`) return json(boardReceivablesFixture);
   if (p === `${board}/mail`) {
-    return json({ threads: [], total: 0, mailboxes: [], status: boardOverviewFixture.mail });
+    const archived = url.searchParams.get("archived");
+    let threads = boardMailThreadsFixture;
+    if (archived === "1" || archived === "true") {
+      threads = threads.filter((t) => t.disposition === "archived");
+    } else if (archived === "0" || archived === "false") {
+      threads = threads.filter((t) => t.disposition !== "archived");
+    }
+    const mailboxes = [
+      {
+        address: "hello@siutindei.com",
+        threadCount: boardMailThreadsFixture.length,
+        unreadCount: boardMailThreadsFixture.filter((t) => t.unread).length,
+        lastMessageAt: boardMailThreadsFixture[0]?.lastMessageAt ?? "",
+      },
+    ];
+    return json({
+      threads,
+      total: threads.length,
+      mailboxes,
+      status: boardOverviewFixture.mail,
+    });
+  }
+  if (p.startsWith(`${board}/mail/`) && p !== `${board}/mail/selftest`) {
+    const rest = p.slice(`${board}/mail/`.length);
+    const [threadId, action] = rest.split("/");
+    const thread = boardMailThreadsFixture.find((t) => t.threadId === threadId);
+    if (!thread) return json({ message: "Not found" }, 404);
+    if (action === "read" && method === "POST") {
+      return json({ thread: { ...thread, unread: false } });
+    }
+    return json({
+      thread,
+      messages: [
+        {
+          messageId: `${threadId}-1`,
+          threadId,
+          direction: thread.lastDirection,
+          source: "ses",
+          mailbox: thread.mailbox,
+          from: { address: thread.lastFrom, name: thread.lastFromName ?? "" },
+          to: [thread.mailbox],
+          cc: [],
+          subject: thread.subject,
+          date: thread.lastMessageAt,
+          receivedAt: thread.lastMessageAt,
+          text: thread.snippet,
+          attachments: [],
+        },
+      ],
+    });
   }
   if (p === `${board}/mail/selftest` && method === "POST") {
     return json({

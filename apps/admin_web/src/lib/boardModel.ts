@@ -512,6 +512,8 @@ export type BoardMailThread = {
   readonly unread: boolean;
   readonly hasAttachments: boolean;
   readonly snippet: string;
+  readonly disposition?: string;
+  readonly archivedReason?: string;
 };
 
 export type BoardMailMessage = {
@@ -1797,6 +1799,7 @@ export type BoardReviewSnapshot = {
     readonly listings?: Readonly<Record<string, unknown>>;
     readonly signings?: Readonly<Record<string, unknown>>;
     readonly market?: Readonly<Record<string, unknown>>;
+    readonly mail?: { readonly replied: number; readonly archived: number; readonly open: number };
   };
   readonly holdsDue: readonly BoardHold[];
   readonly escalations: readonly {

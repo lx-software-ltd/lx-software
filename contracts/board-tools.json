@@ -54,7 +54,7 @@
     {
       "id": "research",
       "label": "Research",
-      "description": "Web search for competitor pages, Hong Kong market news, EDB school-holiday calendars and venue listings. Read-only; results are cached for 24 hours.",
+      "description": "Web search for competitor pages, Hong Kong market news, EDB school-holiday calendars and venue listings, plus a public page fetch (private hosts refused). Read-only; search results are cached for 24 hours.",
       "maxLevel": "read",
       "defaults": {
         "ceo": "read",
