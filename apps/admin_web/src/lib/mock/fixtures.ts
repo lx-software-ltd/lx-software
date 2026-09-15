@@ -549,13 +549,13 @@ export const boardTasksFixture: BoardTask[] = [
     step: 12,
     managerId: "cto",
   }),
-  fixtureTask("task-help-parent", "waiting_subtask", "support", "Verify visitor sources without web access.", {
-    helpTaskIds: ["task-help-child"],
-    blockedOn: ["task-help-child"],
-    parkedReason: "waiting on help task task-help-child",
+  fixtureTask("task-hpar01", "waiting_subtask", "support", "Verify visitor sources without web access.", {
+    helpTaskIds: ["task-hchd01"],
+    blockedOn: ["task-hchd01"],
+    parkedReason: "waiting on help task task-hchd01",
   }),
-  fixtureTask("task-help-child", "running", "data-analyst", "Need: GA4 sessions and referrers for the parent task.", {
-    parentTaskId: "task-help-parent",
+  fixtureTask("task-hchd01", "running", "data-analyst", "Need: GA4 sessions and referrers for the parent task.", {
+    parentTaskId: "task-hpar01",
     origin: "task",
     managerId: "cio",
   }),

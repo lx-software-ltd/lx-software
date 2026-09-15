@@ -34,8 +34,11 @@ function errorText(err: unknown): string | null {
 }
 
 function defaultView(): "board" | "list" {
-  if (typeof window === "undefined" || !window.matchMedia) return "board";
-  return window.matchMedia("(min-width: 768px)").matches ? "board" : "list";
+  if (typeof window === "undefined") return "board";
+  const narrow =
+    window.innerWidth < 768 ||
+    (typeof window.matchMedia === "function" && !window.matchMedia("(min-width: 768px)").matches);
+  return narrow ? "list" : "board";
 }
 
 export function BoardTasksSection({ focusTaskId = null }: { readonly focusTaskId?: string | null }) {
