@@ -107,11 +107,12 @@ class FakeGitHub:
 
 
 class HostRouter:
-    """Route leftover ``urllib.request.urlopen`` calls by host.
+    """Route HTTP fakes by host.
 
-    GitHub tests should patch ``board_github._urlopen`` (production no longer
-    reads ``urlopen``). This router stays as a safety net for OpenRouter and
-    any stray GitHub ``urlopen``.
+    Production GitHub calls go through ``board_github._urlopen`` (patched to
+    this router). Tests that replace ``self.router.github`` keep intercepting.
+    ``urllib.request.urlopen`` stays patched as a safety net for OpenRouter
+    and any stray GitHub ``urlopen``.
     """
 
     def __init__(self, openrouter: Any, github: Any) -> None:
@@ -132,7 +133,8 @@ class ToolsTestCase(BoardTestCase):
         patcher = patch("urllib.request.urlopen", self.router)
         patcher.start()
         self.addCleanup(patcher.stop)
-        patcher_gh = patch.object(board_github, "_urlopen", self.github)
+        # Delegate so tests that replace ``self.router.github`` still intercept.
+        patcher_gh = patch.object(board_github, "_urlopen", self.router)
         patcher_gh.start()
         self.addCleanup(patcher_gh.stop)
         board_github.reset_token_cache_for_tests()
