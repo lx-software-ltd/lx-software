@@ -64,7 +64,7 @@ Owner decisions from plan §6, applied as specified:
 | R-34 | Fixed | Unsubscribe token is `pid + mac` (no `.`); parse `raw[:-16]` / `raw[-16:]`. Test: `test_unsubscribe_token_round_trip_and_tamper`. |
 | R-35 | Fixed | Duplicate Bold binaries removed (`NotoSans-Bold.ttf`, `NotoSansTC-Bold.otf`); both weights use Regular / variable `wght`. Remaining: `NotoSans-Regular.ttf`, `NotoSansTC-Regular.otf`, `OFL.txt`. |
 | R-36 | Fixed | `_origin_from_ctx` returns `"task"`; contract `taskOrigins` includes `task`. |
-| R-37 | Fixed + owner | See §6 decision 2. `action_class_exempt` checks `action_class == "code_production"`. |
+| R-37 | Fixed + owner | See §6 decision 2. `action_class_exempt` checks `action_class` in `code_production` / `code_close`. |
 | R-38 | Fixed | Rate limiters use `bump_cache_count` `ADD`. |
 
 ## WP1

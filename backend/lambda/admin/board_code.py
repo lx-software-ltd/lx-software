@@ -539,35 +539,39 @@ def op_merge_staging(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     return dispatch_workflow(WORKFLOW_MERGE, {"pr_number": str(number)}, ref="staging")
 
 
-def close_guard(_ctx: Any, args: dict[str, Any]) -> str | None:
-    """Refuse closing anything except an open, unmerged board/* PR into staging."""
+def inspect_close_pr(args: dict[str, Any]) -> tuple[str | None, dict[str, Any] | None]:
+    """Return ``(reason, pr)``. ``reason`` is set when the PR must not be closed."""
     try:
         number = int(args.get("prNumber") or 0)
     except (TypeError, ValueError):
-        return "prNumber is required"
+        return "prNumber is required", None
     if number <= 0:
-        return "prNumber is required"
+        return "prNumber is required", None
     try:
         pr = _get_pr(number)
     except (CodeError, board_github.GitHubSnapshotError) as exc:
-        return str(exc)[:200]
+        return str(exc)[:200], None
     if pr.get("merged") or pr.get("merged_at"):
-        return "pull request is already merged"
+        return "pull request is already merged", pr
     head = str((pr.get("head") or {}).get("ref") or "")
     if not head.startswith("board/"):
-        return "only board/* pull requests can be closed this way"
+        return "only board/* pull requests can be closed this way", pr
     if str((pr.get("base") or {}).get("ref") or "") != "staging":
-        return "base branch must be staging"
+        return "base branch must be staging", pr
     if str(pr.get("state") or "open").lower() != "open":
-        return "pull request is not open"
-    return None
+        return "pull request is not open", pr
+    return None, pr
+
+
+def close_guard(_ctx: Any, args: dict[str, Any]) -> str | None:
+    """Refuse closing anything except an open, unmerged board/* PR into staging."""
+    reason, _pr = inspect_close_pr(args)
+    return reason
 
 
 def preview_close_pr(_ctx: Any, args: dict[str, Any]) -> dict[str, Any] | None:
-    try:
-        number = int(args.get("prNumber") or 0)
-        pr = _get_pr(number)
-    except (TypeError, ValueError, CodeError, board_github.GitHubSnapshotError):
+    reason, pr = inspect_close_pr(args)
+    if reason or not pr:
         return None
     return {
         "prNumber": pr.get("number"),
@@ -579,7 +583,7 @@ def preview_close_pr(_ctx: Any, args: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
-def _reject_pending_merge_approvals(table: Any, pr_number: int, note: str) -> int:
+def _reject_pending_merge_approvals(table: Any, settings: dict[str, Any] | None, pr_number: int, note: str) -> int:
     """Drop stale merge proposals so a vetoed close cannot be merged afterwards."""
     rejected = 0
     now = board_store.now_iso()
@@ -596,19 +600,80 @@ def _reject_pending_merge_approvals(table: Any, pr_number: int, note: str) -> in
             continue
         if not board_store.claim_approval_decision(table, approval_id, status="rejected"):
             continue
-        board_store.put_approval(
-            table,
-            {
-                **approval,
-                "status": "rejected",
-                "note": note[:1000],
-                "decidedAt": now,
-                "decidedBySub": "system:close-pr",
-                "updatedAt": now,
-            },
-        )
+        decided = {
+            **approval,
+            "status": "rejected",
+            "note": note[:1000],
+            "decidedAt": now,
+            "decidedBySub": "system:close-pr",
+            "updatedAt": now,
+        }
+        board_store.put_approval(table, decided)
+        if settings is not None:
+            try:
+                board_staff.resume_after_approval(table, settings, decided)
+            except Exception as exc:
+                _log_event(
+                    "warning",
+                    tag="board_code_close_resume_failed",
+                    approvalId=approval_id,
+                    error=str(exc)[:200],
+                )
         rejected += 1
     return rejected
+
+
+def _issue_label_list(issue: dict[str, Any]) -> list[str]:
+    names: list[str] = []
+    for lab in issue.get("labels") or []:
+        text = str(lab.get("name") if isinstance(lab, dict) else lab or "").strip()
+        if text and text not in names:
+            names.append(text)
+    return names
+
+
+def _abandon_linked_issue(pr: dict[str, Any], pr_number: int, reason: str) -> dict[str, Any]:
+    """Stop the runner re-picking the issue: drop board-ready, add board-closed, comment."""
+    out: dict[str, Any] = {"issue": None, "relabeled": False, "commented": False, "labels": []}
+    issue = _issue_from_pr(pr)
+    if not issue or issue == int(pr_number):
+        return out
+    out["issue"] = issue
+    repo = _repo()
+    try:
+        raw = _gh("GET", f"/repos/{repo}/issues/{issue}")
+    except board_github.GitHubSnapshotError as exc:
+        _log_event("warning", tag="board_code_close_issue_load_failed", issue=issue, error=str(exc)[:200])
+        return out
+    if not isinstance(raw, dict) or raw.get("pull_request"):
+        return out
+    kept = [name for name in _issue_label_list(raw) if name.lower() != BOARD_READY_LABEL]
+    if not any(name.lower() == BOARD_CLOSED_LABEL for name in kept):
+        kept.append(BOARD_CLOSED_LABEL)
+    try:
+        updated = _gh("PUT", f"/repos/{repo}/issues/{issue}/labels", {"labels": kept})
+        if isinstance(updated, list):
+            out["labels"] = [str(row.get("name") or "") for row in updated if isinstance(row, dict)]
+        else:
+            out["labels"] = kept
+        out["relabeled"] = True
+    except board_github.GitHubSnapshotError as exc:
+        _log_event("warning", tag="board_code_close_issue_label_failed", issue=issue, error=str(exc)[:200])
+    try:
+        board_github.op_comment_issue(
+            {
+                "number": issue,
+                "body": (
+                    f"Board PR #{pr_number} was closed without merging: {reason[:400]}. "
+                    f"Removed `{BOARD_READY_LABEL}` and added `{BOARD_CLOSED_LABEL}` so the runner "
+                    "will not pick this issue up again. Re-add board-ready to retry."
+                ),
+            }
+        )
+        out["commented"] = True
+    except board_github.GitHubSnapshotError as exc:
+        _log_event("warning", tag="board_code_close_issue_comment_failed", issue=issue, error=str(exc)[:200])
+    return out
 
 
 def op_close_pr(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -616,17 +681,19 @@ def op_close_pr(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     reason = str(args.get("reason") or "").strip()
     if not reason:
         raise CodeError("reason is required")
-    blocked = close_guard(ctx, args)
-    if blocked:
-        raise CodeError(blocked)
-    number = int(args["prNumber"])
+    blocked, pr = inspect_close_pr(args)
+    if blocked or not pr:
+        raise CodeError(blocked or "prNumber is required")
+    number = int(pr.get("number") or args.get("prNumber") or 0)
     if not board_github.write_enabled():
         raise CodeError(
             "GitHub writes need a token: replace the dummy value in the "
             "lxsoftware-admin-siutindei-board-github-token secret with a fine-grained token "
             "that has issues: write and pull-requests: write on the repository"
         )
-    pr = _get_pr(number)
+    updated = _gh("PATCH", f"/repos/{_repo()}/pulls/{number}", {"state": "closed"})
+    if not isinstance(updated, dict) or str(updated.get("state") or "") != "closed":
+        raise CodeError(f"GitHub did not close pull request #{number}")
     commented = False
     try:
         board_github.op_comment_issue(
@@ -635,14 +702,15 @@ def op_close_pr(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         commented = True
     except board_github.GitHubSnapshotError as exc:
         _log_event("warning", tag="board_code_close_comment_failed", prNumber=number, error=str(exc)[:200])
-    updated = _gh("PATCH", f"/repos/{_repo()}/pulls/{number}", {"state": "closed"})
-    if not isinstance(updated, dict) or str(updated.get("state") or "") != "closed":
-        raise CodeError(f"GitHub did not close pull request #{number}")
+    abandoned = _abandon_linked_issue(pr, number, reason)
     rejected = 0
     table = getattr(ctx, "table", None)
     if table is not None:
         rejected = _reject_pending_merge_approvals(
-            table, number, f"PR #{number} was closed without merging: {reason[:200]}"
+            table,
+            getattr(ctx, "settings", None),
+            number,
+            f"PR #{number} was closed without merging: {reason[:200]}",
         )
     return {
         "ok": True,
@@ -652,6 +720,9 @@ def op_close_pr(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         "head": (pr.get("head") or {}).get("ref"),
         "commented": commented,
         "rejectedMergeApprovals": rejected,
+        "issue": abandoned.get("issue"),
+        "issueRelabeled": bool(abandoned.get("relabeled")),
+        "issueCommented": bool(abandoned.get("commented")),
     }
 
 
@@ -908,12 +979,13 @@ def poll_runs(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
     return created
 
 
-_SKIP_ISSUE_LABELS = frozenset({"wontfix", "duplicate", "invalid"})
+_SKIP_ISSUE_LABELS = frozenset({"wontfix", "duplicate", "invalid", "board-closed"})
 _IMPLEMENT_ISSUE_LABELS = frozenset(
     {"security", "high", "high-priority", "bug", "enhancement", "backend", "performance", "dependencies"}
 )
 _AUTO_FILED_TITLE_PREFIXES = ("NOTE:", "TODO:", "SECURITY NOTE:")
 BOARD_READY_LABEL = "board-ready"
+BOARD_CLOSED_LABEL = "board-closed"
 
 
 def _issue_label_names(issue: dict[str, Any]) -> set[str]:

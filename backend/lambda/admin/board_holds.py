@@ -66,7 +66,7 @@ class HoldError(ValueError):
 
 def action_class_exempt(op: board_tools.ToolOp) -> bool:
     """Writes that stay Approvals even when staff holds are on (R-37)."""
-    return getattr(op, "action_class", None) == "code_production"
+    return getattr(op, "action_class", None) in ("code_production", "code_close")
 
 
 def classify(op: board_tools.ToolOp, ctx: board_tools.ToolContext, args: dict[str, Any], settings: dict[str, Any]) -> tuple[str, str]:
@@ -97,6 +97,8 @@ def classify(op: board_tools.ToolOp, ctx: board_tools.ToolContext, args: dict[st
         return "code_staging", "code_staging"
     if name == "code_promote":
         return "code_production", "code_production"
+    if name == "code_close_pr":
+        return "code_close", "code_close"
     if op.is_write:
         return "internal", "internal"
     return "internal", "internal"

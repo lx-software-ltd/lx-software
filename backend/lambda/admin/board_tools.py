@@ -2334,7 +2334,10 @@ def build_registry() -> dict[str, ToolOp]:
             description=(
                 "Close a board/* pull request without merging (founder veto, superseded work, "
                 "or a review that will not be revised). Does not delete the branch. Always an "
-                "Approval. After a vetoed merge, call this instead of retrying code_merge_staging."
+                "Approval (not a hold). After a vetoed merge, call this instead of retrying "
+                "code_merge_staging. Relabels the linked GitHub issue: removes board-ready and "
+                "adds board-closed so the runner will not pick it up again until an architect "
+                "re-adds board-ready."
             ),
             parameters=_obj(
                 {
@@ -2350,6 +2353,7 @@ def build_registry() -> dict[str, ToolOp]:
             validate=_code_close_guard,
             preview=_preview_code_close_pr,
             always_propose=True,
+            action_class="code_close",
         ),
         ToolOp(
             name="code_promote",

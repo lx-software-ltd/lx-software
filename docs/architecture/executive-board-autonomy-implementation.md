@@ -1306,10 +1306,12 @@ use the same path.
   this PR, `changedLines <= 400`, no path matches `PROTECTED_PATHS`
   (`**/auth/**`, `**/payments/**`, `**/migrations/**`, `infra/**`, `.github/**`),
   base is `staging`; on execute dispatches `board-merge-staging.yml`),
-  `code_close_pr(prNumber, reason)` (write; class `internal`; `always_propose=True`;
-  `act_guard` refuses unless the PR is open, unmerged, `board/*`, and based on
-  `staging`; on execute comments then `PATCH`es the pull to `closed` via the
-  GitHub API and rejects pending `code_merge_staging` approvals for that number;
+  `code_close_pr(prNumber, reason)` (write; class `code_close`; `always_propose=True`;
+  `action_class_exempt` so it stays an Approval even when `holds.internal` is
+  non-zero; `act_guard` refuses unless the PR is open, unmerged, `board/*`, and based on
+  `staging`; on execute `PATCH`es the pull to `closed`, then comments, rejects
+  pending `code_merge_staging` approvals and resumes any task parked on them,
+  and relabels the linked issue (`board-ready` off, `board-closed` on);
   does not delete the branch), `code_promote(kind="production")` (write; `always_propose=True` — an
   Approval whose approve action dispatches `board-promote.yml`; shown as
   the "Promote" button on the review page with the staging diff summary).

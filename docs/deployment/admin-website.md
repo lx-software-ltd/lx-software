@@ -753,7 +753,9 @@ function calling. Design:
 
 - **Engineering runner (WP10):** `GET /siu-tin-dei/board/code/staging`,
   `POST …/code/promote`. Tool ops `code_run_task`, `code_get_run`,
-  `code_review_pr`, `code_merge_staging`, `code_close_pr`, `code_promote`. Widen the board
+  `code_review_pr`, `code_merge_staging`, `code_close_pr`, `code_promote`.
+  `code_close_pr` stays an Approval (`action_class` `code_close`) and
+  relabels the linked issue (`board-closed`, drop `board-ready`). Widen the board
   GitHub token to **Actions: write** and **Pull requests: write**. Workflows
   `board-agent.yml` / `board-merge-staging.yml` / `board-promote.yml` must
   exist on **lx-software-ltd/siutindei** (see appendix A). Daily review
