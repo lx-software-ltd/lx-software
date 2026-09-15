@@ -3,6 +3,7 @@ import {
   formatRelativeTime,
   formatUsageCost,
   shortTaskId,
+  taskSlaLabel,
   taskSlaState,
   taskStatusLabel,
   taskStatusTone,
@@ -53,31 +54,47 @@ export function BoardTaskCard({
           <BoardTaskId taskId={task.taskId} compact />
         </div>
         <button type="button" className="btn text-start border-0 p-0 w-100" onClick={onOpen}>
-          <div className="small fw-semibold board-clamp-2" title={task.brief}>
+          <span className="d-block small fw-semibold board-clamp-2" title={task.brief}>
             {task.brief}
-          </div>
-          <div className="small text-muted mt-1 d-flex flex-wrap align-items-center gap-1">
-            <span>
-              {assigneeLabel}
-              {managerLabel && managerLabel !== assigneeLabel ? ` → ${managerLabel}` : ""}
+          </span>
+          <span className="d-block small text-muted mt-1">
+            {assigneeLabel}
+            {managerLabel && managerLabel !== assigneeLabel ? ` → ${managerLabel}` : ""}
+            {origin ? <span className="badge text-bg-light border ms-1">{origin}</span> : null}
+          </span>
+          <span className="d-block mt-2">
+            <span
+              className="board-task-meter"
+              role="meter"
+              aria-label={`Steps ${task.stepsUsed} of ${stepsMax}`}
+              aria-valuemin={0}
+              aria-valuemax={stepsMax}
+              aria-valuenow={task.stepsUsed}
+            >
+              <span className="board-task-meter-fill" style={{ width: `${stepPct}%` }} />
             </span>
-            {origin ? <span className="badge text-bg-light border">{origin}</span> : null}
-          </div>
-          <div className="board-task-meter mt-2" aria-hidden="true">
-            <div className="board-task-meter-fill" style={{ width: `${Math.max(stepPct, budgetPct)}%` }} />
-          </div>
-          <div className="small text-muted mt-1">
+            <span
+              className="board-task-meter board-task-meter-budget mt-1"
+              role="meter"
+              aria-label={`Spend ${formatUsageCost(task.usage.cost)} of ${formatUsageCost(task.budgetUsd)}`}
+              aria-valuemin={0}
+              aria-valuemax={task.budgetUsd || 0}
+              aria-valuenow={task.usage.cost}
+            >
+              <span className="board-task-meter-fill" style={{ width: `${budgetPct}%` }} />
+            </span>
+          </span>
+          <span className="d-block small text-muted mt-1">
             {task.stepsUsed} / {stepsMax} steps · {formatUsageCost(task.usage.cost)}
             {task.budgetUsd ? ` / ${formatUsageCost(task.budgetUsd)}` : ""}
-          </div>
-          <div className={`small mt-1 ${sla === "overdue" ? "text-danger" : sla === "soon" ? "text-warning" : "text-muted"}`}>
-            {slaLabel(task, sla)} · updated {formatRelativeTime(task.updatedAt)}
-          </div>
+          </span>
+          <span className={`d-block small mt-1 ${sla === "overdue" ? "text-danger" : sla === "soon" ? "text-warning" : "text-muted"}`}>
+            {taskSlaLabel(task.slaAt)} · updated {formatRelativeTime(task.updatedAt)}
+          </span>
         </button>
         {task.parentTaskId ? (
           <div className="small mt-1">
-            ↳ help for{" "}
-            <TaskIdLink taskId={task.parentTaskId} onOpenTask={onOpenTask} />
+            ↳ help for <TaskIdLink taskId={task.parentTaskId} onOpenTask={onOpenTask} />
           </div>
         ) : null}
         {task.helpTaskIds?.length ? (
@@ -117,14 +134,7 @@ function TaskIdLink({
   readonly onOpenTask: (taskId: string) => void;
 }) {
   return (
-    <button
-      type="button"
-      className="btn btn-link btn-sm p-0 align-baseline"
-      onClick={(event) => {
-        event.stopPropagation();
-        onOpenTask(taskId);
-      }}
-    >
+    <button type="button" className="btn btn-link btn-sm p-0 align-baseline" onClick={() => onOpenTask(taskId)}>
       #{shortTaskId(taskId)}
     </button>
   );
@@ -149,11 +159,4 @@ function contextLine(task: BoardTask): string {
   if (task.parkedReason) return task.parkedReason;
   if (task.lastReview?.notes) return `${task.lastReview.verdict}: ${task.lastReview.notes}`;
   return "";
-}
-
-function slaLabel(task: BoardTask, sla: ReturnType<typeof taskSlaState>): string {
-  if (sla === "none") return "No SLA";
-  const relative = formatRelativeTime(task.slaAt);
-  if (sla === "overdue") return `SLA ${relative}`;
-  return `SLA ${relative}`;
 }

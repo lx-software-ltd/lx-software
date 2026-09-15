@@ -114,4 +114,12 @@ describe("BoardTasksSection", () => {
     expect(screen.getByText("Delivered tasks cannot be cancelled")).toBeInTheDocument();
     cancelState.error = null;
   });
+
+  it("opens a focused task and tells the parent the focus was consumed", () => {
+    const onFocusConsumed = vi.fn();
+    render(<BoardTasksSection focusTaskId="task-owner" onFocusConsumed={onFocusConsumed} />);
+    expect(onFocusConsumed).toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getAllByLabelText("Task task-owner").length).toBeGreaterThan(0);
+  });
 });

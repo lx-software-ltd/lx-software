@@ -46,7 +46,22 @@ async function copyTaskId(taskId: string): Promise<boolean> {
       return true;
     }
   } catch {
+    // HTTP or denied clipboard: fall through to execCommand.
+  }
+  try {
+    const el = document.createElement("textarea");
+    el.value = taskId;
+    el.setAttribute("readonly", "");
+    el.style.position = "fixed";
+    el.style.top = "0";
+    el.style.left = "-9999px";
+    document.body.appendChild(el);
+    el.select();
+    el.setSelectionRange(0, taskId.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(el);
+    return ok;
+  } catch {
     return false;
   }
-  return false;
 }

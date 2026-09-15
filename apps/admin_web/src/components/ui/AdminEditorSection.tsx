@@ -8,6 +8,8 @@ export type AdminEditorSectionProps = {
   readonly footer?: ReactNode;
   /** Root `.card` element; use with `scheduleFocusRecordEditor` when opening a row for edit. */
   readonly containerRef?: Ref<HTMLDivElement | null>;
+  /** Omit the card chrome when the form already sits inside another panel. */
+  readonly embedded?: boolean;
 };
 
 /**
@@ -20,23 +22,41 @@ export function AdminEditorSection({
   children,
   footer,
   containerRef,
+  embedded = false,
 }: AdminEditorSectionProps) {
+  const heading = title ? (
+    <h2 className="h6 text-uppercase text-muted mb-2">{title}</h2>
+  ) : null;
+  const intro = description ? (
+    <p className="small text-muted mb-3">{description}</p>
+  ) : null;
+  const actions = footer ? (
+    <div
+      className={`d-flex justify-content-start align-items-center gap-2 flex-wrap ${
+        embedded ? "mt-3" : "card-footer bg-transparent border-top pt-3 pb-3"
+      }`}
+    >
+      {footer}
+    </div>
+  ) : null;
+  if (embedded) {
+    return (
+      <div ref={containerRef}>
+        {heading}
+        {intro}
+        {children}
+        {actions}
+      </div>
+    );
+  }
   return (
     <div ref={containerRef} className="card shadow-sm mb-4">
       <div className="card-body">
-        {title ? (
-          <h2 className="h6 text-uppercase text-muted mb-2">{title}</h2>
-        ) : null}
-        {description ? (
-          <p className="small text-muted mb-3">{description}</p>
-        ) : null}
+        {heading}
+        {intro}
         {children}
       </div>
-      {footer ? (
-        <div className="card-footer bg-transparent border-top pt-3 pb-3 d-flex justify-content-start align-items-center gap-2 flex-wrap">
-          {footer}
-        </div>
-      ) : null}
+      {actions}
     </div>
   );
 }

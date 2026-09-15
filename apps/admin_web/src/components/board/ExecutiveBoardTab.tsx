@@ -296,7 +296,9 @@ export function ExecutiveBoardTab() {
 
           {overview && section === "staff" ? <BoardStaffSection /> : null}
 
-          {overview && section === "tasks" ? <BoardTasksSection focusTaskId={focusTaskId} /> : null}
+          {overview && section === "tasks" ? (
+            <BoardTasksSection focusTaskId={focusTaskId} onFocusConsumed={() => setFocusTaskId(null)} />
+          ) : null}
 
           {overview && section === "approvals" ? (
             <>

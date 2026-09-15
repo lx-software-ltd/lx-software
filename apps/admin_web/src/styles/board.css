@@ -291,6 +291,7 @@
 }
 
 .board-task-meter {
+  display: block;
   height: 0.25rem;
   background: var(--bs-secondary-bg);
   border-radius: 999px;
@@ -298,8 +299,13 @@
 }
 
 .board-task-meter-fill {
+  display: block;
   height: 100%;
   background: var(--bs-primary);
+}
+
+.board-task-meter-budget .board-task-meter-fill {
+  background: var(--bs-success);
 }
 
 .board-clamp-2 {

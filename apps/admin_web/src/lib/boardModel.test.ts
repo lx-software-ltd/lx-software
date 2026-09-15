@@ -6,6 +6,7 @@ import {
   boardTaskSearchParams,
   canRetryBoardTask,
   filterBoardTasks,
+  formatRelativeDuration,
   formatRelativeTime,
   formatUsageCost,
   groupActionsByPriority,
@@ -19,6 +20,7 @@ import {
   readBoardTaskIdFromSearch,
   shortTaskId,
   taskActorLabel,
+  taskSlaLabel,
   taskLane,
   taskSlaState,
   taskStatusLabel,
@@ -248,6 +250,9 @@ describe("task dashboard helpers", () => {
     expect(taskSlaState("2026-09-16T12:00:00Z", now)).toBe("ok");
     expect(formatRelativeTime("2026-09-15T10:00:00Z", now)).toBe("2h ago");
     expect(formatRelativeTime("2026-09-15T18:00:00Z", now)).toBe("in 6h");
+    expect(formatRelativeDuration("2026-09-15T10:00:00Z", now)).toBe("2h");
+    expect(taskSlaLabel("2026-09-15T10:00:00Z", now)).toBe("Overdue 2h");
+    expect(taskSlaLabel("2026-09-16T12:00:00Z", now)).toBe("SLA in 1d");
   });
 
   it("resolves seat and persona labels", () => {
@@ -275,7 +280,7 @@ describe("task dashboard helpers", () => {
 
   it("groups lanes with attention and failed first", () => {
     const grouped = groupTasksByLane([
-      task({ taskId: "r", status: "review", updatedAt: "2026-09-14T10:00:00Z" }),
+      task({ taskId: "r", status: "review", updatedAt: "2026-09-14T18:00:00Z" }),
       task({ taskId: "o", status: "needs_owner", updatedAt: "2026-09-14T10:00:00Z" }),
       task({ taskId: "d", status: "delivered", finishedAt: "2026-09-14T18:00:00Z" }),
       task({ taskId: "f", status: "failed", updatedAt: "2026-09-14T11:00:00Z" }),
@@ -289,5 +294,7 @@ describe("task dashboard helpers", () => {
     expect(readBoardTaskIdFromSearch("?section=tasks")).toBeNull();
     expect(boardTaskHref("abc123", "?tab=dashboard")).toBe("?tab=board&section=tasks&task=abc123");
     expect(boardTaskSearchParams(null, "?tab=board&section=tasks&task=abc123").get("task")).toBeNull();
+    expect(boardTaskSearchParams(null, "?tab=dashboard").get("section")).toBeNull();
+    expect(boardTaskSearchParams(null, "?tab=dashboard").get("tab")).toBe("dashboard");
   });
 });

@@ -8,8 +8,8 @@ import {
 import { BoardTaskId } from "./BoardTaskId";
 import {
   canRetryBoardTask,
-  formatRelativeTime,
   formatUsageCost,
+  taskSlaLabel,
   taskSlaState,
   taskStatusLabel,
   taskStatusTone,
@@ -80,7 +80,7 @@ export function BoardTasksTable({
               <AdminCell column="assignee">{actorLabel(task.assignee)}</AdminCell>
               <AdminCell column="sla">
                 <span className={sla === "overdue" ? "text-danger" : sla === "soon" ? "text-warning" : undefined}>
-                  {formatRelativeTime(task.slaAt)}
+                  {taskSlaLabel(task.slaAt)}
                 </span>
               </AdminCell>
               <AdminCell column="steps">{task.stepsUsed}</AdminCell>

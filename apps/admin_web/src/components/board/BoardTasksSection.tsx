@@ -41,7 +41,13 @@ function defaultView(): "board" | "list" {
   return narrow ? "list" : "board";
 }
 
-export function BoardTasksSection({ focusTaskId = null }: { readonly focusTaskId?: string | null }) {
+export function BoardTasksSection({
+  focusTaskId = null,
+  onFocusConsumed,
+}: {
+  readonly focusTaskId?: string | null;
+  readonly onFocusConsumed?: () => void;
+}) {
   const staff = useBoardStaff();
   const [includeFinished, setIncludeFinished] = useState(false);
   const [query, setQuery] = useState("");
@@ -51,18 +57,31 @@ export function BoardTasksSection({ focusTaskId = null }: { readonly focusTaskId
   const [phoneLane, setPhoneLane] = useState<BoardTaskLaneId>("attention");
   const [doneExpanded, setDoneExpanded] = useState(false);
   const [showNew, setShowNew] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(focusTaskId);
-  const [syncedFocus, setSyncedFocus] = useState<string | null>(focusTaskId);
-  if (focusTaskId !== syncedFocus) {
-    setSyncedFocus(focusTaskId);
-    if (focusTaskId) setSelectedId(focusTaskId);
+  const [pickedId, setPickedId] = useState<string | null>(focusTaskId);
+  const [appliedFocus, setAppliedFocus] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  if (focusTaskId && focusTaskId !== appliedFocus) {
+    setAppliedFocus(focusTaskId);
+    if (pickedId !== focusTaskId) setPickedId(focusTaskId);
+  } else if (!focusTaskId && appliedFocus) {
+    setAppliedFocus(null);
   }
-  const tasks = useBoardTasks({ includeFinished: includeFinished || statusFilter === "delivered" || statusFilter === "cancelled" });
+  const selectedId = pickedId;
+  const tasks = useBoardTasks();
   const detail = useBoardTask(selectedId);
+
+  useEffect(() => {
+    if (focusTaskId) onFocusConsumed?.();
+  }, [focusTaskId, onFocusConsumed]);
 
   useEffect(() => {
     syncBoardTaskSearchParams(selectedId);
   }, [selectedId]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const actorLabel = useCallback((id: string) => taskActorLabel(id, staff.seats), [staff.seats]);
   const visible = useMemo(
@@ -77,15 +96,21 @@ export function BoardTasksSection({ focusTaskId = null }: { readonly focusTaskId
     [tasks.tasks, query, assignee, statusFilter, includeFinished, actorLabel],
   );
   const lanes = useMemo(() => groupTasksByLane(visible), [visible]);
-  const spend = sumTaskUsageCost(tasks.tasks);
+  const spend = sumTaskUsageCost(tasks.tasks.filter((task) => !isFinishedBoardTaskStatus(task.status)));
   const retryingId = tasks.retry.isPending ? String(tasks.retry.variables ?? "") : null;
   const cancellingId = tasks.cancel.isPending ? String(tasks.cancel.variables ?? "") : null;
   const updatedLabel = tasks.dataUpdatedAt
-    ? formatRelativeTime(new Date(tasks.dataUpdatedAt).toISOString())
+    ? formatRelativeTime(new Date(tasks.dataUpdatedAt).toISOString(), nowMs)
     : "just now";
 
-  const openTask = (taskId: string) => setSelectedId(taskId);
-  const closeTask = () => setSelectedId(null);
+  const openTask = (taskId: string) => {
+    setPickedId(taskId);
+    onFocusConsumed?.();
+  };
+  const closeTask = () => {
+    setPickedId(null);
+    onFocusConsumed?.();
+  };
   const assignees = useMemo(() => {
     const seen = new Set<string>();
     const rows: { id: string; label: string }[] = [];
@@ -253,12 +278,14 @@ export function BoardTasksSection({ focusTaskId = null }: { readonly focusTaskId
                       isRetrying={retryingId === task.taskId}
                       isCancelling={cancellingId === task.taskId}
                       errorMessage={
-                        (retryingId === task.taskId || String(tasks.retry.variables ?? "") === task.taskId
-                          ? errorText(tasks.retry.error)
-                          : null) ??
-                        (cancellingId === task.taskId || String(tasks.cancel.variables ?? "") === task.taskId
-                          ? errorText(tasks.cancel.error)
-                          : null)
+                        selectedId === task.taskId
+                          ? null
+                          : ((retryingId === task.taskId || String(tasks.retry.variables ?? "") === task.taskId
+                              ? errorText(tasks.retry.error)
+                              : null) ??
+                            (cancellingId === task.taskId || String(tasks.cancel.variables ?? "") === task.taskId
+                              ? errorText(tasks.cancel.error)
+                              : null))
                       }
                       onOpen={() => openTask(task.taskId)}
                       onOpenTask={openTask}
@@ -285,6 +312,7 @@ export function BoardTasksSection({ focusTaskId = null }: { readonly focusTaskId
             disabled={!staff.enabled || tasks.create.isPending}
             errorMessage={errorText(tasks.create.error)}
             title=""
+            embedded
             onCreate={(body) =>
               tasks.create.mutate(body, {
                 onSuccess: (created) => {
@@ -357,7 +385,7 @@ function SummaryStrip({
         )}
       </div>
       <div className="small text-muted text-md-end" aria-live="polite">
-        <div>Task spend {formatUsageCost(spend)}</div>
+        <div>Open task spend {formatUsageCost(spend)}</div>
         <div>{isFetching ? "Refreshing…" : `Updated ${updatedLabel}`}</div>
       </div>
     </div>

@@ -1210,19 +1210,35 @@ export function taskSlaState(slaAt: string | undefined | null, nowMs: number = D
   return "ok";
 }
 
+export function formatRelativeDuration(iso: string | undefined | null, nowMs: number = Date.now()): string {
+  if (!iso) return "—";
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return "—";
+  const abs = Math.abs(then - nowMs);
+  const minute = 60_000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (abs < minute) return "<1m";
+  if (abs < hour) return `${Math.round(abs / minute)}m`;
+  if (abs < day) return `${Math.round(abs / hour)}h`;
+  return `${Math.round(abs / day)}d`;
+}
+
 export function formatRelativeTime(iso: string | undefined | null, nowMs: number = Date.now()): string {
   if (!iso) return "—";
   const then = Date.parse(iso);
   if (!Number.isFinite(then)) return "—";
-  const delta = then - nowMs;
-  const abs = Math.abs(delta);
-  const minute = 60_000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-  if (abs < minute) return "just now";
-  const value =
-    abs < hour ? `${Math.round(abs / minute)}m` : abs < day ? `${Math.round(abs / hour)}h` : `${Math.round(abs / day)}d`;
-  return delta >= 0 ? `in ${value}` : `${value} ago`;
+  const duration = formatRelativeDuration(iso, nowMs);
+  if (duration === "—") return "—";
+  if (duration === "<1m") return "just now";
+  return then >= nowMs ? `in ${duration}` : `${duration} ago`;
+}
+
+export function taskSlaLabel(slaAt: string | undefined | null, nowMs: number = Date.now()): string {
+  const sla = taskSlaState(slaAt, nowMs);
+  if (sla === "none") return "No SLA";
+  if (sla === "overdue") return `Overdue ${formatRelativeDuration(slaAt, nowMs)}`;
+  return `SLA ${formatRelativeTime(slaAt, nowMs)}`;
 }
 
 export function taskActorLabel(
@@ -1300,8 +1316,8 @@ export function sortTasksInLane(lane: BoardTaskLaneId, tasks: readonly BoardTask
   if (lane === "attention") {
     copy.sort(
       (a, b) =>
-        cmpIso(a.updatedAt, b.updatedAt, "desc") ||
         statusOrder(a.status, ["needs_owner", "review"]) - statusOrder(b.status, ["needs_owner", "review"]) ||
+        cmpIso(a.updatedAt, b.updatedAt, "desc") ||
         a.taskId.localeCompare(b.taskId),
     );
   } else if (lane === "in_progress") {
@@ -1351,10 +1367,13 @@ export function boardTaskSearchParams(
   currentSearch = "",
 ): URLSearchParams {
   const params = new URLSearchParams(currentSearch.startsWith("?") ? currentSearch.slice(1) : currentSearch);
-  params.set("tab", "board");
-  params.set("section", "tasks");
-  if (taskId) params.set("task", taskId);
-  else params.delete("task");
+  if (taskId) {
+    params.set("tab", "board");
+    params.set("section", "tasks");
+    params.set("task", taskId);
+  } else {
+    params.delete("task");
+  }
   return params;
 }
 
