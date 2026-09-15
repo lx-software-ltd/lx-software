@@ -9,7 +9,30 @@ import {
   type BoardOverview,
   type BoardSettings,
 } from "../../lib/boardModel";
-import { BOARD_MAX_DAILY_BUDGET_USD } from "../../lib/contracts/generated";
+import {
+  BOARD_MAX_DAILY_BUDGET_USD,
+  BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
+  BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
+} from "../../lib/contracts/generated";
+
+/** Matches `normalize_staff_config` in `board_store.py`. */
+const STAFF_MAX_RUNNING_TASKS_CAP = 20;
+const STAFF_DAILY_BUDGET_MAX_USD = 100;
+
+function staffDraft(
+  current: BoardSettings,
+  patch: Partial<NonNullable<BoardSettings["staff"]>>,
+): NonNullable<BoardSettings["staff"]> {
+  return {
+    enabled: Boolean(current.staff?.enabled),
+    maxRunningTasks: current.staff?.maxRunningTasks ?? BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
+    dailyBudgetUsd: current.staff?.dailyBudgetUsd ?? BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
+    dutiesEnabled: current.staff?.dutiesEnabled,
+    seniorPaused: current.staff?.seniorPaused,
+    disabledReason: current.staff?.disabledReason,
+    ...patch,
+  };
+}
 
 export type BoardSettingsCardProps = {
   readonly overview: BoardOverview;
@@ -194,14 +217,7 @@ export function BoardSettingsCard({
               onChange={(ev) =>
                 setDraft((d) => ({
                   ...d,
-                  staff: {
-                    enabled: ev.target.checked,
-                    maxRunningTasks: d.staff?.maxRunningTasks ?? 6,
-                    dailyBudgetUsd: d.staff?.dailyBudgetUsd ?? 20,
-                    dutiesEnabled: d.staff?.dutiesEnabled,
-                    seniorPaused: d.staff?.seniorPaused,
-                    disabledReason: d.staff?.disabledReason,
-                  },
+                  staff: staffDraft(d, { enabled: ev.target.checked }),
                 }))
               }
             />
@@ -223,19 +239,66 @@ export function BoardSettingsCard({
               onChange={(ev) =>
                 setDraft((d) => ({
                   ...d,
-                  staff: {
-                    enabled: Boolean(d.staff?.enabled),
-                    maxRunningTasks: d.staff?.maxRunningTasks ?? 6,
-                    dailyBudgetUsd: d.staff?.dailyBudgetUsd ?? 20,
-                    dutiesEnabled: ev.target.checked,
-                    seniorPaused: d.staff?.seniorPaused,
-                  },
+                  staff: staffDraft(d, { dutiesEnabled: ev.target.checked }),
                 }))
               }
             />
             <label className="form-check-label" htmlFor="board-duties-enabled">
               Run scheduled seat duties
             </label>
+          </div>
+          <div className="row g-2 mt-2">
+            <div className="col-6">
+              <label className="form-label small" htmlFor="board-staff-max-running">
+                Concurrent tasks
+              </label>
+              <input
+                id="board-staff-max-running"
+                type="number"
+                className="form-control form-control-sm"
+                min={1}
+                max={STAFF_MAX_RUNNING_TASKS_CAP}
+                step={1}
+                value={draft.staff?.maxRunningTasks ?? BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT}
+                onChange={(ev) =>
+                  setDraft((d) => ({
+                    ...d,
+                    staff: staffDraft(d, { maxRunningTasks: Number(ev.target.value) }),
+                  }))
+                }
+              />
+              <div className="form-text">
+                How many staff tasks may run at once (1–{STAFF_MAX_RUNNING_TASKS_CAP}). Extra work stays queued until a slot frees.
+              </div>
+            </div>
+            <div className="col-6">
+              <label className="form-label small" htmlFor="board-staff-daily-budget">
+                Staff daily budget
+              </label>
+              <div className="input-group input-group-sm">
+                <span className="input-group-text">USD</span>
+                <input
+                  id="board-staff-daily-budget"
+                  type="number"
+                  className="form-control"
+                  min={0}
+                  max={STAFF_DAILY_BUDGET_MAX_USD}
+                  step={0.5}
+                  value={draft.staff?.dailyBudgetUsd ?? BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD}
+                  aria-label="Staff daily budget in USD"
+                  onChange={(ev) =>
+                    setDraft((d) => ({
+                      ...d,
+                      staff: staffDraft(d, { dailyBudgetUsd: Number(ev.target.value) }),
+                    }))
+                  }
+                />
+                <span className="input-group-text">/ day</span>
+              </div>
+              <div className="form-text">
+                Separate from the board chat and meeting cap below. Exhausted staff budget re-queues work instead of failing it.
+              </div>
+            </div>
           </div>
           <div className="mb-2 mt-2">
             <label className="form-label small" htmlFor="board-review-digest">Digest email</label>

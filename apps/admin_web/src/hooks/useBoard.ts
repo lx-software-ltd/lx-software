@@ -88,7 +88,10 @@ export function useBoard() {
       });
       return res.settings;
     },
-    onSuccess: invalidate,
+    onSuccess: (settings) => {
+      qc.setQueryData<BoardOverview>(BOARD_QUERY_KEY, (prev) => (prev ? { ...prev, settings } : prev));
+      invalidate();
+    },
   });
 
   const postUpdate = useMutation({

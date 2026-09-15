@@ -58,4 +58,17 @@ describe("mockAdminFetch", () => {
     const res = await mockAdminFetch("/no-such-route");
     expect(res.status).toBe(404);
   });
+
+  it("persists staff.maxRunningTasks on PUT /siu-tin-dei/board/settings", async () => {
+    const put = await mockAdminFetch("/siu-tin-dei/board/settings", {
+      method: "PUT",
+      body: JSON.stringify({ staff: { enabled: true, maxRunningTasks: 8, dailyBudgetUsd: 20 } }),
+    });
+    expect(put.ok).toBe(true);
+    const saved = (await put.json()) as { settings: { staff: { maxRunningTasks: number } } };
+    expect(saved.settings.staff.maxRunningTasks).toBe(8);
+    const get = await mockAdminFetch("/siu-tin-dei/board");
+    const overview = (await get.json()) as { settings: { staff: { maxRunningTasks: number } } };
+    expect(overview.settings.staff.maxRunningTasks).toBe(8);
+  });
 });

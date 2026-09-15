@@ -144,8 +144,8 @@ export function BoardTasksSection({
     <div>
       {!staff.enabled ? (
         <p className="small text-muted">
-          Staff tasks are off. Turn on <code>settings.staff.enabled</code> after <code>SiutindeiBoardStaffEnabled</code> is true
-          on the stack. Seats are managed on the Staff tab.
+          Staff tasks are off. Turn them on under Settings → Staff and daily review after the stack kill switch is on.
+          Seats are managed on the Staff tab.
         </p>
       ) : null}
 

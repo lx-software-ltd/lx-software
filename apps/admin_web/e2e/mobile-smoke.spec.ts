@@ -138,6 +138,8 @@ test.describe("admin viewport smoke", () => {
     }
     await expect(page.getByText("Parent Support").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Run staff tick now" })).toBeVisible();
+    await expect(page.getByText(/Up to 6 tasks can run at once/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open Settings" })).toBeVisible();
     if (testInfo.project.name === "phone") {
       await page.locator("#board-section-select").selectOption("tasks");
     } else {
@@ -154,7 +156,9 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByLabel("Approval apr-1")).toBeVisible();
     await expect(page.getByText("Send launch confirmation to a newly onboarded provider")).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
-    if (testInfo.project.name !== "phone") {
+    if (testInfo.project.name === "phone") {
+      await page.locator("#board-section-select").selectOption("settings");
+    } else {
       const tablist = page.getByRole("tablist", { name: "Board sections" });
       const lastTab = page.getByRole("tab", { name: /Settings/ });
       await expect(lastTab).toBeInViewport();
@@ -163,6 +167,10 @@ test.describe("admin viewport smoke", () => {
       expect(listBox).toBeTruthy();
       expect(tabBox).toBeTruthy();
       expect(tabBox!.x + tabBox!.width).toBeLessThanOrEqual(listBox!.x + listBox!.width + 2);
+      await lastTab.click();
     }
+    await expect(page.getByLabel("Concurrent tasks")).toBeVisible();
+    await expect(page.getByLabel("Concurrent tasks")).toHaveValue("6");
+    await expect(page.getByLabel("Staff daily budget in USD")).toBeVisible();
   });
 });

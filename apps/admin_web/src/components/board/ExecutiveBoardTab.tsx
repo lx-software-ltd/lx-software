@@ -294,7 +294,12 @@ export function ExecutiveBoardTab() {
             />
           ) : null}
 
-          {overview && section === "staff" ? <BoardStaffSection /> : null}
+          {overview && section === "staff" ? (
+            <BoardStaffSection
+              maxRunningTasks={overview.settings.staff?.maxRunningTasks}
+              onOpenSettings={() => setSection("settings")}
+            />
+          ) : null}
 
           {overview && section === "tasks" ? (
             <BoardTasksSection focusTaskId={focusTaskId} onFocusConsumed={() => setFocusTaskId(null)} />

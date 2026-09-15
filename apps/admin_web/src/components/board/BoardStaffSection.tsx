@@ -1,11 +1,21 @@
 import { useMemo, useState } from "react";
 import { AdminEditorSection } from "../ui";
 import type { BoardSeat } from "../../lib/boardModel";
-import { BOARD_PERSONA_DEFAULTS, BOARD_STAFF_MODEL_TIERS } from "../../lib/contracts/generated";
+import {
+  BOARD_PERSONA_DEFAULTS,
+  BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
+  BOARD_STAFF_MODEL_TIERS,
+} from "../../lib/contracts/generated";
 import { staffTickErrorMessage, useBoardStaff } from "../../hooks/useBoardStaff";
 
-export function BoardStaffSection() {
+export type BoardStaffSectionProps = {
+  readonly maxRunningTasks?: number;
+  readonly onOpenSettings?: () => void;
+};
+
+export function BoardStaffSection({ maxRunningTasks, onOpenSettings }: BoardStaffSectionProps) {
   const staff = useBoardStaff();
+  const runningCap = maxRunningTasks ?? BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT;
   const byManager = useMemo(() => {
     const groups = new Map<string, BoardSeat[]>();
     for (const seat of staff.seats) {
@@ -43,12 +53,22 @@ export function BoardStaffSection() {
       ) : null}
       {!staff.enabled ? (
         <p className="small text-muted">
-          Staff tasks are off. Turn on <code>settings.staff.enabled</code> after <code>SiutindeiBoardStaffEnabled</code> is true
-          on the stack. Open work lives on the Tasks tab.
+          Staff tasks are off. Turn them on under Settings → Staff and daily review after the stack kill switch is on.
+          Open work lives on the Tasks tab.
         </p>
       ) : (
-        <p className="small text-muted">Open work and new assignments live on the Tasks tab.</p>
+        <p className="small text-muted">
+          Up to {runningCap} tasks can run at once. Extra work stays queued. Change the cap under Settings → Staff and
+          daily review. Open work and new assignments live on the Tasks tab.
+        </p>
       )}
+      {onOpenSettings ? (
+        <p className="mb-3">
+          <button type="button" className="btn btn-link btn-sm p-0" onClick={onOpenSettings}>
+            Open Settings
+          </button>
+        </p>
+      ) : null}
       <div className="row g-3 mb-4">
         {[...byManager.entries()].map(([managerId, seats]) => {
           const manager = BOARD_PERSONA_DEFAULTS.find((p) => p.id === managerId);
