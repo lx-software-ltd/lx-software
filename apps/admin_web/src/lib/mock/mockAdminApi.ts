@@ -52,7 +52,12 @@ import {
   type BoardProspect,
   type BoardSequence,
   type BoardContentItem,
+  type BoardSettings,
 } from "../boardModel";
+import {
+  BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
+  BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
+} from "../contracts/generated";
 
 export { isAdminMockEnabled };
 
@@ -101,6 +106,7 @@ type MockState = {
   sequences: Record<string, BoardSequence>;
   content: BoardContentItem[];
   approvals: BoardApproval[];
+  settings: BoardSettings;
 };
 
 const state: MockState = {
@@ -121,6 +127,7 @@ const state: MockState = {
   sequences: {},
   content: structuredClone(boardContentFixture) as BoardContentItem[],
   approvals: structuredClone(boardApprovalsFixture) as BoardApproval[],
+  settings: structuredClone(boardOverviewFixture.settings) as BoardSettings,
 };
 
 function json(body: unknown, status = 200): Response {
@@ -269,7 +276,35 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   if (p === "/banking/mappings") return json({ mappings: parseBody(init).mappings ?? bankingFixture.mappings });
 
   const board = "/siu-tin-dei/board";
-  if (p === board) return json(boardOverviewFixture);
+  if (p === board) {
+    return json({
+      ...boardOverviewFixture,
+      settings: { ...state.settings, boundaries: state.boundaries },
+    });
+  }
+  if (p === `${board}/settings` && method === "PUT") {
+    const body = parseBody(init) as Partial<BoardSettings>;
+    state.settings = {
+      ...state.settings,
+      ...body,
+      staff: {
+        enabled: Boolean(body.staff?.enabled ?? state.settings.staff?.enabled),
+        maxRunningTasks:
+          body.staff?.maxRunningTasks ??
+          state.settings.staff?.maxRunningTasks ??
+          BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
+        dailyBudgetUsd:
+          body.staff?.dailyBudgetUsd ??
+          state.settings.staff?.dailyBudgetUsd ??
+          BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
+        dutiesEnabled: body.staff?.dutiesEnabled ?? state.settings.staff?.dutiesEnabled,
+        seniorPaused: body.staff?.seniorPaused ?? state.settings.staff?.seniorPaused,
+      },
+      review: body.review ?? state.settings.review,
+      updatedAt: new Date().toISOString(),
+    };
+    return json({ settings: state.settings });
+  }
   if (p === `${board}/actions`) return json({ actions: state.actions });
   if (p.startsWith(`${board}/actions/`) && method === "PUT") {
     const actionId = p.slice(`${board}/actions/`.length);

@@ -32,11 +32,19 @@ vi.mock("../../hooks/useBoardStaff", () => ({
 
 describe("BoardStaffSection", () => {
   it("shows the roster and tick, not the task board", () => {
-    render(<BoardStaffSection />);
+    render(<BoardStaffSection maxRunningTasks={8} />);
     expect(screen.getByRole("button", { name: "Run staff tick now" })).toBeInTheDocument();
     expect(screen.getByText(/Parent Support/)).toBeInTheDocument();
+    expect(screen.getByText(/Up to 8 tasks can run at once/)).toBeInTheDocument();
     expect(screen.getByText(/Open work and new assignments live on the Tasks tab/)).toBeInTheDocument();
     expect(screen.queryByText("New task")).not.toBeInTheDocument();
     expect(screen.queryByText(/Failed \(/)).not.toBeInTheDocument();
+  });
+
+  it("links to Settings for the concurrent-task cap", () => {
+    const onOpenSettings = vi.fn();
+    render(<BoardStaffSection maxRunningTasks={3} onOpenSettings={onOpenSettings} />);
+    screen.getByRole("button", { name: "Open Settings" }).click();
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
   });
 });

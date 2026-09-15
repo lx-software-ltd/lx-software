@@ -772,12 +772,12 @@ function calling. Design:
 1. Deploy with `SiutindeiBoardStaffEnabled=false` (CDK default). No seats needed.
 2. After WP2–WP4: set `review.digestTo`, then deploy `SiutindeiBoardStaffEnabled=true`
    (`params/production.json` already does) and flip `settings.staff.enabled=true`.
-   Default-on seats handle triage and the daily review. Leave `maxRunningTasks` at 3.
+   Default-on seats handle triage and the daily review. Leave **Settings → Staff and daily review → Concurrent tasks** (`maxRunningTasks`) at 3.
 3. WP5: activate `market-analyst`; add ~five watchlist entries.
 4. WP6: activate `prospector` after `partners.siutindei.com` DNS and SES
    identity verify. First sends are 24 h holds.
 5. WP7: activate `content-marketer` and `growth-specialist`; raise
-   `maxRunningTasks` to 6 after the first content week is stable.
+   Concurrent tasks to 6 after the first content week is stable.
 6. WP8–WP9: set `PublicSiteOrigins`; activate `accountant` and
    `security-analyst` (`data-analyst` is already default-on for assignment);
    then `settings.staff.dutiesEnabled` (weekly attribution and other duties).
