@@ -1,6 +1,6 @@
 """Engineering runner: dispatch Cursor-on-Actions, review PRs, merge staging.
 
-See docs/architecture/executive-board-autonomy-implementation.md WP10.
+See docs/architecture/executive-board.md §11 (Engineering runner).
 Workflows live in the siutindei repo (appendix A). This module only dispatches
 and enforces policy.
 """

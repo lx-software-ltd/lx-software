@@ -10,7 +10,7 @@ queries only the function names listed in ``BOARD_AWS_LAMBDA_NAMES``. The
 board never creates IAM, DNS or Cognito changes; ``aws_propose_budget_alert``
 only queues an action item for the founder.
 
-Plan: docs/architecture/executive-board-tools-plan.md §4 ``aws``.
+See docs/architecture/executive-board.md §6 (Connectors, ``aws``).
 """
 
 from __future__ import annotations

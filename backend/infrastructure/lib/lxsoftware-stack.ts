@@ -401,11 +401,11 @@ export class LxsoftwareStack extends cdk.Stack {
       description:
         "Enable Banking application id (JWT kid) for the bank account sync. " +
         "Register the app at enablebanking.com with the public key of the " +
-        "EnableBankingSigningKey KMS key (scripts/export-enable-banking-public-key.py). " +
+        "EnableBankingSigningKey KMS key (docs/deployment/admin-website.md, Enable Banking). " +
         "Leave blank to disable bank sync.",
     });
 
-    // Executive Board (AI board for Siu Tin Dei; see docs/architecture/executive-board-plan.md)
+    // Executive Board (AI board for Siu Tin Dei; see docs/architecture/executive-board.md)
     const siutindeiClusterArn = new cdk.CfnParameter(
       this,
       "SiutindeiClusterArn",
@@ -637,7 +637,7 @@ export class LxsoftwareStack extends cdk.Stack {
       type: "String",
       default: "siutindei.com",
       description:
-        "Company mail domain the Executive Board reads. Every message to any mailbox at this domain is fanned out by a Cloudflare Email Worker to the board's SES inbound address and indexed (docs/architecture/executive-board-tools-plan.md §5.2).",
+        "Company mail domain the Executive Board reads. Every message to any mailbox at this domain is fanned out by a Cloudflare Email Worker to the board's SES inbound address and indexed (docs/architecture/executive-board.md §6.1).",
     });
     const boardMailSendingEnabled = new cdk.CfnParameter(
       this,
@@ -2558,7 +2558,7 @@ export class LxsoftwareStack extends cdk.Stack {
         path: "/siu-tin-dei/board/repo-snapshot/refresh",
         methods: [apigwv2.HttpMethod.POST],
       },
-      // Tools and permissions (docs/architecture/executive-board-tools-plan.md)
+      // Tools and permissions (docs/architecture/executive-board.md §5)
       {
         path: "/siu-tin-dei/board/tools",
         methods: [apigwv2.HttpMethod.GET, apigwv2.HttpMethod.PUT],
@@ -3005,7 +3005,7 @@ export class LxsoftwareStack extends cdk.Stack {
       value: enableBankingSigningKey.keyId,
       description:
         "KMS key id whose public key must be registered with Enable Banking " +
-        "(export PEM: scripts/export-enable-banking-public-key.py).",
+        "(export the PEM with aws kms get-public-key; see docs/deployment/admin-website.md).",
       exportName: "lxsoftware-EnableBankingSigningKeyId",
     });
 

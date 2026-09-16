@@ -7,8 +7,8 @@ accounts sheet from live bank balances.
 Authentication to Enable Banking uses an RS256 JWT whose signing key lives
 in AWS KMS (asymmetric RSA_2048 SIGN_VERIFY key, never exported). The
 matching public key is registered with Enable Banking when creating the
-application (see scripts/export-enable-banking-public-key.py); the resulting
-application id becomes the JWT `kid`.
+application (``aws kms get-public-key``; see docs/deployment/admin-website.md);
+the resulting application id becomes the JWT `kid`.
 
 State in the records table:
 - ``pk=BANKSYNC#state, sk=STATE``: sessions, account→record mappings and
