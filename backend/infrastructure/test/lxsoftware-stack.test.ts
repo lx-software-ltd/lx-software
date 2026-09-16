@@ -637,6 +637,16 @@ describe("Siu Tin Dei parameter naming", () => {
     }
   });
 
+  test("SiutindeiBoardCatalogImportEnabled defaults off", () => {
+    const parameters = template.toJSON().Parameters as Record<
+      string,
+      { Default?: string; AllowedValues?: string[] }
+    >;
+    expect(parameters.SiutindeiBoardCatalogImportEnabled?.Default).toBe("false");
+    expect(parameters.SiutindeiBoardCatalogImportEnabled?.AllowedValues).toEqual(["true", "false"]);
+    expect(parameters.CatalogImportEnabled).toBeUndefined();
+  });
+
   test("PublicApiWritesEnabled is unprefixed and defaults off", () => {
     const parameters = template.toJSON().Parameters as Record<
       string,

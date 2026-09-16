@@ -191,6 +191,11 @@ BOARD_CATALOG_ASSIGNEE = str(_BOARD_CATALOG.get("assignee") or "content-marketer
 BOARD_CATALOG_BUDGET_USD = float(_BOARD_CATALOG.get("budgetUsd") or 3)
 BOARD_CATALOG_OUTPUT_CONTRACT = str(_BOARD_CATALOG.get("outputContract") or "")
 BOARD_CATALOG_DISTRICTS: list[dict] = list(_BOARD_CATALOG.get("districts") or [])
+BOARD_CATALOG_TYPE_TO_CATEGORY: dict[str, str] = {
+    str(k): str(v) for k, v in dict(_BOARD_CATALOG.get("typeToCategory") or {}).items()
+}
+BOARD_CATALOG_MAX_ORGS_PER_IMPORT = int(_BOARD_CATALOG.get("maxOrgsPerImport") or 20)
+BOARD_CATALOG_IMPORT_ENABLED_DEFAULT = bool(_BOARD_CATALOG.get("importEnabledDefault"))
 
 OPENROUTER_PAYER = OPENROUTER_APPS_CONTRACT["payer"]
 OPENROUTER_APPS: list[dict] = list(OPENROUTER_APPS_CONTRACT["apps"])

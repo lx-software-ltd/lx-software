@@ -195,6 +195,9 @@ def handle_board_route(
     if head == "code":
         return _code_route(event, method, rest, user_sub)
 
+    if head == "catalog":
+        return _catalog_route(event, method, rest, user_sub)
+
     return _json_response(404, {"message": "Not found"})
 
 
@@ -1237,6 +1240,29 @@ def _code_route(event: dict[str, Any], method: str, rest: list[str], user_sub: s
         except board_code.CodeError as exc:
             return _json_response(409, {"message": str(exc)})
         _audit(user_sub, "BOARD_CODE_SYNC_STAGING", "staging", event)
+        return _json_response(200, out)
+    return _json_response(404, {"message": "Not found"})
+
+
+def _catalog_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
+    if not board_staff.env_enabled():
+        return _staff_disabled()
+    import board_catalog_import
+
+    table = board_store.records_table()
+    if len(rest) == 2 and rest[1] == "preview" and method == "POST":
+        try:
+            out = board_catalog_import.owner_preview(table, _parse_json_body(event))
+        except board_catalog_import.CatalogImportError as exc:
+            return _json_response(400, {"message": str(exc)})
+        _audit(user_sub, "BOARD_CATALOG_PREVIEW", str(out.get("taskId") or ""), event)
+        return _json_response(200, {"preview": out})
+    if len(rest) == 2 and rest[1] == "import" and method == "POST":
+        try:
+            out = board_catalog_import.owner_import(table, _parse_json_body(event))
+        except board_catalog_import.CatalogImportError as exc:
+            return _json_response(409, {"message": str(exc)})
+        _audit(user_sub, "BOARD_CATALOG_IMPORT", str(out.get("taskId") or ""), event)
         return _json_response(200, out)
     return _json_response(404, {"message": "Not found"})
 

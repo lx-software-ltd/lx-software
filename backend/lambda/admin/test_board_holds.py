@@ -86,6 +86,10 @@ class ClassifyTests(BoardTestCase):
         self.assertEqual(self._cls("stores_draft_release_notes"), ("publish", "publish:stores"))
         self.assertEqual(self._cls("meta_create_ad_set"), ("spend", "spend:meta"))
         self.assertEqual(self._cls("meta_boost_post"), ("spend", "spend:meta"))
+        self.assertEqual(
+            self._cls("catalog_import", {"taskId": "task-1", "reason": "import Eastern"}),
+            ("catalog_import", "catalog_import"),
+        )
 
 
 class HoldHoursTests(BoardTestCase):

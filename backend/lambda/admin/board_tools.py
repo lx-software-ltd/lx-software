@@ -4,7 +4,8 @@ Design (see docs/architecture/executive-board-tools-plan.md):
 
 - A **registry** of operations, each belonging to a tool (``github``,
   ``board``, ``mail``, ``research``, ``aws``, ``security``, ``product``,
-  ``meta``, ``finance``, ``stores``, ``staff``, ``intel``, ``outreach``, ``content``, ``code``, ``newsletter``)
+  ``catalog``, ``meta``, ``finance``, ``stores``, ``staff``, ``intel``,
+  ``outreach``, ``content``, ``code``, ``newsletter``)
   and being either a *read* or a *write*.
 - A per-tool, per-member **level** (``off`` < ``read`` < ``propose`` <
   ``act``), capped by a global mode. Read operations are offered at
@@ -33,6 +34,7 @@ from typing import Any, Callable
 import board_actions
 import board_aws
 import board_budget
+import board_catalog_import
 import board_deadline
 import board_finance
 import board_github
@@ -1509,6 +1511,66 @@ def build_registry() -> dict[str, ToolOp]:
             summarize=_summ("Flag listing {listingId}"),
         ),
         ToolOp(
+            name="catalog_preview",
+            tool_id="catalog",
+            kind="read",
+            description=(
+                "Transform an accepted catalog micro-batch sheet into siutindei importer JSON. "
+                "Copies verified_fields only. Does not call the importer."
+            ),
+            parameters=_obj(
+                {
+                    "taskId": _str_param("Staff task id of the catalog sheet.", max_len=40),
+                    "sheet": _str_param("Optional sheet JSON; defaults to the task deliverable.", max_len=12000),
+                },
+                ["taskId"],
+            ),
+            run=board_catalog_import.op_preview,
+            summarize=_summ("Previewed catalog import for {taskId}"),
+        ),
+        ToolOp(
+            name="catalog_dry_run",
+            tool_id="catalog",
+            kind="read",
+            description=(
+                "Local verified-fields dry-run of a catalog sheet, plus a remote dry_run when "
+                "the siutindei admin API is configured. Never writes the catalog."
+            ),
+            parameters=_obj(
+                {
+                    "taskId": _str_param("Staff task id of the catalog sheet.", max_len=40),
+                    "sheet": _str_param("Optional sheet JSON; defaults to the task deliverable.", max_len=12000),
+                },
+                ["taskId"],
+            ),
+            run=board_catalog_import.op_dry_run,
+            summarize=_summ("Dry-ran catalog import for {taskId}"),
+            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
+        ),
+        ToolOp(
+            name="catalog_import",
+            tool_id="catalog",
+            kind="write",
+            always_propose=True,
+            action_class="catalog_import",
+            description=(
+                "Propose importing a transformed catalog sheet through the siutindei admin importer. "
+                "Always an Approval. Refused while SiutindeiBoardCatalogImportEnabled is false. "
+                "Does not write Aurora from this stack."
+            ),
+            parameters=_obj(
+                {
+                    "taskId": _str_param("Staff task id of the catalog sheet.", max_len=40),
+                    "sheet": _str_param("Optional sheet JSON; defaults to the task deliverable.", max_len=12000),
+                    "reason": REASON_PARAM,
+                },
+                ["taskId", "reason"],
+            ),
+            run=board_catalog_import.op_import,
+            summarize=_summ("Import catalog sheet {taskId}"),
+            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
+        ),
+        ToolOp(
             name="meta_page_insights",
             tool_id="meta",
             kind="read",
@@ -2678,6 +2740,8 @@ def _op_is_configured(op: ToolOp) -> bool:
         return board_web.configured()
     if op.tool_id == "stores":
         return board_stores.configured()
+    if op.tool_id == "catalog":
+        return board_catalog_import.import_enabled() and board_catalog_import.configured()
     return True
 
 

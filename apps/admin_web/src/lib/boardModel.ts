@@ -212,6 +212,7 @@ export const DEFAULT_BOARD_BOUNDARIES: BoardBoundaries = {
     spend: 24,
     code_staging: 12,
     code_production: 0,
+    catalog_import: 0,
   },
   holdOverrides: {},
 };
@@ -297,9 +298,38 @@ export type BoardTask = {
     readonly stars?: number;
     readonly prNumber?: number;
     readonly issueNumber?: number;
+    readonly districtId?: string;
+    readonly district?: string;
   } | null;
   readonly deliverableKey?: string;
   readonly deliverableBytes?: number;
+  readonly importedAt?: string;
+  readonly importPreview?: BoardCatalogImportPreview | null;
+  readonly importResult?: BoardCatalogImportResult | null;
+};
+
+export type BoardCatalogImportPreview = {
+  readonly ok: boolean;
+  readonly taskId?: string;
+  readonly district?: string;
+  readonly importEnabled?: boolean;
+  readonly configured?: boolean;
+  readonly error?: string;
+  readonly dryRun?: {
+    readonly ok?: boolean;
+    readonly mode?: string;
+    readonly accepted?: number;
+    readonly skipped?: number;
+    readonly errors?: readonly string[];
+  };
+  readonly payload?: { readonly organizations?: readonly Record<string, unknown>[] };
+};
+
+export type BoardCatalogImportResult = {
+  readonly ok?: boolean;
+  readonly accepted?: number;
+  readonly objectKey?: string;
+  readonly at?: string;
 };
 
 export type BoardTaskStep = {
@@ -1556,6 +1586,18 @@ export function boardCodePromotePath(): string {
 
 export function boardCodeSyncStagingPath(): string {
   return `${BOARD_API_BASE}/code/sync-staging`;
+}
+
+export function boardCatalogPreviewPath(): string {
+  return `${BOARD_API_BASE}/catalog/preview`;
+}
+
+export function boardCatalogImportPath(): string {
+  return `${BOARD_API_BASE}/catalog/import`;
+}
+
+export function isCatalogSheetTask(task: Pick<BoardTask, "eventRef"> | undefined | null): boolean {
+  return task?.eventRef?.kind === "catalog-micro-batch";
 }
 
 export type BoardStagingPreview = {

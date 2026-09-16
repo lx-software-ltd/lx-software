@@ -329,18 +329,28 @@ export function BoardTasksSection({
         <BoardTaskDrawer
           detail={detail.data}
           isLoading={detail.isLoading}
-          isMutating={tasks.cancel.isPending || tasks.review.isPending || tasks.retry.isPending}
+          isMutating={
+            tasks.cancel.isPending ||
+            tasks.review.isPending ||
+            tasks.retry.isPending ||
+            tasks.catalogPreview.isPending ||
+            tasks.catalogImport.isPending
+          }
           errorMessage={
             errorText(detail.error) ??
             errorText(tasks.cancel.error) ??
             errorText(tasks.review.error) ??
             errorText(tasks.retry.error)
           }
+          importPreview={tasks.catalogPreview.data ?? detail.data?.task.importPreview}
+          importMessage={errorText(tasks.catalogImport.error) ?? errorText(tasks.catalogPreview.error)}
           onClose={closeTask}
           onOpenTask={openTask}
           onCancel={(id) => tasks.cancel.mutate(id, { onSuccess: () => closeTask() })}
           onReview={(id, verdict, notes) => tasks.review.mutate({ taskId: id, verdict, notes })}
           onRetry={(id) => tasks.retry.mutate(id)}
+          onPreviewImport={(id) => tasks.catalogPreview.mutate(id)}
+          onImport={(id) => tasks.catalogImport.mutate(id)}
         />
       ) : null}
     </div>

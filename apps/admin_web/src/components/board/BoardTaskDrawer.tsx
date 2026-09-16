@@ -4,7 +4,16 @@ import { BoardOffcanvas } from "./BoardOffcanvas";
 import { BoardTaskId } from "./BoardTaskId";
 import { BoardToolCallList } from "./BoardToolCallList";
 import { DateTimeDisplay } from "../ui";
-import { canRetryBoardTask, formatUsageCost, shortTaskId, type BoardTask, type BoardTaskDetailPayload, type BoardToolCallLogEntry } from "../../lib/boardModel";
+import {
+  canRetryBoardTask,
+  formatUsageCost,
+  isCatalogSheetTask,
+  shortTaskId,
+  type BoardCatalogImportPreview,
+  type BoardTask,
+  type BoardTaskDetailPayload,
+  type BoardToolCallLogEntry,
+} from "../../lib/boardModel";
 
 export type BoardTaskDrawerProps = {
   readonly detail: BoardTaskDetailPayload | undefined;
@@ -16,6 +25,10 @@ export type BoardTaskDrawerProps = {
   readonly onReview: (taskId: string, verdict: "accept" | "return", notes: string) => void;
   readonly onRetry?: (taskId: string) => void;
   readonly onOpenTask?: (taskId: string) => void;
+  readonly onPreviewImport?: (taskId: string) => void;
+  readonly onImport?: (taskId: string) => void;
+  readonly importPreview?: BoardCatalogImportPreview | null;
+  readonly importMessage?: string | null;
 };
 
 const OPEN_STATUSES = new Set([
@@ -45,6 +58,10 @@ export function BoardTaskDrawer({
   onReview,
   onRetry,
   onOpenTask,
+  onPreviewImport,
+  onImport,
+  importPreview,
+  importMessage,
 }: BoardTaskDrawerProps) {
   const [notes, setNotes] = useState("");
   const task = detail?.task;
@@ -91,7 +108,7 @@ export function BoardTaskDrawer({
       }
       onClose={onClose}
       footer={
-        task && (OPEN_STATUSES.has(task.status) || task.status === "failed") ? (
+        task && (OPEN_STATUSES.has(task.status) || task.status === "failed" || (task.status === "delivered" && isCatalogSheetTask(task))) ? (
           <>
             {task.status === "review" || task.status === "needs_owner" ? (
               <>
@@ -112,6 +129,26 @@ export function BoardTaskDrawer({
                   Return
                 </button>
               </>
+            ) : null}
+            {isCatalogSheetTask(task) && onPreviewImport ? (
+              <button
+                type="button"
+                className="btn btn-outline-primary btn-sm"
+                disabled={isMutating}
+                onClick={() => onPreviewImport(task.taskId)}
+              >
+                Preview import
+              </button>
+            ) : null}
+            {isCatalogSheetTask(task) && onImport ? (
+              <button
+                type="button"
+                className="btn btn-outline-secondary btn-sm"
+                disabled={isMutating || Boolean(task.importedAt)}
+                onClick={() => onImport(task.taskId)}
+              >
+                {task.importedAt ? "Imported" : "Import"}
+              </button>
             ) : null}
             {canRetryBoardTask(task.status) && onRetry ? (
               <button
@@ -140,7 +177,16 @@ export function BoardTaskDrawer({
       {isLoading && !task ? <p className="text-muted small">Loading task…</p> : null}
       {errorMessage ? <div className="alert alert-danger py-2 small">{errorMessage}</div> : null}
       {task ? (
-        <TaskBody task={task} detail={detail} calls={calls} notes={notes} onNotes={setNotes} onOpenTask={onOpenTask} />
+        <TaskBody
+          task={task}
+          detail={detail}
+          calls={calls}
+          notes={notes}
+          onNotes={setNotes}
+          onOpenTask={onOpenTask}
+          importPreview={importPreview ?? task.importPreview}
+          importMessage={importMessage}
+        />
       ) : null}
     </BoardOffcanvas>
   );
@@ -153,6 +199,8 @@ function TaskBody({
   notes,
   onNotes,
   onOpenTask,
+  importPreview,
+  importMessage,
 }: {
   readonly task: BoardTask;
   readonly detail: BoardTaskDetailPayload | undefined;
@@ -160,6 +208,8 @@ function TaskBody({
   readonly notes: string;
   readonly onNotes: (value: string) => void;
   readonly onOpenTask?: (taskId: string) => void;
+  readonly importPreview?: BoardCatalogImportPreview | null;
+  readonly importMessage?: string | null;
 }) {
   const deliverable = detail?.deliverable ?? "";
   const isCsv = task.deliverableType === "csv";
@@ -247,6 +297,9 @@ function TaskBody({
           <p className="small text-muted mb-0">No deliverable yet.</p>
         )}
       </div>
+      {isCatalogSheetTask(task) ? (
+        <CatalogImportPanel preview={importPreview} importedAt={task.importedAt} message={importMessage} />
+      ) : null}
       {task.status === "review" || task.status === "needs_owner" ? (
         <label className="form-label small mb-0">
           Review notes
@@ -275,6 +328,44 @@ function RelatedTaskId({
     <button type="button" className="btn btn-link btn-sm p-0 me-2 align-baseline" onClick={() => onOpenTask(taskId)}>
       #{shortTaskId(taskId)}
     </button>
+  );
+}
+
+function CatalogImportPanel({
+  preview,
+  importedAt,
+  message,
+}: {
+  readonly preview?: BoardCatalogImportPreview | null;
+  readonly importedAt?: string;
+  readonly message?: string | null;
+}) {
+  const orgs = preview?.payload?.organizations ?? [];
+  return (
+    <div>
+      <div className="small text-muted text-uppercase mb-1">Catalog import</div>
+      {importedAt ? <p className="small mb-1">Imported {importedAt}</p> : null}
+      {message ? <div className="alert alert-warning py-2 small mb-2">{message}</div> : null}
+      {preview?.error ? <div className="alert alert-danger py-2 small mb-2">{preview.error}</div> : null}
+      {preview ? (
+        <p className="small mb-1">
+          {preview.district || "Unknown district"} · {preview.dryRun?.accepted ?? 0} ready, {preview.dryRun?.skipped ?? 0}{" "}
+          skipped
+          {preview.importEnabled ? "" : " · import kill switch off"}
+        </p>
+      ) : (
+        <p className="small text-muted mb-1">Accept the sheet or click Preview import to map verified fields.</p>
+      )}
+      {orgs.length > 0 ? (
+        <ul className="small mb-0">
+          {orgs.map((org, i) => (
+            <li key={i}>
+              {String(org.name || "Organisation")} — {String(org.category_name || "")} / {String(org.area_name || "")}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 

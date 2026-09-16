@@ -82,6 +82,17 @@ def _mail_disposition_counts(table: Any) -> dict[str, int]:
     return {"replied": replied, "archived": archived, "open": open_n}
 
 
+def _catalog_headline(table: Any) -> dict[str, Any]:
+    try:
+        import board_catalog_import
+
+        ready = board_catalog_import.ready_sheets(table)
+        return {"ready": len(ready), "sheets": ready}
+    except Exception as exc:
+        _log_event("warning", tag="board_catalog_headline_failed", error=str(exc)[:200])
+        return {"ready": 0, "sheets": []}
+
+
 def headline_pack(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, Any]:
     day_start, day_end = _hkt_day_bounds(date_hkt)
     counts = {status: 0 for status in BOARD_STAFF_TASK_STATUSES}
@@ -139,6 +150,7 @@ def headline_pack(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[s
         "content": {},
         "market": {},
         "mail": _mail_disposition_counts(table),
+        "catalog": _catalog_headline(table),
     }
     try:
         import board_progress
@@ -306,12 +318,22 @@ def _cached_promotion(table: Any) -> dict[str, Any] | list[Any]:
 
 
 def _config_gaps_section(table: Any) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
     try:
         import board_duties
 
-        return board_duties.list_config_gaps(table)
+        items = board_duties.list_config_gaps(table)
     except Exception:
-        return []
+        items = []
+    try:
+        import board_catalog_import
+
+        gap = board_catalog_import.config_gap()
+        if gap:
+            items = [*items, gap]
+    except Exception:
+        pass
+    return items
 
 
 def _promotion_section() -> dict[str, Any]:
@@ -405,6 +427,9 @@ def _headline_lines(review: dict[str, Any]) -> list[str]:
         f"Holds executed/vetoed {holds.get('executed') or 0}/{holds.get('vetoed') or 0}.",
         f"Staff spend {spend.get('staffUsd') or 0} / {spend.get('budgetUsd') or 0} USD.",
     ]
+    catalog = headline.get("catalog") or {}
+    if catalog.get("ready"):
+        lines.append(f"Catalog sheets ready to import: {catalog.get('ready')}.")
     pipeline = headline.get("pipeline") or {}
     if pipeline.get("weeklyTarget"):
         lines.append(
