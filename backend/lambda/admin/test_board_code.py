@@ -93,6 +93,8 @@ class FakeActions:
         self.supports_revision = True
         self.contents_error: Exception | None = None
         self.workflow_yaml: str | None = None
+        self.branches: list[dict[str, Any]] = []
+        self.deleted_refs: list[str] = []
 
     def __call__(self, method: str, path: str, *, body: dict[str, Any] | None = None, accept: str = "application/vnd.github+json") -> Any:
         if accept == "application/vnd.github.diff":
@@ -121,7 +123,21 @@ class FakeActions:
         if method == "GET" and "/pulls?head=" in path:
             head = path.split("head=", 1)[1].split("&", 1)[0]
             ref = head.split(":", 1)[-1]
-            return [p for p in self.prs if ((p.get("head") or {}).get("ref") or "") == ref]
+            matches = [p for p in self.prs if ((p.get("head") or {}).get("ref") or "") == ref]
+            if "state=open" in path:
+                matches = [p for p in matches if str(p.get("state") or "open") != "closed"]
+            return matches
+        if method == "GET" and "/branches?" in path:
+            qs = parse_qs(urlparse("https://example" + path).query)
+            page = int((qs.get("page") or ["1"])[0])
+            per = int((qs.get("per_page") or ["100"])[0])
+            start = (page - 1) * per
+            return list(self.branches)[start : start + per]
+        if method == "DELETE" and "/git/refs/heads/" in path:
+            name = path.split("/git/refs/heads/", 1)[1]
+            self.deleted_refs.append(name)
+            self.branches = [b for b in self.branches if str(b.get("name") or "") != name]
+            return {}
         if method == "GET" and "/pulls/" in path and "/files?" in path:
             number = int(path.split("/pulls/", 1)[1].split("/", 1)[0])
             all_files = list(self.files.get(number) or [])
@@ -636,6 +652,40 @@ class RunnerTests(BoardTestCase):
         out = board_code.on_review_delivered(self.table, self.settings, task)
         self.assertEqual(out.get("skipped"), "ci pending")
         self.assertFalse(out.get("taskId"))
+
+    def test_parse_owner_revision_mention_reads_pr_hash(self) -> None:
+        self.assertEqual(
+            board_code.parse_owner_revision_mention(
+                "Fix the two failing resolver tests on PR #501 (unknown area_name)."
+            ),
+            (501, None),
+        )
+        self.assertEqual(
+            board_code.parse_owner_revision_mention("Revise PR#7 against issue #42."),
+            (7, 42),
+        )
+        self.assertEqual(
+            board_code.parse_owner_revision_mention("prNumber: 501, issueNumber: 489"),
+            (None, 489),
+        )
+        self.assertEqual(board_code.parse_owner_revision_mention("no mention"), (None, None))
+        self.assertTrue(board_code.is_engineer_owner_seat("engineer-1"))
+        self.assertFalse(board_code.is_engineer_owner_seat("cfo"))
+        self.assertIn(
+            "code_run_task ONCE",
+            board_code.append_owner_revision_brief(
+                "Fix CI.",
+                {"kind": "code-implement", "prNumber": 501, "issueNumber": 489},
+            ),
+        )
+        already = "Call code_run_task with issueNumber=489."
+        self.assertEqual(
+            board_code.append_owner_revision_brief(
+                already, {"kind": "code-implement", "prNumber": 501, "issueNumber": 489}
+            ),
+            already,
+        )
+        self.assertEqual(board_code.append_owner_revision_brief("Note only.", None), "Note only.")
 
     def test_owner_revision_ref_sets_event_ref(self) -> None:
         self.gh.prs.append(_pr(number=498, issue=489))
@@ -1590,6 +1640,7 @@ class RunnerTests(BoardTestCase):
         }
         out = board_code.handle_tick(self.table, self.settings)
         self.assertTrue(out["stagingSync"])
+        self.assertEqual(out.get("staleBranches"), 0)
         open_tasks = board_store.list_tasks(self.table, "queued") + board_store.list_tasks(self.table, "running")
         tasks = [t for t in open_tasks if (t.get("eventRef") or {}).get("id") == "rebase-staging"]
         self.assertEqual(len(tasks), 1)
@@ -1702,6 +1753,71 @@ class RunnerTests(BoardTestCase):
         self.assertFalse(
             any((t.get("eventRef") or {}).get("id") == "rebase-staging" for t in board_store.list_tasks(self.table, "queued"))
         )
+
+    def test_sweep_deletes_board_branches_without_open_prs(self) -> None:
+        self.gh.branches = [
+            {"name": "main"},
+            {"name": "staging"},
+            {"name": "board/3fd6f5b5a4d44b9ba6fbebc3a4f532a9"},
+            {"name": "board/b1520abc679e4aacbbb813e59b5406e5"},
+            {"name": "board/61c1f80644124498aad5b4c80594e146"},
+            {"name": "feature/keep-me"},
+        ]
+        self.gh.prs.append(
+            {
+                **_pr(501, issue=489),
+                "head": {"ref": "board/3fd6f5b5a4d44b9ba6fbebc3a4f532a9", "sha": "abc123"},
+            }
+        )
+        self.gh.prs.append(
+            {
+                **_pr(498, issue=489),
+                "state": "closed",
+                "merged": False,
+                "head": {"ref": "board/b1520abc679e4aacbbb813e59b5406e5", "sha": "def456"},
+            }
+        )
+        deleted = board_code.sweep_stale_board_branches(self.table)
+        self.assertEqual(
+            set(deleted),
+            {
+                "board/b1520abc679e4aacbbb813e59b5406e5",
+                "board/61c1f80644124498aad5b4c80594e146",
+            },
+        )
+        self.assertNotIn("board/3fd6f5b5a4d44b9ba6fbebc3a4f532a9", deleted)
+        self.assertNotIn("main", self.gh.deleted_refs)
+        self.assertNotIn("feature/keep-me", self.gh.deleted_refs)
+
+    def test_sweep_keeps_dry_run_and_pages_branch_list(self) -> None:
+        self.gh.branches = [{"name": f"board/page-{idx:03d}"} for idx in range(105)]
+        self.gh.branches.append({"name": "board/dry-run"})
+        deleted = board_code.sweep_stale_board_branches(self.table, force=True)
+        self.assertEqual(len(deleted), 20)
+        self.assertNotIn("board/dry-run", deleted)
+        self.assertNotIn("board/dry-run", self.gh.deleted_refs)
+
+    def test_sweep_runs_at_most_every_six_hours(self) -> None:
+        self.gh.branches = [{"name": "board/stale-one"}]
+        first = board_code.sweep_stale_board_branches(self.table)
+        self.assertEqual(first, ["board/stale-one"])
+        self.gh.branches = [{"name": "board/stale-two"}]
+        self.assertEqual(board_code.sweep_stale_board_branches(self.table), [])
+        self.assertEqual(self.gh.deleted_refs, ["board/stale-one"])
+        forced = board_code.sweep_stale_board_branches(self.table, force=True)
+        self.assertEqual(forced, ["board/stale-two"])
+
+    def test_sweep_keeps_branch_of_fresh_run_without_pr(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add booking.", "kind": "feature"})
+        self.gh.branches = [{"name": "board/task-1"}, {"name": "board/old-run"}]
+        board_code._put_run(  # noqa: SLF001
+            self.table,
+            "old-run",
+            {"issue": 43, "dispatchedAt": "2026-09-01T00:00:00.000Z", "kind": "feature"},
+        )
+        deleted = board_code.sweep_stale_board_branches(self.table, force=True)
+        self.assertEqual(deleted, ["board/old-run"])
+        self.assertNotIn("board/task-1", self.gh.deleted_refs)
 
     def test_classify_merge_and_promote(self) -> None:
         merge = REGISTRY["code_merge_staging"]

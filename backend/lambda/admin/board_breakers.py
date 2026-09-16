@@ -24,6 +24,7 @@ _IGNORABLE_TOOL_ERROR_MARKERS = (
     "deliverable still has placeholder",
     "deliverable is larger than",
     "wait for it to resume before continuing",
+    "fetch cap",
 )
 _INTERNAL_TOOLS = frozenset({"task"})
 _TOOL_TRIP_ERRORS = 10
@@ -305,8 +306,6 @@ def _parse_iso(value: str) -> datetime | None:
     if not raw:
         return None
     try:
-        if raw.endswith("Z"):
-            return datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
         return datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
         return None

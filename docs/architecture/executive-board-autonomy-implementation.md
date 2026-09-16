@@ -1317,7 +1317,10 @@ use the same path.
   does not delete the branch), `code_promote(kind="production")` (write; `always_propose=True` — an
   Approval whose approve action dispatches `board-promote.yml`; shown as
   the "Promote" button on the review page with the staging diff summary).
-  The board GitHub token needs `actions: write` and `pull-requests: write` (deployment doc).
+  The board GitHub token needs `actions: write`, `pull-requests: write`,
+  and `contents: write` (deployment doc). `handle_tick` calls
+  `sweep_stale_board_branches` (at most every 6 h) to delete `board/*`
+  heads with no open PR, skipping heads whose runner dispatch is under 2 h old.
 - Engineering flow as tasks: architect duty "groom backlog" (weekly) →
   issues with acceptance criteria labelled `board-ready`; `engineer-*`
   target check: if fewer than 2 open `board/*` PRs, take the oldest

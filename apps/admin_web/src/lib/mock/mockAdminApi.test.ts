@@ -82,4 +82,38 @@ describe("mockAdminFetch", () => {
     const saved = (await put.json()) as { settings: { staff: { modelBySeat?: Record<string, string> } } };
     expect(saved.settings.staff.modelBySeat?.["engineer-1"]).toBe("qwen/qwen-2.5-72b-instruct");
   });
+
+  it("posts New task prNumber as a revision eventRef and omits it when empty", async () => {
+    const withPr = await mockAdminFetch("/siu-tin-dei/board/tasks", {
+      method: "POST",
+      body: JSON.stringify({
+        assignee: "engineer-1",
+        brief: "Fix the two failing resolver tests on PR #501.",
+        deliverableType: "pr",
+        slaHours: 24,
+        prNumber: 501,
+        issueNumber: 489,
+      }),
+    });
+    expect(withPr.status).toBe(201);
+    const created = (await withPr.json()) as {
+      task: { eventRef?: { kind?: string; prNumber?: number; issueNumber?: number } | null };
+    };
+    expect(created.task.eventRef).toEqual(
+      expect.objectContaining({ kind: "code-implement", prNumber: 501, issueNumber: 489 }),
+    );
+
+    const withoutPr = await mockAdminFetch("/siu-tin-dei/board/tasks", {
+      method: "POST",
+      body: JSON.stringify({
+        assignee: "support",
+        brief: "Write a weekly note",
+        deliverableType: "markdown",
+        slaHours: 24,
+      }),
+    });
+    expect(withoutPr.status).toBe(201);
+    const plain = (await withoutPr.json()) as { task: { eventRef?: unknown } };
+    expect(plain.task.eventRef).toBeNull();
+  });
 });

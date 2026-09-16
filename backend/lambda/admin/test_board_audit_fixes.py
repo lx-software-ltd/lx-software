@@ -856,6 +856,14 @@ class CodeImplementHandoffTests(BoardTestCase):
             },
         )
 
+    def test_task_finish_refuses_code_implement_without_runner(self) -> None:
+        task = self._implement()
+        with self.assertRaises(board_staff.StaffError) as raised:
+            self._finish(task)
+        self.assertIn("code_run_task", str(raised.exception))
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "running")
+
     def test_task_finish_delivers_when_runner_already_dispatched(self) -> None:
         task = self._implement()
         approval = board_tools.create_approval(

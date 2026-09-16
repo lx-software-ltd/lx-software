@@ -750,11 +750,11 @@ function calling. Design:
   GA4 assignment. Flip `accountant` and `security-analyst` on at runbook
   step 6, then enable
   `settings.staff.dutiesEnabled` (Settings → Run scheduled seat duties)
-  after staff is on. `content-marketer` has a daily `catalog-micro-batch`
-  duty (10:00 HKT, off until the seat and duties are on) that creates one
-  district curation sheet per day from `contracts/board-staff.json`
-  `catalog`. Failed or cancelled district tasks are treated as unclaimed so
-  the next duty run retries that district. Per-seat OpenRouter models live in `settings.staff.modelBySeat`
+  after staff is on. `content-marketer` has a `catalog-micro-batch`
+  duty (08:00, 12:00 and 16:00 HKT, off until the seat and duties are on)
+  that creates one district curation sheet per slot from
+  `contracts/board-staff.json` `catalog`. Failed or cancelled district
+  tasks are treated as unclaimed so the next duty run retries that district. Per-seat OpenRouter models live in `settings.staff.modelBySeat`
   (Staff tab → Step model). **Staff → Run staff tick now** (`POST /siu-tin-dei/board/staff/tick`)
   queues the same work as the 5-minute schedule (due duties, due holds, drain
   the queue) via a 2-second `Event` invoke (`try_invoke_event`) and returns
@@ -783,8 +783,11 @@ function calling. Design:
   `POST …/code/promote`. Tool ops `code_run_task`, `code_get_run`,
   `code_review_pr`, `code_merge_staging`, `code_close_pr`, `code_promote`.
   `code_close_pr` stays an Approval (`action_class` `code_close`) and
-  relabels the linked issue (`board-closed`, drop `board-ready`). Widen the board
-  GitHub token to **Actions: write** and **Pull requests: write**. Workflows
+  relabels the linked issue (`board-closed`, drop `board-ready`).   Widen the board
+  GitHub token to **Actions: write**, **Pull requests: write**, and
+  **Contents: write** (every 6 h the staff tick deletes stale `board/*`
+  heads with no open PR; heads from a runner dispatch under 2 h old and
+  `board/dry-run` are kept). Workflows
   `board-agent.yml` / `board-merge-staging.yml` / `board-promote.yml` must
   exist on **lx-software-ltd/siutindei** (see appendix A). Daily review
   **Promote** queues an Approval; the owner merges the GitHub
@@ -802,10 +805,17 @@ function calling. Design:
   `pr_number` / `ci_failure` inputs; otherwise it parks an architect review
   and the daily review **Engineering** line says the runner cannot revise.
   Architect `changes` briefs include the excerpt.   An owner
-  `POST /tasks` with `prNumber` resets `reviewRounds` so a maxed-out revision
+  `POST /tasks` with `prNumber` (Tasks → New task → **PR #** / **Issue #**,
+  or JSON) resets `reviewRounds` so a maxed-out revision
   loop can start again; that reopen still needs the Appendix A revision
   patch (it clears the runner-capability cache so a just-applied YAML is
-  seen immediately). `ciFixRounds` increments only after a successful
+  seen immediately). The created brief is appended with a `code_run_task`
+  instruction; `task_finish` on a `code-implement` task is refused until
+  that runner is dispatched (or a `code_run_task` Approval is pending).
+  If an `engineer-1` / `engineer-2` owner brief has `deliverableType=pr`,
+  mentions `PR #n`, and the POST has no `prNumber`, the handler tries the
+  same revision ref; a missing linked issue then creates a normal task
+  instead of returning 400. `ciFixRounds` increments only after a successful
   revision dispatch, not when the ci-fix staff task is created. A `review-headline:*` duty can be manager-accepted
   without evidence so the 07:30 digest has a narrative. `task_note` call ids
   are not evidence. Stand-up `boundarySuggestions` that promote an

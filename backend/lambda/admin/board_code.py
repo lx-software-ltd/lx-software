@@ -686,6 +686,55 @@ def ensure_run_for_pr(table: Any, pr_number: int) -> tuple[str, dict[str, Any]]:
     return task_id, row
 
 
+_OWNER_REVISION_PR_RE = re.compile(r"\bPR\s*#\s*(\d+)\b", re.IGNORECASE)
+_OWNER_REVISION_ISSUE_RE = re.compile(
+    r"\bissue(?:Number)?\s*[#:]\s*(\d+)\b", re.IGNORECASE
+)
+_ENGINEER_OWNER_SEATS = frozenset({"engineer-1", "engineer-2"})
+
+
+def is_engineer_owner_seat(assignee: str) -> bool:
+    return str(assignee or "") in _ENGINEER_OWNER_SEATS
+
+
+def parse_owner_revision_mention(brief: str) -> tuple[int | None, int | None]:
+    """Return ``(prNumber, issueNumber)`` hinted in an owner brief, if any."""
+    text = str(brief or "")
+    pr_match = _OWNER_REVISION_PR_RE.search(text)
+    issue_match = _OWNER_REVISION_ISSUE_RE.search(text)
+    pr_number = int(pr_match.group(1)) if pr_match else None
+    issue_number = int(issue_match.group(1)) if issue_match else None
+    if pr_number is not None and pr_number <= 0:
+        pr_number = None
+    if issue_number is not None and issue_number <= 0:
+        issue_number = None
+    return pr_number, issue_number
+
+
+def append_owner_revision_brief(brief: str, event_ref: dict[str, Any] | None) -> str:
+    """Tell an owner reopen to dispatch the runner, not invent GitHub writes."""
+    text = str(brief or "").strip()
+    if not event_ref or str(event_ref.get("kind") or "") != "code-implement":
+        return text
+    if "code_run_task" in text:
+        return text
+    try:
+        pr_number = int(event_ref.get("prNumber") or 0)
+    except (TypeError, ValueError):
+        pr_number = 0
+    try:
+        issue_number = int(event_ref.get("issueNumber") or 0)
+    except (TypeError, ValueError):
+        issue_number = 0
+    issue_number = issue_number or pr_number
+    extra = (
+        f" Call code_run_task ONCE with issueNumber={issue_number} and a brief that "
+        f"fixes PR #{pr_number}, then call task_finish. Do not invent GitHub write "
+        "tools or open a second pull request. The board polls CI for you."
+    )
+    return (text + extra)[:4000]
+
+
 def owner_revision_ref(table: Any, pr_number: int, issue_number: Any = None) -> dict[str, Any]:
     """``eventRef`` so an owner-created task revises an existing board PR."""
     source_id, row = ensure_run_for_pr(table, pr_number)
@@ -2129,10 +2178,117 @@ def on_review_delivered(table: Any, settings: dict[str, Any], task: dict[str, An
     return {"verdict": "accept", "taskId": follow.get("taskId")}
 
 
+_STALE_BRANCH_PREFIX = "board/"
+_STALE_BRANCH_SWEEP_CAP = 20
+_STALE_BRANCH_SWEEP_CACHE = "code:branch-sweep"
+_STALE_BRANCH_SWEEP_INTERVAL = timedelta(hours=6)
+# A runner pushes ``board/{taskId}`` and opens the PR in the same job step;
+# never delete a head whose run is still that fresh.
+_STALE_BRANCH_MIN_RUN_AGE = timedelta(hours=2)
+_STALE_BRANCH_KEEP = frozenset({"board/dry-run"})
+_STALE_BRANCH_PAGE_SIZE = 100
+_STALE_BRANCH_MAX_PAGES = 10
+
+
+def _list_repo_branches(repo: str) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for page in range(1, _STALE_BRANCH_MAX_PAGES + 1):
+        raw = (
+            _gh(
+                "GET",
+                f"/repos/{repo}/branches?per_page={_STALE_BRANCH_PAGE_SIZE}&page={page}",
+            )
+            or []
+        )
+        if not isinstance(raw, list):
+            break
+        out.extend(row for row in raw if isinstance(row, dict))
+        if len(raw) < _STALE_BRANCH_PAGE_SIZE:
+            break
+    return out
+
+
+def _branch_run_is_fresh(table: Any, name: str) -> bool:
+    task_id = name[len(_STALE_BRANCH_PREFIX) :]
+    row = _get_run(table, task_id) if task_id else {}
+    if not row or row.get("prNumber"):
+        return False
+    started = _parse_iso(str(row.get("dispatchedAt") or ""))
+    return started is None or datetime.now(timezone.utc) - started < _STALE_BRANCH_MIN_RUN_AGE
+
+
+def sweep_stale_board_branches(table: Any, *, force: bool = False) -> list[str]:
+    """Delete ``board/*`` heads that have no open pull request.
+
+    Covers merged PRs, closed-unmerged PRs, and runner branches that never
+    opened a PR. Leaves ``board/dry-run``, any branch with an open PR,
+    and any head whose runner dispatch is under two hours old. Runs at most
+    every six hours unless ``force``. A 403 here means the board GitHub
+    token needs Contents: write.
+    """
+    if not force:
+        hit = board_store.get_cache(table, _STALE_BRANCH_SWEEP_CACHE)
+        payload = hit.get("payload") if isinstance(hit, dict) else None
+        last = _parse_iso(str((payload or {}).get("ranAt") or "")) if isinstance(payload, dict) else None
+        if last is not None and datetime.now(timezone.utc) - last < _STALE_BRANCH_SWEEP_INTERVAL:
+            return []
+    board_store.put_cache(
+        table,
+        _STALE_BRANCH_SWEEP_CACHE,
+        {"ranAt": board_store.now_iso()},
+        ttl_seconds=int(_STALE_BRANCH_SWEEP_INTERVAL.total_seconds()) * 2,
+    )
+    repo = _repo()
+    owner = repo.split("/", 1)[0]
+    deleted: list[str] = []
+    try:
+        raw = _list_repo_branches(repo)
+    except board_github.GitHubSnapshotError as exc:
+        _log_event("warning", tag="board_code_branch_sweep_list_failed", error=str(exc)[:200])
+        return []
+    for row in raw:
+        name = str(row.get("name") or "")
+        if not name.startswith(_STALE_BRANCH_PREFIX) or name in _STALE_BRANCH_KEEP:
+            continue
+        if _branch_run_is_fresh(table, name):
+            continue
+        try:
+            pulls = (
+                _gh("GET", f"/repos/{repo}/pulls?head={owner}:{name}&state=open&per_page=5") or []
+            )
+        except board_github.GitHubSnapshotError as exc:
+            _log_event(
+                "warning",
+                tag="board_code_branch_sweep_pr_failed",
+                branch=name,
+                error=str(exc)[:200],
+            )
+            continue
+        if isinstance(pulls, list) and any(isinstance(pr, dict) for pr in pulls):
+            continue
+        try:
+            _gh("DELETE", f"/repos/{repo}/git/refs/heads/{name}")
+        except board_github.GitHubSnapshotError as exc:
+            _log_event(
+                "warning",
+                tag="board_code_branch_sweep_delete_failed",
+                branch=name,
+                error=str(exc)[:200],
+            )
+            continue
+        deleted.append(name)
+        if len(deleted) >= _STALE_BRANCH_SWEEP_CAP:
+            break
+    if deleted:
+        _log_event("info", tag="board_code_branch_sweep", deleted=",".join(deleted)[:400])
+    return deleted
+
+
 def handle_tick(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
     if not board_staff.enabled(settings):
         return {"ok": True, "skipped": "disabled"}
     reviews = poll_runs(table, settings)
+    stale = sweep_stale_board_branches(table)
     assigned = maybe_assign_ready_issues(table, settings)
     preview = cache_staging_preview(table)
     sync = maybe_daily_staging_sync(table, settings, preview=preview)
@@ -2141,4 +2297,5 @@ def handle_tick(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
         "reviews": len(reviews),
         "assigned": len(assigned),
         "stagingSync": bool(sync),
+        "staleBranches": len(stale),
     }

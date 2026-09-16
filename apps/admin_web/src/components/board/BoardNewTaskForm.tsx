@@ -40,8 +40,15 @@ export function BoardNewTaskForm({
   const [assignee, setAssignee] = useState(initialAssignee ?? activeSeats[0]?.id ?? "cfo");
   const [brief, setBrief] = useState(initialBrief);
   const [deliverableType, setDeliverableType] = useState<BoardDeliverableType>("markdown");
+  const [prNumber, setPrNumber] = useState("");
+  const [issueNumber, setIssueNumber] = useState("");
+  const parsedPr = parsePositiveInt(prNumber);
+  const parsedIssue = parsePositiveInt(issueNumber);
+  const issueNeedsPr = parsedIssue != null && parsedPr == null;
   const assigneeId = `${idPrefix}-assignee`;
   const deliverableId = `${idPrefix}-deliverable`;
+  const prNumberId = `${idPrefix}-pr-number`;
+  const issueNumberId = `${idPrefix}-issue-number`;
   const briefId = `${idPrefix}-brief`;
   return (
     <AdminEditorSection title={title} description={description} embedded={embedded}>
@@ -86,6 +93,45 @@ export function BoardNewTaskForm({
             ))}
           </select>
         </div>
+        <div className="col-md-2">
+          <label className="form-label small" htmlFor={prNumberId}>
+            PR #
+          </label>
+          <input
+            id={prNumberId}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
+            className="form-control form-control-sm"
+            value={prNumber}
+            placeholder="optional"
+            onChange={(ev) => setPrNumber(ev.target.value)}
+          />
+        </div>
+        <div className="col-md-3">
+          <label className="form-label small" htmlFor={issueNumberId}>
+            Issue #
+          </label>
+          <input
+            id={issueNumberId}
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
+            className="form-control form-control-sm"
+            value={issueNumber}
+            placeholder="if PR has none"
+            onChange={(ev) => setIssueNumber(ev.target.value)}
+          />
+        </div>
+        <div className="col-12">
+          <p className={`small mb-0 ${issueNeedsPr ? "text-danger" : "text-secondary"}`}>
+            {issueNeedsPr
+              ? "Issue # needs a PR #. Leave both empty unless you are reopening a board pull request."
+              : "PR # reopens a revision on that board pull request. Issue # is only needed when the PR row has no linked GitHub issue."}
+          </p>
+        </div>
         <div className="col-12">
           <label className="form-label small" htmlFor={briefId}>
             Brief
@@ -96,7 +142,7 @@ export function BoardNewTaskForm({
           <button
             type="button"
             className="btn btn-primary btn-sm"
-            disabled={disabled || !brief.trim()}
+            disabled={disabled || !brief.trim() || issueNeedsPr}
             onClick={() =>
               onCreate({
                 assignee,
@@ -104,6 +150,8 @@ export function BoardNewTaskForm({
                 deliverableType,
                 slaHours: 24,
                 ...(actionId ? { actionId } : {}),
+                ...(parsedPr != null ? { prNumber: parsedPr } : {}),
+                ...(parsedPr != null && parsedIssue != null ? { issueNumber: parsedIssue } : {}),
               })
             }
           >
@@ -119,4 +167,12 @@ export function BoardNewTaskForm({
       </div>
     </AdminEditorSection>
   );
+}
+
+function parsePositiveInt(raw: string): number | undefined {
+  const trimmed = raw.trim();
+  if (!/^[1-9]\d*$/.test(trimmed)) return undefined;
+  const value = Number(trimmed);
+  if (!Number.isSafeInteger(value) || value <= 0) return undefined;
+  return value;
 }

@@ -164,6 +164,18 @@ class StaffEngineTests(BoardTestCase):
             help_available="Help available: data-analyst (web).",
         )
         self.assertIn("Help available: data-analyst (web).", with_help)
+        code_frame = board_personas.render_task_frame(
+            {
+                "brief": "Fix CI",
+                "deliverableType": "pr",
+                "budgetUsd": 3,
+                "usage": {"cost": 0},
+                "step": 0,
+                "eventRef": {"kind": "code-implement", "prNumber": 501},
+            },
+            "",
+        )
+        self.assertIn("Call code_run_task once", code_frame)
 
     def test_accountant_prompt_points_at_product_database_not_xero(self) -> None:
         seat = board_staff.seat_default("accountant") or {}
@@ -1714,6 +1726,129 @@ class StaffRouteTests(BoardTestCase):
         self.assertEqual(status, 201)
         self.assertEqual(created["task"]["eventRef"]["prNumber"], 498)
         self.assertEqual(created["task"]["eventRef"]["issueNumber"], 489)
+        self.assertIn("code_run_task ONCE", created["task"]["brief"])
+
+    def test_create_engineer_task_derives_revision_ref_from_brief(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None), patch.object(
+            board_code,
+            "owner_revision_ref",
+            return_value={
+                "kind": "code-implement",
+                "id": "pr:501:owner",
+                "prNumber": 501,
+                "issueNumber": 489,
+                "sourceTaskId": "run-1",
+            },
+        ) as revision:
+            _enable_staff(self.table)
+            board_store.save_staff_override(self.table, "engineer-1", {"isActive": True})
+            status, created = self.call(
+                "/siu-tin-dei/board/tasks",
+                "POST",
+                {
+                    "assignee": "engineer-1",
+                    "brief": "Fix the two failing resolver tests on PR #501 (unknown area_name).",
+                    "deliverableType": "pr",
+                },
+            )
+        self.assertEqual(status, 201, created)
+        revision.assert_called_once()
+        self.assertEqual(revision.call_args.args[1], 501)
+        self.assertEqual(created["task"]["eventRef"]["prNumber"], 501)
+        self.assertEqual(created["task"]["eventRef"]["issueNumber"], 489)
+
+    def test_create_engineer_task_brief_issue_fills_owner_revision(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None), patch.object(
+            board_code,
+            "owner_revision_ref",
+            return_value={
+                "kind": "code-implement",
+                "id": "pr:501:owner",
+                "prNumber": 501,
+                "issueNumber": 489,
+                "sourceTaskId": "run-1",
+            },
+        ) as revision:
+            _enable_staff(self.table)
+            board_store.save_staff_override(self.table, "engineer-2", {"isActive": True})
+            status, created = self.call(
+                "/siu-tin-dei/board/tasks",
+                "POST",
+                {
+                    "assignee": "engineer-2",
+                    "brief": "Fix CI on PR #501, issue #489.",
+                    "deliverableType": "pr",
+                },
+            )
+        self.assertEqual(status, 201, created)
+        self.assertEqual(revision.call_args.args[2], 489)
+        self.assertEqual(created["task"]["eventRef"]["issueNumber"], 489)
+
+    def test_create_engineer_markdown_ignores_pr_mention_in_brief(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None), patch.object(
+            board_code,
+            "owner_revision_ref",
+        ) as revision:
+            _enable_staff(self.table)
+            board_store.save_staff_override(self.table, "engineer-1", {"isActive": True})
+            status, created = self.call(
+                "/siu-tin-dei/board/tasks",
+                "POST",
+                {
+                    "assignee": "engineer-1",
+                    "brief": "Summarise comments on PR #501",
+                    "deliverableType": "markdown",
+                },
+            )
+        self.assertEqual(status, 201, created)
+        revision.assert_not_called()
+        self.assertFalse(created["task"].get("eventRef"))
+
+    def test_create_engineer_brief_revision_without_issue_still_creates(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None), patch.object(
+            board_code,
+            "owner_revision_ref",
+            side_effect=board_code.CodeRefused("PR #501 has no linked GitHub issue; pass issueNumber"),
+        ) as revision:
+            _enable_staff(self.table)
+            board_store.save_staff_override(self.table, "engineer-1", {"isActive": True})
+            status, created = self.call(
+                "/siu-tin-dei/board/tasks",
+                "POST",
+                {
+                    "assignee": "engineer-1",
+                    "brief": "Fix CI on PR #501",
+                    "deliverableType": "pr",
+                },
+            )
+        self.assertEqual(status, 201, created)
+        revision.assert_called_once()
+        self.assertFalse(created["task"].get("eventRef"))
+        self.assertNotIn("code_run_task", created["task"]["brief"])
+
+    def test_create_non_engineer_task_ignores_pr_mention_in_brief(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None), patch.object(
+            board_code,
+            "owner_revision_ref",
+        ) as revision:
+            _enable_staff(self.table)
+            status, created = self.call(
+                "/siu-tin-dei/board/tasks",
+                "POST",
+                {
+                    "assignee": "cfo",
+                    "brief": "Summarise spend related to PR #501",
+                    "deliverableType": "markdown",
+                },
+            )
+        self.assertEqual(status, 201, created)
+        revision.assert_not_called()
+        self.assertFalse(created["task"].get("eventRef"))
 
     def test_create_task_pr_without_linked_issue_returns_400(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"

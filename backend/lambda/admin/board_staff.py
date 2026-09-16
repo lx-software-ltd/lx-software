@@ -2324,6 +2324,10 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
             _mark_code_runner_dispatched(updated)
             delivered = _mark_delivered(ctx.table, updated, now)
             return {"ok": True, "status": str(delivered.get("status") or "delivered"), "deliverableKey": key}
+        raise StaffError(
+            "This task revises an existing board PR. Call code_run_task once, then "
+            "task_finish. Do not invent GitHub write tools or open a second pull request."
+        )
     updated["status"] = "review"
     board_store.put_task(ctx.table, updated)
     if enabled(ctx.settings):
