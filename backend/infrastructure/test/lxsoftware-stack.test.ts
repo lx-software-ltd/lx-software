@@ -394,6 +394,7 @@ describe("Admin Lambda IAM policies", () => {
     ["AdminOpenRouterSecretPolicy", "HasOpenRouterSecret"],
     ["AdminSiutindeiDataApiPolicy", "HasSiutindeiDataApi"],
     ["SiutindeiBoardMailSendPolicy", "HasSiutindeiBoardMailSending"],
+    ["SiutindeiBoardImporterAuthPolicy", "HasSiutindeiUserPool"],
   ])("%s keeps its %s condition", (constructId, conditionName) => {
     const policies = findPoliciesByConstructId(constructId);
     expect(policies).toHaveLength(1);
@@ -635,6 +636,16 @@ describe("Siu Tin Dei parameter naming", () => {
     for (const name of retiredUnprefixed) {
       expect(parameters[name]).toBeUndefined();
     }
+  });
+
+  test("SiutindeiBoardCatalogImportEnabled defaults off", () => {
+    const parameters = template.toJSON().Parameters as Record<
+      string,
+      { Default?: string; AllowedValues?: string[] }
+    >;
+    expect(parameters.SiutindeiBoardCatalogImportEnabled?.Default).toBe("false");
+    expect(parameters.SiutindeiBoardCatalogImportEnabled?.AllowedValues).toEqual(["true", "false"]);
+    expect(parameters.CatalogImportEnabled).toBeUndefined();
   });
 
   test("PublicApiWritesEnabled is unprefixed and defaults off", () => {

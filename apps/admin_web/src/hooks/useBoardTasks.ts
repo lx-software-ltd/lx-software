@@ -1,12 +1,15 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { adminFetchJson } from "../lib/apiAdminClient";
 import {
+  boardCatalogImportPath,
+  boardCatalogPreviewPath,
   boardTaskCancelPath,
   boardTaskPath,
   boardTaskReviewPath,
   boardTaskRetryPath,
   boardTasksPath,
   tasksNeedPolling,
+  type BoardCatalogImportPreview,
   type BoardTask,
   type BoardTaskCreate,
   type BoardTaskDetailPayload,
@@ -68,6 +71,38 @@ export function retryTaskMutationOptions(qc: QueryClient) {
   };
 }
 
+export function catalogPreviewMutationOptions(qc: QueryClient) {
+  return {
+    mutationFn: async (taskId: string) => {
+      const res = await adminFetchJson<{ preview: BoardCatalogImportPreview }>(boardCatalogPreviewPath(), {
+        method: "POST",
+        body: JSON.stringify({ taskId }),
+      });
+      return res.preview;
+    },
+    onSuccess: (_preview: BoardCatalogImportPreview, taskId: string) => {
+      void qc.invalidateQueries({ queryKey: boardTaskDetailKey(taskId) });
+      void qc.invalidateQueries({ queryKey: BOARD_TASKS_KEY });
+    },
+  };
+}
+
+export function catalogImportMutationOptions(qc: QueryClient) {
+  return {
+    mutationFn: async (taskId: string) => {
+      const res = await adminFetchJson<{ ok: boolean; preview?: BoardCatalogImportPreview; taskId?: string }>(
+        boardCatalogImportPath(),
+        {
+          method: "POST",
+          body: JSON.stringify({ taskId }),
+        },
+      );
+      return res;
+    },
+    onSuccess: () => invalidateTasks(qc),
+  };
+}
+
 export function reviewTaskMutationOptions(qc: QueryClient) {
   return {
     mutationFn: async ({
@@ -113,6 +148,8 @@ export function useBoardTasks() {
   const cancel = useMutation(cancelTaskMutationOptions(qc));
   const review = useMutation(reviewTaskMutationOptions(qc));
   const retry = useMutation(retryTaskMutationOptions(qc));
+  const catalogPreview = useMutation(catalogPreviewMutationOptions(qc));
+  const catalogImport = useMutation(catalogImportMutationOptions(qc));
   return {
     tasks: query.data?.tasks ?? [],
     counts: query.data?.counts ?? {},
@@ -125,6 +162,8 @@ export function useBoardTasks() {
     cancel,
     review,
     retry,
+    catalogPreview,
+    catalogImport,
   };
 }
 

@@ -779,6 +779,39 @@ function calling. Design:
   minutes may include `boundarySuggestions` that prepend the daily
   review suggestions list.
 
+- **Catalog import (Option A):** `POST /siu-tin-dei/board/catalog/preview` and
+  `POST …/catalog/import` (JWT owner-only; public API keys get `owner_only`).
+  Tool `catalog` (`catalog_preview`, `catalog_dry_run`, `catalog_import`).
+  The board never writes Aurora. It transforms an accepted catalog
+  micro-batch sheet (verified_fields only) into siutindei importer JSON
+  and calls the product admin API as a dedicated Cognito **importer**
+  user (`AdminInitiateAuth` + `ADMIN_USER_PASSWORD_AUTH`). `catalog_import`
+  stays an Approval (`always_propose`, class `catalog_import`). Kill
+  switch `SiutindeiBoardCatalogImportEnabled` defaults **false** —
+  preview and local dry-run work; import refuses. Accepting a catalog
+  sheet attaches `importPreview` only. A second import of the same
+  task is 409 (`already imported at …`) unless the owner POSTs
+  `{force: true}`. This repo cannot push siutindei; land these product
+  PRs before flipping the switch:
+
+  1. **Importer group** — Cognito group `importer`, `_is_importer` on
+     `POST /admin/imports` and `/admin/imports/presign`, and
+     `ALLOW_ADMIN_USER_PASSWORD_AUTH` on the importer app client.
+  2. **#502 fields** — `default_manager_id` / `source_url` /
+     `vetting_note` (area_name / category_name already on main via #501).
+  3. **`dry_run`** — same presign + PUT as a live import, then
+     `POST /admin/imports` with `{object_key, dry_run: true}` (no
+     upsert). Until that ships, the board dry-run is local validation
+     only. The `SiutindeiBoardImporterAuthPolicy` IAM statement is
+     gated by `HasSiutindeiUserPool` so a blank pool id does not
+     attach `…:userpool/`.
+
+  Then create the service user in `importer`, put `{username, password}`
+  in `lxsoftware-admin-siutindei-board-importer-credentials`, and set
+  `SiutindeiAdminApiBaseUrl`, `SiutindeiUserPoolId`,
+  `SiutindeiBoardImporterClientId`, `SiutindeiBoardCatalogManagerId`.
+  Tasks → catalog sheet drawer has **Preview import** / **Import**.
+
 - **Engineering runner (WP10):** `GET /siu-tin-dei/board/code/staging`,
   `POST …/code/sync-staging`, `POST …/code/promote`. Tool ops `code_run_task`, `code_get_run`,
   `code_review_pr`, `code_merge_staging`, `code_close_pr`, `code_promote`.

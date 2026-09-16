@@ -436,6 +436,53 @@ export class LxsoftwareStack extends cdk.Stack {
           "Secrets Manager name of the siutindei DB credentials when SiutindeiDbSecretArn is blank (RDS-owned; do not recreate).",
       }
     );
+    const siutindeiAdminApiBaseUrl = new cdk.CfnParameter(
+      this,
+      "SiutindeiAdminApiBaseUrl",
+      {
+        type: "String",
+        default: "",
+        description:
+          "Base URL of the siutindei admin HTTP API (no trailing slash). Used by Executive Board catalog import (Option A). Leave blank to keep import unconfigured.",
+      }
+    );
+    const siutindeiUserPoolId = new cdk.CfnParameter(this, "SiutindeiUserPoolId", {
+      type: "String",
+      default: "",
+      description:
+        "siutindei Cognito user-pool id for the dedicated importer service user (Option A AdminInitiateAuth). Leave blank until that pool exists.",
+    });
+    const boardImporterClientId = new cdk.CfnParameter(
+      this,
+      "SiutindeiBoardImporterClientId",
+      {
+        type: "String",
+        default: "",
+        description:
+          "siutindei Cognito app-client id that allows ADMIN_USER_PASSWORD_AUTH for the importer user. Leave blank until the siutindei importer-group PR is deployed.",
+      }
+    );
+    const boardCatalogManagerId = new cdk.CfnParameter(
+      this,
+      "SiutindeiBoardCatalogManagerId",
+      {
+        type: "String",
+        default: "",
+        description:
+          "siutindei manager UUID stamped on every board-imported organisation (required until siutindei default_manager_id ships). Leave blank to keep dry-run local-only.",
+      }
+    );
+    const boardCatalogImportEnabled = new cdk.CfnParameter(
+      this,
+      "SiutindeiBoardCatalogImportEnabled",
+      {
+        type: "String",
+        default: "false",
+        allowedValues: ["true", "false"],
+        description:
+          "Kill switch for Executive Board catalog import. Default false (fail-closed): transform and dry-run still work; POST /catalog/import and catalog_import refuse. Flip only after the siutindei importer group, dry_run, and credentials secret are live.",
+      }
+    );
     const metaVerifyToken = new cdk.CfnParameter(this, "SiutindeiBoardMetaVerifyToken", {
       type: "String",
       default: "",
@@ -983,6 +1030,16 @@ export class LxsoftwareStack extends cdk.Stack {
       "SiutindeiBoardLinkSigningKey",
       "lxsoftware-admin-siutindei-board-link-signing-key"
     );
+    const boardImporterCredentialsSecret = boardPlaceholderSecret(this, "SiutindeiBoardImporterCredentials", {
+      secretName: "lxsoftware-admin-siutindei-board-importer-credentials",
+      description:
+        "Cognito username/password for the siutindei importer service user (Option A). Replace the dummy values in Secrets Manager.",
+      encryptionKey: this.sharedEncryptionKey,
+      tenant: "siutindei",
+      purpose: "board-importer",
+      jsonTemplate: { username: "replace-me" },
+      generateKey: "password",
+    });
 
     /**
      * Asymmetric RSA key that signs the Enable Banking RS256 JWTs. The
@@ -1056,6 +1113,12 @@ export class LxsoftwareStack extends cdk.Stack {
         BOARD_DEEP_DIVE_MODEL: boardDeepDiveModel.valueAsString,
         BOARD_TOOLS_ENABLED: boardToolsEnabled.valueAsString,
         BOARD_STAFF_ENABLED: boardStaffEnabled.valueAsString,
+        BOARD_CATALOG_IMPORT_ENABLED: boardCatalogImportEnabled.valueAsString,
+        SIUTINDEI_ADMIN_API_BASE_URL: siutindeiAdminApiBaseUrl.valueAsString,
+        SIUTINDEI_USER_POOL_ID: siutindeiUserPoolId.valueAsString,
+        BOARD_IMPORTER_CLIENT_ID: boardImporterClientId.valueAsString,
+        BOARD_CATALOG_MANAGER_ID: boardCatalogManagerId.valueAsString,
+        BOARD_IMPORTER_CREDENTIALS_SECRET_ARN: boardImporterCredentialsSecret.secretArn,
         PUBLIC_API_WRITES_ENABLED: publicApiWritesEnabled.valueAsString,
         OUTREACH_SENDING_DOMAIN: outreachSendingDomain.valueAsString,
         OUTREACH_FROM_LOCAL_PART: outreachFromLocalPart.valueAsString,
@@ -1572,6 +1635,31 @@ export class LxsoftwareStack extends cdk.Stack {
     siutindeiBoardSecrets.analytics.grantRead(adminFn);
     googlePlacesKeySecret.grantRead(adminFn);
     boardLinkSigningSecret.grantRead(adminFn);
+    boardImporterCredentialsSecret.grantRead(adminFn);
+    // AdminInitiateAuth is scoped to SiutindeiUserPoolId. The parameter
+    // defaults to "" (ARN …:userpool/), so skip the policy until a pool id
+    // is set — same pattern as HasOpenRouterSecret.
+    const hasSiutindeiUserPool = new cdk.CfnCondition(this, "HasSiutindeiUserPool", {
+      expression: cdk.Fn.conditionNot(cdk.Fn.conditionEquals(siutindeiUserPoolId.valueAsString, "")),
+    });
+    const importerAuthPolicy = new iam.Policy(this, "SiutindeiBoardImporterAuthPolicy", {
+      statements: [
+        new iam.PolicyStatement({
+          sid: "SiutindeiImporterAdminInitiateAuth",
+          actions: ["cognito-idp:AdminInitiateAuth"],
+          resources: [
+            this.formatArn({
+              service: "cognito-idp",
+              resource: "userpool",
+              resourceName: siutindeiUserPoolId.valueAsString,
+              arnFormat: cdk.ArnFormat.SLASH_RESOURCE_NAME,
+            }),
+          ],
+        }),
+      ],
+    });
+    importerAuthPolicy.attachToRole(adminFn.role!);
+    (importerAuthPolicy.node.defaultChild as iam.CfnPolicy).cfnOptions.condition = hasSiutindeiUserPool;
 
     // Executive Board aws + security read tools (plan §8). Each statement is
     // scoped as tightly as the IAM action allows (see the Service
@@ -2622,6 +2710,14 @@ export class LxsoftwareStack extends cdk.Stack {
       },
       {
         path: "/siu-tin-dei/board/code/sync-staging",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/catalog/preview",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/catalog/import",
         methods: [apigwv2.HttpMethod.POST],
       },
     ];

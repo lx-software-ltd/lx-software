@@ -551,6 +551,23 @@ export const boardTasksFixture: BoardTask[] = [
     step: 12,
     managerId: "cto",
   }),
+  fixtureTask("task-catalog", "delivered", "content-marketer", "Founder directive — CATALOG MICRO-BATCH Eastern.", {
+    deliverableType: "json",
+    origin: "duty",
+    managerId: "cmo",
+    eventRef: { kind: "catalog-micro-batch", id: "catalog:eastern", districtId: "eastern", district: "Eastern" },
+    importPreview: {
+      ok: true,
+      taskId: "task-catalog",
+      district: "Eastern",
+      importEnabled: false,
+      configured: false,
+      dryRun: { ok: true, mode: "local", accepted: 1, skipped: 0, errors: [] },
+      payload: {
+        organizations: [{ name: "Quarry Bay Park Playground", category_name: "Playground", area_name: "Eastern" }],
+      },
+    },
+  }),
   fixtureTask("task-hpar01", "waiting_subtask", "support", "Verify visitor sources without web access.", {
     helpTaskIds: ["task-hchd01"],
     blockedOn: ["task-hchd01"],
@@ -574,7 +591,7 @@ export const boardStaffFixture: BoardStaffPayload = {
     waiting_subtask: 1,
     review: 1,
     returned: 0,
-    delivered: 1,
+    delivered: 2,
     needs_owner: 1,
     failed: 1,
     cancelled: 0,
@@ -896,7 +913,12 @@ export function boardTaskDetailFixture(taskId: string): BoardTaskDetailPayload |
     reviews: task.reviews
       ? [{ seq: 1, verdict: task.lastReview?.verdict ?? "accept", notes: task.lastReview?.notes ?? "Looks good.", at: isoDaysAgo(0), by: "manager" }]
       : [],
-    deliverable: task.status === "queued" || task.status === "running" ? "" : "# Costs\n\n- AWS Lambda\n- OpenRouter\n- SES",
+    deliverable:
+      task.taskId === "task-catalog"
+        ? '{"district":"Eastern","organisations":[{"name_en":"Quarry Bay Park Playground","type":"playground","verified_fields":["name_en","type"]}]}'
+        : task.status === "queued" || task.status === "running"
+          ? ""
+          : "# Costs\n\n- AWS Lambda\n- OpenRouter\n- SES",
     deliverableUrl: "",
   };
 }

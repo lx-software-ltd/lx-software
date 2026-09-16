@@ -89,6 +89,26 @@ describe("mockAdminFetch", () => {
     expect(again.alreadyCurrent).toBe(true);
   });
 
+  it("previews a catalog sheet and refuses import while the kill switch is off", async () => {
+    const previewRes = await mockAdminFetch("/siu-tin-dei/board/catalog/preview", {
+      method: "POST",
+      body: JSON.stringify({ taskId: "task-catalog" }),
+    });
+    expect(previewRes.ok).toBe(true);
+    const preview = (await previewRes.json()) as {
+      preview: { ok?: boolean; importEnabled?: boolean; district?: string };
+    };
+    expect(preview.preview.ok).toBe(true);
+    expect(preview.preview.importEnabled).toBe(false);
+    expect(preview.preview.district).toBe("Eastern");
+
+    const importRes = await mockAdminFetch("/siu-tin-dei/board/catalog/import", {
+      method: "POST",
+      body: JSON.stringify({ taskId: "task-catalog" }),
+    });
+    expect(importRes.status).toBe(409);
+  });
+
   it("returns 404 for unknown paths", async () => {
     const res = await mockAdminFetch("/no-such-route");
     expect(res.status).toBe(404);

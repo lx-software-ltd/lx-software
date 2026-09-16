@@ -17,7 +17,9 @@ import {
   formatRelativeTime,
   formatUsageCost,
   groupTasksByLane,
+  catalogMutationErrorForTask,
   isFinishedBoardTaskStatus,
+  liveCatalogPreviewForTask,
   sumTaskUsageCost,
   syncBoardTaskSearchParams,
   taskActorLabel,
@@ -104,10 +106,16 @@ export function BoardTasksSection({
     : "just now";
 
   const openTask = (taskId: string) => {
+    if (taskId !== pickedId) {
+      tasks.catalogPreview.reset();
+      tasks.catalogImport.reset();
+    }
     setPickedId(taskId);
     onFocusConsumed?.();
   };
   const closeTask = () => {
+    tasks.catalogPreview.reset();
+    tasks.catalogImport.reset();
     setPickedId(null);
     onFocusConsumed?.();
   };
@@ -329,18 +337,45 @@ export function BoardTasksSection({
         <BoardTaskDrawer
           detail={detail.data}
           isLoading={detail.isLoading}
-          isMutating={tasks.cancel.isPending || tasks.review.isPending || tasks.retry.isPending}
+          isMutating={
+            tasks.cancel.isPending ||
+            tasks.review.isPending ||
+            tasks.retry.isPending ||
+            tasks.catalogPreview.isPending ||
+            tasks.catalogImport.isPending
+          }
           errorMessage={
             errorText(detail.error) ??
             errorText(tasks.cancel.error) ??
             errorText(tasks.review.error) ??
             errorText(tasks.retry.error)
           }
+          importPreview={liveCatalogPreviewForTask(
+            tasks.catalogPreview.data,
+            selectedId,
+            detail.data?.task.importPreview,
+          )}
+          importMessage={
+            catalogMutationErrorForTask(
+              tasks.catalogImport.variables,
+              selectedId,
+              tasks.catalogImport.error,
+              errorText,
+            ) ??
+            catalogMutationErrorForTask(
+              tasks.catalogPreview.variables,
+              selectedId,
+              tasks.catalogPreview.error,
+              errorText,
+            )
+          }
           onClose={closeTask}
           onOpenTask={openTask}
           onCancel={(id) => tasks.cancel.mutate(id, { onSuccess: () => closeTask() })}
           onReview={(id, verdict, notes) => tasks.review.mutate({ taskId: id, verdict, notes })}
           onRetry={(id) => tasks.retry.mutate(id)}
+          onPreviewImport={(id) => tasks.catalogPreview.mutate(id)}
+          onImport={(id) => tasks.catalogImport.mutate(id)}
         />
       ) : null}
     </div>

@@ -354,6 +354,22 @@ export const BOARD_TOOL_DEFINITIONS: readonly BoardToolDefinition[] = [
     }
   },
   {
+    "id": "catalog",
+    "label": "Catalog import",
+    "description": "Transform an accepted catalog micro-batch sheet into siutindei importer JSON (verified fields only) and propose an import. Does not write Aurora from this stack. Imports stay Approvals (always_propose) until the founder flips SiutindeiBoardCatalogImportEnabled.",
+    "maxLevel": "propose",
+    "defaults": {
+      "ceo": "read",
+      "cfo": "off",
+      "coo": "propose",
+      "cpo": "propose",
+      "cto": "off",
+      "cio": "off",
+      "ciso": "off",
+      "cmo": "read"
+    }
+  },
+  {
     "id": "meta",
     "label": "Meta",
     "description": "Facebook Page, Instagram and WhatsApp Cloud API on the existing number. Reads insights, comments, DMs and WhatsApp threads. Writes (post, story, reply, ad set, lead relay) go to Approvals. WhatsApp act is only inside the 24-hour window and only to allow-listed recipients.",
@@ -638,7 +654,8 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
       "github": "propose",
       "content": "act",
       "newsletter": "act",
-      "code": "act"
+      "code": "act",
+      "catalog": "propose"
     },
     "brief": "You fill the content calendar, write posts and stories in English and Traditional Chinese, render template cards, and draft newsletters and SEO articles. You never invent photos of children and you never publish a claim the catalog does not support. Report facts you verified with tools; say clearly what you could not verify.",
     "duties": [
@@ -847,7 +864,7 @@ export const BOARD_STAFF_DELIVERABLE_TYPES = ["markdown", "csv", "json", "messag
 export type BoardDeliverableType = (typeof BOARD_STAFF_DELIVERABLE_TYPES)[number];
 export const BOARD_STAFF_HOLD_STATUSES = ["scheduled", "executed", "vetoed", "failed", "expired"] as const;
 export type BoardHoldStatus = (typeof BOARD_STAFF_HOLD_STATUSES)[number];
-export const BOARD_STAFF_ACTION_CLASSES = ["internal", "inbound_reply", "outbound_known", "cold_outreach", "publish", "spend", "code_staging", "code_production", "never"] as const;
+export const BOARD_STAFF_ACTION_CLASSES = ["internal", "inbound_reply", "outbound_known", "cold_outreach", "publish", "spend", "code_staging", "code_production", "catalog_import", "never"] as const;
 export type BoardActionClass = (typeof BOARD_STAFF_ACTION_CLASSES)[number];
 export const BOARD_STAFF_PROSPECT_TYPES = ["provider", "venue", "community", "school", "restaurant", "media"] as const;
 export type BoardProspectType = (typeof BOARD_STAFF_PROSPECT_TYPES)[number];
@@ -872,8 +889,11 @@ export const BOARD_CODE_CI_FIX_MAX_ROUNDS = 2;
 export const BOARD_STAFF_OUTREACH_DAILY_CAP_START = 20;
 export const BOARD_STAFF_STEP_MODELS = ["qwen/qwen-2.5-72b-instruct", "deepseek/deepseek-chat"] as const;
 export const BOARD_CATALOG_ASSIGNEE = "content-marketer";
-export const BOARD_CATALOG_OUTPUT_CONTRACT = "OUTPUT CONTRACT (curation sheet, NOT the importer JSON \u2014 the founder maps ids): one fenced JSON block {\"district\": \"<name>\", \"organisations\": [ {\"name_en\", \"name_zh\", \"type\": \"playground|indoor_play|class|outdoor|restaurant|event\", \"free_or_paid\", \"age_range\", \"address_en\", \"lat\", \"lng\", \"official_url\", \"phone\", \"opening_hours\", \"price_note\", \"description_en\" (max 40 words), \"description_zh\" (max 40 words), \"source_url\", \"verified_fields\": [...], \"unverified_fields\": [...]} ] }. Exactly 3 organisations. Only facts you read on the official page (LCSD / gov / the provider's own site) go into verified_fields; everything else is the string \"unverified\" and listed in unverified_fields. No invented phone numbers, hours or prices. Keep the whole deliverable under 2500 words: research one organisation, task_note a 6-line summary, next organisation; after the third, call task_finish immediately with the JSON. No Meta, no mobile, no publishing.";
+export const BOARD_CATALOG_OUTPUT_CONTRACT = "OUTPUT CONTRACT (curation sheet, NOT the importer JSON \u2014 the board copies verified_fields only; type is your classification and is always mapped): one fenced JSON block {\"district\": \"<name>\", \"organisations\": [ {\"name_en\", \"name_zh\", \"type\": \"playground|indoor_play|class|outdoor|restaurant|event\" (seat classification \u2014 omit type from verified_fields), \"free_or_paid\", \"age_range\", \"address_en\", \"lat\", \"lng\", \"official_url\", \"phone\", \"opening_hours\", \"price_note\", \"description_en\" (max 40 words), \"description_zh\" (max 40 words), \"source_url\", \"verified_fields\": [...], \"unverified_fields\": [...]} ] }. Exactly 3 organisations. Only facts you read on the official page (LCSD / gov / the provider's own site) go into verified_fields; everything else is the string \"unverified\" and listed in unverified_fields. Do not list type in verified_fields. No invented phone numbers, hours or prices. Keep the whole deliverable under 2500 words: research one organisation, task_note a 6-line summary, next organisation; after the third, call task_finish immediately with the JSON. No Meta, no mobile, no publishing.";
 export const BOARD_CATALOG_DISTRICTS = [{"id": "eastern", "name": "Eastern", "hint": "one LCSD playground or park (e.g. Quarry Bay Park area), one indoor play centre, one class provider"}, {"id": "wan-chai", "name": "Wan Chai", "hint": "one public playground or park, one indoor family venue, one class provider \u2014 all inside Wan Chai"}, {"id": "islands", "name": "Islands", "hint": "one LCSD playground or park (Tung Chung, Mui Wo or Discovery Bay), one indoor or family venue, one class or sports provider"}, {"id": "southern", "name": "Southern", "hint": "one beach or park playground (Repulse Bay, Stanley or Aberdeen Promenade), one indoor family venue, one class or sports provider"}, {"id": "sham-shui-po", "name": "Sham Shui Po", "hint": "one public playground or park (Nam Cheong Park or Lai Chi Kok Park), one indoor family venue, one class provider"}, {"id": "central-and-western", "name": "Central and Western", "hint": "one public playground or park (Hong Kong Park or Sun Yat Sen Memorial Park), one indoor family venue, one class provider"}, {"id": "kwun-tong", "name": "Kwun Tong", "hint": "one public playground or park, one indoor family venue, one class provider"}, {"id": "wong-tai-sin", "name": "Wong Tai Sin", "hint": "one public playground or park, one indoor family venue, one class provider"}, {"id": "kowloon-city", "name": "Kowloon City", "hint": "one public playground or park, one indoor family venue, one class provider"}, {"id": "yau-tsim-mong", "name": "Yau Tsim Mong", "hint": "one public playground or park, one indoor family venue, one class provider"}, {"id": "tsuen-wan", "name": "Tsuen Wan", "hint": "one public playground or park, one indoor family venue, one class provider"}, {"id": "kwai-tsing", "name": "Kwai Tsing", "hint": "one public playground or park, one indoor family venue, one class provider"}, {"id": "north", "name": "North", "hint": "one public playground or park, one indoor family venue, one class provider"}, {"id": "tai-po", "name": "Tai Po", "hint": "one public playground or park, one indoor family venue, one class provider"}, {"id": "sha-tin", "name": "Sha Tin", "hint": "one public playground or park, one indoor family venue, one class provider"}, {"id": "yuen-long", "name": "Yuen Long", "hint": "one public playground or park, one indoor family venue, one class provider"}, {"id": "tuen-mun", "name": "Tuen Mun", "hint": "one public playground or park, one indoor family venue, one class provider"}, {"id": "sai-kung", "name": "Sai Kung", "hint": "one public playground or park, one indoor family venue, one class provider"}] as const;
+export const BOARD_CATALOG_TYPE_TO_CATEGORY = {"playground": "Playground", "indoor_play": "Indoor play", "class": "Class", "outdoor": "Outdoor", "restaurant": "Restaurant", "event": "Event"} as const;
+export const BOARD_CATALOG_MAX_ORGS_PER_IMPORT = 20;
+export const BOARD_CATALOG_IMPORT_ENABLED_DEFAULT = false;
 
 export type OpenRouterAppDefinition = {
   readonly id: string;
