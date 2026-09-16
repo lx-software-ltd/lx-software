@@ -351,6 +351,29 @@ export function BoardReviewSection() {
         )}
       </Section>
 
+      <Section id="engineering" title="Engineering">
+        {(review.engineering ?? []).length === 0 ? (
+          <p className="text-muted small mb-0">No open board pull requests.</p>
+        ) : (
+          <ul className="list-unstyled mb-0">
+            {(review.engineering ?? []).map((row) => (
+              <li key={`${row.taskId || "run"}-${row.prNumber || ""}`} className="border-bottom py-2">
+                <div className="small fw-semibold">
+                  PR #{row.prNumber} CI {row.ciState || "unknown"}
+                  {row.ciState === "failure"
+                    ? ` (ci-fix ${row.ciFixRounds ?? 0}/${row.ciFixMax ?? 2})`
+                    : ""}
+                </div>
+                {row.failureLine ? <div className="small">{row.failureLine}</div> : null}
+                {row.canRevise === false ? (
+                  <div className="small text-muted">Runner cannot revise — apply the Appendix A revision patch.</div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
       <Section id="promotion" title="Production promotion">
         <StagingPromote data={data} />
       </Section>

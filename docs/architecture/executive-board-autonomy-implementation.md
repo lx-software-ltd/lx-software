@@ -1296,7 +1296,9 @@ use the same path.
   `content-marketer` (SEO only) via their manager): ops
   `code_run_task(issueNumber, brief, kind="feature"|"fix"|"content")`
   (write; class `internal` because it only opens a draft PR; dispatches
-  `board-agent.yml` with inputs `task_id`, `issue`, `brief`, `kind`),
+  `board-agent.yml` with inputs `task_id`, `issue`, `brief`, `kind`, plus
+  `pr_number` / `ci_failure` / `revision_round` when revising an existing
+  PR — refused as `CodeRefused` until staging YAML declares those inputs),
   `code_get_run(taskId)` (read; polls Actions runs by `task_id` in the run
   name and the PR by branch `board/{taskId}`), `code_review_pr(prNumber)`
   (read; returns diff stats, changed paths, CI status, and the diff text
@@ -1322,8 +1324,11 @@ use the same path.
   `board-ready` issue → `code_run_task`; when a run finishes, a task for
   `architect` "review PR #n" → `code_review_pr`, deliverable `markdown` with
   a final JSON `{"verdict":"accept"|"changes","notes":[…]}`; `changes` →
-  `code_run_task` again with the notes (max 2 rounds), `accept` → the
-  engineer calls `code_merge_staging`.
+  `code_run_task` again with the notes (`codeReviewMaxRounds` 3), `accept` → the
+  engineer calls `code_merge_staging`. Red PR CI opens an engineer `ci-fix`
+  (`codeCiFixMaxRounds` 2) with the pytest excerpt when the runner can
+  revise; otherwise the architect review and daily **Engineering** line
+  tell the owner to apply the Appendix A revision patch.
 - SEO articles (WP7 hand-off): `content-marketer` produces Markdown; a
   `code_run_task(kind="content")` places it under the site's content path;
   path rule `content/**` only → `changedLines` limit 2 000 for `content`
@@ -1335,13 +1340,17 @@ use the same path.
    merges by the Actions bot; require status checks. `main` protected:
    PRs only, owner approval.
 2. Workflow `.github/workflows/board-agent.yml`: `on: workflow_dispatch`
-   with inputs `task_id`, `issue`, `brief`, `kind`; `permissions: contents:
-   write, pull-requests: write`; steps: checkout `staging`; create branch
-   `board/${{ inputs.task_id }}`; install Cursor CLI; run
+   with inputs `task_id`, `issue`, `brief`, `kind` and optional
+   `pr_number` / `ci_failure` / `revision_round`; `permissions: contents:
+   write, pull-requests: write`; steps: checkout `staging` (or `gh pr
+   checkout` when `pr_number` is set); create branch
+   `board/${{ inputs.task_id }}` only on a first run; install Cursor CLI; run
    `cursor-agent -p "$(cat brief.txt)" --model <fixed model> --yolo` with
    `CURSOR_API_KEY` from repo secrets and a repo-level `AGENTS.md` that
    states the acceptance criteria discipline and forbids touching
-   protected paths; run the repo's tests; commit; `gh pr create --draft
+   protected paths; run the repo's tests (same suite as CI, including
+   Postgres + alembic when that job needs them) **before** push; commit;
+   `git push` to the existing branch when revising, else `gh pr create --draft
    --base staging --title "board: #<issue> <first line of brief>" --body
    "<brief>\n\nTask: <task_id>"`. Job name includes `task_id`.
 3. Workflow `board-merge-staging.yml`: `workflow_dispatch` input

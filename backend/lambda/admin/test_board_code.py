@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -20,6 +21,40 @@ import board_staff
 import board_store
 import board_tools
 from board_tools import REGISTRY, ToolContext, execute_call
+
+_REVISION_WORKFLOW_YAML = """
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        required: true
+      issue:
+        required: true
+      brief:
+        required: true
+      kind:
+        required: true
+      pr_number:
+        required: false
+      ci_failure:
+        required: false
+      revision_round:
+        required: false
+"""
+
+_BASE_WORKFLOW_YAML = """
+on:
+  workflow_dispatch:
+    inputs:
+      task_id:
+        required: true
+      issue:
+        required: true
+      brief:
+        required: true
+      kind:
+        required: true
+"""
 
 
 def _enable_staff(table: Any, **staff: Any) -> dict[str, Any]:
@@ -55,11 +90,23 @@ class FakeActions:
         self.writeOrder: list[str] = []
         self.compare: dict[str, Any] = {"status": "ahead", "ahead_by": 2, "behind_by": 0, "commits": []}
         self.diff = "diff --git a/app.py b/app.py\n+ok\n"
+        self.supports_revision = True
 
     def __call__(self, method: str, path: str, *, body: dict[str, Any] | None = None, accept: str = "application/vnd.github+json") -> Any:
         if accept == "application/vnd.github.diff":
             return self.diff
+        if method == "GET" and "/contents/.github/workflows/board-agent.yml" in path:
+            yaml = _REVISION_WORKFLOW_YAML if self.supports_revision else _BASE_WORKFLOW_YAML
+            return {"content": base64.b64encode(yaml.encode()).decode(), "encoding": "base64"}
         if method == "POST" and "/actions/workflows/" in path and path.endswith("/dispatches"):
+            inputs = (body or {}).get("inputs") or {}
+            if not self.supports_revision and any(
+                key in inputs for key in ("pr_number", "ci_failure", "revision_round")
+            ):
+                raise board_github.GitHubSnapshotError(
+                    "Unexpected input(s) 'pr_number', provided to workflow_dispatch",
+                    status=422,
+                )
             name = path.split("/workflows/", 1)[1].split("/", 1)[0]
             self.dispatches.append({"workflow": name, "body": body or {}})
             return {}
@@ -307,6 +354,7 @@ class RunnerTests(BoardTestCase):
         self.gh.job_logs[7] = "pull request changes 439 lines (max 400)\n##[error]Process completed"
         out = board_code.op_get_run(self.ctx, {"taskId": "task-1"})
         self.assertEqual(out["failureLine"], "pull request changes 439 lines (max 400)")
+        self.assertIn("pull request changes 439 lines", out.get("failureExcerpt") or "")
         self.assertEqual(self.gh.logAccepts, ["application/vnd.github.raw"])
 
     def test_extract_failure_line_picks_last_match(self) -> None:
@@ -323,6 +371,19 @@ class RunnerTests(BoardTestCase):
             board_code.extract_failure_line(log),
             "FAILED backend/test_x.py::test_y - AssertionError: expected 1",
         )
+
+    def test_extract_failure_excerpt_uses_pytest_summary(self) -> None:
+        log = (
+            "2026-09-16T04:00:00.1Z collected 12 items\n"
+            "2026-09-16T04:00:01Z E   AssertionError: unknown area_name\n"
+            "2026-09-16T04:00:02Z ===== short test summary info =====\n"
+            "2026-09-16T04:00:02Z FAILED backend/test_admin_imports.py::test_area - unknown area_name\n"
+            "2026-09-16T04:00:02Z FAILED backend/test_admin_imports.py::test_category - unknown category_name\n"
+        )
+        excerpt = board_code.extract_failure_excerpt(log)
+        self.assertIn("short test summary info", excerpt)
+        self.assertIn("FAILED backend/test_admin_imports.py::test_area", excerpt)
+        self.assertNotIn("2026-09-16T04:00:02Z", excerpt)
 
     def test_revision_reuses_original_run_task_id(self) -> None:
         board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
@@ -353,8 +414,15 @@ class RunnerTests(BoardTestCase):
         out = board_code.op_run_task(revise_ctx, {"issueNumber": 42, "brief": "Fix mypy on PR 498.", "kind": "fix"})
         self.assertEqual(out["taskId"], "task-1")
         self.assertNotIn("failureLine", out)
-        self.assertEqual(self.gh.dispatches[-1]["body"]["inputs"]["task_id"], "task-1")
-        self.assertEqual(self.gh.dispatches[-1]["body"]["inputs"]["kind"], "fix")
+        inputs = self.gh.dispatches[-1]["body"]["inputs"]
+        self.assertEqual(inputs["task_id"], "task-1")
+        self.assertEqual(inputs["kind"], "fix")
+        self.assertEqual(inputs["pr_number"], "7")
+        self.assertEqual(inputs["revision_round"], "1")
+        self.assertIn("mypy: got", inputs["ci_failure"])
+        self.assertIn("REVISION round 1 for PR #7", inputs["brief"])
+        self.assertIn("Fix points: Fix mypy on PR 498.", inputs["brief"])
+        self.assertIn("Add the booking form.", inputs["brief"])
 
     def test_revision_remaps_when_engineer_passes_pr_number_as_issue(self) -> None:
         board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
@@ -509,6 +577,37 @@ class RunnerTests(BoardTestCase):
         self.assertIn("Call code_run_task ONCE", follow["brief"])
         self.assertIn("Do not poll CI", follow["brief"])
         self.assertEqual(follow["eventRef"]["kind"], "code-implement")
+
+    def test_revise_brief_includes_failure_excerpt(self) -> None:
+        board_code._put_run(  # noqa: SLF001
+            self.table,
+            "task-1",
+            {
+                "issue": 42,
+                "kind": "feature",
+                "rounds": 1,
+                "failureLine": "FAILED backend/test_x.py::test_y - boom",
+                "failureExcerpt": "===== short test summary info =====\nFAILED backend/test_x.py::test_y - boom",
+            },
+        )
+        board_staff._blob_put(  # noqa: SLF001
+            board_staff._deliverable_key("rev-excerpt", "markdown"),  # noqa: SLF001
+            b'```json {"verdict":"changes","notes":["CI failed"]}\n```',
+        )
+        task = {
+            "taskId": "rev-excerpt",
+            "status": "delivered",
+            "assignee": "architect",
+            "deliverableKey": board_staff._deliverable_key("rev-excerpt", "markdown"),  # noqa: SLF001
+            "eventRef": {"kind": "code-review", "id": "pr:7", "prNumber": 7, "taskId": "task-1"},
+        }
+        board_store.put_task(self.table, task)
+        self.gh.prs.append(_pr())
+        self.gh.files[7] = [{"filename": "app.py", "changes": 4}]
+        self.gh.checks["abc123"] = _green()
+        out = board_code.on_review_delivered(self.table, self.settings, task)
+        follow = board_store.get_task(self.table, out["taskId"])
+        self.assertIn("short test summary info", follow["brief"])
 
     def test_review_changes_skips_pending_only_notes(self) -> None:
         board_code._put_run(self.table, "task-1", {"issue": 42, "kind": "feature", "reviewRounds": 0})  # noqa: SLF001
@@ -890,6 +989,9 @@ class RunnerTests(BoardTestCase):
         self.gh.checks["abc123"] = [{"name": "Test Python", "status": "completed", "conclusion": "failure"}]
         out = board_code.op_get_run(self.ctx, {"taskId": "task-1"})
         self.assertIn("FAILED backend/test_admin_imports.py", out["failureLine"])
+        self.assertIn("FAILED backend/test_admin_imports.py", out.get("failureExcerpt") or "")
+        self.assertEqual(out.get("failureJob"), "Test Python")
+        self.assertEqual(out["failureHistory"][-1]["sha"], "abc123")
         logs_after_first = len(self.gh.logAccepts)
         again = board_code.op_get_run(self.ctx, {"taskId": "task-1"})
         self.assertIn("FAILED backend/test_admin_imports.py", again["failureLine"])
@@ -973,6 +1075,258 @@ class RunnerTests(BoardTestCase):
         settled = board_code.poll_runs(self.table, self.settings)
         self.assertEqual(len(settled), 1)
         self.assertEqual(settled[0]["eventRef"]["id"], "pr:7")
+
+    def _seed_red_python(self, sha: str = "abc123") -> None:
+        self.gh.runs.append(
+            {
+                "id": 100,
+                "name": "CI",
+                "path": ".github/workflows/ci.yml",
+                "head_sha": sha,
+                "status": "completed",
+                "conclusion": "failure",
+            }
+        )
+        self.gh.jobs[100] = [{"id": 8, "conclusion": "failure", "name": "Test Python"}]
+        self.gh.job_logs[8] = (
+            "===== short test summary info =====\n"
+            "FAILED backend/test_admin_imports.py::test_upsert_location_resolves_area_name - "
+            "unknown area_name\n"
+        )
+        self.gh.checks[sha] = [{"name": "Test Python", "status": "completed", "conclusion": "failure"}]
+
+    def test_runner_supports_revision_from_workflow_yaml(self) -> None:
+        self.assertTrue(board_code.runner_supports_revision(self.table))
+        self.assertTrue(board_code.cached_runner_revision(self.table))
+        self.gh.supports_revision = False
+        self.assertTrue(board_code.runner_supports_revision(self.table))
+
+    def test_runner_supports_revision_fail_closed(self) -> None:
+        self.gh.supports_revision = False
+        self.assertFalse(board_code.runner_supports_revision(self.table))
+        self.assertFalse(board_code.cached_runner_revision(self.table))
+
+    def test_revision_refused_when_runner_lacks_inputs(self) -> None:
+        self.gh.supports_revision = False
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
+        self.gh.prs.append(_pr(issue=42))
+        stored = board_code._get_run(self.table, "task-1")  # noqa: SLF001
+        stored["prNumber"] = 7
+        stored["failedAt"] = board_store.now_iso()
+        stored["conclusion"] = "failure"
+        board_code._put_run(self.table, "task-1", stored)  # noqa: SLF001
+        board_store.put_task(
+            self.table,
+            {
+                "taskId": "revise-no-cap",
+                "status": "running",
+                "assignee": "engineer-1",
+                "eventRef": {
+                    "kind": "code-implement",
+                    "id": "issue:42:r2",
+                    "issueNumber": 42,
+                    "prNumber": 7,
+                },
+            },
+        )
+        revise_ctx = ToolContext(
+            self.table, self.settings, "cto", display_name="CTO", kind="task", task_id="revise-no-cap"
+        )
+        with self.assertRaises(board_code.CodeRefused) as raised:
+            board_code.op_run_task(revise_ctx, {"issueNumber": 42, "brief": "Fix CI.", "kind": "fix"})
+        self.assertIn("Appendix A", str(raised.exception))
+        self.assertEqual(len(self.gh.dispatches), 1)
+
+    def test_revision_dispatch_422_maps_to_refused(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
+        board_store.put_cache(self.table, "code:runner-caps", {"revision": True}, ttl_seconds=3600)
+        self.gh.supports_revision = False
+        self.gh.prs.append(_pr(issue=42))
+        stored = board_code._get_run(self.table, "task-1")  # noqa: SLF001
+        stored["prNumber"] = 7
+        stored["failedAt"] = board_store.now_iso()
+        stored["conclusion"] = "failure"
+        stored["failureExcerpt"] = "FAILED backend/test_x.py::test_y - boom"
+        board_code._put_run(self.table, "task-1", stored)  # noqa: SLF001
+        board_store.put_task(
+            self.table,
+            {
+                "taskId": "revise-422",
+                "status": "running",
+                "assignee": "engineer-1",
+                "eventRef": {
+                    "kind": "code-implement",
+                    "id": "issue:42:r2",
+                    "issueNumber": 42,
+                    "prNumber": 7,
+                },
+            },
+        )
+        revise_ctx = ToolContext(
+            self.table, self.settings, "cto", display_name="CTO", kind="task", task_id="revise-422"
+        )
+        with self.assertRaises(board_code.CodeRefused) as raised:
+            board_code.op_run_task(revise_ctx, {"issueNumber": 42, "brief": "Fix CI.", "kind": "fix"})
+        self.assertIn("Appendix A", str(raised.exception))
+        self.assertFalse(board_code.cached_runner_revision(self.table))
+
+    def test_poll_creates_ci_fix_for_engineer(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add booking.", "kind": "feature"})
+        self.gh.runs.append({"name": "board-agent task-1", "status": "completed", "conclusion": "success"})
+        self.gh.prs.append(_pr())
+        self._seed_red_python()
+        created = board_code.poll_runs(self.table, self.settings)
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0]["assignee"], "engineer-1")
+        self.assertEqual(created[0]["eventRef"]["id"], "pr:7:ci:abc123")
+        self.assertTrue(created[0]["eventRef"].get("ciFix"))
+        self.assertIn("unknown area_name", created[0]["brief"])
+        self.assertEqual(board_code._get_run(self.table, "task-1").get("ciFixRounds"), 1)  # noqa: SLF001
+        again = board_code.poll_runs(self.table, self.settings)
+        self.assertEqual(again, [])
+
+    def test_poll_falls_back_to_architect_when_cannot_revise(self) -> None:
+        self.gh.supports_revision = False
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add booking.", "kind": "feature"})
+        self.gh.runs.append({"name": "board-agent task-1", "status": "completed", "conclusion": "success"})
+        self.gh.prs.append(_pr())
+        self._seed_red_python()
+        created = board_code.poll_runs(self.table, self.settings)
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0]["assignee"], "architect")
+        self.assertEqual(created[0]["eventRef"]["id"], "pr:7:ci-fail")
+        self.assertIn("cannot revise", created[0]["brief"])
+
+    def test_poll_skips_ci_fix_for_policy_failure(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add booking.", "kind": "feature"})
+        self.gh.runs.append({"name": "board-agent task-1", "status": "completed", "conclusion": "success"})
+        self.gh.prs.append(_pr())
+        self.gh.runs.append(
+            {
+                "id": 100,
+                "name": "CI",
+                "path": ".github/workflows/ci.yml",
+                "head_sha": "abc123",
+                "status": "completed",
+                "conclusion": "failure",
+            }
+        )
+        self.gh.jobs[100] = [{"id": 8, "conclusion": "failure", "name": "Guard"}]
+        self.gh.job_logs[8] = "pull request changes 439 lines (max 400)\n"
+        self.gh.checks["abc123"] = [{"name": "Guard", "status": "completed", "conclusion": "failure"}]
+        created = board_code.poll_runs(self.table, self.settings)
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0]["assignee"], "architect")
+        self.assertEqual(created[0]["eventRef"]["id"], "pr:7:ci-fail")
+        self.assertIn("policy failure", created[0]["brief"])
+
+    def test_poll_skips_ci_fix_when_same_failure_repeats(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add booking.", "kind": "feature"})
+        stored = board_code._get_run(self.table, "task-1")  # noqa: SLF001
+        stored["failureLine"] = "FAILED backend/test_x.py::test_y - boom"
+        stored["failureExcerpt"] = "FAILED backend/test_x.py::test_y - boom"
+        stored["failureLineSha"] = "abc123"
+        stored["failureHistory"] = [
+            {"sha": "aaa1111", "line": "FAILED backend/test_x.py::test_y - boom"},
+            {"sha": "abc123", "line": "FAILED backend/test_x.py::test_y - boom"},
+        ]
+        stored["ciFixRounds"] = 1
+        board_code._put_run(self.table, "task-1", stored)  # noqa: SLF001
+        self.gh.runs.append({"name": "board-agent task-1", "status": "completed", "conclusion": "success"})
+        self.gh.prs.append(_pr())
+        self._seed_red_python()
+        created = board_code.poll_runs(self.table, self.settings)
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0]["assignee"], "architect")
+        self.assertIn("same failure", created[0]["brief"])
+
+    def test_poll_skips_ci_fix_when_rounds_exhausted(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add booking.", "kind": "feature"})
+        stored = board_code._get_run(self.table, "task-1")  # noqa: SLF001
+        stored["ciFixRounds"] = 2
+        board_code._put_run(self.table, "task-1", stored)  # noqa: SLF001
+        self.gh.runs.append({"name": "board-agent task-1", "status": "completed", "conclusion": "success"})
+        self.gh.prs.append(_pr())
+        self._seed_red_python()
+        created = board_code.poll_runs(self.table, self.settings)
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0]["assignee"], "architect")
+        self.assertIn("ci-fix exhausted", created[0]["brief"])
+
+    def test_list_open_run_summaries_is_table_only(self) -> None:
+        board_code._put_run(  # noqa: SLF001
+            self.table,
+            "task-1",
+            {
+                "taskId": "task-1",
+                "prNumber": 7,
+                "ciState": "failure",
+                "ciFixRounds": 1,
+                "failureLine": "FAILED backend/test_x.py::test_y - boom",
+            },
+        )
+        board_store.put_cache(self.table, "code:runner-caps", {"revision": False}, ttl_seconds=3600)
+        with patch.object(board_github, "_request", side_effect=AssertionError("summaries must not call GitHub")):
+            rows = board_code.list_open_run_summaries(self.table)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["prNumber"], 7)
+        self.assertFalse(rows[0]["canRevise"])
+
+    def test_ci_fix_blocked_finish_parks_when_cannot_revise(self) -> None:
+        task = board_staff.create_task(
+            self.table,
+            self.settings,
+            assignee="engineer-1",
+            origin="event",
+            brief="CI on PR #7 failed. Call code_run_task once.",
+            deliverable_type="pr",
+            event_ref={
+                "kind": "code-implement",
+                "id": "pr:7:ci:abc123",
+                "prNumber": 7,
+                "issueNumber": 42,
+                "ciFix": True,
+                "taskId": "task-1",
+            },
+            created_by="board_code",
+        )
+        tid = task["taskId"]
+        board_store.claim_task_step(self.table, tid, 0)
+        latest = board_store.get_task(self.table, tid)
+        latest["status"] = "running"
+        board_store.put_task(self.table, latest)
+        ctx = ToolContext(
+            self.table, self.settings, "cto", kind="task", task_id=tid, seat_id="engineer-1"
+        )
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "refused-revise",
+                "op": "code_run_task",
+                "toolId": "code",
+                "status": "refused",
+                "taskId": tid,
+                "resultPreview": (
+                    '{"error": "runner workflow cannot revise an existing PR yet; '
+                    'owner must apply the Appendix A revision patch"}'
+                ),
+            },
+        )
+        out = board_staff.op_task_finish(
+            ctx,
+            {
+                "summary": "Cannot revise this PR",
+                "deliverableType": "markdown",
+                "deliverable": "Runner rejected revision inputs.",
+                "confidence": "low",
+                "status": "blocked",
+                "blockedReason": "runner cannot revise",
+            },
+        )
+        self.assertTrue(out.get("blocked"))
+        parked = board_store.get_task(self.table, tid)
+        self.assertEqual(parked["status"], "needs_owner")
+        self.assertEqual(parked["parkedReason"], "blocked:tool:code")
 
     def test_assign_oldest_board_ready_when_under_two_prs(self) -> None:
         self.gh.issues = [

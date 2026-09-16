@@ -202,6 +202,8 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "BOARD_STAFF_HOLD_CODE_STAGING_HOURS = int(_BOARD_STAFF_LIMITS[\"holdCodeStagingHours\"])",
         "BOARD_CODE_RUN_COOLDOWN_SECONDS = int(_BOARD_STAFF_LIMITS[\"codeRunCooldownSeconds\"])",
         "BOARD_CODE_RUN_MAX_ROUNDS = int(_BOARD_STAFF_LIMITS[\"codeRunMaxRounds\"])",
+        "BOARD_CODE_REVIEW_MAX_ROUNDS = int(_BOARD_STAFF_LIMITS[\"codeReviewMaxRounds\"])",
+        "BOARD_CODE_CI_FIX_MAX_ROUNDS = int(_BOARD_STAFF_LIMITS[\"codeCiFixMaxRounds\"])",
         "BOARD_STAFF_RAMP_MIN_ACTIONS = int(_BOARD_STAFF_LIMITS[\"rampMinActions\"])",
         "BOARD_STAFF_RAMP_PROMOTE_MAX_VETO_RATE = float(_BOARD_STAFF_LIMITS[\"rampPromoteMaxVetoRate\"])",
         "BOARD_STAFF_RAMP_DEMOTE_VETO_RATE = float(_BOARD_STAFF_LIMITS[\"rampDemoteVetoRate\"])",
@@ -428,6 +430,8 @@ export const BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = {staff_limits["maxRunningTa
 export const BOARD_STAFF_MAX_EVENT_TASKS_PER_SEAT_PER_HOUR = {staff_limits["maxEventTasksPerSeatPerHour"]};
 export const BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD = {staff_limits["staffDailyBudgetDefaultUsd"]};
 export const BOARD_STAFF_REVIEW_SAMPLE_SIZE = {staff_limits["reviewSampleSize"]};
+export const BOARD_CODE_REVIEW_MAX_ROUNDS = {staff_limits.get("codeReviewMaxRounds") or 3};
+export const BOARD_CODE_CI_FIX_MAX_ROUNDS = {staff_limits.get("codeCiFixMaxRounds") or 2};
 export const BOARD_STAFF_OUTREACH_DAILY_CAP_START = {staff_limits["outreachDailyCapStart"]};
 export const BOARD_STAFF_STEP_MODELS = {json.dumps(list(staff_limits.get("stepModels") or ["qwen/qwen-2.5-72b-instruct", "deepseek/deepseek-chat"]))} as const;
 export const BOARD_CATALOG_ASSIGNEE = {json.dumps((board_staff.get("catalog") or {}).get("assignee") or "content-marketer")};

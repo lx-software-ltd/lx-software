@@ -20,14 +20,20 @@ Lockfile diffs (`package-lock.json`, `pubspec.lock`, `yarn.lock`, …)
 are excluded from the 400-line runner cap so Dependabot bumps can land.
 
 This admin repo cannot push to `lx-software-ltd/siutindei`. Apply the
-lockfile + `BOARD_PR_TOKEN` change set from
-[`siutindei-board-runner.patch`](siutindei-board-runner.patch):
+lockfile + `BOARD_PR_TOKEN` change set, then the revision-mode patch:
 
 ```
 git -C /path/to/siutindei apply /path/to/lx-software/docs/architecture/siutindei-board-runner.patch
+git -C /path/to/siutindei apply /path/to/lx-software/docs/architecture/siutindei-board-runner-revision.patch
 ```
 
-Then set the `BOARD_PR_TOKEN` repo secret.
+If the second apply fails against a drifted workflow, copy the
+`board-agent.yml` block below. Then set the `BOARD_PR_TOKEN` repo secret.
+
+The admin stack refuses `code_run_task` revisions until staging
+`board-agent.yml` declares `pr_number:` and `ci_failure:` inputs. Without
+that, a CI-red `board/*` PR cannot be patched in place — the runner always
+branches from `staging` and force-pushes.
 
 ## Branch protection
 
@@ -55,6 +61,17 @@ on:
       kind:
         required: true
         type: string
+      pr_number:
+        required: false
+        type: string
+        description: Existing board/* PR to revise (do not start from staging)
+      ci_failure:
+        required: false
+        type: string
+        description: CI failure excerpt to fix
+      revision_round:
+        required: false
+        type: string
 permissions:
   contents: write
   pull-requests: write
@@ -67,11 +84,27 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: staging
+          fetch-depth: 0
           token: ${{ secrets.BOARD_PR_TOKEN || secrets.GITHUB_TOKEN }}
       - name: Branch
-        run: git checkout -B "board/${{ inputs.task_id }}"
+        env:
+          GH_TOKEN: ${{ secrets.BOARD_PR_TOKEN || secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          TASK_ID: ${{ inputs.task_id }}
+        run: |
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr checkout "$PR_NUMBER"
+          else
+            git checkout -B "board/${TASK_ID}"
+          fi
       - name: Write brief
-        run: printf '%s\n' "${{ inputs.brief }}" > brief.txt
+        env:
+          CI_FAILURE: ${{ inputs.ci_failure }}
+        run: |
+          printf '%s\n' "${{ inputs.brief }}" > brief.txt
+          if [ -n "$CI_FAILURE" ]; then
+            printf '\n\nCI failure:\n%s\n' "$CI_FAILURE" >> brief.txt
+          fi
       - name: Cursor agent
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
@@ -80,19 +113,27 @@ jobs:
           # If the CLI supports a token/turn budget flag at install time, set it.
           cursor-agent -p "$(cat brief.txt)" --model composer-2.5 --yolo
       - name: Test
-        run: # repo test command
+        run: |
+          # Same suite as the Test Python CI job (Postgres + alembic when
+          # that job needs them). A red suite must fail before git push.
+          # repo test command
       - name: Commit and draft PR
         env:
           GH_TOKEN: ${{ secrets.BOARD_PR_TOKEN || secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          TASK_ID: ${{ inputs.task_id }}
+          ISSUE: ${{ inputs.issue }}
         run: |
           git add -A
-          git commit -m "board: #${{ inputs.issue }} $(head -n 1 brief.txt)" || true
-          git push -u origin "HEAD:board/${{ inputs.task_id }}"
-          gh pr create --draft --base staging \
-            --title "board: #${{ inputs.issue }} $(head -n 1 brief.txt)" \
-            --body "$(cat brief.txt)
+          git commit -m "board: #${ISSUE} $(head -n 1 brief.txt)" || true
+          git push -u origin HEAD
+          if [ -z "$PR_NUMBER" ]; then
+            gh pr create --draft --base staging \
+              --title "board: #${ISSUE} $(head -n 1 brief.txt)" \
+              --body "$(cat brief.txt)
 
-Task: ${{ inputs.task_id }}"
+Task: ${TASK_ID}"
+          fi
 ```
 
 Secrets on the runner: `CURSOR_API_KEY` plus `BOARD_PR_TOKEN` (falls back

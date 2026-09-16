@@ -795,8 +795,13 @@ function calling. Design:
   merged or closed PRs and drops merged PRs from the runner index
   (closed-not-merged stay so a reopen can reuse the run row). Merging a gone
   PR is refused (not an Approval); a due `code_staging` hold fails instead of
-  executing. `code_get_run` caches pytest `FAILED` lines per head SHA and
-  does not fall back to the board-agent log once PR CI has failed. An owner
+  executing.   `code_get_run` caches pytest `FAILED` lines and a short excerpt per head SHA
+  and does not fall back to the board-agent log once PR CI has failed.
+  `poll_runs` opens an engineer `ci-fix` task on a red `board/*` PR (capped by
+  `codeCiFixMaxRounds`, default 2) when staging `board-agent.yml` declares
+  `pr_number` / `ci_failure` inputs; otherwise it parks an architect review
+  and the daily review **Engineering** line says the runner cannot revise.
+  Architect `changes` briefs include the excerpt. An owner
   `POST /tasks` with `prNumber` resets `reviewRounds` so a maxed-out revision
   loop can start again. A `review-headline:*` duty can be manager-accepted
   without evidence so the 07:30 digest has a narrative. `task_note` call ids

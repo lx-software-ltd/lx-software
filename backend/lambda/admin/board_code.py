@@ -7,12 +7,18 @@ and enforces policy.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from contract_constants import BOARD_CODE_RUN_COOLDOWN_SECONDS, BOARD_CODE_RUN_MAX_ROUNDS
+from contract_constants import (
+    BOARD_CODE_CI_FIX_MAX_ROUNDS,
+    BOARD_CODE_REVIEW_MAX_ROUNDS,
+    BOARD_CODE_RUN_COOLDOWN_SECONDS,
+    BOARD_CODE_RUN_MAX_ROUNDS,
+)
 
 import board_github
 import board_hk
@@ -52,19 +58,28 @@ _RUN_DONE = frozenset(
 )
 _RUN_FAILED = frozenset({"failure", "cancelled", "timed_out", "startup_failure"})
 _RUN_WAITING_STATUS = frozenset({"queued", "in_progress", "waiting", "pending", "requested"})
-MAX_REVIEW_ROUNDS = 2
 KINDS = frozenset({"feature", "fix", "content"})
 CI_OK = frozenset({"success", "neutral", "skipped"})
 REVIEW_PENDING_GRACE_SECONDS = 60 * 60
 _ISSUE_RE = re.compile(r"#(\d+)")
 _JSON_BLOCK = re.compile(r"```json\s*(\{.*?\})\s*```", re.S)
 _RUN_INDEX = "code:runs"
+_RUNNER_CAPS_KEY = "code:runner-caps"
+_RUNNER_CAPS_TTL = 3600
+_FAILURE_HISTORY_CAP = 6
+_EXCERPT_MAX_CHARS = 2500
+_BRIEF_DISPATCH_MAX = 6000
 _FAILURE_LINE_RE = re.compile(
     r"(?:pull request changes \d+ lines|protected path \S+|content pull request changes \d+ lines"
     r"|error: .+|Failed .+|mypy:.+|got \".+\", expected \".+\")",
     re.I,
 )
 _PYTEST_LINE_RE = re.compile(r"^(?:FAILED |ERROR |E\s{2,})")
+_POLICY_FAILURE_RE = re.compile(
+    r"protected path |pull request changes \d+ lines|content pull request changes \d+ lines",
+    re.I,
+)
+_LOG_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\s+")
 _PENDING_ONLY_RE = re.compile(
     r"\b(?:ci is pending|pending ci|ci.{0,24}pending|not ready for review yet as the ci)\b",
     re.I,
@@ -174,13 +189,24 @@ def files_outside_content(files: list[dict[str, Any]]) -> list[str]:
     return [path for row in files for path in file_paths(row) if not path_is_content(path)]
 
 
-def dispatch_workflow(name: str, inputs: dict[str, Any], *, ref: str = "staging") -> dict[str, Any]:
+def dispatch_workflow(
+    name: str, inputs: dict[str, Any], *, ref: str = "staging", table: Any = None
+) -> dict[str, Any]:
     repo = _repo()
-    _gh(
-        "POST",
-        f"/repos/{repo}/actions/workflows/{name}/dispatches",
-        {"ref": ref, "inputs": {str(k): str(v) for k, v in inputs.items()}},
-    )
+    payload = {"ref": ref, "inputs": {str(k): str(v) for k, v in inputs.items()}}
+    try:
+        _gh("POST", f"/repos/{repo}/actions/workflows/{name}/dispatches", payload)
+    except board_github.GitHubSnapshotError as exc:
+        if (
+            getattr(exc, "status", None) == 422
+            and "unexpected input" in str(exc).lower()
+        ):
+            if table is not None:
+                board_store.put_cache(table, _RUNNER_CAPS_KEY, {"revision": False}, ttl_seconds=_RUNNER_CAPS_TTL)
+            raise CodeRefused(
+                "runner workflow rejected revision inputs; owner must apply the Appendix A revision patch"
+            ) from exc
+        raise
     return {"ok": True, "workflow": name, "ref": ref, "inputs": inputs}
 
 
@@ -736,12 +762,16 @@ def _brief_mismatches_issue(issue: int, brief: str) -> bool:
     return not any(word in blob for word in nouns)
 
 
+def _strip_log_line(raw: str) -> str:
+    return _LOG_TS_RE.sub("", raw).strip()
+
+
 def extract_failure_line(log: str) -> str:
     """Last pytest or policy / compiler line from a failed Actions job log."""
     last_policy = ""
     last_pytest = ""
     for raw in str(log or "").splitlines():
-        line = raw.strip()
+        line = _strip_log_line(raw)
         if not line:
             continue
         if _PYTEST_LINE_RE.match(line):
@@ -751,18 +781,44 @@ def extract_failure_line(log: str) -> str:
     return last_pytest or last_policy
 
 
-def _failure_line_for_run(run: dict[str, Any]) -> str:
+def extract_failure_excerpt(log: str, *, max_chars: int = _EXCERPT_MAX_CHARS) -> str:
+    """Pytest summary or last assertion block from a failed Actions job log."""
+    lines = [_strip_log_line(raw) for raw in str(log or "").splitlines()]
+    lines = [line for line in lines if line]
+    if not lines:
+        return ""
+    summary_idx = next((i for i, line in enumerate(lines) if "short test summary info" in line.lower()), None)
+    if summary_idx is not None:
+        return "\n".join(lines[summary_idx:])[:max_chars]
+    failed = [line for line in lines if _PYTEST_LINE_RE.match(line)]
+    errors = [line for line in lines if line.startswith("E ") or line.startswith("E\t")]
+    parts = [*errors[-12:], *failed[-6:]]
+    if parts:
+        return "\n".join(parts)[:max_chars]
+    return "\n".join(lines[-30:])[:max_chars]
+
+
+def _decode_job_log(log: Any) -> str:
+    if log is None:
+        return ""
+    if isinstance(log, (bytes, bytearray)):
+        return bytes(log).decode("utf-8", errors="replace")
+    return str(log)
+
+
+def _failure_for_run(run: dict[str, Any]) -> dict[str, str]:
+    empty = {"line": "", "excerpt": "", "job": ""}
     run_id = run.get("id") or run.get("databaseId")
     if not run_id:
-        return ""
+        return empty
     repo = _repo()
     try:
         jobs = _gh("GET", f"/repos/{repo}/actions/runs/{int(run_id)}/jobs") or {}
     except (TypeError, ValueError, board_github.GitHubSnapshotError):
-        return ""
+        return empty
     items = jobs.get("jobs") if isinstance(jobs, dict) else jobs
     if not isinstance(items, list):
-        return ""
+        return empty
     for job in items:
         if not isinstance(job, dict):
             continue
@@ -779,34 +835,33 @@ def _failure_line_for_run(run: dict[str, Any]) -> str:
             )
         except (TypeError, ValueError, board_github.GitHubSnapshotError):
             continue
-        if log is None:
+        text = _decode_job_log(log)
+        if not text:
             continue
-        if isinstance(log, (bytes, bytearray)):
-            text = bytes(log).decode("utf-8", errors="replace")
-        else:
-            text = str(log)
         line = extract_failure_line(text)
-        if line:
-            return line
-    return ""
+        excerpt = extract_failure_excerpt(text)
+        if line or excerpt:
+            return {"line": line, "excerpt": excerpt, "job": str(job.get("name") or "")}
+    return empty
 
 
-def _failure_line_for_sha(sha: str) -> str:
-    """Last pytest / policy line from failed PR CI jobs on this head SHA.
+def _failure_line_for_run(run: dict[str, Any]) -> str:
+    return _failure_for_run(run).get("line") or ""
 
-    Board-agent runs on ``staging``, so they do not share the PR head SHA and
-    are skipped when the API happens to return them.
-    """
+
+def _failure_for_sha(sha: str) -> dict[str, str]:
+    """Last pytest / policy excerpt from failed PR CI jobs on this head SHA."""
+    empty = {"line": "", "excerpt": "", "job": ""}
     if not sha:
-        return ""
+        return empty
     repo = _repo()
     try:
         raw = _gh("GET", f"/repos/{repo}/actions/runs?head_sha={sha}&per_page=20") or {}
     except (TypeError, ValueError, board_github.GitHubSnapshotError):
-        return ""
+        return empty
     runs = raw.get("workflow_runs") if isinstance(raw, dict) else raw
     if not isinstance(runs, list):
-        return ""
+        return empty
     for run in runs:
         if not isinstance(run, dict):
             continue
@@ -815,10 +870,66 @@ def _failure_line_for_sha(sha: str) -> str:
         blob = f"{run.get('path') or ''} {run.get('name') or ''} {run.get('display_title') or ''}"
         if "board-agent" in blob.lower():
             continue
-        line = _failure_line_for_run(run)
-        if line:
-            return line
-    return ""
+        found = _failure_for_run(run)
+        if found.get("line") or found.get("excerpt"):
+            return found
+    return empty
+
+
+def _failure_line_for_sha(sha: str) -> str:
+    return _failure_for_sha(sha).get("line") or ""
+
+
+def _workflow_yaml_has_revision_inputs(text: str) -> bool:
+    blob = text or ""
+    return "pr_number:" in blob and "ci_failure:" in blob
+
+
+def runner_supports_revision(table: Any) -> bool:
+    """True when staging ``board-agent.yml`` declares revision inputs. Fail closed."""
+    hit = board_store.get_cache(table, _RUNNER_CAPS_KEY)
+    if hit and isinstance(hit.get("payload"), dict) and "revision" in hit["payload"]:
+        return bool(hit["payload"]["revision"])
+    repo = _repo()
+    try:
+        raw = _gh("GET", f"/repos/{repo}/contents/.github/workflows/{WORKFLOW_AGENT}?ref=staging") or {}
+    except board_github.GitHubSnapshotError:
+        board_store.put_cache(table, _RUNNER_CAPS_KEY, {"revision": False}, ttl_seconds=_RUNNER_CAPS_TTL)
+        return False
+    content = ""
+    if isinstance(raw, dict):
+        encoded = str(raw.get("content") or "").replace("\n", "")
+        try:
+            content = base64.b64decode(encoded).decode("utf-8", errors="replace") if encoded else ""
+        except Exception:
+            content = ""
+    ok = _workflow_yaml_has_revision_inputs(content)
+    board_store.put_cache(table, _RUNNER_CAPS_KEY, {"revision": ok}, ttl_seconds=_RUNNER_CAPS_TTL)
+    return ok
+
+
+def cached_runner_revision(table: Any) -> bool | None:
+    """Cached revise capability, or ``None`` if compile must not hit GitHub."""
+    hit = board_store.get_cache(table, _RUNNER_CAPS_KEY)
+    if not hit or not isinstance(hit.get("payload"), dict) or "revision" not in hit["payload"]:
+        return None
+    return bool(hit["payload"]["revision"])
+
+
+def _revision_dispatch_brief(
+    prior: dict[str, Any], engineer_brief: str, round_n: int, pr_number: int
+) -> str:
+    original = str(prior.get("brief") or "").strip()
+    excerpt = str(prior.get("failureExcerpt") or prior.get("failureLine") or "").strip()
+    parts: list[str] = []
+    if original:
+        parts.append(original)
+    parts.append(f"REVISION round {round_n} for PR #{int(pr_number)}.")
+    if engineer_brief:
+        parts.append(f"Fix points: {engineer_brief}")
+    if excerpt:
+        parts.append(f"CI failure:\n{excerpt}")
+    return "\n\n".join(parts)
 
 
 def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -841,6 +952,10 @@ def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         )
     caller = str(getattr(ctx, "task_id", "") or "")
     if revision_id:
+        if not runner_supports_revision(ctx.table):
+            raise CodeRefused(
+                "runner workflow cannot revise an existing PR yet; owner must apply the Appendix A revision patch"
+            )
         task_id = revision_id
         prior = revision_row
     else:
@@ -863,7 +978,7 @@ def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
             dispatch_rounds = int(prior.get("rounds") or 0)
     else:
         # New architect-created revise task: fresh dispatch budget on the
-        # shared run row. MAX_REVIEW_ROUNDS still caps revise cycles.
+        # shared run row. codeReviewMaxRounds still caps revise cycles.
         dispatch_rounds = 0
     if dispatch_rounds >= max_rounds:
         raise CodeRefused("two runs already made for this task; report the failure")
@@ -872,23 +987,37 @@ def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if prior.get("dispatchedAt") and (_run_in_flight(prior) or dispatch_rounds > 0):
         if started is None or now - started < timedelta(seconds=cooldown):
             raise CodeRefused("a run for this task is already in flight — call code_get_run")
-    dispatched = dispatch_workflow(
-        WORKFLOW_AGENT,
-        {"task_id": task_id, "issue": str(issue), "brief": brief[:4000], "kind": kind},
-        ref="staging",
-    )
+    inputs: dict[str, Any] = {
+        "task_id": task_id,
+        "issue": str(issue),
+        "brief": brief[:_BRIEF_DISPATCH_MAX],
+        "kind": kind,
+    }
+    if revision_id:
+        try:
+            pr_number = int(prior.get("prNumber") or 0)
+        except (TypeError, ValueError):
+            pr_number = 0
+        revision_round = int(prior.get("ciFixRounds") or prior.get("reviewRounds") or 0) + 1
+        inputs["brief"] = _revision_dispatch_brief(prior, brief, revision_round, pr_number)[:_BRIEF_DISPATCH_MAX]
+        inputs["pr_number"] = str(pr_number)
+        inputs["ci_failure"] = str(prior.get("failureExcerpt") or prior.get("failureLine") or "")[:_EXCERPT_MAX_CHARS]
+        inputs["revision_round"] = str(revision_round)
+    dispatched = dispatch_workflow(WORKFLOW_AGENT, inputs, ref="staging", table=ctx.table)
     payload = {
         **prior,
         "taskId": task_id,
         "issue": issue,
         "kind": kind,
-        "brief": brief[:4000],
+        "brief": inputs["brief"],
         "rounds": int(prior.get("rounds") or 0) + 1,
         "dispatchRounds": dispatch_rounds + 1,
         "lastStaffTaskId": caller or task_id,
         "dispatchedAt": board_store.now_iso(),
         "workflow": WORKFLOW_AGENT,
     }
+    if revision_id:
+        payload["revisionRounds"] = int(prior.get("revisionRounds") or 0) + 1
     mismatch = _brief_mismatches_issue(issue, brief)
     if mismatch:
         payload["briefMismatch"] = True
@@ -900,6 +1029,9 @@ def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     payload.pop("conclusion", None)
     payload.pop("runStatus", None)
     payload.pop("failureLine", None)
+    payload.pop("failureExcerpt", None)
+    payload.pop("failureJob", None)
+    payload.pop("failureLineSha", None)
     _put_run(ctx.table, task_id, payload)
     return {**dispatched, **payload}
 
@@ -958,18 +1090,47 @@ def op_get_run(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         stored["headSha"] = sha
         if stored.get("failureLineSha") and stored.get("failureLineSha") != sha:
             stored.pop("failureLine", None)
+            stored.pop("failureExcerpt", None)
+            stored.pop("failureJob", None)
             stored.pop("failureLineSha", None)
         if stored.get("ciState") == "failure" and stored.get("failureLineSha") != sha:
-            stored["failureLine"] = _failure_line_for_sha(sha)
+            found = _failure_for_sha(sha)
+            stored["failureLine"] = found.get("line") or ""
+            stored["failureExcerpt"] = found.get("excerpt") or ""
+            stored["failureJob"] = found.get("job") or ""
             stored["failureLineSha"] = sha
+            history = [row for row in (stored.get("failureHistory") or []) if isinstance(row, dict)]
+            last = history[-1] if history else {}
+            if last.get("sha") != sha or last.get("line") != stored["failureLine"]:
+                history.append(
+                    {
+                        "sha": sha,
+                        "line": stored["failureLine"],
+                        "at": board_store.now_iso(),
+                    }
+                )
+            stored["failureHistory"] = history[-_FAILURE_HISTORY_CAP:]
     if (
         conclusion in _RUN_FAILED
         and stored.get("ciState") != "failure"
         and not stored.get("failureLine")
     ):
-        stored["failureLine"] = _failure_line_for_run(latest)
+        found = _failure_for_run(latest)
+        stored["failureLine"] = found.get("line") or ""
+        if found.get("excerpt"):
+            stored["failureExcerpt"] = found["excerpt"]
+        if found.get("job"):
+            stored["failureJob"] = found["job"]
     if stored.get("failureLine"):
         out["failureLine"] = stored["failureLine"]
+    if stored.get("failureExcerpt"):
+        out["failureExcerpt"] = stored["failureExcerpt"]
+    if stored.get("failureJob"):
+        out["failureJob"] = stored["failureJob"]
+    if stored.get("failureHistory"):
+        out["failureHistory"] = stored["failureHistory"]
+    if stored.get("ciFixRounds"):
+        out["ciFixRounds"] = stored["ciFixRounds"]
     if stored.get("prSeenAt"):
         out["prSeenAt"] = stored["prSeenAt"]
     if stored.get("ciState"):
@@ -1420,12 +1581,97 @@ def _run_pr_prunable(state: dict[str, Any]) -> bool:
     return bool(state.get("prMerged"))
 
 
+def _is_policy_failure(line: str) -> bool:
+    return bool(_POLICY_FAILURE_RE.search(line or ""))
+
+
+def _same_failure_twice(state: dict[str, Any]) -> bool:
+    history = [row for row in (state.get("failureHistory") or []) if isinstance(row, dict)]
+    if len(history) < 2:
+        return False
+    left = str(history[-1].get("line") or "")
+    right = str(history[-2].get("line") or "")
+    return bool(left) and left == right
+
+
+def _ci_fix_skip_reason(table: Any, state: dict[str, Any]) -> str:
+    line = str(state.get("failureLine") or "")
+    if _is_policy_failure(line):
+        return " ci-fix skipped: policy failure needs architect review."
+    if int(state.get("ciFixRounds") or 0) >= BOARD_CODE_CI_FIX_MAX_ROUNDS:
+        return " ci-fix exhausted."
+    if not runner_supports_revision(table):
+        return " runner cannot revise — apply the Appendix A revision patch."
+    if _same_failure_twice(state):
+        return " ci-fix skipped: same failure after the last fix."
+    if not (state.get("failureExcerpt") or line):
+        return " ci-fix skipped: no failure excerpt."
+    return ""
+
+
+def _maybe_ci_fix(
+    table: Any, settings: dict[str, Any], task_id: str, state: dict[str, Any], engineer: str
+) -> dict[str, Any] | None:
+    if str(state.get("ciState") or "") != "failure":
+        return None
+    try:
+        pr_number = int(state.get("prNumber") or 0)
+        issue = int(state.get("issue") or 0)
+    except (TypeError, ValueError):
+        return None
+    sha = str(state.get("headSha") or "")
+    line = str(state.get("failureLine") or "").strip()
+    excerpt = str(state.get("failureExcerpt") or "").strip()
+    if pr_number <= 0 or issue <= 0 or not sha:
+        return None
+    if _ci_fix_skip_reason(table, state):
+        return None
+    event_id = f"pr:{pr_number}:ci:{sha[:7]}"
+    if _find_task(table, "code-implement", event_id):
+        return None
+    job = str(state.get("failureJob") or "CI")
+    brief = (
+        f"CI on PR #{pr_number} failed at {job}. "
+        f"Call code_run_task once with a brief that fixes exactly this:\n{excerpt or line}\n"
+        "Do not restart the feature."
+    )
+    try:
+        task = board_staff.create_task(
+            table,
+            settings,
+            assignee=engineer,
+            origin="event",
+            brief=brief[:4000],
+            deliverable_type="pr",
+            sla_hours=12,
+            event_ref={
+                "kind": "code-implement",
+                "id": event_id,
+                "prNumber": pr_number,
+                "issueNumber": issue,
+                "ciFix": True,
+                "taskId": task_id,
+            },
+            created_by="board_code",
+        )
+    except board_staff.StaffError as exc:
+        _log_event("info", tag="board_code_ci_fix_skipped", error=str(exc)[:200])
+        return None
+    stored = _get_run(table, task_id)
+    stored["ciFixRounds"] = int(stored.get("ciFixRounds") or 0) + 1
+    _put_run(table, task_id, stored)
+    return task
+
+
 def poll_runs(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
     created: list[dict[str, Any]] = []
     if not board_staff.enabled(settings):
         return created
     roster = board_staff.seats_by_id(table, settings)
     architect = "architect" if (roster.get("architect") or {}).get("isActive") else "cto"
+    engineer = _pick_engineer(
+        table, [sid for sid in ("engineer-1", "engineer-2") if (roster.get(sid) or {}).get("isActive")] or ["engineer-1"]
+    )
     gone: set[str] = set()
     for task_id in _run_index(table):
         try:
@@ -1449,8 +1695,18 @@ def poll_runs(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
                 continue
             pending_note = " CI still pending after 60 min — review code only."
             event_id = f"pr:{int(pr_number)}:pending-ci"
-        elif ci in ("success", "failure"):
+        elif ci == "success":
             event_id = f"pr:{int(pr_number)}"
+        elif ci == "failure":
+            sha_prefix = str(state.get("headSha") or "")[:7]
+            if sha_prefix and _find_task(table, "code-implement", f"pr:{int(pr_number)}:ci:{sha_prefix}"):
+                continue
+            fix = _maybe_ci_fix(table, settings, task_id, state, engineer)
+            if fix:
+                created.append(fix)
+                continue
+            event_id = f"pr:{int(pr_number)}:ci-fail"
+            pending_note = _ci_fix_skip_reason(table, state)
         else:
             continue
         if _find_task(table, "code-review", event_id):
@@ -1482,6 +1738,30 @@ def poll_runs(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
         current = _run_index(table)
         _save_run_index(table, [task_id for task_id in current if task_id not in gone])
     return created
+
+
+def list_open_run_summaries(table: Any) -> list[dict[str, Any]]:
+    """Table-only snapshot of indexed runs for the daily review. Never hits GitHub."""
+    can_revise = cached_runner_revision(table)
+    out: list[dict[str, Any]] = []
+    for task_id in _run_index(table):
+        row = _get_run(table, task_id)
+        if not row.get("prNumber") or row.get("prMerged"):
+            continue
+        out.append(
+            {
+                "taskId": task_id,
+                "prNumber": row.get("prNumber"),
+                "ciState": row.get("ciState") or "",
+                "ciFixRounds": int(row.get("ciFixRounds") or 0),
+                "ciFixMax": BOARD_CODE_CI_FIX_MAX_ROUNDS,
+                "reviewRounds": int(row.get("reviewRounds") or 0),
+                "reviewMax": BOARD_CODE_REVIEW_MAX_ROUNDS,
+                "failureLine": row.get("failureLine") or "",
+                "canRevise": can_revise,
+            }
+        )
+    return out[:12]
 
 
 _SKIP_ISSUE_LABELS = frozenset({"wontfix", "duplicate", "invalid", "board-closed"})
@@ -1700,9 +1980,8 @@ def on_review_delivered(table: Any, settings: dict[str, Any], task: dict[str, An
     except (CodeError, board_github.GitHubSnapshotError) as exc:
         _log_event("warning", tag="board_code_head_sha_failed", error=str(exc)[:200])
     if parsed["verdict"] == "changes":
-        # Original run + one architect revise = MAX_REVIEW_ROUNDS. Independent of
-        # how many times the first engineer dispatched the runner.
-        if review_rounds >= MAX_REVIEW_ROUNDS - 1:
+        # Independent of how many times the first engineer dispatched the runner.
+        if review_rounds >= BOARD_CODE_REVIEW_MAX_ROUNDS - 1:
             return {"verdict": "changes", "stopped": "max rounds"}
         notes_list = [str(n) for n in (parsed.get("notes") or []) if n]
         if _notes_are_pending_only(notes_list):
@@ -1711,12 +1990,14 @@ def on_review_delivered(table: Any, settings: dict[str, Any], task: dict[str, An
         if issue <= 0:
             return {"verdict": "changes", "skipped": "no issue"}
         failure_line = str(run.get("failureLine") or "").strip()
+        failure_excerpt = str(run.get("failureExcerpt") or "").strip()
         next_round = review_rounds + 2
         reopened = str(run.get("ownerReopenedAt") or "").strip()
         reopen_note = f" Owner reopened this revision at {reopened}." if reopened else ""
+        excerpt_note = f"\nCI excerpt:\n{failure_excerpt[:1200]}" if failure_excerpt else ""
         brief = (
             f"Revise PR #{pr_number} (round {next_round}). Architect notes: {notes} "
-            f"CI failure: {failure_line or 'none'}.{reopen_note} "
+            f"CI failure: {failure_line or 'none'}.{reopen_note}{excerpt_note} "
             "Call code_run_task ONCE with a brief that fixes exactly these points, then call task_finish. "
             "Do not poll CI; the board polls it for you."
         )

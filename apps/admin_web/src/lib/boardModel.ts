@@ -1850,6 +1850,17 @@ export type BoardReviewSnapshot = {
     readonly reason?: string;
     readonly at?: string;
   }[];
+  readonly engineering?: readonly {
+    readonly taskId?: string;
+    readonly prNumber?: number;
+    readonly ciState?: string;
+    readonly ciFixRounds?: number;
+    readonly ciFixMax?: number;
+    readonly reviewRounds?: number;
+    readonly reviewMax?: number;
+    readonly failureLine?: string;
+    readonly canRevise?: boolean | null;
+  }[];
 };
 
 export function tasksNeedPolling(tasks: readonly BoardTask[]): boolean {

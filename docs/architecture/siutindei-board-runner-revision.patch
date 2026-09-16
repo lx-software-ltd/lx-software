@@ -1,0 +1,55 @@
+diff --git a/.github/workflows/board-agent.yml b/.github/workflows/board-agent.yml
+--- a/.github/workflows/board-agent.yml
++++ b/.github/workflows/board-agent.yml
+@@
+       kind:
+         required: true
+         type: string
++      pr_number:
++        required: false
++        type: string
++        description: Existing board/* PR to revise (do not start from staging)
++      ci_failure:
++        required: false
++        type: string
++        description: CI failure excerpt to fix
++      revision_round:
++        required: false
++        type: string
+@@
+       - name: Branch
+         env:
++          GH_TOKEN: ${{ secrets.BOARD_PR_TOKEN || secrets.GITHUB_TOKEN }}
++          PR_NUMBER: ${{ inputs.pr_number }}
+           TASK_ID: ${{ inputs.task_id }}
+         run: |
+-          git checkout -B "board/${TASK_ID}"
++          if [ -n "$PR_NUMBER" ]; then
++            gh pr checkout "$PR_NUMBER"
++          else
++            git checkout -B "board/${TASK_ID}"
++          fi
+@@
+       - name: Commit and draft PR
+         env:
+           GH_TOKEN: ${{ secrets.BOARD_PR_TOKEN || secrets.GITHUB_TOKEN }}
+           TASK_ID: ${{ inputs.task_id }}
+           ISSUE: ${{ inputs.issue }}
++          PR_NUMBER: ${{ inputs.pr_number }}
+         run: |
+           git add -A
+           git commit -m "board: #${ISSUE} $(head -n 1 brief.txt)" || true
+-          git push -u origin "HEAD:board/${TASK_ID}"
+-          gh pr create --draft --base staging \
+-            --title "board: #${ISSUE} $(head -n 1 brief.txt)" \
+-            --body "$(cat brief.txt)
+-
+-Task: ${TASK_ID}"
++          git push -u origin HEAD
++          if [ -z "$PR_NUMBER" ]; then
++            gh pr create --draft --base staging \
++              --title "board: #${ISSUE} $(head -n 1 brief.txt)" \
++              --body "$(cat brief.txt)
++
++Task: ${TASK_ID}"
++          fi
