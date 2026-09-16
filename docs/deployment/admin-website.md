@@ -1,245 +1,234 @@
-# Deploying the admin website and infrastructure
+# Deploying and operating the admin website
 
-This runbook follows the same ordering as production bring-up: CDK Bootstrap,
-issue the ACM certificate, deploy infrastructure, configure GitHub and Cognito,
-then deploy the SPA.
+Runbook for the `lxsoftware` and `lxsoftware-admin-web` stacks and the
+admin SPA. Prerequisites (OIDC, `GitHubActionsRole`, CDK Bootstrap,
+GitHub environment) are in [`setup.md`](./setup.md); the architecture is
+in [`../architecture/overview.md`](../architecture/overview.md) and
+[`../architecture/security.md`](../architecture/security.md); the
+Executive Board design is in
+[`../architecture/executive-board.md`](../architecture/executive-board.md).
 
-## Pre-deploy checklist (junior dev)
+## Pre-deploy checklist
 
 **Deploy Backend** runs on `main` when `backend/infrastructure/**`,
-`backend/lambda/**`, or `contracts/**` change (or via **Run workflow**).
-Lambda-only PRs used to skip this job and leave the previous `AdminApiFn`
-live.
+`backend/lambda/**` or `contracts/**` change (or via **Run workflow**).
 
-Before triggering **Deploy Backend**:
-
-1. **GitHub environment** — set `AWS_ACCOUNT_ID`, `AWS_REGION`, optional
-   **`CDK_BOOTSTRAP_QUALIFIER`** (only if you did not use the default `hnb659fds`),
-   `ADMIN_ACM_CERT_ARN`,
-   `ADMIN_GOOGLE_CLIENT_ID`, **`ADMIN_FEDERATED_EMAIL_ALLOWLIST`** (comma-separated
-   lower-case emails that should receive `admin` via Pre Token Generation — include
-   every Google admin and the bootstrap email), `ADMIN_BOOTSTRAP_EMAIL`, and
-   (after first deploy) SPA vars `ADMIN_COGNITO_*`, `ADMIN_API_BASE_URL`
-   (`ADMIN_API_BASE_URL` is also inlined as `VITE_PUBLIC_API_URL` by
-   **Deploy Public Website**). Set
-   **secrets** `ADMIN_GOOGLE_CLIENT_SECRET` (Google OAuth client secret) and
-   `ADMIN_BOOTSTRAP_TEMP_PASSWORD` (bootstrap user password; CDK `noEcho`).
-2. **Bootstrap password** — must satisfy the pool policy (14+ chars with mixed
-   classes) or `adminCreateUser` fails.
-3. **Region** — `AWS_REGION` for GitHub Actions must match the region where the
-   stacks deploy (same as the public site). **CDK Bootstrap** must be complete in
-   that same region (SSM `/cdk-bootstrap/<qualifier>/version` must exist), or
-   **Deploy Backend** will fail. Cross-stack CSP wiring assumes this region.
-4. **GitHubActionsRole** — must be allowed to `sts:AssumeRole` the CDK asset
-   publishing / deploy roles (`cdk-hnb659fds-*` or your `CDK_BOOTSTRAP_QUALIFIER`)
-   and `ssm:GetParameter` on `/cdk-bootstrap/*`. If logs show “could not be used
-   to assume … file-publishing-role” and deploy fails on missing CDK Bootstrap SSM,
-   fix CDK Bootstrap + IAM trust first.
-5. **ACM** — `ADMIN_ACM_CERT_ARN` must be **ISSUED** in **us-east-1** (CloudFront).
-6. **Cloudflare** — proxy **OFF** (gray cloud) for ACM validation and for the
+1. **GitHub environment** — `AWS_ACCOUNT_ID`, `AWS_REGION`, optional
+   `CDK_BOOTSTRAP_QUALIFIER`, `CDK_PARAM_FILE`, `ADMIN_ACM_CERT_ARN`,
+   `ADMIN_GOOGLE_CLIENT_ID`, `ADMIN_FEDERATED_EMAIL_ALLOWLIST`
+   (comma-separated lower-case emails that receive `admin` via Pre Token
+   Generation — every Google admin and the bootstrap email),
+   `ADMIN_BOOTSTRAP_EMAIL`, and after the first deploy the SPA vars
+   `ADMIN_COGNITO_*` and `ADMIN_API_BASE_URL`. Secrets
+   `ADMIN_GOOGLE_CLIENT_SECRET` and `ADMIN_BOOTSTRAP_TEMP_PASSWORD` (14+
+   chars, mixed classes, or `adminCreateUser` fails).
+2. **Region** — `AWS_REGION` must match where CDK Bootstrap ran (SSM
+   `/cdk-bootstrap/<qualifier>/version` must exist) and where the public
+   site deploys.
+3. **ACM** — `ADMIN_ACM_CERT_ARN` must be **ISSUED** in **us-east-1**.
+4. **Cloudflare** — proxy **off** (gray cloud) for ACM validation and the
    `admin` CNAME.
-7. **Google OAuth client** — add `https://<cognito-domain>/oauth2/idpresponse` to
-   authorized redirect URIs **before** the first Hosted UI sign-in.
+5. **Google OAuth client** — add
+   `https://<cognito-domain>/oauth2/idpresponse` to the authorized
+   redirect URIs before the first Hosted UI sign-in.
+6. **Docker / QEMU** — `AdminApiFn` bundles Pillow for `linux/arm64`;
+   `deploy-backend.yml` and `cdk-diff.yml` register QEMU with
+   `docker/setup-qemu-action`. For template-only synth set
+   `CDK_SKIP_PYTHON_PIP=1`.
 
-After the first deploy, **verify** that `AdminFederatedEmailAllowlist` includes
-every Google operator; otherwise they authenticate but the API returns **403**.
+After the first deploy, verify `AdminFederatedEmailAllowlist` includes
+every Google operator; otherwise they authenticate but the API returns
+**403**.
 
-## 1. CDK Bootstrap
+## 1. CDK Bootstrap and ACM
 
-Run **CDK Bootstrap** for the target region used by the stacks (match the public site region),
-and **us-east-1** for ACM certificates used by CloudFront:
+Bootstrap the stack region and `us-east-1` ([`setup.md`](./setup.md#3-cdk-bootstrap)).
+Request a certificate for `admin.lx-software.com` in **us-east-1**, validate
+by DNS in Cloudflare with proxy disabled, wait for **ISSUED** and record the
+ARN as `ADMIN_ACM_CERT_ARN`.
 
-```bash
-cd backend/infrastructure
-npm ci
-npx cdk bootstrap aws://ACCOUNT_ID/REGION
-npx cdk bootstrap aws://ACCOUNT_ID/us-east-1
-```
+## 2. Deploy admin infrastructure
 
-## 2. ACM certificate (us-east-1 only)
+Run **Deploy Backend** (or `cdk deploy` locally with the same parameters
+from `backend/infrastructure/params/*.json`; see that folder's README for
+the key list). Confirm both stacks finish:
 
-Request a certificate for `admin.lx-software.com`, complete DNS validation in
-Cloudflare with **proxy disabled**, wait until the certificate status is
-**ISSUED**, and record the ARN for GitHub Actions variables.
-
-## 3. GitHub environment configuration
-
-Under **Settings → Environments → production**, configure variables and secrets
-as described in the checklist above and in `docs/architecture/security.md`.
-
-## 4. Deploy admin infrastructure
-
-Run the **Deploy Backend** workflow (or invoke CDK locally with the same
-parameters). Confirm both admin stacks finish successfully:
-
-- `lxsoftware`           — Cognito, DynamoDB, S3 assets, HTTP API
+- `lxsoftware` — Cognito, DynamoDB, S3 assets, HTTP API, SES inbound rule
+  set, Executive Board schedules
 - `lxsoftware-admin-web` — S3 origin + CloudFront for the SPA
 
-Copy CloudFormation outputs for the user pool, client, hosted UI domain, API
-URL, and CloudFront domain name into the GitHub environment variables used by
-the **Deploy Admin Web** workflow.
+Copy the CloudFormation outputs (user pool, client, hosted UI domain, API
+URL, CloudFront domain) into the GitHub environment variables used by
+**Deploy Admin Web**.
 
-If **Deploy Backend** fails because API Gateway cannot find
-`POST /webhooks/meta/siutindei` (or `GET`) in `RouteSettings`, the
-`$default` stage was updated before those routes existed. The stack may be
-left `UPDATE_ROLLBACK_FAILED`. Continue rollback, skipping the stage if
-CloudFormation still cannot revert it:
+If a deploy leaves `lxsoftware` in `UPDATE_ROLLBACK_FAILED` on a resource
+with no physical counterpart (a stage that references routes created in
+the same changeset, or the `SiutindeiDataApiReceivablesSchema*` custom
+resource), continue the rollback skipping that logical id, then redeploy:
 
 ```bash
 aws cloudformation continue-update-rollback \
-  --stack-name lxsoftware \
-  --resources-to-skip HttpApiDefaultStage3EEB07D6
+  --stack-name lxsoftware --resources-to-skip <logical-id>
 ```
 
-Then redeploy. The stage now `DependsOn` the Meta webhook routes so the
-same changeset creates the routes first.
+## 3. DNS and Google IdP
 
-## 5. DNS
+Create a **CNAME** from `admin.lx-software.com` to the CloudFront domain
+(Cloudflare proxy off). Add the Cognito `idpresponse` URL to the Google
+OAuth client. Do **not** edit Cognito app client callback URLs in the
+console; CDK owns them from `AdminWebDomainName` and overwrites drift.
 
-Create a **CNAME** from `admin.lx-software.com` to the CloudFront distribution
-domain name. Keep Cloudflare proxy **off** for this record.
+## 4. Deploy the admin SPA
 
-## 6. Google OAuth client (IdP)
+Run **Deploy Admin Web** (on `main` when `apps/admin_web/**` or
+`scripts/deploy/deploy-admin-www.sh` change, or manually). It builds
+`apps/admin_web` with production `VITE_*` values, then
+`scripts/deploy/deploy-admin-www.sh` uploads hashed `dist/assets/**` with a
+long immutable cache, uploads `index.html` with `no-cache` and invalidates
+CloudFront. The script reads `AdminWebBucketName` and
+`AdminWebDistributionId` from the `lxsoftware-admin-web` outputs (override
+with `ADMIN_WEB_STACK_NAME`).
 
-Add `https://<cognito-domain>/oauth2/idpresponse` to the Google Cloud OAuth
-client’s authorized redirect URIs. **Do not** manually change Cognito app
-client callback URLs in the console — they are owned by CDK from the
-`AdminWebDomainName` parameter; console drift will be overwritten on the next
-deploy.
+## 5. Smoke tests
 
-## 7. Deploy the admin SPA
-
-Run **Deploy Admin Web**. The workflow builds `apps/admin_web` with production
-`VITE_*` values. The deploy script uploads hashed `dist/assets/**` with a long
-immutable cache, then uploads `index.html` with `no-cache`, then invalidates
-CloudFront.
-
-## 8. Smoke tests
-
-1. Open `https://admin.lx-software.com` and confirm the login screen appears.
-2. Use **Sign in with Google** (allow-listed email) or **Sign in with email**
-   for the bootstrap user; complete Hosted UI / MFA as applicable.
-3. From DevTools, confirm session tokens exist in `sessionStorage`.
-4. Call `GET /health` on the API without auth (expect **200**).
-5. Call `GET /me` with `Authorization: Bearer <id_token>` (expect **200**).
-6. Exercise presigned **POST** upload and confirm flows; verify a DynamoDB row
-   under `ASSET#...` / `META`.
-7. Sign out, reload, and confirm you return to the login screen.
+1. Open `https://admin.lx-software.com`; the login screen appears.
+2. **Sign in with Google** (allow-listed email) or **Sign in with email**
+   for the bootstrap user; complete Hosted UI / MFA.
+3. Tokens exist in `sessionStorage`.
+4. `GET /health` without auth → **200**; `GET /me` with
+   `Authorization: Bearer <id_token>` → **200**.
+5. Presigned **POST** upload and confirm; a DynamoDB row exists under
+   `ASSET#…` / `META`.
+6. Sign out, reload, and land on the login screen again.
 
 ## Local UI without a stack
 
-`npm run dev` still needs a real Cognito pool and API. For layout and table
-work, `npm run dev:mock` (from `apps/admin_web`) loads `.env.mock`, signs the
-SPA in with a fake admin token, and serves fixture rows from
-`src/lib/mock/fixtures.ts`. Never set `VITE_ADMIN_MOCK=1` on a production
-build.
+`npm run dev` needs a real Cognito pool and API. `npm run dev:mock` (from
+`apps/admin_web`) loads `.env.mock`, signs in with a fake admin token and
+serves `src/lib/mock/fixtures.ts`. Never set `VITE_ADMIN_MOCK=1` on a
+production build.
 
-## Operating
+## Read-only debugging identity
 
-For investigating production issues from CloudWatch, S3 access logs, and the
-admin DynamoDB tables using the `cursor-cloud-agent` IAM identity, see
-[`docs/deployment/cloud-agent-iam.md`](./cloud-agent-iam.md). That document
-lists the exact inline IAM policy needed and the AWS CLI / Console commands
-to attach it.
+Investigators (including Cursor cloud agents) authenticate as the IAM user
+`cursor-cloud-agent`. It has no managed policies; attach the inline policy
+`lxsoftware-cloud-agent-read` to let it read S3 access logs, assets-bucket
+metadata (never the statements themselves) and query the admin tables:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadAssetsAccessLogs",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetObject"],
+      "Resource": [
+        "arn:aws:s3:::lxsoftware-admin-assets-logs-588024549699-ap-southeast-1",
+        "arn:aws:s3:::lxsoftware-admin-assets-logs-588024549699-ap-southeast-1/*"
+      ]
+    },
+    {
+      "Sid": "ReadAssetsBucketMetadata",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetBucketCORS", "s3:GetBucketPolicy", "s3:GetBucketLocation",
+        "s3:GetBucketVersioning", "s3:GetBucketLogging", "s3:GetEncryptionConfiguration"
+      ],
+      "Resource": ["arn:aws:s3:::lxsoftware-admin-assets-588024549699-ap-southeast-1"]
+    },
+    {
+      "Sid": "ReadAdminTables",
+      "Effect": "Allow",
+      "Action": ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:DescribeTable"],
+      "Resource": [
+        "arn:aws:dynamodb:ap-southeast-1:588024549699:table/lxsoftware-admin-audit-log",
+        "arn:aws:dynamodb:ap-southeast-1:588024549699:table/lxsoftware-admin-records"
+      ]
+    }
+  ]
+}
+```
+
+```bash
+aws iam put-user-policy --user-name cursor-cloud-agent \
+  --policy-name lxsoftware-cloud-agent-read --policy-document file://policy.json
+# remove:
+aws iam delete-user-policy --user-name cursor-cloud-agent --policy-name lxsoftware-cloud-agent-read
+```
+
+No `s3:GetObject` on the assets bucket, no `dynamodb:Scan`, no KMS
+(AWS-managed keys). CloudWatch Logs read access is a separate policy on the
+user. S3 access logs under `assets-data-bucket/` follow the standard S3 log
+format; for presigned-upload failures look at `Operation`
+(`REST.POST.OBJECT`), `HTTP status` (204 = success) and `Error Code`
+(`AccessDenied`, `EntityTooLarge`, `MalformedPOSTRequest`).
 
 ## Public API keys
 
-The HTTP API exposes mirrors of the admin endpoints under `/public/*`,
-authenticated with a static API key in the `x-api-key` header instead of a
-Cognito JWT. Keys are scoped; a leaked key only unlocks the scopes it was
-minted with. Existing keys stay **GET-only** unless minted or updated with
+The HTTP API mirrors admin endpoints under `/public/*`, authenticated with
+a static key in the `x-api-key` header instead of a Cognito JWT. Keys are
+scoped; existing keys stay GET-only unless minted or updated with
 `allowWrite`.
 
 | Route | Mirrors |
 |-------|---------|
-| `GET /public/finance` | `GET /finance` |
-| `GET /public/finance/quotes` | `GET /finance/quotes` |
-| `GET /public/records` | `GET /records` |
-| `GET /public/fx/v2/rates` | `GET /fx/v2/rates` |
-| `GET /public/siu-tin-dei/board` | `GET /siu-tin-dei/board` |
-| `GET /public/siu-tin-dei/board/{proxy+}` | every existing JWT GET under `/siu-tin-dei/board` |
+| `GET /public/finance`, `/public/finance/quotes`, `/public/records`, `/public/fx/v2/rates` | the JWT GETs (finance stays GET-only) |
+| `GET /public/siu-tin-dei/board` and `GET /public/siu-tin-dei/board/{proxy+}` | every JWT GET under `/siu-tin-dei/board` |
 | `PUT` / `POST` / `DELETE /public/siu-tin-dei/board/{proxy+}` | the matching JWT write, when the key has `allowWrite` and `PublicApiWritesEnabled` is `true` |
 
-Assets and parse-job endpoints are **not** mirrored (they presign S3 access to
-bank statements / are owner-scoped). Board content creatives still return the
-same short-lived presigned URL as the admin GET. Finance `/public/*` stays
-GET-only. The Lambda handler enforces scopes, the write flag, and the kill
-switch (`PUBLIC_READ_PATHS` / `PUBLIC_BOARD_PREFIX` in
-`backend/lambda/admin/dispatch.py`).
-
-`/public/records` still excludes `BOARD#` rows. Legacy keys with only
-`scope=read` (no `scopes` list) are **finance-only**.
-
-### Key scopes
+Assets and parse-job endpoints are not mirrored. `/public/records`
+excludes `BOARD#` rows. Legacy keys with only `scope=read` are finance-only.
+The handler enforces scopes, the write flag and the kill switch
+(`PUBLIC_READ_PATHS` / `PUBLIC_BOARD_PREFIX` in `dispatch.py`).
 
 | Scope | Routes |
 |-------|--------|
 | `finance` | `/public/finance`, quotes, records, FX (GET only) |
-| `siutindei-board-ops` | overview, staff, tasks, breakers, review, holds, ramp, tools, tool-calls; writes on those heads when `allowWrite` is set (except owner-only, below) |
-| `siutindei-board-full` | every JWT GET under `/siu-tin-dei/board` (includes ops paths) except the PII heads below; matching writes when `allowWrite` is set |
+| `siutindei-board-ops` | overview, staff, tasks, breakers, review, holds, ramp, tools, tool-calls; writes on those heads with `allowWrite` (except owner-only) |
+| `siutindei-board-full` | every JWT GET under `/siu-tin-dei/board` except the PII heads; matching writes with `allowWrite` |
 | `siutindei-pii` | unmasked mail; `allowList` / `digestTo` on overview and `GET /tools` `config.allowList`; `prospects`, `outreach`, `receivables` (with board-full); prospect import / PUT / merge |
-| `siutindei-assets` | content creative presigned URLs (GET only; no write routes) |
+| `siutindei-assets` | content creative presigned URLs (GET only) |
 
-Writes also need **`allowWrite`** on the key row (create `--allow-write` or
+Writes need **`allowWrite`** on the key (`create --allow-write` or
 `set-write`) **and** stack parameter **`PublicApiWritesEnabled=true`**
-(CDK default `false`; production is `true`). Authorizer cache is key +
-source IP, so the write flag is enforced in the handler, not by denying the
-method at the authorizer. A valid key that is not allowed to write gets
-**403** `{"message": "Forbidden", "reason": "writes_disabled"|"key_read_only"|"owner_only"|"scope"}`
-instead of a generic 404. Unknown keys still get API Gateway 401/403.
-GET denials stay 404.
+(CDK default `false`; production `true`). Denied writes return **403**
+`{"message": "Forbidden", "reason": "writes_disabled"|"key_read_only"|"owner_only"|"scope"}`;
+GET denials stay 404; unknown keys get API Gateway 401/403. Owner-only
+even for a write key: `PUT settings` / `boundaries` / `tools`,
+`POST approvals/{id}/approve|reject`, `code/promote`, `code/sync-staging`,
+`ramp/{classKey}/promote|pause`, `mail/selftest`, `DELETE chat/{persona}`,
+`POST meetings/{id}/cancel`, `POST tasks/{id}/cancel`, `POST staff/tick`.
 
-These writes stay **Cognito JWT only** even for a write key:
+`PUT charter` / `brief` / `members` and `POST updates` / `tasks` / `chat`
+feed persona and staff prompts, so a leaked write key can steer the board
+within the existing propose / act / hold boundaries. Mint write keys with
+`--allowed-cidrs` and a short `--expires-at`. `POST` is not idempotent; the
+1 req/s write throttle limits accidental duplicates.
 
-- Cost / safety knobs: `PUT settings`, `PUT boundaries`, `PUT tools`
-- Owner decide / promote: `POST approvals/{id}/approve|reject`, `POST code/promote`, `POST code/sync-staging`, `POST ramp/{classKey}/promote`
-- Mail self-test: `POST mail/selftest`
-- Non-reversible live state: `DELETE chat/{persona}`, `POST meetings/{id}/cancel`, `POST tasks/{id}/cancel`, `POST staff/tick`, `POST ramp/{classKey}/pause`
+Without `siutindei-pii`, mail is aliased, allow-list / digest addresses
+are stripped (a blank `settings.review.digestTo` on the public overview
+means the key lacks the scope, not that it is unset) and `prospects` /
+`outreach` / `receivables` return 404. Without `siutindei-assets`,
+creative GETs return the object key only.
 
-`PUT charter` / `brief` / `members` and `POST updates` / `tasks` / `chat` feed
-persona and staff prompts. A leaked write key can steer what the board says
-and what seats do (within existing propose / act / hold boundaries). Mint
-write keys with `--allowed-cidrs` and a short `--expires-at`. `POST` is not
-idempotent — a retried `POST tasks` or `POST meetings` creates a second row;
-the 1 req/s write throttle limits accidental duplicates.
+Keys expire in **90 days** unless `--expires-at` is set; optional
+`--allowed-cidrs` fail closed when the client IP is missing. The
+`PublicApiKeyAuthorizerFn` authorizer looks up the scrypt digest
+(`pk = APIKEY#<digest>`, `sk = META`; only the digest is stored or
+logged) and API Gateway caches verdicts **60 seconds** per key + source
+IP, so revocation takes up to that long. Throttles: GET 2 req/s burst 10;
+board writes 1 req/s burst 5.
 
-Every **write** emails `settings.review.digestTo` from `hello@` (no 60s
-coalesce). Successful **reads** (and denied known keys) still coalesce to one
-mail per 60 seconds per `(keyId, path class, source IP)`. Audit rows for key
-writes use `USER#apikey:<keyId>`.
+Every **write** emails `settings.review.digestTo` from `hello@`. Successful
+**reads** and denied known keys (revoked / expired / CIDR) coalesce to one
+mail per 60 seconds per `(keyId, path class, source IP)`. Notification
+needs `digestTo` and `SiutindeiBoardMailSendingEnabled`; the request
+succeeds either way. Audit rows for key writes use `USER#apikey:<keyId>`.
 
-Without `siutindei-pii`, mail is aliased, allow-list / digest addresses are
-stripped (including `GET /tools` `config.allowList`), and `prospects` /
-`outreach` / `receivables` return 404 (they carry third-party contact and
-billing data with no alias layer). A blank `settings.review.digestTo` on the
-public overview means the key lacks `siutindei-pii`, not that the recipient
-is unset. Without `siutindei-assets`, creative GETs return the object key
-only.
-
-New keys expire in **90 days** unless `--expires-at` is set. Optional
-`--allowed-cidrs` fail-closed when the client IP is missing or outside the
-list. Authorizer cache is **60 seconds**, keyed on `x-api-key` + source IP.
-
-Each successful **read** (and each denied known key: revoked / expired / CIDR)
-emails `settings.review.digestTo` from `hello@`, coalesced to **one mail per
-60 seconds** per `(keyId, path class, source IP)`. Writes mail every time.
-Set `digestTo` and `SiutindeiBoardMailSendingEnabled` or the notify is skipped
-(the request still succeeds). `/public/*` GET routes are throttled at 2 req/s,
-burst 10; board writes at 1 req/s, burst 5.
-
-Mint a Cloud Agent key as `finance,siutindei-board-ops` — not `siutindei-board-full`.
-Do **not** pass `--allow-write` unless that agent should mutate board state.
-After deploy, replace `PUBLIC_API_KEY` and revoke or shrink the old key.
-
-Keys are validated by the `PublicApiKeyAuthorizerFn` Lambda authorizer, which
-looks up the scrypt digest of the presented key in the records table
-(`pk = APIKEY#<digest>`, `sk = META`; see
-`backend/lambda/public_api_authorizer/api_key_hash.py` for the digest
-rationale). Only the digest is ever stored or logged. API Gateway caches
-authorizer verdicts for up to **60 seconds** per key + source IP, so
-revocation and CIDR changes take up to that long to propagate.
-
-Manage keys with admin AWS credentials (needs table read/write + CMK access):
+Mint a Cloud Agent key as `finance,siutindei-board-ops`, not
+`siutindei-board-full`, and without `--allow-write` unless it should
+mutate board state.
 
 ```bash
 # Mint (prints the key exactly once; keys look like lxpk_…)
@@ -251,38 +240,20 @@ python3 scripts/manage-public-api-keys.py create --label "reporting" \
 python3 scripts/manage-public-api-keys.py create --label "board-writer" \
   --scopes finance,siutindei-board-ops --allow-write
 
-# Toggle write without re-minting
+# Toggle write, list, revoke
 python3 scripts/manage-public-api-keys.py set-write --key-id <keyId> --allow-write
 python3 scripts/manage-public-api-keys.py set-write --key-id <keyId> --read-only
-
-# List / revoke
 python3 scripts/manage-public-api-keys.py list
 python3 scripts/manage-public-api-keys.py revoke --key-id <keyId>
 ```
 
-### Via GitHub Actions (no local AWS setup)
-
-The **Manage Public API Keys** workflow (`.github/workflows/manage-api-keys.yml`,
-Actions tab > Run workflow) runs the same script through the `GitHubActionsRole`
-OIDC role and the `production` environment.
-
-One-time setup: add a `PUBLIC_API_KEY_GPG_PASSPHRASE` secret under
-**Settings > Environments > production > Secrets** (any strong passphrase you
-keep locally). Because this repository is public and workflow logs are
-world-readable, a minted key is never printed — the job emits a
-gpg-encrypted block in the run summary instead. Retrieve it with:
-
-```bash
-# paste the armored block from the job summary into key.asc, then:
-gpg --decrypt key.asc   # enter the PUBLIC_API_KEY_GPG_PASSPHRASE value
-```
-
-`list` and `revoke` need no passphrase and print straight to the job summary.
-If the run fails with `AccessDenied` on `dynamodb:PutItem` or `kms:Decrypt`,
-grant `GitHubActionsRole` those actions on the records table and the shared
-CMK.
-
-Call the API:
+**Via GitHub Actions:** **Manage Public API Keys**
+(`.github/workflows/manage-api-keys.yml`) runs the same script through
+`GitHubActionsRole` and the `production` environment. One-time setup: add
+the `PUBLIC_API_KEY_GPG_PASSPHRASE` secret. Because the repository and its
+logs are public, a minted key is emitted as a gpg-encrypted block in the
+run summary (`gpg --decrypt key.asc`). `list` and `revoke` print to the
+summary directly.
 
 ```bash
 curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/finance"
@@ -292,845 +263,353 @@ curl -X POST -H "x-api-key: lxpk_..." -H "Content-Type: application/json" \
   "$ADMIN_API_BASE_URL/public/siu-tin-dei/board/tasks"
 ```
 
-A `.gitleaks.toml` rule flags any `lxpk_…` value committed to the repo.
-
 ## Enable Banking account sync
 
-The admin SPA's **Banking** page links open-banking (PSD2) bank accounts via
-[Enable Banking](https://enablebanking.com) and refreshes `recordedValue` on
-the finance **Accounts** sheet from live balances — manually ("Sync now") and
-on a daily EventBridge schedule (05:30 HKT). Only balances are read; no
-payment scopes are requested.
-
-Authentication to the Enable Banking API uses an RS256 JWT signed by the
-stack's asymmetric KMS key (`lxsoftware-admin/enable-banking`) — no private
-key material is ever stored or exported.
+The **Banking** page links PSD2 bank accounts via
+[Enable Banking](https://enablebanking.com) and refreshes `recordedValue`
+on the finance **Accounts** sheet from live balances ("Sync now" plus a
+daily EventBridge schedule at 05:30 HKT). Only balances are read.
+Authentication is an RS256 JWT signed by the stack's asymmetric KMS key
+(`alias/lxsoftware-admin/enable-banking`); no private key material leaves
+KMS.
 
 One-time setup:
 
-1. Deploy the stack (the KMS key is created even while the feature is off).
-2. Export the public key with admin AWS credentials:
+1. Deploy the stack (the KMS key exists even while the feature is off).
+2. Export the public key as PEM with admin AWS credentials:
 
    ```bash
-   python3 scripts/export-enable-banking-public-key.py
+   { echo "-----BEGIN PUBLIC KEY-----"
+     aws kms get-public-key --key-id alias/lxsoftware-admin/enable-banking \
+       --region ap-southeast-1 --query PublicKey --output text | fold -w 64
+     echo "-----END PUBLIC KEY-----"; } > enable-banking.pem
    ```
 
-3. Create an account at [enablebanking.com](https://enablebanking.com/sign-in/)
-   and register a **production** application, pasting the PEM public key as the
-   certificate. Add the redirect URLs
-   `https://<AdminWebDomainName>/banking/callback` and (for local dev)
+3. Create an account at enablebanking.com, register a **production**
+   application, paste the PEM as the certificate and add the redirect
+   URLs `https://<AdminWebDomainName>/banking/callback` and
    `http://localhost:5173/banking/callback`.
-4. Activate the inactive production application by linking your own accounts
-   ("Activate by linking accounts" in the Control Panel). Restricted
-   applications can only read accounts you link — which is exactly this use
-   case (no Enable Banking contract needed for individual non-commercial use).
-5. Set the returned application id as the `EnableBankingAppId` parameter
-   (`lxsoftware:EnableBankingAppId` in `backend/infrastructure/params/*.json`)
-   and redeploy. Leaving it blank keeps the feature disabled.
+4. Activate the application by linking your own accounts ("Activate by
+   linking accounts"). Restricted applications can only read accounts you
+   link, which is this use case.
+5. Set the application id as `lxsoftware:EnableBankingAppId` in
+   `backend/infrastructure/params/*.json` and redeploy. Blank keeps the
+   feature off.
 
-Then, in the admin SPA: **Banking → Connect a bank** (redirects through the
-bank's own consent screen and back to `/banking/callback`), map each linked
-bank account to an Accounts-sheet record, and run **Sync now**. Consents
-expire per PSD2 (90 days for most UK banks; the stack caps requests at 180
-days) — reconnect from the same page when a session expires.
+Then **Banking → Connect a bank**, map each linked account to an
+Accounts-sheet record and run **Sync now**. Consents expire per PSD2 (90
+days for most UK banks; the stack caps requests at 180 days); reconnect
+from the same page.
 
-## Executive Board (AI board for Siu Tin Dei)
+## Executive Board
 
-The **Siu Tin Dei → Executive Board** tab hosts a fixed board of eight AI
-personas (CEO, CFO, COO, CPO, CTO, CIO, CISO, CMO) that chat with the owner,
-run stand-ups and deep dives through OpenRouter, and keep a list of next
-actions. Design notes live in
-[`docs/architecture/executive-board-plan.md`](../architecture/executive-board-plan.md).
+Design: [`../architecture/executive-board.md`](../architecture/executive-board.md).
+Everything runs on `AdminApiFn` and the records table.
 
-Everything runs on the existing `lxsoftware` stack (`AdminApiFn` + the records
-table); there is no new Lambda, table, or bucket. Board rows use the
-`BOARD#` prefix and are excluded from the generic `/records` scan.
+### Stack parameters
 
-Stack parameters (all optional, set in `backend/infrastructure/params/*.json`).
-Keys must match the names below; an unknown `lxsoftware:*` key fails
-`cdk deploy`. Naming: board-only knobs are `SiutindeiBoard*` (kill
-switches, models, outreach, mail, Meta / stores / web ids); Siu Tin Dei
-product resources the stack integrates with are `Siutindei*` (`SiutindeiClusterArn`,
-`SiutindeiDbSecretArn`, `SiutindeiDbSecretName`); stack-wide knobs stay
-unprefixed (`PublicSiteOrigins`, `PublicApiBaseUrl`, Cognito, OpenRouter,
-inbound mail, Enable Banking). Lambda env vars stay short (`BOARD_*`,
-`OUTREACH_*`).
+All optional, set in `backend/infrastructure/params/*.json`; an unknown
+`lxsoftware:*` key fails `cdk deploy`. Naming: board-only knobs are
+`SiutindeiBoard*`; Siu Tin Dei product resources are `Siutindei*`;
+stack-wide knobs are unprefixed. Lambda env vars stay short
+(`BOARD_*`, `OUTREACH_*`).
 
 | Parameter | Purpose |
 |-----------|---------|
-| `lxsoftware:OpenRouterApiKeySecretArn` | Already required for statement parsing; the board reuses the same key. This secret already exists in the account — CDK does not create it. |
-| `lxsoftware:SiutindeiBoardGitHubRepo` | `owner/name` of the repository to read (default `lx-software-ltd/siutindei`). |
-| `lxsoftware:SiutindeiBoardToolsEnabled` | `true` (default) / `false`. Deploy-time kill switch for every board tool call, independent of the in-app settings. |
-| `lxsoftware:SiutindeiBoardStaffEnabled` | `false` (CDK default) / `true`. Deploy-time kill switch for Executive Board staff tasks. `board_staff.env_enabled()` is fail-closed: only `1` / `true` / `yes` / `on` count as on (unset is off). The same env is set on **both** `AdminApiFn` and `InboundStatementMailFn`. Also requires `settings.staff.enabled` in the app. Production (`params/production.json`) sets `true`; the Staff UI toggle is still required before any seat runs. |
-| `lxsoftware:PublicSiteOrigins` | CSV of extra browser origins allowed on the HTTP API CORS list (admin origin is always included). Stack-wide; used by the public newsletter form (`apps/public_www`) and any other unauthenticated browser client. Default includes the LX Software and Siu Tin Dei public origins. |
-| `lxsoftware:SiutindeiBoardOutreachSendingDomain` | SES From domain for cold outreach (default `partners.siutindei.com`). Owner adds DKIM CNAMEs, MAIL FROM MX+TXT and DMARC before `outreach_send` will send. |
-| `lxsoftware:SiutindeiBoardOutreachFromLocalPart` | Local part of the outreach From address (default `partnerships`). |
-| `lxsoftware:PublicApiBaseUrl` | Public base URL of this stack's HTTP API. Used today for board unsubscribe / newsletter confirm links. Blank uses the API endpoint CloudFormation assigns. |
-| `lxsoftware:SiutindeiBoardAwsStackPrefix` | Name prefix used to match CloudWatch alarms (default `siutindei`). `aws_monthly_cost` filters Cost Explorer by the activated `Project` cost-allocation tag (`Siu Tin Dei` from `contracts/aws-billing.json`); when that filter matches no rows it falls back to the whole account and labels the result `scope: account`. |
-| `lxsoftware:SiutindeiBoardAwsLambdaNames` | Comma-separated Lambda function names (the siutindei stack lives in another repo, so they cannot be derived here). `aws_lambda_health` reports 24h errors/duration for exactly these; empty means "no functions configured". |
-| `lxsoftware:SiutindeiClusterArn` | Aurora cluster ARN for the siutindei database (RDS Data API). When set, CDK enables the HTTP endpoint on that cluster and applies `scripts/siutindei/receivables.sql`. Required for Executive Board `finance` and `product` tools. Leave blank to keep those tools returning a clear "not configured" error. |
-| `lxsoftware:SiutindeiDbSecretArn` | Optional Secrets Manager ARN of the siutindei DB credentials. Leave blank to resolve `SiutindeiDbSecretName` (default `lxsoftware-siutindei-database-credentials`). RDS-owned; do not recreate. |
-| `lxsoftware:SiutindeiDbSecretName` | Secrets Manager name used when `SiutindeiDbSecretArn` is blank (default `lxsoftware-siutindei-database-credentials`). |
-| `lxsoftware:SiutindeiBoardMetaVerifyToken` | Token Meta sends on the GET verify handshake (`hub.verify_token`). Not a Secrets Manager secret. |
-| `lxsoftware:SiutindeiBoardMetaPageId` / `SiutindeiBoardMetaIgUserId` / `SiutindeiBoardMetaWaPhoneNumberId` / `SiutindeiBoardMetaAdAccountId` / `SiutindeiBoardMetaWabaId` | Graph ids the `meta` tools call. |
-| `lxsoftware:SiutindeiBoardAppStoreConnectAppId` / `SiutindeiBoardGooglePlayPackageName` | App id / package if they are not already inside the secrets. |
-| `lxsoftware:SiutindeiBoardAppStoreConnectVendorNumber` | App Store Connect vendor number (Payments and Financial Reports page). Needed for Apple download counts, which come from yesterday's daily `SALES`/`SUMMARY` report; may also be stored as `vendorNumber` inside the key secret. Installs are not exposed by either store API and are reported as `null`. |
-| `lxsoftware:SiutindeiBoardMailDomain` | Domain the board indexes (default `siutindei.com`). Every mailbox at this domain is copied to the board's SES inbound address by the Cloudflare Email Worker. |
-| `lxsoftware:SiutindeiBoardMailSendingEnabled` | `false` (default) / `true`. Flip to `true` only after the DKIM CNAMEs, SPF `include:amazonses.com`, and DMARC are in the `SiutindeiBoardMailDomain` zone. Creates the SES sending identity and the IAM send policy; until then mail tools stay read-only. |
-| `lxsoftware:SiutindeiBoardChatModel` / `SiutindeiBoardMeetingModel` / `SiutindeiBoardDeepDiveModel` | Default OpenRouter model slugs (`openai/gpt-4.1-mini`, `openai/gpt-4.1-mini`, `anthropic/claude-sonnet-4`). The owner can override them per board in **Settings**. Board completions send those slugs as OpenRouter `models` fallbacks, so a 429 on a cheap primary (for example DeepSeek's StreamLake shared pool) continues on the stack defaults instead of failing the meeting. |
+| `OpenRouterApiKeySecretArn` | Existing secret (also used by statement parsing). Must be JSON with named keys `statement-parser` and `executive-board`. |
+| `SiutindeiBoardGitHubRepo` | `owner/name` to read (default `lx-software-ltd/siutindei`). |
+| `SiutindeiBoardToolsEnabled` | `true` (default) / `false`. Deploy-time kill switch for every tool call. |
+| `SiutindeiBoardStaffEnabled` | `false` (default) / `true`. Deploy-time kill switch for staff tasks; fail-closed (`1|true|yes|on`), set on `AdminApiFn` and `InboundStatementMailFn`. Production sets `true`; the Staff UI toggle is still required. |
+| `PublicSiteOrigins` | CSV of extra browser origins on the HTTP API CORS list (admin origin always included). Needed by the public newsletter form. |
+| `PublicApiBaseUrl` | Public base URL of the HTTP API for unsubscribe / confirm links. Blank uses the CloudFormation endpoint. |
+| `SiutindeiBoardOutreachSendingDomain` / `SiutindeiBoardOutreachFromLocalPart` | Cold-outreach From (`partnerships@partners.siutindei.com`). Owner adds DKIM, MAIL FROM and DMARC records. |
+| `SiutindeiBoardAwsStackPrefix` / `SiutindeiBoardAwsLambdaNames` | Alarm-name prefix (default `siutindei`) and CSV of siutindei Lambda names for `aws_lambda_health`. `aws_monthly_cost` filters by the `Project` tag and falls back to the account (`scope: account`). |
+| `SiutindeiClusterArn` | Aurora cluster ARN. When set, CDK enables the HTTP Data API and applies `scripts/siutindei/receivables.sql`; required for `finance` / `product` tools. |
+| `SiutindeiDbSecretArn` / `SiutindeiDbSecretName` | DB credentials secret (default name `lxsoftware-siutindei-database-credentials`; RDS-owned, do not recreate). |
+| `SiutindeiBoardMetaVerifyToken` | Meta GET verify token (not a Secrets Manager secret). |
+| `SiutindeiBoardMetaPageId` / `MetaIgUserId` / `MetaWaPhoneNumberId` / `MetaAdAccountId` / `MetaWabaId` | Graph ids for the `meta` tools. |
+| `SiutindeiBoardAppStoreConnectAppId` / `AppStoreConnectVendorNumber` / `GooglePlayPackageName` | Store ids if not inside the secrets. The vendor number is needed for Apple download counts. |
+| `SiutindeiBoardGa4PropertyIds` / `SiutindeiBoardGtmContainers` | CSV of GA4 properties; `account:container` pairs. |
+| `SiutindeiBoardMailDomain` | Domain the board indexes (default `siutindei.com`). |
+| `SiutindeiBoardMailSendingEnabled` | `false` (default) / `true`. Flip only after DKIM / SPF / DMARC are in the zone; creates the SES identity and send policy. |
+| `SiutindeiBoardChatModel` / `MeetingModel` / `DeepDiveModel` | Default OpenRouter slugs (`openai/gpt-4.1-mini`, `openai/gpt-4.1-mini`, `anthropic/claude-sonnet-4`); overridable in **Settings**. They are also sent as `models` fallbacks so a 429 on a cheap primary continues on the defaults. |
 
-The **Siu Tin Dei** connector secrets (`lxsoftware-admin-siutindei-board-*`)
-already exist in the account. The first #328 deploy created them, then
-`RemovalPolicy.RETAIN` left them behind when rollback dropped them from the
-stack. CDK now **imports those names** and grants `AdminApiFn` read; it
-does not try to create them again. The same happened to the autonomy
-secrets `…-board-google-places-key` and `…-board-link-signing-key` on the
-first #341 deploy, so they are imported the same way (the link-signing
-value generated on that first attempt is the one in use). Replace the dummy values in Secrets
-Manager (`ap-southeast-1`). The older `lxsoftware-admin-*` set stays in
-the stack (CDK-created, unused) for a future LX Software board. OpenRouter
-stays `lxsoftware-admin-openrouter-api-secret-*` because statement parsing
-also uses it. That secret must be JSON with named keys `statement-parser`
-and `executive-board` (mint via `scripts/mint-openrouter-app-keys.py`).
-Sibling products store their own named keys. **LX Software → Dashboard**
-shows AWS and OpenRouter side by side; each card has a UTC month dropdown
-(current month-to-date plus the previous 12 months).
+### Secrets
 
-| Secret name | Dummy shape | Replace with |
-|-------------|-------------|--------------|
-| `lxsoftware-admin-siutindei-board-github-token` | random 40-char string | Fine-grained GitHub PAT (plain string). Needed for write tools, security alerts, and a higher rate limit. Reads of the public `siutindei` repo work without it. |
-| `lxsoftware-admin-siutindei-board-search-api-key` | random 40-char string | Brave Search API key (plain string). Until then `research` falls back to OpenRouter `:online`. |
-| `lxsoftware-admin-siutindei-board-meta-token` | random 40-char string | Meta System User long-lived token (Page / Instagram / WhatsApp / ads). |
-| `lxsoftware-admin-siutindei-board-meta-app-secret` | random 40-char string | Meta app secret (`X-Hub-Signature-256` on `POST /webhooks/meta/siutindei` and `/webhooks/meta`). |
-| `lxsoftware-admin-siutindei-board-app-store-connect-key` | JSON `{keyId, issuerId, appId, vendorNumber, privateKey}` | Real App Store Connect API key. Paste the `.p8` into `privateKey`. |
-| `lxsoftware-admin-siutindei-board-google-play-sa` | JSON `{client_email, packageName, private_key}` | Real Play Console service-account JSON. |
-| `lxsoftware-admin-siutindei-board-google-analytics-sa` | JSON `{client_email, private_key}` | Dedicated GA4 / GTM service-account JSON (not the Play key). |
+The `lxsoftware-admin-siutindei-board-*` secrets are **imported by name**
+(they outlive stack rollbacks under `RemovalPolicy.RETAIN`); CDK grants
+`AdminApiFn` read and never recreates them. Replace the dummy values in
+Secrets Manager (`ap-southeast-1`):
 
-GitHub token setup (only needed for write tools, security alerts, or a higher
-rate limit):
+| Secret | Replace with |
+|--------|--------------|
+| `…-board-github-token` | Fine-grained PAT scoped to `siutindei`: Contents **read and write**, Issues read/write, Pull requests **write**, Actions **read and write**, Metadata read, Security events read (for CISO findings). Public reads work without it. |
+| `…-board-search-api-key` | Brave Search key; until then `research` falls back to OpenRouter `:online`. |
+| `…-board-meta-token` / `…-board-meta-app-secret` | Meta System User long-lived token; app secret for `X-Hub-Signature-256`. |
+| `…-board-app-store-connect-key` | JSON `{keyId, issuerId, appId, vendorNumber, privateKey}` (`.p8` body in `privateKey`). |
+| `…-board-google-play-sa` | Play Console service-account JSON (+ `packageName` if not a parameter). |
+| `…-board-google-analytics-sa` | Dedicated GA4 / GTM service-account JSON (not the Play key); may carry `propertyIds` / `gtmContainers`. |
+| `…-board-google-places-key` | Google Places API (New) key. |
+| `…-board-link-signing-key` | Generated on first deploy; leave as is. |
 
-1. On GitHub create a fine-grained personal access token scoped to the
-   `siutindei` repository only, with **Contents: read**, **Issues: read and
-   write**, **Pull requests: write**, **Actions: read and write**, **Metadata: read** and, if you want the CISO to
-   see Dependabot / code-scanning findings, **Security events: read**. Set an
-   expiry and rotate it like any other secret.
-2. After the stack is deployed, open
-   `lxsoftware-admin-siutindei-board-github-token` in Secrets Manager and replace the
-   dummy string with the PAT. No stack parameter or redeploy is required.
-
-Scheduled stand-ups: two EventBridge Scheduler schedules invoke `AdminApiFn`
-with `{ internal: "board_meeting", trigger: "schedule", slot: "morning" | "evening" }`
-at 06:00 HKT and 18:00 HKT (`Asia/Hong_Kong` cron, no DST maths). Both are
-off until the owner turns them on in **Executive Board → Settings**; the
-handler also refuses to start a meeting when the daily budget is exhausted or
-another meeting is still running.
-
-Lambda invoke permissions: `AdminApiFn` is fronted by 60+ HTTP API routes.
-API Gateway is granted **one** API-wide invoke permission (`AdminApiInvoke`,
-source ARN `arn:aws:execute-api:…:<api-id>/*/*/*`) instead of one
-`AWS::Lambda::Permission` per route — per-route statements exceeded Lambda's
-fixed 20 KB resource-based policy limit. Scheduler targets use an IAM role
-for the same reason. When adding new triggers for `AdminApiFn`, prefer
-role-based invocation (Scheduler, Step Functions) or widen an existing
-statement rather than adding new resource-policy statements.
-
-Recursive loop detection: `AdminApiFn` Event-invokes itself for staff
-steps, meeting phases, chat/parse workers and intel crawl pages. AWS
-Lambda counts each hop and, with the default `Terminate` setting, drops
-the invoke after ~16 and emails `AWS_LAMBDA_RUNAWAY_TERMINATION_NOTIFICATION`
-(CloudWatch metric `RecursiveInvocationsDropped`). That is expected for
-this worker pattern, not an S3/SQS miswire. Production confirmed the
-15 Sep 2026 Health email against
-`lxsoftware-AdminApiFnA81506EE-Dtien8OG6FVk`: drops at 09:52 and 10:20
-UTC (around the 18:00 HKT evening standup); the 12:53 UTC mail is the
-notification, not the drop time. CDK sets `RecursiveLoop = Allow` on
-`AdminApiFn` only; inbound-mail and the public authorizer stay on
-Terminate. Cost is still bounded by `maxStepsPerTask` (12), idle-step
-limits, meeting phase lists, the crawl page budget, and the daily
-OpenRouter staff/board budgets. Do not set Allow on a function that
-writes back to its own S3/SQS trigger.
-
-After Allow, `RecursiveInvocationsDropped` no longer fires. Alarm
-`lxsoftware-admin-siutindei-admin-api-invocations` trips when
-`AdminApiFn` Invocations exceed 250 in 5 minutes (observed peak 145
-during standup). The name includes `siutindei` so
-`board_cache_refresh` / `aws_list_alarms` can open an architect/CTO
-task.
-
-Cost controls: every OpenRouter call records usage under the board's daily
-usage row, and chats/meetings stop when the configured daily budget
-(default USD 15) is reached. OpenRouter requests are sent with data
-collection denied. The context pack shares only aggregated finance totals
-(never individual transactions) and no owner PII.
+The older `lxsoftware-admin-*` connector set stays in the stack, unused,
+for a future LX Software board.
 
 ### OpenRouter bill (shared account)
 
-LX Software pays one OpenRouter invoice. Sibling products share that account
-by tagging every chat-completions request. The catalog is
-[`contracts/openrouter-apps.json`](../../contracts/openrouter-apps.json)
-(`payer: lxSoftware`).
+LX Software pays one OpenRouter invoice; sibling products share it by
+tagging requests. Catalog:
+[`contracts/openrouter-apps.json`](../../contracts/openrouter-apps.json).
 
 | App id | Product | Metered in this admin |
 |--------|---------|----------------------|
-| `statement-parser` | Statement OCR in this repo | Yes |
-| `executive-board` | Executive Board in this repo | Yes |
+| `statement-parser` | Statement OCR (this repo) | Yes |
+| `executive-board` | Executive Board (this repo) | Yes |
 | `evolvesprouts` | [lx-software-ltd/evolvesprouts](https://github.com/lx-software-ltd/evolvesprouts) | No (tag only) |
-| `siutindei` | [lx-software-ltd/siutindei](https://github.com/lx-software-ltd/siutindei) (when it starts calling OpenRouter) | No (tag only) |
+| `siutindei` | [lx-software-ltd/siutindei](https://github.com/lx-software-ltd/siutindei) | No (tag only; no client yet) |
 
-**What this admin sends.** Each request sets a distinct app (`HTTP-Referer` +
-`X-OpenRouter-Title` from the catalog) and a stable `user` of `{app-id}:{owner}`
-(`statement-parser:hillmarton`, `executive-board:siuTinDei`, …). Apps are
-created **hidden**, so they do not appear on OpenRouter's public rankings.
-OpenRouter Activity / Analytics can then group by **app**.
-
-**Named keys (required).** Mint one OpenRouter key per catalog app on the
-LX Software account, then store each key in that product's secret.
+Each request sets `HTTP-Referer` / `X-OpenRouter-Title` from the catalog,
+`X-OpenRouter-App-Visibility: hidden` and a stable `user`
+`{app-id}:{owner-or-workload}` (no PII). Mint one named key per app
+(`lxsoftware:{app-id}`):
 
 ```bash
 OPENROUTER_MANAGEMENT_API_KEY=sk-or-... python3 scripts/mint-openrouter-app-keys.py
 ```
 
-Create the management key at
-[openrouter.ai/settings/management-keys](https://openrouter.ai/settings/management-keys).
-The script names keys `lxsoftware:{app-id}` and prints plaintext once.
+or **Actions → Mint OpenRouter App Keys** (secrets
+`OPENROUTER_MANAGEMENT_API_KEY` and `PUBLIC_API_KEY_GPG_PASSPHRASE`;
+leave **Preview only** checked to list existing names, uncheck to mint,
+decrypt the armored block with `gpg --decrypt keys.asc`). Create the
+management key at
+[openrouter.ai/settings/management-keys](https://openrouter.ai/settings/management-keys);
+it stays in GitHub, not in AWS.
 
-**Via GitHub Actions** (`.github/workflows/mint-openrouter-keys.yml`, Actions
-tab → **Mint OpenRouter App Keys** → Run workflow). One-time setup under
-**Settings → Environments → production → Secrets**:
-
-- `OPENROUTER_MANAGEMENT_API_KEY` — the management key (GitHub secret names
-  cannot contain hyphens; do not use `OPENROUTER-_MANAGEMENT_API_KEY`)
-- `PUBLIC_API_KEY_GPG_PASSPHRASE` — same passphrase as the public API-key
-  workflow; used to encrypt minted inference keys in this public repo's logs
-
-Leave **Preview only** checked to list which catalog names already exist.
-Uncheck it to mint. Copy the armored block from the job summary and decrypt
-locally (`gpg --decrypt keys.asc`). Then merge the admin JSON into
-`lxsoftware-admin-openrouter-api-secret-*` as below. The management key stays
-in GitHub; it does not go in that AWS secret.
-
-**This admin.** Replace the plain string in
-`lxsoftware-admin-openrouter-api-secret-*` with JSON. Parser and board
-calls fail if their named field is missing (no shared-key fallback):
+This admin's secret `lxsoftware-admin-openrouter-api-secret-*` must be
+JSON — parser and board calls fail without their named field:
 
 ```json
-{
-  "statement-parser": "sk-or-v1-parser",
-  "executive-board": "sk-or-v1-board"
-}
+{ "statement-parser": "sk-or-v1-parser", "executive-board": "sk-or-v1-board" }
 ```
 
-**Evolve Sprouts** already has its own Secrets Manager secret
-(`CDK_PARAM_OPENROUTER_API_KEY` / `OPENROUTER_API_KEY_SECRET_ARN`). Put the
-`lxsoftware:evolvesprouts` plaintext there (plain string is fine — that
-stack does not read this admin's JSON). Also tag every chat-completions
-request in `backend/src/app/services/openrouter_client.py`:
+Evolve Sprouts stores `lxsoftware:evolvesprouts` in its own secret (plain
+string) and tags requests with `https://evolvesprouts.com` / `Evolve
+Sprouts` / `evolvesprouts:{workload}`. When siutindei gets a client, mint
+`lxsoftware:siutindei` and tag with `https://siutindei.com` / `Siu Tin
+Dei` / `siutindei:{workload}`.
 
-```
-HTTP-Referer: https://evolvesprouts.com
-X-OpenRouter-Title: Evolve Sprouts
-X-OpenRouter-App-Visibility: hidden
-```
-
-Body `user`: `evolvesprouts:{workload}` (`expense-parser`,
-`sales-daily-plan`, `helper-detector`, … — no PII).
-
-**Siu Tin Dei product** (`lx-software-ltd/siutindei`) has no OpenRouter
-client yet. When it does, mint `lxsoftware:siutindei`, store that key in
-the product's secret, and send `https://siutindei.com` / `Siu Tin Dei` /
-`siutindei:{workload}`.
-
-**Where the invoice lands.** Admin **LX Software → Dashboard → OpenRouter**
-(and `GET /openrouter/usage`) rolls up UTC spend metered here, grouped by
-app. The card defaults to month-to-date and can switch to any of the previous
-12 UTC months (`?from=YYYY-MM-DD&to=YYYY-MM-DD`). Parser rows still record
-which book or house the OCR ran against. Evolve Sprouts / Siu Tin Dei product
-spend shows in OpenRouter Activity by app and named key until those repos
-write to this ledger.
-
-The OpenRouter invoice itself stays on the LX Software card. Parser spend is
-only recorded after this deploy; the board's daily budget row remains the cap,
-and the ledger is the in-admin split.
+**LX Software → Dashboard → OpenRouter** (`GET /openrouter/usage`) rolls up
+UTC spend metered here by app, month-to-date by default with the previous
+12 months on the dropdown (`?from=YYYY-MM-DD&to=YYYY-MM-DD`).
 
 ### AWS bill (shared account)
 
-LX Software pays one AWS invoice for account `588024549699`. Sibling products
-share that account by tagging every resource. Cost allocation tags
-**Organization** and **Project** are already **Active** in Billing → Cost
-allocation tags (required before Cost Explorer can group by them).
+One AWS invoice for account `588024549699`. Cost allocation tags
+**Organization** and **Project** are active. Catalog:
+[`contracts/aws-billing.json`](../../contracts/aws-billing.json); first
+matching row wins:
 
-The catalog is [`contracts/aws-billing.json`](../../contracts/aws-billing.json)
-(`payer: lxSoftware`). First matching row wins:
-
-| Company | `Organization` tag | `Project` tag |
-|---------|--------------------|---------------|
+| Company | `Organization` | `Project` |
+|---------|----------------|-----------|
 | Siu Tin Dei | `LX Software` | `Siu Tin Dei` |
 | Evolve Sprouts | `Evolve Sprouts` | any |
-| LX Software | `LX Software` | anything else (`Admin Console`, `Public Website`, …) |
+| LX Software | `LX Software` | anything else |
 
-Untagged resources and leftover values such as `Organization=Personal` land in
-**Unallocated**. August 2026 Cost Explorer (UnblendedCost) was about half
-Evolve Sprouts (`Project=Backend`) and half Siu Tin Dei, with LX Software's
-own websites under a few dollars.
+Untagged resources land in **Unallocated**. AWS's invoice PDF is one
+account total; the internal split is **LX Software → Dashboard → AWS**
+(`GET /aws/usage`, last complete UTC month by default) and **Download
+allocation PDF** (`GET /aws/usage.pdf`). Keep tagging new stacks with
+`cdk.Tags` and never rotate the tag keys (Cost Explorer only groups by
+activated tags; a key change orphans history).
 
-**AWS's own invoice PDF cannot be split.** It is one account total. The
-internal allocation is:
+### Schedules and invoke permissions
 
-- Admin **LX Software → Dashboard → AWS** (`GET /aws/usage`) — last complete
-  UTC calendar month by default, with the current month-to-date and previous
-  12 months on the card dropdown (`?from=YYYY-MM-DD&to=YYYY-MM-DD` to override).
-- **Download allocation PDF** (`GET /aws/usage.pdf`) — the tagged split to
-  attach to the LX Software book or send to the other companies.
+Schedules are EventBridge Scheduler with an IAM-role target and are listed
+in the architecture doc §12. API Gateway holds one API-wide invoke
+permission (`AdminApiInvoke`); when adding triggers for `AdminApiFn` use
+Scheduler or an event source mapping, never per-route permissions or
+`events.Rule` targets (20 KB resource-policy limit).
 
-Keep tagging new stacks the same way (`cdk.Tags` `Organization` + `Project`).
-Do not rotate tag keys; Cost Explorer only groups by **activated** cost
-allocation tags, and a key change orphans historical spend.
+`AdminApiFn` has `RecursiveLoop = Allow` because it Event-invokes itself
+(staff steps, meeting phases, workers, crawl pages). Alarm
+`lxsoftware-admin-siutindei-admin-api-invocations` trips above 250
+invocations in 5 minutes (observed stand-up peak ~145). A Health event
+`AWS_LAMBDA_RUNAWAY_TERMINATION_NOTIFICATION` after deploy therefore means
+a **different** function is looping.
 
-### Board tools (function calling)
+Stand-ups at 06:00 / 18:00 HKT stay off until enabled in **Executive
+Board → Settings**; a run is refused when the daily budget is exhausted or
+another meeting is running.
 
-Members can look things up and act while answering, through OpenRouter
-function calling. Design:
-[`docs/architecture/executive-board-tools-plan.md`](../architecture/executive-board-tools-plan.md).
+### Emergency stop
 
-- **Tools shipped:** `github` (search/get issues and PRs, workflow runs,
-  commits, files, security alerts; create issue, comment, set labels),
-  `board` (read actions/minutes/decisions; add an action, update the member's
-  own actions), `mail` (list mailboxes and threads, read a thread,
-  contact history; reply, send, or forward), `research` (Brave Search /
-  OpenRouter `:online`, 24 h cache), `aws` (Cost Explorer, CloudWatch
-  alarms, Lambda health, Health events; budget-alert proposal), and
-  `security` (GitHub alerts, Security Hub, Access Analyzer, Cognito MFA;
-  remediation issue proposal), `product` (catalog / funnel / provider-pipeline
-  SQL views),   `meta` (Page / Instagram insights, comments, DMs, WhatsApp
-  threads, ad spend; post, story, reply, ad set, boost a post, or lead relay),
-  `stores` (App Store Connect + Play metrics, review reply, release-notes
-  draft), `web` (GA4 sessions / conversions and GTM live version), and
-  `finance` (listing subscriptions, invoices, aging, draft/send
-  invoice, dunning, match or record a payment, price-change proposal). The
-  board never initiates a bank payment.
-- **Levels** per tool per member: `off`, `read`, `propose` (writes are queued
-  for the owner), `act` (writes run directly). A **global mode**
-  (`readOnly` / `propose` / `act`) caps the whole matrix, and **Tools
-  enabled** in the same card is the in-app kill switch. Defaults live in
-  `contracts/board-tools.json` (e.g. CTO `act` on GitHub, CFO/COO/CMO `off`);
-  the shipped global mode is `propose`, so nothing writes to GitHub without
-  an approval until the owner raises it.
-- **Approvals** (`Executive Board → Approvals`): each proposed write shows
-  the member, the reason, and the exact arguments; the owner can edit the
-  arguments, approve (the call runs as the owner and the result is logged)
-  or reject with a note the member sees next time. Mail writes render an
-  unmasked To / From / Subject / body preview; a guard on `act` downgrades
-  any send whose recipients are not on the allow-list (email, `@domain`, or
-  E.164 phone) to `propose`. Meta ads writes that would breach the owner-set
-  daily / monthly caps also drop to `propose`.
-- **Audit:** every call is a `BOARD#TOOLCALL#` row (persona, level, actor,
-  arguments, result preview, duration) and is visible under **Settings →
-  Tools & permissions → Show the tool call log**. Meeting transcripts record
-  a `tool` turn before the member's statement; chat replies list their calls.
-- **Limits** (contract): at most 4 tool rounds and 8 calls per reply, 10 s
-  per external call, tool loops capped at 120 s in chat and 60 s per meeting
-  statement, tool results truncated to 6 000 characters, 200 pending
-  approvals; approvals expire after 60 days and call-log rows after 90.
-- **Routes:** `GET/PUT /siu-tin-dei/board/tools`, `GET /siu-tin-dei/board/tools/calls`,
-  `GET /siu-tin-dei/board/approvals`, `POST …/approvals/{id}/approve|reject`,
-  `GET /siu-tin-dei/board/mail`, `POST /siu-tin-dei/board/mail/selftest`,
-  `GET /siu-tin-dei/board/mail/{threadId}`,
-  `POST /siu-tin-dei/board/mail/{threadId}/read`,
-  `GET /siu-tin-dei/board/receivables`.
-  Admin-group JWT only. `GET/POST /webhooks/meta/siutindei` is the
-  canonical **unauthenticated** admin-API route (`/webhooks/meta` stays
-  for an already-subscribed Meta app; HMAC / verify-token only).
-- **Emergency stop:** set `lxsoftware:SiutindeiBoardToolsEnabled=false` and redeploy,
-  or flip **Tools enabled** off in the app. Both leave the matrix intact.
-  Staff tasks have a second ladder: `settings.staff.enabled` (UI / settings
-  PUT), then `lxsoftware:SiutindeiBoardStaffEnabled=false` (redeploy), then the tools
-  kill switch. `BOARD_STAFF_ENABLED` unset or any value other than
-  `1`/`true`/`yes`/`on` is off. With either staff flag off,
-  `POST /siu-tin-dei/board/tasks` returns 409
-  `{"message":"Staff is disabled"}`.
-- **Staff (WP1):** `GET/PUT/DELETE /siu-tin-dei/board/staff`,
-  `GET/POST /siu-tin-dei/board/tasks`, `GET …/tasks/{taskId}`,
-  `POST …/tasks/{taskId}/cancel|review`. Schedule
-  `lxsoftware-admin-siutindei-board-staff-tick` every 5 minutes. Assets stay
-  under `board/siuTinDei/staff/{taskId}/` on the existing assets bucket
-  (already bucket-wide read/write). The **Staff** tab is inert until both
-  flags are on.
-- **Holds (WP2):** `GET /siu-tin-dei/board/holds`,
-  `POST …/holds/{holdId}/veto`, `POST …/holds/veto-class`,
-  `PUT …/boundaries`, `GET …/ramp`. A hold is "the founder may say no";
-  an Approval is "the founder must say yes". Default hours: internal /
-  inbound_reply / outbound_known = 0; cold_outreach / publish / spend = 24;
-  code_staging = 12. Quiet hours (default 22:00–08:00 HKT) push
-  `executeAt` to the next 08:00 HKT. When staff is on, `always_propose`
-  publish ops (`meta_propose_post`, `meta_propose_story`, newsletter send)
-  become 24 h holds rather than Approvals; `code_production` stays an
-  Approval (`action_class_exempt`). `code_merge_staging` stays
-  `always_propose` until the siutindei Appendix A workflows exist. The
-  **Approvals** section shows **Scheduled (veto to stop)**; **Settings**
-  has the Boundaries card.
-- **Triage (WP3):** with both staff flags on, inbound `siutindei.com` mail,
-  Meta webhooks and newly seen store reviews open tasks for Parent Support,
-  Provider Success or Community Manager. Escalation keywords (English and
-  Chinese) send the acknowledgement template and park the task on
-  **Needs owner**. Quiet hours hold replies until 08:00 HKT. Finance and
-  phishing mail still route to `accountant` / `security-analyst` (those
-  seats are active from WP9).
-- **Daily review (WP4):** `GET /siu-tin-dei/board/review`,
-  `POST …/review/sample/{callId}/wrong`, `GET/POST …/lessons`,
-  `GET/POST …/breakers/{name}/reset`, `POST …/ramp/{classKey}/promote`.
-  Schedules `lxsoftware-admin-siutindei-board-review-compile` (07:15 HKT)
-  and `…-board-review-send` (07:30 HKT). The digest email inlines the same
-  section summaries as the Daily review page (holds, escalations, sample,
-  breakers, and the rest) rather than SPA fragment links; the staging /
-  promotion section is fetched from GitHub at send time only, so `compile`
-  and `GET …/review` stay pure table reads. Set
-  `settings.review.digestTo` (Settings card) before expecting the digest;
-  sending still requires
-  `SiutindeiBoardMailSendingEnabled`. **Daily review** is the default board section
-  once `settings.staff.enabled` is on. Confirming a lesson injects it into
-  the next staff-task prompt. A budget breaker at 100% of
-  `settings.staff.dailyBudgetUsd` flips `settings.staff.enabled` off.
-- **Market intelligence (WP5):** `GET/POST /siu-tin-dei/board/watchlist`,
-  `PUT/DELETE …/watchlist/{watchId}`, `GET …/changes?days=7`. Schedules
-  `lxsoftware-admin-siutindei-board-intel-crawl` (03:00 HKT daily) and
-  `…-board-intel-weekly` (Monday 04:00 HKT). Digests live under
-  `board/siuTinDei/intel/{watchId}/` on the assets bucket. User-Agent
-  `SiuTinDeiBoardBot/1.0 (+https://siutindei.com/bot)`. The **Market**
-  section is the watchlist, candidates (Promote / Ignore), change notes,
-  and the latest weekly brief. `market-analyst` starts inactive — flip
-  it on at runbook step 3. Owner: add about five competitor watches
-  after enabling staff; the first Monday brief creates CPO `later`
-  actions from the JSON block.
-- **Prospecting and outreach (WP6):** `GET /siu-tin-dei/board/prospects`,
-  `GET/PUT …/prospects/{id}`, `POST …/prospects/import`,
-  `POST …/prospects/{id}/merge`, `GET/PUT …/sequences/{type}`,
-  `GET …/outreach/stats`. Public
-  `GET/POST /public/outreach/unsubscribe/{token}` (no JWT; HMAC token).
-  Schedule `lxsoftware-admin-siutindei-board-targets` (08:00 HKT).
-  Secrets `lxsoftware-admin-siutindei-board-google-places-key` (replace
-  dummy) and `lxsoftware-admin-siutindei-board-link-signing-key`
-  (generated) are imported by name, like the connector set. SES identity for `SiutindeiBoardOutreachSendingDomain` is created
-  pending DNS; sends refuse until `VerifiedForSendingStatus`.
-  Configuration set `lxsoftware-admin-siutindei-outreach` → SNS → SQS.
-  Outreach and board-mail IAM include both `configuration-set/…-outreach`
-  and `…-newsletter` plus `ses:SendBulkEmail`; templates are scoped to
-  `template/lxsoftware-admin-siutindei-*`. List-Unsubscribe is HTTPS-only
-  (RFC 8058). **Pipeline** section. `prospector` starts inactive — flip
-  it on at runbook step 4. Owner: DNS for `partners.siutindei.com`,
-  Places key, SES production / identity verify, then raise the daily cap
-  only via the 7-day warm-up (max 100).
+In order of reach:
 
-- **Content calendar (WP7):** `GET/POST /siu-tin-dei/board/content`,
-  `PUT /content/{id}`, `POST /content/{id}/render`,
-  `GET /content/{id}/creative/{n}`. Sunday 18:00 HKT
-  `…-board-content-plan`, Monday 09:00 HKT `…-board-content-readout`.
-  `AdminApiFn` memory 1536 MB; first pip dependency is Pillow (Docker
-  arm64 wheel — `deploy-backend.yml` and `cdk-diff.yml` register QEMU
-  with `docker/setup-qemu-action` so the x86-64 runner can execute the
-  `linux/arm64` build image). **Content** section. Flip `content-marketer` and
-  `growth-specialist` on at runbook step 5. Meta App Review for
-  `pages_manage_posts` / `instagram_content_publish` stays an owner task.
+1. **Tools enabled** off in Settings, or `settings.staff.enabled` off (UI /
+   `PUT settings`).
+2. `lxsoftware:SiutindeiBoardStaffEnabled=false` and redeploy (with either
+   staff flag off, `POST …/tasks` returns 409 `Staff is disabled`).
+3. `lxsoftware:SiutindeiBoardToolsEnabled=false` and redeploy.
+4. `lxsoftware:SiutindeiBoardMailSendingEnabled=false` and redeploy.
 
-- **Newsletter (WP8):** Public `POST /public/newsletter/subscribe`,
-  `GET /public/newsletter/confirm/{token}`,
-  `GET/POST /public/newsletter/unsubscribe/{token}` (no JWT; HMAC token).
-  Sends from `news@siutindei.com` when `SiutindeiBoardMailSendingEnabled=true`.
-  Config set `lxsoftware-admin-siutindei-newsletter` → same SNS/SQS as
-  outreach, plus OPEN/CLICK (records are routed by configuration-set /
-  `issueId` so newsletter bounces do not trip the outreach breaker).
-  Public site form uses `VITE_PUBLIC_API_URL` (CI inlines
-  `vars.ADMIN_API_BASE_URL` at build) and needs the public origin
-  in `PublicSiteOrigins`. Subscriber rows are `newsletter#sub#{list}#{digest}`
-  (no live migration; no rows existed). Owner: create the
-  `news@siutindei.com` mailbox (fan-out already copies `@siutindei.com`)
-  and set `PublicSiteOrigins`. Confirm `ADMIN_API_BASE_URL` is set on the
-  production GitHub environment (already required for the admin SPA).
+All leave the permission matrix intact.
 
-- **Duties and remaining desks (WP9):** `data-analyst` is default-on for
-  GA4 assignment. Flip `accountant` and `security-analyst` on at runbook
-  step 6, then enable
-  `settings.staff.dutiesEnabled` (Settings → Run scheduled seat duties)
-  after staff is on. `content-marketer` has a `catalog-micro-batch`
-  duty (08:00, 12:00 and 16:00 HKT, off until the seat and duties are on)
-  that creates one district curation sheet per slot from
-  `contracts/board-staff.json` `catalog`. Failed or cancelled district
-  tasks are treated as unclaimed so the next duty run retries that district. Per-seat OpenRouter models live in `settings.staff.modelBySeat`
-  (Staff tab → Step model). **Staff → Run staff tick now** (`POST /siu-tin-dei/board/staff/tick`)
-  queues the same work as the 5-minute schedule (due duties, due holds, drain
-  the queue) via a 2-second `Event` invoke (`try_invoke_event`) and returns
-  `200 {queued}` even if that invoke times out — the default boto client
-  retried past API Gateway's 30 s cap and Safari reported TypeError
-  "Load failed". The SPA retries a dropped fetch once, then treats it as
-  queued. The 5-minute schedule still drains the queue either way. **Deploy Backend** watches `backend/lambda/**` as well as the CDK app;
-  a Lambda-only merge used to ship the admin SPA button while leaving the
-  previous `AdminApiFn` live (`POST /staff/tick` then 404s as an unknown
-  seat). Until that workflow has run, use the 5-minute schedule or
-  **Actions → Deploy Backend → Run workflow**. HKT crons on the 5-minute
-  staff tick: BA weekly KPI
-  (Mon 08:00; Siu Tin Dei only — `aws_monthly_cost`, `meta_ad_spend`; never
-  the LX Software statement book), accountant month-end (1st 09:00; `finance_cash_snapshot`,
-  `finance_aging_report`, `aws_monthly_cost`, `meta_ad_spend`) and weekly aging (Thu
-  09:00; `finance_aging_report` against Siu Tin Dei Aurora invoices, not
-  QuickBooks/Xero), security weekly triage (Tue 09:00), data-analyst attribution
-  (Mon 10:00). Hourly `board_cache_refresh` opens architect/CTO tasks for
-  new CloudWatch ALARMs and security-analyst tasks for new Hub /
-  Analyzer / GitHub alerts. Daily dunning creates an accountant task
-  when staff is on (Approval path unchanged when staff is off). Stand-up
-  minutes may include `boundarySuggestions` that prepend the daily
-  review suggestions list.
+### Staff seat rollout
 
-- **Engineering runner (WP10):** `GET /siu-tin-dei/board/code/staging`,
-  `POST …/code/sync-staging`, `POST …/code/promote`. Tool ops `code_run_task`, `code_get_run`,
-  `code_review_pr`, `code_merge_staging`, `code_close_pr`, `code_promote`.
-  `code_close_pr` stays an Approval (`action_class` `code_close`) and
-  relabels the linked issue (`board-closed`, drop `board-ready`).   Widen the board
-  GitHub token to **Actions: write**, **Pull requests: write**, and
-  **Contents: write** (every 6 h the staff tick deletes stale `board/*`
-  heads with no open PR; heads from a runner dispatch under 2 h old and
-  `board/dry-run` are kept). Workflows
-  `board-agent.yml` / `board-merge-staging.yml` / `board-promote.yml` must
-  exist on **lx-software-ltd/siutindei** (see appendix A). Daily review
-  **Sync from main** (owner-only `POST …/code/sync-staging`) merge-commits
-  `main` into `staging` with no hold or Approval and cancels an open
-  `ops/rebase-staging` task; conflicts return 409 for a GitHub resolve.
-  **Promote** stays disabled until `behindBy` is 0, then queues an
-  Approval; the owner merges the GitHub `staging → main` PR. Architect
-  weekly duty grooms `board-ready` issues.
-  Keep `code_merge_staging` as an Approval (`always_propose`) until the
-  siutindei Appendix A workflows exist; then flip architect / engineer-1 /
-  engineer-2 / product-dev on (runbook step 7). `poll_runs` skips review on
-  merged or closed PRs and drops merged PRs from the runner index
-  (closed-not-merged stay so a reopen can reuse the run row). Merging a gone
-  PR is refused (not an Approval); a due `code_staging` hold fails instead of
-  executing.   `code_get_run` caches pytest `FAILED` lines and a short excerpt per head SHA
-  and does not fall back to the board-agent log once PR CI has failed.
-  `poll_runs` opens an engineer `ci-fix` task on a red `board/*` PR (capped by
-  `codeCiFixMaxRounds`, default 2) when staging `board-agent.yml` declares
-  `pr_number` / `ci_failure` inputs; otherwise it parks an architect review
-  and the daily review **Engineering** line says the runner cannot revise.
-  Architect `changes` briefs include the excerpt.   An owner
-  `POST /tasks` with `prNumber` (Tasks → New task → **PR #** / **Issue #**,
-  or JSON) resets `reviewRounds` so a maxed-out revision
-  loop can start again; that reopen still needs the Appendix A revision
-  patch (it clears the runner-capability cache so a just-applied YAML is
-  seen immediately). The created brief is appended with a `code_run_task`
-  instruction; `task_finish` on a `code-implement` task is refused until
-  that runner is dispatched (or a `code_run_task` Approval is pending).
-  If an `engineer-1` / `engineer-2` owner brief has `deliverableType=pr`,
-  mentions `PR #n`, and the POST has no `prNumber`, the handler tries the
-  same revision ref; a missing linked issue then creates a normal task
-  instead of returning 400. `ciFixRounds` increments only after a successful
-  revision dispatch, not when the ci-fix staff task is created. A `review-headline:*` duty can be manager-accepted
-  without evidence so the 07:30 digest has a narrative. `task_note` call ids
-  are not evidence. Stand-up `boundarySuggestions` that promote an
-  ineligible class are dropped; tightening suggestions stay.
+Default-on seats: `support`, `provider-success`, `community-manager`,
+`business-analyst`, `data-analyst`. `maxRunningTasks` default 3. Flip
+others on from **Staff** (or `PUT /siu-tin-dei/board/staff/{id}`):
 
-**Staff seat rollout (R-24).** Default-on seats: `support`,
-`provider-success`, `community-manager`, `business-analyst`,
-`data-analyst`.
-`maxRunningTasksDefault` is 3. Flip others on from **Staff** (or
-`PUT /siu-tin-dei/board/staff/{id}`) at these steps:
+1. Set `settings.review.digestTo` (Settings card), deploy with
+   `SiutindeiBoardStaffEnabled=true` and flip `settings.staff.enabled`.
+   Default-on seats handle triage and the daily review.
+2. **Market:** activate `market-analyst`; add about five watchlist entries.
+   The first Monday brief creates CPO `later` actions.
+3. **Pipeline:** owner tasks first — DNS for `partners.siutindei.com`
+   (SES DKIM CNAMEs, MAIL FROM MX + TXT, DMARC), Places key into the
+   secret, SES production access, mailboxes `partnerships@`, `market@`,
+   `news@`, `dmarc@` on Cloudflare (fan-out copies them automatically).
+   Then activate `prospector`, approve the default sequences; first sends
+   are 24 h holds and the daily cap rises only via the 7-day warm-up
+   (max 100).
+4. **Content:** activate `content-marketer` and `growth-specialist`; drop
+   logo and colours into `backend/lambda/admin/brand/`; Meta App Review
+   for `pages_manage_posts` / `instagram_content_publish` is an owner task.
+   Raise **Concurrent tasks** to 6 after the first stable week.
+5. **Newsletter / duties:** set `PublicSiteOrigins`; confirm
+   `ADMIN_API_BASE_URL` on the production environment; activate
+   `accountant` and `security-analyst`; then enable
+   `settings.staff.dutiesEnabled` (Settings → Run scheduled seat duties).
+6. **Engineering:** once the siutindei workflows exist (architecture doc,
+   Appendix A) and the GitHub token has Actions / Pull requests / Contents
+   write, activate `architect`, `engineer-1`, `engineer-2`, `product-dev`.
+   `code_merge_staging` stays an Approval until taken off
+   `always_propose`.
+7. After two weeks, act on ramp promotions from the daily review.
 
-1. Deploy with `SiutindeiBoardStaffEnabled=false` (CDK default). No seats needed.
-2. After WP2–WP4: set `review.digestTo`, then deploy `SiutindeiBoardStaffEnabled=true`
-   (`params/production.json` already does) and flip `settings.staff.enabled=true`.
-   Default-on seats handle triage and the daily review. Leave **Settings → Staff and daily review → Concurrent tasks** (`maxRunningTasks`) at 3.
-3. WP5: activate `market-analyst`; add ~five watchlist entries.
-4. WP6: activate `prospector` after `partners.siutindei.com` DNS and SES
-   identity verify. First sends are 24 h holds.
-5. WP7: activate `content-marketer` and `growth-specialist`; raise
-   Concurrent tasks to 6 after the first content week is stable.
-6. WP8–WP9: set `PublicSiteOrigins`; activate `accountant` and
-   `security-analyst` (`data-analyst` is already default-on for assignment);
-   then `settings.staff.dutiesEnabled` (weekly attribution and other duties).
-7. After Appendix A is live in siutindei: activate `architect`,
-   `engineer-1`, `engineer-2`, `product-dev`. First staging merges stay
-   Approvals until `code_merge_staging` is taken off `always_propose`.
+**Staff → Run staff tick now** queues the same work as the 5-minute
+schedule and returns `200 {queued}`; the SPA retries a dropped fetch once.
 
-**Founder actions → staff.** The minutes carry an `assignee` per action:
-the chair is shown the active seats (id, title, brief) and the executives
-and asked to hand work to a seat where its remit fits, to an executive
-otherwise, and to `founder` only for decisions, money, signatures or account
-access. Assigned actions are created through the chair's `staff_assign`
-level: at the default `propose` they appear in **Approvals** (approve to
-start the task, reject to keep the action with you); at `act` the task
-starts on the next drain. Any open action can also be handed over from
-**Next actions → Hand to staff**, which pre-fills the brief and sends
-`actionId` on `POST /siu-tin-dei/board/tasks`; the action then shows
-`staff: <seat>` with a link to the task and is marked done (with
-`closedBy: staff:<taskId>`) when the deliverable is accepted. A second
-hand-off while that task is open returns 409. Outbound work inside the task
-still follows the seat's tool levels, holds and the allow-list, so "propose
-only" holds as long as the global mode stays `propose`. Failed tasks stay
-on **Tasks → Failed** with the reason (`step limit`, `stuck`, `idle step`
-limit`, or a step error); **Retry** re-queues the same brief
-(`POST /siu-tin-dei/board/tasks/{id}/retry`), resets per-task usage so a
-budget miss can be tried again, and refuses if the seat is inactive or the
-linked action is closed. A daily staff-budget miss parks the task back on
-the queue instead of failing it. When a seat cannot finish because it
-lacks a tool, it calls `task_request_help` (once per task) and the
-founder sees **Approvals** then **Tasks → Waiting help**; accepting the
-helper's deliverable writes the memo plus `EVIDENCE: <callId> (op)` lines
-into the original scratchpad so the parent can cite those ids. A child
-that lands on **needs owner** leaves the parent parked and notes the
-scratchpad; expiry does not cancel that child. Cancel or retry of the
-parent cancels any open child. A help wait older than 24 hours (from
-`parkedAt`) resumes with no answer and rejects a still-pending help
-Approval.
+### Smoke test after deploy
 
-Smoke test after deploy: open the tab, save a company vision/mission, edit one
-member's mandate, send a chat message to the CEO (reply arrives within ~30 s),
-then **Run stand-up** and confirm minutes and action items appear. For tools:
-ask the CTO "what is open on GitHub about bookings?" and check the reply lists
-a `Searched GitHub issues` row; ask the CPO to open an issue and confirm it
-lands in **Approvals** rather than on GitHub. Ask the CFO "what did AWS cost
-last month?" and the CISO "any HIGH findings?" — both should cite cached
-reads after the hourly `SiutindeiBoardCacheRefreshSchedule` has run once. For mail: open **Mail**, confirm
-mailbox chips and threads, toggle **Board's view** (addresses become
-`contact#N`), then ask the CMO "what's unread?" and confirm a `Listed threads`
-row. For receivables: set `lxsoftware:SiutindeiClusterArn` and redeploy
-(CDK enables the HTTP Data API and applies `scripts/siutindei/receivables.sql`),
-open **Receivables**, and
-ask the CFO to draft the first listing plan (`finance_propose_price_change`).
-Nightly `SiutindeiBoardReceivablesMirrorSchedule` (00:30 HKT) writes `[receivables]`
-lines into the Siu Tin Dei book; daily `SiutindeiBoardDunningSchedule` (09:00 HKT)
-queues D+7 / D+21 / D+35 accountant tasks when staff is enabled, or reminder
-Approvals when staff is off.
+Open the tab, save a company vision / mission, edit one member's mandate,
+chat with the CEO (reply within ~30 s), **Run stand-up** and confirm
+minutes and actions. Tools: ask the CTO "what is open on GitHub about
+bookings?" (reply lists `Searched GitHub issues`); ask the CPO to open an
+issue (lands in **Approvals**); ask the CFO "what did AWS cost last month?"
+and the CISO "any HIGH findings?" (cached reads after the hourly refresh).
+Mail: open **Mail**, toggle **Board's view** (addresses become
+`contact#N`), ask the CMO "what's unread?". Receivables: with
+`SiutindeiClusterArn` set, open **Receivables** and ask the CFO to draft
+the first listing plan.
 
 ### Board receivables (Aurora Data API)
 
-Listing invoices live in the **siutindei** Aurora database so the product can
-show billing state later; this admin app only reaches them through the RDS
-Data API (no VPC). Design:
-[`docs/architecture/executive-board-tools-plan.md`](../architecture/executive-board-tools-plan.md) §5.4–§5.7.
-
-1. Set `lxsoftware:SiutindeiClusterArn` to the existing
-   `lxsoftware-siutindei-db-cluster` ARN (production.json already has it) and
-   redeploy. The stack turns on the RDS HTTP Data API and applies
-   `scripts/siutindei/receivables.sql` (tables `listing_plans`,
-   `listing_subscriptions`, `invoices`, `payments`, plus views
-   `v_catalog_health`, `v_funnel_daily`, `v_provider_pipeline` aligned to the
-   live siutindei Alembic schema, plus `listing_events_daily` for funnel rows
-   the product does not yet write). Secret ARN is optional: blank resolves
+1. Set `lxsoftware:SiutindeiClusterArn` to the `lxsoftware-siutindei-db-cluster`
+   ARN and redeploy. The stack enables the HTTP Data API and applies
+   `scripts/siutindei/receivables.sql`; the secret defaults to
    `lxsoftware-siutindei-database-credentials`.
-2. The stack attaches a conditional `rds-data:ExecuteStatement` /
-   `BatchExecuteStatement` policy plus `secretsmanager:GetSecretValue` on the
-   resolved DB secret.
-3. Scheduler `lxsoftware-admin-siutindei-data-api-ensure` (every 15 minutes)
-   calls `rds.enableHttpEndpoint` and reapplies the script. A later **siutindei**
-   deploy that omits `enableDataApi: true` can turn HTTP off for at most one
-   interval; this stack turns it back on without waiting for an admin deploy.
-   The product CDK should still set `enableDataApi: true`. A SQL error during
-   the deploy custom resource does not roll the stack back — `AdminApiFn` keeps
-   the cluster/secret env and the scheduler retries the script. The custom
-   resource carries a 15-minute `ServiceTimeout`, so a provider Lambda that
-   never answers (for example a failure at import) fails the deploy in
-   minutes instead of CloudFormation's default one-hour wait. If a stack ever
-   ends in `UPDATE_ROLLBACK_FAILED` on `SiutindeiDataApiReceivablesSchema*`,
-   run **Continue update rollback** on the `lxsoftware` stack and skip that
-   logical id (`aws cloudformation continue-update-rollback --stack-name
-   lxsoftware --resources-to-skip <logical-id>`); the resource has no
-   physical counterpart, so skipping it loses nothing.
-4. Invoice numbers are `STD-{year}-0001`; each draft also gets a unique FPS
-   reference. Drafts also write a PDF to `board/siuTinDei/invoices/` on the assets
-   bucket (`pdf_key` on the invoice). `finance_send_invoice` / `finance_send_reminder` email from
+2. Scheduler `lxsoftware-admin-siutindei-data-api-ensure` (15 min)
+   re-enables the endpoint and reapplies the script if a siutindei deploy
+   drifts it; the product CDK should still set `enableDataApi: true`. A SQL
+   error on the deploy custom resource ACKs SUCCESS so `AdminApiFn` keeps
+   its env; the scheduler retries. The custom resource has a 15-minute
+   `ServiceTimeout`.
+3. `finance_send_invoice` / `finance_send_reminder` mail from
    `billing@siutindei.com` and stay in **Approvals** unless the payer is on
-   the mail allow-list. `finance_match_payment` acts only when amount and FPS
-   reference agree.
-5. Bank ingest (alert mail or an API-first HK account) is **T4b** — the
-   account has not been opened yet. Until then use
-   `finance_record_manual_payment`.
+   the allow-list. Bank ingest waits on the HK account; use
+   `finance_record_manual_payment` until then.
+4. `python3 scripts/siutindei/smoke_data_api.py --cluster-arn … --secret-arn …`
+   exercises every view and a rolled-back insert with the same typed
+   parameters `AdminApiFn` uses (`--dry-run` prints the statements).
 
 ### Board Meta (Page, Instagram, WhatsApp)
 
-The board owns the existing WhatsApp number through the Cloud API, plus the
-Facebook Page and Instagram account. Design:
-[`docs/architecture/executive-board-tools-plan.md`](../architecture/executive-board-tools-plan.md) §5.3.
-
-1. Create a Business-type app under the Siu Tin Dei Business Manager and a
-   System User token (`pages_*`, `instagram_*`, `whatsapp_business_*`,
-   `ads_read` / `ads_management`). After deploy, replace the dummy values
-   in `lxsoftware-admin-siutindei-board-meta-token` and
-   `lxsoftware-admin-siutindei-board-meta-app-secret`.
-2. **WhatsApp coexistence:** turn coexistence on for the number so the
-   owner's phone app keeps working while the board reads and replies through
-   the API. If coexistence is unavailable, the number moves fully to the
-   Cloud API and the owner replies from **Approvals**.
+1. Create a Business-type app under the Siu Tin Dei Business Manager and
+   a System User token (`pages_*`, `instagram_*`, `whatsapp_business_*`,
+   `ads_read` / `ads_management`); replace the two Meta secrets.
+2. Turn on **WhatsApp coexistence** so the owner's phone keeps working. If
+   unavailable, the number moves fully to the Cloud API and the owner
+   replies from **Approvals**.
 3. Subscribe the app to `GET/POST https://<admin-api>/webhooks/meta/siutindei`
-   (or the legacy `/webhooks/meta` path). This is the first admin-API route
-   **without** a Cognito JWT: GET checks
-   `SiutindeiBoardMetaVerifyToken`; POST checks `X-Hub-Signature-256`. The handler stores
-   masked `BOARD#…#meta#` rows and returns 200 without calling OpenRouter.
-4. Set `SiutindeiBoardMetaPageId`, `SiutindeiBoardMetaIgUserId`, `SiutindeiBoardMetaWaPhoneNumberId`,
-   `SiutindeiBoardMetaAdAccountId`, and optionally `SiutindeiBoardMetaWabaId` (used by
-   `meta_list_whatsapp_templates`; otherwise the phone-number id is asked
-   for its WhatsApp Business Account). Until they are set the `meta` tools
-   return a clear "not configured" error.
-5. WhatsApp `act` is only inside the 24-hour customer-service window and
-   only to numbers on the allow-list (E.164 phones are first-class entries
-   next to email / `@domain`); everyone else (and every reply outside the
-   window) stays in **Approvals**, optionally as a template.
-   `meta_relay_lead` emails the provider and the parent from `hello@`.
-6. Ads: set **Meta ads spend caps** on the Tools card (defaults daily USD
-   10 / monthly USD 50, clamped to 500 / 2 000). `meta_create_ad_set` and
-   `meta_boost_post` **act** only while recorded commitment plus Graph
-   month-to-date spend still fits; otherwise they go to Approvals. The
-   shipped global mode stays `propose` until you flip it.
+   (legacy `/webhooks/meta` still works).
+4. Set the `SiutindeiBoardMeta*` ids; until then `meta` tools return "not
+   configured".
+5. WhatsApp `act` is only inside the 24-hour window and only to
+   allow-listed E.164 numbers. Set **Meta ads spend caps** on the Tools
+   card (defaults USD 10 / 50; clamped to 500 / 2 000).
 
 ### Board stores (App Store Connect + Google Play)
 
-The App Store Connect API key and Google Play service account already exist.
-Design: [`docs/architecture/executive-board-tools-plan.md`](../architecture/executive-board-tools-plan.md) §4 `stores`.
-
-1. After deploy, edit `lxsoftware-admin-siutindei-board-app-store-connect-key`: set
-   `keyId`, `issuerId`, and `privateKey` (the `.p8` body). Optional
-   `appId` / `vendorNumber` can live here or in the matching stack
-   parameters. The Lambda signs a 20-minute ES256 JWT on each call.
-2. Edit `lxsoftware-admin-siutindei-board-google-play-sa` with the real Play
-   service-account JSON (standard GCP key; add `packageName` if it is not
-   passed as `SiutindeiBoardGooglePlayPackageName`).
-3. Set `SiutindeiBoardAppStoreConnectAppId` and `SiutindeiBoardGooglePlayPackageName` if they are not
-   inside the secrets, plus `SiutindeiBoardAppStoreConnectVendorNumber` for Apple
-   downloads. Until at least one store is configured the `stores`
-   tools return a clear error; the hourly cache refresh skips them.
-4. Reads (`stores_metrics`, `stores_crashes`, `stores_ratings`,
-   `stores_list_reviews`) are cached 20 hours and refreshed by
-   `SiutindeiBoardCacheRefreshSchedule`. Review text is masked (`contact#hidden` /
-   `phone#hidden`) before it reaches the model.
-5. `stores_reply_review`: CMO may **act**; every other role proposes.
-   `stores_draft_release_notes` always stays in **Approvals** and writes a
-   board action — it never publishes to either store.
+1. Fill `…-board-app-store-connect-key` (`keyId`, `issuerId`, `privateKey`;
+   optional `appId` / `vendorNumber`) and `…-board-google-play-sa`.
+2. Set the store parameters if not inside the secrets. Until one store is
+   configured the `stores` tools return an error and the hourly refresh
+   skips them.
+3. `stores_reply_review`: CMO may **act**; `stores_draft_release_notes`
+   always stays in **Approvals**.
 
 ### Board web (GA4 + GTM)
 
-Dedicated Analytics service account — not the Play publisher key. Design:
-[`docs/architecture/executive-board-tools-plan.md`](../architecture/executive-board-tools-plan.md) §5.8.
-
 1. Create a GCP service account with `analytics.readonly` and
-   `tagmanager.readonly`. Grant it Viewer on every GA4 property and GTM
-   container the board should see. After deploy, replace the dummy JSON in
-   `lxsoftware-admin-siutindei-board-google-analytics-sa`.
-2. Set `SiutindeiBoardGa4PropertyIds` to a comma-separated list (`123456789,987654321` or
-   `properties/123456789,…`). Set `SiutindeiBoardGtmContainers` to
-   `accountId:containerId` pairs. Both can also live inside the secret as
-   `propertyIds` / `gtmContainers`.
-3. Until the SA plus at least one property or container is set, `web` tools
-   return a clear error and the hourly cache refresh skips them.
-4. Reads (`web_sessions`, `web_conversions`, `web_gtm_status`) are cached
-   20 hours and refreshed by `SiutindeiBoardCacheRefreshSchedule`. Page paths are
-   masked (`contact#hidden` / `phone#hidden`) before they reach the model.
-5. Google Ads (`ads` tool) is T8b. `gtm_propose_publish` is T8c and always
-   stays in **Approvals**.
+   `tagmanager.readonly`; grant Viewer on every GA4 property and GTM
+   container; replace `…-board-google-analytics-sa`.
+2. Set `SiutindeiBoardGa4PropertyIds` and `SiutindeiBoardGtmContainers`
+   (or `propertyIds` / `gtmContainers` inside the secret).
 
 ### Shared inbound SES rule set
 
-SES allows only **one** active receipt rule set per region. `lxsoftware`
-owns `lxsoftware-inbound-mail` and activates it on deploy. That set must
-include every mailbox that receives mail in `ap-southeast-1`:
+SES allows one active receipt rule set per region. `lxsoftware` owns
+`lxsoftware-inbound-mail` and activates it on deploy:
 
 | Recipient | Raw store | Processor |
 |---|---|---|
 | `32-hillmarton@inbound.lx-software.com` | `lxsoftware-admin-inbound-mail-…` / `inbound-raw/hillmarton/` | `InboundStatementMailFn` (house `hillmarton`) |
-| `the-morrison@inbound.lx-software.com` | same bucket / `inbound-raw/morrison/` | `InboundStatementMailFn` (house `morrison`) |
-| `billing@inbound.lx-software.com` | same bucket / `inbound-raw/lx-software/` | `InboundStatementMailFn` (book `lxSoftware`, expenses only) |
-| `siutindei-board@inbound.lx-software.com` | same bucket / `inbound-raw/siutindei/` | `board_mail.ingest_raw_object` |
+| `the-morrison@inbound.lx-software.com` | same / `inbound-raw/morrison/` | `InboundStatementMailFn` (house `morrison`) |
+| `billing@inbound.lx-software.com` | same / `inbound-raw/lx-software/` | `InboundStatementMailFn` (book `lxSoftware`, expenses only) |
+| `siutindei-board@inbound.lx-software.com` | same / `inbound-raw/siutindei/` | `board_mail.ingest_raw_object` |
 | `invoices@inbound.evolvesprouts.com` | `evolvesprouts-assets-…` / `inbound-email/raw/` | Evolve Sprouts `InboundInvoiceEmailProcessor` |
 
-`lx-software.com` apex MX stays on iCloud. Public address `billing@lx-software.com`
-is not an SES recipient; after deploy, forward that iCloud mailbox to
-`billing@inbound.lx-software.com` (stack output
-`lxsoftware-InboundMailbox-lxSoftware`). PDFs then use the same extract →
-assets → `enqueue_parse_statement_async_job` path as the house inboxes, with
-`lineTypeOnly=expenditure` so lines land on **LX Software → Expenses**.
-Inbound PDFs are written under `inbound/{owner}/{batch}/` in the assets
-bucket and get an `ASSET#` META row immediately (original filename, not the
-`00_` S3 prefix), so they show on **Assets** even if parse later fails.
+`lx-software.com` MX stays on iCloud; forward the iCloud mailbox
+`billing@lx-software.com` to `billing@inbound.lx-software.com` (output
+`lxsoftware-InboundMailbox-lxSoftware`). Inbound PDFs are written under
+`inbound/{owner}/{batch}/` with an `ASSET#` row so they show on **Assets**
+even if parsing fails. Set `lxsoftware:StatementParseNotifyEmail` to get a
+mail from `statements@inbound.lx-software.com` when a parse job succeeds or
+fails.
 
-Set **`lxsoftware:StatementParseNotifyEmail`** (CDK / `params/*.json`) to
-receive an email from `statements@inbound.lx-software.com` when a statement
-parse job succeeds or fails. Leave it empty to disable. SES must be able to
-send from `InboundMailDomain` to that address (account out of the sandbox,
-or the destination verified).
-
-The Evolve Sprouts stack still owns the invoice bucket, SNS topic, SQS
-queue, receipt IAM role, and processor. It must **not** call
-`SetActiveReceiptRuleSet` on `evolvesprouts-inbound-invoice-email-rule-set`
-(that hid hillmarton + board mail). Before this stack activates the
-shared set, deploy the companion change in
-[evolvesprouts](https://github.com/lx-software-ltd/evolvesprouts) so the
-invoice bucket / role / KMS policies allow the shared-set SourceArn
-`…:receipt-rule-set/lxsoftware-inbound-mail:receipt-rule/evolvesprouts-inbound-invoice-email-rule`
-as well as the old rule-set ARN.
+The Evolve Sprouts stack still owns its bucket, topic, queue, role and
+processor and must **not** call `SetActiveReceiptRuleSet` on its own set;
+its bucket / role / KMS policies must allow the shared-set SourceArn
+`…:receipt-rule-set/lxsoftware-inbound-mail:receipt-rule/evolvesprouts-inbound-invoice-email-rule`.
 
 ### Board mail (Cloudflare + SES)
 
-The owner's existing `siutindei.com` inbox is unchanged. A Cloudflare Email
-Worker copies every message to the board as well. Design:
-[`docs/architecture/executive-board-tools-plan.md`](../architecture/executive-board-tools-plan.md) §5.2.
-
 **Read path (no DNS change on `siutindei.com`):**
 
-1. Deploy the `lxsoftware` stack (after the Evolve Sprouts companion above).
-   Copy the `SiutindeiBoardMailInboundAddress` output
-   (`siutindei-board@<InboundMailDomain>`). The receipt rule stores raw MIME
-   under `inbound-raw/siutindei/` and `inbound_email_handler` hands those
-   objects to `board_mail.ingest_raw_object`. The stack also activates
-   `lxsoftware-inbound-mail`, so you do not run `set-active-receipt-rule-set`
-   by hand.
-2. In the `siutindei.com` Cloudflare zone: **Email → Email Routing →
-   Destination addresses**, add that inbound address. Cloudflare sends a
-   verification mail; it lands in the inbound S3 bucket. Open the object
-   once and click the link.
+1. Deploy `lxsoftware`; copy the `SiutindeiBoardMailInboundAddress` output.
+2. In the `siutindei.com` Cloudflare zone, **Email Routing → Destination
+   addresses**, add that address. The verification mail lands in the
+   inbound S3 bucket; open it once and click the link.
 3. **Workers & Pages → Create**, paste
-   `scripts/cloudflare/siutindei-mail-fanout.js`. Set two plain-text
-   variables: `OWNER_DESTINATION` (the owner's already-verified inbox) and
-   `BOARD_DESTINATION` (the address from step 1). Optional `SKIP_SENDERS`
-   is a comma-separated list of addresses or `@domain` wildcards never
-   copied to the board.
-4. **Email Routing → Routing rules → Catch-all**: action **Send to a
-   Worker**, pick that Worker. Existing per-address rules still win; either
-   delete them or point them at the Worker too, or those mailboxes never
-   reach the board.
+   `scripts/cloudflare/siutindei-mail-fanout.js`; set `OWNER_DESTINATION`
+   (owner's verified inbox) and `BOARD_DESTINATION` (step 1); optional
+   `SKIP_SENDERS` (addresses or `@domain`, never copied).
+4. **Routing rules → Catch-all**: **Send to a Worker**. Existing
+   per-address rules win, so point them at the Worker too or delete them.
 
-**Send path (optional, after DKIM/SPF/DMARC):**
+**Send path (after DKIM / SPF / DMARC):**
 
-1. Set `lxsoftware:SiutindeiBoardMailSendingEnabled=true` and redeploy. The stack
-   creates an SES email identity for `SiutindeiBoardMailDomain` and attaches
-   `ses:SendEmail` / `ses:SendRawEmail` on `AdminApiFn`, constrained to
-   `ses:FromAddress` `*@SiutindeiBoardMailDomain` (SendRawEmail authorizes the
-   mailbox identity, not the verified domain ARN, so identity-ARN resource
-   lists deny in production). Every SES send grant in the stack uses this
-   shape (`sesSendFromDomainStatement`).
-2. Add the three `SiutindeiBoardMailDkimCnameN` outputs as CNAMEs on the
-   `siutindei.com` zone (Cloudflare proxy **off**).
-3. Extend SPF to
-   `v=spf1 include:_spf.mx.cloudflare.net include:amazonses.com ~all`.
-4. Add `_dmarc` TXT (`v=DMARC1; p=quarantine; rua=mailto:dmarc@siutindei.com`).
-   Aggregate reports go to the dedicated `dmarc@` mailbox (fan-out copies
-   the owner and the board). Do not point `rua` at `hello@`.
-5. In **Executive Board → Settings → Tools & permissions**, set the
-   **Recipient allow-list** (`@siutindei.com`, known vendor addresses, and
-   WhatsApp numbers). Sends to anyone else stay in **Approvals** even when
-   the member is at `act`.
-6. Open **Executive Board → Mail**. The header shows what SES itself reports
-   (`GetEmailIdentity` + `GetAccount`, cached 10 min): domain verified, DKIM
-   status, production access (sandbox accounts can only reach verified
-   recipients). Click **Send test email**: one message goes from `hello@` to
-   your sign-in address and is not indexed. A refusal shows the full SES
-   error, including the resource ARN, inline and in CloudWatch as
-   `board_mail_send_failed`. Do this before asking a persona to reply.
-
-Replies go out from the mailbox the thread was addressed to. Every outbound
-message is indexed as `direction=out` so it appears in **Mail**. Bodies and
-threads expire after 90 days (`BOARD_MAIL_MESSAGE_TTL_DAYS`).
-
-## Scripts
-
-Local or CI deploy of static files after a build:
-
-```bash
-bash scripts/deploy/deploy-admin-www.sh
-```
-
-The script reads `AdminWebBucketName` and `AdminWebDistributionId` from the
-`lxsoftware-admin-web` stack outputs (override with `ADMIN_WEB_STACK_NAME`).
+1. Set `lxsoftware:SiutindeiBoardMailSendingEnabled=true` and redeploy.
+2. Add the three `SiutindeiBoardMailDkimCnameN` outputs as CNAMEs
+   (Cloudflare proxy off).
+3. SPF: `v=spf1 include:_spf.mx.cloudflare.net include:amazonses.com ~all`.
+4. `_dmarc` TXT: `v=DMARC1; p=quarantine; rua=mailto:dmarc@siutindei.com`
+   (dedicated `dmarc@` mailbox, not `hello@`).
+5. **Settings → Tools & permissions → Recipient allow-list**
+   (`@siutindei.com`, vendors, WhatsApp numbers).
+6. **Mail → Send test email**: the header shows SES `GetEmailIdentity` /
+   `GetAccount` status (cached 10 min); one message goes from `hello@` to
+   your sign-in address. A refusal shows the full SES error inline and as
+   `board_mail_send_failed` in CloudWatch. Do this before asking a persona
+   to reply.
