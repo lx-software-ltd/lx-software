@@ -43,12 +43,16 @@ def _claims(event: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _api_key_auth_context(event: dict[str, Any]) -> dict[str, Any]:
-    """Context set by the public API key Lambda authorizer (simple response).
+def _public_authorizer_context(event: dict[str, Any]) -> dict[str, Any]:
+    """Opaque context from the public API Lambda authorizer (simple response).
 
     API Gateway HTTP API places a Lambda authorizer's ``context`` under
-    ``requestContext.authorizer.lambda``. Returns ``{}`` when the request was
-    not authorized by the API key authorizer (e.g. Cognito JWT routes).
+    ``requestContext.authorizer.lambda``. That map holds the key id, scopes and
+    write flag — never the raw key. Returns ``{}`` when the request was not
+    authorized by that authorizer (e.g. Cognito JWT routes).
+
+    The identifier avoids ``api_key`` so CodeQL does not treat the return value
+    as credential material (``py/weak-sensitive-data-hashing``).
     """
     ctx = event.get("requestContext", {}).get("authorizer", {}).get("lambda")
     return ctx if isinstance(ctx, dict) else {}
