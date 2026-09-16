@@ -2129,10 +2129,71 @@ def on_review_delivered(table: Any, settings: dict[str, Any], task: dict[str, An
     return {"verdict": "accept", "taskId": follow.get("taskId")}
 
 
+_STALE_BRANCH_PREFIX = "board/"
+_STALE_BRANCH_SWEEP_CAP = 20
+_PROTECTED_BRANCHES = frozenset({"main", "staging", "develop", "master"})
+
+
+def sweep_stale_board_branches() -> list[str]:
+    """Delete ``board/*`` heads that have no open pull request.
+
+    Covers merged PRs, closed-unmerged PRs, and runner branches that never
+    opened a PR. Leaves ``main`` / ``staging`` and any branch with an open PR
+    alone. A 403 here means the board GitHub token needs Contents: write.
+    """
+    repo = _repo()
+    owner = repo.split("/", 1)[0]
+    deleted: list[str] = []
+    try:
+        raw = _gh("GET", f"/repos/{repo}/branches?per_page=100") or []
+    except board_github.GitHubSnapshotError as exc:
+        _log_event("warning", tag="board_code_branch_sweep_list_failed", error=str(exc)[:200])
+        return []
+    if not isinstance(raw, list):
+        return []
+    for row in raw:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("name") or "")
+        if not name.startswith(_STALE_BRANCH_PREFIX) or name in _PROTECTED_BRANCHES:
+            continue
+        try:
+            pulls = (
+                _gh("GET", f"/repos/{repo}/pulls?head={owner}:{name}&state=open&per_page=5") or []
+            )
+        except board_github.GitHubSnapshotError as exc:
+            _log_event(
+                "warning",
+                tag="board_code_branch_sweep_pr_failed",
+                branch=name,
+                error=str(exc)[:200],
+            )
+            continue
+        if isinstance(pulls, list) and any(isinstance(pr, dict) for pr in pulls):
+            continue
+        try:
+            _gh("DELETE", f"/repos/{repo}/git/refs/heads/{name}")
+        except board_github.GitHubSnapshotError as exc:
+            _log_event(
+                "warning",
+                tag="board_code_branch_sweep_delete_failed",
+                branch=name,
+                error=str(exc)[:200],
+            )
+            continue
+        deleted.append(name)
+        if len(deleted) >= _STALE_BRANCH_SWEEP_CAP:
+            break
+    if deleted:
+        _log_event("info", tag="board_code_branch_sweep", deleted=",".join(deleted)[:400])
+    return deleted
+
+
 def handle_tick(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
     if not board_staff.enabled(settings):
         return {"ok": True, "skipped": "disabled"}
     reviews = poll_runs(table, settings)
+    stale = sweep_stale_board_branches()
     assigned = maybe_assign_ready_issues(table, settings)
     preview = cache_staging_preview(table)
     sync = maybe_daily_staging_sync(table, settings, preview=preview)
@@ -2141,4 +2202,5 @@ def handle_tick(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
         "reviews": len(reviews),
         "assigned": len(assigned),
         "stagingSync": bool(sync),
+        "staleBranches": len(stale),
     }

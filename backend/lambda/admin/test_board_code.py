@@ -93,6 +93,8 @@ class FakeActions:
         self.supports_revision = True
         self.contents_error: Exception | None = None
         self.workflow_yaml: str | None = None
+        self.branches: list[dict[str, Any]] = []
+        self.deleted_refs: list[str] = []
 
     def __call__(self, method: str, path: str, *, body: dict[str, Any] | None = None, accept: str = "application/vnd.github+json") -> Any:
         if accept == "application/vnd.github.diff":
@@ -121,7 +123,17 @@ class FakeActions:
         if method == "GET" and "/pulls?head=" in path:
             head = path.split("head=", 1)[1].split("&", 1)[0]
             ref = head.split(":", 1)[-1]
-            return [p for p in self.prs if ((p.get("head") or {}).get("ref") or "") == ref]
+            matches = [p for p in self.prs if ((p.get("head") or {}).get("ref") or "") == ref]
+            if "state=open" in path:
+                matches = [p for p in matches if str(p.get("state") or "open") != "closed"]
+            return matches
+        if method == "GET" and "/branches?" in path:
+            return list(self.branches)
+        if method == "DELETE" and "/git/refs/heads/" in path:
+            name = path.split("/git/refs/heads/", 1)[1]
+            self.deleted_refs.append(name)
+            self.branches = [b for b in self.branches if str(b.get("name") or "") != name]
+            return {}
         if method == "GET" and "/pulls/" in path and "/files?" in path:
             number = int(path.split("/pulls/", 1)[1].split("/", 1)[0])
             all_files = list(self.files.get(number) or [])
@@ -1590,6 +1602,7 @@ class RunnerTests(BoardTestCase):
         }
         out = board_code.handle_tick(self.table, self.settings)
         self.assertTrue(out["stagingSync"])
+        self.assertEqual(out.get("staleBranches"), 0)
         open_tasks = board_store.list_tasks(self.table, "queued") + board_store.list_tasks(self.table, "running")
         tasks = [t for t in open_tasks if (t.get("eventRef") or {}).get("id") == "rebase-staging"]
         self.assertEqual(len(tasks), 1)
@@ -1702,6 +1715,41 @@ class RunnerTests(BoardTestCase):
         self.assertFalse(
             any((t.get("eventRef") or {}).get("id") == "rebase-staging" for t in board_store.list_tasks(self.table, "queued"))
         )
+
+    def test_sweep_deletes_board_branches_without_open_prs(self) -> None:
+        self.gh.branches = [
+            {"name": "main"},
+            {"name": "staging"},
+            {"name": "board/3fd6f5b5a4d44b9ba6fbebc3a4f532a9"},
+            {"name": "board/b1520abc679e4aacbbb813e59b5406e5"},
+            {"name": "board/61c1f80644124498aad5b4c80594e146"},
+            {"name": "feature/keep-me"},
+        ]
+        self.gh.prs.append(
+            {
+                **_pr(501, issue=489),
+                "head": {"ref": "board/3fd6f5b5a4d44b9ba6fbebc3a4f532a9", "sha": "abc123"},
+            }
+        )
+        self.gh.prs.append(
+            {
+                **_pr(498, issue=489),
+                "state": "closed",
+                "merged": False,
+                "head": {"ref": "board/b1520abc679e4aacbbb813e59b5406e5", "sha": "def456"},
+            }
+        )
+        deleted = board_code.sweep_stale_board_branches()
+        self.assertEqual(
+            set(deleted),
+            {
+                "board/b1520abc679e4aacbbb813e59b5406e5",
+                "board/61c1f80644124498aad5b4c80594e146",
+            },
+        )
+        self.assertNotIn("board/3fd6f5b5a4d44b9ba6fbebc3a4f532a9", deleted)
+        self.assertNotIn("main", self.gh.deleted_refs)
+        self.assertNotIn("feature/keep-me", self.gh.deleted_refs)
 
     def test_classify_merge_and_promote(self) -> None:
         merge = REGISTRY["code_merge_staging"]

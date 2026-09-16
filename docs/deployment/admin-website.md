@@ -750,11 +750,11 @@ function calling. Design:
   GA4 assignment. Flip `accountant` and `security-analyst` on at runbook
   step 6, then enable
   `settings.staff.dutiesEnabled` (Settings → Run scheduled seat duties)
-  after staff is on. `content-marketer` has a daily `catalog-micro-batch`
-  duty (10:00 HKT, off until the seat and duties are on) that creates one
-  district curation sheet per day from `contracts/board-staff.json`
-  `catalog`. Failed or cancelled district tasks are treated as unclaimed so
-  the next duty run retries that district. Per-seat OpenRouter models live in `settings.staff.modelBySeat`
+  after staff is on. `content-marketer` has a `catalog-micro-batch`
+  duty (08:00, 12:00 and 16:00 HKT, off until the seat and duties are on)
+  that creates one district curation sheet per slot from
+  `contracts/board-staff.json` `catalog`. Failed or cancelled district
+  tasks are treated as unclaimed so the next duty run retries that district. Per-seat OpenRouter models live in `settings.staff.modelBySeat`
   (Staff tab → Step model). **Staff → Run staff tick now** (`POST /siu-tin-dei/board/staff/tick`)
   queues the same work as the 5-minute schedule (due duties, due holds, drain
   the queue) via a 2-second `Event` invoke (`try_invoke_event`) and returns
@@ -783,8 +783,10 @@ function calling. Design:
   `POST …/code/promote`. Tool ops `code_run_task`, `code_get_run`,
   `code_review_pr`, `code_merge_staging`, `code_close_pr`, `code_promote`.
   `code_close_pr` stays an Approval (`action_class` `code_close`) and
-  relabels the linked issue (`board-closed`, drop `board-ready`). Widen the board
-  GitHub token to **Actions: write** and **Pull requests: write**. Workflows
+  relabels the linked issue (`board-closed`, drop `board-ready`).   Widen the board
+  GitHub token to **Actions: write**, **Pull requests: write**, and
+  **Contents: write** (the staff tick deletes stale `board/*` heads with
+  no open PR). Workflows
   `board-agent.yml` / `board-merge-staging.yml` / `board-promote.yml` must
   exist on **lx-software-ltd/siutindei** (see appendix A). Daily review
   **Promote** queues an Approval; the owner merges the GitHub
