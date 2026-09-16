@@ -686,6 +686,31 @@ def ensure_run_for_pr(table: Any, pr_number: int) -> tuple[str, dict[str, Any]]:
     return task_id, row
 
 
+_OWNER_REVISION_PR_RE = re.compile(r"\bPR\s*#\s*(\d+)\b", re.IGNORECASE)
+_OWNER_REVISION_ISSUE_RE = re.compile(
+    r"\bissue(?:Number)?\s*[#:]\s*(\d+)\b", re.IGNORECASE
+)
+_ENGINEER_OWNER_SEATS = frozenset({"engineer-1", "engineer-2"})
+
+
+def is_engineer_owner_seat(assignee: str) -> bool:
+    return str(assignee or "") in _ENGINEER_OWNER_SEATS
+
+
+def parse_owner_revision_mention(brief: str) -> tuple[int | None, int | None]:
+    """Return ``(prNumber, issueNumber)`` hinted in an owner brief, if any."""
+    text = str(brief or "")
+    pr_match = _OWNER_REVISION_PR_RE.search(text)
+    issue_match = _OWNER_REVISION_ISSUE_RE.search(text)
+    pr_number = int(pr_match.group(1)) if pr_match else None
+    issue_number = int(issue_match.group(1)) if issue_match else None
+    if pr_number is not None and pr_number <= 0:
+        pr_number = None
+    if issue_number is not None and issue_number <= 0:
+        issue_number = None
+    return pr_number, issue_number
+
+
 def owner_revision_ref(table: Any, pr_number: int, issue_number: Any = None) -> dict[str, Any]:
     """``eventRef`` so an owner-created task revises an existing board PR."""
     source_id, row = ensure_run_for_pr(table, pr_number)

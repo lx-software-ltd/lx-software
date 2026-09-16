@@ -805,10 +805,13 @@ function calling. Design:
   `pr_number` / `ci_failure` inputs; otherwise it parks an architect review
   and the daily review **Engineering** line says the runner cannot revise.
   Architect `changes` briefs include the excerpt.   An owner
-  `POST /tasks` with `prNumber` resets `reviewRounds` so a maxed-out revision
+  `POST /tasks` with `prNumber` (Tasks → New task → **PR #** / **Issue #**,
+  or JSON) resets `reviewRounds` so a maxed-out revision
   loop can start again; that reopen still needs the Appendix A revision
   patch (it clears the runner-capability cache so a just-applied YAML is
-  seen immediately). `ciFixRounds` increments only after a successful
+  seen immediately). If an `engineer-1` / `engineer-2` owner brief mentions
+  `PR #n` and the POST has no `eventRef` / `prNumber`, the handler derives
+  the revision ref the same way. `ciFixRounds` increments only after a successful
   revision dispatch, not when the ci-fix staff task is created. A `review-headline:*` duty can be manager-accepted
   without evidence so the 07:30 digest has a narrative. `task_note` call ids
   are not evidence. Stand-up `boundarySuggestions` that promote an

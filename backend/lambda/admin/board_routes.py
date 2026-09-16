@@ -663,6 +663,36 @@ def _staff_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
     return _json_response(404, {"message": "Not found"})
 
 
+def _owner_revision_event_ref(
+    table: Any, body: dict[str, Any]
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Build ``eventRef`` from ``prNumber`` or an engineer brief that cites ``PR #n``."""
+    pr_raw = body.get("prNumber")
+    issue_raw = body.get("issueNumber")
+    pr_number: int | None = None
+    if pr_raw not in (None, ""):
+        try:
+            pr_number = int(pr_raw)
+        except (TypeError, ValueError):
+            return None, _json_response(400, {"message": "prNumber must be an integer"})
+        if pr_number <= 0:
+            return None, _json_response(400, {"message": "prNumber must be a positive integer"})
+    elif board_code.is_engineer_owner_seat(str(body.get("assignee") or "")):
+        hinted_pr, hinted_issue = board_code.parse_owner_revision_mention(
+            str(body.get("brief") or "")
+        )
+        if hinted_pr:
+            pr_number = hinted_pr
+            if issue_raw in (None, "") and hinted_issue:
+                issue_raw = hinted_issue
+    if pr_number is None:
+        return None, None
+    try:
+        return board_code.owner_revision_ref(table, pr_number, issue_raw), None
+    except board_code.CodeError as exc:
+        return None, _json_response(400, {"message": str(exc)})
+
+
 def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
     table = board_store.records_table()
     settings = board_store.load_settings(table)
@@ -685,21 +715,9 @@ def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
                 return _staff_disabled()
             body = _parse_json_body(event)
             action_id = str(body.get("actionId") or "").strip() or None
-            event_ref = None
-            pr_raw = body.get("prNumber")
-            if pr_raw not in (None, ""):
-                try:
-                    pr_number = int(pr_raw)
-                except (TypeError, ValueError):
-                    return _json_response(400, {"message": "prNumber must be an integer"})
-                if pr_number <= 0:
-                    return _json_response(400, {"message": "prNumber must be a positive integer"})
-                try:
-                    event_ref = board_code.owner_revision_ref(
-                        table, pr_number, body.get("issueNumber")
-                    )
-                except board_code.CodeError as exc:
-                    return _json_response(400, {"message": str(exc)})
+            event_ref, revision_error = _owner_revision_event_ref(table, body)
+            if revision_error:
+                return revision_error
             action = board_store.get_action(table, action_id) if action_id else None
             if action_id and not action:
                 return _json_response(400, {"message": "actionId does not match a board action"})

@@ -649,6 +649,25 @@ class RunnerTests(BoardTestCase):
         self.assertEqual(out.get("skipped"), "ci pending")
         self.assertFalse(out.get("taskId"))
 
+    def test_parse_owner_revision_mention_reads_pr_hash(self) -> None:
+        self.assertEqual(
+            board_code.parse_owner_revision_mention(
+                "Fix the two failing resolver tests on PR #501 (unknown area_name)."
+            ),
+            (501, None),
+        )
+        self.assertEqual(
+            board_code.parse_owner_revision_mention("Revise PR#7 against issue #42."),
+            (7, 42),
+        )
+        self.assertEqual(
+            board_code.parse_owner_revision_mention("prNumber: 501, issueNumber: 489"),
+            (None, 489),
+        )
+        self.assertEqual(board_code.parse_owner_revision_mention("no mention"), (None, None))
+        self.assertTrue(board_code.is_engineer_owner_seat("engineer-1"))
+        self.assertFalse(board_code.is_engineer_owner_seat("cfo"))
+
     def test_owner_revision_ref_sets_event_ref(self) -> None:
         self.gh.prs.append(_pr(number=498, issue=489))
         ref = board_code.owner_revision_ref(self.table, 498)

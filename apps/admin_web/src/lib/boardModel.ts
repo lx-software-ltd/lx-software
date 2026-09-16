@@ -289,7 +289,15 @@ export type BoardTask = {
   readonly blockedOn?: readonly string[];
   readonly parkedAt?: string;
   readonly parkedReason?: string;
-  readonly eventRef?: { readonly kind?: string; readonly id?: string; readonly channel?: string; readonly subject?: string; readonly stars?: number } | null;
+  readonly eventRef?: {
+    readonly kind?: string;
+    readonly id?: string;
+    readonly channel?: string;
+    readonly subject?: string;
+    readonly stars?: number;
+    readonly prNumber?: number;
+    readonly issueNumber?: number;
+  } | null;
   readonly deliverableKey?: string;
   readonly deliverableBytes?: number;
 };
@@ -347,6 +355,8 @@ export type BoardTaskCreate = {
   readonly actionId?: string;
   /** Existing board PR to revise (sets eventRef.prNumber). */
   readonly prNumber?: number;
+  /** Linked GitHub issue when the PR row has none. */
+  readonly issueNumber?: number;
 };
 
 export type BoardToolOperation = {

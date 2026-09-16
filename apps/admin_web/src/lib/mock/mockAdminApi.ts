@@ -431,6 +431,8 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   if (p === `${board}/tasks`) {
     if (method === "POST") {
       const body = parseBody(init);
+      const prNumber = Number(body.prNumber);
+      const issueNumber = Number(body.issueNumber);
       const created: BoardTask = {
         ...boardTasksFixture[0],
         taskId: `task-${state.tasks.length + 1}`,
@@ -442,6 +444,16 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
         actionId: typeof body.actionId === "string" && body.actionId ? body.actionId : null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+        ...(Number.isInteger(prNumber) && prNumber > 0
+          ? {
+              eventRef: {
+                kind: "code-implement",
+                id: `pr:${prNumber}:owner`,
+                prNumber,
+                ...(Number.isInteger(issueNumber) && issueNumber > 0 ? { issueNumber } : {}),
+              },
+            }
+          : {}),
       };
       state.tasks = [created, ...state.tasks];
       if (created.actionId) {

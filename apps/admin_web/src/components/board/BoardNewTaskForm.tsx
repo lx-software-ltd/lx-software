@@ -40,8 +40,12 @@ export function BoardNewTaskForm({
   const [assignee, setAssignee] = useState(initialAssignee ?? activeSeats[0]?.id ?? "cfo");
   const [brief, setBrief] = useState(initialBrief);
   const [deliverableType, setDeliverableType] = useState<BoardDeliverableType>("markdown");
+  const [prNumber, setPrNumber] = useState("");
+  const [issueNumber, setIssueNumber] = useState("");
   const assigneeId = `${idPrefix}-assignee`;
   const deliverableId = `${idPrefix}-deliverable`;
+  const prNumberId = `${idPrefix}-pr-number`;
+  const issueNumberId = `${idPrefix}-issue-number`;
   const briefId = `${idPrefix}-brief`;
   return (
     <AdminEditorSection title={title} description={description} embedded={embedded}>
@@ -86,6 +90,41 @@ export function BoardNewTaskForm({
             ))}
           </select>
         </div>
+        <div className="col-md-2">
+          <label className="form-label small" htmlFor={prNumberId}>
+            PR #
+          </label>
+          <input
+            id={prNumberId}
+            type="number"
+            min={1}
+            inputMode="numeric"
+            className="form-control form-control-sm"
+            value={prNumber}
+            placeholder="optional"
+            onChange={(ev) => setPrNumber(ev.target.value)}
+          />
+        </div>
+        <div className="col-md-3">
+          <label className="form-label small" htmlFor={issueNumberId}>
+            Issue #
+          </label>
+          <input
+            id={issueNumberId}
+            type="number"
+            min={1}
+            inputMode="numeric"
+            className="form-control form-control-sm"
+            value={issueNumber}
+            placeholder="if PR has none"
+            onChange={(ev) => setIssueNumber(ev.target.value)}
+          />
+        </div>
+        <div className="col-12">
+          <p className="small text-secondary mb-0">
+            PR # reopens a revision on that board pull request. Issue # is only needed when the PR row has no linked GitHub issue.
+          </p>
+        </div>
         <div className="col-12">
           <label className="form-label small" htmlFor={briefId}>
             Brief
@@ -104,6 +143,8 @@ export function BoardNewTaskForm({
                 deliverableType,
                 slaHours: 24,
                 ...(actionId ? { actionId } : {}),
+                ...optionalPositiveInt("prNumber", prNumber),
+                ...optionalPositiveInt("issueNumber", issueNumber),
               })
             }
           >
@@ -119,4 +160,12 @@ export function BoardNewTaskForm({
       </div>
     </AdminEditorSection>
   );
+}
+
+function optionalPositiveInt(key: "prNumber" | "issueNumber", raw: string): Partial<BoardTaskCreate> {
+  const trimmed = raw.trim();
+  if (!trimmed) return {};
+  const value = Number(trimmed);
+  if (!Number.isInteger(value) || value <= 0) return {};
+  return { [key]: value };
 }
