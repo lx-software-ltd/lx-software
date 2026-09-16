@@ -82,6 +82,12 @@ class PathClassTests(unittest.TestCase):
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
+                    "POST", "/public/siu-tin-dei/board/code/sync-staging", write_ctx, full
+                ),
+                "owner_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
                     "POST",
                     "/public/siu-tin-dei/board/ramp/mail_reply/promote",
                     write_ctx,

@@ -1,7 +1,12 @@
 import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { adminFetchJson } from "../lib/apiAdminClient";
-import { reviewWrongMutationOptions, rampPromoteMutationOptions, stagingPromoteMutationOptions } from "./useBoardReview";
+import {
+  reviewWrongMutationOptions,
+  rampPromoteMutationOptions,
+  stagingPromoteMutationOptions,
+  stagingSyncMutationOptions,
+} from "./useBoardReview";
 
 vi.mock("../lib/apiAdminClient", () => ({
   adminFetchJson: vi.fn(),
@@ -42,6 +47,15 @@ describe("review mutations", () => {
     await mutationFn();
     const [path, init] = fetchMock.mock.calls[0];
     expect(path).toBe("/siu-tin-dei/board/code/promote");
+    expect(init?.method).toBe("POST");
+  });
+
+  it("posts staging sync from main", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: true, mergedSha: "abcmerged000", preview: { behindBy: 0 } });
+    const { mutationFn } = stagingSyncMutationOptions(qc);
+    await mutationFn();
+    const [path, init] = fetchMock.mock.calls[0];
+    expect(path).toBe("/siu-tin-dei/board/code/sync-staging");
     expect(init?.method).toBe("POST");
   });
 });

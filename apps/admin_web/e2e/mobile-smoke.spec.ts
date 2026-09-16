@@ -97,6 +97,7 @@ test.describe("admin viewport smoke", () => {
     await page.getByRole("tab", { name: "Executive Board" }).click();
     await expect(page.getByRole("heading", { name: "Daily review" })).toBeVisible();
     await expect(page.getByText(/Three parent threads closed/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sync from main" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Promote" })).toBeVisible();
     await expect(page.getByText(/board: #42 add booking/i)).toBeVisible();
     if (testInfo.project.name === "phone") {

@@ -131,8 +131,8 @@ def write_blocked(method: str, path: str) -> bool:
     """Owner-only (JWT) writes even when the key has allowWrite.
 
     Cost/safety knobs (settings, boundaries, tools), production promote,
-    approvals, mail selftest, and non-reversible live-state mutations
-    (chat wipe, meeting/task cancel, staff tick, ramp pause).
+    staging sync, approvals, mail selftest, and non-reversible live-state
+    mutations (chat wipe, meeting/task cancel, staff tick, ramp pause).
     """
     rest = _board_rest(path)
     if not rest:
@@ -141,7 +141,12 @@ def write_blocked(method: str, path: str) -> bool:
     tail = rest[-1]
     if method == "PUT" and rest in (["settings"], ["boundaries"], ["tools"]):
         return True
-    if method == "POST" and rest in (["code", "promote"], ["mail", "selftest"], ["staff", "tick"]):
+    if method == "POST" and rest in (
+        ["code", "promote"],
+        ["code", "sync-staging"],
+        ["mail", "selftest"],
+        ["staff", "tick"],
+    ):
         return True
     if method == "POST" and head == "approvals" and len(rest) == 3 and tail in ("approve", "reject"):
         return True

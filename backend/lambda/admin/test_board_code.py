@@ -85,6 +85,7 @@ class FakeActions:
         self.labelCreates = 0
         self.issueLabels: list[tuple[int, list[str]]] = []
         self.merges: list[dict[str, Any]] = []
+        self.merge_error: Exception | None = None
         self.patches: list[dict[str, Any]] = []
         self.comments: list[dict[str, Any]] = []
         self.writeOrder: list[str] = []
@@ -232,6 +233,8 @@ class FakeActions:
                 self.labelCreates += 1
             return body or {}
         if method == "POST" and path.endswith("/merges"):
+            if self.merge_error:
+                raise self.merge_error
             self.merges.append(body or {})
             self.compare = {"status": "identical", "ahead_by": 0, "behind_by": 0, "commits": []}
             return {"sha": "abcmerged000"}
@@ -1703,6 +1706,36 @@ class RunnerTests(BoardTestCase):
         self.assertEqual(self.gh.merges[0]["base"], "staging")
         self.assertEqual(self.gh.merges[0]["head"], "main")
         self.assertEqual(out["preview"]["behindBy"], 0)
+
+    def test_queue_sync_staging_merges_and_closes_rebase_task(self) -> None:
+        self.gh.compare = {"status": "behind", "ahead_by": 0, "behind_by": 3, "commits": []}
+        created = board_code._ensure_rebase_task(self.table, self.settings)  # noqa: SLF001
+        self.assertIsNotNone(created)
+        out = board_code.queue_sync_staging(self.table, self.settings, "admin-sub")
+        self.assertTrue(out["ok"])
+        self.assertEqual(out["mergedSha"], "abcmerged000")
+        self.assertEqual(self.gh.merges[0]["base"], "staging")
+        cancelled = board_store.get_task(self.table, created["taskId"])
+        self.assertEqual(cancelled["status"], "cancelled")
+        self.assertEqual(cancelled["closedBy"], "owner")
+
+    def test_queue_sync_staging_already_current(self) -> None:
+        self.gh.compare = {"status": "identical", "ahead_by": 0, "behind_by": 0, "commits": []}
+        out = board_code.queue_sync_staging(self.table, self.settings, "admin-sub")
+        self.assertTrue(out["ok"])
+        self.assertTrue(out["alreadyCurrent"])
+        self.assertEqual(self.gh.merges, [])
+
+    def test_queue_sync_staging_conflict_is_code_error(self) -> None:
+        self.gh.compare = {"status": "diverged", "ahead_by": 1, "behind_by": 2, "commits": []}
+        self.gh.merge_error = board_github.GitHubSnapshotError(
+            "GitHub API returned status 409 for POST /repos/x/y/merges: Merge conflict",
+            status=409,
+        )
+        with self.assertRaises(board_code.CodeError) as raised:
+            board_code.queue_sync_staging(self.table, self.settings, "admin-sub")
+        self.assertIn("conflicts with main", str(raised.exception))
+        self.assertEqual(self.gh.merges, [])
 
     def test_accept_sync_task_holds_when_staging_still_behind(self) -> None:
         self.gh.compare = {"status": "diverged", "ahead_by": 1, "behind_by": 12, "commits": []}

@@ -1231,6 +1231,13 @@ def _code_route(event: dict[str, Any], method: str, rest: list[str], user_sub: s
             return _json_response(409, {"message": str(exc)})
         _audit(user_sub, "BOARD_CODE_PROMOTE", "staging", event)
         return _json_response(201, out)
+    if len(rest) == 2 and rest[1] == "sync-staging" and method == "POST":
+        try:
+            out = board_code.queue_sync_staging(table, settings, user_sub or "")
+        except board_code.CodeError as exc:
+            return _json_response(409, {"message": str(exc)})
+        _audit(user_sub, "BOARD_CODE_SYNC_STAGING", "staging", event)
+        return _json_response(200, out)
     return _json_response(404, {"message": "Not found"})
 
 

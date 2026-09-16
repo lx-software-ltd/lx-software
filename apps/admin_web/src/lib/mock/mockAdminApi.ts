@@ -54,6 +54,7 @@ import {
   type BoardSequence,
   type BoardContentItem,
   type BoardSettings,
+  type BoardStagingPreview,
 } from "../boardModel";
 import {
   BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
@@ -108,6 +109,7 @@ type MockState = {
   content: BoardContentItem[];
   approvals: BoardApproval[];
   settings: BoardSettings;
+  staging: BoardStagingPreview;
 };
 
 const state: MockState = {
@@ -129,6 +131,13 @@ const state: MockState = {
   content: structuredClone(boardContentFixture) as BoardContentItem[],
   approvals: structuredClone(boardApprovalsFixture) as BoardApproval[],
   settings: structuredClone(boardOverviewFixture.settings) as BoardSettings,
+  staging: {
+    status: "diverged",
+    behindBy: 3,
+    aheadBy: 1,
+    canPromote: false,
+    commits: [{ sha: "a1b2c3d4", message: "board: #42 add booking" }],
+  },
 };
 
 function json(body: unknown, status = 200): Response {
@@ -545,14 +554,25 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
     return json({ classKey: decodeURIComponent(p.slice(`${board}/ramp/`.length, -"/promote".length)), holdOverrides: { "publish:facebook": 0 } });
   }
   if (p === `${board}/code/staging`) {
+    return json({ staging: state.staging });
+  }
+  if (p === `${board}/code/sync-staging` && method === "POST") {
+    const before = state.staging;
+    if ((before.behindBy ?? 0) <= 0) {
+      return json({ ok: true, alreadyCurrent: true, preview: before });
+    }
+    state.staging = {
+      ...before,
+      status: "ahead",
+      behindBy: 0,
+      aheadBy: before.aheadBy ?? 1,
+      canPromote: (before.aheadBy ?? 1) > 0,
+    };
     return json({
-      staging: {
-        status: "ahead",
-        behindBy: 0,
-        aheadBy: 1,
-        canPromote: true,
-        commits: [{ sha: "a1b2c3d4", message: "board: #42 add booking" }],
-      },
+      ok: true,
+      mergedSha: "abcmerged000",
+      before,
+      preview: state.staging,
     });
   }
   if (p === `${board}/code/promote` && method === "POST") {

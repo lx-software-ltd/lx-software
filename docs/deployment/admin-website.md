@@ -192,7 +192,7 @@ GET denials stay 404.
 These writes stay **Cognito JWT only** even for a write key:
 
 - Cost / safety knobs: `PUT settings`, `PUT boundaries`, `PUT tools`
-- Owner decide / promote: `POST approvals/{id}/approve|reject`, `POST code/promote`, `POST ramp/{classKey}/promote`
+- Owner decide / promote: `POST approvals/{id}/approve|reject`, `POST code/promote`, `POST code/sync-staging`, `POST ramp/{classKey}/promote`
 - Mail self-test: `POST mail/selftest`
 - Non-reversible live state: `DELETE chat/{persona}`, `POST meetings/{id}/cancel`, `POST tasks/{id}/cancel`, `POST staff/tick`, `POST ramp/{classKey}/pause`
 
@@ -780,7 +780,7 @@ function calling. Design:
   review suggestions list.
 
 - **Engineering runner (WP10):** `GET /siu-tin-dei/board/code/staging`,
-  `POST …/code/promote`. Tool ops `code_run_task`, `code_get_run`,
+  `POST …/code/sync-staging`, `POST …/code/promote`. Tool ops `code_run_task`, `code_get_run`,
   `code_review_pr`, `code_merge_staging`, `code_close_pr`, `code_promote`.
   `code_close_pr` stays an Approval (`action_class` `code_close`) and
   relabels the linked issue (`board-closed`, drop `board-ready`).   Widen the board
@@ -790,8 +790,12 @@ function calling. Design:
   `board/dry-run` are kept). Workflows
   `board-agent.yml` / `board-merge-staging.yml` / `board-promote.yml` must
   exist on **lx-software-ltd/siutindei** (see appendix A). Daily review
-  **Promote** queues an Approval; the owner merges the GitHub
-  `staging → main` PR. Architect weekly duty grooms `board-ready` issues.
+  **Sync from main** (owner-only `POST …/code/sync-staging`) merge-commits
+  `main` into `staging` with no hold or Approval and cancels an open
+  `ops/rebase-staging` task; conflicts return 409 for a GitHub resolve.
+  **Promote** stays disabled until `behindBy` is 0, then queues an
+  Approval; the owner merges the GitHub `staging → main` PR. Architect
+  weekly duty grooms `board-ready` issues.
   Keep `code_merge_staging` as an Approval (`always_propose`) until the
   siutindei Appendix A workflows exist; then flip architect / engineer-1 /
   engineer-2 / product-dev on (runbook step 7). `poll_runs` skips review on
