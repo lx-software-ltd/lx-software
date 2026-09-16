@@ -212,6 +212,7 @@ export const DEFAULT_BOARD_BOUNDARIES: BoardBoundaries = {
     spend: 24,
     code_staging: 12,
     code_production: 0,
+    catalog_import: 0,
   },
   holdOverrides: {},
 };
@@ -297,9 +298,39 @@ export type BoardTask = {
     readonly stars?: number;
     readonly prNumber?: number;
     readonly issueNumber?: number;
+    readonly districtId?: string;
+    readonly district?: string;
   } | null;
   readonly deliverableKey?: string;
   readonly deliverableBytes?: number;
+  readonly importedAt?: string;
+  readonly importPreview?: BoardCatalogImportPreview | null;
+  readonly importResult?: BoardCatalogImportResult | null;
+};
+
+export type BoardCatalogImportPreview = {
+  readonly ok: boolean;
+  readonly taskId?: string;
+  readonly district?: string;
+  readonly importEnabled?: boolean;
+  readonly configured?: boolean;
+  readonly error?: string;
+  readonly dryRun?: {
+    readonly ok?: boolean;
+    readonly mode?: string;
+    readonly accepted?: number;
+    readonly skipped?: number;
+    readonly errors?: readonly string[];
+  };
+  readonly payload?: { readonly organizations?: readonly Record<string, unknown>[] };
+};
+
+export type BoardCatalogImportResult = {
+  readonly ok?: boolean;
+  readonly sent?: number;
+  readonly accepted?: number;
+  readonly objectKey?: string;
+  readonly at?: string;
 };
 
 export type BoardTaskStep = {
@@ -806,6 +837,17 @@ export type BoardRepoSnapshotMeta = {
   readonly chars: number;
 };
 
+export type BoardOutreachIdentity = {
+  readonly domain: string;
+  readonly fromAddress?: string;
+  readonly identityVerified: boolean | null;
+  readonly dkimStatus: string | null;
+  readonly dkimRecords: readonly { readonly name: string; readonly value: string }[];
+  readonly mailFromDomain: string | null;
+  readonly mailFromStatus: string | null;
+  readonly errors: readonly string[];
+};
+
 export type BoardOverview = {
   readonly settings: BoardSettings;
   readonly charter: BoardCharter;
@@ -826,6 +868,7 @@ export type BoardOverview = {
   readonly unreadMailCount: number;
   readonly overdueInvoiceCount?: number;
   readonly mail: BoardMailStatus;
+  readonly outreachIdentity?: BoardOutreachIdentity;
   readonly receivables?: { readonly outstandingHkd?: number; readonly overdue?: number };
 };
 
@@ -1558,6 +1601,39 @@ export function boardCodeSyncStagingPath(): string {
   return `${BOARD_API_BASE}/code/sync-staging`;
 }
 
+export function boardCatalogPreviewPath(): string {
+  return `${BOARD_API_BASE}/catalog/preview`;
+}
+
+export function boardCatalogImportPath(): string {
+  return `${BOARD_API_BASE}/catalog/import`;
+}
+
+export function isCatalogSheetTask(task: Pick<BoardTask, "eventRef"> | undefined | null): boolean {
+  return task?.eventRef?.kind === "catalog-micro-batch";
+}
+
+/** Use a live preview mutation only when it belongs to the open task. */
+export function liveCatalogPreviewForTask(
+  live: BoardCatalogImportPreview | null | undefined,
+  taskId: string | null | undefined,
+  fallback?: BoardCatalogImportPreview | null,
+): BoardCatalogImportPreview | null | undefined {
+  if (live && taskId && live.taskId === taskId) return live;
+  return fallback;
+}
+
+/** Surface a catalog mutation error only when it belongs to the open task. */
+export function catalogMutationErrorForTask(
+  variables: unknown,
+  taskId: string | null | undefined,
+  error: unknown,
+  format: (err: unknown) => string | null,
+): string | null {
+  if (!taskId || variables !== taskId) return null;
+  return format(error);
+}
+
 export type BoardStagingPreview = {
   readonly status?: string;
   readonly behindBy?: number;
@@ -1662,6 +1738,7 @@ export type BoardOutreachStats = {
   readonly dailyCap?: number;
   readonly capRaisedAt?: string;
   readonly identityVerified?: boolean;
+  readonly identity?: BoardOutreachIdentity;
   readonly breaker?: { readonly name?: string; readonly tripped?: boolean; readonly reason?: string };
   readonly history?: readonly { readonly date: string; readonly sent?: number; readonly bounces?: number; readonly complaints?: number }[];
 };

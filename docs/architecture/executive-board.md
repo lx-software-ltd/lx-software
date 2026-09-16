@@ -262,6 +262,7 @@ The daily budget is re-checked before every round.
 | `content` | R | – | – | – | – | – | – | A |
 | `newsletter` | R | – | – | – | – | – | – | A |
 | `code` | – | – | – | P | A | – | – | – |
+| `catalog` | R | – | P | P | – | – | – | R |
 
 `contracts/board-tools.json` is the source of truth; the table is a
 snapshot of its `defaults`.
@@ -286,6 +287,7 @@ snapshot of its `defaults`.
 | `content` | `board_content.py`, `board_creative.py` | calendar | `content_publish` | §10.3 |
 | `newsletter` | `board_newsletter.py` | subscribers, issues | draft issue, `newsletter_send` | §10.4 |
 | `code` | `board_code.py` | run status, PR review data, staging state | `code_run_task`, `code_merge_staging`, `code_close_pr`, `code_promote` | §11 |
+| `catalog` | `board_catalog_import.py` | `catalog_preview`, `catalog_dry_run` | `catalog_import` (always an Approval) | §6.4 |
 | `staff`, `task` | `board_staff.py` | list tasks, get deliverable | assign, request revision, cancel; `task_note`, `task_finish`, `task_request_help` (task context only) | §7 |
 
 Cheap reads (`aws`, `security`, `stores`, `web`, `product`) are refreshed
@@ -351,6 +353,26 @@ only when amount and reference agree. Nightly `…-board-receivables-mirror`
 lines no longer desired; manual lines are never touched. Daily
 `…-board-dunning` (09:00 HKT) opens D+7 / D+21 / D+35 accountant tasks
 when staff is on, reminder Approvals when it is off.
+
+### 6.4 Catalog import (Option A)
+
+`board_catalog_import.py` turns an accepted `catalog-micro-batch` sheet
+(§7.2; only fields listed in `verified_fields`, mapped through the
+contract `catalog.typeToCategory`, at most `maxOrgsPerImport` 20
+organisations) into siutindei importer JSON. Import authenticates as a
+dedicated Cognito **importer** user in the siutindei pool
+(`AdminInitiateAuth` / `ADMIN_USER_PASSWORD_AUTH`, secret
+`…-board-importer-credentials`, IAM statement gated on
+`SiutindeiUserPoolId`) and calls the product admin API
+(`SiutindeiAdminApiBaseUrl`): presign, PUT, `POST /admin/imports`. This
+stack never writes Aurora in that path and no LLM runs. `catalog_import`
+is `always_propose` (action class `catalog_import`) and refuses while
+`SiutindeiBoardCatalogImportEnabled` is off; preview and local dry-run
+work regardless. Owner `POST …/catalog/preview` and `…/catalog/import`
+are JWT-only (`owner_only` on the public API); accepting a catalog sheet
+attaches `importPreview` only, and a repeat import of the same task is 409
+unless `force` is set. The product side still needs the `importer` group,
+the #502 fields and `dry_run` on `POST /admin/imports` (deployment doc).
 
 ## 7. Staff (background tasks)
 
@@ -453,7 +475,7 @@ proposals, draft invoice, record / match payment), `inbound_reply:{channel}`
 `replied`+ recipients), `cold_outreach:{prospectType}`,
 `publish:{channel}` (posts, stories, release notes, `content_publish`,
 `newsletter_send`), `spend:meta`, `code_staging`, `code_production`,
-`code_close`, `never`.
+`code_close`, `catalog_import`, `never`.
 
 `settings.boundaries.holds` gives hours per class (defaults: internal /
 inbound_reply / outbound_known 0; cold_outreach / publish / spend 24;
@@ -571,7 +593,10 @@ days (`…-google-places-key` secret).
 Sequences per type (`sequence#{type}`, EN / ZH steps at D+0, D+4, D+10,
 `outreachMaxTouches` 3) send from
 `partnerships@{SiutindeiBoardOutreachSendingDomain}` (default
-`partners.siutindei.com`) with `Reply-To` on the main domain so replies
+`partners.siutindei.com`; the stack always creates that SES identity, and
+`scripts/sync-ses-sending-dns.py --retry` republishes the current Easy DKIM
+CNAMEs and MAIL FROM records to Cloudflare after a DKIM `FAILED`, which SES
+never re-checks on its own) with `Reply-To` on the main domain so replies
 enter triage, an HTTPS-only RFC 8058 `List-Unsubscribe`, configuration set
 `lxsoftware-admin-siutindei-outreach` → SNS → SQS
 `lxsoftware-admin-siutindei-outreach-events` → `AdminApiFn` event source
@@ -776,7 +801,8 @@ DynamoDB access, settings normalisation), `board_personas.py`,
 `board_holds.py`, `board_breakers.py`, `board_triage.py`,
 `board_policy.py`, `board_templates.py`, `board_review.py`,
 `board_lessons.py`, `board_duties.py`, `board_progress.py` (listing /
-partnership progress snapshot), `board_catalog.py`. Tests are
+partnership progress snapshot), `board_catalog.py`,
+`board_catalog_import.py`. Tests are
 `test_board*.py` with `FakeTable` and fakes for every external API.
 
 **SPA (`apps/admin_web/src/components/board/`).** `ExecutiveBoardTab`

@@ -394,6 +394,7 @@ describe("Admin Lambda IAM policies", () => {
     ["AdminOpenRouterSecretPolicy", "HasOpenRouterSecret"],
     ["AdminSiutindeiDataApiPolicy", "HasSiutindeiDataApi"],
     ["SiutindeiBoardMailSendPolicy", "HasSiutindeiBoardMailSending"],
+    ["SiutindeiBoardImporterAuthPolicy", "HasSiutindeiUserPool"],
   ])("%s keeps its %s condition", (constructId, conditionName) => {
     const policies = findPoliciesByConstructId(constructId);
     expect(policies).toHaveLength(1);
@@ -635,6 +636,16 @@ describe("Siu Tin Dei parameter naming", () => {
     for (const name of retiredUnprefixed) {
       expect(parameters[name]).toBeUndefined();
     }
+  });
+
+  test("SiutindeiBoardCatalogImportEnabled defaults off", () => {
+    const parameters = template.toJSON().Parameters as Record<
+      string,
+      { Default?: string; AllowedValues?: string[] }
+    >;
+    expect(parameters.SiutindeiBoardCatalogImportEnabled?.Default).toBe("false");
+    expect(parameters.SiutindeiBoardCatalogImportEnabled?.AllowedValues).toEqual(["true", "false"]);
+    expect(parameters.CatalogImportEnabled).toBeUndefined();
   });
 
   test("PublicApiWritesEnabled is unprefixed and defaults off", () => {
@@ -947,6 +958,15 @@ describe("SQS event sources on AdminApiFn", () => {
 });
 
 describe("Board SES configuration-set IAM and public CORS", () => {
+  test("outreach identity publishes DKIM CNAME outputs", () => {
+    const outputs = template.toJSON().Outputs as Record<string, { Description?: string }>;
+    for (const n of [1, 2, 3]) {
+      const key = `SiutindeiOutreachDkimCname${n}`;
+      expect(outputs[key]).toBeDefined();
+      expect(String(outputs[key]?.Description ?? "")).toContain("DKIM CNAME");
+    }
+  });
+
   test("outreach and newsletter configuration sets exist and templates stay prefixed", () => {
     const configSets = Object.values(resourcesOfType("AWS::SES::ConfigurationSet")).map(
       (r) => r.Properties?.Name

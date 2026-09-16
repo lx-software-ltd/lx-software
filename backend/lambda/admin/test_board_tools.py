@@ -266,7 +266,7 @@ class TestLevels(unittest.TestCase):
         registry = board_tools.public_registry()
         self.assertEqual(
             [t["id"] for t in registry],
-            ["github", "board", "mail", "research", "aws", "security", "product", "meta", "finance", "stores", "staff", "intel", "outreach", "content", "code", "newsletter", "web"],
+            ["github", "board", "mail", "research", "aws", "security", "product", "catalog", "meta", "finance", "stores", "staff", "intel", "outreach", "content", "code", "newsletter", "web"],
         )
         self.assertTrue(all(t["operations"] for t in registry))
 

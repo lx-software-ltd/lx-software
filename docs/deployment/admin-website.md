@@ -145,6 +145,24 @@ metadata (never the statements themselves) and query the admin tables:
         "arn:aws:dynamodb:ap-southeast-1:588024549699:table/lxsoftware-admin-audit-log",
         "arn:aws:dynamodb:ap-southeast-1:588024549699:table/lxsoftware-admin-records"
       ]
+    },
+    {
+      "Sid": "ReadBoardSesIdentities",
+      "Effect": "Allow",
+      "Action": ["ses:GetEmailIdentity"],
+      "Resource": [
+        "arn:aws:ses:ap-southeast-1:588024549699:identity/siutindei.com",
+        "arn:aws:ses:ap-southeast-1:588024549699:identity/partners.siutindei.com"
+      ]
+    },
+    {
+      "Sid": "RetryBoardSesDkim",
+      "Effect": "Allow",
+      "Action": ["ses:PutEmailIdentityDkimAttributes", "ses:PutEmailIdentityMailFromAttributes"],
+      "Resource": [
+        "arn:aws:ses:ap-southeast-1:588024549699:identity/siutindei.com",
+        "arn:aws:ses:ap-southeast-1:588024549699:identity/partners.siutindei.com"
+      ]
     }
   ]
 }
@@ -157,6 +175,9 @@ aws iam put-user-policy --user-name cursor-cloud-agent \
 aws iam delete-user-policy --user-name cursor-cloud-agent --policy-name lxsoftware-cloud-agent-read
 ```
 
+`ReadBoardSesIdentities` lets a Health `AWS_SES_DKIM_PENDING_TO_FAILED` be
+diagnosed; `RetryBoardSesDkim` is only needed for
+`scripts/sync-ses-sending-dns.py --retry` and can be left out.
 No `s3:GetObject` on the assets bucket, no `dynamodb:Scan`, no KMS
 (AWS-managed keys). CloudWatch Logs read access is a separate policy on the
 user. S3 access logs under `assets-data-bucket/` follow the standard S3 log
@@ -322,7 +343,7 @@ stack-wide knobs are unprefixed. Lambda env vars stay short
 | `SiutindeiBoardStaffEnabled` | `false` (default) / `true`. Deploy-time kill switch for staff tasks; fail-closed (`1|true|yes|on`), set on `AdminApiFn` and `InboundStatementMailFn`. Production sets `true`; the Staff UI toggle is still required. |
 | `PublicSiteOrigins` | CSV of extra browser origins on the HTTP API CORS list (admin origin always included). Needed by the public newsletter form. |
 | `PublicApiBaseUrl` | Public base URL of the HTTP API for unsubscribe / confirm links. Blank uses the CloudFormation endpoint. |
-| `SiutindeiBoardOutreachSendingDomain` / `SiutindeiBoardOutreachFromLocalPart` | Cold-outreach From (`partnerships@partners.siutindei.com`). Owner adds DKIM, MAIL FROM and DMARC records. |
+| `SiutindeiBoardOutreachSendingDomain` / `SiutindeiBoardOutreachFromLocalPart` | Cold-outreach From (`partnerships@partners.siutindei.com`). Publish the three `SiutindeiOutreachDkimCnameN` outputs (or run `python3 scripts/sync-ses-sending-dns.py --domain partners.siutindei.com --retry`) plus MAIL FROM MX + TXT and DMARC before `outreach_send` will send. SES Easy DKIM that sits in `FAILED` does not re-check DNS on its own. |
 | `SiutindeiBoardAwsStackPrefix` / `SiutindeiBoardAwsLambdaNames` | Alarm-name prefix (default `siutindei`) and CSV of siutindei Lambda names for `aws_lambda_health`. `aws_monthly_cost` filters by the `Project` tag and falls back to the account (`scope: account`). |
 | `SiutindeiClusterArn` | Aurora cluster ARN. When set, CDK enables the HTTP Data API and applies `scripts/siutindei/receivables.sql`; required for `finance` / `product` tools. |
 | `SiutindeiDbSecretArn` / `SiutindeiDbSecretName` | DB credentials secret (default name `lxsoftware-siutindei-database-credentials`; RDS-owned, do not recreate). |
@@ -333,6 +354,8 @@ stack-wide knobs are unprefixed. Lambda env vars stay short
 | `SiutindeiBoardMailDomain` | Domain the board indexes (default `siutindei.com`). |
 | `SiutindeiBoardMailSendingEnabled` | `false` (default) / `true`. Flip only after DKIM / SPF / DMARC are in the zone; creates the SES identity and send policy. |
 | `SiutindeiBoardChatModel` / `MeetingModel` / `DeepDiveModel` | Default OpenRouter slugs (`openai/gpt-4.1-mini`, `openai/gpt-4.1-mini`, `anthropic/claude-sonnet-4`); overridable in **Settings**. They are also sent as `models` fallbacks so a 429 on a cheap primary continues on the defaults. |
+| `SiutindeiBoardCatalogImportEnabled` | `false` (default) / `true`. Kill switch for `catalog_import`; preview and local dry-run work while it is off. |
+| `SiutindeiAdminApiBaseUrl` / `SiutindeiUserPoolId` / `SiutindeiBoardImporterClientId` / `SiutindeiBoardCatalogManagerId` | siutindei admin API base URL, Cognito user pool and importer app client for the catalog importer user, and the default manager id stamped on imported organisations. Blank until the product side exists. |
 
 ### Secrets
 
@@ -350,6 +373,7 @@ Secrets Manager (`ap-southeast-1`):
 | `…-board-google-play-sa` | Play Console service-account JSON (+ `packageName` if not a parameter). |
 | `…-board-google-analytics-sa` | Dedicated GA4 / GTM service-account JSON (not the Play key); may carry `propertyIds` / `gtmContainers`. |
 | `…-board-google-places-key` | Google Places API (New) key. |
+| `…-board-importer-credentials` | `{username, password}` of the siutindei Cognito `importer` service user (catalog import). |
 | `…-board-link-signing-key` | Generated on first deploy; leave as is. |
 
 The older `lxsoftware-admin-*` connector set stays in the stack, unused,
@@ -466,7 +490,8 @@ others on from **Staff** (or `PUT /siu-tin-dei/board/staff/{id}`):
 2. **Market:** activate `market-analyst`; add about five watchlist entries.
    The first Monday brief creates CPO `later` actions.
 3. **Pipeline:** owner tasks first — DNS for `partners.siutindei.com`
-   (SES DKIM CNAMEs, MAIL FROM MX + TXT, DMARC), Places key into the
+   (SES DKIM CNAMEs, MAIL FROM MX + TXT, DMARC; `scripts/sync-ses-sending-dns.py --retry`
+   after a DKIM `FAILED` Health event), Places key into the
    secret, SES production access, mailboxes `partnerships@`, `market@`,
    `news@`, `dmarc@` on Cloudflare (fan-out copies them automatically).
    Then activate `prospector`, approve the default sequences; first sends
@@ -522,6 +547,33 @@ the first listing plan.
 4. `python3 scripts/siutindei/smoke_data_api.py --cluster-arn … --secret-arn …`
    exercises every view and a rolled-back insert with the same typed
    parameters `AdminApiFn` uses (`--dry-run` prints the statements).
+
+### Catalog import (Option A)
+
+Tool `catalog` (`catalog_preview`, `catalog_dry_run`, `catalog_import`;
+design in the architecture doc §6.4) turns an accepted catalog
+micro-batch sheet into siutindei importer JSON and calls the product admin
+API as a dedicated Cognito **importer** user. This stack never writes
+Aurora and no LLM runs in that path. `catalog_import` is always an
+Approval (`always_propose`, class `catalog_import`); owner
+`POST /siu-tin-dei/board/catalog/preview` and `POST …/catalog/import` are
+JWT-only (`owner_only` on the public API). A second import of the same
+task returns 409 unless the body has `{"force": true}`.
+
+1. Land the product-side PRs on siutindei first (this repo cannot push
+   there): Cognito group `importer` with `_is_importer` on
+   `POST /admin/imports` and `/admin/imports/presign` plus
+   `ALLOW_ADMIN_USER_PASSWORD_AUTH` on the importer app client; the #502
+   fields `default_manager_id` / `source_url` / `vetting_note`; and
+   `POST /admin/imports` `{object_key, dry_run: true}`. Until `dry_run`
+   ships, the board dry-run is local validation only.
+2. Create the service user in `importer` and put `{username, password}`
+   in `lxsoftware-admin-siutindei-board-importer-credentials`.
+3. Set `SiutindeiAdminApiBaseUrl`, `SiutindeiUserPoolId`,
+   `SiutindeiBoardImporterClientId` and `SiutindeiBoardCatalogManagerId`
+   (the `SiutindeiBoardImporterAuthPolicy` IAM statement is gated on a
+   non-blank pool id), then flip `SiutindeiBoardCatalogImportEnabled=true`.
+4. **Tasks** → open a catalog sheet → **Preview import** / **Import**.
 
 ### Board Meta (Page, Instagram, WhatsApp)
 
@@ -613,3 +665,28 @@ its bucket / role / KMS policies must allow the shared-set SourceArn
    your sign-in address. A refusal shows the full SES error inline and as
    `board_mail_send_failed` in CloudWatch. Do this before asking a persona
    to reply.
+
+**Outreach sending domain (`partners.siutindei.com`):**
+
+The stack always creates `SiutindeiOutreachSendingIdentity`; its Easy DKIM
+tokens differ from the apex `siutindei.com` board-mail tokens. After a CDK
+deploy, or after SES moves DKIM from `PENDING` to `FAILED` (Health event
+`AWS_SES_DKIM_PENDING_TO_FAILED`), the three
+`token._domainkey.partners.siutindei.com` CNAMEs must match the current
+identity:
+
+```bash
+CLOUDFLARE_API_TOKEN=... python3 scripts/sync-ses-sending-dns.py \
+  --domain partners.siutindei.com --retry
+```
+
+That upserts DNS-only CNAMEs plus the `mail.partners.siutindei.com` MX and
+SPF records and asks SES to verify again (`FAILED` never self-heals).
+Confirm `token.dkim.amazonses.com` resolves to a TXT record; `NXDOMAIN`
+means the Cloudflare targets are stale. `GET /siu-tin-dei/board` and
+**Pipeline → Outreach stats** show `outreachIdentity.dkimStatus` and the
+current CNAME names.
+
+Replies go out from the mailbox the thread was addressed to. Every outbound
+message is indexed as `direction=out` so it appears in **Mail**. Bodies and
+threads expire after 90 days (`BOARD_MAIL_MESSAGE_TTL_DAYS`).

@@ -398,6 +398,7 @@ def default_boundaries() -> dict[str, Any]:
             "spend": 24,
             "code_staging": BOARD_STAFF_HOLD_CODE_STAGING_HOURS,
             "code_production": 0,
+            "catalog_import": 0,
         },
         "holdOverrides": {},
         "outreach": {

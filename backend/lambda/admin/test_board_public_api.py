@@ -88,6 +88,18 @@ class PathClassTests(unittest.TestCase):
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
+                    "POST", "/public/siu-tin-dei/board/catalog/preview", write_ctx, full
+                ),
+                "owner_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
+                    "POST", "/public/siu-tin-dei/board/catalog/import", write_ctx, full
+                ),
+                "owner_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
                     "POST",
                     "/public/siu-tin-dei/board/ramp/mail_reply/promote",
                     write_ctx,
@@ -203,6 +215,7 @@ class PathClassTests(unittest.TestCase):
         for path in (
             "/public/siu-tin-dei/board/prospects",
             "/public/siu-tin-dei/board/outreach/stats",
+            "/public/siu-tin-dei/board/outreach/identity",
             "/public/siu-tin-dei/board/receivables",
         ):
             self.assertFalse(board_public_api.path_allowed(path, ["siutindei-board-full"]))

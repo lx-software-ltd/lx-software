@@ -2632,6 +2632,14 @@ def _mark_delivered(table: Any, task: dict[str, Any], now: str) -> dict[str, Any
             board_code.on_review_delivered(table, board_store.load_settings(table), task)
         except Exception as exc:
             _log_event("warning", tag="board_code_review_deliver_failed", error=str(exc)[:200])
+    if ref.get("kind") == "catalog-micro-batch":
+        try:
+            import board_catalog_import
+
+            board_catalog_import.attach_accept_preview(table, task)
+            board_store.put_task(table, task)
+        except Exception as exc:
+            _log_event("warning", tag="board_catalog_import_accept_failed", error=str(exc)[:200])
     return task
 
 

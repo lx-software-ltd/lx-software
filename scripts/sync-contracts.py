@@ -233,6 +233,11 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "BOARD_CATALOG_BUDGET_USD = float(_BOARD_CATALOG.get(\"budgetUsd\") or 3)",
         "BOARD_CATALOG_OUTPUT_CONTRACT = str(_BOARD_CATALOG.get(\"outputContract\") or \"\")",
         "BOARD_CATALOG_DISTRICTS: list[dict] = list(_BOARD_CATALOG.get(\"districts\") or [])",
+        "BOARD_CATALOG_TYPE_TO_CATEGORY: dict[str, str] = {",
+        "    str(k): str(v) for k, v in dict(_BOARD_CATALOG.get(\"typeToCategory\") or {}).items()",
+        "}",
+        "BOARD_CATALOG_MAX_ORGS_PER_IMPORT = int(_BOARD_CATALOG.get(\"maxOrgsPerImport\") or 20)",
+        "BOARD_CATALOG_IMPORT_ENABLED_DEFAULT = bool(_BOARD_CATALOG.get(\"importEnabledDefault\"))",
         "",
         "OPENROUTER_PAYER = OPENROUTER_APPS_CONTRACT[\"payer\"]",
         "OPENROUTER_APPS: list[dict] = list(OPENROUTER_APPS_CONTRACT[\"apps\"])",
@@ -437,6 +442,9 @@ export const BOARD_STAFF_STEP_MODELS = {json.dumps(list(staff_limits.get("stepMo
 export const BOARD_CATALOG_ASSIGNEE = {json.dumps((board_staff.get("catalog") or {}).get("assignee") or "content-marketer")};
 export const BOARD_CATALOG_OUTPUT_CONTRACT = {json.dumps((board_staff.get("catalog") or {}).get("outputContract") or "")};
 export const BOARD_CATALOG_DISTRICTS = {json.dumps((board_staff.get("catalog") or {}).get("districts") or [])} as const;
+export const BOARD_CATALOG_TYPE_TO_CATEGORY = {json.dumps((board_staff.get("catalog") or {}).get("typeToCategory") or {})} as const;
+export const BOARD_CATALOG_MAX_ORGS_PER_IMPORT = {int((board_staff.get("catalog") or {}).get("maxOrgsPerImport") or 20)};
+export const BOARD_CATALOG_IMPORT_ENABLED_DEFAULT = {json.dumps(bool((board_staff.get("catalog") or {}).get("importEnabledDefault")))};
 
 export type OpenRouterAppDefinition = {{
   readonly id: string;

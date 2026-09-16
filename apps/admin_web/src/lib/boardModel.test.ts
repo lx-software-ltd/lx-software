@@ -5,7 +5,9 @@ import {
   boardTaskHref,
   boardTaskSearchParams,
   canRetryBoardTask,
+  catalogMutationErrorForTask,
   filterBoardTasks,
+  liveCatalogPreviewForTask,
   formatRelativeDuration,
   formatRelativeTime,
   formatUsageCost,
@@ -287,6 +289,18 @@ describe("task dashboard helpers", () => {
     ]);
     expect(grouped.attention.map((t) => t.taskId)).toEqual(["o", "r"]);
     expect(grouped.done.map((t) => t.taskId)).toEqual(["f", "d"]);
+  });
+
+  it("scopes live catalog preview and errors to the open task", () => {
+    const live = { ok: true, taskId: "task-a", district: "Eastern" };
+    const fallback = { ok: true, taskId: "task-b", district: "Wan Chai" };
+    expect(liveCatalogPreviewForTask(live, "task-a", fallback)).toEqual(live);
+    expect(liveCatalogPreviewForTask(live, "task-b", fallback)).toEqual(fallback);
+    expect(liveCatalogPreviewForTask(undefined, "task-a", fallback)).toEqual(fallback);
+    expect(catalogMutationErrorForTask("task-a", "task-a", new Error("off"), (err) => (err instanceof Error ? err.message : null))).toBe(
+      "off",
+    );
+    expect(catalogMutationErrorForTask("task-a", "task-b", new Error("off"), (err) => (err instanceof Error ? err.message : null))).toBeNull();
   });
 
   it("builds a shareable task deep link", () => {

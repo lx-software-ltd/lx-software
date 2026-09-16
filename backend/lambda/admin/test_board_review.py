@@ -58,6 +58,8 @@ class ReviewCompileTests(BoardTestCase):
         self.assertIn("spend", headline)
         self.assertIn("pipeline", headline)
         self.assertIn("qualifiedThisWeek", headline["pipeline"])
+        self.assertIn("catalog", headline)
+        self.assertIn("ready", headline["catalog"])
         self.assertIn("digestHtml", review)
         self.assertIn("Headline numbers", review["digestHtml"])
         self.assertIn("Unconfigured integrations", review["digestHtml"])

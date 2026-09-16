@@ -116,6 +116,22 @@
       }
     },
     {
+      "id": "catalog",
+      "label": "Catalog import",
+      "description": "Transform an accepted catalog micro-batch sheet into siutindei importer JSON (verified fields only) and propose an import. Does not write Aurora from this stack. Imports stay Approvals (always_propose) until the founder flips SiutindeiBoardCatalogImportEnabled.",
+      "maxLevel": "propose",
+      "defaults": {
+        "ceo": "read",
+        "cfo": "off",
+        "coo": "propose",
+        "cpo": "propose",
+        "cto": "off",
+        "cio": "off",
+        "ciso": "off",
+        "cmo": "read"
+      }
+    },
+    {
       "id": "meta",
       "label": "Meta",
       "description": "Facebook Page, Instagram and WhatsApp Cloud API on the existing number. Reads insights, comments, DMs and WhatsApp threads. Writes (post, story, reply, ad set, lead relay) go to Approvals. WhatsApp act is only inside the 24-hour window and only to allow-listed recipients.",
