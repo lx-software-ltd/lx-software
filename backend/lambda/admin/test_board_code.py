@@ -128,7 +128,11 @@ class FakeActions:
                 matches = [p for p in matches if str(p.get("state") or "open") != "closed"]
             return matches
         if method == "GET" and "/branches?" in path:
-            return list(self.branches)
+            qs = parse_qs(urlparse("https://example" + path).query)
+            page = int((qs.get("page") or ["1"])[0])
+            per = int((qs.get("per_page") or ["100"])[0])
+            start = (page - 1) * per
+            return list(self.branches)[start : start + per]
         if method == "DELETE" and "/git/refs/heads/" in path:
             name = path.split("/git/refs/heads/", 1)[1]
             self.deleted_refs.append(name)
@@ -667,6 +671,21 @@ class RunnerTests(BoardTestCase):
         self.assertEqual(board_code.parse_owner_revision_mention("no mention"), (None, None))
         self.assertTrue(board_code.is_engineer_owner_seat("engineer-1"))
         self.assertFalse(board_code.is_engineer_owner_seat("cfo"))
+        self.assertIn(
+            "code_run_task ONCE",
+            board_code.append_owner_revision_brief(
+                "Fix CI.",
+                {"kind": "code-implement", "prNumber": 501, "issueNumber": 489},
+            ),
+        )
+        already = "Call code_run_task with issueNumber=489."
+        self.assertEqual(
+            board_code.append_owner_revision_brief(
+                already, {"kind": "code-implement", "prNumber": 501, "issueNumber": 489}
+            ),
+            already,
+        )
+        self.assertEqual(board_code.append_owner_revision_brief("Note only.", None), "Note only.")
 
     def test_owner_revision_ref_sets_event_ref(self) -> None:
         self.gh.prs.append(_pr(number=498, issue=489))
@@ -1769,6 +1788,14 @@ class RunnerTests(BoardTestCase):
         self.assertNotIn("board/3fd6f5b5a4d44b9ba6fbebc3a4f532a9", deleted)
         self.assertNotIn("main", self.gh.deleted_refs)
         self.assertNotIn("feature/keep-me", self.gh.deleted_refs)
+
+    def test_sweep_keeps_dry_run_and_pages_branch_list(self) -> None:
+        self.gh.branches = [{"name": f"board/page-{idx:03d}"} for idx in range(105)]
+        self.gh.branches.append({"name": "board/dry-run"})
+        deleted = board_code.sweep_stale_board_branches(self.table, force=True)
+        self.assertEqual(len(deleted), 20)
+        self.assertNotIn("board/dry-run", deleted)
+        self.assertNotIn("board/dry-run", self.gh.deleted_refs)
 
     def test_sweep_runs_at_most_every_six_hours(self) -> None:
         self.gh.branches = [{"name": "board/stale-one"}]

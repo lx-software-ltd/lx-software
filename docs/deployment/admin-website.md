@@ -786,8 +786,8 @@ function calling. Design:
   relabels the linked issue (`board-closed`, drop `board-ready`).   Widen the board
   GitHub token to **Actions: write**, **Pull requests: write**, and
   **Contents: write** (every 6 h the staff tick deletes stale `board/*`
-  heads with no open PR; heads from a runner dispatch under 2 h old are
-  kept). Workflows
+  heads with no open PR; heads from a runner dispatch under 2 h old and
+  `board/dry-run` are kept). Workflows
   `board-agent.yml` / `board-merge-staging.yml` / `board-promote.yml` must
   exist on **lx-software-ltd/siutindei** (see appendix A). Daily review
   **Promote** queues an Approval; the owner merges the GitHub
@@ -809,9 +809,13 @@ function calling. Design:
   or JSON) resets `reviewRounds` so a maxed-out revision
   loop can start again; that reopen still needs the Appendix A revision
   patch (it clears the runner-capability cache so a just-applied YAML is
-  seen immediately). If an `engineer-1` / `engineer-2` owner brief mentions
-  `PR #n` and the POST has no `eventRef` / `prNumber`, the handler derives
-  the revision ref the same way. `ciFixRounds` increments only after a successful
+  seen immediately). The created brief is appended with a `code_run_task`
+  instruction; `task_finish` on a `code-implement` task is refused until
+  that runner is dispatched (or a `code_run_task` Approval is pending).
+  If an `engineer-1` / `engineer-2` owner brief has `deliverableType=pr`,
+  mentions `PR #n`, and the POST has no `prNumber`, the handler tries the
+  same revision ref; a missing linked issue then creates a normal task
+  instead of returning 400. `ciFixRounds` increments only after a successful
   revision dispatch, not when the ci-fix staff task is created. A `review-headline:*` duty can be manager-accepted
   without evidence so the 07:30 digest has a narrative. `task_note` call ids
   are not evidence. Stand-up `boundarySuggestions` that promote an

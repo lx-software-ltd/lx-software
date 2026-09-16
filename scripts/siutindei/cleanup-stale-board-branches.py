@@ -18,7 +18,8 @@ import sys
 
 REPO = "lx-software-ltd/siutindei"
 PREFIX = "board/"
-PROTECTED = frozenset({"main", "staging", "develop", "master"})
+KEEP = frozenset({"board/dry-run"})
+PAGE_SIZE = 100
 
 
 def _gh_json(args: list[str]) -> object:
@@ -32,19 +33,24 @@ def main() -> int:
     parser.add_argument("--repo", default=REPO)
     args = parser.parse_args()
     owner = args.repo.split("/", 1)[0]
-    branches = _gh_json(
-        ["api", f"repos/{args.repo}/branches?per_page=100", "--jq", "."]
-    )
-    if not isinstance(branches, list):
-        print("failed to list branches", file=sys.stderr)
-        return 1
+    branches: list[object] = []
+    for page in range(1, 11):
+        chunk = _gh_json(
+            ["api", f"repos/{args.repo}/branches?per_page={PAGE_SIZE}&page={page}", "--jq", "."]
+        )
+        if not isinstance(chunk, list):
+            print("failed to list branches", file=sys.stderr)
+            return 1
+        branches.extend(chunk)
+        if len(chunk) < PAGE_SIZE:
+            break
     deleted = []
     kept = []
     for row in branches:
         if not isinstance(row, dict):
             continue
         name = str(row.get("name") or "")
-        if not name.startswith(PREFIX) or name in PROTECTED:
+        if not name.startswith(PREFIX) or name in KEEP:
             continue
         pulls = _gh_json(
             [

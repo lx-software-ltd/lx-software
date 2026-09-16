@@ -35,6 +35,27 @@ describe("BoardNewTaskForm", () => {
     });
   });
 
+  it("blocks Issue # without PR # and ignores scientific notation", () => {
+    const onCreate = vi.fn();
+    render(<BoardNewTaskForm seats={seats} disabled={false} onCreate={onCreate} />);
+
+    fireEvent.change(screen.getByLabelText("Issue #"), { target: { value: "489" } });
+    fireEvent.change(screen.getByLabelText("Brief"), { target: { value: "Fix CI" } });
+    expect(screen.getByText(/Issue # needs a PR #/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create task" })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("PR #"), { target: { value: "1e3" } });
+    fireEvent.change(screen.getByLabelText("Issue #"), { target: { value: "" } });
+    expect(screen.getByRole("button", { name: "Create task" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Create task" }));
+    expect(onCreate).toHaveBeenCalledWith({
+      assignee: "engineer-1",
+      brief: "Fix CI",
+      deliverableType: "markdown",
+      slaHours: 24,
+    });
+  });
+
   it("omits empty PR and issue fields", () => {
     const onCreate = vi.fn();
     render(<BoardNewTaskForm seats={seats} disabled={false} onCreate={onCreate} />);

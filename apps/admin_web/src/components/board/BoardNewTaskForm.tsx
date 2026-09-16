@@ -42,6 +42,9 @@ export function BoardNewTaskForm({
   const [deliverableType, setDeliverableType] = useState<BoardDeliverableType>("markdown");
   const [prNumber, setPrNumber] = useState("");
   const [issueNumber, setIssueNumber] = useState("");
+  const parsedPr = parsePositiveInt(prNumber);
+  const parsedIssue = parsePositiveInt(issueNumber);
+  const issueNeedsPr = parsedIssue != null && parsedPr == null;
   const assigneeId = `${idPrefix}-assignee`;
   const deliverableId = `${idPrefix}-deliverable`;
   const prNumberId = `${idPrefix}-pr-number`;
@@ -96,9 +99,10 @@ export function BoardNewTaskForm({
           </label>
           <input
             id={prNumberId}
-            type="number"
-            min={1}
+            type="text"
             inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
             className="form-control form-control-sm"
             value={prNumber}
             placeholder="optional"
@@ -111,9 +115,10 @@ export function BoardNewTaskForm({
           </label>
           <input
             id={issueNumberId}
-            type="number"
-            min={1}
+            type="text"
             inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
             className="form-control form-control-sm"
             value={issueNumber}
             placeholder="if PR has none"
@@ -121,8 +126,10 @@ export function BoardNewTaskForm({
           />
         </div>
         <div className="col-12">
-          <p className="small text-secondary mb-0">
-            PR # reopens a revision on that board pull request. Issue # is only needed when the PR row has no linked GitHub issue.
+          <p className={`small mb-0 ${issueNeedsPr ? "text-danger" : "text-secondary"}`}>
+            {issueNeedsPr
+              ? "Issue # needs a PR #. Leave both empty unless you are reopening a board pull request."
+              : "PR # reopens a revision on that board pull request. Issue # is only needed when the PR row has no linked GitHub issue."}
           </p>
         </div>
         <div className="col-12">
@@ -135,7 +142,7 @@ export function BoardNewTaskForm({
           <button
             type="button"
             className="btn btn-primary btn-sm"
-            disabled={disabled || !brief.trim()}
+            disabled={disabled || !brief.trim() || issueNeedsPr}
             onClick={() =>
               onCreate({
                 assignee,
@@ -143,8 +150,8 @@ export function BoardNewTaskForm({
                 deliverableType,
                 slaHours: 24,
                 ...(actionId ? { actionId } : {}),
-                ...optionalPositiveInt("prNumber", prNumber),
-                ...optionalPositiveInt("issueNumber", issueNumber),
+                ...(parsedPr != null ? { prNumber: parsedPr } : {}),
+                ...(parsedPr != null && parsedIssue != null ? { issueNumber: parsedIssue } : {}),
               })
             }
           >
@@ -162,10 +169,10 @@ export function BoardNewTaskForm({
   );
 }
 
-function optionalPositiveInt(key: "prNumber" | "issueNumber", raw: string): Partial<BoardTaskCreate> {
+function parsePositiveInt(raw: string): number | undefined {
   const trimmed = raw.trim();
-  if (!trimmed) return {};
+  if (!/^[1-9]\d*$/.test(trimmed)) return undefined;
   const value = Number(trimmed);
-  if (!Number.isInteger(value) || value <= 0) return {};
-  return { [key]: value };
+  if (!Number.isSafeInteger(value) || value <= 0) return undefined;
+  return value;
 }

@@ -711,6 +711,30 @@ def parse_owner_revision_mention(brief: str) -> tuple[int | None, int | None]:
     return pr_number, issue_number
 
 
+def append_owner_revision_brief(brief: str, event_ref: dict[str, Any] | None) -> str:
+    """Tell an owner reopen to dispatch the runner, not invent GitHub writes."""
+    text = str(brief or "").strip()
+    if not event_ref or str(event_ref.get("kind") or "") != "code-implement":
+        return text
+    if "code_run_task" in text:
+        return text
+    try:
+        pr_number = int(event_ref.get("prNumber") or 0)
+    except (TypeError, ValueError):
+        pr_number = 0
+    try:
+        issue_number = int(event_ref.get("issueNumber") or 0)
+    except (TypeError, ValueError):
+        issue_number = 0
+    issue_number = issue_number or pr_number
+    extra = (
+        f" Call code_run_task ONCE with issueNumber={issue_number} and a brief that "
+        f"fixes PR #{pr_number}, then call task_finish. Do not invent GitHub write "
+        "tools or open a second pull request. The board polls CI for you."
+    )
+    return (text + extra)[:4000]
+
+
 def owner_revision_ref(table: Any, pr_number: int, issue_number: Any = None) -> dict[str, Any]:
     """``eventRef`` so an owner-created task revises an existing board PR."""
     source_id, row = ensure_run_for_pr(table, pr_number)
@@ -2161,7 +2185,27 @@ _STALE_BRANCH_SWEEP_INTERVAL = timedelta(hours=6)
 # A runner pushes ``board/{taskId}`` and opens the PR in the same job step;
 # never delete a head whose run is still that fresh.
 _STALE_BRANCH_MIN_RUN_AGE = timedelta(hours=2)
-_PROTECTED_BRANCHES = frozenset({"main", "staging", "develop", "master"})
+_STALE_BRANCH_KEEP = frozenset({"board/dry-run"})
+_STALE_BRANCH_PAGE_SIZE = 100
+_STALE_BRANCH_MAX_PAGES = 10
+
+
+def _list_repo_branches(repo: str) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for page in range(1, _STALE_BRANCH_MAX_PAGES + 1):
+        raw = (
+            _gh(
+                "GET",
+                f"/repos/{repo}/branches?per_page={_STALE_BRANCH_PAGE_SIZE}&page={page}",
+            )
+            or []
+        )
+        if not isinstance(raw, list):
+            break
+        out.extend(row for row in raw if isinstance(row, dict))
+        if len(raw) < _STALE_BRANCH_PAGE_SIZE:
+            break
+    return out
 
 
 def _branch_run_is_fresh(table: Any, name: str) -> bool:
@@ -2177,7 +2221,7 @@ def sweep_stale_board_branches(table: Any, *, force: bool = False) -> list[str]:
     """Delete ``board/*`` heads that have no open pull request.
 
     Covers merged PRs, closed-unmerged PRs, and runner branches that never
-    opened a PR. Leaves ``main`` / ``staging``, any branch with an open PR,
+    opened a PR. Leaves ``board/dry-run``, any branch with an open PR,
     and any head whose runner dispatch is under two hours old. Runs at most
     every six hours unless ``force``. A 403 here means the board GitHub
     token needs Contents: write.
@@ -2198,17 +2242,13 @@ def sweep_stale_board_branches(table: Any, *, force: bool = False) -> list[str]:
     owner = repo.split("/", 1)[0]
     deleted: list[str] = []
     try:
-        raw = _gh("GET", f"/repos/{repo}/branches?per_page=100") or []
+        raw = _list_repo_branches(repo)
     except board_github.GitHubSnapshotError as exc:
         _log_event("warning", tag="board_code_branch_sweep_list_failed", error=str(exc)[:200])
         return []
-    if not isinstance(raw, list):
-        return []
     for row in raw:
-        if not isinstance(row, dict):
-            continue
         name = str(row.get("name") or "")
-        if not name.startswith(_STALE_BRANCH_PREFIX) or name in _PROTECTED_BRANCHES:
+        if not name.startswith(_STALE_BRANCH_PREFIX) or name in _STALE_BRANCH_KEEP:
             continue
         if _branch_run_is_fresh(table, name):
             continue

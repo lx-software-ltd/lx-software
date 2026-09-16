@@ -343,6 +343,12 @@ def render_task_frame(task: dict[str, Any], scratchpad: str, *, help_available: 
         "Do not call task_finish with placeholder brackets such as [Insert …]; write verified "
         "figures or write unavailable and why."
     )
+    ref = task.get("eventRef") or {}
+    if str(ref.get("kind") or "") == "code-implement":
+        body += (
+            "\nThis task revises an existing board PR. Call code_run_task once with the "
+            "issueNumber from the brief, then task_finish. Do not invent GitHub write tools."
+        )
     extra = (help_available or "").strip()
     if extra:
         return f"{body}\n{extra}"

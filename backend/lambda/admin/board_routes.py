@@ -666,18 +666,21 @@ def _staff_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
 def _owner_revision_event_ref(
     table: Any, body: dict[str, Any]
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """Build ``eventRef`` from ``prNumber`` or an engineer brief that cites ``PR #n``."""
+    """Build ``eventRef`` from ``prNumber`` or an engineer ``pr`` brief that cites ``PR #n``."""
     pr_raw = body.get("prNumber")
     issue_raw = body.get("issueNumber")
     pr_number: int | None = None
-    if pr_raw not in (None, ""):
+    explicit = pr_raw not in (None, "")
+    if explicit:
         try:
             pr_number = int(pr_raw)
         except (TypeError, ValueError):
             return None, _json_response(400, {"message": "prNumber must be an integer"})
         if pr_number <= 0:
             return None, _json_response(400, {"message": "prNumber must be a positive integer"})
-    elif board_code.is_engineer_owner_seat(str(body.get("assignee") or "")):
+    elif board_code.is_engineer_owner_seat(str(body.get("assignee") or "")) and str(
+        body.get("deliverableType") or ""
+    ) == "pr":
         hinted_pr, hinted_issue = board_code.parse_owner_revision_mention(
             str(body.get("brief") or "")
         )
@@ -690,6 +693,8 @@ def _owner_revision_event_ref(
     try:
         return board_code.owner_revision_ref(table, pr_number, issue_raw), None
     except board_code.CodeError as exc:
+        if not explicit:
+            return None, None
         return None, _json_response(400, {"message": str(exc)})
 
 
@@ -728,12 +733,15 @@ def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
                 if open_task and open_task.get("status") in board_staff.NON_TERMINAL_STATUSES:
                     return _json_response(409, {"message": "A staff task is already working on that action"})
             try:
+                brief = board_code.append_owner_revision_brief(
+                    str(body.get("brief") or ""), event_ref
+                )
                 task = board_staff.create_task(
                     table,
                     settings,
                     assignee=str(body.get("assignee") or ""),
                     origin="owner",
-                    brief=str(body.get("brief") or ""),
+                    brief=brief,
                     deliverable_type=str(body.get("deliverableType") or "markdown"),
                     budget_usd=body.get("budgetUsd"),
                     sla_hours=int(body.get("slaHours") or 24),
