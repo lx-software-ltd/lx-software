@@ -1133,6 +1133,8 @@ def op_get_run(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         out["ciFixRounds"] = stored["ciFixRounds"]
     if stored.get("prSeenAt"):
         out["prSeenAt"] = stored["prSeenAt"]
+    if stored.get("headSha"):
+        out["headSha"] = stored["headSha"]
     if stored.get("ciState"):
         out["ciState"] = stored["ciState"]
     if stored.get("prState"):

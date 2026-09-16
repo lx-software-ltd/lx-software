@@ -991,6 +991,7 @@ class RunnerTests(BoardTestCase):
         self.assertIn("FAILED backend/test_admin_imports.py", out["failureLine"])
         self.assertIn("FAILED backend/test_admin_imports.py", out.get("failureExcerpt") or "")
         self.assertEqual(out.get("failureJob"), "Test Python")
+        self.assertEqual(out.get("headSha"), "abc123")
         self.assertEqual(out["failureHistory"][-1]["sha"], "abc123")
         logs_after_first = len(self.gh.logAccepts)
         again = board_code.op_get_run(self.ctx, {"taskId": "task-1"})
