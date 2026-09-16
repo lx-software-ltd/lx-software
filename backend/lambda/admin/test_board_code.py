@@ -93,8 +93,13 @@ class FakeActions:
         if method == "GET" and "/pulls/" in path:
             number = int(path.rstrip("/").rsplit("/", 1)[-1].split("?")[0])
             return next((p for p in self.prs if p.get("number") == number), None)
-        if method == "GET" and path.endswith("/actions/runs?per_page=30"):
-            return {"workflow_runs": list(self.runs)}
+        if method == "GET" and "/actions/runs?" in path:
+            qs = parse_qs(urlparse(path).query)
+            sha = (qs.get("head_sha") or [""])[0]
+            runs = list(self.runs)
+            if sha:
+                runs = [r for r in runs if str(r.get("head_sha") or "") == sha]
+            return {"workflow_runs": runs}
         if method == "GET" and "/actions/runs/" in path and path.endswith("/jobs"):
             run_id = int(path.split("/runs/", 1)[1].split("/", 1)[0])
             return {"jobs": list(self.jobs.get(run_id) or [])}
@@ -540,6 +545,34 @@ class RunnerTests(BoardTestCase):
         ref = board_code.owner_revision_ref(self.table, 500, issue_number=42)
         self.assertEqual(ref["issueNumber"], 42)
 
+    def test_owner_revision_ref_resets_review_rounds(self) -> None:
+        board_code._put_run(  # noqa: SLF001
+            self.table,
+            "task-1",
+            {"issue": 42, "prNumber": 7, "reviewRounds": 1, "kind": "feature"},
+        )
+        self.gh.prs.append(_pr())
+        board_code.owner_revision_ref(self.table, 7)
+        self.assertEqual(board_code._get_run(self.table, "task-1").get("reviewRounds"), 0)  # noqa: SLF001
+        board_staff._blob_put(  # noqa: SLF001
+            board_staff._deliverable_key("rev-reopen", "markdown"),  # noqa: SLF001
+            b'```json {"verdict":"changes","notes":["fix the tests"]}\n```',
+        )
+        task = {
+            "taskId": "rev-reopen",
+            "status": "delivered",
+            "assignee": "architect",
+            "deliverableKey": board_staff._deliverable_key("rev-reopen", "markdown"),  # noqa: SLF001
+            "eventRef": {"kind": "code-review", "id": "pr:7", "prNumber": 7, "taskId": "task-1"},
+        }
+        board_store.put_task(self.table, task)
+        self.gh.files[7] = [{"filename": "app.py", "changes": 4}]
+        self.gh.checks["abc123"] = _green()
+        out = board_code.on_review_delivered(self.table, self.settings, task)
+        self.assertEqual(out.get("verdict"), "changes")
+        self.assertNotEqual(out.get("stopped"), "max rounds")
+        self.assertTrue(out.get("taskId"))
+
     def test_run_task_refuses_revision_when_pr_has_no_issue(self) -> None:
         self.gh.prs.append({**_pr(number=7, issue=0), "title": "orphan", "body": "no issue"})
         board_store.put_task(
@@ -760,6 +793,71 @@ class RunnerTests(BoardTestCase):
         self.assertEqual(created[0]["eventRef"]["id"], "pr:7")
         again = board_code.poll_runs(self.table, self.settings)
         self.assertEqual(again, [])
+
+    def test_poll_skips_and_prunes_merged_pr(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add booking.", "kind": "feature"})
+        self.gh.runs.append({"name": "board-agent task-1", "status": "completed", "conclusion": "success"})
+        self.gh.prs.append({**_pr(), "merged": True, "merged_at": "2026-09-15T10:09:28Z", "state": "closed"})
+        self.gh.checks["abc123"] = _green()
+        created = board_code.poll_runs(self.table, self.settings)
+        self.assertEqual(created, [])
+        self.assertNotIn("task-1", board_code._run_index(self.table))  # noqa: SLF001
+
+    def test_get_run_prefers_pr_ci_pytest_failure_line(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
+        self.gh.prs.append(_pr())
+        self.gh.runs.append(
+            {
+                "id": 99,
+                "name": "board-agent task-1",
+                "status": "completed",
+                "conclusion": "failure",
+            }
+        )
+        self.gh.jobs[99] = [{"id": 7, "conclusion": "failure", "name": "Commit and draft PR"}]
+        self.gh.job_logs[7] = "No changes from staging; skip repo tests\n##[error]Process completed"
+        self.gh.runs.append(
+            {
+                "id": 100,
+                "name": "CI",
+                "path": ".github/workflows/ci.yml",
+                "head_sha": "abc123",
+                "status": "completed",
+                "conclusion": "failure",
+            }
+        )
+        self.gh.jobs[100] = [{"id": 8, "conclusion": "failure", "name": "Test Python"}]
+        self.gh.job_logs[8] = (
+            "FAILED backend/test_admin_imports.py::test_upsert_location_resolves_area_name - "
+            "unknown area_name\n"
+        )
+        self.gh.checks["abc123"] = [{"name": "Test Python", "status": "completed", "conclusion": "failure"}]
+        out = board_code.op_get_run(self.ctx, {"taskId": "task-1"})
+        self.assertIn("FAILED backend/test_admin_imports.py", out["failureLine"])
+
+    def test_merge_merged_pr_is_refused_not_approval(self) -> None:
+        self.gh.prs.append({**_pr(), "merged": True, "merged_at": "2026-09-15T10:09:28Z", "state": "closed"})
+        self.gh.files[7] = [{"filename": "app.py", "changes": 4}]
+        self.gh.checks["abc123"] = _green()
+        ctx = ToolContext(
+            self.table,
+            self.settings,
+            "cto",
+            display_name="CTO",
+            kind="task",
+            task_id="task-1",
+            actor="persona",
+            seat_id="engineer-1",
+        )
+        out = execute_call(
+            ctx, REGISTRY["code_merge_staging"], {"prNumber": 7, "kind": "feature", "reason": "merge it"}
+        )
+        self.assertEqual(out.status, "refused")
+        self.assertIn("already merged", str((out.result or {}).get("error") or ""))
+        self.assertEqual(
+            [a for a in board_store.list_approvals(self.table) if a.get("op") == "code_merge_staging"],
+            [],
+        )
 
     def test_poll_skips_review_while_ci_pending(self) -> None:
         board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add booking.", "kind": "feature"})

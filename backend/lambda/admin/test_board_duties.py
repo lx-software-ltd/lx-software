@@ -18,7 +18,7 @@ import board_receivables
 import board_review
 import board_staff
 import board_store
-from contract_constants import BOARD_STAFF_SEATS
+from contract_constants import BOARD_STAFF_RAMP_MIN_ACTIONS, BOARD_STAFF_SEATS
 
 
 BA_KPI = "0 8 * * MON"
@@ -334,6 +334,18 @@ class BoundarySuggestionTests(BoardTestCase):
         self.settings = _enable_staff(self.table, dutiesEnabled=False)
 
     def test_unknown_class_is_dropped_and_known_class_keeps_ramp(self) -> None:
+        day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        board_store.save_ramp(
+            self.table,
+            "publish:facebook",
+            {
+                "classKey": "publish:facebook",
+                "actions": BOARD_STAFF_RAMP_MIN_ACTIONS,
+                "vetoes": 0,
+                "days": {day: {"actions": BOARD_STAFF_RAMP_MIN_ACTIONS, "vetoes": 0}},
+                "recent": ["action"] * BOARD_STAFF_RAMP_MIN_ACTIONS,
+            },
+        )
         out = board_duties.validate_boundary_suggestions(
             self.table,
             [
@@ -345,7 +357,14 @@ class BoundarySuggestionTests(BoardTestCase):
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0]["classKey"], "publish:facebook")
         self.assertEqual(out[0]["source"], "standup")
-        self.assertIn("eligibleForPromotion", out[0]["ramp"])
+        self.assertTrue(out[0]["ramp"].get("eligibleForPromotion"))
+
+    def test_ineligible_boundary_suggestion_is_dropped(self) -> None:
+        out = board_duties.validate_boundary_suggestions(
+            self.table,
+            [{"classKey": "publish:facebook", "change": "promote to 0 hours", "evidence": "Meta is blocking launch"}],
+        )
+        self.assertEqual(out, [])
 
     def test_standup_suggestions_prepend_review_ramp_rows(self) -> None:
         board_store.put_cache(

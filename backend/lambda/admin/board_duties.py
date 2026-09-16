@@ -569,6 +569,8 @@ def validate_boundary_suggestions(table: Any, raw: Any) -> list[dict[str, Any]]:
             ramp = board_holds.ramp_state(table, class_key)
         except Exception:
             ramp = {}
+        if ramp.get("eligibleForPromotion") is False:
+            continue
         out.append(
             {
                 "classKey": class_key[:80],

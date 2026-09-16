@@ -791,7 +791,16 @@ function calling. Design:
   `staging → main` PR. Architect weekly duty grooms `board-ready` issues.
   Keep `code_merge_staging` as an Approval (`always_propose`) until the
   siutindei Appendix A workflows exist; then flip architect / engineer-1 /
-  engineer-2 / product-dev on (runbook step 7).
+  engineer-2 / product-dev on (runbook step 7). `poll_runs` drops merged or
+  closed PRs from the runner index. Merging a gone PR is refused (not an
+  Approval); a due `code_staging` hold fails instead of executing.
+  `code_get_run` prefers pytest `FAILED` lines from the PR's CI jobs over the
+  board-agent log. An owner `POST /tasks` with `prNumber` resets
+  `reviewRounds` so a maxed-out revision loop can start again. A
+  `review-headline:*` duty can be manager-accepted without evidence so the
+  07:30 digest has a narrative. `task_note` call ids are not evidence.
+  Stand-up `boundarySuggestions` with `eligibleForPromotion: false` are
+  dropped.
 
 **Staff seat rollout (R-24).** Default-on seats: `support`,
 `provider-success`, `community-manager`, `business-analyst`,

@@ -462,6 +462,34 @@ def architect_accepted(table: Any, pr_number: int) -> bool:
     return bool(accepted_sha) and accepted_sha == current
 
 
+TERMINAL_MERGE_REASONS = frozenset(
+    {
+        "pull request is already merged",
+        "pull request is not open",
+    }
+)
+
+
+def is_terminal_merge_reason(reason: str) -> bool:
+    text = (reason or "").strip().lower()
+    return any(known in text for known in TERMINAL_MERGE_REASONS)
+
+
+def pr_not_mergeable_reason(number: int) -> str | None:
+    """Return a refuse reason when the PR is merged or closed. None if unknown/open."""
+    if number <= 0:
+        return "prNumber is required"
+    try:
+        pr = _get_pr(number)
+    except (CodeError, board_github.GitHubSnapshotError):
+        return None
+    if pr.get("merged") or pr.get("merged_at"):
+        return "pull request is already merged"
+    if str(pr.get("state") or "open").lower() != "open":
+        return "pull request is not open"
+    return None
+
+
 def merge_guard(ctx: Any, args: dict[str, Any]) -> str | None:
     try:
         number = int(args.get("prNumber") or 0)
@@ -628,8 +656,11 @@ def owner_revision_ref(table: Any, pr_number: int, issue_number: Any = None) -> 
         raise CodeRefused(
             f"PR #{int(pr_number)} has no linked GitHub issue; pass issueNumber"
         )
-    if source_id and not row.get("issue"):
-        row["issue"] = issue
+    if source_id:
+        if not row.get("issue"):
+            row["issue"] = issue
+        row["reviewRounds"] = 0
+        row["ownerReopenedAt"] = board_store.now_iso()
         _put_run(table, source_id, row)
     return {
         "kind": "code-implement",
@@ -755,6 +786,37 @@ def _failure_line_for_run(run: dict[str, Any]) -> str:
     return ""
 
 
+def _failure_line_for_sha(sha: str) -> str:
+    """Last pytest / policy line from failed CI jobs on this head SHA."""
+    if not sha:
+        return ""
+    repo = _repo()
+    try:
+        raw = _gh("GET", f"/repos/{repo}/actions/runs?head_sha={sha}&per_page=20") or {}
+    except board_github.GitHubSnapshotError:
+        return ""
+    runs = raw.get("workflow_runs") if isinstance(raw, dict) else raw
+    if not isinstance(runs, list):
+        return ""
+    prefer: list[dict[str, Any]] = []
+    fallback: list[dict[str, Any]] = []
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        if str(run.get("conclusion") or "").lower() not in _RUN_FAILED:
+            continue
+        blob = f"{run.get('path') or ''} {run.get('name') or ''} {run.get('display_title') or ''}"
+        if "board-agent" in blob:
+            fallback.append(run)
+        else:
+            prefer.append(run)
+    for run in (*prefer, *fallback):
+        line = _failure_line_for_run(run)
+        if line:
+            return line
+    return ""
+
+
 def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     try:
         issue = int(args.get("issueNumber") or 0)
@@ -869,10 +931,18 @@ def op_get_run(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     conclusion = str(out.get("conclusion") or "").lower()
     if stored.get("runStatus") == "completed" and not stored.get("prNumber") and conclusion in _RUN_FAILED:
         stored["failedAt"] = stored.get("failedAt") or board_store.now_iso()
-    if conclusion in _RUN_FAILED and not stored.get("failureLine"):
-        stored["failureLine"] = _failure_line_for_run(latest)
-    if stored.get("failureLine"):
-        out["failureLine"] = stored["failureLine"]
+    if isinstance(pr, dict):
+        stored["prState"] = str(pr.get("state") or "open")
+        stored["prMerged"] = bool(pr.get("merged") or pr.get("merged_at"))
+    elif stored.get("prNumber"):
+        try:
+            looked = _get_pr(int(stored["prNumber"]))
+        except (CodeError, board_github.GitHubSnapshotError, TypeError, ValueError):
+            looked = {}
+        if looked:
+            stored["prState"] = str(looked.get("state") or "open")
+            stored["prMerged"] = bool(looked.get("merged") or looked.get("merged_at"))
+            pr = looked
     if out.get("prNumber") and not stored.get("prSeenAt"):
         stored["prSeenAt"] = board_store.now_iso()
     sha = ""
@@ -882,10 +952,22 @@ def op_get_run(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if sha:
         stored["ciState"] = ci_state(sha)
         stored["headSha"] = sha
+        if stored.get("ciState") == "failure":
+            ci_line = _failure_line_for_sha(sha)
+            if ci_line:
+                stored["failureLine"] = ci_line
+    if conclusion in _RUN_FAILED and not stored.get("failureLine"):
+        stored["failureLine"] = _failure_line_for_run(latest)
+    if stored.get("failureLine"):
+        out["failureLine"] = stored["failureLine"]
     if stored.get("prSeenAt"):
         out["prSeenAt"] = stored["prSeenAt"]
     if stored.get("ciState"):
         out["ciState"] = stored["ciState"]
+    if stored.get("prState"):
+        out["prState"] = stored["prState"]
+    if stored.get("prMerged"):
+        out["prMerged"] = True
     if stored.get("briefMismatch"):
         out["briefMismatch"] = True
     _put_run(ctx.table, task_id, stored)
@@ -1315,18 +1397,31 @@ def queue_promote_approval(table: Any, settings: dict[str, Any], user_sub: str) 
     return {"approval": approval, "preview": preview}
 
 
+def _run_pr_gone(state: dict[str, Any]) -> bool:
+    if state.get("prMerged"):
+        return True
+    return str(state.get("prState") or "").lower() == "closed"
+
+
 def poll_runs(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
     created: list[dict[str, Any]] = []
     if not board_staff.enabled(settings):
         return created
     roster = board_staff.seats_by_id(table, settings)
     architect = "architect" if (roster.get("architect") or {}).get("isActive") else "cto"
+    kept: list[str] = []
+    pruned = False
     for task_id in _run_index(table):
         try:
             state = op_get_run(type("C", (), {"table": table, "task_id": task_id, "settings": settings})(), {"taskId": task_id})
         except (CodeError, board_github.GitHubSnapshotError) as exc:
             _log_event("warning", tag="board_code_poll_failed", taskId=task_id, error=str(exc)[:200])
+            kept.append(task_id)
             continue
+        if _run_pr_gone(state):
+            pruned = True
+            continue
+        kept.append(task_id)
         pr_number = state.get("prNumber")
         if not pr_number:
             continue
@@ -1368,6 +1463,8 @@ def poll_runs(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
             created.append(task)
         except board_staff.StaffError as exc:
             _log_event("info", tag="board_code_review_skipped", error=str(exc)[:200])
+    if pruned:
+        _save_run_index(table, kept)
     return created
 
 

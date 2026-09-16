@@ -198,6 +198,27 @@ class ExecuteDueAndVetoTests(BoardTestCase):
         board_store.put_hold(self.table, hold)
         return hold
 
+    def test_execute_due_fails_closed_code_merge(self) -> None:
+        settings = _enable_staff(self.table)
+        hold = {
+            "holdId": "h-merge-closed",
+            "status": "scheduled",
+            "op": "code_merge_staging",
+            "actionClass": "code_staging",
+            "classKey": "code_staging",
+            "arguments": {"prNumber": 7, "kind": "feature"},
+            "executeAt": "2020-01-01T00:00:00Z",
+            "personaId": "cto",
+            "createdAt": board_store.now_iso(),
+        }
+        board_store.put_hold(self.table, hold)
+        with patch("board_code._get_pr", return_value={"number": 7, "state": "closed", "merged": False}):
+            ran = board_holds.execute_due(self.table, settings, "2026-09-16T00:00:00Z")
+        self.assertEqual(ran, 1)
+        stored = board_store.get_hold(self.table, "h-merge-closed")
+        self.assertEqual(stored["status"], "failed")
+        self.assertIn("not open", str((stored.get("result") or {}).get("error") or ""))
+
     def test_execute_due_runs_through_execute_call(self) -> None:
         hold = self._scheduled_action()
         settings = board_store.load_settings(self.table)

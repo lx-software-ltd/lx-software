@@ -867,6 +867,18 @@ def _same_as_previous_step(table: Any, task_id: str, calls: list[dict[str, Any]]
     return bool(left) and left == right
 
 
+def _repeats_within_step(calls: list[dict[str, Any]]) -> bool:
+    """True when one step polls the same op+args two or more times."""
+    productive = _productive_calls(calls)
+    if len(productive) < 2:
+        return False
+    fingerprints = [_call_fingerprint(c) for c in productive]
+    first = fingerprints[0]
+    if first[0] not in _POLL_REPEAT_OPS:
+        return False
+    return all(fp == first for fp in fingerprints)
+
+
 def _counts_as_poll_loop(task: dict[str, Any], calls: list[dict[str, Any]]) -> bool:
     """True when identical steps are CI/issue polling, not productive research."""
     kind = str((task.get("eventRef") or {}).get("kind") or "")
@@ -962,6 +974,15 @@ def _salvage_to_review(table: Any, latest: dict[str, Any], reason: str, note: st
     latest["openQuestions"] = [f"Salvaged after {reason}; no task_finish tool call."]
     latest["updatedAt"] = now
     _align_step_claim(latest)
+    last = latest.get("lastReview") or {}
+    if str(last.get("verdict") or "") == "return":
+        latest["status"] = "needs_owner"
+        latest["finishedAt"] = None
+        latest["openQuestions"] = [f"Salvaged after {reason}; manager already returned this work."]
+        board_store.put_task(table, latest)
+        _note_parent_if_child_needs_owner(table, latest)
+        _log_event("warning", tag="board_staff_salvaged_after_return", taskId=task_id, reason=reason[:200], chars=len(text))
+        return True
     board_store.put_task(table, latest)
     settings = board_store.load_settings(table)
     if enabled(settings):
@@ -1228,15 +1249,32 @@ def _call_evidence_aliases(call: dict[str, Any]) -> set[str]:
     return aliases
 
 
-def _known_evidence_ids(table: Any, task: dict[str, Any]) -> set[str]:
-    known: set[str] = set()
+def _is_idle_evidence_call(call: dict[str, Any]) -> bool:
+    return str(call.get("op") or "") in _IDLE_TOOL_OPS
+
+
+def _idle_evidence_ids(table: Any, task: dict[str, Any]) -> set[str]:
+    idle: set[str] = set()
     for tid in _evidence_task_ids(task):
         for call in board_store.list_tool_calls_for_task(table, tid):
+            if _is_idle_evidence_call(call):
+                idle.update(_call_evidence_aliases(call))
+    return idle
+
+
+def _known_evidence_ids(table: Any, task: dict[str, Any]) -> set[str]:
+    known: set[str] = set()
+    idle = _idle_evidence_ids(table, task)
+    for tid in _evidence_task_ids(task):
+        for call in board_store.list_tool_calls_for_task(table, tid):
+            if _is_idle_evidence_call(call):
+                continue
             known.update(_call_evidence_aliases(call))
         for step in board_store.list_task_steps(table, tid):
             for cid in step.get("callIds") or []:
-                if cid:
-                    known.add(str(cid))
+                value = str(cid or "")
+                if value and value not in idle:
+                    known.add(value)
     return known
 
 
@@ -1245,6 +1283,8 @@ def _cited_evidence_ops(table: Any, task: dict[str, Any], evidence: list[str]) -
     ops: set[str] = set()
     for tid in _evidence_task_ids(task):
         for call in board_store.list_tool_calls_for_task(table, tid):
+            if _is_idle_evidence_call(call):
+                continue
             if wanted & _call_evidence_aliases(call):
                 op = str(call.get("op") or "")
                 if op:
@@ -1254,8 +1294,11 @@ def _cited_evidence_ops(table: Any, task: dict[str, Any], evidence: list[str]) -
 
 def _canonical_evidence_ids(table: Any, task: dict[str, Any], evidence: list[str]) -> list[str]:
     alias_to_id: dict[str, str] = {}
+    idle = _idle_evidence_ids(table, task)
     for tid in _evidence_task_ids(task):
         for call in board_store.list_tool_calls_for_task(table, tid):
+            if _is_idle_evidence_call(call):
+                continue
             cid = str(call.get("callId") or "").strip()
             if not cid:
                 continue
@@ -1264,7 +1307,7 @@ def _canonical_evidence_ids(table: Any, task: dict[str, Any], evidence: list[str
         for step in board_store.list_task_steps(table, tid):
             for cid in step.get("callIds") or []:
                 value = str(cid or "").strip()
-                if value:
+                if value and value not in idle:
                     alias_to_id.setdefault(value, value)
     out: list[str] = []
     seen: set[str] = set()
@@ -1911,8 +1954,9 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
         if len(prior) >= 2:
             similar_to_last = _plans_similar(note, str(prior[-2].get("plan") or ""))
     repeated_calls = _same_as_previous_step(table, task_id, calls)
-    poll_loop = repeated_calls and _counts_as_poll_loop(latest, calls)
-    if not _productive_calls(calls) or similar_to_last or repeated_calls:
+    intra_poll = _repeats_within_step(calls)
+    poll_loop = (repeated_calls or intra_poll) and _counts_as_poll_loop(latest, calls)
+    if not _productive_calls(calls) or similar_to_last or repeated_calls or intra_poll:
         idle = int(latest.get("idleSteps") or 0) + 1
         latest["idleSteps"] = idle
         combined = _append_scratchpad(latest, _IDLE_NUDGE)
@@ -2459,9 +2503,16 @@ def _note_parent_if_child_needs_owner(table: Any, task: dict[str, Any]) -> None:
     )
 
 
+def _is_review_headline_duty(task: dict[str, Any]) -> bool:
+    ref = task.get("eventRef") or {}
+    return ref.get("kind") == "duty" and str(ref.get("id") or "").startswith("review-headline:")
+
+
 def _should_hold_unverified_accept(table: Any, task: dict[str, Any]) -> bool:
     flags = {str(f) for f in (task.get("flags") or [])}
     if "no_evidence" not in flags and "salvaged" not in flags:
+        return False
+    if _is_review_headline_duty(task):
         return False
     if "salvaged" not in flags and _task_attempted_required_tools(table, task):
         return False

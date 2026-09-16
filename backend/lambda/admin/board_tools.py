@@ -2969,6 +2969,15 @@ def _should_always_propose(op: ToolOp, ctx: ToolContext, arguments: dict[str, An
     return not _cto_security_issue(ctx, op, arguments)
 
 
+def _is_terminal_merge_guard(reason: str) -> bool:
+    try:
+        import board_code
+
+        return board_code.is_terminal_merge_reason(reason)
+    except Exception:
+        return False
+
+
 def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> ToolOutcome:
     """Run (or record for approval) one operation and write the audit row."""
     started = time.monotonic()
@@ -3100,6 +3109,8 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         else None
     ):
         outcome = ToolOutcome(status="ok", result=reused_assign, summary="Attached to an open task")
+    elif guard_reason and op.name == "code_merge_staging" and _is_terminal_merge_guard(guard_reason):
+        outcome = ToolOutcome(status="refused", result={"error": guard_reason}, summary=summary)
     elif op.is_write and ctx.actor != "hold" and (level != "act" or guard_reason or (_should_always_propose(op, ctx, arguments) and ctx.actor == "persona")):
         approval = create_approval(ctx, op, arguments, summary=summary, downgrade_reason=guard_reason)
         approval_id = str(approval["approvalId"])

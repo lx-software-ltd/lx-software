@@ -468,6 +468,55 @@ class LessonAndReviewTests(BoardTestCase):
         self.assertEqual(out["status"], "needs_owner")
         self.assertEqual(board_store.get_action(self.table, "act-dash")["status"], "open")
 
+    def test_review_headline_accept_delivers_without_evidence(self) -> None:
+        board_store.save_staff_override(self.table, "business-analyst", {"isActive": True})
+        date = board_hk.today_hkt()
+        task = board_staff.create_task(
+            self.table,
+            self.settings,
+            assignee="business-analyst",
+            origin="duty",
+            brief="Write the three-sentence headline for today's review from this JSON",
+            deliverable_type="markdown",
+            event_ref={"kind": "duty", "id": f"review-headline:{date}"},
+            created_by="test",
+        )
+        task["status"] = "review"
+        task["flags"] = ["no_evidence"]
+        board_store.put_task(self.table, task)
+        out = board_staff.apply_review(
+            self.table, self.settings, task, verdict="accept", notes="concise", by="manager"
+        )
+        self.assertEqual(out["status"], "delivered")
+
+    def test_narrative_uses_accepted_needs_owner_headline(self) -> None:
+        board_store.save_staff_override(self.table, "business-analyst", {"isActive": True})
+        date = board_hk.today_hkt()
+        task = board_staff.create_task(
+            self.table,
+            self.settings,
+            assignee="business-analyst",
+            origin="duty",
+            brief="Write the three-sentence headline",
+            deliverable_type="markdown",
+            event_ref={"kind": "duty", "id": f"review-headline:{date}"},
+            created_by="test",
+        )
+        key = board_staff._deliverable_key(task["taskId"], "markdown")  # noqa: SLF001
+        board_staff._blob_put(key, b"Three sentences about the day.")  # noqa: SLF001
+        task.update(
+            {
+                "status": "needs_owner",
+                "flags": ["no_evidence"],
+                "lastReview": {"verdict": "accept", "notes": "ok", "by": "manager"},
+                "deliverableKey": key,
+                "summary": "headline",
+            }
+        )
+        board_store.put_task(self.table, task)
+        text = board_review._narrative(self.table, date)  # noqa: SLF001
+        self.assertIn("Three sentences", text)
+
     def test_duty_tool_error_accept_is_not_held(self) -> None:
         board_store.save_staff_override(self.table, "data-analyst", {"isActive": True})
         task = board_staff.create_task(
