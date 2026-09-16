@@ -4,7 +4,7 @@ Tables and views: ``scripts/siutindei/receivables.sql`` (apply in the product
 repo). Mirror + dunning run from EventBridge Scheduler. The board never
 initiates a bank payment.
 
-Plan: docs/architecture/executive-board-tools-plan.md §5.4–§5.5.
+See docs/architecture/executive-board.md §6.3 (Receivables).
 """
 
 from __future__ import annotations

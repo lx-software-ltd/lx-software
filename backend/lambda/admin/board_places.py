@@ -8,7 +8,7 @@ Prices verified 2026-09-10:
   Text Search Enterprise  USD 0.035
   Place Details Enterprise USD 0.020
 
-See docs/architecture/executive-board-autonomy-reviewer-notes.md WP6.
+See docs/architecture/executive-board.md §10.2 (Prospecting and outreach).
 """
 
 from __future__ import annotations

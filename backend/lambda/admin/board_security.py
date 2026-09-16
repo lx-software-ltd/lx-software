@@ -5,7 +5,7 @@ Reads are cached and refreshed hourly. The only write is
 ``propose`` until the founder approves). The board never changes IAM,
 Security Hub, or Cognito.
 
-Plan: docs/architecture/executive-board-tools-plan.md §4 ``security``.
+See docs/architecture/executive-board.md §6 (Connectors, ``security``).
 """
 
 from __future__ import annotations

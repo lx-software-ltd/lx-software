@@ -1,6 +1,6 @@
 """Executive Board: email ingest, index, sending and the ``mail`` tools.
 
-Flow (docs/architecture/executive-board-tools-plan.md §5.2):
+Flow (docs/architecture/executive-board.md §6.1 Mail):
 
 - Cloudflare Email Routing fans every ``siutindei.com`` message out to the
   owner's inbox *and* to ``siutindei-board@<InboundMailDomain>``. SES stores

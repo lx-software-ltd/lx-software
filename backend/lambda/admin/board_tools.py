@@ -1,6 +1,6 @@
 """Executive Board: tools that members call while chatting or meeting.
 
-Design (see docs/architecture/executive-board-tools-plan.md):
+Design (see docs/architecture/executive-board.md §5 Tools):
 
 - A **registry** of operations, each belonging to a tool (``github``,
   ``board``, ``mail``, ``research``, ``aws``, ``security``, ``product``,
@@ -2956,7 +2956,7 @@ def _cto_security_issue(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any])
     """CTO filing a security/dependencies issue may act even when globalMode is propose.
 
     Labels are model-supplied. This is the only op that ignores the global cap;
-    see docs/architecture/executive-board-tools-plan.md.
+    see docs/architecture/executive-board.md §5.1.
     """
     if op.name != "github_create_issue" or ctx.persona_id != "cto":
         return False

@@ -4,7 +4,7 @@ Falls back to an OpenRouter ``:online`` model when no Brave key is set but
 OpenRouter is. Results are stored under ``BOARD#…#cache`` so eight personas
 in a meeting do not hit the search API eight times for the same query.
 
-Plan: docs/architecture/executive-board-tools-plan.md §4 ``research``.
+See docs/architecture/executive-board.md §6 (Connectors, ``research``).
 """
 
 from __future__ import annotations

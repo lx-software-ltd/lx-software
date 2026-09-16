@@ -5,7 +5,7 @@
  * Why: Cloudflare Email Routing rules deliver each address to exactly one
  * destination. Binding this Worker to the zone's catch-all keeps the owner's
  * mail client untouched while the board gets an identical copy to index
- * (docs/architecture/executive-board-tools-plan.md §5.2).
+ * (docs/architecture/executive-board.md §6.1 Mail).
  *
  * Setup (Cloudflare dashboard, siutindei.com zone):
  *   1. Email > Email Routing > Destination addresses: add the board address

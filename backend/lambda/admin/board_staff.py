@@ -1,6 +1,6 @@
 """Executive Board staff: seats, background tasks, steps and manager review.
 
-See docs/architecture/executive-board-autonomy-implementation.md WP1.
+See docs/architecture/executive-board.md §7 (Staff).
 """
 
 from __future__ import annotations

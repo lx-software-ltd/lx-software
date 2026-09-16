@@ -11,7 +11,7 @@ only inside the 24-hour customer-service window and only for allow-listed
 recipients; otherwise the call is downgraded to propose. Ad writes that would
 breach the owner-set daily or monthly spend caps are forced to propose.
 
-Plan: docs/architecture/executive-board-tools-plan.md §5.3.
+See docs/architecture/executive-board.md §6.2 (Meta).
 """
 
 from __future__ import annotations
