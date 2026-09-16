@@ -2503,7 +2503,7 @@ def build_registry() -> dict[str, ToolOp]:
             name="task_finish",
             tool_id="task",
             kind="write",
-            description="Finish the current task. Provide the deliverable and evidence call ids. If no offered function can verify more, finish anyway with confidence low and openQuestions.",
+            description="Finish the current task. Provide the deliverable and evidence call ids from read or write tools — task_note ids are not evidence. If no offered function can verify more, finish anyway with confidence low and openQuestions.",
             parameters=_obj(
                 {
                     "summary": _str_param("One-paragraph summary of the result.", max_len=800),
@@ -2515,7 +2515,7 @@ def build_registry() -> dict[str, ToolOp]:
                     "evidence": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Tool-call ids from this task that support the deliverable.",
+                        "description": "Tool-call ids from this task that support the deliverable. Do not pass task_note call ids.",
                     },
                     "openQuestions": {
                         "type": "array",
@@ -2715,7 +2715,7 @@ def tools_preamble(ops: list[tuple[ToolOp, str]]) -> str:
                 "TASK CONTROL: task_note, task_finish and task_request_help are in this turn's "
                 "function list. You must invoke them as tool calls. Do not write that you cannot "
                 "call them. Call task_note to record progress, or task_finish with the deliverable "
-                "when done. If the brief needs a tool you were not offered, call task_request_help "
+                "when done (task_note call ids are not evidence). If the brief needs a tool you were not offered, call task_request_help "
                 "once instead of finishing unable to verify. That is how the task completes; a "
                 "prose report is not a finish."
             )
@@ -2723,7 +2723,8 @@ def tools_preamble(ops: list[tuple[ToolOp, str]]) -> str:
             lines.append(
                 "TASK CONTROL: task_note and task_finish are in this turn's function list. "
                 "You must invoke them as tool calls. Do not write that you cannot call them. "
-                "Call task_note to record progress, or task_finish with the deliverable when done. "
+                "Call task_note to record progress, or task_finish with the deliverable when done "
+                "(task_note call ids are not evidence). "
                 "That is how the task completes; a prose report is not a finish."
             )
     proposes = sorted({TOOL_LABELS.get(op.tool_id, op.tool_id) for op, lvl in ops if op.is_write and lvl == "propose"})
@@ -2969,6 +2970,15 @@ def _should_always_propose(op: ToolOp, ctx: ToolContext, arguments: dict[str, An
     return not _cto_security_issue(ctx, op, arguments)
 
 
+def _is_terminal_merge_guard(reason: str) -> bool:
+    try:
+        import board_code
+
+        return board_code.is_terminal_merge_reason(reason)
+    except Exception:
+        return False
+
+
 def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> ToolOutcome:
     """Run (or record for approval) one operation and write the audit row."""
     started = time.monotonic()
@@ -3100,6 +3110,8 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         else None
     ):
         outcome = ToolOutcome(status="ok", result=reused_assign, summary="Attached to an open task")
+    elif guard_reason and op.name == "code_merge_staging" and _is_terminal_merge_guard(guard_reason):
+        outcome = ToolOutcome(status="refused", result={"error": guard_reason}, summary=summary)
     elif op.is_write and ctx.actor != "hold" and (level != "act" or guard_reason or (_should_always_propose(op, ctx, arguments) and ctx.actor == "persona")):
         approval = create_approval(ctx, op, arguments, summary=summary, downgrade_reason=guard_reason)
         approval_id = str(approval["approvalId"])

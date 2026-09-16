@@ -241,7 +241,7 @@ def _sample(table: Any, settings: dict[str, Any], date_hkt: str) -> list[dict[st
 def _narrative(table: Any, date_hkt: str) -> str:
     duty_id = f"review-headline:{date_hkt}"
     task = None
-    for status in ("delivered", "review", "running", "queued"):
+    for status in ("delivered", "needs_owner", "review", "running", "queued"):
         for row in board_store.list_tasks(table, status, limit=100):
             ref = row.get("eventRef") or {}
             if ref.get("kind") == "duty" and str(ref.get("id") or "") == duty_id:
@@ -249,8 +249,12 @@ def _narrative(table: Any, date_hkt: str) -> str:
                 break
         if task:
             break
-    if not task or task.get("status") != "delivered":
+    if not task:
         return ""
+    if task.get("status") != "delivered":
+        last = task.get("lastReview") or {}
+        if str(last.get("verdict") or "") != "accept":
+            return ""
     finished = str(task.get("finishedAt") or "")
     if finished:
         try:

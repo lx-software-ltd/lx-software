@@ -346,6 +346,22 @@ def _execute_one(table: Any, settings: dict[str, Any], hold: dict[str, Any]) -> 
         if _thread_changed(table, hold):
             _finish_hold(table, hold, "failed", now, error="thread changed")
             return True
+    if str(hold.get("op") or "") == "code_merge_staging":
+        # execute_call also fails the hold via act_guard. Pre-check so the
+        # stored error is the explicit "already merged" / "not open" text.
+        try:
+            import board_code
+
+            try:
+                number = int((hold.get("arguments") or {}).get("prNumber") or 0)
+            except (TypeError, ValueError):
+                number = 0
+            reason = board_code.pr_not_mergeable_reason(number) or ""
+        except Exception:
+            reason = ""
+        if reason:
+            _finish_hold(table, hold, "failed", now, error=reason)
+            return True
     ctx = board_tools.ToolContext(
         table=table,
         settings=settings,
