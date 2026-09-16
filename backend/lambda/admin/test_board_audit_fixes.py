@@ -490,6 +490,7 @@ class LessonAndReviewTests(BoardTestCase):
         self.assertEqual(out["status"], "delivered")
 
     def test_narrative_uses_accepted_needs_owner_headline(self) -> None:
+        os.environ.pop("ASSETS_BUCKET_NAME", None)
         board_store.save_staff_override(self.table, "business-analyst", {"isActive": True})
         date = board_hk.today_hkt()
         task = board_staff.create_task(
