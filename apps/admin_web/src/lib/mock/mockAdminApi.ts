@@ -444,16 +444,15 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
         actionId: typeof body.actionId === "string" && body.actionId ? body.actionId : null,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        ...(Number.isInteger(prNumber) && prNumber > 0
-          ? {
-              eventRef: {
+        eventRef:
+          Number.isInteger(prNumber) && prNumber > 0
+            ? {
                 kind: "code-implement",
                 id: `pr:${prNumber}:owner`,
                 prNumber,
                 ...(Number.isInteger(issueNumber) && issueNumber > 0 ? { issueNumber } : {}),
-              },
-            }
-          : {}),
+              }
+            : null,
       };
       state.tasks = [created, ...state.tasks];
       if (created.actionId) {
