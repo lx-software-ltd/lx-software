@@ -644,7 +644,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
     "duties": [
       {
         "id": "catalog-micro-batch",
-        "cron": "0 10 * * *",
+        "cron": "0 8,12,16 * * *",
         "brief": "Create one catalog micro-batch for the next remaining Hong Kong district. The runtime fills the district name, hint and OUTPUT CONTRACT. Use research_search, then research_fetch_page on the official page. Return a fenced JSON curation sheet. No Meta, no mobile, no publishing.",
         "deliverableType": "json",
         "tier": "desk"

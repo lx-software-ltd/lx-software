@@ -126,6 +126,18 @@ def _cache_name(seat_id: str, duty_id: str) -> str:
     return f"duty:{seat_id}:{duty_id}"
 
 
+def _is_catalog_duty(duty_id: str) -> bool:
+    return str(duty_id or "").startswith("catalog-micro-batch")
+
+
+def _duty_slot_label(duty_id: str, when: datetime) -> str:
+    """Date for once-a-day duties; date+hour so a multi-slot catalog cron can fire again."""
+    local = board_hk.as_hkt(when)
+    if _is_catalog_duty(duty_id):
+        return local.strftime("%Y-%m-%dT%H")
+    return local.date().isoformat()
+
+
 def run_due(table: Any, settings: dict[str, Any], now: datetime | None = None) -> list[dict[str, Any]]:
     if not board_staff.enabled(settings):
         return []
@@ -158,13 +170,13 @@ def run_due(table: Any, settings: dict[str, Any], now: datetime | None = None) -
             if not due:
                 continue
             scheduled = last_scheduled(cron, when)
-            date_label = board_hk.as_hkt(scheduled or when).date().isoformat()
+            slot = _duty_slot_label(duty_id, scheduled or when)
             from board_triage import find_open_event_task
 
-            event_id = f"{seat_id}:{duty_id}:{date_label}"
+            event_id = f"{seat_id}:{duty_id}:{slot}"
             if find_open_event_task(table, "duty", event_id):
                 continue
-            if not board_store.claim_duty_marker(table, f"duty:{seat_id}:{duty_id}:{date_label}"):
+            if not board_store.claim_duty_marker(table, f"duty:{seat_id}:{duty_id}:{slot}"):
                 continue
             skip_reason = _duty_unconfigured_reason(duty_id)
             if skip_reason:
@@ -186,7 +198,7 @@ def run_due(table: Any, settings: dict[str, Any], now: datetime | None = None) -
                 _log_event("info", tag="board_duty_skipped_unconfigured", seat=seat_id, duty=duty_id, reason=skip_reason[:200])
                 continue
             try:
-                if duty_id == "catalog-micro-batch":
+                if _is_catalog_duty(duty_id):
                     import board_catalog
 
                     task = board_catalog.create_next(table, settings, created_by="board_duties")
@@ -203,7 +215,7 @@ def run_due(table: Any, settings: dict[str, Any], now: datetime | None = None) -
                         created_by="board_duties",
                     )
             except board_staff.StaffError as exc:
-                if duty_id == "catalog-micro-batch" and "already have a sheet" in str(exc):
+                if _is_catalog_duty(duty_id) and "already have a sheet" in str(exc):
                     board_store.put_cache(
                         table,
                         _cache_name(seat_id, duty_id),
