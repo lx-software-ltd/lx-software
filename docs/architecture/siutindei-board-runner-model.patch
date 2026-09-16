@@ -1,0 +1,12 @@
+--- a/.github/workflows/board-agent.yml
++++ b/.github/workflows/board-agent.yml
+@@ -139,7 +139,7 @@ jobs:
+             cat "${RUNNER_TEMP}/brief.txt"
+           } > "${RUNNER_TEMP}/prompt.txt"
+           cursor-agent -p "$(cat "${RUNNER_TEMP}/prompt.txt")" \
+-            --model composer-2.5 --yolo
++            --model cursor-grok-4.6-high-fast --yolo
+ 
+       - name: Guard protected paths
+         env:
+           BOARD_KIND: ${{ inputs.kind }}

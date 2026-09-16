@@ -1352,7 +1352,7 @@ use the same path.
    write, pull-requests: write`; steps: checkout `staging` (or `gh pr
    checkout` when `pr_number` is set); create branch
    `board/${{ inputs.task_id }}` only on a first run; install Cursor CLI; run
-   `cursor-agent -p "$(cat brief.txt)" --model <fixed model> --yolo` with
+   `cursor-agent -p "$(cat brief.txt)" --model cursor-grok-4.6-high-fast --yolo` with
    `CURSOR_API_KEY` from repo secrets and a repo-level `AGENTS.md` that
    states the acceptance criteria discipline and forbids touching
    protected paths; run the repo's tests (same suite as CI, including

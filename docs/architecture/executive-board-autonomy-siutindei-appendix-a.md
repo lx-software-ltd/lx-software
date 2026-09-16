@@ -21,11 +21,13 @@ are excluded from the 400-line runner cap so Dependabot bumps can land.
 
 This admin repo cannot push to `lx-software-ltd/siutindei`. Apply the
 lockfile + `BOARD_PR_TOKEN` change set, then the revision-mode patch
-(a real unified diff against current `staging` `board-agent.yml`):
+(a real unified diff against current `staging` `board-agent.yml`), then
+the Cursor model pin:
 
 ```
 git -C /path/to/siutindei apply /path/to/lx-software/docs/architecture/siutindei-board-runner.patch
 git -C /path/to/siutindei apply /path/to/lx-software/docs/architecture/siutindei-board-runner-revision.patch
+git -C /path/to/siutindei apply /path/to/lx-software/docs/architecture/siutindei-board-runner-model.patch
 ```
 
 If the second apply fails against a drifted workflow, merge the revision
@@ -134,7 +136,7 @@ jobs:
         run: |
           # Install the Cursor CLI at the version the owner pins.
           # If the CLI supports a token/turn budget flag at install time, set it.
-          cursor-agent -p "$(cat brief.txt)" --model composer-2.5 --yolo
+          cursor-agent -p "$(cat brief.txt)" --model cursor-grok-4.6-high-fast --yolo
       - name: Test
         run: |
           set -euo pipefail
