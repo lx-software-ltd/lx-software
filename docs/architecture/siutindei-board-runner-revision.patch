@@ -1,7 +1,8 @@
 diff --git a/.github/workflows/board-agent.yml b/.github/workflows/board-agent.yml
+index 6e3365e..1d1fff8 100644
 --- a/.github/workflows/board-agent.yml
 +++ b/.github/workflows/board-agent.yml
-@@
+@@ -16,6 +16,17 @@ on:
        kind:
          required: true
          type: string
@@ -16,40 +17,100 @@ diff --git a/.github/workflows/board-agent.yml b/.github/workflows/board-agent.y
 +      revision_round:
 +        required: false
 +        type: string
-@@
+ 
+ # Secrets: CURSOR_API_KEY. Optional BOARD_PR_TOKEN (PAT or GitHub App) so the
+ # draft PR is not opened with GITHUB_TOKEN — those PRs do not start lint/test
+@@ -37,6 +48,23 @@ jobs:
+   run:
+     timeout-minutes: 30
+     runs-on: ubuntu-latest
++    services:
++      postgres:
++        image: postgres:16
++        env:
++          POSTGRES_USER: postgres
++          POSTGRES_PASSWORD: postgres
++          POSTGRES_DB: backend_test
++        ports:
++          - 5432:5432
++        options: >-
++          --health-cmd "pg_isready -U postgres -d backend_test"
++          --health-interval 10s
++          --health-timeout 5s
++          --health-retries 10
++    env:
++      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/backend_test
++      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/backend_test
+     steps:
+       - name: Checkout staging
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+@@ -47,17 +75,27 @@ jobs:
+ 
        - name: Branch
          env:
 +          GH_TOKEN: ${{ secrets.BOARD_PR_TOKEN || secrets.GITHUB_TOKEN }}
 +          PR_NUMBER: ${{ inputs.pr_number }}
            TASK_ID: ${{ inputs.task_id }}
          run: |
+           set -euo pipefail
 -          git checkout -B "board/${TASK_ID}"
-+          if [ -n "$PR_NUMBER" ]; then
-+            gh pr checkout "$PR_NUMBER"
++          if [ -n "${PR_NUMBER:-}" ]; then
++            gh pr checkout "${PR_NUMBER}"
 +          else
 +            git checkout -B "board/${TASK_ID}"
 +          fi
-@@
+ 
+       - name: Write brief
+         env:
+           BOARD_BRIEF: ${{ inputs.brief }}
++          CI_FAILURE: ${{ inputs.ci_failure }}
+         run: |
+           set -euo pipefail
+           printf '%s\n' "$BOARD_BRIEF" > "${RUNNER_TEMP}/brief.txt"
++          if [ -n "${CI_FAILURE:-}" ]; then
++            printf '\n\nCI failure:\n%s\n' "$CI_FAILURE" >> "${RUNNER_TEMP}/brief.txt"
++          fi
+ 
+       - name: Install pinned Cursor CLI
+         run: |
+@@ -120,12 +158,26 @@ jobs:
+             echo "No changes from staging; skip repo tests"
+             exit 0
+           fi
+-          echo "Agent produced changes; lint.yml and test.yml on the PR are the merge gate."
+-          git diff --check origin/staging || git diff --check
++          if git diff --name-only origin/staging -- backend tests \
++            | grep -q . \
++            || git ls-files --others --exclude-standard -- backend tests | grep -q .; then
++            python -m pip install --upgrade pip
++            if [ -f backend/dev-requirements.txt ]; then
++              python -m pip install -r backend/dev-requirements.txt
++            else
++              python -m pip install -r backend/requirements.txt
++              python -m pip install 'pytest>=8.0'
++            fi
++            python -m alembic -c backend/db/alembic.ini upgrade head
++            python -m pytest tests backend --tb=short -q
++          else
++            echo "No backend/tests changes; Flutter and Node stay on PR CI (test.yml)."
++          fi
+ 
        - name: Commit and draft PR
          env:
            GH_TOKEN: ${{ secrets.BOARD_PR_TOKEN || secrets.GITHUB_TOKEN }}
++          PR_NUMBER: ${{ inputs.pr_number }}
            TASK_ID: ${{ inputs.task_id }}
            ISSUE: ${{ inputs.issue }}
-+          PR_NUMBER: ${{ inputs.pr_number }}
          run: |
-           git add -A
-           git commit -m "board: #${ISSUE} $(head -n 1 brief.txt)" || true
--          git push -u origin "HEAD:board/${TASK_ID}"
--          gh pr create --draft --base staging \
--            --title "board: #${ISSUE} $(head -n 1 brief.txt)" \
--            --body "$(cat brief.txt)
--
--Task: ${TASK_ID}"
-+          git push -u origin HEAD
-+          if [ -z "$PR_NUMBER" ]; then
-+            gh pr create --draft --base staging \
-+              --title "board: #${ISSUE} $(head -n 1 brief.txt)" \
-+              --body "$(cat brief.txt)
-+
-+Task: ${TASK_ID}"
+@@ -142,6 +194,11 @@ jobs:
+             echo "No unique commits vs staging; skip draft PR (dry-run / no-op)"
+             exit 0
+           fi
++          if [ -n "${PR_NUMBER:-}" ]; then
++            git push -u origin HEAD
++            echo "Updated existing PR #${PR_NUMBER}"
++            exit 0
 +          fi
+           git push -u origin "HEAD:board/${TASK_ID}" --force-with-lease
+           body="$(cat "${RUNNER_TEMP}/brief.txt")
+ 

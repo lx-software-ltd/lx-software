@@ -4,6 +4,7 @@ import type { BoardContentItem, BoardReviewSnapshot } from "../../lib/boardModel
 import { BoardHoldsList } from "./BoardHoldsList";
 import { useBoardContent } from "../../hooks/useBoardContent";
 import { useBoardHolds } from "../../hooks/useBoardHolds";
+import { BOARD_CODE_CI_FIX_MAX_ROUNDS } from "../../lib/contracts/generated";
 import { useBoardReview } from "../../hooks/useBoardReview";
 
 function errorText(err: unknown): string | null {
@@ -361,7 +362,7 @@ export function BoardReviewSection() {
                 <div className="small fw-semibold">
                   PR #{row.prNumber} CI {row.ciState || "unknown"}
                   {row.ciState === "failure"
-                    ? ` (ci-fix ${row.ciFixRounds ?? 0}/${row.ciFixMax ?? 2})`
+                    ? ` (ci-fix ${row.ciFixRounds ?? 0}/${row.ciFixMax ?? BOARD_CODE_CI_FIX_MAX_ROUNDS})`
                     : ""}
                 </div>
                 {row.failureLine ? <div className="small">{row.failureLine}</div> : null}

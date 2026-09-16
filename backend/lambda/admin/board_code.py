@@ -80,6 +80,18 @@ _POLICY_FAILURE_RE = re.compile(
     re.I,
 )
 _LOG_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\s+")
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]|\x1b\][^\x07]*\x07")
+_YAML_REVISION_KEY_RE = re.compile(r"^[ \t]+(pr_number|ci_failure):(?:[ \t]|$)")
+_CI_FIX_LOOKBACK_STATUSES = (
+    "queued",
+    "running",
+    "waiting_approval",
+    "review",
+    "delivered",
+    "needs_owner",
+    "failed",
+    "cancelled",
+)
 _PENDING_ONLY_RE = re.compile(
     r"\b(?:ci is pending|pending ci|ci.{0,24}pending|not ready for review yet as the ci)\b",
     re.I,
@@ -622,8 +634,6 @@ def _parse_iso(value: str) -> datetime | None:
     if not raw:
         return None
     try:
-        if raw.endswith("Z"):
-            return datetime.strptime(raw, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
         return datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError:
         return None
@@ -693,6 +703,10 @@ def owner_revision_ref(table: Any, pr_number: int, issue_number: Any = None) -> 
         row["reviewRounds"] = 0
         row["ownerReopenedAt"] = board_store.now_iso()
         _put_run(table, source_id, row)
+        # Owner reopen still needs the Appendix A revision patch. Clearing the
+        # capability cache lets a just-applied YAML change be seen immediately
+        # instead of waiting out a 1h revision=False pin.
+        _clear_runner_caps(table)
     return {
         "kind": "code-implement",
         "id": f"pr:{int(pr_number)}:owner",
@@ -763,7 +777,8 @@ def _brief_mismatches_issue(issue: int, brief: str) -> bool:
 
 
 def _strip_log_line(raw: str) -> str:
-    return _LOG_TS_RE.sub("", raw).strip()
+    text = _ANSI_RE.sub("", raw)
+    return _LOG_TS_RE.sub("", text).strip()
 
 
 def extract_failure_line(log: str) -> str:
@@ -789,7 +804,15 @@ def extract_failure_excerpt(log: str, *, max_chars: int = _EXCERPT_MAX_CHARS) ->
         return ""
     summary_idx = next((i for i, line in enumerate(lines) if "short test summary info" in line.lower()), None)
     if summary_idx is not None:
-        return "\n".join(lines[summary_idx:])[:max_chars]
+        block: list[str] = []
+        for line in lines[summary_idx:]:
+            block.append(line)
+            lowered = line.lower()
+            if line.startswith("=") and "failed" in lowered and summary_idx + len(block) > 1:
+                break
+            if len(block) >= 20:
+                break
+        return "\n".join(block)[:max_chars]
     failed = [line for line in lines if _PYTEST_LINE_RE.match(line)]
     errors = [line for line in lines if line.startswith("E ") or line.startswith("E\t")]
     parts = [*errors[-12:], *failed[-6:]]
@@ -881,8 +904,22 @@ def _failure_line_for_sha(sha: str) -> str:
 
 
 def _workflow_yaml_has_revision_inputs(text: str) -> bool:
-    blob = text or ""
-    return "pr_number:" in blob and "ci_failure:" in blob
+    """True when workflow_dispatch declares ``pr_number`` and ``ci_failure`` keys.
+
+    Comments such as ``# pr_number:`` do not count.
+    """
+    keys: set[str] = set()
+    for raw in str(text or "").splitlines():
+        stripped = raw.split("#", 1)[0].rstrip()
+        match = _YAML_REVISION_KEY_RE.match(stripped)
+        if match:
+            keys.add(match.group(1))
+    return keys == {"pr_number", "ci_failure"}
+
+
+def _clear_runner_caps(table: Any) -> None:
+    """Drop the 1h revise-capability cache so the next dispatch re-reads YAML."""
+    board_store.put_cache(table, _RUNNER_CAPS_KEY, {}, ttl_seconds=60)
 
 
 def runner_supports_revision(table: Any) -> bool:
@@ -893,8 +930,11 @@ def runner_supports_revision(table: Any) -> bool:
     repo = _repo()
     try:
         raw = _gh("GET", f"/repos/{repo}/contents/.github/workflows/{WORKFLOW_AGENT}?ref=staging") or {}
-    except board_github.GitHubSnapshotError:
-        board_store.put_cache(table, _RUNNER_CAPS_KEY, {"revision": False}, ttl_seconds=_RUNNER_CAPS_TTL)
+    except board_github.GitHubSnapshotError as exc:
+        # 404: file is gone — cache the negative. Transport / rate-limit / 5xx
+        # must not pin revision=False for an hour.
+        if getattr(exc, "status", None) == 404:
+            board_store.put_cache(table, _RUNNER_CAPS_KEY, {"revision": False}, ttl_seconds=_RUNNER_CAPS_TTL)
         return False
     content = ""
     if isinstance(raw, dict):
@@ -916,19 +956,24 @@ def cached_runner_revision(table: Any) -> bool | None:
     return bool(hit["payload"]["revision"])
 
 
+def _original_brief(prior: dict[str, Any]) -> str:
+    return str(prior.get("originalBrief") or prior.get("brief") or "").strip()
+
+
 def _revision_dispatch_brief(
     prior: dict[str, Any], engineer_brief: str, round_n: int, pr_number: int
 ) -> str:
-    original = str(prior.get("brief") or "").strip()
-    excerpt = str(prior.get("failureExcerpt") or prior.get("failureLine") or "").strip()
+    """Compose the runner brief for this dispatch only. Never persist the result.
+
+    The CI excerpt travels in the ``ci_failure`` input so it is not repeated here.
+    """
+    original = _original_brief(prior)
     parts: list[str] = []
     if original:
         parts.append(original)
     parts.append(f"REVISION round {round_n} for PR #{int(pr_number)}.")
     if engineer_brief:
         parts.append(f"Fix points: {engineer_brief}")
-    if excerpt:
-        parts.append(f"CI failure:\n{excerpt}")
     return "\n\n".join(parts)
 
 
@@ -998,18 +1043,21 @@ def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
             pr_number = int(prior.get("prNumber") or 0)
         except (TypeError, ValueError):
             pr_number = 0
-        revision_round = int(prior.get("ciFixRounds") or prior.get("reviewRounds") or 0) + 1
+        revision_round = int(prior.get("revisionRounds") or 0) + 1
         inputs["brief"] = _revision_dispatch_brief(prior, brief, revision_round, pr_number)[:_BRIEF_DISPATCH_MAX]
         inputs["pr_number"] = str(pr_number)
         inputs["ci_failure"] = str(prior.get("failureExcerpt") or prior.get("failureLine") or "")[:_EXCERPT_MAX_CHARS]
         inputs["revision_round"] = str(revision_round)
     dispatched = dispatch_workflow(WORKFLOW_AGENT, inputs, ref="staging", table=ctx.table)
+    stored_brief = _original_brief(prior) if revision_id else brief
     payload = {
         **prior,
         "taskId": task_id,
         "issue": issue,
         "kind": kind,
-        "brief": inputs["brief"],
+        "brief": stored_brief,
+        "originalBrief": stored_brief,
+        "dispatchBrief": inputs["brief"],
         "rounds": int(prior.get("rounds") or 0) + 1,
         "dispatchRounds": dispatch_rounds + 1,
         "lastStaffTaskId": caller or task_id,
@@ -1018,6 +1066,9 @@ def op_run_task(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     }
     if revision_id:
         payload["revisionRounds"] = int(prior.get("revisionRounds") or 0) + 1
+        caller_ref = (_calling_task(ctx) if ctx is not None else {}).get("eventRef") or {}
+        if caller_ref.get("ciFix"):
+            payload["ciFixRounds"] = int(prior.get("ciFixRounds") or 0) + 1
     mismatch = _brief_mismatches_issue(issue, brief)
     if mismatch:
         payload["briefMismatch"] = True
@@ -1079,12 +1130,15 @@ def op_get_run(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
             stored["prState"] = str(looked.get("state") or "open")
             stored["prMerged"] = bool(looked.get("merged") or looked.get("merged_at"))
             pr = looked
-    if out.get("prNumber") and not stored.get("prSeenAt"):
-        stored["prSeenAt"] = board_store.now_iso()
     sha = ""
     if isinstance(pr, dict):
         head = pr.get("head") if isinstance(pr.get("head"), dict) else {}
         sha = str((head or {}).get("sha") or "")
+    prev_sha = str(stored.get("headSha") or "")
+    if sha and prev_sha and prev_sha != sha:
+        stored["prSeenAt"] = board_store.now_iso()
+    elif out.get("prNumber") and not stored.get("prSeenAt"):
+        stored["prSeenAt"] = board_store.now_iso()
     if sha:
         stored["ciState"] = ci_state(sha)
         stored["headSha"] = sha
@@ -1588,6 +1642,9 @@ def _is_policy_failure(line: str) -> bool:
 
 
 def _same_failure_twice(state: dict[str, Any]) -> bool:
+    """True only after a dispatched ci-fix still produced the same failure line."""
+    if int(state.get("ciFixRounds") or 0) < 1:
+        return False
     history = [row for row in (state.get("failureHistory") or []) if isinstance(row, dict)]
     if len(history) < 2:
         return False
@@ -1596,7 +1653,30 @@ def _same_failure_twice(state: dict[str, Any]) -> bool:
     return bool(left) and left == right
 
 
+def _ci_fail_covers_sha(table: Any, pr_number: int, sha: str) -> bool:
+    """Architect ``pr:{n}:ci-fail`` and engineer ci-fix must not share a SHA."""
+    task = _find_task(table, "code-review", f"pr:{int(pr_number)}:ci-fail")
+    if not task:
+        return False
+    stored = str((task.get("eventRef") or {}).get("headSha") or "")
+    if stored:
+        return stored == sha
+    return str(task.get("status") or "") in (
+        "queued",
+        "running",
+        "waiting_approval",
+        "review",
+        "needs_owner",
+    )
+
+
 def _ci_fix_skip_reason(table: Any, state: dict[str, Any]) -> str:
+    try:
+        issue = int(state.get("issue") or 0)
+    except (TypeError, ValueError):
+        issue = 0
+    if issue <= 0:
+        return " ci-fix skipped: no linked GitHub issue."
     line = str(state.get("failureLine") or "")
     if _is_policy_failure(line):
         return " ci-fix skipped: policy failure needs architect review."
@@ -1624,12 +1704,14 @@ def _maybe_ci_fix(
     sha = str(state.get("headSha") or "")
     line = str(state.get("failureLine") or "").strip()
     excerpt = str(state.get("failureExcerpt") or "").strip()
-    if pr_number <= 0 or issue <= 0 or not sha:
+    if pr_number <= 0 or not sha:
         return None
     if _ci_fix_skip_reason(table, state):
         return None
+    if _ci_fail_covers_sha(table, pr_number, sha):
+        return None
     event_id = f"pr:{pr_number}:ci:{sha[:7]}"
-    if _find_task(table, "code-implement", event_id):
+    if _find_task(table, "code-implement", event_id, statuses=_CI_FIX_LOOKBACK_STATUSES):
         return None
     job = str(state.get("failureJob") or "CI")
     brief = (
@@ -1659,9 +1741,6 @@ def _maybe_ci_fix(
     except board_staff.StaffError as exc:
         _log_event("info", tag="board_code_ci_fix_skipped", error=str(exc)[:200])
         return None
-    stored = _get_run(table, task_id)
-    stored["ciFixRounds"] = int(stored.get("ciFixRounds") or 0) + 1
-    _put_run(table, task_id, stored)
     return task
 
 
@@ -1701,7 +1780,14 @@ def poll_runs(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
             event_id = f"pr:{int(pr_number)}"
         elif ci == "failure":
             sha_prefix = str(state.get("headSha") or "")[:7]
-            if sha_prefix and _find_task(table, "code-implement", f"pr:{int(pr_number)}:ci:{sha_prefix}"):
+            if sha_prefix and _find_task(
+                table,
+                "code-implement",
+                f"pr:{int(pr_number)}:ci:{sha_prefix}",
+                statuses=_CI_FIX_LOOKBACK_STATUSES,
+            ):
+                continue
+            if _ci_fail_covers_sha(table, int(pr_number), str(state.get("headSha") or "")):
                 continue
             fix = _maybe_ci_fix(table, settings, task_id, state, engineer)
             if fix:
@@ -1730,7 +1816,13 @@ def poll_runs(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
                 ),
                 deliverable_type="markdown",
                 sla_hours=24,
-                event_ref={"kind": "code-review", "id": event_id, "prNumber": int(pr_number), "taskId": task_id},
+                event_ref={
+                    "kind": "code-review",
+                    "id": event_id,
+                    "prNumber": int(pr_number),
+                    "taskId": task_id,
+                    "headSha": str(state.get("headSha") or ""),
+                },
                 created_by="board_code",
             )
             created.append(task)
@@ -1748,7 +1840,7 @@ def list_open_run_summaries(table: Any) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for task_id in _run_index(table):
         row = _get_run(table, task_id)
-        if not row.get("prNumber") or row.get("prMerged"):
+        if not row.get("prNumber") or _run_pr_gone(row):
             continue
         out.append(
             {
@@ -1991,15 +2083,14 @@ def on_review_delivered(table: Any, settings: dict[str, Any], task: dict[str, An
         notes = " ".join(notes_list) or "Address the architect review notes."
         if issue <= 0:
             return {"verdict": "changes", "skipped": "no issue"}
-        failure_line = str(run.get("failureLine") or "").strip()
-        failure_excerpt = str(run.get("failureExcerpt") or "").strip()
+        failure = str(run.get("failureExcerpt") or run.get("failureLine") or "").strip()
         next_round = review_rounds + 2
         reopened = str(run.get("ownerReopenedAt") or "").strip()
         reopen_note = f" Owner reopened this revision at {reopened}." if reopened else ""
-        excerpt_note = f"\nCI excerpt:\n{failure_excerpt[:1200]}" if failure_excerpt else ""
+        excerpt_note = f"\nCI failure:\n{failure[:1200]}" if failure else ""
         brief = (
-            f"Revise PR #{pr_number} (round {next_round}). Architect notes: {notes} "
-            f"CI failure: {failure_line or 'none'}.{reopen_note}{excerpt_note} "
+            f"Revise PR #{pr_number} (round {next_round}). Architect notes: {notes}."
+            f"{reopen_note}{excerpt_note} "
             "Call code_run_task ONCE with a brief that fixes exactly these points, then call task_finish. "
             "Do not poll CI; the board polls it for you."
         )

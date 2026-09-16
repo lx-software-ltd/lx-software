@@ -1328,7 +1328,11 @@ use the same path.
   engineer calls `code_merge_staging`. Red PR CI opens an engineer `ci-fix`
   (`codeCiFixMaxRounds` 2) with the pytest excerpt when the runner can
   revise; otherwise the architect review and daily **Engineering** line
-  tell the owner to apply the Appendix A revision patch.
+  tell the owner to apply the Appendix A revision patch. Owner-reopened
+  revision tasks stay refused until that patch is on staging; reopen
+  clears the 1h capability cache so a just-applied YAML is seen immediately.
+  The original first-run brief is stored separately; revision dispatches
+  compose a one-shot brief and put the excerpt only in `ci_failure`.
 - SEO articles (WP7 hand-off): `content-marketer` produces Markdown; a
   `code_run_task(kind="content")` places it under the site's content path;
   path rule `content/**` only → `changedLines` limit 2 000 for `content`

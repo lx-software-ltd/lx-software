@@ -6,6 +6,7 @@
 import type { AdminAssetMeta } from "../../hooks/useAdminAssets";
 import type { BankSyncState } from "../bankSyncModel";
 import {
+  BOARD_CODE_CI_FIX_MAX_ROUNDS,
   BOARD_PERSONA_DEFAULTS,
   BOARD_STAFF_SEAT_DEFAULTS,
   BOARD_TOOL_DEFINITIONS,
@@ -709,7 +710,7 @@ export const boardReviewFixture: BoardReviewSnapshot = {
       prNumber: 501,
       ciState: "failure",
       ciFixRounds: 1,
-      ciFixMax: 2,
+      ciFixMax: BOARD_CODE_CI_FIX_MAX_ROUNDS,
       reviewRounds: 0,
       reviewMax: 3,
       failureLine: "unknown area_name",

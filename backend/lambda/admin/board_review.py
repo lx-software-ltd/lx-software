@@ -12,7 +12,11 @@ import board_hk
 import board_mail
 import board_staff
 import board_store
-from contract_constants import BOARD_STAFF_REVIEW_SAMPLE_SIZE, BOARD_STAFF_TASK_STATUSES
+from contract_constants import (
+    BOARD_CODE_CI_FIX_MAX_ROUNDS,
+    BOARD_STAFF_REVIEW_SAMPLE_SIZE,
+    BOARD_STAFF_TASK_STATUSES,
+)
 from http_common import _log_event
 
 SECTION_IDS = (
@@ -532,7 +536,10 @@ def _engineering_lines(review: dict[str, Any]) -> list[str]:
             fail = _clip(row.get("failureLine") or "", 160)
             if fail:
                 line = f"{line}: {fail}"
-            line = f"{line} (ci-fix {row.get('ciFixRounds') or 0}/{row.get('ciFixMax') or 2})"
+            line = (
+                f"{line} (ci-fix {row.get('ciFixRounds') or 0}/"
+                f"{row.get('ciFixMax') or BOARD_CODE_CI_FIX_MAX_ROUNDS})"
+            )
         can = row.get("canRevise")
         if can is False:
             line = f"{line} — runner cannot revise (Appendix A patch)."
