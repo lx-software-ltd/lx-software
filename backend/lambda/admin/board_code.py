@@ -2131,16 +2131,44 @@ def on_review_delivered(table: Any, settings: dict[str, Any], task: dict[str, An
 
 _STALE_BRANCH_PREFIX = "board/"
 _STALE_BRANCH_SWEEP_CAP = 20
+_STALE_BRANCH_SWEEP_CACHE = "code:branch-sweep"
+_STALE_BRANCH_SWEEP_INTERVAL = timedelta(hours=6)
+# A runner pushes ``board/{taskId}`` and opens the PR in the same job step;
+# never delete a head whose run is still that fresh.
+_STALE_BRANCH_MIN_RUN_AGE = timedelta(hours=2)
 _PROTECTED_BRANCHES = frozenset({"main", "staging", "develop", "master"})
 
 
-def sweep_stale_board_branches() -> list[str]:
+def _branch_run_is_fresh(table: Any, name: str) -> bool:
+    task_id = name[len(_STALE_BRANCH_PREFIX) :]
+    row = _get_run(table, task_id) if task_id else {}
+    if not row or row.get("prNumber"):
+        return False
+    started = _parse_iso(str(row.get("dispatchedAt") or ""))
+    return started is None or datetime.now(timezone.utc) - started < _STALE_BRANCH_MIN_RUN_AGE
+
+
+def sweep_stale_board_branches(table: Any, *, force: bool = False) -> list[str]:
     """Delete ``board/*`` heads that have no open pull request.
 
     Covers merged PRs, closed-unmerged PRs, and runner branches that never
-    opened a PR. Leaves ``main`` / ``staging`` and any branch with an open PR
-    alone. A 403 here means the board GitHub token needs Contents: write.
+    opened a PR. Leaves ``main`` / ``staging``, any branch with an open PR,
+    and any head whose runner dispatch is under two hours old. Runs at most
+    every six hours unless ``force``. A 403 here means the board GitHub
+    token needs Contents: write.
     """
+    if not force:
+        hit = board_store.get_cache(table, _STALE_BRANCH_SWEEP_CACHE)
+        payload = hit.get("payload") if isinstance(hit, dict) else None
+        last = _parse_iso(str((payload or {}).get("ranAt") or "")) if isinstance(payload, dict) else None
+        if last is not None and datetime.now(timezone.utc) - last < _STALE_BRANCH_SWEEP_INTERVAL:
+            return []
+    board_store.put_cache(
+        table,
+        _STALE_BRANCH_SWEEP_CACHE,
+        {"ranAt": board_store.now_iso()},
+        ttl_seconds=int(_STALE_BRANCH_SWEEP_INTERVAL.total_seconds()) * 2,
+    )
     repo = _repo()
     owner = repo.split("/", 1)[0]
     deleted: list[str] = []
@@ -2156,6 +2184,8 @@ def sweep_stale_board_branches() -> list[str]:
             continue
         name = str(row.get("name") or "")
         if not name.startswith(_STALE_BRANCH_PREFIX) or name in _PROTECTED_BRANCHES:
+            continue
+        if _branch_run_is_fresh(table, name):
             continue
         try:
             pulls = (
@@ -2193,7 +2223,7 @@ def handle_tick(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
     if not board_staff.enabled(settings):
         return {"ok": True, "skipped": "disabled"}
     reviews = poll_runs(table, settings)
-    stale = sweep_stale_board_branches()
+    stale = sweep_stale_board_branches(table)
     assigned = maybe_assign_ready_issues(table, settings)
     preview = cache_staging_preview(table)
     sync = maybe_daily_staging_sync(table, settings, preview=preview)

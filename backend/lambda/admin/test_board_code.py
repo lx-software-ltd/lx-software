@@ -1739,7 +1739,7 @@ class RunnerTests(BoardTestCase):
                 "head": {"ref": "board/b1520abc679e4aacbbb813e59b5406e5", "sha": "def456"},
             }
         )
-        deleted = board_code.sweep_stale_board_branches()
+        deleted = board_code.sweep_stale_board_branches(self.table)
         self.assertEqual(
             set(deleted),
             {
@@ -1750,6 +1750,28 @@ class RunnerTests(BoardTestCase):
         self.assertNotIn("board/3fd6f5b5a4d44b9ba6fbebc3a4f532a9", deleted)
         self.assertNotIn("main", self.gh.deleted_refs)
         self.assertNotIn("feature/keep-me", self.gh.deleted_refs)
+
+    def test_sweep_runs_at_most_every_six_hours(self) -> None:
+        self.gh.branches = [{"name": "board/stale-one"}]
+        first = board_code.sweep_stale_board_branches(self.table)
+        self.assertEqual(first, ["board/stale-one"])
+        self.gh.branches = [{"name": "board/stale-two"}]
+        self.assertEqual(board_code.sweep_stale_board_branches(self.table), [])
+        self.assertEqual(self.gh.deleted_refs, ["board/stale-one"])
+        forced = board_code.sweep_stale_board_branches(self.table, force=True)
+        self.assertEqual(forced, ["board/stale-two"])
+
+    def test_sweep_keeps_branch_of_fresh_run_without_pr(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add booking.", "kind": "feature"})
+        self.gh.branches = [{"name": "board/task-1"}, {"name": "board/old-run"}]
+        board_code._put_run(  # noqa: SLF001
+            self.table,
+            "old-run",
+            {"issue": 43, "dispatchedAt": "2026-09-01T00:00:00.000Z", "kind": "feature"},
+        )
+        deleted = board_code.sweep_stale_board_branches(self.table, force=True)
+        self.assertEqual(deleted, ["board/old-run"])
+        self.assertNotIn("board/task-1", self.gh.deleted_refs)
 
     def test_classify_merge_and_promote(self) -> None:
         merge = REGISTRY["code_merge_staging"]

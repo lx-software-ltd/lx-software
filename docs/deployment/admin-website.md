@@ -785,8 +785,9 @@ function calling. Design:
   `code_close_pr` stays an Approval (`action_class` `code_close`) and
   relabels the linked issue (`board-closed`, drop `board-ready`).   Widen the board
   GitHub token to **Actions: write**, **Pull requests: write**, and
-  **Contents: write** (the staff tick deletes stale `board/*` heads with
-  no open PR). Workflows
+  **Contents: write** (every 6 h the staff tick deletes stale `board/*`
+  heads with no open PR; heads from a runner dispatch under 2 h old are
+  kept). Workflows
   `board-agent.yml` / `board-merge-staging.yml` / `board-promote.yml` must
   exist on **lx-software-ltd/siutindei** (see appendix A). Daily review
   **Promote** queues an Approval; the owner merges the GitHub

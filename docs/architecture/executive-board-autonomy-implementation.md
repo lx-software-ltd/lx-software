@@ -1319,7 +1319,8 @@ use the same path.
   the "Promote" button on the review page with the staging diff summary).
   The board GitHub token needs `actions: write`, `pull-requests: write`,
   and `contents: write` (deployment doc). `handle_tick` calls
-  `sweep_stale_board_branches` to delete `board/*` heads with no open PR.
+  `sweep_stale_board_branches` (at most every 6 h) to delete `board/*`
+  heads with no open PR, skipping heads whose runner dispatch is under 2 h old.
 - Engineering flow as tasks: architect duty "groom backlog" (weekly) →
   issues with acceptance criteria labelled `board-ready`; `engineer-*`
   target check: if fewer than 2 open `board/*` PRs, take the oldest
