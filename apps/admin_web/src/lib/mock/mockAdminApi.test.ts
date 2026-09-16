@@ -54,6 +54,41 @@ describe("mockAdminFetch", () => {
     expect(pdf.headers.get("Content-Type")).toBe("application/pdf");
   });
 
+  it("starts staging behind main and Sync from main makes it promotable", async () => {
+    const beforeRes = await mockAdminFetch("/siu-tin-dei/board/code/staging");
+    expect(beforeRes.ok).toBe(true);
+    const before = (await beforeRes.json()) as {
+      staging: { behindBy?: number; canPromote?: boolean; commits?: readonly { message?: string }[] };
+    };
+    expect(before.staging.commits?.[0]?.message).toMatch(/board: #42 add booking/);
+    if ((before.staging.behindBy ?? 0) > 0) {
+      expect(before.staging.canPromote).toBe(false);
+    }
+
+    const syncRes = await mockAdminFetch("/siu-tin-dei/board/code/sync-staging", { method: "POST" });
+    expect(syncRes.ok).toBe(true);
+    const synced = (await syncRes.json()) as {
+      ok?: boolean;
+      alreadyCurrent?: boolean;
+      preview?: { behindBy?: number; canPromote?: boolean };
+    };
+    expect(synced.ok).toBe(true);
+    expect(synced.preview?.behindBy).toBe(0);
+    expect(synced.preview?.canPromote).toBe(true);
+
+    const afterRes = await mockAdminFetch("/siu-tin-dei/board/code/staging");
+    const after = (await afterRes.json()) as {
+      staging: { behindBy?: number; canPromote?: boolean; commits?: readonly { message?: string }[] };
+    };
+    expect(after.staging.behindBy).toBe(0);
+    expect(after.staging.canPromote).toBe(true);
+    expect(after.staging.commits?.[0]?.message).toMatch(/board: #42 add booking/);
+
+    const againRes = await mockAdminFetch("/siu-tin-dei/board/code/sync-staging", { method: "POST" });
+    const again = (await againRes.json()) as { alreadyCurrent?: boolean };
+    expect(again.alreadyCurrent).toBe(true);
+  });
+
   it("returns 404 for unknown paths", async () => {
     const res = await mockAdminFetch("/no-such-route");
     expect(res.status).toBe(404);

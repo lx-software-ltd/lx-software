@@ -389,6 +389,10 @@ Owner decisions from plan §6, applied as specified:
 - **Promote from the review page queues an Approval** (`POST /code/promote`
   → `code_promote`, `always_propose`). Approving it dispatches
   `board-promote.yml`; the owner still merges the GitHub PR to `main`.
+- **Sync from main on the review page** (`POST /code/sync-staging`) is
+  owner-only. It merge-commits `main` into `staging` as `actor=owner`
+  (no hold / Approval). Persona `code_sync_staging` still uses the
+  `code_staging` hold. Conflicts return 409.
 - **`board_github._request` returns raw text** for
   `Accept: application/vnd.github.diff` so `code_review_pr` can cap the
   diff at 30 000 characters.
@@ -400,3 +404,6 @@ Owner decisions from plan §6, applied as specified:
 - **Mock Approvals list is in-memory.** `POST /code/promote` prepends a
   pending `code_promote` row so Daily review → Promote → Approvals matches
   the live API. A static fixture would leave only the mail_send sample.
+  Mock staging starts **diverged** (`behindBy` 3, `aheadBy` 1,
+  `canPromote` false) so **Sync from main** is visible; `POST
+  /code/sync-staging` flips it to ahead and keeps the `#42` commit text.

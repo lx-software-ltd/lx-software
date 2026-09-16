@@ -2620,6 +2620,10 @@ export class LxsoftwareStack extends cdk.Stack {
         path: "/siu-tin-dei/board/code/promote",
         methods: [apigwv2.HttpMethod.POST],
       },
+      {
+        path: "/siu-tin-dei/board/code/sync-staging",
+        methods: [apigwv2.HttpMethod.POST],
+      },
     ];
     for (const route of boardRoutes) {
       this.httpApi.addRoutes({

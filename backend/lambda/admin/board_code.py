@@ -2083,6 +2083,46 @@ def op_sync_staging(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "mergedSha": sha, "before": preview, "preview": after}
 
 
+def _close_rebase_task(table: Any, user_sub: str) -> None:
+    task = _find_task(table, "ops", _SYNC_STAGING_EVENT_ID, statuses=_OPEN_SYNC_STATUSES)
+    if not task:
+        return
+    try:
+        cancelled = board_staff.cancel_task(table, str(task["taskId"]), user_sub or "owner")
+    except board_staff.StaffError:
+        return
+    cancelled["closedBy"] = "owner"
+    board_store.put_task(table, cancelled)
+
+
+def _sync_error_message(err: str) -> str:
+    lowered = err.lower()
+    if "409" in err or "conflict" in lowered:
+        return "staging conflicts with main; resolve in GitHub"
+    return err[:200]
+
+
+def queue_sync_staging(table: Any, settings: dict[str, Any], user_sub: str) -> dict[str, Any]:
+    """Owner-facing merge of main into staging. Skips holds and Approvals."""
+    import board_tools
+
+    ctx = board_tools.ToolContext(
+        table=table,
+        settings=settings,
+        persona_id="cto",
+        display_name="Founder",
+        kind="review",
+        actor="owner",
+        owner_sub=user_sub,
+    )
+    out = op_sync_staging(ctx, {"reason": "Owner requested from the review page."})
+    err = str(out.get("error") or "")
+    if err:
+        raise CodeError(_sync_error_message(err))
+    _close_rebase_task(table, user_sub)
+    return out
+
+
 def _pick_engineer(table: Any, engineers: list[str]) -> str:
     counts: dict[str, int] = {sid: 0 for sid in engineers}
     for status in ("queued", "running", "waiting_approval", "review"):
