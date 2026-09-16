@@ -1481,7 +1481,7 @@ class StaffStepTests(ToolsTestCase):
         ctx = board_tools.ToolContext(
             self.table, board_store.load_settings(self.table), "cfo", kind="task", task_id=tid
         )
-        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+        with self.assertRaises(board_staff.StaffError) as raised:
             board_staff.op_task_finish(
                 ctx,
                 {
@@ -1493,9 +1493,7 @@ class StaffStepTests(ToolsTestCase):
                     "confidence": "high",
                 },
             )
-        latest = board_store.get_task(self.table, tid)
-        self.assertEqual(latest.get("evidence") or [], [])
-        self.assertIn("no_evidence", latest.get("flags") or [])
+        self.assertIn("task_note call ids are not evidence", str(raised.exception))
 
     def test_intra_step_poll_repeats_fail_with_no_progress(self) -> None:
         task = self._queued_task()
@@ -1549,7 +1547,35 @@ class StaffStepTests(ToolsTestCase):
         out = board_store.get_task(self.table, tid)
         self.assertEqual(out["status"], "needs_owner")
         self.assertIn("salvaged", out.get("flags") or [])
+        self.assertIn("already returned", out.get("parkedReason") or "")
         self.assertFalse(any(p.get("internal") == "board_staff_review" for p in invoked))
+
+    def test_salvage_after_retry_ignores_stale_return(self) -> None:
+        task = self._queued_task()
+        tid = task["taskId"]
+        latest = board_store.get_task(self.table, tid)
+        latest["status"] = "running"
+        latest["step"] = BOARD_STAFF_MAX_STEPS_PER_TASK - 1
+        latest["retriedAt"] = "2026-09-16T00:00:00Z"
+        latest["lastReview"] = {
+            "verdict": "return",
+            "notes": "no progress",
+            "by": "manager",
+            "at": "2026-09-15T00:00:00Z",
+        }
+        board_store.put_task(self.table, latest)
+        note = "The CI run for PR #501 is still failing. " * 12
+        result = type("R", (), {"text": note, "usage": {}, "calls": []})()
+        invoked: list[dict[str, Any]] = []
+
+        def capture(payload: dict[str, Any], fallback: Any = None) -> None:  # noqa: ARG001
+            invoked.append(payload)
+
+        with patch.object(board_async, "invoke_async", side_effect=capture):
+            board_staff._complete_step(self.table, tid, latest, result, BOARD_STAFF_MAX_STEPS_PER_TASK)
+        out = board_store.get_task(self.table, tid)
+        self.assertEqual(out["status"], "review")
+        self.assertTrue(any(p.get("internal") == "board_staff_review" for p in invoked))
 
     def test_model_for_seat_uses_override(self) -> None:
         settings = _enable_staff(self.table, modelBySeat={"engineer-1": "qwen/qwen-2.5-72b-instruct"})
@@ -1722,12 +1748,20 @@ class StaffRouteTests(BoardTestCase):
             self.assertEqual(status, 201)
             task_id = created["task"]["taskId"]
             row = board_store.get_task(self.table, task_id)
-            row.update({"status": "failed", "failureReason": "stuck", "stepClaimed": 1})
+            row.update(
+                {
+                    "status": "failed",
+                    "failureReason": "stuck",
+                    "stepClaimed": 1,
+                    "lastReview": {"verdict": "return", "notes": "try again", "at": "2026-01-01T00:00:00Z"},
+                }
+            )
             board_store.put_task(self.table, row)
             status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
             self.assertEqual(status, 200)
             self.assertIn(body["task"]["status"], ("queued", "running"))
             self.assertEqual(body["task"].get("failureReason") or "", "")
+            self.assertFalse(body["task"].get("lastReview"))
             status, again = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
             self.assertEqual(status, 409)
 

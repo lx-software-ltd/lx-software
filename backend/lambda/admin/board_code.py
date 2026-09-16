@@ -634,13 +634,18 @@ def ensure_run_for_pr(table: Any, pr_number: int) -> tuple[str, dict[str, Any]]:
     issue = _issue_from_pr(pr) or 0
     head = str((pr.get("head") or {}).get("ref") or "")
     task_id = head.split("/", 1)[1] if head.startswith("board/") else f"pr-{pr_number}"
+    existing = _get_run(table, task_id)
     row = {
+        **existing,
         "taskId": task_id,
         "prNumber": pr_number,
-        "issue": issue,
-        "kind": "feature",
-        "prUrl": pr.get("html_url"),
+        "issue": existing.get("issue") or issue,
+        "kind": existing.get("kind") or "feature",
+        "prUrl": pr.get("html_url") or existing.get("prUrl"),
     }
+    if str(pr.get("state") or "open").lower() == "open" and not (pr.get("merged") or pr.get("merged_at")):
+        row["prState"] = "open"
+        row["prMerged"] = False
     _put_run(table, task_id, row)
     return task_id, row
 
@@ -787,30 +792,29 @@ def _failure_line_for_run(run: dict[str, Any]) -> str:
 
 
 def _failure_line_for_sha(sha: str) -> str:
-    """Last pytest / policy line from failed CI jobs on this head SHA."""
+    """Last pytest / policy line from failed PR CI jobs on this head SHA.
+
+    Board-agent runs on ``staging``, so they do not share the PR head SHA and
+    are skipped when the API happens to return them.
+    """
     if not sha:
         return ""
     repo = _repo()
     try:
         raw = _gh("GET", f"/repos/{repo}/actions/runs?head_sha={sha}&per_page=20") or {}
-    except board_github.GitHubSnapshotError:
+    except (TypeError, ValueError, board_github.GitHubSnapshotError):
         return ""
     runs = raw.get("workflow_runs") if isinstance(raw, dict) else raw
     if not isinstance(runs, list):
         return ""
-    prefer: list[dict[str, Any]] = []
-    fallback: list[dict[str, Any]] = []
     for run in runs:
         if not isinstance(run, dict):
             continue
         if str(run.get("conclusion") or "").lower() not in _RUN_FAILED:
             continue
         blob = f"{run.get('path') or ''} {run.get('name') or ''} {run.get('display_title') or ''}"
-        if "board-agent" in blob:
-            fallback.append(run)
-        else:
-            prefer.append(run)
-    for run in (*prefer, *fallback):
+        if "board-agent" in blob.lower():
+            continue
         line = _failure_line_for_run(run)
         if line:
             return line
@@ -952,11 +956,17 @@ def op_get_run(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if sha:
         stored["ciState"] = ci_state(sha)
         stored["headSha"] = sha
-        if stored.get("ciState") == "failure":
-            ci_line = _failure_line_for_sha(sha)
-            if ci_line:
-                stored["failureLine"] = ci_line
-    if conclusion in _RUN_FAILED and not stored.get("failureLine"):
+        if stored.get("failureLineSha") and stored.get("failureLineSha") != sha:
+            stored.pop("failureLine", None)
+            stored.pop("failureLineSha", None)
+        if stored.get("ciState") == "failure" and stored.get("failureLineSha") != sha:
+            stored["failureLine"] = _failure_line_for_sha(sha)
+            stored["failureLineSha"] = sha
+    if (
+        conclusion in _RUN_FAILED
+        and stored.get("ciState") != "failure"
+        and not stored.get("failureLine")
+    ):
         stored["failureLine"] = _failure_line_for_run(latest)
     if stored.get("failureLine"):
         out["failureLine"] = stored["failureLine"]
@@ -968,6 +978,8 @@ def op_get_run(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         out["prState"] = stored["prState"]
     if stored.get("prMerged"):
         out["prMerged"] = True
+    if stored.get("ownerReopenedAt"):
+        out["ownerReopenedAt"] = stored["ownerReopenedAt"]
     if stored.get("briefMismatch"):
         out["briefMismatch"] = True
     _put_run(ctx.table, task_id, stored)
@@ -1403,25 +1415,28 @@ def _run_pr_gone(state: dict[str, Any]) -> bool:
     return str(state.get("prState") or "").lower() == "closed"
 
 
+def _run_pr_prunable(state: dict[str, Any]) -> bool:
+    """Drop merged PRs from the index. Closed-not-merged stay so a reopen can reuse the row."""
+    return bool(state.get("prMerged"))
+
+
 def poll_runs(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
     created: list[dict[str, Any]] = []
     if not board_staff.enabled(settings):
         return created
     roster = board_staff.seats_by_id(table, settings)
     architect = "architect" if (roster.get("architect") or {}).get("isActive") else "cto"
-    kept: list[str] = []
-    pruned = False
+    gone: set[str] = set()
     for task_id in _run_index(table):
         try:
             state = op_get_run(type("C", (), {"table": table, "task_id": task_id, "settings": settings})(), {"taskId": task_id})
         except (CodeError, board_github.GitHubSnapshotError) as exc:
             _log_event("warning", tag="board_code_poll_failed", taskId=task_id, error=str(exc)[:200])
-            kept.append(task_id)
             continue
         if _run_pr_gone(state):
-            pruned = True
+            if _run_pr_prunable(state):
+                gone.add(task_id)
             continue
-        kept.append(task_id)
         pr_number = state.get("prNumber")
         if not pr_number:
             continue
@@ -1463,8 +1478,9 @@ def poll_runs(table: Any, settings: dict[str, Any]) -> list[dict[str, Any]]:
             created.append(task)
         except board_staff.StaffError as exc:
             _log_event("info", tag="board_code_review_skipped", error=str(exc)[:200])
-    if pruned:
-        _save_run_index(table, kept)
+    if gone:
+        current = _run_index(table)
+        _save_run_index(table, [task_id for task_id in current if task_id not in gone])
     return created
 
 
@@ -1696,9 +1712,11 @@ def on_review_delivered(table: Any, settings: dict[str, Any], task: dict[str, An
             return {"verdict": "changes", "skipped": "no issue"}
         failure_line = str(run.get("failureLine") or "").strip()
         next_round = review_rounds + 2
+        reopened = str(run.get("ownerReopenedAt") or "").strip()
+        reopen_note = f" Owner reopened this revision at {reopened}." if reopened else ""
         brief = (
             f"Revise PR #{pr_number} (round {next_round}). Architect notes: {notes} "
-            f"CI failure: {failure_line or 'none'}. "
+            f"CI failure: {failure_line or 'none'}.{reopen_note} "
             "Call code_run_task ONCE with a brief that fixes exactly these points, then call task_finish. "
             "Do not poll CI; the board polls it for you."
         )

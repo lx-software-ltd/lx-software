@@ -553,7 +553,9 @@ class RunnerTests(BoardTestCase):
         )
         self.gh.prs.append(_pr())
         board_code.owner_revision_ref(self.table, 7)
-        self.assertEqual(board_code._get_run(self.table, "task-1").get("reviewRounds"), 0)  # noqa: SLF001
+        stored = board_code._get_run(self.table, "task-1")  # noqa: SLF001
+        self.assertEqual(stored.get("reviewRounds"), 0)
+        self.assertTrue(stored.get("ownerReopenedAt"))
         board_staff._blob_put(  # noqa: SLF001
             board_staff._deliverable_key("rev-reopen", "markdown"),  # noqa: SLF001
             b'```json {"verdict":"changes","notes":["fix the tests"]}\n```',
@@ -803,6 +805,60 @@ class RunnerTests(BoardTestCase):
         self.assertEqual(created, [])
         self.assertNotIn("task-1", board_code._run_index(self.table))  # noqa: SLF001
 
+    def test_poll_keeps_closed_unmerged_pr_in_index(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add booking.", "kind": "feature"})
+        self.gh.runs.append({"name": "board-agent task-1", "status": "completed", "conclusion": "success"})
+        self.gh.prs.append({**_pr(), "merged": False, "state": "closed"})
+        self.gh.checks["abc123"] = _green()
+        created = board_code.poll_runs(self.table, self.settings)
+        self.assertEqual(created, [])
+        self.assertIn("task-1", board_code._run_index(self.table))  # noqa: SLF001
+
+    def test_poll_index_keeps_run_dispatched_during_poll(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add booking.", "kind": "feature"})
+        self.gh.runs.append({"name": "board-agent task-1", "status": "completed", "conclusion": "success"})
+        self.gh.prs.append({**_pr(), "merged": True, "merged_at": "2026-09-15T10:09:28Z", "state": "closed"})
+        self.gh.checks["abc123"] = _green()
+        original = board_code.op_get_run
+
+        def inject(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
+            out = original(ctx, args)
+            if "task-new" not in board_code._run_index(self.table):  # noqa: SLF001
+                board_code._put_run(  # noqa: SLF001
+                    self.table,
+                    "task-new",
+                    {"taskId": "task-new", "prNumber": 8, "issue": 43, "kind": "feature"},
+                )
+            return out
+
+        with patch.object(board_code, "op_get_run", side_effect=inject):
+            board_code.poll_runs(self.table, self.settings)
+        self.assertNotIn("task-1", board_code._run_index(self.table))  # noqa: SLF001
+        self.assertIn("task-new", board_code._run_index(self.table))  # noqa: SLF001
+
+    def test_ensure_run_for_pr_reuses_pruned_row(self) -> None:
+        board_code._put_run(  # noqa: SLF001
+            self.table,
+            "task-1",
+            {
+                "taskId": "task-1",
+                "prNumber": 7,
+                "issue": 42,
+                "kind": "fix",
+                "brief": "Keep this brief",
+                "rounds": 3,
+                "dispatchRounds": 2,
+            },
+        )
+        board_code._save_run_index(self.table, [])  # noqa: SLF001
+        self.gh.prs.append(_pr())
+        source_id, row = board_code.ensure_run_for_pr(self.table, 7)
+        self.assertEqual(source_id, "task-1")
+        self.assertEqual(row.get("brief"), "Keep this brief")
+        self.assertEqual(row.get("rounds"), 3)
+        self.assertEqual(row.get("kind"), "fix")
+        self.assertIn("task-1", board_code._run_index(self.table))  # noqa: SLF001
+
     def test_get_run_prefers_pr_ci_pytest_failure_line(self) -> None:
         board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
         self.gh.prs.append(_pr())
@@ -834,6 +890,39 @@ class RunnerTests(BoardTestCase):
         self.gh.checks["abc123"] = [{"name": "Test Python", "status": "completed", "conclusion": "failure"}]
         out = board_code.op_get_run(self.ctx, {"taskId": "task-1"})
         self.assertIn("FAILED backend/test_admin_imports.py", out["failureLine"])
+        logs_after_first = len(self.gh.logAccepts)
+        again = board_code.op_get_run(self.ctx, {"taskId": "task-1"})
+        self.assertIn("FAILED backend/test_admin_imports.py", again["failureLine"])
+        self.assertEqual(len(self.gh.logAccepts), logs_after_first)
+
+    def test_get_run_does_not_use_board_agent_line_when_ci_failed(self) -> None:
+        board_code.op_run_task(self.ctx, {"issueNumber": 42, "brief": "Add the booking form.", "kind": "feature"})
+        self.gh.prs.append(_pr())
+        self.gh.runs.append(
+            {
+                "id": 99,
+                "name": "board-agent task-1",
+                "status": "completed",
+                "conclusion": "failure",
+            }
+        )
+        self.gh.jobs[99] = [{"id": 7, "conclusion": "failure", "name": "Commit and draft PR"}]
+        self.gh.job_logs[7] = "No changes from staging; skip repo tests\n##[error]Process completed"
+        self.gh.runs.append(
+            {
+                "id": 100,
+                "name": "CI",
+                "path": ".github/workflows/ci.yml",
+                "head_sha": "abc123",
+                "status": "completed",
+                "conclusion": "failure",
+            }
+        )
+        self.gh.jobs[100] = [{"id": 8, "conclusion": "failure", "name": "Typecheck"}]
+        self.gh.job_logs[8] = "error TS2304: Cannot find name 'foo'.\n"
+        self.gh.checks["abc123"] = [{"name": "Typecheck", "status": "completed", "conclusion": "failure"}]
+        out = board_code.op_get_run(self.ctx, {"taskId": "task-1"})
+        self.assertNotIn("No changes from staging", out.get("failureLine") or "")
 
     def test_merge_merged_pr_is_refused_not_approval(self) -> None:
         self.gh.prs.append({**_pr(), "merged": True, "merged_at": "2026-09-15T10:09:28Z", "state": "closed"})

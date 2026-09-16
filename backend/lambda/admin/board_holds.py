@@ -347,6 +347,8 @@ def _execute_one(table: Any, settings: dict[str, Any], hold: dict[str, Any]) -> 
             _finish_hold(table, hold, "failed", now, error="thread changed")
             return True
     if str(hold.get("op") or "") == "code_merge_staging":
+        # execute_call also fails the hold via act_guard. Pre-check so the
+        # stored error is the explicit "already merged" / "not open" text.
         try:
             import board_code
 

@@ -362,9 +362,13 @@ class BoundarySuggestionTests(BoardTestCase):
     def test_ineligible_boundary_suggestion_is_dropped(self) -> None:
         out = board_duties.validate_boundary_suggestions(
             self.table,
-            [{"classKey": "publish:facebook", "change": "promote to 0 hours", "evidence": "Meta is blocking launch"}],
+            [
+                {"classKey": "publish:facebook", "change": "promote to 0 hours", "evidence": "Meta is blocking launch"},
+                {"classKey": "publish:facebook", "change": "lengthen to 24h", "evidence": "two vetoes this week"},
+            ],
         )
-        self.assertEqual(out, [])
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["change"], "lengthen to 24h")
 
     def test_standup_suggestions_prepend_review_ramp_rows(self) -> None:
         board_store.put_cache(

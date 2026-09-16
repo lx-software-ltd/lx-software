@@ -274,6 +274,7 @@ def render_seat_prompt(
         "If the brief needs a tool you were not offered, call task_request_help once instead of "
         "finishing unable to verify. "
         "Do not call task_finish without evidence tool calls unless the brief needs none. "
+        "task_note call ids are not evidence. "
         "Do not loop asking for tools that were not offered. "
         "Do not call task_finish with placeholder brackets such as [Insert …]."
     )
@@ -338,7 +339,7 @@ def render_task_frame(task: dict[str, Any], scratchpad: str, *, help_available: 
         "instead of looping. "
         "Do not call task_finish without evidence tool calls unless the brief needs none. "
         "Each successful tool result includes callId; pass those callId values in task_finish evidence "
-        "(not the model's tool_call_id). "
+        "(not the model's tool_call_id, and not task_note call ids). "
         "Do not call task_finish with placeholder brackets such as [Insert …]; write verified "
         "figures or write unavailable and why."
     )

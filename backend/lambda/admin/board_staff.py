@@ -868,7 +868,10 @@ def _same_as_previous_step(table: Any, task_id: str, calls: list[dict[str, Any]]
 
 
 def _repeats_within_step(calls: list[dict[str, Any]]) -> bool:
-    """True when one step polls the same op+args two or more times."""
+    """True when one step polls the same op+args two or more times.
+
+    Conservative: a mixed step (poll plus a different read) is not idle.
+    """
     productive = _productive_calls(calls)
     if len(productive) < 2:
         return False
@@ -975,10 +978,12 @@ def _salvage_to_review(table: Any, latest: dict[str, Any], reason: str, note: st
     latest["updatedAt"] = now
     _align_step_claim(latest)
     last = latest.get("lastReview") or {}
-    if str(last.get("verdict") or "") == "return":
+    if _review_is_current_return(latest, last):
         latest["status"] = "needs_owner"
         latest["finishedAt"] = None
-        latest["openQuestions"] = [f"Salvaged after {reason}; manager already returned this work."]
+        question = f"Salvaged after {reason}; manager already returned this work."
+        latest["openQuestions"] = [question]
+        _stamp_parked(latest, reason=question)
         board_store.put_task(table, latest)
         _note_parent_if_child_needs_owner(table, latest)
         _log_event("warning", tag="board_staff_salvaged_after_return", taskId=task_id, reason=reason[:200], chars=len(text))
@@ -991,6 +996,19 @@ def _salvage_to_review(table: Any, latest: dict[str, Any], reason: str, note: st
             fallback=run_review,
         )
     _log_event("warning", tag="board_staff_salvaged", taskId=task_id, reason=reason[:200], chars=len(text))
+    return True
+
+
+def _review_is_current_return(task: dict[str, Any], last: dict[str, Any]) -> bool:
+    """True when ``lastReview`` is a return from this attempt, not a prior retry."""
+    if str(last.get("verdict") or "") != "return":
+        return False
+    retried = str(task.get("retriedAt") or "")
+    reviewed = str(last.get("at") or "")
+    if retried and reviewed and reviewed < retried:
+        return False
+    if retried and not reviewed:
+        return False
     return True
 
 
@@ -1253,62 +1271,55 @@ def _is_idle_evidence_call(call: dict[str, Any]) -> bool:
     return str(call.get("op") or "") in _IDLE_TOOL_OPS
 
 
-def _idle_evidence_ids(table: Any, task: dict[str, Any]) -> set[str]:
+def _evidence_catalog(
+    table: Any, task: dict[str, Any]
+) -> tuple[set[str], dict[str, str], dict[str, str], set[str]]:
+    """Return (known ids, alias→canonical, canonical→op, idle aliases) in one scan."""
+    known: set[str] = set()
+    alias_to_id: dict[str, str] = {}
+    id_to_op: dict[str, str] = {}
     idle: set[str] = set()
     for tid in _evidence_task_ids(task):
         for call in board_store.list_tool_calls_for_task(table, tid):
+            aliases = _call_evidence_aliases(call)
             if _is_idle_evidence_call(call):
-                idle.update(_call_evidence_aliases(call))
-    return idle
-
-
-def _known_evidence_ids(table: Any, task: dict[str, Any]) -> set[str]:
-    known: set[str] = set()
-    idle = _idle_evidence_ids(table, task)
-    for tid in _evidence_task_ids(task):
-        for call in board_store.list_tool_calls_for_task(table, tid):
-            if _is_idle_evidence_call(call):
+                idle.update(aliases)
                 continue
-            known.update(_call_evidence_aliases(call))
-        for step in board_store.list_task_steps(table, tid):
-            for cid in step.get("callIds") or []:
-                value = str(cid or "")
-                if value and value not in idle:
-                    known.add(value)
-    return known
-
-
-def _cited_evidence_ops(table: Any, task: dict[str, Any], evidence: list[str]) -> set[str]:
-    wanted = set(evidence)
-    ops: set[str] = set()
-    for tid in _evidence_task_ids(task):
-        for call in board_store.list_tool_calls_for_task(table, tid):
-            if _is_idle_evidence_call(call):
-                continue
-            if wanted & _call_evidence_aliases(call):
+            known.update(aliases)
+            cid = str(call.get("callId") or "").strip()
+            if cid:
+                for alias in aliases:
+                    alias_to_id.setdefault(alias, cid)
                 op = str(call.get("op") or "")
                 if op:
-                    ops.add(op)
-    return ops
-
-
-def _canonical_evidence_ids(table: Any, task: dict[str, Any], evidence: list[str]) -> list[str]:
-    alias_to_id: dict[str, str] = {}
-    idle = _idle_evidence_ids(table, task)
-    for tid in _evidence_task_ids(task):
-        for call in board_store.list_tool_calls_for_task(table, tid):
-            if _is_idle_evidence_call(call):
-                continue
-            cid = str(call.get("callId") or "").strip()
-            if not cid:
-                continue
-            for alias in _call_evidence_aliases(call):
-                alias_to_id.setdefault(alias, cid)
+                    id_to_op[cid] = op
         for step in board_store.list_task_steps(table, tid):
             for cid in step.get("callIds") or []:
                 value = str(cid or "").strip()
                 if value and value not in idle:
+                    known.add(value)
                     alias_to_id.setdefault(value, value)
+    return known, alias_to_id, id_to_op, idle
+
+
+def _known_evidence_ids(table: Any, task: dict[str, Any]) -> set[str]:
+    known, _, _, _ = _evidence_catalog(table, task)
+    return known
+
+
+def _cited_evidence_ops(table: Any, task: dict[str, Any], evidence: list[str]) -> set[str]:
+    _, alias_to_id, id_to_op, _ = _evidence_catalog(table, task)
+    ops: set[str] = set()
+    for raw in evidence:
+        cid = alias_to_id.get(str(raw), str(raw))
+        op = id_to_op.get(cid)
+        if op:
+            ops.add(op)
+    return ops
+
+
+def _canonical_evidence_ids(table: Any, task: dict[str, Any], evidence: list[str]) -> list[str]:
+    _, alias_to_id, _, _ = _evidence_catalog(table, task)
     out: list[str] = []
     seen: set[str] = set()
     for raw in evidence:
@@ -2228,13 +2239,24 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
     if status_arg == "blocked":
         return _finish_blocked(ctx, task, args, deliverable)
     evidence = [str(x) for x in (args.get("evidence") or []) if isinstance(x, (str, int))]
-    known = _known_evidence_ids(ctx.table, task)
+    known, alias_to_id, id_to_op, idle = _evidence_catalog(ctx.table, task)
     attempt = _task_attempt(task)
-    evidence = _canonical_evidence_ids(ctx.table, task, [e for e in evidence if e in known])
+    if evidence and not any(item in known for item in evidence) and any(item in idle for item in evidence):
+        raise StaffError("task_note call ids are not evidence; cite a read or write tool call")
+    canonical: list[str] = []
+    seen_ids: set[str] = set()
+    for raw in evidence:
+        if raw not in known:
+            continue
+        cid = alias_to_id.get(raw) or raw
+        if cid not in seen_ids:
+            canonical.append(cid)
+            seen_ids.add(cid)
+    evidence = canonical
     needed = _brief_required_evidence_tools(
         str(task.get("brief") or ""), offered=_offered_evidence_ops(ctx, task)
     )
-    cited = _cited_evidence_ops(ctx.table, task, evidence)
+    cited = {id_to_op[cid] for cid in evidence if cid in id_to_op}
     missing = [tool for tool in needed if tool not in cited]
     if missing:
         borrowed = bool(task.get("helpTaskIds"))
@@ -2688,6 +2710,7 @@ def retry_task(table: Any, settings: dict[str, Any], task_id: str, by_sub: str) 
     task["startedAt"] = None
     task["reviewRetried"] = False
     task["stuckRetried"] = False
+    task["lastReview"] = None
     task.pop("stepClaimed", None)
     task.pop("stepClaimedAt", None)
     task["updatedAt"] = now

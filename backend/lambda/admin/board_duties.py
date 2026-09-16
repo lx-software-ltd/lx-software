@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -17,6 +18,7 @@ from contract_constants import (
 from http_common import _log_event
 
 DOW = {"MON": 0, "TUE": 1, "WED": 2, "THU": 3, "FRI": 4, "SAT": 5, "SUN": 6}
+_PROMOTE_CHANGE_RE = re.compile(r"\bpromote\b|0\s*hours?|\b0h\b|shorten|reduce\s+hold", re.I)
 
 
 class DutyError(ValueError):
@@ -548,6 +550,10 @@ def _maybe_task(
     return True
 
 
+def _is_promotion_change(change: str) -> bool:
+    return bool(_PROMOTE_CHANGE_RE.search(change or ""))
+
+
 def validate_boundary_suggestions(table: Any, raw: Any) -> list[dict[str, Any]]:
     if not isinstance(raw, list):
         return []
@@ -569,7 +575,7 @@ def validate_boundary_suggestions(table: Any, raw: Any) -> list[dict[str, Any]]:
             ramp = board_holds.ramp_state(table, class_key)
         except Exception:
             ramp = {}
-        if ramp.get("eligibleForPromotion") is False:
+        if ramp.get("eligibleForPromotion") is False and _is_promotion_change(str(row.get("change") or "")):
             continue
         out.append(
             {
