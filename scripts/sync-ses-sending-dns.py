@@ -194,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
             f"ses:GetEmailIdentity denied or failed for {args.domain}: {exc}\n"
             "Grant cursor-cloud-agent (or this principal) ses:GetEmailIdentity on "
             f"arn:aws:ses:{args.region}:*:identity/{args.domain}. "
-            "See docs/deployment/cloud-agent-iam.md.",
+            "See docs/deployment/admin-website.md (Read-only debugging identity).",
             file=sys.stderr,
         )
         return 1

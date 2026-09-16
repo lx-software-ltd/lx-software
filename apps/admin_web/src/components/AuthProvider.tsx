@@ -115,7 +115,7 @@ export function AuthProvider({ children }: { readonly children: ReactNode }) {
       /**
        * Cognito /logout ends the Cognito session only. Google may still have an
        * active browser session, so the next “Sign in with Google” can be silent.
-       * See docs/architecture/admin-security.md.
+       * See docs/architecture/security.md.
        */
       window.location.href = logoutUrl.toString();
     })();

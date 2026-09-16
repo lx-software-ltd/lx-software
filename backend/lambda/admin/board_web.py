@@ -9,7 +9,7 @@ account — not the Play publisher key.
 T8c will add ``gtm_propose_publish`` (always Approvals). Google Ads is a
 separate ``ads`` tool (T8b).
 
-Plan: docs/architecture/executive-board-tools-plan.md §5.8.
+See docs/architecture/executive-board.md §6 (Connectors).
 """
 
 from __future__ import annotations

@@ -19,7 +19,7 @@ App Store Connect JWTs are ES256, signed in this Lambda from the
 ``AppStoreConnectKey`` secret. Play uses a service-account JWT exchanged
 for an access token.
 
-Plan: docs/architecture/executive-board-tools-plan.md §4 ``stores``.
+See docs/architecture/executive-board.md §6 (Connectors, ``stores``).
 """
 
 from __future__ import annotations

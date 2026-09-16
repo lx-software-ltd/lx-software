@@ -1,6 +1,6 @@
 """Hold windows: classify write ops, schedule, execute, veto.
 
-See docs/architecture/executive-board-autonomy-implementation.md WP2.
+See docs/architecture/executive-board.md §8.1 (Action classes and holds).
 """
 
 from __future__ import annotations
