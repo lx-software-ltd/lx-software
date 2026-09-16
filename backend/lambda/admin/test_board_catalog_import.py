@@ -1,4 +1,4 @@
-"""Unit tests for catalog sheet → importer JSON (Option A)."""
+"""Unit tests for catalog sheet → importer JSON."""
 
 from __future__ import annotations
 
