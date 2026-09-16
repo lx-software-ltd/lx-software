@@ -75,7 +75,6 @@ from finance_store import (
     _enrich_scan_items_asset_meta,
 )
 from http_common import (
-    _api_key_auth_context,
     _audit,
     _claims,
     _decode_cursor,
@@ -83,6 +82,7 @@ from http_common import (
     _json_response,
     _log_event,
     _parse_json_body,
+    _public_authorizer_context,
     _require_admin,
     _request_id,
     _route,
@@ -225,7 +225,7 @@ def _handle_public(
     owner-only (settings, boundaries, tools, approvals, promote, selftest,
     chat delete, meeting/task cancel, staff tick, ramp pause).
     """
-    key_ctx = _api_key_auth_context(event)
+    key_ctx = _public_authorizer_context(event)
     key_id = key_ctx.get("keyId")
     scopes = board_public_api_mod.scopes_from_key_context(key_ctx)
     if not key_id or not scopes:

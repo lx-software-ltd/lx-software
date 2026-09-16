@@ -66,6 +66,7 @@ from handler import (  # noqa: E402
     _utc_iso_z,
 )
 from dispatch import lambda_handler  # noqa: E402
+from http_common import _public_authorizer_context  # noqa: E402
 
 
 class TestNormalizePublicAssetKey(unittest.TestCase):
@@ -2229,6 +2230,20 @@ class TestParseFinanceQuotesQuery(unittest.TestCase):
     def test_rejects_too_long_symbol(self) -> None:
         out = _parse_finance_quotes_query({"symbols": "X" * 64})
         self.assertIsInstance(out, str)
+
+
+class TestPublicAuthorizerContext(unittest.TestCase):
+    def test_reads_lambda_authorizer_map(self) -> None:
+        ctx = {"keyId": "k123", "scopes": "finance"}
+        event = {"requestContext": {"authorizer": {"lambda": ctx}}}
+        self.assertEqual(_public_authorizer_context(event), ctx)
+
+    def test_empty_without_lambda_authorizer(self) -> None:
+        self.assertEqual(_public_authorizer_context({}), {})
+        self.assertEqual(
+            _public_authorizer_context({"requestContext": {"authorizer": {"jwt": {}}}}),
+            {},
+        )
 
 
 class TestPublicReadRoutes(unittest.TestCase):
