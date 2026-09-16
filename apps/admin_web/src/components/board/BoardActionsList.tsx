@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { DateTimeDisplay, TableIconButton } from "../ui";
+import { BoardCopyableId } from "./BoardCopyableId";
 import { BoardNewTaskForm } from "./BoardNewTaskForm";
 import {
   actionAssigneeLabel,
@@ -84,6 +85,7 @@ export function BoardActionsList({
                 {PRIORITY_LABELS[a.priority] ?? a.priority}
               </span>
               <span className="badge text-bg-light border">{a.effort}</span>
+              <BoardCopyableId id={a.actionId} noun="Action" full />
               <span className={`fw-semibold ${a.status !== "open" ? "text-decoration-line-through text-muted" : ""}`}>
                 {a.title}
               </span>
