@@ -806,6 +806,17 @@ export type BoardRepoSnapshotMeta = {
   readonly chars: number;
 };
 
+export type BoardOutreachIdentity = {
+  readonly domain: string;
+  readonly fromAddress?: string;
+  readonly identityVerified: boolean | null;
+  readonly dkimStatus: string | null;
+  readonly dkimRecords: readonly { readonly name: string; readonly value: string }[];
+  readonly mailFromDomain: string | null;
+  readonly mailFromStatus: string | null;
+  readonly errors: readonly string[];
+};
+
 export type BoardOverview = {
   readonly settings: BoardSettings;
   readonly charter: BoardCharter;
@@ -826,6 +837,7 @@ export type BoardOverview = {
   readonly unreadMailCount: number;
   readonly overdueInvoiceCount?: number;
   readonly mail: BoardMailStatus;
+  readonly outreachIdentity?: BoardOutreachIdentity;
   readonly receivables?: { readonly outstandingHkd?: number; readonly overdue?: number };
 };
 
@@ -1662,6 +1674,7 @@ export type BoardOutreachStats = {
   readonly dailyCap?: number;
   readonly capRaisedAt?: string;
   readonly identityVerified?: boolean;
+  readonly identity?: BoardOutreachIdentity;
   readonly breaker?: { readonly name?: string; readonly tripped?: boolean; readonly reason?: string };
   readonly history?: readonly { readonly date: string; readonly sent?: number; readonly bounces?: number; readonly complaints?: number }[];
 };

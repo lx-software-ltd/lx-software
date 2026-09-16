@@ -1354,7 +1354,7 @@ export class LxsoftwareStack extends cdk.Stack {
         reportBatchItemFailures: true,
       })
     );
-    new ses.CfnEmailIdentity(this, "SiutindeiOutreachSendingIdentity", {
+    const outreachSendingIdentity = new ses.CfnEmailIdentity(this, "SiutindeiOutreachSendingIdentity", {
       emailIdentity: outreachSendingDomain.valueAsString,
       dkimAttributes: { signingEnabled: true },
       mailFromAttributes: {
@@ -2893,6 +2893,16 @@ export class LxsoftwareStack extends cdk.Stack {
         description: `DKIM CNAME ${n} of 3 to add to the SiutindeiBoardMailDomain zone (name CNAME value).`,
       });
       output.condition = hasBoardMailSending;
+    }
+
+    for (const n of [1, 2, 3] as const) {
+      new cdk.CfnOutput(this, `SiutindeiOutreachDkimCname${n}`, {
+        value: cdk.Fn.join(" CNAME ", [
+          outreachSendingIdentity.getAtt(`DkimDNSTokenName${n}`).toString(),
+          outreachSendingIdentity.getAtt(`DkimDNSTokenValue${n}`).toString(),
+        ]),
+        description: `DKIM CNAME ${n} of 3 to add to the SiutindeiBoardOutreachSendingDomain zone (name CNAME value). DNS-only; after FAILED, retry SES then run scripts/sync-ses-sending-dns.py.`,
+      });
     }
 
     new cdk.CfnOutput(this, "EnableBankingSigningKeyId", {

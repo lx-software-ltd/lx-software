@@ -32,7 +32,17 @@ class FakeSes:
         return {"MessageId": "ses-msg-1"}
 
     def get_email_identity(self, **kwargs: Any) -> dict[str, Any]:
-        return {"VerifiedForSendingStatus": self.verified}
+        return {
+            "VerifiedForSendingStatus": self.verified,
+            "DkimAttributes": {
+                "Status": "SUCCESS" if self.verified else "FAILED",
+                "Tokens": ["aaa111", "bbb222", "ccc333"],
+            },
+            "MailFromAttributes": {
+                "MailFromDomain": "mail.partners.siutindei.com",
+                "MailFromDomainStatus": "SUCCESS" if self.verified else "FAILED",
+            },
+        }
 
 
 def _enable_staff(table: Any) -> dict[str, Any]:
@@ -346,6 +356,29 @@ class OutreachTests(BoardTestCase):
         raw_text = raw.decode("utf-8", errors="replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
         self.assertIn("https://", raw_text)
         self.assertNotIn("mailto:", raw_text)
+
+    def test_identity_health_lists_current_dkim_records(self) -> None:
+        os.environ.pop("OUTREACH_IDENTITY_VERIFIED", None)
+        board_outreach.reset_caches_for_tests()
+        self.ses.verified = False
+        health = board_outreach.identity_health(force=True)
+        self.assertEqual(health["domain"], "partners.siutindei.com")
+        self.assertFalse(health["identityVerified"])
+        self.assertEqual(health["dkimStatus"], "FAILED")
+        self.assertEqual(
+            [row["name"] for row in health["dkimRecords"]],
+            [
+                "aaa111._domainkey.partners.siutindei.com",
+                "bbb222._domainkey.partners.siutindei.com",
+                "ccc333._domainkey.partners.siutindei.com",
+            ],
+        )
+        self.assertEqual(health["mailFromDomain"], "mail.partners.siutindei.com")
+        stats = board_outreach.stats(self.table, self.settings, days=7)
+        self.assertEqual(stats["identity"]["dkimStatus"], "FAILED")
+        status, body = self.call("/siu-tin-dei/board/outreach/identity")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["dkimStatus"], "FAILED")
 
     def test_classify_outreach_send(self) -> None:
         row = _prospect(self.table)

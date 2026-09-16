@@ -907,7 +907,7 @@ route to `provider-success`; suppression and compliance are enforced in
 code; the pipeline stays above target.
 
 **Prerequisites (owner tasks before enabling, listed in the deployment doc).**
-DNS for `partners.siutindei.com` (SES DKIM CNAMEs, MAIL FROM MX+TXT, DMARC
+DNS for `partners.siutindei.com` (SES DKIM CNAMEs from `SiutindeiOutreachDkimCnameN` or `scripts/sync-ses-sending-dns.py`, MAIL FROM MX+TXT, DMARC
 TXT `v=DMARC1; p=quarantine; rua=mailto:dmarc@siutindei.com`); a Google
 Cloud project with Places API (New) enabled, billing, a key restricted to
 Places API, stored in the secret; SES production access (verify the

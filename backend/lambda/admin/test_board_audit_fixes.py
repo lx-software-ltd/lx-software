@@ -965,6 +965,7 @@ class CodeImplementHandoffTests(BoardTestCase):
         latest = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(latest["status"], "running")
         self.assertFalse(latest.get("expiresAt"))
+        self.assertNotIn("code_runner_dispatched", latest.get("flags") or [])
 
 
 class ApprovalAndCallIdTests(BoardTestCase):
