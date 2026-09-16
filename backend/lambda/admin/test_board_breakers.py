@@ -267,6 +267,40 @@ class BreakerRuleTests(BoardTestCase):
         updates = board_store.list_updates(self.table)
         self.assertTrue(any("BREAKER tool:mail" in str(u.get("text") or "") for u in updates))
 
+    def test_parse_iso_accepts_now_iso_milliseconds(self) -> None:
+        parsed = board_breakers._parse_iso(board_store.now_iso())  # noqa: SLF001
+        self.assertIsNotNone(parsed)
+        self.assertIsNotNone(board_breakers._parse_iso("2026-09-16T02:23:30.153Z"))  # noqa: SLF001
+
+    def test_auto_reset_parses_millisecond_tripped_at(self) -> None:
+        board_breakers.trip(self.table, "tool:research", "11 errors in the last hour")
+        row = board_store.get_breaker(self.table, "tool:research")
+        self.assertRegex(str(row.get("trippedAt") or ""), r"\.\d{3}Z$")
+        row["trippedAt"] = (datetime.now(timezone.utc) - timedelta(minutes=31)).strftime(
+            "%Y-%m-%dT%H:%M:%S.%f"
+        )[:-3] + "Z"
+        board_store.put_breaker(self.table, "tool:research", row)
+        board_breakers.evaluate(self.table, self.settings)
+        self.assertFalse(board_breakers.is_tripped(self.table, "tool:research"))
+
+    def test_fetch_cap_errors_do_not_trip_research(self) -> None:
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for i in range(12):
+            board_store.add_tool_call(
+                self.table,
+                {
+                    "callId": f"cap-{i}",
+                    "op": "research_fetch_page",
+                    "toolId": "research",
+                    "status": "error",
+                    "resultPreview": '{"error": "per-task fetch cap (6) reached"}',
+                    "createdAt": now,
+                },
+            )
+        tripped = board_breakers.evaluate(self.table, self.settings)
+        self.assertNotIn("tool:research", tripped)
+        self.assertFalse(board_breakers.is_tripped(self.table, "tool:research"))
+
 
 class BreakerExecuteCallTests(ToolsTestCase):
     def setUp(self) -> None:
