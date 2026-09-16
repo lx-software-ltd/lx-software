@@ -46,6 +46,22 @@ const baseProps = {
   onOpenMeeting: vi.fn(),
 };
 
+describe("BoardActionsList ids", () => {
+  it("shows the action id with the other row fields", () => {
+    render(<BoardActionsList {...baseProps} actions={[action()]} />);
+    expect(screen.getByLabelText("Action a1")).toHaveTextContent("a1");
+    expect(screen.getByText("Call 10 activity providers")).toBeInTheDocument();
+    expect(screen.getByText("M")).toBeInTheDocument();
+    expect(screen.getByText("10 calls booked")).toBeInTheDocument();
+  });
+
+  it("shows the full action id rather than a shortened prefix", () => {
+    const actionId = "a1b2c3d4e5f6789012345678abcdef01";
+    render(<BoardActionsList {...baseProps} actions={[action({ actionId })]} />);
+    expect(screen.getByLabelText(`Action ${actionId}`)).toHaveTextContent(actionId);
+  });
+});
+
 describe("BoardActionsList staff hand-off", () => {
   it("hides the control when staff is off", () => {
     render(<BoardActionsList {...baseProps} actions={[action()]} seats={[prospector]} isStaffEnabled={false} onAssignToStaff={vi.fn()} />);
