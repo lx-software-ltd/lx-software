@@ -6,6 +6,7 @@
 import type { AdminAssetMeta } from "../../hooks/useAdminAssets";
 import type { BankSyncState } from "../bankSyncModel";
 import {
+  BOARD_CODE_CI_FIX_MAX_ROUNDS,
   BOARD_PERSONA_DEFAULTS,
   BOARD_STAFF_SEAT_DEFAULTS,
   BOARD_TOOL_DEFINITIONS,
@@ -703,6 +704,19 @@ export const boardReviewFixture: BoardReviewSnapshot = {
     latestBrief: { taskId: "task-review", status: "review", summary: "Weekly market brief", createdAt: isoDaysAgo(0) },
   },
   promotion: [],
+  engineering: [
+    {
+      taskId: "task-ci",
+      prNumber: 501,
+      ciState: "failure",
+      ciFixRounds: 1,
+      ciFixMax: BOARD_CODE_CI_FIX_MAX_ROUNDS,
+      reviewRounds: 0,
+      reviewMax: 3,
+      failureLine: "unknown area_name",
+      canRevise: false,
+    },
+  ],
   configGaps: [
     {
       gapId: "weekly-attribution",

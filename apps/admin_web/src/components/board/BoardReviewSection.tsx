@@ -4,6 +4,7 @@ import type { BoardContentItem, BoardReviewSnapshot } from "../../lib/boardModel
 import { BoardHoldsList } from "./BoardHoldsList";
 import { useBoardContent } from "../../hooks/useBoardContent";
 import { useBoardHolds } from "../../hooks/useBoardHolds";
+import { BOARD_CODE_CI_FIX_MAX_ROUNDS } from "../../lib/contracts/generated";
 import { useBoardReview } from "../../hooks/useBoardReview";
 
 function errorText(err: unknown): string | null {
@@ -345,6 +346,29 @@ export function BoardReviewSection() {
               <li key={`${row.gapId || "gap"}-${row.week || row.at || ""}`} className="border-bottom py-2">
                 <div className="small fw-semibold">{row.gapId}</div>
                 <div className="small">{row.reason}</div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      <Section id="engineering" title="Engineering">
+        {(review.engineering ?? []).length === 0 ? (
+          <p className="text-muted small mb-0">No open board pull requests.</p>
+        ) : (
+          <ul className="list-unstyled mb-0">
+            {(review.engineering ?? []).map((row) => (
+              <li key={`${row.taskId || "run"}-${row.prNumber || ""}`} className="border-bottom py-2">
+                <div className="small fw-semibold">
+                  PR #{row.prNumber} CI {row.ciState || "unknown"}
+                  {row.ciState === "failure"
+                    ? ` (ci-fix ${row.ciFixRounds ?? 0}/${row.ciFixMax ?? BOARD_CODE_CI_FIX_MAX_ROUNDS})`
+                    : ""}
+                </div>
+                {row.failureLine ? <div className="small">{row.failureLine}</div> : null}
+                {row.canRevise === false ? (
+                  <div className="small text-muted">Runner cannot revise — apply the Appendix A revision patch.</div>
+                ) : null}
               </li>
             ))}
           </ul>

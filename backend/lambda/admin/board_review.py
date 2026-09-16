@@ -12,7 +12,11 @@ import board_hk
 import board_mail
 import board_staff
 import board_store
-from contract_constants import BOARD_STAFF_REVIEW_SAMPLE_SIZE, BOARD_STAFF_TASK_STATUSES
+from contract_constants import (
+    BOARD_CODE_CI_FIX_MAX_ROUNDS,
+    BOARD_STAFF_REVIEW_SAMPLE_SIZE,
+    BOARD_STAFF_TASK_STATUSES,
+)
 from http_common import _log_event
 
 SECTION_IDS = (
@@ -25,6 +29,7 @@ SECTION_IDS = (
     "breakers",
     "suggestions",
     "configGaps",
+    "engineering",
     "promotion",
 )
 
@@ -41,6 +46,7 @@ SECTION_LABELS = {
     "breakers": "Tripped breakers",
     "suggestions": "Boundary suggestions",
     "configGaps": "Unconfigured integrations",
+    "engineering": "Engineering",
     "promotion": "Production promotion",
 }
 
@@ -351,6 +357,7 @@ def compile(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, An
         "assisted": _assisted_section(table, settings),
         "market": _market_section(table),
         "configGaps": _config_gaps_section(table),
+        "engineering": _engineering_section(table),
         "promotion": _cached_promotion(table),
     }
     doc["digestHtml"] = render_digest_html(doc)
@@ -506,6 +513,42 @@ def _config_gap_lines(review: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _engineering_section(table: Any) -> list[dict[str, Any]]:
+    """Table-only open runner rows. Never fetch GitHub from compile."""
+    try:
+        import board_code
+
+        return board_code.list_open_run_summaries(table)
+    except Exception:
+        return []
+
+
+def _engineering_lines(review: dict[str, Any]) -> list[str]:
+    rows = [row for row in _as_list(review.get("engineering")) if isinstance(row, dict)]
+    if not rows:
+        return ["No open board pull requests."]
+    lines: list[str] = []
+    for row in rows[:DIGEST_LIST_LIMIT]:
+        pr = row.get("prNumber")
+        ci = str(row.get("ciState") or "unknown")
+        line = f"PR #{pr} CI {ci}"
+        if ci == "failure":
+            fail = _clip(row.get("failureLine") or "", 160)
+            if fail:
+                line = f"{line}: {fail}"
+            line = (
+                f"{line} (ci-fix {row.get('ciFixRounds') or 0}/"
+                f"{row.get('ciFixMax') or BOARD_CODE_CI_FIX_MAX_ROUNDS})"
+            )
+        can = row.get("canRevise")
+        if can is False:
+            line = f"{line} — runner cannot revise (Appendix A patch)."
+        elif can is None:
+            line = f"{line} — revise capability not cached yet."
+        lines.append(line)
+    return lines
+
+
 def _promotion_lines(review: dict[str, Any]) -> list[str]:
     promo = review.get("promotion")
     if isinstance(promo, list):
@@ -562,6 +605,7 @@ def digest_section_lines(review: dict[str, Any]) -> list[tuple[str, str, list[st
         ("breakers", SECTION_LABELS["breakers"], breakers or ["None tripped."]),
         ("suggestions", SECTION_LABELS["suggestions"], suggestions or ["No class is eligible to drop its hold yet."]),
         ("configGaps", SECTION_LABELS["configGaps"], _config_gap_lines(review)),
+        ("engineering", SECTION_LABELS["engineering"], _engineering_lines(review)),
         ("promotion", SECTION_LABELS["promotion"], _promotion_lines(review)),
     ]
 

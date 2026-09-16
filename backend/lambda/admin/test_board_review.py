@@ -47,6 +47,7 @@ class ReviewCompileTests(BoardTestCase):
             "market",
             "promotion",
             "configGaps",
+            "engineering",
             "narrative",
         ):
             self.assertIn(key, review)
@@ -60,6 +61,7 @@ class ReviewCompileTests(BoardTestCase):
         self.assertIn("digestHtml", review)
         self.assertIn("Headline numbers", review["digestHtml"])
         self.assertIn("Unconfigured integrations", review["digestHtml"])
+        self.assertIn("Engineering", review["digestHtml"])
         self.assertNotIn("section=review#", review["digestHtml"])
 
     def test_compile_uses_cached_staging_preview(self) -> None:
@@ -72,6 +74,25 @@ class ReviewCompileTests(BoardTestCase):
             review = board_review.compile(self.table, self.settings, board_hk.today_hkt())
         self.assertEqual(review["promotion"]["behindBy"], 12)
         self.assertIn("12 commit", review["digestHtml"])
+
+    def test_compile_engineering_uses_table_only_run_rows(self) -> None:
+        board_code._put_run(  # noqa: SLF001
+            self.table,
+            "task-1",
+            {
+                "taskId": "task-1",
+                "prNumber": 501,
+                "ciState": "failure",
+                "ciFixRounds": 1,
+                "failureLine": "unknown area_name",
+            },
+        )
+        board_store.put_cache(self.table, "code:runner-caps", {"revision": False}, ttl_seconds=3600)
+        with patch.object(board_github, "_request", side_effect=AssertionError("compile must not call GitHub")):
+            review = board_review.compile(self.table, self.settings, board_hk.today_hkt())
+        self.assertEqual(review["engineering"][0]["prNumber"], 501)
+        self.assertIn("PR #501", review["digestHtml"])
+        self.assertIn("cannot revise", review["digestHtml"])
 
     def test_sample_is_deterministic_under_seeded_rng(self) -> None:
         yesterday = board_hk.now_hkt() - timedelta(days=1)

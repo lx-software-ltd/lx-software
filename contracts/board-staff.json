@@ -405,6 +405,8 @@
     "holdCodeStagingHours": 12,
     "codeRunCooldownSeconds": 900,
     "codeRunMaxRounds": 2,
+    "codeReviewMaxRounds": 3,
+    "codeCiFixMaxRounds": 2,
     "holdSweepMinutes": 5,
     "tickIntervalMinutes": 5,
     "rampMinActions": 30,

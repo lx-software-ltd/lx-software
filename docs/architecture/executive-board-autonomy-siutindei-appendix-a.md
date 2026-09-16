@@ -20,14 +20,26 @@ Lockfile diffs (`package-lock.json`, `pubspec.lock`, `yarn.lock`, …)
 are excluded from the 400-line runner cap so Dependabot bumps can land.
 
 This admin repo cannot push to `lx-software-ltd/siutindei`. Apply the
-lockfile + `BOARD_PR_TOKEN` change set from
-[`siutindei-board-runner.patch`](siutindei-board-runner.patch):
+lockfile + `BOARD_PR_TOKEN` change set, then the revision-mode patch
+(a real unified diff against current `staging` `board-agent.yml`):
 
 ```
 git -C /path/to/siutindei apply /path/to/lx-software/docs/architecture/siutindei-board-runner.patch
+git -C /path/to/siutindei apply /path/to/lx-software/docs/architecture/siutindei-board-runner-revision.patch
 ```
 
-Then set the `BOARD_PR_TOKEN` repo secret.
+If the second apply fails against a drifted workflow, merge the revision
+inputs, `gh pr checkout`, Postgres Test Python, and no-force-push hunks
+by hand. Do not replace the live workflow with the simplified block
+below. Then set the `BOARD_PR_TOKEN` repo secret.
+
+The admin stack refuses `code_run_task` revisions until staging
+`board-agent.yml` declares `pr_number:` and `ci_failure:` inputs. Without
+that, a CI-red `board/*` PR cannot be patched in place — the runner always
+branches from `staging` and force-pushes. Owner-reopened revision tasks
+use the same path: they stay `CodeRefused` until the patch is on staging.
+An owner reopen clears the 1h runner-capability cache so a just-applied
+YAML change is seen on the next dispatch.
 
 ## Branch protection
 
@@ -55,6 +67,17 @@ on:
       kind:
         required: true
         type: string
+      pr_number:
+        required: false
+        type: string
+        description: Existing board/* PR to revise (do not start from staging)
+      ci_failure:
+        required: false
+        type: string
+        description: CI failure excerpt to fix
+      revision_round:
+        required: false
+        type: string
 permissions:
   contents: write
   pull-requests: write
@@ -63,15 +86,48 @@ jobs:
   run:
     timeout-minutes: 30
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: backend_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d backend_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/backend_test
+      TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/backend_test
     steps:
       - uses: actions/checkout@v4
         with:
           ref: staging
+          fetch-depth: 0
           token: ${{ secrets.BOARD_PR_TOKEN || secrets.GITHUB_TOKEN }}
       - name: Branch
-        run: git checkout -B "board/${{ inputs.task_id }}"
+        env:
+          GH_TOKEN: ${{ secrets.BOARD_PR_TOKEN || secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          TASK_ID: ${{ inputs.task_id }}
+        run: |
+          if [ -n "$PR_NUMBER" ]; then
+            gh pr checkout "$PR_NUMBER"
+          else
+            git checkout -B "board/${TASK_ID}"
+          fi
       - name: Write brief
-        run: printf '%s\n' "${{ inputs.brief }}" > brief.txt
+        env:
+          CI_FAILURE: ${{ inputs.ci_failure }}
+        run: |
+          printf '%s\n' "${{ inputs.brief }}" > brief.txt
+          if [ -n "$CI_FAILURE" ]; then
+            printf '\n\nCI failure:\n%s\n' "$CI_FAILURE" >> brief.txt
+          fi
       - name: Cursor agent
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
@@ -80,19 +136,40 @@ jobs:
           # If the CLI supports a token/turn budget flag at install time, set it.
           cursor-agent -p "$(cat brief.txt)" --model composer-2.5 --yolo
       - name: Test
-        run: # repo test command
+        run: |
+          set -euo pipefail
+          # Same suite as test.yml Test Python (Postgres + alembic). A red
+          # suite must fail this step so the runner does not push.
+          if git diff --quiet origin/staging -- \
+            && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+            echo "No changes from staging; skip repo tests"
+            exit 0
+          fi
+          if git diff --name-only origin/staging -- backend tests | grep -q .; then
+            python -m pip install --upgrade pip
+            python -m pip install -r backend/dev-requirements.txt
+            python -m alembic -c backend/db/alembic.ini upgrade head
+            python -m pytest tests backend --tb=short -q
+          else
+            echo "No backend/tests changes; Flutter and Node stay on PR CI."
+          fi
       - name: Commit and draft PR
         env:
           GH_TOKEN: ${{ secrets.BOARD_PR_TOKEN || secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          TASK_ID: ${{ inputs.task_id }}
+          ISSUE: ${{ inputs.issue }}
         run: |
           git add -A
-          git commit -m "board: #${{ inputs.issue }} $(head -n 1 brief.txt)" || true
-          git push -u origin "HEAD:board/${{ inputs.task_id }}"
-          gh pr create --draft --base staging \
-            --title "board: #${{ inputs.issue }} $(head -n 1 brief.txt)" \
-            --body "$(cat brief.txt)
+          git commit -m "board: #${ISSUE} $(head -n 1 brief.txt)" || true
+          git push -u origin HEAD
+          if [ -z "$PR_NUMBER" ]; then
+            gh pr create --draft --base staging \
+              --title "board: #${ISSUE} $(head -n 1 brief.txt)" \
+              --body "$(cat brief.txt)
 
-Task: ${{ inputs.task_id }}"
+Task: ${TASK_ID}"
+          fi
 ```
 
 Secrets on the runner: `CURSOR_API_KEY` plus `BOARD_PR_TOKEN` (falls back
