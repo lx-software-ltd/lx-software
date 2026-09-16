@@ -64,11 +64,15 @@ function StagingPromote({ data }: { readonly data: ReturnType<typeof useBoardRev
   const staging = data.staging;
   const commits = staging?.commits ?? [];
   const behind = staging?.behindBy ?? 0;
+  const ahead = staging?.aheadBy ?? 0;
   return (
     <div>
       {staging?.error ? <p className="text-danger small">{staging.error}</p> : null}
       {behind > 0 ? (
-        <p className="small text-warning">staging is {behind} commit(s) behind main. Rebase before promoting.</p>
+        <p className="small text-warning">
+          staging is {behind} commit(s) behind main
+          {ahead > 0 ? " and has commits of its own" : ""}. Merge main into staging before promoting.
+        </p>
       ) : null}
       {commits.length === 0 ? (
         <p className="text-muted small mb-2">No staging commits ahead of main.</p>
@@ -81,14 +85,36 @@ function StagingPromote({ data }: { readonly data: ReturnType<typeof useBoardRev
           ))}
         </ul>
       )}
-      <button
-        type="button"
-        className="btn btn-sm btn-primary"
-        disabled={data.promoteStaging.isPending || !staging?.canPromote}
-        onClick={() => data.promoteStaging.mutate()}
-      >
-        Promote
-      </button>
+      <div className="d-flex flex-wrap gap-2">
+        {behind > 0 ? (
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-primary"
+            disabled={data.syncStaging.isPending}
+            onClick={() => data.syncStaging.mutate()}
+          >
+            Sync from main
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="btn btn-sm btn-primary"
+          disabled={data.promoteStaging.isPending || !staging?.canPromote}
+          onClick={() => data.promoteStaging.mutate()}
+        >
+          Promote
+        </button>
+      </div>
+      {data.syncStaging.isSuccess ? (
+        <p className="small text-muted mt-2 mb-0">
+          {data.syncStaging.data?.alreadyCurrent
+            ? "Staging already matches main."
+            : "Merged main into staging."}
+        </p>
+      ) : null}
+      {data.syncStaging.isError ? (
+        <p className="small text-danger mt-2 mb-0">{errorText(data.syncStaging.error)}</p>
+      ) : null}
       {data.promoteStaging.isSuccess ? (
         <p className="small text-muted mt-2 mb-0">Queued an Approval. Confirm it under Approvals to open the staging→main PR.</p>
       ) : null}

@@ -272,6 +272,7 @@ class PublicBoardWriteTests(BoardTestCase):
         for path, method, body in (
             ("/public/siu-tin-dei/board/approvals/a1/approve", "POST", {"note": "ok"}),
             ("/public/siu-tin-dei/board/code/promote", "POST", {}),
+            ("/public/siu-tin-dei/board/code/sync-staging", "POST", {}),
             ("/public/siu-tin-dei/board/ramp/mail_reply/promote", "POST", {}),
             ("/public/siu-tin-dei/board/ramp/mail_reply/pause", "POST", {}),
             ("/public/siu-tin-dei/board/tools", "PUT", {"globalMode": "act"}),

@@ -1566,6 +1566,10 @@ export function boardCodePromotePath(): string {
   return `${BOARD_API_BASE}/code/promote`;
 }
 
+export function boardCodeSyncStagingPath(): string {
+  return `${BOARD_API_BASE}/code/sync-staging`;
+}
+
 export type BoardStagingPreview = {
   readonly status?: string;
   readonly behindBy?: number;
@@ -1574,6 +1578,15 @@ export type BoardStagingPreview = {
   readonly htmlUrl?: string;
   readonly error?: string;
   readonly commits?: readonly { readonly sha?: string; readonly message?: string }[];
+};
+
+export type BoardStagingSyncResult = {
+  readonly ok?: boolean;
+  readonly alreadyCurrent?: boolean;
+  readonly mergedSha?: string;
+  readonly before?: BoardStagingPreview;
+  readonly preview?: BoardStagingPreview;
+  readonly error?: string;
 };
 
 export type BoardContentItem = {

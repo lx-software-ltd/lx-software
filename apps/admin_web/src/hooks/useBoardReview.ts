@@ -10,6 +10,7 @@ import {
   boardRampPromotePath,
   boardCodePromotePath,
   boardCodeStagingPath,
+  boardCodeSyncStagingPath,
   boardReviewPath,
   boardReviewWrongPath,
   type BoardBreaker,
@@ -17,6 +18,7 @@ import {
   type BoardRampRow,
   type BoardReviewSnapshot,
   type BoardStagingPreview,
+  type BoardStagingSyncResult,
 } from "../lib/boardModel";
 import { BOARD_QUERY_KEY } from "./useBoard";
 import { BOARD_HOLDS_KEY } from "./useBoardHolds";
@@ -104,6 +106,21 @@ export function stagingPromoteMutationOptions(qc: QueryClient) {
   };
 }
 
+export function stagingSyncMutationOptions(qc: QueryClient) {
+  return {
+    mutationFn: async () => {
+      return adminFetchJson<BoardStagingSyncResult>(boardCodeSyncStagingPath(), {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: BOARD_STAGING_KEY });
+      void qc.invalidateQueries({ queryKey: BOARD_QUERY_KEY });
+    },
+  };
+}
+
 export function rampPromoteMutationOptions(qc: QueryClient) {
   return {
     mutationFn: async (classKey: string) => {
@@ -178,5 +195,6 @@ export function useBoardReview(enabled: boolean) {
     resetBreaker: useMutation(breakerResetMutationOptions(qc)),
     promote: useMutation(rampPromoteMutationOptions(qc)),
     promoteStaging: useMutation(stagingPromoteMutationOptions(qc)),
+    syncStaging: useMutation(stagingSyncMutationOptions(qc)),
   };
 }

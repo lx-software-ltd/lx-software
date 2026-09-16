@@ -957,8 +957,8 @@ class CodeImplementHandoffTests(BoardTestCase):
         retried = board_staff.retry_task(self.table, self.settings, task["taskId"], "owner")
         retried["status"] = "running"
         board_store.put_task(self.table, retried)
-        # Prior failed dispatch must not count as a live runner, so finish
-        # still requires a new code_run_task (it must not auto-deliver).
+        # Prior failed dispatch is ignored after retry, so finish must not
+        # auto-deliver or slide into review without a new code_run_task.
         with self.assertRaises(board_staff.StaffError) as raised:
             self._finish(retried)
         self.assertIn("code_run_task", str(raised.exception))
