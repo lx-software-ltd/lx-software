@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import io
+import json
 import os
 import unittest
+import urllib.error
 from unittest.mock import patch
 
 from test_board import BoardTestCase
@@ -96,6 +99,42 @@ class TransformTests(unittest.TestCase):
         self.assertEqual(dry["mode"], "local")
         self.assertEqual(dry["accepted"], 1)
 
+    def test_type_accepted_without_verified_fields(self) -> None:
+        sheet = {
+            "district": "Eastern",
+            "organisations": [
+                {
+                    "name_en": "Quarry Bay Park Playground",
+                    "type": "playground",
+                    "address_en": "Taikoo Shing",
+                    "verified_fields": ["name_en", "address_en"],
+                }
+            ],
+        }
+        out = board_catalog_import.transform_sheet(sheet)
+        self.assertEqual(out["accepted"], 1)
+        self.assertEqual(out["organizations"][0]["category_name"], "Playground")
+        self.assertEqual(out["organizations"][0]["address"], "Taikoo Shing")
+
+    def test_alias_first_wins(self) -> None:
+        sheet = {
+            "district": "Eastern",
+            "organisations": [
+                {
+                    "name_en": "Park",
+                    "type": "playground",
+                    "address_en": "from address_en",
+                    "address": "from address",
+                    "official_url": "https://official.example",
+                    "website": "https://website.example",
+                    "verified_fields": ["name_en", "address_en", "address", "official_url", "website"],
+                }
+            ],
+        }
+        org = board_catalog_import.transform_sheet(sheet)["organizations"][0]
+        self.assertEqual(org["address"], "from address_en")
+        self.assertEqual(org["website"], "https://official.example")
+
     def test_unknown_type_skipped(self) -> None:
         sheet = {
             "district": "Eastern",
@@ -146,13 +185,14 @@ class ImportClientTests(BoardTestCase):
             self.addCleanup(lambda k=key: os.environ.pop(k, None))
         board_catalog_import.set_secret_for_tests(lambda: {"username": "importer", "password": "secret"})
         board_catalog_import.set_auth_for_tests(lambda user, pw: f"idtok-{user}")
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, str, dict | None]] = []
 
         def http(method, url, headers, body):
-            self.calls.append((method, url))
+            parsed = json.loads(body) if body else None
+            self.calls.append((method, url, parsed))
             if url.endswith("/admin/imports/presign"):
                 return {
-                    "upload_url": "https://s3.example.test/put",
+                    "upload_url": "https://s3.example.test/put?X-Amz-Signature=secret",
                     "object_key": "imports/board.json",
                 }
             if url.startswith("https://s3.example.test/put"):
@@ -172,8 +212,9 @@ class ImportClientTests(BoardTestCase):
         with patch("board_async.invoke_async", lambda payload, fallback=None: None):
             task = board_catalog.create_next(self.table, settings)
         key = board_staff._deliverable_key(task["taskId"], "json")
-        board_staff._blob_put(key, __import__("json").dumps(SHEET).encode())
+        board_staff._blob_put(key, json.dumps(SHEET).encode())
         task["deliverableKey"] = key
+        task["status"] = "delivered"
         board_store.put_task(self.table, task)
         out = board_catalog_import.run_import(self.table, task)
         self.assertTrue(out["ok"])
@@ -181,8 +222,68 @@ class ImportClientTests(BoardTestCase):
             [c[0] for c in self.calls],
             ["POST", "PUT", "POST"],
         )
+        self.assertEqual(self.calls[-1][2], {"object_key": "imports/board.json"})
+        self.assertEqual(out["import"]["sent"], 1)
+        self.assertEqual(out["import"]["accepted"], 1)
         saved = board_store.get_task(self.table, task["taskId"])
         self.assertTrue(saved.get("importedAt"))
+        self.assertEqual((saved.get("importResult") or {}).get("sent"), 1)
+
+        with self.assertRaises(board_catalog_import.CatalogImportError) as ctx:
+            board_catalog_import.run_import(self.table, saved)
+        self.assertIn("already imported", str(ctx.exception))
+
+        self.calls.clear()
+        again = board_catalog_import.run_import(self.table, saved, force=True)
+        self.assertTrue(again["ok"])
+        self.assertEqual([c[0] for c in self.calls], ["POST", "PUT", "POST"])
+
+    def test_remote_dry_run_uses_presign(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            task = board_catalog.create_next(self.table, settings)
+        key = board_staff._deliverable_key(task["taskId"], "json")
+        board_staff._blob_put(key, json.dumps(SHEET).encode())
+        task["deliverableKey"] = key
+        board_store.put_task(self.table, task)
+        out = board_catalog_import.preview_task(self.table, task, remote=True)
+        self.assertEqual([c[0] for c in self.calls], ["POST", "PUT", "POST"])
+        self.assertEqual(
+            self.calls[-1][2],
+            {"object_key": "imports/board.json", "dry_run": True},
+        )
+        self.assertEqual((out.get("dryRun") or {}).get("mode"), "remote")
+
+    def test_import_refuses_non_catalog_and_undelivered(self) -> None:
+        with self.assertRaises(board_catalog_import.CatalogImportError) as ctx:
+            board_catalog_import.run_import(
+                None,
+                {"taskId": "t1", "status": "delivered", "eventRef": {"kind": "mail"}},
+            )
+        self.assertIn("not a catalog", str(ctx.exception))
+        with self.assertRaises(board_catalog_import.CatalogImportError) as ctx:
+            board_catalog_import.run_import(
+                None,
+                {"taskId": "t1", "status": "review", "eventRef": {"kind": "catalog-micro-batch"}},
+            )
+        self.assertIn("delivered", str(ctx.exception))
+
+    def test_http_error_strips_query(self) -> None:
+        board_catalog_import.set_http_for_tests(None)
+        signed = "https://s3.example.test/put?X-Amz-Signature=secret"
+        err = urllib.error.HTTPError(signed, 403, "Forbidden", hdrs={}, fp=io.BytesIO(b"no"))
+        with patch("urllib.request.urlopen", side_effect=err):
+            with self.assertRaises(board_catalog_import.CatalogImportError) as ctx:
+                board_catalog_import._http("PUT", signed)
+        message = str(ctx.exception)
+        self.assertNotIn("X-Amz-Signature", message)
+        self.assertNotIn("secret", message)
+        self.assertIn("https://s3.example.test/put", message)
+        self.assertEqual(
+            board_catalog_import._safe_url(signed),
+            "https://s3.example.test/put",
+        )
 
     def test_accept_hook_previews_without_import(self) -> None:
         settings = _enable_staff(self.table)

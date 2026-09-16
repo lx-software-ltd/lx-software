@@ -65,6 +65,7 @@ export function BoardTaskDrawer({
 }: BoardTaskDrawerProps) {
   const [notes, setNotes] = useState("");
   const task = detail?.task;
+  const preview = importPreview ?? task?.importPreview;
   const calls = useMemo<BoardToolCallLogEntry[]>(() => {
     const ids = new Set(detail?.steps.flatMap((s) => s.callIds) ?? []);
     return (detail?.steps ?? []).flatMap((step) =>
@@ -140,11 +141,15 @@ export function BoardTaskDrawer({
                 Preview import
               </button>
             ) : null}
-            {isCatalogSheetTask(task) && onImport ? (
+            {isCatalogSheetTask(task) && onImport && task.status === "delivered" ? (
               <button
                 type="button"
                 className="btn btn-outline-secondary btn-sm"
-                disabled={isMutating || Boolean(task.importedAt)}
+                disabled={
+                  isMutating ||
+                  Boolean(task.importedAt) ||
+                  preview?.importEnabled === false
+                }
                 onClick={() => onImport(task.taskId)}
               >
                 {task.importedAt ? "Imported" : "Import"}
@@ -184,7 +189,7 @@ export function BoardTaskDrawer({
           notes={notes}
           onNotes={setNotes}
           onOpenTask={onOpenTask}
-          importPreview={importPreview ?? task.importPreview}
+          importPreview={preview}
           importMessage={importMessage}
         />
       ) : null}
@@ -344,7 +349,11 @@ function CatalogImportPanel({
   return (
     <div>
       <div className="small text-muted text-uppercase mb-1">Catalog import</div>
-      {importedAt ? <p className="small mb-1">Imported {importedAt}</p> : null}
+      {importedAt ? (
+        <p className="small mb-1">
+          Imported <DateTimeDisplay iso={importedAt} />
+        </p>
+      ) : null}
       {message ? <div className="alert alert-warning py-2 small mb-2">{message}</div> : null}
       {preview?.error ? <div className="alert alert-danger py-2 small mb-2">{preview.error}</div> : null}
       {preview ? (

@@ -327,6 +327,7 @@ export type BoardCatalogImportPreview = {
 
 export type BoardCatalogImportResult = {
   readonly ok?: boolean;
+  readonly sent?: number;
   readonly accepted?: number;
   readonly objectKey?: string;
   readonly at?: string;
@@ -1598,6 +1599,27 @@ export function boardCatalogImportPath(): string {
 
 export function isCatalogSheetTask(task: Pick<BoardTask, "eventRef"> | undefined | null): boolean {
   return task?.eventRef?.kind === "catalog-micro-batch";
+}
+
+/** Use a live preview mutation only when it belongs to the open task. */
+export function liveCatalogPreviewForTask(
+  live: BoardCatalogImportPreview | null | undefined,
+  taskId: string | null | undefined,
+  fallback?: BoardCatalogImportPreview | null,
+): BoardCatalogImportPreview | null | undefined {
+  if (live && taskId && live.taskId === taskId) return live;
+  return fallback;
+}
+
+/** Surface a catalog mutation error only when it belongs to the open task. */
+export function catalogMutationErrorForTask(
+  variables: unknown,
+  taskId: string | null | undefined,
+  error: unknown,
+  format: (err: unknown) => string | null,
+): string | null {
+  if (!taskId || variables !== taskId) return null;
+  return format(error);
 }
 
 export type BoardStagingPreview = {

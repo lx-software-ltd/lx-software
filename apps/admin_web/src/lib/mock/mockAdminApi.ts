@@ -580,14 +580,16 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
     const taskId = String(body.taskId || "");
     const task = state.tasks.find((t) => t.taskId === taskId);
     if (!task) return json({ message: "Task not found" }, 404);
-    const preview = task.importPreview ?? {
-      ok: true,
+    const preview = {
+      ...(task.importPreview ?? {
+        ok: true,
+        district: task.eventRef?.district || "Eastern",
+        importEnabled: false,
+        configured: false,
+        dryRun: { ok: true, mode: "local", accepted: 1, skipped: 0, errors: [] },
+        payload: { organizations: [{ name: "Quarry Bay Park Playground", category_name: "Playground", area_name: "Eastern" }] },
+      }),
       taskId,
-      district: task.eventRef?.district || "Eastern",
-      importEnabled: false,
-      configured: false,
-      dryRun: { ok: true, mode: "local", accepted: 1, skipped: 0, errors: [] },
-      payload: { organizations: [{ name: "Quarry Bay Park Playground", category_name: "Playground", area_name: "Eastern" }] },
     };
     const idx = state.tasks.findIndex((t) => t.taskId === taskId);
     if (idx >= 0) state.tasks[idx] = { ...state.tasks[idx], importPreview: preview };

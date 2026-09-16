@@ -1554,14 +1554,14 @@ def build_registry() -> dict[str, ToolOp]:
             always_propose=True,
             action_class="catalog_import",
             description=(
-                "Propose importing a transformed catalog sheet through the siutindei admin importer. "
-                "Always an Approval. Refused while SiutindeiBoardCatalogImportEnabled is false. "
-                "Does not write Aurora from this stack."
+                "Propose importing the accepted catalog-micro-batch deliverable through the "
+                "siutindei admin importer. Uses the stored sheet only (no sheet override). "
+                "Always an Approval. Refused while SiutindeiBoardCatalogImportEnabled is false "
+                "or the task is not delivered. Does not write Aurora from this stack."
             ),
             parameters=_obj(
                 {
-                    "taskId": _str_param("Staff task id of the catalog sheet.", max_len=40),
-                    "sheet": _str_param("Optional sheet JSON; defaults to the task deliverable.", max_len=12000),
+                    "taskId": _str_param("Staff task id of the delivered catalog sheet.", max_len=40),
                     "reason": REASON_PARAM,
                 },
                 ["taskId", "reason"],

@@ -394,6 +394,7 @@ describe("Admin Lambda IAM policies", () => {
     ["AdminOpenRouterSecretPolicy", "HasOpenRouterSecret"],
     ["AdminSiutindeiDataApiPolicy", "HasSiutindeiDataApi"],
     ["SiutindeiBoardMailSendPolicy", "HasSiutindeiBoardMailSending"],
+    ["SiutindeiBoardImporterAuthPolicy", "HasSiutindeiUserPool"],
   ])("%s keeps its %s condition", (constructId, conditionName) => {
     const policies = findPoliciesByConstructId(constructId);
     expect(policies).toHaveLength(1);

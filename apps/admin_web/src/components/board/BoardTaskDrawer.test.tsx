@@ -29,6 +29,7 @@ const catalogTask: BoardTask = {
   eventRef: { kind: "catalog-micro-batch", id: "catalog:eastern", district: "Eastern" },
   importPreview: {
     ok: true,
+    taskId: "task-catalog",
     district: "Eastern",
     importEnabled: false,
     dryRun: { ok: true, accepted: 1, skipped: 0 },
@@ -45,7 +46,7 @@ const detail: BoardTaskDetailPayload = {
 };
 
 describe("BoardTaskDrawer catalog import", () => {
-  it("shows preview and import on a delivered catalog sheet", () => {
+  it("shows preview and disables Import while the kill switch is off", () => {
     const onPreview = vi.fn();
     const onImport = vi.fn();
     render(
@@ -61,9 +62,54 @@ describe("BoardTaskDrawer catalog import", () => {
       />,
     );
     expect(screen.getByText("Quarry Bay Park Playground — Playground / Eastern")).toBeInTheDocument();
+    expect(screen.getByText(/import kill switch off/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Preview import" }));
-    fireEvent.click(screen.getByRole("button", { name: "Import" }));
     expect(onPreview).toHaveBeenCalledWith("task-catalog");
+    expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    expect(onImport).not.toHaveBeenCalled();
+  });
+
+  it("imports a delivered sheet when the kill switch is on", () => {
+    const onImport = vi.fn();
+    render(
+      <BoardTaskDrawer
+        detail={{
+          ...detail,
+          task: {
+            ...catalogTask,
+            importPreview: { ...catalogTask.importPreview!, importEnabled: true },
+          },
+        }}
+        isLoading={false}
+        isMutating={false}
+        onClose={() => undefined}
+        onCancel={() => undefined}
+        onReview={() => undefined}
+        onImport={onImport}
+        importPreview={{ ...catalogTask.importPreview!, importEnabled: true }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
     expect(onImport).toHaveBeenCalledWith("task-catalog");
+  });
+
+  it("formats importedAt with DateTimeDisplay", () => {
+    render(
+      <BoardTaskDrawer
+        detail={{
+          ...detail,
+          task: { ...catalogTask, importedAt: "2026-09-16T00:00:00Z" },
+        }}
+        isLoading={false}
+        isMutating={false}
+        onClose={() => undefined}
+        onCancel={() => undefined}
+        onReview={() => undefined}
+      />,
+    );
+    expect(screen.getByText(/Imported/)).toBeInTheDocument();
+    expect(screen.getAllByText("September 16, 2026 at 8:00am HKT").length).toBeGreaterThan(0);
+    expect(screen.queryByText("2026-09-16T00:00:00Z")).not.toBeInTheDocument();
   });
 });

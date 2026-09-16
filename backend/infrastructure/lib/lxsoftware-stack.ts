@@ -1636,7 +1636,13 @@ export class LxsoftwareStack extends cdk.Stack {
     googlePlacesKeySecret.grantRead(adminFn);
     boardLinkSigningSecret.grantRead(adminFn);
     boardImporterCredentialsSecret.grantRead(adminFn);
-    new iam.Policy(this, "SiutindeiBoardImporterAuthPolicy", {
+    // AdminInitiateAuth is scoped to SiutindeiUserPoolId. The parameter
+    // defaults to "" (ARN …:userpool/), so skip the policy until a pool id
+    // is set — same pattern as HasOpenRouterSecret.
+    const hasSiutindeiUserPool = new cdk.CfnCondition(this, "HasSiutindeiUserPool", {
+      expression: cdk.Fn.conditionNot(cdk.Fn.conditionEquals(siutindeiUserPoolId.valueAsString, "")),
+    });
+    const importerAuthPolicy = new iam.Policy(this, "SiutindeiBoardImporterAuthPolicy", {
       statements: [
         new iam.PolicyStatement({
           sid: "SiutindeiImporterAdminInitiateAuth",
@@ -1651,7 +1657,9 @@ export class LxsoftwareStack extends cdk.Stack {
           ],
         }),
       ],
-    }).attachToRole(adminFn.role!);
+    });
+    importerAuthPolicy.attachToRole(adminFn.role!);
+    (importerAuthPolicy.node.defaultChild as iam.CfnPolicy).cfnOptions.condition = hasSiutindeiUserPool;
 
     // Executive Board aws + security read tools (plan §8). Each statement is
     // scoped as tightly as the IAM action allows (see the Service

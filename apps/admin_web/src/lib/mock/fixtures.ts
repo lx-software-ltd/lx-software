@@ -558,6 +558,7 @@ export const boardTasksFixture: BoardTask[] = [
     eventRef: { kind: "catalog-micro-batch", id: "catalog:eastern", districtId: "eastern", district: "Eastern" },
     importPreview: {
       ok: true,
+      taskId: "task-catalog",
       district: "Eastern",
       importEnabled: false,
       configured: false,

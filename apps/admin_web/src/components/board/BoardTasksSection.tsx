@@ -17,7 +17,9 @@ import {
   formatRelativeTime,
   formatUsageCost,
   groupTasksByLane,
+  catalogMutationErrorForTask,
   isFinishedBoardTaskStatus,
+  liveCatalogPreviewForTask,
   sumTaskUsageCost,
   syncBoardTaskSearchParams,
   taskActorLabel,
@@ -104,10 +106,16 @@ export function BoardTasksSection({
     : "just now";
 
   const openTask = (taskId: string) => {
+    if (taskId !== pickedId) {
+      tasks.catalogPreview.reset();
+      tasks.catalogImport.reset();
+    }
     setPickedId(taskId);
     onFocusConsumed?.();
   };
   const closeTask = () => {
+    tasks.catalogPreview.reset();
+    tasks.catalogImport.reset();
     setPickedId(null);
     onFocusConsumed?.();
   };
@@ -342,8 +350,25 @@ export function BoardTasksSection({
             errorText(tasks.review.error) ??
             errorText(tasks.retry.error)
           }
-          importPreview={tasks.catalogPreview.data ?? detail.data?.task.importPreview}
-          importMessage={errorText(tasks.catalogImport.error) ?? errorText(tasks.catalogPreview.error)}
+          importPreview={liveCatalogPreviewForTask(
+            tasks.catalogPreview.data,
+            selectedId,
+            detail.data?.task.importPreview,
+          )}
+          importMessage={
+            catalogMutationErrorForTask(
+              tasks.catalogImport.variables,
+              selectedId,
+              tasks.catalogImport.error,
+              errorText,
+            ) ??
+            catalogMutationErrorForTask(
+              tasks.catalogPreview.variables,
+              selectedId,
+              tasks.catalogPreview.error,
+              errorText,
+            )
+          }
           onClose={closeTask}
           onOpenTask={openTask}
           onCancel={(id) => tasks.cancel.mutate(id, { onSuccess: () => closeTask() })}

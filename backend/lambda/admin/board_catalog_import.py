@@ -1,9 +1,9 @@
 """Catalog sheet → siutindei importer JSON (Option A Cognito importer user).
 
 This stack never writes Aurora. Import calls the siutindei admin HTTP API
-after ``AdminInitiateAuth`` (USER_PASSWORD_AUTH) for a dedicated importer
-user. The kill switch ``BOARD_CATALOG_IMPORT_ENABLED`` is fail-closed.
-There is no LLM in this path.
+after ``AdminInitiateAuth`` (ADMIN_USER_PASSWORD_AUTH) for a dedicated
+importer user. The kill switch ``BOARD_CATALOG_IMPORT_ENABLED`` is
+fail-closed. There is no LLM in this path.
 
 See docs/deployment/admin-website.md → Catalog import (Option A).
 """
@@ -15,7 +15,7 @@ import os
 import urllib.error
 import urllib.request
 from typing import Any, Callable
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from admin_runtime import _get_secretsmanager_client
 from contract_constants import (
@@ -47,6 +47,20 @@ _SHEET_TO_IMPORTER = {
 
 _NOTE_FIELDS = ("opening_hours", "price_note", "age_range", "free_or_paid", "description_zh")
 _NUMERIC_FIELDS = frozenset({"lat", "lng"})
+
+
+def _importer_dests() -> list[tuple[str, list[str]]]:
+    dests: list[tuple[str, list[str]]] = []
+    seen: set[str] = set()
+    for _sheet_key, dest in _SHEET_TO_IMPORTER.items():
+        if dest == "name" or dest in seen:
+            continue
+        seen.add(dest)
+        dests.append((dest, [k for k, v in _SHEET_TO_IMPORTER.items() if v == dest]))
+    return dests
+
+
+_IMPORTER_DESTS = _importer_dests()
 
 _auth_fn: Callable[..., str] | None = None
 _http_fn: Callable[..., dict[str, Any]] | None = None
@@ -210,11 +224,13 @@ def transform_org(
     copied.append("area_name")
 
     org_type = str(org.get("type") or "").strip().lower()
-    if not _field_verified(verified, "type"):
+    # type is the seat's classification (playground|indoor_play|…), not a
+    # page fact. Always map it; do not require it in verified_fields.
+    if org_type in ("", "unverified"):
         return None, {
             "index": index,
             "skipped": True,
-            "reason": "type is not in verified_fields",
+            "reason": "type is missing",
             "name": name[:80],
         }
     category = BOARD_CATALOG_TYPE_TO_CATEGORY.get(org_type) or ""
@@ -228,26 +244,37 @@ def transform_org(
     out["category_name"] = category
     copied.append("category_name")
 
-    for sheet_key, dest in _SHEET_TO_IMPORTER.items():
-        if dest in ("name",):
+    for dest, aliases in _IMPORTER_DESTS:
+        verified_aliases = [alias for alias in aliases if alias in verified]
+        if not verified_aliases:
+            for alias in aliases:
+                if org.get(alias) not in (None, "", "unverified"):
+                    skipped_fields.append(alias)
             continue
-        aliases = [k for k, v in _SHEET_TO_IMPORTER.items() if v == dest]
-        if not _field_verified(verified, *aliases):
-            if org.get(sheet_key) not in (None, "", "unverified"):
-                skipped_fields.append(sheet_key)
-            continue
-        value = org.get(sheet_key)
-        if value in (None, "", "unverified"):
-            continue
-        if dest in _NUMERIC_FIELDS:
-            number = _as_number(value)
-            if number is None:
-                skipped_fields.append(sheet_key)
+        picked = False
+        for alias in verified_aliases:
+            value = org.get(alias)
+            if value in (None, "", "unverified"):
                 continue
-            out[dest] = number
-        else:
-            out[dest] = str(value).strip()[:500]
-        copied.append(dest)
+            if dest in _NUMERIC_FIELDS:
+                number = _as_number(value)
+                if number is None:
+                    skipped_fields.append(alias)
+                    continue
+                out[dest] = number
+            else:
+                out[dest] = str(value).strip()[:500]
+            copied.append(dest)
+            picked = True
+            break
+        if picked:
+            for alias in aliases:
+                if alias not in verified_aliases and org.get(alias) not in (None, "", "unverified"):
+                    skipped_fields.append(alias)
+            continue
+        for alias in aliases:
+            if org.get(alias) not in (None, "", "unverified"):
+                skipped_fields.append(alias)
 
     note_bits: list[str] = []
     for field in _NOTE_FIELDS:
@@ -308,7 +335,7 @@ def local_dry_run(transformed: dict[str, Any]) -> dict[str, Any]:
     errors: list[str] = []
     orgs = transformed.get("organizations") or []
     if not orgs:
-        errors.append("no organisations with a verified name, type and district")
+        errors.append("no organisations with a verified name, a mapped type and a district")
     if not catalog_manager_id() and not any((o or {}).get("manager_id") for o in orgs):
         errors.append("BOARD_CATALOG_MANAGER_ID is not set")
     for org in orgs:
@@ -323,6 +350,39 @@ def local_dry_run(transformed: dict[str, Any]) -> dict[str, Any]:
         "errors": errors,
         "orgReports": transformed.get("orgReports") or [],
         "payload": {"organizations": orgs},
+    }
+
+
+def is_catalog_sheet(task: dict[str, Any]) -> bool:
+    ref = task.get("eventRef") or {}
+    return str(ref.get("kind") or "") == CATALOG_EVENT_KIND
+
+
+def require_catalog_sheet(task: dict[str, Any]) -> None:
+    if not is_catalog_sheet(task):
+        raise CatalogImportError("task is not a catalog micro-batch sheet")
+
+
+def require_importable_task(task: dict[str, Any], *, force: bool = False) -> None:
+    require_catalog_sheet(task)
+    if str(task.get("status") or "") != "delivered":
+        raise CatalogImportError("catalog import requires a delivered (accepted) sheet")
+    imported_at = task.get("importedAt")
+    if imported_at and not force:
+        raise CatalogImportError(f"already imported at {imported_at}")
+
+
+def _safe_url(url: str) -> str:
+    """Host + path only — never include a presigned query string."""
+    parts = urlsplit(url or "")
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+
+
+def _auth_headers(token: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
     }
 
 
@@ -387,9 +447,11 @@ def _http(
             text = raw.decode("utf-8", errors="replace") if raw else ""
     except urllib.error.HTTPError as exc:
         err_body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-        raise CatalogImportError(f"siutindei admin {method} {url} failed: {exc.code} {err_body[:240]}") from exc
+        raise CatalogImportError(
+            f"siutindei admin {method} {_safe_url(url)} failed: {exc.code} {err_body[:240]}"
+        ) from exc
     except urllib.error.URLError as exc:
-        raise CatalogImportError(f"siutindei admin {method} {url} failed: {exc.reason}") from exc
+        raise CatalogImportError(f"siutindei admin {method} {_safe_url(url)} failed: {exc.reason}") from exc
     parsed: Any = {}
     if text:
         try:
@@ -402,39 +464,16 @@ def _http(
     return parsed
 
 
-def _remote_dry_run(payload: dict[str, Any], token: str) -> dict[str, Any]:
+def _presign_and_put(orgs: list[dict[str, Any]], token: str, *, filename: str) -> str:
     base = admin_api_base()
     if not base:
         raise CatalogImportError("SiutindeiAdminApiBaseUrl is not set")
-    body = json.dumps({"organizations": payload.get("organizations") or [], "dry_run": True}).encode("utf-8")
-    resp = _http(
-        "POST",
-        urljoin(base + "/", "admin/imports"),
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        body=body,
-    )
-    return {"ok": True, "mode": "remote", "response": resp, "payload": {"organizations": payload.get("organizations") or []}}
-
-
-def _run_remote_import(payload: dict[str, Any], token: str) -> dict[str, Any]:
-    base = admin_api_base()
-    if not base:
-        raise CatalogImportError("SiutindeiAdminApiBaseUrl is not set")
-    orgs = payload.get("organizations") or []
     blob = json.dumps({"organizations": orgs}).encode("utf-8")
     presign = _http(
         "POST",
         urljoin(base + "/", "admin/imports/presign"),
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        body=json.dumps({"filename": "board-catalog.json", "content_type": "application/json"}).encode("utf-8"),
+        headers=_auth_headers(token),
+        body=json.dumps({"filename": filename, "content_type": "application/json"}).encode("utf-8"),
     )
     upload_url = str(presign.get("upload_url") or presign.get("url") or "").strip()
     object_key = str(presign.get("object_key") or presign.get("key") or "").strip()
@@ -445,22 +484,55 @@ def _run_remote_import(payload: dict[str, Any], token: str) -> dict[str, Any]:
     if isinstance(extra, dict):
         put_headers.update({str(k): str(v) for k, v in extra.items()})
     _http("PUT", upload_url, headers=put_headers, body=blob, timeout=25)
-    imported = _http(
+    return object_key
+
+
+def _imports_post(token: str, body: dict[str, Any]) -> dict[str, Any]:
+    base = admin_api_base()
+    if not base:
+        raise CatalogImportError("SiutindeiAdminApiBaseUrl is not set")
+    return _http(
         "POST",
         urljoin(base + "/", "admin/imports"),
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        body=json.dumps({"object_key": object_key}).encode("utf-8"),
+        headers=_auth_headers(token),
+        body=json.dumps(body).encode("utf-8"),
     )
+
+
+def _importer_accepted(resp: dict[str, Any]) -> int | None:
+    for key in ("imported", "accepted", "created", "upserted", "count"):
+        val = resp.get(key)
+        if isinstance(val, bool) or not isinstance(val, (int, float)):
+            continue
+        return int(val)
+    return None
+
+
+def _remote_dry_run(payload: dict[str, Any], token: str) -> dict[str, Any]:
+    orgs = payload.get("organizations") or []
+    object_key = _presign_and_put(orgs, token, filename="board-catalog-dry-run.json")
+    resp = _imports_post(token, {"object_key": object_key, "dry_run": True})
+    return {
+        "ok": True,
+        "mode": "remote",
+        "objectKey": object_key,
+        "response": resp,
+        "payload": {"organizations": orgs},
+    }
+
+
+def _run_remote_import(payload: dict[str, Any], token: str) -> dict[str, Any]:
+    orgs = payload.get("organizations") or []
+    object_key = _presign_and_put(orgs, token, filename="board-catalog.json")
+    imported = _imports_post(token, {"object_key": object_key})
+    sent = len(orgs)
     return {
         "ok": True,
         "mode": "remote",
         "objectKey": object_key,
         "response": imported,
-        "accepted": len(orgs),
+        "sent": sent,
+        "accepted": _importer_accepted(imported),
     }
 
 
@@ -494,6 +566,7 @@ def _task_text(table: Any, task: dict[str, Any], explicit: str | None) -> str:
 
 
 def preview_task(table: Any, task: dict[str, Any], *, sheet_text: str | None = None, remote: bool = False) -> dict[str, Any]:
+    require_catalog_sheet(task)
     text = _task_text(table, task, sheet_text)
     preview = preview_from_text(text, remote=remote)
     preview["taskId"] = task.get("taskId")
@@ -503,12 +576,13 @@ def preview_task(table: Any, task: dict[str, Any], *, sheet_text: str | None = N
     return preview
 
 
-def run_import(table: Any, task: dict[str, Any], *, sheet_text: str | None = None) -> dict[str, Any]:
+def run_import(table: Any, task: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
     if not import_enabled():
         raise CatalogImportError("catalog import is switched off (SiutindeiBoardCatalogImportEnabled)")
     if not configured():
         raise CatalogImportError("catalog import is not configured (admin API, user pool, client, manager id)")
-    preview = preview_task(table, task, sheet_text=sheet_text, remote=False)
+    require_importable_task(task, force=force)
+    preview = preview_task(table, task, remote=False)
     if not preview.get("ok"):
         errors = (preview.get("dryRun") or {}).get("errors") or ["sheet failed local dry-run"]
         raise CatalogImportError("; ".join(str(e) for e in errors)[:300])
@@ -525,6 +599,7 @@ def run_import(table: Any, task: dict[str, Any], *, sheet_text: str | None = Non
     task["importResult"] = {
         "ok": True,
         "objectKey": imported.get("objectKey"),
+        "sent": imported.get("sent"),
         "accepted": imported.get("accepted"),
         "at": now,
     }
@@ -584,7 +659,7 @@ def op_import(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     task = board_store.get_task(ctx.table, task_id)
     if not task:
         raise CatalogImportError("Task not found")
-    return run_import(ctx.table, task, sheet_text=str(args.get("sheet") or "") or None)
+    return run_import(ctx.table, task)
 
 
 def owner_preview(table: Any, body: dict[str, Any]) -> dict[str, Any]:
@@ -611,7 +686,7 @@ def owner_import(table: Any, body: dict[str, Any]) -> dict[str, Any]:
     task = board_store.get_task(table, task_id)
     if not task:
         raise CatalogImportError("Task not found")
-    return run_import(table, task, sheet_text=str(body.get("sheet") or "") or None)
+    return run_import(table, task, force=bool(body.get("force")))
 
 
 def ready_sheets(table: Any) -> list[dict[str, Any]]:
