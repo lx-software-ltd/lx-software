@@ -216,6 +216,8 @@ def _overview() -> dict[str, Any]:
     pending_approvals = sum(1 for a in board_store.list_approvals(table) if a.get("status") == "pending")
     mail = board_mail.status_summary(table)
     recv = board_receivables.digest_for_context()
+    import board_outreach
+
     return _json_response(
         200,
         {
@@ -229,6 +231,7 @@ def _overview() -> dict[str, Any]:
             "unreadMailCount": mail["unreadCount"],
             "overdueInvoiceCount": int(recv.get("overdue") or 0),
             "mail": mail,
+            "outreachIdentity": board_outreach.identity_health(),
             "receivables": recv,
             "toolsEnabled": board_tools.tools_enabled(settings),
             "runningMeeting": board_meeting.public_meeting_summary(running) if running else None,
@@ -1141,6 +1144,8 @@ def _outreach_route(event: dict[str, Any], method: str, rest: list[str], user_su
         table = board_store.records_table()
         settings = board_store.load_settings(table)
         return _json_response(200, board_outreach.stats(table, settings, days=days))
+    if len(rest) == 2 and rest[1] == "identity" and method == "GET":
+        return _json_response(200, board_outreach.identity_health(force=True))
     return _json_response(404, {"message": "Not found"})
 
 

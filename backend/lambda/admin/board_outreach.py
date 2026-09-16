@@ -33,8 +33,10 @@ CONFIG_SET = "lxsoftware-admin-siutindei-outreach"
 REPLY_TO_LOCAL = "partnerships"
 UNSUB_WORDS = re.compile(r"unsubscribe|取消|不要再|退訂", re.I)
 IDENTITY_CACHE_TTL = 3600
+HEALTH_CACHE_TTL = 600
 _sesv2: Any = None
 _identity_cache: tuple[float, bool] | None = None
+_health_cache: tuple[float, dict[str, Any]] | None = None
 _signing_secret: str | None = None
 
 
@@ -76,9 +78,10 @@ def _ses_client() -> Any:
 
 
 def reset_caches_for_tests() -> None:
-    global _sesv2, _identity_cache, _signing_secret
+    global _sesv2, _identity_cache, _health_cache, _signing_secret
     _sesv2 = None
     _identity_cache = None
+    _health_cache = None
     _signing_secret = None
 
 
@@ -163,6 +166,57 @@ def suppress(table: Any, *, email: str = "", domain: str = "", prospect: dict[st
         board_store.put_prospect(table, prospect)
 
 
+def identity_health(*, force: bool = False) -> dict[str, Any]:
+    """SES view of the outreach sending domain. DKIM tokens are public DNS."""
+    global _health_cache
+    now = datetime.now(timezone.utc).timestamp()
+    if not force and _health_cache and now - _health_cache[0] < HEALTH_CACHE_TTL:
+        return _health_cache[1]
+    domain = sending_domain()
+    out: dict[str, Any] = {
+        "domain": domain,
+        "fromAddress": from_address(),
+        "identityVerified": None,
+        "dkimStatus": None,
+        "dkimRecords": [],
+        "mailFromDomain": None,
+        "mailFromStatus": None,
+        "errors": [],
+    }
+    try:
+        ident = _ses_client().get_email_identity(EmailIdentity=domain)
+    except Exception as exc:
+        _log_event("warning", tag="board_outreach_identity_check_failed", error=str(exc)[:200])
+        out["errors"].append(f"GetEmailIdentity: {type(exc).__name__}: {str(exc)[:200]}")
+        _health_cache = (now, out)
+        return out
+    if not isinstance(ident, dict):
+        out["errors"].append("GetEmailIdentity: unexpected response")
+        _health_cache = (now, out)
+        return out
+    out["identityVerified"] = bool(ident.get("VerifiedForSendingStatus"))
+    dkim = ident.get("DkimAttributes") if isinstance(ident.get("DkimAttributes"), dict) else {}
+    out["dkimStatus"] = str(dkim.get("Status") or "") or None
+    tokens = dkim.get("Tokens") if isinstance(dkim.get("Tokens"), list) else []
+    records = []
+    for tok in tokens:
+        token = str(tok or "").strip()
+        if not token:
+            continue
+        records.append(
+            {
+                "name": f"{token}._domainkey.{domain}",
+                "value": f"{token}.dkim.amazonses.com",
+            }
+        )
+    out["dkimRecords"] = records
+    mail_from = ident.get("MailFromAttributes") if isinstance(ident.get("MailFromAttributes"), dict) else {}
+    out["mailFromDomain"] = str(mail_from.get("MailFromDomain") or "") or None
+    out["mailFromStatus"] = str(mail_from.get("MailFromDomainStatus") or "") or None
+    _health_cache = (now, out)
+    return out
+
+
 def identity_verified(force: bool = False) -> bool:
     global _identity_cache
     now = datetime.now(timezone.utc).timestamp()
@@ -175,12 +229,7 @@ def identity_verified(force: bool = False) -> bool:
     if flag == "false":
         _identity_cache = (now, False)
         return False
-    try:
-        resp = _ses_client().get_email_identity(EmailIdentity=sending_domain())
-        ok = bool(resp.get("VerifiedForSendingStatus"))
-    except Exception as exc:
-        _log_event("warning", tag="board_outreach_identity_check_failed", error=str(exc)[:200])
-        ok = False
+    ok = bool(identity_health(force=force).get("identityVerified"))
     _identity_cache = (now, ok)
     return ok
 
@@ -564,6 +613,7 @@ def stats(table: Any, settings: dict[str, Any], *, days: int = 28) -> dict[str, 
         "capRaisedAt": outreach.get("capRaisedAt") or "",
         "breaker": board_store.get_breaker(table, "outreach") or {"name": "outreach", "tripped": False},
         "identityVerified": identity_verified(),
+        "identity": identity_health(),
     }
 
 

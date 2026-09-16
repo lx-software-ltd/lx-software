@@ -279,6 +279,7 @@ export function BoardPipelineSection() {
           complaints {(((stats?.complaintRate ?? 0) * 100).toFixed(3))}% · replies {stats?.replies ?? 0} ·
           cap {stats?.dailyCap ?? "—"} · breaker {stats?.breaker?.tripped ? "tripped" : "clear"}
           {stats?.identityVerified === false ? " · sending identity not verified" : ""}
+          {stats?.identity?.dkimStatus ? ` · DKIM ${stats.identity.dkimStatus}` : ""}
         </p>
       </AdminEditorSection>
     </div>

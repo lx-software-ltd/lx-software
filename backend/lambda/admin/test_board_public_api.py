@@ -197,6 +197,7 @@ class PathClassTests(unittest.TestCase):
         for path in (
             "/public/siu-tin-dei/board/prospects",
             "/public/siu-tin-dei/board/outreach/stats",
+            "/public/siu-tin-dei/board/outreach/identity",
             "/public/siu-tin-dei/board/receivables",
         ):
             self.assertFalse(board_public_api.path_allowed(path, ["siutindei-board-full"]))

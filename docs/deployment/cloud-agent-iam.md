@@ -41,6 +41,10 @@ It grants:
 - `dynamodb:Query` on the audit log table (no scan, no write).
 - `dynamodb:GetItem` + `dynamodb:Query` on the records table so we can
   diff the persisted finance state against what the UI reports.
+- `ses:GetEmailIdentity` on the board-mail and outreach sending
+  identities so a Health `AWS_SES_DKIM_PENDING_TO_FAILED` can be
+  diagnosed. Optional write actions below are only for
+  `scripts/sync-ses-sending-dns.py --retry`.
 
 ```json
 {
@@ -84,6 +88,29 @@ It grants:
       "Resource": [
         "arn:aws:dynamodb:ap-southeast-1:588024549699:table/lxsoftware-admin-audit-log",
         "arn:aws:dynamodb:ap-southeast-1:588024549699:table/lxsoftware-admin-records"
+      ]
+    },
+    {
+      "Sid": "ReadBoardSesIdentities",
+      "Effect": "Allow",
+      "Action": [
+        "ses:GetEmailIdentity"
+      ],
+      "Resource": [
+        "arn:aws:ses:ap-southeast-1:588024549699:identity/siutindei.com",
+        "arn:aws:ses:ap-southeast-1:588024549699:identity/partners.siutindei.com"
+      ]
+    },
+    {
+      "Sid": "RetryBoardSesDkim",
+      "Effect": "Allow",
+      "Action": [
+        "ses:PutEmailIdentityDkimAttributes",
+        "ses:PutEmailIdentityMailFromAttributes"
+      ],
+      "Resource": [
+        "arn:aws:ses:ap-southeast-1:588024549699:identity/siutindei.com",
+        "arn:aws:ses:ap-southeast-1:588024549699:identity/partners.siutindei.com"
       ]
     }
   ]
@@ -146,6 +173,17 @@ aws s3api list-objects-v2 \
 aws s3api get-bucket-cors \
   --region ap-southeast-1 \
   --bucket lxsoftware-admin-assets-588024549699-ap-southeast-1
+
+# Current SES Easy DKIM tokens (needed after AWS_SES_DKIM_PENDING_TO_FAILED):
+python3 - <<'PY'
+import boto3, json
+print(json.dumps(
+    boto3.client("sesv2", region_name="ap-southeast-1").get_email_identity(
+        EmailIdentity="partners.siutindei.com"
+    ).get("DkimAttributes"),
+    indent=2,
+))
+PY
 
 # Audit-log query for a specific Cognito sub:
 aws dynamodb query \

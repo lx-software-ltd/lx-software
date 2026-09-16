@@ -363,7 +363,7 @@ inbound mail, Enable Banking). Lambda env vars stay short (`BOARD_*`,
 | `lxsoftware:SiutindeiBoardToolsEnabled` | `true` (default) / `false`. Deploy-time kill switch for every board tool call, independent of the in-app settings. |
 | `lxsoftware:SiutindeiBoardStaffEnabled` | `false` (CDK default) / `true`. Deploy-time kill switch for Executive Board staff tasks. `board_staff.env_enabled()` is fail-closed: only `1` / `true` / `yes` / `on` count as on (unset is off). The same env is set on **both** `AdminApiFn` and `InboundStatementMailFn`. Also requires `settings.staff.enabled` in the app. Production (`params/production.json`) sets `true`; the Staff UI toggle is still required before any seat runs. |
 | `lxsoftware:PublicSiteOrigins` | CSV of extra browser origins allowed on the HTTP API CORS list (admin origin is always included). Stack-wide; used by the public newsletter form (`apps/public_www`) and any other unauthenticated browser client. Default includes the LX Software and Siu Tin Dei public origins. |
-| `lxsoftware:SiutindeiBoardOutreachSendingDomain` | SES From domain for cold outreach (default `partners.siutindei.com`). Owner adds DKIM CNAMEs, MAIL FROM MX+TXT and DMARC before `outreach_send` will send. |
+| `lxsoftware:SiutindeiBoardOutreachSendingDomain` | SES From domain for cold outreach (default `partners.siutindei.com`). Publish the three `SiutindeiOutreachDkimCnameN` stack outputs (or run `python3 scripts/sync-ses-sending-dns.py --domain partners.siutindei.com --retry`) plus MAIL FROM MX+TXT and DMARC before `outreach_send` will send. SES Easy DKIM that sits in `FAILED` does **not** re-check DNS on its own. |
 | `lxsoftware:SiutindeiBoardOutreachFromLocalPart` | Local part of the outreach From address (default `partnerships`). |
 | `lxsoftware:PublicApiBaseUrl` | Public base URL of this stack's HTTP API. Used today for board unsubscribe / newsletter confirm links. Blank uses the API endpoint CloudFormation assigns. |
 | `lxsoftware:SiutindeiBoardAwsStackPrefix` | Name prefix used to match CloudWatch alarms (default `siutindei`). `aws_monthly_cost` filters Cost Explorer by the activated `Project` cost-allocation tag (`Siu Tin Dei` from `contracts/aws-billing.json`); when that filter matches no rows it falls back to the whole account and labels the result `scope: account`. |
@@ -833,7 +833,8 @@ function calling. Design:
    Default-on seats handle triage and the daily review. Leave **Settings → Staff and daily review → Concurrent tasks** (`maxRunningTasks`) at 3.
 3. WP5: activate `market-analyst`; add ~five watchlist entries.
 4. WP6: activate `prospector` after `partners.siutindei.com` DNS and SES
-   identity verify. First sends are 24 h holds.
+   identity verify (`scripts/sync-ses-sending-dns.py --retry` if Health
+   reports `AWS_SES_DKIM_PENDING_TO_FAILED`). First sends are 24 h holds.
 5. WP7: activate `content-marketer` and `growth-specialist`; raise
    Concurrent tasks to 6 after the first content week is stable.
 6. WP8–WP9: set `PublicSiteOrigins`; activate `accountant` and
@@ -1115,6 +1116,27 @@ Worker copies every message to the board as well. Design:
    your sign-in address and is not indexed. A refusal shows the full SES
    error, including the resource ARN, inline and in CloudWatch as
    `board_mail_send_failed`. Do this before asking a persona to reply.
+
+**Outreach sending domain (`partners.siutindei.com`):**
+
+The stack always creates `SiutindeiOutreachSendingIdentity`. Easy DKIM
+tokens are **not** the same as the apex `siutindei.com` board-mail
+tokens. After a CDK deploy (or after SES moves DKIM from `PENDING` to
+`FAILED`), the three `token._domainkey.partners.siutindei.com` CNAMEs
+must match the **current** identity:
+
+```bash
+python3 scripts/sync-ses-sending-dns.py \
+  --domain partners.siutindei.com \
+  --retry
+```
+
+That upserts DNS-only CNAMEs plus `mail.partners.siutindei.com` MX+SPF
+and asks SES to check again. Confirm `token.dkim.amazonses.com` resolves
+to a TXT record — `NXDOMAIN` there means the Cloudflare targets are
+stale (the previous Failed tokens were withdrawn). `GET /siu-tin-dei/board`
+and **Pipeline → Outreach stats** now include `outreachIdentity.dkimStatus`
+and the current CNAME names.
 
 Replies go out from the mailbox the thread was addressed to. Every outbound
 message is indexed as `direction=out` so it appears in **Mail**. Bodies and
