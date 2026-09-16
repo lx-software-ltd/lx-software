@@ -548,7 +548,7 @@ the first listing plan.
    exercises every view and a rolled-back insert with the same typed
    parameters `AdminApiFn` uses (`--dry-run` prints the statements).
 
-### Catalog import (Option A)
+### Catalog import
 
 Tool `catalog` (`catalog_preview`, `catalog_dry_run`, `catalog_import`;
 design in the architecture doc §6.4) turns an accepted catalog

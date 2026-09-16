@@ -1,11 +1,11 @@
-"""Catalog sheet → siutindei importer JSON (Option A Cognito importer user).
+"""Catalog sheet → siutindei importer JSON (Cognito importer user).
 
 This stack never writes Aurora. Import calls the siutindei admin HTTP API
 after ``AdminInitiateAuth`` (ADMIN_USER_PASSWORD_AUTH) for a dedicated
 importer user. The kill switch ``BOARD_CATALOG_IMPORT_ENABLED`` is
 fail-closed. There is no LLM in this path.
 
-See docs/deployment/admin-website.md → Catalog import (Option A).
+See docs/deployment/admin-website.md → Catalog import.
 """
 
 from __future__ import annotations

@@ -443,14 +443,14 @@ export class LxsoftwareStack extends cdk.Stack {
         type: "String",
         default: "",
         description:
-          "Base URL of the siutindei admin HTTP API (no trailing slash). Used by Executive Board catalog import (Option A). Leave blank to keep import unconfigured.",
+          "Base URL of the siutindei admin HTTP API (no trailing slash). Used by Executive Board catalog import. Leave blank to keep import unconfigured.",
       }
     );
     const siutindeiUserPoolId = new cdk.CfnParameter(this, "SiutindeiUserPoolId", {
       type: "String",
       default: "",
       description:
-        "siutindei Cognito user-pool id for the dedicated importer service user (Option A AdminInitiateAuth). Leave blank until that pool exists.",
+        "siutindei Cognito user-pool id for the dedicated importer service user (AdminInitiateAuth). Leave blank until that pool exists.",
     });
     const boardImporterClientId = new cdk.CfnParameter(
       this,
@@ -1033,7 +1033,7 @@ export class LxsoftwareStack extends cdk.Stack {
     const boardImporterCredentialsSecret = boardPlaceholderSecret(this, "SiutindeiBoardImporterCredentials", {
       secretName: "lxsoftware-admin-siutindei-board-importer-credentials",
       description:
-        "Cognito username/password for the siutindei importer service user (Option A). Replace the dummy values in Secrets Manager.",
+        "Cognito username/password for the siutindei importer service user. Replace the dummy values in Secrets Manager.",
       encryptionKey: this.sharedEncryptionKey,
       tenant: "siutindei",
       purpose: "board-importer",
