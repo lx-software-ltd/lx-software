@@ -354,7 +354,7 @@ lines no longer desired; manual lines are never touched. Daily
 `…-board-dunning` (09:00 HKT) opens D+7 / D+21 / D+35 accountant tasks
 when staff is on, reminder Approvals when it is off.
 
-### 6.4 Catalog import (Option A)
+### 6.4 Catalog import
 
 `board_catalog_import.py` turns an accepted `catalog-micro-batch` sheet
 (§7.2; only fields listed in `verified_fields`, mapped through the
