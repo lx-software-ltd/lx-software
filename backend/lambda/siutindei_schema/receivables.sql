@@ -98,21 +98,19 @@ CREATE OR REPLACE VIEW v_catalog_health AS
 WITH activity_completeness AS (
     SELECT
         a.id AS activity_id,
-        (
-            (CASE WHEN COALESCE(cardinality(o.media_urls), 0) > 0 THEN 1 ELSE 0 END)
-            + (CASE WHEN EXISTS (
-                SELECT 1 FROM activity_pricing p WHERE p.activity_id = a.id
-            ) THEN 1 ELSE 0 END)
-            + (CASE WHEN EXISTS (
-                SELECT 1 FROM activity_schedule s WHERE s.activity_id = a.id
-            ) THEN 1 ELSE 0 END)
-            + (CASE WHEN EXISTS (
-                SELECT 1
-                FROM activity_locations al
-                JOIN locations l ON l.id = al.location_id
-                WHERE al.activity_id = a.id AND l.lat IS NOT NULL AND l.lng IS NOT NULL
-            ) THEN 1 ELSE 0 END)
-        ) / 4.0 AS completeness
+        (CASE WHEN COALESCE(cardinality(o.media_urls), 0) > 0 THEN 1 ELSE 0 END) AS has_photo,
+        (CASE WHEN EXISTS (
+            SELECT 1 FROM activity_pricing p WHERE p.activity_id = a.id
+        ) THEN 1 ELSE 0 END) AS has_price,
+        (CASE WHEN EXISTS (
+            SELECT 1 FROM activity_schedule s WHERE s.activity_id = a.id
+        ) THEN 1 ELSE 0 END) AS has_schedule,
+        (CASE WHEN EXISTS (
+            SELECT 1
+            FROM activity_locations al
+            JOIN locations l ON l.id = al.location_id
+            WHERE al.activity_id = a.id AND l.lat IS NOT NULL AND l.lng IS NOT NULL
+        ) THEN 1 ELSE 0 END) AS has_geo
     FROM activities a
     JOIN organizations o ON o.id = a.org_id
 ),
@@ -136,10 +134,31 @@ SELECT
     COUNT(DISTINCT p.org_id)::int AS providers,
     COUNT(DISTINCT p.location_id)::int AS stores,
     ROUND(
-        SUM(ac.completeness) FILTER (WHERE p.venue_rank = 1)
+        SUM((ac.has_photo + ac.has_price + ac.has_schedule + ac.has_geo) / 4.0)
+            FILTER (WHERE p.venue_rank = 1)
         / COUNT(DISTINCT p.activity_id),
         2
-    ) AS completeness
+    ) AS completeness,
+    ROUND(
+        SUM(ac.has_photo) FILTER (WHERE p.venue_rank = 1)
+        / COUNT(DISTINCT p.activity_id),
+        2
+    ) AS has_photo,
+    ROUND(
+        SUM(ac.has_price) FILTER (WHERE p.venue_rank = 1)
+        / COUNT(DISTINCT p.activity_id),
+        2
+    ) AS has_price,
+    ROUND(
+        SUM(ac.has_schedule) FILTER (WHERE p.venue_rank = 1)
+        / COUNT(DISTINCT p.activity_id),
+        2
+    ) AS has_schedule,
+    ROUND(
+        SUM(ac.has_geo) FILTER (WHERE p.venue_rank = 1)
+        / COUNT(DISTINCT p.activity_id),
+        2
+    ) AS has_geo
 FROM placed p
 JOIN activity_completeness ac ON ac.activity_id = p.activity_id
 LEFT JOIN activity_categories c ON c.id = p.category_id

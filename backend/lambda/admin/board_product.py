@@ -75,7 +75,10 @@ def refresh_caches(table: Any) -> dict[str, str]:
     return notes
 
 
-_CATALOG_SQL = "SELECT district, category, activities, providers, stores, completeness FROM v_catalog_health"
+_CATALOG_SQL = (
+    "SELECT district, category, activities, providers, stores, completeness, "
+    "has_photo, has_price, has_schedule, has_geo FROM v_catalog_health"
+)
 _FUNNEL_SQL = (
     "SELECT day, district, searches, listing_views, cta_taps, leads_relayed, bookings_confirmed "
     "FROM v_funnel_daily"

@@ -212,6 +212,90 @@ class TransformTests(unittest.TestCase):
         self.assertEqual(org["address"], "from address_en")
         self.assertEqual(org["website"], "https://official.example")
 
+    def test_verified_hours_and_free_become_importer_rows(self) -> None:
+        sheet = {
+            "district": "Eastern",
+            "organisations": [
+                {
+                    "name_en": "Quarry Bay Park Playground",
+                    "type": "playground",
+                    "address_en": "Quarry Bay Park, Lei King Road",
+                    "free_or_paid": "free",
+                    "opening_hours": "Daily 07:00-23:00",
+                    "price_note": "unverified",
+                    "verified_fields": [
+                        "name_en",
+                        "address_en",
+                        "free_or_paid",
+                        "opening_hours",
+                    ],
+                    "unverified_fields": ["price_note"],
+                }
+            ],
+        }
+        org = board_catalog_import.transform_sheet(sheet)["organizations"][0]
+        self.assertNotIn("opening_hours=", org["vetting_note"])
+        self.assertNotIn("free_or_paid=", org["vetting_note"])
+        activity = org["activities"][0]
+        self.assertEqual(activity["pricing"], [{"location_name": "Quarry Bay Park, Lei King Road", "pricing_type": "free"}])
+        entries = activity["schedules"][0]["weekly_entries"]
+        self.assertEqual(len(entries), 7)
+        self.assertEqual(entries[0]["start_time"], "07:00")
+        self.assertEqual(entries[0]["end_time"], "23:00")
+        self.assertEqual(activity["schedules"][0]["timezone"], "Asia/Hong_Kong")
+
+    def test_parseable_hkd_price_note_becomes_per_class(self) -> None:
+        row = board_catalog_import.parse_pricing("paid", "HK$80 per class")
+        self.assertEqual(row, {"pricing_type": "per_class", "amount": 80.0, "currency": "HKD"})
+
+    def test_unparseable_hours_stay_in_vetting_note(self) -> None:
+        self.assertIsNone(board_catalog_import.parse_opening_hours("open most days"))
+        sheet = {
+            "district": "Wan Chai",
+            "organisations": [
+                {
+                    "name_en": "Wan Chai Park",
+                    "type": "playground",
+                    "opening_hours": "open most days",
+                    "verified_fields": ["name_en", "opening_hours"],
+                }
+            ],
+        }
+        org = board_catalog_import.transform_sheet(sheet)["organizations"][0]
+        self.assertNotIn("activities", org)
+        self.assertIn("opening_hours=open most days", org["vetting_note"])
+
+    def test_sheet_quality_requires_two_first_class_facts(self) -> None:
+        thin = {
+            "district": "Eastern",
+            "organisations": [
+                {
+                    "name_en": "Thin Park",
+                    "type": "playground",
+                    "verified_fields": ["name_en"],
+                }
+            ],
+        }
+        issues = board_catalog_import.sheet_quality_issues(thin)
+        self.assertTrue(issues)
+        rich = {
+            "district": "Eastern",
+            "organisations": [
+                {
+                    "name_en": "Rich Park",
+                    "address_en": "Lei King Road",
+                    "opening_hours": "Daily 07:00-23:00",
+                    "verified_fields": ["name_en", "address_en", "opening_hours"],
+                }
+            ],
+        }
+        self.assertEqual(board_catalog_import.sheet_quality_issues(rich), [])
+
+    def test_is_catalog_sheet_includes_enrich(self) -> None:
+        self.assertTrue(board_catalog_import.is_catalog_sheet({"eventRef": {"kind": "catalog-micro-batch"}}))
+        self.assertTrue(board_catalog_import.is_catalog_sheet({"eventRef": {"kind": "catalog-enrich"}}))
+        self.assertFalse(board_catalog_import.is_catalog_sheet({"eventRef": {"kind": "duty"}}))
+
     def test_unknown_type_skipped(self) -> None:
         sheet = {
             "district": "Eastern",

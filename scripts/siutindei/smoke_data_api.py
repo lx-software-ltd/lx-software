@@ -52,7 +52,7 @@ def read_statements() -> list[Statement]:
     since = (date.today() - timedelta(days=30)).isoformat()
     probe_uuid = str(uuid.uuid4())
     return [
-        Statement("view v_catalog_health", "SELECT district, category, activities, providers, stores, completeness FROM v_catalog_health ORDER BY activities DESC LIMIT 5", []),
+        Statement("view v_catalog_health", "SELECT district, category, activities, providers, stores, completeness, has_photo, has_price, has_schedule, has_geo FROM v_catalog_health ORDER BY activities DESC LIMIT 5", []),
         Statement(
             "view v_funnel_daily (DATE hint)",
             "SELECT day, district, searches, listing_views, cta_taps, leads_relayed, bookings_confirmed FROM v_funnel_daily WHERE day >= :dfrom ORDER BY day DESC LIMIT 5",

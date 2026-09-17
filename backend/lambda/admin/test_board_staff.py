@@ -619,6 +619,90 @@ class StaffStepTests(ToolsTestCase):
         done = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(done["lastReview"]["verdict"], "return")
 
+    def test_catalog_quality_return_flags_thin_sheet(self) -> None:
+        thin = json.dumps(
+            {
+                "district": "Eastern",
+                "organisations": [
+                    {"name_en": "Thin Park", "type": "playground", "verified_fields": ["name_en"]}
+                ],
+            }
+        )
+        rich = json.dumps(
+            {
+                "district": "Eastern",
+                "organisations": [
+                    {
+                        "name_en": "Rich Park",
+                        "address_en": "Lei King Road",
+                        "opening_hours": "Daily 07:00-23:00",
+                        "verified_fields": ["name_en", "address_en", "opening_hours"],
+                    }
+                ],
+            }
+        )
+        catalog = {"eventRef": {"kind": "catalog-micro-batch"}}
+        enrich = {"eventRef": {"kind": "catalog-enrich"}}
+        other = {"eventRef": {"kind": "duty"}}
+        self.assertIn("only 0 of address", board_staff._catalog_quality_return(catalog, thin))
+        self.assertEqual(board_staff._catalog_quality_return(catalog, rich), "")
+        self.assertIn("only 0 of address", board_staff._catalog_quality_return(enrich, thin))
+        self.assertEqual(board_staff._catalog_quality_return(other, thin), "")
+        prompt = board_staff._review_user_prompt(catalog, thin, [])
+        self.assertIn("fewer than two of", prompt)
+        self.assertIn("opening_hours", prompt)
+
+    def test_catalog_review_overrides_accept_when_sheet_is_thin(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="content-marketer",
+                origin="duty",
+                brief="Catalog sheet",
+                deliverable_type="json",
+                event_ref={"kind": "catalog-micro-batch", "id": "catalog:eastern", "districtId": "eastern"},
+                created_by="admin",
+            )
+        board_store.claim_task_step(self.table, task["taskId"], 0)
+        thin = {
+            "district": "Eastern",
+            "organisations": [
+                {"name_en": "Thin Park", "type": "playground", "verified_fields": ["name_en"]}
+            ],
+        }
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="content-marketer",
+            display_name="Content Marketer",
+            kind="task",
+            task_id=task["taskId"],
+            actor="persona",
+        )
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "Three orgs.",
+                    "deliverableType": "json",
+                    "deliverable": json.dumps(thin),
+                    "evidence": [],
+                    "openQuestions": [],
+                    "confidence": "high",
+                },
+            )
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "review")
+        self.use_script([], '{"verdict":"accept","notes":"Looks complete."}')
+        board_staff.run_review({"internal": "board_staff_review", "boardKey": BOARD_KEY, "taskId": task["taskId"]})
+        done = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(done["lastReview"]["verdict"], "return")
+        self.assertIn("Return —", done["lastReview"]["notes"])
+        self.assertIn("Thin Park", done["lastReview"]["notes"])
+
     def test_task_finish_high_confidence_without_evidence_is_flagged(self) -> None:
         task = self._queued_task()
         board_store.claim_task_step(self.table, task["taskId"], 0)

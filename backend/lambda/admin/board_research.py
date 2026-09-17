@@ -20,6 +20,8 @@ from urllib import request as urlrequest
 
 from admin_runtime import _get_secretsmanager_client
 from contract_constants import (
+    BOARD_CATALOG_EVENT_KINDS,
+    BOARD_CATALOG_FETCH_CAP,
     BOARD_RESEARCH_CACHE_TTL_HOURS,
     BOARD_RESEARCH_MAX_RESULTS,
     BOARD_RESEARCH_QUERY_MAX_LEN,
@@ -289,8 +291,22 @@ RESEARCH_FETCH_TIMEOUT = 20
 _RESEARCH_FETCH_TYPES = ("text/html", "text/plain", "application/xhtml")
 
 
+def fetch_cap_for_task(table: Any, task_id: str) -> int:
+    """Catalog sheets get 9 fetches (3 orgs × 3 pages); everyone else stays at 6."""
+    if not task_id or table is None:
+        return RESEARCH_FETCH_CAP
+    try:
+        task = board_store.get_task(table, task_id)
+    except Exception:
+        return RESEARCH_FETCH_CAP
+    kind = str(((task or {}).get("eventRef") or {}).get("kind") or "")
+    if kind in BOARD_CATALOG_EVENT_KINDS:
+        return max(RESEARCH_FETCH_CAP, int(BOARD_CATALOG_FETCH_CAP))
+    return RESEARCH_FETCH_CAP
+
+
 def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
-    """Fetch a public page. Refuses private/link-local hosts. Cap 6 per task."""
+    """Fetch a public page. Refuses private/link-local hosts. Cap 6 per task (9 for catalog)."""
     import urllib.error
 
     import board_crawl
@@ -299,14 +315,15 @@ def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if not url:
         return {"error": "url is required"}
     task_id = str(getattr(ctx, "task_id", "") or "")
+    cap = fetch_cap_for_task(getattr(ctx, "table", None), task_id)
     if task_id:
         used = sum(
             1
             for call in board_store.list_tool_calls_for_task(ctx.table, task_id)
             if str(call.get("op") or "") == "research_fetch_page" and str(call.get("status") or "") == "ok"
         )
-        if used >= RESEARCH_FETCH_CAP:
-            return {"error": f"per-task fetch cap ({RESEARCH_FETCH_CAP}) reached"}
+        if used >= cap:
+            return {"error": f"per-task fetch cap ({cap}) reached"}
     try:
         result = board_crawl.fetch(url, max_bytes=RESEARCH_FETCH_MAX_BYTES, timeout=RESEARCH_FETCH_TIMEOUT)
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:

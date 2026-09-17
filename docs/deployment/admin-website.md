@@ -573,7 +573,12 @@ the kill switch, schedules an internal `catalog_import` hold (default
 immediately. **Import now** / **Skip** / **Queue again** drop the
 scheduled hold so it cannot fail later as "already imported". The
 catalog duty pauses when `catalog.maxAwaitingImport` (3) sheets are
-waiting (`awaiting_import` plus parked import `needs_owner` rows).
+waiting (`awaiting_import` plus parked import `needs_owner` rows), and
+when more than `maxLowCompletenessDistricts` (3) imported districts sit
+below 50% completeness (then `catalog-enrich` refills hours, price and
+address on existing orgs). Owner **Import anyway** (`force:true`) on a
+delivered sheet re-sends organisations so failed activities can be
+created after a category-mapping fix.
 **Skip import** marks the sheet delivered without sending organisations
 so the district stays claimed. A partial live import returns 200
 `{ok:false,partial:true}` and retries send only the failed

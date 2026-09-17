@@ -126,8 +126,16 @@ def _cache_name(seat_id: str, duty_id: str) -> str:
     return f"duty:{seat_id}:{duty_id}"
 
 
-def _is_catalog_duty(duty_id: str) -> bool:
+def _is_catalog_micro_batch(duty_id: str) -> bool:
     return str(duty_id or "").startswith("catalog-micro-batch")
+
+
+def _is_catalog_enrich(duty_id: str) -> bool:
+    return str(duty_id or "").startswith("catalog-enrich")
+
+
+def _is_catalog_duty(duty_id: str) -> bool:
+    return _is_catalog_micro_batch(duty_id) or _is_catalog_enrich(duty_id)
 
 
 def _duty_slot_label(duty_id: str, when: datetime) -> str:
@@ -198,7 +206,11 @@ def run_due(table: Any, settings: dict[str, Any], now: datetime | None = None) -
                 _log_event("info", tag="board_duty_skipped_unconfigured", seat=seat_id, duty=duty_id, reason=skip_reason[:200])
                 continue
             try:
-                if _is_catalog_duty(duty_id):
+                if _is_catalog_enrich(duty_id):
+                    import board_catalog
+
+                    task = board_catalog.create_enrich(table, settings, created_by="board_duties")
+                elif _is_catalog_micro_batch(duty_id):
                     import board_catalog
 
                     task = board_catalog.create_next(table, settings, created_by="board_duties")
@@ -216,13 +228,19 @@ def run_due(table: Any, settings: dict[str, Any], now: datetime | None = None) -
                     )
             except board_staff.StaffError as exc:
                 if _is_catalog_duty(duty_id) and (
-                    "already have a sheet" in str(exc) or "awaiting_import cap" in str(exc)
+                    "already have a sheet" in str(exc)
+                    or "awaiting_import cap" in str(exc)
+                    or "below 50% completeness" in str(exc)
+                    or "no district needs enrich" in str(exc)
                 ):
-                    skip_why = (
-                        "awaiting import cap"
-                        if "awaiting_import cap" in str(exc)
-                        else "all districts claimed"
-                    )
+                    if "awaiting_import cap" in str(exc):
+                        skip_why = "awaiting import cap"
+                    elif "below 50% completeness" in str(exc):
+                        skip_why = "imported districts below completeness"
+                    elif "no district needs enrich" in str(exc):
+                        skip_why = "no district needs enrich"
+                    else:
+                        skip_why = "all districts claimed"
                     board_store.put_cache(
                         table,
                         _cache_name(seat_id, duty_id),

@@ -29,8 +29,30 @@ class ProgressSnapshotTests(BoardTestCase):
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
         self.settings = _enable_staff(self.table)
         self.catalog = [
-            {"district": "Sha Tin", "category": "play", "activities": 12, "providers": 4, "stores": 4, "completeness": 0.8},
-            {"district": "Tai Po", "category": "sport", "activities": 0, "providers": 2, "stores": 0, "completeness": 0.1},
+            {
+                "district": "Sha Tin",
+                "category": "play",
+                "activities": 12,
+                "providers": 4,
+                "stores": 4,
+                "completeness": 0.8,
+                "has_photo": 0.5,
+                "has_price": 0.8,
+                "has_schedule": 0.8,
+                "has_geo": 1.0,
+            },
+            {
+                "district": "Tai Po",
+                "category": "sport",
+                "activities": 0,
+                "providers": 2,
+                "stores": 0,
+                "completeness": 0.1,
+                "has_photo": 0.0,
+                "has_price": 0.0,
+                "has_schedule": 0.0,
+                "has_geo": 0.4,
+            },
         ]
         self.funnel = [
             {"day": board_hk.today_hkt(), "district": "Sha Tin", "searches": 40, "listing_views": 20, "cta_taps": 5, "leads_relayed": 3, "bookings_confirmed": 1},
@@ -106,7 +128,13 @@ class ProgressSnapshotTests(BoardTestCase):
 
         snap = board_progress.snapshot(self.table, self.settings)
         self.assertEqual(snap["listings"]["activities"], 12)
+        self.assertAlmostEqual(snap["listings"]["hasPhotoAvg"], 0.25)
+        self.assertAlmostEqual(snap["listings"]["hasPriceAvg"], 0.4)
+        self.assertAlmostEqual(snap["listings"]["hasScheduleAvg"], 0.4)
+        self.assertAlmostEqual(snap["listings"]["hasGeoAvg"], 0.7)
         self.assertTrue(any(g["label"] == "Tai Po" for g in snap["listings"]["gaps"]))
+        tai_po = next(g for g in snap["listings"]["gaps"] if g["label"] == "Tai Po")
+        self.assertIn("missing photos, price, hours, geo", tai_po["detail"])
         self.assertEqual(snap["listings"]["funnel7d"]["listingViews"], 20)
         self.assertEqual(snap["signings"]["count"], 2)
         self.assertEqual(snap["signings"]["stalled"][0]["name"], "Sha Tin Playhouse")

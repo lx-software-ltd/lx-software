@@ -59,7 +59,11 @@ function ProgressBody({
         <Kpi
           label="Live listings"
           value={String(listings.activities)}
-          hint={listings.error ? listings.error : `${listings.providers} providers · completeness ${pct(listings.completenessAvg)}`}
+          hint={
+            listings.error
+              ? listings.error
+              : `${listings.providers} providers · completeness ${pct(listings.completenessAvg)} · photo ${pct(listings.hasPhotoAvg)} · price ${pct(listings.hasPriceAvg)} · hours ${pct(listings.hasScheduleAvg)} · geo ${pct(listings.hasGeoAvg)}`
+          }
         />
         <Kpi
           label="Listing views (7d)"
@@ -124,6 +128,10 @@ function ProgressBody({
                     <th>Listings</th>
                     <th className="d-none d-md-table-cell">Providers</th>
                     <th className="d-none d-md-table-cell">Complete</th>
+                    <th className="d-none d-lg-table-cell">Photo</th>
+                    <th className="d-none d-lg-table-cell">Price</th>
+                    <th className="d-none d-lg-table-cell">Hours</th>
+                    <th className="d-none d-lg-table-cell">Geo</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -133,6 +141,10 @@ function ProgressBody({
                       <td>{row.activities}</td>
                       <td className="d-none d-md-table-cell">{row.providers}</td>
                       <td className="d-none d-md-table-cell">{pct(row.completenessAvg)}</td>
+                      <td className="d-none d-lg-table-cell">{pct(row.hasPhotoAvg)}</td>
+                      <td className="d-none d-lg-table-cell">{pct(row.hasPriceAvg)}</td>
+                      <td className="d-none d-lg-table-cell">{pct(row.hasScheduleAvg)}</td>
+                      <td className="d-none d-lg-table-cell">{pct(row.hasGeoAvg)}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -93,6 +93,10 @@ def _listings(table: Any, settings: dict[str, Any] | None) -> dict[str, Any]:
         "providers": 0,
         "stores": 0,
         "completenessAvg": None,
+        "hasPhotoAvg": None,
+        "hasPriceAvg": None,
+        "hasScheduleAvg": None,
+        "hasGeoAvg": None,
         "byDistrict": [],
         "byCategory": [],
         "funnel7d": {"listingViews": 0, "leads": 0, "bookings": 0},
@@ -114,6 +118,10 @@ def _listings(table: Any, settings: dict[str, Any] | None) -> dict[str, Any]:
     providers = sum(_num(r.get("providers")) for r in rows)
     stores = sum(_num(r.get("stores")) for r in rows)
     scores = [_num(r.get("completeness")) for r in rows if r.get("completeness") is not None]
+    photos = [_num(r.get("has_photo")) for r in rows if r.get("has_photo") is not None]
+    prices = [_num(r.get("has_price")) for r in rows if r.get("has_price") is not None]
+    hours = [_num(r.get("has_schedule")) for r in rows if r.get("has_schedule") is not None]
+    geos = [_num(r.get("has_geo")) for r in rows if r.get("has_geo") is not None]
     by_district = _group_catalog(rows, "district")
     by_category = _group_catalog(rows, "category")
     gaps = []
@@ -121,14 +129,27 @@ def _listings(table: Any, settings: dict[str, Any] | None) -> dict[str, Any]:
         if row["activities"] <= 0 or (
             row.get("completenessAvg") is not None and row["completenessAvg"] < LOW_COMPLETENESS
         ):
+            missing = [
+                name
+                for name, key in (
+                    ("photos", "hasPhotoAvg"),
+                    ("price", "hasPriceAvg"),
+                    ("hours", "hasScheduleAvg"),
+                    ("geo", "hasGeoAvg"),
+                )
+                if row.get(key) is not None and row[key] < LOW_COMPLETENESS
+            ]
+            detail = (
+                f"{row['activities']} listings · completeness "
+                f"{_pct(row.get('completenessAvg'))}"
+            )
+            if missing:
+                detail += " · missing " + ", ".join(missing)
             gaps.append(
                 {
                     "kind": "district",
                     "label": row["label"] or "(unmapped)",
-                    "detail": (
-                        f"{row['activities']} listings · completeness "
-                        f"{_pct(row.get('completenessAvg'))}"
-                    ),
+                    "detail": detail,
                 }
             )
     cutoff = (datetime.now(timezone.utc) - timedelta(days=FUNNEL_DAYS)).date().isoformat()
@@ -139,6 +160,10 @@ def _listings(table: Any, settings: dict[str, Any] | None) -> dict[str, Any]:
         "providers": int(providers),
         "stores": int(stores),
         "completenessAvg": (sum(scores) / len(scores)) if scores else None,
+        "hasPhotoAvg": (sum(photos) / len(photos)) if photos else None,
+        "hasPriceAvg": (sum(prices) / len(prices)) if prices else None,
+        "hasScheduleAvg": (sum(hours) / len(hours)) if hours else None,
+        "hasGeoAvg": (sum(geos) / len(geos)) if geos else None,
         "byDistrict": by_district[:12],
         "byCategory": by_category[:12],
         "funnel7d": {
@@ -424,6 +449,10 @@ def _bottlenecks(
 def _group_catalog(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
     buckets: dict[str, dict[str, float]] = {}
     scores: dict[str, list[float]] = {}
+    photos: dict[str, list[float]] = {}
+    prices: dict[str, list[float]] = {}
+    hours: dict[str, list[float]] = {}
+    geos: dict[str, list[float]] = {}
     for row in rows:
         label = str(row.get(key) or "").strip() or "(unmapped)"
         if key == "district" and label.lower() == "unknown":
@@ -434,9 +463,21 @@ def _group_catalog(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]
         bucket["stores"] += _num(row.get("stores"))
         if row.get("completeness") is not None:
             scores.setdefault(label, []).append(_num(row.get("completeness")))
+        if row.get("has_photo") is not None:
+            photos.setdefault(label, []).append(_num(row.get("has_photo")))
+        if row.get("has_price") is not None:
+            prices.setdefault(label, []).append(_num(row.get("has_price")))
+        if row.get("has_schedule") is not None:
+            hours.setdefault(label, []).append(_num(row.get("has_schedule")))
+        if row.get("has_geo") is not None:
+            geos.setdefault(label, []).append(_num(row.get("has_geo")))
     out: list[dict[str, Any]] = []
     for label, bucket in buckets.items():
         vals = scores.get(label) or []
+        photo_vals = photos.get(label) or []
+        price_vals = prices.get(label) or []
+        hour_vals = hours.get(label) or []
+        geo_vals = geos.get(label) or []
         out.append(
             {
                 "label": label,
@@ -444,6 +485,10 @@ def _group_catalog(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]
                 "providers": int(bucket["providers"]),
                 "stores": int(bucket["stores"]),
                 "completenessAvg": (sum(vals) / len(vals)) if vals else None,
+                "hasPhotoAvg": (sum(photo_vals) / len(photo_vals)) if photo_vals else None,
+                "hasPriceAvg": (sum(price_vals) / len(price_vals)) if price_vals else None,
+                "hasScheduleAvg": (sum(hour_vals) / len(hour_vals)) if hour_vals else None,
+                "hasGeoAvg": (sum(geo_vals) / len(geo_vals)) if geo_vals else None,
             }
         )
     out.sort(key=lambda r: r["activities"], reverse=True)

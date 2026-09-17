@@ -2355,6 +2355,22 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
     return {"ok": True, "status": "review", "deliverableKey": key}
 
 
+def _catalog_quality_return(task: dict[str, Any], raw: str) -> str:
+    kind = str(((task or {}).get("eventRef") or {}).get("kind") or "")
+    if kind not in ("catalog-micro-batch", "catalog-enrich"):
+        return ""
+    try:
+        import board_catalog_import
+
+        sheet = board_catalog_import.parse_sheet(raw)
+        issues = board_catalog_import.sheet_quality_issues(sheet)
+    except Exception as exc:
+        return f"Catalog sheet does not parse: {exc}"[:300]
+    if not issues:
+        return ""
+    return "Return — " + "; ".join(issues[:6])
+
+
 def _review_user_prompt(task: dict[str, Any], raw: str, evidence_lines: list[str]) -> str:
     """User message for the manager review call."""
     return (
@@ -2387,6 +2403,9 @@ def _review_user_prompt(task: dict[str, Any], raw: str, evidence_lines: list[str
         "as if the assignee called those tools.\n"
         "If the brief demands JSON and the Deliverable is not valid JSON, or contains "
         "`!function_call:` text, you MUST return.\n"
+        "Catalog sheets: return if any organisation has fewer than two of "
+        "opening_hours, (free_or_paid or price_note), and address_en in verified_fields. "
+        "Accept only facts read on the official page.\n"
         'Return JSON {"verdict":"accept"|"return","notes":"…"}.'
     )
 
@@ -2452,6 +2471,10 @@ def run_review(payload: dict[str, Any]) -> None:
     if not parsed_ok:
         _log_event("warning", tag="board_staff_review_unparsed", taskId=task_id)
         verdict = "return"
+    quality = _catalog_quality_return(task, raw)
+    if quality:
+        verdict = "return"
+        notes = (quality + (" " + notes if notes else "")).strip()[:2000]
     apply_review(table, settings, task, verdict=verdict, notes=notes, by="manager")
 
 
@@ -2680,11 +2703,19 @@ def _accept_task(table: Any, task: dict[str, Any], now: str, *, bypass_unverifie
         board_store.put_task(table, task)
         _note_parent_if_child_needs_owner(table, task)
         return task
-    if ref.get("kind") == "catalog-micro-batch":
+    if ref.get("kind") in ("catalog-micro-batch", "catalog-enrich"):
         import board_catalog_import
 
         try:
-            return board_catalog_import.accept_catalog_task(table, task, now)
+            accepted = board_catalog_import.accept_catalog_task(table, task, now)
+            try:
+                import board_catalog
+
+                sheet = board_catalog_import.parse_sheet(_blob_get(str(task.get("deliverableKey") or "")).decode("utf-8", errors="replace"))
+                board_catalog.handoff_commercial_providers(table, settings, accepted, sheet)
+            except Exception as exc:
+                _log_event("info", tag="board_catalog_handoff_failed", error=str(exc)[:200])
+            return accepted
         except Exception as exc:
             _log_event("warning", tag="board_catalog_import_accept_failed", error=str(exc)[:200])
             task["importPreview"] = {"ok": False, "error": str(exc)[:300], "taskId": task.get("taskId")}
@@ -2739,7 +2770,10 @@ def retry_task(table: Any, settings: dict[str, Any], task_id: str, by_sub: str) 
         "before trusting them."
     )
     import_notes = [str(q) for q in (task.get("openQuestions") or []) if q]
-    if import_notes and str((task.get("eventRef") or {}).get("kind") or "") == "catalog-micro-batch":
+    if import_notes and str((task.get("eventRef") or {}).get("kind") or "") in (
+        "catalog-micro-batch",
+        "catalog-enrich",
+    ):
         retry_banner = retry_banner + " Importer: " + "; ".join(import_notes[:6])
     combined = _prepend_scratchpad(task, retry_banner)
     task["scratchpadKey"] = _scratchpad_key(task_id)

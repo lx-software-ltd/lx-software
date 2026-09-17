@@ -10,9 +10,13 @@ const snap: BoardProgressSnapshot = {
     providers: 6,
     stores: 4,
     completenessAvg: 0.45,
+    hasPhotoAvg: 0.2,
+    hasPriceAvg: 0.4,
+    hasScheduleAvg: 0.3,
+    hasGeoAvg: 0.9,
     byDistrict: [
-      { label: "Sha Tin", activities: 12, providers: 4, stores: 4, completenessAvg: 0.8 },
-      { label: "Tai Po", activities: 0, providers: 2, stores: 0, completenessAvg: 0.1 },
+      { label: "Sha Tin", activities: 12, providers: 4, stores: 4, completenessAvg: 0.8, hasPhotoAvg: 0.5, hasPriceAvg: 0.8, hasScheduleAvg: 0.8, hasGeoAvg: 1 },
+      { label: "Tai Po", activities: 0, providers: 2, stores: 0, completenessAvg: 0.1, hasPhotoAvg: 0, hasPriceAvg: 0, hasScheduleAvg: 0, hasGeoAvg: 0.4 },
     ],
     funnel7d: { listingViews: 20, leads: 3, bookings: 1 },
     gaps: [{ kind: "district", label: "Tai Po", detail: "0 listings · completeness 10%" }],
@@ -57,5 +61,9 @@ describe("BoardProgressSection", () => {
     expect(screen.getByText("Old draft")).toBeInTheDocument();
     expect(screen.getByText("1 / 50")).toBeInTheDocument();
     expect(screen.getByText(/Listing gap in Tai Po/i)).toBeInTheDocument();
+    expect(screen.getByText("Photo")).toBeInTheDocument();
+    expect(screen.getByText("Price")).toBeInTheDocument();
+    expect(screen.getByText("Hours")).toBeInTheDocument();
+    expect(screen.getByText("Geo")).toBeInTheDocument();
   });
 });

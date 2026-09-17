@@ -1,4 +1,5 @@
 import {
+  BOARD_CATALOG_EVENT_KINDS,
   BOARD_PERSONA_DEFAULTS,
   BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
   BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
@@ -1706,7 +1707,8 @@ export function showTaskReviewActions(task: Pick<BoardTask, "status" | "importPh
 }
 
 export function isCatalogSheetTask(task: Pick<BoardTask, "eventRef"> | undefined | null): boolean {
-  return task?.eventRef?.kind === "catalog-micro-batch";
+  const kind = task?.eventRef?.kind;
+  return Boolean(kind && (BOARD_CATALOG_EVENT_KINDS as readonly string[]).includes(kind));
 }
 
 /** Use a live preview mutation only when it belongs to the open task. */
@@ -1997,12 +1999,20 @@ export type BoardProgressSnapshot = {
     readonly providers: number;
     readonly stores: number;
     readonly completenessAvg: number | null;
+    readonly hasPhotoAvg?: number | null;
+    readonly hasPriceAvg?: number | null;
+    readonly hasScheduleAvg?: number | null;
+    readonly hasGeoAvg?: number | null;
     readonly byDistrict: readonly {
       readonly label: string;
       readonly activities: number;
       readonly providers: number;
       readonly stores: number;
       readonly completenessAvg: number | null;
+      readonly hasPhotoAvg?: number | null;
+      readonly hasPriceAvg?: number | null;
+      readonly hasScheduleAvg?: number | null;
+      readonly hasGeoAvg?: number | null;
     }[];
     readonly funnel7d: { readonly listingViews: number; readonly leads: number; readonly bookings: number };
     readonly gaps: readonly BoardProgressGap[];
@@ -2048,6 +2058,13 @@ export type BoardReviewSnapshot = {
     readonly signings?: Readonly<Record<string, unknown>>;
     readonly market?: Readonly<Record<string, unknown>>;
     readonly mail?: { readonly replied: number; readonly archived: number; readonly open: number };
+    readonly catalog?: {
+      readonly ready?: number;
+      readonly importedDistricts?: number;
+      readonly completeDistricts?: number;
+      readonly nextDistrict?: string;
+      readonly failedActivityRows?: number;
+    };
   };
   readonly holdsDue: readonly BoardHold[];
   readonly escalations: readonly {
