@@ -1488,6 +1488,7 @@ def compare_staging() -> dict[str, Any]:
 
 _SYNC_STAGING_CACHE = "duty:cto:sync-staging"
 _SYNC_STAGING_EVENT_ID = "rebase-staging"
+_SYNC_STAGING_HOUR_HKT = 7
 _DELEGATE_SEATS = ("architect", "engineer-1", "engineer-2")
 _OPEN_SYNC_STATUSES = (
     "queued",
@@ -1496,6 +1497,13 @@ _OPEN_SYNC_STATUSES = (
     "waiting_subtask",
     "review",
     "needs_owner",
+)
+_SUPERSEDE_SYNC_STATUSES = ("needs_owner", "review")
+_LIVE_SYNC_STATUSES = (
+    "queued",
+    "running",
+    "waiting_approval",
+    "waiting_subtask",
 )
 
 
@@ -1532,22 +1540,416 @@ def _sync_staging_brief(preview: dict[str, Any], delegates: list[str]) -> str:
         f"siutindei staging is {behind} commit(s) behind main "
         f"(compare status={status}, aheadBy={ahead}).{compare}{diverge} "
         "You own keeping staging current with main so the promote path can run. "
-        "Call code_sync_staging (merges main into staging; a propose-level call becomes an "
-        "Approval, and act is a code_staging hold). Then call github_compare base=main "
-        "head=staging and only task_finish when behindBy=0. github_list_commits without sha "
+        "Call code_sync_staging (merges main into staging). At act the call is a "
+        "code_staging hold — confirm the response has holdId / executeAt, then task_finish "
+        "citing that hold; the runtime closes this task when the hold executes. At propose "
+        "the call is an Approval; finish citing the approval — the runtime closes this "
+        "task when the founder decides it. Then call github_compare "
+        "base=main head=staging so the note has the counts. github_list_commits without sha "
         "lists the default branch — do not use it to claim staging is current. "
         f"{handoff} "
-        "Deliverable: markdown with behind/ahead counts from github_compare, the merge result, "
-        "and the compare URL."
+        "Deliverable: markdown with behind/ahead counts from github_compare, the hold or "
+        "approval id, and the compare URL."
     )
+
+
+def _sync_task_created_hkt_date(task: dict[str, Any]) -> str:
+    try:
+        return board_hk.as_hkt(board_hk.parse_iso(str(task.get("createdAt") or ""))).date().isoformat()
+    except ValueError:
+        return ""
+
+
+def _list_sync_tasks(table: Any, statuses: tuple[str, ...]) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for status in statuses:
+        for task in board_store.list_tasks(table, status, limit=200):
+            ref = task.get("eventRef") or {}
+            if ref.get("kind") != "ops" or str(ref.get("id") or "") != _SYNC_STAGING_EVENT_ID:
+                continue
+            tid = str(task.get("taskId") or "")
+            if not tid or tid in seen:
+                continue
+            seen.add(tid)
+            found.append(task)
+    return found
+
+
+def find_scheduled_sync_hold(table: Any, task_id: str) -> dict[str, Any] | None:
+    wanted = str(task_id or "")
+    if not wanted:
+        return None
+    for hold in board_store.list_holds(table, "scheduled", limit=200):
+        if str(hold.get("op") or "") != "code_sync_staging":
+            continue
+        if str(hold.get("taskId") or "") == wanted:
+            return hold
+    return None
+
+
+def find_pending_sync_approval(table: Any, task_id: str) -> dict[str, Any] | None:
+    wanted = str(task_id or "")
+    if not wanted:
+        return None
+    for approval in board_store.list_approvals(table):
+        if str(approval.get("status") or "") != "pending":
+            continue
+        if str(approval.get("op") or "") != "code_sync_staging":
+            continue
+        if str((approval.get("context") or {}).get("taskId") or "") == wanted:
+            return approval
+    return None
+
+
+def _park_sync_task(
+    table: Any,
+    task: dict[str, Any],
+    *,
+    now: str,
+    status: str,
+    flags: list[str],
+    blocked_on: list[str],
+    question: str,
+) -> dict[str, Any]:
+    current_flags = [str(f) for f in (task.get("flags") or []) if f]
+    for flag in flags:
+        if flag not in current_flags:
+            current_flags.append(flag)
+    drop = {"staging_behind", "sync_scheduled"} - set(flags)
+    current_flags = [f for f in current_flags if f not in drop]
+    questions = [str(q) for q in (task.get("openQuestions") or []) if q]
+    if question and question not in questions:
+        questions.append(question)
+    task["flags"] = current_flags
+    task["openQuestions"] = questions
+    task["blockedOn"] = [str(x) for x in blocked_on if x]
+    task["status"] = status
+    task["finishedAt"] = None
+    board_staff._stamp_parked(task, reason=question or status)
+    task["updatedAt"] = now
+    board_store.put_task(table, task)
+    return task
+
+
+def park_sync_scheduled(table: Any, task: dict[str, Any], blocker: dict[str, Any], now: str) -> dict[str, Any]:
+    """Hold or Approval is in flight — keep the task off Attention."""
+    hold_id = str(blocker.get("holdId") or "")
+    approval_id = str(blocker.get("approvalId") or "")
+    blocker_id = hold_id or approval_id
+    execute_at = str(blocker.get("executeAt") or "")
+    if hold_id and execute_at:
+        question = f"sync hold {hold_id} executes at {execute_at}"
+    elif hold_id:
+        question = f"sync hold {hold_id} is scheduled"
+    else:
+        question = f"sync approval {approval_id} is pending"
+    return _park_sync_task(
+        table,
+        task,
+        now=now,
+        status="waiting_approval",
+        flags=["sync_scheduled"],
+        blocked_on=[blocker_id],
+        question=question,
+    )
+
+
+def park_sync_behind(
+    table: Any,
+    task: dict[str, Any],
+    still: dict[str, Any],
+    now: str,
+    *,
+    extra: str = "",
+) -> dict[str, Any]:
+    if still.get("error"):
+        question = f"could not verify staging vs main: {still.get('error')}"
+    elif still.get("behindBy") == "?":
+        question = extra or "sync hold did not complete"
+        extra = ""
+    else:
+        question = f"staging is still {still.get('behindBy')} commit(s) behind main"
+    if extra:
+        question = f"{question}; {extra}"
+    parked = _park_sync_task(
+        table,
+        task,
+        now=now,
+        status="needs_owner",
+        flags=["staging_behind"],
+        blocked_on=[],
+        question=question,
+    )
+    board_staff._note_parent_if_child_needs_owner(table, parked)
+    return parked
+
+
+def _write_sync_deliverable(task: dict[str, Any], text: str) -> None:
+    key = board_staff._deliverable_key(str(task.get("taskId") or ""), "markdown")
+    board_staff._blob_put(key, text.encode("utf-8"))
+    task["deliverableKey"] = key
+    task["deliverableType"] = "markdown"
+    task["summary"] = text.splitlines()[0][:200] if text else "Synced staging with main"
+
+
+def _sync_result_succeeded(result: dict[str, Any] | None) -> bool:
+    """True when a hold/approval already recorded a successful merge."""
+    if not isinstance(result, dict) or result.get("error"):
+        return False
+    if result.get("ok") or result.get("mergedSha") or result.get("alreadyCurrent"):
+        return True
+    preview = result.get("preview") if isinstance(result.get("preview"), dict) else {}
+    try:
+        return bool(preview) and not preview.get("error") and int(preview.get("behindBy") or 0) == 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _preview_from_sync_result(result: dict[str, Any], live: dict[str, Any]) -> dict[str, Any]:
+    preview = dict(live) if isinstance(live, dict) else {}
+    stored = result.get("preview") if isinstance(result.get("preview"), dict) else {}
+    ahead = result.get("aheadBy")
+    if ahead in (None, ""):
+        ahead = stored.get("aheadBy")
+    if ahead not in (None, ""):
+        preview["aheadBy"] = ahead
+    url = str(result.get("htmlUrl") or stored.get("htmlUrl") or preview.get("htmlUrl") or "").strip()
+    if url:
+        preview["htmlUrl"] = url
+    preview["behindBy"] = 0
+    preview.pop("error", None)
+    return preview
+
+
+def _note_running_sync(task: dict[str, Any], text: str) -> None:
+    combined = board_staff._append_scratchpad(task, text)
+    task["scratchpadKey"] = str(task.get("scratchpadKey") or board_staff._scratchpad_key(str(task.get("taskId") or "")))
+    task["scratchpadChars"] = len(combined)
+
+
+def _deliver_sync_task(
+    table: Any,
+    task: dict[str, Any],
+    preview: dict[str, Any],
+    *,
+    source: str,
+    source_id: str = "",
+) -> dict[str, Any]:
+    ahead = int(preview.get("aheadBy") or 0)
+    url = str(preview.get("htmlUrl") or "").strip()
+    label = f"{source} {source_id}".strip() if source_id else source
+    lines = [
+        f"Synced staging with main via {label}."
+        f" behindBy=0, aheadBy={ahead}.",
+    ]
+    if url:
+        lines.append(f"Compare: {url}")
+    _write_sync_deliverable(task, "\n".join(lines))
+    task["closedBy"] = f"{source}:{source_id}" if source_id else source
+    flags = [str(f) for f in (task.get("flags") or []) if f and f not in {"staging_behind", "sync_scheduled"}]
+    task["flags"] = flags
+    board_staff._clear_parked(task)
+    return board_staff._mark_delivered(table, task, board_store.now_iso())
+
+
+def _settle_sync_success(
+    table: Any,
+    task: dict[str, Any],
+    preview: dict[str, Any],
+    *,
+    source: str,
+    source_id: str = "",
+) -> dict[str, Any]:
+    """Deliver a finished sync task; leave a still-running step alone."""
+    if str(task.get("status") or "") == "running":
+        label = f"{source} {source_id}".strip() if source_id else source
+        _note_running_sync(
+            task,
+            f"SYNC: {label} completed; staging is current. Call task_finish citing this note.",
+        )
+        task["updatedAt"] = board_store.now_iso()
+        board_store.put_task(table, task)
+        return task
+    return _deliver_sync_task(table, task, preview, source=source, source_id=source_id)
+
+
+def _load_sync_task(table: Any, task_id: str) -> dict[str, Any] | None:
+    wanted = str(task_id or "")
+    if not wanted:
+        return None
+    task = board_store.get_task(table, wanted)
+    if not task:
+        return None
+    ref = task.get("eventRef") or {}
+    if ref.get("kind") != "ops" or str(ref.get("id") or "") != _SYNC_STAGING_EVENT_ID:
+        return None
+    if str(task.get("status") or "") in ("delivered", "cancelled"):
+        return None
+    return task
+
+
+def _settle_sync_executed(
+    table: Any,
+    task: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    source: str,
+    source_id: str,
+) -> dict[str, Any]:
+    live = staging_preview()
+    if _sync_result_succeeded(result):
+        preview = _preview_from_sync_result(result, live)
+        return _settle_sync_success(table, task, preview, source=source, source_id=source_id)
+    if live.get("error") or int(live.get("behindBy") or 0) > 0:
+        extra = str(live.get("error") or "").strip()
+        return park_sync_behind(table, task, live, board_store.now_iso(), extra=extra)
+    return _settle_sync_success(table, task, live, source=source, source_id=source_id)
+
+
+def on_sync_hold_outcome(table: Any, hold: dict[str, Any]) -> dict[str, Any] | None:
+    """Close or re-park the rebase-staging task after a code_sync_staging hold settles."""
+    if str(hold.get("op") or "") != "code_sync_staging":
+        return None
+    task = _load_sync_task(table, str(hold.get("taskId") or ""))
+    if not task:
+        return None
+    now = board_store.now_iso()
+    status = str(hold.get("status") or "")
+    hold_id = str(hold.get("holdId") or "")
+    if status == "executed":
+        return _settle_sync_executed(
+            table,
+            task,
+            hold.get("result") if isinstance(hold.get("result"), dict) else {},
+            source="hold",
+            source_id=hold_id,
+        )
+    reason = str((hold.get("result") or {}).get("error") or hold.get("vetoReason") or status)
+    return park_sync_behind(
+        table,
+        task,
+        {"behindBy": "?", "error": ""},
+        now,
+        extra=f"hold {status}: {reason}"[:200],
+    )
+
+
+def on_sync_approval_outcome(table: Any, approval: dict[str, Any]) -> dict[str, Any] | None:
+    """Close or re-park the rebase-staging task after a code_sync_staging Approval settles."""
+    if str(approval.get("op") or "") != "code_sync_staging":
+        return None
+    task = _load_sync_task(table, str((approval.get("context") or {}).get("taskId") or ""))
+    if not task:
+        return None
+    now = board_store.now_iso()
+    status = str(approval.get("status") or "")
+    approval_id = str(approval.get("approvalId") or "")
+    if status == "executed":
+        result = approval.get("result") if isinstance(approval.get("result"), dict) else {}
+        return _settle_sync_executed(table, task, result, source="approval", source_id=approval_id)
+    if status in ("rejected", "failed"):
+        reason = str(approval.get("errorMessage") or approval.get("note") or status)
+        return park_sync_behind(
+            table,
+            task,
+            {"behindBy": "?", "error": ""},
+            now,
+            extra=f"approval {status}: {reason}"[:200],
+        )
+    return None
+
+
+def accept_sync_staging_task(
+    table: Any,
+    task: dict[str, Any],
+    now: str,
+    *,
+    bypass_unverified: bool = False,
+) -> dict[str, Any]:
+    """Accept gate for ops/rebase-staging: scheduled hold vs still behind vs evidence."""
+    task_id = str(task.get("taskId") or "")
+    hold = find_scheduled_sync_hold(table, task_id)
+    if hold:
+        return park_sync_scheduled(table, task, hold, now)
+    approval = find_pending_sync_approval(table, task_id)
+    if approval:
+        return park_sync_scheduled(table, task, approval, now)
+    try:
+        still = staging_still_behind()
+    except Exception as exc:
+        still = {"error": str(exc)[:200], "behindBy": "?"}
+    if still:
+        return park_sync_behind(table, task, still, now)
+    if not bypass_unverified and board_staff._should_hold_unverified_accept(table, task):
+        flags = [str(f) for f in (task.get("flags") or []) if f]
+        parked = _park_sync_task(
+            table,
+            task,
+            now=now,
+            status="needs_owner",
+            flags=flags,
+            blocked_on=[],
+            question="staging is current; the deliverable still needs evidence before accept",
+        )
+        board_staff._note_parent_if_child_needs_owner(table, parked)
+        return parked
+    return board_staff._mark_delivered(table, task, now)
+
+
+def _supersede_stale_sync_tasks(table: Any, today_hkt: str) -> list[dict[str, Any]]:
+    cancelled: list[dict[str, Any]] = []
+    for task in _list_sync_tasks(table, _SUPERSEDE_SYNC_STATUSES):
+        created = _sync_task_created_hkt_date(task)
+        if created and created >= today_hkt:
+            continue
+        tid = str(task.get("taskId") or "")
+        if not tid:
+            continue
+        try:
+            closed = board_staff.cancel_task(
+                table,
+                tid,
+                "board_code:superseded",
+                reason="Superseded by today's staging-sync check.",
+                record_failure=False,
+            )
+        except board_staff.StaffError as exc:
+            _log_event("info", tag="board_code_rebase_supersede_skipped", taskId=tid, error=str(exc)[:200])
+            continue
+        closed["closedBy"] = "board_code:superseded"
+        closed["failureReason"] = ""
+        if not str(closed.get("summary") or "").strip():
+            closed["summary"] = "Superseded by today's staging-sync check."
+        board_store.put_task(table, closed)
+        cancelled.append(closed)
+    return cancelled
+
+
+def _close_caught_up_sync_tasks(table: Any, preview: dict[str, Any]) -> list[dict[str, Any]]:
+    """Deliver parked rebase-staging tasks when staging is already current."""
+    closed: list[dict[str, Any]] = []
+    for task in _list_sync_tasks(table, (*_SUPERSEDE_SYNC_STATUSES, "queued")):
+        status = str(task.get("status") or "")
+        if status in ("running", "waiting_approval", "waiting_subtask", "delivered", "cancelled"):
+            continue
+        closed.append(_deliver_sync_task(table, task, preview, source="compare", source_id="current"))
+    return closed
 
 
 def _ensure_rebase_task(
     table: Any,
     settings: dict[str, Any],
     preview: dict[str, Any] | None = None,
+    *,
+    when: datetime | None = None,
 ) -> dict[str, Any] | None:
-    if _find_task(table, "ops", _SYNC_STAGING_EVENT_ID, statuses=_OPEN_SYNC_STATUSES):
+    local = board_hk.as_hkt(when or board_hk.now_hkt())
+    today = local.date().isoformat()
+    if _list_sync_tasks(table, _LIVE_SYNC_STATUSES):
+        return None
+    _supersede_stale_sync_tasks(table, today)
+    if _list_sync_tasks(table, _OPEN_SYNC_STATUSES):
         return None
     snapshot = preview if isinstance(preview, dict) else staging_preview()
     if snapshot.get("error"):
@@ -1573,23 +1975,45 @@ def _ensure_rebase_task(
 
 
 def maybe_daily_staging_sync(
-    table: Any, settings: dict[str, Any], preview: dict[str, Any] | None = None
+    table: Any,
+    settings: dict[str, Any],
+    preview: dict[str, Any] | None = None,
+    *,
+    now: datetime | None = None,
 ) -> dict[str, Any] | None:
-    """Once per HKT day, open a CTO task when staging is behind main."""
+    """Once per HKT day from 07:00, open a CTO task when staging is behind main."""
     if not board_staff.enabled(settings):
         return None
-    date_hkt = board_hk.today_hkt()
-    hit = board_store.get_cache(table, _SYNC_STAGING_CACHE)
-    payload = hit.get("payload") if isinstance(hit, dict) else None
-    if isinstance(payload, dict) and payload.get("dateHkt") == date_hkt:
+    when = now or board_hk.now_hkt()
+    local = board_hk.as_hkt(when)
+    if local.hour < _SYNC_STAGING_HOUR_HKT:
         return None
+    date_hkt = local.date().isoformat()
     preview = preview if isinstance(preview, dict) else staging_preview()
     if preview.get("error"):
         _log_event("warning", tag="board_code_staging_sync_preview_failed", error=str(preview.get("error"))[:200])
         return None
+    behind = int(preview.get("behindBy") or 0)
+    if behind <= 0:
+        _close_caught_up_sync_tasks(table, preview)
+        board_store.put_cache(
+            table,
+            _SYNC_STAGING_CACHE,
+            {
+                "dateHkt": date_hkt,
+                "behindBy": 0,
+                "aheadBy": int(preview.get("aheadBy") or 0),
+                "status": preview.get("status") or "",
+            },
+            ttl_seconds=3 * 86400,
+        )
+        return None
+    hit = board_store.get_cache(table, _SYNC_STAGING_CACHE)
+    payload = hit.get("payload") if isinstance(hit, dict) else None
+    if isinstance(payload, dict) and payload.get("dateHkt") == date_hkt:
+        return None
     if not board_store.claim_duty_marker(table, f"duty:cto:sync-staging:{date_hkt}"):
         return None
-    behind = int(preview.get("behindBy") or 0)
     board_store.put_cache(
         table,
         _SYNC_STAGING_CACHE,
@@ -1601,9 +2025,7 @@ def maybe_daily_staging_sync(
         },
         ttl_seconds=3 * 86400,
     )
-    if behind <= 0:
-        return None
-    return _ensure_rebase_task(table, settings, preview=preview)
+    return _ensure_rebase_task(table, settings, preview=preview, when=when)
 
 
 def op_promote(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -2324,14 +2746,14 @@ def sweep_stale_board_branches(table: Any, *, force: bool = False) -> list[str]:
     return deleted
 
 
-def handle_tick(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
+def handle_tick(table: Any, settings: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
     if not board_staff.enabled(settings):
         return {"ok": True, "skipped": "disabled"}
     reviews = poll_runs(table, settings)
     stale = sweep_stale_board_branches(table)
     assigned = maybe_assign_ready_issues(table, settings)
     preview = cache_staging_preview(table)
-    sync = maybe_daily_staging_sync(table, settings, preview=preview)
+    sync = maybe_daily_staging_sync(table, settings, preview=preview, now=now)
     return {
         "ok": True,
         "reviews": len(reviews),

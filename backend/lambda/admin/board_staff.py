@@ -1074,6 +1074,15 @@ def resume_after_approval(table: Any, settings: dict[str, Any], approval: dict[s
         task["updatedAt"] = board_store.now_iso()
         board_store.put_task(table, task)
         return
+    try:
+        import board_code
+
+        if board_code.find_scheduled_sync_hold(table, task_id):
+            return
+        if board_code.on_sync_approval_outcome(table, approval) is not None:
+            return
+    except Exception:
+        pass
     if _is_code_implement(task) and str(approval.get("op") or "") == "code_run_task":
         _settle_code_implement_approval(table, task, approval)
         return
@@ -2579,7 +2588,7 @@ def _task_has_open_approvals(table: Any, task: dict[str, Any]) -> bool:
 
 def _should_close_linked_action(table: Any, task: dict[str, Any]) -> bool:
     flags = {str(f) for f in (task.get("flags") or [])}
-    if flags & {"no_evidence", "salvaged", "staging_behind"}:
+    if flags & {"no_evidence", "salvaged", "staging_behind", "sync_scheduled"}:
         return False
     if _task_has_open_approvals(table, task):
         return False
@@ -2657,6 +2666,13 @@ def _accept_task(table: Any, task: dict[str, Any], now: str, *, bypass_unverifie
         board_store.put_task(table, task)
         _note_parent_if_child_needs_owner(table, task)
         return task
+    ref = task.get("eventRef") or {}
+    if ref.get("kind") == "ops" and str(ref.get("id") or "") == "rebase-staging":
+        import board_code
+
+        return board_code.accept_sync_staging_task(
+            table, task, now, bypass_unverified=bypass_unverified
+        )
     if not bypass_unverified and _should_hold_unverified_accept(table, task):
         task["status"] = "needs_owner"
         task["finishedAt"] = None
@@ -2664,33 +2680,6 @@ def _accept_task(table: Any, task: dict[str, Any], now: str, *, bypass_unverifie
         board_store.put_task(table, task)
         _note_parent_if_child_needs_owner(table, task)
         return task
-    ref = task.get("eventRef") or {}
-    if ref.get("kind") == "ops" and str(ref.get("id") or "") == "rebase-staging":
-        try:
-            import board_code
-
-            still = board_code.staging_still_behind()
-        except Exception as exc:
-            still = {"error": str(exc)[:200], "behindBy": "?"}
-        if still:
-            flags = [str(f) for f in (task.get("flags") or [])]
-            if "staging_behind" not in flags:
-                flags.append("staging_behind")
-            task["flags"] = flags
-            questions = [str(q) for q in (task.get("openQuestions") or []) if q]
-            if still.get("error"):
-                note = f"could not verify staging vs main: {still.get('error')}"
-            else:
-                note = f"staging is still {still.get('behindBy')} commit(s) behind main"
-            if note not in questions:
-                questions.append(note)
-            task["openQuestions"] = questions
-            task["status"] = "needs_owner"
-            task["finishedAt"] = None
-            task["updatedAt"] = now
-            board_store.put_task(table, task)
-            _note_parent_if_child_needs_owner(table, task)
-            return task
     if ref.get("kind") == "catalog-micro-batch":
         import board_catalog_import
 
@@ -2761,7 +2750,15 @@ def retry_task(table: Any, settings: dict[str, Any], task_id: str, by_sub: str) 
     return board_store.get_task(table, task_id) or task
 
 
-def cancel_task(table: Any, task_id: str, by_sub: str, *, notify_parent: bool = True) -> dict[str, Any]:
+def cancel_task(
+    table: Any,
+    task_id: str,
+    by_sub: str,
+    *,
+    notify_parent: bool = True,
+    reason: str = "",
+    record_failure: bool = True,
+) -> dict[str, Any]:
     task = board_store.get_task(table, task_id)
     if not task:
         raise StaffError("Task not found")
@@ -2771,12 +2768,17 @@ def cancel_task(table: Any, task_id: str, by_sub: str, *, notify_parent: bool = 
     if status == "delivered":
         raise StaffError("Delivered tasks cannot be cancelled", code="conflict")
     now = board_store.now_iso()
+    message = (str(reason or "").strip() or f"cancelled by {by_sub}")[:300]
     if status == "failed":
         task["cancelledFrom"] = "failed"
         prior = str(task.get("failureReason") or "").strip()
-        task["failureReason"] = (f"{prior}; cancelled by {by_sub}" if prior else f"cancelled by {by_sub}")[:300]
+        task["failureReason"] = (f"{prior}; {message}" if prior else message)[:300]
+    elif record_failure:
+        task["failureReason"] = message
     else:
-        task["failureReason"] = f"cancelled by {by_sub}"
+        task["failureReason"] = ""
+        if reason and not str(task.get("summary") or "").strip():
+            task["summary"] = message[:200]
     task["status"] = "cancelled"
     task["finishedAt"] = now
     task["updatedAt"] = now

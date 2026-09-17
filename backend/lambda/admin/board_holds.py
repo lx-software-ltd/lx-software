@@ -316,6 +316,7 @@ def expire_stale(table: Any, settings: dict[str, Any], now_iso: str) -> int:
         latest["status"] = "expired"
         latest["updatedAt"] = now_iso
         board_store.put_hold(table, latest)
+        _notify_code_sync_hold(table, latest)
         expired += 1
     return expired
 
@@ -384,7 +385,14 @@ def _execute_one(table: Any, settings: dict[str, Any], hold: dict[str, Any]) -> 
     if outcome.status == "error":
         _finish_hold(table, hold, "failed", now, error=str(outcome.result.get("error") or "error")[:400], call_id=outcome.call_id)
         return True
-    _finish_hold(table, hold, "executed", now, call_id=outcome.call_id)
+    _finish_hold(
+        table,
+        hold,
+        "executed",
+        now,
+        call_id=outcome.call_id,
+        result=outcome.result if isinstance(outcome.result, dict) else None,
+    )
     record_ramp(table, settings, str(hold.get("classKey") or ""), vetoed=False)
     return True
 
@@ -411,14 +419,63 @@ def _thread_changed(table: Any, hold: dict[str, Any]) -> bool:
     return bool(latest and latest > expected)
 
 
-def _finish_hold(table: Any, hold: dict[str, Any], status: str, now: str, *, error: str = "", call_id: str = "") -> None:
+def _notify_code_sync_hold(table: Any, hold: dict[str, Any]) -> None:
+    if str(hold.get("op") or "") != "code_sync_staging":
+        return
+    try:
+        import board_code
+
+        board_code.on_sync_hold_outcome(table, hold)
+    except Exception as exc:
+        _log_event("warning", tag="board_code_sync_hold_notify_failed", error=str(exc)[:200])
+
+
+def _compact_sync_hold_result(result: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    if result.get("ok"):
+        compact["ok"] = True
+    sha = str(result.get("mergedSha") or "")[:12]
+    if sha:
+        compact["mergedSha"] = sha
+    if result.get("alreadyCurrent"):
+        compact["alreadyCurrent"] = True
+    preview = result.get("preview") if isinstance(result.get("preview"), dict) else {}
+    if preview:
+        try:
+            compact["behindBy"] = int(preview.get("behindBy") or 0)
+        except (TypeError, ValueError):
+            compact["behindBy"] = 0
+        try:
+            compact["aheadBy"] = int(preview.get("aheadBy") or 0)
+        except (TypeError, ValueError):
+            compact["aheadBy"] = 0
+        url = str(preview.get("htmlUrl") or "").strip()
+        if url:
+            compact["htmlUrl"] = url[:400]
+    return compact
+
+
+def _finish_hold(
+    table: Any,
+    hold: dict[str, Any],
+    status: str,
+    now: str,
+    *,
+    error: str = "",
+    call_id: str = "",
+    result: dict[str, Any] | None = None,
+) -> None:
     hold["status"] = status
     hold["updatedAt"] = now
     if status == "executed":
         hold["executedAt"] = now
-    hold["result"] = {"callId": call_id, "error": error}
+    payload: dict[str, Any] = {"callId": call_id, "error": error}
+    if status == "executed" and str(hold.get("op") or "") == "code_sync_staging" and isinstance(result, dict):
+        payload.update(_compact_sync_hold_result(result))
+    hold["result"] = payload
     hold["expiresAt"] = int(datetime.now(timezone.utc).timestamp()) + BOARD_STAFF_RETENTION_DAYS * 86400
     board_store.put_hold(table, hold)
+    _notify_code_sync_hold(table, hold)
 
 
 def veto(table: Any, hold_id: str, by_sub: str, reason: str) -> dict[str, Any]:
@@ -451,6 +508,7 @@ def veto(table: Any, hold_id: str, by_sub: str, reason: str) -> dict[str, Any]:
                 row["status"] = "vetoed"
                 row["updatedAt"] = now
                 board_store.put_content(table, row)
+    _notify_code_sync_hold(table, hold)
     if hold.get("op") == "outreach_send":
         pid = str((hold.get("arguments") or {}).get("prospectId") or "")
         prospect = board_store.get_prospect(table, pid) if pid else None
