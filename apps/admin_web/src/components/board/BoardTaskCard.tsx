@@ -15,6 +15,7 @@ export function BoardTaskCard({
   task,
   assigneeLabel,
   managerLabel,
+  nowMs,
   isRetrying,
   isCancelling,
   errorMessage,
@@ -26,6 +27,7 @@ export function BoardTaskCard({
   readonly task: BoardTask;
   readonly assigneeLabel: string;
   readonly managerLabel: string;
+  readonly nowMs: number;
   readonly isRetrying: boolean;
   readonly isCancelling: boolean;
   readonly errorMessage?: string | null;
@@ -36,7 +38,7 @@ export function BoardTaskCard({
 }) {
   const busy = isRetrying || isCancelling;
   const tone = taskStatusTone(task.status);
-  const sla = taskSlaState(task.slaAt);
+  const sla = taskSlaState(task.slaAt, nowMs, task.status);
   const stepsMax = taskStepsLimit();
   const stepPct = Math.min(100, Math.round((task.stepsUsed / Math.max(stepsMax, 1)) * 100));
   const budgetPct = task.budgetUsd > 0 ? Math.min(100, Math.round((task.usage.cost / task.budgetUsd) * 100)) : 0;
@@ -89,7 +91,7 @@ export function BoardTaskCard({
             {task.budgetUsd ? ` / ${formatUsageCost(task.budgetUsd)}` : ""}
           </span>
           <span className={`d-block small mt-1 ${sla === "overdue" ? "text-danger" : sla === "soon" ? "text-warning" : "text-muted"}`}>
-            {taskSlaLabel(task.slaAt)} · updated {formatRelativeTime(task.updatedAt)}
+            {taskSlaLabel(task.slaAt, nowMs, task.status)} · updated {formatRelativeTime(task.updatedAt, nowMs)}
           </span>
         </button>
         {task.parentTaskId ? (

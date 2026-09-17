@@ -10,6 +10,7 @@ from contract_constants import (
     BOARD_CATALOG_ASSIGNEE,
     BOARD_CATALOG_BUDGET_USD,
     BOARD_CATALOG_DISTRICTS,
+    BOARD_CATALOG_MAX_AWAITING_IMPORT,
     BOARD_CATALOG_OUTPUT_CONTRACT,
 )
 from http_common import _log_event
@@ -21,6 +22,7 @@ _OPEN_STATUSES = (
     "waiting_approval",
     "waiting_subtask",
     "review",
+    "awaiting_import",
     "delivered",
     "needs_owner",
 )
@@ -63,6 +65,12 @@ def next_district(table: Any) -> dict[str, Any] | None:
 
 
 def create_next(table: Any, settings: dict[str, Any], *, created_by: str = "board_duties") -> dict[str, Any]:
+    import board_catalog_import
+
+    if board_catalog_import.at_awaiting_cap(table):
+        raise board_staff.StaffError(
+            f"catalog awaiting_import cap reached ({BOARD_CATALOG_MAX_AWAITING_IMPORT})"
+        )
     district = next_district(table)
     if not district:
         raise board_staff.StaffError("all catalog districts already have a sheet")

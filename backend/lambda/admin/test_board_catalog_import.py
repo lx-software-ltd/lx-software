@@ -13,6 +13,7 @@ from test_board import BoardTestCase
 
 import board_catalog
 import board_catalog_import
+import board_holds
 import board_staff
 import board_store
 
@@ -198,7 +199,30 @@ class ImportClientTests(BoardTestCase):
             if url.startswith("https://s3.example.test/put"):
                 return {"status": 200}
             if url.endswith("/admin/imports"):
-                return {"status": 200, "imported": 1}
+                dry = bool((parsed or {}).get("dry_run"))
+                return {
+                    "status": 200,
+                    "dry_run": dry,
+                    "summary": {
+                        "organizations": {"created": 1, "updated": 0, "failed": 0, "skipped": 0},
+                        "locations": {"created": 0, "updated": 0, "failed": 0, "skipped": 0},
+                        "activities": {"created": 0, "updated": 0, "failed": 0, "skipped": 0},
+                        "pricing": {"created": 0, "updated": 0, "failed": 0, "skipped": 0},
+                        "schedules": {"created": 0, "updated": 0, "failed": 0, "skipped": 0},
+                        "warnings": 0,
+                        "errors": 0,
+                    },
+                    "results": [
+                        {
+                            "type": "organizations",
+                            "key": "Quarry Bay Park Playground",
+                            "status": "created",
+                            "warnings": [],
+                            "errors": [],
+                        }
+                    ],
+                    "file_warnings": [],
+                }
             raise AssertionError(url)
 
         board_catalog_import.set_http_for_tests(http)
@@ -214,7 +238,8 @@ class ImportClientTests(BoardTestCase):
         key = board_staff._deliverable_key(task["taskId"], "json")
         board_staff._blob_put(key, json.dumps(SHEET).encode())
         task["deliverableKey"] = key
-        task["status"] = "delivered"
+        task["status"] = "awaiting_import"
+        task["importPhase"] = "validated"
         board_store.put_task(self.table, task)
         out = board_catalog_import.run_import(self.table, task)
         self.assertTrue(out["ok"])
@@ -227,7 +252,9 @@ class ImportClientTests(BoardTestCase):
         self.assertEqual(out["import"]["accepted"], 1)
         saved = board_store.get_task(self.table, task["taskId"])
         self.assertTrue(saved.get("importedAt"))
+        self.assertEqual(saved.get("status"), "delivered")
         self.assertEqual((saved.get("importResult") or {}).get("sent"), 1)
+        self.assertEqual((saved.get("importResult") or {}).get("created"), 1)
 
         with self.assertRaises(board_catalog_import.CatalogImportError) as ctx:
             board_catalog_import.run_import(self.table, saved)
@@ -254,6 +281,8 @@ class ImportClientTests(BoardTestCase):
             {"object_key": "imports/board.json", "dry_run": True},
         )
         self.assertEqual((out.get("dryRun") or {}).get("mode"), "remote")
+        self.assertTrue((out.get("dryRun") or {}).get("ok"))
+        self.assertEqual(((out.get("dryRun") or {}).get("summary") or {}).get("created"), 1)
 
     def test_import_refuses_non_catalog_and_undelivered(self) -> None:
         with self.assertRaises(board_catalog_import.CatalogImportError) as ctx:
@@ -267,7 +296,7 @@ class ImportClientTests(BoardTestCase):
                 None,
                 {"taskId": "t1", "status": "review", "eventRef": {"kind": "catalog-micro-batch"}},
             )
-        self.assertIn("delivered", str(ctx.exception))
+        self.assertIn("waiting to import", str(ctx.exception))
 
     def test_http_error_strips_query(self) -> None:
         board_catalog_import.set_http_for_tests(None)
@@ -296,13 +325,295 @@ class ImportClientTests(BoardTestCase):
         task["status"] = "review"
         task["lastReview"] = {"verdict": "accept", "notes": "", "at": "2026-09-16T00:00:00Z"}
         board_store.put_task(self.table, task)
-        delivered = board_staff._accept_task(self.table, task, "2026-09-16T12:00:00Z")
-        self.assertEqual(delivered["status"], "delivered")
-        preview = delivered.get("importPreview") or {}
+        accepted = board_staff._accept_task(self.table, task, "2026-09-16T12:00:00Z")
+        self.assertEqual(accepted["status"], "awaiting_import")
+        self.assertEqual(accepted.get("importPhase"), "validated")
+        preview = accepted.get("importPreview") or {}
         self.assertTrue(preview.get("ok"))
         self.assertEqual((preview.get("dryRun") or {}).get("accepted"), 1)
-        self.assertFalse(delivered.get("importedAt"))
+        self.assertFalse(accepted.get("importedAt"))
+        self.assertEqual([c[0] for c in self.calls], ["POST", "PUT", "POST"])
+
+    def test_accept_collision_parks_needs_owner(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            task = board_catalog.create_next(self.table, settings)
+        key = board_staff._deliverable_key(task["taskId"], "json")
+        board_staff._blob_put(key, json.dumps(SHEET).encode())
+        task["deliverableKey"] = key
+        task["status"] = "review"
+        task["lastReview"] = {"verdict": "accept", "notes": "", "at": "2026-09-16T00:00:00Z"}
+        board_store.put_task(self.table, task)
+
+        def collision_http(method, url, headers, body):
+            parsed = json.loads(body) if body else None
+            self.calls.append((method, url, parsed))
+            if url.endswith("/admin/imports/presign"):
+                return {"upload_url": "https://s3.example.test/put", "object_key": "imports/board.json"}
+            if url.startswith("https://s3.example.test/put"):
+                return {"status": 200}
+            return {
+                "status": 200,
+                "dry_run": True,
+                "summary": {
+                    "organizations": {"created": 0, "updated": 1, "failed": 0, "skipped": 0},
+                    "warnings": 0,
+                    "errors": 0,
+                },
+                "results": [{"type": "organizations", "key": "Quarry Bay Park Playground", "status": "updated", "errors": []}],
+                "file_warnings": [],
+            }
+
+        board_catalog_import.set_http_for_tests(collision_http)
+        parked = board_staff._accept_task(self.table, task, "2026-09-16T12:00:00Z")
+        self.assertEqual(parked["status"], "needs_owner")
+        self.assertEqual(parked.get("importPhase"), "collision")
+        self.assertIn("update existing", " ".join(parked.get("openQuestions") or []))
+
+    def test_skip_marks_delivered_without_import(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            task = board_catalog.create_next(self.table, settings)
+        task["status"] = "awaiting_import"
+        task["importPhase"] = "validated"
+        board_store.put_task(self.table, task)
+        out = board_catalog_import.skip_import(self.table, task)
+        self.assertTrue(out["skipped"])
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "delivered")
+        self.assertTrue(saved.get("importSkipped"))
+        self.assertFalse(saved.get("importedAt"))
         self.assertEqual(self.calls, [])
+
+    def test_awaiting_cap_blocks_next_district(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            first = board_catalog.create_next(self.table, settings)
+        first["status"] = "awaiting_import"
+        board_store.put_task(self.table, first)
+        with patch.object(board_catalog_import, "BOARD_CATALOG_MAX_AWAITING_IMPORT", 1):
+            with self.assertRaises(board_staff.StaffError) as ctx:
+                board_catalog.create_next(self.table, settings)
+        self.assertIn("awaiting_import cap", str(ctx.exception))
+
+    def test_backfill_promotes_delivered_unimported(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            task = board_catalog.create_next(self.table, settings)
+        key = board_staff._deliverable_key(task["taskId"], "json")
+        board_staff._blob_put(key, json.dumps(SHEET).encode())
+        task["deliverableKey"] = key
+        task["status"] = "delivered"
+        task["finishedAt"] = "2026-09-16T00:00:00Z"
+        task["expiresAt"] = 1
+        board_store.put_task(self.table, task)
+        out = board_catalog_import.handle_tick(self.table, settings)
+        self.assertEqual(out["backfilled"], 1)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "awaiting_import")
+        self.assertIsNone(saved.get("finishedAt"))
+        self.assertNotIn("expiresAt", saved)
+
+    def test_org_counts_read_nested_summary(self) -> None:
+        counts = board_catalog_import._org_counts(
+            {
+                "summary": {
+                    "organizations": {"created": 2, "updated": 1, "failed": 3, "skipped": 0},
+                    "warnings": 0,
+                    "errors": 4,
+                }
+            }
+        )
+        self.assertEqual(counts, {"created": 2, "updated": 1, "failed": 3, "skipped": 0})
+        self.assertEqual(board_catalog_import._importer_accepted({"summary": {"organizations": {"created": 2, "updated": 1}}}), 3)
+
+    def _sheet_task(self, settings, status="review"):
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            task = board_catalog.create_next(self.table, settings)
+        key = board_staff._deliverable_key(task["taskId"], "json")
+        board_staff._blob_put(key, json.dumps(SHEET).encode())
+        task["deliverableKey"] = key
+        task["status"] = status
+        if status == "review":
+            task["lastReview"] = {"verdict": "accept", "notes": "", "at": "2026-09-16T00:00:00Z"}
+        board_store.put_task(self.table, task)
+        return task
+
+    def test_auto_import_hold_executes(self) -> None:
+        settings = _enable_staff(self.table)
+        settings["catalog"] = {"autoImport": True}
+        settings = board_store.save_settings(self.table, settings)
+        task = board_staff._accept_task(self.table, self._sheet_task(settings), "2026-09-16T12:00:00Z")
+        self.assertEqual(task.get("importPhase"), "validated")
+        out = board_catalog_import.handle_tick(self.table, settings)
+        self.assertEqual(out["scheduled"], 1)
+        holds = board_store.list_holds(self.table, "scheduled", limit=20)
+        self.assertEqual(len(holds), 1)
+        self.assertTrue(holds[0].get("internal"))
+        ran = board_holds.execute_due(self.table, settings, "2099-01-01T00:00:00Z")
+        self.assertEqual(ran, 1)
+        latest = board_store.get_hold(self.table, holds[0]["holdId"])
+        self.assertEqual(latest.get("status"), "executed")
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "delivered")
+        self.assertTrue(saved.get("importedAt"))
+
+    def test_sweep_never_imports_immediately(self) -> None:
+        settings = _enable_staff(self.table)
+        settings["catalog"] = {"autoImport": True}
+        settings = board_store.save_settings(self.table, settings)
+        task = board_staff._accept_task(self.table, self._sheet_task(settings), "2026-09-16T12:00:00Z")
+        with patch.object(board_holds, "hold_hours", return_value=0):
+            out = board_catalog_import.handle_tick(self.table, settings)
+        self.assertEqual(out["scheduled"], 1)
+        self.assertEqual(out["imported"], 0)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "awaiting_import")
+        self.assertFalse(saved.get("importedAt"))
+
+    def test_local_pending_does_not_churn_every_tick(self) -> None:
+        for key in ("SIUTINDEI_ADMIN_API_BASE_URL", "SIUTINDEI_USER_POOL_ID", "BOARD_IMPORTER_CLIENT_ID"):
+            os.environ.pop(key, None)
+        settings = _enable_staff(self.table)
+        now = board_store.now_iso()
+        accepted = board_staff._accept_task(self.table, self._sheet_task(settings), now)
+        self.assertEqual(accepted.get("importPhase"), "pending")
+        self.assertEqual(accepted.get("lastValidatedAt"), now)
+        first = accepted.get("acceptedAt")
+        out = board_catalog_import.handle_tick(self.table, settings)
+        self.assertEqual(out["revalidated"], 0)
+        saved = board_store.get_task(self.table, accepted["taskId"])
+        self.assertEqual(saved.get("acceptedAt"), first)
+
+    def test_remote_auth_failure_stays_pending(self) -> None:
+        settings = _enable_staff(self.table)
+        board_catalog_import.set_auth_for_tests(lambda *a, **k: (_ for _ in ()).throw(RuntimeError("cognito down")))
+        accepted = board_staff._accept_task(self.table, self._sheet_task(settings), "2026-09-16T12:00:00Z")
+        self.assertEqual(accepted.get("status"), "awaiting_import")
+        self.assertEqual(accepted.get("importPhase"), "pending")
+        self.assertIn("cognito", str(accepted.get("importError") or "").lower())
+
+    def test_partial_retry_sends_only_failed_orgs(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="awaiting_import")
+        task["importPhase"] = "partial"
+        task["importResult"] = {
+            "results": [
+                {"type": "organizations", "key": "Quarry Bay Park Playground", "status": "failed"},
+            ]
+        }
+        board_store.put_task(self.table, task)
+        bodies: list[dict] = []
+
+        def http(method, url, headers, body):
+            parsed = json.loads(body) if body else None
+            if url.endswith("/admin/imports/presign"):
+                return {"upload_url": "https://s3.example.test/put", "object_key": "imports/board.json"}
+            if url.startswith("https://s3.example.test/put"):
+                bodies.append(parsed or {})
+                return {"status": 200}
+            return {
+                "status": 200,
+                "summary": {"organizations": {"created": 1, "updated": 0, "failed": 0, "skipped": 0}},
+                "results": [{"type": "organizations", "key": "Quarry Bay Park Playground", "status": "created"}],
+            }
+
+        board_catalog_import.set_http_for_tests(http)
+        out = board_catalog_import.run_import(self.table, task)
+        self.assertTrue(out["ok"])
+        self.assertEqual(len((bodies[-1] or {}).get("organizations") or []), 1)
+        self.assertEqual(bodies[-1]["organizations"][0]["name"], "Quarry Bay Park Playground")
+
+    def test_partial_import_returns_ok_false(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="awaiting_import")
+        task["importPhase"] = "validated"
+        board_store.put_task(self.table, task)
+
+        def http(method, url, headers, body):
+            if url.endswith("/admin/imports/presign"):
+                return {"upload_url": "https://s3.example.test/put", "object_key": "imports/board.json"}
+            if url.startswith("https://s3.example.test/put"):
+                return {"status": 200}
+            return {
+                "status": 200,
+                "summary": {"organizations": {"created": 0, "updated": 0, "failed": 1, "skipped": 0}},
+                "results": [
+                    {
+                        "type": "organizations",
+                        "key": "Quarry Bay Park Playground",
+                        "status": "failed",
+                        "errors": [{"message": "bad row"}],
+                    }
+                ],
+            }
+
+        board_catalog_import.set_http_for_tests(http)
+        out = board_catalog_import.run_import(self.table, task)
+        self.assertFalse(out["ok"])
+        self.assertTrue(out.get("partial"))
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "needs_owner")
+        self.assertEqual(saved.get("importPhase"), "partial")
+
+    def test_requeue_clears_importer_questions(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="needs_owner")
+        task["importPhase"] = "collision"
+        task["openQuestions"] = ["siutindei would update existing organisations: Kidz Club"]
+        board_store.put_task(self.table, task)
+        out = board_catalog_import.requeue_for_import(self.table, task)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "awaiting_import")
+        self.assertEqual(saved.get("openQuestions"), [])
+        self.assertEqual(out.get("taskId"), task["taskId"])
+
+    def test_accept_preserves_accepted_at(self) -> None:
+        settings = _enable_staff(self.table)
+        first = board_staff._accept_task(self.table, self._sheet_task(settings), "2026-09-16T12:00:00Z")
+        self.assertEqual(first.get("acceptedAt"), "2026-09-16T12:00:00Z")
+        again = board_catalog_import.accept_catalog_task(self.table, first, "2026-09-17T12:00:00Z")
+        self.assertEqual(again.get("acceptedAt"), "2026-09-16T12:00:00Z")
+
+    def test_cap_counts_parked_import_sheets(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            first = board_catalog.create_next(self.table, settings)
+        first["status"] = "needs_owner"
+        first["importPhase"] = "collision"
+        board_store.put_task(self.table, first)
+        with patch.object(board_catalog_import, "BOARD_CATALOG_MAX_AWAITING_IMPORT", 1):
+            with self.assertRaises(board_staff.StaffError) as ctx:
+                board_catalog.create_next(self.table, settings)
+        self.assertIn("awaiting_import cap", str(ctx.exception))
+
+    def test_import_drops_scheduled_hold(self) -> None:
+        settings = _enable_staff(self.table)
+        settings["catalog"] = {"autoImport": True}
+        settings = board_store.save_settings(self.table, settings)
+        task = board_staff._accept_task(self.table, self._sheet_task(settings), "2026-09-16T12:00:00Z")
+        board_catalog_import.handle_tick(self.table, settings)
+        self.assertEqual(len(board_store.list_holds(self.table, "scheduled", limit=20)), 1)
+        board_catalog_import.run_import(self.table, board_store.get_task(self.table, task["taskId"]))
+        self.assertEqual(board_store.list_holds(self.table, "scheduled", limit=20), [])
+        vetoed = board_store.list_holds(self.table, "vetoed", limit=20)
+        self.assertEqual(len(vetoed), 1)
+        self.assertEqual(vetoed[0].get("vetoReason"), "imported")
+
+    def test_stored_zero_catalog_hold_becomes_24(self) -> None:
+        out = board_store.normalize_boundaries({"holds": {"catalog_import": 0}})
+        self.assertEqual(out["holds"]["catalog_import"], 24)
+        explicit = board_store.normalize_boundaries(
+            {"holds": {"catalog_import": 0}, "holdOverrides": {"catalog_import": 0}}
+        )
+        self.assertEqual(explicit["holds"]["catalog_import"], 0)
+        self.assertEqual(explicit["holdOverrides"]["catalog_import"], 0)
 
 
 class RouteTests(BoardTestCase):
@@ -344,6 +655,23 @@ class RouteTests(BoardTestCase):
         resp = board_routes.handle_board_route(event, "POST", "/siu-tin-dei/board/catalog/import", "owner")
         self.assertEqual(resp["statusCode"], 409)
         self.assertIn("switched off", resp["body"])
+
+    def test_skip_route(self) -> None:
+        import board_routes
+
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            task = board_catalog.create_next(self.table, settings)
+        task["status"] = "awaiting_import"
+        task["importPhase"] = "pending"
+        board_store.put_task(self.table, task)
+        event = self.event("/siu-tin-dei/board/catalog/skip", "POST", {"taskId": task["taskId"]})
+        resp = board_routes.handle_board_route(event, "POST", "/siu-tin-dei/board/catalog/skip", "owner")
+        self.assertEqual(resp["statusCode"], 200)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "delivered")
+        self.assertTrue(saved.get("importSkipped"))
 
 
 if __name__ == "__main__":

@@ -59,6 +59,7 @@ from contract_constants import (
     BOARD_STAFF_ACTION_CLASSES,
     BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
     BOARD_STAFF_DAILY_BUDGET_MAX_USD,
+    BOARD_CATALOG_AUTO_IMPORT_DEFAULT,
     BOARD_STAFF_HOLD_CODE_STAGING_HOURS,
     BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
     BOARD_STAFF_OUTREACH_DAILY_CAP_MAX,
@@ -366,6 +367,19 @@ def default_review_config() -> dict[str, Any]:
     return {"digestTo": "", "digestHourHkt": 7, "sampleSize": BOARD_STAFF_REVIEW_SAMPLE_SIZE}
 
 
+def default_catalog_config() -> dict[str, Any]:
+    return {"autoImport": bool(BOARD_CATALOG_AUTO_IMPORT_DEFAULT)}
+
+
+def normalize_catalog_config(raw: Any) -> dict[str, Any]:
+    out = default_catalog_config()
+    if not isinstance(raw, dict):
+        return out
+    if "autoImport" in raw:
+        out["autoImport"] = bool(raw.get("autoImport"))
+    return out
+
+
 def default_boundaries() -> dict[str, Any]:
     return {
         "reply": {
@@ -398,7 +412,7 @@ def default_boundaries() -> dict[str, Any]:
             "spend": 24,
             "code_staging": BOARD_STAFF_HOLD_CODE_STAGING_HOURS,
             "code_production": 0,
-            "catalog_import": 0,
+            "catalog_import": 24,
         },
         "holdOverrides": {},
         "outreach": {
@@ -550,6 +564,11 @@ def normalize_boundaries(raw: Any) -> dict[str, Any]:
                     out["holds"][cls] = max(0, min(168, int(holds[cls])))
                 except (TypeError, ValueError):
                     continue
+        # Previous default was 0. Treat a stored 0 as unset unless the owner
+        # wrote an explicit holdOverrides.catalog_import (including 0).
+        overrides = raw.get("holdOverrides") if isinstance(raw.get("holdOverrides"), dict) else {}
+        if out["holds"].get("catalog_import") == 0 and "catalog_import" not in overrides:
+            out["holds"]["catalog_import"] = 24
     overrides = raw.get("holdOverrides")
     if isinstance(overrides, dict):
         cleaned: dict[str, int] = {}
@@ -638,6 +657,7 @@ def default_settings() -> dict[str, Any]:
         "tools": default_tools_config(),
         "staff": default_staff_config(),
         "review": default_review_config(),
+        "catalog": default_catalog_config(),
         "boundaries": default_boundaries(),
         "updatedAt": None,
         "version": 0,
@@ -666,6 +686,7 @@ def load_settings(table: Any) -> dict[str, Any]:
     merged["tools"] = normalize_tools_config(stored.get("tools"))
     merged["staff"] = normalize_staff_config(stored.get("staff"))
     merged["review"] = normalize_review_config(stored.get("review"))
+    merged["catalog"] = normalize_catalog_config(stored.get("catalog"))
     merged["boundaries"] = normalize_boundaries(stored.get("boundaries"))
     try:
         merged["version"] = int(stored.get("version") or 0)
@@ -1627,6 +1648,18 @@ def get_task(table: Any, task_id: str) -> dict[str, Any] | None:
         return None
     doc = _from_ddb_nested(_strip_keys(item))
     return doc if isinstance(doc, dict) else None
+
+
+def list_all_tasks(table: Any, status: str) -> list[dict[str, Any]]:
+    """Every task in one status (no 200-row cap)."""
+    rows = _query_all(
+        table,
+        IndexName="gsi1",
+        KeyConditionExpression="gsi1pk = :pk",
+        ExpressionAttributeValues={":pk": board_pk(f"tasks#{status}")},
+        ScanIndexForward=True,
+    )
+    return [_strip_keys(i) for i in rows]
 
 
 def list_tasks(table: Any, status: str | None = None, *, limit: int = 200) -> list[dict[str, Any]]:

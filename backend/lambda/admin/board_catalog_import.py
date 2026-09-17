@@ -14,12 +14,15 @@ import json
 import os
 import urllib.error
 import urllib.request
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from admin_runtime import _get_secretsmanager_client
 from contract_constants import (
+    BOARD_CATALOG_AUTO_IMPORT_DEFAULT,
     BOARD_CATALOG_IMPORT_ENABLED_DEFAULT,
+    BOARD_CATALOG_MAX_AWAITING_IMPORT,
     BOARD_CATALOG_MAX_ORGS_PER_IMPORT,
     BOARD_CATALOG_TYPE_TO_CATEGORY,
 )
@@ -365,11 +368,22 @@ def require_catalog_sheet(task: dict[str, Any]) -> None:
 
 def require_importable_task(task: dict[str, Any], *, force: bool = False) -> None:
     require_catalog_sheet(task)
-    if str(task.get("status") or "") != "delivered":
-        raise CatalogImportError("catalog import requires a delivered (accepted) sheet")
+    status = str(task.get("status") or "")
+    phase = str(task.get("importPhase") or "")
     imported_at = task.get("importedAt")
     if imported_at and not force:
         raise CatalogImportError(f"already imported at {imported_at}")
+    if status == "awaiting_import":
+        if phase == "collision" and not force:
+            raise CatalogImportError("import would update existing organisations; pass force to proceed")
+        return
+    if status == "needs_owner" and phase in ("collision", "rejected", "partial", "failed", "invalid"):
+        if phase == "collision" and not force:
+            raise CatalogImportError("import would update existing organisations; pass force to proceed")
+        return
+    if status == "delivered" and force:
+        return
+    raise CatalogImportError("catalog import requires a sheet waiting to import")
 
 
 def _safe_url(url: str) -> str:
@@ -473,7 +487,7 @@ def _presign_and_put(orgs: list[dict[str, Any]], token: str, *, filename: str) -
         "POST",
         urljoin(base + "/", "admin/imports/presign"),
         headers=_auth_headers(token),
-        body=json.dumps({"filename": filename, "content_type": "application/json"}).encode("utf-8"),
+        body=json.dumps({"file_name": filename, "content_type": "application/json"}).encode("utf-8"),
     )
     upload_url = str(presign.get("upload_url") or presign.get("url") or "").strip()
     object_key = str(presign.get("object_key") or presign.get("key") or "").strip()
@@ -499,24 +513,80 @@ def _imports_post(token: str, body: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _importer_accepted(resp: dict[str, Any]) -> int | None:
-    for key in ("imported", "accepted", "created", "upserted", "count"):
-        val = resp.get(key)
-        if isinstance(val, bool) or not isinstance(val, (int, float)):
+def _as_count(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    return int(value)
+
+
+def _org_counts(resp: dict[str, Any]) -> dict[str, int]:
+    """Read siutindei ``summary.organizations`` counts, with flat fallbacks."""
+    summary = resp.get("summary") if isinstance(resp.get("summary"), dict) else {}
+    orgs = summary.get("organizations") if isinstance(summary.get("organizations"), dict) else {}
+    created = _as_count(orgs.get("created") if orgs else None)
+    updated = _as_count(orgs.get("updated") if orgs else None)
+    failed = _as_count(orgs.get("failed") if orgs else None)
+    skipped = _as_count(orgs.get("skipped") if orgs else None)
+    if not created:
+        for key in ("created", "imported", "accepted", "upserted", "count"):
+            created = _as_count(summary.get(key) if summary else None) or _as_count(resp.get(key))
+            if created:
+                break
+    if not updated:
+        updated = _as_count(summary.get("updated") if summary else None) or _as_count(resp.get("updated"))
+    if not failed:
+        failed = _as_count(summary.get("failed") if summary else None) or _as_count(resp.get("failed"))
+    if not skipped:
+        skipped = _as_count(summary.get("skipped") if summary else None) or _as_count(resp.get("skipped"))
+    return {"created": created, "updated": updated, "failed": failed, "skipped": skipped}
+
+
+def _importer_results(resp: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = resp.get("results")
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for row in raw:
+        if isinstance(row, dict):
+            out.append(row)
+    return out
+
+
+def _org_result_names(results: list[dict[str, Any]], status: str) -> list[str]:
+    names: list[str] = []
+    for row in results:
+        row_type = str(row.get("type") or "").lower()
+        if row_type and row_type not in ("organizations", "organization", "organisations"):
             continue
-        return int(val)
-    return None
+        if str(row.get("status") or "").lower() != status:
+            continue
+        name = str(row.get("key") or row.get("name") or "").strip()
+        if name:
+            names.append(name[:80])
+    return names
+
+
+def _importer_accepted(resp: dict[str, Any]) -> int:
+    counts = _org_counts(resp)
+    return counts["created"] + counts["updated"]
 
 
 def _remote_dry_run(payload: dict[str, Any], token: str) -> dict[str, Any]:
     orgs = payload.get("organizations") or []
     object_key = _presign_and_put(orgs, token, filename="board-catalog-dry-run.json")
     resp = _imports_post(token, {"object_key": object_key, "dry_run": True})
+    counts = _org_counts(resp)
+    results = _importer_results(resp)
+    would_update = _org_result_names(results, "updated")
     return {
-        "ok": True,
+        "ok": counts["failed"] == 0,
         "mode": "remote",
         "objectKey": object_key,
         "response": resp,
+        "summary": counts,
+        "results": results,
+        "fileWarnings": list(resp.get("file_warnings") or []),
+        "wouldUpdate": would_update,
         "payload": {"organizations": orgs},
     }
 
@@ -525,12 +595,17 @@ def _run_remote_import(payload: dict[str, Any], token: str) -> dict[str, Any]:
     orgs = payload.get("organizations") or []
     object_key = _presign_and_put(orgs, token, filename="board-catalog.json")
     imported = _imports_post(token, {"object_key": object_key})
+    counts = _org_counts(imported)
+    results = _importer_results(imported)
     sent = len(orgs)
     return {
-        "ok": True,
+        "ok": counts["failed"] == 0,
         "mode": "remote",
         "objectKey": object_key,
         "response": imported,
+        "summary": counts,
+        "results": results,
+        "wouldUpdate": _org_result_names(results, "updated"),
         "sent": sent,
         "accepted": _importer_accepted(imported),
     }
@@ -551,8 +626,10 @@ def preview_from_text(text: str, *, remote: bool = False) -> dict[str, Any]:
     if remote and configured() and local["ok"]:
         try:
             token = _id_token()
-            out["dryRun"] = {**local, **_remote_dry_run(transformed, token), "local": local}
-        except CatalogImportError as exc:
+            remote_dry = _remote_dry_run(transformed, token)
+            out["dryRun"] = {**local, **remote_dry, "local": local}
+            out["ok"] = bool(local["ok"] and remote_dry.get("ok"))
+        except Exception as exc:
             out["dryRun"] = {**local, "remoteError": str(exc)[:300]}
     return out
 
@@ -576,6 +653,209 @@ def preview_task(table: Any, task: dict[str, Any], *, sheet_text: str | None = N
     return preview
 
 
+def _now_iso() -> str:
+    try:
+        import board_store
+
+        return board_store.now_iso()
+    except Exception:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _append_questions(task: dict[str, Any], lines: list[str]) -> None:
+    existing = [str(q) for q in (task.get("openQuestions") or []) if q]
+    for line in lines:
+        text = str(line or "").strip()[:300]
+        if text and text not in existing:
+            existing.append(text)
+    task["openQuestions"] = existing[:20]
+
+
+def _clear_handoff_ttl(task: dict[str, Any]) -> None:
+    task["finishedAt"] = None
+    task.pop("expiresAt", None)
+
+
+def _park_needs_owner(table: Any, task: dict[str, Any], now: str, *, phase: str, questions: list[str]) -> dict[str, Any]:
+    task["status"] = "needs_owner"
+    task["importPhase"] = phase
+    task["acceptedAt"] = task.get("acceptedAt") or now
+    task["updatedAt"] = now
+    _clear_handoff_ttl(task)
+    _append_questions(task, questions)
+    if table is not None:
+        import board_store
+
+        board_store.put_task(table, task)
+        try:
+            import board_staff
+
+            board_staff.note_parent_if_child_needs_owner(table, task)
+        except Exception:
+            pass
+    return task
+
+
+def _set_awaiting(table: Any, task: dict[str, Any], now: str, *, phase: str) -> dict[str, Any]:
+    task["status"] = "awaiting_import"
+    task["importPhase"] = phase
+    task["acceptedAt"] = task.get("acceptedAt") or now
+    task["lastValidatedAt"] = now
+    task["updatedAt"] = now
+    _clear_handoff_ttl(task)
+    if table is not None:
+        import board_store
+
+        board_store.put_task(table, task)
+    return task
+
+
+def _save_task(table: Any, task: dict[str, Any]) -> None:
+    if table is None:
+        return
+    try:
+        import board_store
+
+        board_store.put_task(table, task)
+    except Exception as exc:
+        _log_event("warning", tag="board_catalog_import_save_failed", error=str(exc)[:200])
+
+
+def accept_catalog_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
+    """Accept-hook: validate the sheet. Never imports. Never marks delivered."""
+    require_catalog_sheet(task)
+    try:
+        preview = preview_task(table, task, remote=configured())
+    except CatalogImportError as exc:
+        preview = {"ok": False, "error": str(exc)[:300], "taskId": task.get("taskId")}
+    except Exception as exc:
+        preview = {"ok": False, "error": str(exc)[:300], "taskId": task.get("taskId")}
+    task["importPreview"] = preview
+    dry = preview.get("dryRun") if isinstance(preview.get("dryRun"), dict) else {}
+    if not preview.get("ok") and not dry.get("remoteError"):
+        errors = list(dry.get("errors") or [])
+        if preview.get("error"):
+            errors.append(str(preview.get("error")))
+        return _park_needs_owner(
+            table,
+            task,
+            now,
+            phase="invalid",
+            questions=errors or ["catalog sheet failed local dry-run"],
+        )
+    if dry.get("mode") == "remote":
+        would_update = list(dry.get("wouldUpdate") or [])
+        if would_update or (dry.get("summary") or {}).get("updated"):
+            names = ", ".join(str(n) for n in would_update) or "existing organisation"
+            return _park_needs_owner(
+                table,
+                task,
+                now,
+                phase="collision",
+                questions=[f"siutindei would update existing organisations: {names}"[:300]],
+            )
+        if not dry.get("ok"):
+            failed = (dry.get("summary") or {}).get("failed") or 0
+            return _park_needs_owner(
+                table,
+                task,
+                now,
+                phase="rejected",
+                questions=[f"siutindei dry-run rejected {failed} organisation(s)"] + _result_errors(dry.get("results") or []),
+            )
+        return _set_awaiting(table, task, now, phase="validated")
+    if dry.get("remoteError"):
+        task["importError"] = str(dry.get("remoteError"))[:300]
+        return _set_awaiting(table, task, now, phase="pending")
+    return _set_awaiting(table, task, now, phase="pending")
+
+
+def attach_accept_preview(table: Any, task: dict[str, Any]) -> dict[str, Any]:
+    """Backward-compatible local preview. Prefer ``accept_catalog_task``."""
+    try:
+        preview = preview_task(table, task, remote=False)
+    except CatalogImportError as exc:
+        preview = {"ok": False, "error": str(exc)[:300], "taskId": task.get("taskId")}
+    except Exception as exc:
+        preview = {"ok": False, "error": str(exc)[:300], "taskId": task.get("taskId")}
+    task["importPreview"] = preview
+    return preview
+
+
+def _result_errors(results: list[Any]) -> list[str]:
+    lines: list[str] = []
+    for row in results:
+        if not isinstance(row, dict):
+            continue
+        errors = row.get("errors") or []
+        if not errors:
+            continue
+        key = str(row.get("key") or row.get("name") or "?")[:80]
+        for err in errors[:3]:
+            if isinstance(err, dict):
+                msg = str(err.get("message") or err)[:160]
+            else:
+                msg = str(err)[:160]
+            lines.append(f"{key}: {msg}")
+    return lines[:12]
+
+
+_IMPORT_PARK_PHASES = ("collision", "rejected", "partial", "failed", "invalid")
+
+
+def _payload_orgs(task: dict[str, Any], payload: dict[str, Any], *, force: bool) -> list[dict[str, Any]]:
+    orgs = [o for o in (payload.get("organizations") or []) if isinstance(o, dict)]
+    if force or str(task.get("importPhase") or "") != "partial":
+        return orgs
+    failed = set(_org_result_names((task.get("importResult") or {}).get("results") or [], "failed"))
+    if not failed:
+        return orgs
+    return [o for o in orgs if str(o.get("name") or "") in failed]
+
+
+def _drop_open_hold(table: Any, task_id: str, *, reason: str) -> None:
+    if table is None or not task_id:
+        return
+    hold = _open_catalog_hold(table, task_id)
+    if not hold:
+        return
+    hold_id = str(hold.get("holdId") or "")
+    if not hold_id:
+        return
+    import board_store
+
+    if not board_store.claim_hold(table, hold_id, from_status="scheduled", to_status="vetoed"):
+        return
+    latest = board_store.get_hold(table, hold_id) or hold
+    now = board_store.now_iso()
+    latest["status"] = "vetoed"
+    latest["vetoedAt"] = now
+    latest["vetoBy"] = "catalog"
+    latest["vetoReason"] = reason[:400]
+    latest["updatedAt"] = now
+    board_store.put_hold(table, latest)
+
+
+def _catalog_tasks(table: Any, status: str) -> list[dict[str, Any]]:
+    import board_store
+
+    return [t for t in board_store.list_all_tasks(table, status) if is_catalog_sheet(t)]
+
+
+def _deliver_imported(table: Any, task: dict[str, Any], now: str) -> None:
+    if table is not None:
+        try:
+            import board_staff
+
+            board_staff._mark_delivered(table, task, now)
+        except Exception as exc:
+            _save_task(table, task)
+            _log_event("warning", tag="board_catalog_import_deliver_failed", error=str(exc)[:200])
+    else:
+        task["status"] = "delivered"
+        task["finishedAt"] = now
+
+
 def run_import(table: Any, task: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
     if not import_enabled():
         raise CatalogImportError("catalog import is switched off (SiutindeiBoardCatalogImportEnabled)")
@@ -586,44 +866,109 @@ def run_import(table: Any, task: dict[str, Any], *, force: bool = False) -> dict
     if not preview.get("ok"):
         errors = (preview.get("dryRun") or {}).get("errors") or ["sheet failed local dry-run"]
         raise CatalogImportError("; ".join(str(e) for e in errors)[:300])
-    token = _id_token()
-    imported = _run_remote_import(preview.get("payload") or {}, token)
-    now = ""
+    now = _now_iso()
+    payload = dict(preview.get("payload") or {})
+    payload["organizations"] = _payload_orgs(task, payload, force=force)
+    preview = {**preview, "payload": payload}
     try:
-        import board_store
-
-        now = board_store.now_iso()
-    except Exception:
-        now = ""
-    task["importedAt"] = now
-    task["importResult"] = {
-        "ok": True,
+        token = _id_token()
+        imported = _run_remote_import(payload, token)
+    except CatalogImportError:
+        task["importAttempts"] = int(task.get("importAttempts") or 0) + 1
+        task["lastImportAttemptAt"] = now
+        task["importPhase"] = "failed"
+        task["importError"] = "siutindei import request failed"
+        task["updatedAt"] = now
+        _save_task(table, task)
+        raise
+    task["importAttempts"] = int(task.get("importAttempts") or 0) + 1
+    task["lastImportAttemptAt"] = now
+    task["importPreview"] = preview
+    summary = imported.get("summary") or {}
+    result = {
+        "ok": bool(imported.get("ok")),
         "objectKey": imported.get("objectKey"),
         "sent": imported.get("sent"),
         "accepted": imported.get("accepted"),
+        "created": summary.get("created"),
+        "updated": summary.get("updated"),
+        "failed": summary.get("failed"),
+        "summary": summary,
+        "results": imported.get("results") or [],
         "at": now,
     }
-    task["importPreview"] = preview
-    if table is not None:
-        try:
-            import board_store
+    task_id = str(task.get("taskId") or "")
+    if summary.get("failed"):
+        task["importResult"] = {**result, "partial": True}
+        task["importError"] = f"siutindei rejected {summary.get('failed')} organisation(s)"
+        _park_needs_owner(
+            table,
+            task,
+            now,
+            phase="partial",
+            questions=[task["importError"]] + _result_errors(imported.get("results") or []),
+        )
+        return {"ok": False, "partial": True, "taskId": task_id, "import": imported, "preview": preview, "task": task}
+    if summary.get("updated") and not force:
+        names = imported.get("wouldUpdate") or _org_result_names(imported.get("results") or [], "updated")
+        label = ", ".join(str(n) for n in names) or "existing organisation"
+        task["importResult"] = result
+        _park_needs_owner(
+            table,
+            task,
+            now,
+            phase="collision",
+            questions=[f"siutindei updated existing organisations: {label}"[:300]],
+        )
+        return {
+            "ok": False,
+            "collision": True,
+            "taskId": task_id,
+            "import": imported,
+            "preview": preview,
+            "task": task,
+        }
+    task["importedAt"] = now
+    task["importResult"] = result
+    task["importPhase"] = "imported"
+    task["importError"] = ""
+    _drop_open_hold(table, task_id, reason="imported")
+    _deliver_imported(table, task, now)
+    return {"ok": True, "taskId": task_id, "import": imported, "preview": preview}
 
-            board_store.put_task(table, task)
-        except Exception as exc:
-            _log_event("warning", tag="board_catalog_import_save_failed", error=str(exc)[:200])
-    return {"ok": True, "taskId": task.get("taskId"), "import": imported, "preview": preview}
+
+def skip_import(table: Any, task: dict[str, Any]) -> dict[str, Any]:
+    require_catalog_sheet(task)
+    if task.get("importedAt"):
+        raise CatalogImportError(f"already imported at {task.get('importedAt')}")
+    status = str(task.get("status") or "")
+    if status not in ("awaiting_import", "needs_owner"):
+        raise CatalogImportError("skip requires a catalog sheet waiting to import")
+    now = _now_iso()
+    task["importSkipped"] = True
+    task["importPhase"] = "skipped"
+    task["updatedAt"] = now
+    _drop_open_hold(table, str(task.get("taskId") or ""), reason="skipped")
+    import board_staff
+
+    delivered = board_staff._mark_delivered(table, task, now)
+    return {"ok": True, "skipped": True, "task": delivered}
 
 
-def attach_accept_preview(table: Any, task: dict[str, Any]) -> dict[str, Any]:
-    """Accept-hook: transform + dry-run only. Never imports."""
-    try:
-        preview = preview_task(table, task, remote=False)
-    except CatalogImportError as exc:
-        preview = {"ok": False, "error": str(exc)[:300], "taskId": task.get("taskId")}
-    except Exception as exc:
-        preview = {"ok": False, "error": str(exc)[:300], "taskId": task.get("taskId")}
-    task["importPreview"] = preview
-    return preview
+def requeue_for_import(table: Any, task: dict[str, Any]) -> dict[str, Any]:
+    require_catalog_sheet(task)
+    status = str(task.get("status") or "")
+    phase = str(task.get("importPhase") or "")
+    if status != "needs_owner" or phase not in ("collision", "rejected", "partial", "failed", "invalid"):
+        raise CatalogImportError("requeue requires a catalog sheet parked after an import check")
+    now = _now_iso()
+    task["importError"] = ""
+    task["openQuestions"] = []
+    task["importPhase"] = "pending"
+    _clear_handoff_ttl(task)
+    _drop_open_hold(table, str(task.get("taskId") or ""), reason="requeued")
+    updated = _set_awaiting(table, task, now, phase="pending")
+    return {"ok": True, "task": updated, "taskId": updated.get("taskId")}
 
 
 def op_preview(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -689,28 +1034,202 @@ def owner_import(table: Any, body: dict[str, Any]) -> dict[str, Any]:
     return run_import(table, task, force=bool(body.get("force")))
 
 
+def owner_skip(table: Any, body: dict[str, Any]) -> dict[str, Any]:
+    task_id = str(body.get("taskId") or "").strip()
+    if not task_id:
+        raise CatalogImportError("taskId is required")
+    import board_store
+
+    task = board_store.get_task(table, task_id)
+    if not task:
+        raise CatalogImportError("Task not found")
+    return skip_import(table, task)
+
+
+def owner_requeue(table: Any, body: dict[str, Any]) -> dict[str, Any]:
+    task_id = str(body.get("taskId") or "").strip()
+    if not task_id:
+        raise CatalogImportError("taskId is required")
+    import board_store
+
+    task = board_store.get_task(table, task_id)
+    if not task:
+        raise CatalogImportError("Task not found")
+    return requeue_for_import(table, task)
+
+
+def _task_row(task: dict[str, Any]) -> dict[str, Any]:
+    ref = task.get("eventRef") or {}
+    preview = task.get("importPreview") or {}
+    return {
+        "taskId": task.get("taskId"),
+        "district": ref.get("district") or preview.get("district") or "",
+        "ok": bool(preview.get("ok")),
+        "accepted": (preview.get("dryRun") or {}).get("accepted") or 0,
+        "phase": task.get("importPhase") or "",
+        "status": task.get("status") or "",
+    }
+
+
 def ready_sheets(table: Any) -> list[dict[str, Any]]:
-    """Delivered catalog sheets that have not been imported yet (digest)."""
+    """Sheets waiting to import (digest)."""
     out: list[dict[str, Any]] = []
-    for task in board_store_list_delivered(table):
-        ref = task.get("eventRef") or {}
-        if str(ref.get("kind") or "") != CATALOG_EVENT_KIND:
-            continue
+    for task in _catalog_tasks(table, "awaiting_import"):
         if task.get("importedAt"):
             continue
-        preview = task.get("importPreview") or {}
-        out.append(
-            {
-                "taskId": task.get("taskId"),
-                "district": ref.get("district") or preview.get("district") or "",
-                "ok": bool(preview.get("ok")),
-                "accepted": (preview.get("dryRun") or {}).get("accepted") or 0,
-            }
-        )
+        out.append(_task_row(task))
     return out[:20]
 
 
-def board_store_list_delivered(table: Any) -> list[dict[str, Any]]:
+def catalog_headline(table: Any) -> dict[str, Any]:
+    awaiting = [t for t in _catalog_tasks(table, "awaiting_import") if not t.get("importedAt")]
+    parked = [
+        t
+        for t in _catalog_tasks(table, "needs_owner")
+        if t.get("importPhase") in _IMPORT_PARK_PHASES and not t.get("importedAt")
+    ]
+    validated = [t for t in awaiting if str(t.get("importPhase") or "") == "validated"]
+    pending = [t for t in awaiting if str(t.get("importPhase") or "") != "validated"]
+    collisions = [t for t in parked if str(t.get("importPhase") or "") == "collision"]
+    rejected = [t for t in parked if str(t.get("importPhase") or "") in ("rejected", "partial", "invalid", "failed")]
+    return {
+        "ready": len(awaiting),
+        "validated": len(validated),
+        "pending": len(pending),
+        "collisions": len(collisions),
+        "rejected": len(rejected),
+        "sheets": [_task_row(t) for t in awaiting[:20]],
+    }
+
+
+def auto_import_enabled(settings: dict[str, Any] | None) -> bool:
+    catalog = (settings or {}).get("catalog") if isinstance(settings, dict) else None
+    if isinstance(catalog, dict) and "autoImport" in catalog:
+        return bool(catalog.get("autoImport"))
+    return bool(BOARD_CATALOG_AUTO_IMPORT_DEFAULT)
+
+
+def awaiting_import_count(table: Any) -> int:
+    awaiting = [t for t in _catalog_tasks(table, "awaiting_import") if not t.get("importedAt")]
+    parked = [
+        t
+        for t in _catalog_tasks(table, "needs_owner")
+        if t.get("importPhase") in _IMPORT_PARK_PHASES and not t.get("importedAt")
+    ]
+    return len(awaiting) + len(parked)
+
+
+def at_awaiting_cap(table: Any) -> bool:
+    return awaiting_import_count(table) >= BOARD_CATALOG_MAX_AWAITING_IMPORT
+
+
+def _open_catalog_hold(table: Any, task_id: str) -> dict[str, Any] | None:
     import board_store
 
-    return list(board_store.list_tasks(table, "delivered", limit=200))
+    for hold in board_store.list_holds(table, "scheduled", limit=400):
+        args = hold.get("arguments") or {}
+        hid = str(args.get("taskId") or hold.get("taskId") or "")
+        if str(hold.get("op") or "") == "catalog_import" and hid == task_id:
+            return hold
+    return None
+
+
+def _schedule_or_run(table: Any, settings: dict[str, Any], task: dict[str, Any]) -> str:
+    import board_holds
+    import board_tools
+
+    task_id = str(task.get("taskId") or "")
+    if not task_id:
+        return "skip"
+    if _open_catalog_hold(table, task_id):
+        return "held"
+    hours = board_holds.hold_hours(table, settings, "catalog_import", "catalog_import")
+    if hours <= 0:
+        hours = 24
+    op = board_tools.REGISTRY.get("catalog_import")
+    if op is None:
+        return "skip"
+    ctx = board_tools.ToolContext(
+        table=table,
+        settings=settings,
+        persona_id="",
+        display_name="catalog sweep",
+        kind="internal",
+        actor="internal",
+        task_id=task_id,
+        internal=True,
+    )
+    district = str((task.get("eventRef") or {}).get("district") or "")
+    board_holds.create_hold(
+        ctx,
+        op,
+        {"taskId": task_id, "reason": "auto-import sweep"},
+        action_class="catalog_import",
+        class_key="catalog_import",
+        hours=hours,
+        summary=f"Import catalog sheet{f' ({district})' if district else ''}",
+    )
+    return "scheduled"
+
+
+def _parse_iso(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _revalidate_due(task: dict[str, Any], now: str) -> bool:
+    last = str(task.get("lastValidatedAt") or "")
+    if not last:
+        return True
+    try:
+        then = _parse_iso(last)
+        now_dt = _parse_iso(now)
+        return then < now_dt - timedelta(hours=1)
+    except ValueError:
+        return True
+
+
+def handle_tick(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
+    """Backfill, re-validate pending sheets, and schedule auto-import holds."""
+    import board_store
+
+    now = board_store.now_iso()
+    backfilled = 0
+    for task in _catalog_tasks(table, "delivered"):
+        if task.get("importedAt") or task.get("importSkipped"):
+            continue
+        accept_catalog_task(table, task, now)
+        backfilled += 1
+    revalidated = 0
+    for task in _catalog_tasks(table, "awaiting_import"):
+        if str(task.get("importPhase") or "") != "pending":
+            continue
+        if not _revalidate_due(task, now):
+            continue
+        accept_catalog_task(table, task, now)
+        revalidated += 1
+    scheduled = 0
+    imported = 0
+    if auto_import_enabled(settings) and import_enabled() and configured():
+        for task in _catalog_tasks(table, "awaiting_import"):
+            latest = board_store.get_task(table, str(task.get("taskId") or "")) or task
+            if str(latest.get("importPhase") or "") != "validated":
+                continue
+            try:
+                action = _schedule_or_run(table, settings, latest)
+            except CatalogImportError as exc:
+                _log_event("warning", tag="board_catalog_import_sweep_failed", error=str(exc)[:200])
+                continue
+            if action == "scheduled":
+                scheduled += 1
+            elif action == "imported":
+                imported += 1
+    return {
+        "ok": True,
+        "backfilled": backfilled,
+        "revalidated": revalidated,
+        "scheduled": scheduled,
+        "imported": imported,
+    }

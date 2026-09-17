@@ -233,6 +233,7 @@ def create_hold(
         "vetoReason": "",
         "result": {},
         "threadLastMessageAt": thread_cursor,
+        "internal": bool(ctx.internal),
     }
     board_store.put_hold(ctx.table, doc)
     _log_event("info", tag="board_hold_created", holdId=hold_id, op=op.name, executeAt=execute_iso, classKey=class_key)
@@ -373,6 +374,7 @@ def _execute_one(table: Any, settings: dict[str, Any], hold: dict[str, Any]) -> 
         task_id=str(hold.get("taskId") or ""),
         seat_id=str(hold.get("seatId") or ""),
         actor="hold",
+        internal=bool(hold.get("internal")),
     )
     try:
         outcome = board_tools.execute_call(ctx, op, dict(hold.get("arguments") or {}))

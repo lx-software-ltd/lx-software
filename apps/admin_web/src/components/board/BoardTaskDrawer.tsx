@@ -5,11 +5,17 @@ import { BoardTaskId } from "./BoardTaskId";
 import { BoardToolCallList } from "./BoardToolCallList";
 import { DateTimeDisplay } from "../ui";
 import {
+  canForceCatalogImport,
+  canImportCatalogTask,
+  canRequeueCatalogImport,
   canRetryBoardTask,
+  canSkipCatalogTask,
+  showTaskReviewActions,
   formatUsageCost,
   isCatalogSheetTask,
   shortTaskId,
   type BoardCatalogImportPreview,
+  type BoardCatalogImportResult,
   type BoardTask,
   type BoardTaskDetailPayload,
   type BoardToolCallLogEntry,
@@ -26,7 +32,9 @@ export type BoardTaskDrawerProps = {
   readonly onRetry?: (taskId: string) => void;
   readonly onOpenTask?: (taskId: string) => void;
   readonly onPreviewImport?: (taskId: string) => void;
-  readonly onImport?: (taskId: string) => void;
+  readonly onImport?: (taskId: string, opts?: { force?: boolean }) => void;
+  readonly onSkipImport?: (taskId: string) => void;
+  readonly onRequeueImport?: (taskId: string) => void;
   readonly importPreview?: BoardCatalogImportPreview | null;
   readonly importMessage?: string | null;
 };
@@ -39,6 +47,7 @@ const OPEN_STATUSES = new Set([
   "review",
   "returned",
   "needs_owner",
+  "awaiting_import",
 ]);
 
 function csvRows(text: string): string[][] {
@@ -60,6 +69,8 @@ export function BoardTaskDrawer({
   onOpenTask,
   onPreviewImport,
   onImport,
+  onSkipImport,
+  onRequeueImport,
   importPreview,
   importMessage,
 }: BoardTaskDrawerProps) {
@@ -111,7 +122,7 @@ export function BoardTaskDrawer({
       footer={
         task && (OPEN_STATUSES.has(task.status) || task.status === "failed" || (task.status === "delivered" && isCatalogSheetTask(task))) ? (
           <>
-            {task.status === "review" || task.status === "needs_owner" ? (
+            {showTaskReviewActions(task) ? (
               <>
                 <button
                   type="button"
@@ -141,18 +152,44 @@ export function BoardTaskDrawer({
                 Preview import
               </button>
             ) : null}
-            {isCatalogSheetTask(task) && onImport && task.status === "delivered" ? (
+            {isCatalogSheetTask(task) && onImport && canImportCatalogTask(task) ? (
               <button
                 type="button"
                 className="btn btn-outline-secondary btn-sm"
-                disabled={
-                  isMutating ||
-                  Boolean(task.importedAt) ||
-                  preview?.importEnabled === false
-                }
+                disabled={isMutating || preview?.importEnabled === false}
                 onClick={() => onImport(task.taskId)}
               >
-                {task.importedAt ? "Imported" : "Import"}
+                {task.importError ? "Retry import" : "Import now"}
+              </button>
+            ) : null}
+            {isCatalogSheetTask(task) && onImport && canForceCatalogImport(task) ? (
+              <button
+                type="button"
+                className="btn btn-outline-warning btn-sm"
+                disabled={isMutating || preview?.importEnabled === false}
+                onClick={() => onImport(task.taskId, { force: true })}
+              >
+                Import anyway
+              </button>
+            ) : null}
+            {isCatalogSheetTask(task) && onSkipImport && canSkipCatalogTask(task) ? (
+              <button
+                type="button"
+                className="btn btn-outline-secondary btn-sm"
+                disabled={isMutating}
+                onClick={() => onSkipImport(task.taskId)}
+              >
+                Skip import
+              </button>
+            ) : null}
+            {isCatalogSheetTask(task) && onRequeueImport && canRequeueCatalogImport(task) ? (
+              <button
+                type="button"
+                className="btn btn-outline-primary btn-sm"
+                disabled={isMutating}
+                onClick={() => onRequeueImport(task.taskId)}
+              >
+                Queue again
               </button>
             ) : null}
             {canRetryBoardTask(task.status) && onRetry ? (
@@ -303,7 +340,17 @@ function TaskBody({
         )}
       </div>
       {isCatalogSheetTask(task) ? (
-        <CatalogImportPanel preview={importPreview} importedAt={task.importedAt} message={importMessage} />
+        <CatalogImportPanel
+          preview={importPreview}
+          importedAt={task.importedAt}
+          importSkipped={task.importSkipped}
+          importPhase={task.importPhase}
+          importError={task.importError}
+          importAttempts={task.importAttempts}
+          lastImportAttemptAt={task.lastImportAttemptAt}
+          importResult={task.importResult}
+          message={importMessage}
+        />
       ) : null}
       {task.status === "review" || task.status === "needs_owner" ? (
         <label className="form-label small mb-0">
@@ -339,13 +386,27 @@ function RelatedTaskId({
 function CatalogImportPanel({
   preview,
   importedAt,
+  importSkipped,
+  importPhase,
+  importError,
+  importAttempts,
+  lastImportAttemptAt,
+  importResult,
   message,
 }: {
   readonly preview?: BoardCatalogImportPreview | null;
   readonly importedAt?: string;
+  readonly importSkipped?: boolean;
+  readonly importPhase?: string;
+  readonly importError?: string;
+  readonly importAttempts?: number;
+  readonly lastImportAttemptAt?: string;
+  readonly importResult?: BoardCatalogImportResult | null;
   readonly message?: string | null;
 }) {
   const orgs = preview?.payload?.organizations ?? [];
+  const results = preview?.dryRun?.results ?? importResult?.results ?? [];
+  const wouldUpdate = preview?.dryRun?.wouldUpdate ?? [];
   return (
     <div>
       <div className="small text-muted text-uppercase mb-1">Catalog import</div>
@@ -354,8 +415,19 @@ function CatalogImportPanel({
           Imported <DateTimeDisplay iso={importedAt} />
         </p>
       ) : null}
+      {importSkipped ? <p className="small mb-1">Skipped — district stays claimed, no organisations sent.</p> : null}
+      {importPhase && !importedAt ? <p className="small mb-1">Phase: {importPhase.replace(/_/g, " ")}</p> : null}
+      {importError ? <div className="alert alert-danger py-2 small mb-2">{importError}</div> : null}
       {message ? <div className="alert alert-warning py-2 small mb-2">{message}</div> : null}
       {preview?.error ? <div className="alert alert-danger py-2 small mb-2">{preview.error}</div> : null}
+      {preview?.dryRun?.remoteError ? (
+        <div className="alert alert-warning py-2 small mb-2">{preview.dryRun.remoteError}</div>
+      ) : null}
+      {wouldUpdate.length ? (
+        <div className="alert alert-warning py-2 small mb-2">
+          Would update existing organisations: {wouldUpdate.join(", ")}
+        </div>
+      ) : null}
       {preview ? (
         <p className="small mb-1">
           {preview.district || "Unknown district"} · {preview.dryRun?.accepted ?? 0} ready, {preview.dryRun?.skipped ?? 0}{" "}
@@ -365,7 +437,29 @@ function CatalogImportPanel({
       ) : (
         <p className="small text-muted mb-1">Accept the sheet or click Preview import to map verified fields.</p>
       )}
-      {orgs.length > 0 ? (
+      {typeof importAttempts === "number" && importAttempts > 0 ? (
+        <p className="small text-muted mb-1">
+          {importAttempts} attempt{importAttempts === 1 ? "" : "s"}
+          {lastImportAttemptAt ? (
+            <>
+              {" "}
+              · last <DateTimeDisplay iso={lastImportAttemptAt} />
+            </>
+          ) : null}
+        </p>
+      ) : null}
+      {results.length > 0 ? (
+        <ul className="small mb-2">
+          {results
+            .filter((row) => !row.type || row.type.startsWith("org"))
+            .map((row, i) => (
+              <li key={i}>
+                {row.key || "Organisation"} — {row.status || "unknown"}
+                {row.errors?.length ? ` (${row.errors.map((e) => e.message).filter(Boolean).join("; ")})` : ""}
+              </li>
+            ))}
+        </ul>
+      ) : orgs.length > 0 ? (
         <ul className="small mb-0">
           {orgs.map((org, i) => (
             <li key={i}>

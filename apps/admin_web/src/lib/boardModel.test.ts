@@ -5,6 +5,7 @@ import {
   boardTaskHref,
   boardTaskSearchParams,
   canRetryBoardTask,
+  showTaskReviewActions,
   catalogMutationErrorForTask,
   filterBoardTasks,
   liveCatalogPreviewForTask,
@@ -239,8 +240,10 @@ describe("task dashboard helpers", () => {
     expect(taskLane("running")).toBe("in_progress");
     expect(taskLane("waiting_subtask")).toBe("in_progress");
     expect(taskLane("queued")).toBe("queued");
+    expect(taskLane("awaiting_import")).toBe("to_import");
     expect(taskLane("failed")).toBe("done");
     expect(taskLane("delivered")).toBe("done");
+    expect(taskStatusLabel("awaiting_import")).toBe("To import");
     expect(taskStatusTone("failed")).toBe("danger");
     expect(taskStatusLabel("waiting_subtask")).toBe("Waiting help");
   });
@@ -255,6 +258,16 @@ describe("task dashboard helpers", () => {
     expect(formatRelativeDuration("2026-09-15T10:00:00Z", now)).toBe("2h");
     expect(taskSlaLabel("2026-09-15T10:00:00Z", now)).toBe("Overdue 2h");
     expect(taskSlaLabel("2026-09-16T12:00:00Z", now)).toBe("SLA in 1d");
+    expect(taskSlaState("2026-09-15T10:00:00Z", now, "awaiting_import")).toBe("none");
+    expect(showTaskReviewActions({ status: "review" })).toBe(true);
+    expect(
+      showTaskReviewActions({
+        status: "needs_owner",
+        importPhase: "collision",
+        eventRef: { kind: "catalog-micro-batch" },
+      }),
+    ).toBe(false);
+    expect(showTaskReviewActions({ status: "needs_owner" })).toBe(true);
   });
 
   it("resolves seat and persona labels", () => {

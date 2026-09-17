@@ -112,33 +112,41 @@ type MockState = {
   staging: BoardStagingPreview;
 };
 
-const state: MockState = {
-  finance: structuredClone(financeFixture) as FinancePersistedState,
-  books: {
-    "siu-tin-dei": structuredClone(siuTinDeiBookFixture) as HouseFinanceData,
-    "lx-software": structuredClone(lxSoftwareBookFixture) as HouseFinanceData,
-  },
-  seats: structuredClone(boardStaffFixture.seats) as BoardSeat[],
-  tasks: structuredClone(boardTasksFixture),
-  actions: structuredClone(boardActionsFixture) as BoardAction[],
-  holds: structuredClone(boardHoldsFixture) as BoardHold[],
-  boundaries: structuredClone(DEFAULT_BOARD_BOUNDARIES),
-  lessons: structuredClone(boardLessonsFixture) as BoardLesson[],
-  breakers: structuredClone(boardBreakersFixture) as BoardBreaker[],
-  watches: structuredClone(boardWatchesFixture) as BoardWatch[],
-  prospects: structuredClone(boardProspectsFixture) as BoardProspect[],
-  sequences: {},
-  content: structuredClone(boardContentFixture) as BoardContentItem[],
-  approvals: structuredClone(boardApprovalsFixture) as BoardApproval[],
-  settings: structuredClone(boardOverviewFixture.settings) as BoardSettings,
-  staging: {
-    status: "diverged",
-    behindBy: 3,
-    aheadBy: 1,
-    canPromote: false,
-    commits: [{ sha: "a1b2c3d4", message: "board: #42 add booking" }],
-  },
-};
+function initialMockState(): MockState {
+  return {
+    finance: structuredClone(financeFixture) as FinancePersistedState,
+    books: {
+      "siu-tin-dei": structuredClone(siuTinDeiBookFixture) as HouseFinanceData,
+      "lx-software": structuredClone(lxSoftwareBookFixture) as HouseFinanceData,
+    },
+    seats: structuredClone(boardStaffFixture.seats) as BoardSeat[],
+    tasks: structuredClone(boardTasksFixture),
+    actions: structuredClone(boardActionsFixture) as BoardAction[],
+    holds: structuredClone(boardHoldsFixture) as BoardHold[],
+    boundaries: structuredClone(DEFAULT_BOARD_BOUNDARIES),
+    lessons: structuredClone(boardLessonsFixture) as BoardLesson[],
+    breakers: structuredClone(boardBreakersFixture) as BoardBreaker[],
+    watches: structuredClone(boardWatchesFixture) as BoardWatch[],
+    prospects: structuredClone(boardProspectsFixture) as BoardProspect[],
+    sequences: {},
+    content: structuredClone(boardContentFixture) as BoardContentItem[],
+    approvals: structuredClone(boardApprovalsFixture) as BoardApproval[],
+    settings: structuredClone(boardOverviewFixture.settings) as BoardSettings,
+    staging: {
+      status: "diverged",
+      behindBy: 3,
+      aheadBy: 1,
+      canPromote: false,
+      commits: [{ sha: "a1b2c3d4", message: "board: #42 add booking" }],
+    },
+  };
+}
+
+let state: MockState = initialMockState();
+
+export function resetAdminMockState(): void {
+  state = initialMockState();
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -597,6 +605,35 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   }
   if (p === `${board}/catalog/import` && method === "POST") {
     return json({ message: "catalog import is switched off (SiutindeiBoardCatalogImportEnabled)" }, 409);
+  }
+  if (p === `${board}/catalog/skip` && method === "POST") {
+    const body = parseBody(init);
+    const taskId = String(body.taskId || "");
+    const idx = state.tasks.findIndex((t) => t.taskId === taskId);
+    if (idx < 0) return json({ message: "Task not found" }, 404);
+    const now = new Date().toISOString();
+    state.tasks[idx] = {
+      ...state.tasks[idx],
+      status: "delivered",
+      importSkipped: true,
+      importPhase: "skipped",
+      finishedAt: now,
+    };
+    return json({ ok: true, skipped: true, task: state.tasks[idx] });
+  }
+  if (p === `${board}/catalog/requeue` && method === "POST") {
+    const body = parseBody(init);
+    const taskId = String(body.taskId || "");
+    const idx = state.tasks.findIndex((t) => t.taskId === taskId);
+    if (idx < 0) return json({ message: "Task not found" }, 404);
+    state.tasks[idx] = {
+      ...state.tasks[idx],
+      status: "awaiting_import",
+      importPhase: "pending",
+      importError: "",
+      finishedAt: null,
+    };
+    return json({ ok: true, task: state.tasks[idx], taskId });
   }
   if (p === `${board}/code/promote` && method === "POST") {
     const now = new Date().toISOString();

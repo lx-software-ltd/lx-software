@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { mockAdminFetch } from "./mockAdminApi";
+import { beforeEach, describe, expect, it } from "vitest";
+import { mockAdminFetch, resetAdminMockState } from "./mockAdminApi";
 
 describe("mockAdminFetch", () => {
+  beforeEach(() => {
+    resetAdminMockState();
+  });
   it("serves finance accounts used by the Accounts tab", async () => {
     const res = await mockAdminFetch("/finance");
     expect(res.ok).toBe(true);
@@ -107,6 +110,15 @@ describe("mockAdminFetch", () => {
       body: JSON.stringify({ taskId: "task-catalog" }),
     });
     expect(importRes.status).toBe(409);
+
+    const skipRes = await mockAdminFetch("/siu-tin-dei/board/catalog/skip", {
+      method: "POST",
+      body: JSON.stringify({ taskId: "task-catalog" }),
+    });
+    expect(skipRes.ok).toBe(true);
+    const skipped = (await skipRes.json()) as { skipped?: boolean; task?: { status?: string } };
+    expect(skipped.skipped).toBe(true);
+    expect(skipped.task?.status).toBe("delivered");
   });
 
   it("returns 404 for unknown paths", async () => {

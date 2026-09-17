@@ -31,6 +31,7 @@ export function BoardTasksTable({
   query,
   onQueryChange,
   actorLabel,
+  nowMs,
   retryingId,
   cancellingId,
   onOpen,
@@ -41,6 +42,7 @@ export function BoardTasksTable({
   readonly query: string;
   readonly onQueryChange: (value: string) => void;
   readonly actorLabel: (id: string) => string;
+  readonly nowMs: number;
   readonly retryingId: string | null;
   readonly cancellingId: string | null;
   readonly onOpen: (taskId: string) => void;
@@ -58,7 +60,7 @@ export function BoardTasksTable({
         <AdminDataTableEmptyRow colSpan={COLUMNS.length} message="No tasks match this view." />
       ) : (
         tasks.map((task) => {
-          const sla = taskSlaState(task.slaAt);
+          const sla = taskSlaState(task.slaAt, nowMs, task.status);
           const busy = retryingId === task.taskId || cancellingId === task.taskId;
           return (
             <tr key={task.taskId}>
@@ -80,7 +82,7 @@ export function BoardTasksTable({
               <AdminCell column="assignee">{actorLabel(task.assignee)}</AdminCell>
               <AdminCell column="sla">
                 <span className={sla === "overdue" ? "text-danger" : sla === "soon" ? "text-warning" : undefined}>
-                  {taskSlaLabel(task.slaAt)}
+                  {taskSlaLabel(task.slaAt, nowMs, task.status)}
                 </span>
               </AdminCell>
               <AdminCell column="steps">{task.stepsUsed}</AdminCell>
