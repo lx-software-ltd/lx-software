@@ -565,12 +565,19 @@ Accepted catalog sheets leave **Review** as `awaiting_import` (SPA
 **To import** lane) after a siutindei dry-run. Name collisions
 (`updated` rows) and rejected rows park at `needs_owner`. The staff
 tick backfills older delivered-but-unimported sheets, re-validates
-`pending` sheets at most once an hour, and when
-`settings.catalog.autoImport` is on plus the kill switch, schedules a
-`catalog_import` hold (default 24 h). The catalog duty pauses when
-`catalog.maxAwaitingImport` (3) sheets are waiting. **Skip import**
-marks the sheet delivered without sending organisations so the district
-stays claimed.
+`pending` sheets at most once an hour (using `lastValidatedAt`, including
+local-only sheets), and when `settings.catalog.autoImport` is on plus
+the kill switch, schedules an internal `catalog_import` hold (default
+24 h; a stored `holds.catalog_import` of 0 is treated as 24 unless
+`holdOverrides.catalog_import` is set). The sweep never imports
+immediately. **Import now** / **Skip** / **Queue again** drop the
+scheduled hold so it cannot fail later as "already imported". The
+catalog duty pauses when `catalog.maxAwaitingImport` (3) sheets are
+waiting (`awaiting_import` plus parked import `needs_owner` rows).
+**Skip import** marks the sheet delivered without sending organisations
+so the district stays claimed. A partial live import returns 200
+`{ok:false,partial:true}` and retries send only the failed
+organisations.
 
 1. The siutindei importer group, #502 fields and `dry_run` are already
    on `main`. Create the service user in `importer` and put

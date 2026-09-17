@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { mockAdminFetch } from "./mockAdminApi";
+import { beforeEach, describe, expect, it } from "vitest";
+import { mockAdminFetch, resetAdminMockState } from "./mockAdminApi";
 
 describe("mockAdminFetch", () => {
+  beforeEach(() => {
+    resetAdminMockState();
+  });
   it("serves finance accounts used by the Accounts tab", async () => {
     const res = await mockAdminFetch("/finance");
     expect(res.ok).toBe(true);

@@ -112,33 +112,41 @@ type MockState = {
   staging: BoardStagingPreview;
 };
 
-const state: MockState = {
-  finance: structuredClone(financeFixture) as FinancePersistedState,
-  books: {
-    "siu-tin-dei": structuredClone(siuTinDeiBookFixture) as HouseFinanceData,
-    "lx-software": structuredClone(lxSoftwareBookFixture) as HouseFinanceData,
-  },
-  seats: structuredClone(boardStaffFixture.seats) as BoardSeat[],
-  tasks: structuredClone(boardTasksFixture),
-  actions: structuredClone(boardActionsFixture) as BoardAction[],
-  holds: structuredClone(boardHoldsFixture) as BoardHold[],
-  boundaries: structuredClone(DEFAULT_BOARD_BOUNDARIES),
-  lessons: structuredClone(boardLessonsFixture) as BoardLesson[],
-  breakers: structuredClone(boardBreakersFixture) as BoardBreaker[],
-  watches: structuredClone(boardWatchesFixture) as BoardWatch[],
-  prospects: structuredClone(boardProspectsFixture) as BoardProspect[],
-  sequences: {},
-  content: structuredClone(boardContentFixture) as BoardContentItem[],
-  approvals: structuredClone(boardApprovalsFixture) as BoardApproval[],
-  settings: structuredClone(boardOverviewFixture.settings) as BoardSettings,
-  staging: {
-    status: "diverged",
-    behindBy: 3,
-    aheadBy: 1,
-    canPromote: false,
-    commits: [{ sha: "a1b2c3d4", message: "board: #42 add booking" }],
-  },
-};
+function initialMockState(): MockState {
+  return {
+    finance: structuredClone(financeFixture) as FinancePersistedState,
+    books: {
+      "siu-tin-dei": structuredClone(siuTinDeiBookFixture) as HouseFinanceData,
+      "lx-software": structuredClone(lxSoftwareBookFixture) as HouseFinanceData,
+    },
+    seats: structuredClone(boardStaffFixture.seats) as BoardSeat[],
+    tasks: structuredClone(boardTasksFixture),
+    actions: structuredClone(boardActionsFixture) as BoardAction[],
+    holds: structuredClone(boardHoldsFixture) as BoardHold[],
+    boundaries: structuredClone(DEFAULT_BOARD_BOUNDARIES),
+    lessons: structuredClone(boardLessonsFixture) as BoardLesson[],
+    breakers: structuredClone(boardBreakersFixture) as BoardBreaker[],
+    watches: structuredClone(boardWatchesFixture) as BoardWatch[],
+    prospects: structuredClone(boardProspectsFixture) as BoardProspect[],
+    sequences: {},
+    content: structuredClone(boardContentFixture) as BoardContentItem[],
+    approvals: structuredClone(boardApprovalsFixture) as BoardApproval[],
+    settings: structuredClone(boardOverviewFixture.settings) as BoardSettings,
+    staging: {
+      status: "diverged",
+      behindBy: 3,
+      aheadBy: 1,
+      canPromote: false,
+      commits: [{ sha: "a1b2c3d4", message: "board: #42 add booking" }],
+    },
+  };
+}
+
+let state: MockState = initialMockState();
+
+export function resetAdminMockState(): void {
+  state = initialMockState();
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {

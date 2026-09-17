@@ -1699,6 +1699,12 @@ export function canRequeueCatalogImport(task: Pick<BoardTask, "status" | "import
   return task.status === "needs_owner" && Boolean(task.importPhase);
 }
 
+export function showTaskReviewActions(task: Pick<BoardTask, "status" | "importPhase" | "eventRef">): boolean {
+  if (task.status === "review") return true;
+  if (task.status !== "needs_owner") return false;
+  return !(isCatalogSheetTask(task) && task.importPhase);
+}
+
 export function isCatalogSheetTask(task: Pick<BoardTask, "eventRef"> | undefined | null): boolean {
   return task?.eventRef?.kind === "catalog-micro-batch";
 }

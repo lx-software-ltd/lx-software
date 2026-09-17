@@ -564,6 +564,11 @@ def normalize_boundaries(raw: Any) -> dict[str, Any]:
                     out["holds"][cls] = max(0, min(168, int(holds[cls])))
                 except (TypeError, ValueError):
                     continue
+        # Previous default was 0. Treat a stored 0 as unset unless the owner
+        # wrote an explicit holdOverrides.catalog_import (including 0).
+        overrides = raw.get("holdOverrides") if isinstance(raw.get("holdOverrides"), dict) else {}
+        if out["holds"].get("catalog_import") == 0 and "catalog_import" not in overrides:
+            out["holds"]["catalog_import"] = 24
     overrides = raw.get("holdOverrides")
     if isinstance(overrides, dict):
         cleaned: dict[str, int] = {}
@@ -1643,6 +1648,18 @@ def get_task(table: Any, task_id: str) -> dict[str, Any] | None:
         return None
     doc = _from_ddb_nested(_strip_keys(item))
     return doc if isinstance(doc, dict) else None
+
+
+def list_all_tasks(table: Any, status: str) -> list[dict[str, Any]]:
+    """Every task in one status (no 200-row cap)."""
+    rows = _query_all(
+        table,
+        IndexName="gsi1",
+        KeyConditionExpression="gsi1pk = :pk",
+        ExpressionAttributeValues={":pk": board_pk(f"tasks#{status}")},
+        ScanIndexForward=True,
+    )
+    return [_strip_keys(i) for i in rows]
 
 
 def list_tasks(table: Any, status: str | None = None, *, limit: int = 200) -> list[dict[str, Any]]:

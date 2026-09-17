@@ -5,6 +5,7 @@ import {
   boardTaskHref,
   boardTaskSearchParams,
   canRetryBoardTask,
+  showTaskReviewActions,
   catalogMutationErrorForTask,
   filterBoardTasks,
   liveCatalogPreviewForTask,
@@ -258,6 +259,15 @@ describe("task dashboard helpers", () => {
     expect(taskSlaLabel("2026-09-15T10:00:00Z", now)).toBe("Overdue 2h");
     expect(taskSlaLabel("2026-09-16T12:00:00Z", now)).toBe("SLA in 1d");
     expect(taskSlaState("2026-09-15T10:00:00Z", now, "awaiting_import")).toBe("none");
+    expect(showTaskReviewActions({ status: "review" })).toBe(true);
+    expect(
+      showTaskReviewActions({
+        status: "needs_owner",
+        importPhase: "collision",
+        eventRef: { kind: "catalog-micro-batch" },
+      }),
+    ).toBe(false);
+    expect(showTaskReviewActions({ status: "needs_owner" })).toBe(true);
   });
 
   it("resolves seat and persona labels", () => {

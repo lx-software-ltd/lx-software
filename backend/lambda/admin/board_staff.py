@@ -2523,6 +2523,11 @@ def _task_attempted_required_tools(table: Any, task: dict[str, Any]) -> bool:
     return all(tool in ops for tool in needed)
 
 
+def note_parent_if_child_needs_owner(table: Any, task: dict[str, Any]) -> None:
+    """Public wrapper so catalog import can park a help child without calling a private."""
+    _note_parent_if_child_needs_owner(table, task)
+
+
 def _note_parent_if_child_needs_owner(table: Any, task: dict[str, Any]) -> None:
     if not task.get("parentTaskId") or task.get("status") != "needs_owner":
         return

@@ -10,6 +10,7 @@ import {
   canRequeueCatalogImport,
   canRetryBoardTask,
   canSkipCatalogTask,
+  showTaskReviewActions,
   formatUsageCost,
   isCatalogSheetTask,
   shortTaskId,
@@ -121,7 +122,7 @@ export function BoardTaskDrawer({
       footer={
         task && (OPEN_STATUSES.has(task.status) || task.status === "failed" || (task.status === "delivered" && isCatalogSheetTask(task))) ? (
           <>
-            {task.status === "review" || task.status === "needs_owner" ? (
+            {showTaskReviewActions(task) ? (
               <>
                 <button
                   type="button"

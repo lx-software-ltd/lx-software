@@ -140,6 +140,8 @@ class ToolContext:
     owner_sub: str = ""
     task_id: str = ""
     seat_id: str = ""
+    # Sweep-created holds skip the persona matrix (still re-check tools / guards).
+    internal: bool = False
     # OpenRouter / model ``tool_call_id`` for this invocation (staff evidence alias).
     llm_tool_call_id: str = ""
     usage_sink: Callable[[dict[str, Any]], None] | None = None
@@ -1557,11 +1559,11 @@ def build_registry() -> dict[str, ToolOp]:
                 "Propose importing the accepted catalog-micro-batch deliverable through the "
                 "siutindei admin importer. Uses the stored sheet only (no sheet override). "
                 "Always an Approval. Refused while SiutindeiBoardCatalogImportEnabled is false "
-                "or the task is not delivered. Does not write Aurora from this stack."
+                "or the task is not waiting to import. Does not write Aurora from this stack."
             ),
             parameters=_obj(
                 {
-                    "taskId": _str_param("Staff task id of the delivered catalog sheet.", max_len=40),
+                    "taskId": _str_param("Staff task id of the catalog sheet waiting to import.", max_len=40),
                     "reason": REASON_PARAM,
                 },
                 ["taskId", "reason"],
@@ -3058,18 +3060,21 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
     if safety_actor and op.tool_id == "task":
         level = task_ops_level(ctx.kind)
     elif safety_actor:
-        seats = None
-        if ctx.seat_id:
-            import board_staff
+        if ctx.internal:
+            level = "act"
+        else:
+            seats = None
+            if ctx.seat_id:
+                import board_staff
 
-            seats = board_staff.seats_by_id(ctx.table, ctx.settings)
-        level = effective_level(
-            ctx.settings,
-            op.tool_id,
-            ctx.persona_id,
-            seat_id=ctx.seat_id,
-            seats_by_id=seats,
-        )
+                seats = board_staff.seats_by_id(ctx.table, ctx.settings)
+            level = effective_level(
+                ctx.settings,
+                op.tool_id,
+                ctx.persona_id,
+                seat_id=ctx.seat_id,
+                seats_by_id=seats,
+            )
         # Intentional: security/dependencies issues skip always_propose and the
         # globalMode cap so Dependabot / CVE tickets are filed without an Approval.
         if _cto_security_issue(ctx, op, arguments) and level in ("propose", "act"):

@@ -111,6 +111,36 @@ describe("BoardTaskDrawer catalog import", () => {
     expect(onSkip).toHaveBeenCalledWith("task-catalog");
   });
 
+  it("hides Accept on an import collision", () => {
+    render(
+      <BoardTaskDrawer
+        detail={{
+          ...detail,
+          task: {
+            ...catalogTask,
+            status: "needs_owner",
+            importPhase: "collision",
+            importPreview: {
+              ...catalogTask.importPreview!,
+              dryRun: { ok: true, accepted: 1, skipped: 0, wouldUpdate: ["Kidz Club"] },
+            },
+          },
+        }}
+        isLoading={false}
+        isMutating={false}
+        onClose={() => undefined}
+        onCancel={() => undefined}
+        onReview={() => undefined}
+        onImport={() => undefined}
+        onSkipImport={() => undefined}
+        onRequeueImport={() => undefined}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Accept" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import anyway" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Queue again" })).toBeInTheDocument();
+  });
+
   it("formats importedAt with DateTimeDisplay", () => {
     render(
       <BoardTaskDrawer

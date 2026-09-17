@@ -102,6 +102,7 @@ export function catalogImportMutationOptions(qc: QueryClient) {
       return res;
     },
     onSuccess: () => invalidateTasks(qc),
+    onError: () => invalidateTasks(qc),
   };
 }
 
