@@ -203,52 +203,65 @@ def _as_number(value: Any) -> float | None:
 
 _FREE_RE = re.compile(r"^(free|免費|免费)$", re.I)
 _PRICE_RE = re.compile(
-    r"(?:hk\$|hkd|\$)\s*(\d{1,5}(?:\.\d{1,2})?)",
+    r"(?:(?P<cur>hk\$|hkd)|(?P<dol>\$))\s*(?P<amt>\d{1,5}(?:\.\d{1,2})?)",
     re.I,
 )
-_HOURS_RANGE_RE = re.compile(
-    r"(?P<h1>\d{1,2})(?:[:.](?P<m1>\d{2}))?\s*(?P<p1>a\.?m\.?|p\.?m\.?)?\s*"
-    r"(?:-|–|—|to|至)\s*"
-    r"(?P<h2>\d{1,2})(?:[:.](?P<m2>\d{2}))?\s*(?P<p2>a\.?m\.?|p\.?m\.?)?",
+_PRICE_PREFERRED = ("per class", "per session", "per lesson", "每堂", "每節", "每节")
+_PRICE_TRIAL = ("trial", "體驗", "体验", "first class", "試堂", "试堂")
+_TIME_RE = re.compile(
+    r"(?:(?P<pre>上午|下午|早上|晚上)\s*)?"
+    r"(?P<h>\d{1,2})"
+    r"(?:[:.：](?P<m>\d{2}))?"
+    r"\s*"
+    r"(?P<post>a\.?m\.?|p\.?m\.?|時|点|點)?",
     re.I,
 )
+_RANGE_SEP = re.compile(r"\s*(?:-|–|—|to|至)\s*", re.I)
 _DAILY_HOURS_RE = re.compile(
-    r"\b(daily|everyday|every\s+day|mon(?:day)?\s*(?:-|–|—|to)\s*sun(?:day)?|每日|每天)\b",
+    r"(daily|everyday|every\s+day|mon(?:day)?\s*(?:-|–|—|to)\s*sun(?:day)?|每日|每天)",
     re.I,
 )
-_DAY_INDEX = {
-    "sun": 0,
-    "sunday": 0,
-    "週日": 0,
-    "星期日": 0,
-    "mon": 1,
-    "monday": 1,
-    "週一": 1,
-    "星期一": 1,
-    "tue": 2,
-    "tues": 2,
-    "tuesday": 2,
-    "週二": 2,
-    "星期二": 2,
-    "wed": 3,
-    "wednesday": 3,
-    "週三": 3,
-    "星期三": 3,
-    "thu": 4,
-    "thur": 4,
-    "thurs": 4,
-    "thursday": 4,
-    "週四": 4,
-    "星期四": 4,
-    "fri": 5,
-    "friday": 5,
-    "週五": 5,
-    "星期五": 5,
-    "sat": 6,
-    "saturday": 6,
-    "週六": 6,
-    "星期六": 6,
-}
+_CLOSED_RE = re.compile(r"(?:closed(?:\s+on)?|休息)\s*:?\s*(?P<body>[^.;|]*)", re.I)
+_DAY_ALTS: tuple[tuple[str, int], ...] = (
+    ("sunday", 0),
+    ("monday", 1),
+    ("tuesday", 2),
+    ("wednesday", 3),
+    ("thursday", 4),
+    ("friday", 5),
+    ("saturday", 6),
+    ("tues", 2),
+    ("thurs", 4),
+    ("thur", 4),
+    ("sun", 0),
+    ("mon", 1),
+    ("tue", 2),
+    ("wed", 3),
+    ("thu", 4),
+    ("fri", 5),
+    ("sat", 6),
+    ("星期日", 0),
+    ("星期一", 1),
+    ("星期二", 2),
+    ("星期三", 3),
+    ("星期四", 4),
+    ("星期五", 5),
+    ("星期六", 6),
+    ("週日", 0),
+    ("週一", 1),
+    ("週二", 2),
+    ("週三", 3),
+    ("週四", 4),
+    ("週五", 5),
+    ("週六", 6),
+)
+_DAY_ALT = "|".join(re.escape(tok) for tok, _ in sorted(_DAY_ALTS, key=lambda kv: -len(kv[0])))
+_DAY_TOKEN_RE = re.compile(rf"(?<![a-zA-Z])(?:{_DAY_ALT})(?![a-zA-Z])", re.I)
+_DAY_RANGE_RE = re.compile(
+    rf"(?<![a-zA-Z])(?P<a>{_DAY_ALT})\s*(?:-|–|—|to|至)\s*(?P<b>{_DAY_ALT})(?![a-zA-Z])",
+    re.I,
+)
+_DAY_INDEX = {tok.casefold(): idx for tok, idx in _DAY_ALTS}
 
 
 def parse_pricing(free_or_paid: Any, price_note: Any) -> dict[str, Any] | None:
@@ -259,11 +272,28 @@ def parse_pricing(free_or_paid: Any, price_note: Any) -> dict[str, Any] | None:
         return {"pricing_type": "free"}
     if note and _FREE_RE.match(note):
         return {"pricing_type": "free"}
-    match = _PRICE_RE.search(note)
-    if not match:
+    matches = list(_PRICE_RE.finditer(note))
+    if not matches:
         return None
+
+    def _score(match: re.Match[str]) -> float:
+        window = note[max(0, match.start() - 28) : min(len(note), match.end() + 28)].casefold()
+        score = 0.0
+        if match.group("cur"):
+            score += 3
+        if any(token in window for token in _PRICE_PREFERRED):
+            score += 5
+        if any(token in window for token in _PRICE_TRIAL):
+            score -= 4
+        try:
+            score += float(match.group("amt")) / 1_000_000
+        except (TypeError, ValueError):
+            pass
+        return score
+
+    best = max(matches, key=_score)
     try:
-        amount = float(match.group(1))
+        amount = float(best.group("amt"))
     except (TypeError, ValueError):
         return None
     if amount < 0:
@@ -287,28 +317,95 @@ def _hour_to_hhmm(hour: str, minute: str | None, meridiem: str | None) -> str | 
     return f"{hours:02d}:{mins:02d}"
 
 
+def _meridiem_from_time(match: re.Match[str]) -> str | None:
+    pre = str(match.group("pre") or "").strip()
+    post = str(match.group("post") or "").strip().lower().replace(".", "")
+    if pre in ("下午", "晚上") or post == "pm":
+        return "pm"
+    if pre in ("上午", "早上") or post == "am":
+        return "am"
+    return None
+
+
+def _is_clock_match(match: re.Match[str]) -> bool:
+    return bool(match.group("m") or match.group("pre") or match.group("post"))
+
+
+def _clock_spans(text: str) -> list[tuple[int, int, str]]:
+    spans: list[tuple[int, int, str]] = []
+    for match in _TIME_RE.finditer(text):
+        if not _is_clock_match(match):
+            continue
+        hhmm = _hour_to_hhmm(match.group("h"), match.group("m"), _meridiem_from_time(match))
+        if hhmm:
+            spans.append((match.start(), match.end(), hhmm))
+    return spans
+
+
+def _token_day(token: str) -> int | None:
+    return _DAY_INDEX.get(str(token or "").casefold())
+
+
+def _days_from_open_text(text: str) -> set[int]:
+    days: set[int] = set()
+    used: list[tuple[int, int]] = []
+    for match in _DAY_RANGE_RE.finditer(text):
+        start = _token_day(match.group("a"))
+        end = _token_day(match.group("b"))
+        if start is None or end is None:
+            continue
+        if start <= end:
+            days.update(range(start, end + 1))
+        else:
+            days.update(range(start, 7))
+            days.update(range(0, end + 1))
+        used.append((match.start(), match.end()))
+    for match in _DAY_TOKEN_RE.finditer(text):
+        if any(lo <= match.start() < hi for lo, hi in used):
+            continue
+        index = _token_day(match.group(0))
+        if index is not None:
+            days.add(index)
+    return days
+
+
+def _parse_hours_days(text: str) -> set[int] | None:
+    closed: set[int] = set()
+    stripped = text
+    for match in _CLOSED_RE.finditer(text):
+        closed |= _days_from_open_text(match.group(0))
+        stripped = stripped[: match.start()] + " " * (match.end() - match.start()) + stripped[match.end() :]
+    if _DAILY_HOURS_RE.search(stripped):
+        opened = set(range(7))
+    else:
+        opened = _days_from_open_text(stripped)
+    if not opened and closed:
+        opened = set(range(7))
+    if not opened:
+        return None
+    remaining = opened - closed
+    return remaining or None
+
+
 def parse_opening_hours(raw: Any) -> list[dict[str, str]] | None:
     """Parse a verified hours string into Sunday-first weekly_entries, or None."""
     text = str(raw or "").strip()
     if not text or text.lower() == "unverified":
         return None
-    match = _HOURS_RANGE_RE.search(text)
-    if not match:
-        return None
-    start = _hour_to_hhmm(match.group("h1"), match.group("m1"), match.group("p1"))
-    end = _hour_to_hhmm(match.group("h2"), match.group("m2"), match.group("p2"))
+    clocks = _clock_spans(text)
+    start = end = None
+    for index in range(len(clocks) - 1):
+        _a_start, a_end, start_hh = clocks[index]
+        b_start, _b_end, end_hh = clocks[index + 1]
+        sep = text[a_end:b_start]
+        if _RANGE_SEP.fullmatch(sep):
+            start, end = start_hh, end_hh
+            break
     if not start or not end:
         return None
-    days: set[int] = set()
-    lower = text.casefold()
-    if _DAILY_HOURS_RE.search(text):
-        days = set(range(7))
-    else:
-        for token, index in _DAY_INDEX.items():
-            if token in lower or token in text:
-                days.add(index)
-    if not days:
-        days = set(range(7))
+    days = _parse_hours_days(text)
+    if days is None:
+        return None
     return [{"day_of_week": day, "start_time": start, "end_time": end} for day in sorted(days)]
 
 
@@ -525,6 +622,11 @@ def transform_sheet(
     mid = (manager_id if manager_id is not None else catalog_manager_id()).strip()
     payload_orgs: list[dict[str, Any]] = []
     reports: list[dict[str, Any]] = []
+    als_budget = None
+    if table is not None:
+        import board_geocode
+
+        als_budget = board_geocode.AlsBudget()
     for i, org in enumerate(orgs):
         row, report = transform_org(org if isinstance(org, dict) else {}, district=district, manager_id=mid, index=i)
         reports.append(report)
@@ -532,7 +634,12 @@ def transform_sheet(
             if table is not None:
                 import board_geocode
 
-                board_geocode.fill_org_coords(row, district=district or str(row.get("area_name") or ""), table=table)
+                board_geocode.fill_org_coords(
+                    row,
+                    district=district or str(row.get("area_name") or ""),
+                    table=table,
+                    budget=als_budget,
+                )
             payload_orgs.append(row)
     if len(payload_orgs) > BOARD_CATALOG_MAX_ORGS_PER_IMPORT:
         raise CatalogImportError(
@@ -574,6 +681,11 @@ def is_catalog_sheet(task: dict[str, Any]) -> bool:
     return str(ref.get("kind") or "") in CATALOG_SHEET_KINDS
 
 
+def allows_existing_org_updates(task: dict[str, Any]) -> bool:
+    """Enrich sheets re-list imported orgs; updates are the point, not a collision."""
+    return str((task.get("eventRef") or {}).get("kind") or "") == CATALOG_ENRICH_KIND
+
+
 def require_catalog_sheet(task: dict[str, Any]) -> None:
     if not is_catalog_sheet(task):
         raise CatalogImportError("task is not a catalog sheet")
@@ -587,11 +699,11 @@ def require_importable_task(task: dict[str, Any], *, force: bool = False) -> Non
     if imported_at and not force:
         raise CatalogImportError(f"already imported at {imported_at}")
     if status == "awaiting_import":
-        if phase == "collision" and not force:
+        if phase == "collision" and not force and not allows_existing_org_updates(task):
             raise CatalogImportError("import would update existing organisations; pass force to proceed")
         return
     if status == "needs_owner" and phase in ("collision", "rejected", "partial", "failed", "invalid"):
-        if phase == "collision" and not force:
+        if phase == "collision" and not force and not allows_existing_org_updates(task):
             raise CatalogImportError("import would update existing organisations; pass force to proceed")
         return
     if status == "delivered" and force:
@@ -1053,7 +1165,8 @@ def _apply_preview_outcome(
         )
     if dry.get("mode") == "remote":
         would_update = _preview_would_update(dry)
-        if would_update or (dry.get("summary") or {}).get("updated"):
+        updating = bool(would_update or (dry.get("summary") or {}).get("updated"))
+        if updating and not allows_existing_org_updates(task):
             names = ", ".join(would_update) or "existing organisation"
             return _park_needs_owner(
                 table,
@@ -1193,7 +1306,9 @@ def run_import(table: Any, task: dict[str, Any], *, force: bool = False, live_af
     if not force:
         stored = task.get("importPreview") if isinstance(task.get("importPreview"), dict) else {}
         stored_dry = _preview_dry(stored)
-        if _preview_would_update(stored_dry) or (stored_dry.get("summary") or {}).get("updated"):
+        if (
+            _preview_would_update(stored_dry) or (stored_dry.get("summary") or {}).get("updated")
+        ) and not allows_existing_org_updates(task):
             _apply_preview_outcome(table, task, stored, now, promote=True)
             return {"ok": False, "collision": True, "taskId": task_id, "preview": stored, "task": task}
         if not _fresh_remote_preview(task, now):

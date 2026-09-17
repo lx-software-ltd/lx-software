@@ -462,6 +462,7 @@
     "catalogFetchCap": 9,
     "maxLowCompletenessDistricts": 3,
     "qualityMinVerifiedFacts": 2,
+    "eventKinds": ["catalog-micro-batch", "catalog-enrich"],
     "typeToCategory": {
       "playground": "Outdoor activity",
       "indoor_play": "Indoor fun",

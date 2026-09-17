@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from typing import Any
 from urllib import error as urlerror
 from urllib import parse as urlparse
@@ -18,11 +19,29 @@ import board_hk
 from http_common import _log_event
 
 ALS_LOOKUP = "https://www.als.gov.hk/lookup"
-ALS_TIMEOUT_SECONDS = 8
+ALS_TIMEOUT_SECONDS = 4
 ALS_CACHE_TTL_SECONDS = 30 * 86400
+ALS_MAX_LIVE_LOOKUPS = 3
+ALS_SHEET_BUDGET_SECONDS = 12
 ALS_USER_AGENT = "SiuTinDeiBoardBot/1.0 (+https://siutindei.com/bot)"
 
 _lookup_fn: Any = None
+
+
+class AlsBudget:
+    """Cap live ALS calls per sheet (cache hits do not count)."""
+
+    def __init__(self) -> None:
+        self.started = time.monotonic()
+        self.live = 0
+
+    def allow_live(self) -> bool:
+        if self.live >= ALS_MAX_LIVE_LOOKUPS:
+            return False
+        return (time.monotonic() - self.started) < ALS_SHEET_BUDGET_SECONDS
+
+    def record_live(self) -> None:
+        self.live += 1
 
 
 def set_lookup_for_tests(fn: Any) -> None:
@@ -35,7 +54,13 @@ def cache_name(address: str) -> str:
     return f"geocode:als:{digest}"
 
 
-def lookup_address(address: str, *, district: str, table: Any = None) -> dict[str, Any] | None:
+def lookup_address(
+    address: str,
+    *,
+    district: str,
+    table: Any = None,
+    budget: AlsBudget | None = None,
+) -> dict[str, Any] | None:
     """Return ``{lat, lng, alsDistrict, source}`` when ALS agrees on the district."""
     text = str(address or "").strip()
     if not text or not district:
@@ -60,7 +85,12 @@ def lookup_address(address: str, *, district: str, table: Any = None) -> dict[st
                     "cached": True,
                 }
             return None
+    if budget is not None and not budget.allow_live():
+        _log_event("info", tag="board_geocode_als_budget", address=text[:80])
+        return None
     try:
+        if budget is not None:
+            budget.record_live()
         raw = _fetch_als(text) if _lookup_fn is None else _lookup_fn(text)
     except (urlerror.URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError) as exc:
         _log_event("info", tag="board_geocode_als_failed", error=str(exc)[:200])
@@ -83,14 +113,25 @@ def lookup_address(address: str, *, district: str, table: Any = None) -> dict[st
     return {**chosen, "source": "als", "cached": False}
 
 
-def fill_org_coords(org: dict[str, Any], *, district: str, table: Any = None) -> dict[str, Any]:
+def fill_org_coords(
+    org: dict[str, Any],
+    *,
+    district: str,
+    table: Any = None,
+    budget: AlsBudget | None = None,
+) -> dict[str, Any]:
     """Stamp lat/lng on a transformed org when address is present and coords are not."""
     if org.get("lat") is not None and org.get("lng") is not None:
         return org
     address = str(org.get("address") or "").strip()
     if not address:
         return org
-    hit = lookup_address(address, district=district or str(org.get("area_name") or ""), table=table)
+    hit = lookup_address(
+        address,
+        district=district or str(org.get("area_name") or ""),
+        table=table,
+        budget=budget,
+    )
     if not hit:
         return org
     org["lat"] = hit["lat"]

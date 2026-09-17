@@ -23,6 +23,7 @@ from http_common import _utc_iso_z
 CATALOG_CACHE = "product:catalog_health"
 FUNNEL_CACHE = "product:funnel"
 PIPELINE_CACHE = "product:provider_pipeline"
+CATALOG_HEALTH_LIMIT = 200
 
 
 class ProductError(RuntimeError):
@@ -63,7 +64,7 @@ def refresh_caches(table: Any) -> dict[str, str]:
         return {CATALOG_CACHE: "skipped"}
     notes: dict[str, str] = {}
     for name, fetcher in (
-        (CATALOG_CACHE, lambda: _q(_CATALOG_SQL + " ORDER BY activities DESC LIMIT 50")),
+        (CATALOG_CACHE, lambda: _q(_CATALOG_SQL + f" ORDER BY activities DESC LIMIT {CATALOG_HEALTH_LIMIT}")),
         (FUNNEL_CACHE, lambda: _q(_FUNNEL_SQL + " ORDER BY day DESC LIMIT 60")),
         (PIPELINE_CACHE, lambda: _q(_PIPELINE_SQL + " ORDER BY days_since_last_edit DESC LIMIT 50")),
     ):
@@ -94,7 +95,11 @@ def op_catalog_health(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     category = str(args.get("category") or "").strip()
     sql = _CATALOG_SQL
     if not district and not category:
-        return _cached_rows(getattr(ctx, "table", None), CATALOG_CACHE, lambda: _q(sql + " ORDER BY activities DESC LIMIT 50"))
+        return _cached_rows(
+            getattr(ctx, "table", None),
+            CATALOG_CACHE,
+            lambda: _q(sql + f" ORDER BY activities DESC LIMIT {CATALOG_HEALTH_LIMIT}"),
+        )
     clauses: list[str] = []
     params: dict[str, Any] = {}
     if district:
@@ -107,6 +112,17 @@ def op_catalog_health(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         sql += " WHERE " + " AND ".join(clauses)
     sql += " ORDER BY activities DESC LIMIT 50"
     return {"rows": _q(sql, **params)}
+
+
+def cached_catalog_health(table: Any) -> dict[str, Any]:
+    """Read ``product:catalog_health`` only. Never hits the Data API."""
+    if table is None:
+        return {"rows": [], "cached": False}
+    hit = board_store.get_cache(table, CATALOG_CACHE)
+    payload = hit.get("payload") if isinstance(hit, dict) else None
+    if isinstance(payload, dict) and isinstance(payload.get("rows"), list):
+        return {**payload, "cached": True, "fetchedAt": hit.get("fetchedAt")}
+    return {"rows": [], "cached": False}
 
 
 def op_funnel(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -45,6 +46,29 @@ _GOV_HOST_SUFFIXES = (
     "edb.gov.hk",
     "fehd.gov.hk",
     "hab.gov.hk",
+)
+_NON_COMMERCIAL_HOST_SUFFIXES = (".org.hk", ".edu.hk")
+_NON_COMMERCIAL_MARKERS = (
+    "ngo",
+    "charity",
+    "church",
+    "chapel",
+    "temple",
+    "mosque",
+    "synagogue",
+    "community centre",
+    "community center",
+    "community hall",
+    "youth centre",
+    "youth center",
+    "志願",
+    "慈善",
+    "教會",
+    "教堂",
+    "廟",
+    "清真寺",
+    "社區中心",
+    "青年中心",
 )
 
 
@@ -103,12 +127,15 @@ def open_enrich_district_ids(table: Any) -> set[str]:
 
 
 def district_completeness(table: Any) -> dict[str, float]:
-    """Average completeness by district label from the cached product view."""
+    """Average completeness by district label from the cached product view.
+
+    Cache-only: never hits the Data API (review compile and the duty gate
+    stay offline when the hourly refresh has not run).
+    """
     try:
         import board_product
 
-        ctx = type("Ctx", (), {"table": table, "settings": {}, "persona_id": ""})()
-        hit = board_product.op_catalog_health(ctx, {})
+        hit = board_product.cached_catalog_health(table)
     except Exception as exc:
         _log_event("info", tag="board_catalog_health_unavailable", error=str(exc)[:200])
         return {}
@@ -138,7 +165,7 @@ def low_completeness_imported_count(table: Any) -> int:
         if did not in imported:
             continue
         score = scores.get(name)
-        if score is None or score < LOW_COMPLETENESS:
+        if score is not None and score < LOW_COMPLETENESS:
             count += 1
     return count
 
@@ -254,6 +281,12 @@ def create_enrich(table: Any, settings: dict[str, Any], *, created_by: str = "bo
     )
 
 
+def _has_non_commercial_marker(blob: str, marker: str) -> bool:
+    if any(ord(ch) > 127 for ch in marker):
+        return marker in blob
+    return re.search(rf"(?<![a-z0-9]){re.escape(marker)}(?![a-z0-9])", blob) is not None
+
+
 def is_commercial_org(org: dict[str, Any]) -> bool:
     url = str(org.get("official_url") or org.get("website") or org.get("source_url") or "")
     host = urlparse(url).netloc.lower()
@@ -261,8 +294,22 @@ def is_commercial_org(org: dict[str, Any]) -> bool:
         host = host[4:]
     if host and any(host == suffix or host.endswith("." + suffix) for suffix in _GOV_HOST_SUFFIXES):
         return False
+    if host and any(host.endswith(suffix) for suffix in _NON_COMMERCIAL_HOST_SUFFIXES):
+        return False
     org_type = str(org.get("type") or org.get("category_name") or "").strip().lower()
     if org_type in ("playground", "outdoor", "outdoor activity"):
+        return False
+    blob = " ".join(
+        (
+            str(org.get("name_en") or ""),
+            str(org.get("name") or ""),
+            str(org.get("name_zh") or ""),
+            org_type,
+            url,
+            host,
+        )
+    ).casefold()
+    if any(_has_non_commercial_marker(blob, marker) for marker in _NON_COMMERCIAL_MARKERS):
         return False
     return True
 

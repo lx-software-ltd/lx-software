@@ -17,6 +17,7 @@ import board_personas
 import board_store
 import board_tools
 from contract_constants import (
+    BOARD_CATALOG_EVENT_KINDS,
     BOARD_CHAIR_DEFAULT,
     BOARD_KEY,
     BOARD_PERSONA_IDS,
@@ -2357,7 +2358,7 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
 
 def _catalog_quality_return(task: dict[str, Any], raw: str) -> str:
     kind = str(((task or {}).get("eventRef") or {}).get("kind") or "")
-    if kind not in ("catalog-micro-batch", "catalog-enrich"):
+    if kind not in BOARD_CATALOG_EVENT_KINDS:
         return ""
     try:
         import board_catalog_import
@@ -2429,6 +2430,10 @@ def run_review(payload: dict[str, Any]) -> None:
     raw = _blob_get(str(task.get("deliverableKey") or "")).decode("utf-8", errors="replace")
     if len(raw) > 12000:
         raw = raw[:12000] + "\n[… truncated]"
+    quality = _catalog_quality_return(task, raw)
+    if quality:
+        apply_review(table, settings, task, verdict="return", notes=quality, by="manager")
+        return
     cited = set(task.get("evidence") or [])
     evidence_lines: list[str] = []
     for call in board_store.list_tool_calls_for_task(table, task_id):
@@ -2471,10 +2476,6 @@ def run_review(payload: dict[str, Any]) -> None:
     if not parsed_ok:
         _log_event("warning", tag="board_staff_review_unparsed", taskId=task_id)
         verdict = "return"
-    quality = _catalog_quality_return(task, raw)
-    if quality:
-        verdict = "return"
-        notes = (quality + (" " + notes if notes else "")).strip()[:2000]
     apply_review(table, settings, task, verdict=verdict, notes=notes, by="manager")
 
 
@@ -2703,7 +2704,7 @@ def _accept_task(table: Any, task: dict[str, Any], now: str, *, bypass_unverifie
         board_store.put_task(table, task)
         _note_parent_if_child_needs_owner(table, task)
         return task
-    if ref.get("kind") in ("catalog-micro-batch", "catalog-enrich"):
+    if ref.get("kind") in BOARD_CATALOG_EVENT_KINDS:
         import board_catalog_import
 
         try:
@@ -2711,7 +2712,10 @@ def _accept_task(table: Any, task: dict[str, Any], now: str, *, bypass_unverifie
             try:
                 import board_catalog
 
-                sheet = board_catalog_import.parse_sheet(_blob_get(str(task.get("deliverableKey") or "")).decode("utf-8", errors="replace"))
+                settings = board_store.load_settings(table)
+                sheet = board_catalog_import.parse_sheet(
+                    _blob_get(str(task.get("deliverableKey") or "")).decode("utf-8", errors="replace")
+                )
                 board_catalog.handoff_commercial_providers(table, settings, accepted, sheet)
             except Exception as exc:
                 _log_event("info", tag="board_catalog_handoff_failed", error=str(exc)[:200])
@@ -2770,10 +2774,7 @@ def retry_task(table: Any, settings: dict[str, Any], task_id: str, by_sub: str) 
         "before trusting them."
     )
     import_notes = [str(q) for q in (task.get("openQuestions") or []) if q]
-    if import_notes and str((task.get("eventRef") or {}).get("kind") or "") in (
-        "catalog-micro-batch",
-        "catalog-enrich",
-    ):
+    if import_notes and str((task.get("eventRef") or {}).get("kind") or "") in BOARD_CATALOG_EVENT_KINDS:
         retry_banner = retry_banner + " Importer: " + "; ".join(import_notes[:6])
     combined = _prepend_scratchpad(task, retry_banner)
     task["scratchpadKey"] = _scratchpad_key(task_id)

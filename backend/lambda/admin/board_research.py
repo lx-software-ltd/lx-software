@@ -291,18 +291,27 @@ RESEARCH_FETCH_TIMEOUT = 20
 _RESEARCH_FETCH_TYPES = ("text/html", "text/plain", "application/xhtml")
 
 
-def fetch_cap_for_task(table: Any, task_id: str) -> int:
+def fetch_cap_for_task(table: Any, task_id: str, *, ctx: Any = None) -> int:
     """Catalog sheets get 9 fetches (3 orgs × 3 pages); everyone else stays at 6."""
-    if not task_id or table is None:
-        return RESEARCH_FETCH_CAP
-    try:
-        task = board_store.get_task(table, task_id)
-    except Exception:
-        return RESEARCH_FETCH_CAP
-    kind = str(((task or {}).get("eventRef") or {}).get("kind") or "")
-    if kind in BOARD_CATALOG_EVENT_KINDS:
-        return max(RESEARCH_FETCH_CAP, int(BOARD_CATALOG_FETCH_CAP))
-    return RESEARCH_FETCH_CAP
+    if ctx is not None:
+        cached = getattr(ctx, "_research_fetch_cap", None)
+        if isinstance(cached, int):
+            return cached
+    cap = RESEARCH_FETCH_CAP
+    if task_id and table is not None:
+        try:
+            task = board_store.get_task(table, task_id)
+        except Exception:
+            task = None
+        kind = str(((task or {}).get("eventRef") or {}).get("kind") or "")
+        if kind in BOARD_CATALOG_EVENT_KINDS:
+            cap = max(RESEARCH_FETCH_CAP, int(BOARD_CATALOG_FETCH_CAP))
+    if ctx is not None:
+        try:
+            setattr(ctx, "_research_fetch_cap", cap)
+        except Exception:
+            pass
+    return cap
 
 
 def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -315,7 +324,7 @@ def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if not url:
         return {"error": "url is required"}
     task_id = str(getattr(ctx, "task_id", "") or "")
-    cap = fetch_cap_for_task(getattr(ctx, "table", None), task_id)
+    cap = fetch_cap_for_task(getattr(ctx, "table", None), task_id, ctx=ctx)
     if task_id:
         used = sum(
             1

@@ -248,6 +248,31 @@ class TransformTests(unittest.TestCase):
         row = board_catalog_import.parse_pricing("paid", "HK$80 per class")
         self.assertEqual(row, {"pricing_type": "per_class", "amount": 80.0, "currency": "HKD"})
 
+    def test_price_note_prefers_per_class_over_trial(self) -> None:
+        row = board_catalog_import.parse_pricing("paid", "trial $50, HK$120 per class")
+        self.assertEqual(row, {"pricing_type": "per_class", "amount": 120.0, "currency": "HKD"})
+
+    def test_opening_hours_expands_weekday_range(self) -> None:
+        entries = board_catalog_import.parse_opening_hours("Mon-Fri 9am-6pm")
+        self.assertEqual([row["day_of_week"] for row in entries], [1, 2, 3, 4, 5])
+        self.assertEqual(entries[0]["start_time"], "09:00")
+        self.assertEqual(entries[0]["end_time"], "18:00")
+
+    def test_opening_hours_drops_closed_days(self) -> None:
+        entries = board_catalog_import.parse_opening_hours("7am-11pm, closed Tuesdays")
+        self.assertEqual([row["day_of_week"] for row in entries], [0, 1, 3, 4, 5, 6])
+
+    def test_opening_hours_parses_daily_chinese(self) -> None:
+        entries = board_catalog_import.parse_opening_hours("每日上午7時至晚上11時")
+        self.assertEqual(len(entries), 7)
+        self.assertEqual(entries[0]["start_time"], "07:00")
+        self.assertEqual(entries[0]["end_time"], "23:00")
+
+    def test_opening_hours_skips_age_ranges_and_24h(self) -> None:
+        self.assertIsNone(board_catalog_import.parse_opening_hours("Ages 3-12"))
+        self.assertIsNone(board_catalog_import.parse_opening_hours("24 hours daily"))
+        self.assertIsNone(board_catalog_import.parse_opening_hours("9:00-18:00"))
+
     def test_unparseable_hours_stay_in_vetting_note(self) -> None:
         self.assertIsNone(board_catalog_import.parse_opening_hours("open most days"))
         sheet = {
@@ -647,6 +672,98 @@ class ImportClientTests(BoardTestCase):
         self.assertEqual(parked["status"], "needs_owner")
         self.assertEqual(parked.get("importPhase"), "collision")
         self.assertIn("update existing", " ".join(parked.get("openQuestions") or []))
+
+    def test_enrich_accept_updates_and_handoffs(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        board_store.save_staff_override(self.table, "provider-success", {"isActive": True})
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            board_catalog.create_next(self.table, settings)
+            task = board_catalog.create_enrich(self.table, settings)
+        sheet = {
+            "district": "Eastern",
+            "organisations": [
+                {
+                    "name_en": "Quarry Bay Park Playground",
+                    "type": "playground",
+                    "address_en": "Taikoo Shing, Eastern",
+                    "official_url": "https://www.lcsd.gov.hk/en/parks/qbp.html",
+                    "verified_fields": ["name_en", "address_en", "official_url"],
+                },
+                {
+                    "name_en": "Kidz Club",
+                    "type": "class",
+                    "address_en": "1 King's Road",
+                    "official_url": "https://kidzclub.example/eastern",
+                    "opening_hours": "Mon-Fri 9am-6pm",
+                    "free_or_paid": "paid",
+                    "price_note": "HK$120 per class",
+                    "verified_fields": [
+                        "name_en",
+                        "address_en",
+                        "official_url",
+                        "opening_hours",
+                        "free_or_paid",
+                        "price_note",
+                    ],
+                },
+            ],
+        }
+        key = board_staff._deliverable_key(task["taskId"], "json")
+        board_staff._blob_put(key, json.dumps(sheet).encode())
+        task["deliverableKey"] = key
+        task["status"] = "review"
+        task["lastReview"] = {"verdict": "accept", "notes": "", "at": "2026-09-16T00:00:00Z"}
+        board_store.put_task(self.table, task)
+
+        def collision_http(method, url, headers, body):
+            parsed = json.loads(body) if body else None
+            self.calls.append((method, url, parsed))
+            if url.endswith("/admin/imports/presign"):
+                return {"upload_url": "https://s3.example.test/put", "object_key": "imports/board.json"}
+            if url.startswith("https://s3.example.test/put"):
+                return {"status": 200}
+            return {
+                "status": 200,
+                "dry_run": True,
+                "summary": {
+                    "organizations": {"created": 0, "updated": 2, "failed": 0, "skipped": 0},
+                    "warnings": 0,
+                    "errors": 0,
+                },
+                "results": [
+                    {"type": "organizations", "key": "Quarry Bay Park Playground", "status": "updated", "errors": []},
+                    {"type": "organizations", "key": "Kidz Club", "status": "updated", "errors": []},
+                ],
+                "file_warnings": [],
+            }
+
+        board_catalog_import.set_http_for_tests(collision_http)
+        accepted = board_staff._accept_task(self.table, task, "2026-09-16T12:00:00Z")
+        self.assertEqual(accepted["status"], "awaiting_import")
+        self.assertEqual(accepted.get("importPhase"), "validated")
+        handoffs = [
+            row
+            for status in ("queued", "running")
+            for row in board_store.list_tasks(self.table, status, limit=50)
+            if (row.get("eventRef") or {}).get("kind") == "catalog-handoff"
+        ]
+        self.assertEqual(len(handoffs), 1)
+        self.assertEqual(handoffs[0]["assignee"], "provider-success")
+        self.assertEqual(handoffs[0]["eventRef"]["name"], "Kidz Club")
+
+    def test_run_import_allows_enrich_updates(self) -> None:
+        task = self._catalog_task_with_sheet()
+        task["eventRef"] = {**(task.get("eventRef") or {}), "kind": "catalog-enrich"}
+        task["status"] = "awaiting_import"
+        task["importPhase"] = "validated"
+        _stamp_fresh_remote(task, wouldUpdate=["Quarry Bay Park Playground"], summary={"updated": 1, "failed": 0})
+        board_store.put_task(self.table, task)
+        self.calls.clear()
+        out = board_catalog_import.run_import(self.table, task)
+        self.assertTrue(out["ok"])
+        self.assertFalse(out.get("collision"))
+        self.assertTrue(any(url.endswith("/admin/imports") for _method, url, _body in self.calls))
 
     def test_skip_marks_delivered_without_import(self) -> None:
         settings = _enable_staff(self.table)

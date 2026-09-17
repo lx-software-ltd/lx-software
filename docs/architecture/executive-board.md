@@ -369,9 +369,13 @@ organisations) into siutindei importer JSON. Verified `free_or_paid` /
 `price_note` and parseable `opening_hours` become nested `pricing` /
 `schedules` rows; a verified address without coordinates is geocoded
 through the HK Address Lookup Service (district must match, 30-day
-cache, fail-open). The micro-batch duty pauses after
+cache, fail-open, 4 s timeout, at most 3 live lookups / 12 s per sheet).
+The micro-batch duty pauses after
 `maxLowCompletenessDistricts` (3) imported districts sit below 50%
-completeness so `catalog-enrich` can refill hours, price and address.
+completeness (cached health only; a missing score is not “low”) so
+`catalog-enrich` can refill hours, price and address. Enrich dry-runs
+that would update existing organisations stay `validated`. A thin catalog
+sheet is returned before the manager LLM call.
 Import authenticates as a
 dedicated Cognito **importer** user in the siutindei pool
 (`AdminInitiateAuth` / `ADMIN_USER_PASSWORD_AUTH`, secret

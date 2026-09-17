@@ -828,6 +828,11 @@ class TestProductViewCache(unittest.TestCase):
         self.assertEqual(len([s for s in db.sqls if "v_catalog_health" in s]), 2)
         notes = board_product.refresh_caches(table)
         self.assertEqual(set(notes.values()), {"ok"})
+        self.assertTrue(any(f"LIMIT {board_product.CATALOG_HEALTH_LIMIT}" in s for s in db.sqls))
+        before = len(db.sqls)
+        cached = board_product.cached_catalog_health(table)
+        self.assertTrue(cached.get("rows") is not None)
+        self.assertEqual(len(db.sqls), before)
 
 
 if __name__ == "__main__":

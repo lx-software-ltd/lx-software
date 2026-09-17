@@ -241,7 +241,7 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "BOARD_CATALOG_FETCH_CAP = int(_BOARD_CATALOG.get(\"catalogFetchCap\") or 9)",
         "BOARD_CATALOG_MAX_LOW_COMPLETENESS = int(_BOARD_CATALOG.get(\"maxLowCompletenessDistricts\") or 3)",
         "BOARD_CATALOG_QUALITY_MIN_FACTS = int(_BOARD_CATALOG.get(\"qualityMinVerifiedFacts\") or 2)",
-        "BOARD_CATALOG_EVENT_KINDS = frozenset({\"catalog-micro-batch\", \"catalog-enrich\"})",
+        "BOARD_CATALOG_EVENT_KINDS = frozenset(str(k) for k in (_BOARD_CATALOG.get(\"eventKinds\") or (\"catalog-micro-batch\", \"catalog-enrich\")))",
         "BOARD_CATALOG_IMPORT_ENABLED_DEFAULT = bool(_BOARD_CATALOG.get(\"importEnabledDefault\"))",
         "BOARD_CATALOG_AUTO_IMPORT_DEFAULT = bool(_BOARD_CATALOG.get(\"autoImportDefault\"))",
         "",
@@ -454,7 +454,7 @@ export const BOARD_CATALOG_MAX_AWAITING_IMPORT = {int((board_staff.get("catalog"
 export const BOARD_CATALOG_FETCH_CAP = {int((board_staff.get("catalog") or {}).get("catalogFetchCap") or 9)};
 export const BOARD_CATALOG_MAX_LOW_COMPLETENESS = {int((board_staff.get("catalog") or {}).get("maxLowCompletenessDistricts") or 3)};
 export const BOARD_CATALOG_QUALITY_MIN_FACTS = {int((board_staff.get("catalog") or {}).get("qualityMinVerifiedFacts") or 2)};
-export const BOARD_CATALOG_EVENT_KINDS = ["catalog-micro-batch", "catalog-enrich"] as const;
+export const BOARD_CATALOG_EVENT_KINDS = {json.dumps(list((board_staff.get("catalog") or {}).get("eventKinds") or ["catalog-micro-batch", "catalog-enrich"]))} as const;
 export const BOARD_CATALOG_IMPORT_ENABLED_DEFAULT = {json.dumps(bool((board_staff.get("catalog") or {}).get("importEnabledDefault")))};
 export const BOARD_CATALOG_AUTO_IMPORT_DEFAULT = {json.dumps(bool((board_staff.get("catalog") or {}).get("autoImportDefault")))};
 

@@ -13,6 +13,7 @@ from test_board import BoardTestCase
 from test_board_tools import ScriptedOpenRouter, ToolsTestCase
 
 import board_async
+import board_budget
 import board_code
 import board_personas
 import board_staff
@@ -696,8 +697,9 @@ class StaffStepTests(ToolsTestCase):
             )
         latest = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(latest["status"], "review")
-        self.use_script([], '{"verdict":"accept","notes":"Looks complete."}')
-        board_staff.run_review({"internal": "board_staff_review", "boardKey": BOARD_KEY, "taskId": task["taskId"]})
+        with patch.object(board_budget, "board_completion") as completion:
+            board_staff.run_review({"internal": "board_staff_review", "boardKey": BOARD_KEY, "taskId": task["taskId"]})
+        completion.assert_not_called()
         done = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(done["lastReview"]["verdict"], "return")
         self.assertIn("Return —", done["lastReview"]["notes"])

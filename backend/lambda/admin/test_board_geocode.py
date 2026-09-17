@@ -77,6 +77,34 @@ class GeocodeTests(unittest.TestCase):
         self.assertEqual(org["lat"], 22.28369)
         self.assertEqual(org["lng"], 114.21179)
 
+    def test_sheet_budget_caps_live_lookups(self) -> None:
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+        table = FakeTable()
+        calls = {"n": 0}
+
+        def lookup(_addr: str):
+            calls["n"] += 1
+            return ALS_EASTERN
+
+        board_geocode.set_lookup_for_tests(lookup)
+        sheet = {
+            "district": "Eastern",
+            "organisations": [
+                {
+                    "name_en": f"Park {i}",
+                    "type": "playground",
+                    "address_en": f"Address {i} Eastern",
+                    "verified_fields": ["name_en", "address_en"],
+                }
+                for i in range(4)
+            ],
+        }
+        orgs = board_catalog_import.transform_sheet(sheet, table=table)["organizations"]
+        self.assertEqual(len(orgs), 4)
+        self.assertEqual(calls["n"], 3)
+        self.assertEqual(sum(1 for org in orgs if org.get("lat") is not None), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

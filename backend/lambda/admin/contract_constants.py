@@ -199,7 +199,7 @@ BOARD_CATALOG_MAX_AWAITING_IMPORT = int(_BOARD_CATALOG.get("maxAwaitingImport") 
 BOARD_CATALOG_FETCH_CAP = int(_BOARD_CATALOG.get("catalogFetchCap") or 9)
 BOARD_CATALOG_MAX_LOW_COMPLETENESS = int(_BOARD_CATALOG.get("maxLowCompletenessDistricts") or 3)
 BOARD_CATALOG_QUALITY_MIN_FACTS = int(_BOARD_CATALOG.get("qualityMinVerifiedFacts") or 2)
-BOARD_CATALOG_EVENT_KINDS = frozenset({"catalog-micro-batch", "catalog-enrich"})
+BOARD_CATALOG_EVENT_KINDS = frozenset(str(k) for k in (_BOARD_CATALOG.get("eventKinds") or ("catalog-micro-batch", "catalog-enrich")))
 BOARD_CATALOG_IMPORT_ENABLED_DEFAULT = bool(_BOARD_CATALOG.get("importEnabledDefault"))
 BOARD_CATALOG_AUTO_IMPORT_DEFAULT = bool(_BOARD_CATALOG.get("autoImportDefault"))
 

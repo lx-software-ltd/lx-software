@@ -576,7 +576,13 @@ catalog duty pauses when `catalog.maxAwaitingImport` (3) sheets are
 waiting (`awaiting_import` plus parked import `needs_owner` rows), and
 when more than `maxLowCompletenessDistricts` (3) imported districts sit
 below 50% completeness (then `catalog-enrich` refills hours, price and
-address on existing orgs). Owner **Import anyway** (`force:true`) on a
+address on existing orgs). The gate uses the cached `v_catalog_health`
+rows only and ignores districts with no score, so a cold cache does not
+pause new districts. After deploy, live districts around 28% completeness
+will pause `catalog-micro-batch` until enrich + import raise them. Enrich
+sheets that would update existing organisations stay on the import path
+(`validated` / `awaiting_import`); they are not parked as collisions.
+Owner **Import anyway** (`force:true`) on a
 delivered sheet re-sends organisations so failed activities can be
 created after a category-mapping fix.
 **Skip import** marks the sheet delivered without sending organisations

@@ -131,12 +131,37 @@ class CatalogDutyTests(BoardTestCase):
         settings = _enable(self.table, maxRunningTasks=20)
         board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
-            for _ in range(4):
-                board_catalog.create_next(self.table, settings)
+            created = [board_catalog.create_next(self.table, settings) for _ in range(4)]
+        board_store.put_cache(
+            self.table,
+            "product:catalog_health",
+            {
+                "rows": [
+                    {
+                        "district": (task.get("eventRef") or {}).get("district"),
+                        "category": "Outdoor activity",
+                        "activities": 3,
+                        "completeness": 0.2,
+                    }
+                    for task in created
+                ]
+            },
+        )
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             with self.assertRaises(board_staff.StaffError) as ctx:
                 board_catalog.create_next(self.table, settings)
         self.assertIn("below 50% completeness", str(ctx.exception))
         self.assertEqual(board_catalog.low_completeness_imported_count(self.table), 4)
+
+    def test_completeness_gate_ignores_missing_scores(self) -> None:
+        settings = _enable(self.table, maxRunningTasks=20)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            for _ in range(4):
+                board_catalog.create_next(self.table, settings)
+            fifth = board_catalog.create_next(self.table, settings)
+        self.assertEqual(board_catalog.low_completeness_imported_count(self.table), 0)
+        self.assertEqual(fifth["eventRef"]["districtId"], BOARD_CATALOG_DISTRICTS[4]["id"])
 
     def test_completeness_gate_allows_next_when_imported_are_healthy(self) -> None:
         settings = _enable(self.table, maxRunningTasks=20)
@@ -212,6 +237,24 @@ class CatalogDutyTests(BoardTestCase):
         self.assertEqual(created[0]["eventRef"]["name"], "Kidz Club")
         self.assertFalse(board_catalog.is_commercial_org(sheet["organisations"][0]))
         self.assertTrue(board_catalog.is_commercial_org(sheet["organisations"][1]))
+        self.assertFalse(
+            board_catalog.is_commercial_org(
+                {
+                    "name_en": "St John's Church Family Centre",
+                    "type": "class",
+                    "official_url": "https://stjohns.example/family",
+                }
+            )
+        )
+        self.assertFalse(
+            board_catalog.is_commercial_org(
+                {
+                    "name_en": "Eastern Youth Association",
+                    "type": "class",
+                    "official_url": "https://eya.org.hk/classes",
+                }
+            )
+        )
 
     def test_micro_batch_accept_does_not_handoff(self) -> None:
         settings = _enable(self.table)
@@ -270,6 +313,12 @@ class CatalogDutyTests(BoardTestCase):
         self.assertEqual(board_research.fetch_cap_for_task(self.table, catalog["taskId"]), 9)
         self.assertEqual(board_research.fetch_cap_for_task(self.table, other["taskId"]), 6)
         self.assertEqual(board_research.fetch_cap_for_task(self.table, ""), 6)
+        ctx = type("Ctx", (), {})()
+        original = board_store.get_task
+        with patch.object(board_store, "get_task", side_effect=original) as getter:
+            self.assertEqual(board_research.fetch_cap_for_task(self.table, catalog["taskId"], ctx=ctx), 9)
+            self.assertEqual(board_research.fetch_cap_for_task(self.table, catalog["taskId"], ctx=ctx), 9)
+        self.assertEqual(getter.call_count, 1)
 
 
 if __name__ == "__main__":
