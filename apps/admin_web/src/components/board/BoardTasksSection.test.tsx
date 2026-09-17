@@ -47,6 +47,19 @@ const ownerTask: BoardTask = {
   lastReview: { verdict: "return", notes: "Need evidence.", at: "2026-09-14T00:00:00Z" },
 };
 
+const catalogTask: BoardTask = {
+  ...failedTask,
+  taskId: "task-catalog",
+  status: "awaiting_import",
+  assignee: "content-marketer",
+  managerId: "cmo",
+  brief: "Founder directive — CATALOG MICRO-BATCH Eastern.",
+  failureReason: "",
+  lastReview: null,
+  importPhase: "pending",
+  eventRef: { kind: "catalog-micro-batch", id: "catalog:eastern" },
+};
+
 vi.mock("../../hooks/useBoardStaff", () => ({
   useBoardStaff: () => ({
     enabled: true,
@@ -65,8 +78,8 @@ vi.mock("../../hooks/useBoardStaff", () => ({
 
 vi.mock("../../hooks/useBoardTasks", () => ({
   useBoardTasks: () => ({
-    tasks: [failedTask, ownerTask],
-    counts: { failed: 1, needs_owner: 1 },
+    tasks: [failedTask, ownerTask, catalogTask],
+    counts: { failed: 1, needs_owner: 1, awaiting_import: 1 },
     isLoading: false,
     isFetching: false,
     dataUpdatedAt: Date.parse("2026-09-15T12:00:00Z"),
@@ -90,8 +103,13 @@ describe("BoardTasksSection", () => {
     expect(screen.getByRole("button", { name: "New task" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Failed \(1\)/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Needs owner \(1\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /To import \(1\)/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Waiting approval \(0\)/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Waiting help \(0\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "In progress" })).toHaveTextContent("To import");
+    expect(screen.getByRole("region", { name: "In progress" })).toHaveTextContent("CATALOG MICRO-BATCH Eastern");
+    expect(screen.queryByRole("region", { name: "To import" })).not.toBeInTheDocument();
+    expect(screen.getByText(/1 catalog sheet waiting to import/)).toBeInTheDocument();
     expect(screen.getByText("step limit")).toBeInTheDocument();
     expect(screen.getByLabelText("Task task-failed")).toHaveAttribute("title", "task-failed");
     expect(screen.getByLabelText("Task task-owner")).toHaveAttribute("title", "task-owner");

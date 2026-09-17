@@ -99,6 +99,10 @@ export function BoardTasksSection({
     [tasks.tasks, query, assignee, statusFilter, includeFinished, actorLabel],
   );
   const lanes = useMemo(() => groupTasksByLane(visible), [visible]);
+  const awaitingImport = useMemo(
+    () => visible.filter((task) => task.status === "awaiting_import"),
+    [visible],
+  );
   const spend = sumTaskUsageCost(tasks.tasks.filter((task) => !isFinishedBoardTaskStatus(task.status)));
   const retryingId = tasks.retry.isPending ? String(tasks.retry.variables ?? "") : null;
   const cancellingId = tasks.cancel.isPending ? String(tasks.cancel.variables ?? "") : null;
@@ -180,10 +184,10 @@ export function BoardTasksSection({
         onSelect={selectStatus}
       />
 
-      {lanes.to_import.length > 0 ? (
+      {awaitingImport.length > 0 ? (
         <div className="alert alert-info py-2 small">
-          {lanes.to_import.length} catalog sheet{lanes.to_import.length === 1 ? "" : "s"} waiting to import
-          {lanes.to_import.some((task) => task.importPreview?.importEnabled === false)
+          {awaitingImport.length} catalog sheet{awaitingImport.length === 1 ? "" : "s"} waiting to import
+          {awaitingImport.some((task) => task.importPreview?.importEnabled === false)
             ? " — import is switched off (SiutindeiBoardCatalogImportEnabled)"
             : ""}
           .
