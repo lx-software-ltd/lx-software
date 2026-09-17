@@ -700,7 +700,7 @@ export const boardReviewFixture: BoardReviewSnapshot = {
   compiledAt: isoDaysAgo(0),
   narrative: "Three parent threads closed. One Facebook post is waiting out its hold. Spend is inside the staff cap.",
   digestHtml:
-    "<h1>Siu Tin Dei daily review</h1><h2>Headline numbers</h2><ul><li>Three parent threads closed. One Facebook post is waiting out its hold. Spend is inside the staff cap.</li><li>Delivered 1 · running 1 · blocked 1.</li></ul><h2>On hold, executing soon</h2><ul><li>Propose Page post · publish:facebook</li></ul><h2>Escalations</h2><ul><li>Reconcile last week's unmatched payments. (accountant)</li></ul>",
+    "<h1>Siu Tin Dei daily review</h1><h2>Headline numbers</h2><ul><li>Three parent threads closed. One Facebook post is waiting out its hold. Spend is inside the staff cap.</li><li>Delivered 1 · running 1 · blocked 1.</li><li>Catalog: 6 districts imported, 2 ≥ 50%, next Islands.</li></ul><h2>On hold, executing soon</h2><ul><li>Propose Page post · publish:facebook</li></ul><h2>Escalations</h2><ul><li>Reconcile last week's unmatched payments. (accountant)</li></ul>",
   headline: {
     tasks: { delivered: 1, running: 1, blocked: 1 },
     messagesByChannel: { mail: 2, meta: 1 },
@@ -711,6 +711,7 @@ export const boardReviewFixture: BoardReviewSnapshot = {
     listings: { activities: 12, providers: 6, lowCompleteness: 1, error: "" },
     signings: { count: 2, stalled: 1, error: "" },
     mail: { replied: 2, archived: 1, open: 1 },
+    catalog: { ready: 1, importedDistricts: 6, completeDistricts: 2, nextDistrict: "Islands", failedActivityRows: 0 },
   },
   holdsDue: [...boardHoldsFixture],
   escalations: [

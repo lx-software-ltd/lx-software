@@ -145,6 +145,13 @@ function Headline({ review }: { readonly review: BoardReviewSnapshot }) {
         <div className="col-auto">
           Staff spend <strong>{h.spend.staffUsd}</strong> / {h.spend.budgetUsd} USD
         </div>
+        {h.catalog && (h.catalog.importedDistricts || h.catalog.nextDistrict) ? (
+          <div className="col-auto">
+            Catalog: <strong>{h.catalog.importedDistricts ?? 0}</strong> imported,{" "}
+            <strong>{h.catalog.completeDistricts ?? 0}</strong> ≥ 50%
+            {h.catalog.nextDistrict ? <> · next {h.catalog.nextDistrict}</> : null}
+          </div>
+        ) : null}
       </div>
       {channels.length > 0 ? (
         <div className="small text-muted mt-2">

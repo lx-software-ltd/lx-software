@@ -15,8 +15,13 @@ describe("mockAdminFetch", () => {
   it("serves listing and partnership progress", async () => {
     const res = await mockAdminFetch("/siu-tin-dei/board/progress");
     expect(res.ok).toBe(true);
-    const body = (await res.json()) as { listings: { activities: number }; bottlenecks: unknown[] };
+    const body = (await res.json()) as {
+      listings: { activities: number; hasPhotoAvg?: number; byDistrict: { hasPhotoAvg?: number }[] };
+      bottlenecks: unknown[];
+    };
     expect(body.listings.activities).toBe(12);
+    expect(body.listings.hasPhotoAvg).toBe(0.2);
+    expect(body.listings.byDistrict[0]?.hasPhotoAvg).toBe(0.5);
     expect(body.bottlenecks.length).toBeGreaterThan(0);
   });
 
