@@ -345,6 +345,26 @@ _BULK_SUBJECT_MARKERS = (
 )
 
 
+def _local_part(address: str) -> str:
+    return str(address or "").split("@", 1)[0].strip().lower()
+
+
+def _is_bulk_local_part(local: str) -> bool:
+    return bool(local) and (
+        local in BULK_LOCAL_PARTS or local.startswith("noreply") or local.startswith("bounce")
+    )
+
+
+def _recipient_local_parts(msg: EmailMessage) -> list[str]:
+    locals: list[str] = []
+    for header in ("X-Original-To", "Delivered-To", "X-Forwarded-To", "Envelope-To", "To", "Cc"):
+        for addr in _addresses(msg, header):
+            local = _local_part(addr)
+            if local and local not in locals:
+                locals.append(local)
+    return locals
+
+
 def _is_bulk_mail(msg: EmailMessage) -> bool:
     auto = str(msg.get("Auto-Submitted") or "").strip().lower()
     if auto and auto != "no":
@@ -356,13 +376,28 @@ def _is_bulk_mail(msg: EmailMessage) -> bool:
     if str(msg.get("X-Auto-Response-Suppress") or "").strip():
         return True
     _from_name, from_addr = parseaddr(str(msg.get("From") or ""))
-    local = from_addr.split("@", 1)[0].strip().lower()
-    if local in BULK_LOCAL_PARTS or local.startswith("noreply") or local.startswith("bounce"):
+    if _is_bulk_local_part(_local_part(from_addr)):
+        return True
+    if any(_is_bulk_local_part(local) for local in _recipient_local_parts(msg)):
         return True
     subject = str(msg.get("Subject") or "").strip().lower()
     if any(marker in subject for marker in _BULK_SUBJECT_MARKERS):
         return True
+    content_type = str(msg.get("Content-Type") or "").strip().lower()
+    if "report-type=" in content_type and (
+        "dmarc" in content_type or "feedback-report" in content_type
+    ):
+        return True
     return False
+
+
+def is_archived_thread(thread: dict[str, Any]) -> bool:
+    return str(thread.get("disposition") or "") == "archived"
+
+
+def counts_as_unread(thread: dict[str, Any]) -> bool:
+    """Archived bulk / no-action mail must not light the unread badge."""
+    return bool(thread.get("unread")) and not is_archived_thread(thread)
 
 
 def _is_own(address: str) -> bool:
@@ -540,7 +575,8 @@ def _upsert_thread(table: Any, thread_id: str, parsed: ParsedMail, *, direction:
             "lastFromName": parsed.from_name if not _is_own(parsed.from_address) else "",
             "snippet": _snippet(parsed.text),
             "hasAttachments": bool(thread.get("hasAttachments")) or bool(parsed.attachments),
-            "unread": bool(thread.get("unread")) or direction == "in",
+            "unread": bool(thread.get("unread"))
+            or (direction in ("in", "inbound") and not parsed.bulk),
             "updatedAt": now,
         }
     )
@@ -551,6 +587,7 @@ def _upsert_thread(table: Any, thread_id: str, parsed: ParsedMail, *, direction:
     if parsed.bulk and direction in ("in", "inbound"):
         thread["disposition"] = "archived"
         thread["archivedReason"] = "bulk"
+        thread["unread"] = False
     board_store.put_mail_thread(table, thread)
 
 
@@ -636,18 +673,20 @@ def thread_list(
         box = str(t.get("mailbox") or "")
         entry = mailboxes.setdefault(box, {"address": box, "threadCount": 0, "unreadCount": 0, "lastMessageAt": ""})
         entry["threadCount"] += 1
-        if t.get("unread"):
+        if counts_as_unread(t):
             entry["unreadCount"] += 1
         entry["lastMessageAt"] = max(str(entry["lastMessageAt"]), str(t.get("lastMessageAt") or ""))
     mailbox = board_pii.normalize_email(mailbox)
     if mailbox:
         threads = [t for t in threads if str(t.get("mailbox") or "") == mailbox]
     if unread_only:
-        threads = [t for t in threads if t.get("unread")]
+        threads = [t for t in threads if counts_as_unread(t)]
     if archived is True:
-        threads = [t for t in threads if str(t.get("disposition") or "") == "archived"]
-    elif archived is False:
-        threads = [t for t in threads if str(t.get("disposition") or "") != "archived"]
+        threads = [t for t in threads if is_archived_thread(t)]
+    else:
+        # Omitted or archived=0 is the inbox. Personas calling mail_list_threads
+        # without a filter must not see DMARC / SES bulk reports.
+        threads = [t for t in threads if not is_archived_thread(t)]
     groups = _query_groups(table, query)
     if groups:
         threads = [t for t in threads if _matches(t, groups, table)]
@@ -677,7 +716,7 @@ def status_summary(table: Any, *, include_health: bool = False) -> dict[str, Any
     threads = board_store.list_mail_threads(table)
     out = {
         "threadCount": len(threads),
-        "unreadCount": sum(1 for t in threads if t.get("unread")),
+        "unreadCount": sum(1 for t in threads if counts_as_unread(t)),
         "domain": mail_domain(),
         "sendEnabled": sending_enabled(),
         "inboundAddress": inbound_address(),
@@ -747,7 +786,7 @@ def digest_for_context(table: Any) -> dict[str, Any]:
     threads = board_store.list_mail_threads(table)
     by_box: dict[str, int] = {}
     for t in threads:
-        if t.get("unread"):
+        if counts_as_unread(t):
             box = str(t.get("mailbox") or "")
             by_box[box] = by_box.get(box, 0) + 1
     return {

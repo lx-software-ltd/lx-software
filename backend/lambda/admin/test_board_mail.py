@@ -442,6 +442,58 @@ class TestMailRoutes(MailTestCase):
         self.assertEqual(self.call(f"/siu-tin-dei/board/mail/{a}/read", "POST", {"read": "yes"})[0], 400)
         self.assertEqual(self.call("/siu-tin-dei/board/mail/deadbeefdeadbeef/read", "POST", {})[0], 404)
 
+    def test_dmarc_reports_are_archived_and_not_unread(self) -> None:
+        human = self.ingest()["threadId"]
+        rua = self.ingest(
+            frm="DMARC Aggregate <reports@dmarc.yahoo.com>",
+            to="dmarc@siutindei.com",
+            subject="Weekly aggregate",
+            text="",
+            message_id="<rua@yahoo.com>",
+        )["threadId"]
+        google = self.ingest(
+            frm="Google <noreply-dmarc-support@google.com>",
+            to="hello@siutindei.com",
+            subject="Report domain: siutindei.com Submitter: google.com Report-ID: 4575574242782826386",
+            text="",
+            message_id="<rua@google.com>",
+        )["threadId"]
+        board_store.put_mail_thread(
+            self.table,
+            {
+                "threadId": "legacy-dmarc",
+                "mailbox": "hello@siutindei.com",
+                "subject": "Report domain: siutindei.com",
+                "unread": True,
+                "disposition": "archived",
+                "archivedReason": "bulk",
+            },
+        )
+        rua_thread = board_store.get_mail_thread(self.table, rua)
+        google_thread = board_store.get_mail_thread(self.table, google)
+        self.assertEqual(rua_thread["disposition"], "archived")
+        self.assertFalse(rua_thread["unread"])
+        self.assertEqual(google_thread["disposition"], "archived")
+        self.assertFalse(google_thread["unread"])
+
+        status, body = self.call("/siu-tin-dei/board/mail")
+        self.assertEqual(status, 200)
+        ids = {t["threadId"] for t in body["threads"]}
+        self.assertEqual(ids, {human})
+        self.assertEqual(body["status"]["unreadCount"], 1)
+        self.assertEqual(self.call("/siu-tin-dei/board")[1]["unreadMailCount"], 1)
+        boxes = {m["address"]: m["unreadCount"] for m in body["mailboxes"]}
+        self.assertEqual(boxes.get("hello@siutindei.com"), 1)
+        self.assertEqual(boxes.get("dmarc@siutindei.com"), 0)
+
+        status, archived = self.call("/siu-tin-dei/board/mail", query="archived=1")
+        self.assertEqual(status, 200)
+        archived_ids = {t["threadId"] for t in archived["threads"]}
+        self.assertIn(rua, archived_ids)
+        self.assertIn(google, archived_ids)
+        self.assertIn("legacy-dmarc", archived_ids)
+        self.assertNotIn(human, archived_ids)
+
     def test_allow_list_validation_and_normalisation(self) -> None:
         status, body = self.call(
             "/siu-tin-dei/board/tools",

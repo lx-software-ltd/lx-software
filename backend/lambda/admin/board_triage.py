@@ -58,9 +58,17 @@ def archive_reason(thread: dict[str, Any], message: dict[str, Any]) -> str:
         or local.startswith("bounce")
     ):
         return f"no-action sender {local or 'unknown'}"
+    mailbox_local = str(thread.get("mailbox") or "").split("@", 1)[0].strip().lower()
+    if mailbox_local in board_mail.BULK_LOCAL_PARTS:
+        return f"no-action mailbox {mailbox_local}"
+    recipients = message.get("to") if isinstance(message.get("to"), list) else []
+    for addr in recipients:
+        dest = str(addr or "").split("@", 1)[0].strip().lower()
+        if dest in board_mail.BULK_LOCAL_PARTS:
+            return f"no-action mailbox {dest}"
     subject = str(thread.get("subject") or message.get("subject") or "").lower()
     text = str(message.get("text") or "")[:400].lower()
-    if "report-type=" in text or "report domain:" in subject:
+    if "report-type=" in text or "report domain:" in subject or "report-id:" in subject:
         return "dmarc/ses report"
     return ""
 
@@ -69,6 +77,7 @@ def _archive_mail(table: Any, thread: dict[str, Any], message: dict[str, Any], r
     thread = dict(thread)
     thread["disposition"] = "archived"
     thread["archivedReason"] = str(reason or "archived")[:200]
+    thread["unread"] = False
     thread["updatedAt"] = board_store.now_iso()
     board_store.put_mail_thread(table, thread)
     return None

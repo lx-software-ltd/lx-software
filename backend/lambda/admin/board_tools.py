@@ -3357,6 +3357,30 @@ def create_approval(
                     downgrade_reason=downgrade_reason,
                     fingerprint=fingerprint,
                 )
+            if op.name == "github_create_issue":
+                return _refresh_pending_approval(
+                    ctx,
+                    op,
+                    existing,
+                    arguments,
+                    summary=summary,
+                    downgrade_reason=downgrade_reason,
+                    fingerprint=fingerprint,
+                )
+        if (
+            op.name == "github_create_issue"
+            and str(existing.get("op") or "") == "github_create_issue"
+            and _same_github_issue_title(existing.get("arguments") or {}, arguments)
+        ):
+            return _refresh_pending_approval(
+                ctx,
+                op,
+                existing,
+                arguments,
+                summary=summary,
+                downgrade_reason=downgrade_reason,
+                fingerprint=fingerprint,
+            )
     if len(pending) >= BOARD_MAX_PENDING_APPROVALS:
         raise ToolPermissionError("Too many pending approvals; ask the founder to review the queue first.")
     now = board_store.now_iso()
@@ -3613,6 +3637,15 @@ def _same_code_run_target(left: dict[str, Any], right: dict[str, Any]) -> bool:
     except (TypeError, ValueError):
         return False
     return bool(left_issue) and left_issue == right_issue
+
+
+def _norm_issue_title(value: Any) -> str:
+    return " ".join(str(value or "").lower().split())
+
+
+def _same_github_issue_title(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    title = _norm_issue_title(left.get("title"))
+    return bool(title) and title == _norm_issue_title(right.get("title"))
 
 
 def _refresh_pending_approval(

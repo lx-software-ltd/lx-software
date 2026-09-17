@@ -122,6 +122,22 @@ describe("mockAdminFetch", () => {
     expect(skipped.task?.status).toBe("delivered");
   });
 
+  it("hides archived DMARC reports from the inbox and unread count", async () => {
+    const inbox = await mockAdminFetch("/siu-tin-dei/board/mail");
+    expect(inbox.ok).toBe(true);
+    const inboxBody = (await inbox.json()) as {
+      threads: readonly { subject: string; disposition?: string }[];
+      mailboxes: readonly { unreadCount: number }[];
+    };
+    expect(inboxBody.threads.map((t) => t.subject)).toEqual(["Saturday swimming availability"]);
+    expect(inboxBody.threads.some((t) => t.disposition === "archived")).toBe(false);
+    expect(inboxBody.mailboxes[0]?.unreadCount).toBe(1);
+
+    const archived = await mockAdminFetch("/siu-tin-dei/board/mail?archived=1");
+    const archivedBody = (await archived.json()) as { threads: readonly { subject: string }[] };
+    expect(archivedBody.threads.map((t) => t.subject)).toEqual(["Report Domain: siutindei.com"]);
+  });
+
   it("returns 404 for unknown paths", async () => {
     const res = await mockAdminFetch("/no-such-route");
     expect(res.status).toBe(404);
