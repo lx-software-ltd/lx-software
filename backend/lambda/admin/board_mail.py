@@ -384,6 +384,20 @@ def is_dmarc_or_feedback_report(*, subject: str = "", text: str = "", content_ty
     return "report-type=" in blob and ("dmarc" in blob or "feedback-report" in blob)
 
 
+def is_human_inbound(parsed: ParsedMail) -> bool:
+    """A person wrote this — ignore inherited DMARC / SES subjects on replies."""
+    auto = str(parsed.auto_submitted or "").strip().lower()
+    if auto and auto != "no":
+        return False
+    if parsed.list_unsubscribe:
+        return False
+    if _is_bulk_local_part(_local_part(parsed.from_address)):
+        return False
+    if _is_bulk_local_part(_local_part(parsed.mailbox)):
+        return False
+    return True
+
+
 def _is_bulk_mail(msg: EmailMessage) -> bool:
     auto = str(msg.get("Auto-Submitted") or "").strip().lower()
     if auto and auto != "no":
@@ -553,7 +567,7 @@ def ingest_bytes(
         skipped=len(parsed.attachments_skipped),
         size=parsed.raw_size,
     )
-    if direction in ("in", "inbound") and not parsed.bulk:
+    if direction in ("in", "inbound") and is_human_inbound(parsed):
         try:
             import board_triage
 
@@ -583,6 +597,7 @@ def _upsert_thread(table: Any, thread_id: str, parsed: ParsedMail, *, direction:
             participants.append(addr)
     prior_count = int(thread.get("messageCount") or 0)
     inbound = direction in ("in", "inbound")
+    human = inbound and is_human_inbound(parsed)
     thread.update(
         {
             "participants": participants[:20],
@@ -593,7 +608,7 @@ def _upsert_thread(table: Any, thread_id: str, parsed: ParsedMail, *, direction:
             "lastFromName": parsed.from_name if not _is_own(parsed.from_address) else "",
             "snippet": _snippet(parsed.text),
             "hasAttachments": bool(thread.get("hasAttachments")) or bool(parsed.attachments),
-            "unread": bool(thread.get("unread")) or (inbound and not parsed.bulk),
+            "unread": bool(thread.get("unread")) or human,
             "updatedAt": now,
         }
     )
@@ -601,7 +616,10 @@ def _upsert_thread(table: Any, thread_id: str, parsed: ParsedMail, *, direction:
         thread["lastInboundAt"] = now
     if parsed.mailbox and str(thread.get("mailbox") or "").startswith("unknown@"):
         thread["mailbox"] = parsed.mailbox
-    if inbound and parsed.bulk:
+    if human and is_archived_thread(thread):
+        thread["disposition"] = ""
+        thread.pop("archivedReason", None)
+    elif inbound and parsed.bulk:
         # Only hide brand-new bulk (DMARC / SES) or a thread that is already
         # archived. An Auto-Submitted bounce must not bury a live conversation.
         if prior_count == 0 or is_archived_thread(thread):
@@ -609,9 +627,6 @@ def _upsert_thread(table: Any, thread_id: str, parsed: ParsedMail, *, direction:
             if not thread.get("archivedReason"):
                 thread["archivedReason"] = "bulk"
             thread["unread"] = False
-    elif inbound and not parsed.bulk and is_archived_thread(thread):
-        thread["disposition"] = ""
-        thread.pop("archivedReason", None)
     board_store.put_mail_thread(table, thread)
 
 

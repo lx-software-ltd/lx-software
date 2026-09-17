@@ -546,10 +546,11 @@ escalates. Escalations create the task as `needs_owner` and send the
 / `security-analyst`. Mail that needs no reply is archived with
 `ARCHIVED — no action:` and does not increment unread (the inbox and the
 overview badge hide archived threads; open **Archived** to see them). A later
-human reply on that thread clears `disposition` and returns it to the inbox;
-an Auto-Submitted bounce on a live conversation does not archive the thread.
-Recipient local-parts (`dmarc@`, `postmaster@`) are only treated as bulk when
-they are on an own-domain mailbox.
+human reply on that thread clears `disposition` and returns it to the inbox
+even when the subject still says `Report domain:`; an Auto-Submitted bounce
+on a live conversation does not archive the thread. Recipient local-parts
+(`dmarc@`, `postmaster@`) are only treated as bulk when they are on an
+own-domain mailbox.
 
 Reply policy is enforced as an `act_guard` on the reply ops: quiet hours
 (→ hold to 08:00), per-thread and per-channel daily caps, forbidden
