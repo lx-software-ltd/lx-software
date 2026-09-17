@@ -62,12 +62,29 @@ describe("BoardTaskDrawer catalog import", () => {
       />,
     );
     expect(screen.getByText("Quarry Bay Park Playground — Playground / Eastern")).toBeInTheDocument();
+    expect(screen.getByText(/local dry-run/)).toBeInTheDocument();
     expect(screen.getByText(/import kill switch off/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Preview import" }));
     expect(onPreview).toHaveBeenCalledWith("task-catalog");
     expect(screen.getByRole("button", { name: "Import now" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Import now" }));
     expect(onImport).not.toHaveBeenCalled();
+  });
+
+  it("labels Preview import as Previewing while the remote dry-run is in flight", () => {
+    render(
+      <BoardTaskDrawer
+        detail={detail}
+        isLoading={false}
+        isMutating
+        isPreviewing
+        onClose={() => undefined}
+        onCancel={() => undefined}
+        onReview={() => undefined}
+        onPreviewImport={() => undefined}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Previewing…" })).toBeDisabled();
   });
 
   it("imports a waiting sheet when the kill switch is on", () => {
@@ -139,6 +156,23 @@ describe("BoardTaskDrawer catalog import", () => {
     expect(screen.queryByRole("button", { name: "Accept" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Import anyway" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Queue again" })).toBeInTheDocument();
+    expect(screen.getByText(/remote dry-run/)).toBeInTheDocument();
+  });
+
+  it("surfaces skip and requeue errors in the catalog panel", () => {
+    render(
+      <BoardTaskDrawer
+        detail={detail}
+        isLoading={false}
+        isMutating={false}
+        importMessage="Could not skip this sheet"
+        onClose={() => undefined}
+        onCancel={() => undefined}
+        onReview={() => undefined}
+        onSkipImport={() => undefined}
+      />,
+    );
+    expect(screen.getByText("Could not skip this sheet")).toBeInTheDocument();
   });
 
   it("formats importedAt with DateTimeDisplay", () => {

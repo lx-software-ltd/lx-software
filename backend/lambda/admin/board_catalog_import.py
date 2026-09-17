@@ -1007,6 +1007,23 @@ def op_import(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     return run_import(ctx.table, task)
 
 
+def _body_flag(body: dict[str, Any], key: str, *, default: bool) -> bool:
+    if key not in body or body.get(key) is None:
+        return default
+    value = body[key]
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        raw = value.strip().lower()
+        if raw in ("1", "true", "yes", "on"):
+            return True
+        if raw in ("0", "false", "no", "off", ""):
+            return False
+    return bool(value)
+
+
 def owner_preview(table: Any, body: dict[str, Any]) -> dict[str, Any]:
     task_id = str(body.get("taskId") or "").strip()
     if not task_id:
@@ -1016,7 +1033,13 @@ def owner_preview(table: Any, body: dict[str, Any]) -> dict[str, Any]:
     task = board_store.get_task(table, task_id)
     if not task:
         raise CatalogImportError("Task not found")
-    preview = preview_task(table, task, sheet_text=str(body.get("sheet") or "") or None, remote=bool(body.get("remote")))
+    # Owner Preview import is a siutindei dry-run. Pass remote=false for local-only.
+    preview = preview_task(
+        table,
+        task,
+        sheet_text=str(body.get("sheet") or "") or None,
+        remote=_body_flag(body, "remote", default=True),
+    )
     task["importPreview"] = preview
     board_store.put_task(table, task)
     return preview

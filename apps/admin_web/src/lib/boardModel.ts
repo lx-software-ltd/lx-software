@@ -1739,6 +1739,19 @@ export function catalogMutationErrorForTask(
   return null;
 }
 
+/** First catalog mutation error that belongs to the open task (preview / import / skip / requeue). */
+export function catalogDrawerMessageForTask(
+  taskId: string | null | undefined,
+  sources: readonly { readonly variables?: unknown; readonly error?: unknown }[],
+  format: (err: unknown) => string | null,
+): string | null {
+  for (const source of sources) {
+    const message = catalogMutationErrorForTask(source.variables, taskId, source.error, format);
+    if (message) return message;
+  }
+  return null;
+}
+
 export type BoardStagingPreview = {
   readonly status?: string;
   readonly behindBy?: number;

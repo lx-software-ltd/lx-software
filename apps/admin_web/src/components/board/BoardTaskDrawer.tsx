@@ -37,6 +37,7 @@ export type BoardTaskDrawerProps = {
   readonly onRequeueImport?: (taskId: string) => void;
   readonly importPreview?: BoardCatalogImportPreview | null;
   readonly importMessage?: string | null;
+  readonly isPreviewing?: boolean;
 };
 
 const OPEN_STATUSES = new Set([
@@ -73,6 +74,7 @@ export function BoardTaskDrawer({
   onRequeueImport,
   importPreview,
   importMessage,
+  isPreviewing = false,
 }: BoardTaskDrawerProps) {
   const [notes, setNotes] = useState("");
   const task = detail?.task;
@@ -149,7 +151,7 @@ export function BoardTaskDrawer({
                 disabled={isMutating}
                 onClick={() => onPreviewImport(task.taskId)}
               >
-                Preview import
+                {isPreviewing ? "Previewing…" : "Preview import"}
               </button>
             ) : null}
             {isCatalogSheetTask(task) && onImport && canImportCatalogTask(task) ? (
@@ -430,8 +432,9 @@ function CatalogImportPanel({
       ) : null}
       {preview ? (
         <p className="small mb-1">
-          {preview.district || "Unknown district"} · {preview.dryRun?.accepted ?? 0} ready, {preview.dryRun?.skipped ?? 0}{" "}
-          skipped
+          {preview.district || "Unknown district"}
+          {preview.dryRun?.mode ? ` · ${preview.dryRun.mode} dry-run` : ""} · {preview.dryRun?.accepted ?? 0} ready,{" "}
+          {preview.dryRun?.skipped ?? 0} skipped
           {preview.importEnabled ? "" : " · import kill switch off"}
         </p>
       ) : (

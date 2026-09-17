@@ -368,7 +368,8 @@ dedicated Cognito **importer** user in the siutindei pool
 stack never writes Aurora in that path and no LLM runs. `catalog_import`
 is `always_propose` (action class `catalog_import`) and refuses while
 `SiutindeiBoardCatalogImportEnabled` is off; preview and local dry-run
-work regardless. Owner `POST …/catalog/preview` and `…/catalog/import`
+work regardless. Owner `POST …/catalog/preview` defaults to a remote
+siutindei dry-run (`{"remote": false}` stays local) and `…/catalog/import`
 are JWT-only (`owner_only` on the public API); accepting a catalog sheet
 attaches `importPreview` only, and a repeat import of the same task is 409
 unless `force` is set. The product side still needs the `importer` group,

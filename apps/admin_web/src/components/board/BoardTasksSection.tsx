@@ -17,7 +17,7 @@ import {
   formatRelativeTime,
   formatUsageCost,
   groupTasksByLane,
-  catalogMutationErrorForTask,
+  catalogDrawerMessageForTask,
   isFinishedBoardTaskStatus,
   liveCatalogPreviewForTask,
   sumTaskUsageCost,
@@ -373,20 +373,12 @@ export function BoardTasksSection({
             selectedId,
             detail.data?.task.importPreview,
           )}
-          importMessage={
-            catalogMutationErrorForTask(
-              tasks.catalogImport.variables,
-              selectedId,
-              tasks.catalogImport.error,
-              errorText,
-            ) ??
-            catalogMutationErrorForTask(
-              tasks.catalogPreview.variables,
-              selectedId,
-              tasks.catalogPreview.error,
-              errorText,
-            )
-          }
+          importMessage={catalogDrawerMessageForTask(
+            selectedId,
+            [tasks.catalogImport, tasks.catalogPreview, tasks.catalogSkip, tasks.catalogRequeue],
+            errorText,
+          )}
+          isPreviewing={tasks.catalogPreview.isPending}
           onClose={closeTask}
           onOpenTask={openTask}
           onCancel={(id) => tasks.cancel.mutate(id, { onSuccess: () => closeTask() })}

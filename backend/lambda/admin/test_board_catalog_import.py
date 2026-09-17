@@ -284,6 +284,31 @@ class ImportClientTests(BoardTestCase):
         self.assertTrue((out.get("dryRun") or {}).get("ok"))
         self.assertEqual(((out.get("dryRun") or {}).get("summary") or {}).get("created"), 1)
 
+    def _catalog_task_with_sheet(self) -> dict:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            task = board_catalog.create_next(self.table, settings)
+        key = board_staff._deliverable_key(task["taskId"], "json")
+        board_staff._blob_put(key, json.dumps(SHEET).encode())
+        task["deliverableKey"] = key
+        board_store.put_task(self.table, task)
+        return task
+
+    def test_owner_preview_defaults_to_remote(self) -> None:
+        task = self._catalog_task_with_sheet()
+        out = board_catalog_import.owner_preview(self.table, {"taskId": task["taskId"]})
+        self.assertEqual([c[0] for c in self.calls], ["POST", "PUT", "POST"])
+        self.assertEqual((out.get("dryRun") or {}).get("mode"), "remote")
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(((saved.get("importPreview") or {}).get("dryRun") or {}).get("mode"), "remote")
+
+    def test_owner_preview_stays_local_when_remote_false(self) -> None:
+        task = self._catalog_task_with_sheet()
+        out = board_catalog_import.owner_preview(self.table, {"taskId": task["taskId"], "remote": False})
+        self.assertEqual(self.calls, [])
+        self.assertEqual((out.get("dryRun") or {}).get("mode"), "local")
+
     def test_import_refuses_non_catalog_and_undelivered(self) -> None:
         with self.assertRaises(board_catalog_import.CatalogImportError) as ctx:
             board_catalog_import.run_import(
@@ -643,6 +668,8 @@ class RouteTests(BoardTestCase):
         body = __import__("json").loads(resp["body"])
         self.assertTrue(body["preview"]["ok"])
         self.assertFalse(body["preview"]["importEnabled"])
+        # Importer env is unset here, so the default remote request stays local.
+        self.assertEqual((body["preview"].get("dryRun") or {}).get("mode"), "local")
 
     def test_import_route_conflict_when_off(self) -> None:
         import board_routes

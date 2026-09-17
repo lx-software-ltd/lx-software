@@ -588,10 +588,15 @@ organisations.
    (the `SiutindeiBoardImporterAuthPolicy` IAM statement is gated on a
    non-blank pool id). Production params already carry these; the kill
    switch stays `false` until a remote Preview succeeds.
-3. **Tasks → To import** → open a sheet → **Preview import**. Flip
-   `SiutindeiBoardCatalogImportEnabled=true` in
-   `backend/infrastructure/params/production.json`, then optionally
-   enable **Auto-import validated catalog sheets** under Settings.
+3. **Tasks → To import** → open a sheet → **Preview import**. That
+   button calls siutindei with `dry_run` (the SPA sends `{remote:true}`;
+   the API also defaults to remote). The footer shows **Previewing…**
+   until the dry-run returns; the catalog panel then shows
+   `remote dry-run` (or a `remoteError` if Cognito / the product API
+   failed). Flip `SiutindeiBoardCatalogImportEnabled=true` in
+   `backend/infrastructure/params/production.json` after a successful
+   remote Preview, then optionally enable **Auto-import validated
+   catalog sheets** under Settings.
 
 ### Board Meta (Page, Instagram, WhatsApp)
 
