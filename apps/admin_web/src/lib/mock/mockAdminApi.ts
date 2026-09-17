@@ -598,6 +598,35 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   if (p === `${board}/catalog/import` && method === "POST") {
     return json({ message: "catalog import is switched off (SiutindeiBoardCatalogImportEnabled)" }, 409);
   }
+  if (p === `${board}/catalog/skip` && method === "POST") {
+    const body = parseBody(init);
+    const taskId = String(body.taskId || "");
+    const idx = state.tasks.findIndex((t) => t.taskId === taskId);
+    if (idx < 0) return json({ message: "Task not found" }, 404);
+    const now = new Date().toISOString();
+    state.tasks[idx] = {
+      ...state.tasks[idx],
+      status: "delivered",
+      importSkipped: true,
+      importPhase: "skipped",
+      finishedAt: now,
+    };
+    return json({ ok: true, skipped: true, task: state.tasks[idx] });
+  }
+  if (p === `${board}/catalog/requeue` && method === "POST") {
+    const body = parseBody(init);
+    const taskId = String(body.taskId || "");
+    const idx = state.tasks.findIndex((t) => t.taskId === taskId);
+    if (idx < 0) return json({ message: "Task not found" }, 404);
+    state.tasks[idx] = {
+      ...state.tasks[idx],
+      status: "awaiting_import",
+      importPhase: "pending",
+      importError: "",
+      finishedAt: null,
+    };
+    return json({ ok: true, task: state.tasks[idx], taskId });
+  }
   if (p === `${board}/code/promote` && method === "POST") {
     const now = new Date().toISOString();
     const approval: BoardApproval = {

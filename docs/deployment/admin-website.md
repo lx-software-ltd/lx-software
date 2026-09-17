@@ -556,24 +556,35 @@ micro-batch sheet into siutindei importer JSON and calls the product admin
 API as a dedicated Cognito **importer** user. This stack never writes
 Aurora and no LLM runs in that path. `catalog_import` is always an
 Approval (`always_propose`, class `catalog_import`); owner
-`POST /siu-tin-dei/board/catalog/preview` and `POST …/catalog/import` are
-JWT-only (`owner_only` on the public API). A second import of the same
-task returns 409 unless the body has `{"force": true}`.
+`POST /siu-tin-dei/board/catalog/preview`, `POST …/catalog/import`,
+`POST …/catalog/skip` and `POST …/catalog/requeue` are JWT-only
+(`owner_only` on the public API). A second import of the same task
+returns 409 unless the body has `{"force": true}`.
 
-1. Land the product-side PRs on siutindei first (this repo cannot push
-   there): Cognito group `importer` with `_is_importer` on
-   `POST /admin/imports` and `/admin/imports/presign` plus
-   `ALLOW_ADMIN_USER_PASSWORD_AUTH` on the importer app client; the #502
-   fields `default_manager_id` / `source_url` / `vetting_note`; and
-   `POST /admin/imports` `{object_key, dry_run: true}`. Until `dry_run`
-   ships, the board dry-run is local validation only.
-2. Create the service user in `importer` and put `{username, password}`
-   in `lxsoftware-admin-siutindei-board-importer-credentials`.
-3. Set `SiutindeiAdminApiBaseUrl`, `SiutindeiUserPoolId`,
+Accepted catalog sheets leave **Review** as `awaiting_import` (SPA
+**To import** lane) after a siutindei dry-run. Name collisions
+(`updated` rows) and rejected rows park at `needs_owner`. The staff
+tick backfills older delivered-but-unimported sheets, re-validates
+`pending` sheets at most once an hour, and when
+`settings.catalog.autoImport` is on plus the kill switch, schedules a
+`catalog_import` hold (default 24 h). The catalog duty pauses when
+`catalog.maxAwaitingImport` (3) sheets are waiting. **Skip import**
+marks the sheet delivered without sending organisations so the district
+stays claimed.
+
+1. The siutindei importer group, #502 fields and `dry_run` are already
+   on `main`. Create the service user in `importer` and put
+   `{username, password}` in
+   `lxsoftware-admin-siutindei-board-importer-credentials`.
+2. Set `SiutindeiAdminApiBaseUrl`, `SiutindeiUserPoolId`,
    `SiutindeiBoardImporterClientId` and `SiutindeiBoardCatalogManagerId`
    (the `SiutindeiBoardImporterAuthPolicy` IAM statement is gated on a
-   non-blank pool id), then flip `SiutindeiBoardCatalogImportEnabled=true`.
-4. **Tasks** → open a catalog sheet → **Preview import** / **Import**.
+   non-blank pool id). Production params already carry these; the kill
+   switch stays `false` until a remote Preview succeeds.
+3. **Tasks → To import** → open a sheet → **Preview import**. Flip
+   `SiutindeiBoardCatalogImportEnabled=true` in
+   `backend/infrastructure/params/production.json`, then optionally
+   enable **Auto-import validated catalog sheets** under Settings.
 
 ### Board Meta (Page, Instagram, WhatsApp)
 

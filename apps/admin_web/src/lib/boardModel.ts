@@ -109,6 +109,7 @@ export type BoardSettings = {
     readonly modelBySeat?: Readonly<Record<string, string>>;
   };
   readonly review?: { readonly digestTo: string; readonly digestHourHkt: number; readonly sampleSize: number };
+  readonly catalog?: { readonly autoImport?: boolean };
   readonly boundaries?: BoardBoundaries;
   readonly updatedAt?: string | null;
   readonly version?: number;
@@ -127,6 +128,16 @@ export function staffDraft(
     seniorPaused: current.staff?.seniorPaused,
     disabledReason: current.staff?.disabledReason,
     modelBySeat: current.staff?.modelBySeat,
+    ...patch,
+  };
+}
+
+export function catalogDraft(
+  current: BoardSettings,
+  patch: Partial<NonNullable<BoardSettings["catalog"]>>,
+): NonNullable<BoardSettings["catalog"]> {
+  return {
+    autoImport: Boolean(current.catalog?.autoImport),
     ...patch,
   };
 }
@@ -212,7 +223,7 @@ export const DEFAULT_BOARD_BOUNDARIES: BoardBoundaries = {
     spend: 24,
     code_staging: 12,
     code_production: 0,
-    catalog_import: 0,
+    catalog_import: 24,
   },
   holdOverrides: {},
 };
@@ -304,6 +315,12 @@ export type BoardTask = {
   readonly deliverableKey?: string;
   readonly deliverableBytes?: number;
   readonly importedAt?: string;
+  readonly acceptedAt?: string;
+  readonly importPhase?: string;
+  readonly importError?: string;
+  readonly importAttempts?: number;
+  readonly lastImportAttemptAt?: string;
+  readonly importSkipped?: boolean;
   readonly importPreview?: BoardCatalogImportPreview | null;
   readonly importResult?: BoardCatalogImportResult | null;
 };
@@ -321,6 +338,20 @@ export type BoardCatalogImportPreview = {
     readonly accepted?: number;
     readonly skipped?: number;
     readonly errors?: readonly string[];
+    readonly remoteError?: string;
+    readonly wouldUpdate?: readonly string[];
+    readonly summary?: {
+      readonly created?: number;
+      readonly updated?: number;
+      readonly failed?: number;
+      readonly skipped?: number;
+    };
+    readonly results?: readonly {
+      readonly type?: string;
+      readonly key?: string;
+      readonly status?: string;
+      readonly errors?: readonly { readonly message?: string }[];
+    }[];
   };
   readonly payload?: { readonly organizations?: readonly Record<string, unknown>[] };
 };
@@ -329,8 +360,24 @@ export type BoardCatalogImportResult = {
   readonly ok?: boolean;
   readonly sent?: number;
   readonly accepted?: number;
+  readonly created?: number;
+  readonly updated?: number;
+  readonly failed?: number;
   readonly objectKey?: string;
   readonly at?: string;
+  readonly partial?: boolean;
+  readonly summary?: {
+    readonly created?: number;
+    readonly updated?: number;
+    readonly failed?: number;
+    readonly skipped?: number;
+  };
+  readonly results?: readonly {
+    readonly type?: string;
+    readonly key?: string;
+    readonly status?: string;
+    readonly errors?: readonly { readonly message?: string }[];
+  }[];
 };
 
 export type BoardTaskStep = {
@@ -1206,7 +1253,7 @@ export function isFinishedBoardTaskStatus(status: string): boolean {
   return status === "delivered" || status === "cancelled";
 }
 
-export type BoardTaskLaneId = "attention" | "in_progress" | "queued" | "done";
+export type BoardTaskLaneId = "attention" | "in_progress" | "queued" | "to_import" | "done";
 
 export const BOARD_TASK_LANES: readonly {
   readonly id: BoardTaskLaneId;
@@ -1231,6 +1278,12 @@ export const BOARD_TASK_LANES: readonly {
     label: "Queued",
     empty: "Queue is empty",
     statuses: ["queued"],
+  },
+  {
+    id: "to_import",
+    label: "To import",
+    empty: "No sheets waiting",
+    statuses: ["awaiting_import"],
   },
   {
     id: "done",
@@ -1261,6 +1314,7 @@ export const BOARD_TASK_STATUS_META: readonly {
   { id: "waiting_subtask", label: "Waiting help", tone: "info" },
   { id: "running", label: "Running", tone: "primary" },
   { id: "queued", label: "Queued", tone: "secondary" },
+  { id: "awaiting_import", label: "To import", tone: "info" },
   { id: "delivered", label: "Delivered", tone: "success" },
   { id: "failed", label: "Failed", tone: "danger" },
   { id: "cancelled", label: "Cancelled", tone: "secondary" },
@@ -1278,7 +1332,14 @@ export function taskStatusTone(status: string): BoardTaskStatusTone {
 
 export type BoardTaskSlaState = "none" | "ok" | "soon" | "overdue";
 
-export function taskSlaState(slaAt: string | undefined | null, nowMs: number = Date.now()): BoardTaskSlaState {
+export function taskSlaState(
+  slaAt: string | undefined | null,
+  nowMs: number = Date.now(),
+  status?: string,
+): BoardTaskSlaState {
+  if (status === "awaiting_import" || status === "failed" || isFinishedBoardTaskStatus(status ?? "")) {
+    return "none";
+  }
   if (!slaAt) return "none";
   const at = Date.parse(slaAt);
   if (!Number.isFinite(at)) return "none";
@@ -1311,8 +1372,8 @@ export function formatRelativeTime(iso: string | undefined | null, nowMs: number
   return then >= nowMs ? `in ${duration}` : `${duration} ago`;
 }
 
-export function taskSlaLabel(slaAt: string | undefined | null, nowMs: number = Date.now()): string {
-  const sla = taskSlaState(slaAt, nowMs);
+export function taskSlaLabel(slaAt: string | undefined | null, nowMs: number = Date.now(), status?: string): string {
+  const sla = taskSlaState(slaAt, nowMs, status);
   if (sla === "none") return "No SLA";
   if (sla === "overdue") return `Overdue ${formatRelativeDuration(slaAt, nowMs)}`;
   return `SLA ${formatRelativeTime(slaAt, nowMs)}`;
@@ -1405,6 +1466,8 @@ export function sortTasksInLane(lane: BoardTaskLaneId, tasks: readonly BoardTask
     );
   } else if (lane === "queued") {
     copy.sort((a, b) => cmpIso(a.slaAt, b.slaAt, "asc") || a.taskId.localeCompare(b.taskId));
+  } else if (lane === "to_import") {
+    copy.sort((a, b) => cmpIso(a.acceptedAt || a.updatedAt, b.acceptedAt || b.updatedAt, "asc") || a.taskId.localeCompare(b.taskId));
   } else {
     copy.sort(
       (a, b) =>
@@ -1421,6 +1484,7 @@ export function groupTasksByLane(tasks: readonly BoardTask[]): Record<BoardTaskL
     attention: [],
     in_progress: [],
     queued: [],
+    to_import: [],
     done: [],
   };
   for (const task of tasks) {
@@ -1609,6 +1673,32 @@ export function boardCatalogImportPath(): string {
   return `${BOARD_API_BASE}/catalog/import`;
 }
 
+export function boardCatalogSkipPath(): string {
+  return `${BOARD_API_BASE}/catalog/skip`;
+}
+
+export function boardCatalogRequeuePath(): string {
+  return `${BOARD_API_BASE}/catalog/requeue`;
+}
+
+export function canImportCatalogTask(task: Pick<BoardTask, "status" | "importedAt" | "importPhase">): boolean {
+  if (task.importedAt) return false;
+  if (task.status === "awaiting_import") return task.importPhase !== "collision";
+  return task.status === "needs_owner" && Boolean(task.importPhase) && task.importPhase !== "collision";
+}
+
+export function canForceCatalogImport(task: Pick<BoardTask, "status" | "importedAt" | "importPhase">): boolean {
+  return !task.importedAt && task.importPhase === "collision";
+}
+
+export function canSkipCatalogTask(task: Pick<BoardTask, "status" | "importedAt">): boolean {
+  return !task.importedAt && (task.status === "awaiting_import" || task.status === "needs_owner");
+}
+
+export function canRequeueCatalogImport(task: Pick<BoardTask, "status" | "importPhase">): boolean {
+  return task.status === "needs_owner" && Boolean(task.importPhase);
+}
+
 export function isCatalogSheetTask(task: Pick<BoardTask, "eventRef"> | undefined | null): boolean {
   return task?.eventRef?.kind === "catalog-micro-batch";
 }
@@ -1630,8 +1720,17 @@ export function catalogMutationErrorForTask(
   error: unknown,
   format: (err: unknown) => string | null,
 ): string | null {
-  if (!taskId || variables !== taskId) return null;
-  return format(error);
+  if (!taskId) return null;
+  if (variables === taskId) return format(error);
+  if (
+    variables &&
+    typeof variables === "object" &&
+    "taskId" in variables &&
+    (variables as { taskId?: string }).taskId === taskId
+  ) {
+    return format(error);
+  }
+  return null;
 }
 
 export type BoardStagingPreview = {

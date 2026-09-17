@@ -36,7 +36,7 @@ export function BoardTaskCard({
 }) {
   const busy = isRetrying || isCancelling;
   const tone = taskStatusTone(task.status);
-  const sla = taskSlaState(task.slaAt);
+  const sla = taskSlaState(task.slaAt, Date.now(), task.status);
   const stepsMax = taskStepsLimit();
   const stepPct = Math.min(100, Math.round((task.stepsUsed / Math.max(stepsMax, 1)) * 100));
   const budgetPct = task.budgetUsd > 0 ? Math.min(100, Math.round((task.usage.cost / task.budgetUsd) * 100)) : 0;
@@ -89,7 +89,7 @@ export function BoardTaskCard({
             {task.budgetUsd ? ` / ${formatUsageCost(task.budgetUsd)}` : ""}
           </span>
           <span className={`d-block small mt-1 ${sla === "overdue" ? "text-danger" : sla === "soon" ? "text-warning" : "text-muted"}`}>
-            {taskSlaLabel(task.slaAt)} · updated {formatRelativeTime(task.updatedAt)}
+            {taskSlaLabel(task.slaAt, Date.now(), task.status)} · updated {formatRelativeTime(task.updatedAt)}
           </span>
         </button>
         {task.parentTaskId ? (

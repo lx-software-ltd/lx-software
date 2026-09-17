@@ -195,7 +195,9 @@ BOARD_CATALOG_TYPE_TO_CATEGORY: dict[str, str] = {
     str(k): str(v) for k, v in dict(_BOARD_CATALOG.get("typeToCategory") or {}).items()
 }
 BOARD_CATALOG_MAX_ORGS_PER_IMPORT = int(_BOARD_CATALOG.get("maxOrgsPerImport") or 20)
+BOARD_CATALOG_MAX_AWAITING_IMPORT = int(_BOARD_CATALOG.get("maxAwaitingImport") or 3)
 BOARD_CATALOG_IMPORT_ENABLED_DEFAULT = bool(_BOARD_CATALOG.get("importEnabledDefault"))
+BOARD_CATALOG_AUTO_IMPORT_DEFAULT = bool(_BOARD_CATALOG.get("autoImportDefault"))
 
 OPENROUTER_PAYER = OPENROUTER_APPS_CONTRACT["payer"]
 OPENROUTER_APPS: list[dict] = list(OPENROUTER_APPS_CONTRACT["apps"])

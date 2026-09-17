@@ -4,6 +4,7 @@ import {
   formatUsageCost,
   MEETING_MODE_LABELS,
   memberLabel,
+  catalogDraft,
   staffDraft,
   type BoardMeetingMode,
   type BoardMember,
@@ -231,6 +232,23 @@ export function BoardSettingsCard({
             />
             <label className="form-check-label" htmlFor="board-duties-enabled">
               Run scheduled seat duties
+            </label>
+          </div>
+          <div className="form-check form-switch">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="board-catalog-auto-import"
+              checked={Boolean(draft.catalog?.autoImport)}
+              onChange={(ev) =>
+                setDraft((d) => ({
+                  ...d,
+                  catalog: catalogDraft(d, { autoImport: ev.target.checked }),
+                }))
+              }
+            />
+            <label className="form-check-label" htmlFor="board-catalog-auto-import">
+              Auto-import validated catalog sheets (24 h hold)
             </label>
           </div>
           <div className="row g-2 mt-2">

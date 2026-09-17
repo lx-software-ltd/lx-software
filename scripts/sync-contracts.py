@@ -237,7 +237,9 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "    str(k): str(v) for k, v in dict(_BOARD_CATALOG.get(\"typeToCategory\") or {}).items()",
         "}",
         "BOARD_CATALOG_MAX_ORGS_PER_IMPORT = int(_BOARD_CATALOG.get(\"maxOrgsPerImport\") or 20)",
+        "BOARD_CATALOG_MAX_AWAITING_IMPORT = int(_BOARD_CATALOG.get(\"maxAwaitingImport\") or 3)",
         "BOARD_CATALOG_IMPORT_ENABLED_DEFAULT = bool(_BOARD_CATALOG.get(\"importEnabledDefault\"))",
+        "BOARD_CATALOG_AUTO_IMPORT_DEFAULT = bool(_BOARD_CATALOG.get(\"autoImportDefault\"))",
         "",
         "OPENROUTER_PAYER = OPENROUTER_APPS_CONTRACT[\"payer\"]",
         "OPENROUTER_APPS: list[dict] = list(OPENROUTER_APPS_CONTRACT[\"apps\"])",
@@ -444,7 +446,9 @@ export const BOARD_CATALOG_OUTPUT_CONTRACT = {json.dumps((board_staff.get("catal
 export const BOARD_CATALOG_DISTRICTS = {json.dumps((board_staff.get("catalog") or {}).get("districts") or [])} as const;
 export const BOARD_CATALOG_TYPE_TO_CATEGORY = {json.dumps((board_staff.get("catalog") or {}).get("typeToCategory") or {})} as const;
 export const BOARD_CATALOG_MAX_ORGS_PER_IMPORT = {int((board_staff.get("catalog") or {}).get("maxOrgsPerImport") or 20)};
+export const BOARD_CATALOG_MAX_AWAITING_IMPORT = {int((board_staff.get("catalog") or {}).get("maxAwaitingImport") or 3)};
 export const BOARD_CATALOG_IMPORT_ENABLED_DEFAULT = {json.dumps(bool((board_staff.get("catalog") or {}).get("importEnabledDefault")))};
+export const BOARD_CATALOG_AUTO_IMPORT_DEFAULT = {json.dumps(bool((board_staff.get("catalog") or {}).get("autoImportDefault")))};
 
 export type OpenRouterAppDefinition = {{
   readonly id: string;

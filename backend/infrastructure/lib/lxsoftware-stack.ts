@@ -2720,6 +2720,14 @@ export class LxsoftwareStack extends cdk.Stack {
         path: "/siu-tin-dei/board/catalog/import",
         methods: [apigwv2.HttpMethod.POST],
       },
+      {
+        path: "/siu-tin-dei/board/catalog/skip",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/catalog/requeue",
+        methods: [apigwv2.HttpMethod.POST],
+      },
     ];
     for (const route of boardRoutes) {
       this.httpApi.addRoutes({

@@ -109,6 +109,8 @@ export function BoardTasksSection({
     if (taskId !== pickedId) {
       tasks.catalogPreview.reset();
       tasks.catalogImport.reset();
+      tasks.catalogSkip.reset();
+      tasks.catalogRequeue.reset();
     }
     setPickedId(taskId);
     onFocusConsumed?.();
@@ -116,6 +118,8 @@ export function BoardTasksSection({
   const closeTask = () => {
     tasks.catalogPreview.reset();
     tasks.catalogImport.reset();
+    tasks.catalogSkip.reset();
+    tasks.catalogRequeue.reset();
     setPickedId(null);
     onFocusConsumed?.();
   };
@@ -166,6 +170,16 @@ export function BoardTasksSection({
         updatedLabel={updatedLabel}
         onSelect={selectStatus}
       />
+
+      {lanes.to_import.length > 0 ? (
+        <div className="alert alert-info py-2 small">
+          {lanes.to_import.length} catalog sheet{lanes.to_import.length === 1 ? "" : "s"} waiting to import
+          {lanes.to_import.some((task) => task.importPreview?.importEnabled === false)
+            ? " — import is switched off (SiutindeiBoardCatalogImportEnabled)"
+            : ""}
+          .
+        </div>
+      ) : null}
 
       <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
         <button
@@ -342,7 +356,9 @@ export function BoardTasksSection({
             tasks.review.isPending ||
             tasks.retry.isPending ||
             tasks.catalogPreview.isPending ||
-            tasks.catalogImport.isPending
+            tasks.catalogImport.isPending ||
+            tasks.catalogSkip.isPending ||
+            tasks.catalogRequeue.isPending
           }
           errorMessage={
             errorText(detail.error) ??
@@ -375,7 +391,9 @@ export function BoardTasksSection({
           onReview={(id, verdict, notes) => tasks.review.mutate({ taskId: id, verdict, notes })}
           onRetry={(id) => tasks.retry.mutate(id)}
           onPreviewImport={(id) => tasks.catalogPreview.mutate(id)}
-          onImport={(id) => tasks.catalogImport.mutate(id)}
+          onImport={(id, opts) => tasks.catalogImport.mutate({ taskId: id, force: opts?.force })}
+          onSkipImport={(id) => tasks.catalogSkip.mutate(id)}
+          onRequeueImport={(id) => tasks.catalogRequeue.mutate(id)}
         />
       ) : null}
     </div>

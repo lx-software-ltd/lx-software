@@ -147,6 +147,8 @@ def write_blocked(method: str, path: str) -> bool:
         ["code", "sync-staging"],
         ["catalog", "preview"],
         ["catalog", "import"],
+        ["catalog", "skip"],
+        ["catalog", "requeue"],
         ["mail", "selftest"],
         ["staff", "tick"],
     ):

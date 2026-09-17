@@ -3,6 +3,8 @@ import { adminFetchJson } from "../lib/apiAdminClient";
 import {
   boardCatalogImportPath,
   boardCatalogPreviewPath,
+  boardCatalogRequeuePath,
+  boardCatalogSkipPath,
   boardTaskCancelPath,
   boardTaskPath,
   boardTaskReviewPath,
@@ -89,14 +91,40 @@ export function catalogPreviewMutationOptions(qc: QueryClient) {
 
 export function catalogImportMutationOptions(qc: QueryClient) {
   return {
-    mutationFn: async (taskId: string) => {
+    mutationFn: async ({ taskId, force }: { taskId: string; force?: boolean }) => {
       const res = await adminFetchJson<{ ok: boolean; preview?: BoardCatalogImportPreview; taskId?: string }>(
         boardCatalogImportPath(),
         {
           method: "POST",
-          body: JSON.stringify({ taskId }),
+          body: JSON.stringify({ taskId, force: Boolean(force) }),
         },
       );
+      return res;
+    },
+    onSuccess: () => invalidateTasks(qc),
+  };
+}
+
+export function catalogSkipMutationOptions(qc: QueryClient) {
+  return {
+    mutationFn: async (taskId: string) => {
+      const res = await adminFetchJson<{ ok: boolean; task?: BoardTask }>(boardCatalogSkipPath(), {
+        method: "POST",
+        body: JSON.stringify({ taskId }),
+      });
+      return res;
+    },
+    onSuccess: () => invalidateTasks(qc),
+  };
+}
+
+export function catalogRequeueMutationOptions(qc: QueryClient) {
+  return {
+    mutationFn: async (taskId: string) => {
+      const res = await adminFetchJson<{ ok: boolean; task?: BoardTask }>(boardCatalogRequeuePath(), {
+        method: "POST",
+        body: JSON.stringify({ taskId }),
+      });
       return res;
     },
     onSuccess: () => invalidateTasks(qc),
@@ -150,6 +178,8 @@ export function useBoardTasks() {
   const retry = useMutation(retryTaskMutationOptions(qc));
   const catalogPreview = useMutation(catalogPreviewMutationOptions(qc));
   const catalogImport = useMutation(catalogImportMutationOptions(qc));
+  const catalogSkip = useMutation(catalogSkipMutationOptions(qc));
+  const catalogRequeue = useMutation(catalogRequeueMutationOptions(qc));
   return {
     tasks: query.data?.tasks ?? [],
     counts: query.data?.counts ?? {},
@@ -164,6 +194,8 @@ export function useBoardTasks() {
     retry,
     catalogPreview,
     catalogImport,
+    catalogSkip,
+    catalogRequeue,
   };
 }
 

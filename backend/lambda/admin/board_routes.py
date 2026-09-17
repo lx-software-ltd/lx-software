@@ -604,6 +604,10 @@ def validate_settings(body: Any, current: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(body.get("review"), dict):
             raise ValueError("review must be an object")
         out["review"] = board_store.normalize_review_config({**(current.get("review") or {}), **body["review"]})
+    if "catalog" in body:
+        if not isinstance(body.get("catalog"), dict):
+            raise ValueError("catalog must be an object")
+        out["catalog"] = board_store.normalize_catalog_config({**(current.get("catalog") or {}), **body["catalog"]})
     if "boundaries" in body:
         if not isinstance(body.get("boundaries"), dict):
             raise ValueError("boundaries must be an object")
@@ -1268,6 +1272,20 @@ def _catalog_route(event: dict[str, Any], method: str, rest: list[str], user_sub
         except board_catalog_import.CatalogImportError as exc:
             return _json_response(409, {"message": str(exc)})
         _audit(user_sub, "BOARD_CATALOG_IMPORT", str(out.get("taskId") or ""), event)
+        return _json_response(200, out)
+    if len(rest) == 2 and rest[1] == "skip" and method == "POST":
+        try:
+            out = board_catalog_import.owner_skip(table, _parse_json_body(event))
+        except board_catalog_import.CatalogImportError as exc:
+            return _json_response(409, {"message": str(exc)})
+        _audit(user_sub, "BOARD_CATALOG_SKIP", str((out.get("task") or {}).get("taskId") or ""), event)
+        return _json_response(200, out)
+    if len(rest) == 2 and rest[1] == "requeue" and method == "POST":
+        try:
+            out = board_catalog_import.owner_requeue(table, _parse_json_body(event))
+        except board_catalog_import.CatalogImportError as exc:
+            return _json_response(409, {"message": str(exc)})
+        _audit(user_sub, "BOARD_CATALOG_REQUEUE", str(out.get("taskId") or out.get("task", {}).get("taskId") or ""), event)
         return _json_response(200, out)
     return _json_response(404, {"message": "Not found"})
 

@@ -215,14 +215,21 @@ def run_due(table: Any, settings: dict[str, Any], now: datetime | None = None) -
                         created_by="board_duties",
                     )
             except board_staff.StaffError as exc:
-                if _is_catalog_duty(duty_id) and "already have a sheet" in str(exc):
+                if _is_catalog_duty(duty_id) and (
+                    "already have a sheet" in str(exc) or "awaiting_import cap" in str(exc)
+                ):
+                    skip_why = (
+                        "awaiting import cap"
+                        if "awaiting_import cap" in str(exc)
+                        else "all districts claimed"
+                    )
                     board_store.put_cache(
                         table,
                         _cache_name(seat_id, duty_id),
                         {
                             "ranAt": board_store.now_iso(),
                             "scheduledAt": board_hk.to_iso(scheduled or when),
-                            "skipped": "all districts claimed",
+                            "skipped": skip_why,
                         },
                         ttl_seconds=40 * 86400,
                     )

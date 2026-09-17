@@ -63,7 +63,7 @@ def _yesterday_hkt(date_hkt: str) -> str:
 
 
 _HEADLINE_OPEN = frozenset(
-    {"queued", "running", "waiting_approval", "waiting_subtask", "review", "needs_owner"}
+    {"queued", "running", "waiting_approval", "waiting_subtask", "review", "needs_owner", "awaiting_import"}
 )
 
 
@@ -86,8 +86,7 @@ def _catalog_headline(table: Any) -> dict[str, Any]:
     try:
         import board_catalog_import
 
-        ready = board_catalog_import.ready_sheets(table)
-        return {"ready": len(ready), "sheets": ready}
+        return board_catalog_import.catalog_headline(table)
     except Exception as exc:
         _log_event("warning", tag="board_catalog_headline_failed", error=str(exc)[:200])
         return {"ready": 0, "sheets": []}
@@ -428,8 +427,14 @@ def _headline_lines(review: dict[str, Any]) -> list[str]:
         f"Staff spend {spend.get('staffUsd') or 0} / {spend.get('budgetUsd') or 0} USD.",
     ]
     catalog = headline.get("catalog") or {}
-    if catalog.get("ready"):
-        lines.append(f"Catalog sheets ready to import: {catalog.get('ready')}.")
+    if catalog.get("ready") or catalog.get("collisions") or catalog.get("rejected"):
+        bits = [f"{catalog.get('validated') or 0} validated by siutindei"]
+        if catalog.get("pending"):
+            bits.append(f"{catalog.get('pending')} waiting on a dry-run")
+        waiting = int(catalog.get("collisions") or 0) + int(catalog.get("rejected") or 0)
+        if waiting:
+            bits.append(f"{waiting} waiting on you")
+        lines.append("Catalog sheets: " + ", ".join(bits) + ".")
     pipeline = headline.get("pipeline") or {}
     if pipeline.get("weeklyTarget"):
         lines.append(

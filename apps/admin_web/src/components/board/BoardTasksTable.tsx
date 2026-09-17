@@ -58,7 +58,7 @@ export function BoardTasksTable({
         <AdminDataTableEmptyRow colSpan={COLUMNS.length} message="No tasks match this view." />
       ) : (
         tasks.map((task) => {
-          const sla = taskSlaState(task.slaAt);
+          const sla = taskSlaState(task.slaAt, Date.now(), task.status);
           const busy = retryingId === task.taskId || cancellingId === task.taskId;
           return (
             <tr key={task.taskId}>
@@ -80,7 +80,7 @@ export function BoardTasksTable({
               <AdminCell column="assignee">{actorLabel(task.assignee)}</AdminCell>
               <AdminCell column="sla">
                 <span className={sla === "overdue" ? "text-danger" : sla === "soon" ? "text-warning" : undefined}>
-                  {taskSlaLabel(task.slaAt)}
+                  {taskSlaLabel(task.slaAt, Date.now(), task.status)}
                 </span>
               </AdminCell>
               <AdminCell column="steps">{task.stepsUsed}</AdminCell>

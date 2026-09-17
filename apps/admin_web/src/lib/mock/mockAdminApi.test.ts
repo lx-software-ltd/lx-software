@@ -107,6 +107,15 @@ describe("mockAdminFetch", () => {
       body: JSON.stringify({ taskId: "task-catalog" }),
     });
     expect(importRes.status).toBe(409);
+
+    const skipRes = await mockAdminFetch("/siu-tin-dei/board/catalog/skip", {
+      method: "POST",
+      body: JSON.stringify({ taskId: "task-catalog" }),
+    });
+    expect(skipRes.ok).toBe(true);
+    const skipped = (await skipRes.json()) as { skipped?: boolean; task?: { status?: string } };
+    expect(skipped.skipped).toBe(true);
+    expect(skipped.task?.status).toBe("delivered");
   });
 
   it("returns 404 for unknown paths", async () => {

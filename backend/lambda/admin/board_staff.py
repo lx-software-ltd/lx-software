@@ -1905,7 +1905,15 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
     usage = result.usage or {}
     latest = board_store.get_task(table, task_id) or task
     status = str(latest.get("status") or "")
-    if status not in ("running", "review", "needs_owner", "delivered", "waiting_subtask", "waiting_approval"):
+    if status not in (
+        "running",
+        "review",
+        "needs_owner",
+        "delivered",
+        "waiting_subtask",
+        "waiting_approval",
+        "awaiting_import",
+    ):
         return
     latest["usage"] = _task_usage_add(latest, usage)
     note = (result.text or "").strip()
@@ -1933,7 +1941,7 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
         latest["stepsUsed"] = seq
     latest["updatedAt"] = board_store.now_iso()
     latest["stuckRetried"] = False
-    if status in ("review", "needs_owner", "delivered", "waiting_subtask", "waiting_approval"):
+    if status in ("review", "needs_owner", "delivered", "waiting_subtask", "waiting_approval", "awaiting_import"):
         latest["idleSteps"] = 0
         board_store.patch_task_if_status(
             table,
@@ -2632,14 +2640,6 @@ def _mark_delivered(table: Any, task: dict[str, Any], now: str) -> dict[str, Any
             board_code.on_review_delivered(table, board_store.load_settings(table), task)
         except Exception as exc:
             _log_event("warning", tag="board_code_review_deliver_failed", error=str(exc)[:200])
-    if ref.get("kind") == "catalog-micro-batch":
-        try:
-            import board_catalog_import
-
-            board_catalog_import.attach_accept_preview(table, task)
-            board_store.put_task(table, task)
-        except Exception as exc:
-            _log_event("warning", tag="board_catalog_import_accept_failed", error=str(exc)[:200])
     return task
 
 
@@ -2686,6 +2686,15 @@ def _accept_task(table: Any, task: dict[str, Any], now: str, *, bypass_unverifie
             board_store.put_task(table, task)
             _note_parent_if_child_needs_owner(table, task)
             return task
+    if ref.get("kind") == "catalog-micro-batch":
+        import board_catalog_import
+
+        try:
+            return board_catalog_import.accept_catalog_task(table, task, now)
+        except Exception as exc:
+            _log_event("warning", tag="board_catalog_import_accept_failed", error=str(exc)[:200])
+            task["importPreview"] = {"ok": False, "error": str(exc)[:300], "taskId": task.get("taskId")}
+            return board_catalog_import._set_awaiting(table, task, now, phase="pending")
     return _mark_delivered(table, task, now)
 
 
@@ -2735,6 +2744,9 @@ def retry_task(table: Any, settings: dict[str, Any], task_id: str, by_sub: str) 
         "RETRY — the notes below are from a failed attempt; verify state with tools "
         "before trusting them."
     )
+    import_notes = [str(q) for q in (task.get("openQuestions") or []) if q]
+    if import_notes and str((task.get("eventRef") or {}).get("kind") or "") == "catalog-micro-batch":
+        retry_banner = retry_banner + " Importer: " + "; ".join(import_notes[:6])
     combined = _prepend_scratchpad(task, retry_banner)
     task["scratchpadKey"] = _scratchpad_key(task_id)
     task["scratchpadChars"] = len(combined)
@@ -2818,6 +2830,12 @@ def handle_tick(event: dict[str, Any]) -> dict[str, Any]:
         pass
     except Exception as exc:
         _log_event("error", tag="board_holds_tick_failed", error=str(exc)[:300])
+    try:
+        import board_catalog_import
+
+        board_catalog_import.handle_tick(table, settings)
+    except Exception as exc:
+        _log_event("warning", tag="board_catalog_import_tick_failed", error=str(exc)[:300])
     try:
         import board_duties
 

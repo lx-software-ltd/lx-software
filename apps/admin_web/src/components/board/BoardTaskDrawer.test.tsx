@@ -5,7 +5,7 @@ import { BoardTaskDrawer } from "./BoardTaskDrawer";
 
 const catalogTask: BoardTask = {
   taskId: "task-catalog",
-  status: "delivered",
+  status: "awaiting_import",
   assignee: "content-marketer",
   assigneeKind: "seat",
   managerId: "cmo",
@@ -65,12 +65,12 @@ describe("BoardTaskDrawer catalog import", () => {
     expect(screen.getByText(/import kill switch off/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Preview import" }));
     expect(onPreview).toHaveBeenCalledWith("task-catalog");
-    expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    expect(screen.getByRole("button", { name: "Import now" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Import now" }));
     expect(onImport).not.toHaveBeenCalled();
   });
 
-  it("imports a delivered sheet when the kill switch is on", () => {
+  it("imports a waiting sheet when the kill switch is on", () => {
     const onImport = vi.fn();
     render(
       <BoardTaskDrawer
@@ -90,8 +90,25 @@ describe("BoardTaskDrawer catalog import", () => {
         importPreview={{ ...catalogTask.importPreview!, importEnabled: true }}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    fireEvent.click(screen.getByRole("button", { name: "Import now" }));
     expect(onImport).toHaveBeenCalledWith("task-catalog");
+  });
+
+  it("offers skip on a waiting sheet", () => {
+    const onSkip = vi.fn();
+    render(
+      <BoardTaskDrawer
+        detail={detail}
+        isLoading={false}
+        isMutating={false}
+        onClose={() => undefined}
+        onCancel={() => undefined}
+        onReview={() => undefined}
+        onSkipImport={onSkip}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Skip import" }));
+    expect(onSkip).toHaveBeenCalledWith("task-catalog");
   });
 
   it("formats importedAt with DateTimeDisplay", () => {

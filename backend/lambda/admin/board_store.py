@@ -59,6 +59,7 @@ from contract_constants import (
     BOARD_STAFF_ACTION_CLASSES,
     BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
     BOARD_STAFF_DAILY_BUDGET_MAX_USD,
+    BOARD_CATALOG_AUTO_IMPORT_DEFAULT,
     BOARD_STAFF_HOLD_CODE_STAGING_HOURS,
     BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
     BOARD_STAFF_OUTREACH_DAILY_CAP_MAX,
@@ -366,6 +367,19 @@ def default_review_config() -> dict[str, Any]:
     return {"digestTo": "", "digestHourHkt": 7, "sampleSize": BOARD_STAFF_REVIEW_SAMPLE_SIZE}
 
 
+def default_catalog_config() -> dict[str, Any]:
+    return {"autoImport": bool(BOARD_CATALOG_AUTO_IMPORT_DEFAULT)}
+
+
+def normalize_catalog_config(raw: Any) -> dict[str, Any]:
+    out = default_catalog_config()
+    if not isinstance(raw, dict):
+        return out
+    if "autoImport" in raw:
+        out["autoImport"] = bool(raw.get("autoImport"))
+    return out
+
+
 def default_boundaries() -> dict[str, Any]:
     return {
         "reply": {
@@ -398,7 +412,7 @@ def default_boundaries() -> dict[str, Any]:
             "spend": 24,
             "code_staging": BOARD_STAFF_HOLD_CODE_STAGING_HOURS,
             "code_production": 0,
-            "catalog_import": 0,
+            "catalog_import": 24,
         },
         "holdOverrides": {},
         "outreach": {
@@ -638,6 +652,7 @@ def default_settings() -> dict[str, Any]:
         "tools": default_tools_config(),
         "staff": default_staff_config(),
         "review": default_review_config(),
+        "catalog": default_catalog_config(),
         "boundaries": default_boundaries(),
         "updatedAt": None,
         "version": 0,
@@ -666,6 +681,7 @@ def load_settings(table: Any) -> dict[str, Any]:
     merged["tools"] = normalize_tools_config(stored.get("tools"))
     merged["staff"] = normalize_staff_config(stored.get("staff"))
     merged["review"] = normalize_review_config(stored.get("review"))
+    merged["catalog"] = normalize_catalog_config(stored.get("catalog"))
     merged["boundaries"] = normalize_boundaries(stored.get("boundaries"))
     try:
         merged["version"] = int(stored.get("version") or 0)
