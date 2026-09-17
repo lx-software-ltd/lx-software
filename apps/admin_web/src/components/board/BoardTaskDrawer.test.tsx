@@ -32,7 +32,7 @@ const catalogTask: BoardTask = {
     taskId: "task-catalog",
     district: "Eastern",
     importEnabled: false,
-    dryRun: { ok: true, accepted: 1, skipped: 0 },
+    dryRun: { ok: true, mode: "local", accepted: 1, skipped: 0 },
     payload: { organizations: [{ name: "Quarry Bay Park Playground", category_name: "Playground", area_name: "Eastern" }] },
   },
 };
@@ -139,7 +139,7 @@ describe("BoardTaskDrawer catalog import", () => {
             importPhase: "collision",
             importPreview: {
               ...catalogTask.importPreview!,
-              dryRun: { ok: true, accepted: 1, skipped: 0, wouldUpdate: ["Kidz Club"] },
+              dryRun: { ok: true, mode: "remote", accepted: 1, skipped: 0, wouldUpdate: ["Kidz Club"] },
             },
           },
         }}

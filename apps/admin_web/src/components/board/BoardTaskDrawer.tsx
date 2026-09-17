@@ -433,8 +433,8 @@ function CatalogImportPanel({
       {preview ? (
         <p className="small mb-1">
           {preview.district || "Unknown district"}
-          {preview.dryRun?.mode ? ` · ${preview.dryRun.mode} dry-run` : ""} · {preview.dryRun?.accepted ?? 0} ready,{" "}
-          {preview.dryRun?.skipped ?? 0} skipped
+          {preview.dryRun ? ` · ${preview.dryRun.mode || "local"} dry-run` : ""} · {preview.dryRun?.accepted ?? 0}{" "}
+          ready, {preview.dryRun?.skipped ?? 0} skipped
           {preview.importEnabled ? "" : " · import kill switch off"}
         </p>
       ) : (
