@@ -316,20 +316,6 @@
   overflow: hidden;
 }
 
-@media (max-width: 1199.98px) and (min-width: 768px) {
-  .board-task-lanes {
-    display: flex;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    padding-bottom: 0.35rem;
-  }
-
-  .board-task-lane {
-    flex: 0 0 min(20rem, 70vw);
-    scroll-snap-align: start;
-  }
-}
-
 @media (max-width: 767.98px) {
   .board-task-lanes {
     display: block;
