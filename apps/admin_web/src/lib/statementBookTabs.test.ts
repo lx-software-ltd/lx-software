@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultStatementBookTab } from "./StatementBookPage";
+import { defaultStatementBookTab } from "./statementBookTabs";
 
 describe("defaultStatementBookTab", () => {
   it("opens Executive Board on Siu Tin Dei when no tab is requested", () => {
