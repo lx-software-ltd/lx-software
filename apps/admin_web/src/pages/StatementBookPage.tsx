@@ -7,10 +7,9 @@ import { AdminPageIntro, AdminTabList, type AdminTabItem } from "../components/u
 import { useStatementBook } from "../hooks/useStatementBook";
 import { adminTabButtonId } from "../lib/adminTabs";
 import { defaultFiscalYearIdForNowUtc, type FiscalYearId } from "../lib/fiscalYearFinance";
+import { defaultStatementBookTab, type StatementBookTab } from "../lib/statementBookTabs";
 import { SIU_TIN_DEI_BOOK_KEY, STATEMENT_BOOK_DISPLAY_LABEL } from "../lib/statementOwners";
 import type { StatementBookKey } from "../lib/financeTypes";
-
-type StatementBookTab = "dashboard" | "expenses" | "gains" | "board";
 
 const STATEMENT_BOOK_TABS: readonly AdminTabItem<StatementBookTab>[] = [
   { id: "dashboard", label: "Dashboard" },
@@ -46,15 +45,9 @@ export function StatementBookPage({
     saveError,
     saveErrorDetail,
   } = useStatementBook(bookKey);
-  const [tab, setTab] = useState<StatementBookTab>(() => {
-    const params = new URLSearchParams(window.location.search);
-    const requested = params.get("tab");
-    if (hasExecutiveBoard && (requested === "board" || params.get("section") || params.get("task"))) {
-      return "board";
-    }
-    if (requested === "expenses" || requested === "gains" || requested === "dashboard") return requested;
-    return "dashboard";
-  });
+  const [tab, setTab] = useState<StatementBookTab>(() =>
+    defaultStatementBookTab(hasExecutiveBoard, window.location.search),
+  );
   const [fiscalYear, setFiscalYear] = useState<FiscalYearId>(() =>
     defaultFiscalYearIdForNowUtc(),
   );
