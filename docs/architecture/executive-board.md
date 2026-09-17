@@ -713,6 +713,16 @@ this repository never pushes code.
   in GitHub. Owner-only `POST …/code/sync-staging` merge-commits `main`
   into `staging` directly (409 on conflict) and cancels an open
   `ops/rebase-staging` task.
+- Daily staff tick from 07:00 HKT (`maybe_daily_staging_sync`) compares
+  `main...staging`. When `behindBy > 0` it opens a CTO `ops/rebase-staging`
+  task. The CTO calls `code_sync_staging` (act → `code_staging` hold;
+  propose → Approval) and `task_finish` citing the hold. Accept parks the
+  task as `waiting_approval` / `sync_scheduled` while the hold is due; the
+  hold execute / veto / expire hook delivers the task when `behindBy=0` or
+  parks `needs_owner` otherwise. The next day's 07:00 check cancels a stale
+  `needs_owner` / `review` task (`closedBy: board_code:superseded`) and
+  opens a fresh one. An in-flight `queued` / `running` / `waiting_*` task
+  is left alone.
 - Owner `POST …/tasks` with `prNumber` (Tasks → New task → PR # / Issue #)
   resets `reviewRounds` so a maxed-out loop can restart. `task_finish` on a
   `code-implement` task is refused until the runner is dispatched or a

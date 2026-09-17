@@ -1488,6 +1488,7 @@ def compare_staging() -> dict[str, Any]:
 
 _SYNC_STAGING_CACHE = "duty:cto:sync-staging"
 _SYNC_STAGING_EVENT_ID = "rebase-staging"
+_SYNC_STAGING_HOUR_HKT = 7
 _DELEGATE_SEATS = ("architect", "engineer-1", "engineer-2")
 _OPEN_SYNC_STATUSES = (
     "queued",
@@ -1496,6 +1497,13 @@ _OPEN_SYNC_STATUSES = (
     "waiting_subtask",
     "review",
     "needs_owner",
+)
+_SUPERSEDE_SYNC_STATUSES = ("needs_owner", "review")
+_LIVE_SYNC_STATUSES = (
+    "queued",
+    "running",
+    "waiting_approval",
+    "waiting_subtask",
 )
 
 
@@ -1532,22 +1540,259 @@ def _sync_staging_brief(preview: dict[str, Any], delegates: list[str]) -> str:
         f"siutindei staging is {behind} commit(s) behind main "
         f"(compare status={status}, aheadBy={ahead}).{compare}{diverge} "
         "You own keeping staging current with main so the promote path can run. "
-        "Call code_sync_staging (merges main into staging; a propose-level call becomes an "
-        "Approval, and act is a code_staging hold). Then call github_compare base=main "
-        "head=staging and only task_finish when behindBy=0. github_list_commits without sha "
+        "Call code_sync_staging (merges main into staging). At act the call is a "
+        "code_staging hold — confirm the response has holdId / executeAt, then task_finish "
+        "citing that hold; the runtime closes this task when the hold executes. At propose "
+        "the call is an Approval; finish citing the approval. Then call github_compare "
+        "base=main head=staging so the note has the counts. github_list_commits without sha "
         "lists the default branch — do not use it to claim staging is current. "
         f"{handoff} "
-        "Deliverable: markdown with behind/ahead counts from github_compare, the merge result, "
-        "and the compare URL."
+        "Deliverable: markdown with behind/ahead counts from github_compare, the hold or "
+        "approval id, and the compare URL."
     )
+
+
+def _sync_task_created_hkt_date(task: dict[str, Any]) -> str:
+    try:
+        return board_hk.as_hkt(board_hk.parse_iso(str(task.get("createdAt") or ""))).date().isoformat()
+    except ValueError:
+        return ""
+
+
+def _list_sync_tasks(table: Any, statuses: tuple[str, ...]) -> list[dict[str, Any]]:
+    found: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for status in statuses:
+        for task in board_store.list_tasks(table, status, limit=200):
+            ref = task.get("eventRef") or {}
+            if ref.get("kind") != "ops" or str(ref.get("id") or "") != _SYNC_STAGING_EVENT_ID:
+                continue
+            tid = str(task.get("taskId") or "")
+            if not tid or tid in seen:
+                continue
+            seen.add(tid)
+            found.append(task)
+    return found
+
+
+def find_scheduled_sync_hold(table: Any, task_id: str) -> dict[str, Any] | None:
+    wanted = str(task_id or "")
+    if not wanted:
+        return None
+    for hold in board_store.list_holds(table, "scheduled", limit=200):
+        if str(hold.get("op") or "") != "code_sync_staging":
+            continue
+        if str(hold.get("taskId") or "") == wanted:
+            return hold
+    return None
+
+
+def find_pending_sync_approval(table: Any, task_id: str) -> dict[str, Any] | None:
+    wanted = str(task_id or "")
+    if not wanted:
+        return None
+    for approval in board_store.list_approvals(table):
+        if str(approval.get("status") or "") != "pending":
+            continue
+        if str(approval.get("op") or "") != "code_sync_staging":
+            continue
+        if str((approval.get("context") or {}).get("taskId") or "") == wanted:
+            return approval
+    return None
+
+
+def _park_sync_task(
+    table: Any,
+    task: dict[str, Any],
+    *,
+    now: str,
+    status: str,
+    flags: list[str],
+    blocked_on: list[str],
+    question: str,
+) -> dict[str, Any]:
+    current_flags = [str(f) for f in (task.get("flags") or []) if f]
+    for flag in flags:
+        if flag not in current_flags:
+            current_flags.append(flag)
+    drop = {"staging_behind", "sync_scheduled"} - set(flags)
+    current_flags = [f for f in current_flags if f not in drop]
+    questions = [str(q) for q in (task.get("openQuestions") or []) if q]
+    if question and question not in questions:
+        questions.append(question)
+    task["flags"] = current_flags
+    task["openQuestions"] = questions
+    task["blockedOn"] = [str(x) for x in blocked_on if x]
+    task["status"] = status
+    task["finishedAt"] = None
+    task["updatedAt"] = now
+    board_store.put_task(table, task)
+    return task
+
+
+def park_sync_scheduled(table: Any, task: dict[str, Any], blocker: dict[str, Any], now: str) -> dict[str, Any]:
+    """Hold or Approval is in flight — keep the task off Attention."""
+    hold_id = str(blocker.get("holdId") or "")
+    approval_id = str(blocker.get("approvalId") or "")
+    blocker_id = hold_id or approval_id
+    execute_at = str(blocker.get("executeAt") or "")
+    if hold_id and execute_at:
+        question = f"sync hold {hold_id} executes at {execute_at}"
+    elif hold_id:
+        question = f"sync hold {hold_id} is scheduled"
+    else:
+        question = f"sync approval {approval_id} is pending"
+    return _park_sync_task(
+        table,
+        task,
+        now=now,
+        status="waiting_approval",
+        flags=["sync_scheduled"],
+        blocked_on=[blocker_id],
+        question=question,
+    )
+
+
+def park_sync_behind(
+    table: Any,
+    task: dict[str, Any],
+    still: dict[str, Any],
+    now: str,
+    *,
+    extra: str = "",
+) -> dict[str, Any]:
+    if still.get("error"):
+        question = f"could not verify staging vs main: {still.get('error')}"
+    elif still.get("behindBy") == "?":
+        question = extra or "sync hold did not complete"
+        extra = ""
+    else:
+        question = f"staging is still {still.get('behindBy')} commit(s) behind main"
+    if extra:
+        question = f"{question}; {extra}"
+    parked = _park_sync_task(
+        table,
+        task,
+        now=now,
+        status="needs_owner",
+        flags=["staging_behind"],
+        blocked_on=[],
+        question=question,
+    )
+    board_staff._note_parent_if_child_needs_owner(table, parked)
+    return parked
+
+
+def _write_sync_deliverable(task: dict[str, Any], text: str) -> None:
+    key = board_staff._deliverable_key(str(task.get("taskId") or ""), "markdown")
+    board_staff._blob_put(key, text.encode("utf-8"))
+    task["deliverableKey"] = key
+    task["deliverableType"] = "markdown"
+    task["summary"] = text.splitlines()[0][:200] if text else "Synced staging with main"
+
+
+def _deliver_sync_task(table: Any, task: dict[str, Any], hold: dict[str, Any], preview: dict[str, Any]) -> dict[str, Any]:
+    hold_id = str(hold.get("holdId") or "")
+    ahead = int(preview.get("aheadBy") or 0)
+    url = str(preview.get("htmlUrl") or "").strip()
+    lines = [
+        f"Synced staging with main via hold {hold_id or '(unknown)'}."
+        f" behindBy=0, aheadBy={ahead}.",
+    ]
+    if url:
+        lines.append(f"Compare: {url}")
+    _write_sync_deliverable(task, "\n".join(lines))
+    task["closedBy"] = f"hold:{hold_id}" if hold_id else "hold"
+    flags = [str(f) for f in (task.get("flags") or []) if f and f not in {"staging_behind", "sync_scheduled"}]
+    task["flags"] = flags
+    task["blockedOn"] = []
+    return board_staff._mark_delivered(table, task, board_store.now_iso())
+
+
+def on_sync_hold_outcome(table: Any, hold: dict[str, Any]) -> dict[str, Any] | None:
+    """Close or re-park the rebase-staging task after a code_sync_staging hold settles."""
+    if str(hold.get("op") or "") != "code_sync_staging":
+        return None
+    task_id = str(hold.get("taskId") or "")
+    if not task_id:
+        return None
+    task = board_store.get_task(table, task_id)
+    if not task:
+        return None
+    ref = task.get("eventRef") or {}
+    if ref.get("kind") != "ops" or str(ref.get("id") or "") != _SYNC_STAGING_EVENT_ID:
+        return None
+    if str(task.get("status") or "") in ("delivered", "cancelled"):
+        return None
+    now = board_store.now_iso()
+    status = str(hold.get("status") or "")
+    if status == "executed":
+        preview = staging_preview()
+        if preview.get("error") or int(preview.get("behindBy") or 0) > 0:
+            extra = str(preview.get("error") or "").strip()
+            return park_sync_behind(table, task, preview, now, extra=extra)
+        return _deliver_sync_task(table, task, hold, preview)
+    reason = str((hold.get("result") or {}).get("error") or hold.get("vetoReason") or status)
+    return park_sync_behind(
+        table,
+        task,
+        {"behindBy": "?", "error": ""},
+        now,
+        extra=f"hold {status}: {reason}"[:200],
+    )
+
+
+def accept_sync_staging_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
+    """Accept gate for ops/rebase-staging: scheduled hold vs still behind."""
+    task_id = str(task.get("taskId") or "")
+    hold = find_scheduled_sync_hold(table, task_id)
+    if hold:
+        return park_sync_scheduled(table, task, hold, now)
+    approval = find_pending_sync_approval(table, task_id)
+    if approval:
+        return park_sync_scheduled(table, task, approval, now)
+    try:
+        still = staging_still_behind()
+    except Exception as exc:
+        still = {"error": str(exc)[:200], "behindBy": "?"}
+    if still:
+        return park_sync_behind(table, task, still, now)
+    return board_staff._mark_delivered(table, task, now)
+
+
+def _supersede_stale_sync_tasks(table: Any, today_hkt: str) -> list[dict[str, Any]]:
+    cancelled: list[dict[str, Any]] = []
+    for task in _list_sync_tasks(table, _SUPERSEDE_SYNC_STATUSES):
+        created = _sync_task_created_hkt_date(task)
+        if created and created >= today_hkt:
+            continue
+        tid = str(task.get("taskId") or "")
+        if not tid:
+            continue
+        try:
+            closed = board_staff.cancel_task(table, tid, "board_code:superseded")
+        except board_staff.StaffError as exc:
+            _log_event("info", tag="board_code_rebase_supersede_skipped", taskId=tid, error=str(exc)[:200])
+            continue
+        closed["closedBy"] = "board_code:superseded"
+        board_store.put_task(table, closed)
+        cancelled.append(closed)
+    return cancelled
 
 
 def _ensure_rebase_task(
     table: Any,
     settings: dict[str, Any],
     preview: dict[str, Any] | None = None,
+    *,
+    when: datetime | None = None,
 ) -> dict[str, Any] | None:
-    if _find_task(table, "ops", _SYNC_STAGING_EVENT_ID, statuses=_OPEN_SYNC_STATUSES):
+    local = board_hk.as_hkt(when or board_hk.now_hkt())
+    today = local.date().isoformat()
+    if _list_sync_tasks(table, _LIVE_SYNC_STATUSES):
+        return None
+    _supersede_stale_sync_tasks(table, today)
+    if _list_sync_tasks(table, _OPEN_SYNC_STATUSES):
         return None
     snapshot = preview if isinstance(preview, dict) else staging_preview()
     if snapshot.get("error"):
@@ -1573,12 +1818,20 @@ def _ensure_rebase_task(
 
 
 def maybe_daily_staging_sync(
-    table: Any, settings: dict[str, Any], preview: dict[str, Any] | None = None
+    table: Any,
+    settings: dict[str, Any],
+    preview: dict[str, Any] | None = None,
+    *,
+    now: datetime | None = None,
 ) -> dict[str, Any] | None:
-    """Once per HKT day, open a CTO task when staging is behind main."""
+    """Once per HKT day from 07:00, open a CTO task when staging is behind main."""
     if not board_staff.enabled(settings):
         return None
-    date_hkt = board_hk.today_hkt()
+    when = now or board_hk.now_hkt()
+    local = board_hk.as_hkt(when)
+    if local.hour < _SYNC_STAGING_HOUR_HKT:
+        return None
+    date_hkt = local.date().isoformat()
     hit = board_store.get_cache(table, _SYNC_STAGING_CACHE)
     payload = hit.get("payload") if isinstance(hit, dict) else None
     if isinstance(payload, dict) and payload.get("dateHkt") == date_hkt:
@@ -1603,7 +1856,7 @@ def maybe_daily_staging_sync(
     )
     if behind <= 0:
         return None
-    return _ensure_rebase_task(table, settings, preview=preview)
+    return _ensure_rebase_task(table, settings, preview=preview, when=when)
 
 
 def op_promote(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -2324,14 +2577,14 @@ def sweep_stale_board_branches(table: Any, *, force: bool = False) -> list[str]:
     return deleted
 
 
-def handle_tick(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
+def handle_tick(table: Any, settings: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
     if not board_staff.enabled(settings):
         return {"ok": True, "skipped": "disabled"}
     reviews = poll_runs(table, settings)
     stale = sweep_stale_board_branches(table)
     assigned = maybe_assign_ready_issues(table, settings)
     preview = cache_staging_preview(table)
-    sync = maybe_daily_staging_sync(table, settings, preview=preview)
+    sync = maybe_daily_staging_sync(table, settings, preview=preview, now=now)
     return {
         "ok": True,
         "reviews": len(reviews),

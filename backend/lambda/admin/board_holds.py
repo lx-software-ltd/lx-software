@@ -316,6 +316,7 @@ def expire_stale(table: Any, settings: dict[str, Any], now_iso: str) -> int:
         latest["status"] = "expired"
         latest["updatedAt"] = now_iso
         board_store.put_hold(table, latest)
+        _notify_code_sync_hold(table, latest)
         expired += 1
     return expired
 
@@ -411,6 +412,17 @@ def _thread_changed(table: Any, hold: dict[str, Any]) -> bool:
     return bool(latest and latest > expected)
 
 
+def _notify_code_sync_hold(table: Any, hold: dict[str, Any]) -> None:
+    if str(hold.get("op") or "") != "code_sync_staging":
+        return
+    try:
+        import board_code
+
+        board_code.on_sync_hold_outcome(table, hold)
+    except Exception as exc:
+        _log_event("warning", tag="board_code_sync_hold_notify_failed", error=str(exc)[:200])
+
+
 def _finish_hold(table: Any, hold: dict[str, Any], status: str, now: str, *, error: str = "", call_id: str = "") -> None:
     hold["status"] = status
     hold["updatedAt"] = now
@@ -419,6 +431,7 @@ def _finish_hold(table: Any, hold: dict[str, Any], status: str, now: str, *, err
     hold["result"] = {"callId": call_id, "error": error}
     hold["expiresAt"] = int(datetime.now(timezone.utc).timestamp()) + BOARD_STAFF_RETENTION_DAYS * 86400
     board_store.put_hold(table, hold)
+    _notify_code_sync_hold(table, hold)
 
 
 def veto(table: Any, hold_id: str, by_sub: str, reason: str) -> dict[str, Any]:
@@ -451,6 +464,7 @@ def veto(table: Any, hold_id: str, by_sub: str, reason: str) -> dict[str, Any]:
                 row["status"] = "vetoed"
                 row["updatedAt"] = now
                 board_store.put_content(table, row)
+    _notify_code_sync_hold(table, hold)
     if hold.get("op") == "outreach_send":
         pid = str((hold.get("arguments") or {}).get("prospectId") or "")
         prospect = board_store.get_prospect(table, pid) if pid else None

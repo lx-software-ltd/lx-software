@@ -57,6 +57,10 @@ on:
 """
 
 
+_AFTER_SEVEN_HKT = datetime(2026, 9, 16, 23, 5, tzinfo=timezone.utc)  # 07:05 HKT on 2026-09-17
+_BEFORE_SEVEN_HKT = datetime(2026, 9, 16, 22, 0, tzinfo=timezone.utc)  # 06:00 HKT
+
+
 def _enable_staff(table: Any, **staff: Any) -> dict[str, Any]:
     settings = board_store.load_settings(table)
     settings["staff"] = board_store.normalize_staff_config({**(settings.get("staff") or {}), "enabled": True, **staff})
@@ -1641,7 +1645,7 @@ class RunnerTests(BoardTestCase):
             "html_url": "https://github.com/lx-software-ltd/siutindei/compare/main...staging",
             "commits": [],
         }
-        out = board_code.handle_tick(self.table, self.settings)
+        out = board_code.handle_tick(self.table, self.settings, now=_AFTER_SEVEN_HKT)
         self.assertTrue(out["stagingSync"])
         self.assertEqual(out.get("staleBranches"), 0)
         open_tasks = board_store.list_tasks(self.table, "queued") + board_store.list_tasks(self.table, "running")
@@ -1650,7 +1654,7 @@ class RunnerTests(BoardTestCase):
         self.assertEqual(tasks[0]["assignee"], "cto")
         self.assertIn("12 commit", tasks[0]["brief"])
         self.assertIn("do not force-push", tasks[0]["brief"])
-        again = board_code.handle_tick(self.table, self.settings)
+        again = board_code.handle_tick(self.table, self.settings, now=_AFTER_SEVEN_HKT)
         self.assertFalse(again["stagingSync"])
         open_again = board_store.list_tasks(self.table, "queued") + board_store.list_tasks(self.table, "running")
         self.assertEqual(
@@ -1779,9 +1783,132 @@ class RunnerTests(BoardTestCase):
         self.assertIn("staging_behind", out.get("flags") or [])
         self.assertTrue(any("could not verify" in str(q) for q in (out.get("openQuestions") or [])))
 
+    def _rebase_task(self) -> dict[str, Any]:
+        return board_staff.create_task(
+            self.table,
+            self.settings,
+            assignee="cto",
+            origin="event",
+            brief="sync staging",
+            deliverable_type="markdown",
+            event_ref={"kind": "ops", "id": "rebase-staging"},
+            created_by="t",
+        )
+
+    def test_accept_sync_task_parks_scheduled_hold(self) -> None:
+        self.gh.compare = {"status": "diverged", "ahead_by": 1, "behind_by": 9, "commits": []}
+        task = self._rebase_task()
+        task["status"] = "review"
+        task["flags"] = ["no_evidence"]
+        task["lastReview"] = {"verdict": "accept"}
+        board_store.put_task(self.table, task)
+        board_store.put_hold(
+            self.table,
+            {
+                "holdId": "hold-sync-1",
+                "status": "scheduled",
+                "op": "code_sync_staging",
+                "taskId": task["taskId"],
+                "executeAt": "2026-09-17T00:00:00Z",
+                "actionClass": "code_staging",
+                "classKey": "code_staging",
+                "arguments": {"reason": "Keep staging current."},
+            },
+        )
+        out = board_staff._accept_task(self.table, task, board_store.now_iso())  # noqa: SLF001
+        self.assertEqual(out["status"], "waiting_approval")
+        self.assertIn("sync_scheduled", out.get("flags") or [])
+        self.assertNotIn("staging_behind", out.get("flags") or [])
+        self.assertEqual(out.get("blockedOn"), ["hold-sync-1"])
+
+    def test_accept_sync_task_parks_pending_approval(self) -> None:
+        self.gh.compare = {"status": "diverged", "ahead_by": 1, "behind_by": 4, "commits": []}
+        task = self._rebase_task()
+        task["status"] = "review"
+        task["lastReview"] = {"verdict": "accept"}
+        board_store.put_task(self.table, task)
+        board_store.put_approval(
+            self.table,
+            {
+                "approvalId": "apr-sync-1",
+                "status": "pending",
+                "op": "code_sync_staging",
+                "context": {"taskId": task["taskId"]},
+                "arguments": {"reason": "Keep staging current."},
+            },
+        )
+        out = board_staff._accept_task(self.table, task, board_store.now_iso())  # noqa: SLF001
+        self.assertEqual(out["status"], "waiting_approval")
+        self.assertIn("sync_scheduled", out.get("flags") or [])
+        self.assertEqual(out.get("blockedOn"), ["apr-sync-1"])
+
+    def test_sync_hold_executed_delivers_task(self) -> None:
+        self.gh.compare = {"status": "identical", "ahead_by": 1, "behind_by": 0, "commits": []}
+        task = self._rebase_task()
+        task["status"] = "waiting_approval"
+        task["flags"] = ["sync_scheduled"]
+        board_store.put_task(self.table, task)
+        hold = {
+            "holdId": "hold-sync-ok",
+            "status": "executed",
+            "op": "code_sync_staging",
+            "taskId": task["taskId"],
+            "result": {"callId": "c1", "error": ""},
+        }
+        out = board_code.on_sync_hold_outcome(self.table, hold)
+        self.assertIsNotNone(out)
+        stored = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(stored["status"], "delivered")
+        self.assertEqual(stored["closedBy"], "hold:hold-sync-ok")
+        self.assertNotIn("sync_scheduled", stored.get("flags") or [])
+        self.assertIn("behindBy=0", board_staff.read_deliverable(stored))
+
+    def test_sync_hold_vetoed_parks_needs_owner(self) -> None:
+        self.gh.compare = {"status": "diverged", "ahead_by": 1, "behind_by": 5, "commits": []}
+        task = self._rebase_task()
+        task["status"] = "waiting_approval"
+        task["flags"] = ["sync_scheduled"]
+        board_store.put_task(self.table, task)
+        hold = {
+            "holdId": "hold-sync-veto",
+            "status": "vetoed",
+            "op": "code_sync_staging",
+            "taskId": task["taskId"],
+            "vetoReason": "not now",
+            "result": {"callId": "", "error": ""},
+        }
+        out = board_code.on_sync_hold_outcome(self.table, hold)
+        self.assertEqual(out["status"], "needs_owner")
+        self.assertIn("staging_behind", out.get("flags") or [])
+        self.assertTrue(any("vetoed" in str(q) for q in (out.get("openQuestions") or [])))
+
+    def test_daily_tick_skips_before_seven_hkt(self) -> None:
+        self.gh.compare = {"status": "behind", "ahead_by": 0, "behind_by": 3, "commits": []}
+        out = board_code.maybe_daily_staging_sync(self.table, self.settings, now=_BEFORE_SEVEN_HKT)
+        self.assertIsNone(out)
+        self.assertFalse(
+            any((t.get("eventRef") or {}).get("id") == "rebase-staging" for t in board_store.list_tasks(self.table, "queued"))
+        )
+
+    def test_daily_tick_supersedes_stale_needs_owner(self) -> None:
+        self.gh.compare = {"status": "behind", "ahead_by": 0, "behind_by": 5, "commits": []}
+        stale = self._rebase_task()
+        stale["status"] = "needs_owner"
+        stale["flags"] = ["staging_behind"]
+        stale["createdAt"] = "2026-09-15T16:00:00Z"
+        board_store.put_task(self.table, stale)
+        created = board_code.maybe_daily_staging_sync(self.table, self.settings, now=_AFTER_SEVEN_HKT)
+        self.assertIsNotNone(created)
+        self.assertNotEqual(created["taskId"], stale["taskId"])
+        self.assertEqual(created["assignee"], "cto")
+        self.assertIn("citing that hold", created["brief"])
+        old = board_store.get_task(self.table, stale["taskId"])
+        self.assertEqual(old["status"], "cancelled")
+        self.assertEqual(old["closedBy"], "board_code:superseded")
+
     def test_daily_tick_skips_when_staging_current(self) -> None:
         self.gh.compare = {"status": "identical", "ahead_by": 0, "behind_by": 0, "commits": []}
-        out = board_code.handle_tick(self.table, self.settings)
+        out = board_code.handle_tick(self.table, self.settings, now=_AFTER_SEVEN_HKT)
         self.assertFalse(out["stagingSync"])
         self.assertFalse(
             any((t.get("eventRef") or {}).get("id") == "rebase-staging" for t in board_store.list_tasks(self.table, "queued"))
