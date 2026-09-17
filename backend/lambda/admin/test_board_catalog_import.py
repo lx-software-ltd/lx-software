@@ -64,6 +64,21 @@ def _enable_staff(table):
     return board_store.save_settings(table, settings)
 
 
+def _stamp_fresh_remote(task: dict, **dry_extra) -> dict:
+    now = board_store.now_iso()
+    task["lastValidatedAt"] = now
+    preview = dict(task.get("importPreview") or {})
+    dry = dict(preview.get("dryRun") or {"ok": True, "accepted": 1, "skipped": 0})
+    dry["mode"] = "remote"
+    dry.pop("remoteError", None)
+    dry.update(dry_extra)
+    preview["ok"] = True
+    preview["dryRun"] = dry
+    preview["taskId"] = task.get("taskId")
+    task["importPreview"] = preview
+    return task
+
+
 class TransformTests(unittest.TestCase):
     def setUp(self) -> None:
         os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
@@ -240,6 +255,7 @@ class ImportClientTests(BoardTestCase):
         task["deliverableKey"] = key
         task["status"] = "awaiting_import"
         task["importPhase"] = "validated"
+        _stamp_fresh_remote(task)
         board_store.put_task(self.table, task)
         out = board_catalog_import.run_import(self.table, task)
         self.assertTrue(out["ok"])
@@ -302,12 +318,103 @@ class ImportClientTests(BoardTestCase):
         self.assertEqual((out.get("dryRun") or {}).get("mode"), "remote")
         saved = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(((saved.get("importPreview") or {}).get("dryRun") or {}).get("mode"), "remote")
+        self.assertTrue(saved.get("lastValidatedAt"))
 
     def test_owner_preview_stays_local_when_remote_false(self) -> None:
         task = self._catalog_task_with_sheet()
         out = board_catalog_import.owner_preview(self.table, {"taskId": task["taskId"], "remote": False})
         self.assertEqual(self.calls, [])
         self.assertEqual((out.get("dryRun") or {}).get("mode"), "local")
+
+    def test_wants_remote_defaults_true(self) -> None:
+        self.assertTrue(board_catalog_import._wants_remote({}))
+        self.assertTrue(board_catalog_import._wants_remote({"remote": True}))
+        self.assertFalse(board_catalog_import._wants_remote({"remote": False}))
+        self.assertFalse(board_catalog_import._wants_remote({"remote": "false"}))
+        self.assertTrue(board_catalog_import._wants_remote({"remote": "true"}))
+
+    def test_owner_preview_parks_collision(self) -> None:
+        task = self._catalog_task_with_sheet()
+        task["status"] = "awaiting_import"
+        task["importPhase"] = "validated"
+        board_store.put_task(self.table, task)
+
+        def collision_http(method, url, headers, body):
+            parsed = json.loads(body) if body else None
+            self.calls.append((method, url, parsed))
+            if url.endswith("/admin/imports/presign"):
+                return {"upload_url": "https://s3.example.test/put", "object_key": "imports/board.json"}
+            if url.startswith("https://s3.example.test/put"):
+                return {"status": 200}
+            return {
+                "status": 200,
+                "dry_run": True,
+                "summary": {"organizations": {"created": 0, "updated": 1, "failed": 0, "skipped": 0}},
+                "results": [{"type": "organizations", "key": "Kidz Club", "status": "updated", "errors": []}],
+                "file_warnings": [],
+            }
+
+        board_catalog_import.set_http_for_tests(collision_http)
+        out = board_catalog_import.owner_preview(self.table, {"taskId": task["taskId"]})
+        self.assertTrue((out.get("dryRun") or {}).get("wouldUpdate"))
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "needs_owner")
+        self.assertEqual(saved.get("importPhase"), "collision")
+        self.assertEqual(saved.get("importError"), "")
+
+    def test_owner_preview_clears_import_error(self) -> None:
+        task = self._catalog_task_with_sheet()
+        task["status"] = "awaiting_import"
+        task["importPhase"] = "pending"
+        task["importError"] = "Cognito AdminInitiateAuth did not return an IdToken"
+        board_store.put_task(self.table, task)
+        board_catalog_import.owner_preview(self.table, {"taskId": task["taskId"]})
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("importPhase"), "validated")
+        self.assertEqual(saved.get("importError"), "")
+        self.assertTrue(saved.get("lastValidatedAt"))
+
+    def test_owner_preview_local_keeps_collision(self) -> None:
+        task = self._catalog_task_with_sheet()
+        task["status"] = "needs_owner"
+        task["importPhase"] = "collision"
+        task["importError"] = "old remote error"
+        board_store.put_task(self.table, task)
+        board_catalog_import.owner_preview(self.table, {"taskId": task["taskId"], "remote": False})
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "needs_owner")
+        self.assertEqual(saved.get("importPhase"), "collision")
+        self.assertEqual(saved.get("importError"), "old remote error")
+
+    def test_run_import_refuses_stored_collision(self) -> None:
+        task = self._catalog_task_with_sheet()
+        task["status"] = "awaiting_import"
+        task["importPhase"] = "validated"
+        _stamp_fresh_remote(task, wouldUpdate=["Kidz Club"], summary={"updated": 1})
+        board_store.put_task(self.table, task)
+        self.calls.clear()
+        out = board_catalog_import.run_import(self.table, task)
+        self.assertFalse(out["ok"])
+        self.assertTrue(out.get("collision"))
+        self.assertEqual(self.calls, [])
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "needs_owner")
+        self.assertEqual(saved.get("importPhase"), "collision")
+
+    def test_owner_import_stale_refreshes_without_live_write(self) -> None:
+        task = self._catalog_task_with_sheet()
+        task["status"] = "awaiting_import"
+        task["importPhase"] = "pending"
+        task["lastValidatedAt"] = "2020-01-01T00:00:00Z"
+        board_store.put_task(self.table, task)
+        self.calls.clear()
+        out = board_catalog_import.owner_import(self.table, {"taskId": task["taskId"]})
+        self.assertFalse(out["ok"])
+        self.assertTrue(out.get("previewed"))
+        self.assertTrue(all((c[2] or {}).get("dry_run") for c in self.calls if c[1].endswith("/admin/imports")))
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("importPhase"), "validated")
+        self.assertFalse(saved.get("importedAt"))
 
     def test_import_refuses_non_catalog_and_undelivered(self) -> None:
         with self.assertRaises(board_catalog_import.CatalogImportError) as ctx:
@@ -527,6 +634,7 @@ class ImportClientTests(BoardTestCase):
         settings = _enable_staff(self.table)
         task = self._sheet_task(settings, status="awaiting_import")
         task["importPhase"] = "partial"
+        _stamp_fresh_remote(task)
         task["importResult"] = {
             "results": [
                 {"type": "organizations", "key": "Quarry Bay Park Playground", "status": "failed"},
@@ -558,6 +666,7 @@ class ImportClientTests(BoardTestCase):
         settings = _enable_staff(self.table)
         task = self._sheet_task(settings, status="awaiting_import")
         task["importPhase"] = "validated"
+        _stamp_fresh_remote(task)
         board_store.put_task(self.table, task)
 
         def http(method, url, headers, body):

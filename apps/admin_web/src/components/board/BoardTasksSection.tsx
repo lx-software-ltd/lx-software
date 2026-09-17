@@ -18,6 +18,7 @@ import {
   formatUsageCost,
   groupTasksByLane,
   catalogDrawerMessageForTask,
+  catalogSiblingMutationKeys,
   isFinishedBoardTaskStatus,
   liveCatalogPreviewForTask,
   sumTaskUsageCost,
@@ -122,6 +123,14 @@ export function BoardTasksSection({
     tasks.catalogRequeue.reset();
     setPickedId(null);
     onFocusConsumed?.();
+  };
+  const resetCatalogSiblings = (keep: "preview" | "import" | "skip" | "requeue") => {
+    for (const key of catalogSiblingMutationKeys(keep)) {
+      if (key === "preview") tasks.catalogPreview.reset();
+      if (key === "import") tasks.catalogImport.reset();
+      if (key === "skip") tasks.catalogSkip.reset();
+      if (key === "requeue") tasks.catalogRequeue.reset();
+    }
   };
   const assignees = useMemo(() => {
     const seen = new Set<string>();
@@ -384,10 +393,19 @@ export function BoardTasksSection({
           onCancel={(id) => tasks.cancel.mutate(id, { onSuccess: () => closeTask() })}
           onReview={(id, verdict, notes) => tasks.review.mutate({ taskId: id, verdict, notes })}
           onRetry={(id) => tasks.retry.mutate(id)}
-          onPreviewImport={(id) => tasks.catalogPreview.mutate(id)}
-          onImport={(id, opts) => tasks.catalogImport.mutate({ taskId: id, force: opts?.force })}
-          onSkipImport={(id) => tasks.catalogSkip.mutate(id)}
-          onRequeueImport={(id) => tasks.catalogRequeue.mutate(id)}
+          onPreviewImport={(id) =>
+            tasks.catalogPreview.mutate(id, { onSuccess: () => resetCatalogSiblings("preview") })
+          }
+          onImport={(id, opts) =>
+            tasks.catalogImport.mutate(
+              { taskId: id, force: opts?.force },
+              { onSuccess: () => resetCatalogSiblings("import") },
+            )
+          }
+          onSkipImport={(id) => tasks.catalogSkip.mutate(id, { onSuccess: () => resetCatalogSiblings("skip") })}
+          onRequeueImport={(id) =>
+            tasks.catalogRequeue.mutate(id, { onSuccess: () => resetCatalogSiblings("requeue") })
+          }
         />
       ) : null}
     </div>

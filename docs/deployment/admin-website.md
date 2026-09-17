@@ -593,7 +593,8 @@ organisations.
    the API also defaults to remote). The footer shows **Previewing…**
    until the dry-run returns; the catalog panel then shows
    `remote dry-run` (or a `remoteError` if Cognito / the product API
-   failed). Flip `SiutindeiBoardCatalogImportEnabled=true` in
+   failed). A collision parks the sheet on **Attention** and hides
+   **Import now** until **Import anyway**. Flip `SiutindeiBoardCatalogImportEnabled=true` in
    `backend/infrastructure/params/production.json` after a successful
    remote Preview, then optionally enable **Auto-import validated
    catalog sheets** under Settings.

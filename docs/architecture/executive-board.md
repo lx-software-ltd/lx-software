@@ -368,12 +368,18 @@ dedicated Cognito **importer** user in the siutindei pool
 stack never writes Aurora in that path and no LLM runs. `catalog_import`
 is `always_propose` (action class `catalog_import`) and refuses while
 `SiutindeiBoardCatalogImportEnabled` is off; preview and local dry-run
-work regardless. Owner `POST …/catalog/preview` defaults to a remote
-siutindei dry-run (`{"remote": false}` stays local) and `…/catalog/import`
-are JWT-only (`owner_only` on the public API); accepting a catalog sheet
-attaches `importPreview` only, and a repeat import of the same task is 409
-unless `force` is set. The product side still needs the `importer` group,
-the #502 fields and `dry_run` on `POST /admin/imports` (deployment doc).
+work regardless. Owner `POST …/catalog/preview` (defaults to a remote
+siutindei dry-run; `{"remote": false}` stays local), `…/catalog/import`,
+`…/catalog/skip` and `…/catalog/requeue` are JWT-only (`owner_only` on
+the public API). A remote Preview on an `awaiting_import` / parked
+import sheet applies the same outcome as Accept (validate, collision,
+rejected, or pending + `remoteError`), stamps `lastValidatedAt`, and
+clears `importError` when the dry-run reaches siutindei. Owner Import
+refuses a stored collision without a live write; a stale preview is
+refreshed in that request and the live POST waits for the next click
+(HTTP API 30 s). A repeat import of the same task is 409 unless `force`
+is set. The product side still needs the `importer` group, the #502
+fields and `dry_run` on `POST /admin/imports` (deployment doc).
 
 ## 7. Staff (background tasks)
 

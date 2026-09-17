@@ -1752,6 +1752,14 @@ export function catalogDrawerMessageForTask(
   return null;
 }
 
+export const CATALOG_MUTATION_KEYS = ["preview", "import", "skip", "requeue"] as const;
+export type CatalogMutationKey = (typeof CATALOG_MUTATION_KEYS)[number];
+
+/** Other catalog mutations to reset after one of them succeeds. */
+export function catalogSiblingMutationKeys(keep: CatalogMutationKey): readonly CatalogMutationKey[] {
+  return CATALOG_MUTATION_KEYS.filter((key) => key !== keep);
+}
+
 export type BoardStagingPreview = {
   readonly status?: string;
   readonly behindBy?: number;

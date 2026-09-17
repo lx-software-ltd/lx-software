@@ -8,6 +8,7 @@ import {
   showTaskReviewActions,
   catalogDrawerMessageForTask,
   catalogMutationErrorForTask,
+  catalogSiblingMutationKeys,
   filterBoardTasks,
   liveCatalogPreviewForTask,
   formatRelativeDuration,
@@ -330,6 +331,8 @@ describe("task dashboard helpers", () => {
         err instanceof Error ? err.message : null,
       ),
     ).toBeNull();
+    expect(catalogSiblingMutationKeys("preview")).toEqual(["import", "skip", "requeue"]);
+    expect(catalogSiblingMutationKeys("skip")).toEqual(["preview", "import", "requeue"]);
   });
 
   it("builds a shareable task deep link", () => {

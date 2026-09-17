@@ -50,6 +50,12 @@ _SHEET_TO_IMPORTER = {
 
 _NOTE_FIELDS = ("opening_hours", "price_note", "age_range", "free_or_paid", "description_zh")
 _NUMERIC_FIELDS = frozenset({"lat", "lng"})
+# HTTP API integrations cap at 30s. Preview is 3 hops + Cognito; keep the
+# worst case under that so a slow importer fails here (and is stored) instead
+# of as an empty API Gateway 504.
+_COGNITO_TIMEOUT = 5
+_PREVIEW_HTTP_TIMEOUT = 7
+_IMPORT_HTTP_TIMEOUT = 8
 
 
 def _importer_dests() -> list[tuple[str, list[str]]]:
@@ -430,8 +436,16 @@ def _id_token() -> str:
         raise CatalogImportError("SiutindeiUserPoolId / SiutindeiBoardImporterClientId are not set")
     creds = _load_credentials()
     import boto3
+    from botocore.config import Config
 
-    resp = boto3.client("cognito-idp").admin_initiate_auth(
+    resp = boto3.client(
+        "cognito-idp",
+        config=Config(
+            connect_timeout=2,
+            read_timeout=_COGNITO_TIMEOUT,
+            retries={"max_attempts": 1},
+        ),
+    ).admin_initiate_auth(
         UserPoolId=pool,
         ClientId=client_id,
         AuthFlow="ADMIN_USER_PASSWORD_AUTH",
@@ -478,7 +492,7 @@ def _http(
     return parsed
 
 
-def _presign_and_put(orgs: list[dict[str, Any]], token: str, *, filename: str) -> str:
+def _presign_and_put(orgs: list[dict[str, Any]], token: str, *, filename: str, timeout: int = _IMPORT_HTTP_TIMEOUT) -> str:
     base = admin_api_base()
     if not base:
         raise CatalogImportError("SiutindeiAdminApiBaseUrl is not set")
@@ -488,6 +502,7 @@ def _presign_and_put(orgs: list[dict[str, Any]], token: str, *, filename: str) -
         urljoin(base + "/", "admin/imports/presign"),
         headers=_auth_headers(token),
         body=json.dumps({"file_name": filename, "content_type": "application/json"}).encode("utf-8"),
+        timeout=timeout,
     )
     upload_url = str(presign.get("upload_url") or presign.get("url") or "").strip()
     object_key = str(presign.get("object_key") or presign.get("key") or "").strip()
@@ -497,11 +512,11 @@ def _presign_and_put(orgs: list[dict[str, Any]], token: str, *, filename: str) -
     extra = presign.get("headers")
     if isinstance(extra, dict):
         put_headers.update({str(k): str(v) for k, v in extra.items()})
-    _http("PUT", upload_url, headers=put_headers, body=blob, timeout=25)
+    _http("PUT", upload_url, headers=put_headers, body=blob, timeout=timeout)
     return object_key
 
 
-def _imports_post(token: str, body: dict[str, Any]) -> dict[str, Any]:
+def _imports_post(token: str, body: dict[str, Any], *, timeout: int = _IMPORT_HTTP_TIMEOUT) -> dict[str, Any]:
     base = admin_api_base()
     if not base:
         raise CatalogImportError("SiutindeiAdminApiBaseUrl is not set")
@@ -510,6 +525,7 @@ def _imports_post(token: str, body: dict[str, Any]) -> dict[str, Any]:
         urljoin(base + "/", "admin/imports"),
         headers=_auth_headers(token),
         body=json.dumps(body).encode("utf-8"),
+        timeout=timeout,
     )
 
 
@@ -573,8 +589,8 @@ def _importer_accepted(resp: dict[str, Any]) -> int:
 
 def _remote_dry_run(payload: dict[str, Any], token: str) -> dict[str, Any]:
     orgs = payload.get("organizations") or []
-    object_key = _presign_and_put(orgs, token, filename="board-catalog-dry-run.json")
-    resp = _imports_post(token, {"object_key": object_key, "dry_run": True})
+    object_key = _presign_and_put(orgs, token, filename="board-catalog-dry-run.json", timeout=_PREVIEW_HTTP_TIMEOUT)
+    resp = _imports_post(token, {"object_key": object_key, "dry_run": True}, timeout=_PREVIEW_HTTP_TIMEOUT)
     counts = _org_counts(resp)
     results = _importer_results(resp)
     would_update = _org_result_names(results, "updated")
@@ -593,8 +609,8 @@ def _remote_dry_run(payload: dict[str, Any], token: str) -> dict[str, Any]:
 
 def _run_remote_import(payload: dict[str, Any], token: str) -> dict[str, Any]:
     orgs = payload.get("organizations") or []
-    object_key = _presign_and_put(orgs, token, filename="board-catalog.json")
-    imported = _imports_post(token, {"object_key": object_key})
+    object_key = _presign_and_put(orgs, token, filename="board-catalog.json", timeout=_IMPORT_HTTP_TIMEOUT)
+    imported = _imports_post(token, {"object_key": object_key}, timeout=_IMPORT_HTTP_TIMEOUT)
     counts = _org_counts(imported)
     results = _importer_results(imported)
     sent = len(orgs)
@@ -680,6 +696,7 @@ def _park_needs_owner(table: Any, task: dict[str, Any], now: str, *, phase: str,
     task["status"] = "needs_owner"
     task["importPhase"] = phase
     task["acceptedAt"] = task.get("acceptedAt") or now
+    task["lastValidatedAt"] = now
     task["updatedAt"] = now
     _clear_handoff_ttl(task)
     _append_questions(task, questions)
@@ -721,17 +738,60 @@ def _save_task(table: Any, task: dict[str, Any]) -> None:
         _log_event("warning", tag="board_catalog_import_save_failed", error=str(exc)[:200])
 
 
-def accept_catalog_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
-    """Accept-hook: validate the sheet. Never imports. Never marks delivered."""
-    require_catalog_sheet(task)
-    try:
-        preview = preview_task(table, task, remote=configured())
-    except CatalogImportError as exc:
-        preview = {"ok": False, "error": str(exc)[:300], "taskId": task.get("taskId")}
-    except Exception as exc:
-        preview = {"ok": False, "error": str(exc)[:300], "taskId": task.get("taskId")}
+def _preview_dry(preview: Any) -> dict[str, Any]:
+    dry = preview.get("dryRun") if isinstance(preview, dict) else None
+    return dry if isinstance(dry, dict) else {}
+
+
+def _preview_would_update(dry: dict[str, Any]) -> list[str]:
+    names = [str(n) for n in (dry.get("wouldUpdate") or []) if n]
+    if names:
+        return names
+    if (dry.get("summary") or {}).get("updated"):
+        return _org_result_names(dry.get("results") or [], "updated")
+    return []
+
+
+def _in_import_handoff(task: dict[str, Any]) -> bool:
+    if task.get("importedAt") or task.get("importSkipped"):
+        return False
+    status = str(task.get("status") or "")
+    if status == "awaiting_import":
+        return True
+    return status == "needs_owner" and bool(task.get("importPhase"))
+
+
+def _fresh_remote_preview(task: dict[str, Any], now: str) -> bool:
+    dry = _preview_dry(task.get("importPreview"))
+    if dry.get("mode") != "remote" or dry.get("remoteError"):
+        return False
+    return not _revalidate_due(task, now)
+
+
+def _apply_preview_outcome(
+    table: Any,
+    task: dict[str, Any],
+    preview: dict[str, Any],
+    now: str,
+    *,
+    promote: bool,
+) -> dict[str, Any]:
+    """Store a dry-run and, when promote=True, park / validate like accept."""
     task["importPreview"] = preview
-    dry = preview.get("dryRun") if isinstance(preview.get("dryRun"), dict) else {}
+    task["lastValidatedAt"] = now
+    task["updatedAt"] = now
+    dry = _preview_dry(preview)
+    remote_ok = dry.get("mode") == "remote" and not dry.get("remoteError")
+    if remote_ok:
+        task["importError"] = ""
+    elif dry.get("remoteError"):
+        task["importError"] = str(dry.get("remoteError"))[:300]
+    if not promote:
+        if table is not None:
+            import board_store
+
+            board_store.put_task(table, task)
+        return task
     if not preview.get("ok") and not dry.get("remoteError"):
         errors = list(dry.get("errors") or [])
         if preview.get("error"):
@@ -744,9 +804,9 @@ def accept_catalog_task(table: Any, task: dict[str, Any], now: str) -> dict[str,
             questions=errors or ["catalog sheet failed local dry-run"],
         )
     if dry.get("mode") == "remote":
-        would_update = list(dry.get("wouldUpdate") or [])
+        would_update = _preview_would_update(dry)
         if would_update or (dry.get("summary") or {}).get("updated"):
-            names = ", ".join(str(n) for n in would_update) or "existing organisation"
+            names = ", ".join(would_update) or "existing organisation"
             return _park_needs_owner(
                 table,
                 task,
@@ -765,9 +825,27 @@ def accept_catalog_task(table: Any, task: dict[str, Any], now: str) -> dict[str,
             )
         return _set_awaiting(table, task, now, phase="validated")
     if dry.get("remoteError"):
-        task["importError"] = str(dry.get("remoteError"))[:300]
         return _set_awaiting(table, task, now, phase="pending")
+    # Local-only: do not un-park a collision or downgrade a validated sheet.
+    if _in_import_handoff(task) and task.get("importPhase"):
+        if table is not None:
+            import board_store
+
+            board_store.put_task(table, task)
+        return task
     return _set_awaiting(table, task, now, phase="pending")
+
+
+def accept_catalog_task(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
+    """Accept-hook: validate the sheet. Never imports. Never marks delivered."""
+    require_catalog_sheet(task)
+    try:
+        preview = preview_task(table, task, remote=configured())
+    except CatalogImportError as exc:
+        preview = {"ok": False, "error": str(exc)[:300], "taskId": task.get("taskId")}
+    except Exception as exc:
+        preview = {"ok": False, "error": str(exc)[:300], "taskId": task.get("taskId")}
+    return _apply_preview_outcome(table, task, preview, now, promote=True)
 
 
 def attach_accept_preview(table: Any, task: dict[str, Any]) -> dict[str, Any]:
@@ -856,17 +934,31 @@ def _deliver_imported(table: Any, task: dict[str, Any], now: str) -> None:
         task["finishedAt"] = now
 
 
-def run_import(table: Any, task: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
+def run_import(table: Any, task: dict[str, Any], *, force: bool = False, live_after_refresh: bool = True) -> dict[str, Any]:
     if not import_enabled():
         raise CatalogImportError("catalog import is switched off (SiutindeiBoardCatalogImportEnabled)")
     if not configured():
         raise CatalogImportError("catalog import is not configured (admin API, user pool, client, manager id)")
     require_importable_task(task, force=force)
+    now = _now_iso()
+    task_id = str(task.get("taskId") or "")
+    if not force:
+        stored = task.get("importPreview") if isinstance(task.get("importPreview"), dict) else {}
+        stored_dry = _preview_dry(stored)
+        if _preview_would_update(stored_dry) or (stored_dry.get("summary") or {}).get("updated"):
+            _apply_preview_outcome(table, task, stored, now, promote=True)
+            return {"ok": False, "collision": True, "taskId": task_id, "preview": stored, "task": task}
+        if not _fresh_remote_preview(task, now):
+            preview = preview_task(table, task, remote=configured())
+            _apply_preview_outcome(table, task, preview, now, promote=True)
+            if str(task.get("importPhase") or "") != "validated" or str(task.get("status") or "") != "awaiting_import":
+                return {"ok": False, "previewed": True, "taskId": task_id, "preview": preview, "task": task}
+            if not live_after_refresh:
+                return {"ok": False, "previewed": True, "taskId": task_id, "preview": preview, "task": task}
     preview = preview_task(table, task, remote=False)
     if not preview.get("ok"):
         errors = (preview.get("dryRun") or {}).get("errors") or ["sheet failed local dry-run"]
         raise CatalogImportError("; ".join(str(e) for e in errors)[:300])
-    now = _now_iso()
     payload = dict(preview.get("payload") or {})
     payload["organizations"] = _payload_orgs(task, payload, force=force)
     preview = {**preview, "payload": payload}
@@ -1007,21 +1099,11 @@ def op_import(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     return run_import(ctx.table, task)
 
 
-def _body_flag(body: dict[str, Any], key: str, *, default: bool) -> bool:
-    if key not in body or body.get(key) is None:
-        return default
-    value = body[key]
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)) and value in (0, 1):
-        return bool(value)
+def _wants_remote(body: dict[str, Any]) -> bool:
+    value = body.get("remote", True)
     if isinstance(value, str):
-        raw = value.strip().lower()
-        if raw in ("1", "true", "yes", "on"):
-            return True
-        if raw in ("0", "false", "no", "off", ""):
-            return False
-    return bool(value)
+        return value.strip().lower() not in {"0", "false", "no", "off", ""}
+    return value is not False and value != 0
 
 
 def owner_preview(table: Any, body: dict[str, Any]) -> dict[str, Any]:
@@ -1038,10 +1120,9 @@ def owner_preview(table: Any, body: dict[str, Any]) -> dict[str, Any]:
         table,
         task,
         sheet_text=str(body.get("sheet") or "") or None,
-        remote=_body_flag(body, "remote", default=True),
+        remote=_wants_remote(body),
     )
-    task["importPreview"] = preview
-    board_store.put_task(table, task)
+    _apply_preview_outcome(table, task, preview, _now_iso(), promote=_in_import_handoff(task))
     return preview
 
 
@@ -1054,7 +1135,8 @@ def owner_import(table: Any, body: dict[str, Any]) -> dict[str, Any]:
     task = board_store.get_task(table, task_id)
     if not task:
         raise CatalogImportError("Task not found")
-    return run_import(table, task, force=bool(body.get("force")))
+    # HTTP API is 30s: refresh a stale dry-run in this request, live-import on the next click.
+    return run_import(table, task, force=bool(body.get("force")), live_after_refresh=False)
 
 
 def owner_skip(table: Any, body: dict[str, Any]) -> dict[str, Any]:
