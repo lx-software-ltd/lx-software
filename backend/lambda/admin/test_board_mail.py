@@ -485,6 +485,9 @@ class TestMailRoutes(MailTestCase):
         boxes = {m["address"]: m["unreadCount"] for m in body["mailboxes"]}
         self.assertEqual(boxes.get("hello@siutindei.com"), 1)
         self.assertEqual(boxes.get("dmarc@siutindei.com"), 0)
+        self.assertEqual(body["status"]["threadCount"], 1)
+        hello_box = next(m for m in body["mailboxes"] if m["address"] == "hello@siutindei.com")
+        self.assertEqual(hello_box["threadCount"], 1)
 
         status, archived = self.call("/siu-tin-dei/board/mail", query="archived=1")
         self.assertEqual(status, 200)
@@ -493,6 +496,54 @@ class TestMailRoutes(MailTestCase):
         self.assertIn(google, archived_ids)
         self.assertIn("legacy-dmarc", archived_ids)
         self.assertNotIn(human, archived_ids)
+
+    def test_human_reply_unarchives_bulk_thread(self) -> None:
+        first = self.ingest(
+            frm="Google <noreply-dmarc-support@google.com>",
+            to="hello@siutindei.com",
+            subject="Report domain: siutindei.com Submitter: google.com Report-ID: 9",
+            text="",
+            message_id="<rua@google.com>",
+        )
+        archived = board_store.get_mail_thread(self.table, first["threadId"])
+        self.assertEqual(archived["disposition"], "archived")
+        self.assertFalse(archived["unread"])
+        reply = self.ingest(
+            frm="Wendy Chan <wendy.chan@gmail.com>",
+            to="hello@siutindei.com",
+            subject="Re: Report domain: siutindei.com",
+            text="This is actually about our listing.",
+            message_id="<human-reply@gmail.com>",
+            in_reply_to="<rua@google.com>",
+        )
+        self.assertEqual(reply["threadId"], first["threadId"])
+        thread = board_store.get_mail_thread(self.table, first["threadId"])
+        self.assertNotEqual(thread.get("disposition"), "archived")
+        self.assertTrue(thread["unread"])
+        status, body = self.call("/siu-tin-dei/board/mail")
+        self.assertEqual(status, 200)
+        self.assertIn(first["threadId"], {t["threadId"] for t in body["threads"]})
+        self.assertEqual(body["status"]["unreadCount"], 1)
+        self.assertEqual(body["status"]["threadCount"], 1)
+
+    def test_auto_reply_does_not_hide_human_thread(self) -> None:
+        first = self.ingest()
+        bounce = self.ingest(
+            frm="Mailer Daemon <mailer-daemon@gmail.com>",
+            to="hello@siutindei.com",
+            subject="Re: Swimming class for my daughter",
+            text="The recipient's mailbox is unavailable.",
+            message_id="<bounce@gmail.com>",
+            in_reply_to="<abc123@mail.gmail.com>",
+            headers={"Auto-Submitted": "auto-replied"},
+        )
+        self.assertEqual(bounce["threadId"], first["threadId"])
+        thread = board_store.get_mail_thread(self.table, first["threadId"])
+        self.assertNotEqual(thread.get("disposition"), "archived")
+        status, body = self.call("/siu-tin-dei/board/mail")
+        self.assertEqual(status, 200)
+        self.assertIn(first["threadId"], {t["threadId"] for t in body["threads"]})
+        self.assertEqual(body["status"]["threadCount"], 1)
 
     def test_allow_list_validation_and_normalisation(self) -> None:
         status, body = self.call(

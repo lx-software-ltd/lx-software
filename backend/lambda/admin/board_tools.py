@@ -3357,7 +3357,9 @@ def create_approval(
                     downgrade_reason=downgrade_reason,
                     fingerprint=fingerprint,
                 )
-            if op.name == "github_create_issue":
+            if op.name == "github_create_issue" and _same_github_issue_title(
+                existing.get("arguments") or {}, arguments
+            ):
                 return _refresh_pending_approval(
                     ctx,
                     op,
@@ -3367,20 +3369,6 @@ def create_approval(
                     downgrade_reason=downgrade_reason,
                     fingerprint=fingerprint,
                 )
-        if (
-            op.name == "github_create_issue"
-            and str(existing.get("op") or "") == "github_create_issue"
-            and _same_github_issue_title(existing.get("arguments") or {}, arguments)
-        ):
-            return _refresh_pending_approval(
-                ctx,
-                op,
-                existing,
-                arguments,
-                summary=summary,
-                downgrade_reason=downgrade_reason,
-                fingerprint=fingerprint,
-            )
     if len(pending) >= BOARD_MAX_PENDING_APPROVALS:
         raise ToolPermissionError("Too many pending approvals; ask the founder to review the queue first.")
     now = board_store.now_iso()

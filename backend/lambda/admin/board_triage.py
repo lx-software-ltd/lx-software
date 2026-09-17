@@ -58,17 +58,25 @@ def archive_reason(thread: dict[str, Any], message: dict[str, Any]) -> str:
         or local.startswith("bounce")
     ):
         return f"no-action sender {local or 'unknown'}"
-    mailbox_local = str(thread.get("mailbox") or "").split("@", 1)[0].strip().lower()
+    mailbox = str(thread.get("mailbox") or "")
+    mailbox_local = mailbox.split("@", 1)[0].strip().lower()
     if mailbox_local in board_mail.BULK_LOCAL_PARTS:
         return f"no-action mailbox {mailbox_local}"
-    recipients = message.get("to") if isinstance(message.get("to"), list) else []
+    recipients: list[Any] = []
+    if isinstance(message.get("to"), list):
+        recipients.extend(message["to"])
+    if isinstance(message.get("cc"), list):
+        recipients.extend(message["cc"])
     for addr in recipients:
-        dest = str(addr or "").split("@", 1)[0].strip().lower()
-        if dest in board_mail.BULK_LOCAL_PARTS:
-            return f"no-action mailbox {dest}"
-    subject = str(thread.get("subject") or message.get("subject") or "").lower()
-    text = str(message.get("text") or "")[:400].lower()
-    if "report-type=" in text or "report domain:" in subject or "report-id:" in subject:
+        dest = str(addr or "")
+        if not board_mail._is_own(dest):
+            continue
+        local = dest.split("@", 1)[0].strip().lower()
+        if local in board_mail.BULK_LOCAL_PARTS:
+            return f"no-action mailbox {local}"
+    subject = str(thread.get("subject") or message.get("subject") or "")
+    text = str(message.get("text") or "")[:400]
+    if board_mail.is_dmarc_or_feedback_report(subject=subject, text=text):
         return "dmarc/ses report"
     return ""
 

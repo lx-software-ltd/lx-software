@@ -331,6 +331,12 @@ class BulkMailAndChatMaskTests(BoardTestCase):
         arf["Subject"] = "feedback"
         arf["Content-Type"] = 'multipart/report; report-type=dmarc; boundary="b"'
         self.assertTrue(board_mail._is_bulk_mail(arf))
+        cc_school = EmailMessage()
+        cc_school["From"] = "parent@example.com"
+        cc_school["To"] = "hello@siutindei.com"
+        cc_school["Cc"] = "notifications@their-school.edu"
+        cc_school["Subject"] = "Class on Saturday"
+        self.assertFalse(board_mail._is_bulk_mail(cc_school))
 
     def test_thread_search_matches_alias_and_raw_email(self) -> None:
         board_store.put_mail_thread(
@@ -1038,7 +1044,7 @@ class ApprovalAndCallIdTests(BoardTestCase):
             ctx,
             board_tools.REGISTRY["github_create_issue"],
             {
-                "title": title,
+                "title": f"  {title.upper()} ",
                 "body": "Slightly different body about the same importer bug.",
                 "reason": "again",
             },
@@ -1060,21 +1066,19 @@ class ApprovalAndCallIdTests(BoardTestCase):
             {"title": title, "body": "Same title from a second task.", "reason": "other task"},
             summary="Open GitHub issue: Importer from task 2",
         )
-        self.assertEqual(first["approvalId"], third["approvalId"])
+        self.assertNotEqual(first["approvalId"], third["approvalId"])
         pending = [a for a in board_store.list_approvals(self.table) if a.get("status") == "pending"]
-        self.assertEqual(len(pending), 1)
-        self.assertEqual(pending[0]["arguments"]["body"], "Same title from a second task.")
+        self.assertEqual(len(pending), 2)
         retitled = board_tools.create_approval(
             ctx,
             board_tools.REGISTRY["github_create_issue"],
             {"title": "Unrelated CI flake", "body": "Different issue.", "reason": "ci"},
             summary="Open GitHub issue: Unrelated CI flake",
         )
-        # Same task still collapses, even when the title changes — one issue per task.
-        self.assertEqual(first["approvalId"], retitled["approvalId"])
+        # Same task, different title: a second distinct issue stays its own Approval.
+        self.assertNotEqual(first["approvalId"], retitled["approvalId"])
         pending = [a for a in board_store.list_approvals(self.table) if a.get("status") == "pending"]
-        self.assertEqual(len(pending), 1)
-        self.assertEqual(pending[0]["arguments"]["title"], "Unrelated CI flake")
+        self.assertEqual(len(pending), 3)
         other_issue = board_tools.create_approval(
             board_tools.ToolContext(
                 table=self.table,
@@ -1091,7 +1095,7 @@ class ApprovalAndCallIdTests(BoardTestCase):
         )
         self.assertNotEqual(first["approvalId"], other_issue["approvalId"])
         pending = [a for a in board_store.list_approvals(self.table) if a.get("status") == "pending"]
-        self.assertEqual(len(pending), 2)
+        self.assertEqual(len(pending), 4)
 
     def test_execute_call_returns_internal_call_id(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"

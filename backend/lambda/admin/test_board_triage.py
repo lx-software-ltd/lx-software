@@ -285,6 +285,17 @@ class PolicyTests(BoardTestCase):
             ),
             "no-action mailbox dmarc",
         )
+        self.assertEqual(
+            board_triage.archive_reason(
+                {"mailbox": "hello@siutindei.com", "subject": "Hello"},
+                {
+                    "from": {"address": "parent@example.com"},
+                    "to": ["hello@siutindei.com"],
+                    "cc": ["notifications@their-school.edu"],
+                },
+            ),
+            "",
+        )
 
     def test_mail_event_brief_names_archive_prefix(self) -> None:
         brief = board_triage.render_event_brief(

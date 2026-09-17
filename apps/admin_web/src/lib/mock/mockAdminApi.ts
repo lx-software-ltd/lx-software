@@ -355,7 +355,7 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
     const mailboxes = [
       {
         address: "hello@siutindei.com",
-        threadCount: boardMailThreadsFixture.length,
+        threadCount: boardMailThreadsFixture.filter((t) => t.disposition !== "archived").length,
         unreadCount: boardMailThreadsFixture.filter((t) => t.unread && t.disposition !== "archived").length,
         lastMessageAt: boardMailThreadsFixture[0]?.lastMessageAt ?? "",
       },
