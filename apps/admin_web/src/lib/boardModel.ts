@@ -1254,7 +1254,7 @@ export function isFinishedBoardTaskStatus(status: string): boolean {
   return status === "delivered" || status === "cancelled";
 }
 
-export type BoardTaskLaneId = "attention" | "in_progress" | "queued" | "done";
+export type BoardTaskLaneId = "attention" | "in_progress" | "done";
 
 export const BOARD_TASK_LANES: readonly {
   readonly id: BoardTaskLaneId;
@@ -1272,13 +1272,7 @@ export const BOARD_TASK_LANES: readonly {
     id: "in_progress",
     label: "In progress",
     empty: "No work in flight",
-    statuses: ["running", "waiting_approval", "waiting_subtask", "awaiting_import"],
-  },
-  {
-    id: "queued",
-    label: "Queued",
-    empty: "Queue is empty",
-    statuses: ["queued"],
+    statuses: ["running", "waiting_approval", "waiting_subtask", "queued", "awaiting_import"],
   },
   {
     id: "done",
@@ -1456,17 +1450,15 @@ export function sortTasksInLane(lane: BoardTaskLaneId, tasks: readonly BoardTask
   } else if (lane === "in_progress") {
     copy.sort(
       (a, b) =>
-        statusOrder(a.status, ["running", "waiting_approval", "waiting_subtask", "awaiting_import"]) -
-          statusOrder(b.status, ["running", "waiting_approval", "waiting_subtask", "awaiting_import"]) ||
+        statusOrder(a.status, ["running", "waiting_approval", "waiting_subtask", "queued", "awaiting_import"]) -
+          statusOrder(b.status, ["running", "waiting_approval", "waiting_subtask", "queued", "awaiting_import"]) ||
         cmpIso(
-          a.startedAt || a.parkedAt || a.acceptedAt || a.updatedAt,
-          b.startedAt || b.parkedAt || b.acceptedAt || b.updatedAt,
+          a.startedAt || a.parkedAt || a.acceptedAt || a.slaAt || a.updatedAt,
+          b.startedAt || b.parkedAt || b.acceptedAt || b.slaAt || b.updatedAt,
           "desc",
         ) ||
         a.taskId.localeCompare(b.taskId),
     );
-  } else if (lane === "queued") {
-    copy.sort((a, b) => cmpIso(a.slaAt, b.slaAt, "asc") || a.taskId.localeCompare(b.taskId));
   } else {
     copy.sort(
       (a, b) =>
@@ -1482,7 +1474,6 @@ export function groupTasksByLane(tasks: readonly BoardTask[]): Record<BoardTaskL
   const grouped: Record<BoardTaskLaneId, BoardTask[]> = {
     attention: [],
     in_progress: [],
-    queued: [],
     done: [],
   };
   for (const task of tasks) {
