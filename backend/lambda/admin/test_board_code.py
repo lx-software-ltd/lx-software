@@ -1820,6 +1820,8 @@ class RunnerTests(BoardTestCase):
         self.assertIn("sync_scheduled", out.get("flags") or [])
         self.assertNotIn("staging_behind", out.get("flags") or [])
         self.assertEqual(out.get("blockedOn"), ["hold-sync-1"])
+        self.assertTrue(out.get("parkedReason"))
+        self.assertTrue(out.get("parkedAt"))
 
     def test_accept_sync_task_parks_pending_approval(self) -> None:
         self.gh.compare = {"status": "diverged", "ahead_by": 1, "behind_by": 4, "commits": []}
@@ -1841,6 +1843,32 @@ class RunnerTests(BoardTestCase):
         self.assertEqual(out["status"], "waiting_approval")
         self.assertIn("sync_scheduled", out.get("flags") or [])
         self.assertEqual(out.get("blockedOn"), ["apr-sync-1"])
+
+    def test_finish_hold_persists_sync_merge_result(self) -> None:
+        hold = {
+            "holdId": "hold-sync-store",
+            "status": "executing",
+            "op": "code_sync_staging",
+            "taskId": "missing-task",
+        }
+        board_holds._finish_hold(  # noqa: SLF001
+            self.table,
+            hold,
+            "executed",
+            board_store.now_iso(),
+            call_id="c9",
+            result={
+                "ok": True,
+                "mergedSha": "abcmerged000",
+                "preview": {"behindBy": 0, "aheadBy": 2, "htmlUrl": "https://example/compare"},
+            },
+        )
+        stored = board_store.get_hold(self.table, "hold-sync-store")
+        self.assertTrue(stored["result"]["ok"])
+        self.assertEqual(stored["result"]["mergedSha"], "abcmerged000")
+        self.assertEqual(stored["result"]["behindBy"], 0)
+        self.assertEqual(stored["result"]["aheadBy"], 2)
+        self.assertEqual(stored["result"]["htmlUrl"], "https://example/compare")
 
     def test_sync_hold_executed_delivers_task(self) -> None:
         self.gh.compare = {"status": "identical", "ahead_by": 1, "behind_by": 0, "commits": []}
@@ -1905,6 +1933,8 @@ class RunnerTests(BoardTestCase):
         old = board_store.get_task(self.table, stale["taskId"])
         self.assertEqual(old["status"], "cancelled")
         self.assertEqual(old["closedBy"], "board_code:superseded")
+        self.assertEqual(old.get("failureReason") or "", "")
+        self.assertIn("Superseded", old.get("summary") or "")
 
     def test_daily_tick_skips_when_staging_current(self) -> None:
         self.gh.compare = {"status": "identical", "ahead_by": 0, "behind_by": 0, "commits": []}
@@ -1913,6 +1943,126 @@ class RunnerTests(BoardTestCase):
         self.assertFalse(
             any((t.get("eventRef") or {}).get("id") == "rebase-staging" for t in board_store.list_tasks(self.table, "queued"))
         )
+
+    def test_daily_tick_delivers_when_staging_caught_up(self) -> None:
+        self.gh.compare = {"status": "identical", "ahead_by": 0, "behind_by": 0, "commits": []}
+        parked = self._rebase_task()
+        parked["status"] = "needs_owner"
+        parked["flags"] = ["staging_behind"]
+        parked["createdAt"] = "2026-09-15T16:00:00Z"
+        board_store.put_task(self.table, parked)
+        out = board_code.maybe_daily_staging_sync(self.table, self.settings, now=_AFTER_SEVEN_HKT)
+        self.assertIsNone(out)
+        stored = board_store.get_task(self.table, parked["taskId"])
+        self.assertEqual(stored["status"], "delivered")
+        self.assertEqual(stored["closedBy"], "compare:current")
+        self.assertIn("behindBy=0", board_staff.read_deliverable(stored))
+
+    def test_accept_sync_task_holds_unverified_when_current(self) -> None:
+        self.gh.compare = {"status": "identical", "ahead_by": 1, "behind_by": 0, "commits": []}
+        task = self._rebase_task()
+        task["status"] = "review"
+        task["flags"] = ["no_evidence"]
+        task["origin"] = "event"
+        task["lastReview"] = {"verdict": "accept"}
+        board_store.put_task(self.table, task)
+        out = board_staff._accept_task(self.table, task, board_store.now_iso())  # noqa: SLF001
+        self.assertEqual(out["status"], "needs_owner")
+        self.assertIn("no_evidence", out.get("flags") or [])
+        self.assertTrue(any("evidence" in str(q) for q in (out.get("openQuestions") or [])))
+
+    def test_sync_hold_executed_trusts_merge_when_compare_lags(self) -> None:
+        self.gh.compare = {"status": "behind", "ahead_by": 0, "behind_by": 4, "commits": []}
+        task = self._rebase_task()
+        task["status"] = "waiting_approval"
+        task["flags"] = ["sync_scheduled"]
+        board_store.put_task(self.table, task)
+        hold = {
+            "holdId": "hold-sync-lag",
+            "status": "executed",
+            "op": "code_sync_staging",
+            "taskId": task["taskId"],
+            "result": {"callId": "c1", "error": "", "ok": True, "mergedSha": "abcmerged000", "behindBy": 0, "aheadBy": 1},
+        }
+        out = board_code.on_sync_hold_outcome(self.table, hold)
+        self.assertEqual(out["status"], "delivered")
+        stored = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(stored["closedBy"], "hold:hold-sync-lag")
+
+    def test_sync_hold_executed_skips_running_task(self) -> None:
+        self.gh.compare = {"status": "identical", "ahead_by": 1, "behind_by": 0, "commits": []}
+        task = self._rebase_task()
+        task["status"] = "running"
+        board_store.put_task(self.table, task)
+        hold = {
+            "holdId": "hold-sync-run",
+            "status": "executed",
+            "op": "code_sync_staging",
+            "taskId": task["taskId"],
+            "result": {"callId": "c1", "error": "", "ok": True, "mergedSha": "abcmerged000"},
+        }
+        out = board_code.on_sync_hold_outcome(self.table, hold)
+        self.assertEqual(out["status"], "running")
+        stored = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(stored["status"], "running")
+        scratch = board_staff._blob_get(stored.get("scratchpadKey") or board_staff._scratchpad_key(stored["taskId"])).decode()  # noqa: SLF001
+        self.assertIn("staging is current", scratch)
+
+    def test_sync_approval_executed_delivers_task(self) -> None:
+        self.gh.compare = {"status": "identical", "ahead_by": 1, "behind_by": 0, "commits": []}
+        task = self._rebase_task()
+        task["status"] = "waiting_approval"
+        task["flags"] = ["sync_scheduled"]
+        board_store.put_task(self.table, task)
+        approval = {
+            "approvalId": "apr-sync-ok",
+            "status": "executed",
+            "op": "code_sync_staging",
+            "context": {"taskId": task["taskId"]},
+            "result": {"ok": True, "mergedSha": "abcmerged000", "preview": {"behindBy": 0, "aheadBy": 1}},
+        }
+        out = board_code.on_sync_approval_outcome(self.table, approval)
+        self.assertEqual(out["status"], "delivered")
+        stored = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(stored["closedBy"], "approval:apr-sync-ok")
+        self.assertNotIn("sync_scheduled", stored.get("flags") or [])
+
+    def test_sync_approval_rejected_parks_needs_owner(self) -> None:
+        self.gh.compare = {"status": "diverged", "ahead_by": 1, "behind_by": 5, "commits": []}
+        task = self._rebase_task()
+        task["status"] = "waiting_approval"
+        task["flags"] = ["sync_scheduled"]
+        board_store.put_task(self.table, task)
+        approval = {
+            "approvalId": "apr-sync-no",
+            "status": "rejected",
+            "op": "code_sync_staging",
+            "context": {"taskId": task["taskId"]},
+            "note": "not now",
+        }
+        out = board_code.on_sync_approval_outcome(self.table, approval)
+        self.assertEqual(out["status"], "needs_owner")
+        self.assertIn("staging_behind", out.get("flags") or [])
+        self.assertTrue(any("rejected" in str(q) for q in (out.get("openQuestions") or [])))
+
+    def test_resume_after_sync_approval_does_not_rerun(self) -> None:
+        self.gh.compare = {"status": "identical", "ahead_by": 1, "behind_by": 0, "commits": []}
+        task = self._rebase_task()
+        task["status"] = "waiting_approval"
+        task["flags"] = ["sync_scheduled"]
+        board_store.put_task(self.table, task)
+        approval = {
+            "approvalId": "apr-sync-resume",
+            "status": "executed",
+            "op": "code_sync_staging",
+            "context": {"taskId": task["taskId"]},
+            "result": {"ok": True, "alreadyCurrent": True, "preview": {"behindBy": 0, "aheadBy": 1}},
+        }
+        with patch.object(board_async, "invoke_async") as invoke:
+            board_staff.resume_after_approval(self.table, self.settings, approval)
+        invoke.assert_not_called()
+        stored = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(stored["status"], "delivered")
 
     def test_sweep_deletes_board_branches_without_open_prs(self) -> None:
         self.gh.branches = [

@@ -716,13 +716,19 @@ this repository never pushes code.
 - Daily staff tick from 07:00 HKT (`maybe_daily_staging_sync`) compares
   `main...staging`. When `behindBy > 0` it opens a CTO `ops/rebase-staging`
   task. The CTO calls `code_sync_staging` (act → `code_staging` hold;
-  propose → Approval) and `task_finish` citing the hold. Accept parks the
-  task as `waiting_approval` / `sync_scheduled` while the hold is due; the
-  hold execute / veto / expire hook delivers the task when `behindBy=0` or
-  parks `needs_owner` otherwise. The next day's 07:00 check cancels a stale
-  `needs_owner` / `review` task (`closedBy: board_code:superseded`) and
-  opens a fresh one. An in-flight `queued` / `running` / `waiting_*` task
-  is left alone.
+  propose → Approval) and `task_finish` citing the hold or approval. Accept
+  parks the task as `waiting_approval` / `sync_scheduled` while a hold or
+  Approval is due. The hold execute / veto / expire hook and the Approval
+  decide hook deliver the task when the merge succeeded (trusting the
+  stored `mergedSha` / `ok` if GitHub compare still lags) or park
+  `needs_owner` on veto / reject / failure. A still-`running` task is not
+  delivered mid-step. When staging is already current the same 07:00 check
+  delivers leftover `needs_owner` / `review` / `queued` tasks. The next
+  day's check cancels a stale parked task (`closedBy: board_code:superseded`,
+  no `failureReason`) and opens a fresh one. An in-flight `queued` /
+  `running` / `waiting_*` task is left alone. Accept still applies the
+  unverified-evidence gate when staging is current and no hold/Approval is
+  in flight.
 - Owner `POST …/tasks` with `prNumber` (Tasks → New task → PR # / Issue #)
   resets `reviewRounds` so a maxed-out loop can restart. `task_finish` on a
   `code-implement` task is refused until the runner is dispatched or a
