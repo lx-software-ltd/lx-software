@@ -115,6 +115,36 @@ class TransformTests(unittest.TestCase):
         self.assertEqual(dry["mode"], "local")
         self.assertEqual(dry["accepted"], 1)
 
+    def test_sports_maps_to_sport(self) -> None:
+        sheet = {
+            "district": "Southern",
+            "organisations": [
+                {
+                    "name_en": "Aberdeen Sports Club",
+                    "type": "sports",
+                    "verified_fields": ["name_en", "type"],
+                }
+            ],
+        }
+        out = board_catalog_import.transform_sheet(sheet)
+        self.assertEqual(out["accepted"], 1)
+        self.assertEqual(out["organizations"][0]["category_name"], "Sport")
+
+    def test_sport_alias_maps_to_sport(self) -> None:
+        sheet = {
+            "district": "Islands",
+            "organisations": [
+                {
+                    "name_en": "Galaxy Sports Asia",
+                    "type": "sport",
+                    "verified_fields": ["name_en"],
+                }
+            ],
+        }
+        out = board_catalog_import.transform_sheet(sheet)
+        self.assertEqual(out["accepted"], 1)
+        self.assertEqual(out["organizations"][0]["category_name"], "Sport")
+
     def test_indoor_play_maps_to_indoor_fun(self) -> None:
         sheet = {
             "district": "Wan Chai",
@@ -593,6 +623,18 @@ class ImportClientTests(BoardTestCase):
         )
         self.assertEqual(counts, {"created": 2, "updated": 1, "failed": 3, "skipped": 0})
         self.assertEqual(board_catalog_import._importer_accepted({"summary": {"organizations": {"created": 2, "updated": 1}}}), 3)
+        self.assertEqual(
+            board_catalog_import._importer_accepted(
+                {
+                    "summary": {
+                        "organizations": {"created": 0, "updated": 0, "failed": 0, "skipped": 3},
+                        "locations": {"created": 0, "updated": 0, "failed": 0, "skipped": 3},
+                        "activities": {"created": 2, "updated": 0, "failed": 0, "skipped": 1},
+                    }
+                }
+            ),
+            2,
+        )
 
     def _sheet_task(self, settings, status="review"):
         board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})

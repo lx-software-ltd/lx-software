@@ -297,7 +297,7 @@ def _bottlenecks(
                 "section": "progress",
             }
         )
-    elif listings.get("gaps"):
+    else:
         unlinked = next(
             (
                 row
@@ -319,8 +319,15 @@ def _bottlenecks(
                     "section": "progress",
                 }
             )
-        else:
-            gap = listings["gaps"][0]
+        gap = next(
+            (
+                row
+                for row in (listings.get("gaps") or [])
+                if row.get("label") != UNLINKED_DISTRICT_LABEL
+            ),
+            None,
+        )
+        if gap:
             out.append(
                 {
                     "id": "listings-gap",

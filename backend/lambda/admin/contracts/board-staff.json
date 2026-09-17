@@ -447,7 +447,7 @@
   "catalog": {
     "assignee": "content-marketer",
     "budgetUsd": 3,
-    "outputContract": "OUTPUT CONTRACT (curation sheet, NOT the importer JSON — the board copies verified_fields only; type is your classification and is always mapped): one fenced JSON block {\"district\": \"<name>\", \"organisations\": [ {\"name_en\", \"name_zh\", \"type\": \"playground|indoor_play|class|outdoor|restaurant|event\" (seat classification — omit type from verified_fields), \"free_or_paid\", \"age_range\", \"address_en\", \"lat\", \"lng\", \"official_url\", \"phone\", \"opening_hours\", \"price_note\", \"description_en\" (max 40 words), \"description_zh\" (max 40 words), \"source_url\", \"verified_fields\": [...], \"unverified_fields\": [...]} ] }. Exactly 3 organisations. Only facts you read on the official page (LCSD / gov / the provider's own site) go into verified_fields; everything else is the string \"unverified\" and listed in unverified_fields. Do not list type in verified_fields. No invented phone numbers, hours or prices. Keep the whole deliverable under 2500 words: research one organisation, task_note a 6-line summary, next organisation; after the third, call task_finish immediately with the JSON. No Meta, no mobile, no publishing.",
+    "outputContract": "OUTPUT CONTRACT (curation sheet, NOT the importer JSON — the board copies verified_fields only; type is your classification and is always mapped): one fenced JSON block {\"district\": \"<name>\", \"organisations\": [ {\"name_en\", \"name_zh\", \"type\": \"playground|indoor_play|class|outdoor|sports|event\" (seat classification — omit type from verified_fields; do not use restaurant), \"free_or_paid\", \"age_range\", \"address_en\", \"lat\", \"lng\", \"official_url\", \"phone\", \"opening_hours\", \"price_note\", \"description_en\" (max 40 words), \"description_zh\" (max 40 words), \"source_url\", \"verified_fields\": [...], \"unverified_fields\": [...]} ] }. Exactly 3 organisations. Only facts you read on the official page (LCSD / gov / the provider's own site) go into verified_fields; everything else is the string \"unverified\" and listed in unverified_fields. Do not list type in verified_fields. No invented phone numbers, hours or prices. Keep the whole deliverable under 2500 words: research one organisation, task_note a 6-line summary, next organisation; after the third, call task_finish immediately with the JSON. No Meta, no mobile, no publishing.",
     "importEnabledDefault": false,
     "autoImportDefault": false,
     "maxOrgsPerImport": 20,
@@ -457,6 +457,8 @@
       "indoor_play": "Indoor fun",
       "class": "Class",
       "outdoor": "Outdoor activity",
+      "sports": "Sport",
+      "sport": "Sport",
       "event": "Workshop"
     },
     "districts": [

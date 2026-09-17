@@ -611,6 +611,19 @@ def _org_result_names(results: list[dict[str, Any]], status: str) -> list[str]:
 
 
 def _importer_accepted(resp: dict[str, Any]) -> int:
+    """Count created+updated orgs, venues and activities.
+
+    A matching-manager reimport skips every organisation and only
+    creates the missing activities; those still count as accepted.
+    """
+    packed = resp.get("summary") if isinstance(resp.get("summary"), dict) else {}
+    total = 0
+    for key in ("organizations", "locations", "activities"):
+        counts = packed.get(key) if isinstance(packed.get(key), dict) else {}
+        total += _as_count(counts.get("created") if counts else None)
+        total += _as_count(counts.get("updated") if counts else None)
+    if total:
+        return total
     counts = _org_counts(resp)
     return counts["created"] + counts["updated"]
 
