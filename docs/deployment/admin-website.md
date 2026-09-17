@@ -354,7 +354,7 @@ stack-wide knobs are unprefixed. Lambda env vars stay short
 | `SiutindeiBoardMailDomain` | Domain the board indexes (default `siutindei.com`). |
 | `SiutindeiBoardMailSendingEnabled` | `false` (default) / `true`. Flip only after DKIM / SPF / DMARC are in the zone; creates the SES identity and send policy. |
 | `SiutindeiBoardChatModel` / `MeetingModel` / `DeepDiveModel` | Default OpenRouter slugs (`openai/gpt-4.1-mini`, `openai/gpt-4.1-mini`, `anthropic/claude-sonnet-4`); overridable in **Settings**. They are also sent as `models` fallbacks so a 429 on a cheap primary continues on the defaults. |
-| `SiutindeiBoardCatalogImportEnabled` | `false` (default) / `true`. Kill switch for `catalog_import`; preview and local dry-run work while it is off. |
+| `SiutindeiBoardCatalogImportEnabled` | `false` (CDK default) / `true`. Kill switch for `catalog_import`; preview and local dry-run work while it is off. Production is `true`. |
 | `SiutindeiAdminApiBaseUrl` / `SiutindeiUserPoolId` / `SiutindeiBoardImporterClientId` / `SiutindeiBoardCatalogManagerId` | siutindei admin API base URL, Cognito user pool and importer app client for the catalog importer user, and the default manager id stamped on imported organisations. Blank until the product side exists. |
 
 ### Secrets
@@ -586,18 +586,17 @@ organisations.
 2. Set `SiutindeiAdminApiBaseUrl`, `SiutindeiUserPoolId`,
    `SiutindeiBoardImporterClientId` and `SiutindeiBoardCatalogManagerId`
    (the `SiutindeiBoardImporterAuthPolicy` IAM statement is gated on a
-   non-blank pool id). Production params already carry these; the kill
-   switch stays `false` until a remote Preview succeeds.
+   non-blank pool id). Production params already carry these.
 3. **Tasks → To import** → open a sheet → **Preview import**. That
    button calls siutindei with `dry_run` (the SPA sends `{remote:true}`;
    the API also defaults to remote). The footer shows **Previewing…**
    until the dry-run returns; the catalog panel then shows
    `remote dry-run` (or a `remoteError` if Cognito / the product API
    failed). A collision parks the sheet on **Attention** and hides
-   **Import now** until **Import anyway**. Flip `SiutindeiBoardCatalogImportEnabled=true` in
-   `backend/infrastructure/params/production.json` after a successful
-   remote Preview, then optionally enable **Auto-import validated
-   catalog sheets** under Settings.
+   **Import now** until **Import anyway**. Production has
+   `SiutindeiBoardCatalogImportEnabled=true`, so **Import now** is live
+   after Deploy Backend. Leave **Auto-import validated catalog sheets**
+   off until a few manual imports look right.
 
 ### Board Meta (Page, Instagram, WhatsApp)
 

@@ -12,6 +12,6 @@
   "lxsoftware:SiutindeiUserPoolId": "ap-southeast-1_uv3vjkpJz",
   "lxsoftware:SiutindeiBoardImporterClientId": "316qm9jifoo6n7e10kf8eddgv1",
   "lxsoftware:SiutindeiBoardCatalogManagerId": "c9cad5fc-40a1-70f7-73ea-7d35fb00d573",
-  "lxsoftware:SiutindeiBoardCatalogImportEnabled": "false",
+  "lxsoftware:SiutindeiBoardCatalogImportEnabled": "true",
   "lxsoftware-admin-web:CspCognitoConnectOrigin": "https://auth.lx-software.com"
 }
