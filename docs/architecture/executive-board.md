@@ -363,7 +363,7 @@ when staff is on, reminder Approvals when it is off.
 
 `board_catalog_import.py` turns an accepted `catalog-micro-batch` sheet
 (§7.2; only fields listed in `verified_fields`, mapped through the
-contract `catalog.typeToCategory`, at most `maxOrgsPerImport` 20
+contract `catalog.typeToCategory` (siutindei `activity_categories` names), at most `maxOrgsPerImport` 20
 organisations) into siutindei importer JSON. Import authenticates as a
 dedicated Cognito **importer** user in the siutindei pool
 (`AdminInitiateAuth` / `ADMIN_USER_PASSWORD_AUTH`, secret

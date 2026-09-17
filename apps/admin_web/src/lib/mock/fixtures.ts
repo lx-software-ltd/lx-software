@@ -566,7 +566,7 @@ export const boardTasksFixture: BoardTask[] = [
       configured: true,
       dryRun: { ok: true, mode: "local", accepted: 1, skipped: 0, errors: [] },
       payload: {
-        organizations: [{ name: "Quarry Bay Park Playground", category_name: "Playground", area_name: "Eastern" }],
+        organizations: [{ name: "Quarry Bay Park Playground", category_name: "Outdoor activity", area_name: "Eastern" }],
       },
     },
   }),
@@ -592,7 +592,7 @@ export const boardTasksFixture: BoardTask[] = [
         wouldUpdate: ["Kidz Club"],
         results: [{ type: "organizations", key: "Kidz Club", status: "updated" }],
       },
-      payload: { organizations: [{ name: "Kidz Club", category_name: "Indoor play", area_name: "Wan Chai" }] },
+      payload: { organizations: [{ name: "Kidz Club", category_name: "Indoor fun", area_name: "Wan Chai" }] },
     },
   }),
   fixtureTask("task-hpar01", "waiting_subtask", "support", "Verify visitor sources without web access.", {

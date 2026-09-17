@@ -128,6 +128,32 @@ class ProgressSnapshotTests(BoardTestCase):
         self.assertIn("bottlenecks", body)
         self.assertEqual(body["listings"]["activities"], 12)
 
+    def test_unknown_district_is_labelled_unlinked(self) -> None:
+        self.catalog = [
+            {"district": "unknown", "category": "Class", "activities": 5, "providers": 5, "stores": 0, "completeness": 0.0},
+            {"district": "Wan Chai", "category": "Workshop", "activities": 1, "providers": 1, "stores": 1, "completeness": 0.75},
+        ]
+        snap = board_progress.snapshot(self.table, self.settings)
+        labels = [row["label"] for row in snap["listings"]["byDistrict"]]
+        self.assertIn("No venue linked", labels)
+        self.assertNotIn("unknown", labels)
+        ids = {b["id"] for b in snap["bottlenecks"]}
+        self.assertIn("listings-unlinked", ids)
+
+    def test_unlinked_and_district_gap_both_listed(self) -> None:
+        self.catalog = [
+            {"district": "unknown", "category": "Class", "activities": 5, "providers": 5, "stores": 0, "completeness": 0.9},
+            {"district": "Tai Po", "category": "sport", "activities": 0, "providers": 2, "stores": 0, "completeness": 0.1},
+            {"district": "Wan Chai", "category": "Workshop", "activities": 1, "providers": 1, "stores": 1, "completeness": 0.75},
+        ]
+        snap = board_progress.snapshot(self.table, self.settings)
+        ids = [b["id"] for b in snap["bottlenecks"]]
+        self.assertIn("listings-unlinked", ids)
+        self.assertIn("listings-gap", ids)
+        gap = next(b for b in snap["bottlenecks"] if b["id"] == "listings-gap")
+        self.assertIn("Tai Po", gap["summary"])
+        self.assertNotIn("No venue linked", gap["summary"])
+
     def test_unavailable_product_views_become_bottlenecks(self) -> None:
         board_data_api.set_executor_for_tests(None)
         snap = board_progress.snapshot(self.table, self.settings)

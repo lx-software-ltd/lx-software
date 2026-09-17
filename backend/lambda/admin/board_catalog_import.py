@@ -541,7 +541,6 @@ def _org_counts(resp: dict[str, Any]) -> dict[str, int]:
     orgs = summary.get("organizations") if isinstance(summary.get("organizations"), dict) else {}
     created = _as_count(orgs.get("created") if orgs else None)
     updated = _as_count(orgs.get("updated") if orgs else None)
-    failed = _as_count(orgs.get("failed") if orgs else None)
     skipped = _as_count(orgs.get("skipped") if orgs else None)
     if not created:
         for key in ("created", "imported", "accepted", "upserted", "count"):
@@ -550,11 +549,40 @@ def _org_counts(resp: dict[str, Any]) -> dict[str, int]:
                 break
     if not updated:
         updated = _as_count(summary.get("updated") if summary else None) or _as_count(resp.get("updated"))
-    if not failed:
-        failed = _as_count(summary.get("failed") if summary else None) or _as_count(resp.get("failed"))
     if not skipped:
         skipped = _as_count(summary.get("skipped") if summary else None) or _as_count(resp.get("skipped"))
-    return {"created": created, "updated": updated, "failed": failed, "skipped": skipped}
+    return {
+        "created": created,
+        "updated": updated,
+        "failed": _failed_row_count(resp, summary),
+        "skipped": skipped,
+    }
+
+
+def _failed_row_count(resp: dict[str, Any], summary: dict[str, Any] | None = None) -> int:
+    """Count failed importer rows across orgs, venues and activities.
+
+    Siutindei returns per-type counters. A sheet that creates organisations
+    but rejects every activity used to look clean because only
+    ``summary.organizations.failed`` was read.
+    """
+    packed = summary if isinstance(summary, dict) else (
+        resp.get("summary") if isinstance(resp.get("summary"), dict) else {}
+    )
+    total = 0
+    for key in ("organizations", "locations", "activities", "pricing", "schedules"):
+        counts = packed.get(key) if isinstance(packed.get(key), dict) else {}
+        total += _as_count(counts.get("failed") if counts else None)
+    if total:
+        return total
+    from_rows = sum(
+        1
+        for row in _importer_results(resp)
+        if str(row.get("status") or "").lower() == "failed"
+    )
+    if from_rows:
+        return from_rows
+    return _as_count(packed.get("failed") if packed else None) or _as_count(resp.get("failed"))
 
 
 def _importer_results(resp: dict[str, Any]) -> list[dict[str, Any]]:
@@ -583,6 +611,19 @@ def _org_result_names(results: list[dict[str, Any]], status: str) -> list[str]:
 
 
 def _importer_accepted(resp: dict[str, Any]) -> int:
+    """Count created+updated orgs, venues and activities.
+
+    A matching-manager reimport skips every organisation and only
+    creates the missing activities; those still count as accepted.
+    """
+    packed = resp.get("summary") if isinstance(resp.get("summary"), dict) else {}
+    total = 0
+    for key in ("organizations", "locations", "activities"):
+        counts = packed.get(key) if isinstance(packed.get(key), dict) else {}
+        total += _as_count(counts.get("created") if counts else None)
+        total += _as_count(counts.get("updated") if counts else None)
+    if total:
+        return total
     counts = _org_counts(resp)
     return counts["created"] + counts["updated"]
 
@@ -992,7 +1033,7 @@ def run_import(table: Any, task: dict[str, Any], *, force: bool = False, live_af
     task_id = str(task.get("taskId") or "")
     if summary.get("failed"):
         task["importResult"] = {**result, "partial": True}
-        task["importError"] = f"siutindei rejected {summary.get('failed')} organisation(s)"
+        task["importError"] = f"siutindei rejected {summary.get('failed')} row(s)"
         _park_needs_owner(
             table,
             task,

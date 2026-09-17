@@ -20,6 +20,7 @@ from http_common import _utc_iso_z
 PARTNERSHIP_WEEKLY_TARGET = 15
 STALL_EDIT_DAYS = 7
 LOW_COMPLETENESS = 0.5
+UNLINKED_DISTRICT_LABEL = "No venue linked"
 FUNNEL_DAYS = 7
 CONTENT_HORIZON_DAYS = 7
 MAX_STALLED_ROWS = 8
@@ -296,17 +297,46 @@ def _bottlenecks(
                 "section": "progress",
             }
         )
-    elif listings.get("gaps"):
-        gap = listings["gaps"][0]
-        out.append(
-            {
-                "id": "listings-gap",
-                "area": "listings",
-                "severity": "warning",
-                "summary": f"Listing gap in {gap.get('label')}: {gap.get('detail')}",
-                "section": "progress",
-            }
+    else:
+        unlinked = next(
+            (
+                row
+                for row in (listings.get("byDistrict") or [])
+                if row.get("label") == UNLINKED_DISTRICT_LABEL and row.get("activities")
+            ),
+            None,
         )
+        if unlinked:
+            out.append(
+                {
+                    "id": "listings-unlinked",
+                    "area": "listings",
+                    "severity": "warning",
+                    "summary": (
+                        f"{int(unlinked['activities'])} listing(s) have no venue linked "
+                        f"to the activity (district unknown)"
+                    ),
+                    "section": "progress",
+                }
+            )
+        gap = next(
+            (
+                row
+                for row in (listings.get("gaps") or [])
+                if row.get("label") != UNLINKED_DISTRICT_LABEL
+            ),
+            None,
+        )
+        if gap:
+            out.append(
+                {
+                    "id": "listings-gap",
+                    "area": "listings",
+                    "severity": "warning",
+                    "summary": f"Listing gap in {gap.get('label')}: {gap.get('detail')}",
+                    "section": "progress",
+                }
+            )
     stalled_sign = signings.get("stalled") or []
     if signings.get("error"):
         out.append(
@@ -396,6 +426,8 @@ def _group_catalog(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]
     scores: dict[str, list[float]] = {}
     for row in rows:
         label = str(row.get(key) or "").strip() or "(unmapped)"
+        if key == "district" and label.lower() == "unknown":
+            label = UNLINKED_DISTRICT_LABEL
         bucket = buckets.setdefault(label, {"activities": 0, "providers": 0, "stores": 0})
         bucket["activities"] += _num(row.get("activities"))
         bucket["providers"] += _num(row.get("providers"))
