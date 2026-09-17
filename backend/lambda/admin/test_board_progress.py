@@ -128,6 +128,18 @@ class ProgressSnapshotTests(BoardTestCase):
         self.assertIn("bottlenecks", body)
         self.assertEqual(body["listings"]["activities"], 12)
 
+    def test_unknown_district_is_labelled_unlinked(self) -> None:
+        self.catalog = [
+            {"district": "unknown", "category": "Class", "activities": 5, "providers": 5, "stores": 0, "completeness": 0.0},
+            {"district": "Wan Chai", "category": "Workshop", "activities": 1, "providers": 1, "stores": 1, "completeness": 0.75},
+        ]
+        snap = board_progress.snapshot(self.table, self.settings)
+        labels = [row["label"] for row in snap["listings"]["byDistrict"]]
+        self.assertIn("No venue linked", labels)
+        self.assertNotIn("unknown", labels)
+        ids = {b["id"] for b in snap["bottlenecks"]}
+        self.assertIn("listings-unlinked", ids)
+
     def test_unavailable_product_views_become_bottlenecks(self) -> None:
         board_data_api.set_executor_for_tests(None)
         snap = board_progress.snapshot(self.table, self.settings)
