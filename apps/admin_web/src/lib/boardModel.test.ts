@@ -312,6 +312,25 @@ describe("task dashboard helpers", () => {
     expect(Object.keys(grouped)).toEqual(["attention", "in_progress", "done"]);
   });
 
+  it("sorts queued by soonest SLA and import sheets oldest-accepted first", () => {
+    const grouped = groupTasksByLane([
+      task({ taskId: "q-late", status: "queued", slaAt: "2026-09-16T12:00:00Z" }),
+      task({ taskId: "q-soon", status: "queued", slaAt: "2026-09-15T12:00:00Z" }),
+      task({ taskId: "imp-new", status: "awaiting_import", acceptedAt: "2026-09-14T18:00:00Z" }),
+      task({ taskId: "imp-old", status: "awaiting_import", acceptedAt: "2026-09-14T08:00:00Z" }),
+      task({ taskId: "run-old", status: "running", startedAt: "2026-09-14T08:00:00Z" }),
+      task({ taskId: "run-new", status: "running", startedAt: "2026-09-14T18:00:00Z" }),
+    ]);
+    expect(grouped.in_progress.map((t) => t.taskId)).toEqual([
+      "run-new",
+      "run-old",
+      "q-soon",
+      "q-late",
+      "imp-old",
+      "imp-new",
+    ]);
+  });
+
   it("scopes live catalog preview and errors to the open task", () => {
     const live = { ok: true, taskId: "task-a", district: "Eastern" };
     const fallback = { ok: true, taskId: "task-b", district: "Wan Chai" };
