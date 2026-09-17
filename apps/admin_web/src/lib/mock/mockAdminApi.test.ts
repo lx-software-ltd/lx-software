@@ -95,15 +95,16 @@ describe("mockAdminFetch", () => {
   it("previews a catalog sheet and refuses import while the kill switch is off", async () => {
     const previewRes = await mockAdminFetch("/siu-tin-dei/board/catalog/preview", {
       method: "POST",
-      body: JSON.stringify({ taskId: "task-catalog" }),
+      body: JSON.stringify({ taskId: "task-catalog", remote: true }),
     });
     expect(previewRes.ok).toBe(true);
     const preview = (await previewRes.json()) as {
-      preview: { ok?: boolean; importEnabled?: boolean; district?: string };
+      preview: { ok?: boolean; importEnabled?: boolean; district?: string; dryRun?: { mode?: string } };
     };
     expect(preview.preview.ok).toBe(true);
     expect(preview.preview.importEnabled).toBe(false);
     expect(preview.preview.district).toBe("Eastern");
+    expect(preview.preview.dryRun?.mode).toBe("remote");
 
     const importRes = await mockAdminFetch("/siu-tin-dei/board/catalog/import", {
       method: "POST",

@@ -78,7 +78,7 @@ export function catalogPreviewMutationOptions(qc: QueryClient) {
     mutationFn: async (taskId: string) => {
       const res = await adminFetchJson<{ preview: BoardCatalogImportPreview }>(boardCatalogPreviewPath(), {
         method: "POST",
-        body: JSON.stringify({ taskId }),
+        body: JSON.stringify({ taskId, remote: true }),
       });
       return res.preview;
     },

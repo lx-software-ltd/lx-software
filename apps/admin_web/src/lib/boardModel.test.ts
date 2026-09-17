@@ -6,7 +6,9 @@ import {
   boardTaskSearchParams,
   canRetryBoardTask,
   showTaskReviewActions,
+  catalogDrawerMessageForTask,
   catalogMutationErrorForTask,
+  catalogSiblingMutationKeys,
   filterBoardTasks,
   liveCatalogPreviewForTask,
   formatRelativeDuration,
@@ -314,6 +316,23 @@ describe("task dashboard helpers", () => {
       "off",
     );
     expect(catalogMutationErrorForTask("task-a", "task-b", new Error("off"), (err) => (err instanceof Error ? err.message : null))).toBeNull();
+    expect(
+      catalogDrawerMessageForTask(
+        "task-a",
+        [
+          { variables: { taskId: "task-a" }, error: new Error("skip failed") },
+          { variables: "task-a", error: new Error("preview failed") },
+        ],
+        (err) => (err instanceof Error ? err.message : null),
+      ),
+    ).toBe("skip failed");
+    expect(
+      catalogDrawerMessageForTask("task-b", [{ variables: "task-a", error: new Error("preview failed") }], (err) =>
+        err instanceof Error ? err.message : null,
+      ),
+    ).toBeNull();
+    expect(catalogSiblingMutationKeys("preview")).toEqual(["import", "skip", "requeue"]);
+    expect(catalogSiblingMutationKeys("skip")).toEqual(["preview", "import", "requeue"]);
   });
 
   it("builds a shareable task deep link", () => {
