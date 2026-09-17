@@ -259,7 +259,7 @@
 
 .board-task-lanes {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
   align-items: start;
 }
@@ -314,20 +314,6 @@
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-
-@media (max-width: 1199.98px) and (min-width: 768px) {
-  .board-task-lanes {
-    display: flex;
-    overflow-x: auto;
-    scroll-snap-type: x mandatory;
-    padding-bottom: 0.35rem;
-  }
-
-  .board-task-lane {
-    flex: 0 0 min(20rem, 70vw);
-    scroll-snap-align: start;
-  }
 }
 
 @media (max-width: 767.98px) {

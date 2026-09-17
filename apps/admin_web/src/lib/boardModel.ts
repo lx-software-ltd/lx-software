@@ -1254,7 +1254,17 @@ export function isFinishedBoardTaskStatus(status: string): boolean {
   return status === "delivered" || status === "cancelled";
 }
 
-export type BoardTaskLaneId = "attention" | "in_progress" | "queued" | "done";
+export type BoardTaskLaneId = "attention" | "in_progress" | "done";
+
+const ATTENTION_STATUSES = ["needs_owner", "review"] as const satisfies readonly BoardTaskStatus[];
+const IN_PROGRESS_STATUSES = [
+  "running",
+  "waiting_approval",
+  "waiting_subtask",
+  "queued",
+  "awaiting_import",
+] as const satisfies readonly BoardTaskStatus[];
+const DONE_STATUSES = ["failed", "delivered", "cancelled"] as const satisfies readonly BoardTaskStatus[];
 
 export const BOARD_TASK_LANES: readonly {
   readonly id: BoardTaskLaneId;
@@ -1266,25 +1276,19 @@ export const BOARD_TASK_LANES: readonly {
     id: "attention",
     label: "Attention",
     empty: "Nothing waiting on you",
-    statuses: ["needs_owner", "review"],
+    statuses: ATTENTION_STATUSES,
   },
   {
     id: "in_progress",
     label: "In progress",
-    empty: "No work in flight",
-    statuses: ["running", "waiting_approval", "waiting_subtask", "awaiting_import"],
-  },
-  {
-    id: "queued",
-    label: "Queued",
-    empty: "Queue is empty",
-    statuses: ["queued"],
+    empty: "Nothing running or queued",
+    statuses: IN_PROGRESS_STATUSES,
   },
   {
     id: "done",
     label: "Done",
     empty: "No finished tasks",
-    statuses: ["failed", "delivered", "cancelled"],
+    statuses: DONE_STATUSES,
   },
 ];
 
@@ -1444,29 +1448,34 @@ function statusOrder(status: string, order: readonly string[]): number {
   return index < 0 ? order.length : index;
 }
 
+function inProgressTimeCmp(a: BoardTask, b: BoardTask): number {
+  if (a.status === "queued") return cmpIso(a.slaAt, b.slaAt, "asc");
+  if (a.status === "awaiting_import") {
+    return cmpIso(a.acceptedAt || a.updatedAt, b.acceptedAt || b.updatedAt, "asc");
+  }
+  return cmpIso(
+    a.startedAt || a.parkedAt || a.updatedAt,
+    b.startedAt || b.parkedAt || b.updatedAt,
+    "desc",
+  );
+}
+
 export function sortTasksInLane(lane: BoardTaskLaneId, tasks: readonly BoardTask[]): BoardTask[] {
   const copy = [...tasks];
   if (lane === "attention") {
     copy.sort(
       (a, b) =>
-        statusOrder(a.status, ["needs_owner", "review"]) - statusOrder(b.status, ["needs_owner", "review"]) ||
+        statusOrder(a.status, ATTENTION_STATUSES) - statusOrder(b.status, ATTENTION_STATUSES) ||
         cmpIso(a.updatedAt, b.updatedAt, "desc") ||
         a.taskId.localeCompare(b.taskId),
     );
   } else if (lane === "in_progress") {
     copy.sort(
       (a, b) =>
-        statusOrder(a.status, ["running", "waiting_approval", "waiting_subtask", "awaiting_import"]) -
-          statusOrder(b.status, ["running", "waiting_approval", "waiting_subtask", "awaiting_import"]) ||
-        cmpIso(
-          a.startedAt || a.parkedAt || a.acceptedAt || a.updatedAt,
-          b.startedAt || b.parkedAt || b.acceptedAt || b.updatedAt,
-          "desc",
-        ) ||
+        statusOrder(a.status, IN_PROGRESS_STATUSES) - statusOrder(b.status, IN_PROGRESS_STATUSES) ||
+        inProgressTimeCmp(a, b) ||
         a.taskId.localeCompare(b.taskId),
     );
-  } else if (lane === "queued") {
-    copy.sort((a, b) => cmpIso(a.slaAt, b.slaAt, "asc") || a.taskId.localeCompare(b.taskId));
   } else {
     copy.sort(
       (a, b) =>
@@ -1482,7 +1491,6 @@ export function groupTasksByLane(tasks: readonly BoardTask[]): Record<BoardTaskL
   const grouped: Record<BoardTaskLaneId, BoardTask[]> = {
     attention: [],
     in_progress: [],
-    queued: [],
     done: [],
   };
   for (const task of tasks) {

@@ -60,6 +60,18 @@ const catalogTask: BoardTask = {
   eventRef: { kind: "catalog-micro-batch", id: "catalog:eastern" },
 };
 
+const queuedTask: BoardTask = {
+  ...failedTask,
+  taskId: "task-queued",
+  status: "queued",
+  assignee: "support",
+  managerId: "coo",
+  brief: "Draft a reply to yesterday's parent email.",
+  failureReason: "",
+  lastReview: null,
+  eventRef: { kind: "mail", id: "th-parent", channel: "mail" },
+};
+
 vi.mock("../../hooks/useBoardStaff", () => ({
   useBoardStaff: () => ({
     enabled: true,
@@ -78,8 +90,8 @@ vi.mock("../../hooks/useBoardStaff", () => ({
 
 vi.mock("../../hooks/useBoardTasks", () => ({
   useBoardTasks: () => ({
-    tasks: [failedTask, ownerTask, catalogTask],
-    counts: { failed: 1, needs_owner: 1, awaiting_import: 1 },
+    tasks: [failedTask, ownerTask, catalogTask, queuedTask],
+    counts: { failed: 1, needs_owner: 1, awaiting_import: 1, queued: 1 },
     isLoading: false,
     isFetching: false,
     dataUpdatedAt: Date.parse("2026-09-15T12:00:00Z"),
@@ -104,11 +116,15 @@ describe("BoardTasksSection", () => {
     expect(screen.getByRole("button", { name: /Failed \(1\)/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Needs owner \(1\)/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /To import \(1\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Queued \(1\)/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Waiting approval \(0\)/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Waiting help \(0\)/ })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "In progress" })).toHaveTextContent("To import");
     expect(screen.getByRole("region", { name: "In progress" })).toHaveTextContent("CATALOG MICRO-BATCH Eastern");
+    expect(screen.getByRole("region", { name: "In progress" })).toHaveTextContent("Queued");
+    expect(screen.getByRole("region", { name: "In progress" })).toHaveTextContent("parent email");
     expect(screen.queryByRole("region", { name: "To import" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Queued" })).not.toBeInTheDocument();
     expect(screen.getByText(/1 catalog sheet waiting to import/)).toBeInTheDocument();
     expect(screen.getByText("step limit")).toBeInTheDocument();
     expect(screen.getByLabelText("Task task-failed")).toHaveAttribute("title", "task-failed");
