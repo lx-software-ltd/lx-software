@@ -562,7 +562,7 @@ Approval (`always_propose`, class `catalog_import`); owner
 returns 409 unless the body has `{"force": true}`.
 
 Accepted catalog sheets leave **Review** as `awaiting_import` (SPA
-**To import** lane) after a siutindei dry-run. Name collisions
+**In progress**, **To import** tag) after a siutindei dry-run. Name collisions
 (`updated` rows) and rejected rows park at `needs_owner`. The staff
 tick backfills older delivered-but-unimported sheets, re-validates
 `pending` sheets at most once an hour (using `lastValidatedAt`, including
@@ -600,7 +600,7 @@ organisations.
    `SiutindeiBoardImporterClientId` and `SiutindeiBoardCatalogManagerId`
    (the `SiutindeiBoardImporterAuthPolicy` IAM statement is gated on a
    non-blank pool id). Production params already carry these.
-3. **Tasks → To import** → open a sheet → **Preview import**. That
+3. **Tasks → In progress** → open a **To import** sheet → **Preview import**. That
    button calls siutindei with `dry_run` (the SPA sends `{remote:true}`;
    the API also defaults to remote). The footer shows **Previewing…**
    until the dry-run returns; the catalog panel then shows

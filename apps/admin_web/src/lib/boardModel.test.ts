@@ -242,7 +242,7 @@ describe("task dashboard helpers", () => {
     expect(taskLane("running")).toBe("in_progress");
     expect(taskLane("waiting_subtask")).toBe("in_progress");
     expect(taskLane("queued")).toBe("queued");
-    expect(taskLane("awaiting_import")).toBe("to_import");
+    expect(taskLane("awaiting_import")).toBe("in_progress");
     expect(taskLane("failed")).toBe("done");
     expect(taskLane("delivered")).toBe("done");
     expect(taskStatusLabel("awaiting_import")).toBe("To import");
@@ -301,9 +301,13 @@ describe("task dashboard helpers", () => {
       task({ taskId: "o", status: "needs_owner", updatedAt: "2026-09-14T10:00:00Z" }),
       task({ taskId: "d", status: "delivered", finishedAt: "2026-09-14T18:00:00Z" }),
       task({ taskId: "f", status: "failed", updatedAt: "2026-09-14T11:00:00Z" }),
+      task({ taskId: "i", status: "awaiting_import", updatedAt: "2026-09-14T09:00:00Z" }),
+      task({ taskId: "n", status: "running", updatedAt: "2026-09-14T08:00:00Z" }),
     ]);
     expect(grouped.attention.map((t) => t.taskId)).toEqual(["o", "r"]);
+    expect(grouped.in_progress.map((t) => t.taskId)).toEqual(["n", "i"]);
     expect(grouped.done.map((t) => t.taskId)).toEqual(["f", "d"]);
+    expect(Object.keys(grouped)).toEqual(["attention", "in_progress", "queued", "done"]);
   });
 
   it("scopes live catalog preview and errors to the open task", () => {
