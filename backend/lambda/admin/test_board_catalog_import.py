@@ -96,7 +96,7 @@ class TransformTests(unittest.TestCase):
         org = out["organizations"][0]
         self.assertEqual(org["name"], "Quarry Bay Park Playground")
         self.assertEqual(org["area_name"], "Eastern")
-        self.assertEqual(org["category_name"], "Playground")
+        self.assertEqual(org["category_name"], "Outdoor activity")
         self.assertEqual(org["manager_id"], "mgr-1")
         self.assertEqual(org["website"], "https://www.lcsd.gov.hk/en/parks/qbp.html")
         self.assertEqual(org["lat"], 22.291)
@@ -115,6 +115,37 @@ class TransformTests(unittest.TestCase):
         self.assertEqual(dry["mode"], "local")
         self.assertEqual(dry["accepted"], 1)
 
+    def test_indoor_play_maps_to_indoor_fun(self) -> None:
+        sheet = {
+            "district": "Wan Chai",
+            "organisations": [
+                {
+                    "name_en": "One Small Step",
+                    "type": "indoor_play",
+                    "verified_fields": ["name_en", "type"],
+                }
+            ],
+        }
+        out = board_catalog_import.transform_sheet(sheet)
+        self.assertEqual(out["accepted"], 1)
+        self.assertEqual(out["organizations"][0]["category_name"], "Indoor fun")
+
+    def test_restaurant_type_is_skipped_without_a_product_category(self) -> None:
+        sheet = {
+            "district": "Wan Chai",
+            "organisations": [
+                {
+                    "name_en": "Kids Menu Cafe",
+                    "type": "restaurant",
+                    "verified_fields": ["name_en", "type"],
+                }
+            ],
+        }
+        out = board_catalog_import.transform_sheet(sheet)
+        self.assertEqual(out["accepted"], 0)
+        self.assertEqual(out["skipped"], 1)
+        self.assertIn("unknown type restaurant", str(out["orgReports"][0].get("reason") or ""))
+
     def test_type_accepted_without_verified_fields(self) -> None:
         sheet = {
             "district": "Eastern",
@@ -129,7 +160,7 @@ class TransformTests(unittest.TestCase):
         }
         out = board_catalog_import.transform_sheet(sheet)
         self.assertEqual(out["accepted"], 1)
-        self.assertEqual(out["organizations"][0]["category_name"], "Playground")
+        self.assertEqual(out["organizations"][0]["category_name"], "Outdoor activity")
         self.assertEqual(out["organizations"][0]["address"], "Taikoo Shing")
 
     def test_alias_first_wins(self) -> None:
@@ -661,6 +692,44 @@ class ImportClientTests(BoardTestCase):
         self.assertTrue(out["ok"])
         self.assertEqual(len((bodies[-1] or {}).get("organizations") or []), 1)
         self.assertEqual(bodies[-1]["organizations"][0]["name"], "Quarry Bay Park Playground")
+
+    def test_activity_failure_is_partial_even_when_orgs_succeed(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="awaiting_import")
+        task["importPhase"] = "validated"
+        _stamp_fresh_remote(task)
+        board_store.put_task(self.table, task)
+
+        def http(method, url, headers, body):
+            if url.endswith("/admin/imports/presign"):
+                return {"upload_url": "https://s3.example.test/put", "object_key": "imports/board.json"}
+            if url.startswith("https://s3.example.test/put"):
+                return {"status": 200}
+            return {
+                "status": 200,
+                "summary": {
+                    "organizations": {"created": 1, "updated": 0, "failed": 0, "skipped": 0},
+                    "activities": {"created": 0, "updated": 0, "failed": 1, "skipped": 0},
+                },
+                "results": [
+                    {"type": "organizations", "key": "Wan Chai Park", "status": "created"},
+                    {
+                        "type": "activities",
+                        "key": "Wan Chai Park / Wan Chai Park",
+                        "status": "failed",
+                        "errors": [{"field": "category_name", "message": "unknown category_name"}],
+                    },
+                ],
+            }
+
+        board_catalog_import.set_http_for_tests(http)
+        out = board_catalog_import.run_import(self.table, task)
+        self.assertFalse(out["ok"])
+        self.assertTrue(out.get("partial"))
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "needs_owner")
+        self.assertEqual(saved.get("importPhase"), "partial")
+        self.assertIn("unknown category_name", str(saved.get("importError") or "") + str(saved.get("openQuestions") or ""))
 
     def test_partial_import_returns_ok_false(self) -> None:
         settings = _enable_staff(self.table)

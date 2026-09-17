@@ -597,7 +597,7 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
         importEnabled: false,
         configured: false,
         dryRun: fallbackDryRun,
-        payload: { organizations: [{ name: "Quarry Bay Park Playground", category_name: "Playground", area_name: "Eastern" }] },
+        payload: { organizations: [{ name: "Quarry Bay Park Playground", category_name: "Outdoor activity", area_name: "Eastern" }] },
       }),
       taskId,
       dryRun: {

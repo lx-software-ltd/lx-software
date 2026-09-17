@@ -33,7 +33,7 @@ const catalogTask: BoardTask = {
     district: "Eastern",
     importEnabled: false,
     dryRun: { ok: true, mode: "local", accepted: 1, skipped: 0 },
-    payload: { organizations: [{ name: "Quarry Bay Park Playground", category_name: "Playground", area_name: "Eastern" }] },
+    payload: { organizations: [{ name: "Quarry Bay Park Playground", category_name: "Outdoor activity", area_name: "Eastern" }] },
   },
 };
 
@@ -61,7 +61,7 @@ describe("BoardTaskDrawer catalog import", () => {
         onImport={onImport}
       />,
     );
-    expect(screen.getByText("Quarry Bay Park Playground — Playground / Eastern")).toBeInTheDocument();
+    expect(screen.getByText("Quarry Bay Park Playground — Outdoor activity / Eastern")).toBeInTheDocument();
     expect(screen.getByText(/local dry-run/)).toBeInTheDocument();
     expect(screen.getByText(/import kill switch off/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Preview import" }));

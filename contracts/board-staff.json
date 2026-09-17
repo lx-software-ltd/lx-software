@@ -453,12 +453,11 @@
     "maxOrgsPerImport": 20,
     "maxAwaitingImport": 3,
     "typeToCategory": {
-      "playground": "Playground",
-      "indoor_play": "Indoor play",
+      "playground": "Outdoor activity",
+      "indoor_play": "Indoor fun",
       "class": "Class",
-      "outdoor": "Outdoor",
-      "restaurant": "Restaurant",
-      "event": "Event"
+      "outdoor": "Outdoor activity",
+      "event": "Workshop"
     },
     "districts": [
       {"id": "eastern", "name": "Eastern", "hint": "one LCSD playground or park (e.g. Quarry Bay Park area), one indoor play centre, one class provider"},
