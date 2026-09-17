@@ -251,6 +251,7 @@ export function BoardTasksSection({
           query={query}
           onQueryChange={setQuery}
           actorLabel={actorLabel}
+          nowMs={nowMs}
           retryingId={retryingId}
           cancellingId={cancellingId}
           onOpen={openTask}
@@ -297,6 +298,7 @@ export function BoardTasksSection({
                       task={task}
                       assigneeLabel={actorLabel(task.assignee)}
                       managerLabel={actorLabel(task.managerId)}
+                      nowMs={nowMs}
                       isRetrying={retryingId === task.taskId}
                       isCancelling={cancellingId === task.taskId}
                       errorMessage={
