@@ -47,6 +47,19 @@ class GeocodeTests(unittest.TestCase):
         board_geocode.set_lookup_for_tests(boom)
         self.assertIsNone(board_geocode.lookup_address("Anywhere", district="Eastern"))
 
+    def test_fail_open_on_unexpected_client_error(self) -> None:
+        board_geocode.set_lookup_for_tests(None)
+
+        def bad_urlopen(*_args, **_kwargs):
+            raise AttributeError("'NoneType' object has no attribute 'decode'")
+
+        import board_geocode as geocode_mod
+
+        original = geocode_mod.urlrequest.urlopen
+        geocode_mod.urlrequest.urlopen = bad_urlopen
+        self.addCleanup(lambda: setattr(geocode_mod.urlrequest, "urlopen", original))
+        self.assertIsNone(board_geocode.lookup_address("Anywhere", district="Eastern"))
+
     def test_fills_org_and_caches(self) -> None:
         table = FakeTable()
         board_geocode.set_lookup_for_tests(lambda _addr: ALS_EASTERN)

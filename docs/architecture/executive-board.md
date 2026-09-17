@@ -374,8 +374,10 @@ The micro-batch duty pauses after
 `maxLowCompletenessDistricts` (3) imported districts sit below 50%
 completeness (cached health only; a missing score is not “low”) so
 `catalog-enrich` can refill hours, price and address. Enrich dry-runs
-that would update existing organisations stay `validated`. A thin catalog
-sheet is returned before the manager LLM call.
+that would update existing organisations stay `validated`. Accept of a
+catalog sheet skips the unverified-evidence hold so enrich briefs that
+mention Fill/send still reach dry-run. A thin catalog sheet is returned
+before the manager LLM call. ALS lookup failures of any kind fail open.
 Import authenticates as a
 dedicated Cognito **importer** user in the siutindei pool
 (`AdminInitiateAuth` / `ADMIN_USER_PASSWORD_AUTH`, secret

@@ -2586,6 +2586,8 @@ def _should_hold_unverified_accept(table: Any, task: dict[str, Any]) -> bool:
         return False
     if _is_review_headline_duty(task):
         return False
+    if str((task.get("eventRef") or {}).get("kind") or "") in BOARD_CATALOG_EVENT_KINDS:
+        return False
     if "salvaged" not in flags and _task_attempted_required_tools(table, task):
         return False
     if str(task.get("origin") or "") in _EVIDENCE_REQUIRED_ORIGINS:

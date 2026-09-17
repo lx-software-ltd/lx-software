@@ -255,8 +255,12 @@ _DAY_ALTS: tuple[tuple[str, int], ...] = (
     ("週五", 5),
     ("週六", 6),
 )
-_DAY_ALT = "|".join(re.escape(tok) for tok, _ in sorted(_DAY_ALTS, key=lambda kv: -len(kv[0])))
-_DAY_TOKEN_RE = re.compile(rf"(?<![a-zA-Z])(?:{_DAY_ALT})(?![a-zA-Z])", re.I)
+_DAY_EN = [(tok, idx) for tok, idx in _DAY_ALTS if all(ord(ch) < 128 for ch in tok)]
+_DAY_ZH = [(tok, idx) for tok, idx in _DAY_ALTS if any(ord(ch) >= 128 for ch in tok)]
+_DAY_ALT_EN = "|".join(re.escape(tok) for tok, _ in sorted(_DAY_EN, key=lambda kv: -len(kv[0])))
+_DAY_ALT_ZH = "|".join(re.escape(tok) for tok, _ in sorted(_DAY_ZH, key=lambda kv: -len(kv[0])))
+_DAY_ALT = rf"(?:(?:{_DAY_ALT_EN})s?|{_DAY_ALT_ZH})"
+_DAY_TOKEN_RE = re.compile(rf"(?<![a-zA-Z]){_DAY_ALT}(?![a-zA-Z])", re.I)
 _DAY_RANGE_RE = re.compile(
     rf"(?<![a-zA-Z])(?P<a>{_DAY_ALT})\s*(?:-|–|—|to|至)\s*(?P<b>{_DAY_ALT})(?![a-zA-Z])",
     re.I,
@@ -343,7 +347,12 @@ def _clock_spans(text: str) -> list[tuple[int, int, str]]:
 
 
 def _token_day(token: str) -> int | None:
-    return _DAY_INDEX.get(str(token or "").casefold())
+    key = str(token or "").casefold()
+    if key in _DAY_INDEX:
+        return _DAY_INDEX[key]
+    if key.endswith("s") and key[:-1] in _DAY_INDEX:
+        return _DAY_INDEX[key[:-1]]
+    return None
 
 
 def _days_from_open_text(text: str) -> set[int]:

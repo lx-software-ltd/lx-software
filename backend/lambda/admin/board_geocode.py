@@ -92,9 +92,11 @@ def lookup_address(
         if budget is not None:
             budget.record_live()
         raw = _fetch_als(text) if _lookup_fn is None else _lookup_fn(text)
-    except (urlerror.URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError) as exc:
+    except Exception as exc:
         _log_event("info", tag="board_geocode_als_failed", error=str(exc)[:200])
         return None
+    if not isinstance(raw, dict):
+        raw = {}
     chosen = _pick_suggestion(raw, district)
     if table is not None:
         try:

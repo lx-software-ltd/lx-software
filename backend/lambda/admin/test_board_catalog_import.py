@@ -677,9 +677,6 @@ class ImportClientTests(BoardTestCase):
         settings = _enable_staff(self.table)
         board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
         board_store.save_staff_override(self.table, "provider-success", {"isActive": True})
-        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
-            board_catalog.create_next(self.table, settings)
-            task = board_catalog.create_enrich(self.table, settings)
         sheet = {
             "district": "Eastern",
             "organisations": [
@@ -709,12 +706,6 @@ class ImportClientTests(BoardTestCase):
                 },
             ],
         }
-        key = board_staff._deliverable_key(task["taskId"], "json")
-        board_staff._blob_put(key, json.dumps(sheet).encode())
-        task["deliverableKey"] = key
-        task["status"] = "review"
-        task["lastReview"] = {"verdict": "accept", "notes": "", "at": "2026-09-16T00:00:00Z"}
-        board_store.put_task(self.table, task)
 
         def collision_http(method, url, headers, body):
             parsed = json.loads(body) if body else None
@@ -739,8 +730,25 @@ class ImportClientTests(BoardTestCase):
             }
 
         board_catalog_import.set_http_for_tests(collision_http)
-        accepted = board_staff._accept_task(self.table, task, "2026-09-16T12:00:00Z")
-        self.assertEqual(accepted["status"], "awaiting_import")
+        import board_geocode
+
+        board_geocode.set_lookup_for_tests(lambda _addr: {})
+        self.addCleanup(lambda: board_geocode.set_lookup_for_tests(None))
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            board_catalog.create_next(self.table, settings)
+            task = board_catalog.create_enrich(self.table, settings)
+            key = board_staff._deliverable_key(task["taskId"], "json")
+            board_staff._blob_put(key, json.dumps(sheet).encode())
+            task["deliverableKey"] = key
+            task["status"] = "review"
+            task["lastReview"] = {"verdict": "accept", "notes": "", "at": "2026-09-16T00:00:00Z"}
+            board_store.put_task(self.table, task)
+            accepted = board_staff._accept_task(self.table, task, "2026-09-16T12:00:00Z")
+        self.assertEqual(
+            accepted["status"],
+            "awaiting_import",
+            msg=f"phase={accepted.get('importPhase')} flags={accepted.get('flags')} questions={accepted.get('openQuestions')} error={accepted.get('importError')}",
+        )
         self.assertEqual(accepted.get("importPhase"), "validated")
         handoffs = [
             row

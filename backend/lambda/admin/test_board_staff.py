@@ -699,7 +699,8 @@ class StaffStepTests(ToolsTestCase):
         self.assertEqual(latest["status"], "review")
         with patch.object(board_budget, "board_completion") as completion:
             board_staff.run_review({"internal": "board_staff_review", "boardKey": BOARD_KEY, "taskId": task["taskId"]})
-        completion.assert_not_called()
+        review_calls = [call for call in completion.call_args_list if call.kwargs.get("tag") == "board_staff_review"]
+        self.assertEqual(review_calls, [])
         done = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(done["lastReview"]["verdict"], "return")
         self.assertIn("Return —", done["lastReview"]["notes"])

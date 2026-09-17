@@ -582,6 +582,8 @@ pause new districts. After deploy, live districts around 28% completeness
 will pause `catalog-micro-batch` until enrich + import raise them. Enrich
 sheets that would update existing organisations stay on the import path
 (`validated` / `awaiting_import`); they are not parked as collisions.
+Accept of a catalog sheet skips the unverified-evidence hold (enrich
+briefs mention Fill/send). ALS geocode failures of any kind fail open.
 Owner **Import anyway** (`force:true`) on a
 delivered sheet re-sends organisations so failed activities can be
 created after a category-mapping fix.
