@@ -680,7 +680,12 @@ its bucket / role / KMS policies must allow the shared-set SourceArn
    (Cloudflare proxy off).
 3. SPF: `v=spf1 include:_spf.mx.cloudflare.net include:amazonses.com ~all`.
 4. `_dmarc` TXT: `v=DMARC1; p=quarantine; rua=mailto:dmarc@siutindei.com`
-   (dedicated `dmarc@` mailbox, not `hello@`).
+   (dedicated `dmarc@` mailbox, not `hello@`). Google / Yahoo aggregate
+   reports to `dmarc@` (or a `Report domain:` subject on `hello@`) are
+   archived at ingest and never count as unread. A later human reply on
+   that thread returns it to the inbox; an Auto-Submitted bounce does not
+   archive a live conversation. There is no parser; open **Mail → Archived**
+   if you need the raw report.
 5. **Settings → Tools & permissions → Recipient allow-list**
    (`@siutindei.com`, vendors, WhatsApp numbers).
 6. **Mail → Send test email**: the header shows SES `GetEmailIdentity` /

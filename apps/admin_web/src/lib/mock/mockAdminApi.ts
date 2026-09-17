@@ -349,14 +349,14 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
     let threads = boardMailThreadsFixture;
     if (archived === "1" || archived === "true") {
       threads = threads.filter((t) => t.disposition === "archived");
-    } else if (archived === "0" || archived === "false") {
+    } else {
       threads = threads.filter((t) => t.disposition !== "archived");
     }
     const mailboxes = [
       {
         address: "hello@siutindei.com",
-        threadCount: boardMailThreadsFixture.length,
-        unreadCount: boardMailThreadsFixture.filter((t) => t.unread).length,
+        threadCount: boardMailThreadsFixture.filter((t) => t.disposition !== "archived").length,
+        unreadCount: boardMailThreadsFixture.filter((t) => t.unread && t.disposition !== "archived").length,
         lastMessageAt: boardMailThreadsFixture[0]?.lastMessageAt ?? "",
       },
     ];

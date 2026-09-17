@@ -315,6 +315,28 @@ class BulkMailAndChatMaskTests(BoardTestCase):
         partner["From"] = "complaints@partner.example"
         partner["Subject"] = "A parent complaint about a listing"
         self.assertFalse(board_mail._is_bulk_mail(partner))
+        rua = EmailMessage()
+        rua["From"] = "reports@dmarc.yahoo.com"
+        rua["To"] = "dmarc@siutindei.com"
+        rua["Subject"] = "Weekly aggregate"
+        self.assertTrue(board_mail._is_bulk_mail(rua))
+        google = EmailMessage()
+        google["From"] = "noreply-dmarc-support@google.com"
+        google["To"] = "hello@siutindei.com"
+        google["Subject"] = "Report domain: siutindei.com Submitter: google.com Report-ID: 9"
+        self.assertTrue(board_mail._is_bulk_mail(google))
+        arf = EmailMessage()
+        arf["From"] = "reporter@example.net"
+        arf["To"] = "hello@siutindei.com"
+        arf["Subject"] = "feedback"
+        arf["Content-Type"] = 'multipart/report; report-type=dmarc; boundary="b"'
+        self.assertTrue(board_mail._is_bulk_mail(arf))
+        cc_school = EmailMessage()
+        cc_school["From"] = "parent@example.com"
+        cc_school["To"] = "hello@siutindei.com"
+        cc_school["Cc"] = "notifications@their-school.edu"
+        cc_school["Subject"] = "Class on Saturday"
+        self.assertFalse(board_mail._is_bulk_mail(cc_school))
 
     def test_thread_search_matches_alias_and_raw_email(self) -> None:
         board_store.put_mail_thread(
@@ -998,6 +1020,82 @@ class ApprovalAndCallIdTests(BoardTestCase):
         self.assertEqual(len(pending), 1)
         self.assertEqual(pending[0]["arguments"]["brief"], "Different wording")
         self.assertEqual(pending[0]["summary"], "Retry extract-zip with a tighter brief")
+
+    def test_github_create_issue_dedupes_pending_by_task_and_title(self) -> None:
+        settings = board_store.default_settings()
+        settings["tools"]["globalMode"] = "propose"
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="cto",
+            display_name="CTO",
+            kind="task",
+            actor="persona",
+            task_id="importer-1",
+        )
+        title = "Importer: accept Playground / Indoor play categories"
+        first = board_tools.create_approval(
+            ctx,
+            board_tools.REGISTRY["github_create_issue"],
+            {"title": title, "body": "First wording of the bug.", "reason": "first"},
+            summary="Open GitHub issue: Importer…",
+        )
+        second = board_tools.create_approval(
+            ctx,
+            board_tools.REGISTRY["github_create_issue"],
+            {
+                "title": f"  {title.upper()} ",
+                "body": "Slightly different body about the same importer bug.",
+                "reason": "again",
+            },
+            summary="Open GitHub issue: Importer (retry)",
+        )
+        self.assertEqual(first["approvalId"], second["approvalId"])
+        other_task = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="cto",
+            display_name="CTO",
+            kind="task",
+            actor="persona",
+            task_id="importer-2",
+        )
+        third = board_tools.create_approval(
+            other_task,
+            board_tools.REGISTRY["github_create_issue"],
+            {"title": title, "body": "Same title from a second task.", "reason": "other task"},
+            summary="Open GitHub issue: Importer from task 2",
+        )
+        self.assertNotEqual(first["approvalId"], third["approvalId"])
+        pending = [a for a in board_store.list_approvals(self.table) if a.get("status") == "pending"]
+        self.assertEqual(len(pending), 2)
+        retitled = board_tools.create_approval(
+            ctx,
+            board_tools.REGISTRY["github_create_issue"],
+            {"title": "Unrelated CI flake", "body": "Different issue.", "reason": "ci"},
+            summary="Open GitHub issue: Unrelated CI flake",
+        )
+        # Same task, different title: a second distinct issue stays its own Approval.
+        self.assertNotEqual(first["approvalId"], retitled["approvalId"])
+        pending = [a for a in board_store.list_approvals(self.table) if a.get("status") == "pending"]
+        self.assertEqual(len(pending), 3)
+        other_issue = board_tools.create_approval(
+            board_tools.ToolContext(
+                table=self.table,
+                settings=settings,
+                persona_id="cto",
+                display_name="CTO",
+                kind="task",
+                actor="persona",
+                task_id="ci-flake",
+            ),
+            board_tools.REGISTRY["github_create_issue"],
+            {"title": "Fix nightly flake", "body": "A different ticket.", "reason": "ci"},
+            summary="Open GitHub issue: Fix nightly flake",
+        )
+        self.assertNotEqual(first["approvalId"], other_issue["approvalId"])
+        pending = [a for a in board_store.list_approvals(self.table) if a.get("status") == "pending"]
+        self.assertEqual(len(pending), 4)
 
     def test_execute_call_returns_internal_call_id(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"

@@ -271,6 +271,31 @@ class PolicyTests(BoardTestCase):
             board_triage.archive_reason({}, {"from": {"address": "complaints@partner.example"}}),
             "no-action sender complaints",
         )
+        self.assertEqual(
+            board_triage.archive_reason(
+                {"mailbox": "dmarc@siutindei.com", "subject": "Weekly aggregate"},
+                {"from": {"address": "reports@dmarc.yahoo.com"}},
+            ),
+            "no-action mailbox dmarc",
+        )
+        self.assertEqual(
+            board_triage.archive_reason(
+                {"subject": "Hello"},
+                {"from": {"address": "parent@example.com"}, "to": ["dmarc@siutindei.com"]},
+            ),
+            "no-action mailbox dmarc",
+        )
+        self.assertEqual(
+            board_triage.archive_reason(
+                {"mailbox": "hello@siutindei.com", "subject": "Hello"},
+                {
+                    "from": {"address": "parent@example.com"},
+                    "to": ["hello@siutindei.com"],
+                    "cc": ["notifications@their-school.edu"],
+                },
+            ),
+            "",
+        )
 
     def test_mail_event_brief_names_archive_prefix(self) -> None:
         brief = board_triage.render_event_brief(

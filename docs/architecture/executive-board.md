@@ -229,8 +229,13 @@ The daily budget is re-checked before every round.
   (`maxPendingApprovals` 200, expire after 60 days). The **Approvals**
   section shows member, reason, exact arguments and an unmasked preview;
   the owner may edit arguments, approve (runs as the owner, logged) or
-  reject with a note the member sees next time. Proposals are only created
-  by the loop, never by a `POST …/approvals` route.
+  reject with a note the member sees next time. A second `github_create_issue`
+  from the same task with the same title (whitespace / case folded) refreshes
+  the pending row instead of stacking duplicates. A different title from that
+  task, or the same title from another task, is a new Approval so
+  `resume_after_approval` can unpark each waiter. `code_run_task` already
+  collapses by issue number. Proposals are only created by the loop, never by a
+  `POST …/approvals` route.
 - Every call writes a `toolcalls#` row (persona / seat, level, actor,
   arguments, result preview, duration, `taskId`), visible under **Settings
   → Tools & permissions → Show the tool call log**; transcripts record a
@@ -528,7 +533,8 @@ reset from the review page (`POST …/breakers/{name}/reset`).
 ### 9.1 Triage (`board_triage.py`, `board_policy.py`, `board_templates.py`)
 
 With both staff flags on, inbound `siutindei.com` mail (not own-domain,
-not `Auto-Submitted` / `List-Unsubscribe` / `Precedence: bulk`), Meta
+not `Auto-Submitted` / `List-Unsubscribe` / `Precedence: bulk` / DMARC
+`rua=` reports to `dmarc@` or `Report domain:` subjects), Meta
 events and newly seen store reviews create `origin: event` tasks for
 `support` (parents), `provider-success` (providers / prospects) or
 `community-manager` (comments, reviews). One open task per thread; a new
@@ -538,7 +544,13 @@ domain lookup, then one `desk` JSON call cached 7 days; model failure
 escalates. Escalations create the task as `needs_owner` and send the
 `ack_escalation` template. Finance and phishing mail route to `accountant`
 / `security-analyst`. Mail that needs no reply is archived with
-`ARCHIVED — no action:`.
+`ARCHIVED — no action:` and does not increment unread (the inbox and the
+overview badge hide archived threads; open **Archived** to see them). A later
+human reply on that thread clears `disposition` and returns it to the inbox
+even when the subject still says `Report domain:`; an Auto-Submitted bounce
+on a live conversation does not archive the thread. Recipient local-parts
+(`dmarc@`, `postmaster@`) are only treated as bulk when they are on an
+own-domain mailbox.
 
 Reply policy is enforced as an `act_guard` on the reply ops: quiet hours
 (→ hold to 08:00), per-thread and per-channel daily caps, forbidden
