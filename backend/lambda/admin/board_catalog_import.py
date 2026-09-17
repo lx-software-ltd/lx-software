@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -21,15 +22,21 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 from admin_runtime import _get_secretsmanager_client
 from contract_constants import (
     BOARD_CATALOG_AUTO_IMPORT_DEFAULT,
+    BOARD_CATALOG_EVENT_KINDS,
     BOARD_CATALOG_IMPORT_ENABLED_DEFAULT,
     BOARD_CATALOG_MAX_AWAITING_IMPORT,
     BOARD_CATALOG_MAX_ORGS_PER_IMPORT,
+    BOARD_CATALOG_QUALITY_MIN_FACTS,
     BOARD_CATALOG_TYPE_TO_CATEGORY,
 )
 from http_common import _log_event
 from openrouter_client import read_secret_raw
 
 CATALOG_EVENT_KIND = "catalog-micro-batch"
+CATALOG_ENRICH_KIND = "catalog-enrich"
+CATALOG_SHEET_KINDS = frozenset(BOARD_CATALOG_EVENT_KINDS) or frozenset(
+    {CATALOG_EVENT_KIND, CATALOG_ENRICH_KIND}
+)
 
 # Sheet field → importer field. Only copied when listed in verified_fields.
 _SHEET_TO_IMPORTER = {
@@ -194,6 +201,251 @@ def _as_number(value: Any) -> float | None:
         return None
 
 
+_FREE_RE = re.compile(r"^(free|免費|免费)$", re.I)
+_PRICE_RE = re.compile(
+    r"(?:(?P<cur>hk\$|hkd)|(?P<dol>\$))\s*(?P<amt>\d{1,5}(?:\.\d{1,2})?)",
+    re.I,
+)
+_PRICE_PREFERRED = ("per class", "per session", "per lesson", "每堂", "每節", "每节")
+_PRICE_TRIAL = ("trial", "體驗", "体验", "first class", "試堂", "试堂")
+_TIME_RE = re.compile(
+    r"(?:(?P<pre>上午|下午|早上|晚上)\s*)?"
+    r"(?P<h>\d{1,2})"
+    r"(?:[:.：](?P<m>\d{2}))?"
+    r"\s*"
+    r"(?P<post>a\.?m\.?|p\.?m\.?|時|点|點)?",
+    re.I,
+)
+_RANGE_SEP = re.compile(r"\s*(?:-|–|—|to|至)\s*", re.I)
+_DAILY_HOURS_RE = re.compile(
+    r"(daily|everyday|every\s+day|mon(?:day)?\s*(?:-|–|—|to)\s*sun(?:day)?|每日|每天)",
+    re.I,
+)
+_CLOSED_RE = re.compile(r"(?:closed(?:\s+on)?|休息)\s*:?\s*(?P<body>[^.;|]*)", re.I)
+_DAY_ALTS: tuple[tuple[str, int], ...] = (
+    ("sunday", 0),
+    ("monday", 1),
+    ("tuesday", 2),
+    ("wednesday", 3),
+    ("thursday", 4),
+    ("friday", 5),
+    ("saturday", 6),
+    ("tues", 2),
+    ("thurs", 4),
+    ("thur", 4),
+    ("sun", 0),
+    ("mon", 1),
+    ("tue", 2),
+    ("wed", 3),
+    ("thu", 4),
+    ("fri", 5),
+    ("sat", 6),
+    ("星期日", 0),
+    ("星期一", 1),
+    ("星期二", 2),
+    ("星期三", 3),
+    ("星期四", 4),
+    ("星期五", 5),
+    ("星期六", 6),
+    ("週日", 0),
+    ("週一", 1),
+    ("週二", 2),
+    ("週三", 3),
+    ("週四", 4),
+    ("週五", 5),
+    ("週六", 6),
+)
+_DAY_EN = [(tok, idx) for tok, idx in _DAY_ALTS if all(ord(ch) < 128 for ch in tok)]
+_DAY_ZH = [(tok, idx) for tok, idx in _DAY_ALTS if any(ord(ch) >= 128 for ch in tok)]
+_DAY_ALT_EN = "|".join(re.escape(tok) for tok, _ in sorted(_DAY_EN, key=lambda kv: -len(kv[0])))
+_DAY_ALT_ZH = "|".join(re.escape(tok) for tok, _ in sorted(_DAY_ZH, key=lambda kv: -len(kv[0])))
+_DAY_ALT = rf"(?:(?:{_DAY_ALT_EN})s?|{_DAY_ALT_ZH})"
+_DAY_TOKEN_RE = re.compile(rf"(?<![a-zA-Z]){_DAY_ALT}(?![a-zA-Z])", re.I)
+_DAY_RANGE_RE = re.compile(
+    rf"(?<![a-zA-Z])(?P<a>{_DAY_ALT})\s*(?:-|–|—|to|至)\s*(?P<b>{_DAY_ALT})(?![a-zA-Z])",
+    re.I,
+)
+_DAY_INDEX = {tok.casefold(): idx for tok, idx in _DAY_ALTS}
+
+
+def parse_pricing(free_or_paid: Any, price_note: Any) -> dict[str, Any] | None:
+    """Turn verified free/paid + price_note into a siutindei pricing row (no location yet)."""
+    status = str(free_or_paid or "").strip()
+    note = str(price_note or "").strip()
+    if status and _FREE_RE.match(status):
+        return {"pricing_type": "free"}
+    if note and _FREE_RE.match(note):
+        return {"pricing_type": "free"}
+    matches = list(_PRICE_RE.finditer(note))
+    if not matches:
+        return None
+
+    def _score(match: re.Match[str]) -> float:
+        window = note[max(0, match.start() - 28) : min(len(note), match.end() + 28)].casefold()
+        score = 0.0
+        if match.group("cur"):
+            score += 3
+        if any(token in window for token in _PRICE_PREFERRED):
+            score += 5
+        if any(token in window for token in _PRICE_TRIAL):
+            score -= 4
+        try:
+            score += float(match.group("amt")) / 1_000_000
+        except (TypeError, ValueError):
+            pass
+        return score
+
+    best = max(matches, key=_score)
+    try:
+        amount = float(best.group("amt"))
+    except (TypeError, ValueError):
+        return None
+    if amount < 0:
+        return None
+    return {"pricing_type": "per_class", "amount": amount, "currency": "HKD"}
+
+
+def _hour_to_hhmm(hour: str, minute: str | None, meridiem: str | None) -> str | None:
+    try:
+        hours = int(hour)
+        mins = int(minute or 0)
+    except (TypeError, ValueError):
+        return None
+    stamp = (meridiem or "").lower().replace(".", "")
+    if stamp == "pm" and hours < 12:
+        hours += 12
+    if stamp == "am" and hours == 12:
+        hours = 0
+    if hours > 23 or mins > 59:
+        return None
+    return f"{hours:02d}:{mins:02d}"
+
+
+def _meridiem_from_time(match: re.Match[str]) -> str | None:
+    pre = str(match.group("pre") or "").strip()
+    post = str(match.group("post") or "").strip().lower().replace(".", "")
+    if pre in ("下午", "晚上") or post == "pm":
+        return "pm"
+    if pre in ("上午", "早上") or post == "am":
+        return "am"
+    return None
+
+
+def _is_clock_match(match: re.Match[str]) -> bool:
+    return bool(match.group("m") or match.group("pre") or match.group("post"))
+
+
+def _clock_spans(text: str) -> list[tuple[int, int, str]]:
+    spans: list[tuple[int, int, str]] = []
+    for match in _TIME_RE.finditer(text):
+        if not _is_clock_match(match):
+            continue
+        hhmm = _hour_to_hhmm(match.group("h"), match.group("m"), _meridiem_from_time(match))
+        if hhmm:
+            spans.append((match.start(), match.end(), hhmm))
+    return spans
+
+
+def _token_day(token: str) -> int | None:
+    key = str(token or "").casefold()
+    if key in _DAY_INDEX:
+        return _DAY_INDEX[key]
+    if key.endswith("s") and key[:-1] in _DAY_INDEX:
+        return _DAY_INDEX[key[:-1]]
+    return None
+
+
+def _days_from_open_text(text: str) -> set[int]:
+    days: set[int] = set()
+    used: list[tuple[int, int]] = []
+    for match in _DAY_RANGE_RE.finditer(text):
+        start = _token_day(match.group("a"))
+        end = _token_day(match.group("b"))
+        if start is None or end is None:
+            continue
+        if start <= end:
+            days.update(range(start, end + 1))
+        else:
+            days.update(range(start, 7))
+            days.update(range(0, end + 1))
+        used.append((match.start(), match.end()))
+    for match in _DAY_TOKEN_RE.finditer(text):
+        if any(lo <= match.start() < hi for lo, hi in used):
+            continue
+        index = _token_day(match.group(0))
+        if index is not None:
+            days.add(index)
+    return days
+
+
+def _parse_hours_days(text: str) -> set[int] | None:
+    closed: set[int] = set()
+    stripped = text
+    for match in _CLOSED_RE.finditer(text):
+        closed |= _days_from_open_text(match.group(0))
+        stripped = stripped[: match.start()] + " " * (match.end() - match.start()) + stripped[match.end() :]
+    if _DAILY_HOURS_RE.search(stripped):
+        opened = set(range(7))
+    else:
+        opened = _days_from_open_text(stripped)
+    if not opened and closed:
+        opened = set(range(7))
+    if not opened:
+        return None
+    remaining = opened - closed
+    return remaining or None
+
+
+def parse_opening_hours(raw: Any) -> list[dict[str, str]] | None:
+    """Parse a verified hours string into Sunday-first weekly_entries, or None."""
+    text = str(raw or "").strip()
+    if not text or text.lower() == "unverified":
+        return None
+    clocks = _clock_spans(text)
+    start = end = None
+    for index in range(len(clocks) - 1):
+        _a_start, a_end, start_hh = clocks[index]
+        b_start, _b_end, end_hh = clocks[index + 1]
+        sep = text[a_end:b_start]
+        if _RANGE_SEP.fullmatch(sep):
+            start, end = start_hh, end_hh
+            break
+    if not start or not end:
+        return None
+    days = _parse_hours_days(text)
+    if days is None:
+        return None
+    return [{"day_of_week": day, "start_time": start, "end_time": end} for day in sorted(days)]
+
+
+def sheet_quality_issues(sheet: dict[str, Any], *, min_facts: int | None = None) -> list[str]:
+    """Return reviewer notes when an org is missing first-class verified facts."""
+    needed = BOARD_CATALOG_QUALITY_MIN_FACTS if min_facts is None else int(min_facts)
+    orgs = sheet.get("organisations")
+    if orgs is None:
+        orgs = sheet.get("organizations")
+    if not isinstance(orgs, list) or not orgs:
+        return ["sheet has no organisations"]
+    issues: list[str] = []
+    groups = (
+        ("address_en", "address"),
+        ("opening_hours",),
+        ("free_or_paid", "price_note"),
+    )
+    for org in orgs:
+        if not isinstance(org, dict):
+            continue
+        verified = _verified_set(org)
+        name = str(org.get("name_en") or org.get("name") or "organisation")[:80]
+        hits = sum(1 for aliases in groups if _field_verified(verified, *aliases))
+        if hits < needed:
+            issues.append(
+                f"{name}: only {hits} of address / opening_hours / free_or_paid (or price_note) "
+                f"are in verified_fields (need {needed})"
+            )
+    return issues
+
+
 def transform_org(
     org: dict[str, Any],
     *,
@@ -285,8 +537,33 @@ def transform_org(
             if org.get(alias) not in (None, "", "unverified"):
                 skipped_fields.append(alias)
 
+    pricing = None
+    if _field_verified(verified, "free_or_paid", "price_note"):
+        pricing = parse_pricing(org.get("free_or_paid"), org.get("price_note"))
+        if pricing is None and org.get("price_note") not in (None, "", "unverified"):
+            skipped_fields.append("price_note")
+    elif org.get("free_or_paid") not in (None, "", "unverified") or org.get("price_note") not in (
+        None,
+        "",
+        "unverified",
+    ):
+        skipped_fields.append("price_note" if org.get("price_note") not in (None, "", "unverified") else "free_or_paid")
+
+    weekly = None
+    if _field_verified(verified, "opening_hours"):
+        weekly = parse_opening_hours(org.get("opening_hours"))
+        if weekly is None and org.get("opening_hours") not in (None, "", "unverified"):
+            skipped_fields.append("opening_hours")
+    elif org.get("opening_hours") not in (None, "", "unverified"):
+        skipped_fields.append("opening_hours")
+
+    structured_notes = {"opening_hours", "price_note", "free_or_paid"}
     note_bits: list[str] = []
     for field in _NOTE_FIELDS:
+        if field in structured_notes and (
+            (field == "opening_hours" and weekly) or (field in ("price_note", "free_or_paid") and pricing)
+        ):
+            continue
         if _field_verified(verified, field):
             raw = org.get(field)
             if raw not in (None, "", "unverified"):
@@ -303,6 +580,33 @@ def transform_org(
     if not out.get("source_url") and out.get("website"):
         out["source_url"] = out["website"]
 
+    location_name = str(out.get("address") or out.get("name") or "").strip()
+    activity: dict[str, Any] | None = None
+    if pricing or weekly:
+        activity = {
+            "name": out["name"],
+            "category_name": out.get("category_name"),
+            "vetting_note": out.get("vetting_note"),
+        }
+        if out.get("description"):
+            activity["description"] = out["description"]
+        if out.get("source_url"):
+            activity["source_url"] = out["source_url"]
+        if pricing and location_name:
+            row = {"location_name": location_name[:200], **pricing}
+            activity["pricing"] = [row]
+            copied.append("pricing")
+        if weekly and location_name:
+            activity["schedules"] = [
+                {
+                    "location_name": location_name[:200],
+                    "timezone": "Asia/Hong_Kong",
+                    "weekly_entries": weekly,
+                }
+            ]
+            copied.append("schedules")
+        out["activities"] = [activity]
+
     return out, {
         "index": index,
         "skipped": False,
@@ -312,7 +616,12 @@ def transform_org(
     }
 
 
-def transform_sheet(sheet: dict[str, Any], *, manager_id: str | None = None) -> dict[str, Any]:
+def transform_sheet(
+    sheet: dict[str, Any],
+    *,
+    manager_id: str | None = None,
+    table: Any = None,
+) -> dict[str, Any]:
     district = str(sheet.get("district") or "").strip()
     orgs = sheet.get("organisations")
     if orgs is None:
@@ -322,10 +631,24 @@ def transform_sheet(sheet: dict[str, Any], *, manager_id: str | None = None) -> 
     mid = (manager_id if manager_id is not None else catalog_manager_id()).strip()
     payload_orgs: list[dict[str, Any]] = []
     reports: list[dict[str, Any]] = []
+    als_budget = None
+    if table is not None:
+        import board_geocode
+
+        als_budget = board_geocode.AlsBudget()
     for i, org in enumerate(orgs):
         row, report = transform_org(org if isinstance(org, dict) else {}, district=district, manager_id=mid, index=i)
         reports.append(report)
         if row:
+            if table is not None:
+                import board_geocode
+
+                board_geocode.fill_org_coords(
+                    row,
+                    district=district or str(row.get("area_name") or ""),
+                    table=table,
+                    budget=als_budget,
+                )
             payload_orgs.append(row)
     if len(payload_orgs) > BOARD_CATALOG_MAX_ORGS_PER_IMPORT:
         raise CatalogImportError(
@@ -364,12 +687,17 @@ def local_dry_run(transformed: dict[str, Any]) -> dict[str, Any]:
 
 def is_catalog_sheet(task: dict[str, Any]) -> bool:
     ref = task.get("eventRef") or {}
-    return str(ref.get("kind") or "") == CATALOG_EVENT_KIND
+    return str(ref.get("kind") or "") in CATALOG_SHEET_KINDS
+
+
+def allows_existing_org_updates(task: dict[str, Any]) -> bool:
+    """Enrich sheets re-list imported orgs; updates are the point, not a collision."""
+    return str((task.get("eventRef") or {}).get("kind") or "") == CATALOG_ENRICH_KIND
 
 
 def require_catalog_sheet(task: dict[str, Any]) -> None:
     if not is_catalog_sheet(task):
-        raise CatalogImportError("task is not a catalog micro-batch sheet")
+        raise CatalogImportError("task is not a catalog sheet")
 
 
 def require_importable_task(task: dict[str, Any], *, force: bool = False) -> None:
@@ -380,11 +708,11 @@ def require_importable_task(task: dict[str, Any], *, force: bool = False) -> Non
     if imported_at and not force:
         raise CatalogImportError(f"already imported at {imported_at}")
     if status == "awaiting_import":
-        if phase == "collision" and not force:
+        if phase == "collision" and not force and not allows_existing_org_updates(task):
             raise CatalogImportError("import would update existing organisations; pass force to proceed")
         return
     if status == "needs_owner" and phase in ("collision", "rejected", "partial", "failed", "invalid"):
-        if phase == "collision" and not force:
+        if phase == "collision" and not force and not allows_existing_org_updates(task):
             raise CatalogImportError("import would update existing organisations; pass force to proceed")
         return
     if status == "delivered" and force:
@@ -668,9 +996,9 @@ def _run_remote_import(payload: dict[str, Any], token: str) -> dict[str, Any]:
     }
 
 
-def preview_from_text(text: str, *, remote: bool = False) -> dict[str, Any]:
+def preview_from_text(text: str, *, remote: bool = False, table: Any = None) -> dict[str, Any]:
     sheet = parse_sheet(text)
-    transformed = transform_sheet(sheet)
+    transformed = transform_sheet(sheet, table=table)
     local = local_dry_run(transformed)
     out: dict[str, Any] = {
         "ok": local["ok"],
@@ -702,7 +1030,7 @@ def _task_text(table: Any, task: dict[str, Any], explicit: str | None) -> str:
 def preview_task(table: Any, task: dict[str, Any], *, sheet_text: str | None = None, remote: bool = False) -> dict[str, Any]:
     require_catalog_sheet(task)
     text = _task_text(table, task, sheet_text)
-    preview = preview_from_text(text, remote=remote)
+    preview = preview_from_text(text, remote=remote, table=table)
     preview["taskId"] = task.get("taskId")
     ref = task.get("eventRef") or {}
     if not preview.get("district") and ref.get("district"):
@@ -846,7 +1174,8 @@ def _apply_preview_outcome(
         )
     if dry.get("mode") == "remote":
         would_update = _preview_would_update(dry)
-        if would_update or (dry.get("summary") or {}).get("updated"):
+        updating = bool(would_update or (dry.get("summary") or {}).get("updated"))
+        if updating and not allows_existing_org_updates(task):
             names = ", ".join(would_update) or "existing organisation"
             return _park_needs_owner(
                 table,
@@ -986,7 +1315,9 @@ def run_import(table: Any, task: dict[str, Any], *, force: bool = False, live_af
     if not force:
         stored = task.get("importPreview") if isinstance(task.get("importPreview"), dict) else {}
         stored_dry = _preview_dry(stored)
-        if _preview_would_update(stored_dry) or (stored_dry.get("summary") or {}).get("updated"):
+        if (
+            _preview_would_update(stored_dry) or (stored_dry.get("summary") or {}).get("updated")
+        ) and not allows_existing_org_updates(task):
             _apply_preview_outcome(table, task, stored, now, promote=True)
             return {"ok": False, "collision": True, "taskId": task_id, "preview": stored, "task": task}
         if not _fresh_remote_preview(task, now):
@@ -1238,13 +1569,54 @@ def catalog_headline(table: Any) -> dict[str, Any]:
     pending = [t for t in awaiting if str(t.get("importPhase") or "") != "validated"]
     collisions = [t for t in parked if str(t.get("importPhase") or "") == "collision"]
     rejected = [t for t in parked if str(t.get("importPhase") or "") in ("rejected", "partial", "invalid", "failed")]
+    coverage = catalog_coverage(table)
     return {
         "ready": len(awaiting),
         "validated": len(validated),
         "pending": len(pending),
         "collisions": len(collisions),
         "rejected": len(rejected),
+        "importedDistricts": coverage.get("importedDistricts") or 0,
+        "completeDistricts": coverage.get("completeDistricts") or 0,
+        "nextDistrict": coverage.get("nextDistrict") or "",
+        "failedActivityRows": coverage.get("failedActivityRows") or 0,
         "sheets": [_task_row(t) for t in awaiting[:20]],
+    }
+
+
+def catalog_coverage(table: Any) -> dict[str, Any]:
+    """Owner-facing district coverage for the daily review Catalog line."""
+    import board_catalog
+    from contract_constants import BOARD_CATALOG_DISTRICTS
+
+    imported = board_catalog.claimed_district_ids(table)
+    scores = board_catalog.district_completeness(table)
+    complete = 0
+    for row in BOARD_CATALOG_DISTRICTS:
+        if not isinstance(row, dict):
+            continue
+        did = str(row.get("id") or "").strip().lower()
+        name = str(row.get("name") or "")
+        if did not in imported:
+            continue
+        score = scores.get(name)
+        if score is not None and score >= 0.5:
+            complete += 1
+    nxt = board_catalog.next_district(table, enforce_completeness_gate=False)
+    failed = 0
+    for status in ("delivered", "awaiting_import", "needs_owner"):
+        for task in _catalog_tasks(table, status):
+            result = task.get("importResult") if isinstance(task.get("importResult"), dict) else {}
+            for row in result.get("results") or []:
+                if not isinstance(row, dict):
+                    continue
+                if str(row.get("type") or "").lower() == "activities" and str(row.get("status") or "").lower() == "failed":
+                    failed += 1
+    return {
+        "importedDistricts": len(imported),
+        "completeDistricts": complete,
+        "nextDistrict": str((nxt or {}).get("name") or ""),
+        "failedActivityRows": failed,
     }
 
 

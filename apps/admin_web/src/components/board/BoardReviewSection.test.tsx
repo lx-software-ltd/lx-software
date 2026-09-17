@@ -11,6 +11,7 @@ const reviewState = vi.hoisted(() => ({
       messagesByChannel: {},
       holds: { executed: 0, vetoed: 0 },
       spend: { boardUsd: 0, staffUsd: 0, budgetUsd: 20 },
+      catalog: { importedDistricts: 6, completeDistricts: 2, nextDistrict: "Islands" },
     },
     holdsDue: [],
     escalations: [],
@@ -95,6 +96,8 @@ describe("BoardReviewSection staging sync", () => {
     expect(sync).toBeEnabled();
     expect(promote).toBeDisabled();
     expect(screen.getByText(/3 commit\(s\) behind main/)).toBeInTheDocument();
+    expect(screen.getByText(/Catalog:/)).toBeInTheDocument();
+    expect(screen.getByText(/next Islands/)).toBeInTheDocument();
     sync.click();
     expect(reviewState.syncMutate).toHaveBeenCalledTimes(1);
   });

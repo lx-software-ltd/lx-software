@@ -573,7 +573,20 @@ the kill switch, schedules an internal `catalog_import` hold (default
 immediately. **Import now** / **Skip** / **Queue again** drop the
 scheduled hold so it cannot fail later as "already imported". The
 catalog duty pauses when `catalog.maxAwaitingImport` (3) sheets are
-waiting (`awaiting_import` plus parked import `needs_owner` rows).
+waiting (`awaiting_import` plus parked import `needs_owner` rows), and
+when more than `maxLowCompletenessDistricts` (3) imported districts sit
+below 50% completeness (then `catalog-enrich` refills hours, price and
+address on existing orgs). The gate uses the cached `v_catalog_health`
+rows only and ignores districts with no score, so a cold cache does not
+pause new districts. After deploy, live districts around 28% completeness
+will pause `catalog-micro-batch` until enrich + import raise them. Enrich
+sheets that would update existing organisations stay on the import path
+(`validated` / `awaiting_import`); they are not parked as collisions.
+Accept of a catalog sheet skips the unverified-evidence hold (enrich
+briefs mention Fill/send). ALS geocode failures of any kind fail open.
+Owner **Import anyway** (`force:true`) on a
+delivered sheet re-sends organisations so failed activities can be
+created after a category-mapping fix.
 **Skip import** marks the sheet delivered without sending organisations
 so the district stays claimed. A partial live import returns 200
 `{ok:false,partial:true}` and retries send only the failed

@@ -700,7 +700,7 @@ export const boardReviewFixture: BoardReviewSnapshot = {
   compiledAt: isoDaysAgo(0),
   narrative: "Three parent threads closed. One Facebook post is waiting out its hold. Spend is inside the staff cap.",
   digestHtml:
-    "<h1>Siu Tin Dei daily review</h1><h2>Headline numbers</h2><ul><li>Three parent threads closed. One Facebook post is waiting out its hold. Spend is inside the staff cap.</li><li>Delivered 1 · running 1 · blocked 1.</li></ul><h2>On hold, executing soon</h2><ul><li>Propose Page post · publish:facebook</li></ul><h2>Escalations</h2><ul><li>Reconcile last week's unmatched payments. (accountant)</li></ul>",
+    "<h1>Siu Tin Dei daily review</h1><h2>Headline numbers</h2><ul><li>Three parent threads closed. One Facebook post is waiting out its hold. Spend is inside the staff cap.</li><li>Delivered 1 · running 1 · blocked 1.</li><li>Catalog: 6 districts imported, 2 ≥ 50%, next Islands.</li></ul><h2>On hold, executing soon</h2><ul><li>Propose Page post · publish:facebook</li></ul><h2>Escalations</h2><ul><li>Reconcile last week's unmatched payments. (accountant)</li></ul>",
   headline: {
     tasks: { delivered: 1, running: 1, blocked: 1 },
     messagesByChannel: { mail: 2, meta: 1 },
@@ -711,6 +711,7 @@ export const boardReviewFixture: BoardReviewSnapshot = {
     listings: { activities: 12, providers: 6, lowCompleteness: 1, error: "" },
     signings: { count: 2, stalled: 1, error: "" },
     mail: { replied: 2, archived: 1, open: 1 },
+    catalog: { ready: 1, importedDistricts: 6, completeDistricts: 2, nextDistrict: "Islands", failedActivityRows: 0 },
   },
   holdsDue: [...boardHoldsFixture],
   escalations: [
@@ -778,9 +779,13 @@ export const boardProgressFixture: BoardProgressSnapshot = {
     providers: 6,
     stores: 4,
     completenessAvg: 0.45,
+    hasPhotoAvg: 0.2,
+    hasPriceAvg: 0.4,
+    hasScheduleAvg: 0.3,
+    hasGeoAvg: 0.9,
     byDistrict: [
-      { label: "Sha Tin", activities: 12, providers: 4, stores: 4, completenessAvg: 0.8 },
-      { label: "Tai Po", activities: 0, providers: 2, stores: 0, completenessAvg: 0.1 },
+      { label: "Sha Tin", activities: 12, providers: 4, stores: 4, completenessAvg: 0.8, hasPhotoAvg: 0.5, hasPriceAvg: 0.8, hasScheduleAvg: 0.8, hasGeoAvg: 1 },
+      { label: "Tai Po", activities: 0, providers: 2, stores: 0, completenessAvg: 0.1, hasPhotoAvg: 0, hasPriceAvg: 0, hasScheduleAvg: 0, hasGeoAvg: 0.4 },
     ],
     funnel7d: { listingViews: 20, leads: 3, bookings: 1 },
     gaps: [{ kind: "district", label: "Tai Po", detail: "0 listings · completeness 10%" }],

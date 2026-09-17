@@ -1355,7 +1355,8 @@ def build_registry() -> dict[str, ToolOp]:
             kind="read",
             description=(
                 "Fetch a public http(s) page as text. Refuses private/link-local hosts. "
-                "At most 6 fetches per task. Prefer official venue or government pages."
+                "At most 6 fetches per task (9 on catalog-micro-batch / catalog-enrich). "
+                "Prefer official LCSD or provider pages."
             ),
             parameters=_obj({"url": _str_param("https URL to fetch.", max_len=500)}, ["url"]),
             run=board_research.op_fetch_page,

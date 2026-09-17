@@ -91,7 +91,14 @@
         {
           "id": "catalog-micro-batch",
           "cron": "0 8,12,16 * * *",
-          "brief": "Create one catalog micro-batch for the next remaining Hong Kong district. The runtime fills the district name, hint and OUTPUT CONTRACT. Use research_search, then research_fetch_page on the official page. Return a fenced JSON curation sheet. No Meta, no mobile, no publishing.",
+          "brief": "Create one catalog micro-batch for the next remaining Hong Kong district. The runtime fills the district name, hint and OUTPUT CONTRACT. Use research_search, then research_fetch_page on the official LCSD or provider page (one page often has address, hours, phone and free entry). Return a fenced JSON curation sheet. No Meta, no mobile, no publishing.",
+          "deliverableType": "json",
+          "tier": "desk"
+        },
+        {
+          "id": "catalog-enrich",
+          "cron": "30 8,12,16 * * *",
+          "brief": "Enrich one already-imported Hong Kong district whose live completeness is under 50%. The runtime fills the district, existing organisation names, hint and OUTPUT CONTRACT. Re-fetch official pages for missing opening_hours, free_or_paid or price_note, and address_en. Return a fenced JSON curation sheet for those organisations only. For commercial providers (not LCSD/gov), request help from provider-success so they send the onboarding link. No Meta, no mobile, no publishing.",
           "deliverableType": "json",
           "tier": "desk"
         }
@@ -447,11 +454,15 @@
   "catalog": {
     "assignee": "content-marketer",
     "budgetUsd": 3,
-    "outputContract": "OUTPUT CONTRACT (curation sheet, NOT the importer JSON — the board copies verified_fields only; type is your classification and is always mapped): one fenced JSON block {\"district\": \"<name>\", \"organisations\": [ {\"name_en\", \"name_zh\", \"type\": \"playground|indoor_play|class|outdoor|sports|event\" (seat classification — omit type from verified_fields; do not use restaurant), \"free_or_paid\", \"age_range\", \"address_en\", \"lat\", \"lng\", \"official_url\", \"phone\", \"opening_hours\", \"price_note\", \"description_en\" (max 40 words), \"description_zh\" (max 40 words), \"source_url\", \"verified_fields\": [...], \"unverified_fields\": [...]} ] }. Exactly 3 organisations. Only facts you read on the official page (LCSD / gov / the provider's own site) go into verified_fields; everything else is the string \"unverified\" and listed in unverified_fields. Do not list type in verified_fields. No invented phone numbers, hours or prices. Keep the whole deliverable under 2500 words: research one organisation, task_note a 6-line summary, next organisation; after the third, call task_finish immediately with the JSON. No Meta, no mobile, no publishing.",
+    "outputContract": "OUTPUT CONTRACT (curation sheet, NOT the importer JSON — the board copies verified_fields only; type is your classification and is always mapped): one fenced JSON block {\"district\": \"<name>\", \"organisations\": [ {\"name_en\", \"name_zh\", \"type\": \"playground|indoor_play|class|outdoor|sports|event\" (seat classification — omit type from verified_fields; do not use restaurant), \"free_or_paid\", \"age_range\", \"address_en\", \"lat\", \"lng\", \"official_url\", \"phone\", \"opening_hours\", \"price_note\", \"description_en\" (max 40 words), \"description_zh\" (max 40 words), \"source_url\", \"verified_fields\": [...], \"unverified_fields\": [...]} ] }. Exactly 3 organisations on a new-district sheet; an enrich sheet may list only the organisations named in the brief. address_en, opening_hours and free_or_paid (or a parseable HKD price_note) are first-class: put each in verified_fields when you read it on the official page. Copy lat/lng from the official page map link when present. Only facts you read on the official page (LCSD / gov / the provider's own site) go into verified_fields; everything else is the string \"unverified\" and listed in unverified_fields. Do not list type in verified_fields. No invented phone numbers, hours or prices. Prefer the LCSD facility page for public playgrounds. Keep the whole deliverable under 2500 words: research one organisation, task_note a 6-line summary, next organisation; after the last, call task_finish immediately with the JSON. No Meta, no mobile, no publishing.",
     "importEnabledDefault": false,
     "autoImportDefault": false,
     "maxOrgsPerImport": 20,
     "maxAwaitingImport": 3,
+    "catalogFetchCap": 9,
+    "maxLowCompletenessDistricts": 3,
+    "qualityMinVerifiedFacts": 2,
+    "eventKinds": ["catalog-micro-batch", "catalog-enrich"],
     "typeToCategory": {
       "playground": "Outdoor activity",
       "indoor_play": "Indoor fun",
@@ -462,24 +473,24 @@
       "event": "Workshop"
     },
     "districts": [
-      {"id": "eastern", "name": "Eastern", "hint": "one LCSD playground or park (e.g. Quarry Bay Park area), one indoor play centre, one class provider"},
-      {"id": "wan-chai", "name": "Wan Chai", "hint": "one public playground or park, one indoor family venue, one class provider — all inside Wan Chai"},
-      {"id": "islands", "name": "Islands", "hint": "one LCSD playground or park (Tung Chung, Mui Wo or Discovery Bay), one indoor or family venue, one class or sports provider"},
-      {"id": "southern", "name": "Southern", "hint": "one beach or park playground (Repulse Bay, Stanley or Aberdeen Promenade), one indoor family venue, one class or sports provider"},
-      {"id": "sham-shui-po", "name": "Sham Shui Po", "hint": "one public playground or park (Nam Cheong Park or Lai Chi Kok Park), one indoor family venue, one class provider"},
-      {"id": "central-and-western", "name": "Central and Western", "hint": "one public playground or park (Hong Kong Park or Sun Yat Sen Memorial Park), one indoor family venue, one class provider"},
-      {"id": "kwun-tong", "name": "Kwun Tong", "hint": "one public playground or park, one indoor family venue, one class provider"},
-      {"id": "wong-tai-sin", "name": "Wong Tai Sin", "hint": "one public playground or park, one indoor family venue, one class provider"},
-      {"id": "kowloon-city", "name": "Kowloon City", "hint": "one public playground or park, one indoor family venue, one class provider"},
-      {"id": "yau-tsim-mong", "name": "Yau Tsim Mong", "hint": "one public playground or park, one indoor family venue, one class provider"},
-      {"id": "tsuen-wan", "name": "Tsuen Wan", "hint": "one public playground or park, one indoor family venue, one class provider"},
-      {"id": "kwai-tsing", "name": "Kwai Tsing", "hint": "one public playground or park, one indoor family venue, one class provider"},
-      {"id": "north", "name": "North", "hint": "one public playground or park, one indoor family venue, one class provider"},
-      {"id": "tai-po", "name": "Tai Po", "hint": "one public playground or park, one indoor family venue, one class provider"},
-      {"id": "sha-tin", "name": "Sha Tin", "hint": "one public playground or park, one indoor family venue, one class provider"},
-      {"id": "yuen-long", "name": "Yuen Long", "hint": "one public playground or park, one indoor family venue, one class provider"},
-      {"id": "tuen-mun", "name": "Tuen Mun", "hint": "one public playground or park, one indoor family venue, one class provider"},
-      {"id": "sai-kung", "name": "Sai Kung", "hint": "one public playground or park, one indoor family venue, one class provider"}
+      {"id": "eastern", "name": "Eastern", "hint": "LCSD Quarry Bay Park playground page first, then one indoor play centre, one class provider"},
+      {"id": "wan-chai", "name": "Wan Chai", "hint": "LCSD Wan Chai Park playground page first, then one indoor family venue, one class provider — all inside Wan Chai"},
+      {"id": "islands", "name": "Islands", "hint": "LCSD Tung Chung North Park or Mui Wo Municipal Services Building playground page first, then one indoor or family venue, one class or sports provider"},
+      {"id": "southern", "name": "Southern", "hint": "LCSD Repulse Bay Beach or Aberdeen Promenade playground page first, then one indoor family venue, one class or sports provider"},
+      {"id": "sham-shui-po", "name": "Sham Shui Po", "hint": "LCSD Sham Shui Po Park or Nam Cheong Park playground page first, then one indoor family venue, one class provider"},
+      {"id": "central-and-western", "name": "Central and Western", "hint": "LCSD Hong Kong Park or Sun Yat Sen Memorial Park playground page first, then one indoor family venue, one class provider"},
+      {"id": "kwun-tong", "name": "Kwun Tong", "hint": "LCSD Jordan Valley Playground or Laguna Park page first, then one indoor family venue, one class provider"},
+      {"id": "wong-tai-sin", "name": "Wong Tai Sin", "hint": "LCSD Morse Park or Wong Tai Sin Square Playground page first, then one indoor family venue, one class provider"},
+      {"id": "kowloon-city", "name": "Kowloon City", "hint": "LCSD Kowloon Walled City Park or Ho Man Tin Park page first, then one indoor family venue, one class provider"},
+      {"id": "yau-tsim-mong", "name": "Yau Tsim Mong", "hint": "LCSD Kowloon Park or King George V Memorial Park page first, then one indoor family venue, one class provider"},
+      {"id": "tsuen-wan", "name": "Tsuen Wan", "hint": "LCSD Tsuen Wan Park or Jockey Club Tak Wah Park page first, then one indoor family venue, one class provider"},
+      {"id": "kwai-tsing", "name": "Kwai Tsing", "hint": "LCSD Tsing Yi Park or Central Kwai Chung Park page first, then one indoor family venue, one class provider"},
+      {"id": "north", "name": "North", "hint": "LCSD North District Park or Fanling Recreation Ground page first, then one indoor family venue, one class provider"},
+      {"id": "tai-po", "name": "Tai Po", "hint": "LCSD Tai Po Waterfront Park or Yuen Shin Park page first, then one indoor family venue, one class provider"},
+      {"id": "sha-tin", "name": "Sha Tin", "hint": "LCSD Sha Tin Park or Ma On Shan Park page first, then one indoor family venue, one class provider"},
+      {"id": "yuen-long", "name": "Yuen Long", "hint": "LCSD Yuen Long Park or Tin Shui Wai Park page first, then one indoor family venue, one class provider"},
+      {"id": "tuen-mun", "name": "Tuen Mun", "hint": "LCSD Tuen Mun Park or Butterfly Beach Park page first, then one indoor family venue, one class provider"},
+      {"id": "sai-kung", "name": "Sai Kung", "hint": "LCSD Sai Kung Waterfront Park or Po Tsui Park page first, then one indoor family venue, one class provider"}
     ]
   }
 }

@@ -573,8 +573,20 @@ class TestSqlFileAndSmokeCli(unittest.TestCase):
         self.assertIn("WITH activity_completeness AS", text)
         self.assertIn("FILTER (WHERE p.venue_rank = 1)", text)
         self.assertNotRegex(text, r"AVG\(\s*\(CASE WHEN COALESCE\(cardinality")
-        # Live-schema column names.
-        for needle in ("a.org_id", "l.lat IS NOT NULL AND l.lng IS NOT NULL", "ga.name", "cardinality(o.media_urls)", "l.area_id"):
+        # Live-schema column names and the four completeness parts.
+        for needle in (
+            "a.org_id",
+            "l.lat IS NOT NULL AND l.lng IS NOT NULL",
+            "ga.name",
+            "cardinality(o.media_urls)",
+            "l.area_id",
+            "AS has_photo",
+            "AS has_price",
+            "AS has_schedule",
+            "AS has_geo",
+            "FROM activity_pricing",
+            "FROM activity_schedule",
+        ):
             self.assertIn(needle, text)
 
     def test_smoke_cli_dry_run_prints_typed_statements_without_aws(self) -> None:

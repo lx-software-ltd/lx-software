@@ -427,14 +427,30 @@ def _headline_lines(review: dict[str, Any]) -> list[str]:
         f"Staff spend {spend.get('staffUsd') or 0} / {spend.get('budgetUsd') or 0} USD.",
     ]
     catalog = headline.get("catalog") or {}
-    if catalog.get("ready") or catalog.get("collisions") or catalog.get("rejected"):
-        bits = [f"{catalog.get('validated') or 0} validated by siutindei"]
-        if catalog.get("pending"):
-            bits.append(f"{catalog.get('pending')} waiting on a dry-run")
-        waiting = int(catalog.get("collisions") or 0) + int(catalog.get("rejected") or 0)
-        if waiting:
-            bits.append(f"{waiting} waiting on you")
-        lines.append("Catalog sheets: " + ", ".join(bits) + ".")
+    if (
+        catalog.get("ready")
+        or catalog.get("collisions")
+        or catalog.get("rejected")
+        or catalog.get("importedDistricts")
+        or catalog.get("failedActivityRows")
+        or catalog.get("nextDistrict")
+    ):
+        bits = [
+            f"{catalog.get('importedDistricts') or 0} districts imported",
+            f"{catalog.get('completeDistricts') or 0} ≥ 50%",
+        ]
+        if catalog.get("nextDistrict"):
+            bits.append(f"next {catalog.get('nextDistrict')}")
+        if catalog.get("failedActivityRows"):
+            bits.append(f"{catalog.get('failedActivityRows')} failed activity rows")
+        if catalog.get("ready") or catalog.get("collisions") or catalog.get("rejected"):
+            bits.append(f"{catalog.get('validated') or 0} validated by siutindei")
+            if catalog.get("pending"):
+                bits.append(f"{catalog.get('pending')} waiting on a dry-run")
+            waiting = int(catalog.get("collisions") or 0) + int(catalog.get("rejected") or 0)
+            if waiting:
+                bits.append(f"{waiting} waiting on you")
+        lines.append("Catalog: " + ", ".join(bits) + ".")
     pipeline = headline.get("pipeline") or {}
     if pipeline.get("weeklyTarget"):
         lines.append(
