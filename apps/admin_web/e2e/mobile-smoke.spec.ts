@@ -110,6 +110,11 @@ test.describe("admin viewport smoke", () => {
     }
     await expect(page.getByRole("heading", { name: "Progress" })).toBeVisible();
     await expect(page.getByText("Live listings")).toBeVisible();
+    await expect(page.getByText("12 / 1000")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Bulk catalog sources" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Scan sources now" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Preview" }).first()).toBeVisible();
+    await page.getByRole("button", { name: "Preview" }).first().click();
     await expect(page.getByRole("cell", { name: "Sha Tin Playhouse" })).toBeVisible();
     await expect(page.getByText(/Listing gap in Tai Po/i)).toBeVisible();
     if (testInfo.project.name === "phone") {
@@ -176,5 +181,8 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByLabel("Concurrent tasks")).toBeVisible();
     await expect(page.getByLabel("Concurrent tasks")).toHaveValue("6");
     await expect(page.getByLabel("Staff daily budget in USD")).toBeVisible();
+    await expect(
+      page.getByLabel("Run 3-per-district catalog micro-batch (pause while bulk import fills the catalog)"),
+    ).toBeVisible();
   });
 });
