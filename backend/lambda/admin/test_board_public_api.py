@@ -112,6 +112,39 @@ class PathClassTests(unittest.TestCase):
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
+                    "POST", "/public/siu-tin-dei/board/catalog/reimport", write_ctx, full
+                ),
+                "owner_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
+                    "POST", "/public/siu-tin-dei/board/catalog/bulk/lcsd/preview", write_ctx, full
+                ),
+                "owner_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
+                    "POST", "/public/siu-tin-dei/board/catalog/bulk/lcsd/import", write_ctx, full
+                ),
+                "owner_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
+                    "POST",
+                    "/public/siu-tin-dei/board/catalog/candidates/c1/approve",
+                    write_ctx,
+                    full,
+                ),
+                "owner_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
+                    "POST", "/public/siu-tin-dei/board/catalog/discovery/run", write_ctx, full
+                ),
+                "owner_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
                     "POST",
                     "/public/siu-tin-dei/board/ramp/mail_reply/promote",
                     write_ctx,

@@ -27,6 +27,8 @@ Key layout (``pk`` / ``sk``):
 - ``BOARD#<b>#mail#msgids`` / ``MSGID#<digest>`` — RFC Message-ID → thread (TTL)
 - ``BOARD#<b>#mail#pii`` / ``STATE``             — contact pseudonym map
 - ``BOARD#<b>#cache`` / ``ITEM#<key>``          — cached research / AWS / security reads (TTL)
+- ``BOARD#<b>#candidate#<id>`` / ``META``       — catalog discovery candidate
+  (``gsi1pk=BOARD#<b>#candidates#<status>``)
 - ``BOARD#<b>#meta#threads`` / ``THREAD#<id>``  — WhatsApp / Page / IG thread summaries (TTL)
 - ``BOARD#<b>#meta#thread#<id>`` / ``MSG#<ts>#<id>`` — inbound Meta messages (masked, TTL)
 """
@@ -368,7 +370,12 @@ def default_review_config() -> dict[str, Any]:
 
 
 def default_catalog_config() -> dict[str, Any]:
-    return {"autoImport": bool(BOARD_CATALOG_AUTO_IMPORT_DEFAULT)}
+    from contract_constants import BOARD_CATALOG_MICRO_BATCH_ENABLED_DEFAULT
+
+    return {
+        "autoImport": bool(BOARD_CATALOG_AUTO_IMPORT_DEFAULT),
+        "microBatchEnabled": bool(BOARD_CATALOG_MICRO_BATCH_ENABLED_DEFAULT),
+    }
 
 
 def normalize_catalog_config(raw: Any) -> dict[str, Any]:
@@ -377,6 +384,8 @@ def normalize_catalog_config(raw: Any) -> dict[str, Any]:
         return out
     if "autoImport" in raw:
         out["autoImport"] = bool(raw.get("autoImport"))
+    if "microBatchEnabled" in raw:
+        out["microBatchEnabled"] = bool(raw.get("microBatchEnabled"))
     return out
 
 
@@ -2384,3 +2393,81 @@ def release_outreach_sent(table: Any, date_iso: str) -> None:
         UpdateExpression="ADD sent :neg",
         ExpressionAttributeValues={":neg": -1},
     )
+
+
+def candidate_key(candidate_id: str) -> dict[str, str]:
+    return {"pk": board_pk(f"candidate#{candidate_id}"), "sk": "META"}
+
+
+def put_candidate(table: Any, doc: dict[str, Any]) -> None:
+    from contract_constants import BOARD_CATALOG_CANDIDATE_STATUSES
+
+    status = str(doc.get("status") or "new")
+    if status not in BOARD_CATALOG_CANDIDATE_STATUSES:
+        status = "new"
+        doc = {**doc, "status": status}
+    sort = str(doc.get("updatedAt") or doc.get("createdAt") or now_iso())
+    table.put_item(
+        Item={
+            **candidate_key(str(doc["candidateId"])),
+            "gsi1pk": board_pk(f"candidates#{status}"),
+            "gsi1sk": f"{sort}#{doc.get('candidateId') or ''}",
+            **_to_ddb_nested(doc),
+        }
+    )
+
+
+def get_candidate(table: Any, candidate_id: str) -> dict[str, Any] | None:
+    res = table.get_item(Key=candidate_key(candidate_id))
+    item = res.get("Item") if isinstance(res, dict) else None
+    if not item:
+        return None
+    doc = _from_ddb_nested(_strip_keys(item))
+    return doc if isinstance(doc, dict) else None
+
+
+def list_candidates(
+    table: Any,
+    status: str | None = None,
+    *,
+    limit: int = 200,
+    per_status_limit: int | None = None,
+) -> list[dict[str, Any]]:
+    from contract_constants import BOARD_CATALOG_CANDIDATE_STATUSES
+
+    statuses = [status] if status else list(BOARD_CATALOG_CANDIDATE_STATUSES)
+    fetch_cap = per_status_limit if per_status_limit is not None else limit
+    items: list[dict[str, Any]] = []
+    for st in statuses:
+        rows = _query_all(
+            table,
+            IndexName="gsi1",
+            KeyConditionExpression="gsi1pk = :pk",
+            ExpressionAttributeValues={":pk": board_pk(f"candidates#{st}")},
+            ScanIndexForward=False,
+            Limit=fetch_cap,
+        )
+        items.extend(_strip_keys(i) for i in rows)
+    if per_status_limit is not None:
+        return items
+    return items[:limit]
+
+
+def put_candidate_dedupe(table: Any, dedupe_key: str, candidate_id: str) -> None:
+    _put_state(table, f"candidatededupe#{dedupe_key}", {"candidateId": candidate_id})
+
+
+def get_candidate_by_dedupe(table: Any, dedupe_key: str) -> str | None:
+    stored = _get_state(table, f"candidatededupe#{dedupe_key}")
+    if not stored:
+        return None
+    cid = stored.get("candidateId")
+    return str(cid) if cid else None
+
+
+def put_listing_mirror(table: Any, listing_key: str, doc: dict[str, Any]) -> None:
+    _put_state(table, f"cataloglisting#{listing_key}", doc)
+
+
+def get_listing_mirror(table: Any, listing_key: str) -> dict[str, Any] | None:
+    return _get_state(table, f"cataloglisting#{listing_key}")

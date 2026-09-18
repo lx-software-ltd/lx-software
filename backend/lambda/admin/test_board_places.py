@@ -59,7 +59,7 @@ class PlacesTests(BoardTestCase):
         board_store.put_cache(
             self.table,
             board_places._month_key(),
-            {"usd": 20.0, "searches": 500, "details": 0},
+            {"usd": float(board_places.monthly_cap_usd(self.settings)), "searches": 500, "details": 0},
             ttl_seconds=86400,
         )
         with self.assertRaises(board_places.PlacesError) as ctx:
@@ -69,6 +69,48 @@ class PlacesTests(BoardTestCase):
     def test_field_mask_constant(self) -> None:
         self.assertIn("websiteUri", board_places.FIELD_MASK)
         self.assertTrue(board_places.SEARCH_FIELD_MASK.startswith("places."))
+
+    def test_failed_search_does_not_charge(self) -> None:
+        with patch.object(board_places, "_http", side_effect=board_places.PlacesError("Places HTTP 500: boom")):
+            with self.assertRaises(board_places.PlacesError):
+                board_places.text_search(self.table, "kids play sha tin", settings=self.settings)
+        self.assertIsNone(board_store.get_cache(self.table, board_places._month_key()))
+
+    def test_discover_uses_location_bias_circle(self) -> None:
+        payload = {
+            "places": [
+                {
+                    "id": "ChIJdisc",
+                    "displayName": {"text": "Eastern Park"},
+                    "formattedAddress": "Eastern, Hong Kong",
+                    "types": ["park"],
+                }
+            ]
+        }
+        with patch.object(board_places, "_http", return_value=payload) as http:
+            found = board_places.discover(self.table, "Eastern", settings=self.settings, limit=5)
+        self.assertEqual(found[0]["placeId"], "ChIJdisc")
+        body = json.loads(http.call_args.kwargs["body"].decode("utf-8"))
+        self.assertIn("locationBias", body)
+        self.assertIn("circle", body["locationBias"])
+
+    def test_discover_caches_multipage(self) -> None:
+        payload = {
+            "places": [
+                {
+                    "id": "ChIJpage",
+                    "displayName": {"text": "Eastern Park"},
+                    "formattedAddress": "Eastern, Hong Kong",
+                    "types": ["park"],
+                }
+            ]
+        }
+        with patch.object(board_places, "_http", return_value=payload) as http:
+            first = board_places.discover(self.table, "Eastern", settings=self.settings, pages=2, limit=5)
+            second = board_places.discover(self.table, "Eastern", settings=self.settings, pages=2, limit=5)
+        self.assertEqual(first[0]["placeId"], "ChIJpage")
+        self.assertEqual(second[0]["placeId"], "ChIJpage")
+        self.assertEqual(http.call_count, len(board_places.DISCOVERY_QUERIES))
 
 
 class PlacesRouteHiddenWhenStaffOff(BoardTestCase):

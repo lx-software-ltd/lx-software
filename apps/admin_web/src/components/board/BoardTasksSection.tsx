@@ -116,6 +116,7 @@ export function BoardTasksSection({
       tasks.catalogImport.reset();
       tasks.catalogSkip.reset();
       tasks.catalogRequeue.reset();
+      tasks.catalogReimport.reset();
     }
     setPickedId(taskId);
     onFocusConsumed?.();
@@ -125,15 +126,17 @@ export function BoardTasksSection({
     tasks.catalogImport.reset();
     tasks.catalogSkip.reset();
     tasks.catalogRequeue.reset();
+    tasks.catalogReimport.reset();
     setPickedId(null);
     onFocusConsumed?.();
   };
-  const resetCatalogSiblings = (keep: "preview" | "import" | "skip" | "requeue") => {
+  const resetCatalogSiblings = (keep: "preview" | "import" | "skip" | "requeue" | "reimport") => {
     for (const key of catalogSiblingMutationKeys(keep)) {
       if (key === "preview") tasks.catalogPreview.reset();
       if (key === "import") tasks.catalogImport.reset();
       if (key === "skip") tasks.catalogSkip.reset();
       if (key === "requeue") tasks.catalogRequeue.reset();
+      if (key === "reimport") tasks.catalogReimport.reset();
     }
   };
   const assignees = useMemo(() => {
@@ -373,7 +376,8 @@ export function BoardTasksSection({
             tasks.catalogPreview.isPending ||
             tasks.catalogImport.isPending ||
             tasks.catalogSkip.isPending ||
-            tasks.catalogRequeue.isPending
+            tasks.catalogRequeue.isPending ||
+            tasks.catalogReimport.isPending
           }
           errorMessage={
             errorText(detail.error) ??
@@ -388,7 +392,7 @@ export function BoardTasksSection({
           )}
           importMessage={catalogDrawerMessageForTask(
             selectedId,
-            [tasks.catalogImport, tasks.catalogPreview, tasks.catalogSkip, tasks.catalogRequeue],
+            [tasks.catalogImport, tasks.catalogPreview, tasks.catalogSkip, tasks.catalogRequeue, tasks.catalogReimport],
             errorText,
           )}
           isPreviewing={tasks.catalogPreview.isPending}
@@ -409,6 +413,9 @@ export function BoardTasksSection({
           onSkipImport={(id) => tasks.catalogSkip.mutate(id, { onSuccess: () => resetCatalogSiblings("skip") })}
           onRequeueImport={(id) =>
             tasks.catalogRequeue.mutate(id, { onSuccess: () => resetCatalogSiblings("requeue") })
+          }
+          onReimport={(id) =>
+            tasks.catalogReimport.mutate(id, { onSuccess: () => resetCatalogSiblings("reimport") })
           }
         />
       ) : null}

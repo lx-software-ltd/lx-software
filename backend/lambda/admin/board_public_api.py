@@ -149,9 +149,15 @@ def write_blocked(method: str, path: str) -> bool:
         ["catalog", "import"],
         ["catalog", "skip"],
         ["catalog", "requeue"],
+        ["catalog", "reimport"],
+        ["catalog", "discovery", "run"],
         ["mail", "selftest"],
         ["staff", "tick"],
     ):
+        return True
+    if method == "POST" and head == "catalog" and len(rest) == 4 and rest[1] == "bulk" and tail in ("preview", "import"):
+        return True
+    if method == "POST" and head == "catalog" and len(rest) == 4 and rest[1] == "candidates" and tail in ("approve", "reject"):
         return True
     if method == "POST" and head == "approvals" and len(rest) == 3 and tail in ("approve", "reject"):
         return True

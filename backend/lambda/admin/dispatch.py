@@ -406,6 +406,16 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if isinstance(event, dict) and event.get("internal") == "board_intel_weekly":
         return board_intel_mod.handle_weekly(event)
 
+    if isinstance(event, dict) and event.get("internal") == "board_catalog_discovery":
+        import board_catalog_discovery as board_catalog_discovery_mod
+
+        return board_catalog_discovery_mod.handle_tick(event)
+
+    if isinstance(event, dict) and event.get("internal") == "board_catalog_bulk":
+        import board_catalog_bulk as board_catalog_bulk_mod
+
+        return board_catalog_bulk_mod.handle_job(event)
+
     if isinstance(event, dict) and event.get("internal") == "board_targets":
         import board_targets as board_targets_mod
 

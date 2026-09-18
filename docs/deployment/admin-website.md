@@ -557,9 +557,19 @@ API as a dedicated Cognito **importer** user. This stack never writes
 Aurora and no LLM runs in that path. `catalog_import` is always an
 Approval (`always_propose`, class `catalog_import`); owner
 `POST /siu-tin-dei/board/catalog/preview`, `POST …/catalog/import`,
-`POST …/catalog/skip` and `POST …/catalog/requeue` are JWT-only
-(`owner_only` on the public API). A second import of the same task
-returns 409 unless the body has `{"force": true}`.
+`POST …/catalog/skip`, `POST …/catalog/requeue` and
+`POST …/catalog/reimport` are JWT-only
+(`owner_only` on the public API). Bulk sources live on **Progress**
+(`GET …/catalog/sources`, `POST …/catalog/bulk/{source}/preview|import`
+and `POST …/catalog/discovery/run` return `200 {queued}` and run in the
+background like **Run staff tick now**; Progress shows the job phase and
+disables Preview/Import for that source while it is `queued` or
+`running`. A failed job writes `phase: error` instead of staying
+`running`. Candidate approve/reject stay
+synchronous). A second
+import of the same task returns 409 unless the body has `{"force": true}`.
+`settings.catalog.microBatchEnabled` (default on) pauses the 3-per-district
+duty while bulk import fills toward 1000 live listings.
 
 Accepted catalog sheets leave **Review** as `awaiting_import` (SPA
 **In progress**, **To import** tag) after a siutindei dry-run. Name collisions
@@ -584,9 +594,10 @@ sheets that would update existing organisations stay on the import path
 (`validated` / `awaiting_import`); they are not parked as collisions.
 Accept of a catalog sheet skips the unverified-evidence hold (enrich
 briefs mention Fill/send). ALS geocode failures of any kind fail open.
-Owner **Import anyway** (`force:true`) on a
-delivered sheet re-sends organisations so failed activities can be
-created after a category-mapping fix.
+Owner **Re-import failed rows** (`POST …/catalog/reimport`) force-sends
+an already-imported or partial sheet so omitted or failed activity rows
+can create after the transform always emits an activity. Owner **Import
+anyway** (`force:true`) on a delivered sheet is the same live path.
 **Skip import** marks the sheet delivered without sending organisations
 so the district stays claimed. A partial live import returns 200
 `{ok:false,partial:true}` and retries send only the failed

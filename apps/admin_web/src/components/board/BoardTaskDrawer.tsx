@@ -7,6 +7,7 @@ import { DateTimeDisplay } from "../ui";
 import {
   canForceCatalogImport,
   canImportCatalogTask,
+  canReimportCatalogTask,
   canRequeueCatalogImport,
   canRetryBoardTask,
   canSkipCatalogTask,
@@ -35,6 +36,7 @@ export type BoardTaskDrawerProps = {
   readonly onImport?: (taskId: string, opts?: { force?: boolean }) => void;
   readonly onSkipImport?: (taskId: string) => void;
   readonly onRequeueImport?: (taskId: string) => void;
+  readonly onReimport?: (taskId: string) => void;
   readonly importPreview?: BoardCatalogImportPreview | null;
   readonly importMessage?: string | null;
   readonly isPreviewing?: boolean;
@@ -72,6 +74,7 @@ export function BoardTaskDrawer({
   onImport,
   onSkipImport,
   onRequeueImport,
+  onReimport,
   importPreview,
   importMessage,
   isPreviewing = false,
@@ -192,6 +195,16 @@ export function BoardTaskDrawer({
                 onClick={() => onRequeueImport(task.taskId)}
               >
                 Queue again
+              </button>
+            ) : null}
+            {isCatalogSheetTask(task) && onReimport && canReimportCatalogTask(task) ? (
+              <button
+                type="button"
+                className="btn btn-outline-warning btn-sm"
+                disabled={isMutating}
+                onClick={() => onReimport(task.taskId)}
+              >
+                Re-import failed rows
               </button>
             ) : null}
             {canRetryBoardTask(task.status) && onRetry ? (

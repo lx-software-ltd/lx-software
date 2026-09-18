@@ -251,6 +251,23 @@ export function BoardSettingsCard({
               Auto-import validated catalog sheets (24 h hold)
             </label>
           </div>
+          <div className="form-check form-switch">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="board-catalog-micro-batch"
+              checked={draft.catalog?.microBatchEnabled !== false}
+              onChange={(ev) =>
+                setDraft((d) => ({
+                  ...d,
+                  catalog: catalogDraft(d, { microBatchEnabled: ev.target.checked }),
+                }))
+              }
+            />
+            <label className="form-check-label" htmlFor="board-catalog-micro-batch">
+              Run 3-per-district catalog micro-batch (pause while bulk import fills the catalog)
+            </label>
+          </div>
           <div className="row g-2 mt-2">
             <div className="col-6">
               <label className="form-label small" htmlFor="board-staff-max-running">

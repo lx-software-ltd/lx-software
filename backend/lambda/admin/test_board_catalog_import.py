@@ -287,7 +287,8 @@ class TransformTests(unittest.TestCase):
             ],
         }
         org = board_catalog_import.transform_sheet(sheet)["organizations"][0]
-        self.assertNotIn("activities", org)
+        self.assertIn("activities", org)
+        self.assertNotIn("schedules", org["activities"][0])
         self.assertIn("opening_hours=open most days", org["vetting_note"])
 
     def test_sheet_quality_requires_two_first_class_facts(self) -> None:
@@ -981,6 +982,52 @@ class ImportClientTests(BoardTestCase):
         self.assertEqual(saved.get("status"), "needs_owner")
         self.assertEqual(saved.get("importPhase"), "partial")
         self.assertIn("unknown category_name", str(saved.get("importError") or "") + str(saved.get("openQuestions") or ""))
+        self.assertTrue(board_catalog_import.can_reimport(saved))
+
+    def test_owner_reimport_force_sends_imported_sheet(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="delivered")
+        task["importedAt"] = "2026-09-16T12:00:00Z"
+        task["importPhase"] = "imported"
+        task["importResult"] = {"failedActivities": 1, "results": [{"type": "activities", "status": "failed"}]}
+        board_store.put_task(self.table, task)
+        self.assertTrue(board_catalog_import.can_reimport(task))
+
+        def http(method, url, headers, body):
+            if url.endswith("/admin/imports/presign"):
+                return {"upload_url": "https://s3.example.test/put", "object_key": "imports/board.json"}
+            if url.startswith("https://s3.example.test/put"):
+                return {"status": 200}
+            return {
+                "status": 200,
+                "summary": {"organizations": {"created": 0, "updated": 1, "failed": 0, "skipped": 0}},
+                "results": [{"type": "organizations", "key": "Quarry Bay Park Playground", "status": "updated"}],
+            }
+
+        board_catalog_import.set_http_for_tests(http)
+        out = board_catalog_import.owner_reimport(self.table, {"taskId": task["taskId"]})
+        self.assertTrue(out["ok"])
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertTrue(saved.get("reimportedAt"))
+
+    def test_reimport_transport_failure_keeps_imported_phase(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="delivered")
+        task["importedAt"] = "2026-09-16T12:00:00Z"
+        task["importPhase"] = "imported"
+        task["importResult"] = {"failedActivities": 1}
+        board_store.put_task(self.table, task)
+        with patch.object(
+            board_catalog_import,
+            "_run_remote_import",
+            side_effect=board_catalog_import.CatalogImportError("siutindei import request failed"),
+        ):
+            with self.assertRaises(board_catalog_import.CatalogImportError):
+                board_catalog_import.reimport_failed_rows(self.table, task)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("importPhase"), "imported")
+        self.assertEqual(saved.get("importedAt"), "2026-09-16T12:00:00Z")
+        self.assertIn("failed", saved.get("importError") or "")
 
     def test_partial_import_returns_ok_false(self) -> None:
         settings = _enable_staff(self.table)

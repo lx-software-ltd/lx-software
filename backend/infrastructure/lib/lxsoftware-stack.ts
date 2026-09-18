@@ -1291,6 +1291,18 @@ export class LxsoftwareStack extends cdk.Stack {
       0
     );
     siutindeiBoardSchedule(
+      "SiutindeiBoardCatalogDiscoverySchedule",
+      "lxsoftware-admin-siutindei-board-catalog-discovery",
+      "Daily 03:30 HKT catalog discovery: Places sweep, weekly open-data refresh, Places-field expiry.",
+      scheduler.ScheduleExpression.cron({
+        minute: "30",
+        hour: "3",
+        timeZone: cdk.TimeZone.ASIA_HONG_KONG,
+      }),
+      { internal: "board_catalog_discovery" },
+      0
+    );
+    siutindeiBoardSchedule(
       "SiutindeiBoardIntelWeeklySchedule",
       "lxsoftware-admin-siutindei-board-intel-weekly",
       "Monday 04:00 HKT watchlist discovery and weekly market brief.",
@@ -2726,6 +2738,38 @@ export class LxsoftwareStack extends cdk.Stack {
       },
       {
         path: "/siu-tin-dei/board/catalog/requeue",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/catalog/reimport",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/catalog/sources",
+        methods: [apigwv2.HttpMethod.GET],
+      },
+      {
+        path: "/siu-tin-dei/board/catalog/bulk/{source}/preview",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/catalog/bulk/{source}/import",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/catalog/candidates",
+        methods: [apigwv2.HttpMethod.GET],
+      },
+      {
+        path: "/siu-tin-dei/board/catalog/candidates/{candidateId}/approve",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/catalog/candidates/{candidateId}/reject",
+        methods: [apigwv2.HttpMethod.POST],
+      },
+      {
+        path: "/siu-tin-dei/board/catalog/discovery/run",
         methods: [apigwv2.HttpMethod.POST],
       },
     ];

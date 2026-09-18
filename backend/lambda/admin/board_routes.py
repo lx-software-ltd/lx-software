@@ -1287,6 +1287,82 @@ def _catalog_route(event: dict[str, Any], method: str, rest: list[str], user_sub
             return _json_response(409, {"message": str(exc)})
         _audit(user_sub, "BOARD_CATALOG_REQUEUE", str(out.get("taskId") or out.get("task", {}).get("taskId") or ""), event)
         return _json_response(200, out)
+    if len(rest) == 2 and rest[1] == "reimport" and method == "POST":
+        try:
+            out = board_catalog_import.owner_reimport(table, _parse_json_body(event))
+        except board_catalog_import.CatalogImportError as exc:
+            return _json_response(409, {"message": str(exc)})
+        _audit(user_sub, "BOARD_CATALOG_REIMPORT", str(out.get("taskId") or ""), event)
+        return _json_response(200, out)
+    if len(rest) == 2 and rest[1] == "sources" and method == "GET":
+        import board_catalog_bulk
+
+        return _json_response(200, board_catalog_bulk.sources_status(table))
+    if len(rest) == 4 and rest[1] == "bulk" and rest[3] == "preview" and method == "POST":
+        import board_catalog_bulk
+
+        body = _parse_json_body(event)
+        try:
+            out = board_catalog_bulk.queue_action(
+                table,
+                "preview",
+                rest[2],
+                remote=body.get("remote") is not False,
+                limit=body.get("limit"),
+                requested_by=user_sub or "owner",
+            )
+        except (board_catalog_bulk.BulkImportError, board_catalog_import.CatalogImportError) as exc:
+            return _json_response(400, {"message": str(exc)})
+        _audit(user_sub, "BOARD_CATALOG_BULK_PREVIEW", rest[2], event)
+        return _json_response(200, out)
+    if len(rest) == 4 and rest[1] == "bulk" and rest[3] == "import" and method == "POST":
+        import board_catalog_bulk
+
+        body = _parse_json_body(event)
+        try:
+            out = board_catalog_bulk.queue_action(
+                table,
+                "import",
+                rest[2],
+                limit=body.get("limit"),
+                requested_by=user_sub or "owner",
+            )
+        except (board_catalog_bulk.BulkImportError, board_catalog_import.CatalogImportError) as exc:
+            return _json_response(409, {"message": str(exc)})
+        _audit(user_sub, "BOARD_CATALOG_BULK_IMPORT", rest[2], event)
+        return _json_response(200, out)
+    if len(rest) == 2 and rest[1] == "candidates" and method == "GET":
+        qs = parse_qs(event.get("rawQueryString") or "")
+        status = (qs.get("status") or [""])[0] or None
+        return _json_response(200, {"candidates": board_store.list_candidates(table, status, limit=200)})
+    if len(rest) == 4 and rest[1] == "candidates" and rest[3] in ("approve", "reject") and method == "POST":
+        import board_catalog_candidates
+
+        try:
+            status = "approved" if rest[3] == "approve" else "rejected"
+            out = board_catalog_candidates.set_status(table, rest[2], status)
+        except KeyError:
+            return _json_response(404, {"message": "Candidate not found"})
+        except ValueError as exc:
+            return _json_response(400, {"message": str(exc)})
+        _audit(user_sub, "BOARD_CATALOG_CANDIDATE", rest[2], event)
+        return _json_response(200, {"candidate": out})
+    if len(rest) == 3 and rest[1] == "discovery" and rest[2] == "run" and method == "POST":
+        import board_async
+
+        settings = board_store.load_settings(table)
+        if not board_staff.enabled(settings):
+            return _json_response(409, {"message": "Staff is disabled; catalog discovery is off"})
+        payload = {
+            "internal": "board_catalog_discovery",
+            "boardKey": board_store.BOARD_KEY,
+            "requestedBy": user_sub or "owner",
+        }
+        invoked = board_async.try_invoke_event(payload)
+        if not invoked:
+            _log_event("warning", tag="board_catalog_discovery_enqueue_deferred", reason="invoke_timeout_or_unavailable")
+        _audit(user_sub, "BOARD_CATALOG_DISCOVERY", "run", event)
+        return _json_response(200, {"ok": True, "queued": True, "invoked": invoked})
     return _json_response(404, {"message": "Not found"})
 
 

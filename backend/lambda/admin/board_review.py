@@ -443,6 +443,8 @@ def _headline_lines(review: dict[str, Any]) -> list[str]:
             bits.append(f"next {catalog.get('nextDistrict')}")
         if catalog.get("failedActivityRows"):
             bits.append(f"{catalog.get('failedActivityRows')} failed activity rows")
+        if catalog.get("launchTarget"):
+            bits.append(f"launch gate {catalog.get('launchTarget')}")
         if catalog.get("ready") or catalog.get("collisions") or catalog.get("rejected"):
             bits.append(f"{catalog.get('validated') or 0} validated by siutindei")
             if catalog.get("pending"):

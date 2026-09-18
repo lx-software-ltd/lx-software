@@ -45,6 +45,15 @@ class CatalogDutyTests(BoardTestCase):
         self.assertIn("research_fetch_page", brief)
         self.assertTrue(BOARD_CATALOG_OUTPUT_CONTRACT[:40] in brief)
 
+    def test_create_next_paused_when_micro_batch_off(self) -> None:
+        settings = _enable(self.table)
+        settings["catalog"] = board_store.normalize_catalog_config({"microBatchEnabled": False})
+        settings = board_store.save_settings(self.table, settings)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with self.assertRaises(board_staff.StaffError) as ctx:
+            board_catalog.create_next(self.table, settings)
+        self.assertIn("micro-batch paused", str(ctx.exception))
+
     def test_create_next_skips_claimed_districts(self) -> None:
         settings = _enable(self.table)
         board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
@@ -101,7 +110,7 @@ class CatalogDutyTests(BoardTestCase):
         self.assertEqual(first["eventRef"]["districtId"], BOARD_CATALOG_DISTRICTS[0]["id"])
         self.assertEqual(enrich["eventRef"]["kind"], "catalog-enrich")
         self.assertEqual(enrich["eventRef"]["districtId"], first["eventRef"]["districtId"])
-        self.assertIn("CATALOG ENRICH", enrich["brief"])
+        self.assertIn("CATALOG DESCRIBE", enrich["brief"])
         self.assertTrue(BOARD_CATALOG_OUTPUT_CONTRACT[:40] in enrich["brief"])
 
     def test_enrich_duty_fires_on_half_hour_slot(self) -> None:

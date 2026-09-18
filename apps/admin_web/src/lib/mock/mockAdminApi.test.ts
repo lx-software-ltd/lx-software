@@ -125,6 +125,29 @@ describe("mockAdminFetch", () => {
     const skipped = (await skipRes.json()) as { skipped?: boolean; task?: { status?: string } };
     expect(skipped.skipped).toBe(true);
     expect(skipped.task?.status).toBe("delivered");
+
+    const sourcesRes = await mockAdminFetch("/siu-tin-dei/board/catalog/sources");
+    expect(sourcesRes.ok).toBe(true);
+    const sources = (await sourcesRes.json()) as { launchTarget?: number; sources?: { id: string }[] };
+    expect(sources.launchTarget).toBe(1000);
+    expect(sources.sources?.some((row) => row.id === "lcsd")).toBe(true);
+
+    const previewBulk = await mockAdminFetch("/siu-tin-dei/board/catalog/bulk/lcsd/preview", { method: "POST", body: "{}" });
+    expect(previewBulk.ok).toBe(true);
+    const sourcesAfter = await mockAdminFetch("/siu-tin-dei/board/catalog/sources");
+    const sourcesAfterBody = (await sourcesAfter.json()) as {
+      sources?: { id: string; job?: { phase?: string; action?: string } | null }[];
+    };
+    expect(sourcesAfterBody.sources?.find((row) => row.id === "lcsd")?.job).toEqual({
+      phase: "queued",
+      action: "preview",
+    });
+
+    const reimportRes = await mockAdminFetch("/siu-tin-dei/board/catalog/reimport", {
+      method: "POST",
+      body: JSON.stringify({ taskId: "task-catalog-imported" }),
+    });
+    expect(reimportRes.ok).toBe(true);
   });
 
   it("hides archived DMARC reports from the inbox and unread count", async () => {

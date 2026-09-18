@@ -14,7 +14,11 @@ import board_content
 import board_hk
 import board_product
 import board_store
-from contract_constants import BOARD_STAFF_CONTENT_CHANNELS, BOARD_STAFF_PROSPECT_STAGES
+from contract_constants import (
+    BOARD_CATALOG_LAUNCH_LISTING_TARGET,
+    BOARD_STAFF_CONTENT_CHANNELS,
+    BOARD_STAFF_PROSPECT_STAGES,
+)
 from http_common import _utc_iso_z
 
 PARTNERSHIP_WEEKLY_TARGET = 15
@@ -78,6 +82,7 @@ def headline_pack(table: Any, settings: dict[str, Any] | None = None) -> dict[st
             "providers": listings.get("providers") or 0,
             "lowCompleteness": len(listings.get("gaps") or []),
             "error": listings.get("error") or "",
+            "launchTarget": listings.get("launchTarget") or BOARD_CATALOG_LAUNCH_LISTING_TARGET,
         },
         "signings": {
             "count": signings.get("count") or 0,
@@ -104,6 +109,7 @@ def _listings(table: Any, settings: dict[str, Any] | None) -> dict[str, Any]:
         "error": "",
         "cached": False,
         "fetchedAt": None,
+        "launchTarget": BOARD_CATALOG_LAUNCH_LISTING_TARGET,
     }
     try:
         ctx = _Ctx(table, settings)

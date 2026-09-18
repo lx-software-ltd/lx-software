@@ -3,6 +3,7 @@ import { adminFetchJson } from "../lib/apiAdminClient";
 import {
   boardCatalogImportPath,
   boardCatalogPreviewPath,
+  boardCatalogReimportPath,
   boardCatalogRequeuePath,
   boardCatalogSkipPath,
   boardTaskCancelPath,
@@ -132,6 +133,20 @@ export function catalogRequeueMutationOptions(qc: QueryClient) {
   };
 }
 
+export function catalogReimportMutationOptions(qc: QueryClient) {
+  return {
+    mutationFn: async (taskId: string) => {
+      const res = await adminFetchJson<{ ok: boolean; taskId?: string }>(boardCatalogReimportPath(), {
+        method: "POST",
+        body: JSON.stringify({ taskId }),
+      });
+      return res;
+    },
+    onSuccess: () => invalidateTasks(qc),
+    onError: () => invalidateTasks(qc),
+  };
+}
+
 export function reviewTaskMutationOptions(qc: QueryClient) {
   return {
     mutationFn: async ({
@@ -181,6 +196,7 @@ export function useBoardTasks() {
   const catalogImport = useMutation(catalogImportMutationOptions(qc));
   const catalogSkip = useMutation(catalogSkipMutationOptions(qc));
   const catalogRequeue = useMutation(catalogRequeueMutationOptions(qc));
+  const catalogReimport = useMutation(catalogReimportMutationOptions(qc));
   return {
     tasks: query.data?.tasks ?? [],
     counts: query.data?.counts ?? {},
@@ -197,6 +213,7 @@ export function useBoardTasks() {
     catalogImport,
     catalogSkip,
     catalogRequeue,
+    catalogReimport,
   };
 }
 

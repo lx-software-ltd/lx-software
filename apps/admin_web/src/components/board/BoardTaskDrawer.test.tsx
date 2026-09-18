@@ -193,4 +193,24 @@ describe("BoardTaskDrawer catalog import", () => {
     expect(screen.getAllByText("September 16, 2026 at 8:00am HKT").length).toBeGreaterThan(0);
     expect(screen.queryByText("2026-09-16T00:00:00Z")).not.toBeInTheDocument();
   });
+
+  it("offers re-import on an already-imported sheet", () => {
+    const onReimport = vi.fn();
+    render(
+      <BoardTaskDrawer
+        detail={{
+          ...detail,
+          task: { ...catalogTask, status: "delivered", importedAt: "2026-09-16T00:00:00Z", importPhase: "imported" },
+        }}
+        isLoading={false}
+        isMutating={false}
+        onClose={() => undefined}
+        onCancel={() => undefined}
+        onReview={() => undefined}
+        onReimport={onReimport}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Re-import failed rows" }));
+    expect(onReimport).toHaveBeenCalledWith("task-catalog");
+  });
 });

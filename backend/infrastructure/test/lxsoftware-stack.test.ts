@@ -299,6 +299,7 @@ describe("EventBridge Scheduler wiring", () => {
       "lxsoftware-admin-siutindei-board-review-compile": "board_review_compile",
       "lxsoftware-admin-siutindei-board-review-send": "board_review_send",
       "lxsoftware-admin-siutindei-board-intel-crawl": "board_intel_crawl",
+      "lxsoftware-admin-siutindei-board-catalog-discovery": "board_catalog_discovery",
       "lxsoftware-admin-siutindei-board-intel-weekly": "board_intel_weekly",
       "lxsoftware-admin-siutindei-board-targets": "board_targets",
       "lxsoftware-admin-siutindei-board-content-plan": "board_content_plan",

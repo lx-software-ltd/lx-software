@@ -53,6 +53,7 @@ import {
   type BoardProspect,
   type BoardSequence,
   type BoardContentItem,
+  type BoardCatalogJob,
   type BoardSettings,
   type BoardStagingPreview,
 } from "../boardModel";
@@ -110,6 +111,7 @@ type MockState = {
   approvals: BoardApproval[];
   settings: BoardSettings;
   staging: BoardStagingPreview;
+  catalogJobs: Record<string, BoardCatalogJob>;
 };
 
 function initialMockState(): MockState {
@@ -139,6 +141,7 @@ function initialMockState(): MockState {
       canPromote: false,
       commits: [{ sha: "a1b2c3d4", message: "board: #42 add booking" }],
     },
+    catalogJobs: {},
   };
 }
 
@@ -640,6 +643,61 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
       finishedAt: null,
     };
     return json({ ok: true, task: state.tasks[idx], taskId });
+  }
+  if (p === `${board}/catalog/reimport` && method === "POST") {
+    const body = parseBody(init);
+    const taskId = String(body.taskId || "");
+    const idx = state.tasks.findIndex((t) => t.taskId === taskId);
+    if (idx < 0) return json({ message: "Task not found" }, 404);
+    return json({ ok: true, taskId, reimported: true });
+  }
+  if (p === `${board}/catalog/sources` && method === "GET") {
+    return json({
+      launchTarget: 1000,
+      candidateCounts: { lcsd: { new: 0, approved: 2, imported: 0, rejected: 0, closed: 0 } },
+      sources: [
+        {
+          id: "lcsd",
+          counts: { new: 0, approved: 2, imported: 0, rejected: 0, closed: 0 },
+          available: 2,
+          lastImport: null,
+          lastPreview: null,
+          job: state.catalogJobs.lcsd ?? null,
+        },
+      ],
+    });
+  }
+  if (p.startsWith(`${board}/catalog/bulk/`) && p.endsWith("/preview") && method === "POST") {
+    const source = p.split("/")[5] || "lcsd";
+    state.catalogJobs[source] = { phase: "queued", action: "preview" };
+    return json({ ok: true, queued: true, invoked: true, source, action: "preview" });
+  }
+  if (p.startsWith(`${board}/catalog/bulk/`) && p.endsWith("/import") && method === "POST") {
+    const source = p.split("/")[5] || "lcsd";
+    state.catalogJobs[source] = { phase: "queued", action: "import" };
+    return json({ ok: true, queued: true, invoked: true, source, action: "import" });
+  }
+  if (p.startsWith(`${board}/catalog/candidates`) && method === "GET") {
+    return json({
+      candidates: [
+        {
+          candidateId: "cand-1",
+          source: "competitor",
+          nameEn: "Example Playhouse",
+          district: "Sha Tin",
+          status: "new",
+        },
+      ],
+    });
+  }
+  if (p.endsWith("/approve") && p.includes("/catalog/candidates/") && method === "POST") {
+    return json({ candidate: { candidateId: "cand-1", source: "competitor", nameEn: "Example Playhouse", district: "Sha Tin", status: "approved" } });
+  }
+  if (p.endsWith("/reject") && p.includes("/catalog/candidates/") && method === "POST") {
+    return json({ candidate: { candidateId: "cand-1", source: "competitor", nameEn: "Example Playhouse", district: "Sha Tin", status: "rejected" } });
+  }
+  if (p === `${board}/catalog/discovery/run` && method === "POST") {
+    return json({ ok: true, queued: true, invoked: true });
   }
   if (p === `${board}/code/promote` && method === "POST") {
     const now = new Date().toISOString();

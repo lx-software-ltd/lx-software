@@ -391,6 +391,7 @@ export const boardOverviewFixture: BoardOverview = {
     tools: toolsConfig,
     staff: { enabled: true, maxRunningTasks: 6, dailyBudgetUsd: 20, dutiesEnabled: false },
     review: { digestTo: "founder@example.com", digestHourHkt: 7, sampleSize: 8 },
+    catalog: { autoImport: false, microBatchEnabled: false },
     boundaries: DEFAULT_BOARD_BOUNDARIES,
   },
   charter: {
@@ -569,6 +570,15 @@ export const boardTasksFixture: BoardTask[] = [
         organizations: [{ name: "Quarry Bay Park Playground", category_name: "Outdoor activity", area_name: "Eastern" }],
       },
     },
+  }),
+  fixtureTask("task-catalog-imported", "delivered", "content-marketer", "Founder directive — CATALOG MICRO-BATCH Islands.", {
+    deliverableType: "json",
+    origin: "duty",
+    managerId: "cmo",
+    eventRef: { kind: "catalog-micro-batch", id: "catalog:islands", districtId: "islands", district: "Islands" },
+    importPhase: "imported",
+    importedAt: isoDaysAgo(2),
+    importResult: { failedActivities: 1, results: [{ type: "activities", status: "failed" }] },
   }),
   fixtureTask("task-catalog-collision", "needs_owner", "content-marketer", "Founder directive — CATALOG MICRO-BATCH Wan Chai.", {
     deliverableType: "json",
@@ -776,6 +786,7 @@ export const boardProgressFixture: BoardProgressSnapshot = {
   fetchedAt: isoDaysAgo(0),
   listings: {
     activities: 12,
+    launchTarget: 1000,
     providers: 6,
     stores: 4,
     completenessAvg: 0.45,
