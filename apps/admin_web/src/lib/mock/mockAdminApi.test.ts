@@ -134,6 +134,14 @@ describe("mockAdminFetch", () => {
 
     const previewBulk = await mockAdminFetch("/siu-tin-dei/board/catalog/bulk/lcsd/preview", { method: "POST", body: "{}" });
     expect(previewBulk.ok).toBe(true);
+    const sourcesAfter = await mockAdminFetch("/siu-tin-dei/board/catalog/sources");
+    const sourcesAfterBody = (await sourcesAfter.json()) as {
+      sources?: { id: string; job?: { phase?: string; action?: string } | null }[];
+    };
+    expect(sourcesAfterBody.sources?.find((row) => row.id === "lcsd")?.job).toEqual({
+      phase: "queued",
+      action: "preview",
+    });
 
     const reimportRes = await mockAdminFetch("/siu-tin-dei/board/catalog/reimport", {
       method: "POST",
