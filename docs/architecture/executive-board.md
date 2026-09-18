@@ -414,7 +414,10 @@ Daily 03:30 HKT `…-board-catalog-discovery` rotates
 and drops Places hours/phone after `placesTtlDays` 30. Owner
 `GET …/catalog/sources`, `POST …/catalog/bulk/{source}/preview|import`
 and `POST …/catalog/discovery/run` return `200 {queued}` and run on
-`AdminApiFn` via `try_invoke_event` (HTTP API 30 s). Batches of
+`AdminApiFn` via `try_invoke_event` (HTTP API 30 s). A bulk job that
+raises writes `phase: error` so Progress does not stay on
+`running`. The listing mirror seeds once per invocation and skips keys
+already present. Places `discover` caches every page count. Batches of
 `maxOrgsPerBulkImport` 50. `GET …/catalog/candidates` and
 `POST …/catalog/candidates/{id}/approve|reject` stay on the request.
 Writes are JWT-only except the GETs. Open-data URLs (LCSD pefac/sc/sp/cpr

@@ -222,6 +222,29 @@ class CandidateQueueTests(BoardTestCase):
         self.assertTrue(rows[0].get("placesExpired"))
         self.assertEqual(board_catalog_candidates.expire_stale_places(self.table), 0)
 
+    def test_expire_stale_places_scans_each_status(self) -> None:
+        with patch.object(board_store, "list_candidates", return_value=[]) as listed:
+            board_catalog_candidates.expire_stale_places(self.table)
+        self.assertEqual(listed.call_args.kwargs.get("per_status_limit"), 10_000)
+
+    def test_remember_listing_skips_existing_key(self) -> None:
+        org = {"name": "Quarry Bay Park Playground", "area_name": "Eastern"}
+        board_catalog_candidates.remember_listing(self.table, org)
+        with patch.object(board_store, "put_listing_mirror") as put:
+            board_catalog_candidates.remember_listing(self.table, org)
+        put.assert_not_called()
+
+    def test_seed_listing_mirror_runs_once_per_table(self) -> None:
+        first = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "seed-1", "nameEn": "Seed Park", "district": "Eastern"},
+        )
+        board_catalog_candidates.set_status(self.table, first["candidateId"], "imported")
+        n1 = board_catalog_candidates.seed_listing_mirror(self.table)
+        n2 = board_catalog_candidates.seed_listing_mirror(self.table)
+        self.assertGreater(n1, 0)
+        self.assertEqual(n2, 0)
+
 
 class BulkTransformTests(BoardTestCase):
     def test_candidate_to_org_always_has_activity(self) -> None:
@@ -303,6 +326,74 @@ class BulkTransformTests(BoardTestCase):
         self.assertEqual(out["imported"], 1)
         self.assertEqual(board_store.get_candidate(self.table, keep["candidateId"])["status"], "imported")
         self.assertEqual(board_store.get_candidate(self.table, drop["candidateId"])["status"], "approved")
+
+    def test_import_marks_long_org_name(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+        long_name = "A" * 120
+        keep = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "long", "nameEn": long_name, "district": "Eastern"},
+        )
+
+        def fake_import(payload, token):
+            return {
+                "ok": True,
+                "summary": {"failed": 0, "created": 1, "updated": 0},
+                "results": [{"type": "organizations", "key": long_name[:80], "status": "created"}],
+            }
+
+        with (
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=[]),
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "_id_token", return_value="tok"),
+            patch.object(board_catalog_import, "_run_remote_import", side_effect=fake_import),
+        ):
+            out = board_catalog_bulk.import_source(self.table, "lcsd")
+        self.assertEqual(out["imported"], 1)
+        self.assertEqual(board_store.get_candidate(self.table, keep["candidateId"])["status"], "imported")
+
+    def test_import_marks_all_when_failed_is_zero(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+        keep = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "id-key", "nameEn": "Id Key Park", "district": "Eastern"},
+        )
+
+        def fake_import(payload, token):
+            return {
+                "ok": True,
+                "summary": {"failed": 0, "created": 1, "updated": 0},
+                "results": [{"type": "organizations", "key": "org-uuid-1", "status": "created"}],
+            }
+
+        with (
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=[]),
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "_id_token", return_value="tok"),
+            patch.object(board_catalog_import, "_run_remote_import", side_effect=fake_import),
+        ):
+            out = board_catalog_bulk.import_source(self.table, "lcsd")
+        self.assertEqual(out["imported"], 1)
+        self.assertEqual(board_store.get_candidate(self.table, keep["candidateId"])["status"], "imported")
+
+    def test_handle_job_unexpected_error_marks_error(self) -> None:
+        with (
+            patch.object(board_store, "records_table", return_value=self.table),
+            patch.object(board_catalog_bulk, "preview_source", side_effect=RuntimeError("cognito timeout")),
+        ):
+            out = board_catalog_bulk.handle_job({"action": "preview", "source": "lcsd"})
+        self.assertFalse(out["ok"])
+        self.assertIn("cognito timeout", out["error"])
+        job = board_catalog_bulk._job(self.table, "lcsd")
+        self.assertIsNotNone(job)
+        self.assertEqual(job["phase"], "error")
+        self.assertIn("cognito timeout", job["error"])
 
     def test_queue_preview_returns_queued(self) -> None:
         os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"

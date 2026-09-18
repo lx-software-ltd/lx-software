@@ -270,10 +270,10 @@ def discover(
     seen: set[str] = set()
     for included, query, kind in DISCOVERY_QUERIES:
         q = f"{query} {name} Hong Kong"
-        cache_name = "places:d:" + hashlib.sha256(f"{q}|{included}|{limit}".encode("utf-8")).hexdigest()[:24]
+        cache_name = "places:d:" + hashlib.sha256(f"{q}|{included}|{limit}|{pages}".encode("utf-8")).hexdigest()[:24]
         hit = board_store.get_cache(table, cache_name)
         page_places: list[dict[str, Any]]
-        if pages == 1 and hit and isinstance(hit.get("payload"), dict) and isinstance(hit["payload"].get("places"), list):
+        if hit and isinstance(hit.get("payload"), dict) and isinstance(hit["payload"].get("places"), list):
             page_places = list(hit["payload"]["places"])
         else:
             page_places = []
@@ -318,8 +318,7 @@ def discover(
                 page_token = str(data.get("nextPageToken") or "")
                 if not page_token:
                     break
-            if pages == 1:
-                board_store.put_cache(table, cache_name, {"places": page_places}, ttl_seconds=CACHE_TTL_SECONDS)
+            board_store.put_cache(table, cache_name, {"places": page_places}, ttl_seconds=CACHE_TTL_SECONDS)
         for place in page_places:
             pid = str(place.get("placeId") or "")
             if not pid or pid in seen:

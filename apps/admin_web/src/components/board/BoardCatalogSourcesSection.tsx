@@ -8,12 +8,13 @@ function errorText(err: unknown): string | null {
 }
 
 function jobLine(phase?: string, action?: string): string | null {
-  if (!phase) return null;
-  if (phase === "queued" || phase === "running") {
-    return `${action === "import" ? "Import" : action === "preview" ? "Preview" : "Job"} ${phase}…`;
-  }
-  if (phase === "error") return null;
-  return null;
+  if (phase !== "queued" && phase !== "running") return null;
+  const label = action === "import" ? "Import" : action === "preview" ? "Preview" : "Job";
+  return `${label} ${phase}…`;
+}
+
+function isJobBusy(phase?: string): boolean {
+  return phase === "queued" || phase === "running";
 }
 
 export function BoardCatalogSourcesSection() {
@@ -94,7 +95,7 @@ export function BoardCatalogSourcesSection() {
                     <button
                       type="button"
                       className="btn btn-outline-primary btn-sm me-1"
-                      disabled={mutations.preview.isPending}
+                      disabled={mutations.preview.isPending || isJobBusy(row.job?.phase)}
                       onClick={() => mutations.preview.mutate(row.id)}
                     >
                       Preview
@@ -102,7 +103,11 @@ export function BoardCatalogSourcesSection() {
                     <button
                       type="button"
                       className="btn btn-outline-secondary btn-sm"
-                      disabled={mutations.importSource.isPending || (row.counts.approved ?? 0) === 0}
+                      disabled={
+                        mutations.importSource.isPending ||
+                        (row.counts.approved ?? 0) === 0 ||
+                        isJobBusy(row.job?.phase)
+                      }
                       onClick={() => {
                         const n = row.counts.approved ?? 0;
                         if (

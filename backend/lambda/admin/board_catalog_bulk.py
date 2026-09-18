@@ -233,15 +233,21 @@ def preview_source(table: Any, source: str, *, remote: bool = False, limit: int 
     }
 
 
+def _org_name_key(name: Any) -> str:
+    """Match siutindei ``results[].key`` (truncated to 80) against our 200-char names."""
+    return str(name or "").strip()[:80]
+
+
 def _succeeded_org_names(imported: dict[str, Any], batch: list[dict[str, Any]]) -> set[str]:
     created = set(board_catalog_import._org_result_names(imported.get("results") or [], "created"))  # noqa: SLF001
     updated = set(board_catalog_import._org_result_names(imported.get("results") or [], "updated"))  # noqa: SLF001
-    named = created | updated
+    named = {_org_name_key(n) for n in (created | updated) if n}
     failed = int((imported.get("summary") or {}).get("failed") or 0)
+    batch_names = {_org_name_key(org.get("name")) for org in batch if org.get("name")}
+    if failed == 0:
+        return batch_names
     if named:
-        return named
-    if bool(imported.get("ok")) and failed == 0:
-        return {str(org.get("name") or "") for org in batch if org.get("name")}
+        return named & batch_names
     return set()
 
 
@@ -281,7 +287,7 @@ def import_source(table: Any, source: str, *, remote: bool = True, limit: int | 
         results.append(compact)
         succeeded = _succeeded_org_names(imported, batch)
         for row, org in zip(rows, batch):
-            if str(org.get("name") or "") not in succeeded:
+            if _org_name_key(org.get("name")) not in succeeded:
                 continue
             board_catalog_candidates.set_status(table, str(row["candidateId"]), "imported")
             board_catalog_candidates.remember_listing(table, org)
@@ -393,6 +399,20 @@ def handle_job(event: dict[str, Any]) -> dict[str, Any]:
         )
         return out
     except (BulkImportError, board_catalog_import.CatalogImportError) as exc:
+        _put_job(
+            table,
+            source,
+            {"phase": "error", "action": action, "at": board_store.now_iso(), "error": str(exc)[:300]},
+        )
+        return {"ok": False, "error": str(exc)[:300], "source": source, "action": action}
+    except Exception as exc:
+        _log_event(
+            "error",
+            tag="board_catalog_bulk_job_failed",
+            action=action,
+            source=source,
+            error=str(exc)[:300],
+        )
         _put_job(
             table,
             source,

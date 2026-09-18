@@ -94,6 +94,24 @@ class PlacesTests(BoardTestCase):
         self.assertIn("locationBias", body)
         self.assertIn("circle", body["locationBias"])
 
+    def test_discover_caches_multipage(self) -> None:
+        payload = {
+            "places": [
+                {
+                    "id": "ChIJpage",
+                    "displayName": {"text": "Eastern Park"},
+                    "formattedAddress": "Eastern, Hong Kong",
+                    "types": ["park"],
+                }
+            ]
+        }
+        with patch.object(board_places, "_http", return_value=payload) as http:
+            first = board_places.discover(self.table, "Eastern", settings=self.settings, pages=2, limit=5)
+            second = board_places.discover(self.table, "Eastern", settings=self.settings, pages=2, limit=5)
+        self.assertEqual(first[0]["placeId"], "ChIJpage")
+        self.assertEqual(second[0]["placeId"], "ChIJpage")
+        self.assertEqual(http.call_count, len(board_places.DISCOVERY_QUERIES))
+
 
 class PlacesRouteHiddenWhenStaffOff(BoardTestCase):
     def test_prospects_409_when_env_off(self) -> None:

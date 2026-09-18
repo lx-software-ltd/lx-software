@@ -164,7 +164,7 @@ def remember_listing(table: Any, org: dict[str, Any]) -> None:
     name = str(org.get("name") or org.get("nameEn") or "")
     district = str(org.get("area_name") or org.get("district") or "")
     key = listing_key(name, district)
-    if not key.startswith("|"):
+    if not key.startswith("|") and not board_store.get_listing_mirror(table, key):
         board_store.put_listing_mirror(
             table,
             key,
@@ -178,7 +178,7 @@ def remember_listing(table: Any, org: dict[str, Any]) -> None:
             },
         )
     geo = geohash_approx(org.get("lat"), org.get("lng"))
-    if geo:
+    if geo and not board_store.get_listing_mirror(table, f"geo|{geo}"):
         board_store.put_listing_mirror(table, f"geo|{geo}", {"name": name, "district": district, "updatedAt": _now()})
 
 
@@ -211,9 +211,19 @@ def set_status(table: Any, candidate_id: str, status: str) -> dict[str, Any]:
 
 
 def seed_listing_mirror(table: Any) -> int:
-    """Remember names already imported through catalog sheets or this queue."""
+    """Remember names already imported through catalog sheets or this queue.
+
+    Runs once per table object so preview + import + discovery do not rewrite
+    the mirror on every nested call in the same Lambda invocation.
+    """
     import board_catalog_import
 
+    if getattr(table, "_catalog_mirror_seeded", False):
+        return 0
+    try:
+        setattr(table, "_catalog_mirror_seeded", True)
+    except Exception:
+        pass
     n = 0
     for status in ("delivered", "awaiting_import", "needs_owner"):
         for task in board_store.list_tasks(table, status, limit=200):
@@ -254,7 +264,7 @@ def expire_stale_places(table: Any, *, now: datetime | None = None) -> int:
     """Drop Places-derived hours / phone / rating after the 30-day cache window."""
     cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=BOARD_CATALOG_PLACES_TTL_DAYS)
     n = 0
-    for row in board_store.list_candidates(table, limit=2000):
+    for row in board_store.list_candidates(table, per_status_limit=10_000):
         if str(row.get("source") or "") != "places":
             continue
         if row.get("placesExpired"):
