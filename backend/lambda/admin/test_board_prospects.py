@@ -55,6 +55,11 @@ class QualifyTests(BoardTestCase):
         self.assertEqual(row["district"], "unknown")
         self.assertEqual(board_hk.district_from_address("12 North Point Road"), "Eastern")
         self.assertEqual(board_hk.district_from_address("Somewhere else"), "unknown")
+        self.assertEqual(board_hk.canonical_district("tai-po"), "Tai Po")
+        self.assertEqual(board_hk.canonical_district("Causeway Bay"), "Wan Chai")
+        self.assertEqual(board_hk.district_from_url("https://classbee.hk/activities/area/tung_chung"), "Islands")
+        self.assertEqual(board_hk.district_from_url("https://classbee.hk/activities/area/causeway_bay"), "Wan Chai")
+        self.assertEqual(board_hk.district_from_url("https://classbee.hk/activities"), "unknown")
 
     def test_business_address_filter(self) -> None:
         allow = {"boundaries": {"outreach": {"personalAddressesAllowed": False}}}

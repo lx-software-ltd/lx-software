@@ -841,6 +841,14 @@ export const boardWatchesFixture: BoardWatch[] = [
     pages: [{ url: "https://kiztopia.example/pricing", emptyBody: false, lastFetchedAt: isoDaysAgo(0), status: 200 }],
   },
   {
+    watchId: "watch-listings",
+    name: "Classbee Tung Chung",
+    kind: "listingsIndex",
+    urls: ["https://classbee.example/activities/area/tung_chung"],
+    district: "Islands",
+    createdAt: isoDaysAgo(2),
+  },
+  {
     watchId: "watch-candidate",
     name: "New Kids Lab",
     kind: "candidate",

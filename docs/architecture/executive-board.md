@@ -423,10 +423,15 @@ already present. Places `discover` caches every page count. Batches of
 Writes are JWT-only except the GETs. Open-data URLs (LCSD pefac/sc/sp/cpr
 + CSDI parks/libraries, SWD CSDI + list-ccc.csv, EDB CSV) are verified
 2026-09-18.
-Competitor pages are names only — never descriptions or photos. The
-product repo still needs `place_id` / status / closure handling (out of
-this stack). The product side still needs the `importer` group, the #502
-fields and `dry_run` on `POST /admin/imports` (deployment doc).
+Competitor pages are names only — never descriptions or photos. Nav,
+header, footer and known chrome labels (`Browse`, `Contact Us`, page
+titles such as `Kids' Activities in …`) are dropped; HTML entities are
+decoded. A `listingsIndex` watch may carry an optional `district`;
+ingest prefers an area slug on the page URL (`/area/tung_chung` →
+Islands), then that watch district, then page text. The product repo
+still needs `place_id` / status / closure handling (out of this stack).
+The product side still needs the `importer` group, the #502 fields and
+`dry_run` on `POST /admin/imports` (deployment doc).
 
 ## 7. Staff (background tasks)
 
@@ -623,7 +628,8 @@ persona's prompt under "standing instructions" (`lessonsPerSeatInPrompt`
 ### 10.1 Market intelligence (`board_intel.py`, `board_watch.py`, `board_crawl.py`, `board_opendata.py`)
 
 Owner-maintained watchlist (`competitor`, `directory`, `media`,
-`analogue`, `event-source`; URLs, app ids, social handles). Daily crawl
+`analogue`, `event-source`, `listingsIndex`; URLs, optional district,
+app ids, social handles). Daily crawl
 (`…-board-intel-crawl`, 03:00 HKT, 40 pages per invocation with a cursor,
 `crawlMaxPagesPerRun` 200, 1 request/s per host, robots.txt honoured,
 UA `SiuTinDeiBoardBot/1.0 (+https://siutindei.com/bot)`, private /

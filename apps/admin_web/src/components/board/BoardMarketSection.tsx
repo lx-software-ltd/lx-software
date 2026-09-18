@@ -5,7 +5,7 @@ import { useBoardMarket } from "../../hooks/useBoardMarket";
 import { useBoardTask, useBoardTasks } from "../../hooks/useBoardTasks";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import type { BoardWatch, BoardWatchWrite } from "../../lib/boardModel";
-import { BOARD_STAFF_WATCH_KINDS } from "../../lib/contracts/generated";
+import { BOARD_CATALOG_DISTRICTS, BOARD_STAFF_WATCH_KINDS } from "../../lib/contracts/generated";
 
 function errorText(err: unknown): string | null {
   if (!err) return null;
@@ -17,6 +17,7 @@ const KIND_OPTIONS = BOARD_STAFF_WATCH_KINDS.filter((k) => k !== "candidate");
 const WATCH_COLUMNS = [
   { key: "name", header: "Name" },
   { key: "kind", header: "Kind", priority: "secondary" as const },
+  { key: "district", header: "District", priority: "secondary" as const },
   { key: "urls", header: "Pages", priority: "secondary" as const },
   { key: "ops", header: <span className="visually-hidden">Operations</span>, className: "text-end" },
 ] as const;
@@ -29,7 +30,7 @@ const CANDIDATE_COLUMNS = [
 ] as const;
 
 function emptyForm(): BoardWatchWrite {
-  return { name: "", kind: "competitor", urls: [""], appIds: { ios: "", android: "" }, socialHandles: [] };
+  return { name: "", kind: "competitor", urls: [""], district: "", appIds: { ios: "", android: "" }, socialHandles: [] };
 }
 
 export function BoardMarketSection() {
@@ -55,7 +56,7 @@ export function BoardMarketSection() {
     return market.watches.filter((w) => {
       if (w.kind === "candidate") return false;
       if (!q) return true;
-      return [w.name, w.kind, ...(w.urls ?? [])].join(" ").toLowerCase().includes(q);
+      return [w.name, w.kind, w.district, ...(w.urls ?? [])].join(" ").toLowerCase().includes(q);
     });
   }, [market.watches, watchFilter]);
 
@@ -65,6 +66,7 @@ export function BoardMarketSection() {
       name: (form.name ?? "").trim(),
       kind: form.kind || "competitor",
       urls,
+      district: (form.district ?? "").trim(),
       appIds: {
         ...(form.appIds?.ios ? { ios: form.appIds.ios.trim() } : {}),
         ...(form.appIds?.android ? { android: form.appIds.android.trim() } : {}),
@@ -91,7 +93,7 @@ export function BoardMarketSection() {
       <h2 className="h5 mb-3">Market</h2>
       <AdminEditorSection
         title={editingId ? "Edit watch" : "Add a watch"}
-        description="Start with five competitors. Discovery adds candidates on Monday; promote the ones that keep showing up."
+        description="Start with five competitors. A listingsIndex watch turns each page into catalog names only — set a district when the URLs share one, or leave it blank so the crawl guesses from the path (for example /area/tung_chung). Discovery adds candidates on Monday; promote the ones that keep showing up."
         footer={
           <>
             <button
@@ -140,6 +142,24 @@ export function BoardMarketSection() {
               {KIND_OPTIONS.map((k) => (
                 <option key={k} value={k}>
                   {k}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="col-md-3">
+            <label className="form-label" htmlFor="watch-district">
+              District
+            </label>
+            <select
+              id="watch-district"
+              className="form-select"
+              value={form.district ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))}
+            >
+              <option value="">Guess from URL / page</option>
+              {BOARD_CATALOG_DISTRICTS.map((row) => (
+                <option key={row.id} value={row.name}>
+                  {row.name}
                 </option>
               ))}
             </select>
@@ -204,6 +224,7 @@ export function BoardMarketSection() {
                   name: watch.name,
                   kind: watch.kind,
                   urls: [...watch.urls],
+                  district: watch.district ?? "",
                   appIds: { ios: watch.appIds?.ios ?? "", android: watch.appIds?.android ?? "" },
                   socialHandles: watch.socialHandles,
                 });
@@ -345,6 +366,7 @@ function WatchRow({
         ) : null}
       </AdminCell>
       <AdminCell column="kind">{watch.kind}</AdminCell>
+      <AdminCell column="district">{watch.district || "—"}</AdminCell>
       <AdminCell column="urls">
         <span className="small">{watch.urls.slice(0, 2).join(" · ")}</span>
       </AdminCell>
