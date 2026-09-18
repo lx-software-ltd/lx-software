@@ -26,7 +26,7 @@ NAME_LINE = re.compile(r"^(?:[-*•]\s*)?([A-Z][\w'&.\-]{2,}(?:\s+[A-Za-z0-9'&.\
 ANCHOR = re.compile(r"<a\b[^>]*>([^<]{4,80})</a>", re.I)
 HEADING = re.compile(r"<h[1-3]\b[^>]*>([^<]{4,80})</h[1-3]>", re.I)
 CHROME_BLOCK = re.compile(
-    r"<(?:nav|header|footer|script|style|noscript)\b[^>]*>.*?</(?:nav|header|footer|script|style|noscript)>",
+    r"<(?:nav|header|footer|script|style|noscript)\b[^>]*>.*?</(?:nav|header|footer|script|style|noscript)\s*>",
     re.I | re.S,
 )
 PAGE_TITLE_NAME = re.compile(

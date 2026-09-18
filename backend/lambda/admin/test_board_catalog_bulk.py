@@ -440,8 +440,9 @@ class DiscoveryTests(BoardTestCase):
 
     def test_extract_listing_names_drops_nav_and_decodes_entities(self) -> None:
         html = (
-            "<nav><a>Browse</a><a>Privacy Policy</a></nav>"
+            "<nav><a>Browse</a><a>Privacy Policy</a></nav >"
             "<header><a>Contact Us</a></header>"
+            "<script>document.write('<a>Fake Listing</a>')</script >"
             "<h2>Kids&#x27; Activities in Tung Chung</h2>"
             "<a>Kids Boxing Classes</a>"
             "<a>Toddler&#x27;s Ballet</a>"
