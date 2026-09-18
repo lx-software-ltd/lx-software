@@ -109,7 +109,7 @@ test.describe("admin viewport smoke", () => {
       await page.getByRole("tab", { name: /Progress/ }).click();
     }
     await expect(page.getByRole("heading", { name: "Progress" })).toBeVisible();
-    await expect(page.getByText("Live listings")).toBeVisible();
+    await expect(page.getByText("Live listings", { exact: true })).toBeVisible();
     await expect(page.getByText("12 / 1000")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Bulk catalog sources" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Scan sources now" })).toBeVisible();
