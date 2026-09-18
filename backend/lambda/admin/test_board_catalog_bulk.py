@@ -438,6 +438,20 @@ class DiscoveryTests(BoardTestCase):
         self.assertIn("Happy Playhouse", names)
         self.assertIn("Tai Po Art Class", names)
 
+    def test_extract_listing_names_drops_nav_and_decodes_entities(self) -> None:
+        html = (
+            "<nav><a>Browse</a><a>Privacy Policy</a></nav >"
+            "<header><a>Contact Us</a></header>"
+            "<script>document.write('<a>Fake Listing</a>')</script >"
+            "<h2>Kids&#x27; Activities in Tung Chung</h2>"
+            "<a>Kids Boxing Classes</a>"
+            "<a>Toddler&#x27;s Ballet</a>"
+            "<a>Browse All Activities</a>"
+            "<footer><a>Terms of Use</a></footer>"
+        )
+        names = board_catalog_discovery.extract_listing_names(html)
+        self.assertEqual(names, ["Kids Boxing Classes", "Toddler's Ballet"])
+
     def test_ingest_listings_page_creates_new_candidates(self) -> None:
         n = board_catalog_discovery.ingest_listings_page(
             self.table,
@@ -449,6 +463,37 @@ class DiscoveryTests(BoardTestCase):
         rows = board_store.list_candidates(self.table, "new")
         self.assertEqual(rows[0]["source"], "competitor")
         self.assertEqual(rows[0]["nameEn"], "Example Playhouse")
+        self.assertEqual(rows[0]["district"], "unknown")
+
+    def test_ingest_listings_page_uses_url_district(self) -> None:
+        n = board_catalog_discovery.ingest_listings_page(
+            self.table,
+            {"watchId": "w1", "district": "Sha Tin"},
+            "<h2>Kids Boxing Classes</h2>",
+            "https://classbee.hk/activities/area/tung_chung",
+        )
+        self.assertEqual(n, 1)
+        self.assertEqual(board_store.list_candidates(self.table, "new")[0]["district"], "Islands")
+
+    def test_ingest_listings_page_uses_watch_district(self) -> None:
+        n = board_catalog_discovery.ingest_listings_page(
+            self.table,
+            {"watchId": "w1", "district": "tai-po"},
+            "<h2>Happy Playhouse</h2> Tseung Kwan O campus",
+            "https://directory.example/organisations",
+        )
+        self.assertEqual(n, 1)
+        self.assertEqual(board_store.list_candidates(self.table, "new")[0]["district"], "Tai Po")
+
+    def test_ingest_listings_page_ignores_citywide_page_text(self) -> None:
+        n = board_catalog_discovery.ingest_listings_page(
+            self.table,
+            {"watchId": "w1"},
+            "<h2>Happy Playhouse</h2> Featured in Tseung Kwan O",
+            "https://directory.example/organisations",
+        )
+        self.assertEqual(n, 1)
+        self.assertEqual(board_store.list_candidates(self.table, "new")[0]["district"], "unknown")
 
     def test_discover_places_upserts(self) -> None:
         settings = _enable_staff(self.table)

@@ -488,6 +488,9 @@ others on from **Staff** (or `PUT /siu-tin-dei/board/staff/{id}`):
    `SiutindeiBoardStaffEnabled=true` and flip `settings.staff.enabled`.
    Default-on seats handle triage and the daily review.
 2. **Market:** activate `market-analyst`; add about five watchlist entries.
+   A `listingsIndex` watch (competitor listing index pages) may set a
+   district; leave it blank when the URLs already carry an area slug
+   (`/area/tung_chung`). Nav chrome is stripped from extracted names.
    The first Monday brief creates CPO `later` actions.
 3. **Pipeline:** owner tasks first — DNS for `partners.siutindei.com`
    (SES DKIM CNAMEs, MAIL FROM MX + TXT, DMARC; `scripts/sync-ses-sending-dns.py --retry`
