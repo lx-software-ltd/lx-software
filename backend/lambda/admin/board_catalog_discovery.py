@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import re
 from datetime import datetime
+from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlparse
 
@@ -25,10 +26,7 @@ CURSOR_CACHE = "catalog:discovery:cursor"
 NAME_LINE = re.compile(r"^(?:[-*•]\s*)?([A-Z][\w'&.\-]{2,}(?:\s+[A-Za-z0-9'&.\-]{2,}){0,8})\s*$")
 ANCHOR = re.compile(r"<a\b[^>]*>([^<]{4,80})</a>", re.I)
 HEADING = re.compile(r"<h[1-3]\b[^>]*>([^<]{4,80})</h[1-3]>", re.I)
-CHROME_BLOCK = re.compile(
-    r"<(?:nav|header|footer|script|style|noscript)\b[^>]*>.*?</(?:nav|header|footer|script|style|noscript)\s*>",
-    re.I | re.S,
-)
+_CHROME_TAGS = frozenset({"nav", "header", "footer", "script", "style", "noscript"})
 PAGE_TITLE_NAME = re.compile(
     r"^(kids['’]? activities in |browse |all activities\b|activities in )",
     re.I,
@@ -222,6 +220,60 @@ def refresh_open_data(table: Any) -> dict[str, Any]:
     return notes
 
 
+class _ChromeStripper(HTMLParser):
+    """Drop nav/header/footer/script/style so listing regexes never see chrome."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self._depth = 0
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        if tag in _CHROME_TAGS:
+            self._depth += 1
+            return
+        if self._depth:
+            return
+        self.parts.append(self.get_starttag_text() or f"<{tag}>")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in _CHROME_TAGS:
+            self._depth = max(0, self._depth - 1)
+            return
+        if self._depth:
+            return
+        self.parts.append(f"</{tag}>")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        if tag in _CHROME_TAGS or self._depth:
+            return
+        self.parts.append(self.get_starttag_text() or f"<{tag} />")
+
+    def handle_data(self, data: str) -> None:
+        if not self._depth:
+            self.parts.append(data)
+
+    def handle_entityref(self, name: str) -> None:
+        if not self._depth:
+            self.parts.append(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        if not self._depth:
+            self.parts.append(f"&#{name};")
+
+
+def _strip_chrome_html(blob: str) -> str:
+    parser = _ChromeStripper()
+    try:
+        parser.feed(blob or "")
+        parser.close()
+    except Exception:
+        return blob or ""
+    return "".join(parser.parts)
+
+
 def _clean_listing_name(raw: str) -> str:
     name = html.unescape(" ".join(str(raw).split()))
     return name.strip(" \t\n\r-–—·|:;")
@@ -242,7 +294,7 @@ def extract_listing_names(html_or_text: str) -> list[str]:
     """Names only — never copy competitor descriptions or photos."""
     names: list[str] = []
     seen: set[str] = set()
-    blob = CHROME_BLOCK.sub(" ", html_or_text or "")
+    blob = _strip_chrome_html(html_or_text or "")
     for pattern in (ANCHOR, HEADING):
         for match in pattern.findall(blob):
             name = _clean_listing_name(match)

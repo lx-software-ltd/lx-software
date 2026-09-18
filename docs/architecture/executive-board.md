@@ -423,10 +423,10 @@ already present. Places `discover` caches every page count. Batches of
 Writes are JWT-only except the GETs. Open-data URLs (LCSD pefac/sc/sp/cpr
 + CSDI parks/libraries, SWD CSDI + list-ccc.csv, EDB CSV) are verified
 2026-09-18.
-Competitor pages are names only — never descriptions or photos. Nav,
-header, footer and known chrome labels (`Browse`, `Contact Us`, page
-titles such as `Kids' Activities in …`) are dropped; HTML entities are
-decoded. A `listingsIndex` watch may carry an optional `district`;
+Competitor pages are names only — never descriptions or photos. An
+`html.parser` pass drops nav / header / footer / script / style, then
+known chrome labels (`Browse`, `Contact Us`, page titles such as
+`Kids' Activities in …`) are skipped; HTML entities are decoded. A `listingsIndex` watch may carry an optional `district`;
 ingest prefers an area slug on the page URL (`/area/tung_chung` →
 Islands), then that watch district. City-wide index HTML is not mined
 for a district. The product repo
