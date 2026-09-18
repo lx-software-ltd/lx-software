@@ -428,7 +428,8 @@ header, footer and known chrome labels (`Browse`, `Contact Us`, page
 titles such as `Kids' Activities in …`) are dropped; HTML entities are
 decoded. A `listingsIndex` watch may carry an optional `district`;
 ingest prefers an area slug on the page URL (`/area/tung_chung` →
-Islands), then that watch district, then page text. The product repo
+Islands), then that watch district. City-wide index HTML is not mined
+for a district. The product repo
 still needs `place_id` / status / closure handling (out of this stack).
 The product side still needs the `importer` group, the #502 fields and
 `dry_run` on `POST /admin/imports` (deployment doc).

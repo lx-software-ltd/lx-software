@@ -478,11 +478,21 @@ class DiscoveryTests(BoardTestCase):
         n = board_catalog_discovery.ingest_listings_page(
             self.table,
             {"watchId": "w1", "district": "tai-po"},
-            "<h2>Happy Playhouse</h2>",
+            "<h2>Happy Playhouse</h2> Tseung Kwan O campus",
             "https://directory.example/organisations",
         )
         self.assertEqual(n, 1)
         self.assertEqual(board_store.list_candidates(self.table, "new")[0]["district"], "Tai Po")
+
+    def test_ingest_listings_page_ignores_citywide_page_text(self) -> None:
+        n = board_catalog_discovery.ingest_listings_page(
+            self.table,
+            {"watchId": "w1"},
+            "<h2>Happy Playhouse</h2> Featured in Tseung Kwan O",
+            "https://directory.example/organisations",
+        )
+        self.assertEqual(n, 1)
+        self.assertEqual(board_store.list_candidates(self.table, "new")[0]["district"], "unknown")
 
     def test_discover_places_upserts(self) -> None:
         settings = _enable_staff(self.table)

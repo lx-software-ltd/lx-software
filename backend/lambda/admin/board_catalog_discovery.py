@@ -264,16 +264,19 @@ def extract_listing_names(html_or_text: str) -> list[str]:
     return names[:80]
 
 
-def resolve_listings_district(watch: dict[str, Any], url: str, text: str = "") -> str:
-    """Prefer the page URL, then the watch district, then page text."""
+def resolve_listings_district(watch: dict[str, Any], url: str, _text: str = "") -> str:
+    """Prefer an area slug on the page URL, then the watch district.
+
+    City-wide index HTML is not used: the first district token on the page is
+    usually a single card or footer, not the listing set.
+    """
     from_url = board_hk.district_from_url(url)
     if from_url != "unknown":
         return from_url
     watch_district = board_hk.canonical_district(str(watch.get("district") or ""))
     if watch_district != "unknown":
         return watch_district
-    guessed = board_hk.district_from_address(text)
-    return guessed if guessed != "unknown" else "unknown"
+    return "unknown"
 
 
 def ingest_listings_page(table: Any, watch: dict[str, Any], text: str, url: str) -> int:
