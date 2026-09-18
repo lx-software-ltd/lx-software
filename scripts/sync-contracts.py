@@ -237,6 +237,7 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "    str(k): str(v) for k, v in dict(_BOARD_CATALOG.get(\"typeToCategory\") or {}).items()",
         "}",
         "BOARD_CATALOG_MAX_ORGS_PER_IMPORT = int(_BOARD_CATALOG.get(\"maxOrgsPerImport\") or 20)",
+        "BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT = int(_BOARD_CATALOG.get(\"maxOrgsPerBulkImport\") or 50)",
         "BOARD_CATALOG_MAX_AWAITING_IMPORT = int(_BOARD_CATALOG.get(\"maxAwaitingImport\") or 3)",
         "BOARD_CATALOG_FETCH_CAP = int(_BOARD_CATALOG.get(\"catalogFetchCap\") or 9)",
         "BOARD_CATALOG_MAX_LOW_COMPLETENESS = int(_BOARD_CATALOG.get(\"maxLowCompletenessDistricts\") or 3)",
@@ -244,6 +245,19 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "BOARD_CATALOG_EVENT_KINDS = frozenset(str(k) for k in (_BOARD_CATALOG.get(\"eventKinds\") or (\"catalog-micro-batch\", \"catalog-enrich\")))",
         "BOARD_CATALOG_IMPORT_ENABLED_DEFAULT = bool(_BOARD_CATALOG.get(\"importEnabledDefault\"))",
         "BOARD_CATALOG_AUTO_IMPORT_DEFAULT = bool(_BOARD_CATALOG.get(\"autoImportDefault\"))",
+        "BOARD_CATALOG_MICRO_BATCH_ENABLED_DEFAULT = _BOARD_CATALOG.get(\"microBatchEnabledDefault\", True) is not False",
+        "BOARD_CATALOG_LAUNCH_LISTING_TARGET = int(_BOARD_CATALOG.get(\"launchListingTarget\") or 1000)",
+        "BOARD_CATALOG_DESCRIBE_BATCH_SIZE = int(_BOARD_CATALOG.get(\"describeBatchSize\") or 20)",
+        "BOARD_CATALOG_DESCRIBE_BUDGET_USD = float(_BOARD_CATALOG.get(\"describeBudgetUsd\") or 1)",
+        "BOARD_CATALOG_DISCOVERY_DISTRICTS_PER_DAY = int(_BOARD_CATALOG.get(\"discoveryDistrictsPerDay\") or 3)",
+        "BOARD_CATALOG_PLACES_MIN_RATING = float(_BOARD_CATALOG.get(\"placesMinRating\") or 3.8)",
+        "BOARD_CATALOG_PLACES_MIN_REVIEWS = int(_BOARD_CATALOG.get(\"placesMinReviews\") or 10)",
+        "BOARD_CATALOG_PLACES_TTL_DAYS = int(_BOARD_CATALOG.get(\"placesTtlDays\") or 30)",
+        "BOARD_CATALOG_CANDIDATE_STATUSES = tuple(_BOARD_CATALOG.get(\"candidateStatuses\") or (\"new\", \"approved\", \"imported\", \"rejected\", \"closed\"))",
+        "BOARD_CATALOG_BULK_SOURCES = tuple(_BOARD_CATALOG.get(\"bulkSources\") or (\"lcsd\", \"edb\", \"swd\", \"places\", \"competitor\"))",
+        "BOARD_CATALOG_SOURCE_CATEGORY: dict[str, str] = {",
+        "    str(k): str(v) for k, v in dict(_BOARD_CATALOG.get(\"sourceCategory\") or {}).items()",
+        "}",
         "",
         "OPENROUTER_PAYER = OPENROUTER_APPS_CONTRACT[\"payer\"]",
         "OPENROUTER_APPS: list[dict] = list(OPENROUTER_APPS_CONTRACT[\"apps\"])",
@@ -450,6 +464,7 @@ export const BOARD_CATALOG_OUTPUT_CONTRACT = {json.dumps((board_staff.get("catal
 export const BOARD_CATALOG_DISTRICTS = {json.dumps((board_staff.get("catalog") or {}).get("districts") or [])} as const;
 export const BOARD_CATALOG_TYPE_TO_CATEGORY = {json.dumps((board_staff.get("catalog") or {}).get("typeToCategory") or {})} as const;
 export const BOARD_CATALOG_MAX_ORGS_PER_IMPORT = {int((board_staff.get("catalog") or {}).get("maxOrgsPerImport") or 20)};
+export const BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT = {int((board_staff.get("catalog") or {}).get("maxOrgsPerBulkImport") or 50)};
 export const BOARD_CATALOG_MAX_AWAITING_IMPORT = {int((board_staff.get("catalog") or {}).get("maxAwaitingImport") or 3)};
 export const BOARD_CATALOG_FETCH_CAP = {int((board_staff.get("catalog") or {}).get("catalogFetchCap") or 9)};
 export const BOARD_CATALOG_MAX_LOW_COMPLETENESS = {int((board_staff.get("catalog") or {}).get("maxLowCompletenessDistricts") or 3)};
@@ -457,6 +472,11 @@ export const BOARD_CATALOG_QUALITY_MIN_FACTS = {int((board_staff.get("catalog") 
 export const BOARD_CATALOG_EVENT_KINDS = {json.dumps(list((board_staff.get("catalog") or {}).get("eventKinds") or ["catalog-micro-batch", "catalog-enrich"]))} as const;
 export const BOARD_CATALOG_IMPORT_ENABLED_DEFAULT = {json.dumps(bool((board_staff.get("catalog") or {}).get("importEnabledDefault")))};
 export const BOARD_CATALOG_AUTO_IMPORT_DEFAULT = {json.dumps(bool((board_staff.get("catalog") or {}).get("autoImportDefault")))};
+export const BOARD_CATALOG_MICRO_BATCH_ENABLED_DEFAULT = {json.dumps((board_staff.get("catalog") or {}).get("microBatchEnabledDefault", True) is not False)};
+export const BOARD_CATALOG_LAUNCH_LISTING_TARGET = {int((board_staff.get("catalog") or {}).get("launchListingTarget") or 1000)};
+export const BOARD_CATALOG_DESCRIBE_BATCH_SIZE = {int((board_staff.get("catalog") or {}).get("describeBatchSize") or 20)};
+export const BOARD_CATALOG_BULK_SOURCES = {json.dumps(list((board_staff.get("catalog") or {}).get("bulkSources") or ["lcsd", "edb", "swd", "places", "competitor"]))} as const;
+export const BOARD_CATALOG_CANDIDATE_STATUSES = {json.dumps(list((board_staff.get("catalog") or {}).get("candidateStatuses") or ["new", "approved", "imported", "rejected", "closed"]))} as const;
 
 export type OpenRouterAppDefinition = {{
   readonly id: string;

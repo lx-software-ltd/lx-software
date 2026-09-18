@@ -669,7 +669,7 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
       {
         "id": "catalog-enrich",
         "cron": "30 8,12,16 * * *",
-        "brief": "Enrich one already-imported Hong Kong district whose live completeness is under 50%. The runtime fills the district, existing organisation names, hint and OUTPUT CONTRACT. Re-fetch official pages for missing opening_hours, free_or_paid or price_note, and address_en. Return a fenced JSON curation sheet for those organisations only. For commercial providers (not LCSD/gov), request help from provider-success so they send the onboarding link. No Meta, no mobile, no publishing.",
+        "brief": "Describe imported listings that still have a template description. The runtime names up to 20 organisations. Write 40-word EN + 繁中 descriptions, age_range and price_note from the official page only. Return a fenced JSON curation sheet for those organisations. No Meta, no mobile, no publishing.",
         "deliverableType": "json",
         "tier": "desk"
       }
@@ -877,7 +877,7 @@ export const BOARD_STAFF_PROSPECT_TYPES = ["provider", "venue", "community", "sc
 export type BoardProspectType = (typeof BOARD_STAFF_PROSPECT_TYPES)[number];
 export const BOARD_STAFF_PROSPECT_STAGES = ["discovered", "qualified", "parked", "contacted", "replied", "onboarding", "listed", "declined", "unresponsive", "suppressed"] as const;
 export type BoardProspectStage = (typeof BOARD_STAFF_PROSPECT_STAGES)[number];
-export const BOARD_STAFF_WATCH_KINDS = ["competitor", "directory", "media", "analogue", "event-source", "candidate"] as const;
+export const BOARD_STAFF_WATCH_KINDS = ["competitor", "directory", "media", "analogue", "event-source", "candidate", "listingsIndex"] as const;
 export const BOARD_STAFF_CONTENT_CHANNELS = ["facebook", "instagram", "instagram_story", "newsletter", "seo", "assisted_xiaohongshu", "assisted_fb_group"] as const;
 export const BOARD_STAFF_CONTENT_STATUSES = ["idea", "drafted", "creative", "scheduled", "published", "vetoed", "failed"] as const;
 export const BOARD_STAFF_NEWSLETTER_LISTS = ["parents", "providers"] as const;
@@ -900,6 +900,7 @@ export const BOARD_CATALOG_OUTPUT_CONTRACT = "OUTPUT CONTRACT (curation sheet, N
 export const BOARD_CATALOG_DISTRICTS = [{"id": "eastern", "name": "Eastern", "hint": "LCSD Quarry Bay Park playground page first, then one indoor play centre, one class provider"}, {"id": "wan-chai", "name": "Wan Chai", "hint": "LCSD Wan Chai Park playground page first, then one indoor family venue, one class provider \u2014 all inside Wan Chai"}, {"id": "islands", "name": "Islands", "hint": "LCSD Tung Chung North Park or Mui Wo Municipal Services Building playground page first, then one indoor or family venue, one class or sports provider"}, {"id": "southern", "name": "Southern", "hint": "LCSD Repulse Bay Beach or Aberdeen Promenade playground page first, then one indoor family venue, one class or sports provider"}, {"id": "sham-shui-po", "name": "Sham Shui Po", "hint": "LCSD Sham Shui Po Park or Nam Cheong Park playground page first, then one indoor family venue, one class provider"}, {"id": "central-and-western", "name": "Central and Western", "hint": "LCSD Hong Kong Park or Sun Yat Sen Memorial Park playground page first, then one indoor family venue, one class provider"}, {"id": "kwun-tong", "name": "Kwun Tong", "hint": "LCSD Jordan Valley Playground or Laguna Park page first, then one indoor family venue, one class provider"}, {"id": "wong-tai-sin", "name": "Wong Tai Sin", "hint": "LCSD Morse Park or Wong Tai Sin Square Playground page first, then one indoor family venue, one class provider"}, {"id": "kowloon-city", "name": "Kowloon City", "hint": "LCSD Kowloon Walled City Park or Ho Man Tin Park page first, then one indoor family venue, one class provider"}, {"id": "yau-tsim-mong", "name": "Yau Tsim Mong", "hint": "LCSD Kowloon Park or King George V Memorial Park page first, then one indoor family venue, one class provider"}, {"id": "tsuen-wan", "name": "Tsuen Wan", "hint": "LCSD Tsuen Wan Park or Jockey Club Tak Wah Park page first, then one indoor family venue, one class provider"}, {"id": "kwai-tsing", "name": "Kwai Tsing", "hint": "LCSD Tsing Yi Park or Central Kwai Chung Park page first, then one indoor family venue, one class provider"}, {"id": "north", "name": "North", "hint": "LCSD North District Park or Fanling Recreation Ground page first, then one indoor family venue, one class provider"}, {"id": "tai-po", "name": "Tai Po", "hint": "LCSD Tai Po Waterfront Park or Yuen Shin Park page first, then one indoor family venue, one class provider"}, {"id": "sha-tin", "name": "Sha Tin", "hint": "LCSD Sha Tin Park or Ma On Shan Park page first, then one indoor family venue, one class provider"}, {"id": "yuen-long", "name": "Yuen Long", "hint": "LCSD Yuen Long Park or Tin Shui Wai Park page first, then one indoor family venue, one class provider"}, {"id": "tuen-mun", "name": "Tuen Mun", "hint": "LCSD Tuen Mun Park or Butterfly Beach Park page first, then one indoor family venue, one class provider"}, {"id": "sai-kung", "name": "Sai Kung", "hint": "LCSD Sai Kung Waterfront Park or Po Tsui Park page first, then one indoor family venue, one class provider"}] as const;
 export const BOARD_CATALOG_TYPE_TO_CATEGORY = {"playground": "Outdoor activity", "indoor_play": "Indoor fun", "class": "Class", "outdoor": "Outdoor activity", "sports": "Sport", "sport": "Sport", "event": "Workshop"} as const;
 export const BOARD_CATALOG_MAX_ORGS_PER_IMPORT = 20;
+export const BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT = 50;
 export const BOARD_CATALOG_MAX_AWAITING_IMPORT = 3;
 export const BOARD_CATALOG_FETCH_CAP = 9;
 export const BOARD_CATALOG_MAX_LOW_COMPLETENESS = 3;
@@ -907,6 +908,11 @@ export const BOARD_CATALOG_QUALITY_MIN_FACTS = 2;
 export const BOARD_CATALOG_EVENT_KINDS = ["catalog-micro-batch", "catalog-enrich"] as const;
 export const BOARD_CATALOG_IMPORT_ENABLED_DEFAULT = false;
 export const BOARD_CATALOG_AUTO_IMPORT_DEFAULT = false;
+export const BOARD_CATALOG_MICRO_BATCH_ENABLED_DEFAULT = true;
+export const BOARD_CATALOG_LAUNCH_LISTING_TARGET = 1000;
+export const BOARD_CATALOG_DESCRIBE_BATCH_SIZE = 20;
+export const BOARD_CATALOG_BULK_SOURCES = ["lcsd", "edb", "swd", "places", "competitor"] as const;
+export const BOARD_CATALOG_CANDIDATE_STATUSES = ["new", "approved", "imported", "rejected", "closed"] as const;
 
 export type OpenRouterAppDefinition = {
   readonly id: string;

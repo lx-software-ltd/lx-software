@@ -110,7 +110,7 @@ export type BoardSettings = {
     readonly modelBySeat?: Readonly<Record<string, string>>;
   };
   readonly review?: { readonly digestTo: string; readonly digestHourHkt: number; readonly sampleSize: number };
-  readonly catalog?: { readonly autoImport?: boolean };
+  readonly catalog?: { readonly autoImport?: boolean; readonly microBatchEnabled?: boolean };
   readonly boundaries?: BoardBoundaries;
   readonly updatedAt?: string | null;
   readonly version?: number;
@@ -139,6 +139,7 @@ export function catalogDraft(
 ): NonNullable<BoardSettings["catalog"]> {
   return {
     autoImport: Boolean(current.catalog?.autoImport),
+    microBatchEnabled: current.catalog?.microBatchEnabled !== false,
     ...patch,
   };
 }
@@ -364,6 +365,7 @@ export type BoardCatalogImportResult = {
   readonly created?: number;
   readonly updated?: number;
   readonly failed?: number;
+  readonly failedActivities?: number;
   readonly objectKey?: string;
   readonly at?: string;
   readonly partial?: boolean;
@@ -1687,6 +1689,35 @@ export function boardCatalogRequeuePath(): string {
   return `${BOARD_API_BASE}/catalog/requeue`;
 }
 
+export function boardCatalogReimportPath(): string {
+  return `${BOARD_API_BASE}/catalog/reimport`;
+}
+
+export function boardCatalogSourcesPath(): string {
+  return `${BOARD_API_BASE}/catalog/sources`;
+}
+
+export function boardCatalogBulkPreviewPath(source: string): string {
+  return `${BOARD_API_BASE}/catalog/bulk/${encodeURIComponent(source)}/preview`;
+}
+
+export function boardCatalogBulkImportPath(source: string): string {
+  return `${BOARD_API_BASE}/catalog/bulk/${encodeURIComponent(source)}/import`;
+}
+
+export function boardCatalogCandidatesPath(status?: string): string {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  return `${BOARD_API_BASE}/catalog/candidates${qs}`;
+}
+
+export function boardCatalogCandidateDecidePath(candidateId: string, decision: "approve" | "reject"): string {
+  return `${BOARD_API_BASE}/catalog/candidates/${encodeURIComponent(candidateId)}/${decision}`;
+}
+
+export function boardCatalogDiscoveryRunPath(): string {
+  return `${BOARD_API_BASE}/catalog/discovery/run`;
+}
+
 export function canImportCatalogTask(task: Pick<BoardTask, "status" | "importedAt" | "importPhase">): boolean {
   if (task.importedAt) return false;
   if (task.status === "awaiting_import") return task.importPhase !== "collision";
@@ -1703,6 +1734,21 @@ export function canSkipCatalogTask(task: Pick<BoardTask, "status" | "importedAt"
 
 export function canRequeueCatalogImport(task: Pick<BoardTask, "status" | "importPhase">): boolean {
   return task.status === "needs_owner" && Boolean(task.importPhase);
+}
+
+export function canReimportCatalogTask(
+  task: Pick<BoardTask, "importedAt" | "importPhase" | "importResult" | "eventRef">,
+): boolean {
+  if (!isCatalogSheetTask(task)) return false;
+  const imported = Boolean(task.importedAt) || task.importPhase === "imported";
+  const partial = task.importPhase === "partial";
+  if (imported) return true;
+  if (!partial) return false;
+  const stored = task.importResult?.failedActivities;
+  if (typeof stored === "number") return stored > 0;
+  return (task.importResult?.results ?? []).some(
+    (row) => row.type === "activities" && row.status === "failed",
+  );
 }
 
 export function showTaskReviewActions(task: Pick<BoardTask, "status" | "importPhase" | "eventRef">): boolean {
@@ -1759,7 +1805,7 @@ export function catalogDrawerMessageForTask(
   return null;
 }
 
-export const CATALOG_MUTATION_KEYS = ["preview", "import", "skip", "requeue"] as const;
+export const CATALOG_MUTATION_KEYS = ["preview", "import", "skip", "requeue", "reimport"] as const;
 export type CatalogMutationKey = (typeof CATALOG_MUTATION_KEYS)[number];
 
 /** Other catalog mutations to reset after one of them succeeds. */
@@ -2001,6 +2047,7 @@ export type BoardProgressSnapshot = {
   readonly fetchedAt: string;
   readonly listings: {
     readonly activities: number;
+    readonly launchTarget?: number;
     readonly providers: number;
     readonly stores: number;
     readonly completenessAvg: number | null;
@@ -2109,6 +2156,31 @@ export type BoardReviewSnapshot = {
     readonly failureLine?: string;
     readonly canRevise?: boolean | null;
   }[];
+};
+
+export type BoardCatalogSourceRow = {
+  readonly id: string;
+  readonly counts: Readonly<Record<string, number>>;
+  readonly available: number;
+  readonly lastImport?: { readonly at?: string; readonly imported?: number } | null;
+  readonly lastPreview?: { readonly at?: string; readonly count?: number } | null;
+};
+
+export type BoardCatalogSourcesPayload = {
+  readonly sources: readonly BoardCatalogSourceRow[];
+  readonly launchTarget: number;
+  readonly candidateCounts: Readonly<Record<string, Readonly<Record<string, number>>>>;
+};
+
+export type BoardCatalogCandidate = {
+  readonly candidateId: string;
+  readonly source: string;
+  readonly nameEn: string;
+  readonly nameZh?: string;
+  readonly district: string;
+  readonly status: string;
+  readonly officialUrl?: string;
+  readonly updatedAt?: string;
 };
 
 export function tasksNeedPolling(tasks: readonly BoardTask[]): boolean {

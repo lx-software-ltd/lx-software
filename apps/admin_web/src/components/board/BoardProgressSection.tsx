@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
+import { BOARD_CATALOG_LAUNCH_LISTING_TARGET } from "../../lib/contracts/generated";
 import { useBoardProgress } from "../../hooks/useBoardProgress";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import type { BoardProgressSnapshot } from "../../lib/boardModel";
+import { BoardCatalogSourcesSection } from "./BoardCatalogSourcesSection";
 
 function errorText(err: unknown): string | null {
   if (!err) return null;
@@ -58,7 +60,7 @@ function ProgressBody({
       <div className="row g-3 mb-3">
         <Kpi
           label="Live listings"
-          value={String(listings.activities)}
+          value={`${listings.activities} / ${listings.launchTarget ?? BOARD_CATALOG_LAUNCH_LISTING_TARGET}`}
           hint={
             listings.error
               ? listings.error
@@ -86,6 +88,8 @@ function ProgressBody({
           hint={content.emptyChannels.length ? `Empty: ${content.emptyChannels.join(", ")}` : "Channels have slots"}
         />
       </div>
+
+      <BoardCatalogSourcesSection />
 
       <div className="progress mb-3" role="img" aria-label="Partnerships versus weekly target">
         <div className="progress-bar" style={{ width: `${Math.min(100, Math.round((warm / Math.max(target, 1)) * 100))}%` }} />

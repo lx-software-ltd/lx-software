@@ -59,7 +59,7 @@ class PlacesTests(BoardTestCase):
         board_store.put_cache(
             self.table,
             board_places._month_key(),
-            {"usd": 20.0, "searches": 500, "details": 0},
+            {"usd": float(board_places.monthly_cap_usd(self.settings)), "searches": 500, "details": 0},
             ttl_seconds=86400,
         )
         with self.assertRaises(board_places.PlacesError) as ctx:
@@ -69,6 +69,24 @@ class PlacesTests(BoardTestCase):
     def test_field_mask_constant(self) -> None:
         self.assertIn("websiteUri", board_places.FIELD_MASK)
         self.assertTrue(board_places.SEARCH_FIELD_MASK.startswith("places."))
+
+    def test_discover_uses_location_bias_circle(self) -> None:
+        payload = {
+            "places": [
+                {
+                    "id": "ChIJdisc",
+                    "displayName": {"text": "Eastern Park"},
+                    "formattedAddress": "Eastern, Hong Kong",
+                    "types": ["park"],
+                }
+            ]
+        }
+        with patch.object(board_places, "_http", return_value=payload) as http:
+            found = board_places.discover(self.table, "Eastern", settings=self.settings, limit=5)
+        self.assertEqual(found[0]["placeId"], "ChIJdisc")
+        body = json.loads(http.call_args.kwargs["body"].decode("utf-8"))
+        self.assertIn("locationBias", body)
+        self.assertIn("circle", body["locationBias"])
 
 
 class PlacesRouteHiddenWhenStaffOff(BoardTestCase):

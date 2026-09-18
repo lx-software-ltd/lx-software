@@ -51,10 +51,27 @@ vi.mock("../../hooks/useBoardProgress", () => ({
   useBoardProgress: () => ({ data: snap, isLoading: false, isError: false, error: null }),
 }));
 
+vi.mock("../../hooks/useBoardCatalog", () => ({
+  useBoardCatalogSources: () => ({
+    data: { sources: [], launchTarget: 1000, candidateCounts: {} },
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
+  useBoardCatalogCandidates: () => ({ data: [], isLoading: false, isError: false, error: null }),
+  useBoardCatalogMutations: () => ({
+    preview: { isPending: false, isError: false, error: null, mutate: vi.fn() },
+    importSource: { isPending: false, isError: false, error: null, mutate: vi.fn() },
+    decide: { isPending: false, isError: false, mutate: vi.fn() },
+    runDiscovery: { isPending: false, mutate: vi.fn() },
+  }),
+}));
+
 describe("BoardProgressSection", () => {
   it("shows catalog, signings, stalled outreach and bottlenecks", () => {
     render(<BoardProgressSection />);
     expect(screen.getByRole("heading", { name: "Progress" })).toBeInTheDocument();
+    expect(screen.getByText("Bulk catalog sources")).toBeInTheDocument();
     expect(screen.getByText("Live listings")).toBeInTheDocument();
     expect(screen.getByText("Sha Tin Playhouse")).toBeInTheDocument();
     expect(screen.getByText("Tai Po Hall")).toBeInTheDocument();

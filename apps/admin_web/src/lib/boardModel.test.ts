@@ -8,6 +8,7 @@ import {
   showTaskReviewActions,
   catalogDrawerMessageForTask,
   catalogMutationErrorForTask,
+  canReimportCatalogTask,
   catalogSiblingMutationKeys,
   filterBoardTasks,
   liveCatalogPreviewForTask,
@@ -356,8 +357,28 @@ describe("task dashboard helpers", () => {
         err instanceof Error ? err.message : null,
       ),
     ).toBeNull();
-    expect(catalogSiblingMutationKeys("preview")).toEqual(["import", "skip", "requeue"]);
-    expect(catalogSiblingMutationKeys("skip")).toEqual(["preview", "import", "requeue"]);
+    expect(catalogSiblingMutationKeys("preview")).toEqual(["import", "skip", "requeue", "reimport"]);
+    expect(catalogSiblingMutationKeys("skip")).toEqual(["preview", "import", "requeue", "reimport"]);
+    expect(
+      canReimportCatalogTask({
+        importedAt: "2026-09-17T00:00:00Z",
+        importPhase: "imported",
+        eventRef: { kind: "catalog-micro-batch" },
+      }),
+    ).toBe(true);
+    expect(
+      canReimportCatalogTask({
+        importPhase: "partial",
+        eventRef: { kind: "catalog-enrich" },
+        importResult: { failedActivities: 2 },
+      }),
+    ).toBe(true);
+    expect(
+      canReimportCatalogTask({
+        importPhase: "pending",
+        eventRef: { kind: "catalog-micro-batch" },
+      }),
+    ).toBe(false);
   });
 
   it("builds a shareable task deep link", () => {

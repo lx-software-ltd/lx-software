@@ -11,9 +11,12 @@ import board_store
 from contract_constants import (
     BOARD_CATALOG_ASSIGNEE,
     BOARD_CATALOG_BUDGET_USD,
+    BOARD_CATALOG_DESCRIBE_BATCH_SIZE,
+    BOARD_CATALOG_DESCRIBE_BUDGET_USD,
     BOARD_CATALOG_DISTRICTS,
     BOARD_CATALOG_MAX_AWAITING_IMPORT,
     BOARD_CATALOG_MAX_LOW_COMPLETENESS,
+    BOARD_CATALOG_MICRO_BATCH_ENABLED_DEFAULT,
     BOARD_CATALOG_OUTPUT_CONTRACT,
 )
 from http_common import _log_event
@@ -91,13 +94,18 @@ def compose_enrich_brief(district: dict[str, Any], names: list[str]) -> str:
     listed = ", ".join(names[:8]) if names else "the organisations already imported for this district"
     contract = BOARD_CATALOG_OUTPUT_CONTRACT.strip()
     return (
-        f"Founder directive — CATALOG ENRICH {name}: live completeness is under 50%. "
-        f"Re-curate {listed} in {name} ({hint}). Fill missing opening_hours, free_or_paid "
-        f"or price_note, and address_en from the official page. Prefer the LCSD facility "
-        f"page for public playgrounds. For commercial providers (not LCSD/gov), "
-        f"task_request_help from provider-success so they send the onboarding link. "
+        f"Founder directive — CATALOG DESCRIBE {name}: write 40-word EN + 繁中 descriptions, "
+        f"age_range and price_note for {listed} in {name} ({hint}). "
+        f"Read only the official page. Leave unverified fields as unverified. "
         f"{contract}"
     )[:4000]
+
+
+def micro_batch_enabled(settings: dict[str, Any] | None) -> bool:
+    catalog = (settings or {}).get("catalog") if isinstance(settings, dict) else None
+    if isinstance(catalog, dict) and "microBatchEnabled" in catalog:
+        return bool(catalog.get("microBatchEnabled"))
+    return bool(BOARD_CATALOG_MICRO_BATCH_ENABLED_DEFAULT)
 
 
 def claimed_district_ids(table: Any) -> set[str]:
@@ -187,6 +195,11 @@ def next_district(table: Any, *, enforce_completeness_gate: bool = True) -> dict
 
 def imported_org_names(table: Any, district_id: str) -> list[str]:
     did = str(district_id or "").strip().lower()
+    district_name = ""
+    for row in BOARD_CATALOG_DISTRICTS:
+        if isinstance(row, dict) and str(row.get("id") or "").strip().lower() == did:
+            district_name = str(row.get("name") or "")
+            break
     names: list[str] = []
     for status in ("delivered", "awaiting_import", "needs_owner"):
         for task in board_store.list_tasks(table, status, limit=200):
@@ -203,7 +216,15 @@ def imported_org_names(table: Any, district_id: str) -> list[str]:
                 name = str(org.get("name") or "").strip()
                 if name and name not in names:
                     names.append(name)
-    return names[:12]
+    for cand in board_store.list_candidates(table, "imported", limit=400):
+        if district_name and str(cand.get("district") or "") != district_name:
+            continue
+        if str(cand.get("descriptionSource") or "") not in ("", "template"):
+            continue
+        name = str(cand.get("nameEn") or cand.get("name") or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names[:BOARD_CATALOG_DESCRIBE_BATCH_SIZE]
 
 
 def next_enrich_district(table: Any) -> dict[str, Any] | None:
@@ -226,6 +247,8 @@ def next_enrich_district(table: Any) -> dict[str, Any] | None:
 def create_next(table: Any, settings: dict[str, Any], *, created_by: str = "board_duties") -> dict[str, Any]:
     import board_catalog_import
 
+    if not micro_batch_enabled(settings):
+        raise board_staff.StaffError("catalog micro-batch paused")
     if board_catalog_import.at_awaiting_cap(table):
         raise board_staff.StaffError(
             f"catalog awaiting_import cap reached ({BOARD_CATALOG_MAX_AWAITING_IMPORT})"
@@ -266,7 +289,7 @@ def create_enrich(table: Any, settings: dict[str, Any], *, created_by: str = "bo
         raise board_staff.StaffError("no district needs enrich")
     did = str(district.get("id") or "")
     name = str(district.get("name") or did)
-    names = imported_org_names(table, did)
+    names = imported_org_names(table, did)[:BOARD_CATALOG_DESCRIBE_BATCH_SIZE]
     return board_staff.create_task(
         table,
         settings,
@@ -274,7 +297,7 @@ def create_enrich(table: Any, settings: dict[str, Any], *, created_by: str = "bo
         origin="duty",
         brief=compose_enrich_brief(district, names),
         deliverable_type="json",
-        budget_usd=BOARD_CATALOG_BUDGET_USD,
+        budget_usd=BOARD_CATALOG_DESCRIBE_BUDGET_USD,
         sla_hours=24,
         event_ref={"kind": CATALOG_ENRICH_KIND, "id": f"catalog-enrich:{did}", "districtId": did, "district": name},
         created_by=created_by,

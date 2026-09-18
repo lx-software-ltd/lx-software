@@ -104,6 +104,33 @@ HK_DISTRICTS: tuple[tuple[str, str], ...] = (
 )
 
 
+# Approximate district centres for Places locationBias circles (WGS84).
+DISTRICT_CENTERS: dict[str, tuple[float, float, int]] = {
+    "Eastern": (22.284, 114.224, 7000),
+    "Wan Chai": (22.277, 114.173, 4500),
+    "Central and Western": (22.282, 114.145, 5000),
+    "Southern": (22.247, 114.168, 8000),
+    "Islands": (22.288, 113.943, 15000),
+    "Kwun Tong": (22.313, 114.226, 5500),
+    "Wong Tai Sin": (22.342, 114.195, 5000),
+    "Kowloon City": (22.328, 114.188, 5000),
+    "Sham Shui Po": (22.331, 114.162, 5000),
+    "Yau Tsim Mong": (22.307, 114.171, 4500),
+    "Sha Tin": (22.382, 114.190, 8000),
+    "Tai Po": (22.451, 114.165, 8000),
+    "North": (22.495, 114.138, 10000),
+    "Tsuen Wan": (22.372, 114.115, 6000),
+    "Kwai Tsing": (22.357, 114.128, 6000),
+    "Tuen Mun": (22.392, 113.973, 8000),
+    "Yuen Long": (22.445, 114.022, 8000),
+    "Sai Kung": (22.382, 114.271, 10000),
+}
+
+
+def district_center(name: str) -> tuple[float, float, int] | None:
+    return DISTRICT_CENTERS.get(name)
+
+
 def district_from_address(address: str) -> str:
     text = address or ""
     for token, district in HK_DISTRICTS:

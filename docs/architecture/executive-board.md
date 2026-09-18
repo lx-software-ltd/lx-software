@@ -370,10 +370,13 @@ organisations) into siutindei importer JSON. Verified `free_or_paid` /
 `schedules` rows; a verified address without coordinates is geocoded
 through the HK Address Lookup Service (district must match, 30-day
 cache, fail-open, 4 s timeout, at most 3 live lookups / 12 s per sheet).
-The micro-batch duty pauses after
+Every imported organisation always carries one activity (hours and
+price stay optional). The micro-batch duty pauses after
 `maxLowCompletenessDistricts` (3) imported districts sit below 50%
 completeness (cached health only; a missing score is not “low”) so
-`catalog-enrich` can refill hours, price and address. Enrich dry-runs
+`catalog-enrich` / describe can write 40-word EN + 繁中 copy. The owner
+can also set `settings.catalog.microBatchEnabled` false while bulk
+import fills toward `launchListingTarget` 1000. Enrich dry-runs
 that would update existing organisations stay `validated`. Accept of a
 catalog sheet skips the unverified-evidence hold so enrich briefs that
 mention Fill/send still reach dry-run. A thin catalog sheet is returned
@@ -389,7 +392,7 @@ is `always_propose` (action class `catalog_import`) and refuses while
 `SiutindeiBoardCatalogImportEnabled` is off; preview and local dry-run
 work regardless. Owner `POST …/catalog/preview` (defaults to a remote
 siutindei dry-run; `{"remote": false}` stays local), `…/catalog/import`,
-`…/catalog/skip` and `…/catalog/requeue` are JWT-only (`owner_only` on
+`…/catalog/skip`, `…/catalog/requeue` and `…/catalog/reimport` are JWT-only (`owner_only` on
 the public API). A remote Preview on an `awaiting_import` / parked
 import sheet applies the same outcome as Accept (validate, collision,
 rejected, or pending + `remoteError`), stamps `lastValidatedAt`, and
@@ -397,7 +400,25 @@ clears `importError` when the dry-run reaches siutindei. Owner Import
 refuses a stored collision without a live write; a stale preview is
 refreshed in that request and the live POST waits for the next click
 (HTTP API 30 s). A repeat import of the same task is 409 unless `force`
-is set. The product side still needs the `importer` group, the #502
+is set. Reimport force-sends an already-imported or partial sheet so
+failed or previously omitted activity rows can create.
+
+Bulk listing growth is `board_catalog_bulk.py` plus a candidate queue
+(`BOARD#…#candidate#`). Official LCSD / EDB kindergarten / SWD child-care
+feeds auto-approve; Places rows that pass the public-type or
+rating/review bar also auto-approve; competitor `listingsIndex` names
+stay `new` until the owner decides. Daily 03:30 HKT
+`…-board-catalog-discovery` rotates `discoveryDistrictsPerDay` (3)
+districts through Places (Enterprise, 30-day cache, `placesMonthlyCapUsd`
+80), refreshes open data on Mondays, and drops Places hours/phone after
+`placesTtlDays` 30. Owner `GET …/catalog/sources`,
+`POST …/catalog/bulk/{source}/preview|import` (batches of
+`maxOrgsPerBulkImport` 50), `GET …/catalog/candidates`,
+`POST …/catalog/candidates/{id}/approve|reject` and
+`POST …/catalog/discovery/run` are JWT-only writes except the GETs.
+Competitor pages are names only — never descriptions or photos. The
+product repo still needs `place_id` / status / closure handling (out of
+this stack). The product side still needs the `importer` group, the #502
 fields and `dry_run` on `POST /admin/imports` (deployment doc).
 
 ## 7. Staff (background tasks)
@@ -619,7 +640,7 @@ scored against `boundaries.outreach.fitRubric` by one `desk` call, and
 `qualified` at ≥ 60. Contacts are business addresses only (`info@`,
 `hello@`, `enquiry@`, …) found on the prospect's site or Places data;
 personal addresses are never used unless the owner allows them. Google
-Places (New) usage is capped at `placesMonthlyCapUsd` 20 and cached 30
+Places (New) usage is capped at `placesMonthlyCapUsd` 80 and cached 30
 days (`…-google-places-key` secret).
 
 Sequences per type (`sequence#{type}`, EN / ZH steps at D+0, D+4, D+10,

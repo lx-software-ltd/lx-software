@@ -641,6 +641,56 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
     };
     return json({ ok: true, task: state.tasks[idx], taskId });
   }
+  if (p === `${board}/catalog/reimport` && method === "POST") {
+    const body = parseBody(init);
+    const taskId = String(body.taskId || "");
+    const idx = state.tasks.findIndex((t) => t.taskId === taskId);
+    if (idx < 0) return json({ message: "Task not found" }, 404);
+    return json({ ok: true, taskId, reimported: true });
+  }
+  if (p === `${board}/catalog/sources` && method === "GET") {
+    return json({
+      launchTarget: 1000,
+      candidateCounts: { lcsd: { new: 0, approved: 2, imported: 0, rejected: 0, closed: 0 } },
+      sources: [
+        {
+          id: "lcsd",
+          counts: { new: 0, approved: 2, imported: 0, rejected: 0, closed: 0 },
+          available: 2,
+          lastImport: null,
+          lastPreview: null,
+        },
+      ],
+    });
+  }
+  if (p.startsWith(`${board}/catalog/bulk/`) && p.endsWith("/preview") && method === "POST") {
+    return json({ ok: true, source: p.split("/")[5], approved: 2, wouldSend: 2, batches: 1, dryRuns: [{ ok: true }] });
+  }
+  if (p.startsWith(`${board}/catalog/bulk/`) && p.endsWith("/import") && method === "POST") {
+    return json({ ok: true, source: p.split("/")[5], imported: 2, batches: [] });
+  }
+  if (p.startsWith(`${board}/catalog/candidates`) && method === "GET") {
+    return json({
+      candidates: [
+        {
+          candidateId: "cand-1",
+          source: "competitor",
+          nameEn: "Example Playhouse",
+          district: "Sha Tin",
+          status: "new",
+        },
+      ],
+    });
+  }
+  if (p.endsWith("/approve") && p.includes("/catalog/candidates/") && method === "POST") {
+    return json({ candidate: { candidateId: "cand-1", source: "competitor", nameEn: "Example Playhouse", district: "Sha Tin", status: "approved" } });
+  }
+  if (p.endsWith("/reject") && p.includes("/catalog/candidates/") && method === "POST") {
+    return json({ candidate: { candidateId: "cand-1", source: "competitor", nameEn: "Example Playhouse", district: "Sha Tin", status: "rejected" } });
+  }
+  if (p === `${board}/catalog/discovery/run` && method === "POST") {
+    return json({ ok: true, places: { districts: ["Eastern"], upserted: 0 }, openData: {}, placesExpired: 0 });
+  }
   if (p === `${board}/code/promote` && method === "POST") {
     const now = new Date().toISOString();
     const approval: BoardApproval = {

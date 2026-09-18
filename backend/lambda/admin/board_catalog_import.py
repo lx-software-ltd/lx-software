@@ -581,31 +581,30 @@ def transform_org(
         out["source_url"] = out["website"]
 
     location_name = str(out.get("address") or out.get("name") or "").strip()
-    activity: dict[str, Any] | None = None
-    if pricing or weekly:
-        activity = {
-            "name": out["name"],
-            "category_name": out.get("category_name"),
-            "vetting_note": out.get("vetting_note"),
-        }
-        if out.get("description"):
-            activity["description"] = out["description"]
-        if out.get("source_url"):
-            activity["source_url"] = out["source_url"]
-        if pricing and location_name:
-            row = {"location_name": location_name[:200], **pricing}
-            activity["pricing"] = [row]
-            copied.append("pricing")
-        if weekly and location_name:
-            activity["schedules"] = [
-                {
-                    "location_name": location_name[:200],
-                    "timezone": "Asia/Hong_Kong",
-                    "weekly_entries": weekly,
-                }
-            ]
-            copied.append("schedules")
-        out["activities"] = [activity]
+    activity: dict[str, Any] = {
+        "name": out["name"],
+        "category_name": out.get("category_name"),
+        "vetting_note": out.get("vetting_note"),
+    }
+    if out.get("description"):
+        activity["description"] = out["description"]
+    if out.get("source_url"):
+        activity["source_url"] = out["source_url"]
+    if pricing and location_name:
+        row = {"location_name": location_name[:200], **pricing}
+        activity["pricing"] = [row]
+        copied.append("pricing")
+    if weekly and location_name:
+        activity["schedules"] = [
+            {
+                "location_name": location_name[:200],
+                "timezone": "Asia/Hong_Kong",
+                "weekly_entries": weekly,
+            }
+        ]
+        copied.append("schedules")
+    out["activities"] = [activity]
+    copied.append("activities")
 
     return out, {
         "index": index,
@@ -1349,14 +1348,20 @@ def run_import(table: Any, task: dict[str, Any], *, force: bool = False, live_af
     task["lastImportAttemptAt"] = now
     task["importPreview"] = preview
     summary = imported.get("summary") or {}
+    failed_activities = sum(
+        1
+        for row in (imported.get("results") or [])
+        if str(row.get("type") or "").lower() == "activities" and str(row.get("status") or "").lower() == "failed"
+    )
     result = {
-        "ok": bool(imported.get("ok")),
+        "ok": bool(imported.get("ok")) and int(summary.get("failed") or 0) == 0,
         "objectKey": imported.get("objectKey"),
         "sent": imported.get("sent"),
         "accepted": imported.get("accepted"),
         "created": summary.get("created"),
         "updated": summary.get("updated"),
         "failed": summary.get("failed"),
+        "failedActivities": failed_activities,
         "summary": summary,
         "results": imported.get("results") or [],
         "at": now,
@@ -1398,6 +1403,14 @@ def run_import(table: Any, task: dict[str, Any], *, force: bool = False, live_af
     task["importError"] = ""
     _drop_open_hold(table, task_id, reason="imported")
     _deliver_imported(table, task, now)
+    try:
+        import board_catalog_candidates
+
+        for org in payload.get("organizations") or []:
+            if isinstance(org, dict):
+                board_catalog_candidates.remember_listing(table, org)
+    except Exception as exc:
+        _log_event("warning", tag="board_catalog_listing_mirror_failed", error=str(exc)[:200])
     return {"ok": True, "taskId": task_id, "import": imported, "preview": preview}
 
 
@@ -1535,6 +1548,64 @@ def owner_requeue(table: Any, body: dict[str, Any]) -> dict[str, Any]:
     return requeue_for_import(table, task)
 
 
+def failed_activity_count(task: dict[str, Any]) -> int:
+    result = task.get("importResult") if isinstance(task.get("importResult"), dict) else {}
+    stored = result.get("failedActivities")
+    if isinstance(stored, int):
+        return stored
+    return sum(
+        1
+        for row in (result.get("results") or [])
+        if isinstance(row, dict)
+        and str(row.get("type") or "").lower() == "activities"
+        and str(row.get("status") or "").lower() == "failed"
+    )
+
+
+def can_reimport(task: dict[str, Any]) -> bool:
+    """Owner may re-send an already-imported or partial sheet so activities land."""
+    if not is_catalog_sheet(task):
+        return False
+    imported = bool(task.get("importedAt")) or str(task.get("importPhase") or "") == "imported"
+    partial = str(task.get("importPhase") or "") == "partial"
+    if imported:
+        return True
+    return partial and failed_activity_count(task) > 0
+
+
+def reimport_failed_rows(table: Any, task: dict[str, Any]) -> dict[str, Any]:
+    """Re-send an already-imported sheet so failed activity rows can create."""
+    require_catalog_sheet(task)
+    if not can_reimport(task):
+        raise CatalogImportError("reimport requires an imported catalog sheet with failed activity rows")
+    now = _now_iso()
+    import board_store
+
+    history = list((task.get("importResult") or {}).get("history") or [])
+    if task.get("importResult"):
+        history.append({k: (task.get("importResult") or {}).get(k) for k in ("at", "ok", "failed", "failedActivities", "objectKey")})
+    out = run_import(table, task, force=True)
+    latest = board_store.get_task(table, str(task.get("taskId") or "")) or task
+    if latest.get("importResult") and isinstance(latest["importResult"], dict):
+        latest["importResult"]["history"] = history[-8:]
+        latest["reimportedAt"] = now
+        _save_task(table, latest)
+        out["task"] = latest
+    return out
+
+
+def owner_reimport(table: Any, body: dict[str, Any]) -> dict[str, Any]:
+    task_id = str(body.get("taskId") or "").strip()
+    if not task_id:
+        raise CatalogImportError("taskId is required")
+    import board_store
+
+    task = board_store.get_task(table, task_id)
+    if not task:
+        raise CatalogImportError("Task not found")
+    return reimport_failed_rows(table, task)
+
+
 def _task_row(task: dict[str, Any]) -> dict[str, Any]:
     ref = task.get("eventRef") or {}
     preview = task.get("importPreview") or {}
@@ -1580,6 +1651,8 @@ def catalog_headline(table: Any) -> dict[str, Any]:
         "completeDistricts": coverage.get("completeDistricts") or 0,
         "nextDistrict": coverage.get("nextDistrict") or "",
         "failedActivityRows": coverage.get("failedActivityRows") or 0,
+        "launchTarget": coverage.get("launchTarget") or 0,
+        "candidates": coverage.get("candidates") or {},
         "sheets": [_task_row(t) for t in awaiting[:20]],
     }
 
@@ -1612,11 +1685,17 @@ def catalog_coverage(table: Any) -> dict[str, Any]:
                     continue
                 if str(row.get("type") or "").lower() == "activities" and str(row.get("status") or "").lower() == "failed":
                     failed += 1
+    from contract_constants import BOARD_CATALOG_LAUNCH_LISTING_TARGET
+
+    import board_catalog_candidates
+
     return {
         "importedDistricts": len(imported),
         "completeDistricts": complete,
         "nextDistrict": str((nxt or {}).get("name") or ""),
         "failedActivityRows": failed,
+        "launchTarget": BOARD_CATALOG_LAUNCH_LISTING_TARGET,
+        "candidates": board_catalog_candidates.counts_by_source(table),
     }
 
 

@@ -105,6 +105,7 @@ vi.mock("../../hooks/useBoardTasks", () => ({
     catalogImport: { isPending: false, error: null, variables: undefined, mutate: vi.fn(), reset: vi.fn() },
     catalogSkip: { isPending: false, error: null, variables: undefined, mutate: vi.fn(), reset: vi.fn() },
     catalogRequeue: { isPending: false, error: null, variables: undefined, mutate: vi.fn(), reset: vi.fn() },
+    catalogReimport: { isPending: false, error: null, variables: undefined, mutate: vi.fn(), reset: vi.fn() },
   }),
   useBoardTask: () => ({ data: undefined, isLoading: false, error: null }),
 }));

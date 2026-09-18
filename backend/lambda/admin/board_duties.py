@@ -232,6 +232,7 @@ def run_due(table: Any, settings: dict[str, Any], now: datetime | None = None) -
                     or "awaiting_import cap" in str(exc)
                     or "below 50% completeness" in str(exc)
                     or "no district needs enrich" in str(exc)
+                    or "micro-batch paused" in str(exc)
                 ):
                     if "awaiting_import cap" in str(exc):
                         skip_why = "awaiting import cap"
@@ -239,6 +240,8 @@ def run_due(table: Any, settings: dict[str, Any], now: datetime | None = None) -
                         skip_why = "imported districts below completeness"
                     elif "no district needs enrich" in str(exc):
                         skip_why = "no district needs enrich"
+                    elif "micro-batch paused" in str(exc):
+                        skip_why = "micro-batch paused"
                     else:
                         skip_why = "all districts claimed"
                     board_store.put_cache(
