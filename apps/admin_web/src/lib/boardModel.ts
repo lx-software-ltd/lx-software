@@ -2158,12 +2158,23 @@ export type BoardReviewSnapshot = {
   }[];
 };
 
+export type BoardCatalogJob = {
+  readonly phase?: string;
+  readonly action?: string;
+  readonly at?: string;
+  readonly error?: string;
+  readonly ok?: boolean;
+  readonly imported?: number;
+  readonly approved?: number;
+};
+
 export type BoardCatalogSourceRow = {
   readonly id: string;
   readonly counts: Readonly<Record<string, number>>;
   readonly available: number;
   readonly lastImport?: { readonly at?: string; readonly imported?: number } | null;
   readonly lastPreview?: { readonly at?: string; readonly count?: number } | null;
+  readonly job?: BoardCatalogJob | null;
 };
 
 export type BoardCatalogSourcesPayload = {

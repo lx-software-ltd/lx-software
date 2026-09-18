@@ -664,10 +664,10 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
     });
   }
   if (p.startsWith(`${board}/catalog/bulk/`) && p.endsWith("/preview") && method === "POST") {
-    return json({ ok: true, source: p.split("/")[5], approved: 2, wouldSend: 2, batches: 1, dryRuns: [{ ok: true }] });
+    return json({ ok: true, queued: true, invoked: true, source: p.split("/")[5], action: "preview" });
   }
   if (p.startsWith(`${board}/catalog/bulk/`) && p.endsWith("/import") && method === "POST") {
-    return json({ ok: true, source: p.split("/")[5], imported: 2, batches: [] });
+    return json({ ok: true, queued: true, invoked: true, source: p.split("/")[5], action: "import" });
   }
   if (p.startsWith(`${board}/catalog/candidates`) && method === "GET") {
     return json({
@@ -689,7 +689,7 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
     return json({ candidate: { candidateId: "cand-1", source: "competitor", nameEn: "Example Playhouse", district: "Sha Tin", status: "rejected" } });
   }
   if (p === `${board}/catalog/discovery/run` && method === "POST") {
-    return json({ ok: true, places: { districts: ["Eastern"], upserted: 0 }, openData: {}, placesExpired: 0 });
+    return json({ ok: true, queued: true, invoked: true });
   }
   if (p === `${board}/code/promote` && method === "POST") {
     const now = new Date().toISOString();

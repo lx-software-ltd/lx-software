@@ -157,7 +157,7 @@ def daily_crawl(table: Any, settings: dict[str, Any], cursor: dict[str, Any] | N
             try:
                 import board_catalog_discovery
 
-                board_catalog_discovery.ingest_listings_page(table, watch, text, url)
+                board_catalog_discovery.ingest_listings_page(table, watch, result.text, url)
             except Exception as exc:
                 _log_event("warning", tag="board_catalog_listings_index_failed", error=str(exc)[:200])
         board_store.put_watch_page(table, str(watch["watchId"]), digest_id, page_doc)

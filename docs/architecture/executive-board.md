@@ -405,17 +405,21 @@ failed or previously omitted activity rows can create.
 
 Bulk listing growth is `board_catalog_bulk.py` plus a candidate queue
 (`BOARD#…#candidate#`). Official LCSD / EDB kindergarten / SWD child-care
-feeds auto-approve; Places rows that pass the public-type or
-rating/review bar also auto-approve; competitor `listingsIndex` names
-stay `new` until the owner decides. Daily 03:30 HKT
-`…-board-catalog-discovery` rotates `discoveryDistrictsPerDay` (3)
-districts through Places (Enterprise, 30-day cache, `placesMonthlyCapUsd`
-80), refreshes open data on Mondays, and drops Places hours/phone after
-`placesTtlDays` 30. Owner `GET …/catalog/sources`,
-`POST …/catalog/bulk/{source}/preview|import` (batches of
-`maxOrgsPerBulkImport` 50), `GET …/catalog/candidates`,
-`POST …/catalog/candidates/{id}/approve|reject` and
-`POST …/catalog/discovery/run` are JWT-only writes except the GETs.
+feeds auto-approve; Places rows auto-approve only for public types
+(park / playground / library / pool / museum). Commercial Places and
+competitor `listingsIndex` names stay `new` until the owner decides.
+Daily 03:30 HKT `…-board-catalog-discovery` rotates
+`discoveryDistrictsPerDay` (3) districts through Places (Enterprise,
+30-day cache, `placesMonthlyCapUsd` 80), refreshes open data on Mondays,
+and drops Places hours/phone after `placesTtlDays` 30. Owner
+`GET …/catalog/sources`, `POST …/catalog/bulk/{source}/preview|import`
+and `POST …/catalog/discovery/run` return `200 {queued}` and run on
+`AdminApiFn` via `try_invoke_event` (HTTP API 30 s). Batches of
+`maxOrgsPerBulkImport` 50. `GET …/catalog/candidates` and
+`POST …/catalog/candidates/{id}/approve|reject` stay on the request.
+Writes are JWT-only except the GETs. Open-data URLs (LCSD pefac/sc/sp/cpr
++ CSDI parks/libraries, SWD CSDI + list-ccc.csv, EDB CSV) are verified
+2026-09-18.
 Competitor pages are names only — never descriptions or photos. The
 product repo still needs `place_id` / status / closure handling (out of
 this stack). The product side still needs the `importer` group, the #502

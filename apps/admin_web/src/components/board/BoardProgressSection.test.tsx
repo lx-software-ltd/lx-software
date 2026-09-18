@@ -60,10 +60,10 @@ vi.mock("../../hooks/useBoardCatalog", () => ({
   }),
   useBoardCatalogCandidates: () => ({ data: [], isLoading: false, isError: false, error: null }),
   useBoardCatalogMutations: () => ({
-    preview: { isPending: false, isError: false, error: null, mutate: vi.fn() },
-    importSource: { isPending: false, isError: false, error: null, mutate: vi.fn() },
+    preview: { isPending: false, isError: false, isSuccess: false, error: null, data: null, mutate: vi.fn() },
+    importSource: { isPending: false, isError: false, isSuccess: false, error: null, data: null, mutate: vi.fn() },
     decide: { isPending: false, isError: false, mutate: vi.fn() },
-    runDiscovery: { isPending: false, mutate: vi.fn() },
+    runDiscovery: { isPending: false, isError: false, isSuccess: false, error: null, data: null, mutate: vi.fn() },
   }),
 }));
 

@@ -1339,7 +1339,9 @@ def run_import(table: Any, task: dict[str, Any], *, force: bool = False, live_af
     except CatalogImportError:
         task["importAttempts"] = int(task.get("importAttempts") or 0) + 1
         task["lastImportAttemptAt"] = now
-        task["importPhase"] = "failed"
+        already_imported = bool(task.get("importedAt")) or str(task.get("importPhase") or "") == "imported"
+        if not already_imported:
+            task["importPhase"] = "failed"
         task["importError"] = "siutindei import request failed"
         task["updatedAt"] = now
         _save_task(table, task)

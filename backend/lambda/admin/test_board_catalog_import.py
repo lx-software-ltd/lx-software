@@ -1010,6 +1010,25 @@ class ImportClientTests(BoardTestCase):
         saved = board_store.get_task(self.table, task["taskId"])
         self.assertTrue(saved.get("reimportedAt"))
 
+    def test_reimport_transport_failure_keeps_imported_phase(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="delivered")
+        task["importedAt"] = "2026-09-16T12:00:00Z"
+        task["importPhase"] = "imported"
+        task["importResult"] = {"failedActivities": 1}
+        board_store.put_task(self.table, task)
+        with patch.object(
+            board_catalog_import,
+            "_run_remote_import",
+            side_effect=board_catalog_import.CatalogImportError("siutindei import request failed"),
+        ):
+            with self.assertRaises(board_catalog_import.CatalogImportError):
+                board_catalog_import.reimport_failed_rows(self.table, task)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("importPhase"), "imported")
+        self.assertEqual(saved.get("importedAt"), "2026-09-16T12:00:00Z")
+        self.assertIn("failed", saved.get("importError") or "")
+
     def test_partial_import_returns_ok_false(self) -> None:
         settings = _enable_staff(self.table)
         task = self._sheet_task(settings, status="awaiting_import")

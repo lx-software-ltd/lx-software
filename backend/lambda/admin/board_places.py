@@ -99,7 +99,7 @@ def monthly_cap_usd(settings: dict[str, Any] | None = None) -> float:
     return float(BOARD_STAFF_PLACES_MONTHLY_CAP_USD)
 
 
-def _charge(table: Any, settings: dict[str, Any] | None, usd: float, *, kind: str) -> None:
+def _ensure_cap(table: Any, settings: dict[str, Any] | None, usd: float) -> None:
     doc = _month_doc(table)
     cap = monthly_cap_usd(settings)
     if doc["usd"] + usd > cap + 1e-9:
@@ -107,6 +107,11 @@ def _charge(table: Any, settings: dict[str, Any] | None, usd: float, *, kind: st
             "places monthly cap exceeded",
             {"error": "places monthly cap exceeded", "usd": doc["usd"], "cap": cap},
         )
+
+
+def _charge(table: Any, settings: dict[str, Any] | None, usd: float, *, kind: str) -> None:
+    _ensure_cap(table, settings, usd)
+    doc = _month_doc(table)
     doc["usd"] = round(doc["usd"] + usd, 6)
     if kind == "search":
         doc["searches"] = int(doc["searches"]) + 1
@@ -168,7 +173,6 @@ def text_search(
     hit = board_store.get_cache(table, cache_name)
     if hit and isinstance(hit.get("payload"), dict) and isinstance(hit["payload"].get("places"), list):
         return list(hit["payload"]["places"])
-    _charge(table, settings, TEXT_SEARCH_USD, kind="search")
     body: dict[str, Any] = {
         "textQuery": q,
         "regionCode": region.upper(),
@@ -182,6 +186,7 @@ def text_search(
             }
         }
     payload = json.dumps(body).encode("utf-8")
+    _ensure_cap(table, settings, TEXT_SEARCH_USD)
     data = _http(
         "POST",
         TEXT_SEARCH_URL,
@@ -192,6 +197,7 @@ def text_search(
         },
         body=payload,
     )
+    _charge(table, settings, TEXT_SEARCH_USD, kind="search")
     places = [_normalise_place(p) for p in (data.get("places") or []) if isinstance(p, dict)]
     if region == "hk":
         places = [p for p in places if board_hk.is_hk_address(str(p.get("address") or ""))]
@@ -218,12 +224,13 @@ def details(
         hit = board_store.get_cache(table, cache_name)
         if hit and isinstance(hit.get("payload"), dict) and isinstance(hit["payload"].get("place"), dict):
             return dict(hit["payload"]["place"])
-    _charge(table, settings, DETAILS_USD, kind="details")
+    _ensure_cap(table, settings, DETAILS_USD)
     data = _http(
         "GET",
         DETAILS_URL.format(place_id=urllib.parse.quote(pid, safe="")),
         headers={"X-Goog-Api-Key": _api_key(), "X-Goog-FieldMask": FIELD_MASK},
     )
+    _charge(table, settings, DETAILS_USD, kind="details")
     place = _normalise_place(data)
     if not place.get("placeId"):
         place["placeId"] = pid
@@ -266,48 +273,57 @@ def discover(
         cache_name = "places:d:" + hashlib.sha256(f"{q}|{included}|{limit}".encode("utf-8")).hexdigest()[:24]
         hit = board_store.get_cache(table, cache_name)
         page_places: list[dict[str, Any]]
-        if hit and isinstance(hit.get("payload"), dict) and isinstance(hit["payload"].get("places"), list):
+        if pages == 1 and hit and isinstance(hit.get("payload"), dict) and isinstance(hit["payload"].get("places"), list):
             page_places = list(hit["payload"]["places"])
         else:
-            _charge(table, settings, TEXT_SEARCH_USD, kind="search")
-            body: dict[str, Any] = {
-                "textQuery": q,
-                "regionCode": "HK",
-                "maxResultCount": limit,
-                "includedType": included,
-            }
-            if center:
-                lat, lng, radius = center
-                # Text Search (New) accepts a circle on locationBias only.
-                body["locationBias"] = {
-                    "circle": {"center": {"latitude": lat, "longitude": lng}, "radius": float(radius)}
+            page_places = []
+            page_token = ""
+            for _page in range(pages):
+                body: dict[str, Any] = {
+                    "textQuery": q,
+                    "regionCode": "HK",
+                    "maxResultCount": limit,
+                    "includedType": included,
                 }
-            else:
-                body["locationRestriction"] = {
-                    "rectangle": {
-                        "low": {"latitude": 22.15, "longitude": 113.82},
-                        "high": {"latitude": 22.56, "longitude": 114.41},
+                if center:
+                    lat, lng, radius = center
+                    # Text Search (New) accepts a circle on locationBias only.
+                    body["locationBias"] = {
+                        "circle": {"center": {"latitude": lat, "longitude": lng}, "radius": float(radius)}
                     }
-                }
-            data = _http(
-                "POST",
-                TEXT_SEARCH_URL,
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Goog-Api-Key": _api_key(),
-                    "X-Goog-FieldMask": SEARCH_FIELD_MASK,
-                },
-                body=json.dumps(body).encode("utf-8"),
-            )
-            page_places = [_normalise_place(p) for p in (data.get("places") or []) if isinstance(p, dict)]
-            page_places = [p for p in page_places if board_hk.is_hk_address(str(p.get("address") or ""))]
-            board_store.put_cache(table, cache_name, {"places": page_places}, ttl_seconds=CACHE_TTL_SECONDS)
+                else:
+                    body["locationRestriction"] = {
+                        "rectangle": {
+                            "low": {"latitude": 22.15, "longitude": 113.82},
+                            "high": {"latitude": 22.56, "longitude": 114.41},
+                        }
+                    }
+                if page_token:
+                    body["pageToken"] = page_token
+                _ensure_cap(table, settings, TEXT_SEARCH_USD)
+                data = _http(
+                    "POST",
+                    TEXT_SEARCH_URL,
+                    headers={
+                        "Content-Type": "application/json",
+                        "X-Goog-Api-Key": _api_key(),
+                        "X-Goog-FieldMask": SEARCH_FIELD_MASK,
+                    },
+                    body=json.dumps(body).encode("utf-8"),
+                )
+                _charge(table, settings, TEXT_SEARCH_USD, kind="search")
+                chunk = [_normalise_place(p) for p in (data.get("places") or []) if isinstance(p, dict)]
+                chunk = [p for p in chunk if board_hk.is_hk_address(str(p.get("address") or ""))]
+                page_places.extend(chunk)
+                page_token = str(data.get("nextPageToken") or "")
+                if not page_token:
+                    break
+            if pages == 1:
+                board_store.put_cache(table, cache_name, {"places": page_places}, ttl_seconds=CACHE_TTL_SECONDS)
         for place in page_places:
             pid = str(place.get("placeId") or "")
             if not pid or pid in seen:
                 continue
             seen.add(pid)
             found.append({**place, "facilityKind": kind, "district": name})
-        if pages <= 1:
-            continue
     return found

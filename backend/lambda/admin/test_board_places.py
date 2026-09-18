@@ -70,6 +70,12 @@ class PlacesTests(BoardTestCase):
         self.assertIn("websiteUri", board_places.FIELD_MASK)
         self.assertTrue(board_places.SEARCH_FIELD_MASK.startswith("places."))
 
+    def test_failed_search_does_not_charge(self) -> None:
+        with patch.object(board_places, "_http", side_effect=board_places.PlacesError("Places HTTP 500: boom")):
+            with self.assertRaises(board_places.PlacesError):
+                board_places.text_search(self.table, "kids play sha tin", settings=self.settings)
+        self.assertIsNone(board_store.get_cache(self.table, board_places._month_key()))
+
     def test_discover_uses_location_bias_circle(self) -> None:
         payload = {
             "places": [

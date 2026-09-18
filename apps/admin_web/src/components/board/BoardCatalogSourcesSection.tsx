@@ -7,12 +7,24 @@ function errorText(err: unknown): string | null {
   return getAdminApiErrorMessage(err) ?? (err instanceof Error ? err.message : "Request failed.");
 }
 
+function jobLine(phase?: string, action?: string): string | null {
+  if (!phase) return null;
+  if (phase === "queued" || phase === "running") {
+    return `${action === "import" ? "Import" : action === "preview" ? "Preview" : "Job"} ${phase}…`;
+  }
+  if (phase === "error") return null;
+  return null;
+}
+
 export function BoardCatalogSourcesSection() {
   const sources = useBoardCatalogSources();
   const candidates = useBoardCatalogCandidates("new");
   const mutations = useBoardCatalogMutations();
   const rows = sources.data?.sources ?? [];
   const target = sources.data?.launchTarget ?? BOARD_CATALOG_LAUNCH_LISTING_TARGET;
+  const queuedPreview = Boolean(mutations.preview.isSuccess && mutations.preview.data?.queued);
+  const queuedImport = Boolean(mutations.importSource.isSuccess && mutations.importSource.data?.queued);
+  const queuedScan = Boolean(mutations.runDiscovery.isSuccess && mutations.runDiscovery.data?.queued);
   return (
     <section className="card shadow-sm mb-3">
       <div className="card-body">
@@ -20,7 +32,7 @@ export function BoardCatalogSourcesSection() {
           <div>
             <h3 className="h6 mb-1">Bulk catalog sources</h3>
             <p className="small text-muted mb-0">
-              Preview then import official open data and Places. Launch gate is {target} listings.
+              Preview then import official open data and Places. Launch gate is {target} live listings.
             </p>
           </div>
           <button
@@ -39,6 +51,17 @@ export function BoardCatalogSourcesSection() {
         {mutations.importSource.isError ? (
           <div className="alert alert-danger py-2 small">{errorText(mutations.importSource.error)}</div>
         ) : null}
+        {mutations.runDiscovery.isError ? (
+          <div className="alert alert-danger py-2 small">{errorText(mutations.runDiscovery.error)}</div>
+        ) : null}
+        {queuedPreview || queuedImport || queuedScan ? (
+          <div className="alert alert-info py-2 small">
+            {queuedScan ? "Scan queued. " : null}
+            {queuedPreview ? "Preview queued. " : null}
+            {queuedImport ? "Import queued. " : null}
+            This list refreshes every 30 seconds.
+          </div>
+        ) : null}
         {rows.length === 0 ? (
           <p className="small text-muted mb-0">No source rows yet. Scan or preview LCSD / EDB / SWD to fill the queue.</p>
         ) : (
@@ -55,7 +78,15 @@ export function BoardCatalogSourcesSection() {
             <tbody>
               {rows.map((row) => (
                 <tr key={row.id}>
-                  <td className="text-uppercase">{row.id}</td>
+                  <td className="text-uppercase">
+                    {row.id}
+                    {jobLine(row.job?.phase, row.job?.action) ? (
+                      <div className="small text-muted">{jobLine(row.job?.phase, row.job?.action)}</div>
+                    ) : null}
+                    {row.job?.phase === "error" && row.job.error ? (
+                      <div className="small text-danger">{row.job.error}</div>
+                    ) : null}
+                  </td>
                   <td>{row.counts.new ?? 0}</td>
                   <td>{row.counts.approved ?? 0}</td>
                   <td>{row.counts.imported ?? 0}</td>
@@ -72,7 +103,17 @@ export function BoardCatalogSourcesSection() {
                       type="button"
                       className="btn btn-outline-secondary btn-sm"
                       disabled={mutations.importSource.isPending || (row.counts.approved ?? 0) === 0}
-                      onClick={() => mutations.importSource.mutate(row.id)}
+                      onClick={() => {
+                        const n = row.counts.approved ?? 0;
+                        if (
+                          !window.confirm(
+                            `Import ${n} approved ${row.id} organisation${n === 1 ? "" : "s"} into the live catalog?`,
+                          )
+                        ) {
+                          return;
+                        }
+                        mutations.importSource.mutate(row.id);
+                      }}
                     >
                       Import
                     </button>

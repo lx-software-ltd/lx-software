@@ -560,8 +560,10 @@ Approval (`always_propose`, class `catalog_import`); owner
 `POST …/catalog/skip`, `POST …/catalog/requeue` and
 `POST …/catalog/reimport` are JWT-only
 (`owner_only` on the public API). Bulk sources live on **Progress**
-(`GET …/catalog/sources`, `POST …/catalog/bulk/{source}/preview|import`,
-candidate approve/reject, `POST …/catalog/discovery/run`). A second
+(`GET …/catalog/sources`, `POST …/catalog/bulk/{source}/preview|import`
+and `POST …/catalog/discovery/run` return `200 {queued}` and run in the
+background like **Run staff tick now**; candidate approve/reject stay
+synchronous). A second
 import of the same task returns 409 unless the body has `{"force": true}`.
 `settings.catalog.microBatchEnabled` (default on) pauses the 3-per-district
 duty while bulk import fills toward 1000 live listings.

@@ -44,7 +44,7 @@ export function useBoardCatalogMutations() {
   const qc = useQueryClient();
   const preview = useMutation({
     mutationFn: (source: string) =>
-      adminFetchJson<Record<string, unknown>>(boardCatalogBulkPreviewPath(source), {
+      adminFetchJson<{ ok?: boolean; queued?: boolean; source?: string }>(boardCatalogBulkPreviewPath(source), {
         method: "POST",
         body: JSON.stringify({ remote: true }),
       }),
@@ -52,7 +52,7 @@ export function useBoardCatalogMutations() {
   });
   const importSource = useMutation({
     mutationFn: (source: string) =>
-      adminFetchJson<Record<string, unknown>>(boardCatalogBulkImportPath(source), {
+      adminFetchJson<{ ok?: boolean; queued?: boolean; source?: string }>(boardCatalogBulkImportPath(source), {
         method: "POST",
         body: JSON.stringify({}),
       }),
@@ -68,7 +68,7 @@ export function useBoardCatalogMutations() {
   });
   const runDiscovery = useMutation({
     mutationFn: () =>
-      adminFetchJson<Record<string, unknown>>(boardCatalogDiscoveryRunPath(), {
+      adminFetchJson<{ ok?: boolean; queued?: boolean; skipped?: string }>(boardCatalogDiscoveryRunPath(), {
         method: "POST",
         body: JSON.stringify({}),
       }),

@@ -12,8 +12,6 @@ import board_hk
 import board_store
 from contract_constants import (
     BOARD_CATALOG_CANDIDATE_STATUSES,
-    BOARD_CATALOG_PLACES_MIN_RATING,
-    BOARD_CATALOG_PLACES_MIN_REVIEWS,
     BOARD_CATALOG_PLACES_TTL_DAYS,
     BOARD_CATALOG_SOURCE_CATEGORY,
 )
@@ -73,23 +71,31 @@ def category_for(row: dict[str, Any]) -> str:
     return BOARD_CATALOG_SOURCE_CATEGORY.get(source, "Class")
 
 
-def places_quality_ok(place: dict[str, Any]) -> bool:
+PLACES_PUBLIC_KINDS = frozenset(
+    {
+        "places_playground",
+        "places_park",
+        "places_swimming",
+        "places_library",
+        "places_museum",
+    }
+)
+
+
+def places_public_type(place: dict[str, Any]) -> bool:
     types = {str(t).lower() for t in (place.get("types") or [])}
     if types & PLACES_PUBLIC_TYPES:
         return True
-    try:
-        rating = float(place.get("rating") or 0)
-    except (TypeError, ValueError):
-        rating = 0
-    try:
-        reviews = int(place.get("userRatingCount") or 0)
-    except (TypeError, ValueError):
-        reviews = 0
-    return rating >= BOARD_CATALOG_PLACES_MIN_RATING and reviews >= BOARD_CATALOG_PLACES_MIN_REVIEWS
+    return str(place.get("facilityKind") or "") in PLACES_PUBLIC_KINDS
+
+
+def places_quality_ok(place: dict[str, Any]) -> bool:
+    """Public LCSD-like types only. Commercial Places stay on the owner queue."""
+    return places_public_type(place)
 
 
 def auto_approve_source(source: str) -> bool:
-    return source in OFFICIAL_SOURCES or source == "places"
+    return source in OFFICIAL_SOURCES
 
 
 def _now() -> str:
@@ -110,14 +116,20 @@ def upsert_candidate(table: Any, row: dict[str, Any]) -> dict[str, Any]:
         current = board_store.get_candidate(table, existing_id) or {}
         if current.get("status") in ("imported", "rejected", "closed"):
             return current
-        merged = {**current, **{k: v for k, v in row.items() if v not in (None, "")}}
+        incoming = {k: v for k, v in row.items() if v not in (None, "")}
+        described = str(current.get("descriptionSource") or "") not in ("", "template")
+        incoming_is_template = str(incoming.get("descriptionSource") or "template") in ("", "template")
+        if described and incoming_is_template:
+            for key in ("descriptionEn", "descriptionZh", "descriptionSource"):
+                incoming.pop(key, None)
+        merged = {**current, **incoming}
         merged["candidateId"] = existing_id
         merged["updatedAt"] = now
         board_store.put_candidate(table, merged)
         return merged
     status = "approved" if auto_approve_source(source) else "new"
-    if source == "places" and not places_quality_ok(row):
-        status = "new"
+    if source == "places" and places_quality_ok(row):
+        status = "approved"
     doc = {
         "candidateId": board_store.new_id(),
         "source": source,
@@ -198,9 +210,39 @@ def set_status(table: Any, candidate_id: str, status: str) -> dict[str, Any]:
     return doc
 
 
+def seed_listing_mirror(table: Any) -> int:
+    """Remember names already imported through catalog sheets or this queue."""
+    import board_catalog_import
+
+    n = 0
+    for status in ("delivered", "awaiting_import", "needs_owner"):
+        for task in board_store.list_tasks(table, status, limit=200):
+            if not board_catalog_import.is_catalog_sheet(task):
+                continue
+            preview = task.get("importPreview") if isinstance(task.get("importPreview"), dict) else {}
+            payload = preview.get("payload") if isinstance(preview.get("payload"), dict) else {}
+            for org in payload.get("organizations") or []:
+                if isinstance(org, dict) and (org.get("name") or org.get("nameEn")):
+                    remember_listing(table, org)
+                    n += 1
+    for cand in board_store.list_candidates(table, "imported", limit=10_000):
+        remember_listing(
+            table,
+            {
+                "name": cand.get("nameEn") or cand.get("name"),
+                "area_name": cand.get("district"),
+                "lat": cand.get("lat"),
+                "lng": cand.get("lng"),
+                "placeId": cand.get("placeId"),
+            },
+        )
+        n += 1
+    return n
+
+
 def counts_by_source(table: Any) -> dict[str, dict[str, int]]:
     out: dict[str, dict[str, int]] = {}
-    for row in board_store.list_candidates(table, limit=2000):
+    for row in board_store.list_candidates(table, per_status_limit=10_000):
         source = str(row.get("source") or "unknown")
         status = str(row.get("status") or "new")
         bucket = out.setdefault(source, {s: 0 for s in BOARD_CATALOG_CANDIDATE_STATUSES})
@@ -214,6 +256,8 @@ def expire_stale_places(table: Any, *, now: datetime | None = None) -> int:
     n = 0
     for row in board_store.list_candidates(table, limit=2000):
         if str(row.get("source") or "") != "places":
+            continue
+        if row.get("placesExpired"):
             continue
         fetched = str(row.get("placesFetchedAt") or "")
         if not fetched:

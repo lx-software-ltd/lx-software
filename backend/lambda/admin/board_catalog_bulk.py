@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import board_async
 import board_catalog_candidates
 import board_catalog_import
 import board_opendata
@@ -13,6 +14,7 @@ from contract_constants import (
     BOARD_CATALOG_LAUNCH_LISTING_TARGET,
     BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT,
     BOARD_CATALOG_SOURCE_CATEGORY,
+    BOARD_KEY,
 )
 from http_common import _log_event
 
@@ -131,24 +133,25 @@ def candidate_to_org(row: dict[str, Any], *, manager_id: str) -> dict[str, Any]:
     return org
 
 
-def load_source_rows(table: Any, source: str) -> list[dict[str, Any]]:
+def load_source_rows(table: Any, source: str, *, force: bool = False) -> list[dict[str, Any]]:
     if source == "lcsd":
-        return list((board_opendata.lcsd_facilities(table).get("rows") or []))
+        return list((board_opendata.lcsd_facilities(table, force=force).get("rows") or []))
     if source == "edb":
-        return list((board_opendata.edb_kindergartens(table).get("rows") or []))
+        return list((board_opendata.edb_kindergartens(table, force=force).get("rows") or []))
     if source == "swd":
-        return list((board_opendata.swd_child_care_centres(table).get("rows") or []))
+        return list((board_opendata.swd_child_care_centres(table, force=force).get("rows") or []))
     if source in ("places", "competitor"):
         return [
             row
-            for row in board_store.list_candidates(table, limit=2000)
+            for row in board_store.list_candidates(table, per_status_limit=10_000)
             if str(row.get("source") or "") == source and str(row.get("status") or "") in ("new", "approved")
         ]
     raise BulkImportError(f"unknown catalog source {source}")
 
 
-def ingest_source(table: Any, source: str) -> dict[str, Any]:
-    rows = load_source_rows(table, source)
+def ingest_source(table: Any, source: str, *, force: bool = False) -> dict[str, Any]:
+    board_catalog_candidates.seed_listing_mirror(table)
+    rows = load_source_rows(table, source, force=force)
     created = 0
     skipped = 0
     for raw in rows:
@@ -169,9 +172,19 @@ def _batches(orgs: list[dict[str, Any]], size: int) -> list[list[dict[str, Any]]
 def _approved_for_source(table: Any, source: str) -> list[dict[str, Any]]:
     return [
         row
-        for row in board_store.list_candidates(table, "approved", limit=2000)
+        for row in board_store.list_candidates(table, "approved", limit=10_000)
         if str(row.get("source") or "") == source
     ]
+
+
+def _put_job(table: Any, source: str, doc: dict[str, Any]) -> None:
+    board_store.put_cache(table, f"catalog:bulk:{source}:job", doc, ttl_seconds=7 * 86400)
+
+
+def _job(table: Any, source: str) -> dict[str, Any] | None:
+    hit = board_store.get_cache(table, f"catalog:bulk:{source}:job")
+    payload = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
+    return payload if isinstance(payload, dict) else None
 
 
 def preview_source(table: Any, source: str, *, remote: bool = False, limit: int | None = None) -> dict[str, Any]:
@@ -220,7 +233,20 @@ def preview_source(table: Any, source: str, *, remote: bool = False, limit: int 
     }
 
 
+def _succeeded_org_names(imported: dict[str, Any], batch: list[dict[str, Any]]) -> set[str]:
+    created = set(board_catalog_import._org_result_names(imported.get("results") or [], "created"))  # noqa: SLF001
+    updated = set(board_catalog_import._org_result_names(imported.get("results") or [], "updated"))  # noqa: SLF001
+    named = created | updated
+    failed = int((imported.get("summary") or {}).get("failed") or 0)
+    if named:
+        return named
+    if bool(imported.get("ok")) and failed == 0:
+        return {str(org.get("name") or "") for org in batch if org.get("name")}
+    return set()
+
+
 def import_source(table: Any, source: str, *, remote: bool = True, limit: int | None = None) -> dict[str, Any]:
+    board_catalog_candidates.seed_listing_mirror(table)
     preview = preview_source(table, source, remote=False, limit=limit)
     if not board_catalog_import.import_enabled() or not board_catalog_import.configured():
         raise BulkImportError("catalog import is not configured")
@@ -234,7 +260,11 @@ def import_source(table: Any, source: str, *, remote: bool = True, limit: int | 
     results: list[dict[str, Any]] = []
     imported_ids: list[str] = []
     for batch, rows in zip(_batches(orgs, BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT), _batches(approved, BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT)):
-        imported = board_catalog_import._run_remote_import({"organizations": batch}, token)  # noqa: SLF001
+        try:
+            imported = board_catalog_import._run_remote_import({"organizations": batch}, token)  # noqa: SLF001
+        except board_catalog_import.CatalogImportError as exc:
+            results.append({"ok": False, "error": str(exc)[:300]})
+            continue
         failed = int((imported.get("summary") or {}).get("failed") or 0)
         compact = {
             "ok": bool(imported.get("ok")) and failed == 0,
@@ -249,11 +279,13 @@ def import_source(table: Any, source: str, *, remote: bool = True, limit: int | 
             "objectKey": board_catalog_import._safe_url(str(imported.get("objectKey") or "")),  # noqa: SLF001
         }
         results.append(compact)
-        if compact["ok"]:
-            for row, org in zip(rows, batch):
-                board_catalog_candidates.set_status(table, str(row["candidateId"]), "imported")
-                board_catalog_candidates.remember_listing(table, org)
-                imported_ids.append(str(row["candidateId"]))
+        succeeded = _succeeded_org_names(imported, batch)
+        for row, org in zip(rows, batch):
+            if str(org.get("name") or "") not in succeeded:
+                continue
+            board_catalog_candidates.set_status(table, str(row["candidateId"]), "imported")
+            board_catalog_candidates.remember_listing(table, org)
+            imported_ids.append(str(row["candidateId"]))
     board_store.put_cache(
         table,
         f"catalog:bulk:{source}:last",
@@ -284,6 +316,7 @@ def sources_status(table: Any) -> dict[str, Any]:
                 "available": sum(int(bucket.get(k) or 0) for k in ("new", "approved", "imported")),
                 "lastImport": (last or {}).get("payload") if last else None,
                 "lastPreview": (preview or {}).get("payload") if preview else None,
+                "job": _job(table, source),
             }
         )
     return {
@@ -291,3 +324,78 @@ def sources_status(table: Any) -> dict[str, Any]:
         "launchTarget": BOARD_CATALOG_LAUNCH_LISTING_TARGET,
         "candidateCounts": counts,
     }
+
+
+def queue_action(
+    table: Any,
+    action: str,
+    source: str,
+    *,
+    remote: bool = True,
+    limit: int | None = None,
+    requested_by: str = "owner",
+) -> dict[str, Any]:
+    if action not in ("preview", "import"):
+        raise BulkImportError(f"unknown catalog bulk action {action}")
+    if source not in BOARD_CATALOG_BULK_SOURCES:
+        raise BulkImportError(f"unknown catalog source {source}")
+    if not board_catalog_import.import_enabled():
+        raise BulkImportError("catalog import is switched off (SiutindeiBoardCatalogImportEnabled)")
+    if action == "import" and not board_catalog_import.configured():
+        raise BulkImportError("catalog import is not configured")
+    _put_job(
+        table,
+        source,
+        {"phase": "queued", "action": action, "at": board_store.now_iso(), "requestedBy": requested_by},
+    )
+    payload = {
+        "internal": "board_catalog_bulk",
+        "boardKey": BOARD_KEY,
+        "action": action,
+        "source": source,
+        "remote": remote,
+        "limit": limit,
+        "requestedBy": requested_by,
+    }
+    invoked = board_async.try_invoke_event(payload)
+    if not invoked:
+        _log_event("warning", tag="board_catalog_bulk_enqueue_deferred", action=action, source=source)
+    return {"ok": True, "queued": True, "invoked": invoked, "source": source, "action": action}
+
+
+def handle_job(event: dict[str, Any]) -> dict[str, Any]:
+    if not board_store.event_targets_this_board(event):
+        return {"ok": True, "skipped": "other-board"}
+    table = board_store.records_table()
+    action = str(event.get("action") or "")
+    source = str(event.get("source") or "")
+    limit = event.get("limit")
+    remote = event.get("remote") is not False
+    _put_job(table, source, {"phase": "running", "action": action, "at": board_store.now_iso()})
+    try:
+        if action == "preview":
+            out = preview_source(table, source, remote=remote, limit=limit)
+        elif action == "import":
+            out = import_source(table, source, limit=limit)
+        else:
+            raise BulkImportError(f"unknown catalog bulk action {action}")
+        _put_job(
+            table,
+            source,
+            {
+                "phase": "done",
+                "action": action,
+                "at": board_store.now_iso(),
+                "ok": out.get("ok"),
+                "imported": out.get("imported"),
+                "approved": out.get("approved") or (out.get("preview") or {}).get("approved"),
+            },
+        )
+        return out
+    except (BulkImportError, board_catalog_import.CatalogImportError) as exc:
+        _put_job(
+            table,
+            source,
+            {"phase": "error", "action": action, "at": board_store.now_iso(), "error": str(exc)[:300]},
+        )
+        return {"ok": False, "error": str(exc)[:300], "source": source, "action": action}

@@ -2426,10 +2426,17 @@ def get_candidate(table: Any, candidate_id: str) -> dict[str, Any] | None:
     return doc if isinstance(doc, dict) else None
 
 
-def list_candidates(table: Any, status: str | None = None, *, limit: int = 200) -> list[dict[str, Any]]:
+def list_candidates(
+    table: Any,
+    status: str | None = None,
+    *,
+    limit: int = 200,
+    per_status_limit: int | None = None,
+) -> list[dict[str, Any]]:
     from contract_constants import BOARD_CATALOG_CANDIDATE_STATUSES
 
     statuses = [status] if status else list(BOARD_CATALOG_CANDIDATE_STATUSES)
+    fetch_cap = per_status_limit if per_status_limit is not None else limit
     items: list[dict[str, Any]] = []
     for st in statuses:
         rows = _query_all(
@@ -2438,9 +2445,11 @@ def list_candidates(table: Any, status: str | None = None, *, limit: int = 200) 
             KeyConditionExpression="gsi1pk = :pk",
             ExpressionAttributeValues={":pk": board_pk(f"candidates#{st}")},
             ScanIndexForward=False,
-            Limit=limit,
+            Limit=fetch_cap,
         )
         items.extend(_strip_keys(i) for i in rows)
+    if per_status_limit is not None:
+        return items
     return items[:limit]
 
 

@@ -116,7 +116,7 @@ def refresh_open_data(table: Any) -> dict[str, Any]:
     notes: dict[str, Any] = {}
     for source in ("lcsd", "edb", "swd"):
         try:
-            notes[source] = board_catalog_bulk.ingest_source(table, source)
+            notes[source] = board_catalog_bulk.ingest_source(table, source, force=True)
         except Exception as exc:
             notes[source] = {"error": str(exc)[:200]}
     cur = _cursor(table)
@@ -154,9 +154,13 @@ def extract_listing_names(html_or_text: str) -> list[str]:
 def ingest_listings_page(table: Any, watch: dict[str, Any], text: str, url: str) -> int:
     host = (urlparse(url).netloc or "").lower()
     names = extract_listing_names(text)
+    page_district = str(watch.get("district") or "")
+    if not page_district or page_district == "unknown":
+        guessed = board_hk.district_from_address(text)
+        page_district = guessed if guessed != "unknown" else ""
     n = 0
     for name in names:
-        district = board_hk.district_from_address(text) if board_hk.district_from_address(text) != "unknown" else ""
+        district = page_district
         board_catalog_candidates.upsert_candidate(
             table,
             {
@@ -176,6 +180,7 @@ def ingest_listings_page(table: Any, watch: dict[str, Any], text: str, url: str)
 def run_discovery(table: Any, settings: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
     if not board_staff.enabled(settings):
         return {"ok": True, "skipped": "disabled"}
+    board_catalog_candidates.seed_listing_mirror(table)
     when = now or board_hk.now_hkt()
     places = discover_places(table, settings)
     open_data: dict[str, Any] = {}

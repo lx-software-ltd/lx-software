@@ -1303,10 +1303,15 @@ def _catalog_route(event: dict[str, Any], method: str, rest: list[str], user_sub
 
         body = _parse_json_body(event)
         try:
-            out = board_catalog_bulk.preview_source(
-                table, rest[2], remote=body.get("remote") is not False, limit=body.get("limit")
+            out = board_catalog_bulk.queue_action(
+                table,
+                "preview",
+                rest[2],
+                remote=body.get("remote") is not False,
+                limit=body.get("limit"),
+                requested_by=user_sub or "owner",
             )
-        except board_catalog_bulk.BulkImportError as exc:
+        except (board_catalog_bulk.BulkImportError, board_catalog_import.CatalogImportError) as exc:
             return _json_response(400, {"message": str(exc)})
         _audit(user_sub, "BOARD_CATALOG_BULK_PREVIEW", rest[2], event)
         return _json_response(200, out)
@@ -1315,8 +1320,14 @@ def _catalog_route(event: dict[str, Any], method: str, rest: list[str], user_sub
 
         body = _parse_json_body(event)
         try:
-            out = board_catalog_bulk.import_source(table, rest[2], limit=body.get("limit"))
-        except board_catalog_bulk.BulkImportError as exc:
+            out = board_catalog_bulk.queue_action(
+                table,
+                "import",
+                rest[2],
+                limit=body.get("limit"),
+                requested_by=user_sub or "owner",
+            )
+        except (board_catalog_bulk.BulkImportError, board_catalog_import.CatalogImportError) as exc:
             return _json_response(409, {"message": str(exc)})
         _audit(user_sub, "BOARD_CATALOG_BULK_IMPORT", rest[2], event)
         return _json_response(200, out)
@@ -1337,11 +1348,21 @@ def _catalog_route(event: dict[str, Any], method: str, rest: list[str], user_sub
         _audit(user_sub, "BOARD_CATALOG_CANDIDATE", rest[2], event)
         return _json_response(200, {"candidate": out})
     if len(rest) == 3 and rest[1] == "discovery" and rest[2] == "run" and method == "POST":
-        import board_catalog_discovery
+        import board_async
 
-        out = board_catalog_discovery.run_discovery(table, board_store.load_settings(table))
+        settings = board_store.load_settings(table)
+        if not board_staff.enabled(settings):
+            return _json_response(409, {"message": "Staff is disabled; catalog discovery is off"})
+        payload = {
+            "internal": "board_catalog_discovery",
+            "boardKey": board_store.BOARD_KEY,
+            "requestedBy": user_sub or "owner",
+        }
+        invoked = board_async.try_invoke_event(payload)
+        if not invoked:
+            _log_event("warning", tag="board_catalog_discovery_enqueue_deferred", reason="invoke_timeout_or_unavailable")
         _audit(user_sub, "BOARD_CATALOG_DISCOVERY", "run", event)
-        return _json_response(200, out)
+        return _json_response(200, {"ok": True, "queued": True, "invoked": invoked})
     return _json_response(404, {"message": "Not found"})
 
 
