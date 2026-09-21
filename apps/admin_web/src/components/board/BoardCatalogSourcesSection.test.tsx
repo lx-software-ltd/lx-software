@@ -21,6 +21,12 @@ vi.mock("../../hooks/useBoardCatalog", () => ({
           counts: { new: 0, approved: 1, imported: 0, rejected: 0, closed: 0 },
           available: 1,
         },
+        {
+          id: "swd",
+          counts: { new: 0, approved: 3, imported: 0, rejected: 0, closed: 0 },
+          available: 3,
+          job: { phase: "running", action: "ingest", offset: 500, remaining: 200 },
+        },
       ],
     },
     isLoading: false,
@@ -46,5 +52,8 @@ describe("BoardCatalogSourcesSection", () => {
     expect(importButtons[0]).toBeDisabled();
     expect(previewButtons[1]).toBeEnabled();
     expect(importButtons[1]).toBeEnabled();
+    expect(screen.getByText("Ingest running 500 done, 200 left…")).toBeInTheDocument();
+    expect(previewButtons[2]).toBeDisabled();
+    expect(importButtons[2]).toBeDisabled();
   });
 });

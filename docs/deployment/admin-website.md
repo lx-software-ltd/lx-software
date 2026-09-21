@@ -573,7 +573,8 @@ larger (EDB today; any later feed over that size uses the same path).
 Owner Preview / Import of a large source run those chunks first.
 Open-data rows gzip to `board/{BOARD_KEY}/opendata/{name}.json.gz`;
 Dynamo only stores a pointer so a large file cannot exceed the 400 KB
-item limit. An empty official fetch writes review gap `opendata-{source}`.
+item limit. An empty official fetch (no `fetchedAt`, or zero rows) writes review gap `opendata-{source}`.
+A failed enqueue of the next ingest chunk writes `phase: error` so Preview/Import unlock.
 A failed job writes `phase: error` instead of staying
 `running`. Candidate approve/reject stay
 synchronous). A second

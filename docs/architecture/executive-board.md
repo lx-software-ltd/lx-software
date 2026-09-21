@@ -425,14 +425,17 @@ and drops Places hours/phone after `placesTtlDays` 30. Monday refresh fetches LC
 the file fits one 500-row batch and queues a `board_catalog_bulk`
 `ingest` job when it does not (today that is EDB; any later feed over
 500 rows takes the same path). Owner Preview / Import of a large source
-run those chunks before the dry-run. Official-source upsert merges an
-existing candidate instead of a listing-mirror `is_duplicate` pre-check.
+run those chunks before the dry-run. Official-source ingest still skips a listing-mirror hit so a sheet-imported
+org is not re-queued. A failed Event enqueue of the next chunk writes
+`phase: error` so Progress does not stay on `running`. A second Preview
+or Scan while a job is `queued`/`running` (and younger than 6 minutes)
+returns the existing job instead of starting another.
 Open-data caches gzip to S3 `board/{BOARD_KEY}/opendata/{name}.json.gz`
 with a Dynamo pointer (`fetchedAt`, `rowCount`, `s3Key`) so a large CSV
 cannot blow the 400 KB item limit; a Dynamo `ValidationException` still
 returns the fetched rows and logs `board_opendata_cache_failed`. The EDB
 catalog cache is kindergarten-only (`keep_all` keeps every school for
-outreach). An official fetch with empty `fetchedAt` writes daily-review
+outreach). An official fetch with empty `fetchedAt` or zero rows writes daily-review
 gap `opendata-{source}` and a later success clears it. Owner
 `GET …/catalog/sources`, `POST …/catalog/bulk/{source}/preview|import`
 and `POST …/catalog/discovery/run` return `200 {queued}` and run on

@@ -208,11 +208,11 @@ def discover_places(table: Any, settings: dict[str, Any], districts: list[str] |
     return {"districts": chosen, "upserted": upserted, "errors": errors}
 
 
-def _record_opendata_gap(table: Any, source: str, fetched_at: str, *, reason: str = "") -> None:
+def _record_opendata_gap(table: Any, source: str, fetched_at: str, *, row_count: int = 0, reason: str = "") -> None:
     import board_duties
 
     gap_id = f"opendata-{source}"
-    if fetched_at:
+    if fetched_at and int(row_count or 0) > 0:
         board_duties.clear_config_gap(table, gap_id)
         return
     board_duties.note_config_gap(
@@ -231,7 +231,7 @@ def refresh_open_data(table: Any) -> dict[str, Any]:
             fetched_at = str((cached or {}).get("fetchedAt") or "")
             if rows:
                 fetched_at = fetched_at or board_store.now_iso()
-            _record_opendata_gap(table, source, fetched_at)
+            _record_opendata_gap(table, source, fetched_at, row_count=len(rows))
             if board_catalog_bulk.needs_chunked_ingest(len(rows)):
                 queued = board_catalog_bulk.queue_action(table, "ingest", source, requested_by="discovery")
                 notes[source] = {"fetched": len(rows), "fetchedAt": fetched_at, **queued}
@@ -239,7 +239,7 @@ def refresh_open_data(table: Any) -> dict[str, Any]:
                 notes[source] = board_catalog_bulk.ingest_source(table, source, force=False)
         except Exception as exc:
             notes[source] = {"error": str(exc)[:200]}
-            _record_opendata_gap(table, source, "", reason=str(exc)[:200])
+            _record_opendata_gap(table, source, "", row_count=0, reason=str(exc)[:200])
     cur = _cursor(table)
     cur["lastOpenDataAt"] = board_store.now_iso()
     _save_cursor(table, cur)
