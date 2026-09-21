@@ -466,6 +466,41 @@ class BulkTransformTests(BoardTestCase):
         self.assertFalse(job.get("ok"))
         self.assertIn("timed out", job.get("error") or "")
 
+    def test_handle_job_preview_dry_run_failure_stays_done_with_error(self) -> None:
+        # preview_source returns ``batches`` as an int; a failed dry run must
+        # not crash the job into ``phase: error`` while extracting the message.
+        preview_out = {
+            "source": "lcsd",
+            "approved": 3,
+            "wouldSend": 3,
+            "batches": 1,
+            "dryRuns": [{"ok": False, "accepted": 3, "errors": [], "remoteError": "siutindei admin POST failed: timed out"}],
+            "ok": False,
+        }
+        with (
+            patch.object(board_store, "records_table", return_value=self.table),
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=[]),
+            patch.object(board_catalog_bulk, "preview_source", return_value=preview_out),
+        ):
+            out = board_catalog_bulk.handle_job({"action": "preview", "source": "lcsd"})
+        self.assertFalse(out["ok"])
+        job = board_catalog_bulk._job(self.table, "lcsd")
+        self.assertEqual(job["phase"], "done")
+        self.assertFalse(job.get("ok"))
+        self.assertIn("timed out", job.get("error") or "")
+
+    def test_first_partial_error_prefers_batch_then_dry_run_then_top_level(self) -> None:
+        self.assertEqual(
+            board_catalog_bulk._first_partial_error({"batches": [{"ok": True}, {"ok": False, "error": "b2"}]}),
+            "b2",
+        )
+        self.assertEqual(
+            board_catalog_bulk._first_partial_error({"batches": 2, "dryRuns": [{"ok": False, "errors": ["bad row"]}]}),
+            "bad row",
+        )
+        self.assertEqual(board_catalog_bulk._first_partial_error({"batches": 2, "error": "top"}), "top")
+        self.assertIsNone(board_catalog_bulk._first_partial_error({"batches": 2}))
+
     def test_handle_job_unexpected_error_marks_error(self) -> None:
         with (
             patch.object(board_store, "records_table", return_value=self.table),

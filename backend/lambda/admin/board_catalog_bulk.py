@@ -536,6 +536,32 @@ def _continue_job(table: Any, event: dict[str, Any], **updates: Any) -> bool:
     return False
 
 
+def _first_partial_error(out: dict[str, Any]) -> str | None:
+    """First human-readable failure from a job that finished with ``ok: False``.
+
+    ``import`` returns ``batches`` as a list of per-batch results; ``preview``
+    returns ``batches`` as an int and per-batch dry-run failures under
+    ``dryRuns``. A partially failed job stays ``phase: done`` (so the buttons
+    unlock) but the owner still needs to see why a batch was skipped.
+    """
+    for key in ("batches", "dryRuns"):
+        rows = out.get(key)
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            for field in ("error", "remoteError"):
+                if row.get(field):
+                    return str(row[field])
+            errors = row.get("errors")
+            if isinstance(errors, list) and errors:
+                return str(errors[0])
+    if out.get("error"):
+        return str(out["error"])
+    return None
+
+
 def handle_job(event: dict[str, Any]) -> dict[str, Any]:
     if not board_store.event_targets_this_board(event):
         return {"ok": True, "skipped": "other-board"}
@@ -621,15 +647,9 @@ def handle_job(event: dict[str, Any]) -> dict[str, Any]:
             "remaining": 0,
         }
         if out.get("ok") is False:
-            batch_errors = [
-                str(row.get("error"))
-                for row in (out.get("batches") or [])
-                if isinstance(row, dict) and row.get("error")
-            ]
-            if batch_errors:
-                job_doc["error"] = batch_errors[0][:300]
-            elif out.get("error"):
-                job_doc["error"] = str(out.get("error"))[:300]
+            first_error = _first_partial_error(out)
+            if first_error:
+                job_doc["error"] = first_error[:300]
         _put_job(table, source, job_doc)
         return out
     except (BulkImportError, board_catalog_import.CatalogImportError) as exc:
