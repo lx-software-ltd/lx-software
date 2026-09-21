@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from test_board import BoardTestCase
@@ -30,6 +30,24 @@ def _enable(table, **staff):
         {**(settings.get("staff") or {}), "enabled": True, "dutiesEnabled": True, **staff}
     )
     return board_store.save_settings(table, settings)
+
+
+def _seed_imported_orgs(table, district, names):
+    task = {
+        "taskId": f"seed-{district['id']}",
+        "status": "delivered",
+        "assignee": "content-marketer",
+        "eventRef": {
+            "kind": "catalog-micro-batch",
+            "districtId": district["id"],
+            "district": district["name"],
+        },
+        "importPreview": {"payload": {"organizations": [{"name": name} for name in names]}},
+        "createdAt": "2026-09-01T00:00:00Z",
+        "updatedAt": "2026-09-01T00:00:00Z",
+    }
+    board_store.put_task(table, task)
+    return task
 
 
 class CatalogDutyTests(BoardTestCase):
@@ -104,14 +122,62 @@ class CatalogDutyTests(BoardTestCase):
     def test_create_enrich_targets_imported_low_district(self) -> None:
         settings = _enable(self.table)
         board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        district = BOARD_CATALOG_DISTRICTS[0]
+        _seed_imported_orgs(self.table, district, ["Quarry Bay Park Playground"])
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
-            first = board_catalog.create_next(self.table, settings)
             enrich = board_catalog.create_enrich(self.table, settings)
-        self.assertEqual(first["eventRef"]["districtId"], BOARD_CATALOG_DISTRICTS[0]["id"])
         self.assertEqual(enrich["eventRef"]["kind"], "catalog-enrich")
-        self.assertEqual(enrich["eventRef"]["districtId"], first["eventRef"]["districtId"])
+        self.assertEqual(enrich["eventRef"]["districtId"], district["id"])
         self.assertIn("CATALOG DESCRIBE", enrich["brief"])
+        self.assertIn("Quarry Bay Park Playground", enrich["brief"])
+        self.assertIn("copy each name_en into verified_fields", enrich["brief"])
         self.assertTrue(BOARD_CATALOG_OUTPUT_CONTRACT[:40] in enrich["brief"])
+
+    def test_enrich_cooldown_uses_created_at_not_updated_at(self) -> None:
+        district = BOARD_CATALOG_DISTRICTS[0]
+        old = (datetime.now(timezone.utc) - timedelta(hours=49)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        recent = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        board_store.put_task(
+            self.table,
+            {
+                "taskId": "enrich-stale",
+                "status": "needs_owner",
+                "assignee": "content-marketer",
+                "eventRef": {
+                    "kind": "catalog-enrich",
+                    "districtId": district["id"],
+                    "district": district["name"],
+                },
+                "createdAt": old,
+                "updatedAt": recent,
+            },
+        )
+        self.assertNotIn(district["id"], board_catalog.enrich_recently_blocked_ids(self.table))
+        board_store.put_task(
+            self.table,
+            {
+                "taskId": "enrich-fresh",
+                "status": "needs_owner",
+                "assignee": "content-marketer",
+                "eventRef": {
+                    "kind": "catalog-enrich",
+                    "districtId": district["id"],
+                    "district": district["name"],
+                },
+                "createdAt": recent,
+                "updatedAt": recent,
+            },
+        )
+        self.assertIn(district["id"], board_catalog.enrich_recently_blocked_ids(self.table))
+
+    def test_create_enrich_skips_district_without_imported_names(self) -> None:
+        settings = _enable(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_catalog.create_next(self.table, settings)
+            with self.assertRaises(board_staff.StaffError) as ctx:
+                board_catalog.create_enrich(self.table, settings)
+        self.assertIn("no district needs enrich", str(ctx.exception))
 
     def test_enrich_duty_fires_on_half_hour_slot(self) -> None:
         settings = _enable(self.table)
@@ -129,12 +195,33 @@ class CatalogDutyTests(BoardTestCase):
         self.assertTrue(board_duties.matches(parsed, enrich_slot))
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             first = board_duties.run_due(self.table, settings, now=morning)
+            for task in first:
+                if (task.get("eventRef") or {}).get("kind") == "catalog-micro-batch":
+                    task["status"] = "delivered"
+                    task["importPreview"] = {
+                        "payload": {"organizations": [{"name": "Quarry Bay Park Playground"}]}
+                    }
+                    board_store.put_task(self.table, task)
             second = board_duties.run_due(self.table, settings, now=enrich_slot)
         self.assertTrue(any((t.get("eventRef") or {}).get("kind") == "catalog-micro-batch" for t in first))
         self.assertFalse(any((t.get("eventRef") or {}).get("kind") == "catalog-enrich" for t in first))
         enrich = [t for t in second if (t.get("eventRef") or {}).get("kind") == "catalog-enrich"]
         self.assertEqual(len(enrich), 1)
         self.assertEqual(enrich[0]["eventRef"]["districtId"], BOARD_CATALOG_DISTRICTS[0]["id"])
+
+    def test_catalog_duties_skip_when_budget_breaker_tripped(self) -> None:
+        import board_breakers
+
+        settings = _enable(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        board_breakers.trip(self.table, "budget", "OpenRouter 402: no credits")
+        when = datetime(2026, 9, 16, 8, 0, tzinfo=board_hk.HKT)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            created = board_duties.run_due(self.table, settings, now=when)
+        self.assertEqual(
+            [t for t in created if (t.get("eventRef") or {}).get("kind") in ("catalog-micro-batch", "catalog-enrich")],
+            [],
+        )
 
     def test_completeness_gate_pauses_new_districts(self) -> None:
         settings = _enable(self.table, maxRunningTasks=20)

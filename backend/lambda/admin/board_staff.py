@@ -398,6 +398,10 @@ def drain_queue(table: Any, settings: dict[str, Any]) -> int:
         return 0
     if _staff_daily_budget_exhausted(table, settings):
         return 0
+    import board_breakers
+
+    if board_breakers.openrouter_credits_paused(table):
+        return 0
     cap = int((settings.get("staff") or {}).get("maxRunningTasks") or BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT)
     running = [t for t in board_store.list_tasks(table, "running") if t.get("status") == "running"]
     reviewing = [t for t in board_store.list_tasks(table, "review") if t.get("status") == "review"]
@@ -595,6 +599,11 @@ def run_step(payload: dict[str, Any]) -> None:
     parked = _staff_daily_budget_exhausted(table, settings)
     if parked:
         _requeue_for_budget(table, task, wanted, parked)
+        return
+    import board_breakers
+
+    if board_breakers.openrouter_credits_paused(table):
+        _requeue_for_budget(table, task, wanted, "openrouter credits paused")
         return
     if float((task.get("usage") or {}).get("cost") or 0.0) >= float(task.get("budgetUsd") or 0):
         _finish_incomplete(table, task, "Task budget exhausted")

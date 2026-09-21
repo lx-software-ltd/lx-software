@@ -32,6 +32,12 @@ PAGE_TITLE_NAME = re.compile(
     r"^(kids['’]? activities in |browse |all activities\b|activities in )",
     re.I,
 )
+NAV_NAME = re.compile(
+    r"^(first|last|next|previous|prev|more|show\s+\d+|view all|see all|load more|page\s+\d+)$",
+    re.I,
+)
+NAV_CHARS = re.compile(r"[«»‹›]")
+
 # Site chrome extracted as if it were a listing (Classbee nav, Whizpa directory filters).
 CHROME_NAMES = frozenset(
     board_catalog_candidates.norm_name(label)
@@ -96,6 +102,11 @@ CHROME_NAMES = frozenset(
         "Twitter",
         "Unsubscribe",
         "View all",
+        "First",
+        "Last",
+        "Show 20",
+        "Load more",
+        "See all",
         "YouTube",
         "中文",
         "繁體",
@@ -222,18 +233,45 @@ def _record_opendata_gap(table: Any, source: str, fetched_at: str, *, row_count:
     )
 
 
-def refresh_open_data(table: Any) -> dict[str, Any]:
+def source_needs_refresh(table: Any, source: str) -> bool:
+    """True when the open-data cache pointer is missing, empty, or unfetched.
+
+    Reads the Dynamo pointer only — do not pull the S3 gzip just to decide.
+    """
+    if source not in board_catalog_bulk.OPEN_DATA_SOURCES:
+        return False
+    hit = board_store.get_cache(table, f"opendata:{source}")
+    payload = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
+    if not payload:
+        return True
+    if not str(payload.get("fetchedAt") or ""):
+        return True
+    if "rowCount" not in payload:
+        # Legacy pointer written before rowCount: fetchedAt means already fetched.
+        return False
+    try:
+        count = int(payload.get("rowCount") or 0)
+    except (TypeError, ValueError):
+        count = 0
+    rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    return count <= 0 and not rows
+
+
+def refresh_open_data(table: Any, *, force: bool = False) -> dict[str, Any]:
     notes: dict[str, Any] = {}
     for source in board_catalog_bulk.OPEN_DATA_SOURCES:
         try:
-            rows = board_catalog_bulk.load_source_rows(table, source, force=True)
+            reload = force or source_needs_refresh(table, source)
+            rows = board_catalog_bulk.load_source_rows(table, source, force=reload)
             cached = board_opendata._cached(table, f"opendata:{source}")  # noqa: SLF001
             fetched_at = str((cached or {}).get("fetchedAt") or "")
             if rows:
                 fetched_at = fetched_at or board_store.now_iso()
             _record_opendata_gap(table, source, fetched_at, row_count=len(rows))
             if board_catalog_bulk.needs_chunked_ingest(len(rows)):
-                queued = board_catalog_bulk.queue_action(table, "ingest", source, requested_by="discovery")
+                queued = board_catalog_bulk.queue_action(
+                    table, "ingest", source, requested_by="discovery", force=False
+                )
                 notes[source] = {"fetched": len(rows), "fetchedAt": fetched_at, **queued}
             else:
                 notes[source] = board_catalog_bulk.ingest_source(table, source, force=False)
@@ -311,7 +349,14 @@ def _is_chrome_name(name: str) -> bool:
         return True
     if PAGE_TITLE_NAME.search(name):
         return True
+    if NAV_NAME.match(name.strip()):
+        return True
+    if NAV_CHARS.search(name):
+        return True
     if "http" in name.lower():
+        return True
+    first = name[0]
+    if not (first.isalpha() or "\u4e00" <= first <= "\u9fff"):
         return True
     return False
 
@@ -393,10 +438,23 @@ def run_discovery(table: Any, settings: dict[str, Any], *, now: datetime | None 
     when = now or board_hk.now_hkt()
     places = discover_places(table, settings)
     open_data: dict[str, Any] = {}
-    if when.weekday() == 0 or not _cursor(table).get("lastOpenDataAt"):
-        open_data = refresh_open_data(table)
-    expired = board_catalog_candidates.expire_stale_places(table, now=when.astimezone() if when.tzinfo else when)
-    return {"ok": True, "places": places, "openData": open_data, "placesExpired": expired}
+    needs_open = any(
+        source_needs_refresh(table, source) for source in board_catalog_bulk.OPEN_DATA_SOURCES
+    )
+    if when.weekday() == 0 or needs_open or not _cursor(table).get("lastOpenDataAt"):
+        open_data = refresh_open_data(table, force=when.weekday() == 0)
+    utc = when.astimezone() if when.tzinfo else when
+    expired = board_catalog_candidates.expire_stale_places(table, now=utc)
+    expired_comp = board_catalog_candidates.expire_stale_competitor(table, now=utc)
+    enriched = board_catalog_candidates.enrich_with_places(table, settings)
+    return {
+        "ok": True,
+        "places": places,
+        "openData": open_data,
+        "placesExpired": expired,
+        "competitorsExpired": expired_comp,
+        "competitorsEnriched": enriched,
+    }
 
 
 def handle_tick(event: dict[str, Any]) -> dict[str, Any]:

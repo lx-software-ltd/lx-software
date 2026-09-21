@@ -140,20 +140,25 @@ def candidate_to_org(row: dict[str, Any], *, manager_id: str) -> dict[str, Any]:
     return org
 
 
-def load_source_rows(table: Any, source: str, *, force: bool = False) -> list[dict[str, Any]]:
+def load_source_payload(table: Any, source: str, *, force: bool = False) -> dict[str, Any]:
     if source == "lcsd":
-        return list((board_opendata.lcsd_facilities(table, force=force).get("rows") or []))
+        return board_opendata.lcsd_facilities(table, force=force)
     if source == "edb":
-        return list((board_opendata.edb_kindergartens(table, force=force).get("rows") or []))
+        return board_opendata.edb_kindergartens(table, force=force)
     if source == "swd":
-        return list((board_opendata.swd_child_care_centres(table, force=force).get("rows") or []))
+        return board_opendata.swd_child_care_centres(table, force=force)
     if source in ("places", "competitor"):
-        return [
+        rows = [
             row
             for row in board_store.list_candidates(table, per_status_limit=10_000)
             if str(row.get("source") or "") == source and str(row.get("status") or "") in ("new", "approved")
         ]
+        return {"rows": rows, "fetchedAt": board_store.now_iso(), "rowCount": len(rows)}
     raise BulkImportError(f"unknown catalog source {source}")
+
+
+def load_source_rows(table: Any, source: str, *, force: bool = False) -> list[dict[str, Any]]:
+    return list(load_source_payload(table, source, force=force).get("rows") or [])
 
 
 def ingest_source(

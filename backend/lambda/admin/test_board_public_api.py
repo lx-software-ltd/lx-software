@@ -139,6 +139,15 @@ class PathClassTests(unittest.TestCase):
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(
+                    "POST",
+                    "/public/siu-tin-dei/board/catalog/candidates/bulk",
+                    write_ctx,
+                    full,
+                ),
+                "owner_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
                     "POST", "/public/siu-tin-dei/board/catalog/discovery/run", write_ctx, full
                 ),
                 "owner_only",

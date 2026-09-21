@@ -853,11 +853,24 @@ def recipient_allowed(settings: dict[str, Any], address: str) -> bool:
     return any(e == addr or e == f"@{domain}" for e in entries if isinstance(e, str))
 
 
+def recipient_sourced(pseud: board_pii.Pseudonymizer, value: Any) -> bool:
+    """True when the recipient is an alias, a mapped address, or an own mailbox."""
+    return pseud.is_known_contact(str(value or ""))
+
+
+def recipient_values(values: Any) -> list[Any]:
+    """Split a string ``to`` the same way ``resolve_recipients`` does."""
+    if isinstance(values, str):
+        return [v for v in re.split(r"[,;\s]+", values) if v]
+    if isinstance(values, list):
+        return list(values)
+    return [values] if values else []
+
+
 def resolve_recipients(pseud: board_pii.Pseudonymizer, values: Any) -> list[str]:
     """Aliases or addresses → real addresses; raises on unknown aliases."""
-    if isinstance(values, str):
-        values = [v for v in re.split(r"[,;\s]+", values) if v]
-    if not isinstance(values, list):
+    values = recipient_values(values)
+    if not values:
         return []
     out: list[str] = []
     for value in values:
@@ -895,7 +908,7 @@ def _last_inbound(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
     return None
 
 
-def outgoing_plan(table: Any, op: str, args: dict[str, Any]) -> dict[str, Any]:
+def outgoing_plan(table: Any, op: str, args: dict[str, Any], *, require_sourced: bool = True) -> dict[str, Any]:
     """Resolve what a write operation would send (real addresses; owner-facing).
 
     Returns ``{fromMailbox, to, cc, subject, text, inReplyTo, references, threadId}``.
@@ -903,14 +916,20 @@ def outgoing_plan(table: Any, op: str, args: dict[str, Any]) -> dict[str, Any]:
     pseud = pseudonymizer(table)
     body = pseud.unmask_text(str(args.get("body") or "").strip()[:BOARD_MAIL_BODY_MAX_CHARS])
     if op == "mail_send":
-        to = resolve_recipients(pseud, args.get("to"))
+        raw_to = args.get("to")
+        to = resolve_recipients(pseud, raw_to)
         if not to:
             raise MailError("At least one recipient is required.")
         subject = " ".join(str(args.get("subject") or "").split())[:BOARD_MAIL_SUBJECT_MAX_LEN]
         if not subject:
             raise MailError("subject is required.")
+        from_mailbox = resolve_mailbox(args.get("fromMailbox"))
+        if require_sourced:
+            originals = recipient_values(raw_to)
+            if any(value and not recipient_sourced(pseud, value) for value in originals):
+                raise MailError("recipient not sourced")
         plan = {
-            "fromMailbox": resolve_mailbox(args.get("fromMailbox")),
+            "fromMailbox": from_mailbox,
             "to": to,
             "cc": [],
             "subject": subject,

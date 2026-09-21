@@ -454,6 +454,8 @@ def _headline_lines(review: dict[str, Any]) -> list[str]:
                 bits.append(f"{waiting} waiting on you")
             if catalog.get("revalidateExhausted"):
                 bits.append(f"{catalog.get('revalidateExhausted')} automatic retries exhausted")
+            if catalog.get("remoteErrorSheets"):
+                bits.append(f"{catalog.get('remoteErrorSheets')} stuck on a siutindei import error")
         lines.append("Catalog: " + ", ".join(bits) + ".")
     pipeline = headline.get("pipeline") or {}
     if pipeline.get("weeklyTarget"):
@@ -565,12 +567,22 @@ def _config_gap_lines(review: dict[str, Any]) -> list[str]:
 
 def _engineering_section(table: Any) -> list[dict[str, Any]]:
     """Table-only open runner rows. Never fetch GitHub from compile."""
+    extra: list[dict[str, Any]] = []
+    try:
+        import board_catalog_import
+
+        row = board_catalog_import.engineering_import_error(table)
+        if row:
+            extra.append(row)
+    except Exception:
+        pass
     try:
         import board_code
 
-        return board_code.list_open_run_summaries(table)
+        extra.extend(board_code.list_open_run_summaries(table))
     except Exception:
-        return []
+        pass
+    return extra
 
 
 def _engineering_lines(review: dict[str, Any]) -> list[str]:
@@ -579,6 +591,9 @@ def _engineering_lines(review: dict[str, Any]) -> list[str]:
         return ["No open board pull requests."]
     lines: list[str] = []
     for row in rows[:DIGEST_LIST_LIMIT]:
+        if row.get("kind") == "siutindei-import":
+            lines.append(str(row.get("summary") or "siutindei import API failing"))
+            continue
         pr = row.get("prNumber")
         ci = str(row.get("ciState") or "unknown")
         line = f"PR #{pr} CI {ci}"

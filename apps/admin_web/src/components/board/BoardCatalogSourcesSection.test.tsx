@@ -33,11 +33,23 @@ vi.mock("../../hooks/useBoardCatalog", () => ({
     isError: false,
     error: null,
   }),
-  useBoardCatalogCandidates: () => ({ data: [], isLoading: false, isError: false, error: null }),
+  useBoardCatalogCandidates: () => ({
+    data: [
+      { candidateId: "cand-1", source: "competitor", nameEn: "Example Playhouse", district: "Sha Tin", status: "new" },
+    ],
+    total: 1,
+    hasNextPage: false,
+    isFetchingNextPage: false,
+    fetchNextPage: vi.fn(),
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
   useBoardCatalogMutations: () => ({
     preview: { isPending: false, isError: false, isSuccess: false, error: null, data: null, mutate },
     importSource: { isPending: false, isError: false, isSuccess: false, error: null, data: null, mutate },
     decide: { isPending: false, isError: false, mutate },
+    bulkDecide: { isPending: false, isError: false, isSuccess: false, error: null, data: null, mutate },
     runDiscovery: { isPending: false, isError: false, isSuccess: false, error: null, data: null, mutate },
   }),
 }));
@@ -55,5 +67,14 @@ describe("BoardCatalogSourcesSection", () => {
     expect(screen.getByText("Ingest running 500 done, 200 left…")).toBeInTheDocument();
     expect(previewButtons[2]).toBeDisabled();
     expect(importButtons[2]).toBeDisabled();
+  });
+
+  it("lists filtered candidates and a leftover-competitor close action", () => {
+    render(<BoardCatalogSourcesSection />);
+    expect(screen.getByLabelText("Source")).toBeInTheDocument();
+    expect(screen.getByLabelText("District")).toBeInTheDocument();
+    expect(screen.getByText("Example Playhouse")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve Example Playhouse" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close leftover competitors" })).toBeInTheDocument();
   });
 });

@@ -63,6 +63,7 @@ vi.mock("../../hooks/useBoardCatalog", () => ({
     preview: { isPending: false, isError: false, isSuccess: false, error: null, data: null, mutate: vi.fn() },
     importSource: { isPending: false, isError: false, isSuccess: false, error: null, data: null, mutate: vi.fn() },
     decide: { isPending: false, isError: false, mutate: vi.fn() },
+    bulkDecide: { isPending: false, isError: false, isSuccess: false, error: null, data: null, mutate: vi.fn() },
     runDiscovery: { isPending: false, isError: false, isSuccess: false, error: null, data: null, mutate: vi.fn() },
   }),
 }));

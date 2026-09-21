@@ -737,7 +737,17 @@ class ImportClientTests(BoardTestCase):
         board_geocode.set_lookup_for_tests(lambda _addr: {})
         self.addCleanup(lambda: board_geocode.set_lookup_for_tests(None))
         with patch("board_async.invoke_async", lambda payload, fallback=None: None):
-            board_catalog.create_next(self.table, settings)
+            first = board_catalog.create_next(self.table, settings)
+            first["status"] = "delivered"
+            first["importPreview"] = {
+                "payload": {
+                    "organizations": [
+                        {"name": "Quarry Bay Park Playground"},
+                        {"name": "Kidz Club"},
+                    ]
+                }
+            }
+            board_store.put_task(self.table, first)
             task = board_catalog.create_enrich(self.table, settings)
             key = board_staff._deliverable_key(task["taskId"], "json")
             board_staff._blob_put(key, json.dumps(sheet).encode())
@@ -1335,6 +1345,90 @@ class ImportClientTests(BoardTestCase):
         parked = headline["parkedSheets"]
         self.assertEqual(parked[0]["revalidateAttempts"], 3)
         self.assertEqual(parked[0]["taskId"], task["taskId"])
+
+    def test_http_attaches_amzn_request_id(self) -> None:
+        headers = {"x-amzn-RequestId": "req-abc"}
+        err = urllib.error.HTTPError(
+            "https://siu.example/v1/admin/imports",
+            500,
+            "boom",
+            headers,
+            io.BytesIO(b'{"error":"x"}'),
+        )
+        board_catalog_import.set_http_for_tests(None)
+
+        def boom(*_a, **_k):
+            raise err
+
+        with patch("urllib.request.urlopen", boom):
+            with self.assertRaises(board_catalog_import.CatalogImportError) as ctx:
+                board_catalog_import._http("POST", "https://siu.example/v1/admin/imports")
+        self.assertEqual(ctx.exception.request_id, "req-abc")
+        self.assertIn("requestId=req-abc", str(ctx.exception))
+
+    def test_three_remote_errors_open_cto_task(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "cto", {"isActive": True})
+        task = self._sheet_task(settings, status="awaiting_import")
+        task["importPhase"] = "pending"
+        preview = dict(task.get("importPreview") or {})
+        preview["dryRun"] = {"mode": "remote", "remoteError": "siutindei 500 DetachedInstanceError"}
+        task["importPreview"] = preview
+        board_store.put_task(self.table, task)
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            for _ in range(3):
+                latest = board_store.get_task(self.table, task["taskId"]) or task
+                board_catalog_import._note_pending_remote_error(self.table, settings, latest)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("remoteErrorCount"), 3)
+        row = board_catalog_import.engineering_import_error(self.table)
+        self.assertEqual(row["kind"], "siutindei-import")
+        headline = board_catalog_import.catalog_headline(self.table)
+        self.assertGreaterEqual(int(headline.get("remoteErrorSheets") or 0), 1)
+        opened = [
+            t
+            for status in ("queued", "running")
+            for t in board_store.list_tasks(self.table, status, limit=50)
+            if (t.get("eventRef") or {}).get("id") == "siutindei-import-error"
+        ]
+        self.assertEqual(len(opened), 1)
+        self.assertEqual(opened[0]["assignee"], "cto")
+
+    def test_remote_error_clears_on_recovery(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="awaiting_import")
+        task["importError"] = (
+            "siutindei admin POST https://siu.example/v1/admin/imports failed: 500 boom requestId=req-1"
+        )
+        task["remoteErrorCount"] = 2
+        task["remoteErrorFirstAt"] = "2026-09-01T00:00:00Z"
+        preview = dict(task.get("importPreview") or {})
+        preview["dryRun"] = {"mode": "remote", "ok": True}
+        task["importPreview"] = preview
+        board_store.put_task(self.table, task)
+        latest = board_store.get_task(self.table, task["taskId"]) or task
+        board_catalog_import._note_pending_remote_error(self.table, settings, latest)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("remoteErrorCount"), 0)
+        self.assertFalse(saved.get("remoteErrorFirstAt"))
+        self.assertFalse(saved.get("importError"))
+
+    def test_remote_error_recovery_keeps_collision_import_error(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="needs_owner")
+        task["importError"] = "name collision: Foo Park"
+        task["remoteErrorCount"] = 2
+        task["remoteErrorFirstAt"] = "2026-09-01T00:00:00Z"
+        preview = dict(task.get("importPreview") or {})
+        preview["dryRun"] = {"mode": "remote", "ok": True}
+        task["importPreview"] = preview
+        board_store.put_task(self.table, task)
+        latest = board_store.get_task(self.table, task["taskId"]) or task
+        board_catalog_import._note_pending_remote_error(self.table, settings, latest)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("importError"), "name collision: Foo Park")
+        self.assertEqual(saved.get("remoteErrorCount"), 0)
+        self.assertFalse(saved.get("remoteErrorFirstAt"))
 
 
 class RouteTests(BoardTestCase):

@@ -168,6 +168,20 @@ class Pseudonymizer:
         entry = self.state["byAlias"].get(text)
         return str(entry.get("value")) if isinstance(entry, dict) else None
 
+    def is_known_contact(self, alias_or_value: str) -> bool:
+        """True for a stored alias, an already-mapped address, or an own-domain mailbox."""
+        text = str(alias_or_value or "").strip()
+        if not text:
+            return False
+        if ALIAS_RE.fullmatch(text):
+            return isinstance(self.state["byAlias"].get(text), dict)
+        addr = normalize_email(text)
+        if not addr:
+            return False
+        if is_own_address(addr, self.own_domains):
+            return True
+        return _digest("contact", addr) in self.state["byDigest"]
+
     # -- text ---------------------------------------------------------------
 
     def mask_text(self, text: str) -> str:

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { BOARD_PERSONA_DEFAULTS } from "./contracts/generated";
 import {
   approvalEditableFields,
+  boardCatalogCandidatesBulkPath,
+  boardCatalogCandidatesPath,
   boardTaskHref,
   boardTaskSearchParams,
   canRetryBoardTask,
@@ -388,5 +390,23 @@ describe("task dashboard helpers", () => {
     expect(boardTaskSearchParams(null, "?tab=board&section=tasks&task=abc123").get("task")).toBeNull();
     expect(boardTaskSearchParams(null, "?tab=dashboard").get("section")).toBeNull();
     expect(boardTaskSearchParams(null, "?tab=dashboard").get("tab")).toBe("dashboard");
+  });
+
+  it("builds catalog candidate filter and bulk paths", () => {
+    expect(boardCatalogCandidatesPath()).toBe("/siu-tin-dei/board/catalog/candidates");
+    expect(boardCatalogCandidatesPath("new")).toBe("/siu-tin-dei/board/catalog/candidates?status=new");
+    expect(
+      boardCatalogCandidatesPath({
+        status: "new",
+        source: "competitor",
+        district: "Sha Tin",
+        q: "play",
+        missingPlaceId: true,
+        cursor: 20,
+      }),
+    ).toBe(
+      "/siu-tin-dei/board/catalog/candidates?status=new&source=competitor&district=Sha+Tin&q=play&missingPlaceId=true&cursor=20",
+    );
+    expect(boardCatalogCandidatesBulkPath()).toBe("/siu-tin-dei/board/catalog/candidates/bulk");
   });
 });

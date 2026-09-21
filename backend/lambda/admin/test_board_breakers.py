@@ -435,6 +435,38 @@ class PolicyRefusalTests(BoardTestCase):
         self.assertEqual(queued.get("retriedBy"), "system:breaker-reset")
         self.assertFalse(queued.get("parkedReason"))
 
+    def test_openrouter_402_auto_resets_after_pause(self) -> None:
+        board_breakers.trip(self.table, "budget", "OpenRouter 402: insufficient credits")
+        self.assertTrue(board_breakers.openrouter_credits_paused(self.table))
+        row = board_store.get_breaker(self.table, "budget")
+        row["trippedAt"] = (
+            datetime.now(timezone.utc) - timedelta(seconds=board_breakers.OPENROUTER_PAUSE_SECONDS + 5)
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+        board_store.put_breaker(self.table, "budget", row)
+        self.assertFalse(board_breakers.openrouter_credits_paused(self.table))
+        with patch.object(board_breakers, "_credits_recovered", return_value=True):
+            board_breakers.evaluate(self.table, board_store.load_settings(self.table))
+        self.assertFalse(board_breakers.is_tripped(self.table, "budget"))
+
+    def test_credits_recovered_requires_positive_balance(self) -> None:
+        import openrouter_client
+
+        with (
+            patch.object(openrouter_client, "remaining_credits", return_value=None),
+            patch("admin_runtime._get_secretsmanager_client", return_value=None),
+        ):
+            self.assertFalse(board_breakers._credits_recovered())
+        with (
+            patch.object(openrouter_client, "remaining_credits", return_value=0),
+            patch("admin_runtime._get_secretsmanager_client", return_value=None),
+        ):
+            self.assertFalse(board_breakers._credits_recovered())
+        with (
+            patch.object(openrouter_client, "remaining_credits", return_value=1.5),
+            patch("admin_runtime._get_secretsmanager_client", return_value=None),
+        ):
+            self.assertTrue(board_breakers._credits_recovered())
+
 
 if __name__ == "__main__":
     unittest.main()

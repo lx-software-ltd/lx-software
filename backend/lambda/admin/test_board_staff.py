@@ -1352,6 +1352,36 @@ class StaffStepTests(ToolsTestCase):
         self.assertIn("daily budget", latest.get("parkedReason") or "")
         self.assertEqual(board_staff.drain_queue(self.table, board_store.load_settings(self.table)), 0)
 
+    def test_openrouter_credits_pause_requeues(self) -> None:
+        import board_breakers
+
+        task = self._queued_task()
+        tid = task["taskId"]
+        board_breakers.trip(self.table, "budget", "OpenRouter 402: insufficient credits")
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
+        latest = board_store.get_task(self.table, tid)
+        self.assertEqual(latest["status"], "queued")
+        self.assertIn("openrouter credits paused", latest.get("parkedReason") or "")
+
+    def test_openrouter_credits_pause_skips_drain(self) -> None:
+        import board_breakers
+
+        settings = _enable_staff(self.table)
+        board_breakers.trip(self.table, "budget", "OpenRouter 402: insufficient credits")
+        task = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="cfo",
+            origin="owner",
+            brief="List our three biggest monthly costs from AWS and finance",
+            deliverable_type="markdown",
+            created_by="admin",
+        )
+        self.assertEqual(task["status"], "queued")
+        self.assertEqual(board_staff.drain_queue(self.table, settings), 0)
+        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "queued")
+
     def test_stale_step_claim_reinvokes_once_then_fails(self) -> None:
         settings = _enable_staff(self.table)
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
