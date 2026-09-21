@@ -113,8 +113,13 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByText("12 / 1000")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Bulk catalog sources" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Scan sources now" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Preview" }).first()).toBeVisible();
-    await page.getByRole("button", { name: "Preview" }).first().click();
+    await expect(page.getByText("Ingest running 500 done, 200 left…")).toBeVisible();
+    const previewButtons = page.getByRole("button", { name: "Preview" });
+    const importButtons = page.getByRole("button", { name: "Import" });
+    await expect(previewButtons.first()).toBeVisible();
+    await expect(previewButtons.first()).toBeEnabled();
+    await expect(importButtons.nth(1)).toBeDisabled();
+    await previewButtons.first().click();
     await expect(page.getByRole("cell", { name: "Sha Tin Playhouse" })).toBeVisible();
     await expect(page.getByText(/Listing gap in Tai Po/i)).toBeVisible();
     if (testInfo.project.name === "phone") {
