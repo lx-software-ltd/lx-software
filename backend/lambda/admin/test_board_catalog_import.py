@@ -1117,49 +1117,6 @@ class ImportClientTests(BoardTestCase):
         self.assertEqual(explicit["holds"]["catalog_import"], 0)
         self.assertEqual(explicit["holdOverrides"]["catalog_import"], 0)
 
-
-class RouteTests(BoardTestCase):
-    def setUp(self) -> None:
-        super().setUp()
-        os.environ.pop("ASSETS_BUCKET_NAME", None)
-        os.environ["BOARD_STAFF_ENABLED"] = "true"
-        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
-        os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None)
-        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
-        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
-
-    def test_preview_route(self) -> None:
-        import board_routes
-
-        settings = _enable_staff(self.table)
-        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
-        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
-            task = board_catalog.create_next(self.table, settings)
-        key = board_staff._deliverable_key(task["taskId"], "json")
-        board_staff._blob_put(key, __import__("json").dumps(SHEET).encode())
-        task["deliverableKey"] = key
-        board_store.put_task(self.table, task)
-        event = self.event("/siu-tin-dei/board/catalog/preview", "POST", {"taskId": task["taskId"]})
-        resp = board_routes.handle_board_route(event, "POST", "/siu-tin-dei/board/catalog/preview", "owner")
-        self.assertEqual(resp["statusCode"], 200)
-        body = __import__("json").loads(resp["body"])
-        self.assertTrue(body["preview"]["ok"])
-        self.assertFalse(body["preview"]["importEnabled"])
-        # Importer env is unset here, so the default remote request stays local.
-        self.assertEqual((body["preview"].get("dryRun") or {}).get("mode"), "local")
-
-    def test_import_route_conflict_when_off(self) -> None:
-        import board_routes
-
-        settings = _enable_staff(self.table)
-        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
-        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
-            task = board_catalog.create_next(self.table, settings)
-        event = self.event("/siu-tin-dei/board/catalog/import", "POST", {"taskId": task["taskId"]})
-        resp = board_routes.handle_board_route(event, "POST", "/siu-tin-dei/board/catalog/import", "owner")
-        self.assertEqual(resp["statusCode"], 409)
-        self.assertIn("switched off", resp["body"])
-
     def _stale_iso(self) -> str:
         return (datetime.now(timezone.utc) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -1167,7 +1124,6 @@ class RouteTests(BoardTestCase):
         settings = _enable_staff(self.table)
         task = self._sheet_task(settings, status="needs_owner")
         task["importPhase"] = "invalid"
-        task["lastValidatedAt"] = self._stale_iso()
         _stamp_fresh_remote(
             task,
             ok=False,
@@ -1214,7 +1170,6 @@ class RouteTests(BoardTestCase):
         task = self._sheet_task(settings, status="needs_owner")
         task["importPhase"] = "rejected"
         task["revalidateAttempts"] = 3
-        task["lastValidatedAt"] = self._stale_iso()
         _stamp_fresh_remote(task, ok=False)
         task["lastValidatedAt"] = self._stale_iso()
         board_store.put_task(self.table, task)
@@ -1249,6 +1204,49 @@ class RouteTests(BoardTestCase):
         self.assertEqual(saved.get("status"), "awaiting_import")
         self.assertEqual(saved.get("importPhase"), "validated")
         self.assertEqual(saved.get("revalidateAttempts"), 0)
+
+
+class RouteTests(BoardTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        os.environ.pop("ASSETS_BUCKET_NAME", None)
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None)
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+
+    def test_preview_route(self) -> None:
+        import board_routes
+
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            task = board_catalog.create_next(self.table, settings)
+        key = board_staff._deliverable_key(task["taskId"], "json")
+        board_staff._blob_put(key, __import__("json").dumps(SHEET).encode())
+        task["deliverableKey"] = key
+        board_store.put_task(self.table, task)
+        event = self.event("/siu-tin-dei/board/catalog/preview", "POST", {"taskId": task["taskId"]})
+        resp = board_routes.handle_board_route(event, "POST", "/siu-tin-dei/board/catalog/preview", "owner")
+        self.assertEqual(resp["statusCode"], 200)
+        body = __import__("json").loads(resp["body"])
+        self.assertTrue(body["preview"]["ok"])
+        self.assertFalse(body["preview"]["importEnabled"])
+        # Importer env is unset here, so the default remote request stays local.
+        self.assertEqual((body["preview"].get("dryRun") or {}).get("mode"), "local")
+
+    def test_import_route_conflict_when_off(self) -> None:
+        import board_routes
+
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch("board_async.invoke_async", lambda payload, fallback=None: None):
+            task = board_catalog.create_next(self.table, settings)
+        event = self.event("/siu-tin-dei/board/catalog/import", "POST", {"taskId": task["taskId"]})
+        resp = board_routes.handle_board_route(event, "POST", "/siu-tin-dei/board/catalog/import", "owner")
+        self.assertEqual(resp["statusCode"], 409)
+        self.assertIn("switched off", resp["body"])
 
     def test_skip_route(self) -> None:
         import board_routes
