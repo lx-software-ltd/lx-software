@@ -18,6 +18,10 @@ from contract_constants import (
 )
 from http_common import _log_event
 
+INGEST_BATCH = 500
+CHUNKED_INGEST_SOURCES = frozenset({"edb"})
+_TERMINAL_CANDIDATE = frozenset({"imported", "rejected", "closed"})
+
 TEMPLATE_EN = "{name} is a {kind} in {district} for children and families."
 TEMPLATE_ZH = "{name}係{district}嘅{kind}，適合小朋友同家庭。"
 KIND_EN = {
@@ -149,19 +153,41 @@ def load_source_rows(table: Any, source: str, *, force: bool = False) -> list[di
     raise BulkImportError(f"unknown catalog source {source}")
 
 
-def ingest_source(table: Any, source: str, *, force: bool = False) -> dict[str, Any]:
+def ingest_source(
+    table: Any,
+    source: str,
+    *,
+    force: bool = False,
+    offset: int = 0,
+    limit: int | None = None,
+) -> dict[str, Any]:
     board_catalog_candidates.seed_listing_mirror(table)
     rows = load_source_rows(table, source, force=force)
+    start = max(0, int(offset or 0))
+    batch = rows[start:] if limit is None else rows[start : start + max(0, int(limit))]
     created = 0
     skipped = 0
-    for raw in rows:
+    official = source in board_catalog_candidates.OFFICIAL_SOURCES
+    for raw in batch:
         cand = row_to_candidate(raw, source=source)
-        if board_catalog_candidates.is_duplicate(table, cand) and source not in ("places", "competitor"):
+        if not official and board_catalog_candidates.is_duplicate(table, cand) and source not in ("places", "competitor"):
             skipped += 1
             continue
-        board_catalog_candidates.upsert_candidate(table, cand)
+        doc = board_catalog_candidates.upsert_candidate(table, cand)
+        if official and str(doc.get("status") or "") in _TERMINAL_CANDIDATE:
+            skipped += 1
+            continue
         created += 1
-    return {"source": source, "fetched": len(rows), "upserted": created, "skippedDuplicates": skipped}
+    remaining = max(0, len(rows) - start - len(batch))
+    return {
+        "source": source,
+        "fetched": len(rows),
+        "upserted": created,
+        "skippedDuplicates": skipped,
+        "offset": start,
+        "processed": len(batch),
+        "remaining": remaining,
+    }
 
 
 def _batches(orgs: list[dict[str, Any]], size: int) -> list[list[dict[str, Any]]]:
@@ -187,12 +213,19 @@ def _job(table: Any, source: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def preview_source(table: Any, source: str, *, remote: bool = False, limit: int | None = None) -> dict[str, Any]:
+def preview_source(
+    table: Any,
+    source: str,
+    *,
+    remote: bool = False,
+    limit: int | None = None,
+    skip_ingest: bool = False,
+) -> dict[str, Any]:
     if source not in BOARD_CATALOG_BULK_SOURCES:
         raise BulkImportError(f"unknown catalog source {source}")
     if not board_catalog_import.import_enabled():
         raise BulkImportError("catalog import is switched off (SiutindeiBoardCatalogImportEnabled)")
-    ingest = ingest_source(table, source)
+    ingest = {"source": source, "skipped": True} if skip_ingest else ingest_source(table, source)
     approved = _approved_for_source(table, source)
     mid = board_catalog_import.catalog_manager_id()
     if not mid:
@@ -340,19 +373,27 @@ def queue_action(
     remote: bool = True,
     limit: int | None = None,
     requested_by: str = "owner",
+    offset: int = 0,
+    force: bool = False,
 ) -> dict[str, Any]:
-    if action not in ("preview", "import"):
+    if action not in ("preview", "import", "ingest"):
         raise BulkImportError(f"unknown catalog bulk action {action}")
     if source not in BOARD_CATALOG_BULK_SOURCES:
         raise BulkImportError(f"unknown catalog source {source}")
-    if not board_catalog_import.import_enabled():
+    if action in ("preview", "import") and not board_catalog_import.import_enabled():
         raise BulkImportError("catalog import is switched off (SiutindeiBoardCatalogImportEnabled)")
     if action == "import" and not board_catalog_import.configured():
         raise BulkImportError("catalog import is not configured")
     _put_job(
         table,
         source,
-        {"phase": "queued", "action": action, "at": board_store.now_iso(), "requestedBy": requested_by},
+        {
+            "phase": "queued",
+            "action": action,
+            "at": board_store.now_iso(),
+            "requestedBy": requested_by,
+            "offset": int(offset or 0),
+        },
     )
     payload = {
         "internal": "board_catalog_bulk",
@@ -362,11 +403,42 @@ def queue_action(
         "remote": remote,
         "limit": limit,
         "requestedBy": requested_by,
+        "offset": int(offset or 0),
+        "force": bool(force),
     }
     invoked = board_async.try_invoke_event(payload)
     if not invoked:
         _log_event("warning", tag="board_catalog_bulk_enqueue_deferred", action=action, source=source)
     return {"ok": True, "queued": True, "invoked": invoked, "source": source, "action": action}
+
+
+def _job_payload(event: dict[str, Any], **updates: Any) -> dict[str, Any]:
+    payload = {
+        "internal": "board_catalog_bulk",
+        "boardKey": event.get("boardKey") or BOARD_KEY,
+        "action": str(event.get("action") or ""),
+        "source": str(event.get("source") or ""),
+        "remote": event.get("remote") is not False,
+        "limit": event.get("limit"),
+        "requestedBy": event.get("requestedBy") or "owner",
+        "offset": int(event.get("offset") or 0),
+        "force": bool(event.get("force")),
+        "ingestDone": bool(event.get("ingestDone")),
+    }
+    payload.update(updates)
+    return payload
+
+
+def _continue_job(event: dict[str, Any], **updates: Any) -> bool:
+    invoked = board_async.try_invoke_event(_job_payload(event, **updates))
+    if not invoked:
+        _log_event(
+            "warning",
+            tag="board_catalog_bulk_enqueue_deferred",
+            action=str(event.get("action") or ""),
+            source=str(event.get("source") or ""),
+        )
+    return invoked
 
 
 def handle_job(event: dict[str, Any]) -> dict[str, Any]:
@@ -377,12 +449,63 @@ def handle_job(event: dict[str, Any]) -> dict[str, Any]:
     source = str(event.get("source") or "")
     limit = event.get("limit")
     remote = event.get("remote") is not False
-    _put_job(table, source, {"phase": "running", "action": action, "at": board_store.now_iso()})
+    offset = max(0, int(event.get("offset") or 0))
+    _put_job(table, source, {"phase": "running", "action": action, "at": board_store.now_iso(), "offset": offset})
     try:
+        needs_chunk = action == "ingest" or (
+            action in ("preview", "import") and source in CHUNKED_INGEST_SOURCES and not event.get("ingestDone")
+        )
+        if needs_chunk:
+            force = bool(event.get("force")) if "force" in event else offset == 0
+            out = ingest_source(table, source, force=force, offset=offset, limit=INGEST_BATCH)
+            remaining = int(out.get("remaining") or 0)
+            next_offset = offset + int(out.get("processed") or 0)
+            _put_job(
+                table,
+                source,
+                {
+                    "phase": "running",
+                    "action": action,
+                    "at": board_store.now_iso(),
+                    "offset": next_offset,
+                    "remaining": remaining,
+                    "upserted": out.get("upserted"),
+                    "fetched": out.get("fetched"),
+                },
+            )
+            if remaining > 0:
+                _continue_job(event, offset=next_offset, force=False)
+                return {**out, "ok": True, "continued": True}
+            if action == "ingest":
+                _put_job(
+                    table,
+                    source,
+                    {
+                        "phase": "done",
+                        "action": action,
+                        "at": board_store.now_iso(),
+                        "ok": True,
+                        "offset": next_offset,
+                        "upserted": out.get("upserted"),
+                        "fetched": out.get("fetched"),
+                    },
+                )
+                return {**out, "ok": True}
+            _continue_job(event, ingestDone=True, offset=0, force=False)
+            return {**out, "ok": True, "ingestDone": True}
         if action == "preview":
-            out = preview_source(table, source, remote=remote, limit=limit)
+            out = preview_source(
+                table,
+                source,
+                remote=remote,
+                limit=limit,
+                skip_ingest=bool(event.get("ingestDone")),
+            )
         elif action == "import":
             out = import_source(table, source, limit=limit)
+        elif action == "ingest":
+            out = ingest_source(table, source, force=bool(event.get("force")), offset=offset)
+            out = {**out, "ok": True}
         else:
             raise BulkImportError(f"unknown catalog bulk action {action}")
         _put_job(

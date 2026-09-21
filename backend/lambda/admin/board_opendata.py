@@ -40,6 +40,7 @@ SWD aided standalone child-care centres
 from __future__ import annotations
 
 import csv
+import gzip
 import html
 import io
 import json
@@ -53,6 +54,7 @@ from defusedxml import ElementTree as ET
 
 import board_hk
 import board_store
+from contract_constants import BOARD_KEY
 from http_common import _log_event
 
 FEHD_EN_URL = "http://www.fehd.gov.hk/english/licensing/license/text/LP_Restaurants_EN.XML"
@@ -221,7 +223,7 @@ def parse_fehd_csv(body: str) -> list[dict[str, Any]]:
     return rows
 
 
-def parse_edb_csv(body: str) -> list[dict[str, Any]]:
+def parse_edb_csv(body: str, *, keep_all: bool = False) -> list[dict[str, Any]]:
     reader = csv.DictReader(io.StringIO(body))
     rows: list[dict[str, Any]] = []
     for raw in reader:
@@ -243,22 +245,79 @@ def parse_edb_csv(body: str) -> list[dict[str, Any]]:
             rows.append(mapped)
         if len(rows) >= ROW_CAP:
             break
+    if not keep_all:
+        rows = [row for row in rows if is_kindergarten(row)]
     if not rows:
         _log_event("warning", tag="board_opendata_schema_changed", dataset="edb", reason="required columns missing")
     return rows
 
 
+def _opendata_blob_key(name: str) -> str:
+    safe = str(name or "unknown").replace(":", "-")
+    return f"board/{BOARD_KEY}/opendata/{safe}.json.gz"
+
+
+def _blob_payload(raw: bytes) -> dict[str, Any] | None:
+    if not raw:
+        return None
+    try:
+        if raw[:2] == b"\x1f\x8b":
+            raw = gzip.decompress(raw)
+        doc = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
 def _cached(table: Any, name: str) -> dict[str, Any] | None:
     hit = board_store.get_cache(table, name)
-    if hit and isinstance(hit.get("payload"), dict):
-        return hit["payload"]
-    return None
+    if not hit or not isinstance(hit.get("payload"), dict):
+        return None
+    payload = hit["payload"]
+    inline = payload.get("rows")
+    if isinstance(inline, list) and inline:
+        return payload
+    key = str(payload.get("s3Key") or "")
+    if not key:
+        return payload if isinstance(inline, list) else None
+    import board_staff
+
+    doc = _blob_payload(board_staff._blob_get(key))  # noqa: SLF001
+    if not doc or not isinstance(doc.get("rows"), list):
+        return None
+    return {
+        **payload,
+        "rows": doc["rows"],
+        "fetchedAt": str(doc.get("fetchedAt") or payload.get("fetchedAt") or ""),
+        "s3Key": key,
+        "rowCount": int(payload.get("rowCount") or len(doc["rows"])),
+    }
 
 
 def _store(table: Any, name: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
-    payload = {"rows": rows[:ROW_CAP], "fetchedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
-    board_store.put_cache(table, name, payload, ttl_seconds=CACHE_TTL)
-    return payload
+    fetched_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    capped = rows[:ROW_CAP]
+    blob_key = _opendata_blob_key(name)
+    body = gzip.compress(
+        json.dumps({"rows": capped, "fetchedAt": fetched_at}, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    )
+    import board_staff
+
+    board_staff._blob_put(blob_key, body)  # noqa: SLF001
+    pointer = {"fetchedAt": fetched_at, "rowCount": len(capped), "s3Key": blob_key}
+    board_store.put_cache(table, name, pointer, ttl_seconds=CACHE_TTL)
+    return {**pointer, "rows": capped}
+
+
+def _store_best_effort(table: Any, name: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    try:
+        return _store(table, name, rows)
+    except Exception as exc:
+        _log_event("warning", tag="board_opendata_cache_failed", dataset=name, error=str(exc)[:200])
+        return {
+            "rows": rows[:ROW_CAP],
+            "fetchedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
 
 
 def _decode_body(raw: bytes) -> str:
@@ -299,27 +358,29 @@ def fehd_licensed_premises(table: Any | None = None, *, force: bool = False) -> 
     try:
         en = _download(FEHD_EN_URL)
         rows = parse_fehd_xml(en) if "<" in en[:200] else parse_fehd_csv(en)
-        return _store(table, "opendata:fehd", rows)
     except Exception as exc:
         _log_event("warning", tag="board_opendata_fetch_failed", dataset="fehd", error=str(exc)[:200])
         if cached:
             return cached
         return {"rows": [], "fetchedAt": ""}
+    return _store_best_effort(table, "opendata:fehd", rows)
 
 
-def edb_schools(table: Any | None = None, *, force: bool = False) -> dict[str, Any]:
+def edb_schools(table: Any | None = None, *, force: bool = False, keep_all: bool = False) -> dict[str, Any]:
     table = table if table is not None else board_store.records_table()
-    cached = _cached(table, "opendata:edb")
+    cache_name = "opendata:edb:all" if keep_all else "opendata:edb"
+    cached = _cached(table, cache_name)
     if cached and cached.get("rows") and not force:
         return cached
     try:
         body = _download(EDB_CSV_URL)
-        return _store(table, "opendata:edb", parse_edb_csv(body))
+        rows = parse_edb_csv(body, keep_all=keep_all)
     except Exception as exc:
         _log_event("warning", tag="board_opendata_fetch_failed", dataset="edb", error=str(exc)[:200])
         if cached:
             return cached
         return {"rows": [], "fetchedAt": ""}
+    return _store_best_effort(table, cache_name, rows)
 
 
 def _as_float(value: Any) -> float | None:
@@ -520,10 +581,13 @@ def lcsd_facilities(table: Any | None = None, *, force: bool = False) -> dict[st
             if not parsed:
                 _log_event("warning", tag="board_opendata_schema_changed", dataset=kind, reason="no facility rows")
             rows.extend(parsed)
-        if rows:
-            return _store(table, "opendata:lcsd", rows)
     except Exception as exc:
         _log_event("warning", tag="board_opendata_fetch_failed", dataset="lcsd", error=str(exc)[:200])
+        if cached:
+            return cached
+        return {"rows": [], "fetchedAt": ""}
+    if rows:
+        return _store_best_effort(table, "opendata:lcsd", rows)
     if cached:
         return cached
     if errors:
@@ -545,10 +609,13 @@ def swd_child_care_centres(table: Any | None = None, *, force: bool = False) -> 
             row.setdefault("facilityKind", "swd_child_care")
             row.setdefault("category", "Class")
             row.setdefault("source", "swd")
-        if rows:
-            return _store(table, "opendata:swd", rows)
     except Exception as exc:
         _log_event("warning", tag="board_opendata_fetch_failed", dataset="swd", error=str(exc)[:200])
+        if cached:
+            return cached
+        return {"rows": [], "fetchedAt": ""}
+    if rows:
+        return _store_best_effort(table, "opendata:swd", rows)
     if cached:
         return cached
     return {"rows": [], "fetchedAt": ""}

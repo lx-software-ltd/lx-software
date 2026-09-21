@@ -592,7 +592,7 @@ def open_data_rows(table: Any, kind: str, district: str = "") -> list[dict[str, 
         payload = board_opendata.fehd_licensed_premises(table)
         mapped_type = "restaurant"
     elif kind in {"edb", "school", "schools"}:
-        payload = board_opendata.edb_schools(table)
+        payload = board_opendata.edb_schools(table, keep_all=True)
         mapped_type = "school"
     elif kind in {"lcsd", "venue", "venues"}:
         payload = board_opendata.lcsd_programmes(table)

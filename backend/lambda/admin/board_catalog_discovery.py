@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 import board_catalog_bulk
 import board_catalog_candidates
 import board_hk
+import board_opendata
 import board_places
 import board_staff
 import board_store
@@ -207,13 +208,51 @@ def discover_places(table: Any, settings: dict[str, Any], districts: list[str] |
     return {"districts": chosen, "upserted": upserted, "errors": errors}
 
 
+def _record_opendata_gap(table: Any, source: str, fetched_at: str, *, reason: str = "") -> None:
+    import board_duties
+
+    gap_id = f"opendata-{source}"
+    if fetched_at:
+        board_duties.clear_config_gap(table, gap_id)
+        return
+    board_duties.note_config_gap(
+        table,
+        gap_id=gap_id,
+        reason=reason or f"{source} open-data fetch returned no rows",
+    )
+
+
 def refresh_open_data(table: Any) -> dict[str, Any]:
     notes: dict[str, Any] = {}
-    for source in ("lcsd", "edb", "swd"):
+    for source in ("lcsd", "swd"):
         try:
             notes[source] = board_catalog_bulk.ingest_source(table, source, force=True)
+            cached = board_opendata._cached(table, f"opendata:{source}")  # noqa: SLF001
+            fetched_at = str((cached or {}).get("fetchedAt") or "")
+            if notes[source].get("fetched"):
+                fetched_at = fetched_at or board_store.now_iso()
+            _record_opendata_gap(table, source, fetched_at)
         except Exception as exc:
             notes[source] = {"error": str(exc)[:200]}
+            _record_opendata_gap(table, source, "", reason=str(exc)[:200])
+    try:
+        payload = board_opendata.edb_kindergartens(table, force=True)
+        fetched_at = str(payload.get("fetchedAt") or "")
+        _record_opendata_gap(
+            table,
+            "edb",
+            fetched_at,
+            reason="EDB kindergarten fetch returned no rows",
+        )
+        queued = board_catalog_bulk.queue_action(table, "ingest", "edb", requested_by="discovery")
+        notes["edb"] = {
+            "fetched": len(payload.get("rows") or []),
+            "fetchedAt": fetched_at,
+            **queued,
+        }
+    except Exception as exc:
+        notes["edb"] = {"error": str(exc)[:200]}
+        _record_opendata_gap(table, "edb", "", reason=str(exc)[:200])
     cur = _cursor(table)
     cur["lastOpenDataAt"] = board_store.now_iso()
     _save_cursor(table, cur)
