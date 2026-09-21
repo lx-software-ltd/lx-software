@@ -396,7 +396,11 @@ siutindei dry-run; `{"remote": false}` stays local), `…/catalog/import`,
 the public API). A remote Preview on an `awaiting_import` / parked
 import sheet applies the same outcome as Accept (validate, collision,
 rejected, or pending + `remoteError`), stamps `lastValidatedAt`, and
-clears `importError` when the dry-run reaches siutindei. Owner Import
+clears `importError` when the dry-run reaches siutindei. The staff
+tick also re-validates a `needs_owner` sheet parked as `invalid` or
+`rejected` after a remote dry-run (at most once an hour, three
+attempts) so an upstream siutindei fix is re-tested without a click;
+owner Preview / Requeue reset the attempt counter. Owner Import
 refuses a stored collision without a live write; a stale preview is
 refreshed in that request and the live POST waits for the next click
 (HTTP API 30 s). A repeat import of the same task is 409 unless `force`

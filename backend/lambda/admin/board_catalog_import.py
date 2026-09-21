@@ -37,6 +37,9 @@ CATALOG_ENRICH_KIND = "catalog-enrich"
 CATALOG_SHEET_KINDS = frozenset(BOARD_CATALOG_EVENT_KINDS) or frozenset(
     {CATALOG_EVENT_KIND, CATALOG_ENRICH_KIND}
 )
+# Remote dry-run parks that an upstream siutindei fix can clear without a click.
+_REMOTE_RETRY_PHASES = frozenset({"invalid", "rejected"})
+_MAX_REVALIDATE_ATTEMPTS = 3
 
 # Sheet field → importer field. Only copied when listed in verified_fields.
 _SHEET_TO_IMPORTER = {
@@ -1087,6 +1090,8 @@ def _set_awaiting(table: Any, task: dict[str, Any], now: str, *, phase: str) -> 
     task["acceptedAt"] = task.get("acceptedAt") or now
     task["lastValidatedAt"] = now
     task["updatedAt"] = now
+    if phase == "validated":
+        task["revalidateAttempts"] = 0
     _clear_handoff_ttl(task)
     if table is not None:
         import board_store
@@ -1444,6 +1449,7 @@ def requeue_for_import(table: Any, task: dict[str, Any]) -> dict[str, Any]:
     task["importError"] = ""
     task["openQuestions"] = []
     task["importPhase"] = "pending"
+    task["revalidateAttempts"] = 0
     _clear_handoff_ttl(task)
     _drop_open_hold(table, str(task.get("taskId") or ""), reason="requeued")
     updated = _set_awaiting(table, task, now, phase="pending")
@@ -1503,6 +1509,7 @@ def owner_preview(table: Any, body: dict[str, Any]) -> dict[str, Any]:
     if not task:
         raise CatalogImportError("Task not found")
     # Owner Preview import is a siutindei dry-run. Pass remote=false for local-only.
+    task["revalidateAttempts"] = 0
     preview = preview_task(
         table,
         task,
@@ -1790,8 +1797,24 @@ def _revalidate_due(task: dict[str, Any], now: str) -> bool:
         return True
 
 
+def _should_revalidate_parked(task: dict[str, Any], now: str) -> bool:
+    """Retry a remote dry-run that parked the sheet, so an upstream fix is re-tested."""
+    if task.get("importedAt") or task.get("importSkipped"):
+        return False
+    if str(task.get("status") or "") != "needs_owner":
+        return False
+    if str(task.get("importPhase") or "") not in _REMOTE_RETRY_PHASES:
+        return False
+    dry = _preview_dry(task.get("importPreview"))
+    if dry.get("mode") != "remote":
+        return False
+    if int(task.get("revalidateAttempts") or 0) >= _MAX_REVALIDATE_ATTEMPTS:
+        return False
+    return _revalidate_due(task, now)
+
+
 def handle_tick(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
-    """Backfill, re-validate pending sheets, and schedule auto-import holds."""
+    """Backfill, re-validate pending / parked sheets, and schedule auto-import holds."""
     import board_store
 
     now = board_store.now_iso()
@@ -1807,6 +1830,12 @@ def handle_tick(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
             continue
         if not _revalidate_due(task, now):
             continue
+        accept_catalog_task(table, task, now)
+        revalidated += 1
+    for task in _catalog_tasks(table, "needs_owner"):
+        if not _should_revalidate_parked(task, now):
+            continue
+        task["revalidateAttempts"] = int(task.get("revalidateAttempts") or 0) + 1
         accept_catalog_task(table, task, now)
         revalidated += 1
     scheduled = 0
