@@ -291,3 +291,208 @@ def expire_stale_places(table: Any, *, now: datetime | None = None) -> int:
     if n:
         _log_event("info", tag="board_catalog_places_expired", count=n)
     return n
+
+
+CANDIDATE_PAGE = 20
+CANDIDATE_PAGE_MAX = 200
+COMPETITOR_STALE_DAYS = 7
+COMPETITOR_ENRICH_PER_RUN = 20
+
+
+def _match_text(row: dict[str, Any], q: str) -> bool:
+    needle = q.casefold()
+    hay = " ".join(
+        str(row.get(key) or "")
+        for key in ("nameEn", "nameZh", "name", "district", "source", "officialUrl", "addressEn")
+    )
+    return needle in hay.casefold()
+
+
+def filter_candidates(
+    rows: list[dict[str, Any]],
+    *,
+    source: str | None = None,
+    district: str | None = None,
+    q: str | None = None,
+) -> list[dict[str, Any]]:
+    wanted_source = str(source or "").strip().lower()
+    wanted_district = str(district or "").strip()
+    query = str(q or "").strip()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if wanted_source and str(row.get("source") or "").lower() != wanted_source:
+            continue
+        if wanted_district and str(row.get("district") or "") != wanted_district:
+            continue
+        if query and not _match_text(row, query):
+            continue
+        out.append(row)
+    return out
+
+
+def _as_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def list_filtered(
+    table: Any,
+    status: str | None = None,
+    *,
+    source: str | None = None,
+    district: str | None = None,
+    q: str | None = None,
+    limit: int = CANDIDATE_PAGE,
+    cursor: int = 0,
+) -> dict[str, Any]:
+    page_size = max(1, min(CANDIDATE_PAGE_MAX, _as_int(limit, CANDIDATE_PAGE)))
+    start = max(0, _as_int(cursor, 0))
+    rows = filter_candidates(
+        board_store.list_candidates(table, status, per_status_limit=10_000),
+        source=source,
+        district=district,
+        q=q,
+    )
+    page = rows[start : start + page_size]
+    nxt = start + page_size if start + page_size < len(rows) else None
+    return {"candidates": page, "nextCursor": nxt, "total": len(rows)}
+
+
+def bulk_set_status(
+    table: Any,
+    *,
+    decision: str,
+    source: str | None = None,
+    status: str = "new",
+    before: str | None = None,
+    district: str | None = None,
+    q: str | None = None,
+) -> dict[str, Any]:
+    if decision not in ("approve", "reject"):
+        raise ValueError("decision must be approve or reject")
+    target = "approved" if decision == "approve" else "rejected"
+    cutoff = None
+    if before:
+        try:
+            cutoff = board_hk.parse_iso(str(before))
+        except ValueError as exc:
+            raise ValueError("before must be an ISO timestamp") from exc
+        if cutoff.tzinfo is None:
+            cutoff = cutoff.replace(tzinfo=timezone.utc)
+    updated: list[dict[str, Any]] = []
+    for row in filter_candidates(
+        board_store.list_candidates(table, status or "new", per_status_limit=10_000),
+        source=source,
+        district=district,
+        q=q,
+    ):
+        if cutoff is not None:
+            created = str(row.get("createdAt") or "")
+            try:
+                when = board_hk.parse_iso(created)
+            except ValueError:
+                continue
+            if when.tzinfo is None:
+                when = when.replace(tzinfo=timezone.utc)
+            if when >= cutoff:
+                continue
+        updated.append(set_status(table, str(row.get("candidateId") or ""), target))
+    return {"updated": len(updated), "status": target, "candidates": updated[:20]}
+
+
+def expire_stale_competitor(
+    table: Any,
+    *,
+    now: datetime | None = None,
+    before: str | None = None,
+    days: int = COMPETITOR_STALE_DAYS,
+) -> int:
+    """Close leftover `new` competitor rows with no Places match."""
+    if before:
+        try:
+            cutoff = board_hk.parse_iso(str(before))
+        except ValueError:
+            cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=max(1, int(days)))
+    else:
+        cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=max(1, int(days)))
+    if cutoff.tzinfo is None:
+        cutoff = cutoff.replace(tzinfo=timezone.utc)
+    n = 0
+    for row in board_store.list_candidates(table, "new", per_status_limit=10_000):
+        if str(row.get("source") or "") != "competitor":
+            continue
+        if str(row.get("placeId") or "").strip():
+            continue
+        created = str(row.get("createdAt") or "")
+        if not created:
+            continue
+        try:
+            when = board_hk.parse_iso(created)
+        except ValueError:
+            continue
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        if when >= cutoff:
+            continue
+        set_status(table, str(row.get("candidateId") or ""), "closed")
+        n += 1
+    if n:
+        _log_event("info", tag="board_catalog_competitor_expired", count=n)
+    return n
+
+
+def _place_to_candidate_fields(place: dict[str, Any]) -> dict[str, Any]:
+    hours = place.get("regularOpeningHours") or {}
+    opening = ""
+    if isinstance(hours, dict) and hours.get("weekdayDescriptions"):
+        opening = "; ".join(str(x) for x in hours.get("weekdayDescriptions") or [])[:200]
+    loc = place.get("location") if isinstance(place.get("location"), dict) else {}
+    return {
+        "placeId": str(place.get("placeId") or ""),
+        "addressEn": str(place.get("address") or "")[:300],
+        "officialUrl": str(place.get("website") or "")[:400],
+        "phone": str(place.get("phone") or "")[:40],
+        "openingHours": opening,
+        "lat": loc.get("latitude") if loc else place.get("lat"),
+        "lng": loc.get("longitude") if loc else place.get("lng"),
+        "placesFetchedAt": _now(),
+    }
+
+
+def enrich_with_places(table: Any, settings: dict[str, Any] | None = None, *, limit: int = COMPETITOR_ENRICH_PER_RUN) -> int:
+    """Fill address / placeId on new competitor rows via Places text search."""
+    import board_places
+
+    cap = max(0, min(COMPETITOR_ENRICH_PER_RUN, int(limit or 0)))
+    if cap <= 0:
+        return 0
+    n = 0
+    for row in board_store.list_candidates(table, "new", per_status_limit=10_000):
+        if n >= cap:
+            break
+        if str(row.get("source") or "") != "competitor":
+            continue
+        if str(row.get("placeId") or "").strip():
+            continue
+        name = str(row.get("nameEn") or row.get("name") or "").strip()
+        district = str(row.get("district") or "").strip()
+        if not name or board_hk.canonical_district(district) == "unknown":
+            continue
+        query = f"{name} {district} Hong Kong"
+        try:
+            places = board_places.text_search(table, query, limit=1, settings=settings)
+        except board_places.PlacesError as exc:
+            _log_event("info", tag="board_catalog_competitor_enrich_stopped", error=str(exc)[:200])
+            break
+        if not places:
+            continue
+        fields = _place_to_candidate_fields(places[0])
+        if not fields.get("placeId"):
+            continue
+        upsert_candidate(table, {**row, **fields})
+        n += 1
+    if n:
+        _log_event("info", tag="board_catalog_competitor_enriched", count=n)
+    return n

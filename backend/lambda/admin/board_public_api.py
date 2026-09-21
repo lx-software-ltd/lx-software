@@ -157,6 +157,8 @@ def write_blocked(method: str, path: str) -> bool:
         return True
     if method == "POST" and head == "catalog" and len(rest) == 4 and rest[1] == "bulk" and tail in ("preview", "import"):
         return True
+    if method == "POST" and rest == ["catalog", "candidates", "bulk"]:
+        return True
     if method == "POST" and head == "catalog" and len(rest) == 4 and rest[1] == "candidates" and tail in ("approve", "reject"):
         return True
     if method == "POST" and head == "approvals" and len(rest) == 3 and tail in ("approve", "reject"):

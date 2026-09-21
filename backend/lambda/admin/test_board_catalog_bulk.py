@@ -14,6 +14,7 @@ import board_catalog_candidates
 import board_catalog_discovery
 import board_catalog_import
 import board_duties
+import board_hk
 import board_opendata
 import board_places
 import board_staff
@@ -460,6 +461,13 @@ class DiscoveryTests(BoardTestCase):
         names = board_catalog_discovery.extract_listing_names(html)
         self.assertEqual(names, ["Kids Boxing Classes", "Toddler's Ballet"])
 
+    def test_extract_listing_names_drops_nav_chrome(self) -> None:
+        html = (
+            "<a>Next</a><a>Page 2</a><a>« Previous</a><a>See all</a>"
+            "<a>Kids Boxing Classes</a>"
+        )
+        self.assertEqual(board_catalog_discovery.extract_listing_names(html), ["Kids Boxing Classes"])
+
     def test_ingest_listings_page_creates_new_candidates(self) -> None:
         n = board_catalog_discovery.ingest_listings_page(
             self.table,
@@ -527,6 +535,75 @@ class DiscoveryTests(BoardTestCase):
         settings = board_store.load_settings(self.table)
         out = board_catalog_discovery.run_discovery(self.table, settings)
         self.assertEqual(out.get("skipped"), "disabled")
+
+    def test_source_needs_refresh_when_cache_empty(self) -> None:
+        self.assertTrue(board_catalog_discovery.source_needs_refresh(self.table, "edb"))
+        board_opendata._store(self.table, "opendata:edb", [{"nameEn": "Little Stars"}])  # noqa: SLF001
+        self.assertFalse(board_catalog_discovery.source_needs_refresh(self.table, "edb"))
+
+    def test_run_discovery_refreshes_empty_cache_off_monday(self) -> None:
+        settings = _enable_staff(self.table)
+        wednesday = datetime(2026, 9, 16, 4, 0, tzinfo=board_hk.HKT)
+        with (
+            patch.object(board_catalog_discovery, "discover_places", return_value={"upserted": 0}),
+            patch.object(board_catalog_discovery, "refresh_open_data", return_value={"edb": {"fetched": 1}}) as refresh,
+        ):
+            out = board_catalog_discovery.run_discovery(self.table, settings, now=wednesday)
+        refresh.assert_called_once()
+        self.assertEqual(out["openData"]["edb"]["fetched"], 1)
+
+    def test_list_filtered_and_bulk_reject(self) -> None:
+        keep = board_catalog_candidates.upsert_candidate(
+            self.table, {"source": "places", "nameEn": "Eastern Park", "district": "Eastern"}
+        )
+        junk = board_catalog_candidates.upsert_candidate(
+            self.table, {"source": "competitor", "nameEn": "Browse Activities", "district": "Sha Tin"}
+        )
+        page = board_catalog_candidates.list_filtered(self.table, "new", source="competitor", q="browse")
+        self.assertEqual(page["total"], 1)
+        self.assertEqual(page["candidates"][0]["candidateId"], junk["candidateId"])
+        out = board_catalog_candidates.bulk_set_status(
+            self.table, decision="reject", source="competitor", status="new"
+        )
+        self.assertEqual(out["updated"], 1)
+        self.assertEqual(board_store.get_candidate(self.table, junk["candidateId"])["status"], "rejected")
+        self.assertEqual(board_store.get_candidate(self.table, keep["candidateId"])["status"], "new")
+
+    def test_expire_stale_competitor_closes_unmatched(self) -> None:
+        old = board_catalog_candidates.upsert_candidate(
+            self.table, {"source": "competitor", "nameEn": "Old Listing", "district": "Tai Po"}
+        )
+        old["createdAt"] = "2026-09-01T00:00:00Z"
+        board_store.put_candidate(self.table, old)
+        fresh = board_catalog_candidates.upsert_candidate(
+            self.table, {"source": "competitor", "nameEn": "New Listing", "district": "Tai Po"}
+        )
+        n = board_catalog_candidates.expire_stale_competitor(
+            self.table, now=datetime(2026, 9, 16, tzinfo=timezone.utc)
+        )
+        self.assertEqual(n, 1)
+        self.assertEqual(board_store.get_candidate(self.table, old["candidateId"])["status"], "closed")
+        self.assertEqual(board_store.get_candidate(self.table, fresh["candidateId"])["status"], "new")
+
+    def test_enrich_competitor_with_places(self) -> None:
+        row = board_catalog_candidates.upsert_candidate(
+            self.table, {"source": "competitor", "nameEn": "Happy Playhouse", "district": "Sha Tin"}
+        )
+        places = [
+            {
+                "placeId": "ChIJhappy",
+                "address": "1 Sha Tin Centre, Sha Tin",
+                "website": "https://happy.example",
+                "phone": "+852 1234 5678",
+                "location": {"latitude": 22.38, "longitude": 114.19},
+            }
+        ]
+        with patch.object(board_places, "text_search", return_value=places):
+            n = board_catalog_candidates.enrich_with_places(self.table, {})
+        self.assertEqual(n, 1)
+        saved = board_store.get_candidate(self.table, row["candidateId"])
+        self.assertEqual(saved.get("placeId"), "ChIJhappy")
+        self.assertIn("Sha Tin", saved.get("addressEn") or "")
 
 
 class OpenDataCacheTests(BoardTestCase):

@@ -610,6 +610,58 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
             )
         self.assertEqual(timeouts, [45])
 
+    def test_provider_name_from_error(self) -> None:
+        exc = openrouter_client.OpenRouterError(
+            "forbidden",
+            status=403,
+            body='{"error":{"metadata":{"provider_name":"xAI"}}}',
+        )
+        self.assertEqual(openrouter_client.provider_name_from_error(exc), "xAI")
+
+    def test_chat_completion_retries_403_with_provider_ignore(self) -> None:
+        calls: list[dict[str, Any]] = []
+
+        def fake_post_json(**kwargs: Any) -> str:
+            payload = kwargs.get("payload") or {}
+            calls.append(payload)
+            if len(calls) == 1:
+                raise openrouter_client.OpenRouterError(
+                    "tos",
+                    status=403,
+                    body='{"error":{"metadata":{"provider_name":"xAI"}}}',
+                )
+            return json.dumps(
+                {
+                    "model": payload.get("model"),
+                    "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+                }
+            )
+
+        with (
+            patch.object(openrouter_client, "post_json", fake_post_json),
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
+        ):
+            completion = openrouter_client.chat_completion(
+                messages=[{"role": "user", "content": "hi"}],
+                model="x-ai/grok-4",
+                secrets_client=None,
+                timeout=8,
+                max_retries=0,
+            )
+        self.assertEqual(completion.text, "ok")
+        self.assertEqual(calls[1]["provider"]["ignore"], ["xAI"])
+        self.assertTrue(calls[1]["provider"]["allow_fallbacks"])
+
+    def test_remaining_credits_reads_limit(self) -> None:
+        def fake_urlopen(req, timeout=None):  # noqa: ARG001
+            return _FakeResp(json.dumps({"data": {"limit_remaining": 12.5}}).encode("utf-8"))
+
+        with (
+            patch("openrouter_client.urlrequest.urlopen", fake_urlopen),
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
+        ):
+            self.assertEqual(openrouter_client.remaining_credits(None), 12.5)
+
     def test_retry_after_helpers(self) -> None:
         self.assertEqual(
             openrouter_client._retry_sleep_seconds(1, status=429, retry_after=7),

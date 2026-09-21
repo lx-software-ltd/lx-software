@@ -1332,9 +1332,48 @@ def _catalog_route(event: dict[str, Any], method: str, rest: list[str], user_sub
         _audit(user_sub, "BOARD_CATALOG_BULK_IMPORT", rest[2], event)
         return _json_response(200, out)
     if len(rest) == 2 and rest[1] == "candidates" and method == "GET":
+        import board_catalog_candidates
+
         qs = parse_qs(event.get("rawQueryString") or "")
         status = (qs.get("status") or [""])[0] or None
-        return _json_response(200, {"candidates": board_store.list_candidates(table, status, limit=200)})
+        try:
+            limit = int((qs.get("limit") or [""])[0] or board_catalog_candidates.CANDIDATE_PAGE)
+        except ValueError:
+            limit = board_catalog_candidates.CANDIDATE_PAGE
+        try:
+            cursor = int((qs.get("cursor") or [""])[0] or 0)
+        except ValueError:
+            cursor = 0
+        return _json_response(
+            200,
+            board_catalog_candidates.list_filtered(
+                table,
+                status,
+                source=(qs.get("source") or [""])[0] or None,
+                district=(qs.get("district") or [""])[0] or None,
+                q=(qs.get("q") or [""])[0] or None,
+                limit=limit,
+                cursor=cursor,
+            ),
+        )
+    if len(rest) == 3 and rest[1] == "candidates" and rest[2] == "bulk" and method == "POST":
+        import board_catalog_candidates
+
+        body = _parse_json_body(event)
+        try:
+            out = board_catalog_candidates.bulk_set_status(
+                table,
+                decision=str(body.get("decision") or ""),
+                source=body.get("source"),
+                status=str(body.get("status") or "new"),
+                before=body.get("before"),
+                district=body.get("district"),
+                q=body.get("q"),
+            )
+        except ValueError as exc:
+            return _json_response(400, {"message": str(exc)})
+        _audit(user_sub, "BOARD_CATALOG_CANDIDATE_BULK", str(body.get("decision") or ""), event)
+        return _json_response(200, out)
     if len(rest) == 4 and rest[1] == "candidates" and rest[3] in ("approve", "reject") and method == "POST":
         import board_catalog_candidates
 

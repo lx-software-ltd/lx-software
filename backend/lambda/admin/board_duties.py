@@ -184,6 +184,20 @@ def run_due(table: Any, settings: dict[str, Any], now: datetime | None = None) -
             event_id = f"{seat_id}:{duty_id}:{slot}"
             if find_open_event_task(table, "duty", event_id):
                 continue
+            if _is_catalog_duty(duty_id):
+                try:
+                    import board_breakers
+
+                    if board_breakers.is_tripped(table, "budget"):
+                        _log_event(
+                            "info",
+                            tag="board_duty_skipped_budget",
+                            seat=seat_id,
+                            duty=duty_id,
+                        )
+                        continue
+                except Exception as exc:
+                    _log_event("warning", tag="board_duty_budget_check_failed", error=str(exc)[:200])
             if not board_store.claim_duty_marker(table, f"duty:{seat_id}:{duty_id}:{slot}"):
                 continue
             skip_reason = _duty_unconfigured_reason(duty_id)

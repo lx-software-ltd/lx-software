@@ -23,6 +23,7 @@ from urllib import request as urlrequest
 from contract_constants import OPENROUTER_APPS as OPENROUTER_APP_CATALOG
 
 DEFAULT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
+KEY_INFO_URL = "https://openrouter.ai/api/v1/key"
 DEFAULT_TIMEOUT_SECONDS = 60
 _RETRYABLE_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
 _MODEL_WALK_STATUSES = frozenset({429, 502, 503})
@@ -52,9 +53,34 @@ _api_key_cache: dict[str, str] = {}
 class OpenRouterError(RuntimeError):
     """Transport or API failure talking to OpenRouter."""
 
-    def __init__(self, message: str, *, status: int | None = None) -> None:
+    def __init__(self, message: str, *, status: int | None = None, body: str = "") -> None:
         super().__init__(message)
         self.status = status
+        self.body = body
+
+
+def provider_name_from_error(exc: OpenRouterError) -> str:
+    blob = str(exc.body or exc)
+    data: dict[str, Any] = {}
+    text = blob.strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            parsed = json.loads(text[start : end + 1])
+        except json.JSONDecodeError:
+            parsed = {}
+        if isinstance(parsed, dict):
+            data = parsed
+    err = data.get("error") if isinstance(data.get("error"), dict) else {}
+    meta = err.get("metadata") if isinstance(err.get("metadata"), dict) else {}
+    name = str(meta.get("provider_name") or "").strip()
+    if name:
+        return name
+    for prev in meta.get("previous_errors") or []:
+        if isinstance(prev, dict) and prev.get("provider_name"):
+            return str(prev.get("provider_name") or "").strip()
+    return ""
 
 
 @dataclass
@@ -148,6 +174,33 @@ def attribution_user(*, service: str, owner: str | None) -> str | None:
 
 def endpoint_url() -> str:
     return os.getenv("OPENROUTER_CHAT_COMPLETIONS_URL", "").strip() or DEFAULT_ENDPOINT
+
+
+def remaining_credits(secrets_client: Any, *, service: str = SERVICE_EXECUTIVE_BOARD) -> float | None:
+    """Dollar remaining on the named key, or None when the account is unlimited."""
+    api_key = resolve_api_key(secrets_client, service=service)
+    req = urlrequest.Request(  # noqa: S310
+        url=os.getenv("OPENROUTER_KEY_INFO_URL", "").strip() or KEY_INFO_URL,
+        method="GET",
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            **attribution_headers(service),
+        },
+    )
+    try:
+        with urlrequest.urlopen(req, timeout=10) as resp:  # noqa: S310
+            raw = resp.read().decode("utf-8")
+    except Exception as exc:
+        raise OpenRouterError(f"OpenRouter key probe failed: {exc}") from exc
+    data = _load_json_object(raw, what="OpenRouter key")
+    inner = data.get("data") if isinstance(data.get("data"), dict) else data
+    remaining = inner.get("limit_remaining")
+    if remaining is None:
+        return None
+    try:
+        return float(remaining)
+    except (TypeError, ValueError):
+        return None
 
 
 def normalize_fallback_models(primary: str, candidates: list[str] | tuple[str, ...] | None) -> list[str]:
@@ -261,9 +314,30 @@ def chat_completion(
             break
         except OpenRouterError as exc:
             last_error = exc
-            if exc.status in _MODEL_WALK_STATUSES and index < len(chain) - 1:
+            ignored = provider_name_from_error(exc) if exc.status in (403, 504) else ""
+            if ignored:
+                prov = dict(payload.get("provider") or {})
+                already = [str(x) for x in (prov.get("ignore") or []) if x]
+                if ignored not in already:
+                    prov["ignore"] = [*already, ignored]
+                    prov["allow_fallbacks"] = True
+                    payload["provider"] = prov
+                    try:
+                        body_text = post_json(
+                            url=endpoint_url(),
+                            api_key=api_key,
+                            payload=payload,
+                            timeout=attempt_timeout,
+                            max_retries=min(1, max_retries),
+                            service=service,
+                        )
+                        raw = _load_json_object(body_text, what="OpenRouter response")
+                        break
+                    except OpenRouterError as retry_exc:
+                        last_error = retry_exc
+            if last_error.status in _MODEL_WALK_STATUSES and index < len(chain) - 1:
                 continue
-            raise
+            raise last_error
     if raw is None:
         if last_error:
             raise last_error
@@ -447,6 +521,7 @@ def post_json(
             raise OpenRouterError(
                 f"OpenRouter request failed with status {exc.code}{detail}",
                 status=exc.code,
+                body=body,
             ) from exc
         except urlerror.URLError as exc:
             sleep_s = _retry_sleep_seconds(attempt + 1, status=None, retry_after=None)

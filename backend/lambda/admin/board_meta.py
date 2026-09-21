@@ -1131,6 +1131,7 @@ def op_relay_lead(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
                 "subject": "New parent lead from siutindei",
                 "body": summary or "A parent asked to be introduced. Please reply within one working day.",
             },
+            require_sourced=False,
         )
         out["provider"] = board_mail.send_plan(ctx.table, handoff, sent_by=sent_by)
     confirm = board_mail.outgoing_plan(
@@ -1142,6 +1143,7 @@ def op_relay_lead(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
             "subject": "We have passed your request to the provider",
             "body": "Thanks — we have introduced you to the provider. They will contact you shortly.",
         },
+        require_sourced=False,
     )
     out["parent"] = board_mail.send_plan(ctx.table, confirm, sent_by=sent_by)
     out["sent"] = True

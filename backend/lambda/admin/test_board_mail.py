@@ -695,6 +695,33 @@ class TestMailTools(MailTestCase):
         self.assertNotIn("downgradeReason", approval)
         self.assertEqual(approval["preview"]["to"], ["wendy.chan@gmail.com"])
 
+    def test_mail_send_refuses_unsourced_recipient(self) -> None:
+        with self.assertRaises(board_mail.MailError) as ctx:
+            board_mail.outgoing_plan(
+                self.table,
+                "mail_send",
+                {
+                    "fromMailbox": "hello",
+                    "to": ["invented@example.com"],
+                    "subject": "Hi",
+                    "body": "Hello",
+                },
+            )
+        self.assertIn("recipient not sourced", str(ctx.exception))
+        thread_id = self.seed_thread()
+        board_mail.masked_thread_detail(self.table, thread_id)
+        plan = board_mail.outgoing_plan(
+            self.table,
+            "mail_send",
+            {
+                "fromMailbox": "hello",
+                "to": ["contact#1"],
+                "subject": "Hi",
+                "body": "Hello",
+            },
+        )
+        self.assertEqual(plan["to"], ["wendy.chan@gmail.com"])
+
     def test_send_new_mail_with_alias_and_owner_edit(self) -> None:
         self.seed_thread()
         # Learn the alias by reading first.

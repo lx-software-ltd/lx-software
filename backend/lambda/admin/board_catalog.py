@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import re
+from datetime import timedelta
 from typing import Any
 from urllib.parse import urlparse
 
+import board_hk
 import board_staff
 import board_store
 from contract_constants import (
@@ -24,6 +26,8 @@ from http_common import _log_event
 CATALOG_EVENT_KIND = "catalog-micro-batch"
 CATALOG_ENRICH_KIND = "catalog-enrich"
 LOW_COMPLETENESS = 0.5
+ENRICH_COOLDOWN_HOURS = 48
+ENRICH_FAIL_GAP = 3
 _OPEN_STATUSES = (
     "queued",
     "running",
@@ -96,6 +100,7 @@ def compose_enrich_brief(district: dict[str, Any], names: list[str]) -> str:
     return (
         f"Founder directive — CATALOG DESCRIBE {name}: write 40-word EN + 繁中 descriptions, "
         f"age_range and price_note for {listed} in {name} ({hint}). "
+        f"The organisation names below are already verified — copy each name_en into verified_fields. "
         f"Read only the official page. Leave unverified fields as unverified. "
         f"{contract}"
     )[:4000]
@@ -227,16 +232,79 @@ def imported_org_names(table: Any, district_id: str) -> list[str]:
     return names[:BOARD_CATALOG_DESCRIBE_BATCH_SIZE]
 
 
+def _task_district_id(task: dict[str, Any]) -> str:
+    return str((task.get("eventRef") or {}).get("districtId") or "").strip().lower()
+
+
+def _task_when(task: dict[str, Any]):
+    raw = str(task.get("updatedAt") or task.get("createdAt") or "")
+    if not raw:
+        return None
+    try:
+        when = board_hk.parse_iso(raw)
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        from datetime import timezone
+
+        when = when.replace(tzinfo=timezone.utc)
+    return when
+
+
+def enrich_recently_blocked_ids(table: Any, *, hours: int = ENRICH_COOLDOWN_HOURS) -> set[str]:
+    cutoff = board_hk.now_hkt() - timedelta(hours=max(1, int(hours)))
+    found: set[str] = set()
+    for status in ("failed", "needs_owner", "awaiting_import"):
+        for task in board_store.list_tasks(table, status, limit=200):
+            ref = task.get("eventRef") or {}
+            if str(ref.get("kind") or "") != CATALOG_ENRICH_KIND:
+                continue
+            did = _task_district_id(task)
+            when = _task_when(task)
+            if did and when is not None and when >= cutoff:
+                found.add(did)
+    return found
+
+
+def enrich_failed_count(table: Any, district_id: str) -> int:
+    did = str(district_id or "").strip().lower()
+    n = 0
+    for status in ("failed", "needs_owner"):
+        for task in board_store.list_tasks(table, status, limit=200):
+            ref = task.get("eventRef") or {}
+            if str(ref.get("kind") or "") != CATALOG_ENRICH_KIND:
+                continue
+            if _task_district_id(task) != did:
+                continue
+            n += 1
+    return n
+
+
 def next_enrich_district(table: Any) -> dict[str, Any] | None:
-    imported = claimed_district_ids(table)
     busy = open_enrich_district_ids(table)
+    cooling = enrich_recently_blocked_ids(table)
     scores = district_completeness(table)
     for row in BOARD_CATALOG_DISTRICTS:
         if not isinstance(row, dict):
             continue
         did = str(row.get("id") or "").strip().lower()
         name = str(row.get("name") or "")
-        if did not in imported or did in busy:
+        if not did or did in busy or did in cooling:
+            continue
+        names = imported_org_names(table, did)
+        if not names:
+            continue
+        if enrich_failed_count(table, did) >= ENRICH_FAIL_GAP:
+            try:
+                import board_duties
+
+                board_duties.note_config_gap(
+                    table,
+                    gap_id=f"catalog-enrich:{did}",
+                    reason=f"{name} enrich failed {ENRICH_FAIL_GAP} times; skip new sheets until an owner retries",
+                )
+            except Exception as exc:
+                _log_event("info", tag="board_catalog_enrich_gap_failed", error=str(exc)[:200])
             continue
         score = scores.get(name)
         if score is None or score < LOW_COMPLETENESS:
@@ -290,6 +358,8 @@ def create_enrich(table: Any, settings: dict[str, Any], *, created_by: str = "bo
     did = str(district.get("id") or "")
     name = str(district.get("name") or did)
     names = imported_org_names(table, did)[:BOARD_CATALOG_DESCRIBE_BATCH_SIZE]
+    if not names:
+        raise board_staff.StaffError("no district needs enrich")
     return board_staff.create_task(
         table,
         settings,

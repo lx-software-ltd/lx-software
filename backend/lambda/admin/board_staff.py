@@ -596,6 +596,11 @@ def run_step(payload: dict[str, Any]) -> None:
     if parked:
         _requeue_for_budget(table, task, wanted, parked)
         return
+    import board_breakers
+
+    if board_breakers.openrouter_credits_paused(table):
+        _requeue_for_budget(table, task, wanted, "openrouter credits paused")
+        return
     if float((task.get("usage") or {}).get("cost") or 0.0) >= float(task.get("budgetUsd") or 0):
         _finish_incomplete(table, task, "Task budget exhausted")
         return

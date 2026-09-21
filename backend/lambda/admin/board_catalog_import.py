@@ -96,6 +96,10 @@ _secret_fn: Callable[[], dict[str, str]] | None = None
 class CatalogImportError(ValueError):
     """User-facing catalog import failure."""
 
+    def __init__(self, message: str, *, request_id: str = "") -> None:
+        super().__init__(message)
+        self.request_id = request_id
+
 
 def set_auth_for_tests(fn: Callable[..., str] | None) -> None:
     global _auth_fn
@@ -456,12 +460,19 @@ def sheet_quality_issues(sheet: dict[str, Any], *, min_facts: int | None = None)
     return issues
 
 
+def _name_is_known(name: str, known_names: set[str] | None) -> bool:
+    if not name or not known_names:
+        return False
+    return name.casefold() in known_names
+
+
 def transform_org(
     org: dict[str, Any],
     *,
     district: str,
     manager_id: str,
     index: int,
+    known_names: set[str] | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     if not isinstance(org, dict):
         return None, {"index": index, "skipped": True, "reason": "not an object"}
@@ -470,14 +481,14 @@ def transform_org(
     copied: list[str] = []
     out: dict[str, Any] = {}
 
-    if not _field_verified(verified, "name_en", "name"):
+    name = str(org.get("name_en") or org.get("name") or "").strip()
+    if not _field_verified(verified, "name_en", "name") and not _name_is_known(name, known_names):
         return None, {
             "index": index,
             "skipped": True,
             "reason": "name is not in verified_fields",
-            "name": str(org.get("name_en") or org.get("name") or "")[:80],
+            "name": name[:80],
         }
-    name = str(org.get("name_en") or org.get("name") or "").strip()
     if not name:
         return None, {"index": index, "skipped": True, "reason": "verified name is blank"}
     out["name"] = name[:200]
@@ -630,6 +641,7 @@ def transform_sheet(
     *,
     manager_id: str | None = None,
     table: Any = None,
+    known_names: set[str] | None = None,
 ) -> dict[str, Any]:
     district = str(sheet.get("district") or "").strip()
     orgs = sheet.get("organisations")
@@ -646,7 +658,13 @@ def transform_sheet(
 
         als_budget = board_geocode.AlsBudget()
     for i, org in enumerate(orgs):
-        row, report = transform_org(org if isinstance(org, dict) else {}, district=district, manager_id=mid, index=i)
+        row, report = transform_org(
+            org if isinstance(org, dict) else {},
+            district=district,
+            manager_id=mid,
+            index=i,
+            known_names=known_names,
+        )
         reports.append(report)
         if row:
             if table is not None:
@@ -812,9 +830,17 @@ def _http(
             text = raw.decode("utf-8", errors="replace") if raw else ""
     except urllib.error.HTTPError as exc:
         err_body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-        raise CatalogImportError(
-            f"siutindei admin {method} {_safe_url(url)} failed: {exc.code} {err_body[:240]}"
-        ) from exc
+        headers = getattr(exc, "headers", None) or {}
+        request_id = str(
+            headers.get("x-amzn-RequestId")
+            or headers.get("X-Amzn-RequestId")
+            or headers.get("x-amzn-requestid")
+            or ""
+        )
+        detail = f"siutindei admin {method} {_safe_url(url)} failed: {exc.code} {err_body[:240]}"
+        if request_id:
+            detail = f"{detail} requestId={request_id}"
+        raise CatalogImportError(detail, request_id=request_id) from exc
     except urllib.error.URLError as exc:
         raise CatalogImportError(f"siutindei admin {method} {_safe_url(url)} failed: {exc.reason}") from exc
     parsed: Any = {}
@@ -1005,9 +1031,15 @@ def _run_remote_import(payload: dict[str, Any], token: str) -> dict[str, Any]:
     }
 
 
-def preview_from_text(text: str, *, remote: bool = False, table: Any = None) -> dict[str, Any]:
+def preview_from_text(
+    text: str,
+    *,
+    remote: bool = False,
+    table: Any = None,
+    known_names: set[str] | None = None,
+) -> dict[str, Any]:
     sheet = parse_sheet(text)
-    transformed = transform_sheet(sheet, table=table)
+    transformed = transform_sheet(sheet, table=table, known_names=known_names)
     local = local_dry_run(transformed)
     out: dict[str, Any] = {
         "ok": local["ok"],
@@ -1037,10 +1069,23 @@ def _task_text(table: Any, task: dict[str, Any], explicit: str | None) -> str:
     return board_staff.read_deliverable(task, limit=12000)
 
 
+def _known_names_for_task(table: Any, task: dict[str, Any]) -> set[str] | None:
+    if not allows_existing_org_updates(task):
+        return None
+    did = str((task.get("eventRef") or {}).get("districtId") or "").strip()
+    if not did:
+        return None
+    import board_catalog
+
+    names = board_catalog.imported_org_names(table, did)
+    folded = {str(n).casefold() for n in names if n}
+    return folded or None
+
+
 def preview_task(table: Any, task: dict[str, Any], *, sheet_text: str | None = None, remote: bool = False) -> dict[str, Any]:
     require_catalog_sheet(task)
     text = _task_text(table, task, sheet_text)
-    preview = preview_from_text(text, remote=remote, table=table)
+    preview = preview_from_text(text, remote=remote, table=table, known_names=_known_names_for_task(table, task))
     preview["taskId"] = task.get("taskId")
     ref = task.get("eventRef") or {}
     if not preview.get("district") and ref.get("district"):
@@ -1684,6 +1729,13 @@ def catalog_headline(table: Any) -> dict[str, Any]:
                 exhausted += 1
         except (TypeError, ValueError):
             continue
+    remote_errors = 0
+    for task in awaiting + parked:
+        try:
+            if int(task.get("remoteErrorCount") or 0) >= _MAX_REMOTE_ERRORS:
+                remote_errors += 1
+        except (TypeError, ValueError):
+            continue
     coverage = catalog_coverage(table)
     return {
         "ready": len(awaiting),
@@ -1692,6 +1744,7 @@ def catalog_headline(table: Any) -> dict[str, Any]:
         "collisions": len(collisions),
         "rejected": len(rejected),
         "revalidateExhausted": exhausted,
+        "remoteErrorSheets": remote_errors,
         "importedDistricts": coverage.get("importedDistricts") or 0,
         "completeDistricts": coverage.get("completeDistricts") or 0,
         "nextDistrict": coverage.get("nextDistrict") or "",
@@ -1850,6 +1903,75 @@ def _should_revalidate_parked(task: dict[str, Any], now: str) -> bool:
     return _revalidate_due(task, now)
 
 
+IMPORT_ERROR_EVENT = "siutindei-import-error"
+_MAX_REMOTE_ERRORS = 3
+
+
+def _open_import_error_task(table: Any, settings: dict[str, Any], task: dict[str, Any]) -> None:
+    import board_staff
+    from board_triage import find_open_event_task
+
+    if find_open_event_task(table, "ops", IMPORT_ERROR_EVENT):
+        return
+    err = str(task.get("importError") or _preview_dry(task.get("importPreview")).get("remoteError") or "")[:400]
+    try:
+        board_staff.create_task(
+            table,
+            settings,
+            assignee="cto",
+            origin="duty",
+            brief=(
+                f"siutindei POST /v1/admin/imports is failing. Latest: {err}. "
+                f"First seen on task {task.get('taskId')}."
+            )[:4000],
+            deliverable_type="markdown",
+            sla_hours=24,
+            event_ref={"kind": "ops", "id": IMPORT_ERROR_EVENT, "taskId": task.get("taskId")},
+            created_by="board_catalog_import",
+        )
+    except board_staff.StaffError as exc:
+        _log_event("info", tag="board_catalog_import_error_task_skipped", error=str(exc)[:200])
+
+
+def _note_pending_remote_error(table: Any, settings: dict[str, Any], task: dict[str, Any]) -> None:
+    dry = _preview_dry(task.get("importPreview"))
+    if not dry.get("remoteError"):
+        if task.get("remoteErrorCount"):
+            task["remoteErrorCount"] = 0
+            _save_task(table, task)
+        return
+    try:
+        count = int(task.get("remoteErrorCount") or 0) + 1
+    except (TypeError, ValueError):
+        count = 1
+    task["remoteErrorCount"] = count
+    task["importError"] = str(dry.get("remoteError"))[:300]
+    if not task.get("remoteErrorFirstAt"):
+        task["remoteErrorFirstAt"] = _now_iso()
+    _save_task(table, task)
+    if count >= _MAX_REMOTE_ERRORS:
+        _open_import_error_task(table, settings, task)
+
+
+def engineering_import_error(table: Any) -> dict[str, Any] | None:
+    for status in ("awaiting_import", "needs_owner"):
+        for task in _catalog_tasks(table, status):
+            try:
+                count = int(task.get("remoteErrorCount") or 0)
+            except (TypeError, ValueError):
+                count = 0
+            if count < _MAX_REMOTE_ERRORS:
+                continue
+            since = str(task.get("remoteErrorFirstAt") or "")
+            return {
+                "kind": "siutindei-import",
+                "since": since,
+                "taskId": task.get("taskId"),
+                "summary": f"siutindei import API failing since {since or 'recently'}",
+            }
+    return None
+
+
 def _note_parked_revalidate(table: Any, task: dict[str, Any], previous: int) -> None:
     """Count a real parked retry. Transient remoteError does not spend an attempt."""
     if str(task.get("status") or "") != "needs_owner":
@@ -1882,6 +2004,8 @@ def handle_tick(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
         if not _revalidate_due(task, now):
             continue
         accept_catalog_task(table, task, now)
+        latest = board_store.get_task(table, str(task.get("taskId") or "")) or task
+        _note_pending_remote_error(table, settings, latest)
         revalidated += 1
     for task in _catalog_tasks(table, "needs_owner"):
         if not _should_revalidate_parked(task, now):

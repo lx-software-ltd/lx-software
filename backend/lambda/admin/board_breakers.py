@@ -28,6 +28,7 @@ _IGNORABLE_TOOL_ERROR_MARKERS = (
 )
 _INTERNAL_TOOLS = frozenset({"task"})
 _TOOL_TRIP_ERRORS = 10
+OPENROUTER_PAUSE_SECONDS = 1800
 _TOOL_RESET_ERRORS = 5
 _TOOL_RESET_MIN_AGE = timedelta(minutes=30)
 _TOOL_AUTO_RESET_LIMIT = 1
@@ -100,6 +101,31 @@ def reset(table: Any, name: str, by_sub: str) -> dict[str, Any]:
 def is_tripped(table: Any, name: str) -> bool:
     row = board_store.get_breaker(table, name)
     return bool(row and row.get("tripped"))
+
+
+def openrouter_credits_paused(table: Any) -> bool:
+    """True while an OpenRouter 402 trip is younger than 30 minutes."""
+    row = board_store.get_breaker(table, "budget")
+    if not row or not row.get("tripped"):
+        return False
+    if not str(row.get("reason") or "").startswith("OpenRouter 402"):
+        return False
+    tripped_at = _parse_iso(str(row.get("trippedAt") or ""))
+    if tripped_at is None:
+        return True
+    return (datetime.now(timezone.utc) - tripped_at).total_seconds() < OPENROUTER_PAUSE_SECONDS
+
+
+def _credits_recovered() -> bool:
+    try:
+        from admin_runtime import _get_secretsmanager_client
+        import openrouter_client
+
+        remaining = openrouter_client.remaining_credits(_get_secretsmanager_client())
+        return remaining is None or remaining > 0
+    except Exception as exc:
+        _log_event("info", tag="board_breaker_credits_probe_failed", error=str(exc)[:200])
+        return False
 
 
 def write_blocked(table: Any, op: Any) -> dict[str, Any] | None:
@@ -226,6 +252,13 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
             staff = settings.get("staff") or {}
             if staff.get("seniorPaused") or staff.get("disabledReason"):
                 _fresh_save_staff(table, seniorPaused=False, disabledReason="")
+    if is_tripped(table, "budget"):
+        row = board_store.get_breaker(table, "budget") or {}
+        if str(row.get("reason") or "").startswith("OpenRouter 402"):
+            tripped_at = _parse_iso(str(row.get("trippedAt") or ""))
+            age = (datetime.now(timezone.utc) - tripped_at).total_seconds() if tripped_at else 0
+            if age >= OPENROUTER_PAUSE_SECONDS and _credits_recovered():
+                reset(table, "budget", "auto")
 
     cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
     cutoff_iso = cutoff.strftime("%Y-%m-%dT%H:%M:%SZ")

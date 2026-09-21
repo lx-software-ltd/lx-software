@@ -530,6 +530,7 @@ def _send_mail(ctx: Any, inv: dict[str, Any], *, subject: str, body: str) -> dic
             "subject": subject,
             "body": body,
         },
+        require_sourced=False,
     )
     pdf = _load_invoice_pdf(inv)
     if pdf:
