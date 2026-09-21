@@ -651,25 +651,26 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
       "meta": "act",
       "stores": "propose",
       "research": "read",
+      "web": "read",
       "github": "propose",
       "content": "act",
       "newsletter": "act",
       "code": "act",
       "catalog": "propose"
     },
-    "brief": "You fill the content calendar, write posts and stories in English and Traditional Chinese, render template cards, and draft newsletters and SEO articles. You never invent photos of children and you never publish a claim the catalog does not support. Report facts you verified with tools; say clearly what you could not verify.",
+    "brief": "You fill the content calendar, write posts and stories in English and Traditional Chinese, render template cards, and draft newsletters and SEO articles. You never invent photos of children and you never publish a claim the catalog does not support. Official pages come from research_search / research_fetch_page (already offered). web_* is GA4 only — do not request help for web to fetch a page. Report facts you verified with tools; say clearly what you could not verify.",
     "duties": [
       {
         "id": "catalog-micro-batch",
         "cron": "0 8,12,16 * * *",
-        "brief": "Create one catalog micro-batch for the next remaining Hong Kong district. The runtime fills the district name, hint and OUTPUT CONTRACT. Use research_search, then research_fetch_page on the official LCSD or provider page (one page often has address, hours, phone and free entry). Return a fenced JSON curation sheet. No Meta, no mobile, no publishing.",
+        "brief": "Create one catalog micro-batch for the next remaining Hong Kong district. The runtime fills the district name, hint and OUTPUT CONTRACT. Use research_search, then research_fetch_page on the official LCSD or provider page (one page often has address, hours, phone and free entry). You already have research; do not task_request_help for web — web_* is GA4 only. Return a fenced JSON curation sheet. No Meta, no mobile, no publishing.",
         "deliverableType": "json",
         "tier": "desk"
       },
       {
         "id": "catalog-enrich",
         "cron": "30 8,12,16 * * *",
-        "brief": "Describe imported listings that still have a template description. The runtime names up to 20 organisations. Write 40-word EN + 繁中 descriptions, age_range and price_note from the official page only. Return a fenced JSON curation sheet for those organisations. No Meta, no mobile, no publishing.",
+        "brief": "Describe imported listings that still have a template description. The runtime names up to 20 organisations. Write 40-word EN + 繁中 descriptions, age_range and price_note from the official page only (research_fetch_page; do not request web help). Return a fenced JSON curation sheet for those organisations. No Meta, no mobile, no publishing.",
         "deliverableType": "json",
         "tier": "desk"
       }

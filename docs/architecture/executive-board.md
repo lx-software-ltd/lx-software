@@ -569,7 +569,10 @@ business-analyst weekly KPI (Mon 08:00 HKT; Siu Tin Dei only), accountant
 month-end (1st 09:00) and weekly aging (Thu 09:00), security-analyst
 weekly triage (Tue 09:00), data-analyst attribution (Mon 10:00),
 architect backlog grooming, content-marketer `catalog-micro-batch` (08:00,
-12:00, 16:00) plus `catalog-enrich` at :30 of those hours, review-headline duties. The hourly cache refresh also diffs
+12:00, 16:00) plus `catalog-enrich` at :30 of those hours (seat has
+`research: read` for official pages and `web: read` for GA4; catalog
+duties must use `research_fetch_page` and must not `task_request_help`
+for `web`), review-headline duties. The hourly cache refresh also diffs
 CloudWatch ALARM names and new security / GitHub alert ids into
 architect (or CTO) and security-analyst tasks.
 

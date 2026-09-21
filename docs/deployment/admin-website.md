@@ -615,7 +615,10 @@ below 50% completeness (then `catalog-enrich` refills hours, price and
 address on existing orgs). The gate uses the cached `v_catalog_health`
 rows only and ignores districts with no score, so a cold cache does not
 pause new districts. After deploy, live districts around 28% completeness
-will pause `catalog-micro-batch` until enrich + import raise them. Enrich
+will pause `catalog-micro-batch` until enrich + import raise them. The
+`content-marketer` seat has `research: read` and `web: read`; official
+pages come from `research_fetch_page` (already offered) so a catalog
+sheet must not `task_request_help` for `web` (`web_*` is GA4 only). Enrich
 sheets that would update existing organisations stay on the import path
 (`validated` / `awaiting_import`); they are not parked as collisions.
 Accept of a catalog sheet skips the unverified-evidence hold (enrich
