@@ -324,6 +324,46 @@ class StaffEngineTests(BoardTestCase):
         self.assertIn("assign data-analyst", roster_text)
         self.assertIn("Do not assign community-manager", roster_text)
 
+    def test_content_marketer_has_web_read_and_refuses_web_help(self) -> None:
+        seat = board_staff.seat_default("content-marketer") or {}
+        self.assertEqual((seat.get("tools") or {}).get("web"), "read")
+        self.assertEqual((seat.get("tools") or {}).get("research"), "read")
+        self.assertIn("do not request help for web", (seat.get("brief") or "").lower())
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        roster = board_staff.seats_by_id(self.table, settings)
+        self.assertEqual(board_staff.seat_level(settings, roster, "content-marketer", "web"), "read")
+        ops = {
+            op.name
+            for op, _ in board_tools.available_ops(
+                settings, "cmo", context="task", seat_id="content-marketer", seats_by_id=roster
+            )
+        }
+        self.assertIn("research_fetch_page", ops)
+        self.assertIn("web_sessions", ops)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="content-marketer",
+                origin="duty",
+                brief="Catalog sheet",
+                deliverable_type="json",
+                created_by="admin",
+            )
+        reason = board_staff.validate_task_request_help(
+            board_tools.ToolContext(
+                table=self.table,
+                settings=settings,
+                persona_id="cmo",
+                kind="task",
+                task_id=task["taskId"],
+                seat_id="content-marketer",
+            ),
+            {"need": "Fetch official LCSD pages", "toolIds": ["web"]},
+        )
+        self.assertIn("already have those tools", reason)
+
     def test_ga4_brief_does_not_deadlock_seats_without_web(self) -> None:
         settings = _enable_staff(self.table)
         brief = "Verify GA4 visitor sources and event tracking."
