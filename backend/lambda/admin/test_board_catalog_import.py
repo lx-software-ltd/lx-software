@@ -346,7 +346,13 @@ class TransformTests(unittest.TestCase):
             "Tung Chung North Park in Islands (hint)."
         )
         self.assertIn("galaxy sports asia", names)
+        self.assertIn("kids club at tung chung", names)
         self.assertIn("tung chung north park", names)
+        split = board_catalog_import.names_from_brief(
+            "notes for parents go here; write descriptions for Sports and Recreation Centre in Eastern"
+        )
+        self.assertIn("sports and recreation centre", split)
+        self.assertNotIn("sports", split)
         task = {
             "eventRef": {"kind": "catalog-enrich", "orgNames": ["Repulse Bay Beach"]},
             "brief": "for Stanley Plaza in Southern",
@@ -1174,7 +1180,7 @@ class ImportClientTests(BoardTestCase):
     def test_stored_zero_catalog_hold_becomes_default(self) -> None:
         out = board_store.normalize_boundaries({"holds": {"catalog_import": 0}})
         self.assertEqual(out["holds"]["catalog_import"], 2)
-        self.assertEqual(out["holdOverrides"]["catalog_import"], 2)
+        self.assertNotIn("catalog_import", out["holdOverrides"])
         explicit = board_store.normalize_boundaries(
             {"holds": {"catalog_import": 0}, "holdOverrides": {"catalog_import": 0}}
         )

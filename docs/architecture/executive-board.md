@@ -205,7 +205,9 @@ Rules that hold for every tool:
   labels `security` or `dependencies` may `act` under `propose` mode so
   CVE / Dependabot tickets are filed without an Approval. The architect
   seat may `act` on `github_set_labels` and `github_comment_issue` so
-  backlog grooming does not wait on Approvals.
+  backlog grooming does not wait on Approvals. `github_set_labels` at
+  act unions the requested labels with the issue's current set so
+  grooming cannot strip `security` / `board-ready`.
 
 ### 5.2 Registry and loop
 
@@ -431,7 +433,9 @@ Bulk listing growth is `board_catalog_bulk.py` plus a candidate queue
 feeds auto-approve; Places rows auto-approve only for public types
 (park / playground / library / pool / museum). Places / competitor names
 matching `catalog.nameDenyTokens` (elderly, kindergarten, tutorial, day
-care, and the 繁中 equivalents) are skipped at upsert. Commercial Places and
+care, and the 繁中 equivalents) are skipped at upsert unless the row's
+`facilityKind` is the matching Places/EDB/SWD category (so
+`places_kindergarten` search is not emptied by its own query). Commercial Places and
 competitor `listingsIndex` names stay `new` until the owner decides.
 Daily 03:30 HKT `…-board-catalog-discovery` rotates
 `discoveryDistrictsPerDay` (3) districts through Places (Enterprise,
@@ -557,11 +561,12 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
   board_staff_tick`; also **Staff → Run staff tick now**, which queues the
   same work via a 2 s Event invoke): persist autonomy defaults
   (`staff.modelBySeat.content-marketer` =
-  `qwen/qwen-2.5-72b-instruct`, `holdOverrides.catalog_import` 2) when
+  `qwen/qwen-2.5-72b-instruct`, `holds.catalog_import` 2) when
   those keys are still unset → expire stale holds → evaluate
-  breakers → execute due holds → expire pending approvals older than
-  `approvalExpiryHours` 168 → queue one auto bulk-import when
-  `catalog.autoImport` is on and a source has ≥
+  breakers → execute due holds → expire pending approvals that carry
+  `autoRejectAt` and are due (`approvalExpiryHours` 168; legacy rows without
+  the stamp are left for the founder) → schedule one auto bulk-import
+  hold when `catalog.autoImport` is on and a source has ≥
   `catalogAutoBulkMinApproved` 50 approved rows → run due duties →
   expire help waits → drain queue → stuck sweep (a claim older than the
   Lambda timeout is retried once, then `stuck`; `review` older than
@@ -577,8 +582,9 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
   Default: `content-marketer` → `qwen/qwen-2.5-72b-instruct` so Sunday
   content planning skips the DeepSeek / Novita route. A 403 or other
   retryable OpenRouter error retries the same step once on the other
-  `stepModels` entry; a 402 re-queues the task and trips the budget
-  breaker.
+  `stepModels` entry unless the seat has an explicit `modelBySeat`
+  pin (then the retry stays on that model); a 402 re-queues the task
+  and trips the budget breaker.
 
 ### 7.2 Duties
 
@@ -614,7 +620,9 @@ proposals, draft invoice, record / match payment), `inbound_reply:{channel}`
 inbound_reply / outbound_known 0; cold_outreach / publish / spend 24;
 code_staging 12; catalog_import 2). A stored `holds.catalog_import` of 0
 is treated as 2 unless `holdOverrides.catalog_import` is set (including
-an explicit 0). Overridden per `classKey` by the trust ramp. When a call
+an explicit 0). The default lives on `holds.catalog_import` so the trust
+ramp can still promote (`holdOverrides.catalog_import` 0) and demote
+(pop the key → back to 2 h). Overridden per `classKey` by the trust ramp. When a call
 would **execute** (`act`, no guard reason) and the hours are non-zero, it
 is stored as a `holds#` row (`scheduled`, `executeAt`) and the model is
 told it is scheduled unless the founder vetoes. Quiet hours

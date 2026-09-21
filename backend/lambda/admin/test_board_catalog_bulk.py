@@ -1126,6 +1126,17 @@ class AutonomyCatalogTests(BoardTestCase):
             {"source": "places", "nameEn": "Happy Kindergarten", "district": "Kwai Tsing", "placeId": "ChIJkg"},
         )
         self.assertTrue(kg.get("skipped"))
+        kg_ok = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {
+                "source": "places",
+                "facilityKind": "places_kindergarten",
+                "nameEn": "Happy Kindergarten",
+                "district": "Kwai Tsing",
+                "placeId": "ChIJkgok",
+            },
+        )
+        self.assertIn("candidateId", kg_ok)
         keep = board_catalog_candidates.upsert_candidate(
             self.table,
             {"source": "places", "nameEn": "Smartkids House Edu Centre", "district": "Kwai Tsing", "placeId": "ChIJok"},
@@ -1155,10 +1166,15 @@ class AutonomyCatalogTests(BoardTestCase):
         ):
             out = board_catalog_bulk.maybe_queue_auto_imports(self.table, settings)
         self.assertEqual(out.get("queued"), ["swd"])
-        invoke.assert_called_once()
-        job = board_catalog_bulk._job(self.table, "swd")  # noqa: SLF001
-        self.assertEqual(job.get("phase"), "queued")
-        self.assertEqual(job.get("action"), "import")
+        self.assertTrue(out.get("held"))
+        invoke.assert_not_called()
+        holds = board_store.list_holds(self.table, "scheduled", limit=20)
+        self.assertEqual(len(holds), 1)
+        self.assertEqual(holds[0].get("op"), "catalog_bulk_import")
+        self.assertEqual((holds[0].get("arguments") or {}).get("source"), "swd")
+        self.assertIsNone(board_catalog_bulk._job(self.table, "swd"))  # noqa: SLF001
+        again = board_catalog_bulk.maybe_queue_auto_imports(self.table, settings)
+        self.assertEqual(again.get("queued"), [])
 
 
 class CatalogImportActivityTests(unittest.TestCase):

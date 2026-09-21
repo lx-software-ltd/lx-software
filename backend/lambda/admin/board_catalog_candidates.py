@@ -103,14 +103,28 @@ def _now() -> str:
     return board_store.now_iso()
 
 
-def name_denied(name: str) -> bool:
-    """Elderly / kindergarten / tutorial names stay off the owner queue."""
+# Official / category-specific Places queries may name the thing they seek.
+_DENY_ALLOW_BY_KIND = {
+    "places_kindergarten": frozenset({"kindergarten", "幼稚園", "nursery", "幼兒"}),
+    "places_child_care": frozenset({"nursery", "幼兒", "day care", "日間護理"}),
+    "edb_kindergarten": frozenset({"kindergarten", "幼稚園", "nursery", "幼兒"}),
+    "swd_child_care": frozenset({"nursery", "幼兒", "day care", "日間護理"}),
+}
+
+
+def name_denied(name: str, *, facility_kind: str = "") -> bool:
+    """Elderly / kindergarten / tutorial names stay off the owner queue.
+
+    Tokens that match the intended ``facilityKind`` (e.g. ``places_kindergarten``)
+    are allowed so category search is not emptied by its own query.
+    """
     blob = str(name or "").casefold()
     if not blob:
         return False
+    allowed = {str(t).casefold() for t in _DENY_ALLOW_BY_KIND.get(str(facility_kind or ""), ())}
     for token in BOARD_CATALOG_NAME_DENY_TOKENS:
         marker = str(token or "").casefold()
-        if not marker:
+        if not marker or marker in allowed:
             continue
         if any(ord(ch) > 127 for ch in marker):
             if marker in blob:
@@ -127,7 +141,9 @@ def upsert_candidate(table: Any, row: dict[str, Any]) -> dict[str, Any]:
     name = str(row.get("nameEn") or row.get("name") or "").strip()
     if not name:
         raise ValueError("candidate name is required")
-    if source in ("places", "competitor") and name_denied(name):
+    if source in ("places", "competitor") and name_denied(
+        name, facility_kind=str(row.get("facilityKind") or "")
+    ):
         return {
             "skipped": True,
             "reason": "name deny-list",

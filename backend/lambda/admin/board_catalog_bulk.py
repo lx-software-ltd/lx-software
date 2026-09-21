@@ -424,7 +424,7 @@ def sources_status(table: Any) -> dict[str, Any]:
 
 
 def maybe_queue_auto_imports(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
-    """When auto-import is on, queue one source that has enough approved rows."""
+    """When auto-import is on, schedule one catalog_import hold for a ready source."""
     if not board_catalog_import.auto_import_enabled(settings):
         return {"queued": []}
     if not board_catalog_import.import_enabled() or not board_catalog_import.configured():
@@ -437,14 +437,74 @@ def maybe_queue_auto_imports(table: Any, settings: dict[str, Any]) -> dict[str, 
             continue
         if _job_is_active(_job(table, source)):
             continue
+        if _open_bulk_hold(table, source):
+            continue
         ready.append((approved, source))
     if not ready:
         return {"queued": []}
     ready.sort(reverse=True)
     source = ready[0][1]
-    out = queue_action(table, "import", source, requested_by="auto")
-    _log_event("info", tag="board_catalog_auto_bulk_queued", source=source, approved=ready[0][0])
-    return {"queued": [source], "job": out}
+    out = _schedule_or_run_bulk(table, settings, source, approved=ready[0][0])
+    return {"queued": [source], **out}
+
+
+def _open_bulk_hold(table: Any, source: str) -> dict[str, Any] | None:
+    for hold in board_store.list_holds(table, "scheduled", limit=400):
+        args = hold.get("arguments") or {}
+        if str(hold.get("op") or "") == "catalog_bulk_import" and str(args.get("source") or "") == source:
+            return hold
+    return None
+
+
+def _schedule_or_run_bulk(
+    table: Any, settings: dict[str, Any], source: str, *, approved: int
+) -> dict[str, Any]:
+    import board_holds
+    import board_tools
+
+    hours = board_holds.hold_hours(table, settings, "catalog_import", "catalog_import")
+    if hours <= 0:
+        job = queue_action(table, "import", source, requested_by="auto")
+        _log_event("info", tag="board_catalog_auto_bulk_queued", source=source, approved=approved)
+        return {"job": job, "held": False}
+    op = board_tools.REGISTRY.get("catalog_bulk_import")
+    if op is None:
+        return {"held": False}
+    ctx = board_tools.ToolContext(
+        table=table,
+        settings=settings,
+        persona_id="",
+        display_name="catalog sweep",
+        kind="internal",
+        actor="internal",
+        internal=True,
+    )
+    hold = board_holds.create_hold(
+        ctx,
+        op,
+        {"source": source, "reason": "auto bulk-import"},
+        action_class="catalog_import",
+        class_key="catalog_import",
+        hours=hours,
+        summary=f"Import catalog source {source} ({approved} approved)",
+    )
+    _log_event(
+        "info",
+        tag="board_catalog_auto_bulk_held",
+        source=source,
+        approved=approved,
+        holdId=hold.get("holdId"),
+        executeAt=hold.get("executeAt"),
+    )
+    return {"hold": hold, "held": True}
+
+
+def op_import_source(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
+    source = str(args.get("source") or "").strip()
+    requested = "auto" if getattr(ctx, "internal", False) or getattr(ctx, "actor", "") in ("hold", "internal") else str(
+        getattr(ctx, "actor", "") or "owner"
+    )
+    return queue_action(ctx.table, "import", source, requested_by=requested)
 
 
 def queue_action(

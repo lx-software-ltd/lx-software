@@ -609,7 +609,10 @@ The task drawer shows `Automatic re-validation: N/3`. When
 `settings.catalog.autoImport` is on plus
 the kill switch, it schedules an internal `catalog_import` hold (default
 2 h; a stored `holds.catalog_import` of 0 is treated as 2 unless
-`holdOverrides.catalog_import` is set). The sweep never imports
+`holdOverrides.catalog_import` is set). Auto bulk-import of a source
+with ≥ 50 approved rows uses the same hold (`catalog_bulk_import`)
+instead of queueing immediately; a promoted `holdOverrides.catalog_import`
+of 0 still queues at once. The sweep never imports
 immediately. **Import now** / **Skip** / **Queue again** drop the
 scheduled hold so it cannot fail later as "already imported". The
 catalog duty pauses when `catalog.maxAwaitingImport` (3) sheets are

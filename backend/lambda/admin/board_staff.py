@@ -665,6 +665,8 @@ def run_step(payload: dict[str, Any]) -> None:
         seat_id=seat_id,
         actor="persona",
         usage_sink=_sink,
+        task_attempt=_task_attempt(task),
+        task_retried_at=str(task.get("retriedAt") or ""),
     )
     require_finish = _should_require_finish(task)
     try:
@@ -708,6 +710,12 @@ def _is_retryable_step_error(exc: BaseException) -> bool:
     return True
 
 
+def _seat_model_pinned(settings: dict[str, Any], seat_id: str) -> bool:
+    raw = ((settings.get("staff") or {}).get("modelBySeat") or {}).get(seat_id)
+    model = str(raw or "").strip()
+    return bool(model and model in BOARD_STAFF_STEP_MODELS)
+
+
 def _alternate_step_model(current: str) -> str:
     for model in BOARD_STAFF_STEP_MODEL_LIST:
         if model != current:
@@ -745,10 +753,16 @@ def _on_step_exception(
         _requeue_for_budget(table, latest, wanted, f"OpenRouter credits: {exc}"[:300])
         return
     if _is_retryable_step_error(exc) and not payload.get("retried"):
-        current_model = str(payload.get("modelOverride") or "")
-        if not current_model:
-            settings = board_store.load_settings(table)
-            current_model = _model_for_seat(settings, str(latest.get("assignee") or ""), "standup")
+        settings = board_store.load_settings(table)
+        seat_id = str(latest.get("assignee") or "")
+        current_model = str(payload.get("modelOverride") or "") or _model_for_seat(
+            settings, seat_id, "standup"
+        )
+        retry_model = (
+            current_model
+            if _seat_model_pinned(settings, seat_id)
+            else _alternate_step_model(current_model)
+        )
         _release_step_claim(table, latest, wanted)
         board_async.invoke_async(
             {
@@ -757,7 +771,7 @@ def _on_step_exception(
                 "taskId": task_id,
                 "step": wanted,
                 "retried": True,
-                "modelOverride": _alternate_step_model(current_model),
+                "modelOverride": retry_model,
             },
             fallback=run_step,
         )

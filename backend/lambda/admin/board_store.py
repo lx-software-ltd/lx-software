@@ -425,7 +425,7 @@ def default_boundaries() -> dict[str, Any]:
             "code_production": 0,
             "catalog_import": BOARD_CATALOG_IMPORT_HOLD_HOURS,
         },
-        "holdOverrides": {"catalog_import": BOARD_CATALOG_IMPORT_HOLD_HOURS},
+        "holdOverrides": {},
         "outreach": {
             "fitRubric": DEFAULT_FIT_RUBRIC,
             "typesEnabled": ["provider", "venue", "community", "school"],
@@ -593,8 +593,6 @@ def normalize_boundaries(raw: Any) -> dict[str, Any]:
             except (TypeError, ValueError):
                 continue
         out["holdOverrides"] = cleaned
-    if "catalog_import" not in out["holdOverrides"]:
-        out["holdOverrides"]["catalog_import"] = BOARD_CATALOG_IMPORT_HOLD_HOURS
     outreach = raw.get("outreach")
     if isinstance(outreach, dict):
         if isinstance(outreach.get("fitRubric"), str):
@@ -752,8 +750,16 @@ def ensure_autonomy_defaults(table: Any) -> dict[str, Any]:
         )
         or {}
     )
+    stored_holds = (
+        ((stored.get("boundaries") or {}) if isinstance(stored.get("boundaries"), dict) else {}).get("holds")
+        or {}
+    )
     need_models = any(seat not in stored_models for seat in BOARD_STAFF_DEFAULT_MODEL_BY_SEAT)
-    need_hold = "catalog_import" not in stored_overrides
+    try:
+        stored_hold_hours = int(stored_holds.get("catalog_import"))
+    except (TypeError, ValueError):
+        stored_hold_hours = None
+    need_hold = "catalog_import" not in stored_overrides and stored_hold_hours != BOARD_CATALOG_IMPORT_HOLD_HOURS
     if not need_models and not need_hold:
         return load_settings(table)
 
@@ -766,8 +772,10 @@ def ensure_autonomy_defaults(table: Any) -> dict[str, Any]:
         current["staff"] = normalize_staff_config(staff)
         bounds = dict(current.get("boundaries") or {})
         overrides = dict(bounds.get("holdOverrides") or {})
-        overrides.setdefault("catalog_import", BOARD_CATALOG_IMPORT_HOLD_HOURS)
-        bounds["holdOverrides"] = overrides
+        holds = dict(bounds.get("holds") or {})
+        if "catalog_import" not in overrides:
+            holds["catalog_import"] = BOARD_CATALOG_IMPORT_HOLD_HOURS
+        bounds["holds"] = holds
         current["boundaries"] = normalize_boundaries(bounds)
         return current
 

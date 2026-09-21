@@ -350,11 +350,24 @@ def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     task_id = str(getattr(ctx, "task_id", "") or "")
     cap = fetch_cap_for_task(getattr(ctx, "table", None), task_id, ctx=ctx)
     if task_id:
-        task = None
-        try:
-            task = board_store.get_task(ctx.table, task_id)
-        except Exception:
-            task = None
+        bind = getattr(ctx, "bind_task_meta", None)
+        if callable(bind):
+            bind()
+        attempt = getattr(ctx, "task_attempt", None)
+        retried_at = str(getattr(ctx, "task_retried_at", "") or "")
+        if attempt is None:
+            row = None
+            try:
+                row = board_store.get_task(ctx.table, task_id)
+            except Exception:
+                row = None
+            if row:
+                try:
+                    attempt = int(row.get("attempt") or 1)
+                except (TypeError, ValueError):
+                    attempt = 1
+                retried_at = str(row.get("retriedAt") or "")
+        task = {"attempt": attempt or 1, "retriedAt": retried_at}
         used = sum(
             1
             for call in board_store.list_tool_calls_for_task(ctx.table, task_id)

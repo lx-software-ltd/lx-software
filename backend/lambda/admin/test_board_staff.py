@@ -1380,6 +1380,35 @@ class StaffStepTests(ToolsTestCase):
         self.assertTrue(payloads[0].get("retried"))
         self.assertIn(payloads[0].get("modelOverride"), BOARD_STAFF_STEP_MODELS)
 
+    def test_openrouter_403_keeps_pinned_seat_model(self) -> None:
+        from openrouter_client import OpenRouterError
+
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="content-marketer",
+                origin="owner",
+                brief="Plan next week's content calendar",
+                deliverable_type="json",
+                created_by="admin",
+            )
+        tid = task["taskId"]
+        payloads: list[dict[str, Any]] = []
+
+        def boom(*_a: Any, **_k: Any) -> None:
+            raise OpenRouterError("The request is prohibited due to a violation of provider Terms Of Service.", status=403)
+
+        with (
+            patch.object(board_tools, "run_tool_loop", boom),
+            patch.object(board_async, "invoke_async", lambda payload, fallback=None: payloads.append(payload)),
+        ):
+            board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
+        self.assertTrue(payloads)
+        self.assertEqual(payloads[0].get("modelOverride"), "qwen/qwen-2.5-72b-instruct")
+
     def test_openrouter_402_trips_budget_breaker(self) -> None:
         from openrouter_client import OpenRouterError
 
@@ -1794,11 +1823,12 @@ class StaffStepTests(ToolsTestCase):
         )
         out = board_store.ensure_autonomy_defaults(self.table)
         self.assertEqual(out["staff"]["modelBySeat"]["content-marketer"], "qwen/qwen-2.5-72b-instruct")
-        self.assertEqual(out["boundaries"]["holdOverrides"]["catalog_import"], 2)
         self.assertEqual(out["boundaries"]["holds"]["catalog_import"], 2)
+        self.assertNotIn("catalog_import", out["boundaries"]["holdOverrides"])
         stored = board_store._get_state(self.table, "settings")  # noqa: SLF001
         self.assertEqual(stored["staff"]["modelBySeat"]["content-marketer"], "qwen/qwen-2.5-72b-instruct")
-        self.assertEqual(stored["boundaries"]["holdOverrides"]["catalog_import"], 2)
+        self.assertEqual(stored["boundaries"]["holds"]["catalog_import"], 2)
+        self.assertNotIn("catalog_import", stored["boundaries"].get("holdOverrides") or {})
         again = board_store.ensure_autonomy_defaults(self.table)
         self.assertEqual(again["version"], out["version"])
 

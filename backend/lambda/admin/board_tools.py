@@ -149,6 +149,24 @@ class ToolContext:
     # ``time.monotonic()`` value after which no new op should start and running
     # ops are cut short; 0 means "no loop deadline" (owner approvals, jobs).
     deadline: float = 0.0
+    # Cached staff-task attempt metadata so each op does not re-read the row.
+    task_attempt: int | None = None
+    task_retried_at: str = ""
+
+    def bind_task_meta(self) -> None:
+        if not self.task_id or self.task_attempt is not None:
+            return
+        try:
+            row = board_store.get_task(self.table, self.task_id)
+        except Exception:
+            return
+        if row is None:
+            return
+        try:
+            self.task_attempt = int(row.get("attempt") or 1)
+        except (TypeError, ValueError):
+            self.task_attempt = 1
+        self.task_retried_at = str(row.get("retriedAt") or "")
 
     def seconds_left(self) -> float | None:
         if not self.deadline:
@@ -539,6 +557,12 @@ def _board_update_action(ctx: ToolContext, args: dict[str, Any]) -> dict[str, An
         "dueAt": doc.get("dueAt"),
         "note": doc.get("note"),
     }
+
+
+def _run_catalog_bulk_import(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_catalog_bulk
+
+    return board_catalog_bulk.op_import_source(ctx, args)
 
 
 def _summ(template: str) -> Callable[[dict[str, Any]], str]:
@@ -1572,6 +1596,27 @@ def build_registry() -> dict[str, ToolOp]:
             ),
             run=board_catalog_import.op_import,
             summarize=_summ("Import catalog sheet {taskId}"),
+            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
+        ),
+        ToolOp(
+            name="catalog_bulk_import",
+            tool_id="catalog",
+            kind="write",
+            always_propose=True,
+            action_class="catalog_import",
+            description=(
+                "Import approved catalog candidates from one bulk source (lcsd, edb, swd, "
+                "places, competitor). Auto-import schedules this as an internal hold."
+            ),
+            parameters=_obj(
+                {
+                    "source": _str_param("Bulk source id.", enum=["lcsd", "edb", "swd", "places", "competitor"]),
+                    "reason": REASON_PARAM,
+                },
+                ["source", "reason"],
+            ),
+            run=_run_catalog_bulk_import,
+            summarize=_summ("Import catalog source {source}"),
             timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
         ),
         ToolOp(
@@ -3028,6 +3073,20 @@ def _architect_backlog_write(ctx: ToolContext, op: ToolOp) -> bool:
     return bool(ctx.seat_id == "architect" and op.name in _ARCHITECT_AUTO_ACT_OPS)
 
 
+def _union_github_labels(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Merge requested labels with the issue's current set so act cannot strip."""
+    current = board_github.op_get_issue({"number": arguments.get("number")})
+    if current.get("error"):
+        raise board_github.GitHubSnapshotError(str(current.get("error")))
+    existing = [str(name) for name in (current.get("labels") or []) if name]
+    wanted = board_github._clean_labels(arguments.get("labels"))  # noqa: SLF001
+    merged: list[str] = []
+    for name in [*existing, *wanted]:
+        if name and name not in merged:
+            merged.append(name)
+    return {**arguments, "labels": merged[:20]}
+
+
 def _cto_security_issue(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> bool:
     """CTO filing a security/dependencies issue may act even when globalMode is propose.
 
@@ -3090,7 +3149,16 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         if _cto_security_issue(ctx, op, arguments) and level in ("propose", "act"):
             level = "act"
         if _architect_backlog_write(ctx, op) and level in ("propose", "act"):
-            level = "act"
+            if op.name == "github_set_labels":
+                try:
+                    arguments = _union_github_labels(arguments)
+                except Exception:
+                    # Fetch failed — do not replace labels unattended.
+                    pass
+                else:
+                    level = "act"
+            else:
+                level = "act"
     else:
         level = "act"
     summary = op.summarize(arguments)
@@ -3257,14 +3325,8 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
     outcome.duration_ms = int((time.monotonic() - started) * 1000)
     outcome.approval_id = approval_id or outcome.approval_id
     audit = mask_arguments(ctx, {"arguments": arguments, "summary": summary})
-    attempt = None
-    if ctx.task_id:
-        try:
-            task_row = board_store.get_task(ctx.table, ctx.task_id)
-            if task_row is not None:
-                attempt = int(task_row.get("attempt") or 1)
-        except Exception:
-            attempt = None
+    ctx.bind_task_meta()
+    attempt = ctx.task_attempt
     record = board_store.add_tool_call(
         ctx.table,
         {
@@ -3346,6 +3408,15 @@ def _reuse_staff_assign(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any])
         return None
 
 
+def _approval_expires_at(now: str) -> str:
+    try:
+        created = datetime.fromisoformat(now.replace("Z", "+00:00"))
+    except ValueError:
+        created = datetime.now(timezone.utc)
+    expires = created + timedelta(hours=BOARD_STAFF_APPROVAL_EXPIRY_HOURS)
+    return expires.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def create_approval(
     ctx: ToolContext,
     op: ToolOp,
@@ -3412,6 +3483,7 @@ def create_approval(
         "context": ctx.public(),
         "createdAt": now,
         "updatedAt": now,
+        "autoRejectAt": _approval_expires_at(now),
     }
     if downgrade_reason:
         doc["downgradeReason"] = downgrade_reason[:300]
@@ -3830,25 +3902,18 @@ def _resume_waiting_staff(table: Any, settings: dict[str, Any], approval: dict[s
 
 
 def expire_stale_approvals(table: Any, settings: dict[str, Any], now_iso: str | None = None) -> int:
-    """Reject pending approvals older than ``approvalExpiryHours`` and unpark tasks."""
+    """Reject pending approvals that carry ``autoRejectAt`` and are due.
+
+    ``expiresAt`` on the Dynamo row is the table TTL, not this deadline.
+    Approvals created before ``autoRejectAt`` existed are left for the founder.
+    """
     now = now_iso or board_store.now_iso()
-    try:
-        now_dt = datetime.fromisoformat(now.replace("Z", "+00:00"))
-    except ValueError:
-        now_dt = datetime.now(timezone.utc)
-    cut = now_dt - timedelta(hours=BOARD_STAFF_APPROVAL_EXPIRY_HOURS)
     expired = 0
     for approval in board_store.list_approvals(table):
         if approval.get("status") != "pending":
             continue
-        created = str(approval.get("createdAt") or "")
-        if not created:
-            continue
-        try:
-            created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
-        except ValueError:
-            continue
-        if created_dt > cut:
+        expires = str(approval.get("autoRejectAt") or "")
+        if not expires or expires > now:
             continue
         approval_id = str(approval.get("approvalId") or "")
         if not approval_id:

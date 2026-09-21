@@ -1107,22 +1107,28 @@ def _task_text(table: Any, task: dict[str, Any], explicit: str | None) -> str:
     return board_staff.read_deliverable(task, limit=12000)
 
 
-_BRIEF_FOR_NAMES = re.compile(
-    r"\bfor\s+(.+?)\s+in\s+",
-    re.IGNORECASE | re.DOTALL,
-)
-
-
 def names_from_brief(brief: str) -> set[str]:
-    """Parse ``for A, B, and C in District`` from a describe/enrich brief."""
-    match = _BRIEF_FOR_NAMES.search(brief or "")
-    if not match:
+    """Parse ``for A, B, and C in District`` from a describe/enrich brief.
+
+    Walks back from the last `` in `` to the nearest `` for `` so an earlier
+    "for parents" does not swallow the list. Splits on commas only — names
+    that contain ``and`` stay intact.
+    """
+    text = brief or ""
+    lower = text.casefold()
+    idx_in = lower.rfind(" in ")
+    if idx_in < 0:
         return set()
-    chunk = match.group(1)
+    starts = [m.end() for m in re.finditer(r"(?:^|\s)for\s+", lower) if m.end() <= idx_in]
+    if not starts:
+        return set()
+    chunk = text[starts[-1] : idx_in]
     skip = {"the organisations already imported for this district", "the organisations"}
     out: set[str] = set()
-    for part in re.split(r",|\band\b", chunk):
+    for part in chunk.split(","):
         name = " ".join(part.split()).strip()
+        if name.lower().startswith("and "):
+            name = name[4:].strip()
         if not name or name.casefold() in skip:
             continue
         out.add(name.casefold())
