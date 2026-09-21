@@ -1,5 +1,6 @@
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { BOARD_CATALOG_LAUNCH_LISTING_TARGET } from "../../lib/contracts/generated";
+import type { BoardCatalogJob } from "../../lib/boardModel";
 import { useBoardCatalogCandidates, useBoardCatalogMutations, useBoardCatalogSources } from "../../hooks/useBoardCatalog";
 
 function errorText(err: unknown): string | null {
@@ -7,10 +8,15 @@ function errorText(err: unknown): string | null {
   return getAdminApiErrorMessage(err) ?? (err instanceof Error ? err.message : "Request failed.");
 }
 
-function jobLine(phase?: string, action?: string): string | null {
-  if (phase !== "queued" && phase !== "running") return null;
-  const label = action === "import" ? "Import" : action === "preview" ? "Preview" : "Job";
-  return `${label} ${phase}…`;
+function jobLine(job?: BoardCatalogJob | null): string | null {
+  if (job?.phase !== "queued" && job?.phase !== "running") return null;
+  const label =
+    job.action === "import" ? "Import" : job.action === "preview" ? "Preview" : job.action === "ingest" ? "Ingest" : "Job";
+  const progress =
+    job.phase === "running" && job.offset != null && job.remaining != null
+      ? ` ${job.offset} done, ${job.remaining} left`
+      : "";
+  return `${label} ${job.phase}${progress}…`;
 }
 
 function isJobBusy(phase?: string): boolean {
@@ -81,9 +87,7 @@ export function BoardCatalogSourcesSection() {
                 <tr key={row.id}>
                   <td className="text-uppercase">
                     {row.id}
-                    {jobLine(row.job?.phase, row.job?.action) ? (
-                      <div className="small text-muted">{jobLine(row.job?.phase, row.job?.action)}</div>
-                    ) : null}
+                    {jobLine(row.job) ? <div className="small text-muted">{jobLine(row.job)}</div> : null}
                     {row.job?.phase === "error" && row.job.error ? (
                       <div className="small text-danger">{row.job.error}</div>
                     ) : null}

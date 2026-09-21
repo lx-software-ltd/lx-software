@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 import board_async
 import board_catalog_candidates
 import board_catalog_import
+import board_hk
 import board_opendata
 import board_store
 from contract_constants import (
@@ -19,7 +21,8 @@ from contract_constants import (
 from http_common import _log_event
 
 INGEST_BATCH = 500
-OPEN_DATA_SOURCES = ("lcsd", "edb", "swd")
+JOB_STALE_SECONDS = 360
+OPEN_DATA_SOURCES = tuple(sorted(board_catalog_candidates.OFFICIAL_SOURCES))
 _TERMINAL_CANDIDATE = frozenset({"imported", "rejected", "closed"})
 
 TEMPLATE_EN = "{name} is a {kind} in {district} for children and families."
@@ -170,7 +173,7 @@ def ingest_source(
     official = source in board_catalog_candidates.OFFICIAL_SOURCES
     for raw in batch:
         cand = row_to_candidate(raw, source=source)
-        if not official and board_catalog_candidates.is_duplicate(table, cand) and source not in ("places", "competitor"):
+        if source not in ("places", "competitor") and board_catalog_candidates.is_duplicate(table, cand):
             skipped += 1
             continue
         doc = board_catalog_candidates.upsert_candidate(table, cand)
@@ -218,6 +221,39 @@ def _job(table: Any, source: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def _job_age_seconds(job: dict[str, Any] | None) -> float | None:
+    if not job or not job.get("at"):
+        return None
+    try:
+        when = board_hk.parse_iso(str(job.get("at") or ""))
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max(0.0, (datetime.now(timezone.utc) - when.astimezone(timezone.utc)).total_seconds())
+
+
+def _job_is_active(job: dict[str, Any] | None) -> bool:
+    if not job or str(job.get("phase") or "") not in ("queued", "running"):
+        return False
+    age = _job_age_seconds(job)
+    if age is None:
+        return True
+    return age < JOB_STALE_SECONDS
+
+
+def _ingest_summary_from_job(table: Any, source: str) -> dict[str, Any]:
+    job = _job(table, source) or {}
+    return {
+        "source": source,
+        "fetched": int(job.get("fetched") or 0),
+        "upserted": int(job.get("upserted") or 0),
+        "skippedDuplicates": int(job.get("skippedDuplicates") or 0),
+        "processed": int(job.get("processed") or 0),
+        "remaining": int(job.get("remaining") or 0),
+    }
+
+
 def preview_source(
     table: Any,
     source: str,
@@ -230,7 +266,7 @@ def preview_source(
         raise BulkImportError(f"unknown catalog source {source}")
     if not board_catalog_import.import_enabled():
         raise BulkImportError("catalog import is switched off (SiutindeiBoardCatalogImportEnabled)")
-    ingest = {"source": source, "skipped": True} if skip_ingest else ingest_source(table, source)
+    ingest = _ingest_summary_from_job(table, source) if skip_ingest else ingest_source(table, source)
     approved = _approved_for_source(table, source)
     mid = board_catalog_import.catalog_manager_id()
     if not mid:
@@ -289,9 +325,16 @@ def _succeeded_org_names(imported: dict[str, Any], batch: list[dict[str, Any]]) 
     return set()
 
 
-def import_source(table: Any, source: str, *, remote: bool = True, limit: int | None = None) -> dict[str, Any]:
+def import_source(
+    table: Any,
+    source: str,
+    *,
+    remote: bool = True,
+    limit: int | None = None,
+    skip_ingest: bool = False,
+) -> dict[str, Any]:
     board_catalog_candidates.seed_listing_mirror(table)
-    preview = preview_source(table, source, remote=False, limit=limit)
+    preview = preview_source(table, source, remote=False, limit=limit, skip_ingest=skip_ingest)
     if not board_catalog_import.import_enabled() or not board_catalog_import.configured():
         raise BulkImportError("catalog import is not configured")
     approved = _approved_for_source(table, source)
@@ -389,6 +432,17 @@ def queue_action(
         raise BulkImportError("catalog import is switched off (SiutindeiBoardCatalogImportEnabled)")
     if action == "import" and not board_catalog_import.configured():
         raise BulkImportError("catalog import is not configured")
+    existing = _job(table, source)
+    if _job_is_active(existing):
+        return {
+            "ok": True,
+            "queued": True,
+            "invoked": False,
+            "alreadyRunning": True,
+            "source": source,
+            "action": str((existing or {}).get("action") or action),
+            "job": existing,
+        }
     _put_job(
         table,
         source,
@@ -429,21 +483,48 @@ def _job_payload(event: dict[str, Any], **updates: Any) -> dict[str, Any]:
         "offset": int(event.get("offset") or 0),
         "force": bool(event.get("force")),
         "ingestDone": bool(event.get("ingestDone")),
+        "upserted": int(event.get("upserted") or 0),
+        "skippedDuplicates": int(event.get("skippedDuplicates") or 0),
+        "processed": int(event.get("processed") or 0),
+        "fetched": int(event.get("fetched") or 0),
     }
     payload.update(updates)
     return payload
 
 
-def _continue_job(event: dict[str, Any], **updates: Any) -> bool:
+def _add_ingest_totals(event: dict[str, Any], chunk: dict[str, Any]) -> dict[str, int]:
+    return {
+        "upserted": int(event.get("upserted") or 0) + int(chunk.get("upserted") or 0),
+        "skippedDuplicates": int(event.get("skippedDuplicates") or 0) + int(chunk.get("skippedDuplicates") or 0),
+        "processed": int(event.get("processed") or 0) + int(chunk.get("processed") or 0),
+        "fetched": int(chunk.get("fetched") or event.get("fetched") or 0),
+    }
+
+
+def _continue_job(table: Any, event: dict[str, Any], **updates: Any) -> bool:
     invoked = board_async.try_invoke_event(_job_payload(event, **updates))
-    if not invoked:
-        _log_event(
-            "warning",
-            tag="board_catalog_bulk_enqueue_deferred",
-            action=str(event.get("action") or ""),
-            source=str(event.get("source") or ""),
-        )
-    return invoked
+    if invoked:
+        return True
+    source = str(event.get("source") or "")
+    action = str(event.get("action") or "")
+    _log_event("warning", tag="board_catalog_bulk_enqueue_deferred", action=action, source=source)
+    _put_job(
+        table,
+        source,
+        {
+            "phase": "error",
+            "action": action,
+            "at": board_store.now_iso(),
+            "error": "failed to enqueue next ingest chunk",
+            "offset": updates.get("offset", event.get("offset") or 0),
+            "remaining": updates.get("remaining"),
+            "upserted": updates.get("upserted", event.get("upserted") or 0),
+            "skippedDuplicates": updates.get("skippedDuplicates", event.get("skippedDuplicates") or 0),
+            "processed": updates.get("processed", event.get("processed") or 0),
+            "fetched": updates.get("fetched", event.get("fetched") or 0),
+        },
+    )
+    return False
 
 
 def handle_job(event: dict[str, Any]) -> dict[str, Any]:
@@ -466,22 +547,20 @@ def handle_job(event: dict[str, Any]) -> dict[str, Any]:
             remaining = int(out.get("remaining") or 0)
             processed = int(out.get("processed") or 0)
             next_offset = offset + processed
-            _put_job(
-                table,
-                source,
-                {
-                    "phase": "running",
-                    "action": action,
-                    "at": board_store.now_iso(),
-                    "offset": next_offset,
-                    "remaining": remaining,
-                    "upserted": out.get("upserted"),
-                    "fetched": out.get("fetched"),
-                },
-            )
+            totals = _add_ingest_totals(event, out)
+            job_progress = {
+                "phase": "running",
+                "action": action,
+                "at": board_store.now_iso(),
+                "offset": next_offset,
+                "remaining": remaining,
+                **totals,
+            }
+            _put_job(table, source, job_progress)
             if remaining > 0:
-                _continue_job(event, offset=next_offset, force=False)
-                return {**out, "ok": True, "continued": True}
+                if not _continue_job(table, event, offset=next_offset, force=False, remaining=remaining, **totals):
+                    return {**out, **totals, "ok": False, "error": "failed to enqueue next ingest chunk", "continued": False}
+                return {**out, **totals, "ok": True, "continued": True}
             if action == "ingest":
                 _put_job(
                     table,
@@ -492,29 +571,31 @@ def handle_job(event: dict[str, Any]) -> dict[str, Any]:
                         "at": board_store.now_iso(),
                         "ok": True,
                         "offset": next_offset,
-                        "upserted": out.get("upserted"),
-                        "fetched": out.get("fetched"),
+                        "remaining": 0,
+                        **totals,
                     },
                 )
-                return {**out, "ok": True}
+                return {**out, **totals, "ok": True}
             if processed >= INGEST_BATCH or offset > 0:
-                _continue_job(event, ingestDone=True, offset=0, force=False)
-                return {**out, "ok": True, "ingestDone": True}
+                if not _continue_job(
+                    table, event, ingestDone=True, offset=0, force=False, remaining=0, **totals
+                ):
+                    return {**out, **totals, "ok": False, "error": "failed to enqueue next ingest chunk", "ingestDone": False}
+                return {**out, **totals, "ok": True, "ingestDone": True}
+        skip_ingest = already_ingested or bool(event.get("ingestDone"))
         if action == "preview":
             out = preview_source(
                 table,
                 source,
                 remote=remote,
                 limit=limit,
-                skip_ingest=already_ingested or bool(event.get("ingestDone")),
+                skip_ingest=skip_ingest,
             )
         elif action == "import":
-            out = import_source(table, source, limit=limit)
-        elif action == "ingest":
-            out = ingest_source(table, source, force=bool(event.get("force")), offset=offset)
-            out = {**out, "ok": True}
+            out = import_source(table, source, limit=limit, skip_ingest=skip_ingest)
         else:
             raise BulkImportError(f"unknown catalog bulk action {action}")
+        prior = _job(table, source) or {}
         _put_job(
             table,
             source,
@@ -525,6 +606,13 @@ def handle_job(event: dict[str, Any]) -> dict[str, Any]:
                 "ok": out.get("ok"),
                 "imported": out.get("imported"),
                 "approved": out.get("approved") or (out.get("preview") or {}).get("approved"),
+                "fetched": prior.get("fetched") or event.get("fetched") or (out.get("ingest") or {}).get("fetched"),
+                "upserted": prior.get("upserted") or event.get("upserted") or (out.get("ingest") or {}).get("upserted"),
+                "skippedDuplicates": prior.get("skippedDuplicates")
+                or event.get("skippedDuplicates")
+                or (out.get("ingest") or {}).get("skippedDuplicates"),
+                "processed": prior.get("processed") or event.get("processed") or (out.get("ingest") or {}).get("processed"),
+                "remaining": 0,
             },
         )
         return out

@@ -2172,6 +2172,11 @@ export type BoardCatalogJob = {
   readonly ok?: boolean;
   readonly imported?: number;
   readonly approved?: number;
+  readonly offset?: number;
+  readonly remaining?: number;
+  readonly fetched?: number;
+  readonly upserted?: number;
+  readonly processed?: number;
 };
 
 export type BoardCatalogSourceRow = {

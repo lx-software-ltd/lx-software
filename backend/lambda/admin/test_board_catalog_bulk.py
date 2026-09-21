@@ -621,17 +621,19 @@ class ChunkedIngestTests(BoardTestCase):
             self.assertEqual(queued[-1]["offset"], 500)
             second = board_catalog_bulk.handle_job(queued[-1])
             self.assertEqual(second["remaining"], 200)
-            self.assertEqual(second["processed"], 500)
-            self.assertEqual(second["upserted"], 500)
+            self.assertEqual(second["processed"], 1000)
+            self.assertEqual(second["upserted"], 1000)
             third = board_catalog_bulk.handle_job(queued[-1])
             self.assertFalse(third.get("continued"))
             self.assertEqual(third["remaining"], 0)
-            self.assertEqual(third["processed"], 200)
-            self.assertEqual(third["upserted"], 200)
+            self.assertEqual(third["processed"], 1200)
+            self.assertEqual(third["upserted"], 1200)
         self.assertEqual(len(board_store.list_candidates(self.table, "approved", per_status_limit=10_000)), 1200)
         job = board_catalog_bulk._job(self.table, "edb")
         self.assertIsNotNone(job)
         self.assertEqual(job["phase"], "done")
+        self.assertEqual(job["upserted"], 1200)
+        self.assertEqual(job["processed"], 1200)
 
     def test_needs_chunked_ingest_is_row_count_not_source(self) -> None:
         self.assertFalse(board_catalog_bulk.needs_chunked_ingest(board_catalog_bulk.INGEST_BATCH))
@@ -688,7 +690,89 @@ class ChunkedIngestTests(BoardTestCase):
         self.assertFalse(out.get("continued"))
         self.assertTrue(out.get("ok"))
         self.assertEqual(out.get("approved"), 1)
+        self.assertEqual((out.get("ingest") or {}).get("upserted"), 1)
         invoke.assert_not_called()
+
+    def test_official_ingest_skips_listing_mirror(self) -> None:
+        board_catalog_candidates.remember_listing(
+            self.table, {"name": "Quarry Bay Park Playground", "area_name": "Eastern"}
+        )
+        rows = [
+            {
+                "nameEn": "Quarry Bay Park Playground",
+                "district": "Eastern",
+                "sourceId": "lcsd-new",
+                "facilityKind": "lcsd_playground",
+            }
+        ]
+        with patch.object(board_catalog_bulk, "load_source_rows", return_value=rows):
+            out = board_catalog_bulk.ingest_source(self.table, "lcsd")
+        self.assertEqual(out["upserted"], 0)
+        self.assertEqual(out["skippedDuplicates"], 1)
+        self.assertEqual(board_store.list_candidates(self.table), [])
+
+    def test_continue_failure_marks_error(self) -> None:
+        rows = [
+            {
+                "nameEn": f"Park {i:04d}",
+                "district": "Eastern",
+                "sourceId": f"lcsd-{i}",
+                "facilityKind": "lcsd_playground",
+            }
+            for i in range(600)
+        ]
+        with (
+            patch.object(board_store, "records_table", return_value=self.table),
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=rows),
+            patch("board_async.try_invoke_event", return_value=False),
+        ):
+            out = board_catalog_bulk.handle_job({"action": "ingest", "source": "lcsd"})
+        self.assertFalse(out["ok"])
+        self.assertIn("enqueue", out["error"])
+        job = board_catalog_bulk._job(self.table, "lcsd")
+        self.assertIsNotNone(job)
+        self.assertEqual(job["phase"], "error")
+        self.assertIn("enqueue", job["error"])
+        self.assertEqual(job["offset"], 500)
+
+    def test_import_job_skips_reingest(self) -> None:
+        with (
+            patch.object(board_store, "records_table", return_value=self.table),
+            patch.object(board_catalog_bulk, "import_source", return_value={"ok": True, "imported": 0}) as imported,
+        ):
+            board_catalog_bulk.handle_job({"action": "import", "source": "lcsd", "ingestDone": True})
+        imported.assert_called_once()
+        self.assertTrue(imported.call_args.kwargs.get("skip_ingest"))
+
+    def test_queue_action_skips_active_job(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        board_catalog_bulk._put_job(
+            self.table,
+            "edb",
+            {"phase": "running", "action": "ingest", "at": board_store.now_iso()},
+        )
+        with patch("board_async.try_invoke_event", return_value=True) as invoke:
+            out = board_catalog_bulk.queue_action(self.table, "preview", "edb")
+        self.assertTrue(out["alreadyRunning"])
+        self.assertEqual(out["action"], "ingest")
+        invoke.assert_not_called()
+        self.assertEqual(board_catalog_bulk._job(self.table, "edb")["action"], "ingest")
+
+    def test_queue_action_replaces_stale_job(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        board_catalog_bulk._put_job(
+            self.table,
+            "edb",
+            {"phase": "running", "action": "ingest", "at": "2020-01-01T00:00:00Z"},
+        )
+        with patch("board_async.try_invoke_event", return_value=True) as invoke:
+            out = board_catalog_bulk.queue_action(self.table, "preview", "edb")
+        self.assertFalse(out.get("alreadyRunning"))
+        self.assertTrue(out["invoked"])
+        invoke.assert_called_once()
+        self.assertEqual(board_catalog_bulk._job(self.table, "edb")["action"], "preview")
 
 
 class DiscoveryOpenDataTests(BoardTestCase):
@@ -748,6 +832,19 @@ class DiscoveryOpenDataTests(BoardTestCase):
         for source in board_catalog_bulk.OPEN_DATA_SOURCES:
             self.assertEqual(notes[source]["upserted"], 1)
             self.assertNotIn("queued", notes[source])
+
+    def test_refresh_notes_gap_when_fetch_has_no_rows(self) -> None:
+        def load(_table, source, *, force: bool = False):
+            del force
+            return [] if source == "edb" else self._open_data_rows(source, 1)
+
+        with (
+            patch.object(board_catalog_bulk, "load_source_rows", side_effect=load),
+            patch.object(board_opendata, "_cached", return_value={"fetchedAt": "2026-09-21T00:00:00Z"}),
+        ):
+            board_catalog_discovery.refresh_open_data(self.table)
+        gaps = board_duties.list_config_gaps(self.table)
+        self.assertTrue(any(g.get("gapId") == "opendata-edb" for g in gaps))
 
     def test_refresh_open_data_notes_gap_when_edb_empty(self) -> None:
         def load(_table, source, *, force: bool = False):
