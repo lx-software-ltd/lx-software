@@ -96,6 +96,21 @@ def build_context_pack(
             staff = board_staff.context_staff_pack(table)
     except Exception:
         staff = {}
+    catalog = {}
+    try:
+        import board_catalog_candidates
+
+        catalog = {
+            "candidates": board_catalog_candidates.counts_by_source(table),
+            "built": [
+                "Bulk open-data / Places importer (Progress → Catalog Preview/Import)",
+                "Catalog sheet import (Tasks → Preview import / Import now)",
+                "research_fetch_page for official pages (not web_*, which is GA4)",
+                "OpenRouter credit pause + fetch-cap reset on Retry",
+            ],
+        }
+    except Exception:
+        catalog = {}
 
     pack = {
         "brief": _cap(str(brief.get("markdown") or ""), MAX_BRIEF_CHARS),
@@ -119,6 +134,7 @@ def build_context_pack(
         "web": web,
         "staffDelivered": staff.get("staffDelivered") or [],
         "staffInFlight": staff.get("staffInFlight") or [],
+        "catalog": catalog,
         "finance": finance,
         "repoText": _cap(str((repo or {}).get("text") or ""), MAX_REPO_CHARS) if repo else "",
         "repoFetchedAt": (repo or {}).get("fetchedAt") if repo else None,
@@ -309,6 +325,25 @@ def render_context_pack(pack: dict[str, Any]) -> str:
             f"--- Web: {web.get('sessions') or 0} GA4 sessions, {web.get('users') or 0} users "
             f"({web.get('properties') or 0} properties) — members with web access use web_sessions / web_conversions ---"
         )
+
+    catalog = pack.get("catalog") or {}
+    candidates = catalog.get("candidates") or {}
+    if candidates or catalog.get("built"):
+        parts.append("")
+        parts.append("--- Catalog (already built; do not open a new importer issue) ---")
+        if candidates:
+            bits = []
+            for source, row in candidates.items():
+                if not isinstance(row, dict):
+                    continue
+                bits.append(
+                    f"{source}: {int(row.get('imported') or 0)} imported, "
+                    f"{int(row.get('approved') or 0)} approved, {int(row.get('new') or 0)} new"
+                )
+            if bits:
+                parts.append("; ".join(bits))
+        for line in catalog.get("built") or []:
+            parts.append(f"- {line}")
 
     delivered = pack.get("staffDelivered") or []
     inflight = pack.get("staffInFlight") or []

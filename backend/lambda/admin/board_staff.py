@@ -46,6 +46,7 @@ from contract_constants import (
     BOARD_TOOL_IDS,
     BOARD_TOOL_LEVELS,
     BOARD_STAFF_STEP_MODELS,
+    BOARD_STAFF_STEP_MODEL_LIST,
 )
 from http_common import _log_event, _utc_iso_z
 
@@ -648,7 +649,9 @@ def run_step(payload: dict[str, Any]) -> None:
     kind = "standup" if tier != "senior" else "deepDive"
     if (settings.get("staff") or {}).get("seniorPaused") and kind == "deepDive":
         kind = "standup"
-    model = _model_for_seat(settings, seat_id, kind)
+    model = str(payload.get("modelOverride") or "").strip() or _model_for_seat(settings, seat_id, kind)
+    if model not in BOARD_STAFF_STEP_MODELS:
+        model = _model_for_seat(settings, seat_id, kind)
     def _sink(usage: dict[str, Any]) -> None:
         board_store.add_staff_usage_day(table, seat_id or persona_id, {**usage, "calls": 1})
 
@@ -683,6 +686,14 @@ def run_step(payload: dict[str, Any]) -> None:
     _complete_step(table, task_id, task, result, wanted)
 
 
+def _is_credit_error(exc: BaseException) -> bool:
+    try:
+        from openrouter_client import OpenRouterError
+    except Exception:
+        return "402" in str(exc)
+    return isinstance(exc, OpenRouterError) and exc.status == 402
+
+
 def _is_retryable_step_error(exc: BaseException) -> bool:
     try:
         from openrouter_client import OpenRouterError
@@ -692,9 +703,16 @@ def _is_retryable_step_error(exc: BaseException) -> bool:
         return True
     if exc.status == 402:
         return False
-    if 400 <= exc.status < 500 and exc.status not in (408, 409, 425, 429):
+    if 400 <= exc.status < 500 and exc.status not in (403, 408, 409, 425, 429):
         return False
     return True
+
+
+def _alternate_step_model(current: str) -> str:
+    for model in BOARD_STAFF_STEP_MODEL_LIST:
+        if model != current:
+            return model
+    return current
 
 
 def _trip_openrouter_credits(table: Any, exc: BaseException) -> None:
@@ -723,7 +741,14 @@ def _on_step_exception(
     if latest.get("status") != "running":
         return
     _trip_openrouter_credits(table, exc)
+    if _is_credit_error(exc):
+        _requeue_for_budget(table, latest, wanted, f"OpenRouter credits: {exc}"[:300])
+        return
     if _is_retryable_step_error(exc) and not payload.get("retried"):
+        current_model = str(payload.get("modelOverride") or "")
+        if not current_model:
+            settings = board_store.load_settings(table)
+            current_model = _model_for_seat(settings, str(latest.get("assignee") or ""), "standup")
         _release_step_claim(table, latest, wanted)
         board_async.invoke_async(
             {
@@ -732,6 +757,7 @@ def _on_step_exception(
                 "taskId": task_id,
                 "step": wanted,
                 "retried": True,
+                "modelOverride": _alternate_step_model(current_model),
             },
             fallback=run_step,
         )
@@ -1433,6 +1459,22 @@ def _normalize_help_tool_ids(raw: Any) -> list[str]:
     return ids
 
 
+_PAGE_FETCH_NEED = ("fetch", "page", "official", "website", "url", "lcsd", "provider site")
+
+
+def _remap_help_tool_ids(tool_ids: list[str], need: str) -> list[str]:
+    """``web`` is GA4. Page-fetch help must go to ``research`` (or be refused)."""
+    lower = (need or "").lower()
+    if not any(token in lower for token in _PAGE_FETCH_NEED):
+        return tool_ids
+    out: list[str] = []
+    for tid in tool_ids:
+        mapped = "research" if tid == "web" else tid
+        if mapped not in out:
+            out.append(mapped)
+    return out
+
+
 def pick_helper(
     table: Any,
     settings: dict[str, Any],
@@ -1524,7 +1566,7 @@ def prepare_help_request(ctx: board_tools.ToolContext, args: dict[str, Any]) -> 
         raise StaffError("need is required")
     if len(need) > 2000:
         raise StaffError("need must be at most 2000 characters")
-    tool_ids = _normalize_help_tool_ids(args.get("toolIds"))
+    tool_ids = _remap_help_tool_ids(_normalize_help_tool_ids(args.get("toolIds")), str(args.get("need") or ""))
     if not tool_ids:
         raise StaffError(
             "toolIds must be one or more board tools you were not offered (for example web or finance). "
@@ -2373,12 +2415,22 @@ def _catalog_quality_return(task: dict[str, Any], raw: str) -> str:
         import board_catalog_import
 
         sheet = board_catalog_import.parse_sheet(raw)
-        issues = board_catalog_import.sheet_quality_issues(sheet)
+        kept, dropped = board_catalog_import.keep_quality_orgs(sheet)
+        issues = board_catalog_import.sheet_quality_issues(
+            kept if kept.get("organisations") else sheet
+        )
     except Exception as exc:
         return f"Catalog sheet does not parse: {exc}"[:300]
-    if not issues:
+    if kept.get("organisations") and not issues:
         return ""
-    return "Return — " + "; ".join(issues[:6])
+    if not issues and not dropped:
+        return ""
+    prefix = "Return — "
+    if dropped:
+        prefix = f"Return — dropped {len(dropped)} thin org(s); "
+    if not issues:
+        return prefix + ", ".join(dropped[:6])
+    return prefix + "; ".join(issues[:6])
 
 
 def _review_user_prompt(task: dict[str, Any], raw: str, evidence_lines: list[str]) -> str:
@@ -2439,6 +2491,24 @@ def run_review(payload: dict[str, Any]) -> None:
     raw = _blob_get(str(task.get("deliverableKey") or "")).decode("utf-8", errors="replace")
     if len(raw) > 12000:
         raw = raw[:12000] + "\n[… truncated]"
+    try:
+        import board_catalog_import
+
+        if str(((task or {}).get("eventRef") or {}).get("kind") or "") in BOARD_CATALOG_EVENT_KINDS:
+            sheet = board_catalog_import.parse_sheet(raw)
+            kept, dropped = board_catalog_import.keep_quality_orgs(sheet)
+            if dropped and kept.get("organisations"):
+                raw = json.dumps(kept, ensure_ascii=False, indent=2)
+                key = str(task.get("deliverableKey") or "")
+                if key:
+                    _blob_put(key, raw.encode("utf-8"))
+                task["openQuestions"] = [
+                    *(task.get("openQuestions") or []),
+                    *(f"dropped thin org: {name}" for name in dropped[:6]),
+                ][:20]
+                board_store.put_task(table, task)
+    except Exception as exc:
+        _log_event("warning", tag="board_staff_catalog_keep_failed", error=str(exc)[:200])
     quality = _catalog_quality_return(task, raw)
     if quality:
         apply_review(table, settings, task, verdict="return", notes=quality, by="manager")
@@ -2855,7 +2925,11 @@ def handle_tick(event: dict[str, Any]) -> dict[str, Any]:
     if not board_store.event_targets_this_board(event):
         return {"ok": True, "skipped": "other_board"}
     table = board_store.records_table()
-    settings = board_store.load_settings(table)
+    try:
+        settings = board_store.ensure_autonomy_defaults(table)
+    except Exception as exc:
+        _log_event("warning", tag="board_autonomy_defaults_failed", error=str(exc)[:200])
+        settings = board_store.load_settings(table)
     try:
         import board_holds
 
@@ -2889,6 +2963,18 @@ def handle_tick(event: dict[str, Any]) -> dict[str, Any]:
         board_catalog_import.handle_tick(table, settings)
     except Exception as exc:
         _log_event("warning", tag="board_catalog_import_tick_failed", error=str(exc)[:300])
+    try:
+        import board_catalog_bulk
+
+        board_catalog_bulk.maybe_queue_auto_imports(table, settings)
+    except Exception as exc:
+        _log_event("warning", tag="board_catalog_auto_bulk_failed", error=str(exc)[:300])
+    try:
+        import board_tools as _board_tools
+
+        _board_tools.expire_stale_approvals(table, settings)
+    except Exception as exc:
+        _log_event("warning", tag="board_approval_expiry_failed", error=str(exc)[:300])
     try:
         import board_duties
 

@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from test_board import BoardTestCase
 
+import board_async
 import board_catalog_bulk
 import board_catalog_candidates
 import board_catalog_discovery
@@ -1106,6 +1107,58 @@ class DiscoveryOpenDataTests(BoardTestCase):
             board_catalog_discovery.refresh_open_data(self.table)
         gaps = board_duties.list_config_gaps(self.table)
         self.assertFalse(any(g.get("gapId") == "opendata-edb" for g in gaps))
+
+
+class AutonomyCatalogTests(BoardTestCase):
+    def test_places_name_deny_list_skips_elderly_and_kindergarten(self) -> None:
+        skipped = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {
+                "source": "places",
+                "nameEn": "Po Leung Kuk Day Care Centre for the Elderly",
+                "district": "Kwai Tsing",
+                "placeId": "ChIJelder",
+            },
+        )
+        self.assertTrue(skipped.get("skipped"))
+        kg = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "places", "nameEn": "Happy Kindergarten", "district": "Kwai Tsing", "placeId": "ChIJkg"},
+        )
+        self.assertTrue(kg.get("skipped"))
+        keep = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "places", "nameEn": "Smartkids House Edu Centre", "district": "Kwai Tsing", "placeId": "ChIJok"},
+        )
+        self.assertIn("candidateId", keep)
+
+    def test_maybe_queue_auto_imports_picks_largest_ready_source(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        for i in range(50):
+            board_catalog_candidates.upsert_candidate(
+                self.table,
+                {
+                    "source": "swd",
+                    "sourceId": f"swd-{i}",
+                    "nameEn": f"SWD Centre {i}",
+                    "district": "Eastern",
+                },
+            )
+        settings = _enable_staff(self.table)
+        settings["catalog"] = {"autoImport": True}
+        settings = board_store.save_settings(self.table, settings)
+        with (
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "import_enabled", return_value=True),
+            patch.object(board_async, "try_invoke_event", return_value=True) as invoke,
+        ):
+            out = board_catalog_bulk.maybe_queue_auto_imports(self.table, settings)
+        self.assertEqual(out.get("queued"), ["swd"])
+        invoke.assert_called_once()
+        job = board_catalog_bulk._job(self.table, "swd")  # noqa: SLF001
+        self.assertEqual(job.get("phase"), "queued")
+        self.assertEqual(job.get("action"), "import")
 
 
 class CatalogImportActivityTests(unittest.TestCase):

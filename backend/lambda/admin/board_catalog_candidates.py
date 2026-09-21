@@ -12,6 +12,7 @@ import board_hk
 import board_store
 from contract_constants import (
     BOARD_CATALOG_CANDIDATE_STATUSES,
+    BOARD_CATALOG_NAME_DENY_TOKENS,
     BOARD_CATALOG_PLACES_TTL_DAYS,
     BOARD_CATALOG_SOURCE_CATEGORY,
 )
@@ -102,12 +103,37 @@ def _now() -> str:
     return board_store.now_iso()
 
 
+def name_denied(name: str) -> bool:
+    """Elderly / kindergarten / tutorial names stay off the owner queue."""
+    blob = str(name or "").casefold()
+    if not blob:
+        return False
+    for token in BOARD_CATALOG_NAME_DENY_TOKENS:
+        marker = str(token or "").casefold()
+        if not marker:
+            continue
+        if any(ord(ch) > 127 for ch in marker):
+            if marker in blob:
+                return True
+            continue
+        if re.search(rf"(?<![a-z0-9]){re.escape(marker)}(?![a-z0-9])", blob):
+            return True
+    return False
+
+
 def upsert_candidate(table: Any, row: dict[str, Any]) -> dict[str, Any]:
     """Insert or refresh a candidate. Official / quality Places rows auto-approve."""
     source = str(row.get("source") or "unknown")
     name = str(row.get("nameEn") or row.get("name") or "").strip()
     if not name:
         raise ValueError("candidate name is required")
+    if source in ("places", "competitor") and name_denied(name):
+        return {
+            "skipped": True,
+            "reason": "name deny-list",
+            "source": source,
+            "nameEn": name[:200],
+        }
     district = str(row.get("district") or board_hk.district_from_address(str(row.get("addressEn") or row.get("address") or "")))
     dedupe = candidate_dedupe_key({**row, "nameEn": name, "district": district})
     existing_id = board_store.get_candidate_by_dedupe(table, dedupe)

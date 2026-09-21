@@ -314,6 +314,30 @@ def fetch_cap_for_task(table: Any, task_id: str, *, ctx: Any = None) -> int:
     return cap
 
 
+def _call_counts_for_current_attempt(call: dict[str, Any], task: dict[str, Any] | None) -> bool:
+    """Retry namespaces fetches: only count calls from the current attempt.
+
+    Older rows have no ``attempt``. After ``retriedAt``, count only calls
+    created at or after that stamp so a parked catalog sheet gets a fresh cap.
+    """
+    if not task:
+        return True
+    try:
+        current = int(task.get("attempt") or 1)
+    except (TypeError, ValueError):
+        current = 1
+    raw_attempt = call.get("attempt")
+    if raw_attempt is not None:
+        try:
+            return int(raw_attempt) == current
+        except (TypeError, ValueError):
+            pass
+    retried_at = str(task.get("retriedAt") or "")
+    if retried_at:
+        return str(call.get("createdAt") or "") >= retried_at
+    return True
+
+
 def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Fetch a public page. Refuses private/link-local hosts. Cap 6 per task (9 for catalog)."""
     import urllib.error
@@ -326,10 +350,17 @@ def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     task_id = str(getattr(ctx, "task_id", "") or "")
     cap = fetch_cap_for_task(getattr(ctx, "table", None), task_id, ctx=ctx)
     if task_id:
+        task = None
+        try:
+            task = board_store.get_task(ctx.table, task_id)
+        except Exception:
+            task = None
         used = sum(
             1
             for call in board_store.list_tool_calls_for_task(ctx.table, task_id)
-            if str(call.get("op") or "") == "research_fetch_page" and str(call.get("status") or "") == "ok"
+            if str(call.get("op") or "") == "research_fetch_page"
+            and str(call.get("status") or "") == "ok"
+            and _call_counts_for_current_attempt(call, task)
         )
         if used >= cap:
             return {"error": f"per-task fetch cap ({cap}) reached"}

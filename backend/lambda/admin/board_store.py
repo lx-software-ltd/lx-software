@@ -62,6 +62,8 @@ from contract_constants import (
     BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
     BOARD_STAFF_DAILY_BUDGET_MAX_USD,
     BOARD_CATALOG_AUTO_IMPORT_DEFAULT,
+    BOARD_CATALOG_IMPORT_HOLD_HOURS,
+    BOARD_STAFF_DEFAULT_MODEL_BY_SEAT,
     BOARD_STAFF_HOLD_CODE_STAGING_HOURS,
     BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
     BOARD_STAFF_OUTREACH_DAILY_CAP_MAX,
@@ -361,7 +363,7 @@ def default_staff_config() -> dict[str, Any]:
         "dutiesEnabled": False,
         "seniorPaused": False,
         "disabledReason": "",
-        "modelBySeat": {},
+        "modelBySeat": dict(BOARD_STAFF_DEFAULT_MODEL_BY_SEAT),
     }
 
 
@@ -421,9 +423,9 @@ def default_boundaries() -> dict[str, Any]:
             "spend": 24,
             "code_staging": BOARD_STAFF_HOLD_CODE_STAGING_HOURS,
             "code_production": 0,
-            "catalog_import": 24,
+            "catalog_import": BOARD_CATALOG_IMPORT_HOLD_HOURS,
         },
-        "holdOverrides": {},
+        "holdOverrides": {"catalog_import": BOARD_CATALOG_IMPORT_HOLD_HOURS},
         "outreach": {
             "fitRubric": DEFAULT_FIT_RUBRIC,
             "typesEnabled": ["provider", "venue", "community", "school"],
@@ -494,6 +496,8 @@ def normalize_staff_config(raw: Any) -> dict[str, Any]:
             if key in BOARD_STAFF_SEAT_IDS and value in allowed:
                 cleaned[key] = value
         out["modelBySeat"] = cleaned
+    for seat_id, model in BOARD_STAFF_DEFAULT_MODEL_BY_SEAT.items():
+        out["modelBySeat"].setdefault(seat_id, model)
     return out
 
 
@@ -573,11 +577,11 @@ def normalize_boundaries(raw: Any) -> dict[str, Any]:
                     out["holds"][cls] = max(0, min(168, int(holds[cls])))
                 except (TypeError, ValueError):
                     continue
-        # Previous default was 0. Treat a stored 0 as unset unless the owner
-        # wrote an explicit holdOverrides.catalog_import (including 0).
+        # Previous default was 0, then 24. Treat a stored 0 as unset unless
+        # the owner wrote an explicit holdOverrides.catalog_import (including 0).
         overrides = raw.get("holdOverrides") if isinstance(raw.get("holdOverrides"), dict) else {}
         if out["holds"].get("catalog_import") == 0 and "catalog_import" not in overrides:
-            out["holds"]["catalog_import"] = 24
+            out["holds"]["catalog_import"] = BOARD_CATALOG_IMPORT_HOLD_HOURS
     overrides = raw.get("holdOverrides")
     if isinstance(overrides, dict):
         cleaned: dict[str, int] = {}
@@ -589,6 +593,8 @@ def normalize_boundaries(raw: Any) -> dict[str, Any]:
             except (TypeError, ValueError):
                 continue
         out["holdOverrides"] = cleaned
+    if "catalog_import" not in out["holdOverrides"]:
+        out["holdOverrides"]["catalog_import"] = BOARD_CATALOG_IMPORT_HOLD_HOURS
     outreach = raw.get("outreach")
     if isinstance(outreach, dict):
         if isinstance(outreach.get("fitRubric"), str):
@@ -728,6 +734,44 @@ def save_settings_retry(table: Any, apply: Any) -> dict[str, Any]:
         except SettingsConflict as exc:
             last = exc
     raise SettingsConflict("settings were updated by someone else") from last
+
+
+def ensure_autonomy_defaults(table: Any) -> dict[str, Any]:
+    """Persist founder-requested autonomy defaults when they are still unset.
+
+    ``normalize_*`` already applies them at read time. Writing them once means
+    the SPA Settings page shows the live values after the next staff tick.
+    """
+    stored = _get_state(table, "settings") or {}
+    stored_models = ((stored.get("staff") or {}) if isinstance(stored.get("staff"), dict) else {}).get(
+        "modelBySeat"
+    ) or {}
+    stored_overrides = (
+        ((stored.get("boundaries") or {}) if isinstance(stored.get("boundaries"), dict) else {}).get(
+            "holdOverrides"
+        )
+        or {}
+    )
+    need_models = any(seat not in stored_models for seat in BOARD_STAFF_DEFAULT_MODEL_BY_SEAT)
+    need_hold = "catalog_import" not in stored_overrides
+    if not need_models and not need_hold:
+        return load_settings(table)
+
+    def apply(current: dict[str, Any]) -> dict[str, Any]:
+        staff = dict(current.get("staff") or {})
+        models = dict(staff.get("modelBySeat") or {})
+        for seat, model in BOARD_STAFF_DEFAULT_MODEL_BY_SEAT.items():
+            models.setdefault(seat, model)
+        staff["modelBySeat"] = models
+        current["staff"] = normalize_staff_config(staff)
+        bounds = dict(current.get("boundaries") or {})
+        overrides = dict(bounds.get("holdOverrides") or {})
+        overrides.setdefault("catalog_import", BOARD_CATALOG_IMPORT_HOLD_HOURS)
+        bounds["holdOverrides"] = overrides
+        current["boundaries"] = normalize_boundaries(bounds)
+        return current
+
+    return save_settings_retry(table, apply)
 
 
 # ---------------------------------------------------------------------------

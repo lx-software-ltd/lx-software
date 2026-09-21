@@ -12,6 +12,7 @@ import board_hk
 import board_opendata
 import board_store
 from contract_constants import (
+    BOARD_CATALOG_AUTO_BULK_MIN_APPROVED,
     BOARD_CATALOG_BULK_SOURCES,
     BOARD_CATALOG_LAUNCH_LISTING_TARGET,
     BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT,
@@ -182,7 +183,7 @@ def ingest_source(
             skipped += 1
             continue
         doc = board_catalog_candidates.upsert_candidate(table, cand)
-        if official and str(doc.get("status") or "") in _TERMINAL_CANDIDATE:
+        if doc.get("skipped") or (official and str(doc.get("status") or "") in _TERMINAL_CANDIDATE):
             skipped += 1
             continue
         created += 1
@@ -420,6 +421,30 @@ def sources_status(table: Any) -> dict[str, Any]:
         "launchTarget": BOARD_CATALOG_LAUNCH_LISTING_TARGET,
         "candidateCounts": counts,
     }
+
+
+def maybe_queue_auto_imports(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
+    """When auto-import is on, queue one source that has enough approved rows."""
+    if not board_catalog_import.auto_import_enabled(settings):
+        return {"queued": []}
+    if not board_catalog_import.import_enabled() or not board_catalog_import.configured():
+        return {"queued": []}
+    counts = board_catalog_candidates.counts_by_source(table)
+    ready: list[tuple[int, str]] = []
+    for source in BOARD_CATALOG_BULK_SOURCES:
+        approved = int((counts.get(source) or {}).get("approved") or 0)
+        if approved < BOARD_CATALOG_AUTO_BULK_MIN_APPROVED:
+            continue
+        if _job_is_active(_job(table, source)):
+            continue
+        ready.append((approved, source))
+    if not ready:
+        return {"queued": []}
+    ready.sort(reverse=True)
+    source = ready[0][1]
+    out = queue_action(table, "import", source, requested_by="auto")
+    _log_event("info", tag="board_catalog_auto_bulk_queued", source=source, approved=ready[0][0])
+    return {"queued": [source], "job": out}
 
 
 def queue_action(

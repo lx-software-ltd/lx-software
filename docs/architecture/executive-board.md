@@ -203,7 +203,9 @@ Rules that hold for every tool:
   altering the board's own permissions or budgets.
 - Exception to the global cap: the CTO filing `github_create_issue` with
   labels `security` or `dependencies` may `act` under `propose` mode so
-  CVE / Dependabot tickets are filed without an Approval.
+  CVE / Dependabot tickets are filed without an Approval. The architect
+  seat may `act` on `github_set_labels` and `github_comment_issue` so
+  backlog grooming does not wait on Approvals.
 
 ### 5.2 Registry and loop
 
@@ -426,7 +428,9 @@ failed or previously omitted activity rows can create.
 Bulk listing growth is `board_catalog_bulk.py` plus a candidate queue
 (`BOARD#…#candidate#`). Official LCSD / EDB kindergarten / SWD child-care
 feeds auto-approve; Places rows auto-approve only for public types
-(park / playground / library / pool / museum). Commercial Places and
+(park / playground / library / pool / museum). Places / competitor names
+matching `catalog.nameDenyTokens` (elderly, kindergarten, tutorial, day
+care, and the 繁中 equivalents) are skipped at upsert. Commercial Places and
 competitor `listingsIndex` names stay `new` until the owner decides.
 Daily 03:30 HKT `…-board-catalog-discovery` rotates
 `discoveryDistrictsPerDay` (3) districts through Places (Enterprise,
@@ -550,12 +554,18 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
   rows are namespaced. Refused for an inactive seat or a closed action.
 - **Tick** (`…-board-staff-tick`, every 5 minutes, `internal:
   board_staff_tick`; also **Staff → Run staff tick now**, which queues the
-  same work via a 2 s Event invoke): expire stale holds → evaluate
-  breakers → execute due holds → run due duties → expire help waits →
-  drain queue → stuck sweep (a claim older than the Lambda timeout is
-  retried once, then `stuck`; `review` older than `staffTaskStuckSeconds`
-  900 is re-reviewed once, then `needs_owner`) → every 6 h sweep stale
-  `board/*` branches.
+  same work via a 2 s Event invoke): persist autonomy defaults
+  (`staff.modelBySeat.content-marketer` =
+  `qwen/qwen-2.5-72b-instruct`, `holdOverrides.catalog_import` 2) when
+  those keys are still unset → expire stale holds → evaluate
+  breakers → execute due holds → expire pending approvals older than
+  `approvalExpiryHours` 168 → queue one auto bulk-import when
+  `catalog.autoImport` is on and a source has ≥
+  `catalogAutoBulkMinApproved` 50 approved rows → run due duties →
+  expire help waits → drain queue → stuck sweep (a claim older than the
+  Lambda timeout is retried once, then `stuck`; `review` older than
+  `staffTaskStuckSeconds` 900 is re-reviewed once, then `needs_owner`) →
+  every 6 h sweep stale `board/*` branches.
 - **Actions → staff**: minutes actions carry an `assignee`; the chair sees
   the active seat roster in synthesis. Assigned actions go through the
   chair's `staff_assign` level (`propose` → Approval; `act` → task). Any
@@ -563,6 +573,11 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
   (`POST …/tasks` with `actionId`; 409 if already worked).
 - Per-seat step models: `settings.staff.modelBySeat` (Staff tab → Step
   model), falling back to `limits.stepModels` then the tier model.
+  Default: `content-marketer` → `qwen/qwen-2.5-72b-instruct` so Sunday
+  content planning skips the DeepSeek / Novita route. A 403 or other
+  retryable OpenRouter error retries the same step once on the other
+  `stepModels` entry; a 402 re-queues the task and trips the budget
+  breaker.
 
 ### 7.2 Duties
 
@@ -596,7 +611,9 @@ proposals, draft invoice, record / match payment), `inbound_reply:{channel}`
 
 `settings.boundaries.holds` gives hours per class (defaults: internal /
 inbound_reply / outbound_known 0; cold_outreach / publish / spend 24;
-code_staging 12), overridden per `classKey` by the trust ramp. When a call
+code_staging 12; catalog_import 2). A stored `holds.catalog_import` of 0
+is treated as 2 unless `holdOverrides.catalog_import` is set (including
+an explicit 0). Overridden per `classKey` by the trust ramp. When a call
 would **execute** (`act`, no guard reason) and the hours are non-zero, it
 is stored as a `holds#` row (`scheduled`, `executeAt`) and the model is
 told it is scheduled unless the founder vetoes. Quiet hours

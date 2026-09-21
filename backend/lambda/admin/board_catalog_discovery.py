@@ -191,7 +191,9 @@ def discover_places(table: Any, settings: dict[str, Any], districts: list[str] |
                 }
                 if not board_catalog_candidates.is_duplicate(table, cand):
                     doc = board_catalog_candidates.upsert_candidate(table, cand)
-                    board_catalog_candidates.set_status(table, str(doc["candidateId"]), "closed")
+                    cid = str(doc.get("candidateId") or "")
+                    if cid:
+                        board_catalog_candidates.set_status(table, cid, "closed")
                 continue
             row = {
                 "source": "places",
@@ -211,8 +213,9 @@ def discover_places(table: Any, settings: dict[str, Any], districts: list[str] |
             hours = place.get("regularOpeningHours") or {}
             if isinstance(hours, dict) and hours.get("weekdayDescriptions"):
                 row["openingHours"] = "; ".join(str(x) for x in hours.get("weekdayDescriptions") or [])[:200]
-            board_catalog_candidates.upsert_candidate(table, row)
-            upserted += 1
+            doc = board_catalog_candidates.upsert_candidate(table, row)
+            if not doc.get("skipped"):
+                upserted += 1
     cur = _cursor(table)
     cur["lastPlacesAt"] = board_store.now_iso()
     _save_cursor(table, cur)

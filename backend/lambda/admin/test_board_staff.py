@@ -24,6 +24,7 @@ from contract_constants import (
     BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK,
     BOARD_STAFF_MAX_REVISIONS,
     BOARD_STAFF_MAX_STEPS_PER_TASK,
+    BOARD_STAFF_STEP_MODELS,
     BOARD_STAFF_TASK_BUDGET_DESK_USD,
 )
 
@@ -1358,6 +1359,27 @@ class StaffStepTests(ToolsTestCase):
         self.assertTrue(latest["failureReason"].startswith("step error:"))
         self.assertFalse(any(p.get("retried") for p in payloads))
 
+    def test_openrouter_403_retries_once_on_other_model(self) -> None:
+        from openrouter_client import OpenRouterError
+
+        task = self._queued_task()
+        tid = task["taskId"]
+        payloads: list[dict[str, Any]] = []
+
+        def boom(*_a: Any, **_k: Any) -> None:
+            raise OpenRouterError("The request is prohibited due to a violation of provider Terms Of Service.", status=403)
+
+        with (
+            patch.object(board_tools, "run_tool_loop", boom),
+            patch.object(board_async, "invoke_async", lambda payload, fallback=None: payloads.append(payload)),
+        ):
+            board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
+        latest = board_store.get_task(self.table, tid)
+        self.assertEqual(latest["status"], "running")
+        self.assertTrue(payloads)
+        self.assertTrue(payloads[0].get("retried"))
+        self.assertIn(payloads[0].get("modelOverride"), BOARD_STAFF_STEP_MODELS)
+
     def test_openrouter_402_trips_budget_breaker(self) -> None:
         from openrouter_client import OpenRouterError
 
@@ -1373,7 +1395,8 @@ class StaffStepTests(ToolsTestCase):
         ):
             board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
         latest = board_store.get_task(self.table, tid)
-        self.assertEqual(latest["status"], "failed")
+        self.assertEqual(latest["status"], "queued")
+        self.assertIn("OpenRouter credits", latest.get("parkedReason") or "")
         breaker = board_store.get_breaker(self.table, "budget")
         self.assertTrue(breaker and breaker.get("tripped"))
 
@@ -1761,6 +1784,23 @@ class StaffStepTests(ToolsTestCase):
         cleaned = board_store.normalize_staff_config({"modelBySeat": {"engineer-1": "openai/gpt-nope", "support": "deepseek/deepseek-chat"}})
         self.assertNotIn("engineer-1", cleaned["modelBySeat"])
         self.assertEqual(cleaned["modelBySeat"]["support"], "deepseek/deepseek-chat")
+        self.assertEqual(cleaned["modelBySeat"]["content-marketer"], "qwen/qwen-2.5-72b-instruct")
+
+    def test_ensure_autonomy_defaults_persists_model_and_hold(self) -> None:
+        board_store._put_state(  # noqa: SLF001
+            self.table,
+            "settings",
+            {"staff": {"enabled": True}, "boundaries": {}, "version": 1},
+        )
+        out = board_store.ensure_autonomy_defaults(self.table)
+        self.assertEqual(out["staff"]["modelBySeat"]["content-marketer"], "qwen/qwen-2.5-72b-instruct")
+        self.assertEqual(out["boundaries"]["holdOverrides"]["catalog_import"], 2)
+        self.assertEqual(out["boundaries"]["holds"]["catalog_import"], 2)
+        stored = board_store._get_state(self.table, "settings")  # noqa: SLF001
+        self.assertEqual(stored["staff"]["modelBySeat"]["content-marketer"], "qwen/qwen-2.5-72b-instruct")
+        self.assertEqual(stored["boundaries"]["holdOverrides"]["catalog_import"], 2)
+        again = board_store.ensure_autonomy_defaults(self.table)
+        self.assertEqual(again["version"], out["version"])
 
     def test_review_flag_line_names_salvaged(self) -> None:
         line = board_staff._review_flag_line({"flags": ["salvaged", "no_evidence"]})  # noqa: SLF001
@@ -2802,6 +2842,16 @@ class StaffHelpTests(ToolsTestCase):
                 },
             )
         self.assertEqual(out["status"], "review")
+
+    def test_page_fetch_help_remaps_web_to_research(self) -> None:
+        settings = _enable_staff(self.table)
+        parent = {"assignee": "community-manager", "managerId": "cmo"}
+        assignee, kind = board_staff.pick_helper(self.table, settings, parent, ["research"])
+        self.assertEqual(kind, "seat")
+        self.assertNotEqual(assignee, "community-manager")
+        remapped = board_staff._remap_help_tool_ids(["web"], "Fetch official LCSD pages")  # noqa: SLF001
+        self.assertEqual(remapped, ["research"])
+        self.assertEqual(board_staff._remap_help_tool_ids(["web"], "GA4 sessions this week"), ["web"])  # noqa: SLF001
 
     def test_pick_helper_prefers_read_only_web_seat(self) -> None:
         settings = _enable_staff(self.table)

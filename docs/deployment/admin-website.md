@@ -608,7 +608,7 @@ daily review Catalog line reports `revalidateExhausted`. Owner Preview
 The task drawer shows `Automatic re-validation: N/3`. When
 `settings.catalog.autoImport` is on plus
 the kill switch, it schedules an internal `catalog_import` hold (default
-24 h; a stored `holds.catalog_import` of 0 is treated as 24 unless
+2 h; a stored `holds.catalog_import` of 0 is treated as 2 unless
 `holdOverrides.catalog_import` is set). The sweep never imports
 immediately. **Import now** / **Skip** / **Queue again** drop the
 scheduled hold so it cannot fail later as "already imported". The

@@ -403,6 +403,12 @@
     "maxHelpRequestsPerTask": 1,
     "helpDepthMax": 1,
     "waitingExpiryHours": 24,
+    "approvalExpiryHours": 168,
+    "catalogImportHoldHours": 2,
+    "catalogAutoBulkMinApproved": 50,
+    "defaultModelBySeat": {
+      "content-marketer": "qwen/qwen-2.5-72b-instruct"
+    },
     "maxRunningTasksDefault": 3,
     "maxEventTasksPerSeatPerHour": 2,
     "staffTaskStuckSeconds": 900,
@@ -456,7 +462,7 @@
   "catalog": {
     "assignee": "content-marketer",
     "budgetUsd": 3,
-    "outputContract": "OUTPUT CONTRACT (curation sheet, NOT the importer JSON — the board copies verified_fields only; type is your classification and is always mapped): one fenced JSON block {\"district\": \"<name>\", \"organisations\": [ {\"name_en\", \"name_zh\", \"type\": \"playground|indoor_play|class|outdoor|sports|event\" (seat classification — omit type from verified_fields; do not use restaurant), \"free_or_paid\", \"age_range\", \"address_en\", \"lat\", \"lng\", \"official_url\", \"phone\", \"opening_hours\", \"price_note\", \"description_en\" (max 40 words), \"description_zh\" (max 40 words), \"source_url\", \"verified_fields\": [...], \"unverified_fields\": [...]} ] }. Exactly 3 organisations on a new-district sheet; an enrich sheet may list only the organisations named in the brief. address_en, opening_hours and free_or_paid (or a parseable HKD price_note) are first-class: put each in verified_fields when you read it on the official page. Copy lat/lng from the official page map link when present. Only facts you read on the official page (LCSD / gov / the provider's own site) go into verified_fields; everything else is the string \"unverified\" and listed in unverified_fields. Do not list type in verified_fields. No invented phone numbers, hours or prices. Prefer the LCSD facility page for public playgrounds. Keep the whole deliverable under 2500 words: research one organisation, task_note a 6-line summary, next organisation; after the last, call task_finish immediately with the JSON. No Meta, no mobile, no publishing.",
+    "outputContract": "OUTPUT CONTRACT (curation sheet, NOT the importer JSON — the board copies verified_fields only; type is your classification and is always mapped): one fenced JSON block {\"district\": \"<name>\", \"organisations\": [ {\"name_en\", \"name_zh\", \"type\": \"playground|indoor_play|class|outdoor|sports|event\" (seat classification — omit type from verified_fields; do not use restaurant), \"free_or_paid\", \"age_range\", \"address_en\", \"lat\", \"lng\", \"official_url\", \"phone\", \"opening_hours\", \"price_note\", \"description_en\" (max 40 words), \"description_zh\" (max 40 words), \"source_url\", \"verified_fields\": [...], \"unverified_fields\": [...]} ] }. Exactly 3 organisations on a new-district sheet; an enrich sheet may list only the organisations named in the brief. On a describe/enrich sheet the organisation names in the brief are already verified — copy each name_en into verified_fields (the importer also trusts those brief names). address_en, opening_hours and free_or_paid (or a parseable HKD price_note) are first-class: put each in verified_fields when you read it on the official page. Copy lat/lng from the official page map link when present. Only facts you read on the official page (LCSD / gov / the provider's own site) go into verified_fields; everything else is the string \"unverified\" and listed in unverified_fields. Do not list type in verified_fields. No invented phone numbers, hours or prices. Prefer the LCSD facility page for public playgrounds. A sheet may drop an organisation that lacks two first-class facts; keep the rest. Keep the whole deliverable under 2500 words: research one organisation, task_note a 6-line summary, next organisation; after the last, call task_finish immediately with the JSON. No Meta, no mobile, no publishing.",
     "importEnabledDefault": false,
     "autoImportDefault": false,
     "microBatchEnabledDefault": true,
@@ -470,6 +476,19 @@
     "placesMinRating": 3.8,
     "placesMinReviews": 10,
     "placesTtlDays": 30,
+    "nameDenyTokens": [
+      "elderly",
+      "長者",
+      "安老",
+      "kindergarten",
+      "幼稚園",
+      "nursery",
+      "幼兒",
+      "tutorial",
+      "補習",
+      "day care",
+      "日間護理"
+    ],
     "candidateStatuses": ["new", "approved", "imported", "rejected", "closed"],
     "bulkSources": ["lcsd", "edb", "swd", "places", "competitor"],
     "sourceCategory": {

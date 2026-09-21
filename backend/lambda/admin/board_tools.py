@@ -56,6 +56,7 @@ from contract_constants import (
     BOARD_MAIL_SUBJECT_MAX_LEN,
     BOARD_RESEARCH_QUERY_MAX_LEN,
     BOARD_MAX_PENDING_APPROVALS,
+    BOARD_STAFF_APPROVAL_EXPIRY_HOURS,
     BOARD_MAX_TOOL_CALLS_PER_TURN,
     BOARD_MAX_TOOL_ROUNDS_PER_TURN,
     BOARD_TOOL_DEFINITIONS,
@@ -3019,6 +3020,14 @@ def _invoke_op(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> dict[
 _SECURITY_ISSUE_LABELS = frozenset({"security", "dependencies"})
 
 
+_ARCHITECT_AUTO_ACT_OPS = frozenset({"github_set_labels", "github_comment_issue"})
+
+
+def _architect_backlog_write(ctx: ToolContext, op: ToolOp) -> bool:
+    """Architect grooming labels/comments executes at act so the runner loop is unblocked."""
+    return bool(ctx.seat_id == "architect" and op.name in _ARCHITECT_AUTO_ACT_OPS)
+
+
 def _cto_security_issue(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> bool:
     """CTO filing a security/dependencies issue may act even when globalMode is propose.
 
@@ -3079,6 +3088,8 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         # Intentional: security/dependencies issues skip always_propose and the
         # globalMode cap so Dependabot / CVE tickets are filed without an Approval.
         if _cto_security_issue(ctx, op, arguments) and level in ("propose", "act"):
+            level = "act"
+        if _architect_backlog_write(ctx, op) and level in ("propose", "act"):
             level = "act"
     else:
         level = "act"
@@ -3246,6 +3257,14 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
     outcome.duration_ms = int((time.monotonic() - started) * 1000)
     outcome.approval_id = approval_id or outcome.approval_id
     audit = mask_arguments(ctx, {"arguments": arguments, "summary": summary})
+    attempt = None
+    if ctx.task_id:
+        try:
+            task_row = board_store.get_task(ctx.table, ctx.task_id)
+            if task_row is not None:
+                attempt = int(task_row.get("attempt") or 1)
+        except Exception:
+            attempt = None
     record = board_store.add_tool_call(
         ctx.table,
         {
@@ -3268,6 +3287,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
             "taskId": ctx.task_id,
             "seatId": ctx.seat_id,
             "classKey": class_key,
+            **({"attempt": attempt} if attempt is not None else {}),
             **({"toolCallId": ctx.llm_tool_call_id} if ctx.llm_tool_call_id else {}),
         },
     )
@@ -3370,6 +3390,8 @@ def create_approval(
                     downgrade_reason=downgrade_reason,
                     fingerprint=fingerprint,
                 )
+            if op.name == "mail_send" and _same_mail_recipients(existing.get("arguments") or {}, arguments):
+                return existing
     if len(pending) >= BOARD_MAX_PENDING_APPROVALS:
         raise ToolPermissionError("Too many pending approvals; ask the founder to review the queue first.")
     now = board_store.now_iso()
@@ -3637,6 +3659,22 @@ def _same_github_issue_title(left: dict[str, Any], right: dict[str, Any]) -> boo
     return bool(title) and title == _norm_issue_title(right.get("title"))
 
 
+def _mail_recipient_key(args: dict[str, Any]) -> tuple[str, ...]:
+    raw = args.get("to")
+    if isinstance(raw, str):
+        values = [v.strip().lower() for v in re.split(r"[,;\s]+", raw) if v.strip()]
+    elif isinstance(raw, list):
+        values = [str(v).strip().lower() for v in raw if v]
+    else:
+        values = [str(raw).strip().lower()] if raw else []
+    return tuple(sorted(values))
+
+
+def _same_mail_recipients(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    key = _mail_recipient_key(left)
+    return bool(key) and key == _mail_recipient_key(right)
+
+
 def _refresh_pending_approval(
     ctx: ToolContext,
     op: ToolOp,
@@ -3789,6 +3827,46 @@ def _resume_waiting_staff(table: Any, settings: dict[str, Any], approval: dict[s
         board_staff.resume_after_approval(table, settings, approval)
     except Exception as exc:
         _log_event("warning", tag="board_staff_resume_after_approval_failed", error=str(exc)[:200])
+
+
+def expire_stale_approvals(table: Any, settings: dict[str, Any], now_iso: str | None = None) -> int:
+    """Reject pending approvals older than ``approvalExpiryHours`` and unpark tasks."""
+    now = now_iso or board_store.now_iso()
+    try:
+        now_dt = datetime.fromisoformat(now.replace("Z", "+00:00"))
+    except ValueError:
+        now_dt = datetime.now(timezone.utc)
+    cut = now_dt - timedelta(hours=BOARD_STAFF_APPROVAL_EXPIRY_HOURS)
+    expired = 0
+    for approval in board_store.list_approvals(table):
+        if approval.get("status") != "pending":
+            continue
+        created = str(approval.get("createdAt") or "")
+        if not created:
+            continue
+        try:
+            created_dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if created_dt > cut:
+            continue
+        approval_id = str(approval.get("approvalId") or "")
+        if not approval_id:
+            continue
+        if not board_store.claim_approval_decision(table, approval_id, status="rejected"):
+            continue
+        decided = {
+            **approval,
+            "status": "rejected",
+            "decidedAt": now,
+            "decidedBySub": "system:expiry",
+            "note": f"Expired after {BOARD_STAFF_APPROVAL_EXPIRY_HOURS}h without a founder decision.",
+            "updatedAt": now,
+        }
+        board_store.put_approval(table, decided)
+        _resume_waiting_staff(table, settings, decided)
+        expired += 1
+    return expired
 
 
 def public_approval(doc: dict[str, Any]) -> dict[str, Any]:

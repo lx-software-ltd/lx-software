@@ -188,6 +188,17 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "BOARD_STAFF_MAX_HELP_REQUESTS_PER_TASK = int(_BOARD_STAFF_LIMITS[\"maxHelpRequestsPerTask\"])",
         "BOARD_STAFF_HELP_DEPTH_MAX = int(_BOARD_STAFF_LIMITS[\"helpDepthMax\"])",
         "BOARD_STAFF_WAITING_EXPIRY_HOURS = int(_BOARD_STAFF_LIMITS[\"waitingExpiryHours\"])",
+        "BOARD_STAFF_APPROVAL_EXPIRY_HOURS = int(_BOARD_STAFF_LIMITS.get(\"approvalExpiryHours\") or 168)",
+        "BOARD_CATALOG_IMPORT_HOLD_HOURS = int(_BOARD_STAFF_LIMITS.get(\"catalogImportHoldHours\") or 2)",
+        "BOARD_CATALOG_AUTO_BULK_MIN_APPROVED = int(_BOARD_STAFF_LIMITS.get(\"catalogAutoBulkMinApproved\") or 50)",
+        "BOARD_STAFF_DEFAULT_MODEL_BY_SEAT: dict[str, str] = {",
+        "    str(k): str(v)",
+        "    for k, v in dict(_BOARD_STAFF_LIMITS.get(\"defaultModelBySeat\") or {}).items()",
+        "    if k and v",
+        "}",
+        "BOARD_STAFF_STEP_MODEL_LIST = tuple(",
+        "    _BOARD_STAFF_LIMITS.get(\"stepModels\") or (\"qwen/qwen-2.5-72b-instruct\", \"deepseek/deepseek-chat\")",
+        ")",
         "BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = int(_BOARD_STAFF_LIMITS[\"maxRunningTasksDefault\"])",
         "BOARD_STAFF_MAX_EVENT_TASKS_PER_SEAT_PER_HOUR = int(_BOARD_STAFF_LIMITS[\"maxEventTasksPerSeatPerHour\"])",
         "BOARD_STAFF_TASK_STUCK_SECONDS = int(_BOARD_STAFF_LIMITS[\"staffTaskStuckSeconds\"])",
@@ -253,6 +264,9 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "BOARD_CATALOG_PLACES_MIN_RATING = float(_BOARD_CATALOG.get(\"placesMinRating\") or 3.8)",
         "BOARD_CATALOG_PLACES_MIN_REVIEWS = int(_BOARD_CATALOG.get(\"placesMinReviews\") or 10)",
         "BOARD_CATALOG_PLACES_TTL_DAYS = int(_BOARD_CATALOG.get(\"placesTtlDays\") or 30)",
+        "BOARD_CATALOG_NAME_DENY_TOKENS = tuple(",
+        "    str(t) for t in (_BOARD_CATALOG.get(\"nameDenyTokens\") or ()) if t",
+        ")",
         "BOARD_CATALOG_CANDIDATE_STATUSES = tuple(_BOARD_CATALOG.get(\"candidateStatuses\") or (\"new\", \"approved\", \"imported\", \"rejected\", \"closed\"))",
         "BOARD_CATALOG_BULK_SOURCES = tuple(_BOARD_CATALOG.get(\"bulkSources\") or (\"lcsd\", \"edb\", \"swd\", \"places\", \"competitor\"))",
         "BOARD_CATALOG_SOURCE_CATEGORY: dict[str, str] = {",
@@ -451,6 +465,10 @@ export const BOARD_STAFF_MAX_REVISIONS = {staff_limits["maxRevisions"]};
 export const BOARD_STAFF_MAX_HELP_REQUESTS_PER_TASK = {staff_limits["maxHelpRequestsPerTask"]};
 export const BOARD_STAFF_HELP_DEPTH_MAX = {staff_limits["helpDepthMax"]};
 export const BOARD_STAFF_WAITING_EXPIRY_HOURS = {staff_limits["waitingExpiryHours"]};
+export const BOARD_STAFF_APPROVAL_EXPIRY_HOURS = {int(staff_limits.get("approvalExpiryHours") or 168)};
+export const BOARD_CATALOG_IMPORT_HOLD_HOURS = {int(staff_limits.get("catalogImportHoldHours") or 2)};
+export const BOARD_CATALOG_AUTO_BULK_MIN_APPROVED = {int(staff_limits.get("catalogAutoBulkMinApproved") or 50)};
+export const BOARD_STAFF_DEFAULT_MODEL_BY_SEAT = {json.dumps(dict(staff_limits.get("defaultModelBySeat") or dict()))} as const;
 export const BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = {staff_limits["maxRunningTasksDefault"]};
 export const BOARD_STAFF_MAX_EVENT_TASKS_PER_SEAT_PER_HOUR = {staff_limits["maxEventTasksPerSeatPerHour"]};
 export const BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD = {staff_limits["staffDailyBudgetDefaultUsd"]};
@@ -477,6 +495,7 @@ export const BOARD_CATALOG_LAUNCH_LISTING_TARGET = {int((board_staff.get("catalo
 export const BOARD_CATALOG_DESCRIBE_BATCH_SIZE = {int((board_staff.get("catalog") or {}).get("describeBatchSize") or 20)};
 export const BOARD_CATALOG_BULK_SOURCES = {json.dumps(list((board_staff.get("catalog") or {}).get("bulkSources") or ["lcsd", "edb", "swd", "places", "competitor"]))} as const;
 export const BOARD_CATALOG_CANDIDATE_STATUSES = {json.dumps(list((board_staff.get("catalog") or {}).get("candidateStatuses") or ["new", "approved", "imported", "rejected", "closed"]))} as const;
+export const BOARD_CATALOG_NAME_DENY_TOKENS = {json.dumps(list((board_staff.get("catalog") or {}).get("nameDenyTokens") or []))} as const;
 
 export type OpenRouterAppDefinition = {{
   readonly id: string;
