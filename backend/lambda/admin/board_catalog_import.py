@@ -37,6 +37,16 @@ CATALOG_ENRICH_KIND = "catalog-enrich"
 CATALOG_SHEET_KINDS = frozenset(BOARD_CATALOG_EVENT_KINDS) or frozenset(
     {CATALOG_EVENT_KIND, CATALOG_ENRICH_KIND}
 )
+# Remote dry-run parks that an upstream siutindei fix can clear without a click.
+_REMOTE_RETRY_PHASES = frozenset({"invalid", "rejected"})
+_MAX_REVALIDATE_ATTEMPTS = 3
+
+
+def _revalidate_gave_up_line() -> str:
+    return (
+        f"automatic re-validation stopped after {_MAX_REVALIDATE_ATTEMPTS} attempts; "
+        "Preview or Requeue to try again"
+    )
 
 # Sheet field → importer field. Only copied when listed in verified_fields.
 _SHEET_TO_IMPORTER = {
@@ -1014,7 +1024,8 @@ def preview_from_text(text: str, *, remote: bool = False, table: Any = None) -> 
             out["dryRun"] = {**local, **remote_dry, "local": local}
             out["ok"] = bool(local["ok"] and remote_dry.get("ok"))
         except Exception as exc:
-            out["dryRun"] = {**local, "remoteError": str(exc)[:300]}
+            # Keep mode=remote so a later tick still treats this as a remote park.
+            out["dryRun"] = {**local, "mode": "remote", "remoteError": str(exc)[:300]}
     return out
 
 
@@ -1087,6 +1098,8 @@ def _set_awaiting(table: Any, task: dict[str, Any], now: str, *, phase: str) -> 
     task["acceptedAt"] = task.get("acceptedAt") or now
     task["lastValidatedAt"] = now
     task["updatedAt"] = now
+    if phase == "validated":
+        task["revalidateAttempts"] = 0
     _clear_handoff_ttl(task)
     if table is not None:
         import board_store
@@ -1160,17 +1173,20 @@ def _apply_preview_outcome(
 
             board_store.put_task(table, task)
         return task
-    if not preview.get("ok") and not dry.get("remoteError"):
-        errors = list(dry.get("errors") or [])
-        if preview.get("error"):
-            errors.append(str(preview.get("error")))
-        return _park_needs_owner(
-            table,
-            task,
-            now,
-            phase="invalid",
-            questions=errors or ["catalog sheet failed local dry-run"],
+    if dry.get("remoteError"):
+        # A parked invalid/rejected sheet stays parked so an outage cannot
+        # un-park it into pending or spend a revalidate attempt.
+        parked = (
+            str(task.get("status") or "") == "needs_owner"
+            and str(task.get("importPhase") or "") in _REMOTE_RETRY_PHASES
         )
+        if parked:
+            if table is not None:
+                import board_store
+
+                board_store.put_task(table, task)
+            return task
+        return _set_awaiting(table, task, now, phase="pending")
     if dry.get("mode") == "remote":
         would_update = _preview_would_update(dry)
         updating = bool(would_update or (dry.get("summary") or {}).get("updated"))
@@ -1193,8 +1209,17 @@ def _apply_preview_outcome(
                 questions=[f"siutindei dry-run rejected {failed} organisation(s)"] + _result_errors(dry.get("results") or []),
             )
         return _set_awaiting(table, task, now, phase="validated")
-    if dry.get("remoteError"):
-        return _set_awaiting(table, task, now, phase="pending")
+    if not preview.get("ok"):
+        errors = list(dry.get("errors") or [])
+        if preview.get("error"):
+            errors.append(str(preview.get("error")))
+        return _park_needs_owner(
+            table,
+            task,
+            now,
+            phase="invalid",
+            questions=errors or ["catalog sheet failed local dry-run"],
+        )
     # Local-only: do not un-park a collision or downgrade a validated sheet.
     if _in_import_handoff(task) and task.get("importPhase"):
         if table is not None:
@@ -1444,6 +1469,7 @@ def requeue_for_import(table: Any, task: dict[str, Any]) -> dict[str, Any]:
     task["importError"] = ""
     task["openQuestions"] = []
     task["importPhase"] = "pending"
+    task["revalidateAttempts"] = 0
     _clear_handoff_ttl(task)
     _drop_open_hold(table, str(task.get("taskId") or ""), reason="requeued")
     updated = _set_awaiting(table, task, now, phase="pending")
@@ -1503,6 +1529,7 @@ def owner_preview(table: Any, body: dict[str, Any]) -> dict[str, Any]:
     if not task:
         raise CatalogImportError("Task not found")
     # Owner Preview import is a siutindei dry-run. Pass remote=false for local-only.
+    task["revalidateAttempts"] = 0
     preview = preview_task(
         table,
         task,
@@ -1611,6 +1638,10 @@ def owner_reimport(table: Any, body: dict[str, Any]) -> dict[str, Any]:
 def _task_row(task: dict[str, Any]) -> dict[str, Any]:
     ref = task.get("eventRef") or {}
     preview = task.get("importPreview") or {}
+    try:
+        attempts = int(task.get("revalidateAttempts") or 0)
+    except (TypeError, ValueError):
+        attempts = 0
     return {
         "taskId": task.get("taskId"),
         "district": ref.get("district") or preview.get("district") or "",
@@ -1618,6 +1649,7 @@ def _task_row(task: dict[str, Any]) -> dict[str, Any]:
         "accepted": (preview.get("dryRun") or {}).get("accepted") or 0,
         "phase": task.get("importPhase") or "",
         "status": task.get("status") or "",
+        "revalidateAttempts": attempts,
     }
 
 
@@ -1642,6 +1674,16 @@ def catalog_headline(table: Any) -> dict[str, Any]:
     pending = [t for t in awaiting if str(t.get("importPhase") or "") != "validated"]
     collisions = [t for t in parked if str(t.get("importPhase") or "") == "collision"]
     rejected = [t for t in parked if str(t.get("importPhase") or "") in ("rejected", "partial", "invalid", "failed")]
+    retry_parked = [
+        t for t in parked if str(t.get("importPhase") or "") in _REMOTE_RETRY_PHASES
+    ]
+    exhausted = 0
+    for task in retry_parked:
+        try:
+            if int(task.get("revalidateAttempts") or 0) >= _MAX_REVALIDATE_ATTEMPTS:
+                exhausted += 1
+        except (TypeError, ValueError):
+            continue
     coverage = catalog_coverage(table)
     return {
         "ready": len(awaiting),
@@ -1649,6 +1691,7 @@ def catalog_headline(table: Any) -> dict[str, Any]:
         "pending": len(pending),
         "collisions": len(collisions),
         "rejected": len(rejected),
+        "revalidateExhausted": exhausted,
         "importedDistricts": coverage.get("importedDistricts") or 0,
         "completeDistricts": coverage.get("completeDistricts") or 0,
         "nextDistrict": coverage.get("nextDistrict") or "",
@@ -1656,6 +1699,7 @@ def catalog_headline(table: Any) -> dict[str, Any]:
         "launchTarget": coverage.get("launchTarget") or 0,
         "candidates": coverage.get("candidates") or {},
         "sheets": [_task_row(t) for t in awaiting[:20]],
+        "parkedSheets": [_task_row(t) for t in parked[:20]],
     }
 
 
@@ -1790,8 +1834,38 @@ def _revalidate_due(task: dict[str, Any], now: str) -> bool:
         return True
 
 
+def _should_revalidate_parked(task: dict[str, Any], now: str) -> bool:
+    """Retry a remote dry-run that parked the sheet, so an upstream fix is re-tested."""
+    if task.get("importedAt") or task.get("importSkipped"):
+        return False
+    if str(task.get("status") or "") != "needs_owner":
+        return False
+    if str(task.get("importPhase") or "") not in _REMOTE_RETRY_PHASES:
+        return False
+    dry = _preview_dry(task.get("importPreview"))
+    if dry.get("mode") != "remote" and not dry.get("remoteError"):
+        return False
+    if int(task.get("revalidateAttempts") or 0) >= _MAX_REVALIDATE_ATTEMPTS:
+        return False
+    return _revalidate_due(task, now)
+
+
+def _note_parked_revalidate(table: Any, task: dict[str, Any], previous: int) -> None:
+    """Count a real parked retry. Transient remoteError does not spend an attempt."""
+    if str(task.get("status") or "") != "needs_owner":
+        return
+    if str(task.get("importPhase") or "") not in _REMOTE_RETRY_PHASES:
+        return
+    if _preview_dry(task.get("importPreview")).get("remoteError"):
+        return
+    task["revalidateAttempts"] = previous + 1
+    if task["revalidateAttempts"] >= _MAX_REVALIDATE_ATTEMPTS:
+        _append_questions(task, [_revalidate_gave_up_line()])
+    _save_task(table, task)
+
+
 def handle_tick(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
-    """Backfill, re-validate pending sheets, and schedule auto-import holds."""
+    """Backfill, re-validate pending / parked sheets, and schedule auto-import holds."""
     import board_store
 
     now = board_store.now_iso()
@@ -1808,6 +1882,13 @@ def handle_tick(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
         if not _revalidate_due(task, now):
             continue
         accept_catalog_task(table, task, now)
+        revalidated += 1
+    for task in _catalog_tasks(table, "needs_owner"):
+        if not _should_revalidate_parked(task, now):
+            continue
+        previous = int(task.get("revalidateAttempts") or 0)
+        accept_catalog_task(table, task, now)
+        _note_parked_revalidate(table, task, previous)
         revalidated += 1
     scheduled = 0
     imported = 0
