@@ -421,7 +421,19 @@ competitor `listingsIndex` names stay `new` until the owner decides.
 Daily 03:30 HKT `…-board-catalog-discovery` rotates
 `discoveryDistrictsPerDay` (3) districts through Places (Enterprise,
 30-day cache, `placesMonthlyCapUsd` 80), refreshes open data on Mondays,
-and drops Places hours/phone after `placesTtlDays` 30. Owner
+and drops Places hours/phone after `placesTtlDays` 30. Monday refresh
+ingests LCSD / SWD in-process and queues EDB kindergarten ingest as
+`board_catalog_bulk` `ingest` jobs of 500 rows (re-enqueued until the
+file is consumed); owner EDB Preview / Import run the same chunks
+before the dry-run. Official-source upsert merges an existing candidate
+instead of a listing-mirror `is_duplicate` pre-check. Open-data caches
+gzip to S3 `board/{BOARD_KEY}/opendata/{name}.json.gz` with a Dynamo
+pointer (`fetchedAt`, `rowCount`, `s3Key`) so the EDB CSV cannot blow
+the 400 KB item limit; a Dynamo `ValidationException` still returns the
+fetched rows and logs `board_opendata_cache_failed`. The EDB catalog
+cache is kindergarten-only (`keep_all` keeps every school for outreach).
+An official fetch with empty `fetchedAt` writes daily-review gap
+`opendata-{source}` and a later success clears it. Owner
 `GET …/catalog/sources`, `POST …/catalog/bulk/{source}/preview|import`
 and `POST …/catalog/discovery/run` return `200 {queued}` and run on
 `AdminApiFn` via `try_invoke_event` (HTTP API 30 s). A bulk job that
@@ -652,8 +664,9 @@ target queries through `research`; a domain seen in two weekly runs is
 promoted from candidate to competitor) and a `senior` brief task for
 `market-analyst`; the brief's JSON block writes `cache intel:gaps`
 (consumed by outreach), CPO `later` actions and intel prospects. Open
-data: FEHD licensed premises and EDB schools mapped to districts by
-`board_hk.HK_DISTRICTS`. **Market** section.
+data: FEHD licensed premises and EDB schools (`edb_schools(..., keep_all=True)`)
+mapped to districts by `board_hk.HK_DISTRICTS`. Large open-data payloads
+live on S3 with a Dynamo pointer (see §6.4). **Market** section.
 
 ### 10.2 Prospecting and outreach (`board_prospects.py`, `board_outreach.py`, `board_places.py`, `board_sequences.py`, `board_targets.py`)
 

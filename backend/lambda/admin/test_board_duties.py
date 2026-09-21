@@ -182,6 +182,13 @@ class DutyRunTests(BoardTestCase):
         gaps = board_duties.list_config_gaps(self.table)
         self.assertTrue(any(g.get("gapId") == "weekly-attribution" for g in gaps))
 
+    def test_clear_config_gap_removes_row(self) -> None:
+        board_duties.note_config_gap(self.table, gap_id="opendata-edb", reason="empty fetch")
+        self.assertTrue(any(g.get("gapId") == "opendata-edb" for g in board_duties.list_config_gaps(self.table)))
+        self.assertEqual(board_duties.clear_config_gap(self.table, "opendata-edb"), 1)
+        self.assertFalse(any(g.get("gapId") == "opendata-edb" for g in board_duties.list_config_gaps(self.table)))
+        self.assertEqual(board_duties.clear_config_gap(self.table, "opendata-edb"), 0)
+
 
 class OpsTriageTests(BoardTestCase):
     def setUp(self) -> None:

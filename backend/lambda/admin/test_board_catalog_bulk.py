@@ -13,8 +13,10 @@ import board_catalog_bulk
 import board_catalog_candidates
 import board_catalog_discovery
 import board_catalog_import
+import board_duties
 import board_opendata
 import board_places
+import board_staff
 import board_store
 
 
@@ -98,13 +100,18 @@ class OpenDataParserTests(unittest.TestCase):
 
     def test_edb_kindergartens_filter(self) -> None:
         rows = board_opendata.parse_edb_csv(EDB_CSV)
-        kgs = [r for r in rows if board_opendata.is_kindergarten(r)]
-        self.assertEqual(len(kgs), 1)
-        self.assertEqual(kgs[0]["nameEn"], "Little Stars KG")
-        self.assertEqual(kgs[0]["sourceId"], "12345678")
-        self.assertAlmostEqual(float(kgs[0]["lat"]), 22.38)
-        self.assertEqual(kgs[0]["phone"], "2648 0000")
-        self.assertEqual(kgs[0]["officialUrl"], "https://kg.example")
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(all(board_opendata.is_kindergarten(r) for r in rows))
+        self.assertEqual(rows[0]["nameEn"], "Little Stars KG")
+        self.assertEqual(rows[0]["sourceId"], "12345678")
+        self.assertAlmostEqual(float(rows[0]["lat"]), 22.38)
+        self.assertEqual(rows[0]["phone"], "2648 0000")
+        self.assertEqual(rows[0]["officialUrl"], "https://kg.example")
+
+    def test_parse_edb_csv_keep_all(self) -> None:
+        rows = board_opendata.parse_edb_csv(EDB_CSV, keep_all=True)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({r["nameEn"] for r in rows}, {"Little Stars KG", "Tai Po Secondary"})
 
     def test_parse_swd_csv(self) -> None:
         rows = board_opendata.parse_swd_csv(SWD_CSV)
@@ -519,6 +526,186 @@ class DiscoveryTests(BoardTestCase):
         settings = board_store.load_settings(self.table)
         out = board_catalog_discovery.run_discovery(self.table, settings)
         self.assertEqual(out.get("skipped"), "disabled")
+
+
+class OpenDataCacheTests(BoardTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        os.environ.pop("ASSETS_BUCKET_NAME", None)
+        board_staff._MEMORY_BLOBS.clear()  # noqa: SLF001
+        self.addCleanup(board_staff._MEMORY_BLOBS.clear)
+
+    def test_store_pointer_round_trip(self) -> None:
+        rows = [{"nameEn": "Little Stars KG", "district": "Sha Tin"}]
+        stored = board_opendata._store(self.table, "opendata:edb", rows)  # noqa: SLF001
+        self.assertEqual(stored["rowCount"], 1)
+        self.assertTrue(stored["s3Key"].endswith("opendata-edb.json.gz"))
+        hit = board_store.get_cache(self.table, "opendata:edb")
+        payload = (hit or {}).get("payload") or {}
+        self.assertNotIn("rows", payload)
+        self.assertEqual(payload["rowCount"], 1)
+        self.assertEqual(payload["s3Key"], stored["s3Key"])
+        cached = board_opendata._cached(self.table, "opendata:edb")  # noqa: SLF001
+        self.assertIsNotNone(cached)
+        self.assertEqual(cached["rows"][0]["nameEn"], "Little Stars KG")
+
+    def test_legacy_inline_rows_still_read(self) -> None:
+        board_store.put_cache(
+            self.table,
+            "opendata:edb",
+            {"rows": [{"nameEn": "Old KG"}], "fetchedAt": "2026-01-01T00:00:00Z"},
+            ttl_seconds=3600,
+        )
+        cached = board_opendata._cached(self.table, "opendata:edb")  # noqa: SLF001
+        self.assertEqual(cached["rows"][0]["nameEn"], "Old KG")
+
+    def test_edb_store_failure_still_returns_rows(self) -> None:
+        with (
+            patch.object(board_opendata, "_download", return_value=EDB_CSV),
+            patch.object(board_store, "put_cache", side_effect=RuntimeError("ValidationException: Item size")),
+        ):
+            out = board_opendata.edb_schools(self.table, force=True)
+        self.assertEqual(len(out["rows"]), 1)
+        self.assertEqual(out["rows"][0]["nameEn"], "Little Stars KG")
+        self.assertTrue(out["fetchedAt"])
+
+    def test_edb_store_failure_logs_cache_failed(self) -> None:
+        with (
+            patch.object(board_opendata, "_download", return_value=EDB_CSV),
+            patch.object(board_store, "put_cache", side_effect=RuntimeError("ValidationException: Item size")),
+            patch.object(board_opendata, "_log_event") as logged,
+        ):
+            board_opendata.edb_schools(self.table, force=True)
+        tags = [kwargs.get("tag") for _args, kwargs in logged.call_args_list]
+        self.assertIn("board_opendata_cache_failed", tags)
+        self.assertNotIn("board_opendata_fetch_failed", tags)
+
+
+class ChunkedIngestTests(BoardTestCase):
+    def test_queue_ingest_without_import_enabled(self) -> None:
+        os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None)
+        with patch("board_async.try_invoke_event", return_value=True) as invoke:
+            out = board_catalog_bulk.queue_action(self.table, "ingest", "edb", requested_by="discovery")
+        self.assertTrue(out["queued"])
+        self.assertEqual(out["action"], "ingest")
+        invoke.assert_called_once()
+        self.assertEqual(invoke.call_args[0][0]["action"], "ingest")
+
+    def test_edb_ingest_chunks_and_reenqueues(self) -> None:
+        rows = [
+            {
+                "nameEn": f"KG {i:04d}",
+                "district": "Sha Tin",
+                "sourceId": f"edb-{i}",
+                "facilityKind": "edb_kindergarten",
+            }
+            for i in range(1200)
+        ]
+        queued: list[dict] = []
+
+        def capture(payload):
+            queued.append(payload)
+            return True
+
+        with (
+            patch.object(board_store, "records_table", return_value=self.table),
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=rows),
+            patch("board_async.try_invoke_event", side_effect=capture),
+        ):
+            first = board_catalog_bulk.handle_job({"action": "ingest", "source": "edb", "offset": 0})
+            self.assertTrue(first["continued"])
+            self.assertEqual(first["processed"], 500)
+            self.assertEqual(first["remaining"], 700)
+            self.assertEqual(queued[-1]["offset"], 500)
+            second = board_catalog_bulk.handle_job(queued[-1])
+            self.assertEqual(second["remaining"], 200)
+            self.assertEqual(second["processed"], 500)
+            third = board_catalog_bulk.handle_job(queued[-1])
+            self.assertFalse(third.get("continued"))
+            self.assertEqual(third["remaining"], 0)
+            self.assertEqual(third["processed"], 200)
+        self.assertEqual(len(board_store.list_candidates(self.table, "approved")), 1200)
+        job = board_catalog_bulk._job(self.table, "edb")
+        self.assertIsNotNone(job)
+        self.assertEqual(job["phase"], "done")
+
+    def test_edb_preview_job_ingests_in_chunks_first(self) -> None:
+        rows = [
+            {"nameEn": f"KG {i:04d}", "district": "Sha Tin", "sourceId": str(i), "facilityKind": "edb_kindergarten"}
+            for i in range(600)
+        ]
+        queued: list[dict] = []
+
+        def capture(payload):
+            queued.append(payload)
+            return True
+
+        with (
+            patch.object(board_store, "records_table", return_value=self.table),
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=rows),
+            patch("board_async.try_invoke_event", side_effect=capture),
+        ):
+            out = board_catalog_bulk.handle_job({"action": "preview", "source": "edb"})
+        self.assertTrue(out["continued"])
+        self.assertEqual(out["processed"], 500)
+        self.assertEqual(queued[-1]["action"], "preview")
+        self.assertEqual(queued[-1]["offset"], 500)
+        self.assertFalse(queued[-1].get("ingestDone"))
+
+
+class DiscoveryOpenDataTests(BoardTestCase):
+    def test_refresh_open_data_queues_edb_ingest(self) -> None:
+        with (
+            patch.object(
+                board_catalog_bulk,
+                "ingest_source",
+                return_value={"fetched": 2, "upserted": 2, "skippedDuplicates": 0},
+            ),
+            patch.object(
+                board_opendata,
+                "edb_kindergartens",
+                return_value={"rows": [{"nameEn": "KG"}], "fetchedAt": "2026-09-21T00:00:00Z"},
+            ),
+            patch.object(board_opendata, "_cached", return_value={"fetchedAt": "2026-09-21T00:00:00Z", "rows": [1]}),
+            patch.object(
+                board_catalog_bulk,
+                "queue_action",
+                return_value={"ok": True, "queued": True, "invoked": True, "action": "ingest", "source": "edb"},
+            ) as queued,
+        ):
+            notes = board_catalog_discovery.refresh_open_data(self.table)
+        self.assertTrue(notes["edb"]["queued"])
+        self.assertEqual(notes["edb"]["fetched"], 1)
+        queued.assert_called_once()
+        self.assertEqual(queued.call_args.args[1], "ingest")
+        self.assertEqual(queued.call_args.args[2], "edb")
+
+    def test_refresh_open_data_notes_gap_when_edb_empty(self) -> None:
+        with (
+            patch.object(board_catalog_bulk, "ingest_source", return_value={"fetched": 1}),
+            patch.object(board_opendata, "edb_kindergartens", return_value={"rows": [], "fetchedAt": ""}),
+            patch.object(board_opendata, "_cached", return_value={"fetchedAt": "x", "rows": [1]}),
+            patch.object(board_catalog_bulk, "queue_action", return_value={"ok": True, "queued": True}),
+        ):
+            board_catalog_discovery.refresh_open_data(self.table)
+        gaps = board_duties.list_config_gaps(self.table)
+        self.assertTrue(any(g.get("gapId") == "opendata-edb" for g in gaps))
+
+    def test_refresh_open_data_clears_gap_when_edb_ok(self) -> None:
+        board_duties.note_config_gap(self.table, gap_id="opendata-edb", reason="EDB kindergarten fetch returned no rows")
+        with (
+            patch.object(board_catalog_bulk, "ingest_source", return_value={"fetched": 1}),
+            patch.object(
+                board_opendata,
+                "edb_kindergartens",
+                return_value={"rows": [{"nameEn": "KG"}], "fetchedAt": "2026-09-21T00:00:00Z"},
+            ),
+            patch.object(board_opendata, "_cached", return_value={"fetchedAt": "x", "rows": [1]}),
+            patch.object(board_catalog_bulk, "queue_action", return_value={"ok": True, "queued": True}),
+        ):
+            board_catalog_discovery.refresh_open_data(self.table)
+        gaps = board_duties.list_config_gaps(self.table)
+        self.assertFalse(any(g.get("gapId") == "opendata-edb" for g in gaps))
 
 
 class CatalogImportActivityTests(unittest.TestCase):
