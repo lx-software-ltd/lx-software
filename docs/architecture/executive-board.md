@@ -395,12 +395,18 @@ siutindei dry-run; `{"remote": false}` stays local), `…/catalog/import`,
 `…/catalog/skip`, `…/catalog/requeue` and `…/catalog/reimport` are JWT-only (`owner_only` on
 the public API). A remote Preview on an `awaiting_import` / parked
 import sheet applies the same outcome as Accept (validate, collision,
-rejected, or pending + `remoteError`), stamps `lastValidatedAt`, and
-clears `importError` when the dry-run reaches siutindei. The staff
-tick also re-validates a `needs_owner` sheet parked as `invalid` or
-`rejected` after a remote dry-run (at most once an hour, three
-attempts) so an upstream siutindei fix is re-tested without a click;
-owner Preview / Requeue reset the attempt counter. Owner Import
+or rejected), stamps `lastValidatedAt`, and
+clears `importError` when the dry-run reaches siutindei. A parked
+`invalid` / `rejected` sheet stays parked on `remoteError` so an
+outage cannot un-park it; a non-parked sheet stays `pending`. The staff tick also re-validates a
+`needs_owner` sheet parked as `invalid` or `rejected` after a remote
+dry-run (at most once an hour, three attempts) so an upstream
+siutindei fix is re-tested without a click; a transient `remoteError`
+does not spend an attempt. After three still-parked retries the sheet
+stays on **Attention** with an open question. Owner Preview
+(including `{"remote": false}`) / Requeue reset the attempt counter.
+`GET …/review` `headline.catalog` exposes `revalidateAttempts` on
+each sheet row plus `revalidateExhausted`. Owner Import
 refuses a stored collision without a live write; a stale preview is
 refreshed in that request and the live POST waits for the next click
 (HTTP API 30 s). A repeat import of the same task is 409 unless `force`

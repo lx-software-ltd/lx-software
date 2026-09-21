@@ -580,8 +580,13 @@ Accepted catalog sheets leave **Review** as `awaiting_import` (SPA
 tick backfills older delivered-but-unimported sheets and re-validates
 `pending` sheets at most once an hour (using `lastValidatedAt`, including
 local-only sheets). It also re-validates a parked `invalid` / `rejected`
-sheet whose last dry-run reached siutindei (same 1 h spacing, three
-attempts; owner Preview / Requeue reset the counter). When
+sheet whose last dry-run reached siutindei or recorded a `remoteError`
+(same 1 h spacing, three attempts). A transient siutindei error keeps
+the sheet parked and does not spend an attempt. After three still-parked
+retries the sheet stays on **Attention** with an open question; the
+daily review Catalog line reports `revalidateExhausted`. Owner Preview
+(including local-only `{"remote": false}`) / Requeue reset the counter.
+The task drawer shows `Automatic re-validation: N/3`. When
 `settings.catalog.autoImport` is on plus
 the kill switch, it schedules an internal `catalog_import` hold (default
 24 h; a stored `holds.catalog_import` of 0 is treated as 24 unless

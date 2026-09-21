@@ -150,6 +150,9 @@ function Headline({ review }: { readonly review: BoardReviewSnapshot }) {
             Catalog: <strong>{h.catalog.importedDistricts ?? 0}</strong> imported,{" "}
             <strong>{h.catalog.completeDistricts ?? 0}</strong> ≥ 50%
             {h.catalog.nextDistrict ? <> · next {h.catalog.nextDistrict}</> : null}
+            {h.catalog.revalidateExhausted ? (
+              <> · {h.catalog.revalidateExhausted} automatic retries exhausted</>
+            ) : null}
           </div>
         ) : null}
       </div>

@@ -128,6 +128,51 @@ describe("BoardTaskDrawer catalog import", () => {
     expect(onSkip).toHaveBeenCalledWith("task-catalog");
   });
 
+  it("shows automatic re-validation progress on a parked sheet", () => {
+    render(
+      <BoardTaskDrawer
+        detail={{
+          ...detail,
+          task: {
+            ...catalogTask,
+            status: "needs_owner",
+            importPhase: "invalid",
+            revalidateAttempts: 2,
+          },
+        }}
+        isLoading={false}
+        isMutating={false}
+        onClose={() => undefined}
+        onCancel={() => undefined}
+        onReview={() => undefined}
+      />,
+    );
+    expect(screen.getByText("Automatic re-validation: 2/3")).toBeInTheDocument();
+  });
+
+  it("says automatic re-validation stopped after three attempts", () => {
+    render(
+      <BoardTaskDrawer
+        detail={{
+          ...detail,
+          task: {
+            ...catalogTask,
+            status: "needs_owner",
+            importPhase: "rejected",
+            revalidateAttempts: 3,
+          },
+        }}
+        isLoading={false}
+        isMutating={false}
+        onClose={() => undefined}
+        onCancel={() => undefined}
+        onReview={() => undefined}
+      />,
+    );
+    expect(screen.getByText(/Automatic re-validation: 3\/3/)).toBeInTheDocument();
+    expect(screen.getByText(/stopped; Preview or Requeue to try again/)).toBeInTheDocument();
+  });
+
   it("hides Accept on an import collision", () => {
     render(
       <BoardTaskDrawer
