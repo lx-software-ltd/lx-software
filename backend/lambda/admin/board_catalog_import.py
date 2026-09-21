@@ -67,12 +67,15 @@ _SHEET_TO_IMPORTER = {
 
 _NOTE_FIELDS = ("opening_hours", "price_note", "age_range", "free_or_paid", "description_zh")
 _NUMERIC_FIELDS = frozenset({"lat", "lng"})
-# HTTP API integrations cap at 30s. Preview is 3 hops + Cognito; keep the
-# worst case under that so a slow importer fails here (and is stored) instead
-# of as an empty API Gateway 504.
+# HTTP API integrations cap at 30s. Sync owner preview/import is 3 hops +
+# Cognito; keep that worst case under 30s so a slow importer fails here
+# (and is stored) instead of as an empty API Gateway 504.
+# Bulk Preview/Import is Event-invoked (300s). A 50-org live batch has
+# taken 8.5s on siutindei; 8s aborted the job and skipped remaining batches.
 _COGNITO_TIMEOUT = 5
 _PREVIEW_HTTP_TIMEOUT = 7
 _IMPORT_HTTP_TIMEOUT = 8
+_BULK_IMPORT_HTTP_TIMEOUT = 20
 
 
 def _importer_dests() -> list[tuple[str, list[str]]]:
@@ -836,6 +839,11 @@ def _http(
         if request_id:
             detail = f"{detail} requestId={request_id}"
         raise CatalogImportError(detail, request_id=request_id) from exc
+    except TimeoutError as exc:
+        # urlopen(timeout=) raises TimeoutError (OSError), not URLError.
+        raise CatalogImportError(
+            f"siutindei admin {method} {_safe_url(url)} failed: {exc or 'timed out'}"
+        ) from exc
     except urllib.error.URLError as exc:
         raise CatalogImportError(f"siutindei admin {method} {_safe_url(url)} failed: {exc.reason}") from exc
     parsed: Any = {}
@@ -1006,10 +1014,12 @@ def _remote_dry_run(payload: dict[str, Any], token: str) -> dict[str, Any]:
     }
 
 
-def _run_remote_import(payload: dict[str, Any], token: str) -> dict[str, Any]:
+def _run_remote_import(
+    payload: dict[str, Any], token: str, *, timeout: int = _IMPORT_HTTP_TIMEOUT
+) -> dict[str, Any]:
     orgs = payload.get("organizations") or []
-    object_key = _presign_and_put(orgs, token, filename="board-catalog.json", timeout=_IMPORT_HTTP_TIMEOUT)
-    imported = _imports_post(token, {"object_key": object_key}, timeout=_IMPORT_HTTP_TIMEOUT)
+    object_key = _presign_and_put(orgs, token, filename="board-catalog.json", timeout=timeout)
+    imported = _imports_post(token, {"object_key": object_key}, timeout=timeout)
     counts = _org_counts(imported)
     results = _importer_results(imported)
     sent = len(orgs)

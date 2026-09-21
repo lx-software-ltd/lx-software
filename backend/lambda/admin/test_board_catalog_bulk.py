@@ -314,7 +314,7 @@ class BulkTransformTests(BoardTestCase):
             {"source": "lcsd", "sourceId": "drop", "nameEn": "Drop Park", "district": "Eastern"},
         )
 
-        def fake_import(payload, token):
+        def fake_import(payload, token, **_kwargs):
             return {
                 "ok": False,
                 "summary": {"failed": 1, "created": 1, "updated": 0},
@@ -346,7 +346,7 @@ class BulkTransformTests(BoardTestCase):
             {"source": "lcsd", "sourceId": "long", "nameEn": long_name, "district": "Eastern"},
         )
 
-        def fake_import(payload, token):
+        def fake_import(payload, token, **_kwargs):
             return {
                 "ok": True,
                 "summary": {"failed": 0, "created": 1, "updated": 0},
@@ -373,7 +373,7 @@ class BulkTransformTests(BoardTestCase):
             {"source": "lcsd", "sourceId": "id-key", "nameEn": "Id Key Park", "district": "Eastern"},
         )
 
-        def fake_import(payload, token):
+        def fake_import(payload, token, **_kwargs):
             return {
                 "ok": True,
                 "summary": {"failed": 0, "created": 1, "updated": 0},
@@ -389,6 +389,117 @@ class BulkTransformTests(BoardTestCase):
             out = board_catalog_bulk.import_source(self.table, "lcsd")
         self.assertEqual(out["imported"], 1)
         self.assertEqual(board_store.get_candidate(self.table, keep["candidateId"])["status"], "imported")
+
+    def test_import_continues_after_batch_timeout(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+        first = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "one", "nameEn": "One Park", "district": "Eastern"},
+        )
+        second = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "two", "nameEn": "Two Park", "district": "Eastern"},
+        )
+        calls: list[str] = []
+
+        def fake_import(payload, token, *, timeout=None):
+            self.assertEqual(timeout, board_catalog_import._BULK_IMPORT_HTTP_TIMEOUT)
+            name = str(((payload.get("organizations") or [{}])[0] or {}).get("name") or "")
+            calls.append(name)
+            if len(calls) == 1:
+                raise board_catalog_import.CatalogImportError(
+                    "siutindei admin POST https://siu.example/v1/admin/imports failed: The read operation timed out"
+                )
+            return {
+                "ok": True,
+                "summary": {"failed": 0, "created": 1, "updated": 0},
+                "results": [{"type": "organizations", "key": name, "status": "created"}],
+            }
+
+        with (
+            patch.object(board_catalog_bulk, "BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT", 1),
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=[]),
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "_id_token", return_value="tok"),
+            patch.object(board_catalog_import, "_run_remote_import", side_effect=fake_import),
+        ):
+            out = board_catalog_bulk.import_source(self.table, "lcsd")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(out["imported"], 1)
+        self.assertFalse(out["ok"])
+        self.assertIn("timed out", out["batches"][0]["error"])
+        statuses = {
+            board_store.get_candidate(self.table, first["candidateId"])["status"],
+            board_store.get_candidate(self.table, second["candidateId"])["status"],
+        }
+        self.assertEqual(statuses, {"approved", "imported"})
+
+    def test_handle_job_import_keeps_batch_timeout_on_job(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+        board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "keep", "nameEn": "Keep Park", "district": "Eastern"},
+        )
+
+        def fake_import(payload, token, *, timeout=None):
+            raise board_catalog_import.CatalogImportError(
+                "siutindei admin POST https://siu.example/v1/admin/imports failed: The read operation timed out"
+            )
+
+        with (
+            patch.object(board_store, "records_table", return_value=self.table),
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=[]),
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "_id_token", return_value="tok"),
+            patch.object(board_catalog_import, "_run_remote_import", side_effect=fake_import),
+        ):
+            out = board_catalog_bulk.handle_job({"action": "import", "source": "lcsd"})
+        self.assertFalse(out["ok"])
+        job = board_catalog_bulk._job(self.table, "lcsd")
+        self.assertEqual(job["phase"], "done")
+        self.assertFalse(job.get("ok"))
+        self.assertIn("timed out", job.get("error") or "")
+
+    def test_handle_job_preview_dry_run_failure_stays_done_with_error(self) -> None:
+        # preview_source returns ``batches`` as an int; a failed dry run must
+        # not crash the job into ``phase: error`` while extracting the message.
+        preview_out = {
+            "source": "lcsd",
+            "approved": 3,
+            "wouldSend": 3,
+            "batches": 1,
+            "dryRuns": [{"ok": False, "accepted": 3, "errors": [], "remoteError": "siutindei admin POST failed: timed out"}],
+            "ok": False,
+        }
+        with (
+            patch.object(board_store, "records_table", return_value=self.table),
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=[]),
+            patch.object(board_catalog_bulk, "preview_source", return_value=preview_out),
+        ):
+            out = board_catalog_bulk.handle_job({"action": "preview", "source": "lcsd"})
+        self.assertFalse(out["ok"])
+        job = board_catalog_bulk._job(self.table, "lcsd")
+        self.assertEqual(job["phase"], "done")
+        self.assertFalse(job.get("ok"))
+        self.assertIn("timed out", job.get("error") or "")
+
+    def test_first_partial_error_prefers_batch_then_dry_run_then_top_level(self) -> None:
+        self.assertEqual(
+            board_catalog_bulk._first_partial_error({"batches": [{"ok": True}, {"ok": False, "error": "b2"}]}),
+            "b2",
+        )
+        self.assertEqual(
+            board_catalog_bulk._first_partial_error({"batches": 2, "dryRuns": [{"ok": False, "errors": ["bad row"]}]}),
+            "bad row",
+        )
+        self.assertEqual(board_catalog_bulk._first_partial_error({"batches": 2, "error": "top"}), "top")
+        self.assertIsNone(board_catalog_bulk._first_partial_error({"batches": 2}))
 
     def test_handle_job_unexpected_error_marks_error(self) -> None:
         with (

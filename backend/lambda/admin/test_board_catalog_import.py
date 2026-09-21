@@ -1366,6 +1366,22 @@ class ImportClientTests(BoardTestCase):
         self.assertEqual(ctx.exception.request_id, "req-abc")
         self.assertIn("requestId=req-abc", str(ctx.exception))
 
+    def test_http_wraps_read_timeout(self) -> None:
+        board_catalog_import.set_http_for_tests(None)
+
+        def boom(*_a, **_k):
+            raise TimeoutError("The read operation timed out")
+
+        with patch("urllib.request.urlopen", boom):
+            with self.assertRaises(board_catalog_import.CatalogImportError) as ctx:
+                board_catalog_import._http(
+                    "POST",
+                    "https://siu.example/v1/admin/imports",
+                    timeout=board_catalog_import._IMPORT_HTTP_TIMEOUT,
+                )
+        self.assertIn("timed out", str(ctx.exception))
+        self.assertIn("siutindei admin POST", str(ctx.exception))
+
     def test_three_remote_errors_open_cto_task(self) -> None:
         settings = _enable_staff(self.table)
         board_store.save_staff_override(self.table, "cto", {"isActive": True})

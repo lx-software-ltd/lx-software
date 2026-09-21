@@ -126,8 +126,11 @@ export function BoardCatalogSourcesSection() {
                   <td className="text-uppercase">
                     {row.id}
                     {jobLine(row.job) ? <div className="small text-muted">{jobLine(row.job)}</div> : null}
-                    {row.job?.phase === "error" && row.job.error ? (
-                      <div className="small text-danger">{row.job.error}</div>
+                    {row.job?.error && (row.job.phase === "error" || row.job.ok === false) ? (
+                      <div className="small text-danger">
+                        {row.job.phase === "done" ? "Finished with errors: " : null}
+                        {row.job.error}
+                      </div>
                     ) : null}
                   </td>
                   <td>{row.counts.new ?? 0}</td>
