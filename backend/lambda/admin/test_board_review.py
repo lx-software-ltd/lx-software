@@ -233,6 +233,27 @@ class ReviewCompileTests(BoardTestCase):
             board_review.send_digest(self.table, self.settings, review)
         self.assertIn("staging check failed", captured["plan"]["text"])
 
+    def test_headline_lines_include_exhausted_revalidates(self) -> None:
+        lines = board_review._headline_lines(
+            {
+                "headline": {
+                    "tasks": {"delivered": 0, "running": 0, "blocked": 0},
+                    "holds": {"executed": 0, "vetoed": 0},
+                    "spend": {"staffUsd": 0, "budgetUsd": 20},
+                    "catalog": {
+                        "ready": 0,
+                        "validated": 0,
+                        "rejected": 1,
+                        "revalidateExhausted": 1,
+                        "importedDistricts": 1,
+                    },
+                }
+            }
+        )
+        catalog = [line for line in lines if line.startswith("Catalog:")]
+        self.assertTrue(catalog)
+        self.assertIn("1 automatic retries exhausted", catalog[0])
+
     def test_headline_duty_at_07_00(self) -> None:
         board_store.save_staff_override(self.table, "business-analyst", {"isActive": True})
         fake_now = board_hk.parse_iso("2026-09-09T23:05:00Z")  # 07:05 HKT

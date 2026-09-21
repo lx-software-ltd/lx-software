@@ -577,10 +577,18 @@ duty while bulk import fills toward 1000 live listings.
 Accepted catalog sheets leave **Review** as `awaiting_import` (SPA
 **In progress**, **To import** tag) after a siutindei dry-run. Name collisions
 (`updated` rows) and rejected rows park at `needs_owner`. The staff
-tick backfills older delivered-but-unimported sheets, re-validates
+tick backfills older delivered-but-unimported sheets and re-validates
 `pending` sheets at most once an hour (using `lastValidatedAt`, including
-local-only sheets), and when `settings.catalog.autoImport` is on plus
-the kill switch, schedules an internal `catalog_import` hold (default
+local-only sheets). It also re-validates a parked `invalid` / `rejected`
+sheet whose last dry-run reached siutindei or recorded a `remoteError`
+(same 1 h spacing, three attempts). A transient siutindei error keeps
+the sheet parked and does not spend an attempt. After three still-parked
+retries the sheet stays on **Attention** with an open question; the
+daily review Catalog line reports `revalidateExhausted`. Owner Preview
+(including local-only `{"remote": false}`) / Requeue reset the counter.
+The task drawer shows `Automatic re-validation: N/3`. When
+`settings.catalog.autoImport` is on plus
+the kill switch, it schedules an internal `catalog_import` hold (default
 24 h; a stored `holds.catalog_import` of 0 is treated as 24 unless
 `holdOverrides.catalog_import` is set). The sweep never imports
 immediately. **Import now** / **Skip** / **Queue again** drop the

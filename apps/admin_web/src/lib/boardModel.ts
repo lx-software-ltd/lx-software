@@ -321,6 +321,7 @@ export type BoardTask = {
   readonly importPhase?: string;
   readonly importError?: string;
   readonly importAttempts?: number;
+  readonly revalidateAttempts?: number;
   readonly lastImportAttemptAt?: string;
   readonly importSkipped?: boolean;
   readonly importPreview?: BoardCatalogImportPreview | null;
@@ -1718,6 +1719,8 @@ export function boardCatalogDiscoveryRunPath(): string {
   return `${BOARD_API_BASE}/catalog/discovery/run`;
 }
 
+export const CATALOG_MAX_REVALIDATE_ATTEMPTS = 3;
+
 export function canImportCatalogTask(task: Pick<BoardTask, "status" | "importedAt" | "importPhase">): boolean {
   if (task.importedAt) return false;
   if (task.status === "awaiting_import") return task.importPhase !== "collision";
@@ -2118,6 +2121,7 @@ export type BoardReviewSnapshot = {
       readonly completeDistricts?: number;
       readonly nextDistrict?: string;
       readonly failedActivityRows?: number;
+      readonly revalidateExhausted?: number;
     };
   };
   readonly holdsDue: readonly BoardHold[];

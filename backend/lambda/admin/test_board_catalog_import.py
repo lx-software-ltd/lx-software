@@ -7,6 +7,7 @@ import json
 import os
 import unittest
 import urllib.error
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from test_board import BoardTestCase
@@ -1115,6 +1116,225 @@ class ImportClientTests(BoardTestCase):
         )
         self.assertEqual(explicit["holds"]["catalog_import"], 0)
         self.assertEqual(explicit["holdOverrides"]["catalog_import"], 0)
+
+    def _stale_iso(self) -> str:
+        return (datetime.now(timezone.utc) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def test_tick_revalidates_parked_invalid_remote_sheet(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="needs_owner")
+        task["importPhase"] = "invalid"
+        _stamp_fresh_remote(
+            task,
+            ok=False,
+            errors=["name_translations.zh-HK must be a valid ISO 639-1 language code"],
+        )
+        task["lastValidatedAt"] = self._stale_iso()
+        board_store.put_task(self.table, task)
+        out = board_catalog_import.handle_tick(self.table, settings)
+        self.assertEqual(out["revalidated"], 1)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "awaiting_import")
+        self.assertEqual(saved.get("importPhase"), "validated")
+        self.assertEqual(saved.get("revalidateAttempts"), 0)
+
+    def test_tick_skips_fresh_parked_invalid_sheet(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="needs_owner")
+        task["importPhase"] = "invalid"
+        _stamp_fresh_remote(task, ok=False)
+        board_store.put_task(self.table, task)
+        out = board_catalog_import.handle_tick(self.table, settings)
+        self.assertEqual(out["revalidated"], 0)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "needs_owner")
+        self.assertEqual(saved.get("importPhase"), "invalid")
+
+    def test_tick_skips_local_invalid_sheet(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="needs_owner")
+        task["importPhase"] = "invalid"
+        task["lastValidatedAt"] = self._stale_iso()
+        task["importPreview"] = {
+            "ok": False,
+            "dryRun": {"ok": False, "mode": "local", "errors": ["name is not in verified_fields"]},
+        }
+        board_store.put_task(self.table, task)
+        out = board_catalog_import.handle_tick(self.table, settings)
+        self.assertEqual(out["revalidated"], 0)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "needs_owner")
+
+    def test_tick_stops_after_three_parked_revalidates(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="needs_owner")
+        task["importPhase"] = "rejected"
+        task["revalidateAttempts"] = 3
+        _stamp_fresh_remote(task, ok=False)
+        task["lastValidatedAt"] = self._stale_iso()
+        board_store.put_task(self.table, task)
+        out = board_catalog_import.handle_tick(self.table, settings)
+        self.assertEqual(out["revalidated"], 0)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "needs_owner")
+        self.assertEqual(saved.get("revalidateAttempts"), 3)
+
+    def test_requeue_resets_revalidate_attempts(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="needs_owner")
+        task["importPhase"] = "invalid"
+        task["revalidateAttempts"] = 2
+        board_store.put_task(self.table, task)
+        out = board_catalog_import.requeue_for_import(self.table, task)
+        self.assertTrue(out["ok"])
+        saved = out["task"]
+        self.assertEqual(saved.get("status"), "awaiting_import")
+        self.assertEqual(saved.get("importPhase"), "pending")
+        self.assertEqual(saved.get("revalidateAttempts"), 0)
+
+    def test_owner_preview_resets_revalidate_attempts(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="needs_owner")
+        task["importPhase"] = "invalid"
+        task["revalidateAttempts"] = 2
+        board_store.put_task(self.table, task)
+        preview = board_catalog_import.owner_preview(self.table, {"taskId": task["taskId"]})
+        self.assertTrue(preview.get("ok"))
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "awaiting_import")
+        self.assertEqual(saved.get("importPhase"), "validated")
+        self.assertEqual(saved.get("revalidateAttempts"), 0)
+
+    def test_owner_preview_local_resets_revalidate_attempts(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="needs_owner")
+        task["importPhase"] = "invalid"
+        task["revalidateAttempts"] = 2
+        _stamp_fresh_remote(task, ok=False)
+        board_store.put_task(self.table, task)
+        preview = board_catalog_import.owner_preview(
+            self.table, {"taskId": task["taskId"], "remote": False}
+        )
+        self.assertTrue(preview.get("ok"))
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("revalidateAttempts"), 0)
+
+    def _rejecting_remote_http(self) -> None:
+        def http(method, url, headers, body):
+            parsed = json.loads(body) if body else None
+            if url.endswith("/admin/imports/presign"):
+                return {
+                    "upload_url": "https://s3.example.test/put?X-Amz-Signature=secret",
+                    "object_key": "imports/board.json",
+                }
+            if url.startswith("https://s3.example.test/put"):
+                return {"status": 200}
+            if url.endswith("/admin/imports"):
+                return {
+                    "status": 200,
+                    "dry_run": bool((parsed or {}).get("dry_run")),
+                    "summary": {
+                        "organizations": {"created": 0, "updated": 0, "failed": 1, "skipped": 0},
+                        "locations": {"created": 0, "updated": 0, "failed": 0, "skipped": 0},
+                        "activities": {"created": 0, "updated": 0, "failed": 0, "skipped": 0},
+                        "pricing": {"created": 0, "updated": 0, "failed": 0, "skipped": 0},
+                        "schedules": {"created": 0, "updated": 0, "failed": 0, "skipped": 0},
+                        "warnings": 0,
+                        "errors": 1,
+                    },
+                    "results": [
+                        {
+                            "type": "organizations",
+                            "key": "Quarry Bay Park Playground",
+                            "status": "failed",
+                            "warnings": [],
+                            "errors": [
+                                {
+                                    "message": "name_translations.zh-HK must be a valid ISO 639-1 language code"
+                                }
+                            ],
+                        }
+                    ],
+                    "file_warnings": [],
+                }
+            raise AssertionError(url)
+
+        board_catalog_import.set_http_for_tests(http)
+
+    def test_tick_reparks_invalid_remote_sheet_and_counts_attempt(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="needs_owner")
+        task["importPhase"] = "invalid"
+        _stamp_fresh_remote(
+            task,
+            ok=False,
+            errors=["name_translations.zh-HK must be a valid ISO 639-1 language code"],
+        )
+        task["lastValidatedAt"] = self._stale_iso()
+        board_store.put_task(self.table, task)
+        self._rejecting_remote_http()
+        out = board_catalog_import.handle_tick(self.table, settings)
+        self.assertEqual(out["revalidated"], 1)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "needs_owner")
+        self.assertEqual(saved.get("importPhase"), "rejected")
+        self.assertEqual(saved.get("revalidateAttempts"), 1)
+        questions = saved.get("openQuestions") or []
+        zh = [q for q in questions if "zh-HK" in str(q)]
+        self.assertEqual(len(zh), 1)
+        saved["lastValidatedAt"] = self._stale_iso()
+        board_store.put_task(self.table, saved)
+        again = board_catalog_import.handle_tick(self.table, settings)
+        self.assertEqual(again["revalidated"], 1)
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest.get("revalidateAttempts"), 2)
+        self.assertEqual(len([q for q in (latest.get("openQuestions") or []) if "zh-HK" in str(q)]), 1)
+
+    def test_tick_remote_error_keeps_parked_without_spending_attempt(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="needs_owner")
+        task["importPhase"] = "invalid"
+        _stamp_fresh_remote(task, ok=False)
+        task["lastValidatedAt"] = self._stale_iso()
+        board_store.put_task(self.table, task)
+        board_catalog_import.set_auth_for_tests(
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("cognito down"))
+        )
+        out = board_catalog_import.handle_tick(self.table, settings)
+        self.assertEqual(out["revalidated"], 1)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "needs_owner")
+        self.assertEqual(saved.get("importPhase"), "invalid")
+        self.assertEqual(int(saved.get("revalidateAttempts") or 0), 0)
+        self.assertIn("cognito", str(saved.get("importError") or "").lower())
+        dry = (saved.get("importPreview") or {}).get("dryRun") or {}
+        self.assertTrue(dry.get("remoteError"))
+        self.assertEqual(dry.get("mode"), "remote")
+
+    def test_tick_records_give_up_after_third_parked_revalidate(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="needs_owner")
+        task["importPhase"] = "rejected"
+        task["revalidateAttempts"] = 2
+        _stamp_fresh_remote(task, ok=False)
+        task["lastValidatedAt"] = self._stale_iso()
+        board_store.put_task(self.table, task)
+        self._rejecting_remote_http()
+        out = board_catalog_import.handle_tick(self.table, settings)
+        self.assertEqual(out["revalidated"], 1)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("status"), "needs_owner")
+        self.assertEqual(saved.get("revalidateAttempts"), 3)
+        self.assertIn(board_catalog_import._revalidate_gave_up_line(), saved.get("openQuestions") or [])
+        saved["lastValidatedAt"] = self._stale_iso()
+        board_store.put_task(self.table, saved)
+        again = board_catalog_import.handle_tick(self.table, settings)
+        self.assertEqual(again["revalidated"], 0)
+        headline = board_catalog_import.catalog_headline(self.table)
+        self.assertEqual(headline["revalidateExhausted"], 1)
+        parked = headline["parkedSheets"]
+        self.assertEqual(parked[0]["revalidateAttempts"], 3)
+        self.assertEqual(parked[0]["taskId"], task["taskId"])
 
 
 class RouteTests(BoardTestCase):

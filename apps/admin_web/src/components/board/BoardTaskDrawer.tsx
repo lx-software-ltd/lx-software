@@ -5,6 +5,7 @@ import { BoardTaskId } from "./BoardTaskId";
 import { BoardToolCallList } from "./BoardToolCallList";
 import { DateTimeDisplay } from "../ui";
 import {
+  CATALOG_MAX_REVALIDATE_ATTEMPTS,
   canForceCatalogImport,
   canImportCatalogTask,
   canReimportCatalogTask,
@@ -362,6 +363,7 @@ function TaskBody({
           importPhase={task.importPhase}
           importError={task.importError}
           importAttempts={task.importAttempts}
+          revalidateAttempts={task.revalidateAttempts}
           lastImportAttemptAt={task.lastImportAttemptAt}
           importResult={task.importResult}
           message={importMessage}
@@ -405,6 +407,7 @@ function CatalogImportPanel({
   importPhase,
   importError,
   importAttempts,
+  revalidateAttempts,
   lastImportAttemptAt,
   importResult,
   message,
@@ -415,6 +418,7 @@ function CatalogImportPanel({
   readonly importPhase?: string;
   readonly importError?: string;
   readonly importAttempts?: number;
+  readonly revalidateAttempts?: number;
   readonly lastImportAttemptAt?: string;
   readonly importResult?: BoardCatalogImportResult | null;
   readonly message?: string | null;
@@ -432,6 +436,14 @@ function CatalogImportPanel({
       ) : null}
       {importSkipped ? <p className="small mb-1">Skipped — district stays claimed, no organisations sent.</p> : null}
       {importPhase && !importedAt ? <p className="small mb-1">Phase: {importPhase.replace(/_/g, " ")}</p> : null}
+      {typeof revalidateAttempts === "number" && revalidateAttempts > 0 ? (
+        <p className="small mb-1">
+          Automatic re-validation: {revalidateAttempts}/{CATALOG_MAX_REVALIDATE_ATTEMPTS}
+          {revalidateAttempts >= CATALOG_MAX_REVALIDATE_ATTEMPTS
+            ? " — stopped; Preview or Requeue to try again"
+            : ""}
+        </p>
+      ) : null}
       {importError ? <div className="alert alert-danger py-2 small mb-2">{importError}</div> : null}
       {message ? <div className="alert alert-warning py-2 small mb-2">{message}</div> : null}
       {preview?.error ? <div className="alert alert-danger py-2 small mb-2">{preview.error}</div> : null}

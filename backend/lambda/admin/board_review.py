@@ -452,6 +452,8 @@ def _headline_lines(review: dict[str, Any]) -> list[str]:
             waiting = int(catalog.get("collisions") or 0) + int(catalog.get("rejected") or 0)
             if waiting:
                 bits.append(f"{waiting} waiting on you")
+            if catalog.get("revalidateExhausted"):
+                bits.append(f"{catalog.get('revalidateExhausted')} automatic retries exhausted")
         lines.append("Catalog: " + ", ".join(bits) + ".")
     pipeline = headline.get("pipeline") or {}
     if pipeline.get("weeklyTarget"):
