@@ -779,6 +779,7 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
         name: String(body.name ?? ""),
         kind: String(body.kind ?? "competitor"),
         urls: Array.isArray(body.urls) ? body.urls.map(String) : [],
+        ...(typeof body.district === "string" && body.district.trim() ? { district: body.district.trim() } : {}),
         appIds: typeof body.appIds === "object" && body.appIds ? (body.appIds as Record<string, string>) : {},
         createdAt: new Date().toISOString(),
       };
@@ -800,12 +801,17 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
     }
     if (method === "PUT") {
       const body = parseBody(init);
-      state.watches[idx] = {
+      const next = {
         ...state.watches[idx],
         ...(typeof body.name === "string" ? { name: body.name } : {}),
         ...(typeof body.kind === "string" ? { kind: body.kind } : {}),
         ...(Array.isArray(body.urls) ? { urls: body.urls.map(String) } : {}),
       };
+      if (typeof body.district === "string") {
+        if (body.district.trim()) next.district = body.district.trim();
+        else delete next.district;
+      }
+      state.watches[idx] = next;
       return json({ watch: state.watches[idx] });
     }
   }

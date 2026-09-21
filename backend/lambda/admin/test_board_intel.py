@@ -312,9 +312,15 @@ class RouteTests(BoardTestCase):
         status, body = self.call(
             "/siu-tin-dei/board/watchlist",
             "POST",
-            {"name": "Kiztopia", "kind": "competitor", "urls": ["https://kiztopia.example/pricing"]},
+            {
+                "name": "Kiztopia",
+                "kind": "competitor",
+                "urls": ["https://kiztopia.example/pricing"],
+                "district": "Kwun Tong",
+            },
         )
         self.assertEqual(status, 201)
+        self.assertEqual(body["watch"]["district"], "Kwun Tong")
         watch_id = body["watch"]["watchId"]
         status, body = self.call("/siu-tin-dei/board/watchlist")
         self.assertEqual(status, 200)
@@ -322,10 +328,25 @@ class RouteTests(BoardTestCase):
         status, body = self.call(
             f"/siu-tin-dei/board/watchlist/{watch_id}",
             "PUT",
-            {"kind": "directory"},
+            {"kind": "listingsIndex", "district": "tung chung"},
         )
         self.assertEqual(status, 200)
-        self.assertEqual(body["watch"]["kind"], "directory")
+        self.assertEqual(body["watch"]["kind"], "listingsIndex")
+        self.assertEqual(body["watch"]["district"], "Islands")
+        status, body = self.call(
+            f"/siu-tin-dei/board/watchlist/{watch_id}",
+            "PUT",
+            {"district": ""},
+        )
+        self.assertEqual(status, 200)
+        self.assertNotIn("district", body["watch"])
+        status, body = self.call(
+            f"/siu-tin-dei/board/watchlist/{watch_id}",
+            "PUT",
+            {"district": "Narnia"},
+        )
+        self.assertEqual(status, 400)
+        self.assertIn("district", body["message"].lower())
         status, body = self.call("/siu-tin-dei/board/changes", query="days=7")
         self.assertEqual(status, 200)
         self.assertEqual(body["changes"], [])

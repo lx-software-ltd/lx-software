@@ -228,4 +228,26 @@ describe("mockAdminFetch", () => {
     const plain = (await withoutPr.json()) as { task: { eventRef?: unknown } };
     expect(plain.task.eventRef).toBeNull();
   });
+
+  it("persists an optional district on a listingsIndex watch", async () => {
+    const created = await mockAdminFetch("/siu-tin-dei/board/watchlist", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Classbee Tung Chung",
+        kind: "listingsIndex",
+        urls: ["https://classbee.hk/activities/area/tung_chung"],
+        district: "Islands",
+      }),
+    });
+    expect(created.status).toBe(201);
+    const body = (await created.json()) as { watch: { watchId: string; district?: string } };
+    expect(body.watch.district).toBe("Islands");
+    const updated = await mockAdminFetch(`/siu-tin-dei/board/watchlist/${body.watch.watchId}`, {
+      method: "PUT",
+      body: JSON.stringify({ district: "" }),
+    });
+    expect(updated.status).toBe(200);
+    const next = (await updated.json()) as { watch: { district?: string } };
+    expect(next.watch.district).toBeUndefined();
+  });
 });

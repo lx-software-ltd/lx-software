@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import html
 import re
 from datetime import datetime
+from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlparse
 
@@ -24,6 +26,99 @@ CURSOR_CACHE = "catalog:discovery:cursor"
 NAME_LINE = re.compile(r"^(?:[-*•]\s*)?([A-Z][\w'&.\-]{2,}(?:\s+[A-Za-z0-9'&.\-]{2,}){0,8})\s*$")
 ANCHOR = re.compile(r"<a\b[^>]*>([^<]{4,80})</a>", re.I)
 HEADING = re.compile(r"<h[1-3]\b[^>]*>([^<]{4,80})</h[1-3]>", re.I)
+_CHROME_TAGS = frozenset({"nav", "header", "footer", "script", "style", "noscript"})
+PAGE_TITLE_NAME = re.compile(
+    r"^(kids['’]? activities in |browse |all activities\b|activities in )",
+    re.I,
+)
+# Site chrome extracted as if it were a listing (Classbee nav, Whizpa directory filters).
+CHROME_NAMES = frozenset(
+    board_catalog_candidates.norm_name(label)
+    for label in (
+        "About",
+        "All Classes",
+        "Back",
+        "Browse",
+        "Browse Activities",
+        "Browse All Activities",
+        "Career",
+        "Category",
+        "Collections",
+        "Columnists",
+        "Coming Up",
+        "Community Culture",
+        "Contact",
+        "Contact Us",
+        "Cookie Policy",
+        "Cookies",
+        "Education organisations",
+        "English",
+        "Events",
+        "Experiences",
+        "Facebook",
+        "For providers",
+        "Get listed",
+        "Guides",
+        "Health Psychology",
+        "Home",
+        "Instagram",
+        "Learn more",
+        "LinkedIn",
+        "Local School",
+        "Local School 2",
+        "Login",
+        "Log in",
+        "Menu",
+        "More",
+        "News",
+        "Next",
+        "Opinions",
+        "Parenthood",
+        "Previous",
+        "Privacy",
+        "Privacy Disclaimer",
+        "Privacy Policy",
+        "Read more",
+        "Search",
+        "See more",
+        "Show more",
+        "Sign in",
+        "Sign up",
+        "Skip to main content",
+        "Special Education",
+        "STEAM",
+        "Studios",
+        "Subscribe",
+        "Terms",
+        "Terms of Use",
+        "Try First",
+        "Twitter",
+        "Unsubscribe",
+        "View all",
+        "YouTube",
+        "中文",
+        "繁體",
+        "简体",
+        "移至主內容",
+        "最新資訊",
+        "親子教養",
+        "健康與心理",
+        "STEAM教育",
+        "本地學校",
+        "海外升學",
+        "職業規劃",
+        "社會與文化",
+        "特殊教育",
+        "家庭活動",
+        "專欄分享",
+        "專欄作家",
+        "教育機構",
+        "聯絡我們",
+        "官立中學",
+        "直資中學",
+        "國際學校",
+    )
+)
 
 
 def _district_names() -> list[str]:
@@ -125,25 +220,95 @@ def refresh_open_data(table: Any) -> dict[str, Any]:
     return notes
 
 
+class _ChromeStripper(HTMLParser):
+    """Drop nav/header/footer/script/style so listing regexes never see chrome."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self._depth = 0
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        if tag in _CHROME_TAGS:
+            self._depth += 1
+            return
+        if self._depth:
+            return
+        self.parts.append(self.get_starttag_text() or f"<{tag}>")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in _CHROME_TAGS:
+            self._depth = max(0, self._depth - 1)
+            return
+        if self._depth:
+            return
+        self.parts.append(f"</{tag}>")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        if tag in _CHROME_TAGS or self._depth:
+            return
+        self.parts.append(self.get_starttag_text() or f"<{tag} />")
+
+    def handle_data(self, data: str) -> None:
+        if not self._depth:
+            self.parts.append(data)
+
+    def handle_entityref(self, name: str) -> None:
+        if not self._depth:
+            self.parts.append(f"&{name};")
+
+    def handle_charref(self, name: str) -> None:
+        if not self._depth:
+            self.parts.append(f"&#{name};")
+
+
+def _strip_chrome_html(blob: str) -> str:
+    parser = _ChromeStripper()
+    try:
+        parser.feed(blob or "")
+        parser.close()
+    except Exception:
+        return blob or ""
+    return "".join(parser.parts)
+
+
+def _clean_listing_name(raw: str) -> str:
+    name = html.unescape(" ".join(str(raw).split()))
+    return name.strip(" \t\n\r-–—·|:;")
+
+
+def _is_chrome_name(name: str) -> bool:
+    key = board_catalog_candidates.norm_name(name)
+    if not key or key in CHROME_NAMES:
+        return True
+    if PAGE_TITLE_NAME.search(name):
+        return True
+    if "http" in name.lower():
+        return True
+    return False
+
+
 def extract_listing_names(html_or_text: str) -> list[str]:
     """Names only — never copy competitor descriptions or photos."""
     names: list[str] = []
     seen: set[str] = set()
-    blob = html_or_text or ""
+    blob = _strip_chrome_html(html_or_text or "")
     for pattern in (ANCHOR, HEADING):
         for match in pattern.findall(blob):
-            name = " ".join(str(match).split())
+            name = _clean_listing_name(match)
             key = board_catalog_candidates.norm_name(name)
-            if 3 < len(name) < 80 and key and key not in seen:
+            if 3 < len(name) < 80 and key and key not in seen and not _is_chrome_name(name):
                 seen.add(key)
                 names.append(name)
     for line in blob.splitlines():
         match = NAME_LINE.match(line.strip())
         if not match:
             continue
-        name = match.group(1).strip()
+        name = _clean_listing_name(match.group(1))
         key = board_catalog_candidates.norm_name(name)
-        if key and key not in seen and "http" not in name.lower():
+        if key and key not in seen and not _is_chrome_name(name):
             seen.add(key)
             names.append(name)
         if len(names) >= 80:
@@ -151,29 +316,47 @@ def extract_listing_names(html_or_text: str) -> list[str]:
     return names[:80]
 
 
+def resolve_listings_district(watch: dict[str, Any], url: str, _text: str = "") -> str:
+    """Prefer an area slug on the page URL, then the watch district.
+
+    City-wide index HTML is not used: the first district token on the page is
+    usually a single card or footer, not the listing set.
+    """
+    from_url = board_hk.district_from_url(url)
+    if from_url != "unknown":
+        return from_url
+    watch_district = board_hk.canonical_district(str(watch.get("district") or ""))
+    if watch_district != "unknown":
+        return watch_district
+    return "unknown"
+
+
 def ingest_listings_page(table: Any, watch: dict[str, Any], text: str, url: str) -> int:
     host = (urlparse(url).netloc or "").lower()
     names = extract_listing_names(text)
-    page_district = str(watch.get("district") or "")
-    if not page_district or page_district == "unknown":
-        guessed = board_hk.district_from_address(text)
-        page_district = guessed if guessed != "unknown" else ""
+    page_district = resolve_listings_district(watch, url, text)
     n = 0
     for name in names:
-        district = page_district
         board_catalog_candidates.upsert_candidate(
             table,
             {
                 "source": "competitor",
                 "sourceId": f"{host}:{board_catalog_candidates.norm_name(name)}"[:80],
                 "nameEn": name,
-                "district": district or "unknown",
+                "district": page_district,
                 "officialUrl": "",
                 "facilityKind": "competitor",
             },
         )
         n += 1
-    _log_event("info", tag="board_catalog_listings_index", host=host[:80], names=n, watch=str(watch.get("watchId") or ""))
+    _log_event(
+        "info",
+        tag="board_catalog_listings_index",
+        host=host[:80],
+        names=n,
+        district=page_district,
+        watch=str(watch.get("watchId") or ""),
+    )
     return n
 
 

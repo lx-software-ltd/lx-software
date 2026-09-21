@@ -1941,6 +1941,7 @@ export type BoardWatch = {
   readonly name: string;
   readonly kind: string;
   readonly urls: readonly string[];
+  readonly district?: string;
   readonly appIds?: Readonly<Record<string, string>>;
   readonly socialHandles?: readonly string[];
   readonly seenWeeks?: readonly string[];
@@ -1953,6 +1954,7 @@ export type BoardWatchWrite = {
   readonly name?: string;
   readonly kind?: string;
   readonly urls?: readonly string[];
+  readonly district?: string;
   readonly appIds?: Readonly<Record<string, string>>;
   readonly socialHandles?: readonly string[];
 };

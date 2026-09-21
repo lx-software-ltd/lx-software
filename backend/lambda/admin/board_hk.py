@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from urllib.parse import unquote, urlparse
 
 HKT = timezone(timedelta(hours=8))
 
@@ -73,6 +74,8 @@ HK_DISTRICTS: tuple[tuple[str, str], ...] = (
     ("青衣", "Kwai Tsing"),
     ("Islands", "Islands"),
     ("離島", "Islands"),
+    ("Discovery Bay", "Islands"),
+    ("愉景灣", "Islands"),
     ("Tung Chung", "Islands"),
     ("東涌", "Islands"),
     ("Kwun Tong", "Kwun Tong"),
@@ -95,6 +98,8 @@ HK_DISTRICTS: tuple[tuple[str, str], ...] = (
     ("中西區", "Central and Western"),
     ("Central", "Central and Western"),
     ("中環", "Central and Western"),
+    ("Causeway Bay", "Wan Chai"),
+    ("銅鑼灣", "Wan Chai"),
     ("Wan Chai", "Wan Chai"),
     ("灣仔", "Wan Chai"),
     ("Eastern", "Eastern"),
@@ -137,6 +142,30 @@ def district_from_address(address: str) -> str:
         if token.lower() in text.lower() or token in text:
             return district
     return "unknown"
+
+
+def canonical_district(value: str) -> str:
+    """Map a label, alias or slug to an 18-district name, else ``unknown``."""
+    text = (value or "").strip()
+    if not text:
+        return "unknown"
+    keyed = {name.lower(): name for name in DISTRICT_CENTERS}
+    if text.lower() in keyed:
+        return keyed[text.lower()]
+    return district_from_address(text.replace("_", " ").replace("-", " "))
+
+
+def district_from_url(url: str) -> str:
+    """Guess a district from path slugs such as ``/activities/area/tung_chung``."""
+    parsed = urlparse(url or "")
+    parts: list[str] = []
+    for seg in unquote(parsed.path or "").split("/"):
+        if seg:
+            parts.append(seg.replace("-", " ").replace("_", " "))
+    query = unquote(parsed.query or "").replace("&", " ").replace("=", " ").replace("+", " ")
+    if query:
+        parts.append(query)
+    return district_from_address(" ".join(parts))
 
 
 def is_hk_address(address: str) -> bool:

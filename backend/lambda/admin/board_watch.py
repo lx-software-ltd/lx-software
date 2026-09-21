@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
+import board_hk
 import board_store
 from contract_constants import BOARD_STAFF_WATCH_KINDS
 from http_common import _log_event
@@ -85,6 +86,17 @@ class WatchError(ValueError):
     """Watchlist request is invalid."""
 
 
+def _watch_district(raw: Any) -> str:
+    """Optional 18-district label stored on the watch (blank = guess per page)."""
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    district = board_hk.canonical_district(text)
+    if district == "unknown":
+        raise WatchError("district must be a Hong Kong 18-district name")
+    return district
+
+
 def _domain(url: str) -> str:
     host = (urlparse(url).netloc or "").lower()
     if host.startswith("www."):
@@ -153,12 +165,15 @@ def add_watch(table: Any, body: dict[str, Any]) -> dict[str, Any]:
         "name": name[:200],
         "kind": kind,
         "urls": urls[:20],
+        "district": _watch_district(body.get("district")),
         "appIds": body.get("appIds") if isinstance(body.get("appIds"), dict) else {},
         "socialHandles": [str(x) for x in (body.get("socialHandles") or []) if str(x).strip()][:12],
         "seenWeeks": list(body.get("seenWeeks") or []),
         "createdAt": now,
         "updatedAt": now,
     }
+    if not doc["district"]:
+        doc.pop("district")
     board_store.put_watch(table, doc)
     return public_watch(doc)
 
@@ -182,6 +197,12 @@ def update_watch(table: Any, watch_id: str, body: dict[str, Any]) -> dict[str, A
         existing["appIds"] = body["appIds"]
     if "socialHandles" in body and isinstance(body.get("socialHandles"), list):
         existing["socialHandles"] = [str(x) for x in body["socialHandles"] if str(x).strip()][:12]
+    if "district" in body:
+        district = _watch_district(body.get("district"))
+        if district:
+            existing["district"] = district
+        else:
+            existing.pop("district", None)
     existing["updatedAt"] = board_store.now_iso()
     board_store.put_watch(table, existing)
     return public_watch(existing)
