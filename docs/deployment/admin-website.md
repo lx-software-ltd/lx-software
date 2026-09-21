@@ -578,6 +578,10 @@ missing/empty, ingests a source in-process
 when it has ≤ 500 rows, and queues 500-row `ingest` jobs when it is
 larger (EDB today; any later feed over that size uses the same path).
 Owner Preview / Import of a large source run those chunks first.
+Bulk Import waits 20 s per siutindei hop (a 50-org batch has taken 8.5 s).
+A read timeout on one batch leaves that batch `approved` and continues
+the rest; click Import again for leftovers. Sync sheet **Import now**
+still uses the 8 s cap so API Gateway cannot 504.
 Open-data rows gzip to `board/{BOARD_KEY}/opendata/{name}.json.gz`;
 Dynamo only stores a pointer so a large file cannot exceed the 400 KB
 item limit. An empty official fetch (no `fetchedAt`, or zero rows) writes review gap `opendata-{source}`.

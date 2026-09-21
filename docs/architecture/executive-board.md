@@ -449,7 +449,11 @@ outreach). An official fetch with empty `fetchedAt` or zero rows writes daily-re
 gap `opendata-{source}` and a later success clears it. Owner
 `GET …/catalog/sources`, `POST …/catalog/bulk/{source}/preview|import`
 and `POST …/catalog/discovery/run` return `200 {queued}` and run on
-`AdminApiFn` via `try_invoke_event` (HTTP API 30 s). A bulk job that
+`AdminApiFn` via `try_invoke_event` (HTTP API 30 s). Bulk live import
+waits 20 s per siutindei hop (sync owner sheet import stays at 8 s so
+the HTTP API cannot 504). A read timeout on one 50-org batch is a
+`CatalogImportError`; later batches still run and the job finishes
+`done` with `ok: false` plus the first batch error. A bulk job that
 raises writes `phase: error` so Progress does not stay on
 `running`. The listing mirror seeds once per invocation and skips keys
 already present. Places `discover` caches every page count. Batches of

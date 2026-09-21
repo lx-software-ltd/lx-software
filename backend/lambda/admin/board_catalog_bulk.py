@@ -353,7 +353,11 @@ def import_source(
     imported_ids: list[str] = []
     for batch, rows in zip(_batches(orgs, BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT), _batches(approved, BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT)):
         try:
-            imported = board_catalog_import._run_remote_import({"organizations": batch}, token)  # noqa: SLF001
+            imported = board_catalog_import._run_remote_import(  # noqa: SLF001
+                {"organizations": batch},
+                token,
+                timeout=board_catalog_import._BULK_IMPORT_HTTP_TIMEOUT,
+            )
         except board_catalog_import.CatalogImportError as exc:
             results.append({"ok": False, "error": str(exc)[:300]})
             continue
@@ -601,25 +605,32 @@ def handle_job(event: dict[str, Any]) -> dict[str, Any]:
         else:
             raise BulkImportError(f"unknown catalog bulk action {action}")
         prior = _job(table, source) or {}
-        _put_job(
-            table,
-            source,
-            {
-                "phase": "done",
-                "action": action,
-                "at": board_store.now_iso(),
-                "ok": out.get("ok"),
-                "imported": out.get("imported"),
-                "approved": out.get("approved") or (out.get("preview") or {}).get("approved"),
-                "fetched": prior.get("fetched") or event.get("fetched") or (out.get("ingest") or {}).get("fetched"),
-                "upserted": prior.get("upserted") or event.get("upserted") or (out.get("ingest") or {}).get("upserted"),
-                "skippedDuplicates": prior.get("skippedDuplicates")
-                or event.get("skippedDuplicates")
-                or (out.get("ingest") or {}).get("skippedDuplicates"),
-                "processed": prior.get("processed") or event.get("processed") or (out.get("ingest") or {}).get("processed"),
-                "remaining": 0,
-            },
-        )
+        job_doc: dict[str, Any] = {
+            "phase": "done",
+            "action": action,
+            "at": board_store.now_iso(),
+            "ok": out.get("ok"),
+            "imported": out.get("imported"),
+            "approved": out.get("approved") or (out.get("preview") or {}).get("approved"),
+            "fetched": prior.get("fetched") or event.get("fetched") or (out.get("ingest") or {}).get("fetched"),
+            "upserted": prior.get("upserted") or event.get("upserted") or (out.get("ingest") or {}).get("upserted"),
+            "skippedDuplicates": prior.get("skippedDuplicates")
+            or event.get("skippedDuplicates")
+            or (out.get("ingest") or {}).get("skippedDuplicates"),
+            "processed": prior.get("processed") or event.get("processed") or (out.get("ingest") or {}).get("processed"),
+            "remaining": 0,
+        }
+        if out.get("ok") is False:
+            batch_errors = [
+                str(row.get("error"))
+                for row in (out.get("batches") or [])
+                if isinstance(row, dict) and row.get("error")
+            ]
+            if batch_errors:
+                job_doc["error"] = batch_errors[0][:300]
+            elif out.get("error"):
+                job_doc["error"] = str(out.get("error"))[:300]
+        _put_job(table, source, job_doc)
         return out
     except (BulkImportError, board_catalog_import.CatalogImportError) as exc:
         _put_job(
