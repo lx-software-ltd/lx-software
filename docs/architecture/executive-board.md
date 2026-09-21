@@ -318,8 +318,9 @@ after 90 days.
 Send path (off until `SiutindeiBoardMailSendingEnabled=true` and
 DKIM / SPF / DMARC are in the zone): replies go out from the mailbox the
 thread was addressed to; `mail_send` refuses a recipient that is not a
-known `contact#N` alias, an already-mapped address, or an own-domain
-mailbox (`recipient not sourced`). Recipients outside the allow-list always need an
+known `contact#N` alias or an own-domain mailbox (`recipient not sourced`) —
+a raw address is refused even when it was already aliased, so an invented
+recipient cannot reach Approvals. Recipients outside the allow-list always need an
 Approval. The digest sends from `board@`, invoices from `billing@`, lead
 relays and notifications from `hello@`, newsletters from `news@`. **Mail →
 Send test email** (`POST …/mail/selftest`) checks SES `GetEmailIdentity` /
