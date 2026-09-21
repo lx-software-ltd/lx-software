@@ -1107,22 +1107,28 @@ def _task_text(table: Any, task: dict[str, Any], explicit: str | None) -> str:
     return board_staff.read_deliverable(task, limit=12000)
 
 
-def names_from_brief(brief: str) -> set[str]:
-    """Parse ``for A, B, and C in District`` from a describe/enrich brief.
+# ``compose_enrich_brief`` writes "… price_note for A, B, and C in District (hint)".
+_BRIEF_ENRICH_NAMES = re.compile(
+    r"price_note\s+for\s+(?P<names>.+?)\s+in\s+[^(\n]+?\s*\(",
+    re.IGNORECASE | re.DOTALL,
+)
+# Owner-written briefs: the first "for A, B in District" clause, stopped at
+# the sentence end so a later contract paragraph cannot be swallowed.
+_BRIEF_FOR_NAMES = re.compile(
+    r"\bfor\s+(?P<names>[^.\n]+?)\s+in\s+[A-Z][^,.(\n]*",
+)
 
-    Walks back from the last `` in `` to the nearest `` for `` so an earlier
-    "for parents" does not swallow the list. Splits on commas only — names
-    that contain ``and`` stay intact.
+
+def names_from_brief(brief: str) -> set[str]:
+    """Parse the organisation list from a describe/enrich brief.
+
+    Splits on commas only — names that contain ``and`` stay intact.
     """
     text = brief or ""
-    lower = text.casefold()
-    idx_in = lower.rfind(" in ")
-    if idx_in < 0:
+    match = _BRIEF_ENRICH_NAMES.search(text) or _BRIEF_FOR_NAMES.search(text)
+    if not match:
         return set()
-    starts = [m.end() for m in re.finditer(r"(?:^|\s)for\s+", lower) if m.end() <= idx_in]
-    if not starts:
-        return set()
-    chunk = text[starts[-1] : idx_in]
+    chunk = match.group("names")
     skip = {"the organisations already imported for this district", "the organisations"}
     out: set[str] = set()
     for part in chunk.split(","):

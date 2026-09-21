@@ -1813,13 +1813,16 @@ class StaffStepTests(ToolsTestCase):
         cleaned = board_store.normalize_staff_config({"modelBySeat": {"engineer-1": "openai/gpt-nope", "support": "deepseek/deepseek-chat"}})
         self.assertNotIn("engineer-1", cleaned["modelBySeat"])
         self.assertEqual(cleaned["modelBySeat"]["support"], "deepseek/deepseek-chat")
-        self.assertEqual(cleaned["modelBySeat"]["content-marketer"], "qwen/qwen-2.5-72b-instruct")
+        # The content-marketer default is a one-time migration, not a read-time force,
+        # so the owner can clear it later.
+        self.assertNotIn("content-marketer", cleaned["modelBySeat"])
+        self.assertEqual(board_store.default_staff_config()["modelBySeat"]["content-marketer"], "qwen/qwen-2.5-72b-instruct")
 
     def test_ensure_autonomy_defaults_persists_model_and_hold(self) -> None:
         board_store._put_state(  # noqa: SLF001
             self.table,
             "settings",
-            {"staff": {"enabled": True}, "boundaries": {}, "version": 1},
+            {"staff": {"enabled": True}, "boundaries": {"holds": {"catalog_import": 24}}, "version": 1},
         )
         out = board_store.ensure_autonomy_defaults(self.table)
         self.assertEqual(out["staff"]["modelBySeat"]["content-marketer"], "qwen/qwen-2.5-72b-instruct")
@@ -1831,6 +1834,24 @@ class StaffStepTests(ToolsTestCase):
         self.assertNotIn("catalog_import", stored["boundaries"].get("holdOverrides") or {})
         again = board_store.ensure_autonomy_defaults(self.table)
         self.assertEqual(again["version"], out["version"])
+        # Owner edits after the migration are respected on later ticks.
+        edited = board_store.load_settings(self.table)
+        edited["boundaries"]["holds"]["catalog_import"] = 24
+        edited["staff"]["modelBySeat"].pop("content-marketer", None)
+        board_store.save_settings(self.table, edited)
+        later = board_store.ensure_autonomy_defaults(self.table)
+        self.assertEqual(later["boundaries"]["holds"]["catalog_import"], 24)
+        self.assertNotIn("content-marketer", later["staff"]["modelBySeat"])
+
+    def test_ensure_autonomy_defaults_respects_ramp_override(self) -> None:
+        board_store._put_state(  # noqa: SLF001
+            self.table,
+            "settings",
+            {"boundaries": {"holds": {"catalog_import": 0}, "holdOverrides": {"catalog_import": 0}}, "version": 1},
+        )
+        out = board_store.ensure_autonomy_defaults(self.table)
+        self.assertEqual(out["boundaries"]["holds"]["catalog_import"], 0)
+        self.assertEqual(out["boundaries"]["holdOverrides"]["catalog_import"], 0)
 
     def test_review_flag_line_names_salvaged(self) -> None:
         line = board_staff._review_flag_line({"flags": ["salvaged", "no_evidence"]})  # noqa: SLF001

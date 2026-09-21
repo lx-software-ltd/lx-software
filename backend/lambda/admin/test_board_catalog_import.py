@@ -348,11 +348,19 @@ class TransformTests(unittest.TestCase):
         self.assertIn("galaxy sports asia", names)
         self.assertIn("kids club at tung chung", names)
         self.assertIn("tung chung north park", names)
-        split = board_catalog_import.names_from_brief(
-            "notes for parents go here; write descriptions for Sports and Recreation Centre in Eastern"
+        import board_catalog
+
+        real = board_catalog_import.names_from_brief(
+            board_catalog.compose_enrich_brief(
+                {"name": "Islands", "hint": "LCSD Tung Chung North Park first"},
+                ["Galaxy Sports Asia", "Kids Club at Tung Chung", "Sports and Recreation Centre"],
+            )
         )
-        self.assertIn("sports and recreation centre", split)
-        self.assertNotIn("sports", split)
+        self.assertEqual(real, {"galaxy sports asia", "kids club at tung chung", "sports and recreation centre"})
+        split = board_catalog_import.names_from_brief(
+            "Write descriptions for Sports and Recreation Centre, Happy Park in Eastern. Read only official pages."
+        )
+        self.assertEqual(split, {"sports and recreation centre", "happy park"})
         task = {
             "eventRef": {"kind": "catalog-enrich", "orgNames": ["Repulse Bay Beach"]},
             "brief": "for Stanley Plaza in Southern",

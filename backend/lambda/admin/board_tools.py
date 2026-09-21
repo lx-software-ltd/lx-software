@@ -3084,7 +3084,10 @@ def _union_github_labels(arguments: dict[str, Any]) -> dict[str, Any]:
     for name in [*existing, *wanted]:
         if name and name not in merged:
             merged.append(name)
-    return {**arguments, "labels": merged[:20]}
+    # op_set_labels re-cleans to 10; a longer union would drop a requested label.
+    if len(merged) > 10:
+        raise board_github.GitHubSnapshotError("label union exceeds 10; leave as a proposal")
+    return {**arguments, "labels": merged}
 
 
 def _cto_security_issue(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> bool:

@@ -430,14 +430,13 @@ def maybe_queue_auto_imports(table: Any, settings: dict[str, Any]) -> dict[str, 
     if not board_catalog_import.import_enabled() or not board_catalog_import.configured():
         return {"queued": []}
     counts = board_catalog_candidates.counts_by_source(table)
+    held_sources = _held_bulk_sources(table)
     ready: list[tuple[int, str]] = []
     for source in BOARD_CATALOG_BULK_SOURCES:
         approved = int((counts.get(source) or {}).get("approved") or 0)
         if approved < BOARD_CATALOG_AUTO_BULK_MIN_APPROVED:
             continue
-        if _job_is_active(_job(table, source)):
-            continue
-        if _open_bulk_hold(table, source):
+        if source in held_sources or _job_is_active(_job(table, source)):
             continue
         ready.append((approved, source))
     if not ready:
@@ -448,12 +447,15 @@ def maybe_queue_auto_imports(table: Any, settings: dict[str, Any]) -> dict[str, 
     return {"queued": [source], **out}
 
 
-def _open_bulk_hold(table: Any, source: str) -> dict[str, Any] | None:
+def _held_bulk_sources(table: Any) -> set[str]:
+    out: set[str] = set()
     for hold in board_store.list_holds(table, "scheduled", limit=400):
-        args = hold.get("arguments") or {}
-        if str(hold.get("op") or "") == "catalog_bulk_import" and str(args.get("source") or "") == source:
-            return hold
-    return None
+        if str(hold.get("op") or "") != "catalog_bulk_import":
+            continue
+        source = str((hold.get("arguments") or {}).get("source") or "")
+        if source:
+            out.add(source)
+    return out
 
 
 def _schedule_or_run_bulk(

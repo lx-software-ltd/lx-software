@@ -559,10 +559,11 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
   rows are namespaced. Refused for an inactive seat or a closed action.
 - **Tick** (`…-board-staff-tick`, every 5 minutes, `internal:
   board_staff_tick`; also **Staff → Run staff tick now**, which queues the
-  same work via a 2 s Event invoke): persist autonomy defaults
+  same work via a 2 s Event invoke): one-time autonomy-defaults migration
   (`staff.modelBySeat.content-marketer` =
-  `qwen/qwen-2.5-72b-instruct`, `holds.catalog_import` 2) when
-  those keys are still unset → expire stale holds → evaluate
+  `qwen/qwen-2.5-72b-instruct`, `holds.catalog_import` 2 unless a ramp
+  override exists; recorded in the `autonomy_defaults` state row so later
+  owner edits are never re-applied) → expire stale holds → evaluate
   breakers → execute due holds → expire pending approvals that carry
   `autoRejectAt` and are due (`approvalExpiryHours` 168; legacy rows without
   the stamp are left for the founder) → schedule one auto bulk-import
@@ -580,7 +581,8 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
 - Per-seat step models: `settings.staff.modelBySeat` (Staff tab → Step
   model), falling back to `limits.stepModels` then the tier model.
   Default: `content-marketer` → `qwen/qwen-2.5-72b-instruct` so Sunday
-  content planning skips the DeepSeek / Novita route. A 403 or other
+  content planning skips the DeepSeek / Novita route (written once by the
+  tick migration; the owner can change or clear it afterwards). A 403 or other
   retryable OpenRouter error retries the same step once on the other
   `stepModels` entry unless the seat has an explicit `modelBySeat`
   pin (then the retry stays on that model); a 402 re-queues the task

@@ -1175,6 +1175,47 @@ class AutonomyCatalogTests(BoardTestCase):
         self.assertIsNone(board_catalog_bulk._job(self.table, "swd"))  # noqa: SLF001
         again = board_catalog_bulk.maybe_queue_auto_imports(self.table, settings)
         self.assertEqual(again.get("queued"), [])
+        # When the hold executes, the bulk job is queued as "auto".
+        import board_holds
+
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        with (
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "import_enabled", return_value=True),
+            patch.object(board_async, "try_invoke_event", return_value=True) as invoke,
+        ):
+            ran = board_holds.execute_due(self.table, settings, "2099-01-01T00:00:00Z")
+        self.assertEqual(ran, 1)
+        latest = board_store.get_hold(self.table, holds[0]["holdId"])
+        self.assertEqual(latest.get("status"), "executed")
+        invoke.assert_called_once()
+        job = board_catalog_bulk._job(self.table, "swd")  # noqa: SLF001
+        self.assertEqual(job.get("action"), "import")
+        self.assertEqual(job.get("requestedBy"), "auto")
+
+    def test_auto_bulk_import_queues_immediately_when_ramp_promoted(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        for i in range(50):
+            board_catalog_candidates.upsert_candidate(
+                self.table,
+                {"source": "lcsd", "sourceId": f"lcsd-{i}", "nameEn": f"LCSD Park {i}", "district": "Eastern"},
+            )
+        settings = _enable_staff(self.table)
+        settings["catalog"] = {"autoImport": True}
+        settings["boundaries"]["holdOverrides"]["catalog_import"] = 0
+        settings = board_store.save_settings(self.table, settings)
+        with (
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "import_enabled", return_value=True),
+            patch.object(board_async, "try_invoke_event", return_value=True) as invoke,
+        ):
+            out = board_catalog_bulk.maybe_queue_auto_imports(self.table, settings)
+        self.assertEqual(out.get("queued"), ["lcsd"])
+        self.assertFalse(out.get("held"))
+        invoke.assert_called_once()
+        self.assertEqual(board_store.list_holds(self.table, "scheduled", limit=20), [])
 
 
 class CatalogImportActivityTests(unittest.TestCase):

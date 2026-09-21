@@ -318,6 +318,9 @@ def normalize_tools_config(raw: Any) -> dict[str, Any]:
     return out
 
 
+# Bump when a new founder default must be written once into stored settings.
+AUTONOMY_DEFAULTS_VERSION = 1
+
 DEFAULT_FIT_RUBRIC = (
     "Score 0–100. Start at 50. +20 if the organisation runs or hosts activities "
     "for children aged 0–12 in Hong Kong. +10 if it has a physical venue "
@@ -496,8 +499,6 @@ def normalize_staff_config(raw: Any) -> dict[str, Any]:
             if key in BOARD_STAFF_SEAT_IDS and value in allowed:
                 cleaned[key] = value
         out["modelBySeat"] = cleaned
-    for seat_id, model in BOARD_STAFF_DEFAULT_MODEL_BY_SEAT.items():
-        out["modelBySeat"].setdefault(seat_id, model)
     return out
 
 
@@ -735,32 +736,18 @@ def save_settings_retry(table: Any, apply: Any) -> dict[str, Any]:
 
 
 def ensure_autonomy_defaults(table: Any) -> dict[str, Any]:
-    """Persist founder-requested autonomy defaults when they are still unset.
+    """One-time migration of founder-requested autonomy defaults.
 
-    ``normalize_*`` already applies them at read time. Writing them once means
-    the SPA Settings page shows the live values after the next staff tick.
+    Writes ``staff.modelBySeat`` seats that are unset and
+    ``holds.catalog_import`` (unless a ramp override exists), then records
+    ``AUTONOMY_DEFAULTS_VERSION`` so later owner edits are never clobbered.
     """
-    stored = _get_state(table, "settings") or {}
-    stored_models = ((stored.get("staff") or {}) if isinstance(stored.get("staff"), dict) else {}).get(
-        "modelBySeat"
-    ) or {}
-    stored_overrides = (
-        ((stored.get("boundaries") or {}) if isinstance(stored.get("boundaries"), dict) else {}).get(
-            "holdOverrides"
-        )
-        or {}
-    )
-    stored_holds = (
-        ((stored.get("boundaries") or {}) if isinstance(stored.get("boundaries"), dict) else {}).get("holds")
-        or {}
-    )
-    need_models = any(seat not in stored_models for seat in BOARD_STAFF_DEFAULT_MODEL_BY_SEAT)
+    marker = _get_state(table, "autonomy_defaults") or {}
     try:
-        stored_hold_hours = int(stored_holds.get("catalog_import"))
+        applied = int(marker.get("version") or 0)
     except (TypeError, ValueError):
-        stored_hold_hours = None
-    need_hold = "catalog_import" not in stored_overrides and stored_hold_hours != BOARD_CATALOG_IMPORT_HOLD_HOURS
-    if not need_models and not need_hold:
+        applied = 0
+    if applied >= AUTONOMY_DEFAULTS_VERSION:
         return load_settings(table)
 
     def apply(current: dict[str, Any]) -> dict[str, Any]:
@@ -779,7 +766,13 @@ def ensure_autonomy_defaults(table: Any) -> dict[str, Any]:
         current["boundaries"] = normalize_boundaries(bounds)
         return current
 
-    return save_settings_retry(table, apply)
+    saved = save_settings_retry(table, apply)
+    _put_state(
+        table,
+        "autonomy_defaults",
+        {"version": AUTONOMY_DEFAULTS_VERSION, "appliedAt": now_iso()},
+    )
+    return saved
 
 
 # ---------------------------------------------------------------------------
