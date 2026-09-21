@@ -690,18 +690,39 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
     state.catalogJobs[source] = { phase: "queued", action: "import" };
     return json({ ok: true, queued: true, invoked: true, source, action: "import" });
   }
-  if (p.startsWith(`${board}/catalog/candidates`) && method === "GET") {
-    return json({
-      candidates: [
-        {
-          candidateId: "cand-1",
-          source: "competitor",
-          nameEn: "Example Playhouse",
-          district: "Sha Tin",
-          status: "new",
-        },
-      ],
+  if (p === `${board}/catalog/candidates` && method === "GET") {
+    const all = [
+      {
+        candidateId: "cand-1",
+        source: "competitor",
+        nameEn: "Example Playhouse",
+        district: "Sha Tin",
+        status: "new",
+      },
+    ];
+    const source = url.searchParams.get("source");
+    const district = url.searchParams.get("district");
+    const q = (url.searchParams.get("q") || "").toLowerCase();
+    const status = url.searchParams.get("status");
+    const filtered = all.filter((row) => {
+      if (status && row.status !== status) return false;
+      if (source && row.source !== source) return false;
+      if (district && row.district !== district) return false;
+      if (q && !`${row.nameEn} ${row.district} ${row.source}`.toLowerCase().includes(q)) return false;
+      return true;
     });
+    const cursor = Number(url.searchParams.get("cursor") || 0) || 0;
+    const limit = Number(url.searchParams.get("limit") || 20) || 20;
+    const page = filtered.slice(cursor, cursor + limit);
+    return json({
+      candidates: page,
+      nextCursor: cursor + limit < filtered.length ? cursor + limit : null,
+      total: filtered.length,
+    });
+  }
+  if (p === `${board}/catalog/candidates/bulk` && method === "POST") {
+    const body = parseBody(init);
+    return json({ updated: body.decision === "reject" ? 1 : 0, status: body.decision === "approve" ? "approved" : "rejected" });
   }
   if (p.endsWith("/approve") && p.includes("/catalog/candidates/") && method === "POST") {
     return json({ candidate: { candidateId: "cand-1", source: "competitor", nameEn: "Example Playhouse", district: "Sha Tin", status: "approved" } });

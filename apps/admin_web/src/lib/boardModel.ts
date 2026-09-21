@@ -1706,9 +1706,30 @@ export function boardCatalogBulkImportPath(source: string): string {
   return `${BOARD_API_BASE}/catalog/bulk/${encodeURIComponent(source)}/import`;
 }
 
-export function boardCatalogCandidatesPath(status?: string): string {
-  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
-  return `${BOARD_API_BASE}/catalog/candidates${qs}`;
+export type BoardCatalogCandidateQuery = {
+  readonly status?: string;
+  readonly source?: string;
+  readonly district?: string;
+  readonly q?: string;
+  readonly limit?: number;
+  readonly cursor?: number;
+};
+
+export function boardCatalogCandidatesPath(query?: string | BoardCatalogCandidateQuery): string {
+  const filters: BoardCatalogCandidateQuery = typeof query === "string" ? { status: query } : query ?? {};
+  const params = new URLSearchParams();
+  if (filters.status) params.set("status", filters.status);
+  if (filters.source) params.set("source", filters.source);
+  if (filters.district) params.set("district", filters.district);
+  if (filters.q) params.set("q", filters.q);
+  if (filters.limit != null) params.set("limit", String(filters.limit));
+  if (filters.cursor != null) params.set("cursor", String(filters.cursor));
+  const qs = params.toString();
+  return qs ? `${BOARD_API_BASE}/catalog/candidates?${qs}` : `${BOARD_API_BASE}/catalog/candidates`;
+}
+
+export function boardCatalogCandidatesBulkPath(): string {
+  return `${BOARD_API_BASE}/catalog/candidates/bulk`;
 }
 
 export function boardCatalogCandidateDecidePath(candidateId: string, decision: "approve" | "reject"): string {
