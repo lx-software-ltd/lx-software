@@ -664,6 +664,19 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
           lastPreview: null,
           job: state.catalogJobs.lcsd ?? null,
         },
+        {
+          id: "swd",
+          counts: { new: 0, approved: 3, imported: 0, rejected: 0, closed: 0 },
+          available: 3,
+          lastImport: null,
+          lastPreview: null,
+          job: state.catalogJobs.swd ?? {
+            phase: "running",
+            action: "ingest",
+            offset: 500,
+            remaining: 200,
+          },
+        },
       ],
     });
   }
