@@ -421,19 +421,19 @@ competitor `listingsIndex` names stay `new` until the owner decides.
 Daily 03:30 HKT `…-board-catalog-discovery` rotates
 `discoveryDistrictsPerDay` (3) districts through Places (Enterprise,
 30-day cache, `placesMonthlyCapUsd` 80), refreshes open data on Mondays,
-and drops Places hours/phone after `placesTtlDays` 30. Monday refresh
-ingests LCSD / SWD in-process and queues EDB kindergarten ingest as
-`board_catalog_bulk` `ingest` jobs of 500 rows (re-enqueued until the
-file is consumed); owner EDB Preview / Import run the same chunks
-before the dry-run. Official-source upsert merges an existing candidate
-instead of a listing-mirror `is_duplicate` pre-check. Open-data caches
-gzip to S3 `board/{BOARD_KEY}/opendata/{name}.json.gz` with a Dynamo
-pointer (`fetchedAt`, `rowCount`, `s3Key`) so the EDB CSV cannot blow
-the 400 KB item limit; a Dynamo `ValidationException` still returns the
-fetched rows and logs `board_opendata_cache_failed`. The EDB catalog
-cache is kindergarten-only (`keep_all` keeps every school for outreach).
-An official fetch with empty `fetchedAt` writes daily-review gap
-`opendata-{source}` and a later success clears it. Owner
+and drops Places hours/phone after `placesTtlDays` 30. Monday refresh fetches LCSD / EDB / SWD, then ingests in-process when
+the file fits one 500-row batch and queues a `board_catalog_bulk`
+`ingest` job when it does not (today that is EDB; any later feed over
+500 rows takes the same path). Owner Preview / Import of a large source
+run those chunks before the dry-run. Official-source upsert merges an
+existing candidate instead of a listing-mirror `is_duplicate` pre-check.
+Open-data caches gzip to S3 `board/{BOARD_KEY}/opendata/{name}.json.gz`
+with a Dynamo pointer (`fetchedAt`, `rowCount`, `s3Key`) so a large CSV
+cannot blow the 400 KB item limit; a Dynamo `ValidationException` still
+returns the fetched rows and logs `board_opendata_cache_failed`. The EDB
+catalog cache is kindergarten-only (`keep_all` keeps every school for
+outreach). An official fetch with empty `fetchedAt` writes daily-review
+gap `opendata-{source}` and a later success clears it. Owner
 `GET …/catalog/sources`, `POST …/catalog/bulk/{source}/preview|import`
 and `POST …/catalog/discovery/run` return `200 {queued}` and run on
 `AdminApiFn` via `try_invoke_event` (HTTP API 30 s). A bulk job that

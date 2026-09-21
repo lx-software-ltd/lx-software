@@ -19,7 +19,7 @@ from contract_constants import (
 from http_common import _log_event
 
 INGEST_BATCH = 500
-CHUNKED_INGEST_SOURCES = frozenset({"edb"})
+OPEN_DATA_SOURCES = ("lcsd", "edb", "swd")
 _TERMINAL_CANDIDATE = frozenset({"imported", "rejected", "closed"})
 
 TEMPLATE_EN = "{name} is a {kind} in {district} for children and families."
@@ -188,6 +188,11 @@ def ingest_source(
         "processed": len(batch),
         "remaining": remaining,
     }
+
+
+def needs_chunked_ingest(row_count: int) -> bool:
+    """True when a source will not finish in one ingest batch."""
+    return int(row_count or 0) > INGEST_BATCH
 
 
 def _batches(orgs: list[dict[str, Any]], size: int) -> list[list[dict[str, Any]]]:
@@ -452,14 +457,15 @@ def handle_job(event: dict[str, Any]) -> dict[str, Any]:
     offset = max(0, int(event.get("offset") or 0))
     _put_job(table, source, {"phase": "running", "action": action, "at": board_store.now_iso(), "offset": offset})
     try:
-        needs_chunk = action == "ingest" or (
-            action in ("preview", "import") and source in CHUNKED_INGEST_SOURCES and not event.get("ingestDone")
-        )
+        already_ingested = False
+        needs_chunk = action == "ingest" or (action in ("preview", "import") and not event.get("ingestDone"))
         if needs_chunk:
+            already_ingested = True
             force = bool(event.get("force")) if "force" in event else offset == 0
             out = ingest_source(table, source, force=force, offset=offset, limit=INGEST_BATCH)
             remaining = int(out.get("remaining") or 0)
-            next_offset = offset + int(out.get("processed") or 0)
+            processed = int(out.get("processed") or 0)
+            next_offset = offset + processed
             _put_job(
                 table,
                 source,
@@ -491,15 +497,16 @@ def handle_job(event: dict[str, Any]) -> dict[str, Any]:
                     },
                 )
                 return {**out, "ok": True}
-            _continue_job(event, ingestDone=True, offset=0, force=False)
-            return {**out, "ok": True, "ingestDone": True}
+            if processed >= INGEST_BATCH or offset > 0:
+                _continue_job(event, ingestDone=True, offset=0, force=False)
+                return {**out, "ok": True, "ingestDone": True}
         if action == "preview":
             out = preview_source(
                 table,
                 source,
                 remote=remote,
                 limit=limit,
-                skip_ingest=bool(event.get("ingestDone")),
+                skip_ingest=already_ingested or bool(event.get("ingestDone")),
             )
         elif action == "import":
             out = import_source(table, source, limit=limit)

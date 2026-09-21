@@ -224,35 +224,22 @@ def _record_opendata_gap(table: Any, source: str, fetched_at: str, *, reason: st
 
 def refresh_open_data(table: Any) -> dict[str, Any]:
     notes: dict[str, Any] = {}
-    for source in ("lcsd", "swd"):
+    for source in board_catalog_bulk.OPEN_DATA_SOURCES:
         try:
-            notes[source] = board_catalog_bulk.ingest_source(table, source, force=True)
+            rows = board_catalog_bulk.load_source_rows(table, source, force=True)
             cached = board_opendata._cached(table, f"opendata:{source}")  # noqa: SLF001
             fetched_at = str((cached or {}).get("fetchedAt") or "")
-            if notes[source].get("fetched"):
+            if rows:
                 fetched_at = fetched_at or board_store.now_iso()
             _record_opendata_gap(table, source, fetched_at)
+            if board_catalog_bulk.needs_chunked_ingest(len(rows)):
+                queued = board_catalog_bulk.queue_action(table, "ingest", source, requested_by="discovery")
+                notes[source] = {"fetched": len(rows), "fetchedAt": fetched_at, **queued}
+            else:
+                notes[source] = board_catalog_bulk.ingest_source(table, source, force=False)
         except Exception as exc:
             notes[source] = {"error": str(exc)[:200]}
             _record_opendata_gap(table, source, "", reason=str(exc)[:200])
-    try:
-        payload = board_opendata.edb_kindergartens(table, force=True)
-        fetched_at = str(payload.get("fetchedAt") or "")
-        _record_opendata_gap(
-            table,
-            "edb",
-            fetched_at,
-            reason="EDB kindergarten fetch returned no rows",
-        )
-        queued = board_catalog_bulk.queue_action(table, "ingest", "edb", requested_by="discovery")
-        notes["edb"] = {
-            "fetched": len(payload.get("rows") or []),
-            "fetchedAt": fetched_at,
-            **queued,
-        }
-    except Exception as exc:
-        notes["edb"] = {"error": str(exc)[:200]}
-        _record_opendata_gap(table, "edb", "", reason=str(exc)[:200])
     cur = _cursor(table)
     cur["lastOpenDataAt"] = board_store.now_iso()
     _save_cursor(table, cur)
