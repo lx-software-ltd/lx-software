@@ -448,6 +448,25 @@ class PolicyRefusalTests(BoardTestCase):
             board_breakers.evaluate(self.table, board_store.load_settings(self.table))
         self.assertFalse(board_breakers.is_tripped(self.table, "budget"))
 
+    def test_credits_recovered_requires_positive_balance(self) -> None:
+        import openrouter_client
+
+        with (
+            patch.object(openrouter_client, "remaining_credits", return_value=None),
+            patch("admin_runtime._get_secretsmanager_client", return_value=None),
+        ):
+            self.assertFalse(board_breakers._credits_recovered())
+        with (
+            patch.object(openrouter_client, "remaining_credits", return_value=0),
+            patch("admin_runtime._get_secretsmanager_client", return_value=None),
+        ):
+            self.assertFalse(board_breakers._credits_recovered())
+        with (
+            patch.object(openrouter_client, "remaining_credits", return_value=1.5),
+            patch("admin_runtime._get_secretsmanager_client", return_value=None),
+        ):
+            self.assertTrue(board_breakers._credits_recovered())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -543,7 +543,25 @@ class DiscoveryTests(BoardTestCase):
 
     def test_source_needs_refresh_when_cache_empty(self) -> None:
         self.assertTrue(board_catalog_discovery.source_needs_refresh(self.table, "edb"))
-        board_opendata._store(self.table, "opendata:edb", [{"nameEn": "Little Stars"}])  # noqa: SLF001
+        board_store.put_cache(
+            self.table,
+            "opendata:edb",
+            {"fetchedAt": "2026-09-16T00:00:00Z", "rowCount": 1, "s3Key": "board/x/opendata/edb.json.gz"},
+        )
+        self.assertFalse(board_catalog_discovery.source_needs_refresh(self.table, "edb"))
+        board_store.put_cache(
+            self.table,
+            "opendata:edb",
+            {"fetchedAt": "2026-09-16T00:00:00Z", "rowCount": 0},
+        )
+        self.assertTrue(board_catalog_discovery.source_needs_refresh(self.table, "edb"))
+
+    def test_source_needs_refresh_ignores_legacy_pointer_without_row_count(self) -> None:
+        board_store.put_cache(
+            self.table,
+            "opendata:edb",
+            {"fetchedAt": "2026-09-01T00:00:00Z", "s3Key": "board/x/opendata/edb.json.gz"},
+        )
         self.assertFalse(board_catalog_discovery.source_needs_refresh(self.table, "edb"))
 
     def test_run_discovery_refreshes_empty_cache_off_monday(self) -> None:
@@ -584,12 +602,28 @@ class DiscoveryTests(BoardTestCase):
         fresh = board_catalog_candidates.upsert_candidate(
             self.table, {"source": "competitor", "nameEn": "New Listing", "district": "Tai Po"}
         )
+        matched = board_catalog_candidates.upsert_candidate(
+            self.table, {"source": "competitor", "nameEn": "Matched Listing", "district": "Tai Po"}
+        )
+        matched["createdAt"] = "2026-09-01T00:00:00Z"
+        matched["placeId"] = "ChIJold"
+        board_store.put_candidate(self.table, matched)
         n = board_catalog_candidates.expire_stale_competitor(
             self.table, now=datetime(2026, 9, 16, tzinfo=timezone.utc)
         )
         self.assertEqual(n, 1)
         self.assertEqual(board_store.get_candidate(self.table, old["candidateId"])["status"], "closed")
         self.assertEqual(board_store.get_candidate(self.table, fresh["candidateId"])["status"], "new")
+        self.assertEqual(board_store.get_candidate(self.table, matched["candidateId"])["status"], "new")
+        closed = board_catalog_candidates.bulk_set_status(
+            self.table,
+            decision="close",
+            source="competitor",
+            status="new",
+            before="2026-09-09T00:00:00Z",
+            missing_place_id=True,
+        )
+        self.assertEqual(closed["updated"], 0)
 
     def test_enrich_competitor_with_places(self) -> None:
         row = board_catalog_candidates.upsert_candidate(

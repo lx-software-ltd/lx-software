@@ -246,6 +246,9 @@ def source_needs_refresh(table: Any, source: str) -> bool:
         return True
     if not str(payload.get("fetchedAt") or ""):
         return True
+    if "rowCount" not in payload:
+        # Legacy pointer written before rowCount: fetchedAt means already fetched.
+        return False
     try:
         count = int(payload.get("rowCount") or 0)
     except (TypeError, ValueError):
@@ -256,10 +259,9 @@ def source_needs_refresh(table: Any, source: str) -> bool:
 
 def refresh_open_data(table: Any, *, force: bool = False) -> dict[str, Any]:
     notes: dict[str, Any] = {}
-    monday = board_hk.now_hkt().weekday() == 0
     for source in board_catalog_bulk.OPEN_DATA_SOURCES:
         try:
-            reload = force or monday or source_needs_refresh(table, source)
+            reload = force or source_needs_refresh(table, source)
             rows = board_catalog_bulk.load_source_rows(table, source, force=reload)
             cached = board_opendata._cached(table, f"opendata:{source}")  # noqa: SLF001
             fetched_at = str((cached or {}).get("fetchedAt") or "")

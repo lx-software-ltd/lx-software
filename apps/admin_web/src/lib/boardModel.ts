@@ -1711,6 +1711,7 @@ export type BoardCatalogCandidateQuery = {
   readonly source?: string;
   readonly district?: string;
   readonly q?: string;
+  readonly missingPlaceId?: boolean;
   readonly limit?: number;
   readonly cursor?: number;
 };
@@ -1722,6 +1723,7 @@ export function boardCatalogCandidatesPath(query?: string | BoardCatalogCandidat
   if (filters.source) params.set("source", filters.source);
   if (filters.district) params.set("district", filters.district);
   if (filters.q) params.set("q", filters.q);
+  if (filters.missingPlaceId) params.set("missingPlaceId", "true");
   if (filters.limit != null) params.set("limit", String(filters.limit));
   if (filters.cursor != null) params.set("cursor", String(filters.cursor));
   const qs = params.toString();

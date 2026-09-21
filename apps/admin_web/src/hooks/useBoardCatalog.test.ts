@@ -27,17 +27,24 @@ describe("catalog candidate mutations", () => {
     });
   });
 
-  it("posts a bulk reject with filters", async () => {
-    fetchMock.mockResolvedValueOnce({ updated: 3, status: "rejected" });
+  it("posts a bulk close with leftover-competitor filters", async () => {
+    fetchMock.mockResolvedValueOnce({ updated: 3, status: "closed" });
     const { mutationFn } = catalogBulkDecideMutationOptions(qc);
-    await mutationFn({ decision: "reject", source: "competitor", status: "new", before: "2026-09-14T00:00:00Z" });
+    await mutationFn({
+      decision: "close",
+      source: "competitor",
+      status: "new",
+      before: "2026-09-14T00:00:00Z",
+      missingPlaceId: true,
+    });
     expect(fetchMock).toHaveBeenCalledWith("/siu-tin-dei/board/catalog/candidates/bulk", {
       method: "POST",
       body: JSON.stringify({
-        decision: "reject",
+        decision: "close",
         source: "competitor",
         status: "new",
         before: "2026-09-14T00:00:00Z",
+        missingPlaceId: true,
       }),
     });
   });

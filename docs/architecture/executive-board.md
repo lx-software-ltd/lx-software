@@ -378,10 +378,13 @@ price stay optional). The micro-batch duty pauses after
 completeness (cached health only; a missing score is not “low”) so
 `catalog-enrich` / describe can write 40-word EN + 繁中 copy for
 **imported** organisation names only (queued sheets do not count).
-Enrich skips a district for 48 h after a failed/parked describe and
+Enrich skips a district for 48 h after a failed/parked describe
+(`createdAt`, so a revalidate tick does not extend the cooldown) and
 opens a config gap after three failures. Three remote siutindei dry-run
 errors on one sheet open a CTO `ops/siutindei-import-error` task and
-surface `remoteErrorSheets` on the daily review. The owner
+surface `remoteErrorSheets` on the daily review; a later successful
+dry-run clears `remoteErrorFirstAt` / `importError` so the next outage
+starts a new clock. The owner
 can also set `settings.catalog.microBatchEnabled` false while bulk
 import fills toward `launchListingTarget` 1000. Enrich dry-runs
 that would update existing organisations stay `validated`. Accept of a
@@ -453,11 +456,12 @@ already present. Places `discover` caches every page count. Batches of
 `maxOrgsPerBulkImport` 50. `GET …/catalog/candidates` accepts
 `status` / `source` / `district` / `q` / `limit` / `cursor` and returns
 `{candidates, nextCursor, total}`. Owner
-`POST …/catalog/candidates/bulk` (`decision` approve|reject plus the same
-filters and optional `before`) and
+`POST …/catalog/candidates/bulk` (`decision` approve|reject|close plus the
+same filters, optional `before`, and `missingPlaceId`) and
 `POST …/catalog/candidates/{id}/approve|reject` stay on the request.
-Discovery closes leftover `new` competitor rows with no `placeId` after
-7 days and text-searches Places (20/run, skip unknown district) to fill
+Discovery and Progress **Close leftover competitors** both close leftover
+`new` competitor rows with no `placeId` after 7 days. Discovery also
+text-searches Places (20/run, skip unknown district) to fill
 address / `placeId`. Open-data refresh runs on Monday **or** when a
 source cache is missing/empty (so a Tuesday deploy still fills EDB).
 Nav chrome (`Next`, `Page 2`, `«`) is stripped from listingsIndex names.
@@ -516,9 +520,10 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
   errors retry once; 403/504 retry once with `provider.ignore` plus
   `allow_fallbacks`. 402 trips the `budget` breaker and parks further
   steps for 30 minutes (`openrouter credits paused`); evaluate auto-resets
-  that trip after the pause if `GET /api/v1/key` still shows remaining
-  credits. Catalog micro-batch / enrich duties skip while `budget` is
-  tripped.
+  that trip after the pause if `GET /api/v1/credits` shows
+  `total_credits - total_usage > 0`. `drain_queue` also skips while the
+  pause is active. Catalog micro-batch / enrich duties skip while
+  `budget` is tripped.
 - `task_finish` validates `evidence` against call ids recorded in the
   task (no evidence + high confidence → medium + `no_evidence` flag),
   writes the deliverable, records the step before review so a late write

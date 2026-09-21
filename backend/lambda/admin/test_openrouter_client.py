@@ -652,15 +652,25 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
         self.assertEqual(calls[1]["provider"]["ignore"], ["xAI"])
         self.assertTrue(calls[1]["provider"]["allow_fallbacks"])
 
-    def test_remaining_credits_reads_limit(self) -> None:
+    def test_remaining_credits_reads_account_balance(self) -> None:
         def fake_urlopen(req, timeout=None):  # noqa: ARG001
-            return _FakeResp(json.dumps({"data": {"limit_remaining": 12.5}}).encode("utf-8"))
+            return _FakeResp(json.dumps({"data": {"total_credits": 20.0, "total_usage": 7.5}}).encode("utf-8"))
 
         with (
             patch("openrouter_client.urlrequest.urlopen", fake_urlopen),
             patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
         ):
             self.assertEqual(openrouter_client.remaining_credits(None), 12.5)
+
+    def test_remaining_credits_none_when_totals_missing(self) -> None:
+        def fake_urlopen(req, timeout=None):  # noqa: ARG001
+            return _FakeResp(json.dumps({"data": {"limit_remaining": None}}).encode("utf-8"))
+
+        with (
+            patch("openrouter_client.urlrequest.urlopen", fake_urlopen),
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
+        ):
+            self.assertIsNone(openrouter_client.remaining_credits(None))
 
     def test_retry_after_helpers(self) -> None:
         self.assertEqual(

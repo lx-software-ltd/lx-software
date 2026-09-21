@@ -27,12 +27,13 @@ export type BoardCatalogCandidatePage = {
 };
 
 export type BoardCatalogBulkDecision = {
-  readonly decision: "approve" | "reject";
+  readonly decision: "approve" | "reject" | "close";
   readonly source?: string;
   readonly status?: string;
   readonly before?: string;
   readonly district?: string;
   readonly q?: string;
+  readonly missingPlaceId?: boolean;
 };
 
 function invalidateCatalog(qc: ReturnType<typeof useQueryClient>) {

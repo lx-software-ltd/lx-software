@@ -295,8 +295,11 @@ def expire_stale_places(table: Any, *, now: datetime | None = None) -> int:
 
 CANDIDATE_PAGE = 20
 CANDIDATE_PAGE_MAX = 200
+CANDIDATE_SCAN_ONE = 10_000
+CANDIDATE_SCAN_ALL = CANDIDATE_PAGE_MAX
 COMPETITOR_STALE_DAYS = 7
 COMPETITOR_ENRICH_PER_RUN = 20
+_BULK_DECISIONS = {"approve": "approved", "reject": "rejected", "close": "closed"}
 
 
 def _match_text(row: dict[str, Any], q: str) -> bool:
@@ -314,6 +317,7 @@ def filter_candidates(
     source: str | None = None,
     district: str | None = None,
     q: str | None = None,
+    missing_place_id: bool = False,
 ) -> list[dict[str, Any]]:
     wanted_source = str(source or "").strip().lower()
     wanted_district = str(district or "").strip()
@@ -326,6 +330,8 @@ def filter_candidates(
             continue
         if query and not _match_text(row, query):
             continue
+        if missing_place_id and str(row.get("placeId") or "").strip():
+            continue
         out.append(row)
     return out
 
@@ -337,6 +343,14 @@ def _as_int(value: Any, default: int) -> int:
         return default
 
 
+def as_bool(value: Any) -> bool:
+    if value is True:
+        return True
+    if value is False or value is None:
+        return False
+    return str(value).strip().lower() in ("1", "true", "yes")
+
+
 def list_filtered(
     table: Any,
     status: str | None = None,
@@ -344,16 +358,19 @@ def list_filtered(
     source: str | None = None,
     district: str | None = None,
     q: str | None = None,
+    missing_place_id: bool = False,
     limit: int = CANDIDATE_PAGE,
     cursor: int = 0,
 ) -> dict[str, Any]:
     page_size = max(1, min(CANDIDATE_PAGE_MAX, _as_int(limit, CANDIDATE_PAGE)))
     start = max(0, _as_int(cursor, 0))
+    fetch_cap = CANDIDATE_SCAN_ONE if status else CANDIDATE_SCAN_ALL
     rows = filter_candidates(
-        board_store.list_candidates(table, status, per_status_limit=10_000),
+        board_store.list_candidates(table, status, per_status_limit=fetch_cap),
         source=source,
         district=district,
         q=q,
+        missing_place_id=missing_place_id,
     )
     page = rows[start : start + page_size]
     nxt = start + page_size if start + page_size < len(rows) else None
@@ -369,10 +386,11 @@ def bulk_set_status(
     before: str | None = None,
     district: str | None = None,
     q: str | None = None,
+    missing_place_id: bool = False,
 ) -> dict[str, Any]:
-    if decision not in ("approve", "reject"):
-        raise ValueError("decision must be approve or reject")
-    target = "approved" if decision == "approve" else "rejected"
+    if decision not in _BULK_DECISIONS:
+        raise ValueError("decision must be approve, reject, or close")
+    target = _BULK_DECISIONS[decision]
     cutoff = None
     if before:
         try:
@@ -383,10 +401,11 @@ def bulk_set_status(
             cutoff = cutoff.replace(tzinfo=timezone.utc)
     updated: list[dict[str, Any]] = []
     for row in filter_candidates(
-        board_store.list_candidates(table, status or "new", per_status_limit=10_000),
+        board_store.list_candidates(table, status or "new", per_status_limit=CANDIDATE_SCAN_ONE),
         source=source,
         district=district,
         q=q,
+        missing_place_id=missing_place_id,
     ):
         if cutoff is not None:
             created = str(row.get("createdAt") or "")
@@ -419,25 +438,15 @@ def expire_stale_competitor(
         cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=max(1, int(days)))
     if cutoff.tzinfo is None:
         cutoff = cutoff.replace(tzinfo=timezone.utc)
-    n = 0
-    for row in board_store.list_candidates(table, "new", per_status_limit=10_000):
-        if str(row.get("source") or "") != "competitor":
-            continue
-        if str(row.get("placeId") or "").strip():
-            continue
-        created = str(row.get("createdAt") or "")
-        if not created:
-            continue
-        try:
-            when = board_hk.parse_iso(created)
-        except ValueError:
-            continue
-        if when.tzinfo is None:
-            when = when.replace(tzinfo=timezone.utc)
-        if when >= cutoff:
-            continue
-        set_status(table, str(row.get("candidateId") or ""), "closed")
-        n += 1
+    out = bulk_set_status(
+        table,
+        decision="close",
+        source="competitor",
+        status="new",
+        before=cutoff.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        missing_place_id=True,
+    )
+    n = int(out.get("updated") or 0)
     if n:
         _log_event("info", tag="board_catalog_competitor_expired", count=n)
     return n

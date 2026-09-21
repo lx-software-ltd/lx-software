@@ -23,7 +23,7 @@ from urllib import request as urlrequest
 from contract_constants import OPENROUTER_APPS as OPENROUTER_APP_CATALOG
 
 DEFAULT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
-KEY_INFO_URL = "https://openrouter.ai/api/v1/key"
+CREDITS_URL = "https://openrouter.ai/api/v1/credits"
 DEFAULT_TIMEOUT_SECONDS = 60
 _RETRYABLE_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
 _MODEL_WALK_STATUSES = frozenset({429, 502, 503})
@@ -177,10 +177,10 @@ def endpoint_url() -> str:
 
 
 def remaining_credits(secrets_client: Any, *, service: str = SERVICE_EXECUTIVE_BOARD) -> float | None:
-    """Dollar remaining on the named key, or None when the account is unlimited."""
+    """Account credits remaining (``total_credits - total_usage``), or None if unknown."""
     api_key = resolve_api_key(secrets_client, service=service)
     req = urlrequest.Request(  # noqa: S310
-        url=os.getenv("OPENROUTER_KEY_INFO_URL", "").strip() or KEY_INFO_URL,
+        url=os.getenv("OPENROUTER_CREDITS_URL", "").strip() or CREDITS_URL,
         method="GET",
         headers={
             "Authorization": f"Bearer {api_key}",
@@ -191,14 +191,13 @@ def remaining_credits(secrets_client: Any, *, service: str = SERVICE_EXECUTIVE_B
         with urlrequest.urlopen(req, timeout=10) as resp:  # noqa: S310
             raw = resp.read().decode("utf-8")
     except Exception as exc:
-        raise OpenRouterError(f"OpenRouter key probe failed: {exc}") from exc
-    data = _load_json_object(raw, what="OpenRouter key")
+        raise OpenRouterError(f"OpenRouter credits probe failed: {exc}") from exc
+    data = _load_json_object(raw, what="OpenRouter credits")
     inner = data.get("data") if isinstance(data.get("data"), dict) else data
-    remaining = inner.get("limit_remaining")
-    if remaining is None:
+    if inner.get("total_credits") is None and inner.get("total_usage") is None:
         return None
     try:
-        return float(remaining)
+        return float(inner.get("total_credits") or 0) - float(inner.get("total_usage") or 0)
     except (TypeError, ValueError):
         return None
 
@@ -316,25 +315,30 @@ def chat_completion(
             last_error = exc
             ignored = provider_name_from_error(exc) if exc.status in (403, 504) else ""
             if ignored:
-                prov = dict(payload.get("provider") or {})
-                already = [str(x) for x in (prov.get("ignore") or []) if x]
+                current_provider = dict(payload.get("provider") or {})
+                already = [str(x) for x in (current_provider.get("ignore") or []) if x]
                 if ignored not in already:
-                    prov["ignore"] = [*already, ignored]
-                    prov["allow_fallbacks"] = True
-                    payload["provider"] = prov
+                    retry_payload = dict(payload)
+                    retry_payload["provider"] = {
+                        **current_provider,
+                        "ignore": [*already, ignored],
+                        "allow_fallbacks": True,
+                    }
                     try:
                         body_text = post_json(
                             url=endpoint_url(),
                             api_key=api_key,
-                            payload=payload,
+                            payload=retry_payload,
                             timeout=attempt_timeout,
                             max_retries=min(1, max_retries),
                             service=service,
                         )
                         raw = _load_json_object(body_text, what="OpenRouter response")
+                        payload = retry_payload
                         break
                     except OpenRouterError as retry_exc:
                         last_error = retry_exc
+                        payload = retry_payload
             if last_error.status in _MODEL_WALK_STATUSES and index < len(chain) - 1:
                 continue
             raise last_error

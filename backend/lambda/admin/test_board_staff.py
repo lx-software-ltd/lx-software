@@ -1364,6 +1364,24 @@ class StaffStepTests(ToolsTestCase):
         self.assertEqual(latest["status"], "queued")
         self.assertIn("openrouter credits paused", latest.get("parkedReason") or "")
 
+    def test_openrouter_credits_pause_skips_drain(self) -> None:
+        import board_breakers
+
+        settings = _enable_staff(self.table)
+        board_breakers.trip(self.table, "budget", "OpenRouter 402: insufficient credits")
+        task = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="cfo",
+            origin="owner",
+            brief="List our three biggest monthly costs from AWS and finance",
+            deliverable_type="markdown",
+            created_by="admin",
+        )
+        self.assertEqual(task["status"], "queued")
+        self.assertEqual(board_staff.drain_queue(self.table, settings), 0)
+        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "queued")
+
     def test_stale_step_claim_reinvokes_once_then_fails(self) -> None:
         settings = _enable_staff(self.table)
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):

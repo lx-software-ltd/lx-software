@@ -722,6 +722,36 @@ class TestMailTools(MailTestCase):
         )
         self.assertEqual(plan["to"], ["wendy.chan@gmail.com"])
 
+    def test_mail_send_splits_string_to_for_sourced_check(self) -> None:
+        thread_id = self.seed_thread()
+        board_mail.masked_thread_detail(self.table, thread_id)
+        pseud = board_mail.pseudonymizer(self.table)
+        pseud.alias_for_address("other@example.com")
+        pseud.save()
+        plan = board_mail.outgoing_plan(
+            self.table,
+            "mail_send",
+            {
+                "fromMailbox": "hello",
+                "to": "contact#1, other@example.com",
+                "subject": "Hi",
+                "body": "Hello",
+            },
+        )
+        self.assertEqual(plan["to"], ["wendy.chan@gmail.com", "other@example.com"])
+        with self.assertRaises(board_mail.MailError) as ctx:
+            board_mail.outgoing_plan(
+                self.table,
+                "mail_send",
+                {
+                    "fromMailbox": "hello",
+                    "to": "contact#1, invented@example.com",
+                    "subject": "Hi",
+                    "body": "Hello",
+                },
+            )
+        self.assertIn("recipient not sourced", str(ctx.exception))
+
     def test_send_new_mail_with_alias_and_owner_edit(self) -> None:
         self.seed_thread()
         # Learn the alias by reading first.

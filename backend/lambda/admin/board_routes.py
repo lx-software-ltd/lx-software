@@ -1352,6 +1352,7 @@ def _catalog_route(event: dict[str, Any], method: str, rest: list[str], user_sub
                 source=(qs.get("source") or [""])[0] or None,
                 district=(qs.get("district") or [""])[0] or None,
                 q=(qs.get("q") or [""])[0] or None,
+                missing_place_id=board_catalog_candidates.as_bool((qs.get("missingPlaceId") or [""])[0]),
                 limit=limit,
                 cursor=cursor,
             ),
@@ -1369,6 +1370,7 @@ def _catalog_route(event: dict[str, Any], method: str, rest: list[str], user_sub
                 before=body.get("before"),
                 district=body.get("district"),
                 q=body.get("q"),
+                missing_place_id=board_catalog_candidates.as_bool(body.get("missingPlaceId")),
             )
         except ValueError as exc:
             return _json_response(400, {"message": str(exc)})

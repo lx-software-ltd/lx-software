@@ -69,12 +69,12 @@ describe("BoardCatalogSourcesSection", () => {
     expect(importButtons[2]).toBeDisabled();
   });
 
-  it("lists filtered candidates and a leftover-competitor reject action", () => {
+  it("lists filtered candidates and a leftover-competitor close action", () => {
     render(<BoardCatalogSourcesSection />);
     expect(screen.getByLabelText("Source")).toBeInTheDocument();
     expect(screen.getByLabelText("District")).toBeInTheDocument();
     expect(screen.getByText("Example Playhouse")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve Example Playhouse" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Reject leftover competitors" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close leftover competitors" })).toBeInTheDocument();
   });
 });

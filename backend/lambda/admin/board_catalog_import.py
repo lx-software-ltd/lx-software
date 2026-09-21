@@ -830,13 +830,8 @@ def _http(
             text = raw.decode("utf-8", errors="replace") if raw else ""
     except urllib.error.HTTPError as exc:
         err_body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-        headers = getattr(exc, "headers", None) or {}
-        request_id = str(
-            headers.get("x-amzn-RequestId")
-            or headers.get("X-Amzn-RequestId")
-            or headers.get("x-amzn-requestid")
-            or ""
-        )
+        headers = getattr(exc, "headers", None)
+        request_id = str(headers.get("x-amzn-RequestId") or "") if headers is not None else ""
         detail = f"siutindei admin {method} {_safe_url(url)} failed: {exc.code} {err_body[:240]}"
         if request_id:
             detail = f"{detail} requestId={request_id}"
@@ -1933,11 +1928,28 @@ def _open_import_error_task(table: Any, settings: dict[str, Any], task: dict[str
         _log_event("info", tag="board_catalog_import_error_task_skipped", error=str(exc)[:200])
 
 
+def _clear_remote_error_fields(task: dict[str, Any]) -> bool:
+    """Reset remote-error bookkeeping after a successful dry-run.
+
+    Leaves a non-remote ``importError`` (collision, rejected rows) in place.
+    """
+    changed = False
+    if task.get("remoteErrorCount"):
+        task["remoteErrorCount"] = 0
+        changed = True
+    if task.pop("remoteErrorFirstAt", None) is not None:
+        changed = True
+    err = str(task.get("importError") or "")
+    if err.startswith("siutindei admin ") or " requestId=" in err:
+        task.pop("importError", None)
+        changed = True
+    return changed
+
+
 def _note_pending_remote_error(table: Any, settings: dict[str, Any], task: dict[str, Any]) -> None:
     dry = _preview_dry(task.get("importPreview"))
     if not dry.get("remoteError"):
-        if task.get("remoteErrorCount"):
-            task["remoteErrorCount"] = 0
+        if _clear_remote_error_fields(task):
             _save_task(table, task)
         return
     try:

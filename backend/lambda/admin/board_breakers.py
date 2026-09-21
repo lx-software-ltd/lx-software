@@ -122,7 +122,7 @@ def _credits_recovered() -> bool:
         import openrouter_client
 
         remaining = openrouter_client.remaining_credits(_get_secretsmanager_client())
-        return remaining is None or remaining > 0
+        return remaining is not None and remaining > 0
     except Exception as exc:
         _log_event("info", tag="board_breaker_credits_probe_failed", error=str(exc)[:200])
         return False

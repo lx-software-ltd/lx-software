@@ -1394,6 +1394,42 @@ class ImportClientTests(BoardTestCase):
         self.assertEqual(len(opened), 1)
         self.assertEqual(opened[0]["assignee"], "cto")
 
+    def test_remote_error_clears_on_recovery(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="awaiting_import")
+        task["importError"] = (
+            "siutindei admin POST https://siu.example/v1/admin/imports failed: 500 boom requestId=req-1"
+        )
+        task["remoteErrorCount"] = 2
+        task["remoteErrorFirstAt"] = "2026-09-01T00:00:00Z"
+        preview = dict(task.get("importPreview") or {})
+        preview["dryRun"] = {"mode": "remote", "ok": True}
+        task["importPreview"] = preview
+        board_store.put_task(self.table, task)
+        latest = board_store.get_task(self.table, task["taskId"]) or task
+        board_catalog_import._note_pending_remote_error(self.table, settings, latest)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("remoteErrorCount"), 0)
+        self.assertFalse(saved.get("remoteErrorFirstAt"))
+        self.assertFalse(saved.get("importError"))
+
+    def test_remote_error_recovery_keeps_collision_import_error(self) -> None:
+        settings = _enable_staff(self.table)
+        task = self._sheet_task(settings, status="needs_owner")
+        task["importError"] = "name collision: Foo Park"
+        task["remoteErrorCount"] = 2
+        task["remoteErrorFirstAt"] = "2026-09-01T00:00:00Z"
+        preview = dict(task.get("importPreview") or {})
+        preview["dryRun"] = {"mode": "remote", "ok": True}
+        task["importPreview"] = preview
+        board_store.put_task(self.table, task)
+        latest = board_store.get_task(self.table, task["taskId"]) or task
+        board_catalog_import._note_pending_remote_error(self.table, settings, latest)
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("importError"), "name collision: Foo Park")
+        self.assertEqual(saved.get("remoteErrorCount"), 0)
+        self.assertFalse(saved.get("remoteErrorFirstAt"))
+
 
 class RouteTests(BoardTestCase):
     def setUp(self) -> None:

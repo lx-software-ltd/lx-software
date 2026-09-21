@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from test_board import BoardTestCase
@@ -132,6 +132,43 @@ class CatalogDutyTests(BoardTestCase):
         self.assertIn("Quarry Bay Park Playground", enrich["brief"])
         self.assertIn("copy each name_en into verified_fields", enrich["brief"])
         self.assertTrue(BOARD_CATALOG_OUTPUT_CONTRACT[:40] in enrich["brief"])
+
+    def test_enrich_cooldown_uses_created_at_not_updated_at(self) -> None:
+        district = BOARD_CATALOG_DISTRICTS[0]
+        old = (datetime.now(timezone.utc) - timedelta(hours=49)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        recent = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        board_store.put_task(
+            self.table,
+            {
+                "taskId": "enrich-stale",
+                "status": "needs_owner",
+                "assignee": "content-marketer",
+                "eventRef": {
+                    "kind": "catalog-enrich",
+                    "districtId": district["id"],
+                    "district": district["name"],
+                },
+                "createdAt": old,
+                "updatedAt": recent,
+            },
+        )
+        self.assertNotIn(district["id"], board_catalog.enrich_recently_blocked_ids(self.table))
+        board_store.put_task(
+            self.table,
+            {
+                "taskId": "enrich-fresh",
+                "status": "needs_owner",
+                "assignee": "content-marketer",
+                "eventRef": {
+                    "kind": "catalog-enrich",
+                    "districtId": district["id"],
+                    "district": district["name"],
+                },
+                "createdAt": recent,
+                "updatedAt": recent,
+            },
+        )
+        self.assertIn(district["id"], board_catalog.enrich_recently_blocked_ids(self.table))
 
     def test_create_enrich_skips_district_without_imported_names(self) -> None:
         settings = _enable(self.table)

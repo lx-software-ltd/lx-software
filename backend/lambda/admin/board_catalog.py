@@ -237,7 +237,7 @@ def _task_district_id(task: dict[str, Any]) -> str:
 
 
 def _task_when(task: dict[str, Any]):
-    raw = str(task.get("updatedAt") or task.get("createdAt") or "")
+    raw = str(task.get("createdAt") or "")
     if not raw:
         return None
     try:

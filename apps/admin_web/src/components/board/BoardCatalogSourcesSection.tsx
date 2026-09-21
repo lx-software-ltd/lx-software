@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { BOARD_CATALOG_BULK_SOURCES, BOARD_CATALOG_DISTRICTS, BOARD_CATALOG_LAUNCH_LISTING_TARGET } from "../../lib/contracts/generated";
 import type { BoardCatalogJob } from "../../lib/boardModel";
@@ -29,6 +29,17 @@ function competitorCutoffIso(): string {
   return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 }
 
+const CANDIDATE_FILTER_DEBOUNCE_MS = 300;
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebounced(value), delayMs);
+    return () => window.clearTimeout(handle);
+  }, [value, delayMs]);
+  return debounced;
+}
+
 const CANDIDATE_COLUMNS = [
   { key: "name", header: "Name" },
   { key: "district", header: "District", priority: "secondary" as const },
@@ -41,14 +52,15 @@ export function BoardCatalogSourcesSection() {
   const [sourceFilter, setSourceFilter] = useState("");
   const [districtFilter, setDistrictFilter] = useState("");
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, CANDIDATE_FILTER_DEBOUNCE_MS);
   const filters = useMemo(
     () => ({
       status: "new",
       source: sourceFilter || undefined,
       district: districtFilter || undefined,
-      q: query || undefined,
+      q: debouncedQuery || undefined,
     }),
-    [sourceFilter, districtFilter, query],
+    [sourceFilter, districtFilter, debouncedQuery],
   );
   const candidates = useBoardCatalogCandidates(filters);
   const mutations = useBoardCatalogMutations();
@@ -167,20 +179,21 @@ export function BoardCatalogSourcesSection() {
             onClick={() => {
               if (
                 !window.confirm(
-                  "Reject leftover competitor candidates that are still new and older than 7 days?",
+                  "Close leftover competitor candidates that are still new, have no Places match, and are older than 7 days?",
                 )
               ) {
                 return;
               }
               mutations.bulkDecide.mutate({
-                decision: "reject",
+                decision: "close",
                 source: "competitor",
                 status: "new",
                 before: competitorCutoffIso(),
+                missingPlaceId: true,
               });
             }}
           >
-            {mutations.bulkDecide.isPending ? "Rejecting…" : "Reject leftover competitors"}
+            {mutations.bulkDecide.isPending ? "Closing…" : "Close leftover competitors"}
           </button>
         </div>
         {mutations.decide.isError ? (

@@ -398,6 +398,10 @@ def drain_queue(table: Any, settings: dict[str, Any]) -> int:
         return 0
     if _staff_daily_budget_exhausted(table, settings):
         return 0
+    import board_breakers
+
+    if board_breakers.openrouter_credits_paused(table):
+        return 0
     cap = int((settings.get("staff") or {}).get("maxRunningTasks") or BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT)
     running = [t for t in board_store.list_tasks(table, "running") if t.get("status") == "running"]
     reviewing = [t for t in board_store.list_tasks(table, "review") if t.get("status") == "review"]

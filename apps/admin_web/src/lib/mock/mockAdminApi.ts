@@ -704,11 +704,13 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
     const district = url.searchParams.get("district");
     const q = (url.searchParams.get("q") || "").toLowerCase();
     const status = url.searchParams.get("status");
+    const missingPlaceId = url.searchParams.get("missingPlaceId") === "true";
     const filtered = all.filter((row) => {
       if (status && row.status !== status) return false;
       if (source && row.source !== source) return false;
       if (district && row.district !== district) return false;
       if (q && !`${row.nameEn} ${row.district} ${row.source}`.toLowerCase().includes(q)) return false;
+      if (missingPlaceId && "placeId" in row && row.placeId) return false;
       return true;
     });
     const cursor = Number(url.searchParams.get("cursor") || 0) || 0;
@@ -722,7 +724,9 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   }
   if (p === `${board}/catalog/candidates/bulk` && method === "POST") {
     const body = parseBody(init);
-    return json({ updated: body.decision === "reject" ? 1 : 0, status: body.decision === "approve" ? "approved" : "rejected" });
+    const status =
+      body.decision === "approve" ? "approved" : body.decision === "close" ? "closed" : "rejected";
+    return json({ updated: body.decision === "approve" ? 0 : 1, status });
   }
   if (p.endsWith("/approve") && p.includes("/catalog/candidates/") && method === "POST") {
     return json({ candidate: { candidateId: "cand-1", source: "competitor", nameEn: "Example Playhouse", district: "Sha Tin", status: "approved" } });

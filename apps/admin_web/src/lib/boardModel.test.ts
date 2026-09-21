@@ -396,8 +396,17 @@ describe("task dashboard helpers", () => {
     expect(boardCatalogCandidatesPath()).toBe("/siu-tin-dei/board/catalog/candidates");
     expect(boardCatalogCandidatesPath("new")).toBe("/siu-tin-dei/board/catalog/candidates?status=new");
     expect(
-      boardCatalogCandidatesPath({ status: "new", source: "competitor", district: "Sha Tin", q: "play", cursor: 20 }),
-    ).toBe("/siu-tin-dei/board/catalog/candidates?status=new&source=competitor&district=Sha+Tin&q=play&cursor=20");
+      boardCatalogCandidatesPath({
+        status: "new",
+        source: "competitor",
+        district: "Sha Tin",
+        q: "play",
+        missingPlaceId: true,
+        cursor: 20,
+      }),
+    ).toBe(
+      "/siu-tin-dei/board/catalog/candidates?status=new&source=competitor&district=Sha+Tin&q=play&missingPlaceId=true&cursor=20",
+    );
     expect(boardCatalogCandidatesBulkPath()).toBe("/siu-tin-dei/board/catalog/candidates/bulk");
   });
 });

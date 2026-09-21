@@ -569,8 +569,10 @@ background like **Run staff tick now**; Progress shows the job phase and
 disables Preview/Import for that source while it is `queued` or
 `running`. `GET …/catalog/candidates` filters by `source` / `district` /
 `q` and pages with `cursor`; owner `POST …/catalog/candidates/bulk`
-approves or rejects the matching `new` rows (Progress **Reject leftover
-competitors** uses `source=competitor` and `before` = 7 days ago).
+approves, rejects, or closes the matching `new` rows (Progress **Close
+leftover competitors** uses `decision=close`, `source=competitor`,
+`missingPlaceId=true`, and `before` = 7 days ago — the same filter as
+the discovery tick).
 Discovery refreshes LCSD / EDB / SWD on Monday **or** when a cache is
 missing/empty, ingests a source in-process
 when it has ≤ 500 rows, and queues 500-row `ingest` jobs when it is
