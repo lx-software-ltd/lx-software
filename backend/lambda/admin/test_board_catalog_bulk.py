@@ -441,6 +441,11 @@ class BulkTransformTests(BoardTestCase):
 
 
 class DiscoveryTests(BoardTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+
     def test_extract_listing_names(self) -> None:
         html = "<h2>Happy Playhouse</h2><a>Tai Po Art Class</a>\n- Sha Tin Sports Hall"
         names = board_catalog_discovery.extract_listing_names(html)
@@ -546,6 +551,7 @@ class DiscoveryTests(BoardTestCase):
         wednesday = datetime(2026, 9, 16, 4, 0, tzinfo=board_hk.HKT)
         with (
             patch.object(board_catalog_discovery, "discover_places", return_value={"upserted": 0}),
+            patch.object(board_catalog_discovery, "source_needs_refresh", return_value=True),
             patch.object(board_catalog_discovery, "refresh_open_data", return_value={"edb": {"fetched": 1}}) as refresh,
         ):
             out = board_catalog_discovery.run_discovery(self.table, settings, now=wednesday)

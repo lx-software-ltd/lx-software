@@ -624,6 +624,9 @@ class TestAuditMasking(ToolsTestCase):
         settings["tools"]["globalMode"] = "act"
         settings["tools"]["matrix"]["mail"]["ceo"] = "act"
         ctx = ToolContext(table=self.table, settings=settings, persona_id="ceo", display_name="CEO")
+        learned = board_mail.pseudonymizer(self.table)
+        learned.alias_for_address("parent@example.com")
+        learned.save()
         args = {
             "fromMailbox": "hello",
             "to": ["parent@example.com"],

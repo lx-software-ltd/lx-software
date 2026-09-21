@@ -491,7 +491,9 @@ def enrich_with_places(table: Any, settings: dict[str, Any] | None = None, *, li
         fields = _place_to_candidate_fields(places[0])
         if not fields.get("placeId"):
             continue
-        upsert_candidate(table, {**row, **fields})
+        merged = {**row, **{k: v for k, v in fields.items() if v not in (None, "")}}
+        merged["updatedAt"] = _now()
+        board_store.put_candidate(table, merged)
         n += 1
     if n:
         _log_event("info", tag="board_catalog_competitor_enriched", count=n)

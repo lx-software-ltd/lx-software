@@ -234,16 +234,23 @@ def _record_opendata_gap(table: Any, source: str, fetched_at: str, *, row_count:
 
 
 def source_needs_refresh(table: Any, source: str) -> bool:
-    """True when the open-data cache is missing, expired, or empty."""
+    """True when the open-data cache pointer is missing, empty, or unfetched.
+
+    Reads the Dynamo pointer only — do not pull the S3 gzip just to decide.
+    """
     if source not in board_catalog_bulk.OPEN_DATA_SOURCES:
         return False
-    cached = board_opendata._cached(table, f"opendata:{source}")  # noqa: SLF001
-    if not cached:
+    hit = board_store.get_cache(table, f"opendata:{source}")
+    payload = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
+    if not payload:
         return True
-    if not str(cached.get("fetchedAt") or ""):
+    if not str(payload.get("fetchedAt") or ""):
         return True
-    count = int(cached.get("rowCount") or 0)
-    rows = cached.get("rows") if isinstance(cached.get("rows"), list) else []
+    try:
+        count = int(payload.get("rowCount") or 0)
+    except (TypeError, ValueError):
+        count = 0
+    rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
     return count <= 0 and not rows
 
 
@@ -253,11 +260,11 @@ def refresh_open_data(table: Any, *, force: bool = False) -> dict[str, Any]:
     for source in board_catalog_bulk.OPEN_DATA_SOURCES:
         try:
             reload = force or monday or source_needs_refresh(table, source)
-            payload = board_catalog_bulk.load_source_payload(table, source, force=reload)
-            rows = list(payload.get("rows") or [])
-            fetched_at = str(payload.get("fetchedAt") or "")
-            if rows and not fetched_at:
-                fetched_at = board_store.now_iso()
+            rows = board_catalog_bulk.load_source_rows(table, source, force=reload)
+            cached = board_opendata._cached(table, f"opendata:{source}")  # noqa: SLF001
+            fetched_at = str((cached or {}).get("fetchedAt") or "")
+            if rows:
+                fetched_at = fetched_at or board_store.now_iso()
             _record_opendata_gap(table, source, fetched_at, row_count=len(rows))
             if board_catalog_bulk.needs_chunked_ingest(len(rows)):
                 queued = board_catalog_bulk.queue_action(
