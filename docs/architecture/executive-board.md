@@ -30,7 +30,7 @@ bucket. Reused pieces:
 
 | Piece | Where | Used for |
 |---|---|---|
-| OpenRouter client (`chat_completion`, key cache, JSON mode, retry on 429/5xx, `models` fallbacks, tool calls) | `openrouter_client.py` | Every persona, seat and classifier call. `provider.data_collection = "deny"` on every request. |
+| OpenRouter client (`chat_completion`, key cache, JSON mode, retry on 429/5xx, 403/504 provider ignore, `models` fallbacks, tool calls, `remaining_credits`) | `openrouter_client.py` | Every persona, seat and classifier call. `provider.data_collection = "deny"` on every request. |
 | Async job pattern (DDB row + fire-and-forget self-invoke + browser polling) | `board_async.invoke_async`, `parse_jobs.py` | Chat replies, meeting phases, staff steps, crawl pages, ingest workers |
 | Admin-only routing, audit log, structured logs | `dispatch.py`, `http_common.py` | `/siu-tin-dei/board/*` routes |
 | Shared contracts synced to Python / TS / CDK | `contracts/executive-board.json`, `board-timeouts.json`, `board-tools.json`, `board-staff.json` | Roster, limits, tool matrix, seats |
@@ -315,7 +315,9 @@ after 90 days.
 
 Send path (off until `SiutindeiBoardMailSendingEnabled=true` and
 DKIM / SPF / DMARC are in the zone): replies go out from the mailbox the
-thread was addressed to; recipients outside the allow-list always need an
+thread was addressed to; `mail_send` refuses a recipient that is not a
+known `contact#N` alias, an already-mapped address, or an own-domain
+mailbox (`recipient not sourced`). Recipients outside the allow-list always need an
 Approval. The digest sends from `board@`, invoices from `billing@`, lead
 relays and notifications from `hello@`, newsletters from `news@`. **Mail →
 Send test email** (`POST …/mail/selftest`) checks SES `GetEmailIdentity` /
@@ -374,7 +376,12 @@ Every imported organisation always carries one activity (hours and
 price stay optional). The micro-batch duty pauses after
 `maxLowCompletenessDistricts` (3) imported districts sit below 50%
 completeness (cached health only; a missing score is not “low”) so
-`catalog-enrich` / describe can write 40-word EN + 繁中 copy. The owner
+`catalog-enrich` / describe can write 40-word EN + 繁中 copy for
+**imported** organisation names only (queued sheets do not count).
+Enrich skips a district for 48 h after a failed/parked describe and
+opens a config gap after three failures. Three remote siutindei dry-run
+errors on one sheet open a CTO `ops/siutindei-import-error` task and
+surface `remoteErrorSheets` on the daily review. The owner
 can also set `settings.catalog.microBatchEnabled` false while bulk
 import fills toward `launchListingTarget` 1000. Enrich dry-runs
 that would update existing organisations stay `validated`. Accept of a
@@ -443,8 +450,17 @@ and `POST …/catalog/discovery/run` return `200 {queued}` and run on
 raises writes `phase: error` so Progress does not stay on
 `running`. The listing mirror seeds once per invocation and skips keys
 already present. Places `discover` caches every page count. Batches of
-`maxOrgsPerBulkImport` 50. `GET …/catalog/candidates` and
+`maxOrgsPerBulkImport` 50. `GET …/catalog/candidates` accepts
+`status` / `source` / `district` / `q` / `limit` / `cursor` and returns
+`{candidates, nextCursor, total}`. Owner
+`POST …/catalog/candidates/bulk` (`decision` approve|reject plus the same
+filters and optional `before`) and
 `POST …/catalog/candidates/{id}/approve|reject` stay on the request.
+Discovery closes leftover `new` competitor rows with no `placeId` after
+7 days and text-searches Places (20/run, skip unknown district) to fill
+address / `placeId`. Open-data refresh runs on Monday **or** when a
+source cache is missing/empty (so a Tuesday deploy still fills EDB).
+Nav chrome (`Next`, `Page 2`, `«`) is stripped from listingsIndex names.
 Writes are JWT-only except the GETs. Open-data URLs (LCSD pefac/sc/sp/cpr
 + CSDI parks/libraries, SWD CSDI + list-ccc.csv, EDB CSV) are verified
 2026-09-18.
@@ -497,7 +513,12 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
   `staffStepMaxSeconds` 150, per-task budget, staff daily budget
   (`settings.staff.dailyBudgetUsd`, default 20). Daily-budget exhaustion
   re-queues the task; a per-task budget miss fails it. Transient OpenRouter
-  errors retry once; 402 trips the `budget` breaker.
+  errors retry once; 403/504 retry once with `provider.ignore` plus
+  `allow_fallbacks`. 402 trips the `budget` breaker and parks further
+  steps for 30 minutes (`openrouter credits paused`); evaluate auto-resets
+  that trip after the pause if `GET /api/v1/key` still shows remaining
+  credits. Catalog micro-batch / enrich duties skip while `budget` is
+  tripped.
 - `task_finish` validates `evidence` against call ids recorded in the
   task (no evidence + high confidence → medium + `no_evidence` flag),
   writes the deliverable, records the step before review so a late write

@@ -567,7 +567,12 @@ Approval (`always_propose`, class `catalog_import`); owner
 and `POST …/catalog/discovery/run` return `200 {queued}` and run in the
 background like **Run staff tick now**; Progress shows the job phase and
 disables Preview/Import for that source while it is `queued` or
-`running`. Monday discovery fetches LCSD / EDB / SWD, ingests a source in-process
+`running`. `GET …/catalog/candidates` filters by `source` / `district` /
+`q` and pages with `cursor`; owner `POST …/catalog/candidates/bulk`
+approves or rejects the matching `new` rows (Progress **Reject leftover
+competitors** uses `source=competitor` and `before` = 7 days ago).
+Discovery refreshes LCSD / EDB / SWD on Monday **or** when a cache is
+missing/empty, ingests a source in-process
 when it has ≤ 500 rows, and queues 500-row `ingest` jobs when it is
 larger (EDB today; any later feed over that size uses the same path).
 Owner Preview / Import of a large source run those chunks first.
@@ -576,7 +581,7 @@ Dynamo only stores a pointer so a large file cannot exceed the 400 KB
 item limit. An empty official fetch (no `fetchedAt`, or zero rows) writes review gap `opendata-{source}`.
 A failed enqueue of the next ingest chunk writes `phase: error` so Preview/Import unlock.
 A failed job writes `phase: error` instead of staying
-`running`. Candidate approve/reject stay
+`running`. Per-row candidate approve/reject stay
 synchronous). A second
 import of the same task returns 409 unless the body has `{"force": true}`.
 `settings.catalog.microBatchEnabled` (default on) pauses the 3-per-district
