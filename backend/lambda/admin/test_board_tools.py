@@ -6,6 +6,7 @@ import io
 import json
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import patch
 from urllib import error as urlerror
@@ -90,7 +91,8 @@ class FakeGitHub:
         elif "/issues/42/comments" in path:
             payload = [{"user": {"login": "lx"}, "created_at": "2026-09-01T00:00:00Z", "body": "Repro attached"}]
         elif "/issues/42" in path:
-            payload = {"number": 42, "title": "Booking flow crashes", "state": "open", "body": "Steps...", "labels": [], "user": {"login": "lx"}, "assignees": []}
+            labels = [{"name": n} for n in getattr(self, "issue_labels", [])]
+            payload = {"number": 42, "title": "Booking flow crashes", "state": "open", "body": "Steps...", "labels": labels, "user": {"login": "lx"}, "assignees": []}
         elif "/contents/" in path:
             import base64
 
@@ -792,6 +794,114 @@ class LoopHygieneToolTests(ToolsTestCase):
         self.assertFalse(board_tools._should_always_propose(op, ctx, args))  # noqa: SLF001
         billing = {**args, "labels": ["billing"]}
         self.assertTrue(board_tools._should_always_propose(op, ctx, billing))  # noqa: SLF001
+
+
+class AutonomyToolTests(ToolsTestCase):
+    def test_architect_labels_auto_act(self) -> None:
+        settings = board_store.load_settings(self.table)
+        settings["tools"]["globalMode"] = "propose"
+        board_store.save_settings(self.table, settings)
+        board_store.save_staff_override(self.table, "architect", {"isActive": True})
+        ctx = board_tools.ToolContext(
+            self.table,
+            settings,
+            "cto",
+            display_name="Architect",
+            kind="task",
+            actor="persona",
+            seat_id="architect",
+            task_id="t-arch",
+        )
+        op = board_tools.REGISTRY["github_set_labels"]
+        self.assertTrue(board_tools._architect_backlog_write(ctx, op))  # noqa: SLF001
+        self.github.issue_labels = ["security"]
+        with patch.dict("os.environ", {"GITHUB_READ_TOKEN": "ghp_test", "BOARD_STAFF_ENABLED": "true"}):
+            board_github.reset_token_cache_for_tests()
+            outcome = board_tools.execute_call(
+                ctx, op, {"number": 42, "labels": ["board-ready", "bug"], "reason": "groom"}
+            )
+        self.assertEqual(outcome.status, "ok")
+        put = next(body for method, path, _, body in self.github.requests if method == "PUT" and "/labels" in path)
+        self.assertEqual(put["labels"], ["security", "board-ready", "bug"])
+        other = board_tools.ToolContext(
+            self.table, settings, "cto", kind="task", actor="persona", seat_id="engineer-1"
+        )
+        self.assertFalse(board_tools._architect_backlog_write(other, op))  # noqa: SLF001
+
+    def test_expire_stale_approvals(self) -> None:
+        now = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
+        old = (now - timedelta(hours=169)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        fresh = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        board_store.put_approval(
+            self.table,
+            {
+                "approvalId": "old-1",
+                "status": "pending",
+                "op": "mail_send",
+                "createdAt": old,
+                "autoRejectAt": old,
+                "arguments": {},
+                "context": {},
+            },
+        )
+        board_store.put_approval(
+            self.table,
+            {
+                "approvalId": "legacy-1",
+                "status": "pending",
+                "op": "mail_send",
+                "createdAt": old,
+                "arguments": {},
+                "context": {},
+            },
+        )
+        board_store.put_approval(
+            self.table,
+            {
+                "approvalId": "fresh-1",
+                "status": "pending",
+                "op": "mail_send",
+                "createdAt": fresh,
+                "autoRejectAt": (now + timedelta(hours=168)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "arguments": {},
+                "context": {},
+            },
+        )
+        n = board_tools.expire_stale_approvals(self.table, board_store.load_settings(self.table), now_iso=fresh)
+        self.assertEqual(n, 1)
+        expired = board_store.get_approval(self.table, "old-1")
+        self.assertEqual(expired["status"], "rejected")
+        self.assertEqual(expired["decidedBySub"], "system:expiry")
+        self.assertEqual(board_store.get_approval(self.table, "legacy-1")["status"], "pending")
+        self.assertEqual(board_store.get_approval(self.table, "fresh-1")["status"], "pending")
+        created = board_tools.create_approval(
+            board_tools.ToolContext(self.table, board_store.load_settings(self.table), "cmo"),
+            board_tools.REGISTRY["mail_send"],
+            {"fromMailbox": "hello", "to": ["contact#1"], "subject": "Hi", "body": "x", "reason": "r"},
+            summary="send",
+        )
+        self.assertTrue(str(created.get("autoRejectAt") or ""))
+
+    def test_mail_send_reuses_pending_same_recipients(self) -> None:
+        settings = board_store.load_settings(self.table)
+        ctx = board_tools.ToolContext(
+            self.table, settings, "cmo", kind="task", actor="persona", task_id="t-mail"
+        )
+        first = board_tools.create_approval(
+            ctx,
+            board_tools.REGISTRY["mail_send"],
+            {"fromMailbox": "hello", "to": ["contact#1"], "subject": "Hi", "body": "Hello", "reason": "a"},
+            summary="send 1",
+        )
+        second = board_tools.create_approval(
+            ctx,
+            board_tools.REGISTRY["mail_send"],
+            {"fromMailbox": "hello", "to": ["contact#1"], "subject": "Different", "body": "Other", "reason": "b"},
+            summary="send 2",
+        )
+        self.assertEqual(first["approvalId"], second["approvalId"])
+        pending = [a for a in board_store.list_approvals(self.table) if a.get("status") == "pending"]
+        self.assertEqual(len(pending), 1)
 
 
 class TestCompletionTimeout(unittest.TestCase):

@@ -12,6 +12,7 @@ import board_hk
 import board_opendata
 import board_store
 from contract_constants import (
+    BOARD_CATALOG_AUTO_BULK_MIN_APPROVED,
     BOARD_CATALOG_BULK_SOURCES,
     BOARD_CATALOG_LAUNCH_LISTING_TARGET,
     BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT,
@@ -182,7 +183,7 @@ def ingest_source(
             skipped += 1
             continue
         doc = board_catalog_candidates.upsert_candidate(table, cand)
-        if official and str(doc.get("status") or "") in _TERMINAL_CANDIDATE:
+        if doc.get("skipped") or (official and str(doc.get("status") or "") in _TERMINAL_CANDIDATE):
             skipped += 1
             continue
         created += 1
@@ -420,6 +421,92 @@ def sources_status(table: Any) -> dict[str, Any]:
         "launchTarget": BOARD_CATALOG_LAUNCH_LISTING_TARGET,
         "candidateCounts": counts,
     }
+
+
+def maybe_queue_auto_imports(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
+    """When auto-import is on, schedule one catalog_import hold for a ready source."""
+    if not board_catalog_import.auto_import_enabled(settings):
+        return {"queued": []}
+    if not board_catalog_import.import_enabled() or not board_catalog_import.configured():
+        return {"queued": []}
+    counts = board_catalog_candidates.counts_by_source(table)
+    held_sources = _held_bulk_sources(table)
+    ready: list[tuple[int, str]] = []
+    for source in BOARD_CATALOG_BULK_SOURCES:
+        approved = int((counts.get(source) or {}).get("approved") or 0)
+        if approved < BOARD_CATALOG_AUTO_BULK_MIN_APPROVED:
+            continue
+        if source in held_sources or _job_is_active(_job(table, source)):
+            continue
+        ready.append((approved, source))
+    if not ready:
+        return {"queued": []}
+    ready.sort(reverse=True)
+    source = ready[0][1]
+    out = _schedule_or_run_bulk(table, settings, source, approved=ready[0][0])
+    return {"queued": [source], **out}
+
+
+def _held_bulk_sources(table: Any) -> set[str]:
+    out: set[str] = set()
+    for hold in board_store.list_holds(table, "scheduled", limit=400):
+        if str(hold.get("op") or "") != "catalog_bulk_import":
+            continue
+        source = str((hold.get("arguments") or {}).get("source") or "")
+        if source:
+            out.add(source)
+    return out
+
+
+def _schedule_or_run_bulk(
+    table: Any, settings: dict[str, Any], source: str, *, approved: int
+) -> dict[str, Any]:
+    import board_holds
+    import board_tools
+
+    hours = board_holds.hold_hours(table, settings, "catalog_import", "catalog_import")
+    if hours <= 0:
+        job = queue_action(table, "import", source, requested_by="auto")
+        _log_event("info", tag="board_catalog_auto_bulk_queued", source=source, approved=approved)
+        return {"job": job, "held": False}
+    op = board_tools.REGISTRY.get("catalog_bulk_import")
+    if op is None:
+        return {"held": False}
+    ctx = board_tools.ToolContext(
+        table=table,
+        settings=settings,
+        persona_id="",
+        display_name="catalog sweep",
+        kind="internal",
+        actor="internal",
+        internal=True,
+    )
+    hold = board_holds.create_hold(
+        ctx,
+        op,
+        {"source": source, "reason": "auto bulk-import"},
+        action_class="catalog_import",
+        class_key="catalog_import",
+        hours=hours,
+        summary=f"Import catalog source {source} ({approved} approved)",
+    )
+    _log_event(
+        "info",
+        tag="board_catalog_auto_bulk_held",
+        source=source,
+        approved=approved,
+        holdId=hold.get("holdId"),
+        executeAt=hold.get("executeAt"),
+    )
+    return {"hold": hold, "held": True}
+
+
+def op_import_source(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
+    source = str(args.get("source") or "").strip()
+    requested = "auto" if getattr(ctx, "internal", False) or getattr(ctx, "actor", "") in ("hold", "internal") else str(
+        getattr(ctx, "actor", "") or "owner"
+    )
+    return queue_action(ctx.table, "import", source, requested_by=requested)
 
 
 def queue_action(

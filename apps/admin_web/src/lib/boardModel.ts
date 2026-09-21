@@ -225,7 +225,7 @@ export const DEFAULT_BOARD_BOUNDARIES: BoardBoundaries = {
     spend: 24,
     code_staging: 12,
     code_production: 0,
-    catalog_import: 24,
+    catalog_import: 2,
   },
   holdOverrides: {},
 };

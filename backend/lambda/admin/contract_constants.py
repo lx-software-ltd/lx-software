@@ -146,6 +146,17 @@ BOARD_STAFF_MAX_REVISIONS = int(_BOARD_STAFF_LIMITS["maxRevisions"])
 BOARD_STAFF_MAX_HELP_REQUESTS_PER_TASK = int(_BOARD_STAFF_LIMITS["maxHelpRequestsPerTask"])
 BOARD_STAFF_HELP_DEPTH_MAX = int(_BOARD_STAFF_LIMITS["helpDepthMax"])
 BOARD_STAFF_WAITING_EXPIRY_HOURS = int(_BOARD_STAFF_LIMITS["waitingExpiryHours"])
+BOARD_STAFF_APPROVAL_EXPIRY_HOURS = int(_BOARD_STAFF_LIMITS.get("approvalExpiryHours") or 168)
+BOARD_CATALOG_IMPORT_HOLD_HOURS = int(_BOARD_STAFF_LIMITS.get("catalogImportHoldHours") or 2)
+BOARD_CATALOG_AUTO_BULK_MIN_APPROVED = int(_BOARD_STAFF_LIMITS.get("catalogAutoBulkMinApproved") or 50)
+BOARD_STAFF_DEFAULT_MODEL_BY_SEAT: dict[str, str] = {
+    str(k): str(v)
+    for k, v in dict(_BOARD_STAFF_LIMITS.get("defaultModelBySeat") or {}).items()
+    if k and v
+}
+BOARD_STAFF_STEP_MODEL_LIST = tuple(
+    _BOARD_STAFF_LIMITS.get("stepModels") or ("qwen/qwen-2.5-72b-instruct", "deepseek/deepseek-chat")
+)
 BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT = int(_BOARD_STAFF_LIMITS["maxRunningTasksDefault"])
 BOARD_STAFF_MAX_EVENT_TASKS_PER_SEAT_PER_HOUR = int(_BOARD_STAFF_LIMITS["maxEventTasksPerSeatPerHour"])
 BOARD_STAFF_TASK_STUCK_SECONDS = int(_BOARD_STAFF_LIMITS["staffTaskStuckSeconds"])
@@ -211,6 +222,9 @@ BOARD_CATALOG_DISCOVERY_DISTRICTS_PER_DAY = int(_BOARD_CATALOG.get("discoveryDis
 BOARD_CATALOG_PLACES_MIN_RATING = float(_BOARD_CATALOG.get("placesMinRating") or 3.8)
 BOARD_CATALOG_PLACES_MIN_REVIEWS = int(_BOARD_CATALOG.get("placesMinReviews") or 10)
 BOARD_CATALOG_PLACES_TTL_DAYS = int(_BOARD_CATALOG.get("placesTtlDays") or 30)
+BOARD_CATALOG_NAME_DENY_TOKENS = tuple(
+    str(t) for t in (_BOARD_CATALOG.get("nameDenyTokens") or ()) if t
+)
 BOARD_CATALOG_CANDIDATE_STATUSES = tuple(_BOARD_CATALOG.get("candidateStatuses") or ("new", "approved", "imported", "rejected", "closed"))
 BOARD_CATALOG_BULK_SOURCES = tuple(_BOARD_CATALOG.get("bulkSources") or ("lcsd", "edb", "swd", "places", "competitor"))
 BOARD_CATALOG_SOURCE_CATEGORY: dict[str, str] = {

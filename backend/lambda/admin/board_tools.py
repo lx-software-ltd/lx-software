@@ -56,6 +56,7 @@ from contract_constants import (
     BOARD_MAIL_SUBJECT_MAX_LEN,
     BOARD_RESEARCH_QUERY_MAX_LEN,
     BOARD_MAX_PENDING_APPROVALS,
+    BOARD_STAFF_APPROVAL_EXPIRY_HOURS,
     BOARD_MAX_TOOL_CALLS_PER_TURN,
     BOARD_MAX_TOOL_ROUNDS_PER_TURN,
     BOARD_TOOL_DEFINITIONS,
@@ -148,6 +149,24 @@ class ToolContext:
     # ``time.monotonic()`` value after which no new op should start and running
     # ops are cut short; 0 means "no loop deadline" (owner approvals, jobs).
     deadline: float = 0.0
+    # Cached staff-task attempt metadata so each op does not re-read the row.
+    task_attempt: int | None = None
+    task_retried_at: str = ""
+
+    def bind_task_meta(self) -> None:
+        if not self.task_id or self.task_attempt is not None:
+            return
+        try:
+            row = board_store.get_task(self.table, self.task_id)
+        except Exception:
+            return
+        if row is None:
+            return
+        try:
+            self.task_attempt = int(row.get("attempt") or 1)
+        except (TypeError, ValueError):
+            self.task_attempt = 1
+        self.task_retried_at = str(row.get("retriedAt") or "")
 
     def seconds_left(self) -> float | None:
         if not self.deadline:
@@ -538,6 +557,12 @@ def _board_update_action(ctx: ToolContext, args: dict[str, Any]) -> dict[str, An
         "dueAt": doc.get("dueAt"),
         "note": doc.get("note"),
     }
+
+
+def _run_catalog_bulk_import(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+    import board_catalog_bulk
+
+    return board_catalog_bulk.op_import_source(ctx, args)
 
 
 def _summ(template: str) -> Callable[[dict[str, Any]], str]:
@@ -1571,6 +1596,27 @@ def build_registry() -> dict[str, ToolOp]:
             ),
             run=board_catalog_import.op_import,
             summarize=_summ("Import catalog sheet {taskId}"),
+            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
+        ),
+        ToolOp(
+            name="catalog_bulk_import",
+            tool_id="catalog",
+            kind="write",
+            always_propose=True,
+            action_class="catalog_import",
+            description=(
+                "Import approved catalog candidates from one bulk source (lcsd, edb, swd, "
+                "places, competitor). Auto-import schedules this as an internal hold."
+            ),
+            parameters=_obj(
+                {
+                    "source": _str_param("Bulk source id.", enum=["lcsd", "edb", "swd", "places", "competitor"]),
+                    "reason": REASON_PARAM,
+                },
+                ["source", "reason"],
+            ),
+            run=_run_catalog_bulk_import,
+            summarize=_summ("Import catalog source {source}"),
             timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
         ),
         ToolOp(
@@ -3019,6 +3065,31 @@ def _invoke_op(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> dict[
 _SECURITY_ISSUE_LABELS = frozenset({"security", "dependencies"})
 
 
+_ARCHITECT_AUTO_ACT_OPS = frozenset({"github_set_labels", "github_comment_issue"})
+
+
+def _architect_backlog_write(ctx: ToolContext, op: ToolOp) -> bool:
+    """Architect grooming labels/comments executes at act so the runner loop is unblocked."""
+    return bool(ctx.seat_id == "architect" and op.name in _ARCHITECT_AUTO_ACT_OPS)
+
+
+def _union_github_labels(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Merge requested labels with the issue's current set so act cannot strip."""
+    current = board_github.op_get_issue({"number": arguments.get("number")})
+    if current.get("error"):
+        raise board_github.GitHubSnapshotError(str(current.get("error")))
+    existing = [str(name) for name in (current.get("labels") or []) if name]
+    wanted = board_github._clean_labels(arguments.get("labels"))  # noqa: SLF001
+    merged: list[str] = []
+    for name in [*existing, *wanted]:
+        if name and name not in merged:
+            merged.append(name)
+    # op_set_labels re-cleans to 10; a longer union would drop a requested label.
+    if len(merged) > 10:
+        raise board_github.GitHubSnapshotError("label union exceeds 10; leave as a proposal")
+    return {**arguments, "labels": merged}
+
+
 def _cto_security_issue(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> bool:
     """CTO filing a security/dependencies issue may act even when globalMode is propose.
 
@@ -3080,6 +3151,17 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         # globalMode cap so Dependabot / CVE tickets are filed without an Approval.
         if _cto_security_issue(ctx, op, arguments) and level in ("propose", "act"):
             level = "act"
+        if _architect_backlog_write(ctx, op) and level in ("propose", "act"):
+            if op.name == "github_set_labels":
+                try:
+                    arguments = _union_github_labels(arguments)
+                except Exception:
+                    # Fetch failed — do not replace labels unattended.
+                    pass
+                else:
+                    level = "act"
+            else:
+                level = "act"
     else:
         level = "act"
     summary = op.summarize(arguments)
@@ -3246,6 +3328,8 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
     outcome.duration_ms = int((time.monotonic() - started) * 1000)
     outcome.approval_id = approval_id or outcome.approval_id
     audit = mask_arguments(ctx, {"arguments": arguments, "summary": summary})
+    ctx.bind_task_meta()
+    attempt = ctx.task_attempt
     record = board_store.add_tool_call(
         ctx.table,
         {
@@ -3268,6 +3352,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
             "taskId": ctx.task_id,
             "seatId": ctx.seat_id,
             "classKey": class_key,
+            **({"attempt": attempt} if attempt is not None else {}),
             **({"toolCallId": ctx.llm_tool_call_id} if ctx.llm_tool_call_id else {}),
         },
     )
@@ -3326,6 +3411,15 @@ def _reuse_staff_assign(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any])
         return None
 
 
+def _approval_expires_at(now: str) -> str:
+    try:
+        created = datetime.fromisoformat(now.replace("Z", "+00:00"))
+    except ValueError:
+        created = datetime.now(timezone.utc)
+    expires = created + timedelta(hours=BOARD_STAFF_APPROVAL_EXPIRY_HOURS)
+    return expires.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def create_approval(
     ctx: ToolContext,
     op: ToolOp,
@@ -3370,6 +3464,8 @@ def create_approval(
                     downgrade_reason=downgrade_reason,
                     fingerprint=fingerprint,
                 )
+            if op.name == "mail_send" and _same_mail_recipients(existing.get("arguments") or {}, arguments):
+                return existing
     if len(pending) >= BOARD_MAX_PENDING_APPROVALS:
         raise ToolPermissionError("Too many pending approvals; ask the founder to review the queue first.")
     now = board_store.now_iso()
@@ -3390,6 +3486,7 @@ def create_approval(
         "context": ctx.public(),
         "createdAt": now,
         "updatedAt": now,
+        "autoRejectAt": _approval_expires_at(now),
     }
     if downgrade_reason:
         doc["downgradeReason"] = downgrade_reason[:300]
@@ -3637,6 +3734,22 @@ def _same_github_issue_title(left: dict[str, Any], right: dict[str, Any]) -> boo
     return bool(title) and title == _norm_issue_title(right.get("title"))
 
 
+def _mail_recipient_key(args: dict[str, Any]) -> tuple[str, ...]:
+    raw = args.get("to")
+    if isinstance(raw, str):
+        values = [v.strip().lower() for v in re.split(r"[,;\s]+", raw) if v.strip()]
+    elif isinstance(raw, list):
+        values = [str(v).strip().lower() for v in raw if v]
+    else:
+        values = [str(raw).strip().lower()] if raw else []
+    return tuple(sorted(values))
+
+
+def _same_mail_recipients(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    key = _mail_recipient_key(left)
+    return bool(key) and key == _mail_recipient_key(right)
+
+
 def _refresh_pending_approval(
     ctx: ToolContext,
     op: ToolOp,
@@ -3789,6 +3902,39 @@ def _resume_waiting_staff(table: Any, settings: dict[str, Any], approval: dict[s
         board_staff.resume_after_approval(table, settings, approval)
     except Exception as exc:
         _log_event("warning", tag="board_staff_resume_after_approval_failed", error=str(exc)[:200])
+
+
+def expire_stale_approvals(table: Any, settings: dict[str, Any], now_iso: str | None = None) -> int:
+    """Reject pending approvals that carry ``autoRejectAt`` and are due.
+
+    ``expiresAt`` on the Dynamo row is the table TTL, not this deadline.
+    Approvals created before ``autoRejectAt`` existed are left for the founder.
+    """
+    now = now_iso or board_store.now_iso()
+    expired = 0
+    for approval in board_store.list_approvals(table):
+        if approval.get("status") != "pending":
+            continue
+        expires = str(approval.get("autoRejectAt") or "")
+        if not expires or expires > now:
+            continue
+        approval_id = str(approval.get("approvalId") or "")
+        if not approval_id:
+            continue
+        if not board_store.claim_approval_decision(table, approval_id, status="rejected"):
+            continue
+        decided = {
+            **approval,
+            "status": "rejected",
+            "decidedAt": now,
+            "decidedBySub": "system:expiry",
+            "note": f"Expired after {BOARD_STAFF_APPROVAL_EXPIRY_HOURS}h without a founder decision.",
+            "updatedAt": now,
+        }
+        board_store.put_approval(table, decided)
+        _resume_waiting_staff(table, settings, decided)
+        expired += 1
+    return expired
 
 
 def public_approval(doc: dict[str, Any]) -> dict[str, Any]:

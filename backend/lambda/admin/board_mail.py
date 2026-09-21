@@ -854,8 +854,18 @@ def recipient_allowed(settings: dict[str, Any], address: str) -> bool:
 
 
 def recipient_sourced(pseud: board_pii.Pseudonymizer, value: Any) -> bool:
-    """True when the recipient is an alias, a mapped address, or an own mailbox."""
-    return pseud.is_known_contact(str(value or ""))
+    """True when the recipient is an alias or an own mailbox.
+
+    Raw addresses are not sourced even if the seat just aliased them — that is
+    how invented ``venue@district.hk`` recipients used to reach Approvals.
+    """
+    text = str(value or "").strip()
+    if board_pii.ALIAS_RE.fullmatch(text):
+        return isinstance(pseud.state.get("byAlias", {}).get(text), dict)
+    addr = board_pii.normalize_email(text)
+    if not addr:
+        return False
+    return board_pii.is_own_address(addr, getattr(pseud, "own_domains", ()) or ())
 
 
 def recipient_values(values: Any) -> list[Any]:

@@ -369,7 +369,13 @@ def create_enrich(table: Any, settings: dict[str, Any], *, created_by: str = "bo
         deliverable_type="json",
         budget_usd=BOARD_CATALOG_DESCRIBE_BUDGET_USD,
         sla_hours=24,
-        event_ref={"kind": CATALOG_ENRICH_KIND, "id": f"catalog-enrich:{did}", "districtId": did, "district": name},
+        event_ref={
+            "kind": CATALOG_ENRICH_KIND,
+            "id": f"catalog-enrich:{did}",
+            "districtId": did,
+            "district": name,
+            "orgNames": names,
+        },
         created_by=created_by,
     )
 

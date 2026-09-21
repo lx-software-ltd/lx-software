@@ -318,6 +318,73 @@ class TransformTests(unittest.TestCase):
         }
         self.assertEqual(board_catalog_import.sheet_quality_issues(rich), [])
 
+    def test_keep_quality_orgs_drops_thin_rows(self) -> None:
+        sheet = {
+            "district": "Eastern",
+            "organisations": [
+                {
+                    "name_en": "Thin Park",
+                    "type": "playground",
+                    "verified_fields": ["name_en"],
+                },
+                {
+                    "name_en": "Rich Park",
+                    "address_en": "Lei King Road",
+                    "opening_hours": "Daily 07:00-23:00",
+                    "verified_fields": ["name_en", "address_en", "opening_hours"],
+                },
+            ],
+        }
+        kept, dropped = board_catalog_import.keep_quality_orgs(sheet)
+        self.assertEqual([o["name_en"] for o in kept["organisations"]], ["Rich Park"])
+        self.assertEqual(dropped, ["Thin Park"])
+
+    def test_enrich_trusts_brief_names(self) -> None:
+        names = board_catalog_import.names_from_brief(
+            "Founder directive — CATALOG DESCRIBE Islands: write 40-word EN + 繁中 descriptions, "
+            "age_range and price_note for Galaxy Sports Asia, Kids Club at Tung Chung, and "
+            "Tung Chung North Park in Islands (hint)."
+        )
+        self.assertIn("galaxy sports asia", names)
+        self.assertIn("kids club at tung chung", names)
+        self.assertIn("tung chung north park", names)
+        import board_catalog
+
+        real = board_catalog_import.names_from_brief(
+            board_catalog.compose_enrich_brief(
+                {"name": "Islands", "hint": "LCSD Tung Chung North Park first"},
+                ["Galaxy Sports Asia", "Kids Club at Tung Chung", "Sports and Recreation Centre"],
+            )
+        )
+        self.assertEqual(real, {"galaxy sports asia", "kids club at tung chung", "sports and recreation centre"})
+        split = board_catalog_import.names_from_brief(
+            "Write descriptions for Sports and Recreation Centre, Happy Park in Eastern. Read only official pages."
+        )
+        self.assertEqual(split, {"sports and recreation centre", "happy park"})
+        task = {
+            "eventRef": {"kind": "catalog-enrich", "orgNames": ["Repulse Bay Beach"]},
+            "brief": "for Stanley Plaza in Southern",
+        }
+        known = board_catalog_import._known_names_for_task(None, task)  # noqa: SLF001
+        self.assertIsNotNone(known)
+        self.assertIn("repulse bay beach", known)
+        self.assertIn("stanley plaza", known)
+        org, report = board_catalog_import.transform_org(
+            {
+                "name_en": "Stanley Plaza",
+                "type": "indoor_play",
+                "district": "Southern",
+                "verified_fields": ["address_en"],
+                "address_en": "Stanley",
+            },
+            district="Southern",
+            manager_id="mgr-1",
+            index=0,
+            known_names=known,
+        )
+        self.assertIsNotNone(org)
+        self.assertNotIn("name is not in verified_fields", str(report))
+
     def test_is_catalog_sheet_includes_enrich(self) -> None:
         self.assertTrue(board_catalog_import.is_catalog_sheet({"eventRef": {"kind": "catalog-micro-batch"}}))
         self.assertTrue(board_catalog_import.is_catalog_sheet({"eventRef": {"kind": "catalog-enrich"}}))
@@ -1118,9 +1185,10 @@ class ImportClientTests(BoardTestCase):
         self.assertEqual(len(vetoed), 1)
         self.assertEqual(vetoed[0].get("vetoReason"), "imported")
 
-    def test_stored_zero_catalog_hold_becomes_24(self) -> None:
+    def test_stored_zero_catalog_hold_becomes_default(self) -> None:
         out = board_store.normalize_boundaries({"holds": {"catalog_import": 0}})
-        self.assertEqual(out["holds"]["catalog_import"], 24)
+        self.assertEqual(out["holds"]["catalog_import"], 2)
+        self.assertNotIn("catalog_import", out["holdOverrides"])
         explicit = board_store.normalize_boundaries(
             {"holds": {"catalog_import": 0}, "holdOverrides": {"catalog_import": 0}}
         )

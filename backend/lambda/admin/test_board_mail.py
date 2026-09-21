@@ -726,14 +726,14 @@ class TestMailTools(MailTestCase):
         thread_id = self.seed_thread()
         board_mail.masked_thread_detail(self.table, thread_id)
         pseud = board_mail.pseudonymizer(self.table)
-        pseud.alias_for_address("other@example.com")
+        other_alias = pseud.alias_for_address("other@example.com")
         pseud.save()
         plan = board_mail.outgoing_plan(
             self.table,
             "mail_send",
             {
                 "fromMailbox": "hello",
-                "to": "contact#1, other@example.com",
+                "to": f"contact#1, {other_alias}",
                 "subject": "Hi",
                 "body": "Hello",
             },
@@ -745,7 +745,7 @@ class TestMailTools(MailTestCase):
                 "mail_send",
                 {
                     "fromMailbox": "hello",
-                    "to": "contact#1, invented@example.com",
+                    "to": "contact#1, other@example.com",
                     "subject": "Hi",
                     "body": "Hello",
                 },

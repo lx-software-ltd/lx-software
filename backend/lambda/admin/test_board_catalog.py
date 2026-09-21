@@ -416,6 +416,63 @@ class CatalogDutyTests(BoardTestCase):
             self.assertEqual(board_research.fetch_cap_for_task(self.table, catalog["taskId"], ctx=ctx), 9)
         self.assertEqual(getter.call_count, 1)
 
+    def test_fetch_cap_resets_after_retry(self) -> None:
+        settings = _enable(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_catalog.create_next(self.table, settings)
+        tid = task["taskId"]
+        ctx = type("Ctx", (), {"table": self.table, "task_id": tid})()
+        for i in range(9):
+            board_store.add_tool_call(
+                self.table,
+                {
+                    "op": "research_fetch_page",
+                    "status": "ok",
+                    "taskId": tid,
+                    "attempt": 1,
+                    "createdAt": f"2026-09-18T00:00:{i:02d}Z",
+                },
+            )
+        self.assertIn("fetch cap", board_research.op_fetch_page(ctx, {"url": "https://www.lcsd.gov.hk/x"})["error"])
+        task["attempt"] = 2
+        task["retriedAt"] = "2026-09-21T00:00:00Z"
+        board_store.put_task(self.table, task)
+        board_store.add_tool_call(
+            self.table,
+            {
+                "op": "research_fetch_page",
+                "status": "ok",
+                "taskId": tid,
+                "attempt": 2,
+                "createdAt": "2026-09-21T00:01:00Z",
+            },
+        )
+        # One call on attempt 2 — still under the catalog cap of 9.
+        out = board_research.op_fetch_page(ctx, {"url": "https://example.invalid"})
+        self.assertNotIn("fetch cap", str(out.get("error") or ""))
+
+    def test_context_pack_includes_catalog_counts_and_built(self) -> None:
+        import board_catalog_candidates
+        import board_context
+
+        board_catalog_candidates.upsert_candidate(
+            self.table,
+            {
+                "source": "lcsd",
+                "sourceId": "lcsd-1",
+                "nameEn": "Quarry Bay Park Playground",
+                "district": "Eastern",
+            },
+        )
+        pack = board_context.build_context_pack(
+            self.table, board_store.load_settings(self.table), roster=[]
+        )
+        self.assertIn("lcsd", pack["catalog"]["candidates"])
+        self.assertTrue(any("importer" in line.lower() for line in pack["catalog"]["built"]))
+        self.assertIn("Catalog (already built", pack["text"])
+        self.assertIn("research_fetch_page", pack["text"])
+
 
 if __name__ == "__main__":
     unittest.main()

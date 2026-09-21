@@ -463,6 +463,39 @@ def sheet_quality_issues(sheet: dict[str, Any], *, min_facts: int | None = None)
     return issues
 
 
+def keep_quality_orgs(
+    sheet: dict[str, Any], *, min_facts: int | None = None
+) -> tuple[dict[str, Any], list[str]]:
+    """Keep organisations that meet the first-class fact bar; drop the rest."""
+    needed = BOARD_CATALOG_QUALITY_MIN_FACTS if min_facts is None else int(min_facts)
+    orgs = sheet.get("organisations")
+    if orgs is None:
+        orgs = sheet.get("organizations")
+    if not isinstance(orgs, list):
+        return sheet, []
+    groups = (
+        ("address_en", "address"),
+        ("opening_hours",),
+        ("free_or_paid", "price_note"),
+    )
+    kept: list[dict[str, Any]] = []
+    dropped: list[str] = []
+    for org in orgs:
+        if not isinstance(org, dict):
+            continue
+        verified = _verified_set(org)
+        name = str(org.get("name_en") or org.get("name") or "organisation")[:80]
+        hits = sum(1 for aliases in groups if _field_verified(verified, *aliases))
+        if hits >= needed:
+            kept.append(org)
+        else:
+            dropped.append(name)
+    out = {**sheet, "organisations": kept}
+    if "organizations" in out:
+        out["organizations"] = kept
+    return out, dropped
+
+
 def _name_is_known(name: str, known_names: set[str] | None) -> bool:
     if not name or not known_names:
         return False
@@ -1074,16 +1107,55 @@ def _task_text(table: Any, task: dict[str, Any], explicit: str | None) -> str:
     return board_staff.read_deliverable(task, limit=12000)
 
 
+# ``compose_enrich_brief`` writes "… price_note for A, B, and C in District (hint)".
+_BRIEF_ENRICH_NAMES = re.compile(
+    r"price_note\s+for\s+(?P<names>.+?)\s+in\s+[^(\n]+?\s*\(",
+    re.IGNORECASE | re.DOTALL,
+)
+# Owner-written briefs: the first "for A, B in District" clause, stopped at
+# the sentence end so a later contract paragraph cannot be swallowed.
+_BRIEF_FOR_NAMES = re.compile(
+    r"\bfor\s+(?P<names>[^.\n]+?)\s+in\s+[A-Z][^,.(\n]*",
+)
+
+
+def names_from_brief(brief: str) -> set[str]:
+    """Parse the organisation list from a describe/enrich brief.
+
+    Splits on commas only — names that contain ``and`` stay intact.
+    """
+    text = brief or ""
+    match = _BRIEF_ENRICH_NAMES.search(text) or _BRIEF_FOR_NAMES.search(text)
+    if not match:
+        return set()
+    chunk = match.group("names")
+    skip = {"the organisations already imported for this district", "the organisations"}
+    out: set[str] = set()
+    for part in chunk.split(","):
+        name = " ".join(part.split()).strip()
+        if name.lower().startswith("and "):
+            name = name[4:].strip()
+        if not name or name.casefold() in skip:
+            continue
+        out.add(name.casefold())
+    return out
+
+
 def _known_names_for_task(table: Any, task: dict[str, Any]) -> set[str] | None:
     if not allows_existing_org_updates(task):
         return None
-    did = str((task.get("eventRef") or {}).get("districtId") or "").strip()
-    if not did:
-        return None
-    import board_catalog
+    folded: set[str] = set()
+    ref = task.get("eventRef") or {}
+    for name in ref.get("orgNames") or []:
+        text = str(name or "").strip()
+        if text:
+            folded.add(text.casefold())
+    folded |= names_from_brief(str(task.get("brief") or ""))
+    did = str(ref.get("districtId") or "").strip()
+    if did:
+        import board_catalog
 
-    names = board_catalog.imported_org_names(table, did)
-    folded = {str(n).casefold() for n in names if n}
+        folded |= {str(n).casefold() for n in board_catalog.imported_org_names(table, did) if n}
     return folded or None
 
 

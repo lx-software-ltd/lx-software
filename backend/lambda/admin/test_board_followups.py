@@ -625,11 +625,19 @@ class TestAuditMasking(ToolsTestCase):
         settings["tools"]["matrix"]["mail"]["ceo"] = "act"
         ctx = ToolContext(table=self.table, settings=settings, persona_id="ceo", display_name="CEO")
         learned = board_mail.pseudonymizer(self.table)
-        learned.alias_for_address("parent@example.com")
+        alias = learned.alias_for_address("parent@example.com")
         learned.save()
+        # A raw address is never sourced, even when it is already aliased.
+        raw = execute_call(
+            ctx,
+            REGISTRY["mail_send"],
+            {"fromMailbox": "hello", "to": ["parent@example.com"], "subject": "Hi", "body": "x", "reason": "r"},
+        )
+        self.assertEqual(raw.status, "error")
+        self.assertIn("recipient not sourced", str(raw.result.get("error")))
         args = {
             "fromMailbox": "hello",
-            "to": ["parent@example.com"],
+            "to": [alias],
             "subject": "Hi",
             "body": "Call me on +852 9123 4567 or parent@example.com",
             "reason": "r",
