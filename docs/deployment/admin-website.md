@@ -567,7 +567,14 @@ Approval (`always_propose`, class `catalog_import`); owner
 and `POST …/catalog/discovery/run` return `200 {queued}` and run in the
 background like **Run staff tick now**; Progress shows the job phase and
 disables Preview/Import for that source while it is `queued` or
-`running`. A failed job writes `phase: error` instead of staying
+`running`. Monday discovery fetches LCSD / EDB / SWD, ingests a source in-process
+when it has ≤ 500 rows, and queues 500-row `ingest` jobs when it is
+larger (EDB today; any later feed over that size uses the same path).
+Owner Preview / Import of a large source run those chunks first.
+Open-data rows gzip to `board/{BOARD_KEY}/opendata/{name}.json.gz`;
+Dynamo only stores a pointer so a large file cannot exceed the 400 KB
+item limit. An empty official fetch writes review gap `opendata-{source}`.
+A failed job writes `phase: error` instead of staying
 `running`. Candidate approve/reject stay
 synchronous). A second
 import of the same task returns 409 unless the body has `{"force": true}`.

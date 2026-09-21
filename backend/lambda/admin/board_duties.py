@@ -512,6 +512,19 @@ def list_config_gaps(table: Any) -> list[dict[str, Any]]:
     return [row for row in (payload.get("items") or []) if isinstance(row, dict)]
 
 
+def clear_config_gap(table: Any, gap_id: str) -> int:
+    wanted = str(gap_id or "")
+    if not wanted:
+        return 0
+    items = list_config_gaps(table)
+    kept = [row for row in items if str(row.get("gapId") or "") != wanted]
+    dropped = len(items) - len(kept)
+    if not dropped:
+        return 0
+    board_store.put_cache(table, _CONFIG_GAPS_CACHE, {"items": kept[-20:]}, ttl_seconds=40 * 86400)
+    return dropped
+
+
 def _merge_seen_alerts(table: Any, *, add: list[str] | None = None, drop: set[str] | None = None) -> None:
     add_ids = [str(i) for i in (add or []) if i]
     drop_ids = {str(i) for i in (drop or set()) if i}
