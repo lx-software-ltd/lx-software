@@ -78,6 +78,8 @@ LEVEL_RANK: dict[str, int] = {lvl: i for i, lvl in enumerate(BOARD_TOOL_LEVELS)}
 GLOBAL_MODE_CAP: dict[str, str] = {"readOnly": "read", "propose": "propose", "act": "act"}
 TOOL_LABELS: dict[str, str] = {str(t["id"]): str(t["label"]) for t in BOARD_TOOL_DEFINITIONS}
 MAX_ARGUMENT_CHARS = 8000
+# task_finish deliverables (content plans, catalog sheets) routinely exceed 8k.
+MAX_ARGUMENT_CHARS_TASK_FINISH = 40000
 MAX_RESULT_PREVIEW = 400
 # Wall-clock budget of one persona turn (chat: chatToolLoopMaxSeconds, meeting:
 # meetingToolLoopMaxSeconds) is shared by the model calls and the tool ops:
@@ -2892,12 +2894,19 @@ def _truncate_json(value: Any, limit: int) -> str:
     return text[: limit - 60].rstrip() + f" ... [truncated, {len(text)} chars total]"
 
 
-def _clean_arguments(args: Any) -> dict[str, Any]:
+def _argument_char_limit(op_name: str = "") -> int:
+    if op_name == "task_finish":
+        return MAX_ARGUMENT_CHARS_TASK_FINISH
+    return MAX_ARGUMENT_CHARS
+
+
+def _clean_arguments(args: Any, *, limit: int | None = None) -> dict[str, Any]:
     if not isinstance(args, dict):
         return {}
     text = json.dumps(args, default=str)
-    if len(text) > MAX_ARGUMENT_CHARS:
-        raise InvalidArgumentsError(f"arguments too large (over {MAX_ARGUMENT_CHARS} characters)")
+    cap = MAX_ARGUMENT_CHARS if limit is None else int(limit)
+    if len(text) > cap:
+        raise InvalidArgumentsError(f"arguments too large (over {cap} characters)")
     return args
 
 
@@ -3135,12 +3144,13 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
     started = time.monotonic()
     raw = arguments if isinstance(arguments, dict) else {}
     invalid = ""
+    arg_limit = _argument_char_limit(op.name)
     try:
-        arguments = validate_arguments(op, _clean_arguments(raw))
+        arguments = validate_arguments(op, _clean_arguments(raw, limit=arg_limit))
     except InvalidArgumentsError as exc:
         invalid = str(exc)
         # Keep the (bounded) raw arguments so the audit row shows what was asked.
-        arguments = raw if len(json.dumps(raw, default=str)) <= MAX_ARGUMENT_CHARS else {}
+        arguments = raw if len(json.dumps(raw, default=str)) <= arg_limit else {}
     safety_actor = ctx.actor in ("persona", "hold")
     if safety_actor and op.tool_id == "task":
         level = task_ops_level(ctx.kind)
@@ -3540,6 +3550,66 @@ def create_approval(
 # The loop
 # ---------------------------------------------------------------------------
 
+def _completion_hit_length_limit(completion: ChatCompletion | None) -> bool:
+    return bool(completion and str(getattr(completion, "finish_reason", "") or "") == "length")
+
+
+def _board_completion_with_length_retry(
+    *,
+    ctx: ToolContext,
+    messages: list[dict[str, Any]],
+    model: str,
+    timeout_s: int,
+    max_tokens: int,
+    temperature: float,
+    json_mode: bool,
+    tag: str,
+    tools: list[dict[str, Any]] | None = None,
+    tool_choice: Any = None,
+) -> ChatCompletion:
+    """Call the model; if the reply hits the token cap below 6000, retry once at 6000."""
+    kwargs: dict[str, Any] = {}
+    if tools is not None:
+        kwargs["tools"] = tools
+        kwargs["tool_choice"] = tool_choice
+    completion = board_budget.board_completion(
+        table=ctx.table,
+        messages=messages,
+        model=model,
+        timeout=timeout_s,
+        json_mode=json_mode,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        tag=tag,
+        usage_sink=ctx.usage_sink,
+        settings=ctx.settings,
+        **kwargs,
+    )
+    if _completion_hit_length_limit(completion) and max_tokens < 6000:
+        _log_event(
+            "info",
+            tag="board_tool_loop_length_retry",
+            persona=ctx.persona_id,
+            max_tokens=max_tokens,
+        )
+        retry = board_budget.board_completion(
+            table=ctx.table,
+            messages=messages,
+            model=model,
+            timeout=timeout_s,
+            json_mode=json_mode,
+            temperature=temperature,
+            max_tokens=6000,
+            tag=tag,
+            usage_sink=ctx.usage_sink,
+            settings=ctx.settings,
+            **kwargs,
+        )
+        retry.usage = add_usage(completion.usage, retry.usage)
+        return retry
+    return completion
+
+
 def run_tool_loop(
     *,
     ctx: ToolContext,
@@ -3579,17 +3649,15 @@ def run_tool_loop(
         if current and current.get("parentTaskId"):
             ops = [(op, lvl) for op, lvl in ops if op.name != "task_request_help"]
     if not ops:
-        completion = board_budget.board_completion(
-            table=ctx.table,
+        completion = _board_completion_with_length_retry(
+            ctx=ctx,
             messages=messages,
             model=model,
-            timeout=timeout,
-            json_mode=json_mode,
-            temperature=temperature,
+            timeout_s=timeout,
             max_tokens=max_tokens,
+            temperature=temperature,
+            json_mode=json_mode,
             tag=tag,
-            usage_sink=ctx.usage_sink,
-            settings=ctx.settings,
         )
         return ToolLoopResult(text=completion.text, usage=completion.usage, model=completion.model, rounds=1, completion=completion)
 
@@ -3633,19 +3701,17 @@ def run_tool_loop(
                 _log_event("warning", tag="board_tool_loop_budget_stop", persona=ctx.persona_id, rounds=rounds)
                 break
         rounds += 1
-        completion = board_budget.board_completion(
-            table=ctx.table,
+        completion = _board_completion_with_length_retry(
+            ctx=ctx,
             messages=convo,
             model=model,
-            timeout=timeout_s,
-            json_mode=False,
-            temperature=temperature,
+            timeout_s=timeout_s,
             max_tokens=max_tokens,
+            temperature=temperature,
+            json_mode=False,
             tag=tag,
             tools=schemas,
             tool_choice=choice,
-            usage_sink=ctx.usage_sink,
-            settings=ctx.settings,
         )
         usage = add_usage(usage, completion.usage)
         tool_calls = list(completion.tool_calls or [])
@@ -3694,19 +3760,17 @@ def run_tool_loop(
         )
         if timeout_s <= 0:
             return ToolLoopResult(text="", usage=usage, model=model, calls=calls, rounds=rounds)
-        final = board_budget.board_completion(
-            table=ctx.table,
+        final = _board_completion_with_length_retry(
+            ctx=ctx,
             messages=convo,
             model=model,
-            timeout=timeout_s,
-            json_mode=json_mode,
-            temperature=temperature,
+            timeout_s=timeout_s,
             max_tokens=max_tokens,
+            temperature=temperature,
+            json_mode=json_mode,
             tag=tag,
             tools=schemas,
             tool_choice="none",
-            usage_sink=ctx.usage_sink,
-            settings=ctx.settings,
         )
         usage = add_usage(usage, final.usage)
     return ToolLoopResult(text=final.text, usage=usage, model=final.model, calls=calls, rounds=rounds, completion=final)
@@ -3837,6 +3901,18 @@ def _run_one(
     op = by_name.get(tc.name)
     if op is None:
         return _tool_message(tc, {"error": f"Unknown tool {tc.name}"})
+    if tc.name == "task_finish" and any(
+        str(c.get("status") or "") == "pending_approval" and c.get("blocksTask") is not False for c in calls
+    ):
+        return _tool_message(
+            tc,
+            {
+                "error": (
+                    "a blocking approval is pending in this step; "
+                    "wait for the founder before calling task_finish"
+                )
+            },
+        )
     bound = replace(ctx, llm_tool_call_id=str(tc.id or ""))
     try:
         outcome = execute_call(bound, op, tc.arguments)
@@ -3887,7 +3963,9 @@ def decide_approval(
         if isinstance(arguments_override, dict):
             arguments.update(arguments_override)
         if op is not None:
-            arguments = validate_arguments(op, _clean_arguments(arguments))
+            arguments = validate_arguments(
+                op, _clean_arguments(arguments, limit=_argument_char_limit(op.name))
+            )
     next_status = "approved" if approve else "rejected"
     if not board_store.claim_approval_decision(table, approval_id, status=next_status):
         raise ValueError("Approval was decided by someone else a moment ago")

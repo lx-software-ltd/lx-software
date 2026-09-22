@@ -403,11 +403,12 @@ def _page_mentions_org(text: str, names: list[str]) -> bool:
 def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Fetch a public page. Refuses private/link-local hosts. Cap 6 per task (9 for catalog).
 
-    Only a call stored as ``ok`` counts toward the cap. Catalog-enrich tasks
-    may fetch the official URLs on the task (``eventRef.orgUrls``); any other
-    URL is refused before the request. When the sheet has names but no URLs,
-    a page whose text names none of the organisations is refused too, so a
-    200 from an invented LCSD id does not burn the cap.
+    Only a call stored as ``ok`` counts toward the cap, and only distinct
+    normalised URLs. Catalog-enrich tasks may fetch the official URLs on the
+    task (``eventRef.orgUrls``); any other URL is refused before the request.
+    When the sheet has names but no URLs, a page whose text names none of the
+    organisations is refused too, so a 200 from an invented LCSD id does not
+    burn the cap. HTTP ≥ 400 and empty bodies return ``error`` (not ``ok``).
     """
     import urllib.error
 
@@ -442,23 +443,36 @@ def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
                     attempt = 1
                 retried_at = str(row.get("retriedAt") or "")
         task = {"attempt": attempt or 1, "retriedAt": retried_at}
-        used = sum(
-            1
-            for call in board_store.list_tool_calls_for_task(ctx.table, task_id)
-            if str(call.get("op") or "") == "research_fetch_page"
-            and str(call.get("status") or "") == "ok"
-            and _call_counts_for_current_attempt(call, task)
-        )
-        if used >= cap:
+        seen: set[str] = set()
+        for call in board_store.list_tool_calls_for_task(ctx.table, task_id):
+            if str(call.get("op") or "") != "research_fetch_page":
+                continue
+            if str(call.get("status") or "") != "ok":
+                continue
+            if not _call_counts_for_current_attempt(call, task):
+                continue
+            raw_url = str((call.get("arguments") or {}).get("url") or "").strip()
+            if raw_url:
+                seen.add(_normalize_page_url(raw_url))
+            else:
+                # Older audit rows omit arguments; each still burns one slot.
+                seen.add(f"call:{call.get('callId') or len(seen)}")
+        current_key = _normalize_page_url(url)
+        used = len(seen)
+        if current_key not in seen and used >= cap:
             return {"error": f"per-task fetch cap ({cap}) reached"}
     try:
         result = board_crawl.fetch(url, max_bytes=RESEARCH_FETCH_MAX_BYTES, timeout=RESEARCH_FETCH_TIMEOUT)
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
         return {"error": str(exc)[:200]}
+    if int(result.status or 0) >= 400:
+        return {"error": f"HTTP {result.status}"}
     ctype = str(result.content_type or "").split(";", 1)[0].strip().lower()
     if ctype and not any(ctype.startswith(allowed) for allowed in _RESEARCH_FETCH_TYPES):
         return {"error": f"content type {ctype} is not text/html or text/plain"}
     text = board_crawl.html_to_text(result.text) if "html" in ctype or "<html" in result.text[:200].lower() else result.text
+    if not str(text or "").strip():
+        return {"error": "empty page body"}
     if rules and not rules.get("urls") and rules.get("names") and not _page_mentions_org(text, rules["names"]):
         return {"error": "page does not mention an organisation on this enrich sheet"}
     return {

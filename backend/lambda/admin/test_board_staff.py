@@ -92,7 +92,44 @@ class StaffEngineTests(BoardTestCase):
         self.assertEqual(board_store.get_task(self.table, newer["taskId"])["status"], "needs_owner")
         self.assertEqual(board_store.get_task(self.table, lone["taskId"])["status"], "failed")
 
-    def test_supersede_reads_only_failed_when_nothing_qualifies(self) -> None:
+    def test_supersede_strips_duty_date_and_clears_needs_owner_after_deliver(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        settings = board_store.load_settings(self.table)
+        settings["staff"] = board_store.normalize_staff_config({**(settings.get("staff") or {}), "enabled": True})
+        board_store.save_settings(self.table, settings)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        older = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="content-marketer",
+            origin="duty",
+            brief="content plan",
+            deliverable_type="json",
+            event_ref={"kind": "duty", "id": "content-plan:2026-09-20"},
+            created_by="test",
+        )
+        older["status"] = "needs_owner"
+        older["createdAt"] = "2026-09-20T10:00:00Z"
+        board_store.put_task(self.table, older)
+        newer = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="content-marketer",
+            origin="duty",
+            brief="content plan again",
+            deliverable_type="json",
+            event_ref={"kind": "duty", "id": "content-plan:2026-09-21"},
+            created_by="test",
+        )
+        newer["status"] = "delivered"
+        newer["createdAt"] = "2026-09-21T10:00:00Z"
+        board_store.put_task(self.table, newer)
+        self.assertEqual(board_staff.supersede_stale_failed_duties(self.table), 1)
+        self.assertEqual(board_store.get_task(self.table, older["taskId"])["status"], "cancelled")
+        self.assertEqual(board_store.get_task(self.table, newer["taskId"])["status"], "delivered")
+
+    def test_supersede_reads_only_parked_when_nothing_qualifies(self) -> None:
         seen: list[str] = []
         real = board_store.list_tasks
 
@@ -102,7 +139,7 @@ class StaffEngineTests(BoardTestCase):
 
         with patch.object(board_store, "list_tasks", side_effect=wrapped):
             self.assertEqual(board_staff.supersede_stale_failed_duties(self.table), 0)
-        self.assertEqual(seen, ["failed"])
+        self.assertEqual(seen, ["failed", "needs_owner"])
 
     def test_nonblocking_comment_proposal_does_not_park_the_task(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"
@@ -167,6 +204,82 @@ class StaffEngineTests(BoardTestCase):
         )
         board_staff._complete_step(self.table, parked["taskId"], parked, blocking, 1)  # noqa: SLF001
         self.assertEqual(board_store.get_task(self.table, parked["taskId"])["status"], "waiting_approval")
+
+    def test_complete_step_parks_review_when_blocking_approval_in_same_step(self) -> None:
+        """task_finish may land in review before the approval; still park waiting_approval."""
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        settings = board_store.load_settings(self.table)
+        settings["staff"] = board_store.normalize_staff_config({**(settings.get("staff") or {}), "enabled": True})
+        board_store.save_settings(self.table, settings)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        task = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="content-marketer",
+            origin="owner",
+            brief="write a post",
+            deliverable_type="markdown",
+            created_by="test",
+        )
+        task["status"] = "review"
+        task["step"] = 1
+        board_store.put_task(self.table, task)
+        result = board_tools.ToolLoopResult(
+            text="finished and proposed",
+            usage={},
+            model="test",
+            calls=[
+                {"callId": "f1", "op": "task_finish", "status": "ok"},
+                {
+                    "callId": "c1",
+                    "op": "content_schedule",
+                    "status": "pending_approval",
+                    "approvalId": "appr-content",
+                },
+            ],
+        )
+        board_staff._complete_step(self.table, task["taskId"], task, result, 2)  # noqa: SLF001
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved["status"], "waiting_approval")
+        self.assertEqual(saved["blockedOn"], ["appr-content"])
+
+    def test_truncated_completion_does_not_count_as_idle(self) -> None:
+        from openrouter_client import ChatCompletion
+
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        settings = board_store.load_settings(self.table)
+        settings["staff"] = board_store.normalize_staff_config({**(settings.get("staff") or {}), "enabled": True})
+        board_store.save_settings(self.table, settings)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        task = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="content-marketer",
+            origin="duty",
+            brief="content plan",
+            deliverable_type="json",
+            event_ref={"kind": "duty", "id": "content-plan:2026-09-22"},
+            created_by="test",
+        )
+        task["status"] = "running"
+        task["idleSteps"] = 1
+        board_store.put_task(self.table, task)
+        result = board_tools.ToolLoopResult(
+            text="partial plan…",
+            usage={"completionTokens": 2500},
+            model="test",
+            calls=[],
+            completion=ChatCompletion(text="partial plan…", model="test", finish_reason="length"),
+        )
+        with patch.object(board_async, "invoke_async", side_effect=lambda payload, *, fallback=None: None):
+            board_staff._complete_step(self.table, task["taskId"], task, result, 1)  # noqa: SLF001
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved["status"], "running")
+        self.assertEqual(int(saved.get("idleSteps") or 0), 0)
+        scratch = board_staff._blob_get(board_staff._scratchpad_key(task["taskId"])).decode()  # noqa: SLF001
+        self.assertIn("cut off at the length limit", scratch)
 
     def setUp(self) -> None:
         super().setUp()

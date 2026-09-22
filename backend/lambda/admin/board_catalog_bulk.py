@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import board_async
@@ -362,6 +362,167 @@ def _http500_counts(table: Any, source: str) -> dict[str, int]:
     return out
 
 
+def _source_pause_key(source: str) -> str:
+    return f"catalog:bulk:{source}:paused"
+
+
+def _other_source_imported_recently(table: Any, source: str, *, hours: int = 24) -> bool:
+    """True when another bulk source imported successfully in the last ``hours``."""
+    cut = datetime.now(timezone.utc).timestamp() - max(1, int(hours)) * 3600
+    for other in BOARD_CATALOG_BULK_SOURCES:
+        if other == source:
+            continue
+        last = board_store.get_cache(table, f"catalog:bulk:{other}:last")
+        payload = (last or {}).get("payload") if isinstance(last, dict) else None
+        if not isinstance(payload, dict):
+            continue
+        try:
+            imported = int(payload.get("imported") or 0)
+        except (TypeError, ValueError):
+            imported = 0
+        if imported <= 0:
+            continue
+        at = str(payload.get("at") or "")
+        try:
+            stamp = datetime.fromisoformat(at.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            continue
+        if stamp >= cut:
+            return True
+    return False
+
+
+def _probe_remote_dry_run(
+    token: str,
+    org: dict[str, Any] | None,
+    *,
+    budget: list[int],
+    results: list[dict[str, Any]],
+) -> bool:
+    """One-row remote dry-run as a 'server is up' signal. False on failure/budget."""
+    if not org or budget[0] <= 0:
+        return False
+    budget[0] -= 1
+    try:
+        dry = board_catalog_import._remote_dry_run(  # noqa: SLF001
+            {"organizations": [org]},
+            token,
+        )
+    except board_catalog_import.CatalogImportError as exc:
+        results.append({"ok": False, "error": str(exc)[:300], "probe": "dry_run"})
+        return False
+    ok = bool(dry.get("ok"))
+    results.append({"ok": ok, "probe": "dry_run", "summary": dry.get("summary")})
+    return ok
+
+
+def _importer_server_up(
+    table: Any,
+    source: str,
+    token: str,
+    org: dict[str, Any] | None,
+    *,
+    budget: list[int],
+    results: list[dict[str, Any]],
+) -> bool:
+    """Distinguish a total outage from a systematic importer bug."""
+    if _other_source_imported_recently(table, source):
+        return True
+    return _probe_remote_dry_run(token, org, budget=budget, results=results)
+
+
+def _pause_source_until_issue(table: Any, source: str) -> None:
+    """Block auto re-holds for this source until the GitHub issue Approval is decided."""
+    board_store.put_cache(
+        table,
+        _source_pause_key(source),
+        {"pausedAt": board_store.now_iso(), "reason": "systematic_http_500"},
+        ttl_seconds=14 * 86400,
+    )
+
+
+def source_is_paused(table: Any, source: str) -> bool:
+    """True while a systematic-500 pause is active and its Approval is still open."""
+    hit = board_store.get_cache(table, _source_pause_key(source))
+    if not hit:
+        return False
+    if _importer_issue_already_decided(table):
+        board_store.put_cache(table, _source_pause_key(source), {}, ttl_seconds=1)
+        return False
+    return True
+
+
+def _last_import_older_than(table: Any, source: str, *, hours: int = 24) -> bool:
+    last = board_store.get_cache(table, f"catalog:bulk:{source}:last")
+    payload = (last or {}).get("payload") if isinstance(last, dict) else None
+    at = str((payload or {}).get("at") or "") if isinstance(payload, dict) else ""
+    if not at:
+        return True
+    try:
+        stamp = datetime.fromisoformat(at.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    return datetime.now(timezone.utc) - stamp >= timedelta(hours=max(1, int(hours)))
+
+
+def _propose_systematic_500_issue(
+    table: Any,
+    settings: dict[str, Any],
+    source: str,
+    error: str,
+    request_id: str,
+) -> None:
+    """Founder Approval: importer returns 500 on every half while the server answers dry-runs."""
+    import board_github
+    import board_tools
+
+    if _importer_issue_already_decided(table):
+        return
+    title = IMPORTER_ISSUE_TITLE
+    body = (
+        "A catalog bulk import of source "
+        f"`{source}` received HTTP 500 on both bisect halves with no successful "
+        "batch, while a one-row remote dry-run (or another source's recent import) "
+        "showed the importer is reachable. That points at a systematic bug rather "
+        "than a total outage.\n\n"
+        "Bisect continues across runs via persisted sub-batch fingerprints; auto "
+        f"re-holds for `{source}` are paused until this Approval is decided.\n\n"
+        f"requestId: {request_id or 'unknown'}\n"
+        f"Latest client error: {error or 'unknown'}"
+    )[:4000]
+    arguments = {
+        "title": title,
+        "body": body,
+        "labels": ["bug"],
+        "reason": "Catalog bulk import both-halves HTTP 500 with server-up signal.",
+    }
+    try:
+        blocked = board_github.validate_create_issue(arguments)
+    except Exception as exc:
+        _log_event("info", tag="board_catalog_bulk_500_issue_skipped", error=str(exc)[:200])
+        blocked = None
+    if blocked:
+        return
+    ctx = board_tools.ToolContext(
+        table=table,
+        settings=settings,
+        persona_id="cto",
+        display_name="CTO",
+        kind="internal",
+        actor="persona",
+        task_id="catalog-bulk-500",
+    )
+    try:
+        board_tools.create_approval(
+            ctx,
+            board_tools.REGISTRY["github_create_issue"],
+            arguments,
+            summary=f"Open GitHub issue: {title}",
+        )
+    except Exception as exc:
+        _log_event("info", tag="board_catalog_bulk_500_issue_skipped", error=str(exc)[:200])
+
+
 def _batch_fingerprint(ids: list[str]) -> str:
     """Stable id for a batch. Sorting means candidate order cannot move the key."""
     cleaned = sorted({str(item) for item in ids if item})
@@ -509,9 +670,12 @@ def _import_group(
     """Import one batch.
 
     A repeated HTTP 500 is split only after some other batch in this run has
-    succeeded. Both halves returning 500 with no success is an outage: rows
-    stay approved and the next hold retries. A single row is closed only when
-    a sibling batch in the same run succeeded.
+    succeeded. Both halves returning 500 with no success is an outage when the
+    importer is unreachable (rows stay approved; the next hold retries). When a
+    dry-run or another source's recent import shows the server is up, sub-batch
+    fingerprints are persisted, remaining ids continue across runs, a GitHub
+    issue is proposed, and the source is paused until that Approval is decided.
+    A single row is closed only when a sibling batch in the same run succeeded.
     """
     ids = [str(row.get("candidateId") or "") for row in rows if row.get("candidateId")]
     if not batch or not rows:
@@ -639,6 +803,29 @@ def _import_group(
             results.append({"ok": False, "error": left_message})
         if right_status == "http500":
             results.append({"ok": False, "error": right_message})
+        # Both halves 500 with no success: outage vs systematic bug.
+        probe_org = left_batch[0] if left_batch else (right_batch[0] if right_batch else None)
+        if _importer_server_up(table, source, token, probe_org, budget=budget, results=results):
+            error = left_message or right_message
+            for half_rows, half_status in ((left_rows, left_status), (right_rows, right_status)):
+                if half_status != "http500":
+                    continue
+                half_ids = [str(row.get("candidateId") or "") for row in half_rows if row.get("candidateId")]
+                fingerprint = _batch_fingerprint(half_ids)
+                if fingerprint:
+                    _note_http500(table, source, fingerprint)
+                remaining.extend(half_ids)
+            try:
+                _propose_systematic_500_issue(
+                    table,
+                    board_store.load_settings(table),
+                    source,
+                    error,
+                    _request_id(error),
+                )
+            except Exception as exc:
+                _log_event("info", tag="board_catalog_bulk_500_issue_skipped", source=source, error=str(exc)[:200])
+            _pause_source_until_issue(table, source)
         return
     if left_status == "http500":
         _import_group(
@@ -837,9 +1024,15 @@ def maybe_queue_auto_imports(table: Any, settings: dict[str, Any]) -> dict[str, 
     ready: list[tuple[int, str]] = []
     for source in BOARD_CATALOG_BULK_SOURCES:
         approved = int((counts.get(source) or {}).get("approved") or 0)
-        if approved < BOARD_CATALOG_AUTO_BULK_MIN_APPROVED:
+        if approved <= 0:
+            continue
+        if approved < BOARD_CATALOG_AUTO_BULK_MIN_APPROVED and not _last_import_older_than(
+            table, source, hours=24
+        ):
             continue
         if source in held_sources or _job_is_active(_job(table, source)):
+            continue
+        if source_is_paused(table, source):
             continue
         ready.append((approved, source))
     if not ready:

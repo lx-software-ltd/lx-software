@@ -576,6 +576,26 @@ class TestArgumentValidation(ToolsTestCase):
         self.assertIn("too large", out.result["error"])
         self.assertEqual(board_store.list_approvals(self.table), [])
 
+    def test_task_finish_allows_large_deliverable_arguments(self) -> None:
+        """Content plans need ~40k argument room; the generic 8k cap must not block them."""
+        self.assertGreater(board_tools.MAX_ARGUMENT_CHARS_TASK_FINISH, board_tools.MAX_ARGUMENT_CHARS)
+        big = "x" * 20000
+        cleaned = board_tools._clean_arguments(  # noqa: SLF001
+            {
+                "summary": "plan",
+                "deliverableType": "json",
+                "deliverable": big,
+                "confidence": "medium",
+            },
+            limit=board_tools.MAX_ARGUMENT_CHARS_TASK_FINISH,
+        )
+        self.assertEqual(len(cleaned["deliverable"]), 20000)
+        with self.assertRaises(board_tools.InvalidArgumentsError):
+            board_tools._clean_arguments(  # noqa: SLF001
+                {"summary": "plan", "deliverableType": "json", "deliverable": big, "confidence": "medium"},
+                limit=board_tools.MAX_ARGUMENT_CHARS,
+            )
+
     def test_owner_override_is_validated_and_stays_pending(self) -> None:
         approval = self.propose_issue()
         approval_id = approval["approvalId"]

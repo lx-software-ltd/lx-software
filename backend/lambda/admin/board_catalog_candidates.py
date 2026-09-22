@@ -91,7 +91,8 @@ def places_public_type(place: dict[str, Any]) -> bool:
 
 
 def places_quality_ok(place: dict[str, Any]) -> bool:
-    """Public LCSD-like types only. Commercial Places stay on the owner queue."""
+    """Public LCSD-like types only. Commercial Places stay on the owner queue
+    unless :func:`places_commercial_auto_approvable` also matches."""
     return places_public_type(place)
 
 
@@ -137,6 +138,26 @@ def competitor_auto_approvable(row: dict[str, Any], district: str | None = None)
         return False
     label = district if district is not None else str(row.get("district") or "")
     return board_hk.canonical_district(str(label)) != "unknown"
+
+
+def places_commercial_auto_approvable(row: dict[str, Any]) -> bool:
+    """Commercial Places with a real site, address and hours — same bar as competitors."""
+    url = _http_url(row.get("officialUrl") or row.get("website"))
+    if not url or _is_social_url(url):
+        return False
+    address = str(row.get("addressEn") or row.get("address") or "").strip()
+    hours = str(row.get("openingHours") or "").strip()
+    return bool(address and hours)
+
+
+def _maybe_auto_approve(row: dict[str, Any], *, source: str, district: str) -> bool:
+    if auto_approve_source(source):
+        return True
+    if source == "places" and (places_quality_ok(row) or places_commercial_auto_approvable(row)):
+        return True
+    if source == "competitor" and competitor_auto_approvable(row, district):
+        return True
+    return False
 
 
 def _now() -> str:
@@ -207,12 +228,15 @@ def upsert_candidate(table: Any, row: dict[str, Any]) -> dict[str, Any]:
         merged = {**current, **incoming}
         merged["candidateId"] = existing_id
         merged["updatedAt"] = now
+        if str(merged.get("status") or "") == "new" and _maybe_auto_approve(
+            merged, source=source, district=str(merged.get("district") or district)
+        ):
+            merged["status"] = "approved"
+            merged["approvedAt"] = now
         board_store.put_candidate(table, merged)
         return merged
-    status = "approved" if auto_approve_source(source) else "new"
-    if source == "places" and places_quality_ok(row):
-        status = "approved"
-    if source == "competitor" and competitor_auto_approvable(row, district):
+    status = "new"
+    if _maybe_auto_approve({**row, "district": district}, source=source, district=district):
         status = "approved"
     doc = {
         "candidateId": board_store.new_id(),

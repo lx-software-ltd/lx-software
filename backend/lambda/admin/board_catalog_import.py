@@ -1527,7 +1527,7 @@ def run_import(table: Any, task: dict[str, Any], *, force: bool = False, live_af
             questions=[task["importError"]] + _result_errors(imported.get("results") or []),
         )
         return {"ok": False, "partial": True, "taskId": task_id, "import": imported, "preview": preview, "task": task}
-    if summary.get("updated") and not force:
+    if summary.get("updated") and not force and not allows_existing_org_updates(task):
         names = imported.get("wouldUpdate") or _org_result_names(imported.get("results") or [], "updated")
         label = ", ".join(str(n) for n in names) or "existing organisation"
         task["importResult"] = result

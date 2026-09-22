@@ -1091,15 +1091,20 @@ def _park_waiting_approval(table: Any, task: dict[str, Any], approval_ids: list[
     Only the stored *status* is re-checked so a cancel that landed mid-step wins;
     the step counter, usage and scratchpad pointers come from ``task`` so the
     completed step is not lost and ``resume_after_approval`` continues from it.
+
+    ``review`` is also accepted: ``task_finish`` in the same step may have moved
+    the row there before a blocking ``pending_approval`` was recorded.
     """
     stored = board_store.get_task(table, str(task.get("taskId") or ""))
-    if stored is not None and stored.get("status") != "running":
-        return
-    if stored is None and task.get("status") != "running":
+    stored_status = str((stored or task).get("status") or "")
+    if stored_status not in ("running", "review"):
         return
     task["status"] = "waiting_approval"
     task["blockedOn"] = approval_ids
     task["idleSteps"] = 0
+    # Drop a premature review deliverable; the founder decision resumes the seat.
+    if stored_status == "review":
+        task["deliverableKey"] = task.get("deliverableKey") or ""
     _stamp_parked(task, reason=f"waiting on approval {','.join(approval_ids)}", reset_clock=True)
     _align_step_claim(task)
     board_store.put_task(table, task)
@@ -1960,25 +1965,39 @@ def _expire_help_wait(table: Any, settings: dict[str, Any], task: dict[str, Any]
         )
 
 
+_DUTY_DATE_SUFFIX_RE = re.compile(r":\d{4}-\d{2}-\d{2}$")
+_LENGTH_CUTOFF_NUDGE = (
+    "NUDGE: Your previous reply was cut off at the length limit. "
+    "Continue from where you stopped, or call task_finish with the full deliverable."
+)
+
+
 def _duty_event_id(task: dict[str, Any]) -> str:
     if str(task.get("origin") or "") != "duty":
         return ""
     return str((task.get("eventRef") or {}).get("id") or "").strip()
 
 
-def supersede_stale_failed_duties(table: Any) -> int:
-    """Cancel a failed duty when a newer task shares its ``eventRef.id``.
+def _duty_event_key(event_id: str) -> str:
+    """Strip a trailing ``:YYYY-MM-DD`` so dated duty ids group together."""
+    return _DUTY_DATE_SUFFIX_RE.sub("", str(event_id or "").strip())
 
-    The newest task for that id is kept, including when it is also failed, so
-    a retry is still possible. Older failures (the OpenRouter 402 duplicates)
-    leave the Attention lane. The ``failed`` scan runs first; with nothing to
-    supersede the other status queries are skipped.
+
+def supersede_stale_failed_duties(table: Any) -> int:
+    """Cancel a failed/needs_owner duty when a newer task shares its duty key.
+
+    Duty ids are often dated (``content-plan:2026-09-20``); the trailing date is
+    stripped so a later run matches. ``failed`` and ``needs_owner`` start the
+    scan; older ``needs_owner`` rows are cancelled only once a newer run has
+    delivered. Older failures are cancelled whenever any newer task exists.
     """
     grouped: dict[str, list[dict[str, Any]]] = {}
-    for task in board_store.list_tasks(table, "failed", limit=200):
-        event_id = _duty_event_id(task)
-        if event_id:
-            grouped.setdefault(event_id, []).append(task)
+    for status in ("failed", "needs_owner"):
+        for task in board_store.list_tasks(table, status, limit=200):
+            event_id = _duty_event_id(task)
+            key = _duty_event_key(event_id)
+            if key:
+                grouped.setdefault(key, []).append(task)
     if not grouped:
         return 0
     wanted = set(grouped)
@@ -1989,21 +2008,28 @@ def supersede_stale_failed_duties(table: Any) -> int:
         "waiting_subtask",
         "review",
         "awaiting_import",
-        "needs_owner",
         "delivered",
     ):
         for task in board_store.list_tasks(table, status, limit=200):
             event_id = _duty_event_id(task)
-            if event_id in wanted:
-                grouped[event_id].append(task)
+            key = _duty_event_key(event_id)
+            if key in wanted:
+                grouped[key].append(task)
     cancelled = 0
     for tasks in grouped.values():
         newest = max(tasks, key=lambda row: str(row.get("createdAt") or ""))
         newest_id = str(newest.get("taskId") or "")
+        newest_status = str(newest.get("status") or "")
+        newest_delivered = newest_status == "delivered"
         for task in tasks:
             if str(task.get("taskId") or "") == newest_id:
                 continue
-            if str(task.get("status") or "") != "failed":
+            status = str(task.get("status") or "")
+            if status == "failed":
+                pass
+            elif status == "needs_owner" and newest_delivered:
+                pass
+            else:
                 continue
             task_id = str(task.get("taskId") or "")
             if not task_id:
@@ -2084,6 +2110,18 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
         latest["stepsUsed"] = seq
     latest["updatedAt"] = board_store.now_iso()
     latest["stuckRetried"] = False
+    approval_ids = [
+        str(c.get("approvalId"))
+        for c in calls
+        if str(c.get("status") or "") == "pending_approval"
+        and c.get("approvalId")
+        and c.get("blocksTask") is not False
+    ]
+    if approval_ids:
+        # task_finish may already have moved the row to review; still park so
+        # the founder decision can resume instead of duplicate proposals.
+        _park_waiting_approval(table, latest, approval_ids)
+        return
     if status in ("review", "needs_owner", "delivered", "waiting_subtask", "waiting_approval", "awaiting_import"):
         latest["idleSteps"] = 0
         board_store.patch_task_if_status(
@@ -2102,16 +2140,11 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
             },
         )
         return
-    approval_ids = [
-        str(c.get("approvalId"))
-        for c in calls
-        if str(c.get("status") or "") == "pending_approval"
-        and c.get("approvalId")
-        and c.get("blocksTask") is not False
-    ]
-    if approval_ids:
-        _park_waiting_approval(table, latest, approval_ids)
+    if _is_code_implement(latest) and _code_run_dispatched(table, latest):
+        _mark_code_runner_dispatched(latest)
+        _mark_delivered(table, latest, board_store.now_iso())
         return
+    truncated = board_tools._completion_hit_length_limit(getattr(result, "completion", None))  # noqa: SLF001
     similar_to_last = False
     if seq > 1:
         prior = board_store.list_task_steps(table, task_id)
@@ -2120,7 +2153,12 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
     repeated_calls = _same_as_previous_step(table, task_id, calls)
     intra_poll = _repeats_within_step(calls)
     poll_loop = (repeated_calls or intra_poll) and _counts_as_poll_loop(latest, calls)
-    if not _productive_calls(calls) or similar_to_last or repeated_calls or intra_poll:
+    if truncated:
+        latest["idleSteps"] = 0
+        combined = _append_scratchpad(latest, _LENGTH_CUTOFF_NUDGE)
+        latest["scratchpadKey"] = _scratchpad_key(task_id)
+        latest["scratchpadChars"] = len(combined)
+    elif not _productive_calls(calls) or similar_to_last or repeated_calls or intra_poll:
         idle = int(latest.get("idleSteps") or 0) + 1
         latest["idleSteps"] = idle
         combined = _append_scratchpad(latest, _IDLE_NUDGE)

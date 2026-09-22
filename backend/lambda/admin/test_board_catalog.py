@@ -564,6 +564,63 @@ class CatalogDutyTests(BoardTestCase):
             self.assertEqual(board_research.fetch_cap_for_task(self.table, catalog["taskId"], ctx=ctx), 9)
         self.assertEqual(getter.call_count, 1)
 
+    def test_fetch_cap_counts_distinct_urls_and_errors_on_http_failure(self) -> None:
+        import board_crawl
+
+        settings = _enable(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_catalog.create_next(self.table, settings)
+        tid = task["taskId"]
+        ctx = type("Ctx", (), {"table": self.table, "task_id": tid})()
+        for i in range(3):
+            board_store.add_tool_call(
+                self.table,
+                {
+                    "op": "research_fetch_page",
+                    "status": "ok",
+                    "taskId": tid,
+                    "attempt": 1,
+                    "arguments": {"url": f"https://www.lcsd.gov.hk/page{i}"},
+                    "createdAt": f"2026-09-18T00:00:{i:02d}Z",
+                },
+            )
+            # Same URL again — must not burn an extra slot.
+            board_store.add_tool_call(
+                self.table,
+                {
+                    "op": "research_fetch_page",
+                    "status": "ok",
+                    "taskId": tid,
+                    "attempt": 1,
+                    "arguments": {"url": f"https://www.lcsd.gov.hk/page{i}"},
+                    "createdAt": f"2026-09-18T00:01:{i:02d}Z",
+                },
+            )
+        # 404 / empty must return error (not ok), so they never inflate the cap.
+        with patch.object(
+            board_crawl,
+            "fetch",
+            return_value=board_crawl.FetchResult(404, "https://www.lcsd.gov.hk/x", "text/html", "<html>missing</html>", "x"),
+        ):
+            missing = board_research.op_fetch_page(ctx, {"url": "https://www.lcsd.gov.hk/missing"})
+        self.assertIn("HTTP 404", missing["error"])
+        with patch.object(
+            board_crawl,
+            "fetch",
+            return_value=board_crawl.FetchResult(200, "https://www.lcsd.gov.hk/empty", "text/html", "<html>   </html>", "e"),
+        ):
+            empty = board_research.op_fetch_page(ctx, {"url": "https://www.lcsd.gov.hk/empty"})
+        self.assertIn("empty", empty["error"].lower())
+        # Three distinct ok URLs used; still under the catalog cap of 9.
+        with patch.object(
+            board_crawl,
+            "fetch",
+            return_value=board_crawl.FetchResult(200, "https://www.lcsd.gov.hk/fresh", "text/html", "<html>ok</html>", "f"),
+        ):
+            ok = board_research.op_fetch_page(ctx, {"url": "https://www.lcsd.gov.hk/fresh"})
+        self.assertNotIn("error", ok)
+
     def test_fetch_cap_resets_after_retry(self) -> None:
         settings = _enable(self.table)
         board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
