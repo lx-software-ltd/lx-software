@@ -103,6 +103,22 @@ describe("BoardReviewSection staging sync", () => {
     expect(reviewState.syncMutate).toHaveBeenCalledTimes(1);
   });
 
+  it("offers Sync from main when the only commits ahead are sync merges", () => {
+    reviewState.syncMutate.mockClear();
+    reviewState.staging = {
+      status: "ahead",
+      behindBy: 0,
+      aheadBy: 6,
+      canPromote: false,
+      syncOnly: true,
+      commits: [{ sha: "abc12345", message: "board: sync staging with main" }],
+    };
+    render(<BoardReviewSection />);
+    expect(screen.getByRole("button", { name: "Sync from main" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Promote" })).toBeDisabled();
+    expect(screen.getByText(/Only sync merges are ahead of main/)).toBeInTheDocument();
+  });
+
   it("hides Sync from main when staging is current", () => {
     reviewState.staging = {
       status: "ahead",

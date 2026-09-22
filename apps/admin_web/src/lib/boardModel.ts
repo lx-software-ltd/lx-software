@@ -1844,6 +1844,7 @@ export type BoardStagingPreview = {
   readonly behindBy?: number;
   readonly aheadBy?: number;
   readonly canPromote?: boolean;
+  readonly syncOnly?: boolean;
   readonly htmlUrl?: string;
   readonly error?: string;
   readonly commits?: readonly { readonly sha?: string; readonly message?: string }[];
@@ -1852,6 +1853,8 @@ export type BoardStagingPreview = {
 export type BoardStagingSyncResult = {
   readonly ok?: boolean;
   readonly alreadyCurrent?: boolean;
+  readonly reset?: boolean;
+  readonly fastForward?: boolean;
   readonly mergedSha?: string;
   readonly before?: BoardStagingPreview;
   readonly preview?: BoardStagingPreview;

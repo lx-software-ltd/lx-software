@@ -245,6 +245,7 @@ class ToolOutcome:
     approval_id: str = ""
     duration_ms: int = 0
     call_id: str = ""
+    blocks_task: bool = True
 
     def public(self, op: ToolOp) -> dict[str, Any]:
         out = {
@@ -259,6 +260,8 @@ class ToolOutcome:
         }
         if self.approval_id:
             out["approvalId"] = self.approval_id
+        if not self.blocks_task:
+            out["blocksTask"] = False
         if self.status == "held":
             out["holdId"] = str(self.result.get("holdId") or "")
             out["executeAt"] = str(self.result.get("executeAt") or "")
@@ -3279,10 +3282,20 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
     elif op.is_write and ctx.actor != "hold" and (level != "act" or guard_reason or (_should_always_propose(op, ctx, arguments) and ctx.actor == "persona")):
         approval = create_approval(ctx, op, arguments, summary=summary, downgrade_reason=guard_reason)
         approval_id = str(approval["approvalId"])
-        message = (
-            "Recorded as a proposal for the founder. It has NOT been executed; "
-            "tell the founder it awaits their approval in the Approvals section."
-        )
+        # Architect issue comments stay a proposal, and the proposal does not
+        # park the groom task: the founder still decides whether it posts.
+        blocks_task = not _architect_comment_stays_proposal(ctx, op)
+        if blocks_task:
+            message = (
+                "Recorded as a proposal for the founder. It has NOT been executed; "
+                "tell the founder it awaits their approval in the Approvals section."
+            )
+        else:
+            message = (
+                "Recorded as a proposal for the founder. It has NOT been posted. "
+                "Continue the task and cite the approval id; the comment posts "
+                "only after the founder accepts."
+            )
         if guard_reason:
             message = f"Not sent automatically because {guard_reason}. " + message
         outcome = ToolOutcome(
@@ -3290,6 +3303,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
             result={"status": "pending_approval", "approvalId": approval_id, "message": message},
             summary=summary,
             approval_id=approval_id,
+            blocks_task=blocks_task,
         )
     else:
         try:

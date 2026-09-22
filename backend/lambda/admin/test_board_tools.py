@@ -853,6 +853,10 @@ class AutonomyToolTests(ToolsTestCase):
                 {"number": 488, "body": "### Acceptance Criteria:\n- [ ] tests pass", "reason": "groom"},
             )
         self.assertEqual(outcome.status, "pending_approval")
+        self.assertFalse(outcome.blocks_task)
+        self.assertIn("cite the approval id", str(outcome.result.get("message") or ""))
+        self.assertIs(outcome.public(op).get("blocksTask"), False)
+        self.assertTrue(outcome.approval_id)
 
     def test_expire_stale_approvals(self) -> None:
         now = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)

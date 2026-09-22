@@ -207,7 +207,9 @@ Rules that hold for every tool:
   seat may `act` on `github_set_labels` so backlog grooming does not
   wait on Approvals. `github_comment_issue` stays a proposal even when
   the seat could act, so boilerplate acceptance criteria do not land on
-  issues unattended. `github_set_labels` at act unions the requested
+  issues unattended. That proposal is non-blocking (`blocksTask: false`):
+  the groom task continues and cites the approval id, and the comment
+  posts only after the founder accepts. `github_set_labels` at act unions the requested
   labels with the issue's current set so grooming cannot strip
   `security` / `board-ready`.
 
@@ -389,14 +391,20 @@ Enrich skips a district for 48 h after a failed/parked describe
 (`createdAt`, so a revalidate tick does not extend the cooldown) and
 opens a config gap after three failures. The duty also pauses entirely
 while `needs_owner` catalog-enrich sheets are at `maxAwaitingImport`
-(3). The brief lists each organisation's official URL (`eventRef.orgUrls`);
+(3). That pause is stored on the duty as
+`enrich paused (N parked sheets)`, so the Staff tab shows the reason
+and the tick does not re-log it as an unrecorded skip. The brief lists
+each organisation's official URL (`eventRef.orgUrls`);
 `research_fetch_page` on that task refuses any other URL, and when the
 sheet has names but no URLs it refuses a page that mentions none of
 them. Only fetches stored as `ok` count toward the cap. A bulk import
-HTTP 500 is recorded; the next run of the same batch splits it until
-the offending rows are `closed` (with `closeReason`) and one CTO
-`ops/catalog-bulk-500:{source}` task is opened, instead of re-holding
-the whole source. Auto bulk-import passes `limit` =
+HTTP 500 is recorded under a hash of the batch's candidate ids (order
+does not matter). The next run of that same batch splits it. A single
+row is `closed` (with `closeReason`) only after a sibling batch in the
+same run has succeeded, and one CTO `ops/catalog-bulk-500:{source}`
+task is opened. Both halves returning 500 with no success is an outage:
+rows stay approved and the next hold retries, instead of closing the
+source. Auto bulk-import passes `limit` =
 `launchListingTarget` − cached providers. Three remote siutindei dry-run
 errors on one sheet open a CTO `ops/siutindei-import-error` task and
 surface `remoteErrorSheets` on the daily review; a later successful
@@ -583,7 +591,8 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
   `catalogAutoBulkMinApproved` 50 approved rows, capped at
   `launchListingTarget` minus cached providers → cancel a failed duty
   when a newer task shares its `eventRef.id` (`closedBy:
-  board_staff:superseded`, no `failureReason`) → run due duties →
+  board_staff:superseded`, no `failureReason`; the `failed` scan runs
+  first and the other statuses are skipped when nothing qualifies) → run due duties →
   expire help waits → drain queue → stuck sweep (a claim older than the
   Lambda timeout is retried once, then `stuck`; `review` older than
   `staffTaskStuckSeconds` 900 is re-reviewed once, then `needs_owner`) →
@@ -864,7 +873,9 @@ this repository never pushes code.
   `staging` to `main` when staging has no commits of its own (PATCH the
   ref; force when the only commits ahead are `board: sync staging with
   main`), and merge-commits otherwise (409 on conflict). Compare treats
-  a sync-only ahead list as current, so `canPromote` stays false. Either
+  a sync-only ahead list as current, so `canPromote` stays false. Daily
+  Review shows **Sync from main** in that state as well as when staging
+  is behind, with the line "Only sync merges are ahead of main." Either
   path cancels an open `ops/rebase-staging` task.
 - Daily staff tick from 07:00 HKT (`maybe_daily_staging_sync`) compares
   `main...staging`. When `behindBy > 0` it opens a CTO `ops/rebase-staging`

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -358,17 +359,25 @@ def _http500_counts(table: Any, source: str) -> dict[str, int]:
     return out
 
 
-def _note_http500(table: Any, source: str, candidate_id: str) -> None:
+def _batch_fingerprint(ids: list[str]) -> str:
+    """Stable id for a batch. Sorting means candidate order cannot move the key."""
+    cleaned = sorted({str(item) for item in ids if item})
+    if not cleaned:
+        return ""
+    return hashlib.sha256("\n".join(cleaned).encode()).hexdigest()[:16]
+
+
+def _note_http500(table: Any, source: str, batch_key: str) -> None:
     counts = _http500_counts(table, source)
-    counts[candidate_id] = int(counts.get(candidate_id) or 0) + 1
+    counts[batch_key] = int(counts.get(batch_key) or 0) + 1
     board_store.put_cache(table, _http500_key(source), {"counts": counts}, ttl_seconds=7 * 86400)
 
 
-def _clear_http500(table: Any, source: str, candidate_id: str) -> None:
+def _clear_http500(table: Any, source: str, batch_key: str) -> None:
     counts = _http500_counts(table, source)
-    if candidate_id not in counts:
+    if batch_key not in counts:
         return
-    counts.pop(candidate_id, None)
+    counts.pop(batch_key, None)
     board_store.put_cache(table, _http500_key(source), {"counts": counts}, ttl_seconds=7 * 86400)
 
 
@@ -390,29 +399,22 @@ def _mark_imported(table: Any, rows: list[dict[str, Any]], batch: list[dict[str,
     return ids
 
 
-def _import_group(
+def _call_import(
     table: Any,
     source: str,
     batch: list[dict[str, Any]],
     rows: list[dict[str, Any]],
     token: str,
     *,
-    bisecting: bool,
     budget: list[int],
     results: list[dict[str, Any]],
     imported_ids: list[str],
-    closed: list[dict[str, str]],
-    remaining: list[str],
-) -> None:
-    """Import one batch. A repeated HTTP 500 is split until the bad rows are closed."""
-    ids = [str(row.get("candidateId") or "") for row in rows if row.get("candidateId")]
-    if not batch or not rows:
-        return
+) -> tuple[str, str]:
+    """One remote import. ``ok`` means the server answered; ``http500`` is the bisect signal."""
     if budget[0] <= 0:
-        remaining.extend(ids)
-        return
+        return "budget", ""
+    budget[0] -= 1
     try:
-        budget[0] -= 1
         imported = board_catalog_import._run_remote_import(  # noqa: SLF001
             {"organizations": batch},
             token,
@@ -420,30 +422,9 @@ def _import_group(
         )
     except board_catalog_import.CatalogImportError as exc:
         message = str(exc)[:300]
-        first = ids[0] if ids else ""
-        if not _is_http_500(message) or not first:
-            results.append({"ok": False, "error": message})
-            return
-        repeated = bisecting or int(_http500_counts(table, source).get(first) or 0) >= 1
-        if not repeated:
-            _note_http500(table, source, first)
-            results.append({"ok": False, "error": message, "candidateId": first})
-            return
-        if len(batch) <= 1:
-            _close_server_error_row(table, rows[0], message)
-            closed.append({"candidateId": first, "name": str(rows[0].get("nameEn") or rows[0].get("name") or ""), "error": message})
-            results.append({"ok": False, "error": message, "closed": first})
-            return
-        mid = len(batch) // 2
-        _import_group(
-            table, source, batch[:mid], rows[:mid], token,
-            bisecting=True, budget=budget, results=results, imported_ids=imported_ids, closed=closed, remaining=remaining,
-        )
-        _import_group(
-            table, source, batch[mid:], rows[mid:], token,
-            bisecting=True, budget=budget, results=results, imported_ids=imported_ids, closed=closed, remaining=remaining,
-        )
-        return
+        if _is_http_500(message):
+            return "http500", message
+        return "error", message
     failed = int((imported.get("summary") or {}).get("failed") or 0)
     results.append(
         {
@@ -460,8 +441,144 @@ def _import_group(
         }
     )
     imported_ids.extend(_mark_imported(table, rows, batch, imported))
-    if ids:
-        _clear_http500(table, source, ids[0])
+    ids = [str(row.get("candidateId") or "") for row in rows if row.get("candidateId")]
+    fingerprint = _batch_fingerprint(ids)
+    if fingerprint:
+        _clear_http500(table, source, fingerprint)
+    return "ok", ""
+
+
+def _import_group(
+    table: Any,
+    source: str,
+    batch: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+    token: str,
+    *,
+    bisecting: bool,
+    budget: list[int],
+    results: list[dict[str, Any]],
+    imported_ids: list[str],
+    closed: list[dict[str, str]],
+    remaining: list[str],
+    saw_success: list[bool],
+    known: tuple[str, str] | None = None,
+) -> None:
+    """Import one batch.
+
+    A repeated HTTP 500 is split only after some other batch in this run has
+    succeeded. Both halves returning 500 with no success is an outage: rows
+    stay approved and the next hold retries. A single row is closed only when
+    a sibling batch in the same run succeeded.
+    """
+    ids = [str(row.get("candidateId") or "") for row in rows if row.get("candidateId")]
+    if not batch or not rows:
+        return
+    if known is None:
+        if budget[0] <= 0:
+            remaining.extend(ids)
+            return
+        status, message = _call_import(
+            table,
+            source,
+            batch,
+            rows,
+            token,
+            budget=budget,
+            results=results,
+            imported_ids=imported_ids,
+        )
+    else:
+        status, message = known
+    if status == "budget":
+        remaining.extend(ids)
+        return
+    if status == "ok":
+        saw_success[0] = True
+        return
+    if status != "http500":
+        results.append({"ok": False, "error": message})
+        return
+    fingerprint = _batch_fingerprint(ids)
+    if not fingerprint:
+        results.append({"ok": False, "error": message})
+        return
+    repeated = bisecting or int(_http500_counts(table, source).get(fingerprint) or 0) >= 1
+    if not repeated:
+        _note_http500(table, source, fingerprint)
+        results.append({"ok": False, "error": message, "batch": fingerprint})
+        return
+    if len(batch) <= 1:
+        if saw_success[0]:
+            _close_server_error_row(table, rows[0], message)
+            closed.append(
+                {
+                    "candidateId": ids[0],
+                    "name": str(rows[0].get("nameEn") or rows[0].get("name") or ""),
+                    "error": message,
+                }
+            )
+            results.append({"ok": False, "error": message, "closed": ids[0]})
+        else:
+            results.append({"ok": False, "error": message, "candidateId": ids[0]})
+        return
+    mid = len(batch) // 2
+    left_batch, left_rows = batch[:mid], rows[:mid]
+    right_batch, right_rows = batch[mid:], rows[mid:]
+    if saw_success[0]:
+        _import_group(
+            table, source, left_batch, left_rows, token,
+            bisecting=True, budget=budget, results=results, imported_ids=imported_ids,
+            closed=closed, remaining=remaining, saw_success=saw_success,
+        )
+        _import_group(
+            table, source, right_batch, right_rows, token,
+            bisecting=True, budget=budget, results=results, imported_ids=imported_ids,
+            closed=closed, remaining=remaining, saw_success=saw_success,
+        )
+        return
+    left_ids = [str(row.get("candidateId") or "") for row in left_rows if row.get("candidateId")]
+    right_ids = [str(row.get("candidateId") or "") for row in right_rows if row.get("candidateId")]
+    left_status, left_message = _call_import(
+        table, source, left_batch, left_rows, token,
+        budget=budget, results=results, imported_ids=imported_ids,
+    )
+    if left_status == "ok":
+        saw_success[0] = True
+    elif left_status == "budget":
+        remaining.extend(left_ids)
+    elif left_status == "error":
+        results.append({"ok": False, "error": left_message})
+    right_status, right_message = _call_import(
+        table, source, right_batch, right_rows, token,
+        budget=budget, results=results, imported_ids=imported_ids,
+    )
+    if right_status == "ok":
+        saw_success[0] = True
+    elif right_status == "budget":
+        remaining.extend(right_ids)
+    elif right_status == "error":
+        results.append({"ok": False, "error": right_message})
+    if not saw_success[0]:
+        if left_status == "http500":
+            results.append({"ok": False, "error": left_message})
+        if right_status == "http500":
+            results.append({"ok": False, "error": right_message})
+        return
+    if left_status == "http500":
+        _import_group(
+            table, source, left_batch, left_rows, token,
+            bisecting=True, budget=budget, results=results, imported_ids=imported_ids,
+            closed=closed, remaining=remaining, saw_success=saw_success,
+            known=("http500", left_message),
+        )
+    if right_status == "http500":
+        _import_group(
+            table, source, right_batch, right_rows, token,
+            bisecting=True, budget=budget, results=results, imported_ids=imported_ids,
+            closed=closed, remaining=remaining, saw_success=saw_success,
+            known=("http500", right_message),
+        )
 
 
 def import_source(
@@ -493,6 +610,7 @@ def import_source(
     closed: list[dict[str, str]] = []
     remaining: list[str] = []
     budget = [_BISECT_MAX_CALLS]
+    saw_success = [False]
     for batch, rows in zip(_batches(orgs, BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT), _batches(approved, BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT)):
         _import_group(
             table,
@@ -506,6 +624,7 @@ def import_source(
             imported_ids=imported_ids,
             closed=closed,
             remaining=remaining,
+            saw_success=saw_success,
         )
     board_store.put_cache(
         table,

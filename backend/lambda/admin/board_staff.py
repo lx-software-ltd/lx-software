@@ -1960,16 +1960,29 @@ def _expire_help_wait(table: Any, settings: dict[str, Any], task: dict[str, Any]
         )
 
 
+def _duty_event_id(task: dict[str, Any]) -> str:
+    if str(task.get("origin") or "") != "duty":
+        return ""
+    return str((task.get("eventRef") or {}).get("id") or "").strip()
+
+
 def supersede_stale_failed_duties(table: Any) -> int:
     """Cancel a failed duty when a newer task shares its ``eventRef.id``.
 
     The newest task for that id is kept, including when it is also failed, so
     a retry is still possible. Older failures (the OpenRouter 402 duplicates)
-    leave the Attention lane.
+    leave the Attention lane. The ``failed`` scan runs first; with nothing to
+    supersede the other status queries are skipped.
     """
     grouped: dict[str, list[dict[str, Any]]] = {}
-    statuses = (
-        "failed",
+    for task in board_store.list_tasks(table, "failed", limit=200):
+        event_id = _duty_event_id(task)
+        if event_id:
+            grouped.setdefault(event_id, []).append(task)
+    if not grouped:
+        return 0
+    wanted = set(grouped)
+    for status in (
         "queued",
         "running",
         "waiting_approval",
@@ -1978,15 +1991,11 @@ def supersede_stale_failed_duties(table: Any) -> int:
         "awaiting_import",
         "needs_owner",
         "delivered",
-    )
-    for status in statuses:
+    ):
         for task in board_store.list_tasks(table, status, limit=200):
-            if str(task.get("origin") or "") != "duty":
-                continue
-            event_id = str((task.get("eventRef") or {}).get("id") or "").strip()
-            if not event_id:
-                continue
-            grouped.setdefault(event_id, []).append(task)
+            event_id = _duty_event_id(task)
+            if event_id in wanted:
+                grouped[event_id].append(task)
     cancelled = 0
     for tasks in grouped.values():
         newest = max(tasks, key=lambda row: str(row.get("createdAt") or ""))
@@ -2096,7 +2105,9 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
     approval_ids = [
         str(c.get("approvalId"))
         for c in calls
-        if str(c.get("status") or "") == "pending_approval" and c.get("approvalId")
+        if str(c.get("status") or "") == "pending_approval"
+        and c.get("approvalId")
+        and c.get("blocksTask") is not False
     ]
     if approval_ids:
         _park_waiting_approval(table, latest, approval_ids)

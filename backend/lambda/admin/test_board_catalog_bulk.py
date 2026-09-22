@@ -1302,6 +1302,44 @@ class AutonomyCatalogTests(BoardTestCase):
         self.assertEqual(full.get("queued"), [])
         self.assertEqual(full.get("reason"), "launch target reached")
 
+    def test_http_500_outage_does_not_close_rows(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+        left = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "a", "nameEn": "Park A", "district": "Eastern"},
+        )
+        right = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "b", "nameEn": "Park B", "district": "Eastern"},
+        )
+
+        def always_500(payload, token, *, timeout=None):
+            raise board_catalog_import.CatalogImportError(
+                'siutindei admin POST https://siu.example/v1/admin/imports failed: 500 {"error": "down"}'
+            )
+
+        with (
+            patch.object(board_catalog_bulk, "BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT", 2),
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=[]),
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "_id_token", return_value="tok"),
+            patch.object(board_catalog_import, "_run_remote_import", side_effect=always_500),
+        ):
+            board_catalog_bulk.import_source(self.table, "lcsd")
+            again = board_catalog_bulk.import_source(self.table, "lcsd")
+        self.assertEqual(again["closed"], [])
+        self.assertEqual(board_store.get_candidate(self.table, left["candidateId"])["status"], "approved")
+        self.assertEqual(board_store.get_candidate(self.table, right["candidateId"])["status"], "approved")
+        counts = board_catalog_bulk._http500_counts(self.table, "lcsd")  # noqa: SLF001
+        fingerprint = board_catalog_bulk._batch_fingerprint(  # noqa: SLF001
+            [left["candidateId"], right["candidateId"]]
+        )
+        self.assertIn(fingerprint, counts)
+        self.assertNotIn(left["candidateId"], counts)
+
 
 class CatalogImportActivityTests(unittest.TestCase):
     def test_transform_org_always_emits_activity(self) -> None:
