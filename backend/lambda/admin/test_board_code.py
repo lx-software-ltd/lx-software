@@ -89,6 +89,7 @@ class FakeActions:
         self.labelCreates = 0
         self.issueLabels: list[tuple[int, list[str]]] = []
         self.merges: list[dict[str, Any]] = []
+        self.ref_updates: list[dict[str, Any]] = []
         self.merge_error: Exception | None = None
         self.patches: list[dict[str, Any]] = []
         self.comments: list[dict[str, Any]] = []
@@ -242,6 +243,14 @@ class FakeActions:
             self.merges.append(body or {})
             self.compare = {"status": "identical", "ahead_by": 0, "behind_by": 0, "commits": []}
             return {"sha": "abcmerged000"}
+        if method == "GET" and "/git/ref/heads/" in path:
+            branch = path.rsplit("/heads/", 1)[-1]
+            sha = {"main": "abcmain00001", "staging": "abcstag00001"}.get(branch, "")
+            return {"object": {"sha": sha}} if sha else None
+        if method == "PATCH" and "/git/refs/heads/" in path:
+            self.ref_updates.append({"path": path, "body": body or {}})
+            self.compare = {"status": "identical", "ahead_by": 0, "behind_by": 0, "commits": []}
+            return {"object": {"sha": (body or {}).get("sha")}}
         if method == "GET" and "/compare/" in path:
             return self.compare
         return {}
@@ -1711,17 +1720,35 @@ class RunnerTests(BoardTestCase):
         self.assertEqual(self.gh.merges[0]["head"], "main")
         self.assertEqual(out["preview"]["behindBy"], 0)
 
-    def test_queue_sync_staging_merges_and_closes_rebase_task(self) -> None:
+    def test_queue_sync_staging_fast_forwards_when_staging_has_no_unique_commits(self) -> None:
         self.gh.compare = {"status": "behind", "ahead_by": 0, "behind_by": 3, "commits": []}
         created = board_code._ensure_rebase_task(self.table, self.settings)  # noqa: SLF001
         self.assertIsNotNone(created)
         out = board_code.queue_sync_staging(self.table, self.settings, "admin-sub")
         self.assertTrue(out["ok"])
-        self.assertEqual(out["mergedSha"], "abcmerged000")
-        self.assertEqual(self.gh.merges[0]["base"], "staging")
+        self.assertTrue(out["fastForward"])
+        self.assertEqual(out["mergedSha"], "abcmain00001")
+        self.assertEqual(self.gh.merges, [])
+        self.assertEqual(self.gh.ref_updates[0]["body"]["sha"], "abcmain00001")
+        self.assertFalse(self.gh.ref_updates[0]["body"]["force"])
         cancelled = board_store.get_task(self.table, created["taskId"])
         self.assertEqual(cancelled["status"], "cancelled")
         self.assertEqual(cancelled["closedBy"], "owner")
+
+    def test_sync_only_ahead_is_not_promotable_and_resets(self) -> None:
+        commits = [{"sha": f"{i:08x}", "message": "board: sync staging with main"} for i in range(6)]
+        self.gh.compare = {"status": "ahead", "ahead_by": 6, "behind_by": 0, "commits": [
+            {"sha": row["sha"], "commit": {"message": row["message"]}} for row in commits
+        ]}
+        preview = board_code.compare_staging()
+        self.assertTrue(preview["syncOnly"])
+        self.assertFalse(preview["canPromote"])
+        out = board_code.op_sync_staging(self.ctx, {"reason": "Clean sync drift."})
+        self.assertTrue(out["ok"])
+        self.assertTrue(out["alreadyCurrent"])
+        self.assertTrue(out["reset"])
+        self.assertTrue(self.gh.ref_updates[0]["body"]["force"])
+        self.assertEqual(self.gh.merges, [])
 
     def test_queue_sync_staging_already_current(self) -> None:
         self.gh.compare = {"status": "identical", "ahead_by": 0, "behind_by": 0, "commits": []}

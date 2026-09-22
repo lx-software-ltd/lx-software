@@ -1612,6 +1612,11 @@ def build_registry() -> dict[str, ToolOp]:
                 {
                     "source": _str_param("Bulk source id.", enum=["lcsd", "edb", "swd", "places", "competitor"]),
                     "reason": REASON_PARAM,
+                    "limit": _int_param(
+                        "Max approved rows to import. Auto-import sets the room left under the launch target.",
+                        minimum=1,
+                        maximum=5000,
+                    ),
                 },
                 ["source", "reason"],
             ),
@@ -3065,12 +3070,17 @@ def _invoke_op(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> dict[
 _SECURITY_ISSUE_LABELS = frozenset({"security", "dependencies"})
 
 
-_ARCHITECT_AUTO_ACT_OPS = frozenset({"github_set_labels", "github_comment_issue"})
+_ARCHITECT_AUTO_ACT_OPS = frozenset({"github_set_labels"})
 
 
 def _architect_backlog_write(ctx: ToolContext, op: ToolOp) -> bool:
-    """Architect grooming labels/comments executes at act so the runner loop is unblocked."""
+    """Architect label grooming executes at act. Comments stay a proposal."""
     return bool(ctx.seat_id == "architect" and op.name in _ARCHITECT_AUTO_ACT_OPS)
+
+
+def _architect_comment_stays_proposal(ctx: ToolContext, op: ToolOp) -> bool:
+    """Boilerplate acceptance-criteria comments wait for the founder."""
+    return bool(ctx.seat_id == "architect" and op.name == "github_comment_issue")
 
 
 def _union_github_labels(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -3162,6 +3172,8 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
                     level = "act"
             else:
                 level = "act"
+        if _architect_comment_stays_proposal(ctx, op) and level == "act":
+            level = "propose"
     else:
         level = "act"
     summary = op.summarize(arguments)

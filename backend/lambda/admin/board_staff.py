@@ -1960,6 +1960,65 @@ def _expire_help_wait(table: Any, settings: dict[str, Any], task: dict[str, Any]
         )
 
 
+def supersede_stale_failed_duties(table: Any) -> int:
+    """Cancel a failed duty when a newer task shares its ``eventRef.id``.
+
+    The newest task for that id is kept, including when it is also failed, so
+    a retry is still possible. Older failures (the OpenRouter 402 duplicates)
+    leave the Attention lane.
+    """
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    statuses = (
+        "failed",
+        "queued",
+        "running",
+        "waiting_approval",
+        "waiting_subtask",
+        "review",
+        "awaiting_import",
+        "needs_owner",
+        "delivered",
+    )
+    for status in statuses:
+        for task in board_store.list_tasks(table, status, limit=200):
+            if str(task.get("origin") or "") != "duty":
+                continue
+            event_id = str((task.get("eventRef") or {}).get("id") or "").strip()
+            if not event_id:
+                continue
+            grouped.setdefault(event_id, []).append(task)
+    cancelled = 0
+    for tasks in grouped.values():
+        newest = max(tasks, key=lambda row: str(row.get("createdAt") or ""))
+        newest_id = str(newest.get("taskId") or "")
+        for task in tasks:
+            if str(task.get("taskId") or "") == newest_id:
+                continue
+            if str(task.get("status") or "") != "failed":
+                continue
+            task_id = str(task.get("taskId") or "")
+            if not task_id:
+                continue
+            try:
+                closed = cancel_task(
+                    table,
+                    task_id,
+                    "board_staff:superseded",
+                    reason="Superseded by a newer duty with the same event.",
+                    record_failure=False,
+                )
+            except StaffError as exc:
+                _log_event("info", tag="board_staff_supersede_skipped", taskId=task_id, error=str(exc)[:200])
+                continue
+            closed["closedBy"] = "board_staff:superseded"
+            closed["failureReason"] = ""
+            if not str(closed.get("summary") or "").strip():
+                closed["summary"] = "Superseded by a newer duty with the same event."
+            board_store.put_task(table, closed)
+            cancelled += 1
+    return cancelled
+
+
 def expire_waiting_help(table: Any, settings: dict[str, Any]) -> int:
     cut = datetime.now(timezone.utc) - timedelta(hours=BOARD_STAFF_WAITING_EXPIRY_HOURS)
     cut_iso = _utc_iso_z(cut)
@@ -3007,6 +3066,10 @@ def handle_tick(event: dict[str, Any]) -> dict[str, Any]:
         board_meeting.maybe_retry_failed_schedule(table, settings)
     except Exception as exc:
         _log_event("warning", tag="board_meeting_retry_failed", error=str(exc)[:300])
+    try:
+        supersede_stale_failed_duties(table)
+    except Exception as exc:
+        _log_event("warning", tag="board_staff_supersede_failed", error=str(exc)[:300])
     try:
         expire_waiting_help(table, settings)
     except Exception as exc:
