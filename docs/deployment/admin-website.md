@@ -385,12 +385,12 @@ LX Software pays one OpenRouter invoice; sibling products share it by
 tagging requests. Catalog:
 [`contracts/openrouter-apps.json`](../../contracts/openrouter-apps.json).
 
-| App id | Product | Metered in this admin |
+| App id | Product | How spend is recorded |
 |--------|---------|----------------------|
-| `statement-parser` | Statement OCR (this repo) | Yes |
-| `executive-board` | Executive Board (this repo) | Yes |
-| `evolvesprouts` | [lx-software-ltd/evolvesprouts](https://github.com/lx-software-ltd/evolvesprouts) | No (tag only) |
-| `siutindei` | [lx-software-ltd/siutindei](https://github.com/lx-software-ltd/siutindei) | No (tag only; no client yet) |
+| `statement-parser` | Statement OCR (this repo) | Metered here |
+| `executive-board` | Executive Board (this repo) | Metered here |
+| `evolvesprouts` | [lx-software-ltd/evolvesprouts](https://github.com/lx-software-ltd/evolvesprouts) | Pulled hourly (`ingestUsage`) |
+| `siutindei` | [lx-software-ltd/siutindei](https://github.com/lx-software-ltd/siutindei) | Pulled hourly once `lxsoftware:siutindei` exists |
 
 Each request sets `HTTP-Referer` / `X-OpenRouter-Title` from the catalog,
 `X-OpenRouter-App-Visibility: hidden` and a stable `user`
@@ -410,21 +410,41 @@ management key at
 it stays in GitHub, not in AWS.
 
 This admin's secret `lxsoftware-admin-openrouter-api-secret-*` must be
-JSON — parser and board calls fail without their named field:
+JSON — parser and board calls fail without their named field, and the
+sibling pull stays at USD 0.00 without `management`:
 
 ```json
-{ "statement-parser": "sk-or-v1-parser", "executive-board": "sk-or-v1-board" }
+{
+  "statement-parser": "sk-or-v1-parser",
+  "executive-board": "sk-or-v1-board",
+  "management": "sk-or-v1-management"
+}
 ```
+
+`management` is a [Management API key](https://openrouter.ai/settings/management-keys),
+not an inference key. Leave it off the statement-parser and executive-board
+fields. An hourly schedule (`lxsoftware-admin-openrouter-usage-pull`, no
+board key) lists keys named in the catalog with `ingestUsage: true` and
+calls `GET /api/v1/activity?api_key_hash=` once per key. That response
+already carries a `date` on each row for the last 30 completed UTC days, and
+the job groups by that date. A completed day OpenRouter has not aggregated
+yet is stored as USD 0.00 and replaced on the next pull that includes it.
+The current UTC day uses the key's `usage_daily` and has no call count until
+Activity includes that day. A failed request leaves the previously saved
+days in place. Days older than 30 stay as last saved, so history builds
+from the first successful pull.
 
 Evolve Sprouts stores `lxsoftware:evolvesprouts` in its own secret (plain
 string) and tags requests with `https://evolvesprouts.com` / `Evolve
 Sprouts` / `evolvesprouts:{workload}`. When siutindei gets a client, mint
 `lxsoftware:siutindei` and tag with `https://siutindei.com` / `Siu Tin
-Dei` / `siutindei:{workload}`.
+Dei` / `siutindei:{workload}`. Until that named key exists, the dashboard
+shows Siu Tin Dei at USD 0.00 with no spend on the key.
 
 **LX Software → Dashboard → OpenRouter** (`GET /openrouter/usage`) rolls up
-UTC spend metered here by app, month-to-date by default with the previous
-12 months on the dropdown (`?from=YYYY-MM-DD&to=YYYY-MM-DD`).
+UTC spend by app, month-to-date by default with the previous 12 months on
+the dropdown (`?from=YYYY-MM-DD&to=YYYY-MM-DD`). Sibling lines are the
+pulled Activity totals; parser and board lines are still metered here.
 
 ### AWS bill (shared account)
 

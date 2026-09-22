@@ -28,6 +28,8 @@ from openrouter_client import (
 )
 
 USAGE_PK_PREFIX = "OPENROUTER#"
+PULL_STATUS_PK = f"{USAGE_PK_PREFIX}pull"
+PULL_STATUS_SK = "status"
 
 OWNER_LABELS: dict[str, str] = {
     "siuTinDei": "Siu Tin Dei",
@@ -57,7 +59,13 @@ def cost_center_for(*, service: str, owner: str) -> str:
 
 
 def owner_label(owner: str) -> str:
-    return OWNER_LABELS.get(owner, owner)
+    labeled = OWNER_LABELS.get(owner)
+    if labeled:
+        return labeled
+    row = _catalog_row(owner)
+    if row and row.get("label"):
+        return str(row["label"])
+    return owner
 
 
 def payer_payload() -> dict[str, str]:
@@ -90,6 +98,7 @@ def _app_meta(service_id: str) -> dict[str, Any]:
             "repo": str(row.get("repo") or ""),
             "keyName": str(row.get("keyName") or ""),
             "meteredHere": bool(row.get("meteredHere")),
+            "ingestUsage": bool(row.get("ingestUsage")),
         }
     return {
         "id": service_id,
@@ -99,6 +108,7 @@ def _app_meta(service_id: str) -> dict[str, Any]:
         "repo": "",
         "keyName": "",
         "meteredHere": False,
+        "ingestUsage": False,
     }
 
 
@@ -162,6 +172,111 @@ def add_usage_day(
             ":day": day,
         },
     )
+
+
+def replace_usage_day(
+    table: Any,
+    *,
+    service: str,
+    owner: str,
+    usage: dict[str, Any] | None,
+    calls: int = 0,
+    date_iso: str | None = None,
+) -> None:
+    """Set one service+owner day to an absolute total.
+
+    Used by the OpenRouter activity pull so a later poll overwrites the day
+    instead of adding the same spend again.
+    """
+    day = date_iso or utc_today()
+    owner_key = (owner or "").strip() or "unknown"
+    service_id = (service or "").strip() or "unknown"
+    center = cost_center_for(service=service_id, owner=owner_key)
+    normalized = normalize_usage(
+        {
+            "prompt_tokens": (usage or {}).get("promptTokens", 0),
+            "completion_tokens": (usage or {}).get("completionTokens", 0),
+            "total_tokens": (usage or {}).get("totalTokens", 0),
+            "cost": (usage or {}).get("cost", 0.0),
+        }
+    )
+    table.update_item(
+        Key={"pk": usage_day_pk(day), "sk": f"{service_id}#{owner_key}"},
+        UpdateExpression=(
+            "SET promptTokens = :p, completionTokens = :c, totalTokens = :t, "
+            "cost = :cost, calls = :calls, #svc = :svc, #own = :own, "
+            "costCenter = :cc, #day = :day, #src = :src"
+        ),
+        ExpressionAttributeNames={
+            "#svc": "service",
+            "#own": "owner",
+            "#day": "day",
+            "#src": "source",
+        },
+        ExpressionAttributeValues={
+            ":p": int(normalized["promptTokens"]),
+            ":c": int(normalized["completionTokens"]),
+            ":t": int(normalized["totalTokens"]),
+            ":cost": Decimal(str(round(float(normalized["cost"] or 0.0), 6))),
+            ":calls": int(calls),
+            ":svc": service_id,
+            ":own": owner_key,
+            ":cc": center,
+            ":day": day,
+            ":src": "openrouter-activity",
+        },
+    )
+
+
+def put_pull_status(table: Any, status: dict[str, Any]) -> None:
+    """Remember the last sibling-usage pull so the dashboard can explain a zero."""
+    apps_in = status.get("apps") if isinstance(status.get("apps"), list) else []
+    apps: list[dict[str, Any]] = []
+    for row in apps_in:
+        if not isinstance(row, dict) or not row.get("id"):
+            continue
+        apps.append(
+            {
+                "id": str(row.get("id")),
+                "status": str(row.get("status") or ""),
+                "days": _as_int(row.get("days")),
+            }
+        )
+    table.put_item(
+        Item={
+            "pk": PULL_STATUS_PK,
+            "sk": PULL_STATUS_SK,
+            "ok": bool(status.get("ok")),
+            "reason": str(status.get("reason") or ""),
+            "pulledAt": str(status.get("pulledAt") or ""),
+            "apps": apps,
+        }
+    )
+
+
+def read_pull_status(table: Any) -> dict[str, Any] | None:
+    result = table.get_item(Key={"pk": PULL_STATUS_PK, "sk": PULL_STATUS_SK})
+    item = result.get("Item") if isinstance(result, dict) else None
+    if not isinstance(item, dict):
+        return None
+    apps_in = item.get("apps") if isinstance(item.get("apps"), list) else []
+    apps: list[dict[str, Any]] = []
+    for row in apps_in:
+        if not isinstance(row, dict) or not row.get("id"):
+            continue
+        apps.append(
+            {
+                "id": str(row.get("id")),
+                "status": str(row.get("status") or ""),
+                "days": _as_int(row.get("days")),
+            }
+        )
+    return {
+        "ok": bool(item.get("ok")),
+        "reason": str(item.get("reason") or ""),
+        "pulledAt": str(item.get("pulledAt") or ""),
+        "apps": apps,
+    }
 
 
 def _as_int(value: Any) -> int:
@@ -262,7 +377,9 @@ def list_usage(
                 row["day"] = day
             rows.append(row)
     rows.sort(key=lambda r: (r["service"], r["owner"], r["day"]))
-    return summarize(rows, from_day=from_day, to_day=to_day)
+    payload = summarize(rows, from_day=from_day, to_day=to_day)
+    payload["pull"] = read_pull_status(table)
+    return payload
 
 
 def summarize(

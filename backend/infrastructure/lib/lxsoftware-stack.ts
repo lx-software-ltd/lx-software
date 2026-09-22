@@ -377,7 +377,7 @@ export class LxsoftwareStack extends cdk.Stack {
         type: "String",
         default: "",
         description:
-          "ARN of the AWS Secrets Manager secret holding OpenRouter API keys. JSON object with a named key per catalog app this admin calls (statement-parser, executive-board). Sibling products keep their named keys in their own secrets. Leave blank to disable those features.",
+          "ARN of the AWS Secrets Manager secret holding OpenRouter API keys. JSON object with named inference keys (statement-parser, executive-board) plus management (Management API key) so sibling spend can be pulled. Sibling products keep their own named inference keys. Leave blank to disable those features.",
       }
     );
 
@@ -1353,6 +1353,18 @@ export class LxsoftwareStack extends cdk.Stack {
       { internal: "board_content_readout" },
       0
     );
+    new scheduler.Schedule(this, "OpenRouterUsagePullSchedule", {
+      scheduleName: "lxsoftware-admin-openrouter-usage-pull",
+      description:
+        "Hourly pull of sibling OpenRouter key spend (Evolve Sprouts, Siu Tin Dei) into the usage ledger. Requires the management field on the OpenRouter secret.",
+      schedule: scheduler.ScheduleExpression.rate(cdk.Duration.hours(1)),
+      target: new schedulerTargets.LambdaInvoke(adminFn, {
+        input: scheduler.ScheduleTargetInput.fromObject({
+          internal: "openrouter_usage_pull",
+        }),
+        retryAttempts: 1,
+      }),
+    });
 
     const outreachEventsDlq = new sqs.Queue(this, "SiutindeiOutreachEventsDlq", {
       queueName: "lxsoftware-admin-siutindei-outreach-events-dlq",

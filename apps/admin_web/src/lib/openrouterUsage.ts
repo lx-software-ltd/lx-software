@@ -19,7 +19,21 @@ export type OpenRouterUsageApp = OpenRouterUsageTotals & {
   readonly repo: string;
   readonly keyName: string;
   readonly meteredHere: boolean;
+  readonly ingestUsage: boolean;
   readonly owners: readonly OpenRouterUsageOwner[];
+};
+
+export type OpenRouterUsagePullApp = {
+  readonly id: string;
+  readonly status: string;
+  readonly days: number;
+};
+
+export type OpenRouterUsagePull = {
+  readonly ok: boolean;
+  readonly reason: string;
+  readonly pulledAt: string;
+  readonly apps: readonly OpenRouterUsagePullApp[];
 };
 
 export type OpenRouterUsagePayer = {
@@ -34,6 +48,7 @@ export type OpenRouterUsagePayload = {
   readonly payer: OpenRouterUsagePayer;
   readonly total: OpenRouterUsageTotals;
   readonly apps: readonly OpenRouterUsageApp[];
+  readonly pull?: OpenRouterUsagePull | null;
 };
 
 export const OPENROUTER_USAGE_PATH = "/openrouter/usage";

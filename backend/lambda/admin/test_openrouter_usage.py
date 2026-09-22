@@ -79,7 +79,10 @@ class TestOpenRouterUsage(unittest.TestCase):
         owner_ids = {o["id"] for o in by_id["statement-parser"]["owners"]}
         self.assertEqual(owner_ids, {"siuTinDei", "hillmarton", "lxSoftware"})
         self.assertTrue(by_id["evolvesprouts"]["meteredHere"] is False)
+        self.assertTrue(by_id["evolvesprouts"]["ingestUsage"] is True)
+        self.assertTrue(by_id["statement-parser"]["ingestUsage"] is False)
         self.assertAlmostEqual(by_id["evolvesprouts"]["cost"], 0.0)
+        self.assertIsNone(out["pull"])
         self.assertEqual(by_id["siutindei"]["referer"], "https://siutindei.com")
         self.assertEqual(
             by_id["evolvesprouts"]["keyName"], "lxsoftware:evolvesprouts"

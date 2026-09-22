@@ -32,7 +32,7 @@ describe("mockAdminFetch", () => {
       from: string;
       to: string;
       payer: { id: string };
-      apps: readonly { id: string; cost: number }[];
+      apps: readonly { id: string; cost: number; ingestUsage?: boolean }[];
     };
     expect(body.from).toBe("2026-07-01");
     expect(body.to).toBe("2026-07-31");
@@ -40,6 +40,9 @@ describe("mockAdminFetch", () => {
     expect(body.apps.map((app) => app.id)).toEqual(
       expect.arrayContaining(["statement-parser", "executive-board", "evolvesprouts", "siutindei"]),
     );
+    const sprouts = body.apps.find((app) => app.id === "evolvesprouts");
+    expect(sprouts?.cost).toBeGreaterThan(0);
+    expect(sprouts?.ingestUsage).toBe(true);
   });
 
   it("serves the AWS cost split for the LX Software dashboard", async () => {

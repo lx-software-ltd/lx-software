@@ -30,9 +30,10 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByText("USD 420.64 · 49.0%")).toBeVisible();
     await expect(page.getByRole("button", { name: "Download allocation PDF" })).toBeVisible();
     await expect(page.getByText("LX Software pays the OpenRouter invoice")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Tag sibling apps" })).toBeVisible();
-    await expect(page.getByText("lx-software-ltd/evolvesprouts")).toBeVisible();
-    await expect(page.getByText("lxsoftware:evolvesprouts")).toBeVisible();
+    await expect(page.getByText("USD 0.42")).toBeVisible();
+    await expect(page.getByText("calls metered in this admin")).toBeVisible();
+    await expect(page.getByText("Pulled from OpenRouter", { exact: true })).toBeVisible();
+    await expect(page.getByText("Pulled from OpenRouter · no spend on this key yet.")).toBeVisible();
 
     const pastKey = await awsMonth.locator("option").nth(2).getAttribute("value");
     expect(pastKey).toBeTruthy();
