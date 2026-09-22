@@ -383,6 +383,7 @@ CANDIDATE_SCAN_ONE = 10_000
 CANDIDATE_SCAN_ALL = CANDIDATE_PAGE_MAX
 COMPETITOR_STALE_DAYS = 7
 COMPETITOR_ENRICH_PER_RUN = 20
+PLACES_MISS_COOLDOWN_HOURS = 24 * 7
 _BULK_DECISIONS = {"approve": "approved", "reject": "rejected", "close": "closed"}
 
 
@@ -554,6 +555,23 @@ def _place_to_candidate_fields(place: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _places_retry_blocked(row: dict[str, Any]) -> bool:
+    """A Places miss is not searched again until the cooldown elapses."""
+    raw = str(row.get("placesTriedAt") or "").strip()
+    if not raw:
+        return False
+    try:
+        tried = board_hk.parse_iso(raw)
+    except ValueError:
+        return False
+    return datetime.now(timezone.utc) - tried < timedelta(hours=PLACES_MISS_COOLDOWN_HOURS)
+
+
+def _remember_places_miss(table: Any, row: dict[str, Any]) -> None:
+    stamped = {**row, "placesTriedAt": _now(), "updatedAt": _now()}
+    board_store.put_candidate(table, stamped)
+
+
 def enrich_with_places(table: Any, settings: dict[str, Any] | None = None, *, limit: int = COMPETITOR_ENRICH_PER_RUN) -> int:
     """Fill address / placeId on new competitor rows via Places text search."""
     import board_places
@@ -562,12 +580,15 @@ def enrich_with_places(table: Any, settings: dict[str, Any] | None = None, *, li
     if cap <= 0:
         return 0
     n = 0
+    searches = 0
     for row in board_store.list_candidates(table, "new", per_status_limit=10_000):
-        if n >= cap:
+        if searches >= cap or n >= cap:
             break
         if str(row.get("source") or "") != "competitor":
             continue
         if str(row.get("placeId") or "").strip():
+            continue
+        if _places_retry_blocked(row):
             continue
         name = str(row.get("nameEn") or row.get("name") or "").strip()
         district = str(row.get("district") or "").strip()
@@ -575,15 +596,18 @@ def enrich_with_places(table: Any, settings: dict[str, Any] | None = None, *, li
             continue
         known = board_hk.canonical_district(district) != "unknown"
         query = f"{name} {district} Hong Kong" if known else f"{name} Hong Kong"
+        searches += 1
         try:
             places = board_places.text_search(table, query, limit=1, settings=settings)
         except board_places.PlacesError as exc:
             _log_event("info", tag="board_catalog_competitor_enrich_stopped", error=str(exc)[:200])
             break
         if not places:
+            _remember_places_miss(table, row)
             continue
         fields = _place_to_candidate_fields(places[0])
         if not fields.get("placeId"):
+            _remember_places_miss(table, row)
             continue
         if not known:
             guessed = board_hk.district_from_address(str(fields.get("addressEn") or ""))

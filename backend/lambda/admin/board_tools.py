@@ -3459,7 +3459,11 @@ def create_approval(
     for existing in pending:
         if str(existing.get("fingerprint") or "") == fingerprint:
             return existing
-        if op.name == "code_merge_staging" and _same_merge_pr(existing.get("arguments") or {}, arguments):
+        if (
+            op.name == "code_merge_staging"
+            and str(existing.get("op") or "") == op.name
+            and _same_merge_pr(existing.get("arguments") or {}, arguments)
+        ):
             return _refresh_pending_approval(
                 ctx,
                 op,

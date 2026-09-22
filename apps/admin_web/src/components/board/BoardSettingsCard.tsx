@@ -279,10 +279,20 @@ export function BoardSettingsCard({
               min={0}
               max={100000}
               className="form-control form-control-sm"
-              value={draft.catalog?.launchListingTarget ?? BOARD_CATALOG_LAUNCH_LISTING_TARGET}
+              placeholder={String(BOARD_CATALOG_LAUNCH_LISTING_TARGET)}
+              value={draft.catalog?.launchListingTarget ?? ""}
               onChange={(ev) => {
-                const next = Number(ev.target.value);
-                if (!Number.isFinite(next) || next < 0) return;
+                const raw = ev.target.value;
+                if (raw.trim() === "") {
+                  setDraft((d) => {
+                    const catalog = { ...catalogDraft(d, {}) };
+                    delete catalog.launchListingTarget;
+                    return { ...d, catalog };
+                  });
+                  return;
+                }
+                const next = Number(raw);
+                if (!Number.isFinite(next) || next < 0 || next > 100000) return;
                 setDraft((d) => ({
                   ...d,
                   catalog: catalogDraft(d, { launchListingTarget: Math.round(next) }),
@@ -290,7 +300,8 @@ export function BoardSettingsCard({
               }}
             />
             <div className="form-text">
-              Auto-import stops when venue-linked providers reach this number. Providers with no venue do not count.
+              Leave blank to use the default ({BOARD_CATALOG_LAUNCH_LISTING_TARGET}). Auto-import stops when
+              venue-linked providers reach this number. Providers with no venue do not count.
             </div>
           </div>
           <div className="row g-2 mt-2">

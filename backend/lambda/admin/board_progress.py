@@ -130,12 +130,15 @@ def _listings(table: Any, settings: dict[str, Any] | None) -> dict[str, Any]:
     geos = [_num(r.get("has_geo")) for r in rows if r.get("has_geo") is not None]
     by_district = _group_catalog(rows, "district")
     by_category = _group_catalog(rows, "category")
-    unlinked_providers = 0
-    for row in by_district:
-        if row.get("label") == UNLINKED_DISTRICT_LABEL:
-            unlinked_providers = int(row.get("providers") or 0)
-            break
-    providers_with_venue = max(0, int(providers) - unlinked_providers)
+    exact_counts = board_product.provider_counts(table)
+    if isinstance(exact_counts, dict) and exact_counts.get("providersWithVenue") is not None:
+        providers_with_venue = max(0, int(exact_counts["providersWithVenue"]))
+        providers_with_venue_exact = True
+    else:
+        # Sum of non-unknown district cells. An org in two districts or two
+        # categories is counted twice until v_catalog_provider_counts is cached.
+        providers_with_venue = _providers_with_venue_estimate(by_district)
+        providers_with_venue_exact = False
     gaps = []
     for row in by_district:
         if row["activities"] <= 0 or (
@@ -179,6 +182,7 @@ def _listings(table: Any, settings: dict[str, Any] | None) -> dict[str, Any]:
         "byDistrict": by_district[:12],
         "byCategory": by_category[:12],
         "providersWithVenue": providers_with_venue,
+        "providersWithVenueExact": providers_with_venue_exact,
         "funnel7d": {
             "listingViews": int(sum(_num(r.get("listing_views")) for r in recent)),
             "leads": int(sum(_num(r.get("leads_relayed")) for r in recent)),
@@ -457,6 +461,16 @@ def _bottlenecks(
             }
         )
     return out[:8]
+
+
+def _providers_with_venue_estimate(by_district: list[dict[str, Any]]) -> int:
+    """Non-unknown district cells. Not a distinct organisation count."""
+    total = 0
+    for row in by_district:
+        if row.get("label") == UNLINKED_DISTRICT_LABEL:
+            continue
+        total += int(row.get("providers") or 0)
+    return max(0, total)
 
 
 def _group_catalog(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:

@@ -174,8 +174,30 @@ class CatalogDutyTests(BoardTestCase):
                 },
             )
             board_catalog_candidates.set_status(self.table, row["candidateId"], "imported")
-        names = board_catalog.imported_org_names(self.table, district["id"])
-        self.assertEqual(names, ["Sha Tin Park"])
+        alias = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {
+                "source": "lcsd",
+                "sourceId": "sha-tin-library",
+                "nameEn": "Sha Tin Public Library",
+                "district": "沙田",
+            },
+        )
+        board_catalog_candidates.set_status(self.table, alias["candidateId"], "imported")
+        calls = {"n": 0}
+        real_walk = board_store.walk_candidates
+
+        def _counting_walk(*args, **kwargs):
+            calls["n"] += 1
+            return real_walk(*args, **kwargs)
+
+        with patch.object(board_store, "walk_candidates", side_effect=_counting_walk):
+            names = board_catalog.imported_org_names(self.table, district["id"])
+            board_catalog.next_enrich_district(self.table)
+        self.assertEqual(calls["n"], 2)
+        self.assertIn("Sha Tin Park", names)
+        self.assertIn("Sha Tin Public Library", names)
+        self.assertTrue(all(not name.startswith("Kindergarten") for name in names))
 
     def test_enrich_pauses_after_three_needs_owner_sheets(self) -> None:
         settings = _enable(self.table)

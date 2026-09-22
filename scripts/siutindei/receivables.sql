@@ -164,6 +164,27 @@ JOIN activity_completeness ac ON ac.activity_id = p.activity_id
 LEFT JOIN activity_categories c ON c.id = p.category_id
 GROUP BY 1, 2;
 
+-- v_catalog_health counts an organisation once per district × category.
+-- Summing those cells double-counts an org that spans districts or
+-- categories, and subtracting the unknown cell is not a distinct venue count.
+-- providers_with_venue is organisations with at least one location in a
+-- named district (ga.name present and not 'unknown').
+CREATE OR REPLACE VIEW v_catalog_provider_counts AS
+SELECT
+    COUNT(DISTINCT a.org_id)::int AS providers,
+    COUNT(DISTINCT a.org_id) FILTER (
+        WHERE EXISTS (
+            SELECT 1
+            FROM activity_locations al
+            JOIN locations l ON l.id = al.location_id
+            JOIN geographic_areas ga ON ga.id = l.area_id
+            WHERE al.activity_id = a.id
+              AND NULLIF(btrim(ga.name), '') IS NOT NULL
+              AND lower(btrim(ga.name)) <> 'unknown'
+        )
+    )::int AS providers_with_venue
+FROM activities a;
+
 CREATE OR REPLACE VIEW v_funnel_daily AS
 SELECT
     d.day,
@@ -208,7 +229,7 @@ END
 $$;
 
 GRANT USAGE ON SCHEMA public TO board_api;
-GRANT SELECT ON v_catalog_health, v_funnel_daily, v_provider_pipeline TO board_api;
+GRANT SELECT ON v_catalog_health, v_funnel_daily, v_provider_pipeline, v_catalog_provider_counts TO board_api;
 GRANT SELECT ON listing_plans, listing_subscriptions, invoices, payments TO board_api;
 GRANT INSERT, UPDATE ON invoices, payments, listing_plans TO board_api;
 GRANT UPDATE (status) ON listing_subscriptions TO board_api;

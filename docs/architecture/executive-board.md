@@ -243,10 +243,14 @@ The daily budget is re-checked before every round.
   task, or the same title from another task, is a new Approval so
   `resume_after_approval` can unpark each waiter. `code_run_task` already
   collapses by issue number. `code_merge_staging` collapses by `prNumber`
-  across pending Approvals, so a second call with a different `kind` or
-  `reason` refreshes the same row. Proposals are only created by the loop, never by a
+  across pending Approvals of that same op, so a second merge call with a
+  different `kind` or `reason` refreshes the same row and a pending
+  `code_close_pr` or `code_review_pr` for that number is left alone.
+  Proposals are only created by the loop, never by a
   `POST …/approvals` route, except the catalog bulk importer, which opens one
-  `github_create_issue` proposal when a repeated HTTP 500 closes a row.
+  `github_create_issue` proposal when a scheduled row imports only after its
+  weekly hours are omitted. A rejected or executed Approval with that title
+  is not opened again.
 - Every call writes a `toolcalls#` row (persona / seat, level, actor,
   arguments, result preview, duration, `taskId`), visible under **Settings
   → Tools & permissions → Show the tool call log**; transcripts record a
@@ -390,8 +394,11 @@ price stay optional). The micro-batch duty pauses after
 completeness (cached health only; a missing score is not “low”) so
 `catalog-enrich` / describe can write 40-word EN + 繁中 copy for
 **imported** organisation names only (queued sheets do not count).
-District match is case-insensitive and walks the imported candidate
-index instead of the newest 400 rows. EDB kindergarten rows are skipped.
+District match uses the 18-district canonical name (`SHA TIN`,
+`Sha Tin District` and `沙田` agree). One walk of the imported index
+groups those rows and stops once every district has a describe batch,
+so the duty does not re-read the index per district. EDB kindergarten
+rows are skipped.
 Enrich skips a district for 48 h after a failed/parked describe
 (`createdAt`, so a revalidate tick does not extend the cooldown) and
 opens a config gap after three failures. The duty also pauses entirely
@@ -407,18 +414,25 @@ HTTP 500 is recorded under a hash of the batch's candidate ids (order
 does not matter). The next run of that same batch splits it. A single
 row is `closed` (with `closeReason`) only after a sibling batch in the
 same run has succeeded. Before that close, a row that carried
-`schedules` is retried once without them (the live failure is
-`schedule_entry_unique` on a name-collision update). The close opens
-one CTO `ops/catalog-bulk-500:{source}` task whose brief includes the
-siutindei `requestId`, plus one `github_create_issue` Approval
-(`Make activity_schedule_entries inserts idempotent`; a later close
-refreshes that Approval). Both halves returning 500 with no success is an outage:
+`schedules` is retried once without them. When that retry imports, the
+candidate is stamped `importNote: schedules dropped after HTTP 500` and
+one `github_create_issue` Approval asks the importer to make
+`activity_schedule_entries` inserts idempotent. The body reports the
+retry, not a captured server exception. A rejected or executed Approval
+with that title is not opened again; a pending one is refreshed. A close
+that still 500s without schedules does not open that Approval. The close
+opens one CTO `ops/catalog-bulk-500:{source}` task whose brief includes
+the siutindei `requestId`. Both halves returning 500 with no success is an outage:
 rows stay approved and the next hold retries, instead of closing the
 source. Auto bulk-import passes `limit` =
-`launchListingTarget` − venue-linked providers (`providersWithVenue`;
-the "No venue linked" bucket does not count). A missing venue split
-still uses the provider total. `settings.catalog.launchListingTarget`
-overrides the contract constant. Three remote siutindei dry-run
+`launchListingTarget` − venue-linked providers. The count is
+`v_catalog_provider_counts.providers_with_venue` (one organisation, and
+only when it has a location in a named district). Until that view is
+cached, the cap uses the sum of district cells that are not
+"No venue linked", which can count one organisation twice. A payload
+without `providersWithVenue` still uses the provider total.
+`settings.catalog.launchListingTarget` overrides the contract constant;
+clearing it in Settings returns to that default. Three remote siutindei dry-run
 errors on one sheet open a CTO `ops/siutindei-import-error` task and
 surface `remoteErrorSheets` on the daily review; a later successful
 dry-run clears `remoteErrorFirstAt` / `importError` so the next outage
@@ -473,8 +487,9 @@ care, and the 繁中 equivalents) are skipped at upsert unless the row's
 `places_kindergarten` row is not emptied by its own label). Commercial Places stay
 `new` until the owner decides. Competitor rows auto-approve once Places
 has filled a non-social website and a canonical district; an unknown
-district is geocoded with a name-only Places search. A Facebook-only URL
-stays `new`.
+district is geocoded with a name-only Places search. A Places miss
+stamps `placesTriedAt` and is not searched again for 7 days. A
+Facebook-only URL stays `new`.
 Daily 03:30 HKT `…-board-catalog-discovery` rotates
 `discoveryDistrictsPerDay` (3) districts through Places (Enterprise,
 30-day cache, `placesMonthlyCapUsd` 80), refreshes open data on Mondays,
@@ -512,8 +527,9 @@ same filters, optional `before`, and `missingPlaceId`) and
 `POST …/catalog/candidates/{id}/approve|reject` stay on the request.
 Discovery and Progress **Close leftover competitors** both close leftover
 `new` competitor rows with no `placeId` after 7 days. Discovery also
-text-searches Places (20/run, skip unknown district) to fill
-address / `placeId`. Open-data refresh runs on Monday **or** when a
+text-searches Places (20/run, including an unknown district) to fill
+address / `placeId`. A miss waits 7 days (`placesTriedAt`) before the
+next search. Open-data refresh runs on Monday **or** when a
 source cache is missing/empty (so a Tuesday deploy still fills EDB).
 Nav chrome (`Next`, `Page 2`, `«`) is stripped from listingsIndex names.
 Writes are JWT-only except the GETs. Open-data URLs (LCSD pefac/sc/sp/cpr

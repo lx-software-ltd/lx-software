@@ -29,6 +29,7 @@ _BISECT_MAX_CALLS = 8
 _HTTP_500_RE = re.compile(r"(?:failed:\s*500\b|\bHTTP/?\s*500\b|\bstatus(?:\s+code)?\s*500\b)", re.IGNORECASE)
 BULK_500_EVENT = "catalog-bulk-500"
 IMPORTER_ISSUE_TITLE = "Make activity_schedule_entries inserts idempotent"
+SCHEDULES_DROPPED_NOTE = "schedules dropped after HTTP 500"
 _REQUEST_ID_RE = re.compile(r"requestId=([0-9a-fA-F-]{8,})")
 OPEN_DATA_SOURCES = tuple(sorted(board_catalog_candidates.OFFICIAL_SOURCES))
 _TERMINAL_CANDIDATE = frozenset({"imported", "rejected", "closed"})
@@ -389,6 +390,17 @@ def _close_server_error_row(table: Any, row: dict[str, Any], error: str) -> None
     board_store.put_candidate(table, doc)
 
 
+def _note_schedules_dropped(table: Any, row: dict[str, Any]) -> None:
+    """The row imported only after weekly hours were removed."""
+    candidate_id = str(row.get("candidateId") or "")
+    if not candidate_id:
+        return
+    doc = board_store.get_candidate(table, candidate_id) or dict(row)
+    doc["importNote"] = SCHEDULES_DROPPED_NOTE
+    doc["updatedAt"] = board_store.now_iso()
+    board_store.put_candidate(table, doc)
+
+
 def _request_id(error: str) -> str:
     match = _REQUEST_ID_RE.search(error or "")
     return match.group(1) if match else ""
@@ -491,6 +503,7 @@ def _import_group(
     closed: list[dict[str, str]],
     remaining: list[str],
     saw_success: list[bool],
+    schedules_dropped: list[dict[str, str]],
     known: tuple[str, str] | None = None,
 ) -> None:
     """Import one batch.
@@ -554,6 +567,14 @@ def _import_group(
                     imported_ids=imported_ids,
                 )
                 if retry_status == "ok":
+                    _note_schedules_dropped(table, rows[0])
+                    schedules_dropped.append(
+                        {
+                            "candidateId": ids[0],
+                            "name": str(rows[0].get("nameEn") or rows[0].get("name") or ""),
+                            "error": message,
+                        }
+                    )
                     return
                 if retry_status == "budget":
                     remaining.extend(ids)
@@ -582,11 +603,13 @@ def _import_group(
             table, source, left_batch, left_rows, token,
             bisecting=True, budget=budget, results=results, imported_ids=imported_ids,
             closed=closed, remaining=remaining, saw_success=saw_success,
+            schedules_dropped=schedules_dropped,
         )
         _import_group(
             table, source, right_batch, right_rows, token,
             bisecting=True, budget=budget, results=results, imported_ids=imported_ids,
             closed=closed, remaining=remaining, saw_success=saw_success,
+            schedules_dropped=schedules_dropped,
         )
         return
     left_ids = [str(row.get("candidateId") or "") for row in left_rows if row.get("candidateId")]
@@ -622,6 +645,7 @@ def _import_group(
             table, source, left_batch, left_rows, token,
             bisecting=True, budget=budget, results=results, imported_ids=imported_ids,
             closed=closed, remaining=remaining, saw_success=saw_success,
+            schedules_dropped=schedules_dropped,
             known=("http500", left_message),
         )
     if right_status == "http500":
@@ -629,6 +653,7 @@ def _import_group(
             table, source, right_batch, right_rows, token,
             bisecting=True, budget=budget, results=results, imported_ids=imported_ids,
             closed=closed, remaining=remaining, saw_success=saw_success,
+            schedules_dropped=schedules_dropped,
             known=("http500", right_message),
         )
 
@@ -661,6 +686,7 @@ def import_source(
     imported_ids: list[str] = []
     closed: list[dict[str, str]] = []
     remaining: list[str] = []
+    schedules_dropped: list[dict[str, str]] = []
     budget = [_BISECT_MAX_CALLS]
     saw_success = [False]
     for batch, rows in zip(_batches(orgs, BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT), _batches(approved, BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT)):
@@ -677,6 +703,7 @@ def import_source(
             closed=closed,
             remaining=remaining,
             saw_success=saw_success,
+            schedules_dropped=schedules_dropped,
         )
     board_store.put_cache(
         table,
@@ -692,12 +719,27 @@ def import_source(
         batches=len(results),
         closed=len(closed),
     )
+    if schedules_dropped:
+        try:
+            names = ", ".join(str(row.get("name") or row.get("candidateId") or "") for row in schedules_dropped[:12])
+            error = str(schedules_dropped[0].get("error") or "")[:300]
+            _propose_importer_issue(
+                table,
+                board_store.load_settings(table),
+                source,
+                names,
+                error,
+                _request_id(error),
+            )
+        except Exception as exc:
+            _log_event("info", tag="board_catalog_importer_issue_skipped", source=source, error=str(exc)[:200])
     return {
         "ok": all(r.get("ok") for r in results) if results else True,
         "source": source,
         "imported": len(imported_ids),
         "batches": results,
         "closed": closed,
+        "schedulesDropped": schedules_dropped,
         "bisectRemaining": remaining,
         "preview": {k: preview.get(k) for k in ("approved", "wouldSend", "ingest")},
     }
@@ -742,7 +784,12 @@ def launch_listing_target(settings: dict[str, Any] | None) -> int:
 
 
 def venue_linked_providers(listings: dict[str, Any] | None) -> int:
-    """Providers that have a venue. Falls back to the provider total."""
+    """Providers that have a venue.
+
+    Prefers ``providersWithVenue`` from ``v_catalog_provider_counts`` (one
+    organisation, and only when it has a named district). A payload without
+    that field keeps the provider total.
+    """
     payload = listings or {}
     linked = payload.get("providersWithVenue")
     if linked is not None:
@@ -760,8 +807,10 @@ def auto_import_row_limit(table: Any, settings: dict[str, Any] | None = None) ->
     """Approved rows still allowed before venue-linked providers hit the launch target.
 
     A missing cache counts as zero providers, so the first auto-import is still
-    capped at the target. ``providersWithVenue`` ignores the "No venue linked"
-    bucket; a payload without that field keeps using the provider total.
+    capped at the target. ``providersWithVenue`` is the distinct count from
+    ``v_catalog_provider_counts`` when that view is cached; otherwise it is the
+    sum of district cells that are not "No venue linked". A payload without
+    the field keeps using the provider total.
     """
     providers = 0
     try:
@@ -885,7 +934,6 @@ def _open_bulk_500_task(table: Any, settings: dict[str, Any], source: str, close
         _create_bulk_500_task(
             table, settings, source, names, error, request_id, event_id, id_note, len(closed)
         )
-    _propose_importer_issue(table, settings, source, names, error, request_id)
 
 
 def _create_bulk_500_task(
@@ -926,6 +974,20 @@ def _create_bulk_500_task(
         _log_event("info", tag="board_catalog_bulk_500_task_skipped", source=source, error=str(exc)[:200])
 
 
+def _importer_issue_already_decided(table: Any) -> bool:
+    """True once a founder has approved or rejected this importer issue."""
+    wanted = " ".join(IMPORTER_ISSUE_TITLE.lower().split())
+    for row in board_store.list_approvals(table):
+        if str(row.get("op") or "") != "github_create_issue":
+            continue
+        if str(row.get("status") or "") == "pending":
+            continue
+        title = " ".join(str((row.get("arguments") or {}).get("title") or "").lower().split())
+        if title == wanted:
+            return True
+    return False
+
+
 def _propose_importer_issue(
     table: Any,
     settings: dict[str, Any],
@@ -934,19 +996,29 @@ def _propose_importer_issue(
     error: str,
     request_id: str,
 ) -> None:
-    """One founder Approval asking the siutindei repo to make schedule inserts idempotent."""
+    """One founder Approval after a row imported only once schedules were omitted.
+
+    A rejected or already-executed Approval with this title is not opened again.
+    A still-pending one is refreshed by ``create_approval``.
+    """
     import board_github
     import board_tools
 
+    if _importer_issue_already_decided(table):
+        _log_event("info", tag="board_catalog_importer_issue_skipped", reason="already decided")
+        return
     title = IMPORTER_ISSUE_TITLE
     body = (
-        "Repeated HTTP 500 from `POST /v1/admin/imports` while importing catalog "
-        f"source `{source}` closed rows after a sibling batch in the same run succeeded.\n\n"
-        "A captured failure was `IntegrityError` on unique constraint `schedule_entry_unique`: "
-        "an update re-inserts `activity_schedule_entries` for a weekly window that already exists. "
-        "Make that insert idempotent (`ON CONFLICT DO NOTHING`, or replace the schedule's entries "
-        "in one transaction) so a name-collision update does not 500 the batch.\n\n"
-        f"Closed: {names or '(none)'}\n"
+        "A catalog bulk import of source "
+        f"`{source}` received HTTP 500 from `POST /v1/admin/imports` on a row that "
+        "included weekly schedules. The same row imported when those schedules were "
+        "omitted, so the listing is live without opening hours "
+        f"(`importNote`: {SCHEDULES_DROPPED_NOTE}).\n\n"
+        "Make `activity_schedule_entries` inserts idempotent "
+        "(`ON CONFLICT DO NOTHING`, or replace the schedule's entries in one "
+        "transaction) so a name-collision update does not fail on unique constraint "
+        "`schedule_entry_unique`.\n\n"
+        f"Imported without schedules: {names or '(none)'}\n"
         f"requestId: {request_id or 'unknown'}\n"
         f"Latest client error: {error or 'unknown'}"
     )[:4000]

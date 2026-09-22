@@ -167,6 +167,26 @@ class ProgressSnapshotTests(BoardTestCase):
         self.assertNotIn("unknown", labels)
         self.assertEqual(snap["listings"]["providers"], 6)
         self.assertEqual(snap["listings"]["providersWithVenue"], 1)
+        self.assertFalse(snap["listings"]["providersWithVenueExact"])
+
+    def test_provider_counts_view_is_a_distinct_venue_total(self) -> None:
+        self.catalog = [
+            {"district": "unknown", "category": "Class", "activities": 5, "providers": 5, "stores": 0, "completeness": 0.0},
+            {"district": "Wan Chai", "category": "Workshop", "activities": 1, "providers": 1, "stores": 1, "completeness": 0.75},
+            {"district": "Wan Chai", "category": "Class", "activities": 1, "providers": 1, "stores": 1, "completeness": 0.8},
+        ]
+        self.provider_counts = {"providers": 6, "providers_with_venue": 1}
+
+        def execute(sql: str, params):
+            if "v_catalog_provider_counts" in sql.lower():
+                return [dict(self.provider_counts)]
+            return self._execute(sql, params)
+
+        board_data_api.set_executor_for_tests(execute)
+        snap = board_progress.snapshot(self.table, self.settings)
+        self.assertEqual(snap["listings"]["providers"], 7)
+        self.assertEqual(snap["listings"]["providersWithVenue"], 1)
+        self.assertTrue(snap["listings"]["providersWithVenueExact"])
         ids = {b["id"] for b in snap["bottlenecks"]}
         self.assertIn("listings-unlinked", ids)
 

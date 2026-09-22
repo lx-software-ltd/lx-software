@@ -28,8 +28,7 @@ CATALOG_ENRICH_KIND = "catalog-enrich"
 LOW_COMPLETENESS = 0.5
 ENRICH_COOLDOWN_HOURS = 48
 ENRICH_FAIL_GAP = 3
-# EDB rows are kindergartens (deny-list) and their district labels are uppercase,
-# so they must not crowd the describe queue.
+# EDB rows are kindergartens (deny-list), so they must not crowd the describe queue.
 ENRICH_SKIP_SOURCES = frozenset({"edb"})
 _OPEN_STATUSES = (
     "queued",
@@ -227,7 +226,65 @@ def _org_page_url(row: dict[str, Any]) -> str:
     return ""
 
 
-def imported_orgs(table: Any, district_id: str) -> list[dict[str, str]]:
+def _enrich_district_names() -> set[str]:
+    names: set[str] = set()
+    for row in BOARD_CATALOG_DISTRICTS:
+        if not isinstance(row, dict):
+            continue
+        label = board_hk.canonical_district(str(row.get("name") or ""))
+        if label != "unknown":
+            names.add(label)
+    return names
+
+
+def _index_imported_candidates(table: Any) -> dict[str, list[dict[str, str]]]:
+    """One walk of imported candidates, grouped by canonical district.
+
+    Stops once every catalog district has a full describe batch, so a duty
+    does not re-read the index once per district.
+    """
+    targets = _enrich_district_names()
+    buckets: dict[str, list[dict[str, str]]] = {}
+    seen: dict[str, set[str]] = {}
+
+    def full() -> bool:
+        return bool(targets) and all(
+            len(buckets.get(name) or []) >= BOARD_CATALOG_DESCRIBE_BATCH_SIZE for name in targets
+        )
+
+    def visit(cand: dict[str, Any]) -> bool:
+        if full():
+            return True
+        if str(cand.get("source") or "") in ENRICH_SKIP_SOURCES:
+            return False
+        if str(cand.get("descriptionSource") or "") not in ("", "template"):
+            return False
+        district = board_hk.canonical_district(str(cand.get("district") or ""))
+        if district not in targets:
+            return False
+        bucket = buckets.setdefault(district, [])
+        if len(bucket) >= BOARD_CATALOG_DESCRIBE_BATCH_SIZE:
+            return full()
+        cleaned = " ".join(str(cand.get("nameEn") or cand.get("name") or "").split()).strip()
+        if not cleaned:
+            return False
+        names = seen.setdefault(district, set())
+        if cleaned.casefold() in names:
+            return False
+        names.add(cleaned.casefold())
+        bucket.append({"name": cleaned, "url": _org_page_url(cand)})
+        return full()
+
+    board_store.walk_candidates(table, "imported", visit)
+    return buckets
+
+
+def imported_orgs(
+    table: Any,
+    district_id: str,
+    *,
+    imported_index: dict[str, list[dict[str, str]]] | None = None,
+) -> list[dict[str, str]]:
     """Imported organisations in a district, with an official URL when we have one."""
     did = str(district_id or "").strip().lower()
     district_name = ""
@@ -257,22 +314,17 @@ def imported_orgs(table: Any, district_id: str) -> list[dict[str, str]]:
             for org in payload.get("organizations") or []:
                 if isinstance(org, dict):
                     add(str(org.get("name") or ""), _org_page_url(org))
-    wanted = district_name.casefold()
-
-    def visit(cand: dict[str, Any]) -> bool:
+    if len(found) >= BOARD_CATALOG_DESCRIBE_BATCH_SIZE:
+        return found[:BOARD_CATALOG_DESCRIBE_BATCH_SIZE]
+    index = imported_index if imported_index is not None else _index_imported_candidates(table)
+    if district_name:
+        rows = index.get(board_hk.canonical_district(district_name), [])
+    else:
+        rows = [item for bucket in index.values() for item in bucket]
+    for item in rows:
+        add(item.get("name") or "", item.get("url") or "")
         if len(found) >= BOARD_CATALOG_DESCRIBE_BATCH_SIZE:
-            return True
-        if str(cand.get("source") or "") in ENRICH_SKIP_SOURCES:
-            return False
-        if wanted and str(cand.get("district") or "").casefold() != wanted:
-            return False
-        if str(cand.get("descriptionSource") or "") not in ("", "template"):
-            return False
-        add(str(cand.get("nameEn") or cand.get("name") or ""), _org_page_url(cand))
-        return len(found) >= BOARD_CATALOG_DESCRIBE_BATCH_SIZE
-
-    if len(found) < BOARD_CATALOG_DESCRIBE_BATCH_SIZE:
-        board_store.walk_candidates(table, "imported", visit)
+            break
     return found[:BOARD_CATALOG_DESCRIBE_BATCH_SIZE]
 
 
@@ -338,10 +390,15 @@ def enrich_failed_count(table: Any, district_id: str) -> int:
     return n
 
 
-def next_enrich_district(table: Any) -> dict[str, Any] | None:
+def next_enrich_district(
+    table: Any,
+    *,
+    imported_index: dict[str, list[dict[str, str]]] | None = None,
+) -> dict[str, Any] | None:
     busy = open_enrich_district_ids(table)
     cooling = enrich_recently_blocked_ids(table)
     scores = district_completeness(table)
+    index = imported_index if imported_index is not None else _index_imported_candidates(table)
     for row in BOARD_CATALOG_DISTRICTS:
         if not isinstance(row, dict):
             continue
@@ -349,7 +406,7 @@ def next_enrich_district(table: Any) -> dict[str, Any] | None:
         name = str(row.get("name") or "")
         if not did or did in busy or did in cooling:
             continue
-        names = imported_org_names(table, did)
+        names = [item["name"] for item in imported_orgs(table, did, imported_index=index)]
         if not names:
             continue
         if enrich_failed_count(table, did) >= ENRICH_FAIL_GAP:
@@ -416,12 +473,13 @@ def create_enrich(table: Any, settings: dict[str, Any], *, created_by: str = "bo
             f"catalog enrich paused: {parked} needs_owner sheets "
             f"(cap {BOARD_CATALOG_MAX_AWAITING_IMPORT})"
         )
-    district = next_enrich_district(table)
+    index = _index_imported_candidates(table)
+    district = next_enrich_district(table, imported_index=index)
     if not district:
         raise board_staff.StaffError("no district needs enrich")
     did = str(district.get("id") or "")
     name = str(district.get("name") or did)
-    orgs = imported_orgs(table, did)[:BOARD_CATALOG_DESCRIBE_BATCH_SIZE]
+    orgs = imported_orgs(table, did, imported_index=index)[:BOARD_CATALOG_DESCRIBE_BATCH_SIZE]
     names = [row["name"] for row in orgs]
     pages = [row for row in orgs if row.get("url")]
     if not names:

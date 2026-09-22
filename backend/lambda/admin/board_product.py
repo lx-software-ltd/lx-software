@@ -23,6 +23,7 @@ from http_common import _utc_iso_z
 CATALOG_CACHE = "product:catalog_health"
 FUNNEL_CACHE = "product:funnel"
 PIPELINE_CACHE = "product:provider_pipeline"
+PROVIDER_COUNTS_CACHE = "product:catalog_provider_counts"
 CATALOG_HEALTH_LIMIT = 200
 
 
@@ -73,6 +74,20 @@ def refresh_caches(table: Any) -> dict[str, str]:
             notes[name] = "ok"
         except ProductError as exc:
             notes[name] = str(exc)[:200]
+    try:
+        counted = _provider_count_payload()
+        if counted is None:
+            notes[PROVIDER_COUNTS_CACHE] = "empty"
+        else:
+            board_store.put_cache(
+                table,
+                PROVIDER_COUNTS_CACHE,
+                counted,
+                ttl_seconds=BOARD_CACHE_REFRESH_TTL_HOURS * 3600,
+            )
+            notes[PROVIDER_COUNTS_CACHE] = "ok"
+    except ProductError as exc:
+        notes[PROVIDER_COUNTS_CACHE] = str(exc)[:200]
     return notes
 
 
@@ -80,6 +95,7 @@ _CATALOG_SQL = (
     "SELECT district, category, activities, providers, stores, completeness, "
     "has_photo, has_price, has_schedule, has_geo FROM v_catalog_health"
 )
+_PROVIDER_COUNTS_SQL = "SELECT providers, providers_with_venue FROM v_catalog_provider_counts"
 _FUNNEL_SQL = (
     "SELECT day, district, searches, listing_views, cta_taps, leads_relayed, bookings_confirmed "
     "FROM v_funnel_daily"
@@ -112,6 +128,54 @@ def op_catalog_health(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         sql += " WHERE " + " AND ".join(clauses)
     sql += " ORDER BY activities DESC LIMIT 50"
     return {"rows": _q(sql, **params)}
+
+
+def _provider_count_payload() -> dict[str, int] | None:
+    """One distinct-org row, or None when the view returned nothing."""
+    rows = _q(_PROVIDER_COUNTS_SQL)
+    if not rows or not isinstance(rows[0], dict):
+        return None
+    row = rows[0]
+    raw_linked = row.get("providers_with_venue")
+    if raw_linked is None:
+        raw_linked = row.get("providersWithVenue")
+    if raw_linked is None:
+        return None
+    try:
+        providers = max(0, int(row.get("providers") or 0))
+        linked = max(0, int(raw_linked))
+    except (TypeError, ValueError):
+        return None
+    return {"providers": providers, "providersWithVenue": linked}
+
+
+def provider_counts(table: Any) -> dict[str, Any] | None:
+    """Distinct provider totals from ``v_catalog_provider_counts``.
+
+    Cached with the other product views. ``None`` means the view is not
+    available yet, so callers keep the district-cell estimate.
+    """
+    if table is not None:
+        hit = board_store.get_cache(table, PROVIDER_COUNTS_CACHE)
+        payload = hit.get("payload") if isinstance(hit, dict) else None
+        if isinstance(payload, dict) and payload.get("providersWithVenue") is not None:
+            return {**payload, "cached": True, "fetchedAt": hit.get("fetchedAt")}
+    try:
+        counted = _provider_count_payload()
+    except ProductError:
+        return None
+    if counted is None:
+        return None
+    fetched = None
+    if table is not None:
+        doc = board_store.put_cache(
+            table,
+            PROVIDER_COUNTS_CACHE,
+            counted,
+            ttl_seconds=BOARD_CACHE_REFRESH_TTL_HOURS * 3600,
+        )
+        fetched = doc.get("fetchedAt")
+    return {**counted, "cached": False, "fetchedAt": fetched}
 
 
 def cached_catalog_health(table: Any) -> dict[str, Any]:
