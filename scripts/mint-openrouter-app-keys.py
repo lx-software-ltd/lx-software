@@ -150,6 +150,8 @@ def main() -> int:
     ) if app.get("meteredHere") and app_id in minted}
     payload_lines = [
         "# This admin secret (lxsoftware-admin-openrouter-api-secret-*)",
+        "# Keep a separate \"management\" field (Management API key) so the",
+        "# hourly sibling-usage pull can read OpenRouter Activity.",
         "# Merge into the existing JSON. Do not commit these values.",
         json.dumps(
             admin_json

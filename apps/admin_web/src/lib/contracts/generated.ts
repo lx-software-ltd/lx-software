@@ -928,6 +928,7 @@ export type OpenRouterAppDefinition = {
   readonly repo: string;
   readonly keyName: string;
   readonly meteredHere: boolean;
+  readonly ingestUsage: boolean;
 };
 export const OPENROUTER_PAYER = "lxSoftware" as const;
 export const OPENROUTER_APPS: readonly OpenRouterAppDefinition[] = [
@@ -938,7 +939,8 @@ export const OPENROUTER_APPS: readonly OpenRouterAppDefinition[] = [
     "referer": "https://admin.lx-software.com/finance/parse-statement",
     "repo": "lx-software-ltd/lx-software",
     "keyName": "lxsoftware:statement-parser",
-    "meteredHere": true
+    "meteredHere": true,
+    "ingestUsage": false
   },
   {
     "id": "executive-board",
@@ -947,7 +949,8 @@ export const OPENROUTER_APPS: readonly OpenRouterAppDefinition[] = [
     "referer": "https://admin.lx-software.com/siu-tin-dei/board",
     "repo": "lx-software-ltd/lx-software",
     "keyName": "lxsoftware:executive-board",
-    "meteredHere": true
+    "meteredHere": true,
+    "ingestUsage": false
   },
   {
     "id": "evolvesprouts",
@@ -956,7 +959,8 @@ export const OPENROUTER_APPS: readonly OpenRouterAppDefinition[] = [
     "referer": "https://evolvesprouts.com",
     "repo": "lx-software-ltd/evolvesprouts",
     "keyName": "lxsoftware:evolvesprouts",
-    "meteredHere": false
+    "meteredHere": false,
+    "ingestUsage": true
   },
   {
     "id": "siutindei",
@@ -965,7 +969,8 @@ export const OPENROUTER_APPS: readonly OpenRouterAppDefinition[] = [
     "referer": "https://siutindei.com",
     "repo": "lx-software-ltd/siutindei",
     "keyName": "lxsoftware:siutindei",
-    "meteredHere": false
+    "meteredHere": false,
+    "ingestUsage": true
   }
 ];
 

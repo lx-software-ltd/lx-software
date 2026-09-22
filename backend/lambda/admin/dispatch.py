@@ -470,6 +470,11 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if isinstance(event, dict) and event.get("internal") == "public_api_key_notify":
         return board_public_api_mod.handle_internal_notify(event)
 
+    if isinstance(event, dict) and event.get("internal") == "openrouter_usage_pull":
+        import openrouter_usage_pull as openrouter_usage_pull_mod
+
+        return openrouter_usage_pull_mod.handle_pull(event)
+
     method, path = _route(event)
 
     if path in {"/webhooks/meta", "/webhooks/meta/siutindei"}:
