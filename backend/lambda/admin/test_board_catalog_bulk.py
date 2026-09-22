@@ -756,6 +756,81 @@ class DiscoveryTests(BoardTestCase):
         saved = board_store.get_candidate(self.table, row["candidateId"])
         self.assertEqual(saved.get("placeId"), "ChIJhappy")
         self.assertIn("Sha Tin", saved.get("addressEn") or "")
+        self.assertEqual(saved.get("status"), "approved")
+
+    def test_competitor_with_site_and_district_auto_approves(self) -> None:
+        doc = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {
+                "source": "competitor",
+                "nameEn": "Happy Playhouse",
+                "district": "Sha Tin",
+                "officialUrl": "https://happy.example",
+            },
+        )
+        self.assertEqual(doc["status"], "approved")
+
+    def test_competitor_social_url_stays_new(self) -> None:
+        doc = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {
+                "source": "competitor",
+                "nameEn": "Happy Playhouse",
+                "district": "Sha Tin",
+                "officialUrl": "https://www.facebook.com/happy",
+            },
+        )
+        self.assertEqual(doc["status"], "new")
+
+    def test_enrich_unknown_district_geocodes_and_approves(self) -> None:
+        row = board_catalog_candidates.upsert_candidate(
+            self.table, {"source": "competitor", "nameEn": "Happy Playhouse", "district": "unknown"}
+        )
+        places = [
+            {
+                "placeId": "ChIJhappy",
+                "address": "1 Sha Tin Centre, Sha Tin, Hong Kong",
+                "website": "https://happy.example",
+                "location": {"latitude": 22.38, "longitude": 114.19},
+            }
+        ]
+        with patch.object(board_places, "text_search", return_value=places) as search:
+            n = board_catalog_candidates.enrich_with_places(self.table, {})
+        self.assertEqual(n, 1)
+        self.assertIn("Happy Playhouse Hong Kong", search.call_args.args)
+        saved = board_store.get_candidate(self.table, row["candidateId"])
+        self.assertEqual(saved.get("district"), "Sha Tin")
+        self.assertEqual(saved.get("status"), "approved")
+        self.assertEqual(saved.get("officialUrl"), "https://happy.example")
+
+    def test_places_miss_is_not_searched_again_until_the_cooldown(self) -> None:
+        row = board_catalog_candidates.upsert_candidate(
+            self.table, {"source": "competitor", "nameEn": "Missing Playhouse", "district": "unknown"}
+        )
+        with patch.object(board_places, "text_search", return_value=[]) as search:
+            first = board_catalog_candidates.enrich_with_places(self.table, {})
+            second = board_catalog_candidates.enrich_with_places(self.table, {})
+        self.assertEqual(first, 0)
+        self.assertEqual(second, 0)
+        self.assertEqual(search.call_count, 1)
+        saved = board_store.get_candidate(self.table, row["candidateId"])
+        self.assertTrue(saved.get("placesTriedAt"))
+        self.assertEqual(saved.get("status"), "new")
+        saved["placesTriedAt"] = "2026-01-01T00:00:00Z"
+        board_store.put_candidate(self.table, saved)
+        with patch.object(board_places, "text_search", return_value=[]) as again:
+            board_catalog_candidates.enrich_with_places(self.table, {})
+        self.assertEqual(again.call_count, 1)
+
+    def test_places_misses_honor_the_run_cap(self) -> None:
+        for index in range(3):
+            board_catalog_candidates.upsert_candidate(
+                self.table,
+                {"source": "competitor", "nameEn": f"Missing {index}", "district": "unknown"},
+            )
+        with patch.object(board_places, "text_search", return_value=[]) as search:
+            board_catalog_candidates.enrich_with_places(self.table, {}, limit=2)
+        self.assertEqual(search.call_count, 2)
 
 
 class OpenDataCacheTests(BoardTestCase):
@@ -1240,7 +1315,8 @@ class AutonomyCatalogTests(BoardTestCase):
             name = str((orgs[0] or {}).get("name") or "") if orgs else ""
             if len(orgs) > 1 or name == "Bad Park":
                 raise board_catalog_import.CatalogImportError(
-                    'siutindei admin POST https://siu.example/v1/admin/imports failed: 500 {"error": "Internal server error"}'
+                    'siutindei admin POST https://siu.example/v1/admin/imports failed: 500 '
+                    '{"error": "Internal server error"} requestId=edf4ce43-2b3d-40f1-af2f-e1aa412770fd'
                 )
             return {
                 "ok": True,
@@ -1255,6 +1331,7 @@ class AutonomyCatalogTests(BoardTestCase):
             patch.object(board_catalog_import, "_id_token", return_value="tok"),
             patch.object(board_catalog_import, "_run_remote_import", side_effect=fake_import),
             patch.object(board_store, "records_table", return_value=self.table),
+            patch("board_github.validate_create_issue", return_value=None),
         ):
             first = board_catalog_bulk.import_source(self.table, "lcsd")
             self.assertEqual(first["imported"], 0)
@@ -1268,7 +1345,99 @@ class AutonomyCatalogTests(BoardTestCase):
         self.assertEqual(board_store.get_candidate(self.table, good["candidateId"])["status"], "imported")
         self.assertTrue(second.get("closed"))
         tasks = board_store.list_tasks(self.table, "queued", limit=20)
-        self.assertTrue(any((t.get("eventRef") or {}).get("id") == "catalog-bulk-500:lcsd" for t in tasks))
+        task = next(t for t in tasks if (t.get("eventRef") or {}).get("id") == "catalog-bulk-500:lcsd")
+        self.assertIn("requestId=edf4ce43-2b3d-40f1-af2f-e1aa412770fd", task["brief"])
+        self.assertEqual(task["eventRef"]["requestId"], "edf4ce43-2b3d-40f1-af2f-e1aa412770fd")
+        pending = [
+            row
+            for row in board_store.list_approvals(self.table)
+            if row.get("op") == "github_create_issue"
+        ]
+        self.assertEqual(pending, [])
+
+    def test_http_500_retries_a_single_row_without_schedules(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+        bad = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {
+                "source": "lcsd",
+                "sourceId": "bad",
+                "nameEn": "Bad Park",
+                "district": "Eastern",
+                "openingHours": "Daily 09:00-18:00",
+            },
+        )
+        good = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "good", "nameEn": "Good Park", "district": "Eastern"},
+        )
+        sent: list[bool] = []
+
+        def fake_import(payload, token, *, timeout=None):
+            orgs = payload.get("organizations") or []
+            scheduled = any(
+                isinstance(act, dict) and act.get("schedules")
+                for org in orgs
+                for act in (org.get("activities") or [])
+            )
+            sent.append(scheduled)
+            if len(orgs) > 1 or scheduled:
+                raise board_catalog_import.CatalogImportError(
+                    'siutindei admin POST https://siu.example/v1/admin/imports failed: 500 {"error": "Internal server error"}'
+                )
+            name = str((orgs[0] or {}).get("name") or "")
+            return {
+                "ok": True,
+                "summary": {"failed": 0, "created": 1, "updated": 0},
+                "results": [{"type": "organizations", "key": name, "status": "created"}],
+            }
+
+        with (
+            patch.object(board_catalog_bulk, "BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT", 2),
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=[]),
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "_id_token", return_value="tok"),
+            patch.object(board_catalog_import, "_run_remote_import", side_effect=fake_import),
+            patch("board_github.validate_create_issue", return_value=None),
+        ):
+            board_catalog_bulk.import_source(self.table, "lcsd")
+            again = board_catalog_bulk.import_source(self.table, "lcsd")
+        self.assertEqual(again["closed"], [])
+        saved = board_store.get_candidate(self.table, bad["candidateId"])
+        self.assertEqual(saved["status"], "imported")
+        self.assertEqual(saved.get("importNote"), board_catalog_bulk.SCHEDULES_DROPPED_NOTE)
+        self.assertEqual(board_store.get_candidate(self.table, good["candidateId"])["status"], "imported")
+        self.assertIn(False, sent)
+        pending = [
+            row
+            for row in board_store.list_approvals(self.table)
+            if row.get("status") == "pending" and row.get("op") == "github_create_issue"
+        ]
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["arguments"]["title"], board_catalog_bulk.IMPORTER_ISSUE_TITLE)
+        self.assertIn("Imported without schedules", pending[0]["arguments"]["body"])
+        self.assertIn("Bad Park", pending[0]["arguments"]["body"])
+        self.assertNotIn("A captured failure was", pending[0]["arguments"]["body"])
+        pending[0]["status"] = "rejected"
+        board_store.put_approval(self.table, pending[0])
+        board_catalog_bulk._propose_importer_issue(  # noqa: SLF001
+            self.table,
+            board_store.load_settings(self.table),
+            "lcsd",
+            "Bad Park",
+            "failed: 500",
+            "req-1",
+        )
+        issues = [
+            row
+            for row in board_store.list_approvals(self.table)
+            if row.get("op") == "github_create_issue"
+        ]
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0]["status"], "rejected")
 
     def test_auto_import_limit_stops_at_the_launch_target(self) -> None:
         os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
@@ -1301,6 +1470,47 @@ class AutonomyCatalogTests(BoardTestCase):
             full = board_catalog_bulk.maybe_queue_auto_imports(self.table, settings)
         self.assertEqual(full.get("queued"), [])
         self.assertEqual(full.get("reason"), "launch target reached")
+
+    def test_auto_import_limit_uses_venue_linked_providers_and_owner_target(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        for i in range(60):
+            board_catalog_candidates.upsert_candidate(
+                self.table,
+                {"source": "lcsd", "sourceId": f"lcsd-{i}", "nameEn": f"LCSD Park {i}", "district": "Eastern"},
+            )
+        settings = _enable_staff(self.table)
+        settings["catalog"] = {"autoImport": True, "launchListingTarget": 700}
+        settings = board_store.save_settings(self.table, settings)
+        import board_progress
+
+        listings = {"providers": 1582, "providersWithVenue": 636}
+        with (
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "import_enabled", return_value=True),
+            patch.object(board_progress, "_listings", return_value=listings),
+        ):
+            out = board_catalog_bulk.maybe_queue_auto_imports(self.table, settings)
+        self.assertEqual(out.get("queued"), ["lcsd"])
+        self.assertEqual(out.get("limit"), 60)
+        settings["catalog"] = {"autoImport": True, "launchListingTarget": 600}
+        settings = board_store.save_settings(self.table, settings)
+        with (
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "import_enabled", return_value=True),
+            patch.object(board_progress, "_listings", return_value=listings),
+        ):
+            full = board_catalog_bulk.maybe_queue_auto_imports(self.table, settings)
+        self.assertEqual(full.get("queued"), [])
+        self.assertEqual(full.get("reason"), "launch target reached")
+        self.assertEqual(
+            board_store.normalize_catalog_config({"launchListingTarget": "1500"})["launchListingTarget"],
+            1500,
+        )
+        self.assertNotIn(
+            "launchListingTarget",
+            board_store.normalize_catalog_config({"launchListingTarget": "nope"}),
+        )
 
     def test_http_500_outage_does_not_close_rows(self) -> None:
         os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"

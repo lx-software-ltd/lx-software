@@ -12,6 +12,7 @@ import {
   type BoardSettings,
 } from "../../lib/boardModel";
 import {
+  BOARD_CATALOG_LAUNCH_LISTING_TARGET,
   BOARD_MAX_DAILY_BUDGET_USD,
   BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
   BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
@@ -267,6 +268,41 @@ export function BoardSettingsCard({
             <label className="form-check-label" htmlFor="board-catalog-micro-batch">
               Run 3-per-district catalog micro-batch (pause while bulk import fills the catalog)
             </label>
+          </div>
+          <div className="mt-2">
+            <label className="form-label small" htmlFor="board-catalog-launch-target">
+              Launch listing target
+            </label>
+            <input
+              id="board-catalog-launch-target"
+              type="number"
+              min={0}
+              max={100000}
+              className="form-control form-control-sm"
+              placeholder={String(BOARD_CATALOG_LAUNCH_LISTING_TARGET)}
+              value={draft.catalog?.launchListingTarget ?? ""}
+              onChange={(ev) => {
+                const raw = ev.target.value;
+                if (raw.trim() === "") {
+                  setDraft((d) => {
+                    const catalog = { ...catalogDraft(d, {}) };
+                    delete catalog.launchListingTarget;
+                    return { ...d, catalog };
+                  });
+                  return;
+                }
+                const next = Number(raw);
+                if (!Number.isFinite(next) || next < 0 || next > 100000) return;
+                setDraft((d) => ({
+                  ...d,
+                  catalog: catalogDraft(d, { launchListingTarget: Math.round(next) }),
+                }));
+              }}
+            />
+            <div className="form-text">
+              Leave blank to use the default ({BOARD_CATALOG_LAUNCH_LISTING_TARGET}). Auto-import stops when
+              venue-linked providers reach this number. Providers with no venue do not count.
+            </div>
           </div>
           <div className="row g-2 mt-2">
             <div className="col-6">

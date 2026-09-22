@@ -3460,6 +3460,20 @@ def create_approval(
         if str(existing.get("fingerprint") or "") == fingerprint:
             return existing
         if (
+            op.name == "code_merge_staging"
+            and str(existing.get("op") or "") == op.name
+            and _same_merge_pr(existing.get("arguments") or {}, arguments)
+        ):
+            return _refresh_pending_approval(
+                ctx,
+                op,
+                existing,
+                arguments,
+                summary=summary,
+                downgrade_reason=downgrade_reason,
+                fingerprint=fingerprint,
+            )
+        if (
             str(existing.get("op") or "") == op.name
             and str((existing.get("context") or {}).get("taskId") or "") == (ctx.task_id or "")
             and ctx.task_id
@@ -3740,6 +3754,15 @@ def parse_prose_tool_calls(text: str) -> list[ToolCall]:
         return []
     call = _tool_call_from_prose_payload(data)
     return [call] if call else []
+
+
+def _same_merge_pr(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    try:
+        left_pr = int(left.get("prNumber") or 0)
+        right_pr = int(right.get("prNumber") or 0)
+    except (TypeError, ValueError):
+        return False
+    return bool(left_pr) and left_pr == right_pr
 
 
 def _same_code_run_target(left: dict[str, Any], right: dict[str, Any]) -> bool:

@@ -239,12 +239,12 @@ def details(
 
 
 # Text Search includedType values used for catalog discovery (Places API New).
+# Kindergarten and child-care queries stay off: EDB already covers registered
+# kindergartens, and those Places hits were mostly unrated nurseries.
 DISCOVERY_QUERIES: tuple[tuple[str, str, str], ...] = (
     ("playground", "children playground", "places_playground"),
     ("park", "public park playground", "places_park"),
     ("amusement_center", "indoor play centre kids", "places_amusement"),
-    ("preschool", "kindergarten", "places_kindergarten"),
-    ("child_care_agency", "child care centre", "places_child_care"),
     ("swimming_pool", "public swimming pool", "places_swimming"),
     ("library", "public library", "places_library"),
     ("museum", "children museum", "places_museum"),

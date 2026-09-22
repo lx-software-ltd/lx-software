@@ -19,6 +19,14 @@ describe("BoardSettingsCard", () => {
       />,
     );
 
+    const target = screen.getByLabelText("Launch listing target");
+    expect(target).toHaveValue(null);
+    expect(target).toHaveAttribute("placeholder", "1000");
+    fireEvent.change(target, { target: { value: "1200" } });
+    expect(target).toHaveValue(1200);
+    fireEvent.change(target, { target: { value: "" } });
+    expect(target).toHaveValue(null);
+
     const concurrent = screen.getByLabelText("Concurrent tasks");
     expect(concurrent).toHaveValue(6);
     fireEvent.change(concurrent, { target: { value: "8" } });

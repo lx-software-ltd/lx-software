@@ -63,6 +63,7 @@ class FakeAurora:
         self.invoices: list[dict[str, Any]] = []
         self.payments: list[dict[str, Any]] = []
         self.catalog: list[dict[str, Any]] = []
+        self.provider_counts: dict[str, Any] | None = None
         self.funnel: list[dict[str, Any]] = []
         self.pipeline: list[dict[str, Any]] = []
         self.sqls: list[str] = []
@@ -240,6 +241,10 @@ class FakeAurora:
                 rows = [x for x in rows if x.get("invoice_id")]
             return rows
 
+        if "from v_catalog_provider_counts" in low:
+            if self.provider_counts:
+                return [dict(self.provider_counts)]
+            return [{"providers": 0, "providers_with_venue": 0}]
         if "from v_catalog_health" in low:
             rows = list(self.catalog)
             if p.get("district"):

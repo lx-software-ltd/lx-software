@@ -110,7 +110,11 @@ export type BoardSettings = {
     readonly modelBySeat?: Readonly<Record<string, string>>;
   };
   readonly review?: { readonly digestTo: string; readonly digestHourHkt: number; readonly sampleSize: number };
-  readonly catalog?: { readonly autoImport?: boolean; readonly microBatchEnabled?: boolean };
+  readonly catalog?: {
+    readonly autoImport?: boolean;
+    readonly microBatchEnabled?: boolean;
+    readonly launchListingTarget?: number;
+  };
   readonly boundaries?: BoardBoundaries;
   readonly updatedAt?: string | null;
   readonly version?: number;
@@ -140,6 +144,7 @@ export function catalogDraft(
   return {
     autoImport: Boolean(current.catalog?.autoImport),
     microBatchEnabled: current.catalog?.microBatchEnabled !== false,
+    launchListingTarget: current.catalog?.launchListingTarget,
     ...patch,
   };
 }

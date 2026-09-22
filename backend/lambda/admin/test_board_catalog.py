@@ -148,6 +148,57 @@ class CatalogDutyTests(BoardTestCase):
         self.assertIn("Official pages", enrich["brief"])
         self.assertIn("fid=1", enrich["brief"])
 
+    def test_enrich_matches_district_case_and_skips_edb_past_the_newest_window(self) -> None:
+        import board_catalog_candidates
+
+        district = next(row for row in BOARD_CATALOG_DISTRICTS if row["id"] == "sha-tin")
+        older = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {
+                "source": "lcsd",
+                "sourceId": "sha-tin-park",
+                "nameEn": "Sha Tin Park",
+                "district": "SHA TIN",
+            },
+        )
+        board_catalog_candidates.set_status(self.table, older["candidateId"], "imported")
+        for index in range(420):
+            row = board_catalog_candidates.upsert_candidate(
+                self.table,
+                {
+                    "source": "edb",
+                    "sourceId": f"edb-{index}",
+                    "nameEn": f"Kindergarten {index}",
+                    "district": "Eastern" if index else "SHA TIN",
+                    "facilityKind": "edb_kindergarten",
+                },
+            )
+            board_catalog_candidates.set_status(self.table, row["candidateId"], "imported")
+        alias = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {
+                "source": "lcsd",
+                "sourceId": "sha-tin-library",
+                "nameEn": "Sha Tin Public Library",
+                "district": "沙田",
+            },
+        )
+        board_catalog_candidates.set_status(self.table, alias["candidateId"], "imported")
+        calls = {"n": 0}
+        real_walk = board_store.walk_candidates
+
+        def _counting_walk(*args, **kwargs):
+            calls["n"] += 1
+            return real_walk(*args, **kwargs)
+
+        with patch.object(board_store, "walk_candidates", side_effect=_counting_walk):
+            names = board_catalog.imported_org_names(self.table, district["id"])
+            board_catalog.next_enrich_district(self.table)
+        self.assertEqual(calls["n"], 2)
+        self.assertIn("Sha Tin Park", names)
+        self.assertIn("Sha Tin Public Library", names)
+        self.assertTrue(all(not name.startswith("Kindergarten") for name in names))
+
     def test_enrich_pauses_after_three_needs_owner_sheets(self) -> None:
         settings = _enable(self.table)
         board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})

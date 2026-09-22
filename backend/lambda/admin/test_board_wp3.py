@@ -565,7 +565,10 @@ class TestSqlFileAndSmokeCli(unittest.TestCase):
         self.assertIn("0029_add_api_keys", text)
         self.assertIn("listing_events_daily", text)
         self.assertRegex(text, r"IF NOT EXISTS \(SELECT 1 FROM pg_roles WHERE rolname = 'board_api'\)")
-        self.assertIn("GRANT SELECT ON v_catalog_health, v_funnel_daily, v_provider_pipeline TO board_api;", text)
+        self.assertIn(
+            "GRANT SELECT ON v_catalog_health, v_funnel_daily, v_provider_pipeline, v_catalog_provider_counts TO board_api;",
+            text,
+        )
         self.assertIn("GRANT SELECT ON listing_plans, listing_subscriptions, invoices, payments TO board_api;", text)
         self.assertIn("GRANT INSERT, UPDATE ON invoices, payments, listing_plans TO board_api;", text)
         self.assertIn("GRANT UPDATE (status) ON listing_subscriptions TO board_api;", text)
