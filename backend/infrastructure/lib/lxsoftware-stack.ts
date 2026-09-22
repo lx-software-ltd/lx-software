@@ -1353,14 +1353,18 @@ export class LxsoftwareStack extends cdk.Stack {
       { internal: "board_content_readout" },
       0
     );
-    siutindeiBoardSchedule(
-      "OpenRouterUsagePullSchedule",
-      "lxsoftware-admin-openrouter-usage-pull",
-      "Hourly pull of sibling OpenRouter key spend (Evolve Sprouts, Siu Tin Dei) into the usage ledger. Requires the management field on the OpenRouter secret.",
-      scheduler.ScheduleExpression.rate(cdk.Duration.hours(1)),
-      { internal: "openrouter_usage_pull" },
-      1
-    );
+    new scheduler.Schedule(this, "OpenRouterUsagePullSchedule", {
+      scheduleName: "lxsoftware-admin-openrouter-usage-pull",
+      description:
+        "Hourly pull of sibling OpenRouter key spend (Evolve Sprouts, Siu Tin Dei) into the usage ledger. Requires the management field on the OpenRouter secret.",
+      schedule: scheduler.ScheduleExpression.rate(cdk.Duration.hours(1)),
+      target: new schedulerTargets.LambdaInvoke(adminFn, {
+        input: scheduler.ScheduleTargetInput.fromObject({
+          internal: "openrouter_usage_pull",
+        }),
+        retryAttempts: 1,
+      }),
+    });
 
     const outreachEventsDlq = new sqs.Queue(this, "SiutindeiOutreachEventsDlq", {
       queueName: "lxsoftware-admin-siutindei-outreach-events-dlq",

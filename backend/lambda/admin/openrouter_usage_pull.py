@@ -6,11 +6,15 @@ Dei) call OpenRouter from their own stacks with a named key. This job reads
 those keys with the Management API and writes each UTC day into the same
 ledger the dashboard already shows.
 
-Activity covers the last 30 completed UTC days
-(``GET /api/v1/activity?date=&api_key_hash=``). The current UTC day often
-is not in that window yet, so today's cost falls back to the key's
-``usage_daily``. A later poll overwrites the day; it does not add it again.
-Days older than 30 stay as last written.
+Activity covers the last 30 completed UTC days. One
+``GET /api/v1/activity?api_key_hash=`` returns every day still in that
+window; rows are grouped by ``date``. A completed day missing from the
+response is stored as zero and replaced when a later pull includes it.
+The current UTC day often is not in that window yet, so today's cost
+falls back to the key's ``usage_daily`` (call count stays 0 until Activity
+includes the day). A later poll overwrites a day; it does not add it
+again. Days older than 30 stay as last written. A failed request writes
+nothing, so the previous days stay.
 
 The management key lives in the admin OpenRouter secret JSON as
 ``management``. Inference keys stay under ``statement-parser`` and
@@ -226,6 +230,9 @@ def handle_pull(event: dict[str, Any]) -> dict[str, Any]:
     except ManagementKeyRejected:
         result = _result(ok=False, reason="management_key_rejected", apps=[])
         logger.warning("OpenRouter usage pull rejected the management key")
+    except PullHttpError as exc:
+        result = _result(ok=False, reason="http_error", apps=[])
+        logger.warning("OpenRouter usage pull failed status=%s", exc.status)
     put_pull_status(table, result)
     return result
 
@@ -241,63 +248,36 @@ def _write_key_days(
     today: str,
     usage_daily: float,
 ) -> tuple[int, bool]:
-    written = 0
-    failed = False
     hashes = [str(key.get("hash") or "") for key in keys if str(key.get("hash") or "")]
     if not hashes:
         return 0, True
+    grouped: list[dict[str, list[Any]]] = []
+    for key_hash in hashes:
+        url = f"{ACTIVITY_URL}?{urlencode({'api_key_hash': key_hash})}"
+        try:
+            payload = fetch(url, token)
+        except PullHttpError as exc:
+            if exc.status in (401, 403):
+                raise ManagementKeyRejected(str(exc)) from exc
+            logger.warning(
+                "OpenRouter activity pull failed app=%s status=%s",
+                app_id,
+                exc.status,
+            )
+            return 0, True
+        data = payload.get("data")
+        if not isinstance(data, list):
+            logger.warning("OpenRouter activity response missing data app=%s", app_id)
+            return 0, True
+        grouped.append(_rows_by_date(data))
+    written = 0
     for day in days:
-        totals = sum_activity_rows([])
-        day_failed = False
-        unavailable = False
-        for key_hash in hashes:
-            url = f"{ACTIVITY_URL}?{urlencode({'date': day, 'api_key_hash': key_hash})}"
-            try:
-                payload = fetch(url, token)
-            except PullHttpError as exc:
-                if exc.status in (401, 403):
-                    raise ManagementKeyRejected(str(exc)) from exc
-                if exc.status == 400:
-                    unavailable = True
-                    break
-                day_failed = True
-                logger.warning(
-                    "OpenRouter activity pull failed app=%s day=%s status=%s",
-                    app_id,
-                    day,
-                    exc.status,
-                )
-                break
-            data = payload.get("data")
-            if not isinstance(data, list):
-                day_failed = True
-                break
-            part = sum_activity_rows(data)
-            totals = _add_totals(totals, part)
-        if day_failed:
-            failed = True
-            continue
-        if unavailable:
-            # 400 means that UTC date is outside the completed activity window.
-            # Today can still be priced from the key's usage_daily figure.
-            if day == today and usage_daily > 0:
-                replace_usage_day(
-                    table,
-                    service=app_id,
-                    owner=app_id,
-                    usage={"cost": round(usage_daily, 6)},
-                    calls=0,
-                    date_iso=day,
-                )
-                written += 1
-            elif day != today:
-                failed = True
-                logger.warning(
-                    "OpenRouter activity date unavailable app=%s day=%s",
-                    app_id,
-                    day,
-                )
-            continue
+        rows: list[Any] = []
+        for by_date in grouped:
+            rows.extend(by_date.get(day, []))
+        totals = sum_activity_rows(rows)
+        # Activity often omits the current UTC day. Price it from usage_daily;
+        # the call count arrives once that day shows up in Activity.
         if (
             day == today
             and totals["cost"] <= 0
@@ -320,7 +300,19 @@ def _write_key_days(
             date_iso=day,
         )
         written += 1
-    return written, failed
+    return written, False
+
+
+def _rows_by_date(rows: list[Any]) -> dict[str, list[Any]]:
+    grouped: dict[str, list[Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        day = str(row.get("date") or "")[:10]
+        if len(day) != 10:
+            continue
+        grouped.setdefault(day, []).append(row)
+    return grouped
 
 
 def _list_keys(fetch: Fetch, token: str) -> list[dict[str, Any]]:
@@ -342,16 +334,6 @@ def _list_keys(fetch: Fetch, token: str) -> list[dict[str, Any]]:
             break
         offset += _KEY_PAGE_SIZE
     return out
-
-
-def _add_totals(left: dict[str, Any], right: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "promptTokens": int(left["promptTokens"]) + int(right["promptTokens"]),
-        "completionTokens": int(left["completionTokens"]) + int(right["completionTokens"]),
-        "totalTokens": int(left["totalTokens"]) + int(right["totalTokens"]),
-        "cost": round(float(left["cost"]) + float(right["cost"]), 6),
-        "calls": int(left["calls"]) + int(right["calls"]),
-    }
 
 
 def _result(*, ok: bool, reason: str, apps: list[dict[str, Any]]) -> dict[str, Any]:

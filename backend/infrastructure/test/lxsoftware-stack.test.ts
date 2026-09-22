@@ -304,8 +304,10 @@ describe("EventBridge Scheduler wiring", () => {
       "lxsoftware-admin-siutindei-board-targets": "board_targets",
       "lxsoftware-admin-siutindei-board-content-plan": "board_content_plan",
       "lxsoftware-admin-siutindei-board-content-readout": "board_content_readout",
-      "lxsoftware-admin-openrouter-usage-pull": "openrouter_usage_pull",
       "lxsoftware-admin-siutindei-data-api-ensure": "siutindei_data_api_ensure",
+    };
+    const accountSchedules: Record<string, string> = {
+      "lxsoftware-admin-openrouter-usage-pull": "openrouter_usage_pull",
     };
     const schedules = Object.values(resourcesOfType("AWS::Scheduler::Schedule"));
     const byName = Object.fromEntries(
@@ -313,11 +315,18 @@ describe("EventBridge Scheduler wiring", () => {
         .filter((s) => typeof s.Properties?.Name === "string")
         .map((s) => [s.Properties?.Name as string, s])
     );
-    expect(Object.keys(byName).sort()).toEqual(Object.keys(expected).sort());
+    expect(Object.keys(byName).sort()).toEqual(
+      [...Object.keys(expected), ...Object.keys(accountSchedules)].sort()
+    );
     for (const [name, internal] of Object.entries(expected)) {
       const input = JSON.stringify(byName[name].Properties?.Target?.Input ?? "");
       expect(input).toContain(internal);
       expect(input).toContain("siuTinDei");
+    }
+    for (const [name, internal] of Object.entries(accountSchedules)) {
+      const input = JSON.stringify(byName[name].Properties?.Target?.Input ?? "");
+      expect(input).toContain(internal);
+      expect(input).not.toContain("siuTinDei");
     }
   });
 });

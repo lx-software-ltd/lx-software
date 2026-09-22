@@ -423,12 +423,15 @@ sibling pull stays at USD 0.00 without `management`:
 
 `management` is a [Management API key](https://openrouter.ai/settings/management-keys),
 not an inference key. Leave it off the statement-parser and executive-board
-fields. An hourly schedule (`lxsoftware-admin-openrouter-usage-pull`) lists
-keys named in the catalog with `ingestUsage: true`, reads
-`GET /api/v1/activity` for the last 30 UTC days (filtered by key hash), and
-writes those days into the same ledger. The current UTC day uses the key's
-`usage_daily` when Activity has not closed the day yet. A later pull
-overwrites a day. Days older than 30 stay as last saved, so history builds
+fields. An hourly schedule (`lxsoftware-admin-openrouter-usage-pull`, no
+board key) lists keys named in the catalog with `ingestUsage: true` and
+calls `GET /api/v1/activity?api_key_hash=` once per key. That response
+already carries a `date` on each row for the last 30 completed UTC days, and
+the job groups by that date. A completed day OpenRouter has not aggregated
+yet is stored as USD 0.00 and replaced on the next pull that includes it.
+The current UTC day uses the key's `usage_daily` and has no call count until
+Activity includes that day. A failed request leaves the previously saved
+days in place. Days older than 30 stay as last saved, so history builds
 from the first successful pull.
 
 Evolve Sprouts stores `lxsoftware:evolvesprouts` in its own secret (plain

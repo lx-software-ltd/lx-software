@@ -1,4 +1,3 @@
-import { OPENROUTER_APPS } from "../../lib/contracts/generated";
 import { formatUsageCost } from "../../lib/boardModel";
 import type {
   OpenRouterUsageApp,
@@ -25,7 +24,7 @@ export function OpenRouterUsageCard() {
       isLoading={query.isPending}
       loadingMessage="Loading OpenRouter usage…"
       isError={query.isError}
-      errorMessage="Could not load OpenRouter usage. LX Software still pays the invoice; tag sibling apps until this endpoint is available."
+      errorMessage="Could not load OpenRouter usage. LX Software still pays the invoice."
       emptyMessage="No OpenRouter usage recorded yet."
     >
       {query.data ? (
@@ -45,62 +44,29 @@ function OpenRouterUsageBody({
   const shown = data.apps.filter(
     (app) => app.meteredHere || app.ingestUsage || (app.cost ?? 0) > 0,
   );
-  const tagOnly = data.apps.filter(
-    (app) => !app.meteredHere && !app.ingestUsage && (app.cost ?? 0) === 0,
-  );
-  const catalogTagOnly =
-    tagOnly.length > 0
-      ? tagOnly
-      : OPENROUTER_APPS.filter((app) => !app.meteredHere && !app.ingestUsage);
+  const meteredCalls = shown
+    .filter((app) => app.meteredHere)
+    .reduce((sum, app) => sum + (app.calls ?? 0), 0);
   const periodLabel = isCurrent ? "UTC month-to-date" : "UTC month";
   return (
     <>
       <p className="small text-muted">
         {data.payer.label} pays the OpenRouter invoice. {periodLabel} (
-        {data.from} – {data.to}) includes calls metered in this admin and
-        sibling spend pulled hourly from OpenRouter. Total{" "}
-        {formatUsageCost(data.total.cost)} over {data.total.calls ?? 0} calls.
+        {data.from} – {data.to}). Total {formatUsageCost(data.total.cost)}.{" "}
+        {meteredCalls} calls metered in this admin. Sibling lines are
+        OpenRouter cost; the current UTC day&apos;s call count is added after
+        Activity closes that day.
       </p>
       <PullNotice pull={data.pull} />
       {shown.length === 0 ? (
         <p className="small text-muted">No OpenRouter usage recorded for this range.</p>
       ) : (
-        <ul className="list-unstyled mb-3 small">
+        <ul className="list-unstyled mb-0 small">
           {shown.map((app) => (
             <AppSpend key={app.id} app={app} pull={data.pull} />
           ))}
         </ul>
       )}
-      {catalogTagOnly.length > 0 ? (
-        <div className="small">
-          <h3 className="h6">Tag sibling apps</h3>
-          <p className="text-muted">
-            Same LX Software OpenRouter account. Mint a named key (
-            <code>lxsoftware:{"{app-id}"}</code>) and store it in that
-            product&apos;s secret. On every chat-completions request send{" "}
-            <code>HTTP-Referer</code>, <code>X-OpenRouter-Title</code>,{" "}
-            <code>X-OpenRouter-App-Visibility: hidden</code>, and body{" "}
-            <code>user</code> as <code>{"{app-id}:{workload}"}</code> (no PII).
-          </p>
-          <ul className="list-unstyled mb-0">
-            {catalogTagOnly.map((app) => (
-              <li key={app.id} className="mb-2">
-                <strong>{app.label}</strong>
-                <div className="text-muted">
-                  {app.repo ? <code>{app.repo}</code> : null}
-                  {app.repo && app.referer ? " · " : null}
-                  {app.referer ? <code>{app.referer}</code> : null}
-                </div>
-                <div className="text-muted">
-                  title <code>{app.title}</code> · key{" "}
-                  <code>{app.keyName || `lxsoftware:${app.id}`}</code> · user{" "}
-                  <code>{`${app.id}:{workload}`}</code>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
     </>
   );
 }
@@ -146,9 +112,11 @@ function PullNotice({ pull }: { readonly pull: OpenRouterUsagePull | null | unde
   const message =
     reason === "management_key_rejected"
       ? "OpenRouter rejected the management key on the admin secret, so sibling spend is not updating."
-      : reason === "partial"
-        ? "The last OpenRouter pull was incomplete. Saved days are still shown."
-        : "Sibling spend stays at USD 0.00 until the admin OpenRouter secret includes a management key (OpenRouter Management API key). The hourly pull reads Activity for each named sibling key.";
+      : reason === "http_error"
+        ? "The last OpenRouter pull failed. Saved days are still shown."
+        : reason === "partial"
+          ? "The last OpenRouter pull was incomplete. Saved days are still shown."
+          : "Sibling spend stays at USD 0.00 until the admin OpenRouter secret includes a management key (OpenRouter Management API key). The hourly pull reads Activity for each named sibling key.";
   return (
     <p className="small text-warning-emphasis" role="status">
       {message}
@@ -161,7 +129,14 @@ function siblingNote(
   pull: OpenRouterUsagePull | null | undefined,
 ): string | null {
   if (!app.ingestUsage || app.meteredHere) return null;
-  const status = pull?.apps.find((row) => row.id === app.id)?.status;
+  const reason = pull?.reason;
+  if (!pull || reason === "management_key_missing" || reason === "management_key_rejected") {
+    return "Waiting for the first OpenRouter pull.";
+  }
+  if (reason === "http_error") {
+    return "Last pull failed. Showing saved days.";
+  }
+  const status = pull.apps.find((row) => row.id === app.id)?.status;
   if (status === "key_not_found") {
     return `Named key ${app.keyName} is not on the OpenRouter account yet.`;
   }
@@ -171,6 +146,5 @@ function siblingNote(
   if (status === "no_usage" || (app.cost ?? 0) === 0) {
     return "Pulled from OpenRouter · no spend on this key yet.";
   }
-  const calls = app.calls ?? 0;
-  return calls > 0 ? `Pulled from OpenRouter · ${calls} calls` : "Pulled from OpenRouter";
+  return "Pulled from OpenRouter";
 }

@@ -111,23 +111,20 @@ class TestOpenRouterUsagePull(unittest.TestCase):
             qs = parse_qs(parsed.query)
             if parsed.path.endswith("/keys"):
                 return _keys_page(int(qs.get("offset", ["0"])[0]))
-            day = qs["date"][0]
+            self.assertNotIn("date", qs)
             self.assertEqual(qs["api_key_hash"][0], SPROUT_HASH)
-            if day == "2026-09-21":
-                return {
-                    "data": [
-                        {
-                            "usage": 1.5,
-                            "requests": 4,
-                            "prompt_tokens": 100,
-                            "completion_tokens": 20,
-                            "reasoning_tokens": 5,
-                        }
-                    ]
-                }
-            if day == "2026-09-22":
-                return {"data": []}
-            raise AssertionError(day)
+            return {
+                "data": [
+                    {
+                        "date": "2026-09-21",
+                        "usage": 1.5,
+                        "requests": 4,
+                        "prompt_tokens": 100,
+                        "completion_tokens": 20,
+                        "reasoning_tokens": 5,
+                    }
+                ]
+            }
 
         result = pull.pull_sibling_usage(
             table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2
@@ -138,6 +135,7 @@ class TestOpenRouterUsagePull(unittest.TestCase):
         self.assertEqual(by_status["siutindei"], "key_not_found")
         self.assertFalse(any(PARSER_HASH in url for url in seen))
         self.assertTrue(any("/keys?" in url and "offset=100" in url for url in seen))
+        self.assertEqual(sum(1 for url in seen if "/activity?" in url), 1)
 
         out = openrouter_usage.list_usage(table, from_day="2026-09-21", to_day="2026-09-22")
         by_id = {app["id"]: app for app in out["apps"]}
@@ -187,7 +185,7 @@ class TestOpenRouterUsagePull(unittest.TestCase):
         self.assertEqual(by_status["evolvesprouts"], "key_not_found")
         self.assertEqual(activity, [])
 
-    def test_today_falls_back_to_usage_daily_when_activity_rejects_the_date(self) -> None:
+    def test_today_falls_back_to_usage_daily_when_activity_omits_it(self) -> None:
         table = FakeTable()
 
         def fetch(url: str, token: str) -> dict:
@@ -204,12 +202,16 @@ class TestOpenRouterUsagePull(unittest.TestCase):
                         }
                     ]
                 }
-            day = parse_qs(parsed.query)["date"][0]
-            if day == "2026-09-22":
-                raise pull.PullHttpError(400, "date not completed")
+            self.assertNotIn("date", parse_qs(parsed.query))
             return {
                 "data": [
-                    {"usage": 1.1, "requests": 2, "prompt_tokens": 8, "completion_tokens": 2}
+                    {
+                        "date": "2026-09-21",
+                        "usage": 1.1,
+                        "requests": 2,
+                        "prompt_tokens": 8,
+                        "completion_tokens": 2,
+                    }
                 ]
             }
 
@@ -228,9 +230,9 @@ class TestOpenRouterUsagePull(unittest.TestCase):
         self.assertAlmostEqual(rows["2026-09-22"]["cost"], 0.4)
         self.assertEqual(rows["2026-09-22"]["calls"], 0)
 
-    def test_failed_day_keeps_the_previously_saved_total(self) -> None:
+    def test_failed_activity_request_keeps_the_previously_saved_total(self) -> None:
         table = FakeTable()
-        state = {"fail_yesterday": False}
+        state = {"fail": False}
 
         def fetch(url: str, token: str) -> dict:
             del token
@@ -246,18 +248,25 @@ class TestOpenRouterUsagePull(unittest.TestCase):
                         }
                     ]
                 }
-            day = parse_qs(parsed.query)["date"][0]
-            if day == "2026-09-21" and state["fail_yesterday"]:
+            if state["fail"]:
                 raise pull.PullHttpError(500, "unavailable")
-            if day == "2026-09-21":
-                return {"data": [{"usage": 1.5, "requests": 4, "prompt_tokens": 10, "completion_tokens": 1}]}
-            return {"data": []}
+            return {
+                "data": [
+                    {
+                        "date": "2026-09-21",
+                        "usage": 1.5,
+                        "requests": 4,
+                        "prompt_tokens": 10,
+                        "completion_tokens": 1,
+                    }
+                ]
+            }
 
         first = pull.pull_sibling_usage(
             table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2
         )
         self.assertTrue(first["ok"])
-        state["fail_yesterday"] = True
+        state["fail"] = True
         second = pull.pull_sibling_usage(
             table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2
         )
@@ -267,6 +276,38 @@ class TestOpenRouterUsagePull(unittest.TestCase):
         by_id = {app["id"]: app for app in out["apps"]}
         self.assertAlmostEqual(by_id["evolvesprouts"]["cost"], 1.5)
         self.assertEqual(by_id["evolvesprouts"]["calls"], 4)
+
+    def test_missing_completed_day_is_zero_until_a_later_pull_fills_it(self) -> None:
+        table = FakeTable()
+        payloads = [
+            [{"date": "2026-09-22", "usage": 0.2, "requests": 1, "prompt_tokens": 1, "completion_tokens": 1}],
+            [
+                {"date": "2026-09-21", "usage": 1.5, "requests": 4, "prompt_tokens": 10, "completion_tokens": 1},
+                {"date": "2026-09-22", "usage": 0.2, "requests": 1, "prompt_tokens": 1, "completion_tokens": 1},
+            ],
+        ]
+
+        def fetch(url: str, token: str) -> dict:
+            del token
+            if urlparse(url).path.endswith("/keys"):
+                return {
+                    "data": [
+                        {
+                            "name": "lxsoftware:evolvesprouts",
+                            "hash": SPROUT_HASH,
+                            "usage": 2,
+                            "usage_daily": 0,
+                        }
+                    ]
+                }
+            return {"data": payloads.pop(0)}
+
+        pull.pull_sibling_usage(table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2)
+        first = openrouter_usage.list_usage(table, from_day="2026-09-21", to_day="2026-09-21")
+        self.assertAlmostEqual(_app_cost(first, "evolvesprouts"), 0.0)
+        pull.pull_sibling_usage(table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2)
+        second = openrouter_usage.list_usage(table, from_day="2026-09-21", to_day="2026-09-21")
+        self.assertAlmostEqual(_app_cost(second, "evolvesprouts"), 1.5)
 
     def test_missing_management_key_is_visible_on_the_bill(self) -> None:
         table = FakeTable()
@@ -312,6 +353,53 @@ class TestOpenRouterUsagePull(unittest.TestCase):
         listed = openrouter_usage.list_usage(table, from_day="2026-09-21", to_day="2026-09-22")
         self.assertEqual(listed["rows"], [])
         self.assertEqual(listed["pull"]["reason"], "management_key_rejected")
+
+    def test_http_error_replaces_a_previous_ok_status(self) -> None:
+        table = FakeTable()
+        openrouter_usage.put_pull_status(
+            table,
+            {
+                "ok": True,
+                "reason": "",
+                "pulledAt": "2026-09-22T07:00:00Z",
+                "apps": [{"id": "evolvesprouts", "status": "updated", "days": 2}],
+            },
+        )
+
+        def fetch(url: str, token: str) -> dict:
+            del url, token
+            raise pull.PullHttpError(503, "unavailable")
+
+        with patch.dict(
+            os.environ,
+            {
+                "RECORDS_TABLE_NAME": "records",
+                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",
+            },
+            clear=False,
+        ):
+            with (
+                patch.object(runtime, "_ddb", _Ddb(table)),
+                patch("openrouter_usage_pull.http_get_json", fetch),
+                patch("admin_runtime._get_secretsmanager_client", return_value=object()),
+                patch(
+                    "openrouter_client.read_secret_raw",
+                    return_value='{"management":"mgmt-key"}',
+                ),
+            ):
+                result = pull.handle_pull({})
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason"], "http_error")
+        listed = openrouter_usage.list_usage(table, from_day="2026-09-21", to_day="2026-09-22")
+        self.assertEqual(listed["pull"]["reason"], "http_error")
+        self.assertFalse(listed["pull"]["ok"])
+
+
+def _app_cost(payload: dict, app_id: str) -> float:
+    for app in payload["apps"]:
+        if app["id"] == app_id:
+            return float(app["cost"])
+    raise AssertionError(app_id)
 
 
 if __name__ == "__main__":
