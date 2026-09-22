@@ -165,6 +165,8 @@ class ProgressSnapshotTests(BoardTestCase):
         labels = [row["label"] for row in snap["listings"]["byDistrict"]]
         self.assertIn("No venue linked", labels)
         self.assertNotIn("unknown", labels)
+        self.assertEqual(snap["listings"]["providers"], 6)
+        self.assertEqual(snap["listings"]["providersWithVenue"], 1)
         ids = {b["id"] for b in snap["bottlenecks"]}
         self.assertIn("listings-unlinked", ids)
 

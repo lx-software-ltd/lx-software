@@ -391,6 +391,13 @@ def normalize_catalog_config(raw: Any) -> dict[str, Any]:
         out["autoImport"] = bool(raw.get("autoImport"))
     if "microBatchEnabled" in raw:
         out["microBatchEnabled"] = bool(raw.get("microBatchEnabled"))
+    if "launchListingTarget" in raw and raw.get("launchListingTarget") not in (None, ""):
+        try:
+            target = int(raw.get("launchListingTarget"))
+        except (TypeError, ValueError):
+            target = -1
+        if 0 <= target <= 100_000:
+            out["launchListingTarget"] = target
     return out
 
 
@@ -2496,6 +2503,44 @@ def list_candidates(
     if per_status_limit is not None:
         return items
     return items[:limit]
+
+
+def walk_candidates(
+    table: Any,
+    status: str,
+    visitor: Any,
+    *,
+    scan_cap: int = 20000,
+) -> int:
+    """Walk one candidate status newest-first, past ``list_candidates``' window.
+
+    ``visitor(doc)`` returns True to stop. At most ``scan_cap`` rows are read.
+    """
+    scanned = 0
+    start: dict[str, Any] | None = None
+    while scanned < scan_cap:
+        params: dict[str, Any] = {
+            "IndexName": "gsi1",
+            "KeyConditionExpression": "gsi1pk = :pk",
+            "ExpressionAttributeValues": {":pk": board_pk(f"candidates#{status}")},
+            "ScanIndexForward": False,
+            "Limit": min(200, scan_cap - scanned),
+        }
+        if start:
+            params["ExclusiveStartKey"] = start
+        res = table.query(**params)
+        page = res.get("Items") or []
+        if not page:
+            break
+        scanned += len(page)
+        for raw in page:
+            doc = _from_ddb_nested(_strip_keys(raw))
+            if isinstance(doc, dict) and visitor(doc):
+                return scanned
+        start = res.get("LastEvaluatedKey")
+        if not start:
+            break
+    return scanned
 
 
 def put_candidate_dedupe(table: Any, dedupe_key: str, candidate_id: str) -> None:

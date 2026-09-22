@@ -28,6 +28,8 @@ JOB_STALE_SECONDS = 360
 _BISECT_MAX_CALLS = 8
 _HTTP_500_RE = re.compile(r"(?:failed:\s*500\b|\bHTTP/?\s*500\b|\bstatus(?:\s+code)?\s*500\b)", re.IGNORECASE)
 BULK_500_EVENT = "catalog-bulk-500"
+IMPORTER_ISSUE_TITLE = "Make activity_schedule_entries inserts idempotent"
+_REQUEST_ID_RE = re.compile(r"requestId=([0-9a-fA-F-]{8,})")
 OPEN_DATA_SOURCES = tuple(sorted(board_catalog_candidates.OFFICIAL_SOURCES))
 _TERMINAL_CANDIDATE = frozenset({"imported", "rejected", "closed"})
 
@@ -387,6 +389,33 @@ def _close_server_error_row(table: Any, row: dict[str, Any], error: str) -> None
     board_store.put_candidate(table, doc)
 
 
+def _request_id(error: str) -> str:
+    match = _REQUEST_ID_RE.search(error or "")
+    return match.group(1) if match else ""
+
+
+def _org_has_schedules(org: dict[str, Any]) -> bool:
+    for activity in org.get("activities") or []:
+        if isinstance(activity, dict) and activity.get("schedules"):
+            return True
+    return bool(org.get("schedules"))
+
+
+def _without_schedules(org: dict[str, Any]) -> dict[str, Any]:
+    """Same organisation with weekly hours removed, for one retry after a schedule 500."""
+    clone = dict(org)
+    clone.pop("schedules", None)
+    activities = []
+    for activity in org.get("activities") or []:
+        if isinstance(activity, dict):
+            activities.append({k: v for k, v in activity.items() if k != "schedules"})
+        else:
+            activities.append(activity)
+    if activities:
+        clone["activities"] = activities
+    return clone
+
+
 def _mark_imported(table: Any, rows: list[dict[str, Any]], batch: list[dict[str, Any]], imported: dict[str, Any]) -> list[str]:
     succeeded = _succeeded_org_names(imported, batch)
     ids: list[str] = []
@@ -510,6 +539,29 @@ def _import_group(
         return
     if len(batch) <= 1:
         if saw_success[0]:
+            if _org_has_schedules(batch[0]):
+                if budget[0] <= 0:
+                    remaining.extend(ids)
+                    return
+                retry_status, retry_message = _call_import(
+                    table,
+                    source,
+                    [_without_schedules(batch[0])],
+                    rows,
+                    token,
+                    budget=budget,
+                    results=results,
+                    imported_ids=imported_ids,
+                )
+                if retry_status == "ok":
+                    return
+                if retry_status == "budget":
+                    remaining.extend(ids)
+                    return
+                if retry_status != "http500":
+                    results.append({"ok": False, "error": retry_message, "candidateId": ids[0]})
+                    return
+                message = retry_message or message
             _close_server_error_row(table, rows[0], message)
             closed.append(
                 {
@@ -668,28 +720,58 @@ def sources_status(table: Any) -> dict[str, Any]:
                 "job": _job(table, source),
             }
         )
+    settings = board_store.load_settings(table)
     return {
         "sources": sources,
-        "launchTarget": BOARD_CATALOG_LAUNCH_LISTING_TARGET,
+        "launchTarget": launch_listing_target(settings),
         "candidateCounts": counts,
     }
 
 
-def auto_import_row_limit(table: Any) -> int:
-    """Approved rows still allowed before the catalog hits its launch target.
+def launch_listing_target(settings: dict[str, Any] | None) -> int:
+    """Owner ``settings.catalog.launchListingTarget``, else the contract constant."""
+    catalog = (settings or {}).get("catalog") if isinstance(settings, dict) else None
+    if isinstance(catalog, dict) and catalog.get("launchListingTarget") not in (None, ""):
+        try:
+            value = int(catalog.get("launchListingTarget"))
+        except (TypeError, ValueError):
+            value = -1
+        if 0 <= value <= 100_000:
+            return value
+    return BOARD_CATALOG_LAUNCH_LISTING_TARGET
 
-    Uses the cached catalog-health provider total. A missing cache counts as
-    zero providers, so the first auto-import is still capped at the target.
+
+def venue_linked_providers(listings: dict[str, Any] | None) -> int:
+    """Providers that have a venue. Falls back to the provider total."""
+    payload = listings or {}
+    linked = payload.get("providersWithVenue")
+    if linked is not None:
+        try:
+            return max(0, int(linked))
+        except (TypeError, ValueError):
+            pass
+    try:
+        return max(0, int(payload.get("providers") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def auto_import_row_limit(table: Any, settings: dict[str, Any] | None = None) -> int:
+    """Approved rows still allowed before venue-linked providers hit the launch target.
+
+    A missing cache counts as zero providers, so the first auto-import is still
+    capped at the target. ``providersWithVenue`` ignores the "No venue linked"
+    bucket; a payload without that field keeps using the provider total.
     """
     providers = 0
     try:
         import board_progress
 
-        providers = int((board_progress._listings(table, {}) or {}).get("providers") or 0)  # noqa: SLF001
+        providers = venue_linked_providers(board_progress._listings(table, {}))  # noqa: SLF001
     except Exception as exc:
         _log_event("info", tag="board_catalog_auto_bulk_cap_unavailable", error=str(exc)[:200])
         providers = 0
-    return max(0, BOARD_CATALOG_LAUNCH_LISTING_TARGET - providers)
+    return max(0, launch_listing_target(settings) - providers)
 
 
 def maybe_queue_auto_imports(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
@@ -698,7 +780,7 @@ def maybe_queue_auto_imports(table: Any, settings: dict[str, Any]) -> dict[str, 
         return {"queued": []}
     if not board_catalog_import.import_enabled() or not board_catalog_import.configured():
         return {"queued": []}
-    room = auto_import_row_limit(table)
+    room = auto_import_row_limit(table, settings)
     if room <= 0:
         return {"queued": [], "reason": "launch target reached"}
     counts = board_catalog_candidates.counts_by_source(table)
@@ -792,14 +874,33 @@ def _open_bulk_500_task(table: Any, settings: dict[str, Any], source: str, close
     """One CTO task per source while rows closed by a repeated HTTP 500 are outstanding."""
     if not closed:
         return
-    import board_staff
     from board_triage import find_open_event_task
 
     event_id = f"{BULK_500_EVENT}:{source}"
-    if find_open_event_task(table, "ops", event_id):
-        return
     names = ", ".join(str(row.get("name") or row.get("candidateId") or "") for row in closed[:12])
     error = str(closed[0].get("error") or "")[:300]
+    request_id = _request_id(error)
+    id_note = f" requestId={request_id}." if request_id else ""
+    if not find_open_event_task(table, "ops", event_id):
+        _create_bulk_500_task(
+            table, settings, source, names, error, request_id, event_id, id_note, len(closed)
+        )
+    _propose_importer_issue(table, settings, source, names, error, request_id)
+
+
+def _create_bulk_500_task(
+    table: Any,
+    settings: dict[str, Any],
+    source: str,
+    names: str,
+    error: str,
+    request_id: str,
+    event_id: str,
+    id_note: str,
+    closed_count: int,
+) -> None:
+    import board_staff
+
     try:
         board_staff.create_task(
             table,
@@ -808,15 +909,79 @@ def _open_bulk_500_task(table: Any, settings: dict[str, Any], source: str, close
             origin="duty",
             brief=(
                 f"siutindei POST /v1/admin/imports returned HTTP 500 twice for catalog source {source}. "
-                f"The offending rows were closed and will not be retried: {names}. Latest: {error}."
+                f"The offending rows were closed and will not be retried: {names}.{id_note} Latest: {error}."
             )[:4000],
             deliverable_type="markdown",
             sla_hours=24,
-            event_ref={"kind": "ops", "id": event_id, "source": source, "closed": len(closed)},
+            event_ref={
+                "kind": "ops",
+                "id": event_id,
+                "source": source,
+                "closed": closed_count,
+                "requestId": request_id,
+            },
             created_by="board_catalog_bulk",
         )
     except board_staff.StaffError as exc:
         _log_event("info", tag="board_catalog_bulk_500_task_skipped", source=source, error=str(exc)[:200])
+
+
+def _propose_importer_issue(
+    table: Any,
+    settings: dict[str, Any],
+    source: str,
+    names: str,
+    error: str,
+    request_id: str,
+) -> None:
+    """One founder Approval asking the siutindei repo to make schedule inserts idempotent."""
+    import board_github
+    import board_tools
+
+    title = IMPORTER_ISSUE_TITLE
+    body = (
+        "Repeated HTTP 500 from `POST /v1/admin/imports` while importing catalog "
+        f"source `{source}` closed rows after a sibling batch in the same run succeeded.\n\n"
+        "A captured failure was `IntegrityError` on unique constraint `schedule_entry_unique`: "
+        "an update re-inserts `activity_schedule_entries` for a weekly window that already exists. "
+        "Make that insert idempotent (`ON CONFLICT DO NOTHING`, or replace the schedule's entries "
+        "in one transaction) so a name-collision update does not 500 the batch.\n\n"
+        f"Closed: {names or '(none)'}\n"
+        f"requestId: {request_id or 'unknown'}\n"
+        f"Latest client error: {error or 'unknown'}"
+    )[:4000]
+    arguments = {
+        "title": title,
+        "body": body,
+        "labels": ["bug"],
+        "reason": "Catalog bulk import closed rows after a repeated HTTP 500 from the importer.",
+    }
+    try:
+        blocked = board_github.validate_create_issue(arguments)
+    except Exception as exc:
+        _log_event("info", tag="board_catalog_importer_issue_skipped", error=str(exc)[:200])
+        blocked = None
+    if blocked:
+        _log_event("info", tag="board_catalog_importer_issue_skipped", reason=str(blocked)[:200])
+        return
+    ctx = board_tools.ToolContext(
+        table=table,
+        settings=settings,
+        persona_id="cto",
+        display_name="CTO",
+        kind="internal",
+        actor="persona",
+        task_id="catalog-bulk-500",
+    )
+    try:
+        board_tools.create_approval(
+            ctx,
+            board_tools.REGISTRY["github_create_issue"],
+            arguments,
+            summary=f"Open GitHub issue: {title}",
+        )
+    except Exception as exc:
+        _log_event("info", tag="board_catalog_importer_issue_skipped", error=str(exc)[:200])
 
 
 def queue_action(

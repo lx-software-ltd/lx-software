@@ -111,6 +111,10 @@ class PlacesTests(BoardTestCase):
         self.assertEqual(first[0]["placeId"], "ChIJpage")
         self.assertEqual(second[0]["placeId"], "ChIJpage")
         self.assertEqual(http.call_count, len(board_places.DISCOVERY_QUERIES))
+        kinds = [kind for _included, _query, kind in board_places.DISCOVERY_QUERIES]
+        self.assertNotIn("places_kindergarten", kinds)
+        self.assertNotIn("places_child_care", kinds)
+        self.assertIn("places_playground", kinds)
 
 
 class PlacesRouteHiddenWhenStaffOff(BoardTestCase):

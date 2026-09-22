@@ -28,6 +28,9 @@ CATALOG_ENRICH_KIND = "catalog-enrich"
 LOW_COMPLETENESS = 0.5
 ENRICH_COOLDOWN_HOURS = 48
 ENRICH_FAIL_GAP = 3
+# EDB rows are kindergartens (deny-list) and their district labels are uppercase,
+# so they must not crowd the describe queue.
+ENRICH_SKIP_SOURCES = frozenset({"edb"})
 _OPEN_STATUSES = (
     "queued",
     "running",
@@ -254,12 +257,22 @@ def imported_orgs(table: Any, district_id: str) -> list[dict[str, str]]:
             for org in payload.get("organizations") or []:
                 if isinstance(org, dict):
                     add(str(org.get("name") or ""), _org_page_url(org))
-    for cand in board_store.list_candidates(table, "imported", limit=400):
-        if district_name and str(cand.get("district") or "") != district_name:
-            continue
+    wanted = district_name.casefold()
+
+    def visit(cand: dict[str, Any]) -> bool:
+        if len(found) >= BOARD_CATALOG_DESCRIBE_BATCH_SIZE:
+            return True
+        if str(cand.get("source") or "") in ENRICH_SKIP_SOURCES:
+            return False
+        if wanted and str(cand.get("district") or "").casefold() != wanted:
+            return False
         if str(cand.get("descriptionSource") or "") not in ("", "template"):
-            continue
+            return False
         add(str(cand.get("nameEn") or cand.get("name") or ""), _org_page_url(cand))
+        return len(found) >= BOARD_CATALOG_DESCRIBE_BATCH_SIZE
+
+    if len(found) < BOARD_CATALOG_DESCRIBE_BATCH_SIZE:
+        board_store.walk_candidates(table, "imported", visit)
     return found[:BOARD_CATALOG_DESCRIBE_BATCH_SIZE]
 
 

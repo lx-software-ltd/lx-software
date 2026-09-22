@@ -1021,6 +1021,60 @@ class ApprovalAndCallIdTests(BoardTestCase):
         self.assertEqual(pending[0]["arguments"]["brief"], "Different wording")
         self.assertEqual(pending[0]["summary"], "Retry extract-zip with a tighter brief")
 
+    def test_code_merge_staging_dedupes_by_pr_number(self) -> None:
+        settings = board_store.default_settings()
+        settings["tools"]["globalMode"] = "propose"
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="cto",
+            display_name="CTO",
+            kind="task",
+            actor="persona",
+            task_id="merge-1",
+        )
+        first = board_tools.create_approval(
+            ctx,
+            board_tools.REGISTRY["code_merge_staging"],
+            {"prNumber": 530, "kind": "feature", "reason": "Architect accepted."},
+            summary="Merged a pull request to staging",
+            downgrade_reason="pull request changes 704 lines (max 400)",
+        )
+        second = board_tools.create_approval(
+            ctx,
+            board_tools.REGISTRY["code_merge_staging"],
+            {"prNumber": 530, "reason": "Merging to staging."},
+            summary="Merged a pull request to staging",
+            downgrade_reason="pull request changes 704 lines (max 400)",
+        )
+        self.assertEqual(first["approvalId"], second["approvalId"])
+        self.assertNotIn("kind", second["arguments"])
+        other = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="cto",
+            display_name="CTO",
+            kind="task",
+            actor="persona",
+            task_id="merge-2",
+        )
+        third = board_tools.create_approval(
+            other,
+            board_tools.REGISTRY["code_merge_staging"],
+            {"prNumber": "530", "kind": "content", "reason": "Again."},
+            summary="Merged a pull request to staging",
+        )
+        self.assertEqual(first["approvalId"], third["approvalId"])
+        pending = [a for a in board_store.list_approvals(self.table) if a.get("status") == "pending"]
+        self.assertEqual(len(pending), 1)
+        different = board_tools.create_approval(
+            ctx,
+            board_tools.REGISTRY["code_merge_staging"],
+            {"prNumber": 531, "reason": "Other pull request."},
+            summary="Merged a pull request to staging",
+        )
+        self.assertNotEqual(first["approvalId"], different["approvalId"])
+
     def test_github_create_issue_dedupes_pending_by_task_and_title(self) -> None:
         settings = board_store.default_settings()
         settings["tools"]["globalMode"] = "propose"

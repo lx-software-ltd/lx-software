@@ -130,6 +130,12 @@ def _listings(table: Any, settings: dict[str, Any] | None) -> dict[str, Any]:
     geos = [_num(r.get("has_geo")) for r in rows if r.get("has_geo") is not None]
     by_district = _group_catalog(rows, "district")
     by_category = _group_catalog(rows, "category")
+    unlinked_providers = 0
+    for row in by_district:
+        if row.get("label") == UNLINKED_DISTRICT_LABEL:
+            unlinked_providers = int(row.get("providers") or 0)
+            break
+    providers_with_venue = max(0, int(providers) - unlinked_providers)
     gaps = []
     for row in by_district:
         if row["activities"] <= 0 or (
@@ -172,6 +178,7 @@ def _listings(table: Any, settings: dict[str, Any] | None) -> dict[str, Any]:
         "hasGeoAvg": (sum(geos) / len(geos)) if geos else None,
         "byDistrict": by_district[:12],
         "byCategory": by_category[:12],
+        "providersWithVenue": providers_with_venue,
         "funnel7d": {
             "listingViews": int(sum(_num(r.get("listing_views")) for r in recent)),
             "leads": int(sum(_num(r.get("leads_relayed")) for r in recent)),
