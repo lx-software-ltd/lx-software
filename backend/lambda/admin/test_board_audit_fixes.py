@@ -989,6 +989,33 @@ class CodeImplementHandoffTests(BoardTestCase):
         self.assertFalse(latest.get("expiresAt"))
         self.assertNotIn("code_runner_dispatched", latest.get("flags") or [])
 
+    def test_complete_step_auto_delivers_when_code_run_dispatched(self) -> None:
+        """Polling code_get_run after a successful dispatch must not idle-fail."""
+        task = self._implement()
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "run-ok",
+                "op": "code_run_task",
+                "toolId": "code",
+                "status": "ok",
+                "taskId": task["taskId"],
+                "createdAt": board_store.now_iso(),
+            },
+        )
+        result = board_tools.ToolLoopResult(
+            text="still waiting on the runner",
+            usage={},
+            model="test",
+            calls=[
+                {"callId": "poll-1", "op": "code_get_run", "status": "ok"},
+            ],
+        )
+        board_staff._complete_step(self.table, task["taskId"], task, result, 1)  # noqa: SLF001
+        latest = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(latest["status"], "delivered")
+        self.assertIn("code_runner_dispatched", latest.get("flags") or [])
+
 
 class ApprovalAndCallIdTests(BoardTestCase):
     def test_code_run_task_dedupes_pending_by_issue(self) -> None:

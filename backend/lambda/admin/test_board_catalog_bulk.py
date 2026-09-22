@@ -1218,6 +1218,36 @@ class AutonomyCatalogTests(BoardTestCase):
         )
         self.assertIn("candidateId", keep)
 
+    def test_places_commercial_auto_approves_with_site_address_hours(self) -> None:
+        row = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {
+                "source": "places",
+                "nameEn": "Little Stars Playhouse",
+                "district": "Wan Chai",
+                "placeId": "ChIJplay",
+                "officialUrl": "https://littlestars.example/home",
+                "addressEn": "12 Hennessy Road, Wan Chai",
+                "openingHours": "Mon-Fri 10:00-18:00",
+                "types": ["point_of_interest"],
+            },
+        )
+        self.assertEqual(row.get("status"), "approved")
+        social = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {
+                "source": "places",
+                "nameEn": "FB Only Club",
+                "district": "Wan Chai",
+                "placeId": "ChIJfb",
+                "officialUrl": "https://www.facebook.com/fbonly",
+                "addressEn": "1 Lockhart Road",
+                "openingHours": "Daily 9-5",
+                "types": ["point_of_interest"],
+            },
+        )
+        self.assertEqual(social.get("status"), "new")
+
     def test_maybe_queue_auto_imports_picks_largest_ready_source(self) -> None:
         os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
         self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
@@ -1549,6 +1579,187 @@ class AutonomyCatalogTests(BoardTestCase):
         )
         self.assertIn(fingerprint, counts)
         self.assertNotIn(left["candidateId"], counts)
+
+    def test_http_500_systematic_bisects_across_runs_and_pauses(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+        left = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "a", "nameEn": "Park A", "district": "Eastern"},
+        )
+        right = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "b", "nameEn": "Park B", "district": "Eastern"},
+        )
+
+        def always_500(payload, token, *, timeout=None):
+            raise board_catalog_import.CatalogImportError(
+                'siutindei admin POST https://siu.example/v1/admin/imports failed: 500 '
+                '{"error": "bug"} requestId=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+            )
+
+        def dry_ok(payload, token):
+            return {"ok": True, "summary": {"failed": 0, "created": 0, "updated": 0}, "results": []}
+
+        with (
+            patch.object(board_catalog_bulk, "BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT", 2),
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=[]),
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "_id_token", return_value="tok"),
+            patch.object(board_catalog_import, "_run_remote_import", side_effect=always_500),
+            patch.object(board_catalog_import, "_remote_dry_run", side_effect=dry_ok),
+            patch("board_github.validate_create_issue", return_value=None),
+        ):
+            board_catalog_bulk.import_source(self.table, "lcsd")
+            again = board_catalog_bulk.import_source(self.table, "lcsd")
+        self.assertEqual(again["closed"], [])
+        self.assertEqual(again.get("bisectRemaining"), [])
+        self.assertTrue(board_catalog_bulk.source_is_paused(self.table, "lcsd"))
+        pending = [
+            row
+            for row in board_store.list_approvals(self.table)
+            if row.get("op") == "github_create_issue"
+        ]
+        self.assertEqual(len(pending), 1)
+        self.assertIn("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", (pending[0].get("arguments") or {}).get("body") or "")
+        self.assertEqual(board_store.get_candidate(self.table, left["candidateId"])["status"], "approved")
+        self.assertEqual(board_store.get_candidate(self.table, right["candidateId"])["status"], "approved")
+        left_fp = board_catalog_bulk._batch_fingerprint([left["candidateId"]])  # noqa: SLF001
+        right_fp = board_catalog_bulk._batch_fingerprint([right["candidateId"]])  # noqa: SLF001
+        counts = board_catalog_bulk._http500_counts(self.table, "lcsd")  # noqa: SLF001
+        self.assertIn(left_fp, counts)
+        self.assertIn(right_fp, counts)
+
+    def test_handle_job_does_not_reenq_after_both_halves_500(self) -> None:
+        """A both-halves 500 must finish the job; leftover events must not loop."""
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+        board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "a", "nameEn": "Park A", "district": "Eastern"},
+        )
+        board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "b", "nameEn": "Park B", "district": "Eastern"},
+        )
+        board_store.put_cache(
+            self.table,
+            "catalog:bulk:edb:last",
+            {"at": board_store.now_iso(), "imported": 5},
+            ttl_seconds=40 * 86400,
+        )
+        posts: list[int] = []
+
+        def always_500(payload, token, *, timeout=None):
+            posts.append(len(payload.get("organizations") or []))
+            raise board_catalog_import.CatalogImportError(
+                'siutindei admin POST https://siu.example/v1/admin/imports failed: 500 '
+                '{"error": "bug"} requestId=bbbbbbbb-cccc-dddd-eeee-ffffffffffff'
+            )
+
+        event = {
+            "internal": "board_catalog_bulk",
+            "boardKey": "siuTinDei",
+            "action": "import",
+            "source": "lcsd",
+            "ingestDone": True,
+        }
+        continues = 0
+        with (
+            patch.object(board_catalog_bulk, "BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT", 2),
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=[]),
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "import_enabled", return_value=True),
+            patch.object(board_catalog_import, "_id_token", return_value="tok"),
+            patch.object(board_catalog_import, "_run_remote_import", side_effect=always_500),
+            patch.object(board_store, "records_table", return_value=self.table),
+            patch.object(board_store, "event_targets_this_board", return_value=True),
+            patch("board_github.validate_create_issue", return_value=None),
+            patch.object(board_async, "try_invoke_event", return_value=True) as invoke,
+        ):
+            for _ in range(4):
+                out = board_catalog_bulk.handle_job(event)
+                if out.get("continued"):
+                    continues += 1
+        self.assertEqual(continues, 0)
+        invoke.assert_not_called()
+        self.assertGreaterEqual(len(posts), 1)
+        self.assertLessEqual(len(posts), 4)
+        self.assertTrue(board_catalog_bulk.source_is_paused(self.table, "lcsd"))
+
+    def test_pause_skipped_when_issue_cannot_be_proposed(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+        board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "a", "nameEn": "Park A", "district": "Eastern"},
+        )
+        board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "b", "nameEn": "Park B", "district": "Eastern"},
+        )
+
+        def always_500(payload, token, *, timeout=None):
+            raise board_catalog_import.CatalogImportError(
+                "siutindei admin POST https://siu.example/v1/admin/imports failed: 500 down"
+            )
+
+        def dry_ok(payload, token):
+            return {"ok": True, "summary": {"failed": 0}, "results": []}
+
+        with (
+            patch.object(board_catalog_bulk, "BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT", 2),
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=[]),
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "_id_token", return_value="tok"),
+            patch.object(board_catalog_import, "_run_remote_import", side_effect=always_500),
+            patch.object(board_catalog_import, "_remote_dry_run", side_effect=dry_ok),
+            patch("board_github.validate_create_issue", return_value="GitHub token missing"),
+        ):
+            board_catalog_bulk.import_source(self.table, "lcsd")
+            board_catalog_bulk.import_source(self.table, "lcsd")
+        self.assertFalse(board_catalog_bulk.source_is_paused(self.table, "lcsd"))
+        self.assertEqual(
+            [row for row in board_store.list_approvals(self.table) if row.get("op") == "github_create_issue"],
+            [],
+        )
+
+    def test_maybe_queue_drains_small_approved_when_stale(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+        settings = _enable_staff(self.table)
+        settings["catalog"] = {"autoImport": True}
+        settings = board_store.save_settings(self.table, settings)
+        for i in range(5):
+            board_catalog_candidates.upsert_candidate(
+                self.table,
+                {"source": "edb", "sourceId": f"edb-{i}", "nameEn": f"School {i}", "district": "Eastern"},
+            )
+        board_store.put_cache(
+            self.table,
+            "catalog:bulk:edb:last",
+            {"at": "2026-09-01T00:00:00Z", "imported": 10},
+            ttl_seconds=40 * 86400,
+        )
+        with (
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "import_enabled", return_value=True),
+            patch.object(board_catalog_bulk, "auto_import_row_limit", return_value=100),
+            patch("board_holds.hold_hours", return_value=0),
+            patch.object(board_async, "try_invoke_event", return_value=True) as invoke,
+        ):
+            out = board_catalog_bulk.maybe_queue_auto_imports(self.table, settings)
+        self.assertEqual(out.get("queued"), ["edb"])
+        self.assertEqual(out.get("limit"), 5)
+        invoke.assert_called_once()
 
 
 class CatalogImportActivityTests(unittest.TestCase):

@@ -409,9 +409,12 @@ and the tick does not re-log it as an unrecorded skip. The brief lists
 each organisation's official URL (`eventRef.orgUrls`);
 `research_fetch_page` on that task refuses any other URL, and when the
 sheet has names but no URLs it refuses a page that mentions none of
-them. Only fetches stored as `ok` count toward the cap. A bulk import
+them. Only fetches stored as `ok` count toward the cap, and only
+distinct normalised URLs; HTTP ≥ 400 and empty bodies return `error`
+and do not burn a slot. A bulk import
 HTTP 500 is recorded under a hash of the batch's candidate ids (order
-does not matter). The next run of that same batch splits it. A single
+does not matter). The next run of that same batch splits it without
+re-POSTing the known-bad parent. A single
 row is `closed` (with `closeReason`) only after a sibling batch in the
 same run has succeeded. Before that close, a row that carried
 `schedules` is retried once without them. When that retry imports, the
@@ -422,9 +425,13 @@ retry, not a captured server exception. A rejected or executed Approval
 with that title is not opened again; a pending one is refreshed. A close
 that still 500s without schedules does not open that Approval. The close
 opens one CTO `ops/catalog-bulk-500:{source}` task whose brief includes
-the siutindei `requestId`. Both halves returning 500 with no success is an outage:
-rows stay approved and the next hold retries, instead of closing the
-source. Auto bulk-import passes `limit` =
+the siutindei `requestId`. Both halves returning 500 with no success is an outage
+when the importer is unreachable: rows stay approved and the next hold
+retries. When a one-row remote dry-run or another source's import in the
+last 24 h shows the server is up, half fingerprints are persisted, a
+GitHub issue is proposed with the `requestId`, and the source is paused
+(no 2 h re-hold and no `handle_job` re-enqueue of the same rows) until
+that Approval is decided. Auto bulk-import passes `limit` =
 `launchListingTarget` − venue-linked providers. The count is
 `v_catalog_provider_counts.providers_with_venue` (one organisation, and
 only when it has a location in a named district). Until that view is
@@ -581,7 +588,10 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
   `ToolContext(kind="task", persona_id=manager, seat_id, task_id)`, and
   either continues (`task_note`) or finishes (`task_finish`). Limits:
   `maxStepsPerTask` 18, `maxIdleStepsPerTask` 3 note-only steps,
-  `staffStepMaxSeconds` 150, per-task budget, staff daily budget
+  `staffStepMaxSeconds` 150, step completion tokens 2500 (6000 for JSON
+  deliverables and the last/idle step; 12000 for `content-plan` duties),
+  `task_finish` argument cap 40k characters (other ops 8k),
+  per-task budget, staff daily budget
   (`settings.staff.dailyBudgetUsd`, default 20). Daily-budget exhaustion
   re-queues the task; a per-task budget miss fails it. Transient OpenRouter
   errors retry once; 403/504 retry once with `provider.ignore` plus
@@ -622,11 +632,13 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
   `autoRejectAt` and are due (`approvalExpiryHours` 168; legacy rows without
   the stamp are left for the founder) → schedule one auto bulk-import
   hold when `catalog.autoImport` is on and a source has ≥
-  `catalogAutoBulkMinApproved` 50 approved rows, capped at
+  `catalogAutoBulkMinApproved` 50 approved rows (or any approved rows
+  when the last import is older than 24 h), capped at
   `launchListingTarget` minus cached providers → cancel a failed duty
-  when a newer task shares its `eventRef.id` (`closedBy:
-  board_staff:superseded`, no `failureReason`; the `failed` scan runs
-  first and the other statuses are skipped when nothing qualifies) → run due duties →
+  when a newer task shares its duty key (trailing `:YYYY-MM-DD`
+  stripped; `closedBy: board_staff:superseded`, no `failureReason`; the
+  `failed` then `needs_owner` scans run first and parked catalog import
+  sheets are skipped) → run due duties →
   expire help waits → drain queue → stuck sweep (a claim older than the
   Lambda timeout is retried once, then `stuck`; `review` older than
   `staffTaskStuckSeconds` 900 is re-reviewed once, then `needs_owner`) →

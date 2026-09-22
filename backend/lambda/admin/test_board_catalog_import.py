@@ -852,6 +852,41 @@ class ImportClientTests(BoardTestCase):
         self.assertFalse(out.get("collision"))
         self.assertTrue(any(url.endswith("/admin/imports") for _method, url, _body in self.calls))
 
+    def test_run_import_live_updated_does_not_park_enrich(self) -> None:
+        """Post-import ``summary.updated`` must honour enrich updates (same as pre-import)."""
+        task = self._catalog_task_with_sheet()
+        task["eventRef"] = {**(task.get("eventRef") or {}), "kind": "catalog-enrich"}
+        task["status"] = "awaiting_import"
+        task["importPhase"] = "validated"
+        _stamp_fresh_remote(task, summary={"updated": 0, "failed": 0, "created": 1})
+        board_store.put_task(self.table, task)
+
+        def live_updated(payload, token, *, timeout=None):
+            return {
+                "ok": True,
+                "summary": {"failed": 0, "created": 0, "updated": 1},
+                "results": [
+                    {
+                        "type": "organizations",
+                        "key": "Quarry Bay Park Playground",
+                        "status": "updated",
+                    }
+                ],
+                "wouldUpdate": ["Quarry Bay Park Playground"],
+                "sent": 1,
+                "accepted": 1,
+                "objectKey": "imports/board.json",
+            }
+
+        with patch.object(board_catalog_import, "_run_remote_import", side_effect=live_updated):
+            out = board_catalog_import.run_import(self.table, task)
+        self.assertTrue(out["ok"])
+        self.assertFalse(out.get("collision"))
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved.get("importPhase"), "imported")
+        self.assertEqual(saved.get("status"), "delivered")
+        self.assertTrue(saved.get("importedAt"))
+
     def test_skip_marks_delivered_without_import(self) -> None:
         settings = _enable_staff(self.table)
         board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
