@@ -465,19 +465,39 @@ def _last_import_older_than(table: Any, source: str, *, hours: int = 24) -> bool
     return datetime.now(timezone.utc) - stamp >= timedelta(hours=max(1, int(hours)))
 
 
+def _importer_issue_pending(table: Any) -> bool:
+    wanted = " ".join(IMPORTER_ISSUE_TITLE.lower().split())
+    for row in board_store.list_approvals(table):
+        if str(row.get("op") or "") != "github_create_issue":
+            continue
+        if str(row.get("status") or "") != "pending":
+            continue
+        title = " ".join(str((row.get("arguments") or {}).get("title") or "").lower().split())
+        if title == wanted:
+            return True
+    return False
+
+
 def _propose_systematic_500_issue(
     table: Any,
     settings: dict[str, Any],
     source: str,
     error: str,
     request_id: str,
-) -> None:
-    """Founder Approval: importer returns 500 on every half while the server answers dry-runs."""
+) -> bool:
+    """Founder Approval: importer returns 500 on every half while the server answers dry-runs.
+
+    Returns True when a pending Approval exists after this call (created or
+    already open). False when validate/create failed or the title was already
+    decided — the caller must not pause the source in those cases.
+    """
     import board_github
     import board_tools
 
     if _importer_issue_already_decided(table):
-        return
+        return False
+    if _importer_issue_pending(table):
+        return True
     title = IMPORTER_ISSUE_TITLE
     body = (
         "A catalog bulk import of source "
@@ -485,8 +505,9 @@ def _propose_systematic_500_issue(
         "batch, while a one-row remote dry-run (or another source's recent import) "
         "showed the importer is reachable. That points at a systematic bug rather "
         "than a total outage.\n\n"
-        "Bisect continues across runs via persisted sub-batch fingerprints; auto "
-        f"re-holds for `{source}` are paused until this Approval is decided.\n\n"
+        "Bisect continues across later imports via persisted sub-batch "
+        f"fingerprints; auto re-holds for `{source}` are paused until this "
+        "Approval is decided. This job does not re-enqueue the same rows.\n\n"
         f"requestId: {request_id or 'unknown'}\n"
         f"Latest client error: {error or 'unknown'}"
     )[:4000]
@@ -500,9 +521,9 @@ def _propose_systematic_500_issue(
         blocked = board_github.validate_create_issue(arguments)
     except Exception as exc:
         _log_event("info", tag="board_catalog_bulk_500_issue_skipped", error=str(exc)[:200])
-        blocked = None
+        return _importer_issue_pending(table)
     if blocked:
-        return
+        return False
     ctx = board_tools.ToolContext(
         table=table,
         settings=settings,
@@ -513,7 +534,7 @@ def _propose_systematic_500_issue(
         task_id="catalog-bulk-500",
     )
     try:
-        board_tools.create_approval(
+        approval = board_tools.create_approval(
             ctx,
             board_tools.REGISTRY["github_create_issue"],
             arguments,
@@ -521,6 +542,8 @@ def _propose_systematic_500_issue(
         )
     except Exception as exc:
         _log_event("info", tag="board_catalog_bulk_500_issue_skipped", error=str(exc)[:200])
+        return _importer_issue_pending(table)
+    return bool(approval and approval.get("approvalId"))
 
 
 def _batch_fingerprint(ids: list[str]) -> str:
@@ -529,6 +552,12 @@ def _batch_fingerprint(ids: list[str]) -> str:
     if not cleaned:
         return ""
     return hashlib.sha256("\n".join(cleaned).encode()).hexdigest()[:16]
+
+
+def _batch_already_failed(table: Any, source: str, ids: list[str]) -> bool:
+    """True when this exact set of candidate ids already recorded an HTTP 500."""
+    fingerprint = _batch_fingerprint(ids)
+    return bool(fingerprint and int(_http500_counts(table, source).get(fingerprint) or 0) >= 1)
 
 
 def _note_http500(table: Any, source: str, batch_key: str) -> None:
@@ -673,27 +702,33 @@ def _import_group(
     succeeded. Both halves returning 500 with no success is an outage when the
     importer is unreachable (rows stay approved; the next hold retries). When a
     dry-run or another source's recent import shows the server is up, sub-batch
-    fingerprints are persisted, remaining ids continue across runs, a GitHub
-    issue is proposed, and the source is paused until that Approval is decided.
-    A single row is closed only when a sibling batch in the same run succeeded.
+    fingerprints are persisted so a later import can skip those POSTs and
+    split further; a GitHub issue is proposed and the source is paused until
+    that Approval is decided. Tried-and-failed rows are not put in
+    ``remaining`` (that would re-enqueue the same batch forever). A single
+    row is closed only when a sibling batch in the same run succeeded.
     """
     ids = [str(row.get("candidateId") or "") for row in rows if row.get("candidateId")]
     if not batch or not rows:
         return
     if known is None:
-        if budget[0] <= 0:
+        if _batch_already_failed(table, source, ids) and len(batch) > 1:
+            # Split a known-bad parent without re-POSTing it.
+            status, message = "http500", "repeated HTTP 500"
+        elif budget[0] <= 0:
             remaining.extend(ids)
             return
-        status, message = _call_import(
-            table,
-            source,
-            batch,
-            rows,
-            token,
-            budget=budget,
-            results=results,
-            imported_ids=imported_ids,
-        )
+        else:
+            status, message = _call_import(
+                table,
+                source,
+                batch,
+                rows,
+                token,
+                budget=budget,
+                results=results,
+                imported_ids=imported_ids,
+            )
     else:
         status, message = known
     if status == "budget":
@@ -804,6 +839,9 @@ def _import_group(
         if right_status == "http500":
             results.append({"ok": False, "error": right_message})
         # Both halves 500 with no success: outage vs systematic bug.
+        # Do not put these ids in remaining — handle_job would re-enqueue
+        # the same set and loop. Persist half fingerprints so a later
+        # import (after the pause lifts) splits them without re-POSTing.
         probe_org = left_batch[0] if left_batch else (right_batch[0] if right_batch else None)
         if _importer_server_up(table, source, token, probe_org, budget=budget, results=results):
             error = left_message or right_message
@@ -814,9 +852,9 @@ def _import_group(
                 fingerprint = _batch_fingerprint(half_ids)
                 if fingerprint:
                     _note_http500(table, source, fingerprint)
-                remaining.extend(half_ids)
+            opened = False
             try:
-                _propose_systematic_500_issue(
+                opened = _propose_systematic_500_issue(
                     table,
                     board_store.load_settings(table),
                     source,
@@ -825,7 +863,8 @@ def _import_group(
                 )
             except Exception as exc:
                 _log_event("info", tag="board_catalog_bulk_500_issue_skipped", source=source, error=str(exc)[:200])
-            _pause_source_until_issue(table, source)
+            if opened:
+                _pause_source_until_issue(table, source)
         return
     if left_status == "http500":
         _import_group(
@@ -859,6 +898,18 @@ def import_source(
     preview = preview_source(table, source, remote=False, limit=limit, skip_ingest=skip_ingest)
     if not board_catalog_import.import_enabled() or not board_catalog_import.configured():
         raise BulkImportError("catalog import is not configured")
+    if source_is_paused(table, source):
+        return {
+            "ok": False,
+            "source": source,
+            "imported": 0,
+            "batches": [],
+            "closed": [],
+            "schedulesDropped": [],
+            "bisectRemaining": [],
+            "paused": True,
+            "preview": {k: preview.get(k) for k in ("approved", "wouldSend", "ingest")},
+        }
     approved = _approved_for_source(table, source)
     if only_ids:
         wanted = {str(item) for item in only_ids if item}
@@ -1494,7 +1545,7 @@ def handle_job(event: dict[str, Any]) -> dict[str, Any]:
             except Exception as exc:
                 _log_event("info", tag="board_catalog_bulk_500_task_skipped", source=source, error=str(exc)[:200])
         remaining_ids = out.get("bisectRemaining") if isinstance(out.get("bisectRemaining"), list) else []
-        if remaining_ids:
+        if remaining_ids and not source_is_paused(table, source) and not out.get("paused"):
             if _continue_job(
                 table,
                 event,

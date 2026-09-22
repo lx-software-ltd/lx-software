@@ -675,7 +675,7 @@ def run_step(payload: dict[str, Any]) -> None:
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
             model=model,
             timeout=min(90, BOARD_STAFF_STEP_MAX_SECONDS),
-            max_tokens=6000 if require_finish else 2500,
+            max_tokens=_step_max_tokens(task),
             temperature=0.3,
             json_mode=False,
             tag="board_staff_step",
@@ -983,6 +983,30 @@ def _should_require_finish(task: dict[str, Any]) -> bool:
     return idle >= BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK - 1 or steps_used >= BOARD_STAFF_MAX_STEPS_PER_TASK - 1
 
 
+_STEP_TOKENS_DEFAULT = 2500
+_STEP_TOKENS_LARGE = 6000
+_STEP_TOKENS_CONTENT_PLAN = 12000
+
+
+def _is_content_plan(task: dict[str, Any]) -> bool:
+    event_id = str((task.get("eventRef") or {}).get("id") or "")
+    return event_id.startswith("content-plan")
+
+
+def _step_max_tokens(task: dict[str, Any]) -> int:
+    """Completion budget for one staff step.
+
+    Content-plan JSON is ~23 EN+ZH items and needs the large budget up front
+    (a 2500→6000 retry would double-spend and still truncate). Other JSON
+    deliverables and the last/idle step use 6000; everything else stays 2500.
+    """
+    if _is_content_plan(task):
+        return _STEP_TOKENS_CONTENT_PLAN
+    if str(task.get("deliverableType") or "") == "json" or _should_require_finish(task):
+        return _STEP_TOKENS_LARGE
+    return _STEP_TOKENS_DEFAULT
+
+
 def _scratch_without_nudges(task_id: str, note: str) -> str:
     raw = _blob_get(_scratchpad_key(task_id)).decode("utf-8", errors="replace")
     lines = [line for line in (raw or "").splitlines() if not line.strip().startswith("NUDGE:")]
@@ -1102,9 +1126,6 @@ def _park_waiting_approval(table: Any, task: dict[str, Any], approval_ids: list[
     task["status"] = "waiting_approval"
     task["blockedOn"] = approval_ids
     task["idleSteps"] = 0
-    # Drop a premature review deliverable; the founder decision resumes the seat.
-    if stored_status == "review":
-        task["deliverableKey"] = task.get("deliverableKey") or ""
     _stamp_parked(task, reason=f"waiting on approval {','.join(approval_ids)}", reset_clock=True)
     _align_step_claim(task)
     board_store.put_task(table, task)
@@ -2028,7 +2049,11 @@ def supersede_stale_failed_duties(table: Any) -> int:
             if status == "failed":
                 pass
             elif status == "needs_owner" and newest_delivered:
-                pass
+                # Parked catalog import sheets wait for Import/Skip; a newer
+                # enrich of the same district must not cancel them.
+                phase = str(task.get("importPhase") or "")
+                if phase in ("collision", "rejected", "partial", "failed", "invalid"):
+                    continue
             else:
                 continue
             task_id = str(task.get("taskId") or "")

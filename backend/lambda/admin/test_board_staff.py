@@ -129,6 +129,51 @@ class StaffEngineTests(BoardTestCase):
         self.assertEqual(board_store.get_task(self.table, older["taskId"])["status"], "cancelled")
         self.assertEqual(board_store.get_task(self.table, newer["taskId"])["status"], "delivered")
 
+    def test_supersede_keeps_parked_catalog_import_sheets(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        settings = board_store.load_settings(self.table)
+        settings["staff"] = board_store.normalize_staff_config({**(settings.get("staff") or {}), "enabled": True})
+        board_store.save_settings(self.table, settings)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        parked = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="content-marketer",
+            origin="duty",
+            brief="enrich islands",
+            deliverable_type="json",
+            event_ref={"kind": "catalog-enrich", "id": "catalog-enrich:islands"},
+            created_by="test",
+        )
+        parked["status"] = "needs_owner"
+        parked["importPhase"] = "collision"
+        parked["createdAt"] = "2026-09-20T00:00:00Z"
+        board_store.put_task(self.table, parked)
+        newer = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="content-marketer",
+            origin="duty",
+            brief="enrich islands again",
+            deliverable_type="json",
+            event_ref={"kind": "catalog-enrich", "id": "catalog-enrich:islands"},
+            created_by="test",
+        )
+        newer["status"] = "delivered"
+        newer["createdAt"] = "2026-09-21T00:00:00Z"
+        board_store.put_task(self.table, newer)
+        self.assertEqual(board_staff.supersede_stale_failed_duties(self.table), 0)
+        self.assertEqual(board_store.get_task(self.table, parked["taskId"])["status"], "needs_owner")
+
+    def test_step_max_tokens_gives_content_plan_the_large_budget(self) -> None:
+        plan = {"eventRef": {"id": "content-plan:2026-09-22"}, "deliverableType": "json", "idleSteps": 0, "step": 0}
+        sheet = {"eventRef": {"id": "catalog-enrich:islands"}, "deliverableType": "json", "idleSteps": 0, "step": 0}
+        note = {"eventRef": {"id": "groom:1"}, "deliverableType": "markdown", "idleSteps": 0, "step": 0}
+        self.assertEqual(board_staff._step_max_tokens(plan), 12000)  # noqa: SLF001
+        self.assertEqual(board_staff._step_max_tokens(sheet), 6000)  # noqa: SLF001
+        self.assertEqual(board_staff._step_max_tokens(note), 2500)  # noqa: SLF001
+
     def test_supersede_reads_only_parked_when_nothing_qualifies(self) -> None:
         seen: list[str] = []
         real = board_store.list_tasks
