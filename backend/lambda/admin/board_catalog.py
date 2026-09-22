@@ -92,15 +92,33 @@ def compose_brief(district: dict[str, Any]) -> str:
     )[:4000]
 
 
-def compose_enrich_brief(district: dict[str, Any], names: list[str]) -> str:
+def compose_enrich_brief(
+    district: dict[str, Any],
+    names: list[str],
+    pages: list[dict[str, str]] | None = None,
+) -> str:
     name = str(district.get("name") or "")
     hint = str(district.get("hint") or "")
     listed = ", ".join(names[:8]) if names else "the organisations already imported for this district"
     contract = BOARD_CATALOG_OUTPUT_CONTRACT.strip()
+    page_bits = []
+    for page in pages or []:
+        org = str(page.get("name") or "").strip()
+        url = str(page.get("url") or "").strip()
+        if org and url:
+            page_bits.append(f"{org}: {url}")
+    pages_note = ""
+    if page_bits:
+        pages_note = (
+            "Official pages (research_fetch_page only these URLs; any other URL is refused): "
+            + "; ".join(page_bits)
+            + ". "
+        )
     return (
         f"Founder directive — CATALOG DESCRIBE {name}: write 40-word EN + 繁中 descriptions, "
         f"age_range and price_note for {listed} in {name} ({hint}). "
         f"The organisation names below are already verified — copy each name_en into verified_fields. "
+        f"{pages_note}"
         f"Read only the official page. Leave unverified fields as unverified. "
         f"{contract}"
     )[:4000]
@@ -198,14 +216,32 @@ def next_district(table: Any, *, enforce_completeness_gate: bool = True) -> dict
     return None
 
 
-def imported_org_names(table: Any, district_id: str) -> list[str]:
+def _org_page_url(row: dict[str, Any]) -> str:
+    for key in ("official_url", "website", "source_url", "officialUrl", "sourceUrl"):
+        url = str(row.get(key) or "").strip()
+        if url.startswith("http://") or url.startswith("https://"):
+            return url[:400]
+    return ""
+
+
+def imported_orgs(table: Any, district_id: str) -> list[dict[str, str]]:
+    """Imported organisations in a district, with an official URL when we have one."""
     did = str(district_id or "").strip().lower()
     district_name = ""
     for row in BOARD_CATALOG_DISTRICTS:
         if isinstance(row, dict) and str(row.get("id") or "").strip().lower() == did:
             district_name = str(row.get("name") or "")
             break
-    names: list[str] = []
+    found: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def add(name: str, url: str) -> None:
+        cleaned = " ".join(str(name or "").split()).strip()
+        if not cleaned or cleaned.casefold() in seen:
+            return
+        seen.add(cleaned.casefold())
+        found.append({"name": cleaned, "url": url})
+
     for status in ("delivered", "awaiting_import", "needs_owner"):
         for task in board_store.list_tasks(table, status, limit=200):
             ref = task.get("eventRef") or {}
@@ -216,20 +252,29 @@ def imported_org_names(table: Any, district_id: str) -> list[str]:
             preview = task.get("importPreview") if isinstance(task.get("importPreview"), dict) else {}
             payload = preview.get("payload") if isinstance(preview.get("payload"), dict) else {}
             for org in payload.get("organizations") or []:
-                if not isinstance(org, dict):
-                    continue
-                name = str(org.get("name") or "").strip()
-                if name and name not in names:
-                    names.append(name)
+                if isinstance(org, dict):
+                    add(str(org.get("name") or ""), _org_page_url(org))
     for cand in board_store.list_candidates(table, "imported", limit=400):
         if district_name and str(cand.get("district") or "") != district_name:
             continue
         if str(cand.get("descriptionSource") or "") not in ("", "template"):
             continue
-        name = str(cand.get("nameEn") or cand.get("name") or "").strip()
-        if name and name not in names:
-            names.append(name)
-    return names[:BOARD_CATALOG_DESCRIBE_BATCH_SIZE]
+        add(str(cand.get("nameEn") or cand.get("name") or ""), _org_page_url(cand))
+    return found[:BOARD_CATALOG_DESCRIBE_BATCH_SIZE]
+
+
+def imported_org_names(table: Any, district_id: str) -> list[str]:
+    return [row["name"] for row in imported_orgs(table, district_id)]
+
+
+def parked_enrich_count(table: Any) -> int:
+    """needs_owner catalog-enrich sheets. Three of these pause the enrich duty."""
+    count = 0
+    for task in board_store.list_tasks(table, "needs_owner", limit=200):
+        ref = task.get("eventRef") or {}
+        if str(ref.get("kind") or "") == CATALOG_ENRICH_KIND:
+            count += 1
+    return count
 
 
 def _task_district_id(task: dict[str, Any]) -> str:
@@ -352,12 +397,20 @@ def create_enrich(table: Any, settings: dict[str, Any], *, created_by: str = "bo
         raise board_staff.StaffError(
             f"catalog awaiting_import cap reached ({BOARD_CATALOG_MAX_AWAITING_IMPORT})"
         )
+    parked = parked_enrich_count(table)
+    if parked >= BOARD_CATALOG_MAX_AWAITING_IMPORT:
+        raise board_staff.StaffError(
+            f"catalog enrich paused: {parked} needs_owner sheets "
+            f"(cap {BOARD_CATALOG_MAX_AWAITING_IMPORT})"
+        )
     district = next_enrich_district(table)
     if not district:
         raise board_staff.StaffError("no district needs enrich")
     did = str(district.get("id") or "")
     name = str(district.get("name") or did)
-    names = imported_org_names(table, did)[:BOARD_CATALOG_DESCRIBE_BATCH_SIZE]
+    orgs = imported_orgs(table, did)[:BOARD_CATALOG_DESCRIBE_BATCH_SIZE]
+    names = [row["name"] for row in orgs]
+    pages = [row for row in orgs if row.get("url")]
     if not names:
         raise board_staff.StaffError("no district needs enrich")
     return board_staff.create_task(
@@ -365,7 +418,7 @@ def create_enrich(table: Any, settings: dict[str, Any], *, created_by: str = "bo
         settings,
         assignee=BOARD_CATALOG_ASSIGNEE,
         origin="duty",
-        brief=compose_enrich_brief(district, names),
+        brief=compose_enrich_brief(district, names, pages),
         deliverable_type="json",
         budget_usd=BOARD_CATALOG_DESCRIBE_BUDGET_USD,
         sla_hours=24,
@@ -375,6 +428,7 @@ def create_enrich(table: Any, settings: dict[str, Any], *, created_by: str = "bo
             "districtId": did,
             "district": name,
             "orgNames": names,
+            "orgUrls": pages,
         },
         created_by=created_by,
     )

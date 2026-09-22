@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -23,6 +25,9 @@ from http_common import _log_event
 
 INGEST_BATCH = 500
 JOB_STALE_SECONDS = 360
+_BISECT_MAX_CALLS = 8
+_HTTP_500_RE = re.compile(r"(?:failed:\s*500\b|\bHTTP/?\s*500\b|\bstatus(?:\s+code)?\s*500\b)", re.IGNORECASE)
+BULK_500_EVENT = "catalog-bulk-500"
 OPEN_DATA_SOURCES = tuple(sorted(board_catalog_candidates.OFFICIAL_SOURCES))
 _TERMINAL_CANDIDATE = frozenset({"imported", "rejected", "closed"})
 
@@ -331,39 +336,98 @@ def _succeeded_org_names(imported: dict[str, Any], batch: list[dict[str, Any]]) 
     return set()
 
 
-def import_source(
+def _is_http_500(message: str) -> bool:
+    return bool(_HTTP_500_RE.search(message or ""))
+
+
+def _http500_key(source: str) -> str:
+    return f"catalog:bulk:{source}:http500"
+
+
+def _http500_counts(table: Any, source: str) -> dict[str, int]:
+    hit = board_store.get_cache(table, _http500_key(source))
+    payload = hit.get("payload") if isinstance(hit, dict) else None
+    raw = payload.get("counts") if isinstance(payload, dict) else None
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, int] = {}
+    for key, value in raw.items():
+        try:
+            out[str(key)] = int(value)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _batch_fingerprint(ids: list[str]) -> str:
+    """Stable id for a batch. Sorting means candidate order cannot move the key."""
+    cleaned = sorted({str(item) for item in ids if item})
+    if not cleaned:
+        return ""
+    return hashlib.sha256("\n".join(cleaned).encode()).hexdigest()[:16]
+
+
+def _note_http500(table: Any, source: str, batch_key: str) -> None:
+    counts = _http500_counts(table, source)
+    counts[batch_key] = int(counts.get(batch_key) or 0) + 1
+    board_store.put_cache(table, _http500_key(source), {"counts": counts}, ttl_seconds=7 * 86400)
+
+
+def _clear_http500(table: Any, source: str, batch_key: str) -> None:
+    counts = _http500_counts(table, source)
+    if batch_key not in counts:
+        return
+    counts.pop(batch_key, None)
+    board_store.put_cache(table, _http500_key(source), {"counts": counts}, ttl_seconds=7 * 86400)
+
+
+def _close_server_error_row(table: Any, row: dict[str, Any], error: str) -> None:
+    doc = board_catalog_candidates.set_status(table, str(row["candidateId"]), "closed")
+    doc["closeReason"] = error[:300]
+    board_store.put_candidate(table, doc)
+
+
+def _mark_imported(table: Any, rows: list[dict[str, Any]], batch: list[dict[str, Any]], imported: dict[str, Any]) -> list[str]:
+    succeeded = _succeeded_org_names(imported, batch)
+    ids: list[str] = []
+    for row, org in zip(rows, batch):
+        if _org_name_key(org.get("name")) not in succeeded:
+            continue
+        board_catalog_candidates.set_status(table, str(row["candidateId"]), "imported")
+        board_catalog_candidates.remember_listing(table, org)
+        ids.append(str(row["candidateId"]))
+    return ids
+
+
+def _call_import(
     table: Any,
     source: str,
+    batch: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+    token: str,
     *,
-    remote: bool = True,
-    limit: int | None = None,
-    skip_ingest: bool = False,
-) -> dict[str, Any]:
-    board_catalog_candidates.seed_listing_mirror(table)
-    preview = preview_source(table, source, remote=False, limit=limit, skip_ingest=skip_ingest)
-    if not board_catalog_import.import_enabled() or not board_catalog_import.configured():
-        raise BulkImportError("catalog import is not configured")
-    approved = _approved_for_source(table, source)
-    mid = board_catalog_import.catalog_manager_id()
-    orgs = [candidate_to_org(row, manager_id=mid) for row in approved]
-    if limit is not None:
-        orgs = orgs[: max(0, int(limit))]
-        approved = approved[: len(orgs)]
-    token = board_catalog_import._id_token()  # noqa: SLF001
-    results: list[dict[str, Any]] = []
-    imported_ids: list[str] = []
-    for batch, rows in zip(_batches(orgs, BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT), _batches(approved, BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT)):
-        try:
-            imported = board_catalog_import._run_remote_import(  # noqa: SLF001
-                {"organizations": batch},
-                token,
-                timeout=board_catalog_import._BULK_IMPORT_HTTP_TIMEOUT,
-            )
-        except board_catalog_import.CatalogImportError as exc:
-            results.append({"ok": False, "error": str(exc)[:300]})
-            continue
-        failed = int((imported.get("summary") or {}).get("failed") or 0)
-        compact = {
+    budget: list[int],
+    results: list[dict[str, Any]],
+    imported_ids: list[str],
+) -> tuple[str, str]:
+    """One remote import. ``ok`` means the server answered; ``http500`` is the bisect signal."""
+    if budget[0] <= 0:
+        return "budget", ""
+    budget[0] -= 1
+    try:
+        imported = board_catalog_import._run_remote_import(  # noqa: SLF001
+            {"organizations": batch},
+            token,
+            timeout=board_catalog_import._BULK_IMPORT_HTTP_TIMEOUT,
+        )
+    except board_catalog_import.CatalogImportError as exc:
+        message = str(exc)[:300]
+        if _is_http_500(message):
+            return "http500", message
+        return "error", message
+    failed = int((imported.get("summary") or {}).get("failed") or 0)
+    results.append(
+        {
             "ok": bool(imported.get("ok")) and failed == 0,
             "sent": imported.get("sent"),
             "accepted": imported.get("accepted"),
@@ -375,26 +439,214 @@ def import_source(
             ),
             "objectKey": board_catalog_import._safe_url(str(imported.get("objectKey") or "")),  # noqa: SLF001
         }
-        results.append(compact)
-        succeeded = _succeeded_org_names(imported, batch)
-        for row, org in zip(rows, batch):
-            if _org_name_key(org.get("name")) not in succeeded:
-                continue
-            board_catalog_candidates.set_status(table, str(row["candidateId"]), "imported")
-            board_catalog_candidates.remember_listing(table, org)
-            imported_ids.append(str(row["candidateId"]))
+    )
+    imported_ids.extend(_mark_imported(table, rows, batch, imported))
+    ids = [str(row.get("candidateId") or "") for row in rows if row.get("candidateId")]
+    fingerprint = _batch_fingerprint(ids)
+    if fingerprint:
+        _clear_http500(table, source, fingerprint)
+    return "ok", ""
+
+
+def _import_group(
+    table: Any,
+    source: str,
+    batch: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+    token: str,
+    *,
+    bisecting: bool,
+    budget: list[int],
+    results: list[dict[str, Any]],
+    imported_ids: list[str],
+    closed: list[dict[str, str]],
+    remaining: list[str],
+    saw_success: list[bool],
+    known: tuple[str, str] | None = None,
+) -> None:
+    """Import one batch.
+
+    A repeated HTTP 500 is split only after some other batch in this run has
+    succeeded. Both halves returning 500 with no success is an outage: rows
+    stay approved and the next hold retries. A single row is closed only when
+    a sibling batch in the same run succeeded.
+    """
+    ids = [str(row.get("candidateId") or "") for row in rows if row.get("candidateId")]
+    if not batch or not rows:
+        return
+    if known is None:
+        if budget[0] <= 0:
+            remaining.extend(ids)
+            return
+        status, message = _call_import(
+            table,
+            source,
+            batch,
+            rows,
+            token,
+            budget=budget,
+            results=results,
+            imported_ids=imported_ids,
+        )
+    else:
+        status, message = known
+    if status == "budget":
+        remaining.extend(ids)
+        return
+    if status == "ok":
+        saw_success[0] = True
+        return
+    if status != "http500":
+        results.append({"ok": False, "error": message})
+        return
+    fingerprint = _batch_fingerprint(ids)
+    if not fingerprint:
+        results.append({"ok": False, "error": message})
+        return
+    repeated = bisecting or int(_http500_counts(table, source).get(fingerprint) or 0) >= 1
+    if not repeated:
+        _note_http500(table, source, fingerprint)
+        results.append({"ok": False, "error": message, "batch": fingerprint})
+        return
+    if len(batch) <= 1:
+        if saw_success[0]:
+            _close_server_error_row(table, rows[0], message)
+            closed.append(
+                {
+                    "candidateId": ids[0],
+                    "name": str(rows[0].get("nameEn") or rows[0].get("name") or ""),
+                    "error": message,
+                }
+            )
+            results.append({"ok": False, "error": message, "closed": ids[0]})
+        else:
+            results.append({"ok": False, "error": message, "candidateId": ids[0]})
+        return
+    mid = len(batch) // 2
+    left_batch, left_rows = batch[:mid], rows[:mid]
+    right_batch, right_rows = batch[mid:], rows[mid:]
+    if saw_success[0]:
+        _import_group(
+            table, source, left_batch, left_rows, token,
+            bisecting=True, budget=budget, results=results, imported_ids=imported_ids,
+            closed=closed, remaining=remaining, saw_success=saw_success,
+        )
+        _import_group(
+            table, source, right_batch, right_rows, token,
+            bisecting=True, budget=budget, results=results, imported_ids=imported_ids,
+            closed=closed, remaining=remaining, saw_success=saw_success,
+        )
+        return
+    left_ids = [str(row.get("candidateId") or "") for row in left_rows if row.get("candidateId")]
+    right_ids = [str(row.get("candidateId") or "") for row in right_rows if row.get("candidateId")]
+    left_status, left_message = _call_import(
+        table, source, left_batch, left_rows, token,
+        budget=budget, results=results, imported_ids=imported_ids,
+    )
+    if left_status == "ok":
+        saw_success[0] = True
+    elif left_status == "budget":
+        remaining.extend(left_ids)
+    elif left_status == "error":
+        results.append({"ok": False, "error": left_message})
+    right_status, right_message = _call_import(
+        table, source, right_batch, right_rows, token,
+        budget=budget, results=results, imported_ids=imported_ids,
+    )
+    if right_status == "ok":
+        saw_success[0] = True
+    elif right_status == "budget":
+        remaining.extend(right_ids)
+    elif right_status == "error":
+        results.append({"ok": False, "error": right_message})
+    if not saw_success[0]:
+        if left_status == "http500":
+            results.append({"ok": False, "error": left_message})
+        if right_status == "http500":
+            results.append({"ok": False, "error": right_message})
+        return
+    if left_status == "http500":
+        _import_group(
+            table, source, left_batch, left_rows, token,
+            bisecting=True, budget=budget, results=results, imported_ids=imported_ids,
+            closed=closed, remaining=remaining, saw_success=saw_success,
+            known=("http500", left_message),
+        )
+    if right_status == "http500":
+        _import_group(
+            table, source, right_batch, right_rows, token,
+            bisecting=True, budget=budget, results=results, imported_ids=imported_ids,
+            closed=closed, remaining=remaining, saw_success=saw_success,
+            known=("http500", right_message),
+        )
+
+
+def import_source(
+    table: Any,
+    source: str,
+    *,
+    remote: bool = True,
+    limit: int | None = None,
+    skip_ingest: bool = False,
+    only_ids: list[str] | None = None,
+    bisect: bool = False,
+) -> dict[str, Any]:
+    board_catalog_candidates.seed_listing_mirror(table)
+    preview = preview_source(table, source, remote=False, limit=limit, skip_ingest=skip_ingest)
+    if not board_catalog_import.import_enabled() or not board_catalog_import.configured():
+        raise BulkImportError("catalog import is not configured")
+    approved = _approved_for_source(table, source)
+    if only_ids:
+        wanted = {str(item) for item in only_ids if item}
+        approved = [row for row in approved if str(row.get("candidateId") or "") in wanted]
+    mid = board_catalog_import.catalog_manager_id()
+    orgs = [candidate_to_org(row, manager_id=mid) for row in approved]
+    if limit is not None:
+        orgs = orgs[: max(0, int(limit))]
+        approved = approved[: len(orgs)]
+    token = board_catalog_import._id_token()  # noqa: SLF001
+    results: list[dict[str, Any]] = []
+    imported_ids: list[str] = []
+    closed: list[dict[str, str]] = []
+    remaining: list[str] = []
+    budget = [_BISECT_MAX_CALLS]
+    saw_success = [False]
+    for batch, rows in zip(_batches(orgs, BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT), _batches(approved, BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT)):
+        _import_group(
+            table,
+            source,
+            batch,
+            rows,
+            token,
+            bisecting=bool(bisect),
+            budget=budget,
+            results=results,
+            imported_ids=imported_ids,
+            closed=closed,
+            remaining=remaining,
+            saw_success=saw_success,
+        )
     board_store.put_cache(
         table,
         f"catalog:bulk:{source}:last",
         {"at": board_store.now_iso(), "imported": len(imported_ids), "batches": len(results)},
         ttl_seconds=40 * 86400,
     )
-    _log_event("info", tag="board_catalog_bulk_import", source=source, imported=len(imported_ids), batches=len(results))
+    _log_event(
+        "info",
+        tag="board_catalog_bulk_import",
+        source=source,
+        imported=len(imported_ids),
+        batches=len(results),
+        closed=len(closed),
+    )
     return {
         "ok": all(r.get("ok") for r in results) if results else True,
         "source": source,
         "imported": len(imported_ids),
         "batches": results,
+        "closed": closed,
+        "bisectRemaining": remaining,
         "preview": {k: preview.get(k) for k in ("approved", "wouldSend", "ingest")},
     }
 
@@ -423,12 +675,32 @@ def sources_status(table: Any) -> dict[str, Any]:
     }
 
 
+def auto_import_row_limit(table: Any) -> int:
+    """Approved rows still allowed before the catalog hits its launch target.
+
+    Uses the cached catalog-health provider total. A missing cache counts as
+    zero providers, so the first auto-import is still capped at the target.
+    """
+    providers = 0
+    try:
+        import board_progress
+
+        providers = int((board_progress._listings(table, {}) or {}).get("providers") or 0)  # noqa: SLF001
+    except Exception as exc:
+        _log_event("info", tag="board_catalog_auto_bulk_cap_unavailable", error=str(exc)[:200])
+        providers = 0
+    return max(0, BOARD_CATALOG_LAUNCH_LISTING_TARGET - providers)
+
+
 def maybe_queue_auto_imports(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
     """When auto-import is on, schedule one catalog_import hold for a ready source."""
     if not board_catalog_import.auto_import_enabled(settings):
         return {"queued": []}
     if not board_catalog_import.import_enabled() or not board_catalog_import.configured():
         return {"queued": []}
+    room = auto_import_row_limit(table)
+    if room <= 0:
+        return {"queued": [], "reason": "launch target reached"}
     counts = board_catalog_candidates.counts_by_source(table)
     held_sources = _held_bulk_sources(table)
     ready: list[tuple[int, str]] = []
@@ -443,8 +715,9 @@ def maybe_queue_auto_imports(table: Any, settings: dict[str, Any]) -> dict[str, 
         return {"queued": []}
     ready.sort(reverse=True)
     source = ready[0][1]
-    out = _schedule_or_run_bulk(table, settings, source, approved=ready[0][0])
-    return {"queued": [source], **out}
+    limit = min(int(ready[0][0]), room)
+    out = _schedule_or_run_bulk(table, settings, source, approved=limit, limit=limit)
+    return {"queued": [source], "limit": limit, **out}
 
 
 def _held_bulk_sources(table: Any) -> set[str]:
@@ -459,15 +732,15 @@ def _held_bulk_sources(table: Any) -> set[str]:
 
 
 def _schedule_or_run_bulk(
-    table: Any, settings: dict[str, Any], source: str, *, approved: int
+    table: Any, settings: dict[str, Any], source: str, *, approved: int, limit: int | None = None
 ) -> dict[str, Any]:
     import board_holds
     import board_tools
 
     hours = board_holds.hold_hours(table, settings, "catalog_import", "catalog_import")
     if hours <= 0:
-        job = queue_action(table, "import", source, requested_by="auto")
-        _log_event("info", tag="board_catalog_auto_bulk_queued", source=source, approved=approved)
+        job = queue_action(table, "import", source, requested_by="auto", limit=limit)
+        _log_event("info", tag="board_catalog_auto_bulk_queued", source=source, approved=approved, limit=limit)
         return {"job": job, "held": False}
     op = board_tools.REGISTRY.get("catalog_bulk_import")
     if op is None:
@@ -484,7 +757,7 @@ def _schedule_or_run_bulk(
     hold = board_holds.create_hold(
         ctx,
         op,
-        {"source": source, "reason": "auto bulk-import"},
+        {"source": source, "reason": "auto bulk-import", "limit": int(limit or approved)},
         action_class="catalog_import",
         class_key="catalog_import",
         hours=hours,
@@ -506,7 +779,44 @@ def op_import_source(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     requested = "auto" if getattr(ctx, "internal", False) or getattr(ctx, "actor", "") in ("hold", "internal") else str(
         getattr(ctx, "actor", "") or "owner"
     )
-    return queue_action(ctx.table, "import", source, requested_by=requested)
+    limit = None
+    if args.get("limit") is not None:
+        try:
+            limit = max(1, int(args.get("limit")))
+        except (TypeError, ValueError):
+            limit = None
+    return queue_action(ctx.table, "import", source, requested_by=requested, limit=limit)
+
+
+def _open_bulk_500_task(table: Any, settings: dict[str, Any], source: str, closed: list[dict[str, str]]) -> None:
+    """One CTO task per source while rows closed by a repeated HTTP 500 are outstanding."""
+    if not closed:
+        return
+    import board_staff
+    from board_triage import find_open_event_task
+
+    event_id = f"{BULK_500_EVENT}:{source}"
+    if find_open_event_task(table, "ops", event_id):
+        return
+    names = ", ".join(str(row.get("name") or row.get("candidateId") or "") for row in closed[:12])
+    error = str(closed[0].get("error") or "")[:300]
+    try:
+        board_staff.create_task(
+            table,
+            settings,
+            assignee="cto",
+            origin="duty",
+            brief=(
+                f"siutindei POST /v1/admin/imports returned HTTP 500 twice for catalog source {source}. "
+                f"The offending rows were closed and will not be retried: {names}. Latest: {error}."
+            )[:4000],
+            deliverable_type="markdown",
+            sla_hours=24,
+            event_ref={"kind": "ops", "id": event_id, "source": source, "closed": len(closed)},
+            created_by="board_catalog_bulk",
+        )
+    except board_staff.StaffError as exc:
+        _log_event("info", tag="board_catalog_bulk_500_task_skipped", source=source, error=str(exc)[:200])
 
 
 def queue_action(
@@ -579,6 +889,8 @@ def _job_payload(event: dict[str, Any], **updates: Any) -> dict[str, Any]:
         "offset": int(event.get("offset") or 0),
         "force": bool(event.get("force")),
         "ingestDone": bool(event.get("ingestDone")),
+        "onlyCandidateIds": event.get("onlyCandidateIds") or None,
+        "bisect": bool(event.get("bisect")),
         "upserted": int(event.get("upserted") or 0),
         "skippedDuplicates": int(event.get("skippedDuplicates") or 0),
         "processed": int(event.get("processed") or 0),
@@ -714,7 +1026,15 @@ def handle_job(event: dict[str, Any]) -> dict[str, Any]:
                 skip_ingest=skip_ingest,
             )
         elif action == "import":
-            out = import_source(table, source, limit=limit, skip_ingest=skip_ingest)
+            only_ids = event.get("onlyCandidateIds")
+            out = import_source(
+                table,
+                source,
+                limit=limit,
+                skip_ingest=skip_ingest,
+                only_ids=list(only_ids) if isinstance(only_ids, list) else None,
+                bisect=bool(event.get("bisect")),
+            )
         else:
             raise BulkImportError(f"unknown catalog bulk action {action}")
         prior = _job(table, source) or {}
@@ -737,6 +1057,29 @@ def handle_job(event: dict[str, Any]) -> dict[str, Any]:
             first_error = _first_partial_error(out)
             if first_error:
                 job_doc["error"] = first_error[:300]
+        closed = out.get("closed") if isinstance(out.get("closed"), list) else []
+        if closed:
+            try:
+                _open_bulk_500_task(table, board_store.load_settings(table), source, closed)
+            except Exception as exc:
+                _log_event("info", tag="board_catalog_bulk_500_task_skipped", source=source, error=str(exc)[:200])
+        remaining_ids = out.get("bisectRemaining") if isinstance(out.get("bisectRemaining"), list) else []
+        if remaining_ids:
+            if _continue_job(
+                table,
+                event,
+                ingestDone=True,
+                offset=0,
+                onlyCandidateIds=remaining_ids,
+                bisect=True,
+                limit=limit,
+            ):
+                _put_job(
+                    table,
+                    source,
+                    {**job_doc, "phase": "running", "bisectRemaining": len(remaining_ids)},
+                )
+                return {**out, "continued": True}
         _put_job(table, source, job_doc)
         return out
     except (BulkImportError, board_catalog_import.CatalogImportError) as exc:

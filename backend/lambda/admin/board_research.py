@@ -338,8 +338,77 @@ def _call_counts_for_current_attempt(call: dict[str, Any], task: dict[str, Any] 
     return True
 
 
+def _normalize_page_url(url: str) -> str:
+    """Host + path + query, ignoring scheme, www, fragment and a trailing slash."""
+    parsed = urlparse.urlparse(str(url or "").strip())
+    host = parsed.netloc.lower()
+    if "@" in host:
+        host = host.rsplit("@", 1)[-1]
+    if host.startswith("www."):
+        host = host[4:]
+    path = parsed.path.rstrip("/") or "/"
+    query = parsed.query
+    return f"{host}{path}" + (f"?{query}" if query else "")
+
+
+def _enrich_fetch_rules(ctx: Any, task_id: str) -> dict[str, Any] | None:
+    """Official URLs and names for a catalog-enrich task. None for every other task."""
+    if getattr(ctx, "_enrich_fetch_loaded", False):
+        rules = getattr(ctx, "_enrich_fetch_rules", None)
+        return rules if isinstance(rules, dict) else None
+    try:
+        setattr(ctx, "_enrich_fetch_loaded", True)
+    except Exception:
+        pass
+    table = getattr(ctx, "table", None)
+    if not task_id or table is None:
+        return None
+    try:
+        row = board_store.get_task(table, task_id)
+    except Exception:
+        row = None
+    ref = (row or {}).get("eventRef") if isinstance(row, dict) else None
+    if not isinstance(ref, dict) or str(ref.get("kind") or "") != "catalog-enrich":
+        return None
+    urls = []
+    for page in ref.get("orgUrls") or []:
+        if isinstance(page, dict):
+            url = str(page.get("url") or "").strip()
+        else:
+            url = str(page or "").strip()
+        if url:
+            urls.append(url)
+    names = [str(name).strip() for name in (ref.get("orgNames") or []) if str(name or "").strip()]
+    rules = {"urls": urls, "names": names}
+    try:
+        setattr(ctx, "_enrich_fetch_rules", rules)
+    except Exception:
+        pass
+    return rules
+
+
+def _page_mentions_org(text: str, names: list[str]) -> bool:
+    blob = str(text or "").casefold()
+    if not blob:
+        return False
+    for name in names:
+        marker = str(name or "").strip()
+        if len(marker) < 3:
+            continue
+        if marker.casefold() in blob:
+            return True
+    return False
+
+
 def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
-    """Fetch a public page. Refuses private/link-local hosts. Cap 6 per task (9 for catalog)."""
+    """Fetch a public page. Refuses private/link-local hosts. Cap 6 per task (9 for catalog).
+
+    Only a call stored as ``ok`` counts toward the cap. Catalog-enrich tasks
+    may fetch the official URLs on the task (``eventRef.orgUrls``); any other
+    URL is refused before the request. When the sheet has names but no URLs,
+    a page whose text names none of the organisations is refused too, so a
+    200 from an invented LCSD id does not burn the cap.
+    """
     import urllib.error
 
     import board_crawl
@@ -349,6 +418,11 @@ def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         return {"error": "url is required"}
     task_id = str(getattr(ctx, "task_id", "") or "")
     cap = fetch_cap_for_task(getattr(ctx, "table", None), task_id, ctx=ctx)
+    rules = _enrich_fetch_rules(ctx, task_id) if task_id else None
+    if rules and rules.get("urls"):
+        wanted = {_normalize_page_url(item) for item in rules["urls"]}
+        if _normalize_page_url(url) not in wanted:
+            return {"error": "url is not an official page for this enrich sheet"}
     if task_id:
         bind = getattr(ctx, "bind_task_meta", None)
         if callable(bind):
@@ -385,6 +459,8 @@ def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if ctype and not any(ctype.startswith(allowed) for allowed in _RESEARCH_FETCH_TYPES):
         return {"error": f"content type {ctype} is not text/html or text/plain"}
     text = board_crawl.html_to_text(result.text) if "html" in ctype or "<html" in result.text[:200].lower() else result.text
+    if rules and not rules.get("urls") and rules.get("names") and not _page_mentions_org(text, rules["names"]):
+        return {"error": "page does not mention an organisation on this enrich sheet"}
     return {
         "status": result.status,
         "finalUrl": result.final_url,

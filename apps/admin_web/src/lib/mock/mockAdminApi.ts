@@ -151,6 +151,10 @@ export function resetAdminMockState(): void {
   state = initialMockState();
 }
 
+export function setMockStaging(preview: BoardStagingPreview): void {
+  state.staging = { ...preview };
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -569,6 +573,18 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
   }
   if (p === `${board}/code/sync-staging` && method === "POST") {
     const before = state.staging;
+    if ((before.behindBy ?? 0) <= 0 && before.syncOnly) {
+      state.staging = {
+        ...before,
+        status: "identical",
+        behindBy: 0,
+        aheadBy: 0,
+        canPromote: false,
+        syncOnly: false,
+        commits: [],
+      };
+      return json({ ok: true, alreadyCurrent: true, reset: true, preview: state.staging });
+    }
     if ((before.behindBy ?? 0) <= 0) {
       return json({ ok: true, alreadyCurrent: true, preview: before });
     }

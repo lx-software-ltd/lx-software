@@ -65,14 +65,20 @@ function StagingPromote({ data }: { readonly data: ReturnType<typeof useBoardRev
   const commits = staging?.commits ?? [];
   const behind = staging?.behindBy ?? 0;
   const ahead = staging?.aheadBy ?? 0;
+  const syncOnly = Boolean(staging?.syncOnly);
+  const showSync = behind > 0 || syncOnly;
   return (
     <div>
       {staging?.error ? <p className="text-danger small">{staging.error}</p> : null}
       {behind > 0 ? (
         <p className="small text-warning">
           staging is {behind} commit(s) behind main
-          {ahead > 0 ? " and has commits of its own" : ""}. Merge main into staging before promoting.
+          {ahead > 0 && !syncOnly ? " and has commits of its own" : ""}
+          {syncOnly ? "; the commits ahead are only sync merges" : ""}. Merge main into staging before promoting.
         </p>
+      ) : null}
+      {behind === 0 && syncOnly ? (
+        <p className="small text-warning">Only sync merges are ahead of main. Reset staging to main before promoting.</p>
       ) : null}
       {commits.length === 0 ? (
         <p className="text-muted small mb-2">No staging commits ahead of main.</p>
@@ -86,7 +92,7 @@ function StagingPromote({ data }: { readonly data: ReturnType<typeof useBoardRev
         </ul>
       )}
       <div className="d-flex flex-wrap gap-2">
-        {behind > 0 ? (
+        {showSync ? (
           <button
             type="button"
             className="btn btn-sm btn-outline-primary"
@@ -107,9 +113,13 @@ function StagingPromote({ data }: { readonly data: ReturnType<typeof useBoardRev
       </div>
       {data.syncStaging.isSuccess ? (
         <p className="small text-muted mt-2 mb-0">
-          {data.syncStaging.data?.alreadyCurrent
-            ? "Staging already matches main."
-            : "Merged main into staging."}
+          {data.syncStaging.data?.reset
+            ? "Reset staging to main."
+            : data.syncStaging.data?.fastForward
+              ? "Fast-forwarded staging to main."
+              : data.syncStaging.data?.alreadyCurrent
+                ? "Staging already matches main."
+                : "Merged main into staging."}
         </p>
       ) : null}
       {data.syncStaging.isError ? (

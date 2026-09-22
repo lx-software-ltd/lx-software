@@ -247,6 +247,7 @@ def run_due(table: Any, settings: dict[str, Any], now: datetime | None = None) -
                     or "below 50% completeness" in str(exc)
                     or "no district needs enrich" in str(exc)
                     or "micro-batch paused" in str(exc)
+                    or "enrich paused" in str(exc)
                 ):
                     if "awaiting_import cap" in str(exc):
                         skip_why = "awaiting import cap"
@@ -256,6 +257,11 @@ def run_due(table: Any, settings: dict[str, Any], now: datetime | None = None) -
                         skip_why = "no district needs enrich"
                     elif "micro-batch paused" in str(exc):
                         skip_why = "micro-batch paused"
+                    elif "enrich paused" in str(exc):
+                        parked = re.search(r"enrich paused:\s*(\d+)", str(exc))
+                        skip_why = (
+                            f"enrich paused ({parked.group(1)} parked sheets)" if parked else "enrich paused"
+                        )
                     else:
                         skip_why = "all districts claimed"
                     board_store.put_cache(

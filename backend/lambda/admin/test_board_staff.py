@@ -36,6 +36,138 @@ def _enable_staff(table: Any, **staff: Any) -> dict[str, Any]:
 
 
 class StaffEngineTests(BoardTestCase):
+    def test_supersede_stale_failed_duties_keeps_the_newest(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        settings = board_store.load_settings(self.table)
+        settings["staff"] = board_store.normalize_staff_config({**(settings.get("staff") or {}), "enabled": True})
+        board_store.save_settings(self.table, settings)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        older = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="content-marketer",
+            origin="duty",
+            brief="describe southern",
+            deliverable_type="json",
+            event_ref={"kind": "catalog-enrich", "id": "catalog-enrich:southern"},
+            created_by="test",
+        )
+        older["status"] = "failed"
+        older["failureReason"] = "OpenRouter 402"
+        older["createdAt"] = "2026-09-20T00:33:00Z"
+        board_store.put_task(self.table, older)
+        newer = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="content-marketer",
+            origin="duty",
+            brief="describe southern again",
+            deliverable_type="json",
+            event_ref={"kind": "catalog-enrich", "id": "catalog-enrich:southern"},
+            created_by="test",
+        )
+        newer["status"] = "needs_owner"
+        newer["createdAt"] = "2026-09-21T00:33:00Z"
+        board_store.put_task(self.table, newer)
+        lone = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="content-marketer",
+            origin="duty",
+            brief="content plan",
+            deliverable_type="json",
+            event_ref={"kind": "duty", "id": "content-plan:2026-09-20"},
+            created_by="test",
+        )
+        lone["status"] = "failed"
+        lone["failureReason"] = "choices are missing"
+        lone["createdAt"] = "2026-09-20T10:00:00Z"
+        board_store.put_task(self.table, lone)
+        self.assertEqual(board_staff.supersede_stale_failed_duties(self.table), 1)
+        closed = board_store.get_task(self.table, older["taskId"])
+        self.assertEqual(closed["status"], "cancelled")
+        self.assertEqual(closed["closedBy"], "board_staff:superseded")
+        self.assertEqual(closed["failureReason"], "")
+        self.assertEqual(board_store.get_task(self.table, newer["taskId"])["status"], "needs_owner")
+        self.assertEqual(board_store.get_task(self.table, lone["taskId"])["status"], "failed")
+
+    def test_supersede_reads_only_failed_when_nothing_qualifies(self) -> None:
+        seen: list[str] = []
+        real = board_store.list_tasks
+
+        def wrapped(table: Any, status: str, limit: int = 200) -> list[dict[str, Any]]:
+            seen.append(status)
+            return real(table, status, limit=limit)
+
+        with patch.object(board_store, "list_tasks", side_effect=wrapped):
+            self.assertEqual(board_staff.supersede_stale_failed_duties(self.table), 0)
+        self.assertEqual(seen, ["failed"])
+
+    def test_nonblocking_comment_proposal_does_not_park_the_task(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        settings = board_store.load_settings(self.table)
+        settings["staff"] = board_store.normalize_staff_config({**(settings.get("staff") or {}), "enabled": True})
+        board_store.save_settings(self.table, settings)
+        board_store.save_staff_override(self.table, "architect", {"isActive": True})
+        task = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="architect",
+            origin="duty",
+            brief="groom the backlog",
+            deliverable_type="markdown",
+            event_ref={"kind": "duty", "id": "groom:1"},
+            created_by="test",
+        )
+        task["status"] = "running"
+        board_store.put_task(self.table, task)
+        result = board_tools.ToolLoopResult(
+            text="labelled the issue and left the comment for the founder",
+            usage={},
+            model="test",
+            calls=[
+                {
+                    "callId": "c1",
+                    "op": "github_comment_issue",
+                    "status": "pending_approval",
+                    "approvalId": "appr-comment",
+                    "blocksTask": False,
+                }
+            ],
+        )
+        board_staff._complete_step(self.table, task["taskId"], task, result, 1)  # noqa: SLF001
+        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "running")
+
+        parked = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="architect",
+            origin="duty",
+            brief="send the mail",
+            deliverable_type="markdown",
+            event_ref={"kind": "duty", "id": "groom:2"},
+            created_by="test",
+        )
+        parked["status"] = "running"
+        board_store.put_task(self.table, parked)
+        blocking = board_tools.ToolLoopResult(
+            text="waiting on the founder",
+            usage={},
+            model="test",
+            calls=[
+                {
+                    "callId": "c2",
+                    "op": "mail_send",
+                    "status": "pending_approval",
+                    "approvalId": "appr-mail",
+                }
+            ],
+        )
+        board_staff._complete_step(self.table, parked["taskId"], parked, blocking, 1)  # noqa: SLF001
+        self.assertEqual(board_store.get_task(self.table, parked["taskId"])["status"], "waiting_approval")
+
     def setUp(self) -> None:
         super().setUp()
         os.environ["BOARD_STAFF_ENABLED"] = "true"

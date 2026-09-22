@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { mockAdminFetch, resetAdminMockState } from "./mockAdminApi";
+import { mockAdminFetch, resetAdminMockState, setMockStaging } from "./mockAdminApi";
 
 describe("mockAdminFetch", () => {
   beforeEach(() => {
@@ -95,6 +95,26 @@ describe("mockAdminFetch", () => {
     const againRes = await mockAdminFetch("/siu-tin-dei/board/code/sync-staging", { method: "POST" });
     const again = (await againRes.json()) as { alreadyCurrent?: boolean };
     expect(again.alreadyCurrent).toBe(true);
+  });
+
+  it("resets staging when the only commits ahead are sync merges", async () => {
+    setMockStaging({
+      status: "ahead",
+      behindBy: 0,
+      aheadBy: 6,
+      canPromote: false,
+      syncOnly: true,
+      commits: [{ sha: "abc12345", message: "board: sync staging with main" }],
+    });
+    const syncRes = await mockAdminFetch("/siu-tin-dei/board/code/sync-staging", { method: "POST" });
+    const synced = (await syncRes.json()) as {
+      reset?: boolean;
+      preview?: { aheadBy?: number; canPromote?: boolean; syncOnly?: boolean };
+    };
+    expect(synced.reset).toBe(true);
+    expect(synced.preview?.aheadBy).toBe(0);
+    expect(synced.preview?.canPromote).toBe(false);
+    expect(synced.preview?.syncOnly).toBe(false);
   });
 
   it("previews a catalog sheet and refuses import while the kill switch is off", async () => {

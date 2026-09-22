@@ -189,6 +189,24 @@ class DutyRunTests(BoardTestCase):
         self.assertFalse(any(g.get("gapId") == "opendata-edb" for g in board_duties.list_config_gaps(self.table)))
         self.assertEqual(board_duties.clear_config_gap(self.table, "opendata-edb"), 0)
 
+    def test_enrich_pause_is_recorded_on_the_duty(self) -> None:
+        now = datetime(2026, 9, 7, 8, 40, tzinfo=MONDAY_HKT)
+        _seed_duties_current(self.table, now)
+        board_store.put_cache(
+            self.table,
+            "duty:content-marketer:catalog-enrich",
+            {"ranAt": "2026-09-01T00:00:00Z", "scheduledAt": "2026-09-01T00:30:00+08:00"},
+        )
+        with patch(
+            "board_catalog.create_enrich",
+            side_effect=board_staff.StaffError("catalog enrich paused: 3 needs_owner sheets (cap 3)"),
+        ):
+            created = board_duties.run_due(self.table, self.settings, now=now)
+        self.assertEqual(created, [])
+        hit = board_store.get_cache(self.table, "duty:content-marketer:catalog-enrich")
+        payload = (hit or {}).get("payload") or {}
+        self.assertEqual(payload.get("skipped"), "enrich paused (3 parked sheets)")
+
 
 class OpsTriageTests(BoardTestCase):
     def setUp(self) -> None:

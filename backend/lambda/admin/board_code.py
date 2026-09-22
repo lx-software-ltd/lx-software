@@ -1476,14 +1476,48 @@ def compare_staging() -> dict[str, Any]:
         commits.append({"sha": str(row.get("sha") or "")[:8], "message": message[:160]})
     behind = int(raw.get("behind_by") or 0)
     ahead = int(raw.get("ahead_by") or 0)
-    return {
+    preview = {
         "status": raw.get("status") or "unknown",
         "behindBy": behind,
         "aheadBy": ahead,
         "commits": commits[:40],
-        "canPromote": behind == 0 and ahead > 0,
         "htmlUrl": raw.get("html_url") or raw.get("permalink_url"),
     }
+    sync_only = ahead_is_sync_only(preview)
+    preview["syncOnly"] = sync_only
+    preview["canPromote"] = behind == 0 and ahead > 0 and not sync_only
+    return preview
+
+
+SYNC_COMMIT_PREFIX = "board: sync staging with main"
+
+
+def ahead_is_sync_only(preview: dict[str, Any]) -> bool:
+    """True when every commit staging has over main is one of our sync merges.
+
+    The compare payload is capped, so a longer ahead list is not treated as
+    sync-only: a real commit could be sitting past the page.
+    """
+    try:
+        ahead = int(preview.get("aheadBy") or 0)
+    except (TypeError, ValueError):
+        return False
+    commits = [row for row in (preview.get("commits") or []) if isinstance(row, dict)]
+    if ahead <= 0 or not commits or ahead > len(commits):
+        return False
+    return all(str(row.get("message") or "").startswith(SYNC_COMMIT_PREFIX) for row in commits)
+
+
+def _branch_sha(repo: str, branch: str) -> str:
+    ref = _gh("GET", f"/repos/{repo}/git/ref/heads/{branch}")
+    if not isinstance(ref, dict):
+        return ""
+    return str((ref.get("object") or {}).get("sha") or "")
+
+
+def _point_staging_at(repo: str, sha: str, *, force: bool) -> str:
+    _gh("PATCH", f"/repos/{repo}/git/refs/heads/staging", {"sha": sha, "force": bool(force)})
+    return sha
 
 
 _SYNC_STAGING_CACHE = "duty:cto:sync-staging"
@@ -2479,11 +2513,40 @@ def op_sync_staging(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         if table is not None:
             cache_staging_preview(table, preview)
         return {"error": preview["error"], "preview": preview}
-    if int(preview.get("behindBy") or 0) <= 0:
+    behind = int(preview.get("behindBy") or 0)
+    ahead = int(preview.get("aheadBy") or 0)
+    sync_only = ahead_is_sync_only(preview)
+    repo = _repo()
+    if behind <= 0 and (ahead <= 0 or sync_only):
+        reset = False
+        if sync_only:
+            try:
+                sha = _branch_sha(repo, "main")
+                if sha:
+                    _point_staging_at(repo, sha, force=True)
+                    preview = staging_preview()
+                    reset = True
+            except board_github.GitHubSnapshotError as exc:
+                return {"error": str(exc)[:200], "preview": preview}
         if table is not None:
             cache_staging_preview(table, preview)
-        return {"ok": True, "alreadyCurrent": True, "preview": preview}
-    repo = _repo()
+        return {"ok": True, "alreadyCurrent": True, "reset": reset, "preview": preview}
+    if behind > 0 and (ahead <= 0 or sync_only):
+        try:
+            sha = _branch_sha(repo, "main")
+            if not sha:
+                raise board_github.GitHubSnapshotError("main ref has no sha")
+            _point_staging_at(repo, sha, force=sync_only)
+        except board_github.GitHubSnapshotError as exc:
+            if ahead <= 0:
+                pass
+            else:
+                return {"error": str(exc)[:200], "preview": preview}
+        else:
+            after = staging_preview()
+            if table is not None:
+                cache_staging_preview(table, after)
+            return {"ok": True, "fastForward": True, "mergedSha": sha[:12], "before": preview, "preview": after}
     try:
         merged = _gh(
             "POST",
@@ -2491,7 +2554,7 @@ def op_sync_staging(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
             {
                 "base": "staging",
                 "head": "main",
-                "commit_message": "board: sync staging with main",
+                "commit_message": SYNC_COMMIT_PREFIX,
             },
         )
     except board_github.GitHubSnapshotError as exc:

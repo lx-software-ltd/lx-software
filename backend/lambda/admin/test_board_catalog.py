@@ -133,6 +133,103 @@ class CatalogDutyTests(BoardTestCase):
         self.assertIn("copy each name_en into verified_fields", enrich["brief"])
         self.assertTrue(BOARD_CATALOG_OUTPUT_CONTRACT[:40] in enrich["brief"])
 
+    def test_create_enrich_carries_official_urls(self) -> None:
+        settings = _enable(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        district = BOARD_CATALOG_DISTRICTS[0]
+        task = _seed_imported_orgs(self.table, district, ["Quarry Bay Park Playground"])
+        task["importPreview"]["payload"]["organizations"][0]["website"] = "https://www.lcsd.gov.hk/en/facilities/facilitieslist/facilities.php?fid=1"
+        board_store.put_task(self.table, task)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            enrich = board_catalog.create_enrich(self.table, settings)
+        pages = enrich["eventRef"]["orgUrls"]
+        self.assertEqual(pages[0]["name"], "Quarry Bay Park Playground")
+        self.assertIn("fid=1", pages[0]["url"])
+        self.assertIn("Official pages", enrich["brief"])
+        self.assertIn("fid=1", enrich["brief"])
+
+    def test_enrich_pauses_after_three_needs_owner_sheets(self) -> None:
+        settings = _enable(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        district = BOARD_CATALOG_DISTRICTS[0]
+        _seed_imported_orgs(self.table, district, ["Quarry Bay Park Playground"])
+        for i in range(3):
+            board_store.put_task(
+                self.table,
+                {
+                    "taskId": f"parked-enrich-{i}",
+                    "status": "needs_owner",
+                    "assignee": "content-marketer",
+                    "origin": "duty",
+                    "eventRef": {"kind": "catalog-enrich", "id": f"catalog-enrich:d{i}", "districtId": f"d{i}"},
+                    "createdAt": f"2026-09-1{i}T00:00:00Z",
+                },
+            )
+        with self.assertRaises(board_staff.StaffError) as caught:
+            board_catalog.create_enrich(self.table, settings)
+        self.assertIn("enrich paused", str(caught.exception))
+
+    def test_enrich_fetch_rejects_urls_off_the_official_list(self) -> None:
+        import board_crawl
+
+        settings = _enable(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="content-marketer",
+                origin="duty",
+                brief="describe",
+                deliverable_type="json",
+                event_ref={
+                    "kind": "catalog-enrich",
+                    "id": "catalog-enrich:eastern",
+                    "orgNames": ["Quarry Bay Park Playground"],
+                    "orgUrls": [{"name": "Quarry Bay Park Playground", "url": "https://www.lcsd.gov.hk/en/facilities/facilities.php?fid=1"}],
+                },
+                created_by="test",
+            )
+        ctx = type("Ctx", (), {"table": self.table, "task_id": task["taskId"]})()
+        refused = board_research.op_fetch_page(ctx, {"url": "https://www.lcsd.gov.hk/tc/facilities/playgrounds/details.html?fac_id=12345"})
+        self.assertIn("not an official page", refused["error"])
+        fetched = board_crawl.FetchResult(200, "https://www.lcsd.gov.hk/en/facilities/facilities.php?fid=1", "text/html", "<html>Quarry Bay Park Playground</html>", "abc")
+        with patch.object(board_crawl, "fetch", return_value=fetched):
+            allowed = board_research.op_fetch_page(ctx, {"url": "https://lcsd.gov.hk/en/facilities/facilities.php?fid=1"})
+        self.assertNotIn("error", allowed)
+        self.assertIn("Quarry Bay", allowed["text"])
+
+    def test_enrich_fetch_without_urls_rejects_a_page_that_names_nobody(self) -> None:
+        import board_crawl
+
+        settings = _enable(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="content-marketer",
+                origin="duty",
+                brief="describe",
+                deliverable_type="json",
+                event_ref={
+                    "kind": "catalog-enrich",
+                    "id": "catalog-enrich:eastern",
+                    "orgNames": ["Quarry Bay Park Playground"],
+                },
+                created_by="test",
+            )
+        ctx = type("Ctx", (), {"table": self.table, "task_id": task["taskId"]})()
+        empty = board_crawl.FetchResult(200, "https://www.lcsd.gov.hk/missing", "text/html", "<html>Facility not found</html>", "abc")
+        named = board_crawl.FetchResult(200, "https://www.lcsd.gov.hk/park", "text/html", "<html>Quarry Bay Park Playground hours</html>", "def")
+        with patch.object(board_crawl, "fetch", return_value=empty):
+            refused = board_research.op_fetch_page(ctx, {"url": "https://www.lcsd.gov.hk/missing"})
+        self.assertIn("does not mention", refused["error"])
+        ctx2 = type("Ctx", (), {"table": self.table, "task_id": task["taskId"]})()
+        with patch.object(board_crawl, "fetch", return_value=named):
+            allowed = board_research.op_fetch_page(ctx2, {"url": "https://www.lcsd.gov.hk/park"})
+        self.assertNotIn("error", allowed)
+
     def test_enrich_cooldown_uses_created_at_not_updated_at(self) -> None:
         district = BOARD_CATALOG_DISTRICTS[0]
         old = (datetime.now(timezone.utc) - timedelta(hours=49)).strftime("%Y-%m-%dT%H:%M:%SZ")

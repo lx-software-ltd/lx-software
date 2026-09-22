@@ -828,6 +828,36 @@ class AutonomyToolTests(ToolsTestCase):
         )
         self.assertFalse(board_tools._architect_backlog_write(other, op))  # noqa: SLF001
 
+    def test_architect_comment_stays_a_proposal(self) -> None:
+        settings = board_store.load_settings(self.table)
+        settings["tools"]["globalMode"] = "act"
+        board_store.save_settings(self.table, settings)
+        board_store.save_staff_override(self.table, "architect", {"isActive": True})
+        ctx = board_tools.ToolContext(
+            self.table,
+            settings,
+            "cto",
+            display_name="Architect",
+            kind="task",
+            actor="persona",
+            seat_id="architect",
+            task_id="t-arch",
+        )
+        op = board_tools.REGISTRY["github_comment_issue"]
+        self.assertFalse(board_tools._architect_backlog_write(ctx, op))  # noqa: SLF001
+        with patch.dict("os.environ", {"GITHUB_READ_TOKEN": "ghp_test", "BOARD_STAFF_ENABLED": "true"}):
+            board_github.reset_token_cache_for_tests()
+            outcome = board_tools.execute_call(
+                ctx,
+                op,
+                {"number": 488, "body": "### Acceptance Criteria:\n- [ ] tests pass", "reason": "groom"},
+            )
+        self.assertEqual(outcome.status, "pending_approval")
+        self.assertFalse(outcome.blocks_task)
+        self.assertIn("cite the approval id", str(outcome.result.get("message") or ""))
+        self.assertIs(outcome.public(op).get("blocksTask"), False)
+        self.assertTrue(outcome.approval_id)
+
     def test_expire_stale_approvals(self) -> None:
         now = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)
         old = (now - timedelta(hours=169)).strftime("%Y-%m-%dT%H:%M:%SZ")
