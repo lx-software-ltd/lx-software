@@ -340,11 +340,17 @@ only. The hourly cache refresh runs `board_dmarc.evaluate` (no DNS, no
 LLM) into `dmarc:summary`: 24 h / 7 day / 30 day totals, and findings
 `own_sender_failing`, `unknown_source_failing`, `forwarding_noise` (info,
 never a task), `policy_drift`, `new_header_from_domain`, `reports_silent`.
-`own_sender_failing` also lands on Config gaps. With staff on, medium and
-high findings open one `security-analyst` task (or `ciso` when that seat
-is inactive), deduped in `seen:dmarc`. `security_dmarc_summary` reads the
-cache. `settings.dmarc` (`enabled`, `knownSenderDomains`,
-`spoofAlertCount`, `silenceDays`, `expectedPolicy`) gates findings only;
+`own_sender_failing` also lands on Config gaps. A known auth domain counts
+as our mail when that check passed, or when it failed and `header_from` is
+one of our sender domains; a failed `amazonses.com` envelope with a foreign
+From is an unknown source. Unknown sources under 5 messages in 7 days are
+info. With staff on, medium and high findings open one `security-analyst`
+task (or `ciso` when that seat is inactive), deduped in `seen:dmarc`. A
+summary older than 26 hours opens `summary_stale` instead. The daily review
+stores the line and findings only. `security_dmarc_summary` reads the cache
+and does not evaluate on a miss. `settings.dmarc` (`enabled`,
+`knownSenderDomains`, `spoofAlertCount`, `silenceDays`, `expectedPolicy`)
+is edited under Executive Board → Settings and gates findings only;
 parsing stays on. The 07:15 HKT digest section is "reports received in
 the last 24 h" because Google delivers the previous UTC day later that
 morning.

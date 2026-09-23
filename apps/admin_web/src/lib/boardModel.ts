@@ -115,6 +115,7 @@ export type BoardSettings = {
     readonly microBatchEnabled?: boolean;
     readonly launchListingTarget?: number;
   };
+  readonly dmarc?: BoardDmarcSettings;
   readonly boundaries?: BoardBoundaries;
   readonly updatedAt?: string | null;
   readonly version?: number;
@@ -134,6 +135,38 @@ export function staffDraft(
     disabledReason: current.staff?.disabledReason,
     modelBySeat: current.staff?.modelBySeat,
     ...patch,
+  };
+}
+
+export type BoardDmarcSettings = {
+  readonly enabled?: boolean;
+  readonly knownSenderDomains?: readonly string[];
+  readonly spoofAlertCount?: number;
+  readonly silenceDays?: number;
+  readonly expectedPolicy?: {
+    readonly p?: string;
+    readonly pct?: number;
+    readonly sp?: string;
+  };
+};
+
+export function dmarcDraft(
+  current: BoardSettings,
+  patch: Partial<BoardDmarcSettings>,
+): BoardDmarcSettings {
+  const base = current.dmarc;
+  const policy = { ...base?.expectedPolicy, ...patch.expectedPolicy };
+  return {
+    enabled: base?.enabled !== false,
+    knownSenderDomains: [...(base?.knownSenderDomains ?? [])],
+    spoofAlertCount: base?.spoofAlertCount ?? 20,
+    silenceDays: base?.silenceDays ?? 3,
+    ...patch,
+    expectedPolicy: {
+      p: policy.p || "quarantine",
+      pct: policy.pct ?? 100,
+      sp: policy.sp ?? "",
+    },
   };
 }
 

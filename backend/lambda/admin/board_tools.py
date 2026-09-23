@@ -36,6 +36,7 @@ import board_aws
 import board_budget
 import board_catalog_import
 import board_deadline
+import board_dmarc
 import board_finance
 import board_github
 import board_mail
@@ -44,7 +45,6 @@ import board_personas
 import board_product
 import board_receivables
 import board_research
-import board_dmarc
 import board_security
 import board_store
 import board_stores
@@ -1479,7 +1479,7 @@ def build_registry() -> dict[str, ToolOp]:
             kind="read",
             description=(
                 "DMARC aggregate summary for the last 24 hours, 7 days and 30 days: "
-                "aligned percent, reporting orgs, per-source results and findings. Cached from the hourly refresh."
+                "aligned percent, reporting orgs, per-source results and findings. Reads the hourly cache and does not recompute it."
             ),
             parameters=_obj({}),
             run=board_dmarc.op_summary,

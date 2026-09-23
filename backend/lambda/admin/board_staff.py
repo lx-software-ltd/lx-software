@@ -441,6 +441,16 @@ def _blob_put(key: str, body: bytes) -> None:
     runtime._s3.put_object(Bucket=bucket, Key=key, Body=body)
 
 
+def _blob_delete(key: str) -> None:
+    _MEMORY_BLOBS.pop(key, None)
+    bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
+    if not bucket:
+        return
+    import runtime
+
+    runtime._s3.delete_object(Bucket=bucket, Key=key)
+
+
 def _blob_get(key: str) -> bytes:
     if key in _MEMORY_BLOBS:
         return _MEMORY_BLOBS[key]

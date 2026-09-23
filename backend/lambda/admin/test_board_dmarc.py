@@ -216,6 +216,29 @@ class DmarcParseTests(BoardTestCase):
         self.assertEqual(thread["dmarcReportIds"], ["google.com:via-mail"])
         self.assertEqual(thread["dmarcRecordCount"], 1)
 
+    def test_failed_report_write_drops_the_raw_blob(self) -> None:
+        deleted: list[str] = []
+        real_put = self.table.put_item
+
+        def _put(Item: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+            if str(Item.get("sk", "")).startswith("REPORT#"):
+                raise RuntimeError("ddb down")
+            return real_put(Item=Item, **kwargs)
+
+        self.table.put_item = _put  # type: ignore[method-assign]
+        self.addCleanup(lambda: setattr(self.table, "put_item", real_put))
+        with patch.object(board_staff, "_blob_delete", side_effect=lambda key: deleted.append(key)):
+            out = board_dmarc.ingest_message(
+                self.table,
+                _message_with("lost.xml", "application/xml", _xml(report_id="lost")),
+                thread_id="thr-lost",
+            )
+        self.assertEqual(out["errors"], 1)
+        self.assertEqual(out["reports"], 0)
+        self.assertEqual(len(deleted), 1)
+        self.assertTrue(deleted[0].endswith("/lost.xml.gz"))
+        self.assertEqual(board_dmarc.list_reports(self.table), [])
+
 
 class DmarcEvaluateTests(BoardTestCase):
     def setUp(self) -> None:
@@ -375,6 +398,76 @@ class DmarcEvaluateTests(BoardTestCase):
         review = board_review.compile(self.table, self.settings, "2026-09-22")
         self.assertIn("no summary yet", review["dmarc"]["line"])
         self.assertIn("DMARC", review["digestHtml"])
+        self.assertEqual(set(review["dmarc"]), {"line", "findings"})
+
+    def test_spoofed_known_domain_is_not_our_sender(self) -> None:
+        self._ingest(
+            _xml(
+                report_id="spoof-ses",
+                dkim="fail",
+                spf="fail",
+                dkim_domain="amazonses.com",
+                spf_domain="amazonses.com",
+                header_from="attacker.example",
+                source_ip="198.51.100.8",
+                count=14,
+            )
+        )
+        summary = board_dmarc.evaluate(self.table, self.settings)
+        self.assertEqual(self._findings(summary, "own_sender_failing"), [])
+        row = self._findings(summary, "unknown_source_failing")[0]
+        self.assertEqual(row["severity"], "medium")
+        self.assertEqual(row["evidence"]["dkim"], "fail")
+        self.assertEqual(row["evidence"]["spf"], "fail")
+        gaps = board_duties.list_config_gaps(self.table)
+        self.assertFalse(any(str(row.get("gapId") or "") == "dmarc:amazonses.com" for row in gaps))
+
+    def test_small_unknown_source_stays_info(self) -> None:
+        self._ingest(_xml(report_id="tiny", count=1, source_ip="203.0.113.77"))
+        summary = board_dmarc.evaluate(self.table, self.settings)
+        row = self._findings(summary, "unknown_source_failing")[0]
+        self.assertEqual(row["severity"], "info")
+
+    def test_mixed_results_are_not_called_pass(self) -> None:
+        self._ingest(
+            _xml(report_id="mix-a", dkim="pass", spf="fail", count=2, source_ip="203.0.113.9", dkim_domain="evil.example", spf_domain="evil.example")
+        )
+        self._ingest(
+            _xml(report_id="mix-b", dkim="fail", spf="fail", count=2, source_ip="203.0.113.9", dkim_domain="evil.example", spf_domain="evil.example")
+        )
+        summary = board_dmarc.evaluate(self.table, self.settings)
+        row = self._findings(summary, "unknown_source_failing")[0]
+        self.assertEqual(row["evidence"]["dkim"], "mixed")
+        self.assertEqual(row["evidence"]["spf"], "fail")
+
+    def test_read_tool_does_not_evaluate(self) -> None:
+        from types import SimpleNamespace
+
+        self._ingest(_xml(report_id="unread", header_from="fresh.example"))
+        out = board_dmarc.op_summary(SimpleNamespace(table=self.table, settings=self.settings), {})
+        self.assertFalse(out["cached"])
+        self.assertIn("no summary yet", out["line"])
+        self.assertIsNone(board_store.get_cache(self.table, "dmarc:summary"))
+        self.assertFalse(board_store._get_state(self.table, "dmarc#header-from"))  # noqa: SLF001
+
+    def test_stale_summary_is_called_out_on_review(self) -> None:
+        old = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        board_store.put_cache(
+            self.table,
+            "dmarc:summary",
+            {"generatedAt": old, "line": "DMARC (reports received in the last 24 h): no aggregate reports. No problems.", "findings": [], "sources": [{"sourceIp": "x"}]},
+        )
+        review = board_review.compile(self.table, self.settings, "2026-09-22")
+        self.assertIn("older than the hourly refresh", review["dmarc"]["line"])
+        self.assertNotIn("sources", review["dmarc"])
+
+    def test_refresh_failure_does_not_stop_the_cache_job(self) -> None:
+        import board_cache
+
+        with patch.object(board_dmarc, "refresh", side_effect=RuntimeError("boom")):
+            notes = board_cache.refresh_all(self.table)
+        self.assertIn("boom", notes["dmarc"]["error"])
+        self.assertIn("aws", notes)
 
 
 class DmarcTaskTests(BoardTestCase):
@@ -450,3 +543,28 @@ class DmarcTaskTests(BoardTestCase):
         board_duties.triage_ops_signals(self.table, self.settings)
         tasks = board_store.list_tasks(self.table, "queued") + board_store.list_tasks(self.table, "running")
         self.assertEqual(tasks[0]["assignee"], "ciso")
+
+    def test_stale_summary_opens_one_task_and_skips_old_findings(self) -> None:
+        old = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        board_store.put_cache(
+            self.table,
+            "dmarc:summary",
+            {
+                "generatedAt": old,
+                "findings": [
+                    {
+                        "kind": "unknown_source_failing",
+                        "severity": "medium",
+                        "fingerprint": "unknown_source_failing:203.0.113.9",
+                        "summary": "unknown source 203.0.113.9",
+                        "evidence": {},
+                    }
+                ],
+            },
+        )
+        out = board_duties.triage_ops_signals(self.table, self.settings)
+        self.assertEqual(out["dmarc"], 1)
+        tasks = board_store.list_tasks(self.table, "queued") + board_store.list_tasks(self.table, "running")
+        ids = [(task.get("eventRef") or {}).get("id") for task in tasks]
+        self.assertIn("dmarc:summary_stale", ids)
+        self.assertNotIn("dmarc:unknown_source_failing:203.0.113.9", ids)

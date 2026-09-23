@@ -392,6 +392,13 @@ export const boardOverviewFixture: BoardOverview = {
     staff: { enabled: true, maxRunningTasks: 6, dailyBudgetUsd: 20, dutiesEnabled: false },
     review: { digestTo: "founder@example.com", digestHourHkt: 7, sampleSize: 8 },
     catalog: { autoImport: false, microBatchEnabled: false },
+    dmarc: {
+      enabled: true,
+      knownSenderDomains: [],
+      spoofAlertCount: 20,
+      silenceDays: 3,
+      expectedPolicy: { p: "quarantine", pct: 100, sp: "" },
+    },
     boundaries: DEFAULT_BOARD_BOUNDARIES,
   },
   charter: {

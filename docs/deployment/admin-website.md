@@ -768,11 +768,16 @@ its bucket / role / KMS policies must allow the shared-set SourceArn
    (`board_dmarc.py`): the hourly refresh writes `dmarc:summary`, the
    daily review **DMARC** section shows reports received in the last 24 h,
    and a medium or high finding opens a security-analyst task when staff
-   is on. Defaults treat only `amazonses.com`, the mail domain and the
-   outreach domain as our senders. Add `google.com` or `icloud.com` under
-   `settings.dmarc.knownSenderDomains` if you send as `@siutindei.com` from
-   Gmail or iCloud, or the first run flags that source. The raw XML is
-   kept gzipped under `board/{boardKey}/dmarc/` in the assets bucket.
+   is on. An unknown source under 5 messages in 7 days stays informational.
+   A summary older than 26 hours opens one stale-summary task instead of
+   paging on the old findings. Defaults treat only `amazonses.com`, the mail
+   domain and the outreach domain as our senders, and only when that domain
+   authenticated or the header_from is one of those domains. Add
+   `google.com` or `icloud.com` under **Executive Board → Settings → DMARC**
+   (`settings.dmarc.knownSenderDomains`) if you send as `@siutindei.com` from
+   Gmail or iCloud, or the first run flags that source. `security_dmarc_summary`
+   reads the hourly cache and does not recompute it. The raw XML is kept
+   gzipped under `board/{boardKey}/dmarc/` in the assets bucket.
 5. **Settings → Tools & permissions → Recipient allow-list**
    (`@siutindei.com`, vendors, WhatsApp numbers).
 6. **Mail → Send test email**: the header shows SES `GetEmailIdentity` /

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -416,15 +417,10 @@ def triage_ops_signals(table: Any, settings: dict[str, Any]) -> dict[str, int]:
 
 
 def _dmarc_enabled(settings: dict[str, Any]) -> bool:
-    dmarc = settings.get("dmarc")
-    if not isinstance(dmarc, dict) or "enabled" not in dmarc:
-        return True
-    return bool(dmarc.get("enabled"))
+    return bool(board_store.normalize_dmarc_config(settings.get("dmarc")).get("enabled"))
 
 
 def _dmarc_task_brief(finding: dict[str, Any]) -> str:
-    import json
-
     evidence = finding.get("evidence") if isinstance(finding.get("evidence"), dict) else {}
     try:
         blob = json.dumps(evidence, default=str, ensure_ascii=False)
@@ -443,22 +439,32 @@ def _triage_dmarc(table: Any, settings: dict[str, Any], roster: dict[str, dict[s
     """Medium and high DMARC findings become tasks. Info (forwarding) never does."""
     if not _dmarc_enabled(settings):
         return 0
+    import board_dmarc
+
     hit = board_store.get_cache(table, "dmarc:summary")
     payload = hit.get("payload") if isinstance(hit, dict) else None
     findings = []
     if isinstance(payload, dict):
         findings = [row for row in (payload.get("findings") or []) if isinstance(row, dict)]
-    actionable = [row for row in findings if str(row.get("severity") or "") in ("medium", "high")]
+    if isinstance(payload, dict) and board_dmarc.summary_is_stale(payload):
+        actionable = [
+            {
+                "severity": "medium",
+                "fingerprint": "summary_stale",
+                "summary": "DMARC summary is older than the hourly refresh",
+                "evidence": {"generatedAt": payload.get("generatedAt")},
+            }
+        ]
+    else:
+        actionable = [row for row in findings if str(row.get("severity") or "") in ("medium", "high")]
     seen = _seen_payload(table, "seen:dmarc")
     assignee = "security-analyst" if (roster.get("security-analyst") or {}).get("isActive") else "ciso"
     kept: list[str] = []
     created = 0
-    current: list[str] = []
     for finding in actionable:
         fingerprint = str(finding.get("fingerprint") or "")
         if not fingerprint:
             continue
-        current.append(fingerprint)
         if fingerprint in seen:
             kept.append(fingerprint)
             continue
@@ -471,9 +477,6 @@ def _triage_dmarc(table: Any, settings: dict[str, Any], roster: dict[str, dict[s
         ):
             created += 1
             kept.append(fingerprint)
-    stale = [item for item in seen if item not in current]
-    if stale:
-        kept = [item for item in kept if item not in stale]
     _save_seen(table, "seen:dmarc", kept)
     return created
 

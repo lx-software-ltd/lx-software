@@ -16,7 +16,7 @@ import time
 import zipfile
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
-from typing import Any
+from typing import Any, Iterator, Protocol
 
 from defusedxml import ElementTree
 from defusedxml.common import DefusedXmlException
@@ -34,7 +34,22 @@ MAX_SOURCES = 500
 SUMMARY_SOURCE_CAP = 40
 SUMMARY_FINDING_CAP = 30
 SUMMARY_TTL_SECONDS = 7 * 86400
+SUMMARY_STALE_SECONDS = 26 * 3600
+REPORT_LOOKBACK_DAYS = 31
+UNKNOWN_SOURCE_MIN_COUNT = 5
 CONSUMER_MAIL_DOMAINS = frozenset({"google.com", "gmail.com", "icloud.com"})
+_NO_SUMMARY = "DMARC (reports received in the last 24 h): no summary yet."
+
+
+class _XmlElement(Protocol):
+    """Shape of a defusedxml element. The runtime parser does not export Element."""
+
+    tag: str
+    text: str | None
+
+    def __iter__(self) -> Iterator[_XmlElement]: ...
+
+    def iter(self) -> Iterator[_XmlElement]: ...
 
 _SK_UNSAFE = re.compile(r"[^A-Za-z0-9._@+-]")
 _PATH_UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
@@ -62,7 +77,7 @@ def _local(tag: str) -> str:
     return str(tag or "").rsplit("}", 1)[-1]
 
 
-def _child(el: ElementTree.Element | None, name: str) -> ElementTree.Element | None:
+def _child(el: _XmlElement | None, name: str) -> _XmlElement | None:
     if el is None:
         return None
     for child in list(el):
@@ -71,7 +86,7 @@ def _child(el: ElementTree.Element | None, name: str) -> ElementTree.Element | N
     return None
 
 
-def _text(el: ElementTree.Element | None, name: str) -> str:
+def _text(el: _XmlElement | None, name: str) -> str:
     found = _child(el, name)
     if found is None or found.text is None:
         return ""
@@ -93,6 +108,7 @@ def _ttl() -> int:
 
 
 def _reject_dtd(xml: bytes) -> None:
+    """Drop DTD markup before parse. defusedxml still rejects UTF-16 and other forms."""
     lowered = xml.lower()
     if b"<!doctype" in lowered or b"<!entity" in lowered:
         raise DmarcParseError("XML DTD rejected")
@@ -200,7 +216,7 @@ def _extract_interest(name: str, content_type: str, payload: bytes) -> bool:
     return payload[:2] in (b"PK", b"\x1f\x8b") or payload.lstrip()[:5] == b"<?xml"
 
 
-def _parse_auth(auth: ElementTree.Element | None) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+def _parse_auth(auth: _XmlElement | None) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     dkim: list[dict[str, str]] = []
     spf: list[dict[str, str]] = []
     if auth is None:
@@ -238,6 +254,10 @@ def _empty_source(ip: str) -> dict[str, Any]:
         "headerFrom": [],
         "dkimAuth": [],
         "spfAuth": [],
+        "dkimPass": 0,
+        "dkimFail": 0,
+        "spfPass": 0,
+        "spfFail": 0,
         "latestCount": 0,
         "latestEnd": 0,
     }
@@ -323,6 +343,14 @@ def parse_aggregate_xml(xml: bytes) -> dict[str, Any] | None:
         if aligned:
             src["aligned"] += count
             aligned_count += count
+        if dkim == "pass":
+            src["dkimPass"] += count
+        elif dkim == "fail":
+            src["dkimFail"] += count
+        if spf == "pass":
+            src["spfPass"] += count
+        elif spf == "fail":
+            src["spfFail"] += count
         if dkim == "fail" and spf == "fail":
             src["bothFail"] += count
         if dkim == "pass" and spf == "fail":
@@ -400,6 +428,15 @@ def _release_report_id(table: Any, org: str, report_id: str) -> None:
         table.delete_item(Key=_id_key(org, report_id))
     except Exception as exc:
         _log_event("warning", tag="board_dmarc_parse_failed", error=f"dedupe rollback: {exc}"[:200])
+
+
+def _delete_raw(key: str) -> None:
+    try:
+        import board_staff
+
+        board_staff._blob_delete(key)  # noqa: SLF001
+    except Exception as exc:
+        _log_event("warning", tag="board_dmarc_raw_store_failed", error=f"delete: {exc}"[:200])
 
 
 def _store_raw(org: str, report_id: str, xml: bytes) -> str:
@@ -481,6 +518,8 @@ def _store_report(table: Any, report: dict[str, Any], xml: bytes, *, thread_id: 
             }
         )
     except Exception:
+        if raw_key:
+            _delete_raw(raw_key)
         _release_report_id(table, org, report_id)
         raise
     _touch_thread(table, thread_id, org, report_id, int(report.get("recordCount") or 0))
@@ -490,10 +529,11 @@ def _store_report(table: Any, report: dict[str, Any], xml: bytes, *, thread_id: 
 
 
 def list_reports(table: Any) -> list[dict[str, Any]]:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=REPORT_LOOKBACK_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
     items = board_store._query_all(  # noqa: SLF001
         table,
-        KeyConditionExpression="pk = :pk AND begins_with(sk, :prefix)",
-        ExpressionAttributeValues={":pk": _reports_pk(), ":prefix": "REPORT#"},
+        KeyConditionExpression="pk = :pk AND sk >= :start",
+        ExpressionAttributeValues={":pk": _reports_pk(), ":start": f"REPORT#{cutoff}"},
     )
     now = int(time.time())
     out: list[dict[str, Any]] = []
@@ -672,6 +712,10 @@ def _merge_sources(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
             row["aligned"] += int(src.get("aligned") or 0)
             row["quarantine"] += int(src.get("quarantine") or 0)
             row["reject"] += int(src.get("reject") or 0)
+            row["dkimPass"] += int(src.get("dkimPass") or 0)
+            row["dkimFail"] += int(src.get("dkimFail") or 0)
+            row["spfPass"] += int(src.get("spfPass") or 0)
+            row["spfFail"] += int(src.get("spfFail") or 0)
             for key, value in (src.get("dispositions") or {}).items():
                 bucket = row["dispositions"]
                 bucket[str(key)] = int(bucket.get(str(key)) or 0) + int(value or 0)
@@ -687,6 +731,63 @@ def _merge_sources(reports: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for row in rows:
         published.append({k: v for k, v in row.items() if k != "latestEnd"})
     return published
+
+
+def _result_word(passed: int, failed: int) -> str:
+    if passed and failed:
+        return "mixed"
+    if passed:
+        return "pass"
+    if failed:
+        return "fail"
+    return "none"
+
+
+def _auth_rows(source: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for row in list(source.get("dkimAuth") or []) + list(source.get("spfAuth") or []):
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def _auth_match(source: dict[str, Any], known: set[str], result: str) -> str:
+    for row in _auth_rows(source):
+        if str(row.get("result") or "") != result:
+            continue
+        sender = _match_known(str(row.get("domain") or ""), known)
+        if sender:
+            return sender
+    return ""
+
+
+def _header_is_ours(source: dict[str, Any], known: set[str]) -> bool:
+    for header in source.get("headerFrom") or []:
+        if _match_known(str(header), known):
+            return True
+    return False
+
+
+def _own_sender(source: dict[str, Any], known: set[str]) -> str:
+    """A known domain identifies our mail only when it authenticated, or when it failed and the From domain is ours.
+
+    A failed SPF check for amazonses.com with someone else's header_from is a spoofed envelope, not a broken SES identity.
+    """
+    passed = _auth_match(source, known, "pass")
+    if passed:
+        return passed
+    failed = _auth_match(source, known, "fail")
+    if failed and _header_is_ours(source, known):
+        return failed
+    return ""
+
+
+def _failed_auth_domains(source: dict[str, Any]) -> list[str]:
+    found: list[str] = []
+    for row in _auth_rows(source):
+        if str(row.get("result") or "") == "fail":
+            _add_unique(found, str(row.get("domain") or ""))
+    return found
 
 
 def _auth_domains(source: dict[str, Any]) -> list[str]:
@@ -800,8 +901,8 @@ def _note_gaps(table: Any, findings: list[dict[str, Any]]) -> None:
                     "Check SES Easy DKIM, SPF and the published DMARC record."
                 ),
             )
-        elif kind == "unknown_source_failing":
-            for domain in evidence.get("authDomains") or []:
+        elif kind == "unknown_source_failing" and finding.get("severity") != "info":
+            for domain in evidence.get("failedAuthDomains") or []:
                 matched = _match_known(str(domain), set(CONSUMER_MAIL_DOMAINS))
                 if not matched:
                     continue
@@ -824,7 +925,11 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
     enabled = bool(cfg.get("enabled", True))
     known = known_sender_domains(settings)
     reports = list_reports(table)
-    day = [row for row in reports if (_parse_received(row) or moment) >= moment - timedelta(hours=24) and _parse_received(row)]
+    day = []
+    for row in reports:
+        received = _parse_received(row)
+        if received is not None and received >= moment - timedelta(hours=24):
+            day.append(row)
     week = [row for row in reports if _in_window(row, moment, 7)]
     month = [row for row in reports if _in_window(row, moment, 30)]
     sources = _merge_sources(week)
@@ -836,11 +941,7 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
     if enabled:
         for source in sources:
             domains = _auth_domains(source)
-            sender = ""
-            for domain in domains:
-                sender = _match_known(domain, known)
-                if sender:
-                    break
+            sender = _own_sender(source, known)
             both = int(source.get("bothFail") or 0)
             bad_disp = int(source.get("quarantine") or 0) + int(source.get("reject") or 0)
             ip = str(source.get("sourceIp") or "")
@@ -848,10 +949,11 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
                 "sourceIp": ip,
                 "count": int(source.get("count") or 0),
                 "latestCount": int(source.get("latestCount") or 0),
-                "dkim": "fail" if both else ("pass" if int(source.get("dkimPassSpfFail") or 0) or int(source.get("aligned") or 0) else "fail"),
-                "spf": "fail" if both or int(source.get("dkimPassSpfFail") or 0) else "pass",
+                "dkim": _result_word(int(source.get("dkimPass") or 0), int(source.get("dkimFail") or 0)),
+                "spf": _result_word(int(source.get("spfPass") or 0), int(source.get("spfFail") or 0)),
                 "disposition": _disposition_word(source),
                 "authDomains": domains,
+                "failedAuthDomains": _failed_auth_domains(source),
                 "headerFrom": list(source.get("headerFrom") or []),
             }
             if sender and (both or bad_disp):
@@ -890,7 +992,13 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
                 continue
             if not sender and (both or bad_disp):
                 latest = int(source.get("latestCount") or 0)
-                severity = "high" if latest >= spoof_at else "medium"
+                total = int(source.get("count") or 0)
+                if latest >= spoof_at:
+                    severity = "high"
+                elif total >= UNKNOWN_SOURCE_MIN_COUNT:
+                    severity = "medium"
+                else:
+                    severity = "info"
                 findings.append(
                     {
                         "id": "unknown_source_failing",
@@ -1005,8 +1113,6 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
         received = str(report.get("receivedAt") or "")
         if received > last_any:
             last_any = received
-    if not enabled:
-        pass
     day_stats = _stats(day)
     payload = {
         "generatedAt": moment.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1038,19 +1144,59 @@ def read_summary(table: Any) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+def summary_is_stale(payload: dict[str, Any], *, now: datetime | None = None) -> bool:
+    generated = _parse_generated(payload)
+    if generated is None:
+        return False
+    moment = now or datetime.now(timezone.utc)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment - generated > timedelta(seconds=SUMMARY_STALE_SECONDS)
+
+
+def _parse_generated(payload: dict[str, Any]) -> datetime | None:
+    raw = str(payload.get("generatedAt") or "")
+    if not raw:
+        return None
+    try:
+        parsed = board_hk.parse_iso(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _review_findings(payload: dict[str, Any]) -> list[dict[str, str]]:
+    slim: list[dict[str, str]] = []
+    for row in payload.get("findings") or []:
+        if not isinstance(row, dict) or len(slim) >= 8:
+            continue
+        slim.append(
+            {
+                "fingerprint": str(row.get("fingerprint") or ""),
+                "severity": str(row.get("severity") or ""),
+                "summary": str(row.get("summary") or ""),
+            }
+        )
+    return slim
+
+
 def summary_for_review(table: Any) -> dict[str, Any]:
+    """Line and findings only. Does not evaluate, so a review read cannot write gaps or seen domains."""
     payload = read_summary(table)
-    if payload:
-        return payload
-    return {
-        "line": "DMARC (reports received in the last 24 h): no summary yet.",
-        "findings": [],
-    }
+    if not payload:
+        return {"line": _NO_SUMMARY, "findings": []}
+    line = str(payload.get("line") or _NO_SUMMARY)
+    if summary_is_stale(payload):
+        when = _fmt_hkt(str(payload.get("generatedAt") or ""))
+        line = f"{line} Summary from {when} is older than the hourly refresh."
+    return {"line": line, "findings": _review_findings(payload)}
 
 
 def op_summary(ctx: Any, _args: dict[str, Any]) -> dict[str, Any]:
+    """Cache read. A miss does not evaluate: that path writes the summary, header-from state and config gaps."""
     cached = read_summary(ctx.table)
     if cached and cached.get("generatedAt"):
         return {**cached, "cached": True}
-    summary = evaluate(ctx.table, ctx.settings)
-    return {**summary, "cached": False}
+    return {"cached": False, "line": _NO_SUMMARY, "findings": []}

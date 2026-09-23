@@ -5,6 +5,7 @@ import {
   MEETING_MODE_LABELS,
   memberLabel,
   catalogDraft,
+  dmarcDraft,
   staffDraft,
   type BoardMeetingMode,
   type BoardMember,
@@ -45,6 +46,7 @@ export function BoardSettingsCard({
 }: BoardSettingsCardProps) {
   const { settings } = overview;
   const [draft, setDraft] = useState<BoardSettings>(settings);
+  const [senderDomains, setSenderDomains] = useState((settings.dmarc?.knownSenderDomains ?? []).join(", "));
 
   const isDirty = JSON.stringify(draft) !== JSON.stringify(settings);
 
@@ -377,6 +379,143 @@ export function BoardSettingsCard({
               }
             />
             <div className="form-text">One address. Sent from board@siutindei.com at 07:30 HKT when mail sending is on.</div>
+          </div>
+
+          <h3 className="h6 mt-4">DMARC</h3>
+          <div className="form-check form-switch">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              id="board-dmarc-enabled"
+              checked={draft.dmarc?.enabled !== false}
+              onChange={(ev) =>
+                setDraft((d) => ({
+                  ...d,
+                  dmarc: dmarcDraft(d, { enabled: ev.target.checked }),
+                }))
+              }
+            />
+            <label className="form-check-label" htmlFor="board-dmarc-enabled">
+              Record DMARC findings
+            </label>
+          </div>
+          <div className="form-text">Parsing of aggregate mail stays on. This switch only stops findings and tasks.</div>
+          <div className="mt-2">
+            <label className="form-label small" htmlFor="board-dmarc-senders">Known sender domains</label>
+            <input
+              id="board-dmarc-senders"
+              className="form-control form-control-sm"
+              value={senderDomains}
+              placeholder="google.com, icloud.com"
+              onChange={(ev) => {
+                const raw = ev.target.value;
+                setSenderDomains(raw);
+                const knownSenderDomains = raw
+                  .split(",")
+                  .map((part) => part.trim().toLowerCase())
+                  .filter((part) => part.length > 0 && !part.includes(" ") && !part.includes("@"));
+                setDraft((d) => ({ ...d, dmarc: dmarcDraft(d, { knownSenderDomains }) }));
+              }}
+            />
+            <div className="form-text">
+              amazonses.com, the mail domain and the outreach domain are always included. Add google.com or icloud.com
+              when a config gap says mail from Gmail or iCloud failed DMARC.
+            </div>
+          </div>
+          <div className="row g-2 mt-1">
+            <div className="col-6">
+              <label className="form-label small" htmlFor="board-dmarc-spoof">Spoof alert count</label>
+              <input
+                id="board-dmarc-spoof"
+                type="number"
+                min={1}
+                max={100000}
+                className="form-control form-control-sm"
+                value={draft.dmarc?.spoofAlertCount ?? 20}
+                onChange={(ev) =>
+                  setDraft((d) => ({
+                    ...d,
+                    dmarc: dmarcDraft(d, { spoofAlertCount: Number(ev.target.value) }),
+                  }))
+                }
+              />
+            </div>
+            <div className="col-6">
+              <label className="form-label small" htmlFor="board-dmarc-silence">Silence days</label>
+              <input
+                id="board-dmarc-silence"
+                type="number"
+                min={1}
+                max={30}
+                className="form-control form-control-sm"
+                value={draft.dmarc?.silenceDays ?? 3}
+                onChange={(ev) =>
+                  setDraft((d) => ({
+                    ...d,
+                    dmarc: dmarcDraft(d, { silenceDays: Number(ev.target.value) }),
+                  }))
+                }
+              />
+            </div>
+          </div>
+          <div className="form-text">
+            An unknown source under 5 messages in 7 days stays informational. At this count on the newest report it is high.
+          </div>
+          <div className="row g-2 mt-1">
+            <div className="col-4">
+              <label className="form-label small" htmlFor="board-dmarc-policy-p">Expected policy</label>
+              <select
+                id="board-dmarc-policy-p"
+                className="form-select form-select-sm"
+                value={draft.dmarc?.expectedPolicy?.p || "quarantine"}
+                onChange={(ev) =>
+                  setDraft((d) => ({
+                    ...d,
+                    dmarc: dmarcDraft(d, { expectedPolicy: { p: ev.target.value } }),
+                  }))
+                }
+              >
+                <option value="none">none</option>
+                <option value="quarantine">quarantine</option>
+                <option value="reject">reject</option>
+              </select>
+            </div>
+            <div className="col-4">
+              <label className="form-label small" htmlFor="board-dmarc-policy-pct">Percent</label>
+              <input
+                id="board-dmarc-policy-pct"
+                type="number"
+                min={0}
+                max={100}
+                className="form-control form-control-sm"
+                value={draft.dmarc?.expectedPolicy?.pct ?? 100}
+                onChange={(ev) =>
+                  setDraft((d) => ({
+                    ...d,
+                    dmarc: dmarcDraft(d, { expectedPolicy: { pct: Number(ev.target.value) } }),
+                  }))
+                }
+              />
+            </div>
+            <div className="col-4">
+              <label className="form-label small" htmlFor="board-dmarc-policy-sp">Subdomain</label>
+              <select
+                id="board-dmarc-policy-sp"
+                className="form-select form-select-sm"
+                value={draft.dmarc?.expectedPolicy?.sp ?? ""}
+                onChange={(ev) =>
+                  setDraft((d) => ({
+                    ...d,
+                    dmarc: dmarcDraft(d, { expectedPolicy: { sp: ev.target.value } }),
+                  }))
+                }
+              >
+                <option value="">same as policy</option>
+                <option value="none">none</option>
+                <option value="quarantine">quarantine</option>
+                <option value="reject">reject</option>
+              </select>
+            </div>
           </div>
 
           <h3 className="h6 mt-4">Daily budget</h3>
