@@ -7,6 +7,7 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
+import board_async
 import board_content
 import board_hk
 import board_holds
@@ -239,6 +240,60 @@ class ContentTests(BoardTestCase):
         self.assertEqual(latest["status"], "vetoed")
         lessons = board_store.list_lessons(self.table)
         self.assertTrue(lessons)
+
+    def test_stage_items_are_merged_into_task_finish(self) -> None:
+        task = board_staff.create_task(
+            self.table,
+            self.settings,
+            assignee="content-marketer",
+            origin="duty",
+            brief="Plan the week in batches.",
+            deliverable_type="json",
+            event_ref={"kind": "duty", "id": "content-plan:2026-09-23"},
+            created_by="test",
+        )
+        task["status"] = "running"
+        board_store.put_task(self.table, task)
+        board_store.claim_task_step(self.table, task["taskId"], 0)
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=self.settings,
+            persona_id="cmo",
+            kind="task",
+            task_id=task["taskId"],
+            seat_id="content-marketer",
+            actor="persona",
+        )
+        outcome = board_tools.execute_call(
+            ctx,
+            board_tools.REGISTRY["content_stage_items"],
+            {
+                "items": [
+                    {
+                        "slotAt": "2026-09-24T02:00:00Z",
+                        "channel": "facebook",
+                        "copyEn": "Play at the park",
+                        "copyZh": "公園玩耍",
+                    }
+                ]
+            },
+        )
+        self.assertEqual(outcome.status, "ok", outcome.result)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            finished = board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "Week staged",
+                    "deliverableType": "json",
+                    "deliverable": "{\"items\":[]}",
+                    "evidence": [],
+                    "confidence": "medium",
+                },
+            )
+        self.assertEqual(finished["status"], "review")
+        raw = board_staff.read_deliverable(board_store.get_task(self.table, task["taskId"]))
+        self.assertIn("Play at the park", raw)
+        self.assertIn("facebook", raw)
 
 
 if __name__ == "__main__":

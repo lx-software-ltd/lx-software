@@ -240,6 +240,109 @@ def _plan_context(table: Any, settings: dict[str, Any]) -> str:
     return "\n\n".join(chunks)
 
 
+_STAGE_MAX_ITEMS = 40
+
+
+def staged_items_key(task_id: str) -> str:
+    return f"board/{BOARD_KEY}/staff/{task_id}/staged-items.json"
+
+
+def load_staged_items(task_id: str) -> list[dict[str, Any]]:
+    raw = board_staff._blob_get(staged_items_key(task_id))  # noqa: SLF001
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError, AttributeError):
+        return []
+    items = parsed.get("items") if isinstance(parsed, dict) else None
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def stage_items(task_id: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+    """Append or replace calendar items for a content-plan task. Keyed by slot+channel."""
+    existing = load_staged_items(task_id)
+    added = 0
+    for item in items:
+        slot = str(item.get("slotAt") or "").strip()
+        channel = str(item.get("channel") or "").strip()
+        if not slot or not channel:
+            continue
+        key = (slot, channel)
+        replaced = False
+        for index, prev in enumerate(existing):
+            if (str(prev.get("slotAt") or "").strip(), str(prev.get("channel") or "").strip()) == key:
+                existing[index] = item
+                replaced = True
+                break
+        if replaced:
+            added += 1
+            continue
+        if len(existing) >= _STAGE_MAX_ITEMS:
+            break
+        existing.append(item)
+        added += 1
+    board_staff._blob_put(  # noqa: SLF001
+        staged_items_key(task_id),
+        json.dumps({"items": existing}, ensure_ascii=False).encode("utf-8"),
+    )
+    return {"ok": True, "staged": len(existing), "added": added}
+
+
+def op_stage_items(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
+    task_id = str(getattr(ctx, "task_id", "") or "")
+    if not task_id:
+        return {"error": "content_stage_items is only available on a task"}
+    items = args.get("items")
+    if not isinstance(items, list) or not items:
+        return {"error": "items must be a non-empty list"}
+    cleaned: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        if not str(item.get("slotAt") or "").strip() or not str(item.get("channel") or "").strip():
+            continue
+        cleaned.append({key: value for key, value in item.items() if value not in (None, "")})
+    if not cleaned:
+        return {"error": "each item needs slotAt and channel"}
+    return stage_items(task_id, cleaned)
+
+
+def merge_plan_deliverable(task_id: str, deliverable: str) -> str:
+    """Use staged items as the calendar, then any items the finish call still carried."""
+    staged = load_staged_items(task_id)
+    if not staged:
+        return deliverable
+    inline: list[dict[str, Any]] = []
+    text = deliverable or ""
+    try:
+        parsed = json.loads(text) if text.strip() else {}
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        parsed = {}
+        if start >= 0 and end > start:
+            try:
+                parsed = json.loads(text[start : end + 1])
+            except json.JSONDecodeError:
+                parsed = {}
+    raw_items = parsed.get("items") if isinstance(parsed, dict) else None
+    if isinstance(raw_items, list):
+        inline = [item for item in raw_items if isinstance(item, dict)]
+    merged: list[dict[str, Any]] = []
+    index_by_key: dict[tuple[str, str], int] = {}
+    for item in [*staged, *inline]:
+        key = (str(item.get("slotAt") or "").strip(), str(item.get("channel") or "").strip())
+        if key in index_by_key:
+            merged[index_by_key[key]] = item
+            continue
+        index_by_key[key] = len(merged)
+        merged.append(item)
+    return json.dumps({"items": merged}, ensure_ascii=False)
+
+
 def plan_week(table: Any, settings: dict[str, Any]) -> dict[str, Any] | None:
     if not board_staff.enabled(settings):
         return None
@@ -255,7 +358,9 @@ def plan_week(table: Any, settings: dict[str, Any]) -> dict[str, Any] | None:
         f"pillar, copyEn, copyZh, hashtags, template, fields, linkPath. Pillars: {cfg.get('pillars')}. "
         f"Per week: {cfg.get('perWeek')}. Windows HKT: {cfg.get('windowsHkt')}. "
         "Social week is 21 items (7 facebook, 7 instagram, 7 instagram_story); seo items are extra. "
-        "Do not invent photos of children.\n\n"
+        "Stage it with content_stage_items in batches of at most 6 items, then task_finish "
+        "with {\"items\":[]}. Staged items are merged into the deliverable. Do not put the "
+        "full week in one task_finish. Do not invent photos of children.\n\n"
         + context
     )
     try:

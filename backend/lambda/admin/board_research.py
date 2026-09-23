@@ -463,8 +463,9 @@ def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
             return {"error": f"per-task fetch cap ({cap}) reached"}
     try:
         result = board_crawl.fetch(url, max_bytes=RESEARCH_FETCH_MAX_BYTES, timeout=RESEARCH_FETCH_TIMEOUT)
-    except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
         return {"error": str(exc)[:200]}
+    board_crawl._remember_fetch_status(getattr(ctx, "table", None), url, int(result.status or 0))  # noqa: SLF001
     if int(result.status or 0) >= 400:
         return {"error": f"HTTP {result.status}"}
     ctype = str(result.content_type or "").split(";", 1)[0].strip().lower()

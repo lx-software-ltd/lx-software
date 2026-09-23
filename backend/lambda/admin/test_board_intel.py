@@ -31,6 +31,42 @@ def _enable_staff(table: Any, **staff: Any) -> dict[str, Any]:
 
 
 class SsrfTests(BoardTestCase):
+    def test_fetch_retries_oserror_once(self) -> None:
+        calls = {"n": 0}
+
+        class _Ok:
+            status = 200
+            url = "https://example.com/page"
+            headers = {"Content-Type": "text/plain"}
+
+            def read(self, _n: int = -1) -> bytes:
+                return b"hello"
+
+            def __enter__(self) -> "_Ok":
+                return self
+
+            def __exit__(self, *_a: object) -> bool:
+                return False
+
+        def _open(req, timeout=None):  # noqa: ARG001
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise urllib.error.URLError(OSError(16, "Device or resource busy"))
+            return _Ok()
+
+        import urllib.error
+
+        with (
+            patch.object(board_crawl, "host_is_blocked", return_value=False),
+            patch.object(board_crawl.time, "sleep"),
+            patch.object(board_crawl, "_opener") as opener,
+        ):
+            opener.return_value.open = _open
+            result = board_crawl.fetch("https://example.com/page")
+        self.assertEqual(calls["n"], 2)
+        self.assertEqual(result.status, 200)
+        self.assertIn("hello", result.text)
+
     def test_link_local_and_redirect_refused(self) -> None:
         with self.assertRaises(Exception):
             board_crawl.fetch("http://169.254.169.254/")

@@ -170,7 +170,7 @@ class StaffEngineTests(BoardTestCase):
         plan = {"eventRef": {"id": "content-plan:2026-09-22"}, "deliverableType": "json", "idleSteps": 0, "step": 0}
         sheet = {"eventRef": {"id": "catalog-enrich:islands"}, "deliverableType": "json", "idleSteps": 0, "step": 0}
         note = {"eventRef": {"id": "groom:1"}, "deliverableType": "markdown", "idleSteps": 0, "step": 0}
-        self.assertEqual(board_staff._step_max_tokens(plan), 12000)  # noqa: SLF001
+        self.assertEqual(board_staff._step_max_tokens(plan), 6000)  # noqa: SLF001
         self.assertEqual(board_staff._step_max_tokens(sheet), 6000)  # noqa: SLF001
         self.assertEqual(board_staff._step_max_tokens(note), 2500)  # noqa: SLF001
 
@@ -1210,6 +1210,93 @@ class StaffStepTests(ToolsTestCase):
             )
         self.assertIn("finance_cash_snapshot", str(raised.exception))
         self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "running")
+
+    def test_task_finish_autocites_a_same_attempt_read(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "data-analyst", {"isActive": True})
+        settings = board_store.load_settings(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="data-analyst",
+                origin="duty",
+                brief="Report web_sessions for the last 7 days.",
+                deliverable_type="markdown",
+                created_by="board_duties",
+            )
+        task["status"] = "running"
+        board_store.put_task(self.table, task)
+        recorded = board_store.add_tool_call(
+            self.table,
+            {
+                "op": "web_sessions",
+                "status": "ok",
+                "taskId": task["taskId"],
+                "summary": "Read GA4 sessions",
+                "createdAt": board_store.now_iso(),
+            },
+        )
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="cmo",
+            kind="task",
+            task_id=task["taskId"],
+            seat_id="data-analyst",
+            actor="persona",
+        )
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            out = board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "Sessions are connected.",
+                    "deliverableType": "markdown",
+                    "deliverable": "GA4 sessions: 1. Top page /en/.",
+                    "evidence": [],
+                    "confidence": "medium",
+                },
+            )
+        self.assertEqual(out["status"], "review")
+        self.assertEqual(board_store.get_task(self.table, task["taskId"])["evidence"], [recorded["callId"]])
+
+    def test_web_help_is_refused_when_the_seat_already_has_research(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "prospector", {"isActive": True})
+        settings = board_store.load_settings(self.table)
+        task = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="prospector",
+            origin="owner",
+            brief="Find providers.",
+            deliverable_type="markdown",
+            created_by="owner",
+        )
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="coo",
+            kind="task",
+            task_id=task["taskId"],
+            seat_id="prospector",
+            actor="persona",
+        )
+        reason = board_staff.validate_task_request_help(
+            ctx,
+            {"need": "Look up the provider site", "toolIds": ["web"], "reason": "Need a page"},
+        )
+        self.assertIn("research_fetch_page", reason or "")
+
+    def test_review_prompt_states_the_kept_org_count(self) -> None:
+        prompt = board_staff._review_user_prompt(  # noqa: SLF001
+            {"assignee": "content-marketer", "brief": "Exactly 3 organisations.", "deliverableType": "json", "confidence": "medium"},
+            "{\"organisations\":[]}",
+            [],
+            catalog_note="Quality filter kept 2 organisation(s). Dropped as thin: Thin Org.",
+        )
+        self.assertIn("kept 2 organisation", prompt)
+        self.assertIn("exactly N", prompt)
 
     def test_accountant_can_read_cash_and_meta(self) -> None:
         settings = _enable_staff(self.table)

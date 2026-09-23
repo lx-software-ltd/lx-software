@@ -254,6 +254,39 @@ class CandidateQueueTests(BoardTestCase):
         self.assertGreater(n1, 0)
         self.assertEqual(n2, 0)
 
+    def test_places_address_overrides_query_district_and_one_pass_fixes_old_rows(self) -> None:
+        doc = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {
+                "source": "places",
+                "placeId": "ChIJnorthpoint",
+                "nameEn": "North Point Studio",
+                "district": "North",
+                "addressEn": "12 North Point Road",
+            },
+        )
+        self.assertEqual(doc["district"], "Eastern")
+        now = board_store.now_iso()
+        board_store.put_candidate(
+            self.table,
+            {
+                "candidateId": "old-north",
+                "source": "places",
+                "nameEn": "Jeong Ballet",
+                "district": "North",
+                "addressEn": "Shop 1, North Point",
+                "status": "imported",
+                "updatedAt": now,
+                "createdAt": now,
+            },
+        )
+        first = board_catalog_candidates.maybe_redistrict_mismatched(self.table)
+        self.assertFalse(first.get("skipped"))
+        self.assertGreaterEqual(first["updated"], 1)
+        self.assertEqual(board_store.get_candidate(self.table, "old-north")["district"], "Eastern")
+        again = board_catalog_candidates.maybe_redistrict_mismatched(self.table)
+        self.assertTrue(again.get("skipped"))
+
 
 class BulkTransformTests(BoardTestCase):
     def test_candidate_to_org_always_has_activity(self) -> None:
@@ -1760,6 +1793,82 @@ class AutonomyCatalogTests(BoardTestCase):
         self.assertEqual(out.get("queued"), ["edb"])
         self.assertEqual(out.get("limit"), 5)
         invoke.assert_called_once()
+
+    def test_import_of_nothing_stamps_an_error(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+        board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "edb", "sourceId": "e1", "nameEn": "A School", "district": "Eastern"},
+        )
+
+        def _empty(*_a, **kwargs):
+            results = kwargs.get("results")
+            if results is None and len(_a) > 7:
+                results = _a[7]
+            results.append({"ok": False})
+
+        with (
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=[]),
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "_id_token", return_value="tok"),
+            patch.object(board_catalog_bulk, "_import_group", side_effect=_empty),
+        ):
+            out = board_catalog_bulk.import_source(self.table, "edb")
+        self.assertFalse(out["ok"])
+        self.assertEqual(out["imported"], 0)
+        self.assertEqual(out["error"], "imported 0 with no batch error")
+
+    def test_pause_lasts_until_the_github_issue_closes(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+        board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "a", "nameEn": "Park A", "district": "Eastern"},
+        )
+        board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "lcsd", "sourceId": "b", "nameEn": "Park B", "district": "Eastern"},
+        )
+
+        def always_500(payload, token, *, timeout=None):
+            raise board_catalog_import.CatalogImportError(
+                "siutindei admin POST https://siu.example/v1/admin/imports failed: 500 down"
+            )
+
+        def dry_ok(payload, token):
+            return {"ok": True, "summary": {"failed": 0}, "results": []}
+
+        with (
+            patch.object(board_catalog_bulk, "BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT", 2),
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=[]),
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "_id_token", return_value="tok"),
+            patch.object(board_catalog_import, "_run_remote_import", side_effect=always_500),
+            patch.object(board_catalog_import, "_remote_dry_run", side_effect=dry_ok),
+            patch("board_github.validate_create_issue", return_value=None),
+        ):
+            board_catalog_bulk.import_source(self.table, "lcsd")
+            board_catalog_bulk.import_source(self.table, "lcsd")
+        self.assertTrue(board_catalog_bulk.source_is_paused(self.table, "lcsd"))
+        pending = [
+            row
+            for row in board_store.list_approvals(self.table)
+            if row.get("op") == "github_create_issue"
+        ]
+        self.assertEqual(len(pending), 1)
+        decided = {**pending[0], "status": "executed", "result": {"number": 541, "ok": True}}
+        board_store.put_approval(self.table, decided)
+        with patch("board_github.issue_state", return_value="open"):
+            self.assertTrue(board_catalog_bulk.source_is_paused(self.table, "lcsd"))
+        # Issue state is cached for an hour; a later close is visible once that entry expires.
+        self.table.delete_item(Key=board_store.cache_key("catalog:importer-issue:541"))
+        with patch("board_github.issue_state", return_value="closed"):
+            self.assertFalse(board_catalog_bulk.source_is_paused(self.table, "lcsd"))
 
 
 class CatalogImportActivityTests(unittest.TestCase):

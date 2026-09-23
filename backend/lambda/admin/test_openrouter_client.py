@@ -199,6 +199,34 @@ class TestOpenRouterAttribution(unittest.TestCase):
         self.assertEqual(product.title, "Siu Tin Dei")
         self.assertEqual(product.referer, "https://siutindei.com")
 
+    def test_post_json_aborts_on_wall_clock_when_the_socket_stays_busy(self) -> None:
+        class _Slow:
+            def __init__(self) -> None:
+                self.closed = False
+
+            def read(self) -> bytes:
+                while not self.closed:
+                    openrouter_client.time.sleep(0.05)
+                return b""
+
+            def close(self) -> None:
+                self.closed = True
+
+        def fake_urlopen(req, timeout=None):  # noqa: ARG001
+            return _Slow()
+
+        started = openrouter_client._clock()
+        with patch("openrouter_client.urlrequest.urlopen", fake_urlopen):
+            with self.assertRaises(openrouter_client.OpenRouterError) as ctx:
+                openrouter_client.post_json(
+                    url="https://openrouter.ai/api/v1/chat/completions",
+                    api_key="sk-test",
+                    payload={"model": "m"},
+                    timeout=1,
+                )
+        self.assertIn("wall-clock", str(ctx.exception))
+        self.assertLess(openrouter_client._clock() - started, 4)
+
     def test_post_json_success_does_not_read_monotonic(self) -> None:
         """Tool-loop tests patch time.monotonic as a fake clock; do not steal ticks."""
 

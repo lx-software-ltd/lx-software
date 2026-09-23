@@ -2084,6 +2084,12 @@ def handle_tick(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
     """Backfill, re-validate pending / parked sheets, and schedule auto-import holds."""
     import board_store
 
+    try:
+        import board_catalog_candidates
+
+        board_catalog_candidates.maybe_redistrict_mismatched(table)
+    except Exception as exc:
+        _log_event("warning", tag="board_catalog_redistrict_failed", error=str(exc)[:200])
     now = board_store.now_iso()
     backfilled = 0
     for task in _catalog_tasks(table, "delivered"):

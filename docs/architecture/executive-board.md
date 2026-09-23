@@ -458,7 +458,17 @@ retries. When a one-row remote dry-run or another source's import in the
 last 24 h shows the server is up, half fingerprints are persisted, a
 GitHub issue is proposed with the `requestId`, and the source is paused
 (no 2 h re-hold and no `handle_job` re-enqueue of the same rows) until
-that Approval is decided. Auto bulk-import passes `limit` =
+that GitHub issue is closed. A rejected Approval clears the pause. An
+executed Approval stays paused while the issue is open; a failed GitHub
+state lookup stays paused. A bulk import that imports nothing records
+`error` on the result (the first batch error, or `imported 0 with no
+batch error`). Places and competitor candidates take their district from
+the address when `district_from_address` disagrees with the query
+district; one staff-tick pass (`catalog:redistrict:address-v1`) moves
+rows imported earlier. Enrich sheets skip a candidate whose address
+resolves to another district, and drop an official URL whose cached
+fetch status is HTTP ≥ 400. `board_crawl.fetch` retries once on
+`OSError` (including errno 16 wrapped in `URLError`). Auto bulk-import passes `limit` =
 `launchListingTarget` − venue-linked providers. The count is
 `v_catalog_provider_counts.providers_with_venue` (one organisation, and
 only when it has a location in a named district). Until that view is
@@ -616,7 +626,14 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
   either continues (`task_note`) or finishes (`task_finish`). Limits:
   `maxStepsPerTask` 18, `maxIdleStepsPerTask` 3 note-only steps,
   `staffStepMaxSeconds` 150, step completion tokens 2500 (6000 for JSON
-  deliverables and the last/idle step; 12000 for `content-plan` duties),
+  deliverables, content-plan steps, and the last/idle step). Content-plan
+  weeks are staged with `content_stage_items` (at most 6 items a call) and
+  merged on `task_finish`. OpenRouter reads abort on that step's wall-clock
+  budget, not only on socket inactivity, and each tool round is written to
+  the scratchpad before the next model call. A content-plan brief that names
+  `web_sessions` / `web_conversions` / `web_gtm_status` has those reads run
+  before the model starts, and `task_finish` cites the latest same-attempt
+  ok call when the model omits it.
   `task_finish` argument cap 40k characters (other ops 8k),
   per-task budget, staff daily budget
   (`settings.staff.dailyBudgetUsd`, default 20). Daily-budget exhaustion
@@ -871,7 +888,9 @@ sequences editor, stats).
 
 Sunday 18:00 HKT (`…-board-content-plan`) a `senior` `content-marketer`
 task plans the week from `boundaries.content` (pillars, voice, per-week
-counts, windows 10:00 / 20:00 HKT, assisted channels) and writes
+counts, windows 10:00 / 20:00 HKT, assisted channels). It stages items
+with `content_stage_items` and `task_finish` merges them into the JSON
+deliverable, which writes
 `content#` rows; each item gets a Pillow-rendered card (1080×1080 feed,
 1080×1920 story; templates `spotlight`, `guide`, `seasonal`, `quote`,
 `news`; Noto Sans + Noto Sans TC from `backend/lambda/admin/fonts/`,

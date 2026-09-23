@@ -678,6 +678,53 @@ class CatalogDutyTests(BoardTestCase):
         self.assertIn("Catalog (already built", pack["text"])
         self.assertIn("research_fetch_page", pack["text"])
 
+    def test_enrich_index_skips_wrong_district_and_dead_urls(self) -> None:
+        import board_crawl
+
+        now = board_store.now_iso()
+        dead = "https://www.lcsd.gov.hk/en/leisure/park_details.html?park_id=100"
+        board_store.put_candidate(
+            self.table,
+            {
+                "candidateId": "c-north",
+                "source": "places",
+                "nameEn": "Jeong Ballet",
+                "district": "Islands",
+                "addressEn": "Shop 1, North Point",
+                "officialUrl": "https://example.com/jeong",
+                "status": "imported",
+                "descriptionSource": "template",
+                "updatedAt": now,
+                "createdAt": now,
+            },
+        )
+        board_store.put_candidate(
+            self.table,
+            {
+                "candidateId": "c-park",
+                "source": "places",
+                "nameEn": "Mui Wo Playground",
+                "district": "Islands",
+                "addressEn": "Mui Wo, Islands",
+                "officialUrl": dead,
+                "status": "imported",
+                "descriptionSource": "template",
+                "updatedAt": now,
+                "createdAt": now,
+            },
+        )
+        board_store.put_cache(
+            self.table,
+            f"crawl:http:{board_crawl.url_digest(dead)}",
+            {"status": 404, "url": dead},
+            ttl_seconds=3600,
+        )
+        islands = board_catalog._index_imported_candidates(self.table).get("Islands") or []  # noqa: SLF001
+        names = [row["name"] for row in islands]
+        self.assertNotIn("Jeong Ballet", names)
+        park = next(row for row in islands if row["name"] == "Mui Wo Playground")
+        self.assertEqual(park["url"], "")
+
 
 if __name__ == "__main__":
     unittest.main()

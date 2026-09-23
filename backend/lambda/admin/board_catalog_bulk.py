@@ -432,7 +432,7 @@ def _importer_server_up(
 
 
 def _pause_source_until_issue(table: Any, source: str) -> None:
-    """Block auto re-holds for this source until the GitHub issue Approval is decided."""
+    """Block auto re-holds until the importer GitHub issue is closed (or the Approval is rejected)."""
     board_store.put_cache(
         table,
         _source_pause_key(source),
@@ -441,13 +441,37 @@ def _pause_source_until_issue(table: Any, source: str) -> None:
     )
 
 
+def _clear_source_pause(table: Any, source: str) -> None:
+    board_store.put_cache(table, _source_pause_key(source), {}, ttl_seconds=1)
+
+
 def source_is_paused(table: Any, source: str) -> bool:
-    """True while a systematic-500 pause is active and its Approval is still open."""
+    """True while a systematic-500 pause is waiting on the importer issue.
+
+    Pending Approval: stay paused. Rejected Approval: clear the pause.
+    Executed Approval: stay paused until that GitHub issue is closed.
+    A GitHub lookup failure stays paused so the 2 h re-hold does not resume
+    while the issue is still open.
+    """
     hit = board_store.get_cache(table, _source_pause_key(source))
-    if not hit:
+    payload = (hit or {}).get("payload") if isinstance(hit, dict) else None
+    if not isinstance(payload, dict) or not payload.get("pausedAt"):
         return False
-    if _importer_issue_already_decided(table):
-        board_store.put_cache(table, _source_pause_key(source), {}, ttl_seconds=1)
+    rows = _importer_issue_approvals(table)
+    if any(str(row.get("status") or "") == "pending" for row in rows):
+        return True
+    executed = [row for row in rows if str(row.get("status") or "") == "executed"]
+    if executed:
+        number = _issue_number_from_approval(executed[-1])
+        if not number:
+            return True
+        state = _cached_issue_state(table, number)
+        if state == "closed":
+            _clear_source_pause(table, source)
+            return False
+        return True
+    if any(str(row.get("status") or "") == "rejected" for row in rows):
+        _clear_source_pause(table, source)
         return False
     return True
 
@@ -506,8 +530,9 @@ def _propose_systematic_500_issue(
         "showed the importer is reachable. That points at a systematic bug rather "
         "than a total outage.\n\n"
         "Bisect continues across later imports via persisted sub-batch "
-        f"fingerprints; auto re-holds for `{source}` are paused until this "
-        "Approval is decided. This job does not re-enqueue the same rows.\n\n"
+        f"fingerprints; auto re-holds for `{source}` stay paused until the "
+        "GitHub issue this Approval opens is closed (a rejected Approval "
+        "clears the pause). This job does not re-enqueue the same rows.\n\n"
         f"requestId: {request_id or 'unknown'}\n"
         f"Latest client error: {error or 'unknown'}"
     )[:4000]
@@ -908,6 +933,7 @@ def import_source(
             "schedulesDropped": [],
             "bisectRemaining": [],
             "paused": True,
+            "error": "source paused until the importer GitHub issue is closed",
             "preview": {k: preview.get(k) for k in ("approved", "wouldSend", "ingest")},
         }
     approved = _approved_for_source(table, source)
@@ -971,8 +997,17 @@ def import_source(
             )
         except Exception as exc:
             _log_event("info", tag="board_catalog_importer_issue_skipped", source=source, error=str(exc)[:200])
-    return {
-        "ok": all(r.get("ok") for r in results) if results else True,
+    ok = all(r.get("ok") for r in results) if results else True
+    error = ""
+    if not ok and not imported_ids:
+        messages = [
+            str(row.get("error") or "").strip()
+            for row in results
+            if not row.get("ok") and str(row.get("error") or "").strip()
+        ]
+        error = messages[0][:300] if messages else "imported 0 with no batch error"
+    out = {
+        "ok": ok,
         "source": source,
         "imported": len(imported_ids),
         "batches": results,
@@ -981,6 +1016,9 @@ def import_source(
         "bisectRemaining": remaining,
         "preview": {k: preview.get(k) for k in ("approved", "wouldSend", "ingest")},
     }
+    if error:
+        out["error"] = error
+    return out
 
 
 def sources_status(table: Any) -> dict[str, Any]:
@@ -1218,18 +1256,59 @@ def _create_bulk_500_task(
         _log_event("info", tag="board_catalog_bulk_500_task_skipped", source=source, error=str(exc)[:200])
 
 
+def _importer_issue_title_matches(row: dict[str, Any]) -> bool:
+    wanted = " ".join(IMPORTER_ISSUE_TITLE.lower().split())
+    title = " ".join(str((row.get("arguments") or {}).get("title") or "").lower().split())
+    return title == wanted
+
+
+def _importer_issue_approvals(table: Any) -> list[dict[str, Any]]:
+    rows = [
+        row
+        for row in board_store.list_approvals(table)
+        if str(row.get("op") or "") == "github_create_issue" and _importer_issue_title_matches(row)
+    ]
+    rows.sort(key=lambda row: str(row.get("createdAt") or ""))
+    return rows
+
+
+def _issue_number_from_approval(row: dict[str, Any]) -> int | None:
+    result = row.get("result") if isinstance(row.get("result"), dict) else {}
+    try:
+        number = int(result.get("number") or 0)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _cached_issue_state(table: Any, number: int) -> str | None:
+    """``open`` / ``closed``, cached for an hour. None when GitHub cannot be read."""
+    key = f"catalog:importer-issue:{number}"
+    hit = board_store.get_cache(table, key)
+    payload = (hit or {}).get("payload") if isinstance(hit, dict) else None
+    if isinstance(payload, dict) and str(payload.get("state") or ""):
+        return str(payload["state"]).lower()
+    try:
+        import board_github
+
+        state = str(board_github.issue_state(number) or "").lower()
+    except Exception as exc:
+        _log_event(
+            "warning",
+            tag="board_catalog_issue_state_failed",
+            number=number,
+            error=str(exc)[:200],
+        )
+        return None
+    if not state:
+        return None
+    board_store.put_cache(table, key, {"state": state}, ttl_seconds=3600)
+    return state
+
+
 def _importer_issue_already_decided(table: Any) -> bool:
     """True once a founder has approved or rejected this importer issue."""
-    wanted = " ".join(IMPORTER_ISSUE_TITLE.lower().split())
-    for row in board_store.list_approvals(table):
-        if str(row.get("op") or "") != "github_create_issue":
-            continue
-        if str(row.get("status") or "") == "pending":
-            continue
-        title = " ".join(str((row.get("arguments") or {}).get("title") or "").lower().split())
-        if title == wanted:
-            return True
-    return False
+    return any(str(row.get("status") or "") != "pending" for row in _importer_issue_approvals(table))
 
 
 def _propose_importer_issue(

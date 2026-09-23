@@ -678,6 +678,9 @@ def run_step(payload: dict[str, Any]) -> None:
         task_attempt=_task_attempt(task),
         task_retried_at=str(task.get("retriedAt") or ""),
     )
+    seeded = _seed_content_plan_evidence(table, task, ctx)
+    if seeded:
+        user += "\n" + seeded
     require_finish = _should_require_finish(task)
     try:
         result = board_tools.run_tool_loop(
@@ -690,6 +693,7 @@ def run_step(payload: dict[str, Any]) -> None:
             json_mode=False,
             tag="board_staff_step",
             max_seconds=BOARD_STAFF_STEP_MAX_SECONDS,
+            on_progress=lambda calls: _persist_step_progress(table, task_id, calls),
             require_op="task_finish" if require_finish else None,
         )
     except Exception as exc:
@@ -995,7 +999,10 @@ def _should_require_finish(task: dict[str, Any]) -> bool:
 
 _STEP_TOKENS_DEFAULT = 2500
 _STEP_TOKENS_LARGE = 6000
-_STEP_TOKENS_CONTENT_PLAN = 12000
+# Content-plan weeks are staged in batches (content_stage_items). A 12000-token
+# completion does not fit in staffStepMaxSeconds once the model also has to
+# call evidence tools.
+_STEP_TOKENS_CONTENT_PLAN = 6000
 
 
 def _is_content_plan(task: dict[str, Any]) -> bool:
@@ -1006,9 +1013,9 @@ def _is_content_plan(task: dict[str, Any]) -> bool:
 def _step_max_tokens(task: dict[str, Any]) -> int:
     """Completion budget for one staff step.
 
-    Content-plan JSON is ~23 EN+ZH items and needs the large budget up front
-    (a 2500→6000 retry would double-spend and still truncate). Other JSON
-    deliverables and the last/idle step use 6000; everything else stays 2500.
+    Content-plan steps stage at most six items, so they use the same 6000
+    budget as other JSON deliverables. A 2500 cap still truncates a batch.
+    The last/idle step uses 6000; everything else stays 2500.
     """
     if _is_content_plan(task):
         return _STEP_TOKENS_CONTENT_PLAN
@@ -1397,6 +1404,89 @@ def _evidence_catalog(
     return known, alias_to_id, id_to_op, idle
 
 
+def _latest_ok_calls_by_op(table: Any, task: dict[str, Any]) -> dict[str, str]:
+    """Newest ok call id per op on this task's current attempt.
+
+    Help-child calls stay out of this map. The parent still has to cite the
+    EVIDENCE lines the child wrote into the scratchpad.
+    """
+    found: dict[str, str] = {}
+    for call in board_store.list_tool_calls_for_task(table, str(task.get("taskId") or "")):
+        op = str(call.get("op") or "")
+        cid = str(call.get("callId") or "")
+        if not op or not cid or op in found or _is_idle_evidence_call(call):
+            continue
+        if str(call.get("status") or "") not in ("ok", ""):
+            continue
+        if not _after_this_attempt(task, call.get("createdAt")):
+            continue
+        found[op] = cid
+    return found
+
+
+def _persist_step_progress(table: Any, task_id: str, calls: list[dict[str, Any]]) -> None:
+    """Flush tool-call ids onto the scratchpad before the next model round.
+
+    A Lambda kill mid-generation otherwise leaves the re-claimed step with no
+    memory of web_sessions (or any other call) it already made.
+    """
+    if not calls:
+        return
+    task = board_store.get_task(table, task_id)
+    if not task or task.get("status") != "running":
+        return
+    bits = [
+        f"{call.get('op')} {call.get('callId')} {call.get('status')}"
+        for call in calls
+        if call.get("op")
+    ]
+    if not bits:
+        return
+    note = "STEP PROGRESS: " + "; ".join(bits)
+    if len(note) > 1500:
+        note = note[:1500]
+    existing = _blob_get(_scratchpad_key(task_id)).decode("utf-8", errors="replace")
+    if note in existing:
+        return
+    combined = _append_scratchpad(task, note)
+    task["scratchpadKey"] = _scratchpad_key(task_id)
+    task["scratchpadChars"] = len(combined)
+    task["updatedAt"] = board_store.now_iso()
+    board_store.put_task(table, task)
+
+
+def _seed_content_plan_evidence(table: Any, task: dict[str, Any], ctx: board_tools.ToolContext) -> str:
+    """Run GA4 reads the content-plan brief requires, before the model generates the week."""
+    if not _is_content_plan(task):
+        return ""
+    needed = _brief_required_evidence_tools(
+        str(task.get("brief") or ""), offered=_offered_evidence_ops(ctx, task)
+    )
+    wanted = [op for op in needed if op in ("web_sessions", "web_conversions", "web_gtm_status")]
+    if not wanted:
+        return ""
+    have = _latest_ok_calls_by_op(table, task)
+    lines: list[str] = []
+    for op_name in wanted:
+        if op_name in have:
+            lines.append(f"{op_name} {have[op_name]}")
+            continue
+        op = board_tools.REGISTRY.get(op_name)
+        if op is None:
+            continue
+        try:
+            outcome = board_tools.execute_call(ctx, op, {})
+        except Exception as exc:
+            _log_event("warning", tag="board_content_plan_seed_failed", op=op_name, error=str(exc)[:200])
+            continue
+        lines.append(f"{op_name} {outcome.call_id} {outcome.status}")
+    if not lines:
+        return ""
+    note = "SEEDED EVIDENCE: " + "; ".join(lines)
+    _append_scratchpad(task, note)
+    return note + ". Cite these call ids in task_finish evidence."
+
+
 def _known_evidence_ids(table: Any, task: dict[str, Any]) -> set[str]:
     known, _, _, _ = _evidence_catalog(table, task)
     return known
@@ -1634,7 +1724,21 @@ def prepare_help_request(ctx: board_tools.ToolContext, args: dict[str, Any]) -> 
         )
         if op.tool_id != "task"
     }
+    # web_* is GA4. A seat that already has research and asks for web is
+    # trying to fetch a page; hand research back instead of parking an Approval.
+    if "web" in tool_ids and "research" in offered_tools and "web" not in offered_tools:
+        mapped: list[str] = []
+        for tid in tool_ids:
+            mapped_id = "research" if tid == "web" else tid
+            if mapped_id not in mapped:
+                mapped.append(mapped_id)
+        tool_ids = mapped
     if all(tid in offered_tools for tid in tool_ids):
+        if "research" in offered_tools and "web" not in offered_tools:
+            raise StaffError(
+                "You already have research. web_* is GA4 only; fetch pages with "
+                "research_search and research_fetch_page instead of task_request_help."
+            )
         raise StaffError("You already have those tools; call them on this task instead of requesting help")
     suggested = str(args.get("suggestedAssignee") or "").strip()
     assignee, kind = pick_helper(ctx.table, ctx.settings, parent, tool_ids, suggested)
@@ -2001,6 +2105,11 @@ _LENGTH_CUTOFF_NUDGE = (
     "NUDGE: Your previous reply was cut off at the length limit. "
     "Continue from where you stopped, or call task_finish with the full deliverable."
 )
+_CONTENT_PLAN_LENGTH_NUDGE = (
+    "NUDGE: Your previous reply was cut off at the length limit. "
+    "Do not send the whole week in one call. Call content_stage_items with at most "
+    "6 items, repeat until the week is staged, then task_finish with {\"items\":[]}."
+)
 
 
 def _duty_event_id(task: dict[str, Any]) -> str:
@@ -2190,7 +2299,8 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
     poll_loop = (repeated_calls or intra_poll) and _counts_as_poll_loop(latest, calls)
     if truncated:
         latest["idleSteps"] = 0
-        combined = _append_scratchpad(latest, _LENGTH_CUTOFF_NUDGE)
+        nudge = _CONTENT_PLAN_LENGTH_NUDGE if _is_content_plan(latest) else _LENGTH_CUTOFF_NUDGE
+        combined = _append_scratchpad(latest, nudge)
         latest["scratchpadKey"] = _scratchpad_key(task_id)
         latest["scratchpadChars"] = len(combined)
     elif not _productive_calls(calls) or similar_to_last or repeated_calls or intra_poll:
@@ -2450,6 +2560,10 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
     task = _require_running_task(board_store.get_task(ctx.table, ctx.task_id))
     status_arg = str(args.get("status") or "").strip().lower()
     deliverable = _strip_function_call_leak(str(args.get("deliverable") or ""))
+    if _is_content_plan(task):
+        import board_content
+
+        deliverable = board_content.merge_plan_deliverable(ctx.task_id, deliverable)
     encoded = deliverable.encode("utf-8")
     if len(encoded) > BOARD_STAFF_DELIVERABLE_MAX_BYTES:
         raise StaffError(
@@ -2484,6 +2598,19 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
     )
     cited = {id_to_op[cid] for cid in evidence if cid in id_to_op}
     missing = [tool for tool in needed if tool not in cited]
+    latest_calls = _latest_ok_calls_by_op(ctx.table, task) if missing else {}
+    if missing:
+        for tool in missing:
+            cid = latest_calls.get(tool)
+            if cid and cid not in evidence:
+                evidence.append(cid)
+        cited = {id_to_op[cid] for cid in evidence if cid in id_to_op}
+        # Seeded calls are in the catalog; a call recorded after the catalog
+        # scan still has an id we just appended. Fill ops from the latest map.
+        for tool, cid in latest_calls.items():
+            if cid in evidence:
+                cited.add(tool)
+        missing = [tool for tool in needed if tool not in cited]
     if missing:
         borrowed = bool(task.get("helpTaskIds"))
         hint = (
@@ -2492,6 +2619,9 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
             if borrowed
             else " Call those tools first and pass their call ids in evidence."
         )
+        known = [f"{op} {cid}" for op, cid in latest_calls.items() if op in needed]
+        if known:
+            hint += " Already on this attempt: " + ", ".join(known) + "."
         raise StaffError("This brief requires evidence from " + ", ".join(needed) + "." + hint)
     confidence = str(args.get("confidence") or "medium")
     flags = list(task.get("flags") or [])
@@ -2590,8 +2720,15 @@ def _catalog_quality_return(task: dict[str, Any], raw: str) -> str:
     return prefix + "; ".join(issues[:6])
 
 
-def _review_user_prompt(task: dict[str, Any], raw: str, evidence_lines: list[str]) -> str:
+def _review_user_prompt(
+    task: dict[str, Any],
+    raw: str,
+    evidence_lines: list[str],
+    *,
+    catalog_note: str = "",
+) -> str:
     """User message for the manager review call."""
+    catalog_line = (catalog_note.strip() + "\n") if catalog_note.strip() else ""
     return (
         f"You are reviewing work assigned to {task.get('assignee')}.\n"
         f"Brief: {task.get('brief')}\n"
@@ -2599,6 +2736,7 @@ def _review_user_prompt(task: dict[str, Any], raw: str, evidence_lines: list[str
         f"Confidence: {task.get('confidence')}\n"
         f"{_review_flag_line(task)}"
         f"Evidence:\n" + ("\n".join(evidence_lines) or "(none)") + "\n\n"
+        f"{catalog_line}"
         f"Deliverable:\n{raw}\n\n"
         "Books of record: there is no QuickBooks or Xero. This board is Siu Tin Dei "
         "only. For receivables aging, accept a report backed by finance_aging_report "
@@ -2624,7 +2762,9 @@ def _review_user_prompt(task: dict[str, Any], raw: str, evidence_lines: list[str
         "`!function_call:` text, you MUST return.\n"
         "Catalog sheets: return if any organisation has fewer than two of "
         "opening_hours, (free_or_paid or price_note), and address_en in verified_fields. "
-        "Accept only facts read on the official page.\n"
+        "Accept only facts read on the official page. When a quality-filter note "
+        "gives a kept organisation count, that count is authoritative — do not "
+        "return only because it differs from an 'exactly N' line in the brief.\n"
         'Return JSON {"verdict":"accept"|"return","notes":"…"}.'
     )
 
@@ -2648,13 +2788,22 @@ def run_review(payload: dict[str, Any]) -> None:
     raw = _blob_get(str(task.get("deliverableKey") or "")).decode("utf-8", errors="replace")
     if len(raw) > 12000:
         raw = raw[:12000] + "\n[… truncated]"
+    catalog_note = ""
     try:
         import board_catalog_import
 
         if str(((task or {}).get("eventRef") or {}).get("kind") or "") in BOARD_CATALOG_EVENT_KINDS:
             sheet = board_catalog_import.parse_sheet(raw)
             kept, dropped = board_catalog_import.keep_quality_orgs(sheet)
-            if dropped and kept.get("organisations"):
+            kept_orgs = kept.get("organisations") if isinstance(kept.get("organisations"), list) else []
+            catalog_note = (
+                f"Quality filter kept {len(kept_orgs)} organisation(s). "
+                "That count is authoritative. Do not return because it differs "
+                "from an 'exactly N' line in the brief."
+            )
+            if dropped:
+                catalog_note += " Dropped as thin: " + ", ".join(str(name) for name in dropped[:6]) + "."
+            if dropped and kept_orgs:
                 raw = json.dumps(kept, ensure_ascii=False, indent=2)
                 key = str(task.get("deliverableKey") or "")
                 if key:
@@ -2683,7 +2832,7 @@ def run_review(payload: dict[str, Any]) -> None:
                 evidence_lines.append(
                     f"- {call.get('op')} (via {via}, task {hid}): {call.get('summary')}"
                 )
-    prompt = _review_user_prompt(task, raw, evidence_lines)
+    prompt = _review_user_prompt(task, raw, evidence_lines, catalog_note=catalog_note)
     system = board_personas.render_system_prompt(profile, charter)
     model = board_budget.model_for("standup", settings)
     completion = board_budget.board_completion(

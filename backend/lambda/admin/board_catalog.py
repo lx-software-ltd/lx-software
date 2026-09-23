@@ -226,6 +226,22 @@ def _org_page_url(row: dict[str, Any]) -> str:
     return ""
 
 
+def _usable_org_url(table: Any, url: str) -> str:
+    """Drop official URLs a previous fetch stored as HTTP ≥ 400."""
+    cleaned = str(url or "").strip()
+    if not cleaned:
+        return ""
+    try:
+        import board_crawl
+
+        status = board_crawl.fetch_status_cached(table, cleaned)
+    except Exception:
+        return cleaned
+    if status is not None and status >= 400:
+        return ""
+    return cleaned
+
+
 def _enrich_district_names() -> set[str]:
     names: set[str] = set()
     for row in BOARD_CATALOG_DISTRICTS:
@@ -262,6 +278,10 @@ def _index_imported_candidates(table: Any) -> dict[str, list[dict[str, str]]]:
         district = board_hk.canonical_district(str(cand.get("district") or ""))
         if district not in targets:
             return False
+        address = str(cand.get("addressEn") or cand.get("address") or "")
+        from_address = board_hk.district_from_address(address) if address else "unknown"
+        if from_address != "unknown" and from_address != district:
+            return False
         bucket = buckets.setdefault(district, [])
         if len(bucket) >= BOARD_CATALOG_DESCRIBE_BATCH_SIZE:
             return full()
@@ -272,7 +292,7 @@ def _index_imported_candidates(table: Any) -> dict[str, list[dict[str, str]]]:
         if cleaned.casefold() in names:
             return False
         names.add(cleaned.casefold())
-        bucket.append({"name": cleaned, "url": _org_page_url(cand)})
+        bucket.append({"name": cleaned, "url": _usable_org_url(table, _org_page_url(cand))})
         return full()
 
     board_store.walk_candidates(table, "imported", visit)
@@ -300,7 +320,7 @@ def imported_orgs(
         if not cleaned or cleaned.casefold() in seen:
             return
         seen.add(cleaned.casefold())
-        found.append({"name": cleaned, "url": url})
+        found.append({"name": cleaned, "url": _usable_org_url(table, url)})
 
     for status in ("delivered", "awaiting_import", "needs_owner"):
         for task in board_store.list_tasks(table, status, limit=200):
