@@ -29,6 +29,7 @@ SECTION_IDS = (
     "breakers",
     "suggestions",
     "configGaps",
+    "dmarc",
     "engineering",
     "promotion",
 )
@@ -46,6 +47,7 @@ SECTION_LABELS = {
     "breakers": "Tripped breakers",
     "suggestions": "Boundary suggestions",
     "configGaps": "Unconfigured integrations",
+    "dmarc": "DMARC",
     "engineering": "Engineering",
     "promotion": "Production promotion",
 }
@@ -378,6 +380,7 @@ def compile(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, An
         "assisted": _assisted_section(table, settings),
         "market": _market_section(table),
         "configGaps": _config_gaps_section(table),
+        "dmarc": _dmarc_section(table),
         "engineering": _engineering_section(table),
         "promotion": _cached_promotion(table),
     }
@@ -565,6 +568,32 @@ def _config_gap_lines(review: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _dmarc_section(table: Any) -> dict[str, Any]:
+    """Cached summary only. ``compile`` does not parse mail or call the network."""
+    try:
+        import board_dmarc
+
+        return board_dmarc.summary_for_review(table)
+    except Exception as exc:
+        _log_event("warning", tag="board_dmarc_review_failed", error=str(exc)[:200])
+        return {"line": "DMARC (reports received in the last 24 h): no summary yet.", "findings": []}
+
+
+def _dmarc_lines(review: dict[str, Any]) -> list[str]:
+    dmarc = review.get("dmarc")
+    if not isinstance(dmarc, dict) or not dmarc:
+        return ["DMARC (reports received in the last 24 h): no summary yet."]
+    line = str(dmarc.get("line") or "").strip()
+    lines = [line or "DMARC (reports received in the last 24 h): no summary yet."]
+    findings = [row for row in _as_list(dmarc.get("findings")) if isinstance(row, dict)]
+    first = str(findings[0].get("summary") or "") if findings else ""
+    for row in findings[1:DIGEST_LIST_LIMIT]:
+        summary = str(row.get("summary") or "").strip()
+        if summary and summary != first:
+            lines.append(f"{row.get('severity') or 'finding'}: {summary}")
+    return lines
+
+
 def _engineering_section(table: Any) -> list[dict[str, Any]]:
     """Table-only open runner rows. Never fetch GitHub from compile."""
     extra: list[dict[str, Any]] = []
@@ -670,6 +699,7 @@ def digest_section_lines(review: dict[str, Any]) -> list[tuple[str, str, list[st
         ("breakers", SECTION_LABELS["breakers"], breakers or ["None tripped."]),
         ("suggestions", SECTION_LABELS["suggestions"], suggestions or ["No class is eligible to drop its hold yet."]),
         ("configGaps", SECTION_LABELS["configGaps"], _config_gap_lines(review)),
+        ("dmarc", SECTION_LABELS["dmarc"], _dmarc_lines(review)),
         ("engineering", SECTION_LABELS["engineering"], _engineering_lines(review)),
         ("promotion", SECTION_LABELS["promotion"], _promotion_lines(review)),
     ]

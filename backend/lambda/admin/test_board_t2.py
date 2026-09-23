@@ -278,6 +278,31 @@ class TestAwsAndSecurity(ToolsTestCase):
         self.assertEqual(cognito["signInSuccesses24h"], 40)
         self.assertNotIn("Users", cognito)
 
+    def test_security_dmarc_summary_reads_the_cache(self) -> None:
+        from board_tools import REGISTRY, ToolContext, execute_call
+
+        board_store.put_cache(
+            self.table,
+            "dmarc:summary",
+            {
+                "generatedAt": "2026-09-22T01:00:00Z",
+                "line": "DMARC (reports received in the last 24 h): no aggregate reports. No Google report received yet. No problems.",
+                "findings": [],
+                "last24h": {"messages": 0, "reports": 0, "orgs": 0, "alignedPct": 0.0},
+            },
+        )
+        ctx = ToolContext(
+            table=self.table,
+            settings=board_store.load_settings(self.table),
+            persona_id="ciso",
+            display_name="CISO",
+        )
+        outcome = execute_call(ctx, REGISTRY["security_dmarc_summary"], {})
+        self.assertEqual(outcome.status, "ok")
+        self.assertTrue(outcome.result.get("cached"))
+        self.assertIn("No problems.", outcome.result["line"])
+        self.assertEqual(outcome.summary, "Read DMARC aggregate summary")
+
     def test_cache_refresh_and_context_digest(self) -> None:
         notes = board_cache.refresh_all(self.table)
         self.assertEqual(notes["aws"]["aws:monthly_cost"], "ok")

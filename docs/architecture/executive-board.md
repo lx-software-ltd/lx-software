@@ -296,7 +296,7 @@ snapshot of its `defaults`.
 | `mail` | `board_mail.py`, `board_pii.py` | mailboxes, threads, thread body, contact history | reply, send, forward; `mail_report_phishing` (CISO, always an Approval) | See 6.1 |
 | `research` | `board_research.py` | Brave Search or OpenRouter `:online`, cached 24 h | — | Secret `…-search-api-key` |
 | `aws` | `board_aws.py` | Cost Explorer by `Project` tag, CloudWatch alarms, Lambda health, Health events | budget-alert proposal | Alarm prefix `SiutindeiBoardAwsStackPrefix`; functions `SiutindeiBoardAwsLambdaNames` |
-| `security` | `board_security.py` | GitHub alerts, Security Hub, Access Analyzer, Cognito MFA | remediation issue proposal | |
+| `security` | `board_security.py`, `board_dmarc.py` | GitHub alerts, Security Hub, Access Analyzer, Cognito MFA, DMARC aggregate summary | remediation issue proposal | Daily check is deterministic; see §6.1 |
 | `product` | `board_product.py`, `board_data_api.py` | `v_catalog_health`, `v_funnel_daily`, `v_provider_pipeline` views only | flag listing | RDS Data API on the siutindei Aurora cluster; see 6.3 |
 | `finance` | `board_finance.py`, `board_receivables.py`, `board_invoice_pdf.py` | subscriptions, invoices, aging, cash snapshot | draft / send invoice, reminder, match or record payment, price-change proposal | See 6.3. The board never initiates a bank payment. |
 | `meta` | `board_meta.py` | Page / Instagram insights, comments, DMs, WhatsApp threads, ad spend, templates | post, story, reply, WhatsApp reply, ad set, boost, lead relay | See 6.2 |
@@ -327,6 +327,33 @@ parses headers, text body and `text/*` attachments (PDFs are listed by
 name only), masks PII and writes `mail#` rows plus per-mailbox unread
 counters. Outbound copies are indexed as `direction=out`. Bodies expire
 after 90 days.
+
+DMARC aggregate reports (`Report domain:` / `report-type=dmarc`, including
+the daily Google `rua` mail) are archived and are not a reply task. After
+the mail row is written, `board_dmarc.ingest_message` reads `.zip`, `.gz`
+and `.xml` parts (5 MB decompressed cap, DTD rejected) into
+`dmarc#reports` rows rolled up by source IP, deduped on `org_name` +
+`report_id`, and stores the XML gzip at
+`board/{BOARD_KEY}/dmarc/{org}/{reportId}.xml.gz`. The thread gains
+`dmarcReportIds` and `dmarcRecordCount`. Forensic `ruf` mail is counted
+only. The hourly cache refresh runs `board_dmarc.evaluate` (no DNS, no
+LLM) into `dmarc:summary`: 24 h / 7 day / 30 day totals, and findings
+`own_sender_failing`, `unknown_source_failing`, `forwarding_noise` (info,
+never a task), `policy_drift`, `new_header_from_domain`, `reports_silent`.
+`own_sender_failing` also lands on Config gaps. A known auth domain counts
+as our mail when that check passed, or when it failed and `header_from` is
+one of our sender domains; a failed `amazonses.com` envelope with a foreign
+From is an unknown source. Unknown sources under 5 messages in 7 days are
+info. With staff on, medium and high findings open one `security-analyst`
+task (or `ciso` when that seat is inactive), deduped in `seen:dmarc`. A
+summary older than 26 hours opens `summary_stale` instead. The daily review
+stores the line and findings only. `security_dmarc_summary` reads the cache
+and does not evaluate on a miss. `settings.dmarc` (`enabled`,
+`knownSenderDomains`, `spoofAlertCount`, `silenceDays`, `expectedPolicy`)
+is edited under Executive Board → Settings and gates findings only;
+parsing stays on. The 07:15 HKT digest section is "reports received in
+the last 24 h" because Google delivers the previous UTC day later that
+morning.
 
 Send path (off until `SiutindeiBoardMailSendingEnabled=true` and
 DKIM / SPF / DMARC are in the zone): replies go out from the mailbox the

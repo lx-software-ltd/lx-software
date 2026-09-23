@@ -47,6 +47,7 @@ class ReviewCompileTests(BoardTestCase):
             "market",
             "promotion",
             "configGaps",
+            "dmarc",
             "engineering",
             "narrative",
         ):

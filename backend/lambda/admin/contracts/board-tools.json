@@ -86,7 +86,7 @@
     {
       "id": "security",
       "label": "Security",
-      "description": "GitHub security alerts, AWS Security Hub and Access Analyzer findings, Cognito MFA posture. Remediations are always a proposed GitHub issue — never applied directly.",
+      "description": "GitHub security alerts, AWS Security Hub and Access Analyzer findings, Cognito MFA posture, and the daily DMARC aggregate summary. Remediations are always a proposed GitHub issue — never applied directly.",
       "maxLevel": "propose",
       "defaults": {
         "ceo": "read",

@@ -144,6 +144,7 @@ class FakeTable:
         clauses = [c.strip() for c in KeyConditionExpression.split(" AND ")]
         pk_value = None
         prefix = None
+        lower_bounds: dict[str, Any] = {}
         for clause in clauses:
             m = re.fullmatch(r"(\w+) = (:\w+)", clause)
             if m:
@@ -152,10 +153,30 @@ class FakeTable:
             m = re.fullmatch(r"begins_with\((\w+), (:\w+)\)", clause)
             if m:
                 prefix = ExpressionAttributeValues[m.group(2)]
+                continue
+            m = re.fullmatch(r"(\w+) >= (:\w+)", clause)
+            if m:
+                lower_bounds[m.group(1)] = ExpressionAttributeValues[m.group(2)]
+
+        def _above(row: dict[str, Any]) -> bool:
+            for attr, bound in lower_bounds.items():
+                left = row.get(attr, "")
+                if isinstance(bound, (int, float)) and not isinstance(bound, bool):
+                    try:
+                        if float(left) < float(bound):
+                            return False
+                    except (TypeError, ValueError):
+                        return False
+                elif str(left) < str(bound):
+                    return False
+            return True
+
         rows = [
             dict(i)
             for i in self.items.values()
-            if i.get(pk_attr) == pk_value and (prefix is None or str(i.get(sk_attr, "")).startswith(prefix))
+            if i.get(pk_attr) == pk_value
+            and (prefix is None or str(i.get(sk_attr, "")).startswith(prefix))
+            and _above(i)
         ]
         rows.sort(key=lambda i: str(i.get(sk_attr, "")), reverse=not ScanIndexForward)
         if ExclusiveStartKey:

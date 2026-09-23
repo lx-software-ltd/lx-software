@@ -26,6 +26,10 @@ Key layout (``pk`` / ``sk``):
 - ``BOARD#<b>#mail#thread#<id>`` / ``MSG#<ts>#<id>`` — messages in a thread (TTL)
 - ``BOARD#<b>#mail#msgids`` / ``MSGID#<digest>`` — RFC Message-ID → thread (TTL)
 - ``BOARD#<b>#mail#pii`` / ``STATE``             — contact pseudonym map
+- ``BOARD#<b>#dmarc#reports`` / ``REPORT#<end>#<org>#<id>`` — DMARC aggregate rollups (TTL)
+- ``BOARD#<b>#dmarc#ids`` / ``ID#<org>#<id>``   — aggregate report-id dedupe (TTL)
+- ``BOARD#<b>#dmarc#meta`` / ``STATE``          — forensic count and last Google report
+- ``BOARD#<b>#dmarc#header-from`` / ``STATE``   — header_from domains already seen
 - ``BOARD#<b>#cache`` / ``ITEM#<key>``          — cached research / AWS / security reads (TTL)
 - ``BOARD#<b>#candidate#<id>`` / ``META``       — catalog discovery candidate
   (``gsi1pk=BOARD#<b>#candidates#<status>``)
@@ -374,6 +378,64 @@ def default_review_config() -> dict[str, Any]:
     return {"digestTo": "", "digestHourHkt": 7, "sampleSize": BOARD_STAFF_REVIEW_SAMPLE_SIZE}
 
 
+def default_dmarc_config() -> dict[str, Any]:
+    return {
+        "enabled": True,
+        "knownSenderDomains": [],
+        "spoofAlertCount": 20,
+        "silenceDays": 3,
+        "expectedPolicy": {"p": "quarantine", "pct": 100, "sp": ""},
+    }
+
+
+def normalize_dmarc_config(raw: Any) -> dict[str, Any]:
+    """Owner knobs for the daily DMARC check. Parsing does not read this."""
+    out = default_dmarc_config()
+    if not isinstance(raw, dict):
+        return out
+    if "enabled" in raw:
+        out["enabled"] = bool(raw.get("enabled"))
+    domains = raw.get("knownSenderDomains")
+    if isinstance(domains, str):
+        domains = [part.strip() for part in domains.split(",")]
+    cleaned: list[str] = []
+    if isinstance(domains, list):
+        for item in domains:
+            dom = str(item or "").strip().lower().rstrip(".")
+            if not dom or " " in dom or "@" in dom or len(dom) > 200 or dom in cleaned:
+                continue
+            cleaned.append(dom)
+            if len(cleaned) >= 20:
+                break
+    out["knownSenderDomains"] = cleaned
+    if "spoofAlertCount" in raw and raw.get("spoofAlertCount") not in (None, ""):
+        try:
+            count = int(raw.get("spoofAlertCount"))
+        except (TypeError, ValueError):
+            count = 20
+        out["spoofAlertCount"] = max(1, min(100_000, count))
+    if "silenceDays" in raw and raw.get("silenceDays") not in (None, ""):
+        try:
+            days = int(raw.get("silenceDays"))
+        except (TypeError, ValueError):
+            days = 3
+        out["silenceDays"] = max(1, min(30, days))
+    policy = raw.get("expectedPolicy")
+    if isinstance(policy, dict):
+        p = str(policy.get("p") or "quarantine").strip().lower()
+        if p not in ("none", "quarantine", "reject"):
+            p = "quarantine"
+        sp = str(policy.get("sp") or "").strip().lower()
+        if sp not in ("", "none", "quarantine", "reject"):
+            sp = ""
+        try:
+            pct = int(policy.get("pct") if policy.get("pct") not in (None, "") else 100)
+        except (TypeError, ValueError):
+            pct = 100
+        out["expectedPolicy"] = {"p": p, "pct": max(0, min(100, pct)), "sp": sp}
+    return out
+
+
 def default_catalog_config() -> dict[str, Any]:
     from contract_constants import BOARD_CATALOG_MICRO_BATCH_ENABLED_DEFAULT
 
@@ -679,6 +741,7 @@ def default_settings() -> dict[str, Any]:
         "staff": default_staff_config(),
         "review": default_review_config(),
         "catalog": default_catalog_config(),
+        "dmarc": default_dmarc_config(),
         "boundaries": default_boundaries(),
         "updatedAt": None,
         "version": 0,
@@ -708,6 +771,7 @@ def load_settings(table: Any) -> dict[str, Any]:
     merged["staff"] = normalize_staff_config(stored.get("staff"))
     merged["review"] = normalize_review_config(stored.get("review"))
     merged["catalog"] = normalize_catalog_config(stored.get("catalog"))
+    merged["dmarc"] = normalize_dmarc_config(stored.get("dmarc"))
     merged["boundaries"] = normalize_boundaries(stored.get("boundaries"))
     try:
         merged["version"] = int(stored.get("version") or 0)

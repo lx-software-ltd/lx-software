@@ -324,7 +324,7 @@ export const BOARD_TOOL_DEFINITIONS: readonly BoardToolDefinition[] = [
   {
     "id": "security",
     "label": "Security",
-    "description": "GitHub security alerts, AWS Security Hub and Access Analyzer findings, Cognito MFA posture. Remediations are always a proposed GitHub issue — never applied directly.",
+    "description": "GitHub security alerts, AWS Security Hub and Access Analyzer findings, Cognito MFA posture, and the daily DMARC aggregate summary. Remediations are always a proposed GitHub issue — never applied directly.",
     "maxLevel": "propose",
     "defaults": {
       "ceo": "read",
@@ -849,12 +849,12 @@ export const BOARD_STAFF_SEAT_DEFAULTS: readonly BoardStaffSeatDefault[] = [
       "mail": "read",
       "research": "read"
     },
-    "brief": "You triage security alerts, write PDPO and app-store privacy checklists, open remediation issues, and review phishing flags. You never apply a fix yourself. For GitHub alerts use github_get_security_alert (or github_list_security_alerts) and research_search only if the advisory is thin. Report facts you verified with tools; say clearly what you could not verify.",
+    "brief": "You triage security alerts, write PDPO and app-store privacy checklists, open remediation issues, and review phishing flags. You never apply a fix yourself. For GitHub alerts use github_get_security_alert (or github_list_security_alerts) and research_search only if the advisory is thin. DMARC aggregate mail is summarised by security_dmarc_summary; quote that tool and do not invent alignment numbers. Report facts you verified with tools; say clearly what you could not verify.",
     "duties": [
       {
         "id": "weekly-triage",
         "cron": "0 9 * * TUE",
-        "brief": "Triage open GitHub and Security Hub alerts. List new HIGH/CRITICAL items and proposed remediations. Markdown.",
+        "brief": "Triage open GitHub and Security Hub alerts. List new HIGH/CRITICAL items and proposed remediations. State whether DMARC is clean for the last 7 days using security_dmarc_summary. Markdown.",
         "deliverableType": "markdown",
         "tier": "desk"
       }
