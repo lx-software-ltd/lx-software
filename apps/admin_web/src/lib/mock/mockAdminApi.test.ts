@@ -38,7 +38,14 @@ describe("mockAdminFetch", () => {
     expect(body.to).toBe("2026-07-31");
     expect(body.payer.id).toBe("lxSoftware");
     expect(body.apps.map((app) => app.id)).toEqual(
-      expect.arrayContaining(["statement-parser", "executive-board", "evolvesprouts", "siutindei"]),
+      expect.arrayContaining([
+        "statement-parser",
+        "executive-board",
+        "evolvesprouts",
+        "siutindei",
+        "openrouter-other",
+        "or-key:scratch",
+      ]),
     );
     const sprouts = body.apps.find((app) => app.id === "evolvesprouts");
     expect(sprouts?.cost).toBeGreaterThan(0);

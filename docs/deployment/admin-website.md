@@ -424,11 +424,13 @@ sibling pull stays at USD 0.00 without `management`:
 `management` is a [Management API key](https://openrouter.ai/settings/management-keys),
 not an inference key. Leave it off the statement-parser and executive-board
 fields. An hourly schedule (`lxsoftware-admin-openrouter-usage-pull`, no
-board key) lists keys named in the catalog with `ingestUsage: true` and
-calls `GET /api/v1/activity?api_key_hash=` once per key. That response
-already carries a `date` on each row for the last 30 completed UTC days, and
-the job groups by that date. A completed day OpenRouter has not aggregated
-yet is stored as USD 0.00 and replaced on the next pull that includes it.
+board key) lists every key on the account. It calls
+`GET /api/v1/activity` once for the whole account and
+`GET /api/v1/activity?api_key_hash=` once per key that has usage. Catalog
+keys are stored under their app id. Any other key name is its own line.
+`Other` is the account total minus every key, which is where OpenRouter
+Chat lands. A completed day OpenRouter has not aggregated yet is stored
+as USD 0.00 and replaced on the next pull that includes it.
 The current UTC day uses the key's `usage_daily` and has no call count until
 Activity includes that day. A failed request leaves the previously saved
 days in place. Days older than 30 stay as last saved, so history builds
@@ -439,12 +441,15 @@ string) and tags requests with `https://evolvesprouts.com` / `Evolve
 Sprouts` / `evolvesprouts:{workload}`. When siutindei gets a client, mint
 `lxsoftware:siutindei` and tag with `https://siutindei.com` / `Siu Tin
 Dei` / `siutindei:{workload}`. Until that named key exists, the dashboard
-shows Siu Tin Dei at USD 0.00 with no spend on the key.
+shows Siu Tin Dei at USD 0.00 with no spend on the key. Extra keys and
+`Other` appear on the card only in a month that has spend.
 
 **LX Software → Dashboard → OpenRouter** (`GET /openrouter/usage`) rolls up
 UTC spend by app, month-to-date by default with the previous 12 months on
-the dropdown (`?from=YYYY-MM-DD&to=YYYY-MM-DD`). Sibling lines are the
-pulled Activity totals; parser and board lines are still metered here.
+the dropdown (`?from=YYYY-MM-DD&to=YYYY-MM-DD`). Sibling lines, extra key
+names, and Other are the pulled Activity totals. Parser and board lines
+are still metered here, so a gap between that meter and the key's own
+Activity is not added to Other.
 
 ### AWS bill (shared account)
 

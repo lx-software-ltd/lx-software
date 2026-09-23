@@ -100,15 +100,16 @@ def _app_meta(service_id: str) -> dict[str, Any]:
             "meteredHere": bool(row.get("meteredHere")),
             "ingestUsage": bool(row.get("ingestUsage")),
         }
+    pulled = service_id == "openrouter-other" or service_id.startswith("or-key:")
     return {
         "id": service_id,
-        "label": service_label(service_id),
+        "label": "Other" if service_id == "openrouter-other" else service_label(service_id),
         "title": "",
         "referer": "",
         "repo": "",
         "keyName": "",
         "meteredHere": False,
-        "ingestUsage": False,
+        "ingestUsage": pulled,
     }
 
 
@@ -182,6 +183,7 @@ def replace_usage_day(
     usage: dict[str, Any] | None,
     calls: int = 0,
     date_iso: str | None = None,
+    label: str | None = None,
 ) -> None:
     """Set one service+owner day to an absolute total.
 
@@ -226,6 +228,13 @@ def replace_usage_day(
             ":src": "openrouter-activity",
         },
     )
+    shown = (label or "").strip()
+    if shown:
+        table.update_item(
+            Key={"pk": usage_day_pk(day), "sk": f"{service_id}#{owner_key}"},
+            UpdateExpression="SET displayLabel = :label",
+            ExpressionAttributeValues={":label": shown[:120]},
+        )
 
 
 def put_pull_status(table: Any, status: dict[str, Any]) -> None:
@@ -320,6 +329,7 @@ def _row_from_item(item: dict[str, Any]) -> dict[str, Any]:
         "totalTokens": _as_int(item.get("totalTokens")),
         "cost": round(_as_float(item.get("cost")), 6),
         "calls": _as_int(item.get("calls")),
+        "displayLabel": str(item.get("displayLabel") or ""),
     }
 
 
@@ -425,6 +435,9 @@ def summarize(
         merged_owner = add_usage(owner, row)
         owner.update(merged_owner)
         owner["calls"] = int(owner.get("calls") or 0) + row_calls
+        shown = str(row.get("displayLabel") or "").strip()
+        if shown and _catalog_row(svc_id) is None:
+            bucket["label"] = shown
     totals["calls"] = total_calls
 
     catalog_ids = [
