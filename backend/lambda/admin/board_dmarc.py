@@ -2,7 +2,7 @@
 
 Ingest (``board_mail.ingest_bytes``) calls :func:`ingest_message` for bulk
 mail that :func:`board_mail.is_dmarc_or_feedback_report` recognises. Parsing
-is stdlib-only and stays on when staff is off. :func:`evaluate` writes
+uses defusedxml and stays on when staff is off. :func:`evaluate` writes
 ``dmarc:summary``; it does not call the network and does not start tasks.
 """
 
@@ -17,7 +17,9 @@ import zipfile
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from typing import Any
-from xml.etree import ElementTree
+
+from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
 
 import board_hk
 import board_mail
@@ -261,7 +263,7 @@ def parse_aggregate_xml(xml: bytes) -> dict[str, Any] | None:
     _reject_dtd(xml)
     try:
         root = ElementTree.fromstring(xml)
-    except ElementTree.ParseError as exc:
+    except (ElementTree.ParseError, DefusedXmlException) as exc:
         raise DmarcParseError(f"xml: {exc}") from exc
     feedback = root if _local(root.tag) == "feedback" else None
     if feedback is None:
