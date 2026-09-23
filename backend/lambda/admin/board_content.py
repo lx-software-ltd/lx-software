@@ -148,7 +148,7 @@ def upsert_item(table: Any, item: dict[str, Any], *, status: str = "drafted") ->
         "copyZh": str(item.get("copyZh") or existing.get("copyZh") or "")[:2000],
         "hashtags": [str(x)[:40] for x in (item.get("hashtags") or existing.get("hashtags") or [])][:20],
         "template": template,
-        "fields": item.get("fields") if isinstance(item.get("fields"), dict) else (existing.get("fields") or {}),
+        "fields": coerce_fields(item.get("fields")) or (existing.get("fields") or {}),
         "linkPath": str(item.get("linkPath") or existing.get("linkPath") or "")[:400],
         "createdAt": existing.get("createdAt") or now,
         "updatedAt": now,
@@ -261,6 +261,20 @@ def load_staged_items(task_id: str) -> list[dict[str, Any]]:
     return [item for item in items if isinstance(item, dict)]
 
 
+def coerce_fields(value: Any) -> dict[str, Any] | None:
+    """Template fields as a dict. A JSON object string is accepted."""
+    if isinstance(value, dict):
+        return {str(key): item for key, item in value.items() if item not in (None, "")}
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(parsed, dict):
+            return {str(key): item for key, item in parsed.items() if item not in (None, "")}
+    return None
+
+
 def stage_items(task_id: str, items: list[dict[str, Any]]) -> dict[str, Any]:
     """Append or replace calendar items for a content-plan task. Keyed by slot+channel."""
     existing = load_staged_items(task_id)
@@ -288,7 +302,11 @@ def stage_items(task_id: str, items: list[dict[str, Any]]) -> dict[str, Any]:
         staged_items_key(task_id),
         json.dumps({"items": existing}, ensure_ascii=False).encode("utf-8"),
     )
-    return {"ok": True, "staged": len(existing), "added": added}
+    slots = [
+        {"slotAt": str(item.get("slotAt") or ""), "channel": str(item.get("channel") or "")}
+        for item in existing
+    ]
+    return {"ok": True, "staged": len(existing), "added": added, "slots": slots}
 
 
 def op_stage_items(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -304,7 +322,15 @@ def op_stage_items(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
             continue
         if not str(item.get("slotAt") or "").strip() or not str(item.get("channel") or "").strip():
             continue
-        cleaned.append({key: value for key, value in item.items() if value not in (None, "")})
+        cleaned_item = {
+            key: value
+            for key, value in item.items()
+            if key != "fields" and value not in (None, "")
+        }
+        fields = coerce_fields(item.get("fields"))
+        if fields:
+            cleaned_item["fields"] = fields
+        cleaned.append(cleaned_item)
     if not cleaned:
         return {"error": "each item needs slotAt and channel"}
     return stage_items(task_id, cleaned)

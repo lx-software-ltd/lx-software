@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import http.client
 import json
+import math
 import os
 import re
 import threading
@@ -476,12 +477,19 @@ def _read_http_response(req: Any, sock_timeout: int, deadline: float) -> str:
     The read runs on a daemon thread; the caller closes the socket and raises
     once ``deadline`` is reached.
     """
+    remaining = deadline - _clock()
+    if remaining <= 0:
+        raise OpenRouterError("OpenRouter request timed out: wall-clock budget exhausted")
+    # Round up so a 44.9 s leftover stays a 45 s socket timeout. A connect
+    # that has not returned headers then cannot outlive the deadline by more
+    # than a second, because there is no response object to close yet.
+    bounded = max(1, min(int(sock_timeout), max(1, math.ceil(remaining))))
     box: dict[str, Any] = {}
 
     def _worker() -> None:
         resp = None
         try:
-            resp = urlrequest.urlopen(req, timeout=sock_timeout)  # noqa: S310
+            resp = urlrequest.urlopen(req, timeout=bounded)  # noqa: S310
             box["resp"] = resp
             raw = resp.read()
             if isinstance(raw, str):
@@ -507,7 +515,9 @@ def _read_http_response(req: Any, sock_timeout: int, deadline: float) -> str:
                     resp.close()
                 except Exception:
                     pass
-            thread.join(1.0)
+            # The socket timeout is already the leftover budget, so the
+            # daemon ends within about a second. Don't sit on it here.
+            thread.join(0.25)
             raise OpenRouterError("OpenRouter request timed out: wall-clock budget exhausted")
         thread.join(min(0.25, max(0.01, remaining)))
     if box.get("exc") is not None:

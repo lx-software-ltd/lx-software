@@ -237,7 +237,8 @@ def _usable_org_url(table: Any, url: str) -> str:
         status = board_crawl.fetch_status_cached(table, cleaned)
     except Exception:
         return cleaned
-    if status is not None and status >= 400:
+    # 5xx is a transient host failure. Only a stored 4xx drops the URL.
+    if status is not None and 400 <= status < 500:
         return ""
     return cleaned
 
@@ -279,8 +280,10 @@ def _index_imported_candidates(table: Any) -> dict[str, list[dict[str, str]]]:
         if district not in targets:
             return False
         address = str(cand.get("addressEn") or cand.get("address") or "")
-        from_address = board_hk.district_from_address(address) if address else "unknown"
-        if from_address != "unknown" and from_address != district:
+        named = board_hk.districts_named_in_address(address) if address else []
+        # Skip only an unambiguous other district. "Central Plaza, Wan Chai"
+        # names two districts and stays in the Wan Chai bucket.
+        if len(named) == 1 and named[0] != district:
             return False
         bucket = buckets.setdefault(district, [])
         if len(bucket) >= BOARD_CATALOG_DESCRIBE_BATCH_SIZE:

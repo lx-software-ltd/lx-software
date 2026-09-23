@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from urllib.parse import unquote, urlparse
 
 HKT = timezone(timedelta(hours=8))
@@ -142,6 +144,72 @@ def district_from_address(address: str) -> str:
         if token.lower() in text.lower() or token in text:
             return district
     return "unknown"
+
+
+def districts_named_in_address(address: str) -> list[str]:
+    """Districts named in an address, longest token first and non-overlapping.
+
+    ``North Point`` is Eastern only; the shorter token ``North`` does not also
+    match inside it. ``Central Plaza, Wan Chai`` names both Central and Western
+    and Wan Chai, so a caller can keep the claimed district when it is one of them.
+    """
+    text = address or ""
+    if not text:
+        return []
+    lower = text.lower()
+    occupied = [False] * len(text)
+    found: list[str] = []
+    tokens = sorted(HK_DISTRICTS, key=lambda pair: len(pair[0]), reverse=True)
+    for token, district in tokens:
+        needle = token.lower()
+        if not needle:
+            continue
+        start = 0
+        while True:
+            idx = lower.find(needle, start)
+            if idx < 0:
+                break
+            end = idx + len(needle)
+            if any(occupied[idx:end]):
+                start = idx + 1
+                continue
+            for pos in range(idx, end):
+                occupied[pos] = True
+            if district not in found:
+                found.append(district)
+            start = end
+    return found
+
+
+def _metres_between(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    radius = 6_371_000.0
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    d_phi = math.radians(lat2 - lat1)
+    d_lng = math.radians(lng2 - lng1)
+    haversine = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lng / 2) ** 2
+    return 2 * radius * math.asin(min(1.0, math.sqrt(haversine)))
+
+
+def district_containing_point(lat: Any, lng: Any) -> str | None:
+    """The district whose centre radius contains the point, when exactly one does.
+
+    Overlapping circles (dense Kowloon) return None so a caller does not guess.
+    """
+    try:
+        lat_f = float(lat)
+        lng_f = float(lng)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(lat_f) or not math.isfinite(lng_f):
+        return None
+    hits: list[str] = []
+    for name, (centre_lat, centre_lng, radius_m) in DISTRICT_CENTERS.items():
+        if _metres_between(lat_f, lng_f, centre_lat, centre_lng) <= radius_m:
+            hits.append(name)
+    if len(hits) == 1:
+        return hits[0]
+    return None
 
 
 def canonical_district(value: str) -> str:

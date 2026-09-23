@@ -445,35 +445,53 @@ def _clear_source_pause(table: Any, source: str) -> None:
     board_store.put_cache(table, _source_pause_key(source), {}, ttl_seconds=1)
 
 
-def source_is_paused(table: Any, source: str) -> bool:
-    """True while a systematic-500 pause is waiting on the importer issue.
+def source_pause_info(table: Any, source: str) -> dict[str, Any]:
+    """Whether a systematic-500 pause is active, and a reason the owner can read.
 
     Pending Approval: stay paused. Rejected Approval: clear the pause.
     Executed Approval: stay paused until that GitHub issue is closed.
-    A GitHub lookup failure stays paused so the 2 h re-hold does not resume
-    while the issue is still open.
+    A missing issue number or a GitHub lookup failure stays paused so the
+    2 h re-hold does not resume while the issue may still be open.
     """
+    idle = {"paused": False, "reason": ""}
     hit = board_store.get_cache(table, _source_pause_key(source))
     payload = (hit or {}).get("payload") if isinstance(hit, dict) else None
     if not isinstance(payload, dict) or not payload.get("pausedAt"):
-        return False
+        return idle
     rows = _importer_issue_approvals(table)
     if any(str(row.get("status") or "") == "pending" for row in rows):
-        return True
+        return {"paused": True, "reason": "pending importer-issue approval"}
     executed = [row for row in rows if str(row.get("status") or "") == "executed"]
     if executed:
-        number = _issue_number_from_approval(executed[-1])
+        latest = executed[-1]
+        number = _issue_number_from_approval(latest)
         if not number:
-            return True
+            _log_event(
+                "warning",
+                tag="board_catalog_pause_missing_issue",
+                source=source,
+                approvalId=str(latest.get("approvalId") or ""),
+            )
+            return {
+                "paused": True,
+                "reason": "importer GitHub issue number missing on the executed approval",
+            }
         state = _cached_issue_state(table, number)
         if state == "closed":
             _clear_source_pause(table, source)
-            return False
-        return True
+            return idle
+        if not state:
+            return {"paused": True, "reason": f"importer GitHub issue #{number} state unknown"}
+        return {"paused": True, "reason": f"importer GitHub issue #{number} {state}"}
     if any(str(row.get("status") or "") == "rejected" for row in rows):
         _clear_source_pause(table, source)
-        return False
-    return True
+        return idle
+    return {"paused": True, "reason": "waiting for the importer-issue approval"}
+
+
+def source_is_paused(table: Any, source: str) -> bool:
+    """True while a systematic-500 pause is waiting on the importer issue."""
+    return bool(source_pause_info(table, source).get("paused"))
 
 
 def _last_import_older_than(table: Any, source: str, *, hours: int = 24) -> bool:
@@ -1028,6 +1046,7 @@ def sources_status(table: Any) -> dict[str, Any]:
         last = board_store.get_cache(table, f"catalog:bulk:{source}:last")
         preview = board_store.get_cache(table, f"catalog:bulk:{source}:preview")
         bucket = counts.get(source) or {}
+        pause = source_pause_info(table, source)
         sources.append(
             {
                 "id": source,
@@ -1036,6 +1055,8 @@ def sources_status(table: Any) -> dict[str, Any]:
                 "lastImport": (last or {}).get("payload") if last else None,
                 "lastPreview": (preview or {}).get("payload") if preview else None,
                 "job": _job(table, source),
+                "paused": pause["paused"],
+                "pauseReason": pause["reason"],
             }
         )
     settings = board_store.load_settings(table)

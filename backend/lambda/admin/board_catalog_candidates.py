@@ -197,24 +197,33 @@ def name_denied(name: str, *, facility_kind: str = "") -> bool:
 
 
 def resolved_district(row: dict[str, Any]) -> str:
-    """District to store. Places and competitor rows trust the address when it disagrees.
+    """District to store. Places and competitor rows follow an unambiguous address.
 
-    A Places text search for "North" returns North Point businesses and the
-    query district was being stored. ``district_from_address`` already maps
-    North Point to Eastern; use that when it differs from the claimed district.
+    A Places text search for "North" returns North Point businesses. Override
+    the query district only when the address names exactly one other district
+    (``North Point`` is Eastern; the shorter token ``North`` does not also match).
+    If the claimed district is one of several named in the address (``Central
+    Plaza, Wan Chai``), keep it. When the address is ambiguous or names nothing,
+    a lat/lng that sits in exactly one district circle breaks the tie.
     Official open-data sources keep the district they published.
     """
     claimed_raw = str(row.get("district") or "").strip()
     claimed = board_hk.canonical_district(claimed_raw) if claimed_raw else "unknown"
     address = str(row.get("addressEn") or row.get("address") or "")
-    from_address = board_hk.district_from_address(address) if address else "unknown"
+    named = board_hk.districts_named_in_address(address) if address else []
     source = str(row.get("source") or "")
-    if source in ("places", "competitor") and from_address != "unknown" and from_address != claimed:
-        return from_address
+    if source in ("places", "competitor"):
+        if claimed != "unknown" and claimed in named:
+            return claimed
+        if len(named) == 1:
+            return named[0]
+        point = board_hk.district_containing_point(row.get("lat"), row.get("lng"))
+        if point and (not named or point in named):
+            return point
     if claimed != "unknown":
         return claimed
-    if from_address != "unknown":
-        return from_address
+    if len(named) == 1:
+        return named[0]
     return claimed_raw[:80]
 
 

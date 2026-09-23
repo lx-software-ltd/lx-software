@@ -713,10 +713,47 @@ class CatalogDutyTests(BoardTestCase):
                 "createdAt": now,
             },
         )
+        board_store.put_candidate(
+            self.table,
+            {
+                "candidateId": "c-wanchai",
+                "source": "lcsd",
+                "nameEn": "Harbour Road Playground",
+                "district": "Wan Chai",
+                "addressEn": "Central Plaza, 18 Harbour Road, Wan Chai",
+                "officialUrl": "https://example.com/harbour",
+                "status": "imported",
+                "descriptionSource": "template",
+                "updatedAt": now,
+                "createdAt": now,
+            },
+        )
+        flaky = "https://example.com/flaky"
+        board_store.put_candidate(
+            self.table,
+            {
+                "candidateId": "c-flaky",
+                "source": "places",
+                "nameEn": "Mui Wo Library",
+                "district": "Islands",
+                "addressEn": "Mui Wo, Islands",
+                "officialUrl": flaky,
+                "status": "imported",
+                "descriptionSource": "template",
+                "updatedAt": now,
+                "createdAt": now,
+            },
+        )
         board_store.put_cache(
             self.table,
             f"crawl:http:{board_crawl.url_digest(dead)}",
             {"status": 404, "url": dead},
+            ttl_seconds=3600,
+        )
+        board_store.put_cache(
+            self.table,
+            f"crawl:http:{board_crawl.url_digest(flaky)}",
+            {"status": 503, "url": flaky},
             ttl_seconds=3600,
         )
         islands = board_catalog._index_imported_candidates(self.table).get("Islands") or []  # noqa: SLF001
@@ -724,6 +761,10 @@ class CatalogDutyTests(BoardTestCase):
         self.assertNotIn("Jeong Ballet", names)
         park = next(row for row in islands if row["name"] == "Mui Wo Playground")
         self.assertEqual(park["url"], "")
+        flaky_row = next(row for row in islands if row["name"] == "Mui Wo Library")
+        self.assertEqual(flaky_row["url"], flaky)
+        wanchai = board_catalog._index_imported_candidates(self.table).get("Wan Chai") or []  # noqa: SLF001
+        self.assertIn("Harbour Road Playground", [row["name"] for row in wanchai])
 
 
 if __name__ == "__main__":

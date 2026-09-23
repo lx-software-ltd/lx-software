@@ -67,6 +67,24 @@ class SsrfTests(BoardTestCase):
         self.assertEqual(result.status, 200)
         self.assertIn("hello", result.text)
 
+    def test_fetch_does_not_retry_a_read_timeout(self) -> None:
+        calls = {"n": 0}
+
+        def _open(req, timeout=None):  # noqa: ARG001
+            calls["n"] += 1
+            raise TimeoutError("timed out")
+
+        with (
+            patch.object(board_crawl, "host_is_blocked", return_value=False),
+            patch.object(board_crawl.time, "sleep") as slept,
+            patch.object(board_crawl, "_opener") as opener,
+        ):
+            opener.return_value.open = _open
+            with self.assertRaises(TimeoutError):
+                board_crawl.fetch("https://example.com/slow")
+        self.assertEqual(calls["n"], 1)
+        slept.assert_not_called()
+
     def test_link_local_and_redirect_refused(self) -> None:
         with self.assertRaises(Exception):
             board_crawl.fetch("http://169.254.169.254/")

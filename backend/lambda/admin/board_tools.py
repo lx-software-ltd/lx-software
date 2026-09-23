@@ -2382,7 +2382,11 @@ def build_registry() -> dict[str, ToolOp]:
                                 "copyZh": _str_param("Traditional Chinese caption.", max_len=400),
                                 "hashtags": _str_param("Hashtags.", max_len=200),
                                 "template": _str_param("Card template.", max_len=40),
-                                "fields": _str_param("Template fields as a short JSON string.", max_len=400),
+                                "fields": {
+                                    "type": "object",
+                                    "description": "Template fields such as title, body, and titleZh.",
+                                    "additionalProperties": True,
+                                },
                                 "linkPath": _str_param("Site path.", max_len=120),
                             },
                             ["slotAt", "channel"],

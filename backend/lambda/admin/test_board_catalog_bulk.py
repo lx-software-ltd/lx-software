@@ -266,6 +266,30 @@ class CandidateQueueTests(BoardTestCase):
             },
         )
         self.assertEqual(doc["district"], "Eastern")
+        kept = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {
+                "source": "places",
+                "placeId": "ChIJwanchai",
+                "nameEn": "Harbour Road Studio",
+                "district": "Wan Chai",
+                "addressEn": "Central Plaza, 18 Harbour Road, Wan Chai",
+            },
+        )
+        self.assertEqual(kept["district"], "Wan Chai")
+        by_point = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {
+                "source": "places",
+                "placeId": "ChIJfanling",
+                "nameEn": "Fanling Hall",
+                "district": "Islands",
+                "addressEn": "Shop 12, Main Street",
+                "lat": 22.55,
+                "lng": 114.14,
+            },
+        )
+        self.assertEqual(by_point["district"], "North")
         now = board_store.now_iso()
         board_store.put_candidate(
             self.table,
@@ -1869,6 +1893,32 @@ class AutonomyCatalogTests(BoardTestCase):
         self.table.delete_item(Key=board_store.cache_key("catalog:importer-issue:541"))
         with patch("board_github.issue_state", return_value="closed"):
             self.assertFalse(board_catalog_bulk.source_is_paused(self.table, "lcsd"))
+
+    def test_pause_without_an_issue_number_stays_visible(self) -> None:
+        board_store.put_cache(
+            self.table,
+            "catalog:bulk:lcsd:paused",
+            {"pausedAt": "2026-09-22T00:00:00Z", "reason": "systematic_http_500"},
+            ttl_seconds=86400,
+        )
+        board_store.put_approval(
+            self.table,
+            {
+                "approvalId": "ap-no-number",
+                "op": "github_create_issue",
+                "status": "executed",
+                "arguments": {"title": board_catalog_bulk.IMPORTER_ISSUE_TITLE},
+                "result": {"ok": True},
+                "createdAt": "2026-09-22T00:00:00Z",
+            },
+        )
+        info = board_catalog_bulk.source_pause_info(self.table, "lcsd")
+        self.assertTrue(info["paused"])
+        self.assertIn("number missing", info["reason"])
+        status = board_catalog_bulk.sources_status(self.table)
+        lcsd = next(row for row in status["sources"] if row["id"] == "lcsd")
+        self.assertTrue(lcsd["paused"])
+        self.assertIn("number missing", lcsd["pauseReason"])
 
 
 class CatalogImportActivityTests(unittest.TestCase):

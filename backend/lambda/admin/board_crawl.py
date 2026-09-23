@@ -139,6 +139,11 @@ def fetch_status_cached(table: Any, url: str) -> int | None:
         return None
 
 
+def _transient_oserror(exc: BaseException) -> bool:
+    """True for a contended resolver or busy file, not a read timeout."""
+    return isinstance(exc, OSError) and not isinstance(exc, TimeoutError)
+
+
 def fetch(url: str, *, max_bytes: int = BOARD_STAFF_CRAWL_MAX_BYTES, timeout: int = 10) -> FetchResult:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or host_is_blocked(parsed.hostname or ""):
@@ -165,15 +170,17 @@ def fetch(url: str, *, max_bytes: int = BOARD_STAFF_CRAWL_MAX_BYTES, timeout: in
             break
         except urllib.error.URLError as exc:
             reason = exc.reason
-            if attempt == 0 and isinstance(reason, OSError):
+            if attempt == 0 and _transient_oserror(reason):
                 last_os = exc
                 time.sleep(0.2)
                 continue
             raise TimeoutError(str(reason)[:200]) from exc
         except OSError as exc:
             # errno 16 (EBUSY) shows up as a bare OSError when the resolver
-            # or a /tmp file is contended. One retry, then surface it.
-            if attempt == 0:
+            # or a /tmp file is contended. Read timeouts are not retried:
+            # TimeoutError is an OSError, and a second attempt would double
+            # RESEARCH_FETCH_TIMEOUT.
+            if attempt == 0 and _transient_oserror(exc):
                 last_os = exc
                 time.sleep(0.2)
                 continue

@@ -274,11 +274,32 @@ class ContentTests(BoardTestCase):
                         "channel": "facebook",
                         "copyEn": "Play at the park",
                         "copyZh": "公園玩耍",
+                        "fields": {"title": "Park day"},
                     }
                 ]
             },
         )
         self.assertEqual(outcome.status, "ok", outcome.result)
+        self.assertEqual(outcome.result["slots"][0]["channel"], "facebook")
+        staged = board_content.load_staged_items(task["taskId"])
+        self.assertEqual(staged[0]["fields"]["title"], "Park day")
+        as_string = board_content.op_stage_items(
+            ctx,
+            {
+                "items": [
+                    {
+                        "slotAt": "2026-09-25T02:00:00Z",
+                        "channel": "instagram",
+                        "copyEn": "Second slot",
+                        "fields": "{\"title\": \"From string\"}",
+                    }
+                ]
+            },
+        )
+        self.assertEqual(as_string["slots"][-1]["channel"], "instagram")
+        staged = board_content.load_staged_items(task["taskId"])
+        second = next(item for item in staged if item["channel"] == "instagram")
+        self.assertEqual(second["fields"]["title"], "From string")
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             finished = board_staff.op_task_finish(
                 ctx,

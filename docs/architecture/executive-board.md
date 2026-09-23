@@ -462,13 +462,16 @@ that GitHub issue is closed. A rejected Approval clears the pause. An
 executed Approval stays paused while the issue is open; a failed GitHub
 state lookup stays paused. A bulk import that imports nothing records
 `error` on the result (the first batch error, or `imported 0 with no
-batch error`). Places and competitor candidates take their district from
-the address when `district_from_address` disagrees with the query
-district; one staff-tick pass (`catalog:redistrict:address-v1`) moves
-rows imported earlier. Enrich sheets skip a candidate whose address
-resolves to another district, and drop an official URL whose cached
-fetch status is HTTP ≥ 400. `board_crawl.fetch` retries once on
-`OSError` (including errno 16 wrapped in `URLError`). Auto bulk-import passes `limit` =
+batch error`). Places and competitor candidates keep the query district when the
+address also names it. They move only when the address names exactly
+one other district (`North Point` is Eastern; `Central Plaza, Wan Chai`
+stays Wan Chai), or when lat/lng sits in exactly one district circle.
+One staff-tick pass (`catalog:redistrict:address-v1`) applies that rule
+to rows imported earlier. Enrich sheets skip a candidate only when the
+address names exactly one other district, and drop an official URL whose
+cached fetch status is HTTP 4xx (a stored 5xx is left in place).
+`board_crawl.fetch` retries once on a transient `OSError` (including
+errno 16 wrapped in `URLError`) and does not retry a read timeout. Auto bulk-import passes `limit` =
 `launchListingTarget` − venue-linked providers. The count is
 `v_catalog_provider_counts.providers_with_venue` (one organisation, and
 only when it has a location in a named district). Until that view is

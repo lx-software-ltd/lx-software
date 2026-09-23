@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -678,22 +679,34 @@ def run_step(payload: dict[str, Any]) -> None:
         task_attempt=_task_attempt(task),
         task_retried_at=str(task.get("retriedAt") or ""),
     )
+    step_started = time.monotonic()
+    ctx.deadline = step_started + BOARD_STAFF_STEP_MAX_SECONDS
     seeded = _seed_content_plan_evidence(table, task, ctx)
     if seeded:
         user += "\n" + seeded
+    elapsed = int(time.monotonic() - step_started)
+    loop_seconds = max(30, BOARD_STAFF_STEP_MAX_SECONDS - elapsed)
     require_finish = _should_require_finish(task)
+    progress_at = {"n": 0}
+
+    def _on_progress(calls: list[dict[str, Any]]) -> None:
+        fresh = list(calls)[progress_at["n"] :]
+        progress_at["n"] = len(calls)
+        if fresh:
+            _persist_step_progress(table, task_id, fresh)
+
     try:
         result = board_tools.run_tool_loop(
             ctx=ctx,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
             model=model,
-            timeout=min(90, BOARD_STAFF_STEP_MAX_SECONDS),
+            timeout=min(90, loop_seconds),
             max_tokens=_step_max_tokens(task),
             temperature=0.3,
             json_mode=False,
             tag="board_staff_step",
-            max_seconds=BOARD_STAFF_STEP_MAX_SECONDS,
-            on_progress=lambda calls: _persist_step_progress(table, task_id, calls),
+            max_seconds=loop_seconds,
+            on_progress=_on_progress,
             require_op="task_finish" if require_finish else None,
         )
     except Exception as exc:
@@ -1435,17 +1448,21 @@ def _persist_step_progress(table: Any, task_id: str, calls: list[dict[str, Any]]
     task = board_store.get_task(table, task_id)
     if not task or task.get("status") != "running":
         return
-    bits = [
-        f"{call.get('op')} {call.get('callId')} {call.get('status')}"
-        for call in calls
-        if call.get("op")
-    ]
+    existing = _blob_get(_scratchpad_key(task_id)).decode("utf-8", errors="replace")
+    bits = []
+    for call in calls:
+        op = str(call.get("op") or "")
+        cid = str(call.get("callId") or "")
+        if not op:
+            continue
+        if cid and cid in existing:
+            continue
+        bits.append(f"{op} {cid} {call.get('status')}".strip())
     if not bits:
         return
     note = "STEP PROGRESS: " + "; ".join(bits)
     if len(note) > 1500:
         note = note[:1500]
-    existing = _blob_get(_scratchpad_key(task_id)).decode("utf-8", errors="replace")
     if note in existing:
         return
     combined = _append_scratchpad(task, note)
@@ -1724,9 +1741,16 @@ def prepare_help_request(ctx: board_tools.ToolContext, args: dict[str, Any]) -> 
         )
         if op.tool_id != "task"
     }
-    # web_* is GA4. A seat that already has research and asks for web is
-    # trying to fetch a page; hand research back instead of parking an Approval.
-    if "web" in tool_ids and "research" in offered_tools and "web" not in offered_tools:
+    # web_* is GA4. Remap a page-fetch ask to research. A need that names GA4
+    # (sessions, visitor source, GTM) keeps web so a seat with GA4 can take it.
+    asked_web = "web" in _normalize_help_tool_ids(args.get("toolIds"))
+    ga4_need = any(_brief_has_alias(need.lower(), alias) for alias in _GA4_ASSIGN_ALIASES)
+    if (
+        "web" in tool_ids
+        and "research" in offered_tools
+        and "web" not in offered_tools
+        and not ga4_need
+    ):
         mapped: list[str] = []
         for tid in tool_ids:
             mapped_id = "research" if tid == "web" else tid
@@ -1734,7 +1758,7 @@ def prepare_help_request(ctx: board_tools.ToolContext, args: dict[str, Any]) -> 
                 mapped.append(mapped_id)
         tool_ids = mapped
     if all(tid in offered_tools for tid in tool_ids):
-        if "research" in offered_tools and "web" not in offered_tools:
+        if asked_web and not ga4_need and "research" in offered_tools and "web" not in offered_tools:
             raise StaffError(
                 "You already have research. web_* is GA4 only; fetch pages with "
                 "research_search and research_fetch_page instead of task_request_help."
