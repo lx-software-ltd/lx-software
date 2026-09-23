@@ -41,9 +41,7 @@ function OpenRouterUsageBody({
   readonly data: OpenRouterUsagePayload;
   readonly isCurrent: boolean;
 }) {
-  const shown = data.apps.filter(
-    (app) => app.meteredHere || app.ingestUsage || (app.cost ?? 0) > 0,
-  );
+  const shown = data.apps.filter(showApp);
   const meteredCalls = shown
     .filter((app) => app.meteredHere)
     .reduce((sum, app) => sum + (app.calls ?? 0), 0);
@@ -53,9 +51,10 @@ function OpenRouterUsageBody({
       <p className="small text-muted">
         {data.payer.label} pays the OpenRouter invoice. {periodLabel} (
         {data.from} – {data.to}). Total {formatUsageCost(data.total.cost)}.{" "}
-        {meteredCalls} calls metered in this admin. Sibling lines are
-        OpenRouter cost; the current UTC day&apos;s call count is added after
-        Activity closes that day.
+        {meteredCalls} calls metered in this admin. Named keys are pulled
+        from OpenRouter. Other is Chat and any spend that is not on an API
+        key. The current UTC day&apos;s call count is added after Activity
+        closes that day.
       </p>
       <PullNotice pull={data.pull} />
       {shown.length === 0 ? (
@@ -124,6 +123,13 @@ function PullNotice({ pull }: { readonly pull: OpenRouterUsagePull | null | unde
   );
 }
 
+function showApp(app: OpenRouterUsageApp): boolean {
+  if (app.id === "openrouter-other" || app.id.startsWith("or-key:")) {
+    return (app.cost ?? 0) > 0;
+  }
+  return app.meteredHere || app.ingestUsage || (app.cost ?? 0) > 0;
+}
+
 function siblingNote(
   app: OpenRouterUsageApp,
   pull: OpenRouterUsagePull | null | undefined,
@@ -135,6 +141,9 @@ function siblingNote(
   }
   if (reason === "http_error") {
     return "Last pull failed. Showing saved days.";
+  }
+  if (app.id === "openrouter-other") {
+    return "OpenRouter Chat and spend that is not on an API key.";
   }
   const status = pull.apps.find((row) => row.id === app.id)?.status;
   if (status === "key_not_found") {

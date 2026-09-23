@@ -112,7 +112,20 @@ class TestOpenRouterUsagePull(unittest.TestCase):
             if parsed.path.endswith("/keys"):
                 return _keys_page(int(qs.get("offset", ["0"])[0]))
             self.assertNotIn("date", qs)
-            self.assertEqual(qs["api_key_hash"][0], SPROUT_HASH)
+            if "api_key_hash" not in qs:
+                return {
+                    "data": [
+                        {
+                            "date": "2026-09-21",
+                            "usage": 1.5,
+                            "requests": 4,
+                            "prompt_tokens": 100,
+                            "completion_tokens": 20,
+                            "reasoning_tokens": 5,
+                        }
+                    ]
+                }
+            self.assertIn(qs["api_key_hash"][0], {SPROUT_HASH, PARSER_HASH})
             return {
                 "data": [
                     {
@@ -133,9 +146,11 @@ class TestOpenRouterUsagePull(unittest.TestCase):
         by_status = {row["id"]: row["status"] for row in result["apps"]}
         self.assertEqual(by_status["evolvesprouts"], "updated")
         self.assertEqual(by_status["siutindei"], "key_not_found")
-        self.assertFalse(any(PARSER_HASH in url for url in seen))
+        self.assertEqual(by_status["openrouter-other"], "updated")
+        self.assertTrue(any(PARSER_HASH in url for url in seen))
         self.assertTrue(any("/keys?" in url and "offset=100" in url for url in seen))
-        self.assertEqual(sum(1 for url in seen if "/activity?" in url), 1)
+        self.assertEqual(sum(1 for url in seen if "api_key_hash=" in url), 2)
+        self.assertEqual(sum(1 for url in seen if url.rstrip("/").endswith("/activity")), 1)
 
         out = openrouter_usage.list_usage(table, from_day="2026-09-21", to_day="2026-09-22")
         by_id = {app["id"]: app for app in out["apps"]}
@@ -183,7 +198,8 @@ class TestOpenRouterUsagePull(unittest.TestCase):
         by_status = {row["id"]: row["status"] for row in result["apps"]}
         self.assertEqual(by_status["siutindei"], "no_usage")
         self.assertEqual(by_status["evolvesprouts"], "key_not_found")
-        self.assertEqual(activity, [])
+        self.assertEqual(len(activity), 1)
+        self.assertNotIn("api_key_hash", activity[0])
 
     def test_today_falls_back_to_usage_daily_when_activity_omits_it(self) -> None:
         table = FakeTable()
@@ -300,6 +316,8 @@ class TestOpenRouterUsagePull(unittest.TestCase):
                         }
                     ]
                 }
+            if "api_key_hash" not in parse_qs(urlparse(url).query):
+                return {"data": []}
             return {"data": payloads.pop(0)}
 
         pull.pull_sibling_usage(table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2)
@@ -393,6 +411,172 @@ class TestOpenRouterUsagePull(unittest.TestCase):
         listed = openrouter_usage.list_usage(table, from_day="2026-09-21", to_day="2026-09-22")
         self.assertEqual(listed["pull"]["reason"], "http_error")
         self.assertFalse(listed["pull"]["ok"])
+
+    def test_other_is_account_spend_not_on_a_key(self) -> None:
+        table = FakeTable()
+        scratch_hash = "dd" * 32
+
+        def fetch(url: str, token: str) -> dict:
+            del token
+            parsed = urlparse(url)
+            if parsed.path.endswith("/keys"):
+                return {
+                    "data": [
+                        {
+                            "name": "lxsoftware:evolvesprouts",
+                            "hash": SPROUT_HASH,
+                            "usage": 2,
+                            "usage_daily": 0.4,
+                        },
+                        {
+                            "name": "lxsoftware:statement-parser",
+                            "hash": PARSER_HASH,
+                            "usage": 3,
+                            "usage_daily": 0.1,
+                        },
+                        {
+                            "name": "scratch",
+                            "hash": scratch_hash,
+                            "usage": 1,
+                            "usage_daily": 0,
+                        },
+                    ]
+                }
+            key_hash = (parse_qs(parsed.query).get("api_key_hash") or [None])[0]
+            if key_hash is None:
+                return {
+                    "data": [
+                        {
+                            "date": "2026-09-21",
+                            "usage": 2.0,
+                            "requests": 10,
+                            "prompt_tokens": 100,
+                            "completion_tokens": 20,
+                        },
+                        {
+                            "date": "2026-09-22",
+                            "usage": 0.5,
+                            "requests": 2,
+                            "prompt_tokens": 10,
+                            "completion_tokens": 2,
+                        },
+                    ]
+                }
+            if key_hash == SPROUT_HASH:
+                return {
+                    "data": [
+                        {
+                            "date": "2026-09-21",
+                            "usage": 0.4,
+                            "requests": 3,
+                            "prompt_tokens": 20,
+                            "completion_tokens": 4,
+                        }
+                    ]
+                }
+            if key_hash == PARSER_HASH:
+                return {
+                    "data": [
+                        {
+                            "date": "2026-09-21",
+                            "usage": 0.3,
+                            "requests": 2,
+                            "prompt_tokens": 10,
+                            "completion_tokens": 2,
+                        }
+                    ]
+                }
+            return {
+                "data": [
+                    {
+                        "date": "2026-09-21",
+                        "usage": 0.2,
+                        "requests": 4,
+                        "prompt_tokens": 8,
+                        "completion_tokens": 1,
+                    }
+                ]
+            }
+
+        result = pull.pull_sibling_usage(
+            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2
+        )
+        self.assertTrue(result["ok"])
+        out = openrouter_usage.list_usage(table, from_day="2026-09-21", to_day="2026-09-22")
+        by_id = {app["id"]: app for app in out["apps"]}
+        self.assertAlmostEqual(by_id["evolvesprouts"]["cost"], 0.8)
+        self.assertEqual(by_id["evolvesprouts"]["calls"], 3)
+        self.assertEqual(by_id["statement-parser"]["cost"], 0.0)
+        scratch = next(app for app in out["apps"] if app["label"] == "scratch")
+        self.assertTrue(scratch["id"].startswith("or-key:scratch-"))
+        self.assertEqual(scratch["label"], "scratch")
+        self.assertTrue(scratch["ingestUsage"])
+        self.assertAlmostEqual(scratch["cost"], 0.2)
+        self.assertEqual(scratch["calls"], 4)
+        other = by_id["openrouter-other"]
+        self.assertEqual(other["label"], "Other")
+        self.assertAlmostEqual(other["cost"], 1.1)
+        self.assertEqual(other["calls"], 3)
+
+    def test_failed_account_activity_keeps_saved_other(self) -> None:
+        table = FakeTable()
+        state = {"fail_account": False}
+
+        def fetch(url: str, token: str) -> dict:
+            del token
+            parsed = urlparse(url)
+            if parsed.path.endswith("/keys"):
+                return {
+                    "data": [
+                        {
+                            "name": "lxsoftware:evolvesprouts",
+                            "hash": SPROUT_HASH,
+                            "usage": 1,
+                            "usage_daily": 0,
+                        }
+                    ]
+                }
+            if "api_key_hash" not in parse_qs(parsed.query):
+                if state["fail_account"]:
+                    raise pull.PullHttpError(500, "unavailable")
+                return {
+                    "data": [
+                        {
+                            "date": "2026-09-21",
+                            "usage": 1.25,
+                            "requests": 5,
+                            "prompt_tokens": 10,
+                            "completion_tokens": 2,
+                        }
+                    ]
+                }
+            return {
+                "data": [
+                    {
+                        "date": "2026-09-21",
+                        "usage": 0.25,
+                        "requests": 1,
+                        "prompt_tokens": 4,
+                        "completion_tokens": 1,
+                    }
+                ]
+            }
+
+        pull.pull_sibling_usage(table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2)
+        self.assertAlmostEqual(_app_cost(
+            openrouter_usage.list_usage(table, from_day="2026-09-21", to_day="2026-09-21"),
+            "openrouter-other",
+        ), 1.0)
+        state["fail_account"] = True
+        second = pull.pull_sibling_usage(
+            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2
+        )
+        self.assertFalse(second["ok"])
+        self.assertEqual(second["reason"], "partial")
+        self.assertAlmostEqual(_app_cost(
+            openrouter_usage.list_usage(table, from_day="2026-09-21", to_day="2026-09-21"),
+            "openrouter-other",
+        ), 1.0)
 
 
 def _app_cost(payload: dict, app_id: str) -> float:
