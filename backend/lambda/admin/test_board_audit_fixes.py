@@ -442,6 +442,41 @@ class LessonAndReviewTests(BoardTestCase):
         pack = board_review.headline_pack(self.table, self.settings, board_hk.today_hkt())
         self.assertEqual(pack["tasks"]["delivered"], 1)
 
+    def test_review_digest_includes_dmarc_summary(self) -> None:
+        board_store.put_cache(
+            self.table,
+            "dmarc:summary",
+            {
+                "line": (
+                    "DMARC (reports received in the last 24 h): 142 messages, 98.6 % aligned, "
+                    "2 orgs reporting. Last Google report 2026-09-22 09:12 HKT. "
+                    "1 finding: unknown source 203.0.113.9 (14 msgs, spf fail, dkim fail)"
+                ),
+                "findings": [
+                    {
+                        "severity": "medium",
+                        "fingerprint": "unknown_source_failing:203.0.113.9",
+                        "summary": "unknown source 203.0.113.9 (14 msgs, spf fail, dkim fail)",
+                    },
+                    {
+                        "severity": "info",
+                        "fingerprint": "forwarding_noise:198.51.100.4",
+                        "summary": "forwarding 198.51.100.4 (dkim pass, spf fail, 3 msgs)",
+                    },
+                ],
+            },
+            ttl_seconds=86400,
+        )
+        review = board_review.compile(self.table, self.settings, "2026-09-22")
+        self.assertIn("98.6 % aligned", review["dmarc"]["line"])
+        html = review["digestHtml"]
+        text = board_review.render_digest_text(review)
+        self.assertIn("DMARC", html)
+        self.assertIn("98.6 % aligned", html)
+        self.assertIn("unknown source 203.0.113.9", text)
+        self.assertIn("forwarding 198.51.100.4", text)
+        self.assertIn("reports received in the last 24 h", text)
+
     def test_headline_mail_counts_archived(self) -> None:
         board_store.put_mail_thread(
             self.table, {"threadId": "m-arch", "subject": "DMARC", "disposition": "archived"}

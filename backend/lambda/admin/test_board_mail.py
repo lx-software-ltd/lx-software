@@ -284,6 +284,23 @@ class TestParseAndIngest(MailTestCase):
             inbound_email_handler.house_key_from_raw_mail_s3_key(ses_drop_path=key, raw_mail_prefix="inbound-raw")
         )
 
+    def test_broken_dmarc_zip_stays_archived_and_keeps_the_message(self) -> None:
+        result = self.ingest(
+            frm="Google <noreply-dmarc-support@google.com>",
+            to="dmarc@siutindei.com",
+            subject="Report domain: siutindei.com Submitter: google.com Report-ID: 99",
+            text="",
+            message_id="<broken-dmarc@google.com>",
+            attachments=[("report.zip", "application/zip", b"this is not a zip")],
+        )
+        thread = board_store.get_mail_thread(self.table, result["threadId"])
+        self.assertEqual(thread["disposition"], "archived")
+        self.assertFalse(thread["unread"])
+        self.assertNotIn("dmarcReportIds", thread)
+        messages = board_store.list_mail_messages(self.table, result["threadId"])
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["subject"].split()[0], "Report")
+
 
 # ---------------------------------------------------------------------------
 # Owner routes

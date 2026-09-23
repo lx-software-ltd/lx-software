@@ -797,6 +797,16 @@ export const boardReviewFixture: BoardReviewSnapshot = {
       canRevise: false,
     },
   ],
+  dmarc: {
+    line: "DMARC (reports received in the last 24 h): 142 messages, 98.6 % aligned, 2 orgs reporting. Last Google report 2026-09-22 09:12 HKT. 1 finding: unknown source 203.0.113.9 (14 msgs, spf fail, dkim fail)",
+    findings: [
+      {
+        fingerprint: "unknown_source_failing:203.0.113.9",
+        severity: "medium",
+        summary: "unknown source 203.0.113.9 (14 msgs, spf fail, dkim fail)",
+      },
+    ],
+  },
   configGaps: [
     {
       gapId: "weekly-attribution",

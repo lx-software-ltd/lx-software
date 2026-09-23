@@ -608,6 +608,10 @@ def validate_settings(body: Any, current: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(body.get("catalog"), dict):
             raise ValueError("catalog must be an object")
         out["catalog"] = board_store.normalize_catalog_config({**(current.get("catalog") or {}), **body["catalog"]})
+    if "dmarc" in body:
+        if not isinstance(body.get("dmarc"), dict):
+            raise ValueError("dmarc must be an object")
+        out["dmarc"] = board_store.normalize_dmarc_config({**(current.get("dmarc") or {}), **body["dmarc"]})
     if "boundaries" in body:
         if not isinstance(body.get("boundaries"), dict):
             raise ValueError("boundaries must be an object")

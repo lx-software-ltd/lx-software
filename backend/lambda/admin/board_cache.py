@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 import board_aws
+import board_dmarc
 import board_product
 import board_security
 import board_store
@@ -29,6 +30,7 @@ def refresh_all(table: Any) -> dict[str, Any]:
     jobs = (
         ("aws", board_aws.refresh_caches),
         ("security", board_security.refresh_caches),
+        ("dmarc", board_dmarc.refresh),
         ("stores", board_stores.refresh_caches),
         ("web", board_web.refresh_caches),
         ("product", board_product.refresh_caches),
@@ -65,6 +67,7 @@ def handle_schedule_trigger(event: dict[str, Any]) -> dict[str, Any]:
         tag="board_cache_refreshed",
         aws=result.get("aws"),
         security=result.get("security"),
+        dmarc=result.get("dmarc"),
         stores=result.get("stores"),
         web=result.get("web"),
         product=result.get("product"),

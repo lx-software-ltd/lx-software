@@ -398,6 +398,22 @@ export function BoardReviewSection() {
         )}
       </Section>
 
+      <Section id="dmarc" title="DMARC">
+        <p className="small mb-2">
+          {review.dmarc?.line || "DMARC (reports received in the last 24 h): no summary yet."}
+        </p>
+        {(review.dmarc?.findings ?? []).length > 0 ? (
+          <ul className="small mb-0">
+            {(review.dmarc?.findings ?? []).slice(0, 8).map((finding) => (
+              <li key={finding.fingerprint || finding.summary}>
+                {finding.severity ? `${finding.severity}: ` : ""}
+                {finding.summary}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </Section>
+
       <Section id="engineering" title="Engineering">
         {(review.engineering ?? []).length === 0 ? (
           <p className="text-muted small mb-0">No open board pull requests.</p>

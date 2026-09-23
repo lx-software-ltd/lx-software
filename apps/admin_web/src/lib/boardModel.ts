@@ -2182,6 +2182,14 @@ export type BoardReviewSnapshot = {
     readonly reason?: string;
     readonly at?: string;
   }[];
+  readonly dmarc?: {
+    readonly line?: string;
+    readonly findings?: readonly {
+      readonly fingerprint?: string;
+      readonly severity?: string;
+      readonly summary?: string;
+    }[];
+  };
   readonly engineering?: readonly {
     readonly taskId?: string;
     readonly prNumber?: number;

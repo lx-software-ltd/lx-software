@@ -411,7 +411,71 @@ def triage_ops_signals(table: Any, settings: dict[str, Any]) -> dict[str, int]:
     newly_marked = [i for i in kept_alerts if i not in seen_alerts]
     stale = {i for i in seen_alerts if i not in current_ids}
     _merge_seen_alerts(table, add=newly_marked, drop=stale)
-    return {"alarms": created_alarms, "alerts": created_alerts}
+    created_dmarc = _triage_dmarc(table, settings, roster)
+    return {"alarms": created_alarms, "alerts": created_alerts, "dmarc": created_dmarc}
+
+
+def _dmarc_enabled(settings: dict[str, Any]) -> bool:
+    dmarc = settings.get("dmarc")
+    if not isinstance(dmarc, dict) or "enabled" not in dmarc:
+        return True
+    return bool(dmarc.get("enabled"))
+
+
+def _dmarc_task_brief(finding: dict[str, Any]) -> str:
+    import json
+
+    evidence = finding.get("evidence") if isinstance(finding.get("evidence"), dict) else {}
+    try:
+        blob = json.dumps(evidence, default=str, ensure_ascii=False)
+    except TypeError:
+        blob = ""
+    return (
+        f"DMARC {finding.get('severity') or 'medium'}: {finding.get('summary') or finding.get('kind')}. "
+        f"Evidence: {blob[:1200]}. "
+        "Read security_dmarc_summary and write a memo. "
+        "If a DNS, DKIM or SPF fix is needed, call security_open_remediation. "
+        "Do not change DNS yourself."
+    )
+
+
+def _triage_dmarc(table: Any, settings: dict[str, Any], roster: dict[str, dict[str, Any]]) -> int:
+    """Medium and high DMARC findings become tasks. Info (forwarding) never does."""
+    if not _dmarc_enabled(settings):
+        return 0
+    hit = board_store.get_cache(table, "dmarc:summary")
+    payload = hit.get("payload") if isinstance(hit, dict) else None
+    findings = []
+    if isinstance(payload, dict):
+        findings = [row for row in (payload.get("findings") or []) if isinstance(row, dict)]
+    actionable = [row for row in findings if str(row.get("severity") or "") in ("medium", "high")]
+    seen = _seen_payload(table, "seen:dmarc")
+    assignee = "security-analyst" if (roster.get("security-analyst") or {}).get("isActive") else "ciso"
+    kept: list[str] = []
+    created = 0
+    current: list[str] = []
+    for finding in actionable:
+        fingerprint = str(finding.get("fingerprint") or "")
+        if not fingerprint:
+            continue
+        current.append(fingerprint)
+        if fingerprint in seen:
+            kept.append(fingerprint)
+            continue
+        if _maybe_task(
+            table,
+            settings,
+            assignee=assignee,
+            brief=_dmarc_task_brief(finding),
+            event_id=f"dmarc:{fingerprint}",
+        ):
+            created += 1
+            kept.append(fingerprint)
+    stale = [item for item in seen if item not in current]
+    if stale:
+        kept = [item for item in kept if item not in stale]
+    _save_seen(table, "seen:dmarc", kept)
+    return created
 
 
 def _alert_task_brief(fid: str, row: dict[str, Any]) -> str:

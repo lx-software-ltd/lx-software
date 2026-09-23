@@ -567,6 +567,19 @@ def ingest_bytes(
         skipped=len(parsed.attachments_skipped),
         size=parsed.raw_size,
     )
+    if direction in ("in", "inbound") and parsed.bulk:
+        try:
+            msg = BytesParser(policy=policy.default).parsebytes(raw)
+            if is_dmarc_or_feedback_report(
+                subject=parsed.subject,
+                text=parsed.text,
+                content_type=str(msg.get("Content-Type") or ""),
+            ):
+                import board_dmarc
+
+                board_dmarc.ingest_message(table, msg, thread_id=thread_id, deadline=deadline)
+        except Exception as exc:
+            _log_event("warning", tag="board_dmarc_parse_failed", thread=thread_id, error=str(exc)[:300])
     if direction in ("in", "inbound") and is_human_inbound(parsed):
         try:
             import board_triage

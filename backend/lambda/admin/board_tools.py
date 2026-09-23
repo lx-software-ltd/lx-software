@@ -44,6 +44,7 @@ import board_personas
 import board_product
 import board_receivables
 import board_research
+import board_dmarc
 import board_security
 import board_store
 import board_stores
@@ -1471,6 +1472,18 @@ def build_registry() -> dict[str, ToolOp]:
             parameters=_obj({}),
             run=board_security.op_cognito,
             summarize=_summ("Read Cognito security posture"),
+        ),
+        ToolOp(
+            name="security_dmarc_summary",
+            tool_id="security",
+            kind="read",
+            description=(
+                "DMARC aggregate summary for the last 24 hours, 7 days and 30 days: "
+                "aligned percent, reporting orgs, per-source results and findings. Cached from the hourly refresh."
+            ),
+            parameters=_obj({}),
+            run=board_dmarc.op_summary,
+            summarize=_summ("Read DMARC aggregate summary"),
         ),
         ToolOp(
             name="security_open_remediation",
