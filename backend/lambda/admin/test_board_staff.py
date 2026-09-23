@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -170,7 +171,7 @@ class StaffEngineTests(BoardTestCase):
         plan = {"eventRef": {"id": "content-plan:2026-09-22"}, "deliverableType": "json", "idleSteps": 0, "step": 0}
         sheet = {"eventRef": {"id": "catalog-enrich:islands"}, "deliverableType": "json", "idleSteps": 0, "step": 0}
         note = {"eventRef": {"id": "groom:1"}, "deliverableType": "markdown", "idleSteps": 0, "step": 0}
-        self.assertEqual(board_staff._step_max_tokens(plan), 12000)  # noqa: SLF001
+        self.assertEqual(board_staff._step_max_tokens(plan), 6000)  # noqa: SLF001
         self.assertEqual(board_staff._step_max_tokens(sheet), 6000)  # noqa: SLF001
         self.assertEqual(board_staff._step_max_tokens(note), 2500)  # noqa: SLF001
 
@@ -1210,6 +1211,206 @@ class StaffStepTests(ToolsTestCase):
             )
         self.assertIn("finance_cash_snapshot", str(raised.exception))
         self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "running")
+
+    def test_task_finish_autocites_a_same_attempt_read(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "data-analyst", {"isActive": True})
+        settings = board_store.load_settings(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="data-analyst",
+                origin="duty",
+                brief="Report web_sessions for the last 7 days.",
+                deliverable_type="markdown",
+                created_by="board_duties",
+            )
+        task["status"] = "running"
+        board_store.put_task(self.table, task)
+        recorded = board_store.add_tool_call(
+            self.table,
+            {
+                "op": "web_sessions",
+                "status": "ok",
+                "taskId": task["taskId"],
+                "summary": "Read GA4 sessions",
+                "createdAt": board_store.now_iso(),
+            },
+        )
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="cmo",
+            kind="task",
+            task_id=task["taskId"],
+            seat_id="data-analyst",
+            actor="persona",
+        )
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            out = board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "Sessions are connected.",
+                    "deliverableType": "markdown",
+                    "deliverable": "GA4 sessions: 1. Top page /en/.",
+                    "evidence": [],
+                    "confidence": "medium",
+                },
+            )
+        self.assertEqual(out["status"], "review")
+        self.assertEqual(board_store.get_task(self.table, task["taskId"])["evidence"], [recorded["callId"]])
+
+    def test_web_help_is_refused_when_the_seat_already_has_research(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "prospector", {"isActive": True})
+        settings = board_store.load_settings(self.table)
+        task = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="prospector",
+            origin="owner",
+            brief="Find providers.",
+            deliverable_type="markdown",
+            created_by="owner",
+        )
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="coo",
+            kind="task",
+            task_id=task["taskId"],
+            seat_id="prospector",
+            actor="persona",
+        )
+        reason = board_staff.validate_task_request_help(
+            ctx,
+            {"need": "Look up the provider site", "toolIds": ["web"], "reason": "Need a page"},
+        )
+        self.assertIn("research_fetch_page", reason or "")
+        ga4 = board_staff.validate_task_request_help(
+            ctx,
+            {"need": "GA4 sessions and visitor source for the week", "toolIds": ["web"], "reason": "Need analytics"},
+        )
+        self.assertIsNone(ga4)
+
+    def test_step_progress_records_each_call_once(self) -> None:
+        settings = _enable_staff(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="data-analyst",
+                origin="owner",
+                brief="Note progress.",
+                deliverable_type="markdown",
+                created_by="owner",
+            )
+        task["status"] = "running"
+        board_store.put_task(self.table, task)
+        task_id = task["taskId"]
+        board_staff._persist_step_progress(  # noqa: SLF001
+            self.table,
+            task_id,
+            [{"op": "web_sessions", "callId": "call-a", "status": "ok"}],
+        )
+        board_staff._persist_step_progress(  # noqa: SLF001
+            self.table,
+            task_id,
+            [
+                {"op": "web_sessions", "callId": "call-a", "status": "ok"},
+                {"op": "web_conversions", "callId": "call-b", "status": "ok"},
+            ],
+        )
+        scratch = board_staff._blob_get(board_staff._scratchpad_key(task_id)).decode()  # noqa: SLF001
+        self.assertEqual(scratch.count("call-a"), 1)
+        self.assertIn("call-b", scratch)
+
+    def test_content_plan_seeds_named_web_reads(self) -> None:
+        settings = _enable_staff(self.table)
+        board_store.save_staff_override(self.table, "data-analyst", {"isActive": True})
+        settings = board_store.load_settings(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="data-analyst",
+                origin="duty",
+                brief="Plan the week from web_sessions.",
+                deliverable_type="json",
+                event_ref={"kind": "duty", "id": "content-plan:2026-09-23"},
+                created_by="test",
+            )
+        task["status"] = "running"
+        board_store.put_task(self.table, task)
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=settings,
+            persona_id="cmo",
+            kind="task",
+            task_id=task["taskId"],
+            seat_id="data-analyst",
+            actor="persona",
+        )
+        ctx.deadline = time.monotonic() + 150
+        seen: list[str] = []
+
+        class _Outcome:
+            def __init__(self, name: str) -> None:
+                self.call_id = f"seed-{name}"
+                self.status = "ok"
+
+        def _fake(tool_ctx: board_tools.ToolContext, op: board_tools.ToolOp, _args: dict[str, Any]) -> _Outcome:
+            self.assertIsNotNone(tool_ctx.seconds_left())
+            self.assertLess(tool_ctx.seconds_left() or 0, 160)
+            seen.append(op.name)
+            return _Outcome(op.name)
+
+        with patch.object(board_tools, "execute_call", side_effect=_fake):
+            note = board_staff._seed_content_plan_evidence(self.table, task, ctx)  # noqa: SLF001
+        self.assertIn("web_sessions", seen)
+        self.assertIn("seed-web_sessions", note)
+
+    def test_wall_clock_abort_retries_the_step_once(self) -> None:
+        from openrouter_client import OpenRouterError
+
+        settings = _enable_staff(self.table)
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_staff.create_task(
+                self.table,
+                settings,
+                assignee="data-analyst",
+                origin="owner",
+                brief="Write a note.",
+                deliverable_type="markdown",
+                created_by="owner",
+            )
+        task["status"] = "running"
+        task["stepClaimed"] = 1
+        board_store.put_task(self.table, task)
+        exc = OpenRouterError("OpenRouter request timed out: wall-clock budget exhausted")
+        payload = {"taskId": task["taskId"], "step": 1}
+        with patch.object(board_async, "invoke_async") as invoke:
+            board_staff._on_step_exception(self.table, task, payload, 1, exc)  # noqa: SLF001
+        self.assertTrue(invoke.called)
+        queued = invoke.call_args.args[0]
+        self.assertTrue(queued.get("retried"))
+        self.assertEqual(queued.get("step"), 1)
+        payload["retried"] = True
+        board_staff._on_step_exception(self.table, task, payload, 1, exc)  # noqa: SLF001
+        finished = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(finished["status"], "failed")
+        self.assertIn("wall-clock", finished.get("failureReason") or "")
+
+    def test_review_prompt_states_the_kept_org_count(self) -> None:
+        prompt = board_staff._review_user_prompt(  # noqa: SLF001
+            {"assignee": "content-marketer", "brief": "Exactly 3 organisations.", "deliverableType": "json", "confidence": "medium"},
+            "{\"organisations\":[]}",
+            [],
+            catalog_note="Quality filter kept 2 organisation(s). Dropped as thin: Thin Org.",
+        )
+        self.assertIn("kept 2 organisation", prompt)
+        self.assertIn("exactly N", prompt)
 
     def test_accountant_can_read_cash_and_meta(self) -> None:
         settings = _enable_staff(self.table)

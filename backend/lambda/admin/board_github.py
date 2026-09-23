@@ -564,6 +564,15 @@ def op_list_releases(args: dict[str, Any]) -> dict[str, Any]:
     return {"repo": repo, "items": items}
 
 
+def issue_state(number: int) -> str:
+    """``open`` or ``closed`` for one issue, without comment pages."""
+    repo = repo_full_name()
+    it = _get(f"/repos/{repo}/issues/{int(number)}")
+    if not isinstance(it, dict):
+        raise GitHubSnapshotError(f"Issue #{number} not found in {repo}")
+    return str(it.get("state") or "")
+
+
 def op_get_issue(args: dict[str, Any]) -> dict[str, Any]:
     repo = repo_full_name()
     number = _issue_number(args.get("number"))

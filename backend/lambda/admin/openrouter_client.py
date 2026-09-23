@@ -12,8 +12,10 @@ from __future__ import annotations
 import base64
 import http.client
 import json
+import math
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -466,6 +468,66 @@ def _can_retry(*, deadline: float, sleep_s: float) -> bool:
     return _clock() + max(0.0, sleep_s) + _MIN_RETRY_REMAINING_SECONDS < deadline
 
 
+def _read_http_response(req: Any, sock_timeout: int, deadline: float) -> str:
+    """Read one response, aborting when the wall-clock ``deadline`` passes.
+
+    ``urlopen``'s timeout is socket inactivity. A provider that trickles
+    tokens (or heartbeats) resets it, so a generation that started with
+    little of the staff-step budget left can run until the Lambda is killed.
+    The read runs on a daemon thread; the caller closes the socket and raises
+    once ``deadline`` is reached.
+    """
+    remaining = deadline - _clock()
+    if remaining <= 0:
+        raise OpenRouterError("OpenRouter request timed out: wall-clock budget exhausted")
+    # Round up so a 44.9 s leftover stays a 45 s socket timeout. A connect
+    # that has not returned headers then cannot outlive the deadline by more
+    # than a second, because there is no response object to close yet.
+    bounded = max(1, min(int(sock_timeout), max(1, math.ceil(remaining))))
+    box: dict[str, Any] = {}
+
+    def _worker() -> None:
+        resp = None
+        try:
+            resp = urlrequest.urlopen(req, timeout=bounded)  # noqa: S310
+            box["resp"] = resp
+            raw = resp.read()
+            if isinstance(raw, str):
+                raw = raw.encode("utf-8")
+            box["body"] = raw
+        except Exception as exc:  # re-raised on the caller thread
+            box["exc"] = exc
+        finally:
+            if resp is not None:
+                try:
+                    resp.close()
+                except Exception:
+                    pass
+
+    thread = threading.Thread(target=_worker, name="openrouter-read", daemon=True)
+    thread.start()
+    while thread.is_alive():
+        remaining = deadline - _clock()
+        if remaining <= 0:
+            resp = box.get("resp")
+            if resp is not None:
+                try:
+                    resp.close()
+                except Exception:
+                    pass
+            # The socket timeout is already the leftover budget, so the
+            # daemon ends within about a second. Don't sit on it here.
+            thread.join(0.25)
+            raise OpenRouterError("OpenRouter request timed out: wall-clock budget exhausted")
+        thread.join(min(0.25, max(0.01, remaining)))
+    if box.get("exc") is not None:
+        raise box["exc"]
+    body = box.get("body") or b""
+    if isinstance(body, str):
+        return body
+    return bytes(body).decode("utf-8")
+
+
 def post_json(
     *,
     url: str,
@@ -502,8 +564,18 @@ def post_json(
             },
         )
         try:
-            with urlrequest.urlopen(req, timeout=req_timeout) as resp:  # noqa: S310
-                return resp.read().decode("utf-8")
+            remaining_s = deadline - _clock()
+            if remaining_s <= 0:
+                raise OpenRouterError("OpenRouter request timed out: wall-clock budget exhausted")
+            # First attempt keeps the caller's socket timeout. ``int(remaining)``
+            # is one second short of a just-started budget and would turn the
+            # 45 s final-answer floor into 44. The reader still aborts at
+            # ``deadline``, so a trickle cannot outlive the wall clock.
+            if attempt == 0:
+                sock_timeout = req_timeout
+            else:
+                sock_timeout = max(1, min(int(req_timeout), max(1, int(remaining_s))))
+            return _read_http_response(req, sock_timeout, deadline)
         except urlerror.HTTPError as exc:
             body = ""
             try:

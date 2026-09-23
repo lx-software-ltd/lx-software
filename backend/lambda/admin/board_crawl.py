@@ -111,6 +111,39 @@ def _opener() -> Any:
     return urllib.request.build_opener(LimitedRedirectHandler())
 
 
+def _remember_fetch_status(table: Any, url: str, status: int) -> None:
+    """Cache the HTTP status so a later enrich sheet can drop a dead official URL."""
+    if table is None or not url:
+        return
+    try:
+        board_store.put_cache(
+            table,
+            f"crawl:http:{url_digest(url)}",
+            {"status": int(status), "url": url[:400]},
+            ttl_seconds=14 * 86400,
+        )
+    except Exception:
+        return
+
+
+def fetch_status_cached(table: Any, url: str) -> int | None:
+    if table is None or not url:
+        return None
+    hit = board_store.get_cache(table, f"crawl:http:{url_digest(url)}")
+    payload = (hit or {}).get("payload") if isinstance(hit, dict) else None
+    if not isinstance(payload, dict) or payload.get("status") is None:
+        return None
+    try:
+        return int(payload["status"])
+    except (TypeError, ValueError):
+        return None
+
+
+def _transient_oserror(exc: BaseException) -> bool:
+    """True for a contended resolver or busy file, not a read timeout."""
+    return isinstance(exc, OSError) and not isinstance(exc, TimeoutError)
+
+
 def fetch(url: str, *, max_bytes: int = BOARD_STAFF_CRAWL_MAX_BYTES, timeout: int = 10) -> FetchResult:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or host_is_blocked(parsed.hostname or ""):
@@ -120,19 +153,40 @@ def fetch(url: str, *, max_bytes: int = BOARD_STAFF_CRAWL_MAX_BYTES, timeout: in
         headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/xhtml+xml,text/plain,*/*;q=0.8"},
         method="GET",
     )
-    try:
-        with _opener().open(req, timeout=timeout) as resp:  # noqa: S310
-            raw = resp.read(max_bytes + 1)
-            status = int(getattr(resp, "status", None) or resp.getcode() or 200)
-            final = str(getattr(resp, "url", None) or url)
-            ctype = str(resp.headers.get("Content-Type") or "")
-    except urllib.error.HTTPError as exc:
-        raw = exc.read(max_bytes) if exc.fp else b""
-        status = int(exc.code)
-        final = url
-        ctype = str(exc.headers.get("Content-Type") or "") if exc.headers else ""
-    except urllib.error.URLError as exc:
-        raise TimeoutError(str(exc.reason)[:200]) from exc
+    last_os: BaseException | None = None
+    for attempt in range(2):
+        try:
+            with _opener().open(req, timeout=timeout) as resp:  # noqa: S310
+                raw = resp.read(max_bytes + 1)
+                status = int(getattr(resp, "status", None) or resp.getcode() or 200)
+                final = str(getattr(resp, "url", None) or url)
+                ctype = str(resp.headers.get("Content-Type") or "")
+            break
+        except urllib.error.HTTPError as exc:
+            raw = exc.read(max_bytes) if exc.fp else b""
+            status = int(exc.code)
+            final = url
+            ctype = str(exc.headers.get("Content-Type") or "") if exc.headers else ""
+            break
+        except urllib.error.URLError as exc:
+            reason = exc.reason
+            if attempt == 0 and _transient_oserror(reason):
+                last_os = exc
+                time.sleep(0.2)
+                continue
+            raise TimeoutError(str(reason)[:200]) from exc
+        except OSError as exc:
+            # errno 16 (EBUSY) shows up as a bare OSError when the resolver
+            # or a /tmp file is contended. Read timeouts are not retried:
+            # TimeoutError is an OSError, and a second attempt would double
+            # RESEARCH_FETCH_TIMEOUT.
+            if attempt == 0 and _transient_oserror(exc):
+                last_os = exc
+                time.sleep(0.2)
+                continue
+            raise
+    else:
+        raise TimeoutError(str(last_os or "fetch failed")[:200])
     text = raw[:max_bytes].decode("utf-8", errors="replace")
     body_hash = hashlib.sha256(normalise(html_to_text(text) if "html" in ctype.lower() or "<html" in text[:200].lower() else text).encode("utf-8")).hexdigest()
     return FetchResult(status=status, final_url=final, content_type=ctype, text=text, hash=body_hash)

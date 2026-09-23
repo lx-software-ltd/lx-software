@@ -196,6 +196,83 @@ def name_denied(name: str, *, facility_kind: str = "") -> bool:
     return False
 
 
+def resolved_district(row: dict[str, Any]) -> str:
+    """District to store. Places and competitor rows follow an unambiguous address.
+
+    A Places text search for "North" returns North Point businesses. Override
+    the query district only when the address names exactly one other district
+    (``North Point`` is Eastern; the shorter token ``North`` does not also match).
+    If the claimed district is one of several named in the address (``Central
+    Plaza, Wan Chai``), keep it. When the address is ambiguous or names nothing,
+    a lat/lng that sits in exactly one district circle breaks the tie.
+    Official open-data sources keep the district they published.
+    """
+    claimed_raw = str(row.get("district") or "").strip()
+    claimed = board_hk.canonical_district(claimed_raw) if claimed_raw else "unknown"
+    address = str(row.get("addressEn") or row.get("address") or "")
+    named = board_hk.districts_named_in_address(address) if address else []
+    source = str(row.get("source") or "")
+    if source in ("places", "competitor"):
+        if claimed != "unknown" and claimed in named:
+            return claimed
+        if len(named) == 1:
+            return named[0]
+        point = board_hk.district_containing_point(row.get("lat"), row.get("lng"))
+        if point and (not named or point in named):
+            return point
+    if claimed != "unknown":
+        return claimed
+    if len(named) == 1:
+        return named[0]
+    return claimed_raw[:80]
+
+
+_REDISTRICT_MARKER = "catalog:redistrict:address-v1"
+
+
+def maybe_redistrict_mismatched(table: Any) -> dict[str, Any]:
+    """One pass over places/competitor rows whose address district disagrees.
+
+    New upserts correct themselves. This moves rows imported before that check.
+    A cache marker keeps the walk off the staff tick after the first success.
+    """
+    if board_store.get_cache(table, _REDISTRICT_MARKER):
+        return {"skipped": True}
+    updated = 0
+    scanned = 0
+
+    def visit(cand: dict[str, Any]) -> bool:
+        nonlocal updated, scanned
+        scanned += 1
+        if str(cand.get("source") or "") not in ("places", "competitor"):
+            return False
+        resolved = resolved_district(cand)
+        current = board_hk.canonical_district(str(cand.get("district") or ""))
+        if not resolved or resolved == "unknown" or resolved == current:
+            return False
+        new_key = candidate_dedupe_key({**cand, "district": resolved})
+        other = board_store.get_candidate_by_dedupe(table, new_key)
+        if other and other != str(cand.get("candidateId") or ""):
+            return False
+        cand["districtCorrectedFrom"] = str(cand.get("district") or "")[:80]
+        cand["district"] = resolved
+        cand["updatedAt"] = _now()
+        board_store.put_candidate(table, cand)
+        board_store.put_candidate_dedupe(table, new_key, str(cand["candidateId"]))
+        updated += 1
+        return False
+
+    for status in ("imported", "approved", "new"):
+        board_store.walk_candidates(table, status, visit)
+    board_store.put_cache(
+        table,
+        _REDISTRICT_MARKER,
+        {"updated": updated, "scanned": scanned, "at": _now()},
+        ttl_seconds=365 * 86400,
+    )
+    return {"updated": updated, "scanned": scanned, "skipped": False}
+
+
 def upsert_candidate(table: Any, row: dict[str, Any]) -> dict[str, Any]:
     """Insert or refresh a candidate. Official / quality Places rows auto-approve."""
     source = str(row.get("source") or "unknown")
@@ -211,7 +288,7 @@ def upsert_candidate(table: Any, row: dict[str, Any]) -> dict[str, Any]:
             "source": source,
             "nameEn": name[:200],
         }
-    district = str(row.get("district") or board_hk.district_from_address(str(row.get("addressEn") or row.get("address") or "")))
+    district = resolved_district({**row, "nameEn": name, "source": source})
     dedupe = candidate_dedupe_key({**row, "nameEn": name, "district": district})
     existing_id = board_store.get_candidate_by_dedupe(table, dedupe)
     now = _now()
@@ -226,6 +303,7 @@ def upsert_candidate(table: Any, row: dict[str, Any]) -> dict[str, Any]:
             for key in ("descriptionEn", "descriptionZh", "descriptionSource"):
                 incoming.pop(key, None)
         merged = {**current, **incoming}
+        merged["district"] = resolved_district({**merged, "source": source})
         merged["candidateId"] = existing_id
         merged["updatedAt"] = now
         if str(merged.get("status") or "") == "new" and _maybe_auto_approve(
