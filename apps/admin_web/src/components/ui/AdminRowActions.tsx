@@ -9,50 +9,65 @@ export type AdminRowAction = {
   readonly danger?: boolean;
   readonly hidden?: boolean;
   readonly disabled?: boolean;
+  /** Keep this action as its own button when the rest sit in the menu. */
+  readonly inline?: boolean;
 };
 
 export type AdminRowActionsProps = {
   readonly actions: readonly AdminRowAction[];
 };
 
-/** Icon actions. More than two: the first stays inline and the rest go in a menu. */
+/** Icon actions. One action stays inline. Several collapse into one menu. */
 export function AdminRowActions({ actions }: AdminRowActionsProps) {
   const menuId = useId();
   const moreRef = useRef<HTMLButtonElement>(null);
   const visible = actions.filter((action) => !action.hidden);
   if (visible.length === 0) return null;
-  const [first, ...rest] = visible;
-  if (!first) return null;
+  const inline = visible.filter((action) => action.inline);
+  const menuActions = visible.length === 1 ? [] : visible.filter((action) => !action.inline);
+  const solo = visible.length === 1 ? visible[0] : null;
+
+  const hideMenu = (menu: HTMLElement | null) => {
+    if (!menu || typeof menu.hidePopover !== "function") return;
+    try {
+      if (menu.matches(":popover-open")) menu.hidePopover();
+    } catch {
+      // Already closed.
+    }
+  };
 
   return (
     <div
       className="d-inline-flex align-items-center gap-1 admin-row-actions"
       onClick={(event) => event.stopPropagation()}
     >
-      <TableIconButton
-        iconClassName={first.iconClassName}
-        ariaLabel={first.label}
-        appearance="bordered"
-        variant={first.danger ? "danger" : "default"}
-        onClick={first.onClick}
-        disabled={first.disabled}
-      />
-      {rest.length === 1 && rest[0] ? (
+      {solo ? (
         <TableIconButton
-          iconClassName={rest[0].iconClassName}
-          ariaLabel={rest[0].label}
+          iconClassName={solo.iconClassName}
+          ariaLabel={solo.label}
           appearance="bordered"
-          variant={rest[0].danger ? "danger" : "default"}
-          onClick={rest[0].onClick}
-          disabled={rest[0].disabled}
+          variant={solo.danger ? "danger" : "default"}
+          onClick={solo.onClick}
+          disabled={solo.disabled}
         />
       ) : null}
-      {rest.length > 1 ? (
+      {inline.map((action) => (
+        <TableIconButton
+          key={action.id}
+          iconClassName={action.iconClassName}
+          ariaLabel={action.label}
+          appearance="bordered"
+          variant={action.danger ? "danger" : "default"}
+          onClick={action.onClick}
+          disabled={action.disabled}
+        />
+      ))}
+      {menuActions.length > 0 ? (
         <>
           <button
             ref={moreRef}
             type="button"
-            className="btn btn-sm btn-outline-secondary bg-white admin-table-icon-btn"
+            className="admin-kebab"
             aria-label="More actions"
             title="More actions"
             popoverTarget={menuId}
@@ -73,20 +88,13 @@ export function AdminRowActions({ actions }: AdminRowActionsProps) {
               menu.style.left = `${Math.max(8, rect.right - width)}px`;
             }}
           >
-            {rest.map((action) => (
+            {menuActions.map((action) => (
               <button
                 key={action.id}
                 type="button"
                 className={`admin-row-menu-item${action.danger ? " text-danger" : ""}`}
                 onClick={(event) => {
-                  const menu = event.currentTarget.closest("[popover]");
-                  if (menu instanceof HTMLElement && typeof menu.hidePopover === "function") {
-                    try {
-                      if (menu.matches(":popover-open")) menu.hidePopover();
-                    } catch {
-                      // Already closed.
-                    }
-                  }
+                  hideMenu(event.currentTarget.closest("[popover]"));
                   action.onClick();
                 }}
                 disabled={action.disabled}
@@ -101,3 +109,4 @@ export function AdminRowActions({ actions }: AdminRowActionsProps) {
     </div>
   );
 }
+

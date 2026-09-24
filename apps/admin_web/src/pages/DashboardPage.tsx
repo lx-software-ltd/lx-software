@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FinanceDataLoadOrError } from "../components/FinanceDataStatus";
-import { AdminPageIntro } from "../components/ui";
+import { AdminKpi, AdminPageHeader } from "../components/ui";
 import { StatementBookDashboardCard } from "../components/StatementBookDashboardCard";
 import { AllocationCoverageDashboardCard } from "../components/dashboard/AllocationCoverageDashboardCard";
 import { DashboardApiHealthCard } from "../components/dashboard/DashboardApiHealthCard";
@@ -13,13 +13,35 @@ import { PensionDashboardCard } from "../components/dashboard/PensionDashboardCa
 import { adminFetchJson } from "../lib/apiAdminClient";
 import { useFinance } from "../hooks/useFinance";
 import { useStatementBook } from "../hooks/useStatementBook";
-import { defaultFiscalYearIdForNowUtc, type FiscalYearId } from "../lib/fiscalYearFinance";
+import { formatMoneyAmount } from "../lib/formatDisplay";
+import {
+  defaultFiscalYearIdForNowUtc,
+  fiscalYearIdToStartCalendarYear,
+  netGainsMinusExpensesByCurrency,
+  sumHouseStatementLinesForFiscalYear,
+  type FiscalYearId,
+} from "../lib/fiscalYearFinance";
+import { monthlyLedgerNetByCurrency, sumMonthlyFinanceLedgerAmountsByHouse } from "../lib/financeModel";
 import { HOUSE_DISPLAY_LABEL } from "../lib/houses";
 import {
   LX_SOFTWARE_BOOK_KEY,
   SIU_TIN_DEI_BOOK_KEY,
   STATEMENT_BOOK_DISPLAY_LABEL,
 } from "../lib/statementOwners";
+
+function leadAmount(buckets: Readonly<Record<string, number>>): string {
+  const entries = Object.entries(buckets).filter(([, amount]) => amount !== 0);
+  if (entries.length === 0) return "—";
+  entries.sort(([a], [b]) => a.localeCompare(b));
+  const [currency, amount] = entries[0] ?? [];
+  if (!currency || amount === undefined) return "—";
+  return formatMoneyAmount(amount, currency);
+}
+
+function bookNet(lines: Parameters<typeof sumHouseStatementLinesForFiscalYear>[0], year: number): string {
+  const sums = sumHouseStatementLinesForFiscalYear(lines, year);
+  return leadAmount(netGainsMinusExpensesByCurrency(sums.incomeByCurrency, sums.expensesByCurrency));
+}
 
 export function DashboardPage() {
   const healthQuery = useQuery({
@@ -52,14 +74,44 @@ export function DashboardPage() {
   const booksError = lxSoftwareQuery.isError || siuTinDeiQuery.isError;
 
   const financeQuery = useFinance();
+  const fiscalYearStart = fiscalYearIdToStartCalendarYear(defaultFiscalYearIdForNowUtc());
+  const kpis = useMemo(() => {
+    const finance = financeQuery.data;
+    const lx = lxSoftwareQuery.data;
+    const siu = siuTinDeiQuery.data;
+    if (!finance || !lx || !siu) return null;
+    const houseNet = (houseKey: "hillmarton" | "morrison") => {
+      const monthly = sumMonthlyFinanceLedgerAmountsByHouse(
+        finance.incomeRecords,
+        finance.expenseRecords,
+        houseKey,
+        finance.expenseIncomeAllocationPercents,
+        finance.allocationRecords,
+      );
+      return leadAmount(monthlyLedgerNetByCurrency(monthly));
+    };
+    return {
+      lx: bookNet(lx.lines, fiscalYearStart),
+      siu: bookNet(siu.lines, fiscalYearStart),
+      hillmarton: houseNet("hillmarton"),
+      morrison: houseNet("morrison"),
+    };
+  }, [financeQuery.data, fiscalYearStart, lxSoftwareQuery.data, siuTinDeiQuery.data]);
 
   return (
     <div>
-      <h1 className="h3 mb-3">Dashboard</h1>
-      <AdminPageIntro>
-        Welcome to the LX Software admin console. Use the navigation menu to
-        manage assets and records.
-      </AdminPageIntro>
+      <AdminPageHeader
+        title="Dashboard"
+        help="Balances, statement books, and house summaries for the current fiscal year."
+      />
+      {kpis ? (
+        <div className="admin-kpi-row">
+          <AdminKpi label="LX Software net" value={kpis.lx} hint="This fiscal year" />
+          <AdminKpi label="Siu Tin Dei net" value={kpis.siu} hint="This fiscal year" />
+          <AdminKpi label="Hillmarton" value={kpis.hillmarton} hint="Monthly net" />
+          <AdminKpi label="The Morrison" value={kpis.morrison} hint="Monthly net" />
+        </div>
+      ) : null}
 
       <FinanceDataLoadOrError
         isLoading={booksLoading}

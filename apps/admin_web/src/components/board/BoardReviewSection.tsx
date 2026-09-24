@@ -16,13 +16,15 @@ function Section({
   id,
   title,
   children,
+  lane = "main",
 }: {
   readonly id: string;
   readonly title: string;
   readonly children: ReactNode;
+  readonly lane?: "main" | "aside";
 }) {
   return (
-    <section id={id} className="card shadow-sm mb-3">
+    <section id={id} data-lane={lane} className="card shadow-sm mb-3">
       <div className="card-body">
         <h3 className="h6 mb-3">{title}</h3>
         {children}
@@ -199,8 +201,8 @@ export function BoardReviewSection() {
   if (!review) return null;
 
   return (
-    <div>
-      <div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+    <div className="admin-review">
+      <div className="admin-review-header d-flex flex-wrap align-items-center gap-2 mb-3">
         <h2 className="h5 mb-0">Daily review</h2>
         <span className="small text-muted">{review.date}</span>
         <button type="button" className="btn btn-link btn-sm p-0" onClick={() => setShowDigest((v) => !v)}>
@@ -224,7 +226,7 @@ export function BoardReviewSection() {
         <Headline review={review} />
       </Section>
 
-      <Section id="holdsDue" title="On hold, executing soon">
+      <Section id="holdsDue" title="On hold, executing soon" lane="aside">
         <BoardHoldsList
           holds={holds.holds}
           isLoading={holds.isLoading}
@@ -235,7 +237,7 @@ export function BoardReviewSection() {
         />
       </Section>
 
-      <Section id="escalations" title="Escalations">
+      <Section id="escalations" title="Escalations" lane="aside">
         {review.escalations.length === 0 ? (
           <p className="text-muted small mb-0">None waiting.</p>
         ) : (
@@ -351,7 +353,7 @@ export function BoardReviewSection() {
         )}
       </Section>
 
-      <Section id="suggestions" title="Boundary suggestions">
+      <Section id="suggestions" title="Boundary suggestions" lane="aside">
         {review.suggestions.length === 0 ? (
           <p className="text-muted small mb-0">No class is eligible to drop its hold yet.</p>
         ) : (
@@ -437,7 +439,7 @@ export function BoardReviewSection() {
         )}
       </Section>
 
-      <Section id="promotion" title="Production promotion">
+      <Section id="promotion" title="Production promotion" lane="aside">
         <StagingPromote data={data} />
       </Section>
     </div>

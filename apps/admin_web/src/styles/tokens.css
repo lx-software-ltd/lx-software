@@ -1,0 +1,33 @@
+/*
+ * Admin design tokens. Bootstrap variables in theme.css point at these.
+ * color-scheme is set on <html> by ThemeProvider (and the head script) so
+ * light-dark() follows the chosen theme, including an explicit light or dark
+ * override of the system preference.
+ */
+:root {
+  color-scheme: light dark;
+  --admin-font: "Inter Variable", "Inter", system-ui, -apple-system, sans-serif;
+  --admin-canvas: light-dark(#f4f6f8, #101318);
+  --admin-surface: light-dark(#ffffff, #181c22);
+  --admin-line: light-dark(#e6e8ec, #2a3038);
+  --admin-line-strong: light-dark(#d5d8de, #3a424c);
+  --admin-text: light-dark(#12151a, #f3f4f6);
+  --admin-text-2: light-dark(#4b5563, #c5cad3);
+  --admin-text-3: light-dark(#5c6570, #9aa3af);
+  --admin-accent: light-dark(#0f766e, #5eead4);
+  --admin-accent-hover: light-dark(#115e59, #99f6e4);
+  --admin-accent-soft: light-dark(#e7f5f3, #14332f);
+  --admin-accent-text: light-dark(#0f5c56, #99f6e4);
+  --admin-danger: light-dark(#b42318, #fda29b);
+  --admin-warning: light-dark(#b45309, #fdb022);
+  --admin-success: light-dark(#067647, #75e0a7);
+  --admin-hover: light-dark(#f3f5f7, #222830);
+  --admin-shadow: light-dark(0 12px 40px rgba(18, 21, 26, 0.14), 0 12px 40px rgba(0, 0, 0, 0.45));
+  --admin-radius: 10px;
+  --admin-radius-sm: 6px;
+  --admin-row-py: 0.45rem;
+}
+
+:root[data-density="comfortable"] {
+  --admin-row-py: 0.7rem;
+}

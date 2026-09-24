@@ -110,6 +110,7 @@ export function BoardCatalogSourcesSection() {
         {rows.length === 0 ? (
           <p className="small text-muted mb-0">No source rows yet. Scan or preview LCSD / EDB / SWD to fill the queue.</p>
         ) : (
+          <div className="table-responsive">
           <table className="table table-sm mb-3">
             <thead>
               <tr>
@@ -172,6 +173,7 @@ export function BoardCatalogSourcesSection() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
         <div className="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-2">
           <h4 className="h6 mb-0">Competitor / Places candidates waiting on you</h4>

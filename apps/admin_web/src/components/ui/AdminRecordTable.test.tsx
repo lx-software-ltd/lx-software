@@ -76,9 +76,9 @@ describe("AdminRowActions", () => {
         ]}
       />,
     );
-    expect(screen.getByRole("button", { name: "Edit record" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Duplicate record" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit record" })).toBeNull();
     expect(screen.getByRole("button", { name: "More actions" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Edit record", hidden: true })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Delete record", hidden: true })).toBeTruthy();
   });
 

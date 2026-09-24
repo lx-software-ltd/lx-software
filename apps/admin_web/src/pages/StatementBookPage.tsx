@@ -1,12 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { FinanceDataLoadOrError, FinanceSaveStatus } from "../components/FinanceDataStatus";
 import { HouseStatementPanel } from "../components/HouseStatementPanel";
 import { StatementBookDashboardCard } from "../components/StatementBookDashboardCard";
 import { ExecutiveBoardTab } from "../components/board/ExecutiveBoardTab";
-import { AdminPageIntro, AdminTabList, type AdminTabItem } from "../components/ui";
+import { AdminPageHeader, AdminTabList, type AdminTabItem } from "../components/ui";
 import { useStatementBook } from "../hooks/useStatementBook";
 import { adminTabButtonId } from "../lib/adminTabs";
-import { clearExpandedParamsExcept } from "../lib/expandedRecord";
+import { isRowExpandedParam } from "../lib/expandedRecord";
 import { defaultFiscalYearIdForNowUtc, type FiscalYearId } from "../lib/fiscalYearFinance";
 import { defaultStatementBookTab, type StatementBookTab } from "../lib/statementBookTabs";
 import { SIU_TIN_DEI_BOOK_KEY, STATEMENT_BOOK_DISPLAY_LABEL } from "../lib/statementOwners";
@@ -46,17 +47,37 @@ export function StatementBookPage({
     saveError,
     saveErrorDetail,
   } = useStatementBook(bookKey);
-  const [tab, setTab] = useState<StatementBookTab>(() =>
-    defaultStatementBookTab(hasExecutiveBoard, window.location.search),
-  );
+  const location = useLocation();
+  const navigate = useNavigate();
+  const tab = defaultStatementBookTab(hasExecutiveBoard, location.search);
+  const setTab = (id: StatementBookTab) => {
+    const params = new URLSearchParams(location.search);
+    params.set("tab", id);
+    const keep = id === "expenses" || id === "gains" ? `${bookKey}-line` : null;
+    for (const key of [...params.keys()]) {
+      if (key !== keep && isRowExpandedParam(key)) params.delete(key);
+    }
+    if (id !== "board") params.delete("section");
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true });
+  };
   const [fiscalYear, setFiscalYear] = useState<FiscalYearId>(() =>
     defaultFiscalYearIdForNowUtc(),
   );
   useEffect(() => {
     if (tab === "board") return;
+    const params = new URLSearchParams(location.search);
     const keep = tab === "expenses" || tab === "gains" ? `${bookKey}-line` : null;
-    clearExpandedParamsExcept(keep);
-  }, [tab, bookKey]);
+    let changed = false;
+    for (const key of [...params.keys()]) {
+      if (key !== keep && isRowExpandedParam(key)) {
+        params.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) {
+      navigate({ pathname: location.pathname, search: params.toString() }, { replace: true });
+    }
+  }, [bookKey, location.pathname, location.search, navigate, tab]);
   const idPrefix = `book-${bookKey}`;
   const panelId = `${idPrefix}-tabpanel`;
   // The board has its own API; it stays usable even when the book failed to load.
@@ -64,13 +85,15 @@ export function StatementBookPage({
 
   return (
     <div>
-      <h1 className="h3 mb-3">{title}</h1>
-      <AdminPageIntro>
-        Record invoices and receipts for {title}. Upload a PDF or image to
-        extract lines, or add a row by hand. Expenses and gains are stored
-        separately; imports on each tab keep only that tab&apos;s line type.
-        Default currency is HKD.
-      </AdminPageIntro>
+      <AdminPageHeader
+        title={title}
+        help={
+          <>
+            Record invoices and receipts for {title}. Upload a PDF or image to extract lines, or
+            add a row by hand. Expenses and gains are stored separately. Default currency is HKD.
+          </>
+        }
+      />
       <FinanceDataLoadOrError
         isLoading={isLoading}
         isError={isError}
