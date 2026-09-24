@@ -102,6 +102,13 @@
   flex: none;
 }
 
+.admin-nav-mark {
+  width: 1.25rem;
+  height: 1.25rem;
+  object-fit: contain;
+  flex: none;
+}
+
 .admin-nav-link:focus-visible,
 .admin-rail-tool:focus-visible,
 .admin-help-btn:focus-visible {

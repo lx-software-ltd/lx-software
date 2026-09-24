@@ -17,7 +17,11 @@ function NavGroups({ onNavigate }: { readonly onNavigate?: () => void }) {
               title={item.label}
               onClick={onNavigate}
             >
-              <i className={`bi ${item.icon}`} aria-hidden="true" />
+              {item.mark ? (
+                <img src={item.mark} alt="" className="admin-nav-mark" />
+              ) : (
+                <i className={`bi ${item.icon}`} aria-hidden="true" />
+              )}
               <span className="admin-nav-label">{item.label}</span>
             </NavLink>
           ))}
