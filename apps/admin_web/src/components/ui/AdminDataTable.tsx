@@ -1,5 +1,7 @@
 import {
+  Children,
   createContext,
+  isValidElement,
   useContext,
   useEffect,
   useId,
@@ -71,6 +73,28 @@ export type AdminDataTableProps = {
 };
 
 const ColumnsContext = createContext<readonly AdminDataTableColumn[] | null>(null);
+
+function isRecordGroup(child: ReactNode): boolean {
+  return (
+    isValidElement(child) &&
+    (child.type as { recordGroup?: boolean }).recordGroup === true
+  );
+}
+
+/** Expandable records render their own `<tbody>`. Plain rows stay in one body. */
+function renderTableBody(children: ReactNode): ReactNode {
+  const items = Children.toArray(children);
+  if (!items.some(isRecordGroup)) return <tbody>{children}</tbody>;
+  return items.map((child, index) =>
+    isRecordGroup(child) ? (
+      child
+    ) : (
+      <tbody className="admin-record-group" key={`plain-row-${index}`}>
+        {child}
+      </tbody>
+    ),
+  );
+}
 
 /**
  * Standard admin table: filter field, striped rows, last column reserved for operations.
@@ -172,9 +196,7 @@ export function AdminDataTable({
             ))}
           </tr>
         </thead>
-        <ColumnsContext.Provider value={columns}>
-          <tbody>{children}</tbody>
-        </ColumnsContext.Provider>
+        <ColumnsContext.Provider value={columns}>{renderTableBody(children)}</ColumnsContext.Provider>
       </table>
     </div>
   );

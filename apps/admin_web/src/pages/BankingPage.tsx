@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AdminCell,
   AdminDataTable,
@@ -16,6 +16,8 @@ import {
   MoneyAmount,
 } from "../components/ui";
 import { useExpandedRecord } from "../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
+import { clearExpandedParamsExcept } from "../lib/expandedRecord";
 import { FinanceDataLoadOrError } from "../components/FinanceDataStatus";
 import { useBankOptions, useBankSync } from "../hooks/useBankSync";
 import { useFinance } from "../hooks/useFinance";
@@ -98,12 +100,25 @@ export function BankingPage() {
   const [sessionFilter, setSessionFilter] = useState("");
   const [pendingDisconnect, setPendingDisconnect] = useState<BankSyncSession | null>(null);
   const expandedBank = useExpandedRecord("bank");
+  useEffect(() => {
+    clearExpandedParamsExcept("bank");
+  }, []);
   // null = no local edits; otherwise uid -> accounts-sheet record id ("" = unmapped).
   const [mappingDraft, setMappingDraft] = useState<Record<string, string> | null>(
     null,
   );
 
   const sessions = useMemo(() => state?.sessions ?? [], [state]);
+  const openSession = expandedBank.expandedId
+    ? (sessions.find((session) => session.sessionId === expandedBank.expandedId) ?? null)
+    : null;
+  useHydrateExpandedRecord({
+    expandedId: expandedBank.expandedId,
+    recordsReady: !isLoading,
+    record: openSession,
+    apply: () => undefined,
+    onMissing: () => expandedBank.request(null, false),
+  });
   const mappings = useMemo(() => state?.mappings ?? [], [state]);
   const lastSync = state?.lastSync ?? null;
 
@@ -365,20 +380,31 @@ export function BankingPage() {
                   expandedBank.toggle(session.sessionId, false, () => undefined, () => undefined)
                 }
                 editor={
-                  session.accounts.length === 0 ? (
-                    <p className="text-muted small mb-0">No accounts on this consent.</p>
-                  ) : (
-                    <ul className="list-unstyled mb-0">
-                      {session.accounts.map((account) => (
-                        <li key={account.uid} className="small">
-                          {bankAccountLabel(account)}
-                          {account.currency ? (
-                            <span className="text-muted"> · {account.currency}</span>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  )
+                  <>
+                    <div className="d-md-none">
+                      {session.accounts.length === 0 ? (
+                        <p className="text-muted small mb-0">No accounts on this consent.</p>
+                      ) : (
+                        <ul className="list-unstyled mb-0">
+                          {session.accounts.map((account) => (
+                            <li key={account.uid} className="small">
+                              {bankAccountLabel(account)}
+                              {account.currency ? (
+                                <span className="text-muted"> · {account.currency}</span>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <p className="small mb-0 d-none d-md-block d-lg-none">
+                      <ConsentExpiryNote validUntil={session.validUntil} showDate />
+                    </p>
+                    <p className="small text-muted mb-0 d-none d-lg-block">
+                      Connected{" "}
+                      {session.createdAt ? <DateTimeDisplay iso={session.createdAt} /> : "—"}.
+                    </p>
+                  </>
                 }
               >
                 <AdminCell column="bank">
@@ -456,23 +482,24 @@ export function BankingPage() {
         <AdminRecordTable
           label="Account mappings"
           filters={
-            <AdminFilterBar
-              trailing={
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={onSaveMappings}
-                  disabled={!hasMappingChanges || saveMappings.isPending}
-                >
-                  {saveMappings.isPending ? "Saving…" : "Save mappings"}
-                </button>
-              }
-            >
-              <p className="small text-muted mb-0">
+            <>
+              <p className="small text-muted mb-2">
                 Map each linked bank account to a Finance → Accounts record. Sync writes the live
                 balance into the record&apos;s value.
               </p>
-            </AdminFilterBar>
+              <AdminFilterBar
+                trailing={
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={onSaveMappings}
+                    disabled={!hasMappingChanges || saveMappings.isPending}
+                  >
+                    {saveMappings.isPending ? "Saving…" : "Save mappings"}
+                  </button>
+                }
+              />
+            </>
           }
         >
           {saveMappings.isError ? (

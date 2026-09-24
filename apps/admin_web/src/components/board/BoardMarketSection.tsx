@@ -15,6 +15,7 @@ import {
 import { BoardTaskDrawer } from "./BoardTaskDrawer";
 import { DRAFT_RECORD_ID } from "../../lib/expandedRecord";
 import { useExpandedRecord } from "../../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../../hooks/useHydrateExpandedRecord";
 import { useBoardMarket } from "../../hooks/useBoardMarket";
 import { useBoardTask, useBoardTasks } from "../../hooks/useBoardTasks";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
@@ -127,9 +128,21 @@ export function BoardMarketSection() {
       (form.district ?? "") !== (saved.district ?? "") ||
       (form.urls ?? []).join("\n") !== (saved.urls ?? []).join("\n") ||
       (form.appIds?.ios ?? "") !== (saved.appIds?.ios ?? "") ||
-      (form.appIds?.android ?? "") !== (saved.appIds?.android ?? "")
+      (form.appIds?.android ?? "") !== (saved.appIds?.android ?? "") ||
+      JSON.stringify(form.socialHandles ?? []) !== JSON.stringify(saved.socialHandles ?? [])
     );
   }
+
+  const editingWatch = editingId
+    ? (market.watches.find((row) => row.watchId === editingId) ?? null)
+    : null;
+  useHydrateExpandedRecord({
+    expandedId: expanded.expandedId,
+    recordsReady: !market.isLoading,
+    record: editingWatch,
+    apply: (watch) => setForm(watchToForm(watch)),
+    onMissing: () => expanded.request(null, false),
+  });
 
   function openEdit(watch: BoardWatch) {
     expanded.toggle(watch.watchId, watchDirty(), () => setForm(watchToForm(watch)), () => setForm(emptyForm()));
@@ -247,6 +260,7 @@ export function BoardMarketSection() {
         district when the URLs share one, or leave it blank so the crawl guesses from the path (for example
         /area/tung_chung). Discovery adds candidates on Monday; promote the ones that keep showing up.
       </p>
+      <h3 className="h6 text-uppercase text-muted mb-2">Watchlist</h3>
       <AdminRecordTable
         label="Watchlist"
         filters={

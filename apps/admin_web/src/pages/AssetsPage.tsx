@@ -16,6 +16,8 @@ import {
   ConfirmDialog,
 } from "../components/ui";
 import { useExpandedRecord } from "../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
+import { clearExpandedParamsExcept } from "../lib/expandedRecord";
 import {
   useAdminAssets,
   type AdminAssetMeta,
@@ -173,6 +175,19 @@ export function AssetsPage() {
     () => q.data?.pages.flatMap((p) => p.items) ?? [],
     [q.data],
   );
+  useEffect(() => {
+    clearExpandedParamsExcept("asset");
+  }, []);
+  const openAssetRow = expanded.expandedId
+    ? (rows.find((row) => row.pk === expanded.expandedId) ?? null)
+    : null;
+  useHydrateExpandedRecord({
+    expandedId: expanded.expandedId,
+    recordsReady: !q.isLoading && !q.hasNextPage && !q.isFetchingNextPage,
+    record: openAssetRow,
+    apply: () => undefined,
+    onMissing: () => expanded.request(null, false),
+  });
 
   const displayRows = useMemo(() => {
     const sorted = [...rows].sort(

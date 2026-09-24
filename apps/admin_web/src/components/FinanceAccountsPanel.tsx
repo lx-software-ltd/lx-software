@@ -16,6 +16,7 @@ import {
 } from "../lib/financeModel";
 import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
 import { useExpandedRecord } from "../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
 import { useFrankfurterRatesForTotals } from "../hooks/useFrankfurterRatesForTotals";
 import {
   AdminCell,
@@ -128,8 +129,9 @@ export function FinanceAccountsPanel(props: {
   readonly onPatch: (
     patch: (prev: readonly FinanceAccountRecord[]) => FinanceAccountRecord[],
   ) => void;
+  readonly isSaving?: boolean;
 }) {
-  const { records, onPatch } = props;
+  const { records, onPatch, isSaving = false } = props;
   const sheetId = "accounts";
   const formId = `${sheetId}-form`;
   const expanded = useExpandedRecord("account");
@@ -396,18 +398,36 @@ export function FinanceAccountsPanel(props: {
         descriptionInput !== "" ||
         valueStr !== "" ||
         lastStatementStr !== "" ||
-        accountTypeInput !== "Bank Account"
+        accountTypeInput !== "Bank Account" ||
+        billingDayStr !== "1" ||
+        formCurrency !== GLOBAL_DEFAULT_CURRENCY
       );
     }
     const row = records.find((record) => record.id === editingId);
     if (!row) return false;
+    const savedStatement = accountTypeIsCreditCard(row.accountType)
+      ? String(row.lastStatementAmount ?? "")
+      : "";
     return (
       descriptionInput !== row.description ||
       accountTypeInput !== row.accountType ||
+      billingDayStr !== String(row.billingCycleDay) ||
       valueStr !== String(row.recordedValue) ||
-      formCurrency !== row.currency
+      lastStatementStr !== savedStatement ||
+      formCurrency !== coerceSupportedCurrency(row.currency, GLOBAL_DEFAULT_CURRENCY)
     );
   }
+
+  const editingAccount = editingId
+    ? (records.find((record) => record.id === editingId) ?? null)
+    : null;
+  useHydrateExpandedRecord({
+    expandedId: expanded.expandedId,
+    recordsReady: true,
+    record: editingAccount,
+    apply: applyAccount,
+    onMissing: () => expanded.request(null, false),
+  });
 
   function openEdit(row: FinanceAccountRecord) {
     expanded.toggle(row.id, accountDirty(), () => applyAccount(row), resetFields);
@@ -486,6 +506,7 @@ export function FinanceAccountsPanel(props: {
           formId={formId}
           onSubmit={submit}
           submitLabel={editingId ? "Update record" : "Add record"}
+          isSaving={isSaving}
           error={formError}
         >
           <div className="row g-3">

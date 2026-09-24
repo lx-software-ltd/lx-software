@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FinanceDataLoadOrError, FinanceSaveStatus } from "../components/FinanceDataStatus";
 import { FinanceInvestmentsPanel } from "../components/FinanceInvestmentsPanel";
 import { FinancePensionPanel, FinanceSavingsPanel } from "../components/FinanceSavingsAndPensionPanels";
@@ -10,6 +10,7 @@ import { HouseStatementPanel } from "../components/HouseStatementPanel";
 import { AdminPageIntro, AdminTabList, type AdminTabItem } from "../components/ui";
 import { useFinance } from "../hooks/useFinance";
 import { adminTabButtonId } from "../lib/adminTabs";
+import { clearExpandedParamsExcept } from "../lib/expandedRecord";
 import { HOUSE_DISPLAY_LABEL, LEDGER_RELATED_HOUSE_OPTIONS } from "../lib/houses";
 import {
   EXPENSE_CATEGORIES,
@@ -46,6 +47,28 @@ const FINANCE_TABS: readonly AdminTabItem<FinanceTab>[] = [
 const TAB_ID_PREFIX = "finance";
 const PANEL_ID = "finance-tabpanel";
 
+const FINANCE_TAB_PARAM: Record<FinanceTab, string> = {
+  hillmarton: "hillmarton-line",
+  morrison: "morrison-line",
+  investments: "investment",
+  savings: "savings",
+  pension: "pension",
+  income: "income",
+  expenses: "expenses",
+  allocations: "allocation",
+  accounts: "account",
+  liabilities: "liability",
+};
+
+function financeTabFromLocation(): FinanceTab {
+  if (typeof window === "undefined") return "accounts";
+  const params = new URLSearchParams(window.location.search);
+  for (const item of FINANCE_TABS) {
+    if (params.get(FINANCE_TAB_PARAM[item.id])) return item.id;
+  }
+  return "accounts";
+}
+
 export function FinancePage() {
   const {
     data,
@@ -66,7 +89,10 @@ export function FinancePage() {
     saveError,
     saveErrorDetail,
   } = useFinance();
-  const [tab, setTab] = useState<FinanceTab>("accounts");
+  const [tab, setTab] = useState<FinanceTab>(financeTabFromLocation);
+  useEffect(() => {
+    clearExpandedParamsExcept(FINANCE_TAB_PARAM[tab]);
+  }, [tab]);
 
   return (
     <div>
@@ -121,6 +147,7 @@ export function FinancePage() {
                 houseKey="hillmarton"
                 data={data.hillmarton}
                 onPatch={(patch) => patchHouse("hillmarton", patch)}
+                isSaving={isSaving}
               />
             ) : null}
             {tab === "morrison" ? (
@@ -128,23 +155,26 @@ export function FinancePage() {
                 houseKey="morrison"
                 data={data.morrison}
                 onPatch={(patch) => patchHouse("morrison", patch)}
+                isSaving={isSaving}
               />
             ) : null}
             {tab === "investments" ? (
               <FinanceInvestmentsPanel
                 records={data.investmentRecords}
                 onPatch={patchInvestmentRecords}
+                isSaving={isSaving}
                 relatedHouseOptions={LEDGER_RELATED_HOUSE_OPTIONS}
               />
             ) : null}
             {tab === "savings" ? (
-              <FinanceSavingsPanel records={data.savingsRecords} onPatch={patchSavingsRecords} />
+              <FinanceSavingsPanel records={data.savingsRecords} onPatch={patchSavingsRecords} isSaving={isSaving} />
             ) : null}
             {tab === "pension" ? (
               <FinancePensionPanel
                 records={data.pensionRecords}
                 onPatch={patchPensionRecords}
                 allocationRecords={data.allocationRecords}
+                isSaving={isSaving}
               />
             ) : null}
             {tab === "income" ? (
@@ -153,6 +183,7 @@ export function FinancePage() {
                 categories={INCOME_CATEGORIES}
                 records={data.incomeRecords}
                 onPatch={(patch) => patchLedgerRecords("income", patch)}
+                isSaving={isSaving}
                 formSectionTitle="Income record"
                 tableSectionTitle="Monthly Income"
                 deleteConfirmMessage="Delete this income record?"
@@ -168,6 +199,7 @@ export function FinancePage() {
                 categories={EXPENSE_CATEGORIES}
                 records={data.expenseRecords}
                 onPatch={(patch) => patchLedgerRecords("expenses", patch)}
+                isSaving={isSaving}
                 formSectionTitle="Expense record"
                 tableSectionTitle="Monthly Expenses"
                 deleteConfirmMessage="Delete this expense record?"
@@ -184,15 +216,17 @@ export function FinancePage() {
               <FinanceAllocationsPanel
                 records={data.allocationRecords}
                 onPatch={patchAllocationRecords}
+                isSaving={isSaving}
               />
             ) : null}
             {tab === "accounts" ? (
-              <FinanceAccountsPanel records={data.accountRecords} onPatch={patchAccountRecords} />
+              <FinanceAccountsPanel records={data.accountRecords} onPatch={patchAccountRecords} isSaving={isSaving} />
             ) : null}
             {tab === "liabilities" ? (
               <FinanceLiabilitiesPanel
                 records={data.liabilityRecords}
                 onPatch={patchLiabilityRecords}
+                isSaving={isSaving}
                 relatedHouseOptions={LEDGER_RELATED_HOUSE_OPTIONS}
               />
             ) : null}

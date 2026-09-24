@@ -4,6 +4,8 @@ export type TableIconButtonProps = {
   readonly ariaLabel: string;
   readonly onClick?: () => void;
   readonly variant?: "default" | "danger";
+  /** Bordered white buttons are the record-table operations. Other tables stay link-style. */
+  readonly appearance?: "link" | "bordered";
   readonly type?: "button" | "submit";
   readonly disabled?: boolean;
 };
@@ -14,13 +16,19 @@ export function TableIconButton({
   ariaLabel,
   onClick,
   variant = "default",
+  appearance = "link",
   type = "button",
   disabled,
 }: TableIconButtonProps) {
+  const bordered = appearance === "bordered";
   return (
     <button
       type={type}
-      className={`btn btn-sm btn-outline-secondary bg-white admin-table-icon-btn ${variant === "danger" ? "text-danger border-danger" : ""}`}
+      className={`btn btn-sm admin-table-icon-btn ${
+        bordered
+          ? `btn-outline-secondary bg-white${variant === "danger" ? " text-danger border-danger" : ""}`
+          : `btn-link p-1 lh-1${variant === "danger" ? " text-danger" : ""}`
+      }`}
       aria-label={ariaLabel}
       title={ariaLabel}
       onClick={onClick}

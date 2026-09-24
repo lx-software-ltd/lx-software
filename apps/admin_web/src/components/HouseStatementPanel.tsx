@@ -17,6 +17,7 @@ import { formatDateUtc } from "../lib/formatDisplay";
 import { parseAmount } from "../lib/formParse";
 import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
 import { useExpandedRecord } from "../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
 import {
   existingImportedStatementBasenames,
   useParseStatement,
@@ -189,6 +190,8 @@ export type HouseStatementPanelProps = {
   readonly tableSectionTitle?: string;
   readonly emptyMessage?: string;
   readonly importFileLabel?: string;
+  /** Document save in flight. Line uploads use their own Uploading… label. */
+  readonly isSaving?: boolean;
 };
 
 const TABLE_COLUMNS: AdminDataTableColumn[] = [
@@ -239,6 +242,7 @@ export function HouseStatementPanel({
   tableSectionTitle = "House statement",
   emptyMessage = "No statement lines yet.",
   importFileLabel = "Statement file",
+  isSaving: documentSaving = false,
 }: HouseStatementPanelProps) {
   const lineFormId = `${houseKey}-line-form`;
   const [floatAmount, setFloatAmount] = useState(String(data.float.amount));
@@ -369,21 +373,16 @@ export function HouseStatementPanel({
     return lockedLineType ? { ...next, type: lockedLineType } : next;
   }
 
-  const [hydratedLineId, setHydratedLineId] = useState<string | null>(null);
-  if (!editingId) {
-    if (hydratedLineId !== null) setHydratedLineId(null);
-  } else if (editingLine && hydratedLineId !== editingId) {
-    setHydratedLineId(editingId);
-    setLineForm((current) => {
-      const saved = lineToForm(editingLine);
-      const blank = blankLineForm();
-      if (JSON.stringify(current) === JSON.stringify(blank)) return saved;
-      return current;
-    });
-  } else if (!editingLine && hydratedLineId !== editingId) {
-    setHydratedLineId(editingId);
-    expanded.request(null, false);
-  }
+  useHydrateExpandedRecord({
+    expandedId: expanded.expandedId,
+    recordsReady: true,
+    record: editingLine ?? null,
+    apply: (line) => {
+      setFormError(null);
+      setLineForm(lineToForm(line));
+    },
+    onMissing: () => expanded.request(null, false),
+  });
 
   function resetLineFields() {
     setFormError(null);
@@ -564,8 +563,8 @@ export function HouseStatementPanel({
           formId={lineFormId}
           onSubmit={submitLine}
           submitLabel={editingId ? "Update line" : "Add line"}
-          isSaving={lineSubmitBusy}
-          savingLabel="Uploading…"
+          isSaving={lineSubmitBusy || documentSaving}
+          savingLabel={lineSubmitBusy ? "Uploading…" : "Saving…"}
           error={formError}
         >
           <span className="visually-hidden">{lineSectionTitle}</span>

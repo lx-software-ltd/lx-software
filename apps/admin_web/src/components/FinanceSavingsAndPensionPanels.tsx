@@ -18,6 +18,7 @@ import {
 } from "../lib/financeModel";
 import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
 import { useExpandedRecord } from "../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
 import { useFrankfurterRatesForTotals } from "../hooks/useFrankfurterRatesForTotals";
 import {
   AdminCell,
@@ -172,7 +173,7 @@ type SimpleMoneyRecordsPanelProps =
       records: readonly FinanceSavingsRecord[];
       onPatch: (patch: (prev: readonly FinanceSavingsRecord[]) => FinanceSavingsRecord[]) => void;
       sheetId: string;
-      formSectionTitle: string;
+      isSaving?: boolean;
       tableSectionTitle: string;
       labelColumnHeader: string;
       labelFormLabel: string;
@@ -189,7 +190,7 @@ type SimpleMoneyRecordsPanelProps =
       pensionTaggedAllocationRecords?: readonly FinanceAllocationRecord[];
       onPatch: (patch: (prev: readonly FinancePensionRecord[]) => FinancePensionRecord[]) => void;
       sheetId: string;
-      formSectionTitle: string;
+      isSaving?: boolean;
       tableSectionTitle: string;
       labelColumnHeader: string;
       labelFormLabel: string;
@@ -212,6 +213,7 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
     deleteConfirmMessage,
     emptyMessage,
     columnOrder,
+    isSaving = false,
   } = props;
 
   const allocationRecordsForPensionTable =
@@ -564,6 +566,19 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
     );
   }
 
+  const editingMoney = editingId
+    ? variant === "savings"
+      ? ((records as readonly FinanceSavingsRecord[]).find((record) => record.id === editingId) ?? null)
+      : ((records as readonly FinancePensionRecord[]).find((record) => record.id === editingId) ?? null)
+    : null;
+  useHydrateExpandedRecord({
+    expandedId: expanded.expandedId,
+    recordsReady: true,
+    record: editingMoney,
+    apply: (row) => applyRecord(row),
+    onMissing: () => expanded.request(null, false),
+  });
+
   function openEdit(row: FinanceSavingsRecord | FinancePensionRecord) {
     expanded.toggle(row.id, recordDirty(), () => applyRecord(row), resetFields);
   }
@@ -666,6 +681,7 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
       formId={formId}
       onSubmit={submit}
       submitLabel={editingId ? "Update record" : "Add record"}
+      isSaving={isSaving}
       error={formError}
     >
           <div
@@ -1084,6 +1100,7 @@ export function FinanceSavingsPanel(props: {
   readonly onPatch: (
     patch: (prev: readonly FinanceSavingsRecord[]) => FinanceSavingsRecord[],
   ) => void;
+  readonly isSaving?: boolean;
 }) {
   return (
     <SimpleMoneyRecordsPanel
@@ -1091,7 +1108,7 @@ export function FinanceSavingsPanel(props: {
       records={props.records}
       onPatch={props.onPatch}
       sheetId="savings"
-      formSectionTitle="Savings record"
+      isSaving={props.isSaving}
       tableSectionTitle="Savings"
       labelColumnHeader="Deposit"
       labelFormLabel="Deposit"
@@ -1109,6 +1126,7 @@ export function FinancePensionPanel(props: {
     patch: (prev: readonly FinancePensionRecord[]) => FinancePensionRecord[],
   ) => void;
   readonly allocationRecords: readonly FinanceAllocationRecord[];
+  readonly isSaving?: boolean;
 }) {
   return (
     <SimpleMoneyRecordsPanel
@@ -1117,7 +1135,7 @@ export function FinancePensionPanel(props: {
       pensionTaggedAllocationRecords={props.allocationRecords}
       onPatch={props.onPatch}
       sheetId="pension"
-      formSectionTitle="Pension record"
+      isSaving={props.isSaving}
       tableSectionTitle="Pension"
       labelColumnHeader="Fund"
       labelFormLabel="Fund"

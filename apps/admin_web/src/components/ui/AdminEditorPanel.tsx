@@ -39,7 +39,7 @@ export function AdminEditorActions({
       <button
         type="submit"
         form={formId}
-        className="btn btn-primary btn-sm"
+        className="btn btn-primary"
         disabled={disabled || isSaving}
         aria-busy={isSaving}
       >

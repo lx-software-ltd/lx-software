@@ -24,6 +24,7 @@ import {
 } from "../lib/financeModel";
 import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
 import { useExpandedRecord } from "../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
 import { buildQuoteMap, type FinanceQuoteResult } from "../lib/financeQuotes";
 import { useFinanceQuotes } from "../hooks/useFinanceQuotes";
 import { useFrankfurterRatesForTotals } from "../hooks/useFrankfurterRatesForTotals";
@@ -209,11 +210,32 @@ type FormState = {
   cryptoCurrency: string;
 };
 
+function formFromInvestment(row: FinanceInvestmentRecord): FormState {
+  return {
+    category: row.category,
+    assetType: row.assetType,
+    provider: row.provider,
+    principal: String(row.principalAmount),
+    currency: row.currency,
+    unit: row.category === "Real Estate" ? "" : row.unit !== undefined ? String(row.unit) : "",
+    currentValue:
+      row.category === "Real Estate" ? String(row.currentValue ?? row.principalAmount) : "",
+    relatedHouse:
+      row.category === "Real Estate" &&
+      (row.relatedHouse === "hillmarton" || row.relatedHouse === "morrison")
+        ? row.relatedHouse
+        : "",
+    ticker: row.category === "ETF" ? (row.ticker ?? "") : "",
+    cryptoCurrency: row.category === "Crypto" ? (row.cryptoCurrency ?? "") : "",
+  };
+}
+
 export type FinanceInvestmentsPanelProps = {
   readonly records: readonly FinanceInvestmentRecord[];
   readonly onPatch: (
     patch: (prev: readonly FinanceInvestmentRecord[]) => FinanceInvestmentRecord[],
   ) => void;
+  readonly isSaving?: boolean;
   readonly relatedHouseOptions: ReadonlyArray<{
     readonly value: HouseKey;
     readonly label: string;
@@ -224,6 +246,7 @@ export function FinanceInvestmentsPanel({
   records,
   onPatch,
   relatedHouseOptions,
+  isSaving = false,
 }: FinanceInvestmentsPanelProps) {
   const sheetId = "investments";
   const defaultCategory = INVESTMENT_CATEGORIES[0];
@@ -671,39 +694,27 @@ export function FinanceInvestmentsPanel({
 
   function applyInvestment(row: FinanceInvestmentRecord) {
     setFormError(null);
-    setForm({
-      category: row.category,
-      assetType: row.assetType,
-      provider: row.provider,
-      principal: String(row.principalAmount),
-      currency: row.currency,
-      unit:
-        row.category === "Real Estate"
-          ? ""
-          : row.unit !== undefined
-            ? String(row.unit)
-            : "",
-      currentValue:
-        row.category === "Real Estate"
-          ? String(row.currentValue ?? row.principalAmount)
-          : "",
-      relatedHouse:
-        row.category === "Real Estate" &&
-        (row.relatedHouse === "hillmarton" || row.relatedHouse === "morrison")
-          ? row.relatedHouse
-          : "",
-      ticker: row.category === "ETF" ? (row.ticker ?? "") : "",
-      cryptoCurrency: row.category === "Crypto" ? (row.cryptoCurrency ?? "") : "",
-    });
+    setForm(formFromInvestment(row));
   }
 
   function investmentDirty(): boolean {
     if (!formOpen) return false;
-    if (!editingId) return form.provider !== "" || form.principal !== "";
+    if (!editingId) return JSON.stringify(form) !== JSON.stringify(emptyForm());
     const row = records.find((record) => record.id === editingId);
     if (!row) return false;
-    return form.provider !== row.provider || form.principal !== String(row.principalAmount);
+    return JSON.stringify(form) !== JSON.stringify(formFromInvestment(row));
   }
+
+  const editingInvestment = editingId
+    ? (records.find((record) => record.id === editingId) ?? null)
+    : null;
+  useHydrateExpandedRecord({
+    expandedId: expanded.expandedId,
+    recordsReady: true,
+    record: editingInvestment,
+    apply: applyInvestment,
+    onMissing: () => expanded.request(null, false),
+  });
 
   function openEdit(row: FinanceInvestmentRecord) {
     expanded.toggle(row.id, investmentDirty(), () => applyInvestment(row), resetFields);
@@ -802,6 +813,7 @@ export function FinanceInvestmentsPanel({
       formId={formId}
       onSubmit={submit}
       submitLabel={editingId ? "Update record" : "Add record"}
+      isSaving={isSaving}
       error={formError}
     >
           <div className="row g-3">

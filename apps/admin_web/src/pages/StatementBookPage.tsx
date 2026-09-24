@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { FinanceDataLoadOrError, FinanceSaveStatus } from "../components/FinanceDataStatus";
 import { HouseStatementPanel } from "../components/HouseStatementPanel";
 import { StatementBookDashboardCard } from "../components/StatementBookDashboardCard";
@@ -6,6 +6,7 @@ import { ExecutiveBoardTab } from "../components/board/ExecutiveBoardTab";
 import { AdminPageIntro, AdminTabList, type AdminTabItem } from "../components/ui";
 import { useStatementBook } from "../hooks/useStatementBook";
 import { adminTabButtonId } from "../lib/adminTabs";
+import { clearExpandedParamsExcept } from "../lib/expandedRecord";
 import { defaultFiscalYearIdForNowUtc, type FiscalYearId } from "../lib/fiscalYearFinance";
 import { defaultStatementBookTab, type StatementBookTab } from "../lib/statementBookTabs";
 import { SIU_TIN_DEI_BOOK_KEY, STATEMENT_BOOK_DISPLAY_LABEL } from "../lib/statementOwners";
@@ -51,6 +52,11 @@ export function StatementBookPage({
   const [fiscalYear, setFiscalYear] = useState<FiscalYearId>(() =>
     defaultFiscalYearIdForNowUtc(),
   );
+  useEffect(() => {
+    if (tab === "board") return;
+    const keep = tab === "expenses" || tab === "gains" ? `${bookKey}-line` : null;
+    clearExpandedParamsExcept(keep);
+  }, [tab, bookKey]);
   const idPrefix = `book-${bookKey}`;
   const panelId = `${idPrefix}-tabpanel`;
   // The board has its own API; it stays usable even when the book failed to load.
@@ -116,6 +122,7 @@ export function StatementBookPage({
                 houseKey={bookKey}
                 data={data}
                 onPatch={patchBook}
+                isSaving={isSaving}
                 lockedLineType="expenditure"
                 showHouseDetails={false}
                 showMortgageImport={false}
@@ -132,6 +139,7 @@ export function StatementBookPage({
                 houseKey={bookKey}
                 data={data}
                 onPatch={patchBook}
+                isSaving={isSaving}
                 lockedLineType="income"
                 showHouseDetails={false}
                 showMortgageImport={false}

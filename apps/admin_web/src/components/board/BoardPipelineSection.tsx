@@ -51,7 +51,11 @@ export function BoardPipelineSection() {
   const sequence = useBoardSequence(seqType);
   const [seqDraft, setSeqDraft] = useState<BoardSequenceStep[] | null>(null);
 
-  const selected = pipeline.prospects.find((p) => p.prospectId === selectedId) ?? null;
+  const selected =
+    pipeline.prospects.find((p) => p.prospectId === selectedId) ??
+    pipeline.needsContact.find((p) => p.prospectId === selectedId) ??
+    null;
+  const selectedInLoadedPage = pipeline.prospects.some((p) => p.prospectId === selectedId);
   const steps = seqDraft ?? sequence.data?.steps ?? [];
 
   const filtered = useMemo(() => {
@@ -224,6 +228,21 @@ export function BoardPipelineSection() {
       </AdminRecordTable>
 
       <AdminEditorSection title="Needs a contact">
+        {selected && !selectedInLoadedPage ? (
+          <div className="mb-3">
+            <ProspectEditor
+              key={selected.prospectId}
+              prospect={selected}
+              error={errorText(pipeline.update.error) ?? errorText(pipeline.merge.error)}
+              saving={pipeline.update.isPending || pipeline.merge.isPending}
+              onDirty={(dirty) => {
+                prospectDirtyRef.current = dirty;
+              }}
+              onSave={(body) => pipeline.update.mutate({ prospectId: selected.prospectId, body })}
+              onMerge={(into) => pipeline.merge.mutate({ prospectId: selected.prospectId, into })}
+            />
+          </div>
+        ) : null}
         {pipeline.needsContact.length === 0 ? (
           <p className="small text-muted mb-0">No qualified prospects are waiting for a business address.</p>
         ) : (
@@ -233,7 +252,14 @@ export function BoardPipelineSection() {
                 <button
                   type="button"
                   className="btn btn-link btn-sm p-0"
-                  onClick={() => expanded.request(p.prospectId, prospectDirtyRef.current)}
+                  onClick={() => {
+                    setStage("");
+                    setPtype("");
+                    setDistrict("");
+                    setScoreMin("");
+                    setFilter("");
+                    expanded.request(p.prospectId, prospectDirtyRef.current);
+                  }}
                 >
                   {p.name}
                 </button>
@@ -354,7 +380,9 @@ function ProspectEditor({
   const [contact, setContact] = useState(prospect.contact ?? "");
   const [note, setNote] = useState(prospect.ownerNote ?? "");
   const [mergeInto, setMergeInto] = useState(prospect.possibleDuplicates?.[0]?.prospectId ?? "");
-  onDirty(contact !== (prospect.contact ?? "") || note !== (prospect.ownerNote ?? ""));
+  function reportDirty(nextContact: string, nextNote: string) {
+    onDirty(nextContact !== (prospect.contact ?? "") || nextNote !== (prospect.ownerNote ?? ""));
+  }
   return (
     <div>
       <p className="small mb-2">
@@ -379,15 +407,41 @@ function ProspectEditor({
         <p className="small mb-2">Possible duplicates: {(prospect.possibleDuplicates ?? []).map((d) => d.name || d.prospectId).join(", ")}</p>
       ) : null}
       <label className="form-label small mb-1" htmlFor="pipe-contact">Contact</label>
-      <input id="pipe-contact" className="form-control form-control-sm mb-2" value={contact} onChange={(e) => setContact(e.target.value)} />
+      <input
+        id="pipe-contact"
+        className="form-control form-control-sm mb-2"
+        value={contact}
+        onChange={(e) => {
+          const next = e.target.value;
+          setContact(next);
+          reportDirty(next, note);
+        }}
+      />
       <label className="form-label small mb-1" htmlFor="pipe-note">Note</label>
-      <textarea id="pipe-note" className="form-control form-control-sm mb-2" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+      <textarea
+        id="pipe-note"
+        className="form-control form-control-sm mb-2"
+        rows={2}
+        value={note}
+        onChange={(e) => {
+          const next = e.target.value;
+          setNote(next);
+          reportDirty(contact, next);
+        }}
+      />
       <div className="d-flex flex-wrap gap-2 mb-2">
-        <button type="button" className="btn btn-sm btn-primary" disabled={saving} onClick={() => onSave({ contact, note })}>
-          {saving ? "Saving…" : "Update"}
+        <button type="button" className="btn btn-primary" disabled={saving} aria-busy={saving} onClick={() => onSave({ contact, note })}>
+          {saving ? (
+            <>
+              <span className="spinner-border spinner-border-sm me-2" aria-hidden="true" />
+              Saving…
+            </>
+          ) : (
+            "Update"
+          )}
         </button>
         {OWNER_STAGES.map((s) => (
-          <button key={s} type="button" className="btn btn-sm btn-outline-secondary" onClick={() => onSave({ stage: s })}>
+          <button key={s} type="button" className="btn btn-sm btn-outline-secondary" disabled={saving} onClick={() => onSave({ stage: s })}>
             {s === "suppressed" ? "Suppress" : s === "declined" ? "Mark declined" : s === "parked" ? "Park" : "Mark qualified"}
           </button>
         ))}

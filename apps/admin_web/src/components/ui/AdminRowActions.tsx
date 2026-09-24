@@ -32,6 +32,7 @@ export function AdminRowActions({ actions }: AdminRowActionsProps) {
       <TableIconButton
         iconClassName={first.iconClassName}
         ariaLabel={first.label}
+        appearance="bordered"
         variant={first.danger ? "danger" : "default"}
         onClick={first.onClick}
         disabled={first.disabled}
@@ -40,6 +41,7 @@ export function AdminRowActions({ actions }: AdminRowActionsProps) {
         <TableIconButton
           iconClassName={rest[0].iconClassName}
           ariaLabel={rest[0].label}
+          appearance="bordered"
           variant={rest[0].danger ? "danger" : "default"}
           onClick={rest[0].onClick}
           disabled={rest[0].disabled}
@@ -76,7 +78,17 @@ export function AdminRowActions({ actions }: AdminRowActionsProps) {
                 key={action.id}
                 type="button"
                 className={`admin-row-menu-item${action.danger ? " text-danger" : ""}`}
-                onClick={action.onClick}
+                onClick={(event) => {
+                  const menu = event.currentTarget.closest("[popover]");
+                  if (menu instanceof HTMLElement && typeof menu.hidePopover === "function") {
+                    try {
+                      if (menu.matches(":popover-open")) menu.hidePopover();
+                    } catch {
+                      // Already closed.
+                    }
+                  }
+                  action.onClick();
+                }}
                 disabled={action.disabled}
               >
                 <i className={action.iconClassName} aria-hidden="true" />

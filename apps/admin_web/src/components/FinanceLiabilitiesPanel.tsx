@@ -17,6 +17,7 @@ import {
 import { houseDisplayLabel } from "../lib/houses";
 import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
 import { useExpandedRecord } from "../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
 import { useFrankfurterRatesForTotals } from "../hooks/useFrankfurterRatesForTotals";
 import {
   AdminCell,
@@ -120,12 +121,13 @@ export function FinanceLiabilitiesPanel(props: {
   readonly onPatch: (
     patch: (prev: readonly FinanceLiabilityRecord[]) => FinanceLiabilityRecord[],
   ) => void;
+  readonly isSaving?: boolean;
   readonly relatedHouseOptions: ReadonlyArray<{
     readonly value: HouseKey;
     readonly label: string;
   }>;
 }) {
-  const { records, onPatch, relatedHouseOptions } = props;
+  const { records, onPatch, relatedHouseOptions, isSaving = false } = props;
   const sheetId = "liabilities";
   const formId = `${sheetId}-form`;
   const expanded = useExpandedRecord("liability");
@@ -372,11 +374,39 @@ export function FinanceLiabilitiesPanel(props: {
 
   function liabilityDirty(): boolean {
     if (!formOpen) return false;
-    if (!editingId) return descriptionInput !== "" || balanceStr !== "" || rateStr !== "";
+    if (!editingId) {
+      return (
+        descriptionInput !== "" ||
+        balanceStr !== "" ||
+        rateStr !== "" ||
+        liabilityTypeInput !== "Mortgage" ||
+        relatedHouseInput !== "" ||
+        formCurrency !== GLOBAL_DEFAULT_CURRENCY
+      );
+    }
     const row = records.find((record) => record.id === editingId);
     if (!row) return false;
-    return descriptionInput !== row.description || balanceStr !== String(row.outstandingBalance);
+    const savedRate = row.interestRatePercent !== undefined ? String(row.interestRatePercent) : "";
+    return (
+      descriptionInput !== row.description ||
+      liabilityTypeInput !== row.liabilityType ||
+      balanceStr !== String(row.outstandingBalance) ||
+      rateStr !== savedRate ||
+      relatedHouseInput !== (row.relatedHouse ?? "") ||
+      formCurrency !== coerceSupportedCurrency(row.currency, GLOBAL_DEFAULT_CURRENCY)
+    );
   }
+
+  const editingLiability = editingId
+    ? (records.find((record) => record.id === editingId) ?? null)
+    : null;
+  useHydrateExpandedRecord({
+    expandedId: expanded.expandedId,
+    recordsReady: true,
+    record: editingLiability,
+    apply: applyLiability,
+    onMissing: () => expanded.request(null, false),
+  });
 
   function openEdit(row: FinanceLiabilityRecord) {
     expanded.toggle(row.id, liabilityDirty(), () => applyLiability(row), resetFields);
@@ -446,6 +476,7 @@ export function FinanceLiabilitiesPanel(props: {
           formId={formId}
           onSubmit={submit}
           submitLabel={editingId ? "Update record" : "Add record"}
+          isSaving={isSaving}
           error={formError}
         >
           <div className="row g-3">

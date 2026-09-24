@@ -34,6 +34,17 @@ describe("useExpandedRecord", () => {
     expect(result.current.confirmOpen).toBe(false);
   });
 
+  it("drops other row params when one row opens", () => {
+    window.history.replaceState(null, "", "/finance?investment=inv-1&account=ac-1&tab=finance");
+    const { result } = renderHook(() => useExpandedRecord("liability"));
+    act(() => result.current.request("li-1", false));
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get("liability")).toBe("li-1");
+    expect(params.get("investment")).toBeNull();
+    expect(params.get("account")).toBeNull();
+    expect(params.get("tab")).toBe("finance");
+  });
+
   it("toggles the same row closed", () => {
     const { result } = renderHook(() => useExpandedRecord("line"));
     act(() => result.current.toggle("row-1", false, () => undefined, () => undefined));

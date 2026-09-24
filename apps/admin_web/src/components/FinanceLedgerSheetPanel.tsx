@@ -21,6 +21,7 @@ import {
 } from "../lib/financeModel";
 import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
 import { useExpandedRecord } from "../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
 import { useFrankfurterRatesForTotals } from "../hooks/useFrankfurterRatesForTotals";
 import {
   AdminCell,
@@ -121,6 +122,7 @@ export type FinanceLedgerSheetPanelProps = {
   readonly onPatch: (
     patch: (prev: readonly FinanceLedgerRecord[]) => FinanceLedgerRecord[],
   ) => void;
+  readonly isSaving?: boolean;
   readonly formSectionTitle: string;
   readonly tableSectionTitle: string;
   readonly deleteConfirmMessage: string;
@@ -296,6 +298,7 @@ export function FinanceLedgerSheetPanel({
   categories,
   records,
   onPatch,
+  isSaving = false,
   formSectionTitle,
   tableSectionTitle,
   deleteConfirmMessage,
@@ -631,9 +634,8 @@ export function FinanceLedgerSheetPanel({
     setLineForm(emptyForm());
   }
 
-  function applyLedger(row: FinanceLedgerRecord) {
-    setFormError(null);
-    setLineForm({
+  function formFromLedger(row: FinanceLedgerRecord): LineFormState {
+    return {
       category: row.category,
       description: row.description,
       amount: String(row.amount),
@@ -644,17 +646,36 @@ export function FinanceLedgerSheetPanel({
       isSaving: row.isSaving === true,
       isInvestment: row.isInvestment === true,
       isAllocate: row.isAllocate === true,
-    });
+    };
+  }
+
+  function applyLedger(row: FinanceLedgerRecord) {
+    setFormError(null);
+    setLineForm(formFromLedger(row));
   }
 
   function ledgerDirty(): boolean {
     if (!formOpen) return false;
-    const blank = emptyForm();
-    if (!editingId) return JSON.stringify(lineForm) !== JSON.stringify(blank);
+    if (!editingId) return JSON.stringify(lineForm) !== JSON.stringify(emptyForm());
     const row = tableSourceRecords.find((record) => record.id === editingId);
-    if (!row) return false;
-    return lineForm.description !== row.description || lineForm.amount !== String(row.amount);
+    if (!row || row.isDerivedFromTaggedIncome || row.isDerivedFromAllocation) return false;
+    return JSON.stringify(lineForm) !== JSON.stringify(formFromLedger(row));
   }
+
+  const editingLedger = editingId
+    ? (tableSourceRecords.find((record) => record.id === editingId) ?? null)
+    : null;
+  const editableLedger =
+    editingLedger && !editingLedger.isDerivedFromTaggedIncome && !editingLedger.isDerivedFromAllocation
+      ? editingLedger
+      : null;
+  useHydrateExpandedRecord({
+    expandedId: expanded.expandedId,
+    recordsReady: true,
+    record: editableLedger,
+    apply: applyLedger,
+    onMissing: () => expanded.request(null, false),
+  });
 
   function openEdit(row: FinanceLedgerRecord) {
     if (row.isDerivedFromTaggedIncome || row.isDerivedFromAllocation) return;
@@ -734,6 +755,7 @@ export function FinanceLedgerSheetPanel({
           formId={formId}
           onSubmit={submitLine}
           submitLabel={editingId ? "Update record" : "Add record"}
+          isSaving={isSaving}
           error={formError}
         >
           <span className="visually-hidden">{formSectionTitle}</span>

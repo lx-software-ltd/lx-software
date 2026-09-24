@@ -9,6 +9,7 @@ import { parseAmount } from "../lib/formParse";
 import { convertAmountToBase } from "../lib/frankfurterRates";
 import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
 import { useExpandedRecord } from "../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
 import {
   CUSTOM_ALLOCATION_EXPENSE_ID_PREFIX,
   type FinanceAllocationRecord,
@@ -160,8 +161,9 @@ export function FinanceAllocationsPanel(props: {
   readonly onPatch: (
     patch: (prev: readonly FinanceAllocationRecord[]) => FinanceAllocationRecord[],
   ) => void;
+  readonly isSaving?: boolean;
 }) {
-  const { records, onPatch } = props;
+  const { records, onPatch, isSaving = false } = props;
   const expanded = useExpandedRecord("allocation");
   const [sortKey, setSortKey] = useState<AllocSortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -431,6 +433,17 @@ export function FinanceAllocationsPanel(props: {
     );
   }
 
+  const editingAllocation = editingExpenseId
+    ? (records.find((record) => record.expenseId === editingExpenseId) ?? null)
+    : null;
+  useHydrateExpandedRecord({
+    expandedId: expanded.expandedId,
+    recordsReady: true,
+    record: editingAllocation,
+    apply: applyAllocation,
+    onMissing: () => expanded.request(null, false),
+  });
+
   function openEdit(row: FinanceAllocationRecord) {
     expanded.toggle(row.expenseId, allocationDirty(), () => applyAllocation(row), resetFields);
   }
@@ -578,6 +591,7 @@ export function FinanceAllocationsPanel(props: {
       formId={editorFormId}
       onSubmit={submitEditor}
       submitLabel={editingLinkedRow || editingCustomExpenseId ? "Update record" : "Add record"}
+      isSaving={isSaving}
       error={editingLinkedRow ? linkedFormError : customFormError}
     >
           {editingLinkedRow ? (

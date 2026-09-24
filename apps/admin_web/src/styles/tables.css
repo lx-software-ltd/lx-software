@@ -132,6 +132,20 @@
   padding-top: 0.75rem;
 }
 
+.admin-expand-summary {
+  cursor: pointer;
+}
+
+.admin-expand-summary:focus-visible {
+  outline: 2px solid var(--bs-primary);
+  outline-offset: -2px;
+}
+
+/* Stripe by record group. A detail row must not take the next stripe. */
+.admin-data-table.table-striped > tbody.admin-record-group:nth-of-type(even) > tr.admin-expand-summary > * {
+  --bs-table-bg-type: transparent;
+}
+
 .admin-row-framed > td {
   box-shadow: inset 0 2px 0 #cbd5e1;
 }
@@ -181,7 +195,7 @@
   min-width: 12rem;
 }
 
-.admin-row-menu:popover-open {
+.admin-row-menu:is(:popover-open, .\:popover-open) {
   position: fixed;
   inset: auto;
   margin: 0;
