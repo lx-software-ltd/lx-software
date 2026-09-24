@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useMemo, useRef, useState } from "react";
+import { type FormEvent, useCallback, useMemo, useState } from "react";
 import {
   coerceSupportedCurrency,
   GLOBAL_DEFAULT_CURRENCY,
@@ -7,7 +7,9 @@ import {
 import { formatDateUtc } from "../lib/formatDisplay";
 import { parseAmount } from "../lib/formParse";
 import { convertAmountToBase } from "../lib/frankfurterRates";
-import { scheduleFocusRecordEditor } from "../lib/focusRecordEditor";
+import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
+import { useExpandedRecord } from "../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
 import {
   CUSTOM_ALLOCATION_EXPENSE_ID_PREFIX,
   type FinanceAllocationRecord,
@@ -20,12 +22,18 @@ import {
   AdminDataTableCellMeta,
   AdminDataTableEmptyRow,
   type AdminDataTableColumn,
-  AdminEditorSection,
+  AdminCreateButton,
+  AdminEditorPanel,
+  AdminExpandableRow,
+  AdminFilterBar,
+  AdminFilterField,
+  AdminRecordTable,
+  AdminRowActions,
   AdminTableTotalCurrency,
   AdminTableTotalLabel,
+  ConfirmDialog,
   CurrencySelect,
   MoneyAmount,
-  TableIconButton,
   TableSortHeaderButton,
 } from "./ui";
 
@@ -153,9 +161,10 @@ export function FinanceAllocationsPanel(props: {
   readonly onPatch: (
     patch: (prev: readonly FinanceAllocationRecord[]) => FinanceAllocationRecord[],
   ) => void;
+  readonly isSaving?: boolean;
 }) {
-  const { records, onPatch } = props;
-  const allocationEditorSectionRef = useRef<HTMLDivElement | null>(null);
+  const { records, onPatch, isSaving = false } = props;
+  const expanded = useExpandedRecord("allocation");
   const [sortKey, setSortKey] = useState<AllocSortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const onSort = useCallback((key: AllocSortKey) => {
@@ -273,8 +282,19 @@ export function FinanceAllocationsPanel(props: {
   const colSpan = tableColumns.length;
 
   const [tableFilter, setTableFilter] = useState("");
-  const [editingCustomExpenseId, setEditingCustomExpenseId] = useState<string | null>(null);
-  const [editingLinkedExpenseId, setEditingLinkedExpenseId] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const editingExpenseId =
+    expanded.expandedId && expanded.expandedId !== DRAFT_RECORD_ID
+      ? expanded.expandedId
+      : null;
+  const formOpen = expanded.expandedId !== null;
+  const editingRow = editingExpenseId
+    ? records.find((record) => record.expenseId === editingExpenseId)
+    : undefined;
+  const editingLinkedRow =
+    editingRow && editingRow.isCustomAllocation !== true ? editingRow : undefined;
+  const editingCustomExpenseId =
+    editingRow?.isCustomAllocation === true ? editingRow.expenseId : null;
   const [linkedAccumStr, setLinkedAccumStr] = useState("");
   const [linkedIsIncome, setLinkedIsIncome] = useState(false);
   const [linkedIsPension, setLinkedIsPension] = useState(false);
@@ -353,18 +373,9 @@ export function FinanceAllocationsPanel(props: {
     totalDisplayCurrency,
   ]);
 
-  const editingLinkedRow = useMemo(
-    () =>
-      editingLinkedExpenseId
-        ? records.find((r) => r.expenseId === editingLinkedExpenseId)
-        : undefined,
-    [records, editingLinkedExpenseId],
-  );
-
   const editorFormId = "finance-allocations-editor-form";
 
-  function resetCustomForm() {
-    setEditingCustomExpenseId(null);
+  function resetFields() {
     setCustomDesc("");
     setCustomCcy(GLOBAL_DEFAULT_CURRENCY);
     setCustomAccumStr("");
@@ -372,25 +383,15 @@ export function FinanceAllocationsPanel(props: {
     setCustomIsPension(false);
     setCustomIncomeMonthlyStr("");
     setCustomFormError(null);
-  }
-
-  function resetLinkedForm() {
-    setEditingLinkedExpenseId(null);
     setLinkedAccumStr("");
     setLinkedIsIncome(false);
     setLinkedIsPension(false);
     setLinkedFormError(null);
   }
 
-  function openEdit(row: FinanceAllocationRecord) {
+  function applyAllocation(row: FinanceAllocationRecord) {
+    resetFields();
     if (row.isCustomAllocation === true) {
-      setEditingLinkedExpenseId(null);
-      setLinkedAccumStr("");
-      setLinkedIsIncome(false);
-      setLinkedIsPension(false);
-      setLinkedFormError(null);
-      setEditingCustomExpenseId(row.expenseId);
-      setCustomFormError(null);
       setCustomDesc(row.description);
       setCustomCcy(coerceSupportedCurrency(row.currency, GLOBAL_DEFAULT_CURRENCY));
       setCustomAccumStr(String(row.accumulatedAmount));
@@ -399,16 +400,60 @@ export function FinanceAllocationsPanel(props: {
       setCustomIncomeMonthlyStr(
         row.allocationIncomeMonthly !== undefined ? String(row.allocationIncomeMonthly) : "",
       );
-      scheduleFocusRecordEditor(() => allocationEditorSectionRef.current);
-    } else {
-      resetCustomForm();
-      setEditingLinkedExpenseId(row.expenseId);
-      setLinkedFormError(null);
-      setLinkedAccumStr(String(row.accumulatedAmount));
-      setLinkedIsIncome(row.isIncome === true);
-      setLinkedIsPension(row.isPension === true);
-      scheduleFocusRecordEditor(() => allocationEditorSectionRef.current);
+      return;
     }
+    setLinkedAccumStr(String(row.accumulatedAmount));
+    setLinkedIsIncome(row.isIncome === true);
+    setLinkedIsPension(row.isPension === true);
+  }
+
+  function allocationDirty(): boolean {
+    if (!formOpen) return false;
+    if (!editingExpenseId) {
+      return customDesc.trim() !== "" || customAccumStr.trim() !== "" || customIncomeMonthlyStr.trim() !== "";
+    }
+    const row = records.find((record) => record.expenseId === editingExpenseId);
+    if (!row) return false;
+    if (row.isCustomAllocation === true) {
+      const savedMonthly =
+        row.allocationIncomeMonthly !== undefined ? String(row.allocationIncomeMonthly) : "";
+      return (
+        customDesc !== row.description ||
+        customAccumStr !== String(row.accumulatedAmount) ||
+        customCcy !== coerceSupportedCurrency(row.currency, GLOBAL_DEFAULT_CURRENCY) ||
+        customIsIncome !== (row.isIncome === true) ||
+        customIsPension !== (row.isPension === true) ||
+        customIncomeMonthlyStr !== savedMonthly
+      );
+    }
+    return (
+      linkedAccumStr !== String(row.accumulatedAmount) ||
+      linkedIsIncome !== (row.isIncome === true) ||
+      linkedIsPension !== (row.isPension === true)
+    );
+  }
+
+  const editingAllocation = editingExpenseId
+    ? (records.find((record) => record.expenseId === editingExpenseId) ?? null)
+    : null;
+  useHydrateExpandedRecord({
+    expandedId: expanded.expandedId,
+    recordsReady: true,
+    record: editingAllocation,
+    apply: applyAllocation,
+    onMissing: () => expanded.request(null, false),
+  });
+
+  function openEdit(row: FinanceAllocationRecord) {
+    expanded.toggle(row.expenseId, allocationDirty(), () => applyAllocation(row), resetFields);
+  }
+
+  function openCreate() {
+    if (expanded.expandedId === DRAFT_RECORD_ID) {
+      expanded.request(null, allocationDirty(), resetFields);
+      return;
+    }
+    expanded.request(DRAFT_RECORD_ID, allocationDirty(), resetFields);
   }
 
   function submitCustomAllocationCore() {
@@ -497,12 +542,13 @@ export function FinanceAllocationsPanel(props: {
         },
       ]);
     }
-    resetCustomForm();
+    resetFields();
+    expanded.request(null, false);
   }
 
   function submitEditor(e: FormEvent) {
     e.preventDefault();
-    if (editingLinkedExpenseId && editingLinkedRow) {
+    if (editingLinkedRow) {
       submitLinkedAllocationEditCore();
       return;
     }
@@ -510,15 +556,16 @@ export function FinanceAllocationsPanel(props: {
   }
 
   function submitLinkedAllocationEditCore() {
-    if (!editingLinkedExpenseId || !editingLinkedRow) return;
+    if (!editingLinkedRow) return;
     const n = parseAmount(linkedAccumStr);
     if (n === null) {
       setLinkedFormError("Accumulated amount must be a valid number.");
       return;
     }
+    const linkedExpenseId = editingLinkedRow.expenseId;
     onPatch((prev) =>
       prev.map((r) =>
-        r.expenseId === editingLinkedExpenseId
+        r.expenseId === linkedExpenseId
           ? linkedStoredRowPatch(r, n, {
               isIncome: linkedIsIncome,
               isPension: linkedIsPension,
@@ -526,66 +573,53 @@ export function FinanceAllocationsPanel(props: {
           : r,
       ),
     );
-    resetLinkedForm();
+    resetFields();
+    expanded.request(null, false);
   }
 
   function deleteCustomRow(expenseId: string) {
-    if (!window.confirm("Delete this custom allocation?")) return;
     onPatch((prev) => prev.filter((r) => r.expenseId !== expenseId));
     if (editingCustomExpenseId === expenseId) {
-      resetCustomForm();
+      resetFields();
+      expanded.request(null, false);
     }
+    setPendingDeleteId(null);
   }
 
-  return (
-    <div>
-      <AdminEditorSection
-        containerRef={allocationEditorSectionRef}
-        title={editingLinkedRow ? "Edit accumulated amount" : "Custom allocation"}
-        footer={
-          editingLinkedRow ? (
-            <>
-              <button type="submit" form={editorFormId} className="btn btn-primary btn-sm">
-                Save accumulated amount
-              </button>
-              <button type="button" className="btn btn-outline-secondary btn-sm" onClick={resetLinkedForm}>
-                Cancel
-              </button>
-            </>
-          ) : (
-            <>
-              <button type="submit" form={editorFormId} className="btn btn-primary btn-sm">
-                {editingCustomExpenseId ? "Update allocation" : "Add allocation"}
-              </button>
-              <button type="button" className="btn btn-outline-secondary btn-sm" onClick={resetCustomForm}>
-                Clear
-              </button>
-            </>
-          )
-        }
-      >
-        <form id={editorFormId} onSubmit={submitEditor}>
-          {(editingLinkedRow ? linkedFormError : customFormError) ? (
-            <div className="alert alert-danger py-2 small" role="alert">
-              {editingLinkedRow ? linkedFormError : customFormError}
-            </div>
-          ) : null}
+  const allocationEditor = formOpen ? (
+    <AdminEditorPanel
+      formId={editorFormId}
+      onSubmit={submitEditor}
+      submitLabel={editingLinkedRow || editingCustomExpenseId ? "Update record" : "Add record"}
+      isSaving={isSaving}
+      error={editingLinkedRow ? linkedFormError : customFormError}
+    >
           {editingLinkedRow ? (
             <>
               <div className="row g-3 align-items-end">
                 <div className="col-md-2">
-                  <span className="form-label small d-block text-muted">Description (from expense)</span>
-                  <div className="small fw-semibold">{editingLinkedRow.description}</div>
+                  <label className="form-label small" htmlFor="alloc-linked-desc">
+                    Description (from expense)
+                  </label>
+                  <input
+                    id="alloc-linked-desc"
+                    type="text"
+                    className="form-control form-control-sm"
+                    readOnly
+                    value={editingLinkedRow.description}
+                  />
                 </div>
                 <div className="col-md-2">
-                  <span className="form-label small d-block text-muted">Monthly amount</span>
-                  <div className="small">
-                    <MoneyAmount
-                      amount={editingLinkedRow.monthlyAmount}
-                      currency={editingLinkedRow.currency}
-                      amountOnly
-                    />
-                  </div>
+                  <label className="form-label small" htmlFor="alloc-linked-monthly">
+                    Monthly amount
+                  </label>
+                  <input
+                    id="alloc-linked-monthly"
+                    type="text"
+                    className="form-control form-control-sm"
+                    readOnly
+                    value={String(editingLinkedRow.monthlyAmount)}
+                  />
                 </div>
                 <div className="col-md-2">
                   <label className="form-label small" htmlFor="alloc-linked-accum">
@@ -602,8 +636,16 @@ export function FinanceAllocationsPanel(props: {
                   />
                 </div>
                 <div className="col-md-2">
-                  <span className="form-label small d-block text-muted">Currency</span>
-                  <div className="small">{editingLinkedRow.currency}</div>
+                  <label className="form-label small" htmlFor="alloc-linked-ccy">
+                    Currency
+                  </label>
+                  <input
+                    id="alloc-linked-ccy"
+                    type="text"
+                    className="form-control form-control-sm"
+                    readOnly
+                    value={editingLinkedRow.currency}
+                  />
                 </div>
               </div>
               <div className="row g-3 mt-2">
@@ -729,16 +771,34 @@ export function FinanceAllocationsPanel(props: {
               </div>
             </>
           )}
-        </form>
-      </AdminEditorSection>
+    </AdminEditorPanel>
+  ) : null;
 
-      <AdminEditorSection title="Allocations">
+  return (
+    <div>
+      <AdminRecordTable
+        label="Allocations"
+        filters={
+          <AdminFilterBar
+            create={<AdminCreateButton label="New allocation" onClick={openCreate} />}
+          >
+            <AdminFilterField label="Filter" htmlFor="allocations-filter">
+              <input
+                id="allocations-filter"
+                type="search"
+                className="form-control form-control-sm"
+                placeholder="Filter records…"
+                autoComplete="off"
+                value={tableFilter}
+                onChange={(ev) => setTableFilter(ev.target.value)}
+              />
+            </AdminFilterField>
+          </AdminFilterBar>
+        }
+      >
         <AdminDataTable
-          embedded
+          bare
           columns={tableColumns}
-          filterValue={tableFilter}
-          onFilterChange={setTableFilter}
-          filterPlaceholder="Filter records…"
           sort={{
             options: ALLOC_SORT_OPTIONS,
             sortKey,
@@ -749,11 +809,28 @@ export function FinanceAllocationsPanel(props: {
             },
           }}
         >
+          {expanded.expandedId === DRAFT_RECORD_ID ? (
+            <AdminExpandableRow colSpan={colSpan} expanded onToggle={openCreate} editor={allocationEditor}>
+              <AdminCell column="desc">New allocation</AdminCell>
+              <AdminCell column="tags" />
+              <AdminCell column="monthly" />
+              <AdminCell column="accum" />
+              <AdminCell column="ccy" />
+              <AdminCell column="last" />
+              <AdminCell column="ops" />
+            </AdminExpandableRow>
+          ) : null}
           {filtered.length ? (
             filtered.map((r) => {
               const monthlyCol = allocationMonthlyColumnDisplay(r);
               return (
-              <tr key={r.expenseId}>
+              <AdminExpandableRow
+                key={r.expenseId}
+                colSpan={colSpan}
+                expanded={expanded.expandedId === r.expenseId}
+                onToggle={() => openEdit(r)}
+                editor={allocationEditor}
+              >
                 <AdminCell column="desc" className="small">
                   {r.description}
                   <AdminDataTableCellMeta>
@@ -785,25 +862,29 @@ export function FinanceAllocationsPanel(props: {
                 <AdminCell column="ccy" className="small">{r.currency}</AdminCell>
                 <AdminCell column="last" className="small">{allocationLastUpdatedDisplay(r.lastUpdated)}</AdminCell>
                 <AdminCell column="ops" className="small text-end">
-                  <TableIconButton
-                    iconClassName="bi bi-pencil"
-                    ariaLabel={
-                      r.isCustomAllocation === true
-                        ? "Edit custom allocation"
-                        : "Edit accumulated amount"
-                    }
-                    onClick={() => openEdit(r)}
+                  <AdminRowActions
+                    actions={[
+                      {
+                        id: "edit",
+                        label:
+                          r.isCustomAllocation === true
+                            ? "Edit custom allocation"
+                            : "Edit accumulated amount",
+                        iconClassName: "bi bi-pencil",
+                        onClick: () => openEdit(r),
+                      },
+                      {
+                        id: "delete",
+                        label: "Delete custom allocation",
+                        iconClassName: "bi bi-trash",
+                        danger: true,
+                        hidden: r.isCustomAllocation !== true,
+                        onClick: () => setPendingDeleteId(r.expenseId),
+                      },
+                    ]}
                   />
-                  {r.isCustomAllocation === true ? (
-                    <TableIconButton
-                      iconClassName="bi bi-trash"
-                      ariaLabel="Delete custom allocation"
-                      variant="danger"
-                      onClick={() => deleteCustomRow(r.expenseId)}
-                    />
-                  ) : null}
                 </AdminCell>
-              </tr>
+              </AdminExpandableRow>
             );
             })
           ) : (
@@ -812,7 +893,7 @@ export function FinanceAllocationsPanel(props: {
               message={
                 records.length
                   ? "No records match the filter."
-                  : "No allocation rows yet. Tag an expense with Allocate, add derived lines via tagged income and allocation rates on Expenses, or create a custom allocation above."
+                  : "No allocation rows yet. Tag an expense with Allocate, add derived lines via tagged income and allocation rates on Expenses, or create a custom allocation."
               }
             />
           )}
@@ -855,7 +936,28 @@ export function FinanceAllocationsPanel(props: {
             </tr>
           ) : null}
         </AdminDataTable>
-      </AdminEditorSection>
+        <ConfirmDialog
+          open={pendingDeleteId !== null}
+          title="Delete allocation"
+          body="Delete this custom allocation?"
+          confirmLabel="Delete"
+          tone="danger"
+          onConfirm={() => {
+            if (pendingDeleteId) deleteCustomRow(pendingDeleteId);
+          }}
+          onCancel={() => setPendingDeleteId(null)}
+        />
+        <ConfirmDialog
+          open={expanded.confirmOpen}
+          title="Discard unsaved edits?"
+          body="This allocation has unsaved changes."
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          tone="danger"
+          onConfirm={expanded.acceptPending}
+          onCancel={expanded.cancelPending}
+        />
+      </AdminRecordTable>
     </div>
   );
 }

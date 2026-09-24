@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useMemo, useRef, useState } from "react";
+import { type FormEvent, useCallback, useMemo, useState } from "react";
 import {
   coerceSupportedCurrency,
   GLOBAL_DEFAULT_CURRENCY,
@@ -15,7 +15,9 @@ import {
   type HouseKey,
 } from "../lib/financeModel";
 import { houseDisplayLabel } from "../lib/houses";
-import { scheduleFocusRecordEditor } from "../lib/focusRecordEditor";
+import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
+import { useExpandedRecord } from "../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
 import { useFrankfurterRatesForTotals } from "../hooks/useFrankfurterRatesForTotals";
 import {
   AdminCell,
@@ -23,13 +25,19 @@ import {
   AdminDataTableCellMeta,
   AdminDataTableEmptyRow,
   type AdminDataTableColumn,
-  AdminEditorSection,
+  AdminCreateButton,
+  AdminEditorPanel,
+  AdminExpandableRow,
+  AdminFilterBar,
+  AdminFilterField,
+  AdminRecordTable,
+  AdminRowActions,
+  ConfirmDialog,
   AdminTableTotalCurrency,
   AdminTableTotalLabel,
   CurrencySelect,
   MoneyAmount,
   StaleValuationBadge,
-  TableIconButton,
   TableSortHeaderButton,
 } from "./ui";
 
@@ -113,15 +121,21 @@ export function FinanceLiabilitiesPanel(props: {
   readonly onPatch: (
     patch: (prev: readonly FinanceLiabilityRecord[]) => FinanceLiabilityRecord[],
   ) => void;
+  readonly isSaving?: boolean;
   readonly relatedHouseOptions: ReadonlyArray<{
     readonly value: HouseKey;
     readonly label: string;
   }>;
 }) {
-  const { records, onPatch, relatedHouseOptions } = props;
+  const { records, onPatch, relatedHouseOptions, isSaving = false } = props;
   const sheetId = "liabilities";
   const formId = `${sheetId}-form`;
-  const recordEditorSectionRef = useRef<HTMLDivElement | null>(null);
+  const expanded = useExpandedRecord("liability");
+  const editingId =
+    expanded.expandedId && expanded.expandedId !== DRAFT_RECORD_ID
+      ? expanded.expandedId
+      : null;
+  const formOpen = expanded.expandedId !== null;
 
   const [sortKey, setSortKey] = useState<LiabilitiesSortKey | null>("ltype");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -136,8 +150,8 @@ export function FinanceLiabilitiesPanel(props: {
     });
   }, []);
 
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [descriptionInput, setDescriptionInput] = useState("");
   const [liabilityTypeInput, setLiabilityTypeInput] = useState<FinanceLiabilityType>("Mortgage");
   const [balanceStr, setBalanceStr] = useState("");
@@ -338,8 +352,7 @@ export function FinanceLiabilitiesPanel(props: {
     totalDisplayCurrency,
   ]);
 
-  function resetForm() {
-    setEditingId(null);
+  function resetFields() {
     setFormError(null);
     setDescriptionInput("");
     setLiabilityTypeInput("Mortgage");
@@ -349,8 +362,7 @@ export function FinanceLiabilitiesPanel(props: {
     setFormCurrency(GLOBAL_DEFAULT_CURRENCY);
   }
 
-  function openEdit(row: FinanceLiabilityRecord) {
-    setEditingId(row.id);
+  function applyLiability(row: FinanceLiabilityRecord) {
     setFormError(null);
     setDescriptionInput(row.description);
     setLiabilityTypeInput(row.liabilityType);
@@ -358,7 +370,54 @@ export function FinanceLiabilitiesPanel(props: {
     setRateStr(row.interestRatePercent !== undefined ? String(row.interestRatePercent) : "");
     setRelatedHouseInput(row.relatedHouse ?? "");
     setFormCurrency(coerceSupportedCurrency(row.currency, GLOBAL_DEFAULT_CURRENCY));
-    scheduleFocusRecordEditor(() => recordEditorSectionRef.current);
+  }
+
+  function liabilityDirty(): boolean {
+    if (!formOpen) return false;
+    if (!editingId) {
+      return (
+        descriptionInput !== "" ||
+        balanceStr !== "" ||
+        rateStr !== "" ||
+        liabilityTypeInput !== "Mortgage" ||
+        relatedHouseInput !== "" ||
+        formCurrency !== GLOBAL_DEFAULT_CURRENCY
+      );
+    }
+    const row = records.find((record) => record.id === editingId);
+    if (!row) return false;
+    const savedRate = row.interestRatePercent !== undefined ? String(row.interestRatePercent) : "";
+    return (
+      descriptionInput !== row.description ||
+      liabilityTypeInput !== row.liabilityType ||
+      balanceStr !== String(row.outstandingBalance) ||
+      rateStr !== savedRate ||
+      relatedHouseInput !== (row.relatedHouse ?? "") ||
+      formCurrency !== coerceSupportedCurrency(row.currency, GLOBAL_DEFAULT_CURRENCY)
+    );
+  }
+
+  const editingLiability = editingId
+    ? (records.find((record) => record.id === editingId) ?? null)
+    : null;
+  useHydrateExpandedRecord({
+    expandedId: expanded.expandedId,
+    recordsReady: true,
+    record: editingLiability,
+    apply: applyLiability,
+    onMissing: () => expanded.request(null, false),
+  });
+
+  function openEdit(row: FinanceLiabilityRecord) {
+    expanded.toggle(row.id, liabilityDirty(), () => applyLiability(row), resetFields);
+  }
+
+  function openCreate() {
+    if (expanded.expandedId === DRAFT_RECORD_ID) {
+      expanded.request(null, liabilityDirty(), resetFields);
+      return;
+    }
+    expanded.request(DRAFT_RECORD_ID, liabilityDirty(), resetFields);
   }
 
   function submit(e: FormEvent) {
@@ -399,39 +458,27 @@ export function FinanceLiabilitiesPanel(props: {
       }
       return [...prev, row];
     });
-    resetForm();
+    resetFields();
+    expanded.request(null, false);
   }
 
   function deleteRow(id: string) {
-    if (!window.confirm("Delete this liability record?")) return;
     onPatch((prev) => prev.filter((r) => r.id !== id));
     if (editingId === id) {
-      resetForm();
+      resetFields();
+      expanded.request(null, false);
     }
+    setPendingDeleteId(null);
   }
 
-  return (
-    <div>
-      <AdminEditorSection
-        containerRef={recordEditorSectionRef}
-        title="Liability record"
-        footer={
-          <>
-            <button type="submit" form={formId} className="btn btn-primary btn-sm">
-              {editingId ? "Update record" : "Add record"}
-            </button>
-            <button type="button" className="btn btn-outline-secondary btn-sm" onClick={resetForm}>
-              Clear
-            </button>
-          </>
-        }
-      >
-        <form id={formId} onSubmit={submit}>
-          {formError ? (
-            <div className="alert alert-danger py-2 small" role="alert">
-              {formError}
-            </div>
-          ) : null}
+      const liabilityEditor = formOpen ? (
+        <AdminEditorPanel
+          formId={formId}
+          onSubmit={submit}
+          submitLabel={editingId ? "Update record" : "Add record"}
+          isSaving={isSaving}
+          error={formError}
+        >
           <div className="row g-3">
             <div className="col-12 col-sm-6 col-lg-2">
               <label className="form-label small" htmlFor={`${sheetId}-description`}>
@@ -527,16 +574,24 @@ export function FinanceLiabilitiesPanel(props: {
               </select>
             </div>
           </div>
-        </form>
-      </AdminEditorSection>
+        </AdminEditorPanel>
+      ) : null;
 
-      <AdminEditorSection title="Liabilities">
+  return (
+    <div>
+      <AdminRecordTable
+        label="Liabilities"
+        filters={
+          <AdminFilterBar create={<AdminCreateButton label="New liability" onClick={openCreate} />}>
+            <AdminFilterField label="Filter" htmlFor="liabilities-filter">
+              <input id="liabilities-filter" type="search" className="form-control form-control-sm" placeholder="Filter records…" autoComplete="off" value={tableFilter} onChange={(ev) => setTableFilter(ev.target.value)} />
+            </AdminFilterField>
+          </AdminFilterBar>
+        }
+      >
         <AdminDataTable
-          embedded
+          bare
           columns={tableColumns}
-          filterValue={tableFilter}
-          onFilterChange={setTableFilter}
-          filterPlaceholder="Filter records…"
           sort={{
             options: LIABILITY_SORT_OPTIONS,
             sortKey,
@@ -547,9 +602,27 @@ export function FinanceLiabilitiesPanel(props: {
             },
           }}
         >
+          {expanded.expandedId === DRAFT_RECORD_ID ? (
+            <AdminExpandableRow colSpan={colSpan} expanded onToggle={openCreate} editor={liabilityEditor}>
+              <AdminCell column="desc">New liability</AdminCell>
+              <AdminCell column="ltype" />
+              <AdminCell column="amt" />
+              <AdminCell column="ccy" />
+              <AdminCell column="rate" />
+              <AdminCell column="house" />
+              <AdminCell column="lastUpdated" />
+              <AdminCell column="ops" />
+            </AdminExpandableRow>
+          ) : null}
           {filtered.length ? (
             filtered.map((r) => (
-              <tr key={r.id}>
+              <AdminExpandableRow
+                key={r.id}
+                colSpan={colSpan}
+                expanded={expanded.expandedId === r.id}
+                onToggle={() => openEdit(r)}
+                editor={liabilityEditor}
+              >
                 <AdminCell column="desc" className="small">
                   {r.description}
                   <AdminDataTableCellMeta>
@@ -574,19 +647,14 @@ export function FinanceLiabilitiesPanel(props: {
                   <StaleValuationBadge lastUpdated={r.lastUpdated} />
                 </AdminCell>
                 <AdminCell column="ops" className="small text-end">
-                  <TableIconButton
-                    iconClassName="bi bi-pencil"
-                    ariaLabel="Edit record"
-                    onClick={() => openEdit(r)}
-                  />
-                  <TableIconButton
-                    iconClassName="bi bi-trash"
-                    ariaLabel="Delete record"
-                    variant="danger"
-                    onClick={() => deleteRow(r.id)}
+                  <AdminRowActions
+                    actions={[
+                      { id: "edit", label: "Edit record", iconClassName: "bi bi-pencil", onClick: () => openEdit(r) },
+                      { id: "delete", label: "Delete record", iconClassName: "bi bi-trash", danger: true, onClick: () => setPendingDeleteId(r.id) },
+                    ]}
                   />
                 </AdminCell>
-              </tr>
+              </AdminExpandableRow>
             ))
           ) : (
             <AdminDataTableEmptyRow
@@ -630,7 +698,9 @@ export function FinanceLiabilitiesPanel(props: {
             </tr>
           ) : null}
         </AdminDataTable>
-      </AdminEditorSection>
+        <ConfirmDialog open={pendingDeleteId !== null} title="Delete liability" body="Delete this liability record?" confirmLabel="Delete" tone="danger" onConfirm={() => { if (pendingDeleteId) deleteRow(pendingDeleteId); }} onCancel={() => setPendingDeleteId(null)} />
+        <ConfirmDialog open={expanded.confirmOpen} title="Discard unsaved edits?" body="This liability has unsaved changes." confirmLabel="Discard" cancelLabel="Keep editing" tone="danger" onConfirm={expanded.acceptPending} onCancel={expanded.cancelPending} />
+      </AdminRecordTable>
     </div>
   );
 }

@@ -8,6 +8,25 @@
   overflow-wrap: break-word;
 }
 
+@media (max-width: 767.98px) {
+  .admin-data-table th,
+  .admin-data-table td {
+    overflow-wrap: anywhere;
+  }
+
+  .admin-data-table thead th:last-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
 /* Identifiers and hashes have no natural break points. */
 .admin-data-table .font-monospace,
 .admin-data-table .admin-table-cell-meta {
@@ -51,7 +70,191 @@
   }
 }
 
-/* Touch targets: icon buttons grow when the primary input cannot hover. */
+.admin-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.admin-filter-fields,
+.admin-filter-trailing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+  flex: 1 1 auto;
+}
+
+.admin-filter-field {
+  min-width: 10rem;
+  flex: 1 1 12rem;
+}
+
+.admin-create-btn {
+  min-height: calc(1.5em + 0.5rem + 2px);
+}
+
+.admin-field {
+  flex: 0 0 100%;
+  max-width: 100%;
+}
+
+@media (min-width: 768px) {
+  .admin-field-grid-2 .admin-field-span-1 {
+    flex: 0 0 50%;
+    max-width: 50%;
+  }
+
+  .admin-field-grid-2 .admin-field-span-2,
+  .admin-field-grid-4 .admin-field-span-4 {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+
+  .admin-field-grid-4 .admin-field-span-1 {
+    flex: 0 0 25%;
+    max-width: 25%;
+  }
+
+  .admin-field-grid-4 .admin-field-span-2 {
+    flex: 0 0 50%;
+    max-width: 50%;
+  }
+}
+
+.admin-disclosure > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.admin-disclosure-body {
+  padding-top: 0.75rem;
+}
+
+.admin-expand-summary {
+  cursor: pointer;
+}
+
+.admin-expand-summary:focus-visible {
+  outline: 2px solid var(--bs-primary);
+  outline-offset: -2px;
+}
+
+/* Stripe by record group. A detail row must not take the next stripe. */
+.admin-data-table.table-striped > tbody.admin-record-group:nth-of-type(even) > tr.admin-expand-summary > * {
+  --bs-table-bg-type: transparent;
+}
+
+.admin-row-framed > td {
+  box-shadow: inset 0 2px 0 #cbd5e1;
+}
+
+.admin-row-framed > td:first-child {
+  box-shadow: inset 2px 0 0 #cbd5e1, inset 0 2px 0 #cbd5e1;
+}
+
+.admin-row-framed > td:last-child {
+  box-shadow: inset -2px 0 0 #cbd5e1, inset 0 2px 0 #cbd5e1;
+}
+
+.admin-row-framed > td:first-child:last-child {
+  box-shadow: inset 2px 0 0 #cbd5e1, inset -2px 0 0 #cbd5e1, inset 0 2px 0 #cbd5e1;
+}
+
+.admin-row-detail-framed > td {
+  box-shadow:
+    inset 2px 0 0 #cbd5e1,
+    inset -2px 0 0 #cbd5e1,
+    inset 0 -2px 0 #cbd5e1;
+  background: #fff;
+}
+
+.admin-expand {
+  display: grid;
+  grid-template-rows: 0fr;
+  grid-template-columns: minmax(0, 1fr);
+  transition: grid-template-rows 180ms ease;
+}
+
+.admin-expand.is-open {
+  grid-template-rows: 1fr;
+}
+
+.admin-expand-inner {
+  overflow: hidden;
+  min-width: 0;
+}
+
+.admin-row-menu {
+  margin: 0;
+  padding: 0.25rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.375rem;
+  background: #fff;
+  min-width: 12rem;
+}
+
+.admin-row-menu:is(:popover-open, .\:popover-open) {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+}
+
+.admin-row-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: start;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.admin-row-menu-item:hover {
+  background: #f1f5f9;
+}
+
+.admin-confirm-dialog {
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  padding: 1.25rem;
+  max-width: 28rem;
+}
+
+.admin-confirm-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.admin-skeleton-bar {
+  display: block;
+  height: 0.75rem;
+  border-radius: 0.25rem;
+  background: #e2e8f0;
+}
+
+@media (max-width: 767.98px) {
+  .admin-filter-create,
+  .admin-filter-create .admin-create-btn,
+  .admin-filter-trailing,
+  .admin-filter-trailing .btn {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .admin-filter-fields {
+    flex-basis: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-expand {
+    transition: none;
+  }
+}
+
 @media (pointer: coarse) {
   .admin-table-icon-btn {
     min-width: 2.75rem;

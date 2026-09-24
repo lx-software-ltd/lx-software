@@ -6,7 +6,7 @@ export type AdminEditorSectionProps = {
   readonly children: ReactNode;
   /** Primary actions (Save / Update). Placed at the **bottom-left** of the section. */
   readonly footer?: ReactNode;
-  /** Root `.card` element; use with `scheduleFocusRecordEditor` when opening a row for edit. */
+  /** Root card element, for callers that scroll the section into view. */
   readonly containerRef?: Ref<HTMLDivElement | null>;
   /** Omit the card chrome when the form already sits inside another panel. */
   readonly embedded?: boolean;

@@ -1,6 +1,21 @@
-import { useMemo, useState } from "react";
-import { AdminCell, AdminDataTable, AdminDataTableEmptyRow, AdminEditorSection, TableIconButton } from "../ui";
+import { type FormEvent, useMemo, useState } from "react";
+import {
+  AdminCell,
+  AdminCreateButton,
+  AdminDataTable,
+  AdminDataTableEmptyRow,
+  AdminEditorPanel,
+  AdminExpandableRow,
+  AdminFilterBar,
+  AdminFilterField,
+  AdminRecordTable,
+  AdminRowActions,
+  ConfirmDialog,
+} from "../ui";
 import { BoardTaskDrawer } from "./BoardTaskDrawer";
+import { DRAFT_RECORD_ID } from "../../lib/expandedRecord";
+import { useExpandedRecord } from "../../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../../hooks/useHydrateExpandedRecord";
 import { useBoardMarket } from "../../hooks/useBoardMarket";
 import { useBoardTask, useBoardTasks } from "../../hooks/useBoardTasks";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
@@ -33,15 +48,30 @@ function emptyForm(): BoardWatchWrite {
   return { name: "", kind: "competitor", urls: [""], district: "", appIds: { ios: "", android: "" }, socialHandles: [] };
 }
 
+function watchToForm(watch: BoardWatch): BoardWatchWrite {
+  return {
+    name: watch.name,
+    kind: watch.kind,
+    urls: [...watch.urls],
+    district: watch.district ?? "",
+    appIds: { ios: watch.appIds?.ios ?? "", android: watch.appIds?.android ?? "" },
+    socialHandles: watch.socialHandles,
+  };
+}
+
 export function BoardMarketSection() {
   const market = useBoardMarket();
   const tasks = useBoardTasks();
+  const expanded = useExpandedRecord("watch");
   const [form, setForm] = useState<BoardWatchWrite>(emptyForm());
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [briefId, setBriefId] = useState<string | null>(null);
   const [watchFilter, setWatchFilter] = useState("");
   const [candidateFilter, setCandidateFilter] = useState("");
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
   const briefDetail = useBoardTask(briefId);
+  const editingId =
+    expanded.expandedId && expanded.expandedId !== DRAFT_RECORD_ID ? expanded.expandedId : null;
+  const formOpen = expanded.expandedId !== null;
 
   const candidates = useMemo(() => {
     const q = candidateFilter.trim().toLowerCase();
@@ -73,175 +103,285 @@ export function BoardMarketSection() {
       },
       socialHandles: form.socialHandles,
     };
+    const close = () => {
+      setForm(emptyForm());
+      expanded.request(null, false);
+    };
     if (editingId) {
-      market.update.mutate(
-        { watchId: editingId, body },
-        {
-          onSuccess: () => {
-            setEditingId(null);
-            setForm(emptyForm());
-          },
-        },
-      );
+      market.update.mutate({ watchId: editingId, body }, { onSuccess: close });
     } else {
-      market.add.mutate(body, { onSuccess: () => setForm(emptyForm()) });
+      market.add.mutate(body, { onSuccess: close });
     }
   };
+
+  function watchDirty(): boolean {
+    if (!formOpen) return false;
+    if (!editingId) {
+      return (form.name ?? "").trim() !== "" || (form.urls ?? []).some((url) => url.trim() !== "");
+    }
+    const watch = market.watches.find((row) => row.watchId === editingId);
+    if (!watch) return false;
+    const saved = watchToForm(watch);
+    return (
+      (form.name ?? "") !== (saved.name ?? "") ||
+      (form.kind ?? "") !== (saved.kind ?? "") ||
+      (form.district ?? "") !== (saved.district ?? "") ||
+      (form.urls ?? []).join("\n") !== (saved.urls ?? []).join("\n") ||
+      (form.appIds?.ios ?? "") !== (saved.appIds?.ios ?? "") ||
+      (form.appIds?.android ?? "") !== (saved.appIds?.android ?? "") ||
+      JSON.stringify(form.socialHandles ?? []) !== JSON.stringify(saved.socialHandles ?? [])
+    );
+  }
+
+  const editingWatch = editingId
+    ? (market.watches.find((row) => row.watchId === editingId) ?? null)
+    : null;
+  useHydrateExpandedRecord({
+    expandedId: expanded.expandedId,
+    recordsReady: !market.isLoading,
+    record: editingWatch,
+    apply: (watch) => setForm(watchToForm(watch)),
+    onMissing: () => expanded.request(null, false),
+  });
+
+  function openEdit(watch: BoardWatch) {
+    expanded.toggle(watch.watchId, watchDirty(), () => setForm(watchToForm(watch)), () => setForm(emptyForm()));
+  }
+
+  function openCreate() {
+    if (expanded.expandedId === DRAFT_RECORD_ID) {
+      expanded.request(null, watchDirty(), () => setForm(emptyForm()));
+      return;
+    }
+    expanded.request(DRAFT_RECORD_ID, watchDirty(), () => setForm(emptyForm()));
+  }
+
+  const watchEditor = formOpen ? (
+    <AdminEditorPanel
+      formId="watch-form"
+      onSubmit={(event: FormEvent) => {
+        event.preventDefault();
+        save();
+      }}
+      submitLabel={editingId ? "Update" : "Add"}
+      isSaving={market.add.isPending || market.update.isPending}
+      error={errorText(market.add.error) ?? errorText(market.update.error)}
+    >
+      <div className="row g-2">
+        <div className="col-md-6">
+          <label className="form-label" htmlFor="watch-name">
+            Name
+          </label>
+          <input
+            id="watch-name"
+            className="form-control"
+            value={form.name ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+          />
+        </div>
+        <div className="col-md-3">
+          <label className="form-label" htmlFor="watch-kind">
+            Kind
+          </label>
+          <select
+            id="watch-kind"
+            className="form-select"
+            value={form.kind ?? "competitor"}
+            onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value }))}
+          >
+            {KIND_OPTIONS.map((k) => (
+              <option key={k} value={k}>
+                {k}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="col-md-3">
+          <label className="form-label" htmlFor="watch-district">
+            District
+          </label>
+          <select
+            id="watch-district"
+            className="form-select"
+            value={form.district ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))}
+          >
+            <option value="">Guess from URL / page</option>
+            {BOARD_CATALOG_DISTRICTS.map((row) => (
+              <option key={row.id} value={row.name}>
+                {row.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="col-12">
+          <label className="form-label" htmlFor="watch-urls">
+            URLs (one per line)
+          </label>
+          <textarea
+            id="watch-urls"
+            className="form-control"
+            rows={3}
+            value={(form.urls ?? []).join("\n")}
+            onChange={(e) => setForm((f) => ({ ...f, urls: e.target.value.split("\n") }))}
+          />
+        </div>
+        <div className="col-md-6">
+          <label className="form-label" htmlFor="watch-ios">
+            App Store id
+          </label>
+          <input
+            id="watch-ios"
+            className="form-control"
+            value={form.appIds?.ios ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, appIds: { ...f.appIds, ios: e.target.value } }))}
+          />
+        </div>
+        <div className="col-md-6">
+          <label className="form-label" htmlFor="watch-android">
+            Play package
+          </label>
+          <input
+            id="watch-android"
+            className="form-control"
+            value={form.appIds?.android ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, appIds: { ...f.appIds, android: e.target.value } }))}
+          />
+        </div>
+      </div>
+    </AdminEditorPanel>
+  ) : null;
 
   return (
     <div>
       <h2 className="h5 mb-3">Market</h2>
-      <AdminEditorSection
-        title={editingId ? "Edit watch" : "Add a watch"}
-        description="Start with five competitors. A listingsIndex watch turns each page into catalog names only — set a district when the URLs share one, or leave it blank so the crawl guesses from the path (for example /area/tung_chung). Discovery adds candidates on Monday; promote the ones that keep showing up."
-        footer={
-          <>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={market.add.isPending || market.update.isPending}
-              onClick={save}
-            >
-              {editingId ? "Update" : "Add"}
-            </button>
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onClick={() => {
-                setEditingId(null);
-                setForm(emptyForm());
-              }}
-            >
-              Clear
-            </button>
-          </>
+      <p className="small text-muted">
+        Start with five competitors. A listingsIndex watch turns each page into catalog names only — set a
+        district when the URLs share one, or leave it blank so the crawl guesses from the path (for example
+        /area/tung_chung). Discovery adds candidates on Monday; promote the ones that keep showing up.
+      </p>
+      <h3 className="h6 text-uppercase text-muted mb-2">Watchlist</h3>
+      <AdminRecordTable
+        label="Watchlist"
+        filters={
+          <AdminFilterBar create={<AdminCreateButton label="New watch" onClick={openCreate} />}>
+            <AdminFilterField label="Filter" htmlFor="watch-filter">
+              <input
+                id="watch-filter"
+                type="search"
+                className="form-control form-control-sm"
+                placeholder="Filter watches"
+                autoComplete="off"
+                value={watchFilter}
+                onChange={(ev) => setWatchFilter(ev.target.value)}
+              />
+            </AdminFilterField>
+          </AdminFilterBar>
         }
       >
-        <div className="row g-2">
-          <div className="col-md-6">
-            <label className="form-label" htmlFor="watch-name">
-              Name
-            </label>
-            <input
-              id="watch-name"
-              className="form-control"
-              value={form.name ?? ""}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-            />
-          </div>
-          <div className="col-md-3">
-            <label className="form-label" htmlFor="watch-kind">
-              Kind
-            </label>
-            <select
-              id="watch-kind"
-              className="form-select"
-              value={form.kind ?? "competitor"}
-              onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value }))}
-            >
-              {KIND_OPTIONS.map((k) => (
-                <option key={k} value={k}>
-                  {k}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="col-md-3">
-            <label className="form-label" htmlFor="watch-district">
-              District
-            </label>
-            <select
-              id="watch-district"
-              className="form-select"
-              value={form.district ?? ""}
-              onChange={(e) => setForm((f) => ({ ...f, district: e.target.value }))}
-            >
-              <option value="">Guess from URL / page</option>
-              {BOARD_CATALOG_DISTRICTS.map((row) => (
-                <option key={row.id} value={row.name}>
-                  {row.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="col-12">
-            <label className="form-label" htmlFor="watch-urls">
-              URLs (one per line)
-            </label>
-            <textarea
-              id="watch-urls"
-              className="form-control"
-              rows={3}
-              value={(form.urls ?? []).join("\n")}
-              onChange={(e) => setForm((f) => ({ ...f, urls: e.target.value.split("\n") }))}
-            />
-          </div>
-          <div className="col-md-6">
-            <label className="form-label" htmlFor="watch-ios">
-              App Store id
-            </label>
-            <input
-              id="watch-ios"
-              className="form-control"
-              value={form.appIds?.ios ?? ""}
-              onChange={(e) => setForm((f) => ({ ...f, appIds: { ...f.appIds, ios: e.target.value } }))}
-            />
-          </div>
-          <div className="col-md-6">
-            <label className="form-label" htmlFor="watch-android">
-              Play package
-            </label>
-            <input
-              id="watch-android"
-              className="form-control"
-              value={form.appIds?.android ?? ""}
-              onChange={(e) => setForm((f) => ({ ...f, appIds: { ...f.appIds, android: e.target.value } }))}
-            />
-          </div>
-        </div>
-        {errorText(market.add.error) ?? errorText(market.update.error) ? (
-          <div className="small text-danger mt-2">{errorText(market.add.error) ?? errorText(market.update.error)}</div>
+      <AdminDataTable bare columns={WATCH_COLUMNS}>
+        {expanded.expandedId === DRAFT_RECORD_ID ? (
+          <AdminExpandableRow colSpan={WATCH_COLUMNS.length} expanded onToggle={openCreate} editor={watchEditor}>
+            <AdminCell column="name">New watch</AdminCell>
+            <AdminCell column="kind" />
+            <AdminCell column="district" />
+            <AdminCell column="urls" />
+            <AdminCell column="ops" />
+          </AdminExpandableRow>
         ) : null}
-      </AdminEditorSection>
-
-      <h3 className="h6 text-uppercase text-muted mt-4">Watchlist</h3>
-      <AdminDataTable
-        columns={WATCH_COLUMNS}
-        filterValue={watchFilter}
-        onFilterChange={setWatchFilter}
-        filterPlaceholder="Filter watches"
-      >
-        {listed.length === 0 ? (
-          <AdminDataTableEmptyRow colSpan={WATCH_COLUMNS.length} message="No watches yet. Add a competitor above." />
+        {listed.length === 0 && expanded.expandedId !== DRAFT_RECORD_ID ? (
+          <AdminDataTableEmptyRow colSpan={WATCH_COLUMNS.length} message="No watches yet." />
         ) : (
-          listed.map((watch) => (
-            <WatchRow
-              key={watch.watchId}
-              watch={watch}
-              onEdit={() => {
-                setEditingId(watch.watchId);
-                setForm({
-                  name: watch.name,
-                  kind: watch.kind,
-                  urls: [...watch.urls],
-                  district: watch.district ?? "",
-                  appIds: { ios: watch.appIds?.ios ?? "", android: watch.appIds?.android ?? "" },
-                  socialHandles: watch.socialHandles,
-                });
-              }}
-              onRemove={() => market.remove.mutate(watch.watchId)}
-            />
-          ))
+          listed.map((watch) => {
+            const unreadables = (watch.pages ?? []).filter((page) => page.emptyBody);
+            return (
+              <AdminExpandableRow
+                key={watch.watchId}
+                colSpan={WATCH_COLUMNS.length}
+                expanded={expanded.expandedId === watch.watchId}
+                onToggle={() => openEdit(watch)}
+                editor={watchEditor}
+              >
+                <AdminCell column="name">
+                  {watch.name}
+                  {unreadables.length > 0 ? (
+                    <div className="small text-muted">
+                      not readable · {unreadables.length} page{unreadables.length === 1 ? "" : "s"}
+                    </div>
+                  ) : null}
+                </AdminCell>
+                <AdminCell column="kind">{watch.kind}</AdminCell>
+                <AdminCell column="district">{watch.district || "—"}</AdminCell>
+                <AdminCell column="urls">
+                  <span className="small">{watch.urls.slice(0, 2).join(" · ")}</span>
+                </AdminCell>
+                <AdminCell column="ops">
+                  <AdminRowActions
+                    actions={[
+                      {
+                        id: "edit",
+                        label: `Edit ${watch.name}`,
+                        iconClassName: "bi bi-pencil",
+                        onClick: () => openEdit(watch),
+                      },
+                      {
+                        id: "remove",
+                        label: `Remove ${watch.name}`,
+                        iconClassName: "bi bi-trash",
+                        danger: true,
+                        onClick: () => setPendingRemoveId(watch.watchId),
+                      },
+                    ]}
+                  />
+                </AdminCell>
+              </AdminExpandableRow>
+            );
+          })
         )}
       </AdminDataTable>
+      <ConfirmDialog
+        open={pendingRemoveId !== null}
+        title="Remove watch"
+        body="Remove this watch from the list?"
+        confirmLabel="Remove"
+        tone="danger"
+        confirmBusy={market.remove.isPending}
+        onConfirm={() => {
+          if (!pendingRemoveId) return;
+          const id = pendingRemoveId;
+          market.remove.mutate(id, {
+            onSuccess: () => {
+              setPendingRemoveId(null);
+              if (expanded.expandedId === id) expanded.request(null, false);
+            },
+          });
+        }}
+        onCancel={() => {
+          if (!market.remove.isPending) setPendingRemoveId(null);
+        }}
+      />
+      </AdminRecordTable>
 
       <h3 className="h6 text-uppercase text-muted mt-4">Candidates</h3>
-      <AdminDataTable
-        columns={CANDIDATE_COLUMNS}
-        filterValue={candidateFilter}
-        onFilterChange={setCandidateFilter}
-        filterPlaceholder="Filter candidates"
+      <AdminRecordTable
+        label="Candidates"
+        filters={
+          <AdminFilterBar>
+            <AdminFilterField label="Filter" htmlFor="candidate-filter">
+              <input
+                id="candidate-filter"
+                type="search"
+                className="form-control form-control-sm"
+                placeholder="Filter candidates"
+                autoComplete="off"
+                value={candidateFilter}
+                onChange={(ev) => setCandidateFilter(ev.target.value)}
+              />
+            </AdminFilterField>
+          </AdminFilterBar>
+        }
       >
+      <AdminDataTable bare columns={CANDIDATE_COLUMNS}>
         {candidates.length === 0 ? (
           <AdminDataTableEmptyRow
             colSpan={CANDIDATE_COLUMNS.length}
@@ -256,21 +396,30 @@ export function BoardMarketSection() {
               </AdminCell>
               <AdminCell column="seen">{(watch.seenWeeks ?? []).length} weeks</AdminCell>
               <AdminCell column="ops">
-                <TableIconButton
-                  iconClassName="bi bi-check-lg"
-                  ariaLabel={`Promote ${watch.name}`}
-                  onClick={() => market.update.mutate({ watchId: watch.watchId, body: { kind: "competitor" } })}
-                />
-                <TableIconButton
-                  iconClassName="bi bi-x-lg"
-                  ariaLabel={`Ignore ${watch.name}`}
-                  onClick={() => market.remove.mutate(watch.watchId)}
+                <AdminRowActions
+                  actions={[
+                    {
+                      id: "promote",
+                      label: `Promote ${watch.name}`,
+                      iconClassName: "bi bi-check-lg",
+                      onClick: () =>
+                        market.update.mutate({ watchId: watch.watchId, body: { kind: "competitor" } }),
+                    },
+                    {
+                      id: "ignore",
+                      label: `Ignore ${watch.name}`,
+                      iconClassName: "bi bi-x-lg",
+                      danger: true,
+                      onClick: () => setPendingRemoveId(watch.watchId),
+                    },
+                  ]}
                 />
               </AdminCell>
             </tr>
           ))
         )}
       </AdminDataTable>
+      </AdminRecordTable>
 
       <section className="card shadow-sm mb-3 mt-4">
         <div className="card-body">
@@ -342,38 +491,5 @@ export function BoardMarketSection() {
         />
       ) : null}
     </div>
-  );
-}
-
-function WatchRow({
-  watch,
-  onEdit,
-  onRemove,
-}: {
-  readonly watch: BoardWatch;
-  readonly onEdit: () => void;
-  readonly onRemove: () => void;
-}) {
-  const unreadables = (watch.pages ?? []).filter((p) => p.emptyBody);
-  return (
-    <tr>
-      <AdminCell column="name">
-        {watch.name}
-        {unreadables.length > 0 ? (
-          <div className="small text-muted">
-            not readable · {unreadables.length} page{unreadables.length === 1 ? "" : "s"}
-          </div>
-        ) : null}
-      </AdminCell>
-      <AdminCell column="kind">{watch.kind}</AdminCell>
-      <AdminCell column="district">{watch.district || "—"}</AdminCell>
-      <AdminCell column="urls">
-        <span className="small">{watch.urls.slice(0, 2).join(" · ")}</span>
-      </AdminCell>
-      <AdminCell column="ops">
-        <TableIconButton iconClassName="bi bi-pencil" ariaLabel={`Edit ${watch.name}`} onClick={onEdit} />
-        <TableIconButton iconClassName="bi bi-trash" ariaLabel={`Remove ${watch.name}`} onClick={onRemove} />
-      </AdminCell>
-    </tr>
   );
 }

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { FinanceDataLoadOrError } from "../FinanceDataStatus";
 import { BoardActionsList } from "./BoardActionsList";
 import { BoardApprovalsList } from "./BoardApprovalsList";
@@ -46,6 +46,7 @@ import {
 import { AdminTabList, type AdminTabItem } from "../ui";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { adminTabButtonId } from "../../lib/adminTabs";
+import { clearExpandedParamsExcept } from "../../lib/expandedRecord";
 import {
   DEFAULT_BOARD_BOUNDARIES,
   effectiveToolLevel,
@@ -127,6 +128,8 @@ export function ExecutiveBoardTab() {
     const params = new URLSearchParams(window.location.search);
     const requested = params.get("section");
     if (requested && SECTIONS.some((s) => s.id === requested)) return requested as BoardSection;
+    if (params.get("watch")) return "market" as const;
+    if (params.get("prospect")) return "pipeline" as const;
     if (readBoardTaskIdFromSearch(window.location.search)) return "tasks" as const;
     return null;
   }, []);
@@ -149,6 +152,10 @@ export function ExecutiveBoardTab() {
   const setSection = useCallback((id: BoardSection) => {
     setPinnedSection(id);
   }, []);
+  useEffect(() => {
+    const keep = section === "market" ? "watch" : section === "pipeline" ? "prospect" : null;
+    clearExpandedParamsExcept(keep);
+  }, [section]);
   const callLog = useBoardToolCalls(section === "settings" && showCallLog);
   const members = overview?.members ?? [];
   const toolsConfig = tools.data?.config ?? overview?.settings.tools;

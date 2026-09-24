@@ -1,5 +1,17 @@
-import { useMemo, useState } from "react";
-import { AdminCell, AdminDataTable, AdminDataTableEmptyRow, AdminEditorSection } from "../ui";
+import { useMemo, useRef, useState } from "react";
+import {
+  AdminCell,
+  AdminDataTable,
+  AdminDataTableEmptyRow,
+  AdminDisclosure,
+  AdminEditorSection,
+  AdminExpandableRow,
+  AdminFilterBar,
+  AdminFilterField,
+  AdminRecordTable,
+  ConfirmDialog,
+} from "../ui";
+import { useExpandedRecord } from "../../hooks/useExpandedRecord";
 import { useBoardPipeline, useBoardSequence } from "../../hooks/useBoardPipeline";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import type { BoardProspect, BoardProspectWrite, BoardSequenceStep } from "../../lib/boardModel";
@@ -16,7 +28,7 @@ const COLUMNS = [
   { key: "district", header: "District", priority: "secondary" as const },
   { key: "stage", header: "Stage" },
   { key: "score", header: "Score", priority: "secondary" as const },
-];
+] as const;
 
 const OWNER_STAGES = ["suppressed", "declined", "qualified", "parked"] as const;
 
@@ -31,13 +43,19 @@ export function BoardPipelineSection() {
   const [district, setDistrict] = useState("");
   const [scoreMin, setScoreMin] = useState("");
   const [filter, setFilter] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const expanded = useExpandedRecord("prospect");
+  const selectedId = expanded.expandedId;
+  const prospectDirtyRef = useRef(false);
   const [csv, setCsv] = useState("name,type,district,website,email\n");
   const [seqType, setSeqType] = useState("provider");
   const sequence = useBoardSequence(seqType);
   const [seqDraft, setSeqDraft] = useState<BoardSequenceStep[] | null>(null);
 
-  const selected = pipeline.prospects.find((p) => p.prospectId === selectedId) ?? null;
+  const selected =
+    pipeline.prospects.find((p) => p.prospectId === selectedId) ??
+    pipeline.needsContact.find((p) => p.prospectId === selectedId) ??
+    null;
+  const selectedInLoadedPage = pipeline.prospects.some((p) => p.prospectId === selectedId);
   const steps = seqDraft ?? sequence.data?.steps ?? [];
 
   const filtered = useMemo(() => {
@@ -79,63 +97,115 @@ export function BoardPipelineSection() {
         </div>
       </section>
 
-      <AdminEditorSection title="Filters">
-        <div className="row g-2">
-          <div className="col-md-3">
-            <label className="form-label small mb-1" htmlFor="pipe-stage">Stage</label>
-            <select id="pipe-stage" className="form-select form-select-sm" value={stage} onChange={(e) => setStage(e.target.value)}>
-              <option value="">All</option>
-              {BOARD_STAFF_PROSPECT_STAGES.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-          <div className="col-md-3">
-            <label className="form-label small mb-1" htmlFor="pipe-type">Type</label>
-            <select id="pipe-type" className="form-select form-select-sm" value={ptype} onChange={(e) => setPtype(e.target.value)}>
-              <option value="">All</option>
-              {BOARD_STAFF_PROSPECT_TYPES.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </div>
-          <div className="col-md-3">
-            <label className="form-label small mb-1" htmlFor="pipe-district">District</label>
-            <input id="pipe-district" className="form-control form-control-sm" value={district} onChange={(e) => setDistrict(e.target.value)} />
-          </div>
-          <div className="col-md-3">
-            <label className="form-label small mb-1" htmlFor="pipe-score">Min score</label>
-            <input id="pipe-score" className="form-control form-control-sm" value={scoreMin} onChange={(e) => setScoreMin(e.target.value)} />
-          </div>
-        </div>
-      </AdminEditorSection>
-
-      <AdminDataTable
-        columns={COLUMNS}
-        filterValue={filter}
-        onFilterChange={setFilter}
-        filterPlaceholder="Filter prospects"
+      <AdminRecordTable
+        label="Prospects"
+        filters={
+          <AdminFilterBar>
+            <AdminFilterField label="Filter" htmlFor="pipe-filter">
+              <input
+                id="pipe-filter"
+                type="search"
+                className="form-control form-control-sm"
+                placeholder="Filter prospects"
+                autoComplete="off"
+                value={filter}
+                onChange={(ev) => setFilter(ev.target.value)}
+              />
+            </AdminFilterField>
+            <AdminFilterField label="Stage" htmlFor="pipe-stage">
+              <select id="pipe-stage" className="form-select form-select-sm" value={stage} onChange={(e) => setStage(e.target.value)}>
+                <option value="">All</option>
+                {BOARD_STAFF_PROSPECT_STAGES.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </AdminFilterField>
+            <AdminFilterField label="Type" htmlFor="pipe-type">
+              <select id="pipe-type" className="form-select form-select-sm" value={ptype} onChange={(e) => setPtype(e.target.value)}>
+                <option value="">All</option>
+                {BOARD_STAFF_PROSPECT_TYPES.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </AdminFilterField>
+            <AdminFilterField label="District" htmlFor="pipe-district">
+              <input id="pipe-district" className="form-control form-control-sm" value={district} onChange={(e) => setDistrict(e.target.value)} />
+            </AdminFilterField>
+            <AdminFilterField label="Min score" htmlFor="pipe-score">
+              <input id="pipe-score" className="form-control form-control-sm" value={scoreMin} onChange={(e) => setScoreMin(e.target.value)} />
+            </AdminFilterField>
+          </AdminFilterBar>
+        }
+        beforeTable={
+          <AdminDisclosure title="CSV import">
+            <label className="form-label small" htmlFor="pipe-csv">name,type,district,website,email (≤ 500 rows)</label>
+            <textarea id="pipe-csv" className="form-control font-monospace small" rows={4} value={csv} onChange={(e) => setCsv(e.target.value)} />
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-primary mt-2"
+              disabled={pipeline.importCsv.isPending}
+              onClick={() => pipeline.importCsv.mutate(csv)}
+            >
+              {pipeline.importCsv.isPending ? "Uploading…" : "Import"}
+            </button>
+            {pipeline.importCsv.data ? (
+              <p className="small mt-2 mb-0">
+                Created {pipeline.importCsv.data.created}, updated {pipeline.importCsv.data.updated}
+                {pipeline.importCsv.data.errors.length ? `; ${pipeline.importCsv.data.errors.join("; ")}` : ""}
+              </p>
+            ) : null}
+            {errorText(pipeline.importCsv.error) ? <p className="small text-danger mt-2 mb-0">{errorText(pipeline.importCsv.error)}</p> : null}
+          </AdminDisclosure>
+        }
       >
+      <AdminDataTable bare columns={COLUMNS}>
         {filtered.length === 0 ? (
           <AdminDataTableEmptyRow colSpan={COLUMNS.length} message="No prospects yet." />
         ) : (
           filtered.map((p) => (
-            <tr key={p.prospectId} className={selectedId === p.prospectId ? "table-active" : undefined}>
-              <AdminCell column="name">
-                <button type="button" className="btn btn-link btn-sm p-0" onClick={() => setSelectedId(p.prospectId)}>
-                  {p.name}
-                </button>
-              </AdminCell>
+            <AdminExpandableRow
+              key={p.prospectId}
+              colSpan={COLUMNS.length}
+              expanded={selectedId === p.prospectId}
+              onToggle={() =>
+                expanded.toggle(
+                  p.prospectId,
+                  prospectDirtyRef.current,
+                  () => {
+                    prospectDirtyRef.current = false;
+                  },
+                  () => {
+                    prospectDirtyRef.current = false;
+                  },
+                )
+              }
+              editor={
+                selected && selected.prospectId === p.prospectId ? (
+                  <ProspectEditor
+                    key={selected.prospectId}
+                    prospect={selected}
+                    error={errorText(pipeline.update.error) ?? errorText(pipeline.merge.error)}
+                    saving={pipeline.update.isPending}
+                    onDirty={(dirty) => {
+                      prospectDirtyRef.current = dirty;
+                    }}
+                    onSave={(body) => pipeline.update.mutate({ prospectId: selected.prospectId, body })}
+                    onMerge={(into) => pipeline.merge.mutate({ prospectId: selected.prospectId, into })}
+                  />
+                ) : null
+              }
+            >
+              <AdminCell column="name">{p.name}</AdminCell>
               <AdminCell column="type">{p.type}</AdminCell>
               <AdminCell column="district">{p.district}</AdminCell>
               <AdminCell column="stage">{p.stage}</AdminCell>
               <AdminCell column="score">{p.score ?? "—"}</AdminCell>
-            </tr>
+            </AdminExpandableRow>
           ))
         )}
       </AdminDataTable>
       {pipeline.hasNextPage ? (
-        <div>
+        <div className="px-3 pb-3">
           <button
             type="button"
             className="btn btn-outline-secondary btn-sm"
@@ -145,26 +215,52 @@ export function BoardPipelineSection() {
           </button>
         </div>
       ) : null}
-
-      {selected ? (
-        <ProspectDrawer
-          key={selected.prospectId}
-          prospect={selected}
-          error={errorText(pipeline.update.error) ?? errorText(pipeline.merge.error)}
-          onClose={() => setSelectedId(null)}
-          onSave={(body) => pipeline.update.mutate({ prospectId: selected.prospectId, body })}
-          onMerge={(into) => pipeline.merge.mutate({ prospectId: selected.prospectId, into })}
-        />
-      ) : null}
+      <ConfirmDialog
+        open={expanded.confirmOpen}
+        title="Discard unsaved edits?"
+        body="This prospect has unsaved changes."
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        tone="danger"
+        onConfirm={expanded.acceptPending}
+        onCancel={expanded.cancelPending}
+      />
+      </AdminRecordTable>
 
       <AdminEditorSection title="Needs a contact">
+        {selected && !selectedInLoadedPage ? (
+          <div className="mb-3">
+            <ProspectEditor
+              key={selected.prospectId}
+              prospect={selected}
+              error={errorText(pipeline.update.error) ?? errorText(pipeline.merge.error)}
+              saving={pipeline.update.isPending || pipeline.merge.isPending}
+              onDirty={(dirty) => {
+                prospectDirtyRef.current = dirty;
+              }}
+              onSave={(body) => pipeline.update.mutate({ prospectId: selected.prospectId, body })}
+              onMerge={(into) => pipeline.merge.mutate({ prospectId: selected.prospectId, into })}
+            />
+          </div>
+        ) : null}
         {pipeline.needsContact.length === 0 ? (
           <p className="small text-muted mb-0">No qualified prospects are waiting for a business address.</p>
         ) : (
           <ul className="small mb-0">
             {pipeline.needsContact.map((p) => (
               <li key={p.prospectId}>
-                <button type="button" className="btn btn-link btn-sm p-0" onClick={() => setSelectedId(p.prospectId)}>
+                <button
+                  type="button"
+                  className="btn btn-link btn-sm p-0"
+                  onClick={() => {
+                    setStage("");
+                    setPtype("");
+                    setDistrict("");
+                    setScoreMin("");
+                    setFilter("");
+                    expanded.request(p.prospectId, prospectDirtyRef.current);
+                  }}
+                >
                   {p.name}
                 </button>
                 {" "}({p.district || "unknown"})
@@ -172,26 +268,6 @@ export function BoardPipelineSection() {
             ))}
           </ul>
         )}
-      </AdminEditorSection>
-
-      <AdminEditorSection title="CSV import">
-        <label className="form-label small" htmlFor="pipe-csv">name,type,district,website,email (≤ 500 rows)</label>
-        <textarea id="pipe-csv" className="form-control font-monospace small" rows={4} value={csv} onChange={(e) => setCsv(e.target.value)} />
-        <button
-          type="button"
-          className="btn btn-sm btn-outline-primary mt-2"
-          disabled={pipeline.importCsv.isPending}
-          onClick={() => pipeline.importCsv.mutate(csv)}
-        >
-          Import
-        </button>
-        {pipeline.importCsv.data ? (
-          <p className="small mt-2 mb-0">
-            Created {pipeline.importCsv.data.created}, updated {pipeline.importCsv.data.updated}
-            {pipeline.importCsv.data.errors.length ? `; ${pipeline.importCsv.data.errors.join("; ")}` : ""}
-          </p>
-        ) : null}
-        {errorText(pipeline.importCsv.error) ? <p className="small text-danger mt-2 mb-0">{errorText(pipeline.importCsv.error)}</p> : null}
       </AdminEditorSection>
 
       <AdminEditorSection title="Sequences">
@@ -286,28 +362,29 @@ export function BoardPipelineSection() {
   );
 }
 
-function ProspectDrawer({
+function ProspectEditor({
   prospect,
   error,
-  onClose,
+  saving,
+  onDirty,
   onSave,
   onMerge,
 }: {
   readonly prospect: BoardProspect;
   readonly error: string | null;
-  readonly onClose: () => void;
+  readonly saving: boolean;
+  readonly onDirty: (dirty: boolean) => void;
   readonly onSave: (body: BoardProspectWrite) => void;
   readonly onMerge: (into: string) => void;
 }) {
   const [contact, setContact] = useState(prospect.contact ?? "");
   const [note, setNote] = useState(prospect.ownerNote ?? "");
   const [mergeInto, setMergeInto] = useState(prospect.possibleDuplicates?.[0]?.prospectId ?? "");
+  function reportDirty(nextContact: string, nextNote: string) {
+    onDirty(nextContact !== (prospect.contact ?? "") || nextNote !== (prospect.ownerNote ?? ""));
+  }
   return (
-    <div className="border rounded p-3 bg-body-secondary">
-      <div className="d-flex justify-content-between align-items-start gap-2">
-        <h3 className="h6 mb-0">{prospect.name}</h3>
-        <button type="button" className="btn-close" aria-label="Close prospect" onClick={onClose} />
-      </div>
+    <div>
       <p className="small mb-2">
         {prospect.type} · {prospect.district} · {prospect.stage} · score {prospect.score ?? "—"}
       </p>
@@ -330,13 +407,41 @@ function ProspectDrawer({
         <p className="small mb-2">Possible duplicates: {(prospect.possibleDuplicates ?? []).map((d) => d.name || d.prospectId).join(", ")}</p>
       ) : null}
       <label className="form-label small mb-1" htmlFor="pipe-contact">Contact</label>
-      <input id="pipe-contact" className="form-control form-control-sm mb-2" value={contact} onChange={(e) => setContact(e.target.value)} />
+      <input
+        id="pipe-contact"
+        className="form-control form-control-sm mb-2"
+        value={contact}
+        onChange={(e) => {
+          const next = e.target.value;
+          setContact(next);
+          reportDirty(next, note);
+        }}
+      />
       <label className="form-label small mb-1" htmlFor="pipe-note">Note</label>
-      <textarea id="pipe-note" className="form-control form-control-sm mb-2" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
+      <textarea
+        id="pipe-note"
+        className="form-control form-control-sm mb-2"
+        rows={2}
+        value={note}
+        onChange={(e) => {
+          const next = e.target.value;
+          setNote(next);
+          reportDirty(contact, next);
+        }}
+      />
       <div className="d-flex flex-wrap gap-2 mb-2">
-        <button type="button" className="btn btn-sm btn-primary" onClick={() => onSave({ contact, note })}>Save contact</button>
+        <button type="button" className="btn btn-primary" disabled={saving} aria-busy={saving} onClick={() => onSave({ contact, note })}>
+          {saving ? (
+            <>
+              <span className="spinner-border spinner-border-sm me-2" aria-hidden="true" />
+              Saving…
+            </>
+          ) : (
+            "Update"
+          )}
+        </button>
         {OWNER_STAGES.map((s) => (
-          <button key={s} type="button" className="btn btn-sm btn-outline-secondary" onClick={() => onSave({ stage: s })}>
+          <button key={s} type="button" className="btn btn-sm btn-outline-secondary" disabled={saving} onClick={() => onSave({ stage: s })}>
             {s === "suppressed" ? "Suppress" : s === "declined" ? "Mark declined" : s === "parked" ? "Park" : "Mark qualified"}
           </button>
         ))}

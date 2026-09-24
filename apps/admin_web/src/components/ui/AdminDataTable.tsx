@@ -1,5 +1,7 @@
 import {
+  Children,
   createContext,
+  isValidElement,
   useContext,
   useEffect,
   useId,
@@ -48,9 +50,14 @@ export type AdminDataTableSort = {
 
 export type AdminDataTableProps = {
   readonly columns: readonly AdminDataTableColumn[];
-  readonly filterValue: string;
-  readonly onFilterChange: (value: string) => void;
+  readonly filterValue?: string;
+  readonly onFilterChange?: (value: string) => void;
   readonly filterPlaceholder?: string;
+  /**
+   * Table markup only. The card and filter live on `AdminRecordTable` /
+   * `AdminFilterBar` for record screens.
+   */
+  readonly bare?: boolean;
   readonly children: ReactNode;
   /**
    * When true, omit the outer card (for nesting inside `AdminEditorSection` or similar).
@@ -67,6 +74,28 @@ export type AdminDataTableProps = {
 
 const ColumnsContext = createContext<readonly AdminDataTableColumn[] | null>(null);
 
+function isRecordGroup(child: ReactNode): boolean {
+  return (
+    isValidElement(child) &&
+    (child.type as { recordGroup?: boolean }).recordGroup === true
+  );
+}
+
+/** Expandable records render their own `<tbody>`. Plain rows stay in one body. */
+function renderTableBody(children: ReactNode): ReactNode {
+  const items = Children.toArray(children);
+  if (!items.some(isRecordGroup)) return <tbody>{children}</tbody>;
+  return items.map((child, index) =>
+    isRecordGroup(child) ? (
+      child
+    ) : (
+      <tbody className="admin-record-group" key={`plain-row-${index}`}>
+        {child}
+      </tbody>
+    ),
+  );
+}
+
 /**
  * Standard admin table: filter field, striped rows, last column reserved for operations.
  * Pass table body rows as `children` (typically `<tr>` elements). Use
@@ -75,11 +104,12 @@ const ColumnsContext = createContext<readonly AdminDataTableColumn[] | null>(nul
  */
 export function AdminDataTable({
   columns,
-  filterValue,
+  filterValue = "",
   onFilterChange,
   filterPlaceholder = "Filter rows…",
   children,
   embedded = false,
+  bare = false,
   sort,
 }: AdminDataTableProps) {
   const filterId = useId();
@@ -101,7 +131,7 @@ export function AdminDataTable({
             placeholder={filterPlaceholder}
             autoComplete="off"
             value={filterValue}
-            onChange={(ev) => onFilterChange(ev.target.value)}
+            onChange={(ev) => onFilterChange?.(ev.target.value)}
           />
         </div>
         {sort ? (
@@ -166,17 +196,60 @@ export function AdminDataTable({
             ))}
           </tr>
         </thead>
-        <ColumnsContext.Provider value={columns}>
-          <tbody>{children}</tbody>
-        </ColumnsContext.Provider>
+        <ColumnsContext.Provider value={columns}>{renderTableBody(children)}</ColumnsContext.Provider>
       </table>
     </div>
   );
 
+  const phoneSort = sort ? (
+    <div className="d-flex gap-1 align-items-center d-md-none admin-table-sort px-3 pt-2">
+      <label className="visually-hidden" htmlFor={sortId}>
+        Sort by
+      </label>
+      <select
+        id={sortId}
+        className="form-select form-select-sm"
+        value={sort.sortKey ?? ""}
+        onChange={(ev) => sort.onChange(ev.target.value || null, sort.direction)}
+      >
+        <option value="">Sort: default</option>
+        {sort.options.map((o) => (
+          <option key={o.key} value={o.key}>
+            Sort: {o.label}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        className="btn btn-sm btn-outline-secondary bg-white admin-table-icon-btn"
+        aria-label={sort.direction === "asc" ? "Sorted ascending; switch to descending" : "Sorted descending; switch to ascending"}
+        title={sort.direction === "asc" ? "Ascending" : "Descending"}
+        disabled={!sort.sortKey}
+        onClick={() =>
+          sort.onChange(sort.sortKey, sort.direction === "asc" ? "desc" : "asc")
+        }
+      >
+        <i
+          className={`bi ${sort.direction === "asc" ? "bi-sort-alpha-down" : "bi-sort-alpha-up"}`}
+          aria-hidden="true"
+        />
+      </button>
+    </div>
+  ) : null;
+
+  if (bare) {
+    return (
+      <>
+        {phoneSort}
+        {tableBlock}
+      </>
+    );
+  }
+
   if (embedded) {
     return (
       <>
-        {filterBlock}
+        {onFilterChange ? filterBlock : null}
         {tableBlock}
       </>
     );

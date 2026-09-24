@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useMemo, useRef, useState } from "react";
+import { type FormEvent, useCallback, useMemo, useState } from "react";
 import {
   coerceSupportedCurrency,
   GLOBAL_DEFAULT_CURRENCY,
@@ -22,7 +22,9 @@ import {
   type AssetType,
   type InvestmentCategory,
 } from "../lib/financeModel";
-import { scheduleFocusRecordEditor } from "../lib/focusRecordEditor";
+import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
+import { useExpandedRecord } from "../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
 import { buildQuoteMap, type FinanceQuoteResult } from "../lib/financeQuotes";
 import { useFinanceQuotes } from "../hooks/useFinanceQuotes";
 import { useFrankfurterRatesForTotals } from "../hooks/useFrankfurterRatesForTotals";
@@ -33,13 +35,19 @@ import {
   AdminDataTableCellMeta,
   AdminDataTableEmptyRow,
   type AdminDataTableColumn,
-  AdminEditorSection,
+  AdminCreateButton,
+  AdminEditorPanel,
+  AdminExpandableRow,
+  AdminFilterBar,
+  AdminFilterField,
+  AdminRecordTable,
+  AdminRowActions,
+  ConfirmDialog,
   AdminTableTotalCurrency,
   CurrencySelect,
   FrankfurterRatesFooterNote,
   MoneyAmount,
   StaleValuationBadge,
-  TableIconButton,
   TableSortHeaderButton,
 } from "./ui";
 
@@ -202,11 +210,32 @@ type FormState = {
   cryptoCurrency: string;
 };
 
+function formFromInvestment(row: FinanceInvestmentRecord): FormState {
+  return {
+    category: row.category,
+    assetType: row.assetType,
+    provider: row.provider,
+    principal: String(row.principalAmount),
+    currency: row.currency,
+    unit: row.category === "Real Estate" ? "" : row.unit !== undefined ? String(row.unit) : "",
+    currentValue:
+      row.category === "Real Estate" ? String(row.currentValue ?? row.principalAmount) : "",
+    relatedHouse:
+      row.category === "Real Estate" &&
+      (row.relatedHouse === "hillmarton" || row.relatedHouse === "morrison")
+        ? row.relatedHouse
+        : "",
+    ticker: row.category === "ETF" ? (row.ticker ?? "") : "",
+    cryptoCurrency: row.category === "Crypto" ? (row.cryptoCurrency ?? "") : "",
+  };
+}
+
 export type FinanceInvestmentsPanelProps = {
   readonly records: readonly FinanceInvestmentRecord[];
   readonly onPatch: (
     patch: (prev: readonly FinanceInvestmentRecord[]) => FinanceInvestmentRecord[],
   ) => void;
+  readonly isSaving?: boolean;
   readonly relatedHouseOptions: ReadonlyArray<{
     readonly value: HouseKey;
     readonly label: string;
@@ -217,6 +246,7 @@ export function FinanceInvestmentsPanel({
   records,
   onPatch,
   relatedHouseOptions,
+  isSaving = false,
 }: FinanceInvestmentsPanelProps) {
   const sheetId = "investments";
   const defaultCategory = INVESTMENT_CATEGORIES[0];
@@ -413,9 +443,13 @@ export function FinanceInvestmentsPanel({
 
   const colSpan = tableColumns.length;
   const formId = `${sheetId}-form`;
-  const recordEditorSectionRef = useRef<HTMLDivElement | null>(null);
-
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const expanded = useExpandedRecord("investment");
+  const editingId =
+    expanded.expandedId && expanded.expandedId !== DRAFT_RECORD_ID
+      ? expanded.expandedId
+      : null;
+  const formOpen = expanded.expandedId !== null;
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(() => emptyForm());
   const [tableFilter, setTableFilter] = useState("");
@@ -653,40 +687,45 @@ export function FinanceInvestmentsPanel({
     quotesErrored,
   ]);
 
-  function resetForm() {
-    setEditingId(null);
+  function resetFields() {
     setFormError(null);
     setForm(emptyForm());
   }
 
-  function openEdit(row: FinanceInvestmentRecord) {
-    setEditingId(row.id);
+  function applyInvestment(row: FinanceInvestmentRecord) {
     setFormError(null);
-    setForm({
-      category: row.category,
-      assetType: row.assetType,
-      provider: row.provider,
-      principal: String(row.principalAmount),
-      currency: row.currency,
-      unit:
-        row.category === "Real Estate"
-          ? ""
-          : row.unit !== undefined
-            ? String(row.unit)
-            : "",
-      currentValue:
-        row.category === "Real Estate"
-          ? String(row.currentValue ?? row.principalAmount)
-          : "",
-      relatedHouse:
-        row.category === "Real Estate" &&
-        (row.relatedHouse === "hillmarton" || row.relatedHouse === "morrison")
-          ? row.relatedHouse
-          : "",
-      ticker: row.category === "ETF" ? (row.ticker ?? "") : "",
-      cryptoCurrency: row.category === "Crypto" ? (row.cryptoCurrency ?? "") : "",
-    });
-    scheduleFocusRecordEditor(() => recordEditorSectionRef.current);
+    setForm(formFromInvestment(row));
+  }
+
+  function investmentDirty(): boolean {
+    if (!formOpen) return false;
+    if (!editingId) return JSON.stringify(form) !== JSON.stringify(emptyForm());
+    const row = records.find((record) => record.id === editingId);
+    if (!row) return false;
+    return JSON.stringify(form) !== JSON.stringify(formFromInvestment(row));
+  }
+
+  const editingInvestment = editingId
+    ? (records.find((record) => record.id === editingId) ?? null)
+    : null;
+  useHydrateExpandedRecord({
+    expandedId: expanded.expandedId,
+    recordsReady: true,
+    record: editingInvestment,
+    apply: applyInvestment,
+    onMissing: () => expanded.request(null, false),
+  });
+
+  function openEdit(row: FinanceInvestmentRecord) {
+    expanded.toggle(row.id, investmentDirty(), () => applyInvestment(row), resetFields);
+  }
+
+  function openCreate() {
+    if (expanded.expandedId === DRAFT_RECORD_ID) {
+      expanded.request(null, investmentDirty(), resetFields);
+      return;
+    }
+    expanded.request(DRAFT_RECORD_ID, investmentDirty(), resetFields);
   }
 
   function submit(e: FormEvent) {
@@ -756,39 +795,27 @@ export function FinanceInvestmentsPanel({
       return [...prev, row];
     });
 
-    resetForm();
+    resetFields();
+    expanded.request(null, false);
   }
 
   function deleteRow(id: string) {
-    if (!window.confirm("Delete this investment record?")) return;
     onPatch((prev) => prev.filter((r) => r.id !== id));
     if (editingId === id) {
-      resetForm();
+      resetFields();
+      expanded.request(null, false);
     }
+    setPendingDeleteId(null);
   }
 
-  return (
-    <div>
-      <AdminEditorSection
-        containerRef={recordEditorSectionRef}
-        title="Investment record"
-        footer={
-          <>
-            <button type="submit" form={formId} className="btn btn-primary btn-sm">
-              {editingId ? "Update record" : "Add record"}
-            </button>
-            <button type="button" className="btn btn-outline-secondary btn-sm" onClick={resetForm}>
-              Clear
-            </button>
-          </>
-        }
-      >
-        <form id={formId} onSubmit={submit}>
-          {formError ? (
-            <div className="alert alert-danger py-2 small" role="alert">
-              {formError}
-            </div>
-          ) : null}
+  const investmentEditor = formOpen ? (
+    <AdminEditorPanel
+      formId={formId}
+      onSubmit={submit}
+      submitLabel={editingId ? "Update record" : "Add record"}
+      isSaving={isSaving}
+      error={formError}
+    >
           <div className="row g-3">
             <div className="col-12 col-md-2">
               <label className="form-label small" htmlFor={`${sheetId}-cat`}>
@@ -960,16 +987,34 @@ export function FinanceInvestmentsPanel({
               </div>
             ) : null}
           </div>
-        </form>
-      </AdminEditorSection>
+    </AdminEditorPanel>
+  ) : null;
 
-      <AdminEditorSection title="Investments">
+  return (
+    <div>
+      <AdminRecordTable
+        label="Investments"
+        filters={
+          <AdminFilterBar
+            create={<AdminCreateButton label="New investment" onClick={openCreate} />}
+          >
+            <AdminFilterField label="Filter" htmlFor={`${sheetId}-filter`}>
+              <input
+                id={`${sheetId}-filter`}
+                type="search"
+                className="form-control form-control-sm"
+                placeholder="Filter records…"
+                autoComplete="off"
+                value={tableFilter}
+                onChange={(ev) => setTableFilter(ev.target.value)}
+              />
+            </AdminFilterField>
+          </AdminFilterBar>
+        }
+      >
         <AdminDataTable
-          embedded
+          bare
           columns={tableColumns}
-          filterValue={tableFilter}
-          onFilterChange={setTableFilter}
-          filterPlaceholder="Filter records…"
           sort={{
             options: INVESTMENT_SORT_OPTIONS,
             sortKey,
@@ -980,9 +1025,29 @@ export function FinanceInvestmentsPanel({
             },
           }}
         >
+          {expanded.expandedId === DRAFT_RECORD_ID ? (
+            <AdminExpandableRow colSpan={colSpan} expanded onToggle={openCreate} editor={investmentEditor}>
+              <AdminCell column="cat">New investment</AdminCell>
+              <AdminCell column="details" />
+              <AdminCell column="atype" />
+              <AdminCell column="prov" />
+              <AdminCell column="amt" />
+              <AdminCell column="ccy" />
+              <AdminCell column="unit" />
+              <AdminCell column="currVal" />
+              <AdminCell column="lastUpd" />
+              <AdminCell column="ops" />
+            </AdminExpandableRow>
+          ) : null}
           {filtered.length ? (
             filtered.map((r) => (
-              <tr key={r.id}>
+              <AdminExpandableRow
+                key={r.id}
+                colSpan={colSpan}
+                expanded={expanded.expandedId === r.id}
+                onToggle={() => openEdit(r)}
+                editor={investmentEditor}
+              >
                 <AdminCell column="cat" className="small">
                   {r.category}
                   <AdminDataTableCellMeta>
@@ -1064,19 +1129,25 @@ export function FinanceInvestmentsPanel({
                   <StaleValuationBadge lastUpdated={r.lastUpdated} />
                 </AdminCell>
                 <AdminCell column="ops" className="small text-end">
-                  <TableIconButton
-                    iconClassName="bi bi-pencil"
-                    ariaLabel="Edit record"
-                    onClick={() => openEdit(r)}
-                  />
-                  <TableIconButton
-                    iconClassName="bi bi-trash"
-                    ariaLabel="Delete record"
-                    variant="danger"
-                    onClick={() => deleteRow(r.id)}
+                  <AdminRowActions
+                    actions={[
+                      {
+                        id: "edit",
+                        label: "Edit record",
+                        iconClassName: "bi bi-pencil",
+                        onClick: () => openEdit(r),
+                      },
+                      {
+                        id: "delete",
+                        label: "Delete record",
+                        iconClassName: "bi bi-trash",
+                        danger: true,
+                        onClick: () => setPendingDeleteId(r.id),
+                      },
+                    ]}
                   />
                 </AdminCell>
-              </tr>
+              </AdminExpandableRow>
             ))
           ) : (
             <AdminDataTableEmptyRow
@@ -1164,7 +1235,28 @@ export function FinanceInvestmentsPanel({
             </tr>
           ) : null}
         </AdminDataTable>
-      </AdminEditorSection>
+        <ConfirmDialog
+          open={pendingDeleteId !== null}
+          title="Delete investment"
+          body="Delete this investment record?"
+          confirmLabel="Delete"
+          tone="danger"
+          onConfirm={() => {
+            if (pendingDeleteId) deleteRow(pendingDeleteId);
+          }}
+          onCancel={() => setPendingDeleteId(null)}
+        />
+        <ConfirmDialog
+          open={expanded.confirmOpen}
+          title="Discard unsaved edits?"
+          body="This investment has unsaved changes."
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          tone="danger"
+          onConfirm={expanded.acceptPending}
+          onCancel={expanded.cancelPending}
+        />
+      </AdminRecordTable>
     </div>
   );
 }

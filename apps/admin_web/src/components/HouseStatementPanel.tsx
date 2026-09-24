@@ -15,7 +15,9 @@ import {
 } from "../lib/financeModel";
 import { formatDateUtc } from "../lib/formatDisplay";
 import { parseAmount } from "../lib/formParse";
-import { scheduleFocusRecordEditor } from "../lib/focusRecordEditor";
+import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
+import { useExpandedRecord } from "../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
 import {
   existingImportedStatementBasenames,
   useParseStatement,
@@ -27,10 +29,18 @@ import {
   AdminDataTableCellMeta,
   AdminDataTableEmptyRow,
   type AdminDataTableColumn,
+  AdminCreateButton,
+  AdminDisclosure,
+  AdminEditorPanel,
   AdminEditorSection,
+  AdminExpandableRow,
+  AdminFilterBar,
+  AdminFilterField,
+  AdminRecordTable,
+  AdminRowActions,
+  ConfirmDialog,
   CurrencySelect,
   MoneyAmount,
-  TableIconButton,
 } from "./ui";
 
 function utcPartsFromIso(iso: string): { datePart: string; timePart: string } {
@@ -103,7 +113,10 @@ function StatementAssetLaunchButton({
       title={`Open attachment (${base})`}
       aria-label={`Open attachment ${base}`}
       disabled={busy}
-      onClick={() => onOpen(assetKey)}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpen(assetKey);
+      }}
     >
       {busy ? (
         <span
@@ -177,6 +190,8 @@ export type HouseStatementPanelProps = {
   readonly tableSectionTitle?: string;
   readonly emptyMessage?: string;
   readonly importFileLabel?: string;
+  /** Document save in flight. Line uploads use their own Uploading… label. */
+  readonly isSaving?: boolean;
 };
 
 const TABLE_COLUMNS: AdminDataTableColumn[] = [
@@ -227,6 +242,7 @@ export function HouseStatementPanel({
   tableSectionTitle = "House statement",
   emptyMessage = "No statement lines yet.",
   importFileLabel = "Statement file",
+  isSaving: documentSaving = false,
 }: HouseStatementPanelProps) {
   const lineFormId = `${houseKey}-line-form`;
   const [floatAmount, setFloatAmount] = useState(String(data.float.amount));
@@ -235,7 +251,12 @@ export function HouseStatementPanel({
   );
   const [houseDefaultDraft, setHouseDefaultDraft] = useState(data.defaultCurrency);
 
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const expanded = useExpandedRecord(`${houseKey}-line`);
+  const editingId =
+    expanded.expandedId && expanded.expandedId !== DRAFT_RECORD_ID
+      ? expanded.expandedId
+      : null;
+  const formOpen = expanded.expandedId !== null;
   const [formError, setFormError] = useState<string | null>(null);
   const [lineForm, setLineForm] = useState<LineFormState>(() => {
     const next = emptyLineForm(data.defaultCurrency);
@@ -259,8 +280,8 @@ export function HouseStatementPanel({
   const [prefillStatementAssetKeys, setPrefillStatementAssetKeys] = useState<
     string[] | null
   >(null);
-  const lineEditorSectionRef = useRef<HTMLDivElement | null>(null);
   const [lineSubmitBusy, setLineSubmitBusy] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [statementPdfOpenError, setStatementPdfOpenError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -347,49 +368,78 @@ export function HouseStatementPanel({
     setFloatCurrency(floatCur);
   }
 
-  function resetLineForm() {
-    setEditingId(null);
-    setFormError(null);
+  function blankLineForm() {
     const next = emptyLineForm(data.defaultCurrency);
-    setLineForm(lockedLineType ? { ...next, type: lockedLineType } : next);
+    return lockedLineType ? { ...next, type: lockedLineType } : next;
+  }
+
+  useHydrateExpandedRecord({
+    expandedId: expanded.expandedId,
+    recordsReady: true,
+    record: editingLine ?? null,
+    apply: (line) => {
+      setFormError(null);
+      setLineForm(lineToForm(line));
+    },
+    onMissing: () => expanded.request(null, false),
+  });
+
+  function resetLineFields() {
+    setFormError(null);
+    setLineForm(blankLineForm());
     setPendingLineFiles([]);
     setRemovedAssetKeys([]);
     setPrefillStatementAssetKeys(null);
     if (linePdfInputRef.current) {
       linePdfInputRef.current.value = "";
     }
+  }
+
+  function applyLineToForm(line: HouseStatementLine, duplicate: boolean) {
+    setFormError(null);
+    setLineForm(lineToForm(line));
+    setPendingLineFiles([]);
+    setRemovedAssetKeys([]);
+    setPrefillStatementAssetKeys(
+      duplicate ? dedupeAssetKeys(statementLineAssetKeys(line)) : null,
+    );
+    if (linePdfInputRef.current) {
+      linePdfInputRef.current.value = "";
+    }
+    queueMicrotask(() => lineDescriptionRef.current?.focus());
+  }
+
+  function lineDirty(): boolean {
+    if (!formOpen) return false;
+    if (pendingLineFiles.length > 0 || removedAssetKeys.length > 0) return true;
+    if (prefillStatementAssetKeys !== null) return true;
+    if (editingId) {
+      const line = data.lines.find((row) => row.id === editingId);
+      if (!line) return false;
+      return JSON.stringify(lineForm) !== JSON.stringify(lineToForm(line));
+    }
+    return JSON.stringify(lineForm) !== JSON.stringify(blankLineForm());
   }
 
   function openEdit(line: HouseStatementLine) {
-    setEditingId(line.id);
-    setFormError(null);
-    setLineForm(lineToForm(line));
-    setPendingLineFiles([]);
-    setRemovedAssetKeys([]);
-    setPrefillStatementAssetKeys(null);
-    if (linePdfInputRef.current) {
-      linePdfInputRef.current.value = "";
-    }
-    scheduleFocusRecordEditor(() => lineEditorSectionRef.current);
+    expanded.toggle(
+      line.id,
+      lineDirty(),
+      () => applyLineToForm(line, false),
+      resetLineFields,
+    );
   }
 
   function openDuplicateIntoEditor(line: HouseStatementLine) {
-    setEditingId(null);
-    setFormError(null);
-    setLineForm(lineToForm(line));
-    setPendingLineFiles([]);
-    setRemovedAssetKeys([]);
-    setPrefillStatementAssetKeys(dedupeAssetKeys(statementLineAssetKeys(line)));
-    if (linePdfInputRef.current) {
-      linePdfInputRef.current.value = "";
+    expanded.request(DRAFT_RECORD_ID, lineDirty(), () => applyLineToForm(line, true));
+  }
+
+  function openCreate() {
+    if (expanded.expandedId === DRAFT_RECORD_ID) {
+      expanded.request(null, lineDirty(), resetLineFields);
+      return;
     }
-    queueMicrotask(() => {
-      lineEditorSectionRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "start",
-      });
-      lineDescriptionRef.current?.focus({ preventScroll: false });
-    });
+    expanded.request(DRAFT_RECORD_ID, lineDirty(), resetLineFields);
   }
 
   async function submitLine(e: FormEvent) {
@@ -470,7 +520,8 @@ export function HouseStatementPanel({
       };
     });
 
-    resetLineForm();
+    resetLineFields();
+    expanded.request(null, false);
   }
 
   function openStatementPdf(assetKey: string) {
@@ -496,241 +547,27 @@ export function HouseStatementPanel({
   }
 
   function deleteLine(id: string) {
-    if (!window.confirm("Delete this statement line?")) return;
     onPatch((prev) => ({
       ...prev,
       lines: prev.lines.filter((l) => l.id !== id),
     }));
     if (editingId === id) {
-      resetLineForm();
+      resetLineFields();
+      expanded.request(null, false);
     }
+    setPendingDeleteId(null);
   }
 
-  return (
-    <div>
-      {statementPdfOpenError ? (
-        <div
-          className="alert alert-danger alert-dismissible py-2 small mb-3"
-          role="alert"
+      const lineEditor = formOpen ? (
+        <AdminEditorPanel
+          formId={lineFormId}
+          onSubmit={submitLine}
+          submitLabel={editingId ? "Update line" : "Add line"}
+          isSaving={lineSubmitBusy || documentSaving}
+          savingLabel={lineSubmitBusy ? "Uploading…" : "Saving…"}
+          error={formError}
         >
-          <button
-            type="button"
-            className="btn-close"
-            aria-label="Dismiss"
-            onClick={() => setStatementPdfOpenError(null)}
-          />
-          {statementPdfOpenError}
-        </div>
-      ) : null}
-      {showHouseDetails ? (
-      <AdminEditorSection
-        title="House details"
-        footer={
-          <button type="button" className="btn btn-primary btn-sm" onClick={applyHouseDetails}>
-            Save
-          </button>
-        }
-      >
-        <div className="row g-2 align-items-end flex-wrap">
-          <div className="col-12 col-sm-6 col-md-auto admin-field-min">
-            <label className="form-label small mb-0" htmlFor={`${houseKey}-house-default-ccy`}>
-              Default currency
-            </label>
-            <CurrencySelect
-              id={`${houseKey}-house-default-ccy`}
-              value={houseDefaultDraft}
-              onChange={(code) => {
-                const next = coerceSupportedCurrency(code, data.defaultCurrency);
-                setHouseDefaultDraft((prevDraft) => {
-                  setFloatCurrency((fc) => (fc === prevDraft ? next : fc));
-                  return next;
-                });
-              }}
-              className="form-select form-select-sm"
-            />
-          </div>
-        </div>
-        <div className="row g-2 align-items-end flex-wrap mt-2">
-          <div className="col-12 col-sm-6 col-md-auto">
-            <label className="form-label small mb-0" htmlFor={`float-amt-${houseKey}`}>
-              Float amount
-            </label>
-            <input
-              id={`float-amt-${houseKey}`}
-              type="number"
-              className="form-control form-control-sm"
-              step="0.01"
-              value={floatAmount}
-              onChange={(ev) => setFloatAmount(ev.target.value)}
-            />
-          </div>
-          <div className="col-12 col-sm-6 col-md-auto admin-field-min">
-            <label className="form-label small mb-0" htmlFor={`float-cur-${houseKey}`}>
-              Float currency
-            </label>
-            <CurrencySelect
-              id={`float-cur-${houseKey}`}
-              value={floatCurrency}
-              onChange={(code) => setFloatCurrency(code)}
-              className="form-select form-select-sm"
-            />
-          </div>
-        </div>
-      </AdminEditorSection>
-      ) : null}
-
-      <AdminEditorSection
-        title={importTitle}
-        description={importDescription}
-        footer={
-          <>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              disabled={!pdfFile || parseStatement.isPending}
-              onClick={() => {
-                if (!pdfFile) return;
-                setParseSuccess(null);
-                parseStatement.mutate(
-                  {
-                    file: pdfFile,
-                    mortgageOnly: showMortgageImport && importMortgageOnly,
-                    ...(lockedLineType ? { lineTypeOnly: lockedLineType } : {}),
-                  },
-                  {
-                    onSuccess: (res) => {
-                      setParseSuccess(
-                        res.addedLines === 0
-                          ? "No transactions were extracted from this document."
-                          : `Imported ${res.addedLines} statement line${res.addedLines === 1 ? "" : "s"}.`,
-                      );
-                      setPdfFile(null);
-                      if (fileInputRef.current) {
-                        fileInputRef.current.value = "";
-                      }
-                    },
-                  },
-                );
-              }}
-            >
-              {parseStatement.isPending ? "Parsing…" : "Upload & parse"}
-            </button>
-            <button
-              type="button"
-              className="btn btn-outline-secondary btn-sm"
-              disabled={parseStatement.isPending}
-              onClick={() => {
-                setPdfFile(null);
-                setParseSuccess(null);
-                setImportMortgageOnly(false);
-                if (fileInputRef.current) {
-                  fileInputRef.current.value = "";
-                }
-              }}
-            >
-              Clear
-            </button>
-          </>
-        }
-      >
-        <div className="row g-2 align-items-end">
-          <div className="col-md-8">
-            <label
-              className="form-label small mb-0"
-              htmlFor={`${houseKey}-statement-pdf`}
-            >
-              {importFileLabel}
-            </label>
-            <input
-              id={`${houseKey}-statement-pdf`}
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf,image/*"
-              className="form-control form-control-sm"
-              disabled={parseStatement.isPending}
-              onChange={(ev) => {
-                const next = ev.target.files?.[0] ?? null;
-                setPdfFile(next);
-                setParseSuccess(null);
-              }}
-            />
-          </div>
-        </div>
-        {showMortgageImport ? (
-        <div className="form-check mt-2">
-          <input
-            id={`${houseKey}-statement-import-mortgage-only`}
-            className="form-check-input"
-            type="checkbox"
-            checked={importMortgageOnly}
-            disabled={parseStatement.isPending}
-            onChange={(ev) => setImportMortgageOnly(ev.target.checked)}
-          />
-          <label
-            className="form-check-label small"
-            htmlFor={`${houseKey}-statement-import-mortgage-only`}
-          >
-            Mortgage
-          </label>
-          <p className="form-text small mb-0 mt-1">
-            When checked, only lines classified as Mortgage are imported; all other
-            extracted transactions are discarded.
-          </p>
-        </div>
-        ) : null}
-        {parseStatement.isPending ? (
-          <p className="small text-muted mt-2 mb-0">
-            Uploading and parsing — often under a minute; large or scanned PDFs can take several minutes.
-          </p>
-        ) : null}
-        {parseStatement.isError ? (
-          <div
-            className="alert alert-danger py-2 small mt-3 mb-0"
-            role="alert"
-          >
-            {parseStatement.error?.message ?? "Statement import failed."}
-          </div>
-        ) : null}
-        {parseSuccess && !parseStatement.isPending ? (
-          <div
-            className="alert alert-success py-2 small mt-3 mb-0"
-            role="status"
-          >
-            {parseSuccess}
-          </div>
-        ) : null}
-      </AdminEditorSection>
-
-      <AdminEditorSection
-        containerRef={lineEditorSectionRef}
-        title={lineSectionTitle}
-        footer={
-          <>
-            <button
-              type="submit"
-              form={lineFormId}
-              className="btn btn-primary btn-sm"
-              disabled={lineSubmitBusy}
-            >
-              {lineSubmitBusy ? "Uploading…" : editingId ? "Update line" : "Add line"}
-            </button>
-            <button
-              type="button"
-              className="btn btn-outline-secondary btn-sm"
-              disabled={lineSubmitBusy}
-              onClick={resetLineForm}
-            >
-              Clear
-            </button>
-          </>
-        }
-      >
-        <form id={lineFormId} onSubmit={submitLine}>
-          {formError ? (
-            <div className="alert alert-danger py-2 small" role="alert">
-              {formError}
-            </div>
-          ) : null}
+          <span className="visually-hidden">{lineSectionTitle}</span>
           <div className="row g-3">
             <div className="col-12 col-sm-6 col-md-3">
               <label className="form-label small" htmlFor={`${houseKey}-fin-date-utc`}>
@@ -934,20 +771,264 @@ export function HouseStatementPanel({
               ) : null}
             </div>
           </div>
-        </form>
-      </AdminEditorSection>
+        </AdminEditorPanel>
+      ) : null;
 
-      <AdminEditorSection title={tableSectionTitle}>
-        <AdminDataTable
-          embedded
-          columns={TABLE_COLUMNS}
-          filterValue={tableFilter}
-          onFilterChange={setTableFilter}
-          filterPlaceholder="Filter lines…"
+  return (
+    <div>
+      {statementPdfOpenError ? (
+        <div
+          className="alert alert-danger alert-dismissible py-2 small mb-3"
+          role="alert"
         >
+          <button
+            type="button"
+            className="btn-close"
+            aria-label="Dismiss"
+            onClick={() => setStatementPdfOpenError(null)}
+          />
+          {statementPdfOpenError}
+        </div>
+      ) : null}
+      {showHouseDetails ? (
+      <AdminEditorSection
+        footer={
+          <button type="button" className="btn btn-primary btn-sm" onClick={applyHouseDetails}>
+            Save
+          </button>
+        }
+      >
+        <div className="row g-2 align-items-end flex-wrap">
+          <div className="col-12 col-sm-6 col-md-auto admin-field-min">
+            <label className="form-label small mb-0" htmlFor={`${houseKey}-house-default-ccy`}>
+              Default currency
+            </label>
+            <CurrencySelect
+              id={`${houseKey}-house-default-ccy`}
+              value={houseDefaultDraft}
+              onChange={(code) => {
+                const next = coerceSupportedCurrency(code, data.defaultCurrency);
+                setHouseDefaultDraft((prevDraft) => {
+                  setFloatCurrency((fc) => (fc === prevDraft ? next : fc));
+                  return next;
+                });
+              }}
+              className="form-select form-select-sm"
+            />
+          </div>
+        </div>
+        <div className="row g-2 align-items-end flex-wrap mt-2">
+          <div className="col-12 col-sm-6 col-md-auto">
+            <label className="form-label small mb-0" htmlFor={`float-amt-${houseKey}`}>
+              Float amount
+            </label>
+            <input
+              id={`float-amt-${houseKey}`}
+              type="number"
+              className="form-control form-control-sm"
+              step="0.01"
+              value={floatAmount}
+              onChange={(ev) => setFloatAmount(ev.target.value)}
+            />
+          </div>
+          <div className="col-12 col-sm-6 col-md-auto admin-field-min">
+            <label className="form-label small mb-0" htmlFor={`float-cur-${houseKey}`}>
+              Float currency
+            </label>
+            <CurrencySelect
+              id={`float-cur-${houseKey}`}
+              value={floatCurrency}
+              onChange={(code) => setFloatCurrency(code)}
+              className="form-select form-select-sm"
+            />
+          </div>
+        </div>
+      </AdminEditorSection>
+      ) : null}
+
+      <AdminRecordTable
+        label={tableSectionTitle}
+        filters={
+          <AdminFilterBar
+            create={
+              <AdminCreateButton
+                label={
+                  lockedLineType === "income"
+                    ? "New gain"
+                    : lockedLineType === "expenditure"
+                      ? "New expense"
+                      : "New line"
+                }
+                onClick={openCreate}
+              />
+            }
+          >
+            <AdminFilterField label="Filter" htmlFor={`${houseKey}-line-filter`}>
+              <input
+                id={`${houseKey}-line-filter`}
+                type="search"
+                className="form-control form-control-sm"
+                placeholder="Filter lines…"
+                autoComplete="off"
+                value={tableFilter}
+                onChange={(ev) => setTableFilter(ev.target.value)}
+              />
+            </AdminFilterField>
+          </AdminFilterBar>
+        }
+        beforeTable={
+          <AdminDisclosure title={importTitle}>
+            <p className="small text-muted">{importDescription}</p>
+            <AdminEditorSection
+        embedded
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={!pdfFile || parseStatement.isPending}
+              onClick={() => {
+                if (!pdfFile) return;
+                setParseSuccess(null);
+                parseStatement.mutate(
+                  {
+                    file: pdfFile,
+                    mortgageOnly: showMortgageImport && importMortgageOnly,
+                    ...(lockedLineType ? { lineTypeOnly: lockedLineType } : {}),
+                  },
+                  {
+                    onSuccess: (res) => {
+                      setParseSuccess(
+                        res.addedLines === 0
+                          ? "No transactions were extracted from this document."
+                          : `Imported ${res.addedLines} statement line${res.addedLines === 1 ? "" : "s"}.`,
+                      );
+                      setPdfFile(null);
+                      if (fileInputRef.current) {
+                        fileInputRef.current.value = "";
+                      }
+                    },
+                  },
+                );
+              }}
+            >
+              {parseStatement.isPending ? "Parsing…" : "Upload & parse"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm"
+              disabled={parseStatement.isPending}
+              onClick={() => {
+                setPdfFile(null);
+                setParseSuccess(null);
+                setImportMortgageOnly(false);
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = "";
+                }
+              }}
+            >
+              Clear
+            </button>
+          </>
+        }
+      >
+        <div className="row g-2 align-items-end">
+          <div className="col-md-8">
+            <label
+              className="form-label small mb-0"
+              htmlFor={`${houseKey}-statement-pdf`}
+            >
+              {importFileLabel}
+            </label>
+            <input
+              id={`${houseKey}-statement-pdf`}
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf,image/*"
+              className="form-control form-control-sm"
+              disabled={parseStatement.isPending}
+              onChange={(ev) => {
+                const next = ev.target.files?.[0] ?? null;
+                setPdfFile(next);
+                setParseSuccess(null);
+              }}
+            />
+          </div>
+        </div>
+        {showMortgageImport ? (
+        <div className="form-check mt-2">
+          <input
+            id={`${houseKey}-statement-import-mortgage-only`}
+            className="form-check-input"
+            type="checkbox"
+            checked={importMortgageOnly}
+            disabled={parseStatement.isPending}
+            onChange={(ev) => setImportMortgageOnly(ev.target.checked)}
+          />
+          <label
+            className="form-check-label small"
+            htmlFor={`${houseKey}-statement-import-mortgage-only`}
+          >
+            Mortgage
+          </label>
+          <p className="form-text small mb-0 mt-1">
+            When checked, only lines classified as Mortgage are imported; all other
+            extracted transactions are discarded.
+          </p>
+        </div>
+        ) : null}
+        {parseStatement.isPending ? (
+          <p className="small text-muted mt-2 mb-0">
+            Uploading and parsing — often under a minute; large or scanned PDFs can take several minutes.
+          </p>
+        ) : null}
+        {parseStatement.isError ? (
+          <div
+            className="alert alert-danger py-2 small mt-3 mb-0"
+            role="alert"
+          >
+            {parseStatement.error?.message ?? "Statement import failed."}
+          </div>
+        ) : null}
+        {parseSuccess && !parseStatement.isPending ? (
+          <div
+            className="alert alert-success py-2 small mt-3 mb-0"
+            role="status"
+          >
+            {parseSuccess}
+          </div>
+        ) : null}
+            </AdminEditorSection>
+          </AdminDisclosure>
+        }
+      >
+        <AdminDataTable bare columns={TABLE_COLUMNS}>
+          {expanded.expandedId === DRAFT_RECORD_ID ? (
+            <AdminExpandableRow
+              colSpan={COL_SPAN}
+              expanded
+              onToggle={openCreate}
+              editor={lineEditor}
+            >
+              <AdminCell column="when" className="small">New</AdminCell>
+              <AdminCell column="type" className="small">—</AdminCell>
+              <AdminCell column="desc" className="small">New line</AdminCell>
+              <AdminCell column="net" />
+              <AdminCell column="vat" />
+              <AdminCell column="ccy" />
+              <AdminCell column="gross" />
+              <AdminCell column="ops" />
+            </AdminExpandableRow>
+          ) : null}
           {filteredLines.length ? (
             filteredLines.map((line) => (
-              <tr key={line.id}>
+              <AdminExpandableRow
+                key={line.id}
+                colSpan={COL_SPAN}
+                expanded={expanded.expandedId === line.id}
+                onToggle={() => openEdit(line)}
+                editor={lineEditor}
+              >
                 <AdminCell column="when" className="small">
                   {formatDateUtc(line.dateUtc)}
                 </AdminCell>
@@ -1008,24 +1089,31 @@ export function HouseStatementPanel({
                   />
                 </AdminCell>
                 <AdminCell column="ops" className="small text-end">
-                  <TableIconButton
-                    iconClassName="bi bi-pencil"
-                    ariaLabel="Edit line"
-                    onClick={() => openEdit(line)}
-                  />
-                  <TableIconButton
-                    iconClassName="bi bi-copy"
-                    ariaLabel="Duplicate line into editor"
-                    onClick={() => openDuplicateIntoEditor(line)}
-                  />
-                  <TableIconButton
-                    iconClassName="bi bi-trash"
-                    ariaLabel="Delete line"
-                    variant="danger"
-                    onClick={() => deleteLine(line.id)}
+                  <AdminRowActions
+                    actions={[
+                      {
+                        id: "edit",
+                        label: "Edit line",
+                        iconClassName: "bi bi-pencil",
+                        onClick: () => openEdit(line),
+                      },
+                      {
+                        id: "duplicate",
+                        label: "Duplicate line",
+                        iconClassName: "bi bi-copy",
+                        onClick: () => openDuplicateIntoEditor(line),
+                      },
+                      {
+                        id: "delete",
+                        label: "Delete line",
+                        iconClassName: "bi bi-trash",
+                        danger: true,
+                        onClick: () => setPendingDeleteId(line.id),
+                      },
+                    ]}
                   />
                 </AdminCell>
-              </tr>
+              </AdminExpandableRow>
             ))
           ) : (
             <AdminDataTableEmptyRow
@@ -1036,7 +1124,28 @@ export function HouseStatementPanel({
             />
           )}
         </AdminDataTable>
-      </AdminEditorSection>
+        <ConfirmDialog
+          open={pendingDeleteId !== null}
+          title="Delete line"
+          body="Delete this statement line?"
+          confirmLabel="Delete"
+          tone="danger"
+          onConfirm={() => {
+            if (pendingDeleteId) deleteLine(pendingDeleteId);
+          }}
+          onCancel={() => setPendingDeleteId(null)}
+        />
+        <ConfirmDialog
+          open={expanded.confirmOpen}
+          title="Discard unsaved edits?"
+          body="This line has unsaved changes."
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          tone="danger"
+          onConfirm={expanded.acceptPending}
+          onCancel={expanded.cancelPending}
+        />
+      </AdminRecordTable>
     </div>
   );
 }

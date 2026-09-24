@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useMemo, useRef, useState } from "react";
+import { type FormEvent, useCallback, useMemo, useState } from "react";
 import {
   coerceSupportedCurrency,
   GLOBAL_DEFAULT_CURRENCY,
@@ -14,7 +14,9 @@ import {
   type FinanceAccountRecord,
   type FinanceAccountType,
 } from "../lib/financeModel";
-import { scheduleFocusRecordEditor } from "../lib/focusRecordEditor";
+import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
+import { useExpandedRecord } from "../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
 import { useFrankfurterRatesForTotals } from "../hooks/useFrankfurterRatesForTotals";
 import {
   AdminCell,
@@ -22,13 +24,19 @@ import {
   AdminDataTableCellMeta,
   AdminDataTableEmptyRow,
   type AdminDataTableColumn,
-  AdminEditorSection,
+  AdminCreateButton,
+  AdminEditorPanel,
+  AdminExpandableRow,
+  AdminFilterBar,
+  AdminFilterField,
+  AdminRecordTable,
+  AdminRowActions,
+  ConfirmDialog,
   AdminTableTotalCurrency,
   AdminTableTotalLabel,
   CurrencySelect,
   MoneyAmount,
   StaleValuationBadge,
-  TableIconButton,
   TableSortHeaderButton,
 } from "./ui";
 
@@ -121,11 +129,17 @@ export function FinanceAccountsPanel(props: {
   readonly onPatch: (
     patch: (prev: readonly FinanceAccountRecord[]) => FinanceAccountRecord[],
   ) => void;
+  readonly isSaving?: boolean;
 }) {
-  const { records, onPatch } = props;
+  const { records, onPatch, isSaving = false } = props;
   const sheetId = "accounts";
   const formId = `${sheetId}-form`;
-  const recordEditorSectionRef = useRef<HTMLDivElement | null>(null);
+  const expanded = useExpandedRecord("account");
+  const editingId =
+    expanded.expandedId && expanded.expandedId !== DRAFT_RECORD_ID
+      ? expanded.expandedId
+      : null;
+  const formOpen = expanded.expandedId !== null;
 
   const [sortKey, setSortKey] = useState<AccountsSortKey | null>("atype");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -140,8 +154,8 @@ export function FinanceAccountsPanel(props: {
     });
   }, []);
 
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [descriptionInput, setDescriptionInput] = useState("");
   const [accountTypeInput, setAccountTypeInput] = useState<FinanceAccountType>("Bank Account");
   const [billingDayStr, setBillingDayStr] = useState("1");
@@ -353,8 +367,7 @@ export function FinanceAccountsPanel(props: {
     totalDisplayCurrency,
   ]);
 
-  function resetForm() {
-    setEditingId(null);
+  function resetFields() {
     setFormError(null);
     setDescriptionInput("");
     setAccountTypeInput("Bank Account");
@@ -364,8 +377,7 @@ export function FinanceAccountsPanel(props: {
     setFormCurrency(GLOBAL_DEFAULT_CURRENCY);
   }
 
-  function openEdit(row: FinanceAccountRecord) {
-    setEditingId(row.id);
+  function applyAccount(row: FinanceAccountRecord) {
     setFormError(null);
     setDescriptionInput(row.description);
     setAccountTypeInput(row.accountType);
@@ -377,7 +389,56 @@ export function FinanceAccountsPanel(props: {
         : "",
     );
     setFormCurrency(coerceSupportedCurrency(row.currency, GLOBAL_DEFAULT_CURRENCY));
-    scheduleFocusRecordEditor(() => recordEditorSectionRef.current);
+  }
+
+  function accountDirty(): boolean {
+    if (!formOpen) return false;
+    if (!editingId) {
+      return (
+        descriptionInput !== "" ||
+        valueStr !== "" ||
+        lastStatementStr !== "" ||
+        accountTypeInput !== "Bank Account" ||
+        billingDayStr !== "1" ||
+        formCurrency !== GLOBAL_DEFAULT_CURRENCY
+      );
+    }
+    const row = records.find((record) => record.id === editingId);
+    if (!row) return false;
+    const savedStatement = accountTypeIsCreditCard(row.accountType)
+      ? String(row.lastStatementAmount ?? "")
+      : "";
+    return (
+      descriptionInput !== row.description ||
+      accountTypeInput !== row.accountType ||
+      billingDayStr !== String(row.billingCycleDay) ||
+      valueStr !== String(row.recordedValue) ||
+      lastStatementStr !== savedStatement ||
+      formCurrency !== coerceSupportedCurrency(row.currency, GLOBAL_DEFAULT_CURRENCY)
+    );
+  }
+
+  const editingAccount = editingId
+    ? (records.find((record) => record.id === editingId) ?? null)
+    : null;
+  useHydrateExpandedRecord({
+    expandedId: expanded.expandedId,
+    recordsReady: true,
+    record: editingAccount,
+    apply: applyAccount,
+    onMissing: () => expanded.request(null, false),
+  });
+
+  function openEdit(row: FinanceAccountRecord) {
+    expanded.toggle(row.id, accountDirty(), () => applyAccount(row), resetFields);
+  }
+
+  function openCreate() {
+    if (expanded.expandedId === DRAFT_RECORD_ID) {
+      expanded.request(null, accountDirty(), resetFields);
+      return;
+    }
+    expanded.request(DRAFT_RECORD_ID, accountDirty(), resetFields);
   }
 
   function submit(e: FormEvent) {
@@ -427,39 +488,27 @@ export function FinanceAccountsPanel(props: {
       }
       return [...prev, row];
     });
-    resetForm();
+    resetFields();
+    expanded.request(null, false);
   }
 
   function deleteRow(id: string) {
-    if (!window.confirm("Delete this account record?")) return;
     onPatch((prev) => prev.filter((r) => r.id !== id));
     if (editingId === id) {
-      resetForm();
+      resetFields();
+      expanded.request(null, false);
     }
+    setPendingDeleteId(null);
   }
 
-  return (
-    <div>
-      <AdminEditorSection
-        containerRef={recordEditorSectionRef}
-        title="Account record"
-        footer={
-          <>
-            <button type="submit" form={formId} className="btn btn-primary btn-sm">
-              {editingId ? "Update record" : "Add record"}
-            </button>
-            <button type="button" className="btn btn-outline-secondary btn-sm" onClick={resetForm}>
-              Clear
-            </button>
-          </>
-        }
-      >
-        <form id={formId} onSubmit={submit}>
-          {formError ? (
-            <div className="alert alert-danger py-2 small" role="alert">
-              {formError}
-            </div>
-          ) : null}
+      const accountEditor = formOpen ? (
+        <AdminEditorPanel
+          formId={formId}
+          onSubmit={submit}
+          submitLabel={editingId ? "Update record" : "Add record"}
+          isSaving={isSaving}
+          error={formError}
+        >
           <div className="row g-3">
             <div className="col-12 col-sm-6 col-lg-2">
               <label className="form-label small" htmlFor={`${sheetId}-description`}>
@@ -581,16 +630,34 @@ export function FinanceAccountsPanel(props: {
               )}
             </div>
           </div>
-        </form>
-      </AdminEditorSection>
+        </AdminEditorPanel>
+      ) : null;
 
-      <AdminEditorSection title="Accounts">
+  return (
+    <div>
+      <AdminRecordTable
+        label="Accounts"
+        filters={
+          <AdminFilterBar
+            create={<AdminCreateButton label="New account" onClick={openCreate} />}
+          >
+            <AdminFilterField label="Filter" htmlFor="accounts-filter">
+              <input
+                id="accounts-filter"
+                type="search"
+                className="form-control form-control-sm"
+                placeholder="Filter records…"
+                autoComplete="off"
+                value={tableFilter}
+                onChange={(ev) => setTableFilter(ev.target.value)}
+              />
+            </AdminFilterField>
+          </AdminFilterBar>
+        }
+      >
         <AdminDataTable
-          embedded
+          bare
           columns={tableColumns}
-          filterValue={tableFilter}
-          onFilterChange={setTableFilter}
-          filterPlaceholder="Filter records…"
           sort={{
             options: ACCOUNT_SORT_OPTIONS,
             sortKey,
@@ -601,9 +668,27 @@ export function FinanceAccountsPanel(props: {
             },
           }}
         >
+          {expanded.expandedId === DRAFT_RECORD_ID ? (
+            <AdminExpandableRow colSpan={colSpan} expanded onToggle={openCreate} editor={accountEditor}>
+              <AdminCell column="desc">New account</AdminCell>
+              <AdminCell column="atype" />
+              <AdminCell column="amt" />
+              <AdminCell column="stmt" />
+              <AdminCell column="ccy" />
+              <AdminCell column="day" />
+              <AdminCell column="lastUpdated" />
+              <AdminCell column="ops" />
+            </AdminExpandableRow>
+          ) : null}
           {filtered.length ? (
             filtered.map((r) => (
-              <tr key={r.id}>
+              <AdminExpandableRow
+                key={r.id}
+                colSpan={colSpan}
+                expanded={expanded.expandedId === r.id}
+                onToggle={() => openEdit(r)}
+                editor={accountEditor}
+              >
                 <AdminCell column="desc" className="small">
                   {r.description || "—"}
                   <AdminDataTableCellMeta>
@@ -637,19 +722,25 @@ export function FinanceAccountsPanel(props: {
                   <StaleValuationBadge lastUpdated={r.lastUpdated} />
                 </AdminCell>
                 <AdminCell column="ops" className="small text-end">
-                  <TableIconButton
-                    iconClassName="bi bi-pencil"
-                    ariaLabel="Edit record"
-                    onClick={() => openEdit(r)}
-                  />
-                  <TableIconButton
-                    iconClassName="bi bi-trash"
-                    ariaLabel="Delete record"
-                    variant="danger"
-                    onClick={() => deleteRow(r.id)}
+                  <AdminRowActions
+                    actions={[
+                      {
+                        id: "edit",
+                        label: "Edit record",
+                        iconClassName: "bi bi-pencil",
+                        onClick: () => openEdit(r),
+                      },
+                      {
+                        id: "delete",
+                        label: "Delete record",
+                        iconClassName: "bi bi-trash",
+                        danger: true,
+                        onClick: () => setPendingDeleteId(r.id),
+                      },
+                    ]}
                   />
                 </AdminCell>
-              </tr>
+              </AdminExpandableRow>
             ))
           ) : (
             <AdminDataTableEmptyRow
@@ -694,7 +785,26 @@ export function FinanceAccountsPanel(props: {
             </tr>
           ) : null}
         </AdminDataTable>
-      </AdminEditorSection>
+        <ConfirmDialog
+          open={pendingDeleteId !== null}
+          title="Delete account"
+          body="Delete this account record?"
+          confirmLabel="Delete"
+          tone="danger"
+          onConfirm={() => { if (pendingDeleteId) deleteRow(pendingDeleteId); }}
+          onCancel={() => setPendingDeleteId(null)}
+        />
+        <ConfirmDialog
+          open={expanded.confirmOpen}
+          title="Discard unsaved edits?"
+          body="This account has unsaved changes."
+          confirmLabel="Discard"
+          cancelLabel="Keep editing"
+          tone="danger"
+          onConfirm={expanded.acceptPending}
+          onCancel={expanded.cancelPending}
+        />
+      </AdminRecordTable>
     </div>
   );
 }

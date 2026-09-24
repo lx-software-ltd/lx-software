@@ -62,6 +62,13 @@ repo root
 - Stack-wide knobs stay unprefixed (`PublicSiteOrigins`, `PublicApiBaseUrl`, Cognito, OpenRouter, inbound mail, Enable Banking).
 - Lambda env vars stay short (`BOARD_*`, `OUTREACH_*`); do not rename them when adding a second prefix.
 
+### Admin web (`apps/admin_web`) — table-first lists
+- A list is one untitled card: filters, then the table. Create spells the noun (`New account`). The editor opens under the clicked row. One row is open; its id is a query parameter (`new` is the draft). Opening that id fills the editor from the record. An unknown id is removed. Only the active table’s row parameter stays in the URL.
+- The row editor has no title and no Cancel. One primary button, labeled with the verb (`Add line`, `Update record`) and `Saving…` while the save is in flight. Deletes and dirty-row switches use `ConfirmDialog`. Dirty means any editor field differs from the saved record.
+- The summary row is keyboard-focusable. Selecting text does not toggle it. More than two operations: first icon inline, the rest in the three-dots menu, which closes when an action is chosen. Record-table icon buttons are bordered; other tables stay link-style.
+- House details, connect-a-bank, and other document-level forms stay their own card with one Save. Chat, tasks, and member editors stay in `BoardOffcanvas`.
+- Bootstrap 5 only. Do not add Tailwind. Details in `apps/admin_web/docs/UI_COMPONENTS.md`.
+
 ### Admin web (`apps/admin_web`) — currencies standard
 - Supported ISO 4217 codes are a **fixed list**: GBP, HKD, USD, EUR, CNY, SGD, AED (`src/lib/currencies.ts` and the admin Lambda must stay aligned).
 - **Global default** currency is **HKD**. Each **house** (e.g. finance tabs) may set its own `defaultCurrency` stored with that house’s finance payload.

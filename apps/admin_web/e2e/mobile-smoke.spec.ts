@@ -193,4 +193,42 @@ test.describe("admin viewport smoke", () => {
       page.getByLabel("Run 3-per-district catalog micro-batch (pause while bulk import fills the catalog)"),
     ).toBeVisible();
   });
+
+  test("deep-linked account hydrates, and a dirty switch asks first", async ({ page }) => {
+    await page.goto("/finance?account=ac-1&liability=li-1");
+    const description = page.getByRole("textbox", { name: "Description" });
+    await expect(description).toHaveValue("HSBC HK current");
+    await expect(page.getByRole("button", { name: "Update record" })).toBeVisible();
+    await expect(page).toHaveURL(/account=ac-1/);
+    await expect(page).not.toHaveURL(/liability=/);
+    await description.fill("HSBC edited");
+    await page.getByRole("row", { name: /Monzo/ }).click();
+    await expect(page.getByRole("heading", { name: "Discard unsaved edits?" })).toBeVisible();
+    await page.getByRole("button", { name: "Keep editing" }).click();
+    await expect(description).toHaveValue("HSBC edited");
+    await page.getByRole("button", { name: "Update record" }).click();
+    await expect(page.getByRole("cell", { name: /HSBC edited/ }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Update record" })).toHaveCount(0);
+  });
+
+  test("an unknown account id is removed instead of opening a blank editor", async ({ page }) => {
+    await page.goto("/finance?account=does-not-exist");
+    await expect(page.getByRole("button", { name: "Update record" })).toHaveCount(0);
+    await expect(page).not.toHaveURL(/account=/);
+    await expect(page.getByText("HSBC HK current")).toBeVisible();
+  });
+
+  test("a new statement line uses an Add line button", async ({ page }, testInfo) => {
+    await page.goto("/finance");
+    if (testInfo.project.name === "phone") {
+      await page.locator("#finance-select").selectOption("hillmarton");
+    } else {
+      await page.locator("#finance-tab-hillmarton").click();
+    }
+    await page.getByRole("button", { name: "New line" }).click();
+    const addLine = page.getByRole("button", { name: "Add line" });
+    await expect(addLine).toBeVisible();
+    await expect(addLine).toHaveText("Add line");
+    expect(await pageHasHorizontalOverflow(page)).toBe(false);
+  });
 });

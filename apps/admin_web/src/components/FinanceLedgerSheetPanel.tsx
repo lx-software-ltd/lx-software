@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useMemo, useRef, useState } from "react";
+import { type FormEvent, useCallback, useMemo, useState } from "react";
 import {
   coerceSupportedCurrency,
   GLOBAL_DEFAULT_CURRENCY,
@@ -19,7 +19,9 @@ import {
   type IncomeLedgerFlagField,
   syntheticIncomeLedgerRowsFromAllocations,
 } from "../lib/financeModel";
-import { scheduleFocusRecordEditor } from "../lib/focusRecordEditor";
+import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
+import { useExpandedRecord } from "../hooks/useExpandedRecord";
+import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
 import { useFrankfurterRatesForTotals } from "../hooks/useFrankfurterRatesForTotals";
 import {
   AdminCell,
@@ -27,12 +29,19 @@ import {
   AdminDataTableCellMeta,
   AdminDataTableEmptyRow,
   type AdminDataTableColumn,
+  AdminCreateButton,
+  AdminEditorPanel,
+  AdminExpandableRow,
+  AdminFilterBar,
+  AdminFilterField,
+  AdminRecordTable,
+  AdminRowActions,
+  ConfirmDialog,
   AdminEditorSection,
   AdminTableTotalCurrency,
   AdminTableTotalLabel,
   CurrencySelect,
   MoneyAmount,
-  TableIconButton,
   TableSortHeaderButton,
 } from "./ui";
 
@@ -113,6 +122,7 @@ export type FinanceLedgerSheetPanelProps = {
   readonly onPatch: (
     patch: (prev: readonly FinanceLedgerRecord[]) => FinanceLedgerRecord[],
   ) => void;
+  readonly isSaving?: boolean;
   readonly formSectionTitle: string;
   readonly tableSectionTitle: string;
   readonly deleteConfirmMessage: string;
@@ -288,6 +298,7 @@ export function FinanceLedgerSheetPanel({
   categories,
   records,
   onPatch,
+  isSaving = false,
   formSectionTitle,
   tableSectionTitle,
   deleteConfirmMessage,
@@ -501,8 +512,13 @@ export function FinanceLedgerSheetPanel({
     isAllocate: false,
   });
 
-  const recordEditorSectionRef = useRef<HTMLDivElement | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const expanded = useExpandedRecord(sheetId);
+  const editingId =
+    expanded.expandedId && expanded.expandedId !== DRAFT_RECORD_ID
+      ? expanded.expandedId
+      : null;
+  const formOpen = expanded.expandedId !== null;
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [lineForm, setLineForm] = useState<LineFormState>(() => emptyForm());
   const [tableFilter, setTableFilter] = useState("");
@@ -613,19 +629,13 @@ export function FinanceLedgerSheetPanel({
     totalDisplayCurrency,
   ]);
 
-  function resetForm() {
-    setEditingId(null);
+  function resetFields() {
     setFormError(null);
     setLineForm(emptyForm());
   }
 
-  function openEdit(row: FinanceLedgerRecord) {
-    if (row.isDerivedFromTaggedIncome || row.isDerivedFromAllocation) {
-      return;
-    }
-    setEditingId(row.id);
-    setFormError(null);
-    setLineForm({
+  function formFromLedger(row: FinanceLedgerRecord): LineFormState {
+    return {
       category: row.category,
       description: row.description,
       amount: String(row.amount),
@@ -636,8 +646,48 @@ export function FinanceLedgerSheetPanel({
       isSaving: row.isSaving === true,
       isInvestment: row.isInvestment === true,
       isAllocate: row.isAllocate === true,
-    });
-    scheduleFocusRecordEditor(() => recordEditorSectionRef.current);
+    };
+  }
+
+  function applyLedger(row: FinanceLedgerRecord) {
+    setFormError(null);
+    setLineForm(formFromLedger(row));
+  }
+
+  function ledgerDirty(): boolean {
+    if (!formOpen) return false;
+    if (!editingId) return JSON.stringify(lineForm) !== JSON.stringify(emptyForm());
+    const row = tableSourceRecords.find((record) => record.id === editingId);
+    if (!row || row.isDerivedFromTaggedIncome || row.isDerivedFromAllocation) return false;
+    return JSON.stringify(lineForm) !== JSON.stringify(formFromLedger(row));
+  }
+
+  const editingLedger = editingId
+    ? (tableSourceRecords.find((record) => record.id === editingId) ?? null)
+    : null;
+  const editableLedger =
+    editingLedger && !editingLedger.isDerivedFromTaggedIncome && !editingLedger.isDerivedFromAllocation
+      ? editingLedger
+      : null;
+  useHydrateExpandedRecord({
+    expandedId: expanded.expandedId,
+    recordsReady: true,
+    record: editableLedger,
+    apply: applyLedger,
+    onMissing: () => expanded.request(null, false),
+  });
+
+  function openEdit(row: FinanceLedgerRecord) {
+    if (row.isDerivedFromTaggedIncome || row.isDerivedFromAllocation) return;
+    expanded.toggle(row.id, ledgerDirty(), () => applyLedger(row), resetFields);
+  }
+
+  function openCreate() {
+    if (expanded.expandedId === DRAFT_RECORD_ID) {
+      expanded.request(null, ledgerDirty(), resetFields);
+      return;
+    }
+    expanded.request(DRAFT_RECORD_ID, ledgerDirty(), resetFields);
   }
 
   function submitLine(e: FormEvent) {
@@ -683,7 +733,8 @@ export function FinanceLedgerSheetPanel({
       return [...prev, row];
     });
 
-    resetForm();
+    resetFields();
+    expanded.request(null, false);
   }
 
   function deleteRow(id: string) {
@@ -691,45 +742,23 @@ export function FinanceLedgerSheetPanel({
     if (row?.isDerivedFromTaggedIncome || row?.isDerivedFromAllocation) {
       return;
     }
-    if (!window.confirm(deleteConfirmMessage)) return;
     onPatch((prev) => prev.filter((r) => r.id !== id));
     if (editingId === id) {
-      resetForm();
+      resetFields();
+      expanded.request(null, false);
     }
+    setPendingDeleteId(null);
   }
 
-  return (
-    <div>
-      {showExpenseAllocationBlock &&
-      expenseIncomeAllocationPercents &&
-      onPatchExpenseIncomeAllocationPercents ? (
-        <TaggedIncomeAllocationSection
-          key={JSON.stringify(expenseIncomeAllocationPercents)}
-          sheetId={sheetId}
-          percents={expenseIncomeAllocationPercents}
-          onSave={onPatchExpenseIncomeAllocationPercents}
-        />
-      ) : null}
-      <AdminEditorSection
-        containerRef={recordEditorSectionRef}
-        title={formSectionTitle}
-        footer={
-          <>
-            <button type="submit" form={formId} className="btn btn-primary btn-sm">
-              {editingId ? "Update record" : "Add record"}
-            </button>
-            <button type="button" className="btn btn-outline-secondary btn-sm" onClick={resetForm}>
-              Clear
-            </button>
-          </>
-        }
-      >
-        <form id={formId} onSubmit={submitLine}>
-          {formError ? (
-            <div className="alert alert-danger py-2 small" role="alert">
-              {formError}
-            </div>
-          ) : null}
+                  const ledgerEditor = formOpen ? (
+        <AdminEditorPanel
+          formId={formId}
+          onSubmit={submitLine}
+          submitLabel={editingId ? "Update record" : "Add record"}
+          isSaving={isSaving}
+          error={formError}
+        >
+          <span className="visually-hidden">{formSectionTitle}</span>
           <div className="row g-3">
             <div className={showRelatedHouseCol ? "col-md-2" : "col-md-3"}>
               <label className="form-label small" htmlFor={`${sheetId}-ledger-cat`}>
@@ -894,16 +923,34 @@ export function FinanceLedgerSheetPanel({
               </div>
             </div>
           ) : null}
-        </form>
-      </AdminEditorSection>
+        </AdminEditorPanel>
+      ) : null;
 
-      <AdminEditorSection title={tableSectionTitle}>
+  return (
+    <div>
+      {showExpenseAllocationBlock &&
+      expenseIncomeAllocationPercents &&
+      onPatchExpenseIncomeAllocationPercents ? (
+        <TaggedIncomeAllocationSection
+          key={JSON.stringify(expenseIncomeAllocationPercents)}
+          sheetId={sheetId}
+          percents={expenseIncomeAllocationPercents}
+          onSave={onPatchExpenseIncomeAllocationPercents}
+        />
+      ) : null}
+      <AdminRecordTable
+        label={tableSectionTitle}
+        filters={
+          <AdminFilterBar create={<AdminCreateButton label={sheetId === "income" ? "New income" : "New expense"} onClick={openCreate} />}>
+            <AdminFilterField label="Filter" htmlFor={`${sheetId}-ledger-filter`}>
+              <input id={`${sheetId}-ledger-filter`} type="search" className="form-control form-control-sm" placeholder={filterPlaceholder} autoComplete="off" value={tableFilter} onChange={(ev) => setTableFilter(ev.target.value)} />
+            </AdminFilterField>
+          </AdminFilterBar>
+        }
+      >
         <AdminDataTable
-          embedded
+          bare
           columns={tableColumns}
-          filterValue={tableFilter}
-          onFilterChange={setTableFilter}
-          filterPlaceholder={filterPlaceholder}
           sort={{
             options: ledgerSortOptions,
             sortKey,
@@ -914,6 +961,15 @@ export function FinanceLedgerSheetPanel({
             },
           }}
         >
+          {expanded.expandedId === DRAFT_RECORD_ID ? (
+            <AdminExpandableRow colSpan={colSpan} expanded onToggle={openCreate} editor={ledgerEditor}>
+              {tableColumns.map((col) => (
+                <AdminCell key={col.key} column={col.key}>
+                  {col.key === "desc" ? "New record" : null}
+                </AdminCell>
+              ))}
+            </AdminExpandableRow>
+          ) : null}
           {filtered.length ? (
             filtered.map((r) => {
               const flagsLabel = showIncomeFlagsCol
@@ -928,8 +984,15 @@ export function FinanceLedgerSheetPanel({
               const houseLabel = r.relatedHouse
                 ? (relatedHouseLabelByValue.get(r.relatedHouse) ?? r.relatedHouse)
                 : "";
+              const editable = !r.isDerivedFromTaggedIncome && !r.isDerivedFromAllocation;
               return (
-              <tr key={r.id}>
+              <AdminExpandableRow
+                key={r.id}
+                colSpan={colSpan}
+                expanded={expanded.expandedId === r.id}
+                onToggle={() => openEdit(r)}
+                editor={editable ? ledgerEditor : null}
+              >
                 <AdminCell column="cat" className="small">{r.category}</AdminCell>
                 <AdminCell column="desc" className="small">
                   {r.description}
@@ -964,22 +1027,15 @@ export function FinanceLedgerSheetPanel({
                   ) : r.isDerivedFromAllocation ? (
                     <span className="visually-hidden">No operations</span>
                   ) : (
-                    <>
-                      <TableIconButton
-                        iconClassName="bi bi-pencil"
-                        ariaLabel="Edit record"
-                        onClick={() => openEdit(r)}
-                      />
-                      <TableIconButton
-                        iconClassName="bi bi-trash"
-                        ariaLabel="Delete record"
-                        variant="danger"
-                        onClick={() => deleteRow(r.id)}
-                      />
-                    </>
+                    <AdminRowActions
+                      actions={[
+                        { id: "edit", label: "Edit record", iconClassName: "bi bi-pencil", onClick: () => openEdit(r) },
+                        { id: "delete", label: "Delete record", iconClassName: "bi bi-trash", danger: true, onClick: () => setPendingDeleteId(r.id) },
+                      ]}
+                    />
                   )}
                 </AdminCell>
-              </tr>
+              </AdminExpandableRow>
               );
             })
           ) : (
@@ -1030,7 +1086,9 @@ export function FinanceLedgerSheetPanel({
             </tr>
           ) : null}
         </AdminDataTable>
-      </AdminEditorSection>
+        <ConfirmDialog open={pendingDeleteId !== null} title="Delete record" body={deleteConfirmMessage} confirmLabel="Delete" tone="danger" onConfirm={() => { if (pendingDeleteId) deleteRow(pendingDeleteId); }} onCancel={() => setPendingDeleteId(null)} />
+        <ConfirmDialog open={expanded.confirmOpen} title="Discard unsaved edits?" body="This record has unsaved changes." confirmLabel="Discard" cancelLabel="Keep editing" tone="danger" onConfirm={expanded.acceptPending} onCancel={expanded.cancelPending} />
+      </AdminRecordTable>
     </div>
   );
 }
