@@ -47,14 +47,6 @@ import {
 
 type LedgerSortColumnKey = "cat" | "desc" | "house" | "amt" | "ccy";
 
-const LEDGER_SORT_OPTIONS: readonly { readonly key: LedgerSortColumnKey; readonly label: string }[] = [
-  { key: "cat", label: "Category" },
-  { key: "desc", label: "Description" },
-  { key: "house", label: "Related property" },
-  { key: "amt", label: "Monthly amount" },
-  { key: "ccy", label: "Currency" },
-];
-
 function relatedHouseSortLabel(
   record: FinanceLedgerRecord,
   relatedHouseLabelByValue: ReadonlyMap<HouseKey, string>,
@@ -484,11 +476,6 @@ export function FinanceLedgerSheetPanel({
     return cols;
   }, [showRelatedHouseCol, showIncomeFlagsCol, showExpenseFlagsCol, sortKey, sortDir, onLedgerSort]);
   const colSpan = tableColumns.length;
-  const ledgerSortOptions = useMemo(
-    () =>
-      LEDGER_SORT_OPTIONS.filter((o) => o.key !== "house" || showRelatedHouseCol),
-    [showRelatedHouseCol],
-  );
 
   const formId = `${sheetId}-ledger-form`;
   const categoryOptions = useMemo(() => {
@@ -951,15 +938,6 @@ export function FinanceLedgerSheetPanel({
         <AdminDataTable
           bare
           columns={tableColumns}
-          sort={{
-            options: ledgerSortOptions,
-            sortKey,
-            direction: sortDir,
-            onChange: (key, dir) => {
-              setSortKey(key as LedgerSortColumnKey | null);
-              setSortDir(dir);
-            },
-          }}
         >
           {expanded.expandedId === DRAFT_RECORD_ID ? (
             <AdminExpandableRow colSpan={colSpan} expanded onToggle={openCreate} editor={ledgerEditor}>

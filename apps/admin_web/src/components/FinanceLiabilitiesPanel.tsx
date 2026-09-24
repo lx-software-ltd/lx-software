@@ -50,16 +50,6 @@ function liabilityLastUpdatedDisplay(lastUpdated: string | undefined): string {
 
 type LiabilitiesSortKey = "desc" | "ltype" | "amt" | "rate" | "ccy" | "house" | "lastUpdated";
 
-const LIABILITY_SORT_OPTIONS: readonly { readonly key: LiabilitiesSortKey; readonly label: string }[] = [
-  { key: "desc", label: "Description" },
-  { key: "ltype", label: "Type" },
-  { key: "amt", label: "Outstanding" },
-  { key: "ccy", label: "Currency" },
-  { key: "rate", label: "Interest rate" },
-  { key: "house", label: "Property" },
-  { key: "lastUpdated", label: "Last update" },
-];
-
 function compareLiabilities(
   a: FinanceLiabilityRecord,
   b: FinanceLiabilityRecord,
@@ -592,15 +582,6 @@ export function FinanceLiabilitiesPanel(props: {
         <AdminDataTable
           bare
           columns={tableColumns}
-          sort={{
-            options: LIABILITY_SORT_OPTIONS,
-            sortKey,
-            direction: sortDir,
-            onChange: (key, dir) => {
-              setSortKey(key as LiabilitiesSortKey | null);
-              setSortDir(dir);
-            },
-          }}
         >
           {expanded.expandedId === DRAFT_RECORD_ID ? (
             <AdminExpandableRow colSpan={colSpan} expanded onToggle={openCreate} editor={liabilityEditor}>

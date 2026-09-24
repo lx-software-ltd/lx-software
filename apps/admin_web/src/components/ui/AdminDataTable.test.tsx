@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { AdminCell, AdminDataTable } from "./AdminDataTable";
 
 describe("AdminDataTable", () => {
@@ -24,46 +24,30 @@ describe("AdminDataTable", () => {
     expect(screen.getByText("Alpha").className).not.toContain("admin-col-");
   });
 
-  it("exposes a phone sort control when sort is provided", () => {
-    const onChange = vi.fn();
+  it("does not render a phone sort control", () => {
     render(
       <AdminDataTable
         columns={[{ key: "name", header: "Name" }]}
         filterValue=""
         onFilterChange={() => undefined}
-        sort={{
-          options: [{ key: "name", label: "Name" }],
-          sortKey: "name",
-          direction: "asc",
-          onChange,
-        }}
       >
         <tr>
           <AdminCell column="name">Alpha</AdminCell>
         </tr>
       </AdminDataTable>,
     );
-    expect(screen.getByLabelText("Sort by")).toBeTruthy();
+    expect(screen.queryByLabelText("Sort by")).toBeNull();
   });
 
-  it("keeps the phone sort control when the card and text filter are omitted", () => {
+  it("omits the card and text filter when bare", () => {
     render(
-      <AdminDataTable
-        bare
-        columns={[{ key: "name", header: "Name" }]}
-        sort={{
-          options: [{ key: "name", label: "Name" }],
-          sortKey: null,
-          direction: "asc",
-          onChange: () => undefined,
-        }}
-      >
+      <AdminDataTable bare columns={[{ key: "name", header: "Name" }]}>
         <tr>
           <AdminCell column="name">Alpha</AdminCell>
         </tr>
       </AdminDataTable>,
     );
-    expect(screen.getByLabelText("Sort by")).toBeTruthy();
+    expect(screen.queryByLabelText("Sort by")).toBeNull();
     expect(screen.queryByPlaceholderText("Filter records…")).toBeNull();
   });
 });

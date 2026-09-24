@@ -8,8 +8,6 @@ export type {
   AdminCellProps,
   AdminDataTableColumn,
   AdminDataTableProps,
-  AdminDataTableSort,
-  AdminDataTableSortDirection,
 } from "./AdminDataTable";
 export type { AdminTableColumnPriority } from "../../lib/adminTablePriority";
 export { AdminDialog } from "./AdminDialog";

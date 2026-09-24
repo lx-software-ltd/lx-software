@@ -84,10 +84,12 @@ test.describe("admin viewport smoke", () => {
 
     if (testInfo.project.name === "phone") {
       await expect(page.locator("#finance-select")).toBeVisible();
-      await expect(page.getByLabel("Sort by", { exact: true })).toBeVisible();
+      await expect(page.getByLabel("Sort by", { exact: true })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /Sort by /i })).toHaveCount(0);
       await expect(page.getByRole("columnheader", { name: /Account Type/i })).toBeHidden();
     } else {
       await expect(page.getByRole("tab", { name: "Accounts" })).toBeVisible();
+      await expect(page.getByRole("button", { name: /Sort by Description/i })).toBeVisible();
     }
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
