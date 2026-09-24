@@ -57,16 +57,6 @@ function accountTypeIsCreditCard(t: FinanceAccountType): boolean {
 
 type AccountsSortKey = "desc" | "atype" | "day" | "amt" | "stmt" | "ccy" | "lastUpdated";
 
-const ACCOUNT_SORT_OPTIONS: readonly { readonly key: AccountsSortKey; readonly label: string }[] = [
-  { key: "desc", label: "Description" },
-  { key: "atype", label: "Account type" },
-  { key: "amt", label: "Current balance" },
-  { key: "stmt", label: "Last statement" },
-  { key: "ccy", label: "Currency" },
-  { key: "day", label: "Billing cycle day" },
-  { key: "lastUpdated", label: "Last update" },
-];
-
 function compareAccounts(
   a: FinanceAccountRecord,
   b: FinanceAccountRecord,
@@ -658,15 +648,6 @@ export function FinanceAccountsPanel(props: {
         <AdminDataTable
           bare
           columns={tableColumns}
-          sort={{
-            options: ACCOUNT_SORT_OPTIONS,
-            sortKey,
-            direction: sortDir,
-            onChange: (key, dir) => {
-              setSortKey(key as AccountsSortKey | null);
-              setSortDir(dir);
-            },
-          }}
         >
           {expanded.expandedId === DRAFT_RECORD_ID ? (
             <AdminExpandableRow colSpan={colSpan} expanded onToggle={openCreate} editor={accountEditor}>

@@ -68,10 +68,6 @@
   min-width: 5.5rem;
 }
 
-.admin-table-sort .form-select {
-  min-width: 9rem;
-}
-
 @media (max-width: 767.98px) {
   .admin-data-table .admin-col-secondary,
   .admin-data-table .admin-col-tertiary {

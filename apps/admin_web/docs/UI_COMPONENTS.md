@@ -27,7 +27,7 @@ This document defines **reusable patterns** for the LX Software admin SPA (`apps
 | `ConfirmDialog` | Native `<dialog>` confirm. Use for delete and for discarding a dirty row. |
 | `AdminDisclosure` | Native `<details>` block between filters and the table (statement import, CSV import). |
 | `AdminEditorSection` | Card for a form that is not a table row (house details, connect-a-bank, sequences, settings). Optional title, body, footer. Pass `embedded` to drop the card chrome inside another panel. |
-| `AdminDataTable` | Hairline table. With `bare`, the parent `AdminRecordTable` supplies the card and text filter; phone sort still renders when `sort` is set. Pass columns and row children via `AdminCell`. |
+| `AdminDataTable` | Hairline table. With `bare`, the parent `AdminRecordTable` supplies the card and text filter. Pass columns and row children via `AdminCell`. Column sort stays on desktop headers; phones show the label only. |
 | `AdminCell` | Body cell bound to a column key. Applies that column’s priority class so headers and cells hide together. |
 | `AdminPageHeader` | Page title, optional `?` help popover, and the page’s primary actions. |
 | `AdminTableTotalLabel` / `AdminTableTotalCurrency` | Render the FX note and display-currency picker **once** in a finance table footer (never a mobile duplicate). |

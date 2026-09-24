@@ -7,6 +7,27 @@ async function pageHasHorizontalOverflow(page: Page): Promise<boolean> {
 }
 
 test.describe("admin viewport smoke", () => {
+  test("phone pages sit under a full-width top bar", async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== "phone", "the burger bar is phone-only");
+    await page.goto("/banking");
+    await expect(page.getByRole("button", { name: "Open navigation menu" })).toBeVisible();
+    const viewport = page.viewportSize();
+    expect(viewport).not.toBeNull();
+    const topbar = await page.locator(".admin-topbar").boundingBox();
+    const main = await page.locator(".admin-main").boundingBox();
+    const title = await page.getByRole("heading", { name: "Banking", level: 1 }).boundingBox();
+    expect(topbar).not.toBeNull();
+    expect(main).not.toBeNull();
+    expect(title).not.toBeNull();
+    expect(topbar!.x).toBeLessThanOrEqual(1);
+    expect(topbar!.width).toBeGreaterThanOrEqual(viewport!.width - 1);
+    expect(main!.x).toBeLessThanOrEqual(1);
+    expect(main!.width).toBeGreaterThanOrEqual(viewport!.width - 1);
+    expect(main!.y).toBeGreaterThanOrEqual(topbar!.y + topbar!.height - 1);
+    expect(title!.x).toBeGreaterThan(8);
+    expect(title!.x).toBeLessThan(48);
+  });
+
   test("dashboard loads fixture summaries", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByText("LX Software net")).toBeVisible();
@@ -63,11 +84,13 @@ test.describe("admin viewport smoke", () => {
 
     if (testInfo.project.name === "phone") {
       await expect(page.locator("#finance-select")).toBeVisible();
-      await expect(page.getByLabel("Sort by", { exact: true })).toBeVisible();
+      await expect(page.getByLabel("Sort by", { exact: true })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /Sort by /i })).toHaveCount(0);
       await expect(page.getByRole("columnheader", { name: /Account Type/i })).toBeHidden();
       await expect(page.getByRole("columnheader", { name: "Operations" })).toBeHidden();
     } else {
       await expect(page.getByRole("tab", { name: "Accounts" })).toBeVisible();
+      await expect(page.getByRole("button", { name: /Sort by Description/i })).toBeVisible();
     }
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });

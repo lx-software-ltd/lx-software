@@ -39,14 +39,6 @@ import {
 
 type AllocSortKey = "desc" | "monthly" | "accum" | "ccy" | "last";
 
-const ALLOC_SORT_OPTIONS: readonly { readonly key: AllocSortKey; readonly label: string }[] = [
-  { key: "desc", label: "Description" },
-  { key: "monthly", label: "Monthly amount" },
-  { key: "accum", label: "Accumulated" },
-  { key: "ccy", label: "Currency" },
-  { key: "last", label: "Last update" },
-];
-
 function allocationLastUpdatedDisplay(lastUpdated: string | undefined): string {
   if (!lastUpdated) {
     return "—";
@@ -799,15 +791,6 @@ export function FinanceAllocationsPanel(props: {
         <AdminDataTable
           bare
           columns={tableColumns}
-          sort={{
-            options: ALLOC_SORT_OPTIONS,
-            sortKey,
-            direction: sortDir,
-            onChange: (key, dir) => {
-              setSortKey(key as AllocSortKey | null);
-              setSortDir(dir);
-            },
-          }}
         >
           {expanded.expandedId === DRAFT_RECORD_ID ? (
             <AdminExpandableRow colSpan={colSpan} expanded onToggle={openCreate} editor={allocationEditor}>

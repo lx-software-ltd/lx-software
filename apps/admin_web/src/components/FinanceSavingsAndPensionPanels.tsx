@@ -52,15 +52,6 @@ function pensionLastUpdatedDisplay(lastUpdated: string | undefined): string {
 /** Pension adds server-managed `lastUpdated`. Savings adds `atype` (asset type) between label and description. */
 type MoneyRecordsSortKey = "label" | "atype" | "amt" | "ccy" | "desc" | "lastUpdated";
 
-const SORT_LABELS: Readonly<Record<MoneyRecordsSortKey, string>> = {
-  label: "Name",
-  atype: "Asset type",
-  amt: "Value",
-  ccy: "Currency",
-  desc: "Description",
-  lastUpdated: "Last update",
-};
-
 function compareSavings(
   a: FinanceSavingsRecord,
   b: FinanceSavingsRecord,
@@ -362,16 +353,6 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
   ]);
 
   const colSpan = tableColumns.length;
-  const sortOptions = useMemo(
-    () =>
-      tableColumns
-        .filter((col) => col.key !== "ops")
-        .map((col) => ({
-          key: col.key,
-          label: col.key === "label" ? labelColumnHeader : SORT_LABELS[col.key as MoneyRecordsSortKey],
-        })),
-    [labelColumnHeader, tableColumns],
-  );
   const formId = `${sheetId}-form`;
   const expanded = useExpandedRecord(sheetId);
   const editingId =
@@ -806,15 +787,6 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
         <AdminDataTable
           bare
           columns={tableColumns}
-          sort={{
-            options: sortOptions,
-            sortKey,
-            direction: sortDir,
-            onChange: (key, dir) => {
-              setSortKey(key as MoneyRecordsSortKey | null);
-              setSortDir(dir);
-            },
-          }}
         >
           {expanded.expandedId === DRAFT_RECORD_ID ? (
             <AdminExpandableRow colSpan={colSpan} expanded onToggle={openCreate} editor={recordEditor}>
