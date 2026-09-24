@@ -102,60 +102,6 @@
   flex: none;
 }
 
-.admin-rail-sections {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  margin: 0.15rem 0 0.35rem;
-}
-
-.admin-rail-tabs {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.admin-rail-tabs .nav-item {
-  min-width: 0;
-}
-
-.admin-rail-tabs .admin-tab {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  width: 100%;
-  border: 0;
-  background: transparent;
-  color: var(--admin-text-2);
-  border-radius: 7px;
-  padding: 0.32rem 0.55rem 0.32rem 1.7rem;
-  font-size: 0.84rem;
-  font-weight: 500;
-  text-align: start;
-  line-height: 1.25;
-  min-height: 0;
-  white-space: normal;
-}
-
-.admin-rail-tabs.admin-rail-nested .admin-tab {
-  padding-left: 2.35rem;
-  font-weight: 400;
-}
-
-.admin-rail-tabs .admin-tab:hover {
-  background: var(--admin-hover);
-  color: var(--admin-text);
-}
-
-.admin-rail-tabs .admin-tab.active {
-  background: var(--admin-accent-soft);
-  color: var(--admin-accent-text);
-}
-
-.admin-rail-tabs .admin-tab:focus-visible,
 .admin-nav-link:focus-visible,
 .admin-rail-tool:focus-visible,
 .admin-help-btn:focus-visible {
@@ -262,10 +208,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-}
-
-.admin-section-select {
-  margin: -0.5rem 0 1rem;
 }
 
 .admin-kpi-row {
@@ -406,29 +348,11 @@
     overflow: visible;
   }
 
-  .admin-sidebar:has(.admin-rail-sections:not(:empty)) {
-    width: 17rem;
-  }
-
   .admin-rail-primary {
-    width: 4.5rem;
     display: flex;
     flex: 1;
     flex-direction: column;
     min-height: 0;
-    border-right: 1px solid var(--admin-line);
-  }
-
-  .admin-rail-sections {
-    position: absolute;
-    left: 4.5rem;
-    top: 0;
-    bottom: 0;
-    width: 12.5rem;
-    overflow: auto;
-    padding: 0.8rem 0.45rem;
-    background: var(--admin-surface);
-    border-right: 1px solid var(--admin-line);
   }
 
   .admin-nav-label,
@@ -453,10 +377,6 @@
   .admin-rail-tool {
     justify-content: center;
     padding-inline: 0;
-  }
-
-  .admin-rail-sections:empty {
-    display: none;
   }
 }
 

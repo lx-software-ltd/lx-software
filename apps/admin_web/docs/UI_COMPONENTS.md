@@ -7,9 +7,9 @@ This document defines **reusable patterns** for the LX Software admin SPA (`apps
 1. **Table first** — A list is one untitled white card: a toolbar (search and filters, then the create control spelling the noun), then the table. Filters apply as they change. Clicking a row expands its editor beneath that row. One row is open, and its id is the query parameter for that table (`new` is the draft). Switching rows with unsaved edits asks in `ConfirmDialog`. Duplicate opens the draft seeded from the source. House-level settings stay a separate card with one Save.
 2. **One primary action** — The row editor has no title and no Cancel. One left-aligned primary button shows `Saving…` or `Uploading…` while that save is in flight. A query param opens that record with its saved fields. An unknown id is removed. Only the active table’s row param stays in the URL.
 3. **Tables** — Hairline rows, no zebra stripes. The open record has an accent bar. The last column is operations: one action stays a button, and the rest sit in a kebab menu that closes when chosen. On phones, hide non-essential columns with `priority` and repeat the useful value with `AdminDataTableCellMeta`. The summary row is keyboard-focusable and does not toggle while text is selected. Each record is its own `<tbody>`.
-4. **Shell** — Pages live in the left rail. The rail brand is the LX mark and Admin. Section switchers (`AdminTabList`) portal into that rail from `md` and become a native `<select>` on phones. Page help sits in a `?` popover on `AdminPageHeader`, not a paragraph above the first control. There is no command palette, theme switch, or row-density switch.
+4. **Shell** — The left rail lists pages only (Dashboard, House Finance, LX Software, Siu Tin Dei, Banking, Assets). The brand is the LX mark and Admin. Section switchers (`AdminTabList`) sit in the page, under the header. Phones use a two-column grid, or a native `<select>` when there are more than six sections. Page help sits in a `?` popover on `AdminPageHeader`, not a paragraph above the first control. There is no command palette, theme switch, or row-density switch.
 
-`AdminTabList` stays the section control (WAI-ARIA tablist in the rail; a phone `<select>`). Chat, task, and member editors stay in `BoardOffcanvas`. Statement PDF import and Connect a bank open in a dialog. Finance and statement books still save by putting the whole document.
+`AdminTabList` stays the section control (WAI-ARIA tablist in the page). Chat, task, and member editors stay in `BoardOffcanvas`. Statement PDF import and Connect a bank open in a dialog. Finance and statement books still save by putting the whole document.
 
 ## Shared components (`src/components/ui/`)
 
@@ -30,7 +30,7 @@ This document defines **reusable patterns** for the LX Software admin SPA (`apps
 | `AdminCell` | Body cell bound to a column key. Applies that column’s priority class so headers and cells hide together. |
 | `AdminPageHeader` | Page title, optional `?` help popover, and the page’s primary actions. |
 | `AdminTableTotalLabel` / `AdminTableTotalCurrency` | Render the FX note and display-currency picker **once** in a finance table footer (never a mobile duplicate). |
-| `AdminTabList` | WAI-ARIA tablist (arrow / Home / End) portaled into the rail from `md`. Phones always get a native `<select>` (`${idPrefix}-select`). Pass `disabled` when the backing query failed. |
+| `AdminTabList` | WAI-ARIA tablist (arrow / Home / End) in the page. Phones use a native `<select>` (`${idPrefix}-select`) when there are more than six tabs. Pass `disabled` when the backing query failed. |
 | `TableIconButton` | Icon-only button. `appearance="bordered"` is for record-table operations; the default is the link style used by other tables. |
 
 Import from the barrel: `import { MoneyAmount, … } from "../components/ui"` (adjust path).

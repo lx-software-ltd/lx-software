@@ -104,14 +104,10 @@ test.describe("admin viewport smoke", () => {
   test("siu tin dei board sections stay reachable", async ({ page }, testInfo) => {
     await page.goto("/siu-tin-dei");
     await expect(page.getByRole("heading", { name: "Siu Tin Dei", level: 1 })).toBeVisible();
-    if (testInfo.project.name === "phone") {
-      await expect(page.locator("#book-siuTinDei-select")).toHaveValue("board");
-    } else {
-      await expect(page.getByRole("tab", { name: "Executive Board" })).toHaveAttribute(
-        "aria-selected",
-        "true",
-      );
-    }
+    await expect(page.getByRole("tab", { name: "Executive Board" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     await expect(page.getByRole("heading", { name: "Daily review" })).toBeVisible();
     await expect(page.getByText(/Three parent threads closed/i)).toBeVisible();
     await expect(page.getByRole("button", { name: "Sync from main" })).toBeVisible();

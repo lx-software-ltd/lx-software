@@ -1,48 +1,26 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { NavLink, Outlet, useMatch } from "react-router-dom";
-import { ADMIN_NAV_GROUPS, type AdminNavItem } from "../lib/adminNav";
+import { NavLink, Outlet } from "react-router-dom";
+import { ADMIN_NAV_GROUPS } from "../lib/adminNav";
 import { useAuth, type AuthUser } from "./AuthProvider";
-import { AdminChromeProvider, AdminRailSections } from "./ui/AdminChrome";
-
-function NavEntry({ item }: { readonly item: AdminNavItem }) {
-  const match = useMatch({ path: item.to, end: item.end ?? false });
-  return (
-    <div>
-      <NavLink
-        to={item.to}
-        end={item.end}
-        className={({ isActive }) => `admin-nav-link${isActive ? " active" : ""}`}
-        title={item.label}
-      >
-        <i className={`bi ${item.icon}`} aria-hidden="true" />
-        <span className="admin-nav-label">{item.label}</span>
-      </NavLink>
-      {match ? <AdminRailSections /> : null}
-    </div>
-  );
-}
 
 function NavGroups({ onNavigate }: { readonly onNavigate?: () => void }) {
   return (
     <>
       {ADMIN_NAV_GROUPS.map((group) => (
         <div key={group[0].to} className="admin-nav-group">
-          {group.map((item) =>
-            onNavigate ? (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) => `admin-nav-link${isActive ? " active" : ""}`}
-                onClick={onNavigate}
-              >
-                <i className={`bi ${item.icon}`} aria-hidden="true" />
-                <span>{item.label}</span>
-              </NavLink>
-            ) : (
-              <NavEntry key={item.to} item={item} />
-            ),
-          )}
+          {group.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) => `admin-nav-link${isActive ? " active" : ""}`}
+              title={item.label}
+              onClick={onNavigate}
+            >
+              <i className={`bi ${item.icon}`} aria-hidden="true" />
+              <span className="admin-nav-label">{item.label}</span>
+            </NavLink>
+          ))}
         </div>
       ))}
     </>
@@ -110,9 +88,8 @@ export function AuthenticatedShell() {
   }, [isNavOpen]);
 
   return (
-    <AdminChromeProvider>
-      <div className="admin-shell">
-        <header className="admin-topbar">
+    <div className="admin-shell">
+      <header className="admin-topbar">
           <button
             ref={togglerRef}
             type="button"
@@ -177,7 +154,6 @@ export function AuthenticatedShell() {
             <Outlet />
           </div>
         </main>
-      </div>
-    </AdminChromeProvider>
+    </div>
   );
 }
