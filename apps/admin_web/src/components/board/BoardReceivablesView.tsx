@@ -54,6 +54,8 @@ function InvoiceRows({ rows }: { readonly rows: readonly BoardReceivablesInvoice
             <AdminDataTableCellMeta>
               {inv.status}
               {inv.due_on ? ` · due ${inv.due_on}` : ""}
+              {" · "}
+              <MoneyAmount amount={Number(inv.amount_hkd)} currency="HKD" />
             </AdminDataTableCellMeta>
             {inv.fps_reference ? (
               <AdminDataTableCellMeta until="tertiary">

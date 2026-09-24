@@ -976,6 +976,11 @@ export function FinanceLedgerSheetPanel({
                   {r.description}
                   <AdminDataTableCellMeta>
                     {[r.category, flagsLabel, r.currency].filter(Boolean).join(" · ")}
+                    {" · "}
+                    <MoneyAmount
+                      amount={ledgerMonthlyAmount(r)}
+                      currency={r.currency}
+                    />
                   </AdminDataTableCellMeta>
                   {showRelatedHouseCol && houseLabel ? (
                     <AdminDataTableCellMeta until="tertiary">{houseLabel}</AdminDataTableCellMeta>
@@ -1035,6 +1040,26 @@ export function FinanceLedgerSheetPanel({
                   fxError={fxError}
                   fxLoading={fxLoading}
                   ratesQuery={ratesQuery}
+                  phoneValue={
+                    <>
+                      {convertedTotal !== null ? (
+                        <MoneyAmount
+                          amount={convertedTotal}
+                          currency={totalDisplayCurrency}
+                          amountOnly
+                        />
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                      <br />
+                      <AdminTableTotalCurrency
+                        id={`${sheetId}-total-ccy-phone`}
+                        value={totalDisplayCurrency}
+                        onChange={setTotalDisplayCurrency}
+                        disabled={fxLoading}
+                      />
+                    </>
+                  }
                 />
               </AdminCell>
               {showIncomeFlagsCol || showExpenseFlagsCol ? (

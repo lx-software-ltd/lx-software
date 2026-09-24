@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adminColumnPriorityClass } from "./adminTablePriority";
+import { adminColumnClass, adminColumnPriorityClass } from "./adminTablePriority";
 
 describe("adminColumnPriorityClass", () => {
   it("keeps primary columns visible at every breakpoint", () => {
@@ -13,5 +13,17 @@ describe("adminColumnPriorityClass", () => {
 
   it("marks tertiary columns for hiding below lg", () => {
     expect(adminColumnPriorityClass("tertiary")).toBe("admin-col-tertiary");
+  });
+});
+
+describe("adminColumnClass", () => {
+  it("marks the operations column so its header can collapse on phones", () => {
+    expect(adminColumnClass({ key: "ops" })).toBe("admin-col-ops");
+    expect(adminColumnClass({ key: "ops", priority: "secondary" })).toBe("admin-col-ops");
+  });
+
+  it("keeps priority classes for every other column", () => {
+    expect(adminColumnClass({ key: "name" })).toBe("");
+    expect(adminColumnClass({ key: "extra", priority: "secondary" })).toBe("admin-col-secondary");
   });
 });

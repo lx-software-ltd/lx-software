@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import {
   AdminCell,
   AdminDataTable,
+  AdminDataTableCellMeta,
   AdminDataTableEmptyRow,
   AdminDisclosure,
   AdminEditorSection,
@@ -195,7 +196,10 @@ export function BoardPipelineSection() {
                 ) : null
               }
             >
-              <AdminCell column="name">{p.name}</AdminCell>
+              <AdminCell column="name">
+                {p.name}
+                <AdminDataTableCellMeta>{p.stage}</AdminDataTableCellMeta>
+              </AdminCell>
               <AdminCell column="type">{p.type}</AdminCell>
               <AdminCell column="district">{p.district}</AdminCell>
               <AdminCell column="stage">{p.stage}</AdminCell>

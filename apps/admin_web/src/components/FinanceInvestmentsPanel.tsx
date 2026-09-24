@@ -1037,6 +1037,15 @@ export function FinanceInvestmentsPanel({
                     {" · "}
                     Principal{" "}
                     <MoneyAmount amount={r.principalAmount} currency={r.currency} />
+                    {(() => {
+                      const current = currentValueInRowCurrencyByRowId.get(r.id);
+                      return current === undefined ? null : (
+                        <>
+                          {" · "}
+                          <MoneyAmount amount={current} currency={r.currency} />
+                        </>
+                      );
+                    })()}
                   </AdminDataTableCellMeta>
                   <AdminDataTableCellMeta until="tertiary">
                     <StaleValuationBadge lastUpdated={r.lastUpdated} />
@@ -1140,6 +1149,26 @@ export function FinanceInvestmentsPanel({
             <tr className="table-group-divider table-secondary fw-semibold">
               <AdminCell column="cat" className="small">
                 Total
+                <span className="d-md-none d-block mt-1">
+                  {needsFx && (ratesQuery.isPending || ratesQuery.isError) ? (
+                    <span className="text-muted">—</span>
+                  ) : convertedCurrentValueTotal !== null ? (
+                    <MoneyAmount
+                      amount={convertedCurrentValueTotal}
+                      currency={totalDisplayCurrency}
+                      amountOnly
+                    />
+                  ) : (
+                    <span className="text-muted">—</span>
+                  )}
+                  <br />
+                  <AdminTableTotalCurrency
+                    id={`${sheetId}-total-ccy-phone`}
+                    value={totalDisplayCurrency}
+                    onChange={setTotalDisplayCurrency}
+                    disabled={fxLoading}
+                  />
+                </span>
                 <span className="d-block small text-muted fw-normal admin-table-total-note">
                   {quotesPending ? (
                     "Loading quotes…"

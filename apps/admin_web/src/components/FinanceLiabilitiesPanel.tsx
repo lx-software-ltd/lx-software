@@ -609,6 +609,8 @@ export function FinanceLiabilitiesPanel(props: {
                   <AdminDataTableCellMeta>
                     {r.liabilityType} · {r.currency}
                     {r.relatedHouse ? ` · ${houseDisplayLabel(r.relatedHouse)}` : ""}
+                    {" · "}
+                    <MoneyAmount amount={r.outstandingBalance} currency={r.currency} />
                   </AdminDataTableCellMeta>
                   <AdminDataTableCellMeta until="tertiary">
                     <StaleValuationBadge lastUpdated={r.lastUpdated} />
@@ -654,6 +656,26 @@ export function FinanceLiabilitiesPanel(props: {
                   fxError={fxError}
                   fxLoading={fxLoading}
                   ratesQuery={ratesQuery}
+                  phoneValue={
+                    <>
+                      {convertedTotal !== null ? (
+                        <MoneyAmount
+                          amount={convertedTotal}
+                          currency={totalDisplayCurrency}
+                          amountOnly
+                        />
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                      <br />
+                      <AdminTableTotalCurrency
+                        id={`${sheetId}-total-ccy-phone`}
+                        value={totalDisplayCurrency}
+                        onChange={setTotalDisplayCurrency}
+                        disabled={fxLoading}
+                      />
+                    </>
+                  }
                 />
               </AdminCell>
               <AdminCell column="ltype" className="small" />

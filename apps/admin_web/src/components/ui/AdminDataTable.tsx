@@ -11,7 +11,7 @@ import {
   type TdHTMLAttributes,
 } from "react";
 import {
-  adminColumnPriorityClass,
+  adminColumnClass,
   type AdminTableColumnPriority,
 } from "../../lib/adminTablePriority";
 
@@ -30,8 +30,11 @@ export type AdminDataTableColumn = {
   /**
    * Mobile-first visibility. `primary` always shows; `secondary` from `md`;
    * `tertiary` from `lg`. Pair hidden values with `AdminDataTableCellMeta`.
-   * Warnings (stale badges, expiry) and the table's main metric must stay
-   * reachable on phones: keep them `primary` or repeat them in the meta line.
+   * The operations header is omitted on phones so the remaining header can
+   * span the table; the kebab stays in the row. Later primary columns also
+   * hide unless the table opts out with `admin-table-keep-cols`. Warnings
+   * (stale badges, expiry) and the table's main metric must stay reachable
+   * on phones: repeat them in the meta line.
    */
   readonly priority?: AdminTableColumnPriority;
   /** For sortable tables: maps to `<th aria-sort="…">` when set. */
@@ -54,6 +57,11 @@ export type AdminDataTableProps = {
    * Uses slightly roomier table density than the standalone card.
    */
   readonly embedded?: boolean;
+  /**
+   * Extra classes on the `<table>`. Use `admin-table-keep-cols` when a phone
+   * must keep more than one primary column (for example a mapping control).
+   */
+  readonly tableClassName?: string;
 };
 
 const ColumnsContext = createContext<readonly AdminDataTableColumn[] | null>(null);
@@ -94,6 +102,7 @@ export function AdminDataTable({
   children,
   embedded = false,
   bare = false,
+  tableClassName,
 }: AdminDataTableProps) {
   const filterId = useId();
   const tableRef = useRef<HTMLTableElement>(null);
@@ -122,7 +131,7 @@ export function AdminDataTable({
     <div className={embedded ? "table-responsive pt-3" : "table-responsive"}>
       <table
         ref={tableRef}
-        className={`table table-hover mb-0 align-middle admin-data-table ${embedded ? "" : "table-sm"}`.trim()}
+        className={`table table-hover mb-0 align-middle admin-data-table ${embedded ? "" : "table-sm"} ${tableClassName ?? ""}`.trim()}
       >
         <thead>
           <tr>
@@ -131,7 +140,7 @@ export function AdminDataTable({
                 key={col.key}
                 scope="col"
                 className={mergeCellClass(
-                  adminColumnPriorityClass(col.priority),
+                  adminColumnClass(col),
                   col.headerClassName ?? col.className,
                 )}
                 aria-sort={col.thAriaSort}
@@ -185,7 +194,10 @@ export function AdminCell({ column, className, children, ...rest }: AdminCellPro
   }
   return (
     <td
-      className={mergeCellClass(adminColumnPriorityClass(def?.priority), className)}
+      className={mergeCellClass(
+        adminColumnClass({ key: column, priority: def?.priority }),
+        className,
+      )}
       data-column={column}
       {...rest}
     >
@@ -219,10 +231,17 @@ function useColumnAlignmentCheck(
         const span = cell.colSpan || 1;
         const col = columns[index];
         if (col && span === 1) {
-          const expected = adminColumnPriorityClass(col.priority);
+          const expected = adminColumnClass(col);
+          const hasOps = cell.classList.contains("admin-col-ops");
           const hasSecondary = cell.classList.contains("admin-col-secondary");
           const hasTertiary = cell.classList.contains("admin-col-tertiary");
-          const actual = hasSecondary ? "admin-col-secondary" : hasTertiary ? "admin-col-tertiary" : "";
+          const actual = hasOps
+            ? "admin-col-ops"
+            : hasSecondary
+              ? "admin-col-secondary"
+              : hasTertiary
+                ? "admin-col-tertiary"
+                : "";
           if (actual !== expected) {
             problems.push(
               `cell ${index} ("${col.key}") has priority class "${actual || "primary"}" but column is "${expected || "primary"}"`,

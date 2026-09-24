@@ -673,7 +673,8 @@ export function FinanceAccountsPanel(props: {
                 <AdminCell column="desc" className="small">
                   {r.description || "—"}
                   <AdminDataTableCellMeta>
-                    {r.accountType} · {r.currency}
+                    {r.accountType} · {r.currency} ·{" "}
+                    <MoneyAmount amount={r.recordedValue} currency={r.currency} />
                   </AdminDataTableCellMeta>
                   <AdminDataTableCellMeta until="tertiary">
                     <StaleValuationBadge lastUpdated={r.lastUpdated} />
@@ -737,6 +738,26 @@ export function FinanceAccountsPanel(props: {
                   fxError={fxError}
                   fxLoading={fxLoading}
                   ratesQuery={ratesQuery}
+                  phoneValue={
+                    <>
+                      {convertedTotal !== null ? (
+                        <MoneyAmount
+                          amount={convertedTotal}
+                          currency={totalDisplayCurrency}
+                          amountOnly
+                        />
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                      <br />
+                      <AdminTableTotalCurrency
+                        id={`${sheetId}-total-ccy-phone`}
+                        value={totalDisplayCurrency}
+                        onChange={setTotalDisplayCurrency}
+                        disabled={fxLoading}
+                      />
+                    </>
+                  }
                 />
               </AdminCell>
               <AdminCell column="atype" className="small" />

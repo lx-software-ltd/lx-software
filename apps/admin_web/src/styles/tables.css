@@ -8,22 +8,40 @@
   overflow-wrap: break-word;
 }
 
+.admin-data-table thead {
+  background: var(--admin-hover);
+}
+
+.admin-data-table th.admin-col-ops,
+.admin-data-table td.admin-col-ops {
+  width: 1%;
+  white-space: nowrap;
+}
+
 @media (max-width: 767.98px) {
   .admin-data-table th,
   .admin-data-table td {
     overflow-wrap: anywhere;
   }
 
-  .admin-data-table thead th:last-child {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
+  /*
+   * Phones show one identifying column. The kebab stays in the row, but its
+   * header is omitted so the remaining header can span the table — clipping
+   * the last <th> left a blank band over the operations column.
+   */
+  .admin-data-table thead tr {
+    display: flex;
+    width: 100%;
+  }
+
+  .admin-data-table thead th:not(.admin-col-secondary):not(.admin-col-tertiary):not(.admin-col-ops) {
+    display: block;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .admin-data-table thead th.admin-col-ops {
+    display: none;
   }
 }
 
@@ -53,6 +71,16 @@
 @media (max-width: 767.98px) {
   .admin-data-table .admin-col-secondary,
   .admin-data-table .admin-col-tertiary {
+    display: none;
+  }
+
+  /*
+   * After secondary/tertiary are gone, only the first remaining data column
+   * stays visible. Later primaries (usually the metric) hide so the table is
+   * one column plus the kebab; repeat those values with AdminDataTableCellMeta.
+   */
+  .admin-data-table:not(.admin-table-keep-cols) thead th:not(.admin-col-secondary):not(.admin-col-tertiary):not(.admin-col-ops) ~ th:not(.admin-col-secondary):not(.admin-col-tertiary):not(.admin-col-ops),
+  .admin-data-table:not(.admin-table-keep-cols) tbody td:not(.admin-col-secondary):not(.admin-col-tertiary):not(.admin-col-ops) ~ td:not(.admin-col-secondary):not(.admin-col-tertiary):not(.admin-col-ops) {
     display: none;
   }
 

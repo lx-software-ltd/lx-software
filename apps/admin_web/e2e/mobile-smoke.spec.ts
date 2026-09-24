@@ -87,6 +87,7 @@ test.describe("admin viewport smoke", () => {
       await expect(page.getByLabel("Sort by", { exact: true })).toHaveCount(0);
       await expect(page.getByRole("button", { name: /Sort by /i })).toHaveCount(0);
       await expect(page.getByRole("columnheader", { name: /Account Type/i })).toBeHidden();
+      await expect(page.getByRole("columnheader", { name: "Operations" })).toBeHidden();
     } else {
       await expect(page.getByRole("tab", { name: "Accounts" })).toBeVisible();
       await expect(page.getByRole("button", { name: /Sort by Description/i })).toBeVisible();
@@ -117,11 +118,22 @@ test.describe("admin viewport smoke", () => {
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 
-  test("assets lists inbound statement PDFs", async ({ page }) => {
+  test("assets lists inbound statement PDFs", async ({ page }, testInfo) => {
     await page.goto("/assets");
     await expect(page.getByRole("heading", { name: "Assets", level: 1 })).toBeVisible();
     await expect(page.getByText("KDQ170167_-_Landlord_Statement.pdf")).toBeVisible();
     await expect(page.getByText("32 Hillmarton").filter({ visible: true }).first()).toBeVisible();
+    if (testInfo.project.name === "phone") {
+      const table = page.locator(".admin-data-table").first();
+      const fileHeader = page.getByRole("columnheader", { name: "File" });
+      await expect(fileHeader).toBeVisible();
+      await expect(page.getByRole("columnheader", { name: "Operations" })).toBeHidden();
+      const tableBox = await table.boundingBox();
+      const headBox = await table.locator("thead").boundingBox();
+      expect(tableBox && headBox).toBeTruthy();
+      expect(headBox!.width).toBeGreaterThan(tableBox!.width * 0.95);
+      expect((await fileHeader.boundingBox())!.width).toBeGreaterThan(tableBox!.width * 0.7);
+    }
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 
@@ -166,7 +178,7 @@ test.describe("admin viewport smoke", () => {
       await page.getByRole("tab", { name: /Pipeline/ }).click();
     }
     await expect(page.getByRole("heading", { name: "Pipeline" })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "Sha Tin Playhouse", exact: true })).toBeVisible();
+    await expect(page.getByRole("cell", { name: /Sha Tin Playhouse/ })).toBeVisible();
     if (testInfo.project.name === "phone") {
       await page.locator("#board-section-select").selectOption("content");
     } else {
