@@ -1,0 +1,123 @@
+:root {
+  --bs-font-sans-serif: var(--admin-font);
+  --bs-body-font-family: var(--admin-font);
+  --bs-body-bg: var(--admin-canvas);
+  --bs-body-color: var(--admin-text);
+  --bs-secondary-color: var(--admin-text-2);
+  --bs-tertiary-color: var(--admin-text-3);
+  --bs-border-color: var(--admin-line);
+  --bs-primary: var(--admin-accent);
+  --bs-primary-rgb: 15, 118, 110;
+  --bs-link-color: var(--admin-accent-text);
+  --bs-link-hover-color: var(--admin-accent-hover);
+  --bs-border-radius: var(--admin-radius-sm);
+  --bs-emphasis-color: var(--admin-text);
+  accent-color: var(--admin-accent);
+}
+
+[data-bs-theme="dark"] {
+  /* Channels cannot use light-dark(); the accent itself follows the token. */
+  --bs-primary-rgb: 94, 234, 212;
+}
+
+[data-bs-theme="dark"] .bg-white,
+[data-bs-theme="dark"] .bg-light {
+  background-color: var(--admin-surface) !important;
+}
+
+[data-bs-theme="dark"] .text-bg-light {
+  color: var(--admin-text) !important;
+  background-color: var(--admin-hover) !important;
+}
+
+body {
+  font-size: 0.9375rem;
+  background: var(--admin-canvas);
+  color: var(--admin-text);
+}
+
+.card {
+  --bs-card-bg: var(--admin-surface);
+  --bs-card-border-color: var(--admin-line);
+  --bs-card-cap-bg: transparent;
+  border-radius: var(--admin-radius);
+}
+
+.card.shadow-sm,
+.shadow-sm {
+  box-shadow: none !important;
+}
+
+.btn {
+  --bs-btn-border-radius: var(--admin-radius-sm);
+  font-weight: 500;
+}
+
+.btn-primary {
+  --bs-btn-bg: var(--admin-accent);
+  --bs-btn-border-color: var(--admin-accent);
+  --bs-btn-hover-bg: var(--admin-accent-hover);
+  --bs-btn-hover-border-color: var(--admin-accent-hover);
+  --bs-btn-active-bg: var(--admin-accent-hover);
+  --bs-btn-active-border-color: var(--admin-accent-hover);
+  --bs-btn-color: #fff;
+  --bs-btn-hover-color: #fff;
+}
+
+[data-bs-theme="dark"] .btn-primary {
+  --bs-btn-color: #042f2e;
+  --bs-btn-hover-color: #042f2e;
+  --bs-btn-active-color: #042f2e;
+}
+
+.btn-outline-secondary {
+  --bs-btn-color: var(--admin-text);
+  --bs-btn-border-color: var(--admin-line-strong);
+  --bs-btn-hover-bg: var(--admin-hover);
+  --bs-btn-hover-color: var(--admin-text);
+  --bs-btn-hover-border-color: var(--admin-line-strong);
+  --bs-btn-active-bg: var(--admin-hover);
+  --bs-btn-active-color: var(--admin-text);
+}
+
+.form-control,
+.form-select {
+  border-color: var(--admin-line-strong);
+  background-color: var(--admin-surface);
+  color: var(--admin-text);
+  border-radius: var(--admin-radius-sm);
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: var(--admin-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--admin-accent) 22%, transparent);
+}
+
+.badge {
+  font-weight: 500;
+  border-radius: 999px;
+  letter-spacing: 0;
+}
+
+.table {
+  --bs-table-bg: transparent;
+  --bs-table-color: var(--admin-text);
+  --bs-table-border-color: var(--admin-line);
+  --bs-table-striped-bg: transparent;
+  --bs-table-hover-bg: var(--admin-hover);
+  --bs-table-hover-color: var(--admin-text);
+}
+
+.alert {
+  border-radius: var(--admin-radius);
+}
+
+code {
+  color: var(--admin-accent-text);
+}
+
+h1, h2, h3, .h1, .h2, .h3, .h4, .h5, .h6 {
+  letter-spacing: -0.02em;
+  color: var(--admin-text);
+}

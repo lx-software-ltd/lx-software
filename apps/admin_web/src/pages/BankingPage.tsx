@@ -4,11 +4,12 @@ import {
   AdminDataTable,
   AdminDataTableCellMeta,
   AdminDataTableEmptyRow,
+  AdminDialog,
   AdminEditorSection,
   AdminExpandableRow,
   AdminFilterBar,
   AdminFilterField,
-  AdminPageIntro,
+  AdminPageHeader,
   AdminRecordTable,
   AdminRowActions,
   ConfirmDialog,
@@ -93,6 +94,7 @@ export function BankingPage() {
   } = useBankSync();
   const { data: financeData } = useFinance();
 
+  const [connectOpen, setConnectOpen] = useState(false);
   const [country, setCountry] = useState("GB");
   const [bankName, setBankName] = useState("");
   const banksQuery = useBankOptions(country);
@@ -219,22 +221,30 @@ export function BankingPage() {
 
   return (
     <div>
-      <div className="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-        <h1 className="h4 mb-0">Banking</h1>
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          onClick={() => syncNow.mutate()}
-          disabled={!state?.enabled || syncNow.isPending || mappings.length === 0}
-        >
-          {syncNow.isPending ? "Syncing…" : "Sync now"}
-        </button>
-      </div>
-      <AdminPageIntro>
-        Link bank accounts through Enable Banking (open banking / PSD2) and
-        refresh the Finance → Accounts sheet from live balances. A scheduled
-        sync also runs daily.
-      </AdminPageIntro>
+      <AdminPageHeader
+        title="Banking"
+        help={
+          <>
+            Link bank accounts through Enable Banking and refresh the Finance accounts sheet from
+            live balances. A scheduled sync also runs daily.
+          </>
+        }
+        actions={
+          <>
+            <button type="button" className="btn btn-outline-secondary" onClick={() => setConnectOpen(true)}>
+              Connect a bank
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => syncNow.mutate()}
+              disabled={!state?.enabled || syncNow.isPending || mappings.length === 0}
+            >
+              {syncNow.isPending ? "Syncing…" : "Sync now"}
+            </button>
+          </>
+        }
+      />
 
       {state && !state.enabled ? (
         <div className="alert alert-warning" role="alert">
@@ -256,8 +266,9 @@ export function BankingPage() {
         </div>
       ) : null}
 
+      <AdminDialog open={connectOpen} title="Connect a bank" onClose={() => setConnectOpen(false)}>
       <AdminEditorSection
-        title="Connect a bank"
+        embedded
         description="You are redirected to the bank's own consent screen and back here afterwards."
         footer={
           <>
@@ -327,6 +338,7 @@ export function BankingPage() {
           </div>
         </div>
       </AdminEditorSection>
+      </AdminDialog>
 
       <div className="mb-4">
         <AdminRecordTable

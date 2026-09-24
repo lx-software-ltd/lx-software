@@ -12,8 +12,11 @@ export type {
   AdminDataTableSortDirection,
 } from "./AdminDataTable";
 export type { AdminTableColumnPriority } from "../../lib/adminTablePriority";
-export { AdminPageIntro } from "./AdminPageIntro";
-export type { AdminPageIntroProps } from "./AdminPageIntro";
+export { AdminCommandPalette } from "./AdminCommandPalette";
+export { AdminDialog } from "./AdminDialog";
+export { AdminKpi, AdminSparkline } from "./AdminKpi";
+export { AdminPageHeader } from "./AdminPageHeader";
+export type { AdminPageHeaderProps } from "./AdminPageHeader";
 export { AdminTableTotalCurrency, AdminTableTotalLabel } from "./AdminTableTotalCurrency";
 export type {
   AdminTableTotalCurrencyProps,

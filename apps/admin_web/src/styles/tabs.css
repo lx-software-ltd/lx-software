@@ -1,8 +1,6 @@
 /*
- * AdminTabList — one visual language for every section switcher.
- * Phones: two-column grid of pill buttons (a native <select> replaces it above
- * ADMIN_TAB_SELECT_THRESHOLD tabs). md+: content-sized pills that wrap at the
- * container edge (no sideways scroll).
+ * Fallback chrome for an AdminTabList that is not portaled into the rail.
+ * Page sections portal into the rail from md; phones use the native select.
  */
 
 .admin-tab-list {
@@ -30,8 +28,8 @@
   padding: 0.45rem 0.6rem;
   border: 1px solid var(--bs-border-color);
   border-radius: 0.5rem;
-  background: #fff;
-  color: var(--bs-body-color);
+  background: var(--admin-surface);
+  color: var(--admin-text);
   font-weight: 500;
   white-space: normal;
   text-align: center;
@@ -50,15 +48,15 @@
 }
 
 .admin-tab.active {
-  color: #fff;
-  background: var(--bs-primary);
-  border-color: var(--bs-primary);
+  color: light-dark(#fff, #042f2e);
+  background: var(--admin-accent);
+  border-color: var(--admin-accent);
 }
 
 .admin-tab.active .badge {
-  color: var(--bs-primary);
-  background: #fff;
-  border-color: #fff;
+  color: var(--admin-accent-text);
+  background: var(--admin-surface);
+  border-color: var(--admin-surface);
 }
 
 .admin-tab[disabled],

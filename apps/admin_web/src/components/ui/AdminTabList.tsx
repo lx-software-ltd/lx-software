@@ -1,9 +1,10 @@
-import { useId, useRef, type KeyboardEvent } from "react";
+import { useId, useRef, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
-  ADMIN_TAB_SELECT_THRESHOLD,
   adminTabButtonId,
   nextTabIdForKey,
 } from "../../lib/adminTabs";
+import { useAdminChrome } from "./AdminChrome";
 
 export type AdminTabBadge = {
   readonly value: number | string;
@@ -25,6 +26,8 @@ export type AdminTabListProps<T extends string> = {
   readonly className?: string;
   /** Accessible name of the list, e.g. "Finance sections". */
   readonly label: string;
+  /** Indent under a parent section in the rail (Executive Board under Siu Tin Dei). */
+  readonly nested?: boolean;
   /**
    * Stable prefix for tab button ids. Pass the same value to
    * `adminTabButtonId(prefix, active)` for the panel's `aria-labelledby`.
@@ -46,25 +49,24 @@ function badgeClass(tone: AdminTabBadge["tone"]): string {
  * Page-section switcher following the WAI-ARIA Tabs pattern (automatic
  * activation, roving tabindex, arrow/Home/End keys).
  *
- * Phones: up to {@link ADMIN_TAB_SELECT_THRESHOLD} tabs fill a two-column grid;
- * longer lists render a native `<select>` so the content is not pushed below
- * the fold. From `md` the tabs are content-sized pills that wrap at the
- * container edge.
+ * From `md` the tabs portal into the rail under the active page. Phones get a
+ * native select so the section list stays one control tall.
  */
 export function AdminTabList<T extends string>({
   tabs,
   active,
   onChange,
-  className = "mb-4",
+  className = "",
   label,
   idPrefix,
   panelId,
   disabled = false,
+  nested = false,
 }: AdminTabListProps<T>) {
   const generated = useId();
   const prefix = idPrefix ?? generated;
   const buttonRefs = useRef(new Map<T, HTMLButtonElement>());
-  const usesSelectOnPhone = tabs.length > ADMIN_TAB_SELECT_THRESHOLD;
+  const { slot } = useAdminChrome();
   const ids = tabs.map((t) => t.id);
 
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -77,31 +79,9 @@ export function AdminTabList<T extends string>({
 
   const selectId = `${prefix}-select`;
 
-  return (
-    <div className={`admin-tab-list-wrap ${className}`.trim()}>
-      {usesSelectOnPhone ? (
-        <div className="d-md-none">
-          <label className="visually-hidden" htmlFor={selectId}>
-            {label}
-          </label>
-          <select
-            id={selectId}
-            className="form-select admin-tab-select"
-            value={active}
-            disabled={disabled}
-            onChange={(ev) => onChange(ev.target.value as T)}
-          >
-            {tabs.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-                {item.badge ? ` (${item.badge.value})` : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-      ) : null}
+  const list: ReactNode = (
       <ul
-        className={`nav admin-tab-list ${usesSelectOnPhone ? "d-none d-md-flex" : ""}`.trim()}
+        className={`admin-rail-tabs${nested ? " admin-rail-nested" : ""}`}
         role="tablist"
         aria-label={label}
       >
@@ -136,6 +116,43 @@ export function AdminTabList<T extends string>({
           );
         })}
       </ul>
+  );
+
+  const select = (
+    <div className={`d-md-none admin-section-select${className ? ` ${className}` : ""}`}>
+      <label className="form-label small mb-1" htmlFor={selectId}>
+        {label}
+      </label>
+      <select
+        id={selectId}
+        className="form-select admin-tab-select"
+        value={active}
+        disabled={disabled}
+        onChange={(ev) => onChange(ev.target.value as T)}
+      >
+        {tabs.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.label}
+            {item.badge ? ` (${item.badge.value})` : ""}
+          </option>
+        ))}
+      </select>
     </div>
+  );
+
+  if (slot) {
+    return (
+      <>
+        {select}
+        {createPortal(list, slot)}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {select}
+      <div className={className}>{list}</div>
+    </>
   );
 }

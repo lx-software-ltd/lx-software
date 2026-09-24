@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { FinanceDataLoadOrError, FinanceSaveStatus } from "../components/FinanceDataStatus";
 import { FinanceInvestmentsPanel } from "../components/FinanceInvestmentsPanel";
 import { FinancePensionPanel, FinanceSavingsPanel } from "../components/FinanceSavingsAndPensionPanels";
@@ -7,10 +8,10 @@ import { FinanceAllocationsPanel } from "../components/FinanceAllocationsPanel";
 import { FinanceLiabilitiesPanel } from "../components/FinanceLiabilitiesPanel";
 import { FinanceLedgerSheetPanel } from "../components/FinanceLedgerSheetPanel";
 import { HouseStatementPanel } from "../components/HouseStatementPanel";
-import { AdminPageIntro, AdminTabList, type AdminTabItem } from "../components/ui";
+import { AdminPageHeader, AdminTabList, type AdminTabItem } from "../components/ui";
 import { useFinance } from "../hooks/useFinance";
 import { adminTabButtonId } from "../lib/adminTabs";
-import { clearExpandedParamsExcept } from "../lib/expandedRecord";
+import { isRowExpandedParam } from "../lib/expandedRecord";
 import { HOUSE_DISPLAY_LABEL, LEDGER_RELATED_HOUSE_OPTIONS } from "../lib/houses";
 import {
   EXPENSE_CATEGORIES,
@@ -60,9 +61,12 @@ const FINANCE_TAB_PARAM: Record<FinanceTab, string> = {
   liabilities: "liability",
 };
 
-function financeTabFromLocation(): FinanceTab {
-  if (typeof window === "undefined") return "accounts";
-  const params = new URLSearchParams(window.location.search);
+function financeTabFromSearch(search: string): FinanceTab {
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const requested = params.get("tab");
+  if (requested && FINANCE_TABS.some((item) => item.id === requested)) {
+    return requested as FinanceTab;
+  }
   for (const item of FINANCE_TABS) {
     if (params.get(FINANCE_TAB_PARAM[item.id])) return item.id;
   }
@@ -89,24 +93,46 @@ export function FinancePage() {
     saveError,
     saveErrorDetail,
   } = useFinance();
-  const [tab, setTab] = useState<FinanceTab>(financeTabFromLocation);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const tab = financeTabFromSearch(location.search);
+  const setTab = (id: FinanceTab) => {
+    const params = new URLSearchParams(location.search);
+    params.set("tab", id);
+    for (const key of [...params.keys()]) {
+      if (key !== FINANCE_TAB_PARAM[id] && isRowExpandedParam(key)) params.delete(key);
+    }
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true });
+  };
   useEffect(() => {
-    clearExpandedParamsExcept(FINANCE_TAB_PARAM[tab]);
-  }, [tab]);
+    const params = new URLSearchParams(location.search);
+    let changed = false;
+    for (const key of [...params.keys()]) {
+      if (key !== FINANCE_TAB_PARAM[tab] && isRowExpandedParam(key)) {
+        params.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) {
+      navigate({ pathname: location.pathname, search: params.toString() }, { replace: true });
+    }
+  }, [location.pathname, location.search, navigate, tab]);
 
   return (
     <div>
-      <h1 className="h3 mb-3">Finance</h1>
-      <AdminPageIntro>
-        House statements, floats, investments, savings, pension, and income and expense ledgers are
-        stored in the admin API (DynamoDB). The Allocations tab lists expenses tagged{" "}
-        <strong>Allocate</strong>, derived allocation lines from tagged income (both labeled Allocate
-        on Expenses), and <strong>custom</strong> allocation rows you add on Allocations. Any row can
-        be tagged <strong>Income</strong> so it appears on the Income tab with a monthly amount, or{" "}
-        <strong>Pension</strong> so it appears in the Pension tab table (with fund rows). The Accounts
-        tab stores bank and card balances with billing cycle metadata. The Liabilities tab tracks
-        outstanding balances (e.g. mortgages), optionally linked to a property for equity.
-      </AdminPageIntro>
+      <AdminPageHeader
+        eyebrow="House Finance"
+        title="Finance"
+        help={
+          <>
+            House statements, floats, investments, savings, pension, and income and expense ledgers
+            are stored in the admin API. Allocations lists expenses tagged Allocate, derived lines
+            from tagged income, and custom allocation rows. Tag a row Income or Pension to surface
+            it on those sections. Accounts stores bank and card balances. Liabilities tracks
+            outstanding balances, optionally linked to a property.
+          </>
+        }
+      />
       <FinanceDataLoadOrError
         isLoading={isLoading}
         isError={isError}

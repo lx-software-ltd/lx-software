@@ -3,8 +3,21 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <meta name="description" content="LX Software admin console." />
     <title>LX Software | Admin</title>
+    <script>
+      try {
+        var theme = localStorage.getItem("admin-theme");
+        var dark =
+          theme === "dark" ||
+          (theme !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.bsTheme = dark ? "dark" : "light";
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+        var density = localStorage.getItem("admin-density");
+        if (density === "comfortable") document.documentElement.dataset.density = "comfortable";
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

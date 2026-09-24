@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router-dom";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_FINANCE_STATE } from "../lib/financeModel";
@@ -29,7 +30,11 @@ vi.mock("../hooks/useFinance", () => ({
 
 describe("FinancePage error gate", () => {
   it("does not render editable panels when the finance query failed", () => {
-    render(<FinancePage />);
+    render(
+      <MemoryRouter>
+        <FinancePage />
+      </MemoryRouter>,
+    );
     expect(screen.getByRole("alert")).toHaveTextContent("Could not load finance data");
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Add record" })).toBeNull();

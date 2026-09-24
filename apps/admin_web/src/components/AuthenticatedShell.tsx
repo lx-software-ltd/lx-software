@@ -1,72 +1,67 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { NavLink, Outlet } from "react-router-dom";
-import { formatDateTimeHKT } from "../lib/formatDisplay";
+import { NavLink, Outlet, useMatch } from "react-router-dom";
+import { ADMIN_NAV_GROUPS, type AdminNavItem } from "../lib/adminNav";
 import { useAuth, type AuthUser } from "./AuthProvider";
+import { ThemeControls } from "./ThemeProvider";
+import { AdminChromeProvider, AdminRailSections } from "./ui/AdminChrome";
+import { AdminCommandPalette } from "./ui/AdminCommandPalette";
 
-type AdminNavItem = {
-  readonly to: string;
-  readonly label: string;
-  readonly end?: boolean;
-};
-
-const ADMIN_NAV_GROUPS: readonly (readonly AdminNavItem[])[] = [
-  [{ to: "/", label: "Dashboard", end: true }],
-  [
-    { to: "/finance", label: "House Finance" },
-    { to: "/lx-software", label: "LX Software" },
-    { to: "/siu-tin-dei", label: "Siu Tin Dei" },
-  ],
-  [
-    { to: "/banking", label: "Banking" },
-    { to: "/assets", label: "Assets" },
-  ],
-];
-
-function SessionIdentity({ user }: { readonly user: AuthUser | null }) {
-  if (!user?.email && !user?.lastLoginAt) {
-    return null;
-  }
+function NavEntry({ item }: { readonly item: AdminNavItem }) {
+  const match = useMatch({ path: item.to, end: item.end ?? false });
   return (
-    <div
-      className="admin-mobile-session rounded border bg-body-secondary p-2 mb-3"
-      aria-label="Signed-in account"
-    >
-      {user.email ? (
-        <div className="fw-semibold text-break">{user.email}</div>
-      ) : null}
-      {user.lastLoginAt ? (
-        <p className="small text-muted mb-0 mt-1">
-          Last login {formatDateTimeHKT(user.lastLoginAt)}
-        </p>
-      ) : null}
+    <div>
+      <NavLink
+        to={item.to}
+        end={item.end}
+        className={({ isActive }) => `admin-nav-link${isActive ? " active" : ""}`}
+        title={item.label}
+      >
+        <i className={`bi ${item.icon}`} aria-hidden="true" />
+        <span className="admin-nav-label">{item.label}</span>
+      </NavLink>
+      {match ? <AdminRailSections /> : null}
     </div>
   );
 }
 
-function AdminNavLinks({ onNavigate }: { readonly onNavigate?: () => void }) {
+function NavGroups({ onNavigate }: { readonly onNavigate?: () => void }) {
   return (
-    <nav className="nav flex-column gap-1" aria-label="Admin pages">
-      {ADMIN_NAV_GROUPS.map((group, groupIndex) => (
-        <div key={group[0].to} className="w-100">
-          {groupIndex > 0 ? (
-            <hr className="admin-nav-separator my-2" />
-          ) : null}
-          {group.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) =>
-                `nav-link rounded ${isActive ? "active fw-semibold" : ""}`
-              }
-              onClick={onNavigate}
-            >
-              {item.label}
-            </NavLink>
-          ))}
+    <>
+      {ADMIN_NAV_GROUPS.map((group) => (
+        <div key={group[0].to} className="admin-nav-group">
+          {group.map((item) =>
+            onNavigate ? (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                className={({ isActive }) => `admin-nav-link${isActive ? " active" : ""}`}
+                onClick={onNavigate}
+              >
+                <i className={`bi ${item.icon}`} aria-hidden="true" />
+                <span>{item.label}</span>
+              </NavLink>
+            ) : (
+              <NavEntry key={item.to} item={item} />
+            ),
+          )}
         </div>
       ))}
-    </nav>
+    </>
+  );
+}
+
+function RailFooter({ user, onLogout }: { readonly user: AuthUser | null; readonly onLogout: () => void }) {
+  return (
+    <div className="admin-rail-footer">
+      <AdminCommandPalette />
+      <ThemeControls />
+      {user?.email ? <div className="admin-rail-user" title={user.email}>{user.email}</div> : null}
+      <button type="button" className="admin-rail-tool" onClick={onLogout}>
+        <i className="bi bi-box-arrow-right" aria-hidden="true" />
+        <span className="admin-nav-label">Sign out</span>
+      </button>
+    </div>
   );
 }
 
@@ -83,9 +78,7 @@ export function AuthenticatedShell() {
   };
 
   useEffect(() => {
-    if (!isNavOpen) {
-      return;
-    }
+    if (!isNavOpen) return;
     closeRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -95,12 +88,8 @@ export function AuthenticatedShell() {
     };
     const media = window.matchMedia("(min-width: 768px)");
     const onViewportChange = () => {
-      if (media.matches) {
-        setIsNavOpen(false);
-      }
+      if (media.matches) setIsNavOpen(false);
     };
-    // iOS Safari ignores `overflow: hidden` on body, so the lock pins the body
-    // in place and restores the scroll offset when the drawer closes.
     const scrollY = window.scrollY;
     document.body.classList.add("admin-nav-open");
     document.body.style.top = `-${scrollY}px`;
@@ -116,78 +105,78 @@ export function AuthenticatedShell() {
   }, [isNavOpen]);
 
   return (
-    <div className="d-flex flex-column admin-full-height">
-      <nav className="navbar navbar-expand-md navbar-dark bg-dark">
-        <div className="container-fluid">
+    <AdminChromeProvider>
+      <div className="admin-shell">
+        <header className="admin-topbar">
           <button
             ref={togglerRef}
             type="button"
-            className="navbar-toggler d-md-none"
+            className="btn btn-outline-secondary btn-sm"
             aria-label="Open navigation menu"
             aria-controls={navId}
             aria-expanded={isNavOpen}
             onClick={() => setIsNavOpen(true)}
           >
-            <span className="navbar-toggler-icon" />
+            <i className="bi bi-list" aria-hidden="true" />
           </button>
-          <span className="navbar-brand mb-0 h1 ms-2 ms-md-0">LX Admin</span>
-          <div className="navbar-nav ms-auto align-items-center gap-2 flex-row">
-            {user?.email ? (
-              <span
-                className="navbar-text text-white-50 small me-2 d-none d-sm-inline text-truncate admin-navbar-user"
-                title={user.email}
-              >
-                {user.email}
-              </span>
-            ) : null}
-            <button
-              type="button"
-              className="btn btn-outline-light btn-sm"
-              onClick={() => logout()}
-            >
-              Sign out
-            </button>
-          </div>
-        </div>
-      </nav>
-      {isNavOpen ? (
-        <button
-          type="button"
-          className="admin-nav-backdrop d-md-none"
-          aria-label="Close navigation menu"
-          onClick={closeNav}
-        />
-      ) : null}
-      <aside
-        id={navId}
-        className={`admin-mobile-nav d-md-none ${isNavOpen ? "is-open" : ""}`}
-        role="dialog"
-        aria-modal={isNavOpen}
-        aria-label="Admin navigation"
-        aria-hidden={!isNavOpen}
-        inert={!isNavOpen}
-      >
-        <div className="d-flex align-items-center justify-content-between mb-3">
-          <span className="fw-semibold">Menu</span>
+          <span className="admin-topbar-brand">LX Admin</span>
+        </header>
+        {isNavOpen ? (
           <button
-            ref={closeRef}
             type="button"
-            className="btn-close"
+            className="admin-nav-backdrop d-md-none"
             aria-label="Close navigation menu"
             onClick={closeNav}
           />
-        </div>
-        <SessionIdentity user={user} />
-        <AdminNavLinks onNavigate={closeNav} />
-      </aside>
-      <div className="d-flex flex-grow-1 min-w-0">
-        <aside className="admin-sidebar border-end bg-white p-3 d-none d-md-block">
-          <AdminNavLinks />
+        ) : null}
+        <aside
+          id={navId}
+          className={`admin-mobile-nav d-md-none ${isNavOpen ? "is-open" : ""}`}
+          role="dialog"
+          aria-modal={isNavOpen}
+          aria-label="Admin navigation"
+          aria-hidden={!isNavOpen}
+          inert={!isNavOpen}
+        >
+          <div className="d-flex align-items-center justify-content-between mb-3">
+            <span className="fw-semibold">Menu</span>
+            <button
+              ref={closeRef}
+              type="button"
+              className="btn-close"
+              aria-label="Close navigation menu"
+              onClick={closeNav}
+            />
+          </div>
+          {user?.email ? <p className="small text-muted">{user.email}</p> : null}
+          <nav className="d-flex flex-column gap-1" aria-label="Admin pages">
+            <NavGroups onNavigate={closeNav} />
+          </nav>
+          <div className="mt-3">
+            <ThemeControls />
+            <button type="button" className="btn btn-outline-secondary w-100 mt-2" onClick={() => logout()}>
+              Sign out
+            </button>
+          </div>
         </aside>
-        <main className="admin-main flex-grow-1 p-3 p-md-4">
-          <Outlet />
+        <aside className="admin-sidebar">
+          <div className="admin-rail-primary">
+            <div className="admin-brand">
+              <span className="admin-brand-mark" aria-hidden="true">LX</span>
+              <span className="admin-nav-label">LX Admin</span>
+            </div>
+            <nav className="admin-rail-scroll" aria-label="Admin pages">
+              <NavGroups />
+            </nav>
+            <RailFooter user={user} onLogout={() => logout()} />
+          </div>
+        </aside>
+        <main className="admin-main">
+          <div className="admin-content">
+            <Outlet />
+          </div>
         </main>
       </div>
-    </div>
+    </AdminChromeProvider>
   );
 }

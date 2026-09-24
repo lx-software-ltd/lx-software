@@ -44,7 +44,7 @@ export function AdminCreateButton({ label, onClick, disabled }: AdminCreateButto
   return (
     <button
       type="button"
-      className="btn btn-primary btn-sm admin-create-btn"
+      className="btn btn-primary admin-create-btn"
       onClick={onClick}
       disabled={disabled}
     >
