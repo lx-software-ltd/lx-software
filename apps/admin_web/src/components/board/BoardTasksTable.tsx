@@ -3,7 +3,7 @@ import {
   AdminDataTable,
   AdminDataTableCellMeta,
   AdminDataTableEmptyRow,
-  TableIconButton,
+  AdminRowActions,
 } from "../ui";
 import { BoardTaskId } from "./BoardTaskId";
 import {
@@ -88,24 +88,33 @@ export function BoardTasksTable({
               <AdminCell column="steps">{task.stepsUsed}</AdminCell>
               <AdminCell column="cost">{formatUsageCost(task.usage.cost)}</AdminCell>
               <AdminCell column="ops" className="text-nowrap">
-                <TableIconButton iconClassName="bi bi-box-arrow-up-right" ariaLabel={`Open task ${task.taskId}`} onClick={() => onOpen(task.taskId)} />
-                {canRetryBoardTask(task.status) ? (
-                  <TableIconButton
-                    iconClassName="bi bi-arrow-repeat"
-                    ariaLabel={`Retry task ${task.taskId}`}
-                    onClick={() => onRetry(task.taskId)}
-                    disabled={busy}
-                  />
-                ) : null}
-                {task.status === "failed" ? (
-                  <TableIconButton
-                    iconClassName="bi bi-x-lg"
-                    ariaLabel={`Dismiss task ${task.taskId}`}
-                    variant="danger"
-                    onClick={() => onCancel(task.taskId)}
-                    disabled={busy}
-                  />
-                ) : null}
+                <AdminRowActions
+                  actions={[
+                    {
+                      id: "open",
+                      label: `Open task ${task.taskId}`,
+                      iconClassName: "bi bi-box-arrow-up-right",
+                      onClick: () => onOpen(task.taskId),
+                    },
+                    {
+                      id: "retry",
+                      label: `Retry task ${task.taskId}`,
+                      iconClassName: "bi bi-arrow-repeat",
+                      hidden: !canRetryBoardTask(task.status),
+                      disabled: busy,
+                      onClick: () => onRetry(task.taskId),
+                    },
+                    {
+                      id: "dismiss",
+                      label: `Dismiss task ${task.taskId}`,
+                      iconClassName: "bi bi-x-lg",
+                      danger: true,
+                      hidden: task.status !== "failed",
+                      disabled: busy,
+                      onClick: () => onCancel(task.taskId),
+                    },
+                  ]}
+                />
               </AdminCell>
             </tr>
           );

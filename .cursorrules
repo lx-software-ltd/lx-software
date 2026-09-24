@@ -66,7 +66,7 @@ repo root
 - The left rail lists pages only. `AdminTabList` renders in the page (a phone `<select>` when there are more than six sections). Page help is the `?` popover on `AdminPageHeader`.
 - A list is one untitled card: toolbar, then the table. Create spells the noun (`New account`). The editor opens under the clicked row. One row is open; its id is a query parameter (`new` is the draft). Opening that id fills the editor from the record. An unknown id is removed. Only the active table’s row parameter stays in the URL.
 - The row editor has no title and no Cancel. One primary button, labeled with the verb (`Add line`, `Update record`) and `Saving…` while the save is in flight. Deletes and dirty-row switches use `ConfirmDialog`. Dirty means any editor field differs from the saved record.
-- The summary row is keyboard-focusable. Selecting text does not toggle it. One row action stays inline; the rest sit in the kebab menu, which closes when an action is chosen.
+- The summary row is keyboard-focusable. Selecting text does not toggle it. Every row action sits in the kebab menu, which closes when an action is chosen. Record-table icon buttons are bordered; other tables stay link-style.
 - House details stay their own card with one Save. Statement import and Connect a bank open in a dialog. Chat, tasks, and member editors stay in `BoardOffcanvas`.
 - Bootstrap 5 only, re-themed with the tokens in `src/styles/tokens.css`. Do not add Tailwind. Details in `apps/admin_web/docs/UI_COMPONENTS.md`.
 
