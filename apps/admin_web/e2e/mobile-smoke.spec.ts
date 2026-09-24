@@ -9,7 +9,9 @@ async function pageHasHorizontalOverflow(page: Page): Promise<boolean> {
 test.describe("admin viewport smoke", () => {
   test("dashboard loads fixture summaries", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
+    await expect(page.getByText("LX Software net")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Hillmarton" })).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
@@ -53,7 +55,8 @@ test.describe("admin viewport smoke", () => {
     page,
   }, testInfo) => {
     await page.goto("/finance");
-    await expect(page.getByRole("heading", { name: "Finance", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Finance", level: 1 })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
     await expect(page.getByText("HSBC HK current")).toBeVisible();
     await expect(page.getByText("128,430.50").first()).toBeVisible();
     await expect(page.getByText("Stale").filter({ visible: true }).first()).toBeVisible();
@@ -102,14 +105,10 @@ test.describe("admin viewport smoke", () => {
   test("siu tin dei board sections stay reachable", async ({ page }, testInfo) => {
     await page.goto("/siu-tin-dei");
     await expect(page.getByRole("heading", { name: "Siu Tin Dei", level: 1 })).toBeVisible();
-    if (testInfo.project.name === "phone") {
-      await expect(page.locator("#book-siuTinDei-select")).toHaveValue("board");
-    } else {
-      await expect(page.getByRole("tab", { name: "Executive Board" })).toHaveAttribute(
-        "aria-selected",
-        "true",
-      );
-    }
+    await expect(page.getByRole("tab", { name: "Executive Board" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     await expect(page.getByRole("heading", { name: "Daily review" })).toBeVisible();
     await expect(page.getByText(/Three parent threads closed/i)).toBeVisible();
     await expect(page.getByRole("button", { name: "Sync from main" })).toBeVisible();

@@ -6,10 +6,10 @@ This document defines **reusable patterns** for the LX Software admin SPA (`apps
 
 1. **Table first** — A list is one untitled white card: a toolbar (search and filters, then the create control spelling the noun), then the table. Filters apply as they change. Clicking a row expands its editor beneath that row. One row is open, and its id is the query parameter for that table (`new` is the draft). Switching rows with unsaved edits asks in `ConfirmDialog`. Duplicate opens the draft seeded from the source. House-level settings stay a separate card with one Save.
 2. **One primary action** — The row editor has no title and no Cancel. One left-aligned primary button shows `Saving…` or `Uploading…` while that save is in flight. A query param opens that record with its saved fields. An unknown id is removed. Only the active table’s row param stays in the URL.
-3. **Tables** — Hairline rows, no zebra stripes. The open record has an accent bar. The last column is operations: one action stays a button, and the rest sit in a kebab menu that closes when chosen. On phones, hide non-essential columns with `priority` and repeat the useful value with `AdminDataTableCellMeta`. The summary row is keyboard-focusable and does not toggle while text is selected. Each record is its own `<tbody>`.
-4. **Shell** — Pages live in the left rail. Section switchers (`AdminTabList`) portal into that rail from `md` and become a native `<select>` on phones. Page help sits in a `?` popover on `AdminPageHeader`, not a paragraph above the first control. `⌘K` / `Ctrl+K` jumps to a page or section. Theme follows the system, with an explicit light or dark choice, and row density is compact or comfortable.
+3. **Tables** — Hairline rows, no zebra stripes. The open record has an accent bar. The last column is operations: every action sits in the kebab menu, which closes when chosen. On phones, hide non-essential columns with `priority` and repeat the useful value with `AdminDataTableCellMeta`. The summary row is keyboard-focusable and does not toggle while text is selected. Each record is its own `<tbody>`.
+4. **Shell** — The left rail lists pages only (Dashboard, House Finance, LX Software, Siu Tin Dei, Banking, Assets). The brand is the LX mark and Admin. Section switchers (`AdminTabList`) sit in the page, under the header. Phones use a two-column grid, or a native `<select>` when there are more than six sections. Page help sits in a `?` popover on `AdminPageHeader`, not a paragraph above the first control. There is no command palette, theme switch, or row-density switch.
 
-`AdminTabList` stays the section control (WAI-ARIA tablist in the rail; a phone `<select>`). Chat, task, and member editors stay in `BoardOffcanvas`. Statement PDF import and Connect a bank open in a dialog. Finance and statement books still save by putting the whole document.
+`AdminTabList` stays the section control (WAI-ARIA tablist in the page). Chat, task, and member editors stay in `BoardOffcanvas`. Statement PDF import and Connect a bank open in a dialog. Finance and statement books still save by putting the whole document.
 
 ## Shared components (`src/components/ui/`)
 
@@ -19,10 +19,10 @@ This document defines **reusable patterns** for the LX Software admin SPA (`apps
 | `CurrencySelect` | Bootstrap `form-select` for admin-supported currency codes only (`src/lib/currencies.ts`). Props: `id`, `value`, `onChange`, optional `className`, `disabled`, `ariaLabel`. |
 | `DateTimeDisplay` | Formats an ISO instant for **Hong Kong** wall time, e.g. `May 26, 2026 at 10:12pm HKT`. Uses `formatDateTimeHKT` in `src/lib/formatDisplay.ts`. |
 | `AdminRecordTable` | Untitled card: `AdminFilterBar`, optional `beforeTable` (disclosures), then the table. `label` is the accessible name. |
-| `AdminFilterBar` / `AdminFilterField` / `AdminCreateButton` | Filter row. Create is full width on a phone. Each filter has a visible label. |
+| `AdminFilterBar` / `AdminFilterField` / `AdminCreateButton` | Filter row. Create is full width on a phone. Named filters such as Stage keep a visible label. A label of `Filter` stays available to assistive tech and is not shown above the input. |
 | `AdminEditorPanel` | Expanded-row form: fields, error, one primary submit. No title and no Cancel. |
 | `AdminExpandableRow` | Focusable summary row plus a detail row when open. Own `<tbody>` per record. Clicks inside the editor, and text selection, do not toggle the row. |
-| `AdminRowActions` | Operations icons. Overflow uses the Popover API. |
+| `AdminRowActions` | Every operation, including a single one, sits in the kebab menu (Popover API). |
 | `ConfirmDialog` | Native `<dialog>` confirm. Use for delete and for discarding a dirty row. |
 | `AdminDisclosure` | Native `<details>` block between filters and the table (statement import, CSV import). |
 | `AdminEditorSection` | Card for a form that is not a table row (house details, connect-a-bank, sequences, settings). Optional title, body, footer. Pass `embedded` to drop the card chrome inside another panel. |
@@ -30,7 +30,7 @@ This document defines **reusable patterns** for the LX Software admin SPA (`apps
 | `AdminCell` | Body cell bound to a column key. Applies that column’s priority class so headers and cells hide together. |
 | `AdminPageHeader` | Page title, optional `?` help popover, and the page’s primary actions. |
 | `AdminTableTotalLabel` / `AdminTableTotalCurrency` | Render the FX note and display-currency picker **once** in a finance table footer (never a mobile duplicate). |
-| `AdminTabList` | WAI-ARIA tablist (arrow / Home / End) portaled into the rail from `md`. Phones always get a native `<select>` (`${idPrefix}-select`). Pass `disabled` when the backing query failed. |
+| `AdminTabList` | WAI-ARIA tablist (arrow / Home / End) in the page. Phones use a native `<select>` (`${idPrefix}-select`) when there are more than six tabs. Pass `disabled` when the backing query failed. |
 | `TableIconButton` | Icon-only button. `appearance="bordered"` is for record-table operations; the default is the link style used by other tables. |
 
 Import from the barrel: `import { MoneyAmount, … } from "../components/ui"` (adjust path).

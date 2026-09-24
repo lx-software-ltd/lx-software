@@ -1,7 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./components/AuthProvider";
-import { ThemeProvider } from "./components/ThemeProvider";
 import { AuthenticatedShell } from "./components/AuthenticatedShell";
 import { RequireAuth } from "./components/RequireAuth";
 import { AssetsPage } from "./pages/AssetsPage";
@@ -25,7 +24,6 @@ const queryClient = new QueryClient({
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
       <AuthProvider>
         <BrowserRouter>
           <Routes>
@@ -45,7 +43,6 @@ export function App() {
           </Routes>
         </BrowserRouter>
       </AuthProvider>
-      </ThemeProvider>
     </QueryClientProvider>
   );
 }

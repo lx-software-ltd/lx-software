@@ -3,7 +3,7 @@ import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { BOARD_CATALOG_BULK_SOURCES, BOARD_CATALOG_DISTRICTS, BOARD_CATALOG_LAUNCH_LISTING_TARGET } from "../../lib/contracts/generated";
 import type { BoardCatalogJob } from "../../lib/boardModel";
 import { useBoardCatalogCandidates, useBoardCatalogMutations, useBoardCatalogSources } from "../../hooks/useBoardCatalog";
-import { AdminCell, AdminDataTable, AdminDataTableEmptyRow, TableIconButton } from "../ui";
+import { AdminCell, AdminDataTable, AdminDataTableEmptyRow, AdminRowActions } from "../ui";
 
 function errorText(err: unknown): string | null {
   if (!err) return null;
@@ -267,17 +267,24 @@ export function BoardCatalogSourcesSection() {
                 <AdminCell column="district">{row.district}</AdminCell>
                 <AdminCell column="source">{row.source}</AdminCell>
                 <AdminCell column="ops">
-                  <TableIconButton
-                    iconClassName="bi bi-check-lg"
-                    ariaLabel={`Approve ${row.nameEn}`}
-                    disabled={mutations.decide.isPending}
-                    onClick={() => mutations.decide.mutate({ candidateId: row.candidateId, decision: "approve" })}
-                  />
-                  <TableIconButton
-                    iconClassName="bi bi-x-lg"
-                    ariaLabel={`Reject ${row.nameEn}`}
-                    disabled={mutations.decide.isPending}
-                    onClick={() => mutations.decide.mutate({ candidateId: row.candidateId, decision: "reject" })}
+                  <AdminRowActions
+                    actions={[
+                      {
+                        id: "approve",
+                        label: `Approve ${row.nameEn}`,
+                        iconClassName: "bi bi-check-lg",
+                        disabled: mutations.decide.isPending,
+                        onClick: () => mutations.decide.mutate({ candidateId: row.candidateId, decision: "approve" }),
+                      },
+                      {
+                        id: "reject",
+                        label: `Reject ${row.nameEn}`,
+                        iconClassName: "bi bi-x-lg",
+                        danger: true,
+                        disabled: mutations.decide.isPending,
+                        onClick: () => mutations.decide.mutate({ candidateId: row.candidateId, decision: "reject" }),
+                      },
+                    ]}
                   />
                 </AdminCell>
               </tr>

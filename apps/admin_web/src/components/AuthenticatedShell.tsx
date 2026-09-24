@@ -1,61 +1,48 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { NavLink, Outlet, useMatch } from "react-router-dom";
-import { ADMIN_NAV_GROUPS, type AdminNavItem } from "../lib/adminNav";
+import { NavLink, Outlet } from "react-router-dom";
+import { ADMIN_NAV_GROUPS } from "../lib/adminNav";
 import { useAuth, type AuthUser } from "./AuthProvider";
-import { ThemeControls } from "./ThemeProvider";
-import { AdminChromeProvider, AdminRailSections } from "./ui/AdminChrome";
-import { AdminCommandPalette } from "./ui/AdminCommandPalette";
-
-function NavEntry({ item }: { readonly item: AdminNavItem }) {
-  const match = useMatch({ path: item.to, end: item.end ?? false });
-  return (
-    <div>
-      <NavLink
-        to={item.to}
-        end={item.end}
-        className={({ isActive }) => `admin-nav-link${isActive ? " active" : ""}`}
-        title={item.label}
-      >
-        <i className={`bi ${item.icon}`} aria-hidden="true" />
-        <span className="admin-nav-label">{item.label}</span>
-      </NavLink>
-      {match ? <AdminRailSections /> : null}
-    </div>
-  );
-}
 
 function NavGroups({ onNavigate }: { readonly onNavigate?: () => void }) {
   return (
     <>
       {ADMIN_NAV_GROUPS.map((group) => (
         <div key={group[0].to} className="admin-nav-group">
-          {group.map((item) =>
-            onNavigate ? (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) => `admin-nav-link${isActive ? " active" : ""}`}
-                onClick={onNavigate}
-              >
+          {group.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) => `admin-nav-link${isActive ? " active" : ""}`}
+              title={item.label}
+              onClick={onNavigate}
+            >
+              {item.mark ? (
+                <img src={item.mark} alt="" className="admin-nav-mark" />
+              ) : (
                 <i className={`bi ${item.icon}`} aria-hidden="true" />
-                <span>{item.label}</span>
-              </NavLink>
-            ) : (
-              <NavEntry key={item.to} item={item} />
-            ),
-          )}
+              )}
+              <span className="admin-nav-label">{item.label}</span>
+            </NavLink>
+          ))}
         </div>
       ))}
     </>
   );
 }
 
+function RailBrand({ className = "" }: { readonly className?: string }) {
+  return (
+    <div className={`admin-brand${className ? ` ${className}` : ""}`}>
+      <span className="admin-brand-mark" aria-hidden="true">LX</span>
+      <span className="admin-nav-label">Admin</span>
+    </div>
+  );
+}
+
 function RailFooter({ user, onLogout }: { readonly user: AuthUser | null; readonly onLogout: () => void }) {
   return (
     <div className="admin-rail-footer">
-      <AdminCommandPalette />
-      <ThemeControls />
       {user?.email ? <div className="admin-rail-user" title={user.email}>{user.email}</div> : null}
       <button type="button" className="admin-rail-tool" onClick={onLogout}>
         <i className="bi bi-box-arrow-right" aria-hidden="true" />
@@ -105,9 +92,8 @@ export function AuthenticatedShell() {
   }, [isNavOpen]);
 
   return (
-    <AdminChromeProvider>
-      <div className="admin-shell">
-        <header className="admin-topbar">
+    <div className="admin-shell">
+      <header className="admin-topbar">
           <button
             ref={togglerRef}
             type="button"
@@ -139,7 +125,7 @@ export function AuthenticatedShell() {
           inert={!isNavOpen}
         >
           <div className="d-flex align-items-center justify-content-between mb-3">
-            <span className="fw-semibold">Menu</span>
+            <RailBrand className="p-0" />
             <button
               ref={closeRef}
               type="button"
@@ -153,18 +139,14 @@ export function AuthenticatedShell() {
             <NavGroups onNavigate={closeNav} />
           </nav>
           <div className="mt-3">
-            <ThemeControls />
-            <button type="button" className="btn btn-outline-secondary w-100 mt-2" onClick={() => logout()}>
+            <button type="button" className="btn btn-outline-secondary w-100" onClick={() => logout()}>
               Sign out
             </button>
           </div>
         </aside>
         <aside className="admin-sidebar">
           <div className="admin-rail-primary">
-            <div className="admin-brand">
-              <span className="admin-brand-mark" aria-hidden="true">LX</span>
-              <span className="admin-nav-label">LX Admin</span>
-            </div>
+            <RailBrand />
             <nav className="admin-rail-scroll" aria-label="Admin pages">
               <NavGroups />
             </nav>
@@ -176,7 +158,6 @@ export function AuthenticatedShell() {
             <Outlet />
           </div>
         </main>
-      </div>
-    </AdminChromeProvider>
+    </div>
   );
 }

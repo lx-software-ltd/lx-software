@@ -8,7 +8,7 @@ import { FinanceAllocationsPanel } from "../components/FinanceAllocationsPanel";
 import { FinanceLiabilitiesPanel } from "../components/FinanceLiabilitiesPanel";
 import { FinanceLedgerSheetPanel } from "../components/FinanceLedgerSheetPanel";
 import { HouseStatementPanel } from "../components/HouseStatementPanel";
-import { AdminPageHeader, AdminTabList, type AdminTabItem } from "../components/ui";
+import { AdminTabList, type AdminTabItem } from "../components/ui";
 import { useFinance } from "../hooks/useFinance";
 import { adminTabButtonId } from "../lib/adminTabs";
 import { isRowExpandedParam } from "../lib/expandedRecord";
@@ -120,19 +120,6 @@ export function FinancePage() {
 
   return (
     <div>
-      <AdminPageHeader
-        eyebrow="House Finance"
-        title="Finance"
-        help={
-          <>
-            House statements, floats, investments, savings, pension, and income and expense ledgers
-            are stored in the admin API. Allocations lists expenses tagged Allocate, derived lines
-            from tagged income, and custom allocation rows. Tag a row Income or Pension to surface
-            it on those sections. Accounts stores bank and card balances. Liabilities tracks
-            outstanding balances, optionally linked to a property.
-          </>
-        }
-      />
       <FinanceDataLoadOrError
         isLoading={isLoading}
         isError={isError}

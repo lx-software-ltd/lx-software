@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FinanceDataLoadOrError } from "../components/FinanceDataStatus";
-import { AdminKpi, AdminPageHeader } from "../components/ui";
+import { AdminKpi } from "../components/ui";
 import { StatementBookDashboardCard } from "../components/StatementBookDashboardCard";
 import { AllocationCoverageDashboardCard } from "../components/dashboard/AllocationCoverageDashboardCard";
 import { DashboardApiHealthCard } from "../components/dashboard/DashboardApiHealthCard";
@@ -108,10 +108,6 @@ export function DashboardPage() {
 
   return (
     <div>
-      <AdminPageHeader
-        title="Dashboard"
-        help="Balances, statement books, and house summaries for the current fiscal year."
-      />
       {kpis ? (
         <div className="admin-kpi-row">
           <AdminKpi label="LX Software net" value={<MoneyStack lines={kpis.lx} />} hint="This fiscal year" />

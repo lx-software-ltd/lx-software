@@ -266,7 +266,6 @@ export function ExecutiveBoardTab() {
             label="Board sections"
             idPrefix={SECTION_ID_PREFIX}
             panelId={SECTION_PANEL_ID}
-            nested
             disabled={!overview}
           />
 

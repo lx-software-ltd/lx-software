@@ -7,9 +7,10 @@ export type AdminFilterFieldProps = {
 };
 
 export function AdminFilterField({ label, htmlFor, children }: AdminFilterFieldProps) {
+  const showLabel = label !== "Filter";
   return (
     <div className="admin-filter-field">
-      <label className="form-label small mb-1" htmlFor={htmlFor}>
+      <label className={showLabel ? "form-label small mb-1" : "visually-hidden"} htmlFor={htmlFor}>
         {label}
       </label>
       {children}

@@ -4,8 +4,8 @@ import {
   AdminDataTable,
   AdminDataTableCellMeta,
   AdminDataTableEmptyRow,
+  AdminRowActions,
   DateTimeDisplay,
-  TableIconButton,
 } from "../ui";
 import {
   formatUsageCost,
@@ -71,7 +71,16 @@ export function BoardMeetingHistory({ meetings, members, selectedMeetingId, onOp
             <AdminCell column="cost" className="text-end">{formatUsageCost(m.usage?.cost)}</AdminCell>
             <AdminCell column="status"><span className={`badge ${MEETING_STATUS_BADGE_CLASS[m.status]}`}>{m.status}</span></AdminCell>
             <AdminCell column="ops" className="text-end">
-              <TableIconButton iconClassName="bi bi-journal-text" ariaLabel="Open meeting" onClick={() => onOpen(m.meetingId)} />
+              <AdminRowActions
+                actions={[
+                  {
+                    id: "open",
+                    label: "Open meeting",
+                    iconClassName: "bi bi-journal-text",
+                    onClick: () => onOpen(m.meetingId),
+                  },
+                ]}
+              />
             </AdminCell>
           </tr>
         ))

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { DateTimeDisplay, TableIconButton } from "../ui";
+import { AdminRowActions, DateTimeDisplay } from "../ui";
 import { BoardCopyableId } from "./BoardCopyableId";
 import { BoardNewTaskForm } from "./BoardNewTaskForm";
 import {
@@ -167,18 +167,45 @@ export function BoardActionsList({
             ) : null}
           </div>
           <div className="text-nowrap">
-            {a.status === "open" ? (
-              <>
-                {canAssign && !a.staffTaskId ? (
-                  <TableIconButton iconClassName="bi bi-people" ariaLabel="Hand to staff" onClick={() => setAssignDraftId(a.actionId)} />
-                ) : null}
-                <TableIconButton iconClassName="bi bi-check2-circle" ariaLabel="Mark done" onClick={() => onUpdate({ actionId: a.actionId, status: "done" })} />
-                <TableIconButton iconClassName="bi bi-x-circle" ariaLabel="Dismiss" variant="danger" onClick={() => onUpdate({ actionId: a.actionId, status: "dismissed" })} />
-              </>
-            ) : (
-              <TableIconButton iconClassName="bi bi-arrow-counterclockwise" ariaLabel="Reopen" onClick={() => onUpdate({ actionId: a.actionId, status: "open" })} />
-            )}
-            <TableIconButton iconClassName="bi bi-pencil" ariaLabel="Add a note" onClick={() => startNote(a)} />
+            <AdminRowActions
+              actions={[
+                {
+                  id: "assign",
+                  label: "Hand to staff",
+                  iconClassName: "bi bi-people",
+                  hidden: a.status !== "open" || !canAssign || Boolean(a.staffTaskId),
+                  onClick: () => setAssignDraftId(a.actionId),
+                },
+                {
+                  id: "done",
+                  label: "Mark done",
+                  iconClassName: "bi bi-check2-circle",
+                  hidden: a.status !== "open",
+                  onClick: () => onUpdate({ actionId: a.actionId, status: "done" }),
+                },
+                {
+                  id: "dismiss",
+                  label: "Dismiss",
+                  iconClassName: "bi bi-x-circle",
+                  danger: true,
+                  hidden: a.status !== "open",
+                  onClick: () => onUpdate({ actionId: a.actionId, status: "dismissed" }),
+                },
+                {
+                  id: "reopen",
+                  label: "Reopen",
+                  iconClassName: "bi bi-arrow-counterclockwise",
+                  hidden: a.status === "open",
+                  onClick: () => onUpdate({ actionId: a.actionId, status: "open" }),
+                },
+                {
+                  id: "note",
+                  label: "Add a note",
+                  iconClassName: "bi bi-pencil",
+                  onClick: () => startNote(a),
+                },
+              ]}
+            />
           </div>
         </div>
       </li>

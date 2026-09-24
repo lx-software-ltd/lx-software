@@ -1,6 +1,6 @@
 /*
- * Fallback chrome for an AdminTabList that is not portaled into the rail.
- * Page sections portal into the rail from md; phones use the native select.
+ * In-page section tabs. Phones use a two-column grid, or a native select when
+ * the list is longer than ADMIN_TAB_SELECT_THRESHOLD. From md the pills wrap.
  */
 
 .admin-tab-list {

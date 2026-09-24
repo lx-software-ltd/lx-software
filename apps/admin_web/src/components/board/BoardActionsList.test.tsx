@@ -65,7 +65,7 @@ describe("BoardActionsList ids", () => {
 describe("BoardActionsList staff hand-off", () => {
   it("hides the control when staff is off", () => {
     render(<BoardActionsList {...baseProps} actions={[action()]} seats={[prospector]} isStaffEnabled={false} onAssignToStaff={vi.fn()} />);
-    expect(screen.queryByLabelText("Hand to staff")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Hand to staff", hidden: true })).toBeNull();
   });
 
   it("pre-fills the brief from the action and sends actionId", () => {
@@ -73,7 +73,8 @@ describe("BoardActionsList staff hand-off", () => {
     render(
       <BoardActionsList {...baseProps} actions={[action()]} seats={[prospector]} isStaffEnabled onAssignToStaff={onAssignToStaff} />,
     );
-    fireEvent.click(screen.getByLabelText("Hand to staff"));
+    fireEvent.click(screen.getByRole("button", { name: "More actions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hand to staff", hidden: true }));
     const brief = screen.getByLabelText("Brief") as HTMLTextAreaElement;
     expect(brief.value).toContain("Call 10 activity providers");
     expect(brief.value).toContain("Done looks like: Book calls with providers in Sha Tin.");
@@ -102,7 +103,7 @@ describe("BoardActionsList staff hand-off", () => {
       />,
     );
     expect(screen.getByText(/staff: Priya/)).toBeTruthy();
-    expect(screen.queryByLabelText("Hand to staff")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Hand to staff", hidden: true })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "open task" }));
     expect(onOpenStaffTask).toHaveBeenCalledWith("t9");
   });
