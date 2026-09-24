@@ -34,6 +34,14 @@ repo root
 - Use noEcho: true for any CDK parameters containing secrets.
 - Keep public website content non-sensitive and free of PII.
 
+### PII in source
+- Real personal names, phone numbers, personal email addresses, street addresses, bank account numbers, and business-registration numbers must not appear in source or docs.
+- Product mailboxes that are service configuration (`hello@`, `board@`, `billing@`, `news@`, `partnerships@`, `dmarc@`, and the inbound SES recipients) stay in source. They are not personal data.
+- Tests use fictional people and `example.com` addresses.
+- `scripts/check-pii.sh` enforces a hashed denylist (`scripts/pii-denylist.sha256`). Do not add plaintext denylist entries to the repository.
+- The check covers `.py`, `.ts`, `.tsx`, `.js`, `.mjs`, `.dart`, `.sql`, `.md`, `.mdc`, `.yml`, `.yaml`, `.sh`, `.html`, and `.css`.
+- Git author and `Co-authored-by` trailers are outside this check.
+
 ### React + TypeScript guidelines
 - Use functional components and React hooks.
 - Use TypeScript for all app code.

@@ -19,6 +19,15 @@ repos:
       - id: check-merge-conflict
       - id: detect-private-key
 
+  - repo: local
+    hooks:
+      - id: check-pii
+        name: Check hashed PII denylist
+        entry: bash scripts/check-pii.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+
   # TypeScript/JavaScript linting
   - repo: local
     hooks:

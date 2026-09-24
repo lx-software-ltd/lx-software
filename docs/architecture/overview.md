@@ -104,7 +104,9 @@ flowchart TD
 - **Deploy Backend** runs `cdk deploy` when `backend/infrastructure/**`,
   `backend/lambda/**` or `contracts/**` change.
 - **Test** runs Vitest, the Python unit tests, the CDK assertion tests,
-  `scripts/check-contracts.py` and the Playwright viewport smoke.
+  `scripts/check-contracts.py`, `scripts/check_pii.py`, and the Playwright
+  viewport smoke. **Security Scanning** runs the same PII check on every pull
+  request.
 - Dependabot watches the workflows and the three npm projects.
 
 ## Executive Board
