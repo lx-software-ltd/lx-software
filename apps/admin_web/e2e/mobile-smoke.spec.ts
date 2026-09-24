@@ -9,7 +9,9 @@ async function pageHasHorizontalOverflow(page: Page): Promise<boolean> {
 test.describe("admin viewport smoke", () => {
   test("dashboard loads fixture summaries", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
+    await expect(page.getByText("LX Software net")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Hillmarton" })).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
