@@ -55,7 +55,8 @@ test.describe("admin viewport smoke", () => {
     page,
   }, testInfo) => {
     await page.goto("/finance");
-    await expect(page.getByRole("heading", { name: "Finance", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Finance", level: 1 })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
     await expect(page.getByText("HSBC HK current")).toBeVisible();
     await expect(page.getByText("128,430.50").first()).toBeVisible();
     await expect(page.getByText("Stale").filter({ visible: true }).first()).toBeVisible();
