@@ -38,16 +38,6 @@ export type AdminDataTableColumn = {
   readonly thAriaSort?: "ascending" | "descending" | "none" | "other";
 };
 
-export type AdminDataTableSortDirection = "asc" | "desc";
-
-export type AdminDataTableSort = {
-  /** Sortable columns in display order; the label is what the phone select shows. */
-  readonly options: readonly { readonly key: string; readonly label: string }[];
-  readonly sortKey: string | null;
-  readonly direction: AdminDataTableSortDirection;
-  readonly onChange: (sortKey: string | null, direction: AdminDataTableSortDirection) => void;
-};
-
 export type AdminDataTableProps = {
   readonly columns: readonly AdminDataTableColumn[];
   readonly filterValue?: string;
@@ -64,12 +54,6 @@ export type AdminDataTableProps = {
    * Uses slightly roomier table density than the standalone card.
    */
   readonly embedded?: boolean;
-  /**
-   * Sort state for tables whose headers are sort buttons. On phones the
-   * secondary/tertiary headers are hidden, so the same state is exposed as a
-   * compact select + direction toggle next to the filter.
-   */
-  readonly sort?: AdminDataTableSort;
 };
 
 const ColumnsContext = createContext<readonly AdminDataTableColumn[] | null>(null);
@@ -110,65 +94,26 @@ export function AdminDataTable({
   children,
   embedded = false,
   bare = false,
-  sort,
 }: AdminDataTableProps) {
   const filterId = useId();
-  const sortId = useId();
   const tableRef = useRef<HTMLTableElement>(null);
   useColumnAlignmentCheck(tableRef, columns);
 
   const filterBlock = (
     <div className={embedded ? "pb-3 border-bottom" : "card-body py-2 border-bottom"}>
-      <div className="d-flex flex-wrap gap-2 align-items-center">
-        <div className="flex-grow-1 admin-table-filter">
-          <label className="visually-hidden" htmlFor={filterId}>
-            Filter table
-          </label>
-          <input
-            id={filterId}
-            type="search"
-            className="form-control form-control-sm"
-            placeholder={filterPlaceholder}
-            autoComplete="off"
-            value={filterValue}
-            onChange={(ev) => onFilterChange?.(ev.target.value)}
-          />
-        </div>
-        {sort ? (
-          <div className="d-flex gap-1 align-items-center d-md-none admin-table-sort">
-            <label className="visually-hidden" htmlFor={sortId}>
-              Sort by
-            </label>
-            <select
-              id={sortId}
-              className="form-select form-select-sm"
-              value={sort.sortKey ?? ""}
-              onChange={(ev) => sort.onChange(ev.target.value || null, sort.direction)}
-            >
-              <option value="">Sort: default</option>
-              {sort.options.map((o) => (
-                <option key={o.key} value={o.key}>
-                  Sort: {o.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="btn btn-sm btn-outline-secondary admin-table-icon-btn"
-              aria-label={sort.direction === "asc" ? "Sorted ascending; switch to descending" : "Sorted descending; switch to ascending"}
-              title={sort.direction === "asc" ? "Ascending" : "Descending"}
-              disabled={!sort.sortKey}
-              onClick={() =>
-                sort.onChange(sort.sortKey, sort.direction === "asc" ? "desc" : "asc")
-              }
-            >
-              <i
-                className={`bi ${sort.direction === "asc" ? "bi-sort-alpha-down" : "bi-sort-alpha-up"}`}
-                aria-hidden="true"
-              />
-            </button>
-          </div>
-        ) : null}
+      <div className="admin-table-filter">
+        <label className="visually-hidden" htmlFor={filterId}>
+          Filter table
+        </label>
+        <input
+          id={filterId}
+          type="search"
+          className="form-control form-control-sm"
+          placeholder={filterPlaceholder}
+          autoComplete="off"
+          value={filterValue}
+          onChange={(ev) => onFilterChange?.(ev.target.value)}
+        />
       </div>
     </div>
   );
@@ -201,49 +146,8 @@ export function AdminDataTable({
     </div>
   );
 
-  const phoneSort = sort ? (
-    <div className="d-flex gap-1 align-items-center d-md-none admin-table-sort px-3 pt-2">
-      <label className="visually-hidden" htmlFor={sortId}>
-        Sort by
-      </label>
-      <select
-        id={sortId}
-        className="form-select form-select-sm"
-        value={sort.sortKey ?? ""}
-        onChange={(ev) => sort.onChange(ev.target.value || null, sort.direction)}
-      >
-        <option value="">Sort: default</option>
-        {sort.options.map((o) => (
-          <option key={o.key} value={o.key}>
-            Sort: {o.label}
-          </option>
-        ))}
-      </select>
-      <button
-        type="button"
-        className="btn btn-sm btn-outline-secondary bg-white admin-table-icon-btn"
-        aria-label={sort.direction === "asc" ? "Sorted ascending; switch to descending" : "Sorted descending; switch to ascending"}
-        title={sort.direction === "asc" ? "Ascending" : "Descending"}
-        disabled={!sort.sortKey}
-        onClick={() =>
-          sort.onChange(sort.sortKey, sort.direction === "asc" ? "desc" : "asc")
-        }
-      >
-        <i
-          className={`bi ${sort.direction === "asc" ? "bi-sort-alpha-down" : "bi-sort-alpha-up"}`}
-          aria-hidden="true"
-        />
-      </button>
-    </div>
-  ) : null;
-
   if (bare) {
-    return (
-      <>
-        {phoneSort}
-        {tableBlock}
-      </>
-    );
+    return tableBlock;
   }
 
   if (embedded) {

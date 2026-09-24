@@ -116,18 +116,6 @@ type InvSortKey =
   | "currVal"
   | "lastUpd";
 
-const INVESTMENT_SORT_OPTIONS: readonly { readonly key: InvSortKey; readonly label: string }[] = [
-  { key: "cat", label: "Category" },
-  { key: "details", label: "Details" },
-  { key: "atype", label: "Asset type" },
-  { key: "prov", label: "Provider" },
-  { key: "amt", label: "Principal" },
-  { key: "ccy", label: "Currency" },
-  { key: "unit", label: "Units" },
-  { key: "currVal", label: "Current value" },
-  { key: "lastUpd", label: "Last update" },
-];
-
 function compareInv(
   a: FinanceInvestmentRecord,
   b: FinanceInvestmentRecord,
@@ -1015,15 +1003,6 @@ export function FinanceInvestmentsPanel({
         <AdminDataTable
           bare
           columns={tableColumns}
-          sort={{
-            options: INVESTMENT_SORT_OPTIONS,
-            sortKey,
-            direction: sortDir,
-            onChange: (key, dir) => {
-              setSortKey(key as InvSortKey | null);
-              setSortDir(dir);
-            },
-          }}
         >
           {expanded.expandedId === DRAFT_RECORD_ID ? (
             <AdminExpandableRow colSpan={colSpan} expanded onToggle={openCreate} editor={investmentEditor}>
