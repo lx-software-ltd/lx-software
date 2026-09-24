@@ -19,7 +19,7 @@ This document defines **reusable patterns** for the LX Software admin SPA (`apps
 | `CurrencySelect` | Bootstrap `form-select` for admin-supported currency codes only (`src/lib/currencies.ts`). Props: `id`, `value`, `onChange`, optional `className`, `disabled`, `ariaLabel`. |
 | `DateTimeDisplay` | Formats an ISO instant for **Hong Kong** wall time, e.g. `May 26, 2026 at 10:12pm HKT`. Uses `formatDateTimeHKT` in `src/lib/formatDisplay.ts`. |
 | `AdminRecordTable` | Untitled card: `AdminFilterBar`, optional `beforeTable` (disclosures), then the table. `label` is the accessible name. |
-| `AdminFilterBar` / `AdminFilterField` / `AdminCreateButton` | Filter row. Create is full width on a phone. Each filter has a visible label. |
+| `AdminFilterBar` / `AdminFilterField` / `AdminCreateButton` | Filter row. Create is full width on a phone. Named filters such as Stage keep a visible label. A label of `Filter` stays available to assistive tech and is not shown above the input. |
 | `AdminEditorPanel` | Expanded-row form: fields, error, one primary submit. No title and no Cancel. |
 | `AdminExpandableRow` | Focusable summary row plus a detail row when open. Own `<tbody>` per record. Clicks inside the editor, and text selection, do not toggle the row. |
 | `AdminRowActions` | Operations icons. Overflow uses the Popover API. |
