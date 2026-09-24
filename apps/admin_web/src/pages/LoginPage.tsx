@@ -66,6 +66,7 @@ export function LoginPage() {
     <div className="admin-login">
       <div className="admin-login-card">
         <div className="admin-brand px-0 pt-0 mb-4">
+          <span className="admin-brand-mark" aria-hidden="true">LX</span>
           <span>Admin</span>
         </div>
         {deniedMessage ? (
