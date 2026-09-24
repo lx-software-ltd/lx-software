@@ -6,8 +6,16 @@ import {
   AdminDataTable,
   AdminDataTableCellMeta,
   AdminDataTableEmptyRow,
-  TableIconButton,
+  AdminExpandableRow,
+  AdminField,
+  AdminFieldGrid,
+  AdminFilterBar,
+  AdminFilterField,
+  AdminRecordTable,
+  AdminRowActions,
+  ConfirmDialog,
 } from "../components/ui";
+import { useExpandedRecord } from "../hooks/useExpandedRecord";
 import {
   useAdminAssets,
   type AdminAssetMeta,
@@ -55,97 +63,111 @@ function rowMatchesFilter(
   );
 }
 
-function AssetOpenLink({
-  objectKey,
-  onError,
-}: {
-  readonly objectKey: string;
-  readonly onError: (message: string) => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const open = async () => {
-    setBusy(true);
-    try {
-      const qs = `?key=${encodeURIComponent(objectKey)}`;
-      const { url } = await adminFetchJson<{ url: string }>(
-        `/assets/download-url${qs}`,
-      );
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      onError(
-        getAdminApiErrorMessage(err) ??
-          "Could not open the file. Check your connection and try again.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <TableIconButton
-      iconClassName="bi bi-box-arrow-up-right"
-      ariaLabel="Open file in new tab"
-      onClick={() => void open()}
-      disabled={busy}
-    />
-  );
-}
-
 const ASSET_TABLE_COLUMNS = [
   { key: "uploaded", header: "Uploaded", priority: "secondary" as const },
   { key: "file", header: "File" },
   { key: "entity", header: "Entity", priority: "secondary" as const },
-  { key: "actions", header: "Actions", className: "text-end admin-nowrap" },
+  {
+    key: "ops",
+    header: <span className="visually-hidden">Operations</span>,
+    className: "text-end admin-nowrap",
+  },
 ] as const;
 
-function AssetDeleteButton({
-  objectKey,
-  label,
-  onError,
-}: {
-  readonly objectKey: string;
-  readonly label: string;
-  readonly onError: (message: string) => void;
-}) {
-  const qc = useQueryClient();
-  const del = useMutation({
-    mutationFn: () => deleteAdminAsset(objectKey),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["admin", "asset-records"] });
-    },
-  });
-  const onClick = () => {
-    if (
-      !window.confirm(
-        `Delete “${label}” from storage? Any statement lines that still reference this key will need to be edited.`,
-      )
-    ) {
-      return;
-    }
-    void del.mutateAsync().catch((err: unknown) => {
-      const detail = getAdminApiErrorMessage(err);
-      onError(
-        detail ??
-          (err instanceof AdminApiError
-            ? `Delete failed (${err.status}).`
-            : "Could not delete the file. Try again."),
-      );
-    });
-  };
+function assetFieldId(pk: string, field: string): string {
+  return `asset-${field}-${pk.replace(/[^A-Za-z0-9_-]/g, "_")}`;
+}
+
+function AssetDetails({ row }: { readonly row: AdminAssetMeta }) {
+  const objectKey = objectKeyFromAssetPk(row.pk);
   return (
-    <TableIconButton
-      iconClassName="bi bi-trash"
-      ariaLabel="Delete file from storage"
-      variant="danger"
-      onClick={onClick}
-      disabled={del.isPending}
-    />
+    <AdminFieldGrid columns={2}>
+      <AdminField span={2}>
+        <label className="form-label small" htmlFor={assetFieldId(row.pk, "key")}>
+          Object key
+        </label>
+        <input
+          id={assetFieldId(row.pk, "key")}
+          type="text"
+          className="form-control form-control-sm"
+          readOnly
+          value={objectKey}
+        />
+      </AdminField>
+      <AdminField>
+        <label className="form-label small" htmlFor={assetFieldId(row.pk, "size")}>
+          Size
+        </label>
+        <input
+          id={assetFieldId(row.pk, "size")}
+          type="text"
+          className="form-control form-control-sm"
+          readOnly
+          value={typeof row.size === "number" ? formatFileSizeBytes(row.size) : "—"}
+        />
+      </AdminField>
+      <AdminField>
+        <label className="form-label small" htmlFor={assetFieldId(row.pk, "house")}>
+          Entity
+        </label>
+        <input
+          id={assetFieldId(row.pk, "house")}
+          type="text"
+          className="form-control form-control-sm"
+          readOnly
+          value={houseDisplayLabel(row.house)}
+        />
+      </AdminField>
+      <AdminField span={2}>
+        <label className="form-label small" htmlFor={assetFieldId(row.pk, "uploaded")}>
+          Uploaded
+        </label>
+        <input
+          id={assetFieldId(row.pk, "uploaded")}
+          type="text"
+          className="form-control form-control-sm"
+          readOnly
+          value={formatUploadedInstant(row.uploadedAt)}
+        />
+      </AdminField>
+    </AdminFieldGrid>
   );
 }
 
 export function AssetsPage() {
   const q = useAdminAssets();
+  const qc = useQueryClient();
+  const expanded = useExpandedRecord("asset");
   const [tableFilter, setTableFilter] = useState("");
   const [pageError, setPageError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<AdminAssetMeta | null>(null);
+  const [openingKey, setOpeningKey] = useState<string | null>(null);
+  const del = useMutation({
+    mutationFn: (objectKey: string) => deleteAdminAsset(objectKey),
+    onSuccess: (_data, objectKey) => {
+      void qc.invalidateQueries({ queryKey: ["admin", "asset-records"] });
+      setPendingDelete(null);
+      if (expanded.expandedId && objectKeyFromAssetPk(expanded.expandedId) === objectKey) {
+        expanded.request(null, false);
+      }
+    },
+  });
+
+  const openAsset = async (objectKey: string) => {
+    setOpeningKey(objectKey);
+    try {
+      const qs = `?key=${encodeURIComponent(objectKey)}`;
+      const { url } = await adminFetchJson<{ url: string }>(`/assets/download-url${qs}`);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setPageError(
+        getAdminApiErrorMessage(err) ??
+          "Could not open the file. Check your connection and try again.",
+      );
+    } finally {
+      setOpeningKey(null);
+    }
+  };
 
   const rows = useMemo(
     () => q.data?.pages.flatMap((p) => p.items) ?? [],
@@ -196,20 +218,39 @@ export function AssetsPage() {
               {pageError}
             </div>
           ) : null}
-          <AdminDataTable
-            columns={ASSET_TABLE_COLUMNS}
-            filterValue={tableFilter}
-            onFilterChange={(v) => {
-              setTableFilter(v);
-              setPageError(null);
-            }}
-            filterPlaceholder="Filter by file or entity…"
+          <AdminRecordTable
+            label="Assets"
+            filters={
+              <AdminFilterBar>
+                <AdminFilterField label="Filter" htmlFor="assets-filter">
+                  <input
+                    id="assets-filter"
+                    type="search"
+                    className="form-control form-control-sm"
+                    placeholder="Filter by file or entity…"
+                    autoComplete="off"
+                    value={tableFilter}
+                    onChange={(ev) => {
+                      setTableFilter(ev.target.value);
+                      setPageError(null);
+                    }}
+                  />
+                </AdminFilterField>
+              </AdminFilterBar>
+            }
           >
+          <AdminDataTable bare columns={ASSET_TABLE_COLUMNS}>
             {displayRows.length ? (
               displayRows.map((row) => {
                 const objectKey = objectKeyFromAssetPk(row.pk);
                 return (
-                  <tr key={row.pk}>
+                  <AdminExpandableRow
+                    key={row.pk}
+                    colSpan={ASSET_TABLE_COLUMNS.length}
+                    expanded={expanded.expandedId === row.pk}
+                    onToggle={() => expanded.toggle(row.pk, false, () => undefined, () => undefined)}
+                    editor={<AssetDetails row={row} />}
+                  >
                     <AdminCell column="uploaded" className="small">
                       {formatUploadedInstant(row.uploadedAt)}
                     </AdminCell>
@@ -226,20 +267,28 @@ export function AssetsPage() {
                       </AdminDataTableCellMeta>
                     </AdminCell>
                     <AdminCell column="entity" className="small">{houseDisplayLabel(row.house)}</AdminCell>
-                    <AdminCell column="actions" className="text-end">
-                      <div className="d-inline-flex align-items-center gap-1">
-                        <AssetOpenLink
-                          objectKey={objectKey}
-                          onError={setPageError}
-                        />
-                        <AssetDeleteButton
-                          objectKey={objectKey}
-                          label={displayFileName(row)}
-                          onError={setPageError}
-                        />
-                      </div>
+                    <AdminCell column="ops" className="text-end">
+                      <AdminRowActions
+                        actions={[
+                          {
+                            id: "open",
+                            label: "Open file in new tab",
+                            iconClassName: "bi bi-box-arrow-up-right",
+                            disabled: openingKey === objectKey,
+                            onClick: () => void openAsset(objectKey),
+                          },
+                          {
+                            id: "delete",
+                            label: "Delete file from storage",
+                            iconClassName: "bi bi-trash",
+                            danger: true,
+                            disabled: del.isPending,
+                            onClick: () => setPendingDelete(row),
+                          },
+                        ]}
+                      />
                     </AdminCell>
-                  </tr>
+                  </AdminExpandableRow>
                 );
               })
             ) : (
@@ -253,6 +302,36 @@ export function AssetsPage() {
               />
             )}
           </AdminDataTable>
+          <ConfirmDialog
+            open={pendingDelete !== null}
+            title="Delete file"
+            body={
+              pendingDelete
+                ? `Delete “${displayFileName(pendingDelete)}” from storage? Any statement lines that still reference this key will need to be edited.`
+                : ""
+            }
+            confirmLabel="Delete"
+            tone="danger"
+            confirmBusy={del.isPending}
+            onConfirm={() => {
+              if (!pendingDelete) return;
+              const objectKey = objectKeyFromAssetPk(pendingDelete.pk);
+              void del.mutateAsync(objectKey).catch((err: unknown) => {
+                const detail = getAdminApiErrorMessage(err);
+                setPageError(
+                  detail ??
+                    (err instanceof AdminApiError
+                      ? `Delete failed (${err.status}).`
+                      : "Could not delete the file. Try again."),
+                );
+                setPendingDelete(null);
+              });
+            }}
+            onCancel={() => {
+              if (!del.isPending) setPendingDelete(null);
+            }}
+          />
+          </AdminRecordTable>
           {isFetchingNextPage ? (
             <p className="text-muted small mt-2 mb-0">Loading more…</p>
           ) : null}

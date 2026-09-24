@@ -45,4 +45,25 @@ describe("AdminDataTable", () => {
     );
     expect(screen.getByLabelText("Sort by")).toBeTruthy();
   });
+
+  it("keeps the phone sort control when the card and text filter are omitted", () => {
+    render(
+      <AdminDataTable
+        bare
+        columns={[{ key: "name", header: "Name" }]}
+        sort={{
+          options: [{ key: "name", label: "Name" }],
+          sortKey: null,
+          direction: "asc",
+          onChange: () => undefined,
+        }}
+      >
+        <tr>
+          <AdminCell column="name">Alpha</AdminCell>
+        </tr>
+      </AdminDataTable>,
+    );
+    expect(screen.getByLabelText("Sort by")).toBeTruthy();
+    expect(screen.queryByPlaceholderText("Filter records…")).toBeNull();
+  });
 });

@@ -5,11 +5,17 @@ import {
   AdminDataTableCellMeta,
   AdminDataTableEmptyRow,
   AdminEditorSection,
+  AdminExpandableRow,
+  AdminFilterBar,
+  AdminFilterField,
   AdminPageIntro,
+  AdminRecordTable,
+  AdminRowActions,
+  ConfirmDialog,
   DateTimeDisplay,
   MoneyAmount,
-  TableIconButton,
 } from "../components/ui";
+import { useExpandedRecord } from "../hooks/useExpandedRecord";
 import { FinanceDataLoadOrError } from "../components/FinanceDataStatus";
 import { useBankOptions, useBankSync } from "../hooks/useBankSync";
 import { useFinance } from "../hooks/useFinance";
@@ -90,6 +96,8 @@ export function BankingPage() {
   const banksQuery = useBankOptions(country);
 
   const [sessionFilter, setSessionFilter] = useState("");
+  const [pendingDisconnect, setPendingDisconnect] = useState<BankSyncSession | null>(null);
+  const expandedBank = useExpandedRecord("bank");
   // null = no local edits; otherwise uid -> accounts-sheet record id ("" = unmapped).
   const [mappingDraft, setMappingDraft] = useState<Record<string, string> | null>(
     null,
@@ -165,10 +173,14 @@ export function BankingPage() {
   };
 
   const onDeleteSession = (session: BankSyncSession) => {
-    const ok = window.confirm(
-      `Disconnect ${session.bankName}? Its account mappings are removed and the bank consent is closed.`,
-    );
-    if (ok) deleteSession.mutate(session.sessionId);
+    deleteSession.mutate(session.sessionId, {
+      onSuccess: () => {
+        setPendingDisconnect(null);
+        if (expandedBank.expandedId === session.sessionId) {
+          expandedBank.request(null, false);
+        }
+      },
+    });
   };
 
   if (isLoading) {
@@ -301,9 +313,27 @@ export function BankingPage() {
         </div>
       </AdminEditorSection>
 
-      <h2 className="h6 text-uppercase text-muted">Connected banks</h2>
       <div className="mb-4">
+        <AdminRecordTable
+          label="Connected banks"
+          filters={
+            <AdminFilterBar>
+              <AdminFilterField label="Filter" htmlFor="banks-filter">
+                <input
+                  id="banks-filter"
+                  type="search"
+                  className="form-control form-control-sm"
+                  placeholder="Filter banks…"
+                  autoComplete="off"
+                  value={sessionFilter}
+                  onChange={(ev) => setSessionFilter(ev.target.value)}
+                />
+              </AdminFilterField>
+            </AdminFilterBar>
+          }
+        >
         <AdminDataTable
+          bare
           columns={[
             { key: "bank", header: "Bank" },
             { key: "country", header: "Country", priority: "secondary" },
@@ -315,9 +345,6 @@ export function BankingPage() {
               className: "text-end",
             },
           ]}
-          filterValue={sessionFilter}
-          onFilterChange={setSessionFilter}
-          filterPlaceholder="Filter banks…"
         >
           {filteredSessions.length === 0 ? (
             <AdminDataTableEmptyRow
@@ -330,7 +357,30 @@ export function BankingPage() {
             />
           ) : (
             filteredSessions.map((session) => (
-              <tr key={session.sessionId}>
+              <AdminExpandableRow
+                key={session.sessionId}
+                colSpan={5}
+                expanded={expandedBank.expandedId === session.sessionId}
+                onToggle={() =>
+                  expandedBank.toggle(session.sessionId, false, () => undefined, () => undefined)
+                }
+                editor={
+                  session.accounts.length === 0 ? (
+                    <p className="text-muted small mb-0">No accounts on this consent.</p>
+                  ) : (
+                    <ul className="list-unstyled mb-0">
+                      {session.accounts.map((account) => (
+                        <li key={account.uid} className="small">
+                          {bankAccountLabel(account)}
+                          {account.currency ? (
+                            <span className="text-muted"> · {account.currency}</span>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )
+                }
+              >
                 <AdminCell column="bank">
                   {session.bankName}
                   <AdminDataTableCellMeta>
@@ -364,170 +414,183 @@ export function BankingPage() {
                   <ConsentExpiryNote validUntil={session.validUntil} showDate />
                 </AdminCell>
                 <AdminCell column="ops" className="text-end">
-                  <TableIconButton
-                    iconClassName="bi bi-trash"
-                    ariaLabel={`Disconnect ${session.bankName}`}
-                    variant="danger"
-                    onClick={() => onDeleteSession(session)}
-                    disabled={deleteSession.isPending}
+                  <AdminRowActions
+                    actions={[
+                      {
+                        id: "disconnect",
+                        label: `Disconnect ${session.bankName}`,
+                        iconClassName: "bi bi-trash",
+                        danger: true,
+                        disabled: deleteSession.isPending,
+                        onClick: () => setPendingDisconnect(session),
+                      },
+                    ]}
                   />
                 </AdminCell>
-              </tr>
+              </AdminExpandableRow>
             ))
           )}
         </AdminDataTable>
+        <ConfirmDialog
+          open={pendingDisconnect !== null}
+          title="Disconnect bank"
+          body={
+            pendingDisconnect
+              ? `Disconnect ${pendingDisconnect.bankName}? Its account mappings are removed and the bank consent is closed.`
+              : ""
+          }
+          confirmLabel="Disconnect"
+          tone="danger"
+          confirmBusy={deleteSession.isPending}
+          onConfirm={() => {
+            if (pendingDisconnect) onDeleteSession(pendingDisconnect);
+          }}
+          onCancel={() => {
+            if (!deleteSession.isPending) setPendingDisconnect(null);
+          }}
+        />
+        </AdminRecordTable>
       </div>
 
-      <AdminEditorSection
-        title="Account mappings"
-        description="Map each linked bank account to a Finance → Accounts record. Sync writes the live balance into the record's value."
-        footer={
-          <>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={onSaveMappings}
-              disabled={!hasMappingChanges || saveMappings.isPending}
+      <div className="mb-4">
+        <AdminRecordTable
+          label="Account mappings"
+          filters={
+            <AdminFilterBar
+              trailing={
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={onSaveMappings}
+                  disabled={!hasMappingChanges || saveMappings.isPending}
+                >
+                  {saveMappings.isPending ? "Saving…" : "Save mappings"}
+                </button>
+              }
             >
-              {saveMappings.isPending ? "Saving…" : "Save mappings"}
-            </button>
-            {saveMappings.isError ? (
-              <span className="text-danger small">
-                {errorText(saveMappings.error, "Could not save mappings")}
-              </span>
-            ) : null}
-          </>
-        }
-      >
-        {linkedAccounts.length === 0 ? (
-          <p className="text-muted small mb-0">
-            Connect a bank first; its accounts appear here for mapping.
-          </p>
-        ) : (
-          <div className="table-responsive">
-            <table className="table table-sm align-middle mb-0">
-              <thead>
-                <tr>
-                  <th scope="col">Bank account</th>
-                  <th scope="col">Accounts-sheet record</th>
+              <p className="small text-muted mb-0">
+                Map each linked bank account to a Finance → Accounts record. Sync writes the live
+                balance into the record&apos;s value.
+              </p>
+            </AdminFilterBar>
+          }
+        >
+          {saveMappings.isError ? (
+            <div className="alert alert-danger py-2 small mx-3 mt-3 mb-0" role="alert">
+              {errorText(saveMappings.error, "Could not save mappings")}
+            </div>
+          ) : null}
+          {linkedAccounts.length === 0 ? (
+            <p className="text-muted small mb-0 px-3 py-3">
+              Connect a bank first; its accounts appear here for mapping.
+            </p>
+          ) : (
+            <AdminDataTable
+              bare
+              columns={[
+                { key: "account", header: "Bank account" },
+                { key: "record", header: "Accounts-sheet record" },
+              ]}
+            >
+              {linkedAccounts.map(({ session, account }) => (
+                <tr key={account.uid}>
+                  <AdminCell column="account">
+                    <span className="fw-semibold">{session.bankName}</span>{" "}
+                    <span className="text-muted small">
+                      {bankAccountLabel(account)}
+                      {account.currency ? ` · ${account.currency}` : ""}
+                    </span>
+                  </AdminCell>
+                  <AdminCell column="record" className="admin-mapping-select">
+                    <label className="visually-hidden" htmlFor={`mapping-${account.uid}`}>
+                      Record for {bankAccountLabel(account)}
+                    </label>
+                    <select
+                      id={`mapping-${account.uid}`}
+                      className="form-select form-select-sm"
+                      value={draftValue(account.uid)}
+                      onChange={(ev) =>
+                        setMappingDraft((prev) => ({
+                          ...(prev ?? {}),
+                          [account.uid]: ev.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">Not synced</option>
+                      {financeData.accountRecords.map((rec) => (
+                        <option key={rec.id} value={rec.id}>
+                          {recordLabelById[rec.id]}
+                        </option>
+                      ))}
+                    </select>
+                  </AdminCell>
                 </tr>
-              </thead>
-              <tbody>
-                {linkedAccounts.map(({ session, account }) => (
-                  <tr key={account.uid}>
-                    <td>
-                      <span className="fw-semibold">{session.bankName}</span>{" "}
-                      <span className="text-muted small">
-                        {bankAccountLabel(account)}
-                        {account.currency ? ` · ${account.currency}` : ""}
-                      </span>
-                    </td>
-                    <td className="admin-mapping-select">
-                      <label
-                        className="visually-hidden"
-                        htmlFor={`mapping-${account.uid}`}
-                      >
-                        Record for {bankAccountLabel(account)}
-                      </label>
-                      <select
-                        id={`mapping-${account.uid}`}
-                        className="form-select form-select-sm"
-                        value={draftValue(account.uid)}
-                        onChange={(ev) =>
-                          setMappingDraft((prev) => ({
-                            ...(prev ?? {}),
-                            [account.uid]: ev.target.value,
-                          }))
-                        }
-                      >
-                        <option value="">Not synced</option>
-                        {financeData.accountRecords.map((rec) => (
-                          <option key={rec.id} value={rec.id}>
-                            {recordLabelById[rec.id]}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </AdminEditorSection>
+              ))}
+            </AdminDataTable>
+          )}
+        </AdminRecordTable>
+      </div>
 
-      <AdminEditorSection
-        title="Last sync"
-        description={
-          lastSync
-            ? undefined
-            : "No sync has run yet. Map at least one account, then use Sync now."
+      <AdminRecordTable
+        label="Last sync"
+        beforeTable={
+          lastSync ? (
+            <p className="small text-muted mb-0">
+              Ran <DateTimeDisplay iso={lastSync.at} />
+            </p>
+          ) : (
+            <p className="small text-muted mb-0">
+              No sync has run yet. Map at least one account, then use Sync now.
+            </p>
+          )
         }
       >
         {lastSync ? (
-          <>
-            <p className="small text-muted">
-              Ran <DateTimeDisplay iso={lastSync.at} />
-            </p>
-            <div className="table-responsive">
-              <table className="table table-sm align-middle mb-0 admin-data-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Record</th>
-                    <th scope="col">Status</th>
-                    <th scope="col" className="text-end">
-                      Balance
-                    </th>
-                    <th scope="col" className="admin-col-secondary">Details</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lastSync.results.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="text-muted text-center py-3">
-                        Nothing was mapped when the sync ran.
-                      </td>
-                    </tr>
-                  ) : (
-                    lastSync.results.map((result) => (
-                      <tr key={`${result.accountUid}-${result.accountRecordId}`}>
-                        <td>
-                          {recordLabelById[result.accountRecordId] ??
-                            result.accountRecordId}
-                        </td>
-                        <td>
-                          {result.status === "ok" ? (
-                            <span className="badge text-bg-success">OK</span>
-                          ) : (
-                            <span className="badge text-bg-danger">Error</span>
-                          )}
-                        </td>
-                        <td className="text-end">
-                          {result.status === "ok" &&
-                          result.balance !== undefined &&
-                          result.currency ? (
-                            <MoneyAmount
-                              amount={result.balance}
-                              currency={result.currency}
-                            />
-                          ) : (
-                            <span className="text-muted">—</span>
-                          )}
-                        </td>
-                        <td className="small text-muted admin-col-secondary">
-                          {result.status === "ok"
-                            ? result.balanceType
-                            : result.message}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </>
+          <AdminDataTable
+            bare
+            columns={[
+              { key: "record", header: "Record" },
+              { key: "status", header: "Status" },
+              { key: "balance", header: "Balance", className: "text-end", headerClassName: "text-end" },
+              { key: "details", header: "Details", priority: "secondary" },
+            ]}
+          >
+            {lastSync.results.length === 0 ? (
+              <AdminDataTableEmptyRow colSpan={4} message="Nothing was mapped when the sync ran." />
+            ) : (
+              lastSync.results.map((result) => (
+                <tr key={`${result.accountUid}-${result.accountRecordId}`}>
+                  <AdminCell column="record">
+                    {recordLabelById[result.accountRecordId] ?? result.accountRecordId}
+                    <AdminDataTableCellMeta>
+                      {result.status === "ok" ? result.balanceType : result.message}
+                    </AdminDataTableCellMeta>
+                  </AdminCell>
+                  <AdminCell column="status">
+                    {result.status === "ok" ? (
+                      <span className="badge text-bg-success">OK</span>
+                    ) : (
+                      <span className="badge text-bg-danger">Error</span>
+                    )}
+                  </AdminCell>
+                  <AdminCell column="balance" className="text-end">
+                    {result.status === "ok" &&
+                    result.balance !== undefined &&
+                    result.currency ? (
+                      <MoneyAmount amount={result.balance} currency={result.currency} />
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                  </AdminCell>
+                  <AdminCell column="details" className="small text-muted">
+                    {result.status === "ok" ? result.balanceType : result.message}
+                  </AdminCell>
+                </tr>
+              ))
+            )}
+          </AdminDataTable>
         ) : null}
-      </AdminEditorSection>
+      </AdminRecordTable>
     </div>
   );
 }
