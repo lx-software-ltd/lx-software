@@ -3,11 +3,26 @@ import {
   formatDateTimeHKT,
   formatMoneyAmount,
   formatMoneyAmountWithoutCurrency,
+  formatNonZeroMoneyLines,
 } from "./formatDisplay";
 
 describe("formatMoneyAmount", () => {
   it("formats HKD", () => {
     expect(formatMoneyAmount(12.5, "HKD")).toMatch(/12/);
+  });
+});
+
+describe("formatNonZeroMoneyLines", () => {
+  it("lists every non-zero currency and puts HKD first", () => {
+    const lines = formatNonZeroMoneyLines({ USD: -411.4, HKD: 1200, EUR: 0 });
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(/HK/);
+    expect(lines[0]).toMatch(/1,?200/);
+    expect(lines[1]).toMatch(/411/);
+  });
+
+  it("uses an em dash when every amount is zero", () => {
+    expect(formatNonZeroMoneyLines({ HKD: 0, USD: 0 })).toEqual(["—"]);
   });
 });
 

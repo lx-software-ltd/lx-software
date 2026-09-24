@@ -76,10 +76,28 @@ describe("AdminRowActions", () => {
         ]}
       />,
     );
-    expect(screen.getByRole("button", { name: "Edit record" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Duplicate record" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Edit record" })).toBeNull();
     expect(screen.getByRole("button", { name: "More actions" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Edit record", hidden: true })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Delete record", hidden: true })).toBeTruthy();
+  });
+
+  it("renders one button when the only action is marked inline", () => {
+    render(
+      <AdminRowActions
+        actions={[
+          {
+            id: "edit",
+            label: "Edit record",
+            iconClassName: "bi bi-pencil",
+            onClick: () => undefined,
+            inline: true,
+          },
+        ]}
+      />,
+    );
+    expect(screen.getAllByRole("button", { name: "Edit record" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "More actions" })).toBeNull();
   });
 
   it("closes the menu before running an overflow action", () => {

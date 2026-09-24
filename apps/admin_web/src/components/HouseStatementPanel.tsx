@@ -877,7 +877,7 @@ export function HouseStatementPanel({
           </AdminFilterBar>
         }
         beforeTable={
-          <AdminDisclosure title={importTitle}>
+          <AdminDisclosure title={importTitle} presentation="dialog">
             <p className="small text-muted">{importDescription}</p>
             <AdminEditorSection
         embedded

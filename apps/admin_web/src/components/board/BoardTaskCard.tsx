@@ -46,9 +46,8 @@ export function BoardTaskCard({
   const context = contextLine(task);
   return (
     <div
-      className={`card shadow-sm mb-0 text-start w-100 board-task-card ${
-        task.status === "failed" ? "border-danger-subtle" : "border"
-      }`}
+      className={`card mb-0 text-start w-100 board-task-card`}
+      data-status={task.status}
     >
       <div className="card-body py-2 px-3">
         <div className="d-flex justify-content-between align-items-start gap-2 mb-1">

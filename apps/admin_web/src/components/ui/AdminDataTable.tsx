@@ -177,7 +177,7 @@ export function AdminDataTable({
     <div className={embedded ? "table-responsive pt-3" : "table-responsive"}>
       <table
         ref={tableRef}
-        className={`table table-striped mb-0 align-middle admin-data-table ${embedded ? "" : "table-sm"}`.trim()}
+        className={`table table-hover mb-0 align-middle admin-data-table ${embedded ? "" : "table-sm"}`.trim()}
       >
         <thead>
           <tr>
@@ -349,8 +349,8 @@ export type AdminDataTableEmptyProps = {
 export function AdminDataTableEmptyRow({ colSpan, message }: AdminDataTableEmptyProps) {
   return (
     <tr>
-      <td colSpan={colSpan} className="text-muted text-center py-4">
-        {message}
+      <td colSpan={colSpan} className="text-center py-5 admin-empty">
+        <div className="admin-empty-title">{message}</div>
       </td>
     </tr>
   );

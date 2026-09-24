@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { FinanceDataLoadOrError } from "../FinanceDataStatus";
 import { BoardActionsList } from "./BoardActionsList";
 import { BoardApprovalsList } from "./BoardApprovalsList";
@@ -46,7 +47,7 @@ import {
 import { AdminTabList, type AdminTabItem } from "../ui";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { adminTabButtonId } from "../../lib/adminTabs";
-import { clearExpandedParamsExcept } from "../../lib/expandedRecord";
+import { clearExpandedParamsExcept, isRowExpandedParam } from "../../lib/expandedRecord";
 import {
   DEFAULT_BOARD_BOUNDARIES,
   effectiveToolLevel,
@@ -108,6 +109,16 @@ function sectionTabs(
   });
 }
 
+function sectionFromSearch(search: string, fallback: BoardSection): BoardSection {
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const requested = params.get("section");
+  if (requested && SECTIONS.some((s) => s.id === requested)) return requested as BoardSection;
+  if (params.get("watch")) return "market";
+  if (params.get("prospect")) return "pipeline";
+  if (readBoardTaskIdFromSearch(search)) return "tasks";
+  return fallback;
+}
+
 export function ExecutiveBoardTab() {
   const board = useBoard();
   const updatesQuery = useBoardUpdates();
@@ -124,16 +135,8 @@ export function ExecutiveBoardTab() {
   const handToStaff = useMutation(createTaskMutationOptions(qc));
   const lessons = useBoardReview(true);
 
-  const urlSection = useMemo(() => {
-    const params = new URLSearchParams(window.location.search);
-    const requested = params.get("section");
-    if (requested && SECTIONS.some((s) => s.id === requested)) return requested as BoardSection;
-    if (params.get("watch")) return "market" as const;
-    if (params.get("prospect")) return "pipeline" as const;
-    if (readBoardTaskIdFromSearch(window.location.search)) return "tasks" as const;
-    return null;
-  }, []);
-  const [pinnedSection, setPinnedSection] = useState<BoardSection | null>(urlSection);
+  const location = useLocation();
+  const navigate = useNavigate();
   const [chatPersonaId, setChatPersonaId] = useState<string | null>(null);
   const [editPersonaId, setEditPersonaId] = useState<string | null>(null);
   // null = follow the running meeting (if any); CLOSED_MEETING = user closed the panel.
@@ -147,11 +150,19 @@ export function ExecutiveBoardTab() {
   const [showCallLog, setShowCallLog] = useState(false);
 
   const overview = board.overview;
-  const section: BoardSection =
-    pinnedSection ?? (overview?.settings.staff?.enabled ? "review" : "actions");
+  const section = sectionFromSearch(
+    location.search,
+    overview?.settings.staff?.enabled ? "review" : "actions",
+  );
   const setSection = useCallback((id: BoardSection) => {
-    setPinnedSection(id);
-  }, []);
+    const params = new URLSearchParams(location.search);
+    params.set("section", id);
+    const keep = id === "market" ? "watch" : id === "pipeline" ? "prospect" : null;
+    for (const key of [...params.keys()]) {
+      if (key !== keep && isRowExpandedParam(key)) params.delete(key);
+    }
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true });
+  }, [location.pathname, location.search, navigate]);
   useEffect(() => {
     const keep = section === "market" ? "watch" : section === "pipeline" ? "prospect" : null;
     clearExpandedParamsExcept(keep);
@@ -255,6 +266,7 @@ export function ExecutiveBoardTab() {
             label="Board sections"
             idPrefix={SECTION_ID_PREFIX}
             panelId={SECTION_PANEL_ID}
+            nested
             disabled={!overview}
           />
 

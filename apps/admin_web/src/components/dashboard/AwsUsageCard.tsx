@@ -81,6 +81,9 @@ function AwsUsageBody({ data }: { readonly data: AwsBillingPayload }) {
                 {formatUsageCost(company.usd)} · {shareLabel(company.share)}
               </span>
             </div>
+            <div className="admin-share-bar" aria-hidden="true">
+              <span style={{ width: `${Math.max(0, Math.min(100, company.share * 100))}%` }} />
+            </div>
             {company.projects.length > 0 ? (
               <ul className="list-unstyled ms-2 mb-0 text-muted">
                 {company.projects.map((project) => (

@@ -63,11 +63,13 @@ export function LoginPage() {
   );
 
   return (
-    <div className="admin-full-height d-flex align-items-center justify-content-center p-3 bg-light">
-      <div
-        className="d-flex flex-column gap-3 align-items-stretch w-100"
-        style={{ maxWidth: "420px" }}
-      >
+    <div className="admin-login">
+      <div className="admin-login-card">
+        <div className="admin-brand px-0 pt-0">
+          <span className="admin-brand-mark" aria-hidden="true">LX</span>
+          <span>LX Admin</span>
+        </div>
+        <p className="text-muted mb-4">Sign in to manage houses, books, and the executive board.</p>
         {deniedMessage ? (
           <div className="alert alert-danger small mb-0" role="alert">
             {deniedMessage}
