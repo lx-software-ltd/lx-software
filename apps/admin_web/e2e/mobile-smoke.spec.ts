@@ -68,6 +68,7 @@ test.describe("admin viewport smoke", () => {
       await expect(page.getByRole("columnheader", { name: /Account Type/i })).toBeHidden();
     } else {
       await expect(page.getByRole("tab", { name: "Accounts" })).toBeVisible();
+      await expect(page.getByRole("button", { name: /Sort by Description/i })).toBeVisible();
     }
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
