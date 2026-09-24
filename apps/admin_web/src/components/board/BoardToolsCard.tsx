@@ -186,7 +186,7 @@ export function BoardToolsCard({
       </div>
 
       <div className="table-responsive">
-        <table className="table table-sm align-middle board-tools-matrix mb-2">
+        <table className="table table-sm align-middle board-tools-matrix admin-table-compact mb-2">
           <thead>
             <tr>
               <th scope="col">Tool</th>

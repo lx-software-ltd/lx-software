@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { AdminKpi } from "../ui";
 import { BOARD_CATALOG_LAUNCH_LISTING_TARGET } from "../../lib/contracts/generated";
 import { useBoardProgress } from "../../hooks/useBoardProgress";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
@@ -243,7 +244,7 @@ function Panel({ title, children }: { readonly title: string; readonly children:
   return (
     <section className="card shadow-sm h-100">
       <div className="card-body">
-        <h3 className="h6 mb-3">{title}</h3>
+        <h3 className="admin-card-title">{title}</h3>
         {children}
       </div>
     </section>
@@ -252,14 +253,8 @@ function Panel({ title, children }: { readonly title: string; readonly children:
 
 function Kpi({ label, value, hint }: { readonly label: string; readonly value: string; readonly hint: string }) {
   return (
-    <div className="col-6 col-md">
-      <div className="card shadow-sm h-100">
-        <div className="card-body py-2">
-          <div className="small text-muted text-uppercase">{label}</div>
-          <div className="fs-5 fw-semibold">{value}</div>
-          <div className="small text-muted">{hint}</div>
-        </div>
-      </div>
+    <div className="col-6 col-md d-flex">
+      <AdminKpi label={label} value={value} hint={hint} />
     </div>
   );
 }

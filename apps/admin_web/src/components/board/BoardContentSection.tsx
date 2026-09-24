@@ -53,7 +53,7 @@ export function BoardContentSection() {
         <p className="small text-muted mb-0">Two-week calendar. Assisted packs wait for a manual post.</p>
       </section>
       <div className="table-responsive">
-        <table className="table table-sm table-bordered mb-0">
+        <table className="table table-sm table-bordered admin-table-compact mb-0">
           <thead>
             <tr>
               <th scope="col">Channel</th>

@@ -87,7 +87,7 @@ export function BoardStaffSection({ maxRunningTasks, onOpenSettings, modelBySeat
           const manager = BOARD_PERSONA_DEFAULTS.find((p) => p.id === managerId);
           return (
             <div className="col-12" key={managerId}>
-              <h3 className="h6 text-uppercase text-muted mb-2">{manager?.title ?? managerId}</h3>
+              <h3 className="admin-card-title">{manager?.title ?? managerId}</h3>
               <div className="row g-3">
                 {seats.map((seat) => (
                   <div className="col-12 col-lg-6" key={seat.id}>

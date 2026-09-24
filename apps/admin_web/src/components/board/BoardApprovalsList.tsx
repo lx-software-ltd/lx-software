@@ -40,7 +40,7 @@ function ArgumentsTable({ args }: { readonly args: Readonly<Record<string, unkno
   const entries = Object.entries(args).filter(([k]) => k !== "reason");
   if (entries.length === 0) return null;
   return (
-    <table className="table table-sm table-borderless small mb-0 board-approval-args">
+    <table className="table table-sm table-borderless small admin-table-compact mb-0 board-approval-args">
       <tbody>
         {entries.map(([k, v]) => (
           <tr key={k}>
@@ -343,7 +343,7 @@ export function BoardApprovalsList({
     <div className="card shadow-sm mb-4">
       <div className="card-body">
         <div className="d-flex justify-content-between align-items-center mb-2">
-          <h2 className="h6 text-uppercase text-muted mb-0">Approvals</h2>
+          <h2 className="admin-card-title mb-0">Approvals</h2>
           <div className="form-check form-switch mb-0 small">
             <input
               className="form-check-input"

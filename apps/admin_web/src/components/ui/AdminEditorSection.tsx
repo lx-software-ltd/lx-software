@@ -25,7 +25,7 @@ export function AdminEditorSection({
   embedded = false,
 }: AdminEditorSectionProps) {
   const heading = title ? (
-    <h2 className="h6 text-uppercase text-muted mb-2">{title}</h2>
+    <h2 className="admin-card-title">{title}</h2>
   ) : null;
   const intro = description ? (
     <p className="small text-muted mb-3">{description}</p>

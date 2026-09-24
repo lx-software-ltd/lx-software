@@ -121,3 +121,26 @@ h1, h2, h3, .h1, .h2, .h3, .h4, .h5, .h6 {
   letter-spacing: -0.02em;
   color: var(--admin-text);
 }
+
+/*
+ * Card and section titles. Sentence case, one weight, one size — the same
+ * treatment as the dashboard summary cards and the Evolve Sprouts admin Card.
+ * Dashboard pages opt out so those cards stay as they are.
+ */
+.admin-card-title,
+.admin-content:not(:has(.admin-dashboard)) :is(h2, h3, h4).h6 {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.35;
+  color: var(--admin-text);
+  text-transform: none;
+}
+
+.admin-card-title {
+  margin: 0 0 0.75rem;
+}
+
+.admin-content:not(:has(.admin-dashboard)) :is(h2, h3).h5 {
+  font-weight: 600;
+}

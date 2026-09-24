@@ -34,6 +34,7 @@
 }
 
 .admin-data-table .admin-table-cell-meta {
+  font-size: 0.75rem;
   font-weight: 400;
 }
 
@@ -166,27 +167,54 @@
   outline-offset: -2px;
 }
 
-.admin-data-table thead th {
-  font-size: 0.72rem;
+/*
+ * List tables share one header and one cell size (Evolve Sprouts admin tables).
+ * Dashboard cards keep their own compact tables via .admin-dashboard.
+ * .admin-table-compact opts a dense grid (the content calendar) out of the padding.
+ */
+.admin-data-table,
+.admin-content:not(:has(.admin-dashboard)) .table {
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
+.admin-data-table > :not(caption) > * > *,
+.admin-content:not(:has(.admin-dashboard)) .table:not(.admin-table-compact) > :not(caption) > * > * {
+  padding: var(--admin-row-py) var(--admin-cell-px);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-data-table thead th,
+.admin-content:not(:has(.admin-dashboard)) .table thead th {
+  font-size: 0.75rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--admin-text-3);
-  background: var(--admin-surface);
+  color: var(--admin-text-2);
+  background: var(--admin-hover);
   border-bottom-width: 1px;
 }
 
 .admin-data-table thead .admin-sort-header,
 .admin-data-table thead .admin-sort-header:hover,
 .admin-data-table thead .admin-sort-header:focus {
-  color: var(--admin-text-3);
+  color: inherit;
+  font-size: inherit;
+  font-weight: 600;
+  letter-spacing: inherit;
+  text-transform: inherit;
 }
 
-.admin-data-table td,
-.admin-data-table th {
-  padding-top: var(--admin-row-py);
-  padding-bottom: var(--admin-row-py);
-  font-variant-numeric: tabular-nums;
+.admin-content:not(:has(.admin-dashboard)) .table tr.table-secondary > * {
+  --bs-table-bg: var(--admin-hover);
+  --bs-table-color: var(--admin-text);
+  color: var(--admin-text);
+  font-weight: 600;
+}
+
+.admin-content:not(:has(.admin-dashboard)) .table-bordered,
+.admin-content:not(:has(.admin-dashboard)) .table-bordered > :not(caption) > * > * {
+  border-color: var(--admin-line);
 }
 
 .admin-row-framed > td {

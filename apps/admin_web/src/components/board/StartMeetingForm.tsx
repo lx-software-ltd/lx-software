@@ -42,7 +42,7 @@ export function StartMeetingForm({
   return (
     <form className="card shadow-sm mb-4" onSubmit={submit}>
       <div className="card-body">
-        <h2 className="h6 text-uppercase text-muted mb-3">Start a meeting</h2>
+        <h2 className="admin-card-title">Start a meeting</h2>
         <div className="row g-3">
           <div className="col-12 col-md-3">
             <label className="form-label" htmlFor="board-meeting-mode">Format</label>

@@ -225,6 +225,8 @@
 }
 
 .admin-kpi {
+  width: 100%;
+  height: 100%;
   background: var(--admin-surface);
   border: 1px solid var(--admin-line);
   border-radius: var(--admin-radius);

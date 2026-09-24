@@ -23,7 +23,7 @@ export function TableSortHeaderButton({
   return (
     <button
       type="button"
-      className={`btn btn-link admin-sort-header p-0 text-decoration-none small fw-semibold ${
+      className={`btn btn-link admin-sort-header p-0 text-decoration-none fw-semibold ${
         align === "end" ? "w-100 text-end" : "text-start"
       }`}
       onClick={onClick}

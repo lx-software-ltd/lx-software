@@ -113,7 +113,7 @@ export function BoardReceivablesView({ overdueCount, errorText }: BoardReceivabl
     <div className="card shadow-sm mb-4">
       <div className="card-body">
         <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-          <h2 className="h6 text-uppercase text-muted mb-0">Receivables</h2>
+          <h2 className="admin-card-title mb-0">Receivables</h2>
           <div className="small text-muted">
             {data?.configured
               ? `${data.aging.outstandingHkd ?? 0} HKD outstanding${pastDue ? ` · ${pastDue} past due` : ""}`
@@ -137,7 +137,7 @@ export function BoardReceivablesView({ overdueCount, errorText }: BoardReceivabl
           <>
             {BUCKETS.map((b) => (
               <div key={b.id} className="mb-3">
-                <h3 className="h6 text-uppercase text-muted">{b.label}</h3>
+                <h3 className="admin-card-title">{b.label}</h3>
                 <AdminDataTable
                   columns={INVOICE_COLUMNS}
                   filterValue={invoiceFilter}
@@ -148,7 +148,7 @@ export function BoardReceivablesView({ overdueCount, errorText }: BoardReceivabl
                 </AdminDataTable>
               </div>
             ))}
-            <h3 className="h6 text-uppercase text-muted mt-4">Subscriptions</h3>
+            <h3 className="admin-card-title mt-4">Subscriptions</h3>
             <AdminDataTable
               columns={SUB_COLUMNS}
               filterValue={subFilter}
