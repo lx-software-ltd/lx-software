@@ -45,27 +45,6 @@ body.admin-nav-open {
   }
 }
 
-/* Explanatory copy collapsed behind a disclosure on phones (AdminPageIntro). */
-.admin-page-intro > summary {
-  cursor: pointer;
-  list-style: none;
-}
-
-.admin-page-intro > summary::-webkit-details-marker {
-  display: none;
-}
-
-.admin-page-intro > summary::before {
-  content: "\203A";
-  display: inline-block;
-  width: 1em;
-  transition: transform 0.15s ease-out;
-}
-
-.admin-page-intro[open] > summary::before {
-  transform: rotate(90deg);
-}
-
 @media (max-width: 767.98px) {
   /* iOS Safari zooms into inputs below 16px; keep compact controls readable without the jump. */
   .form-control-sm,

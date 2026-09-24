@@ -26,11 +26,11 @@ This document defines **reusable patterns** for the LX Software admin SPA (`apps
 | `ConfirmDialog` | Native `<dialog>` confirm. Use for delete and for discarding a dirty row. |
 | `AdminDisclosure` | Native `<details>` block between filters and the table (statement import, CSV import). |
 | `AdminEditorSection` | Card for a form that is not a table row (house details, connect-a-bank, sequences, settings). Optional title, body, footer. Pass `embedded` to drop the card chrome inside another panel. |
-| `AdminDataTable` | Striped table. With `bare`, the parent `AdminRecordTable` supplies the card and text filter; phone sort still renders when `sort` is set. Pass columns and row children via `AdminCell`. |
+| `AdminDataTable` | Hairline table. With `bare`, the parent `AdminRecordTable` supplies the card and text filter; phone sort still renders when `sort` is set. Pass columns and row children via `AdminCell`. |
 | `AdminCell` | Body cell bound to a column key. Applies that column’s priority class so headers and cells hide together. |
-| `AdminPageIntro` | Explanatory copy under a page title. Collapsed behind a disclosure on phones; inline from `md`. |
+| `AdminPageHeader` | Page title, optional `?` help popover, and the page’s primary actions. |
 | `AdminTableTotalLabel` / `AdminTableTotalCurrency` | Render the FX note and display-currency picker **once** in a finance table footer (never a mobile duplicate). |
-| `AdminTabList` | WAI-ARIA tablist (arrow / Home / End). On phones, up to six tabs fill a **two-column grid**; longer lists become a native `<select>`. From `md` they are content-sized pills that **wrap** at the container edge (no sideways scroll). Pass `disabled` when the backing query failed. |
+| `AdminTabList` | WAI-ARIA tablist (arrow / Home / End) portaled into the rail from `md`. Phones always get a native `<select>` (`${idPrefix}-select`). Pass `disabled` when the backing query failed. |
 | `TableIconButton` | Icon-only button. `appearance="bordered"` is for record-table operations; the default is the link style used by other tables. |
 
 Import from the barrel: `import { MoneyAmount, … } from "../components/ui"` (adjust path).

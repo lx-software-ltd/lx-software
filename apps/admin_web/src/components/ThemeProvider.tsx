@@ -25,14 +25,30 @@ type ThemeContextValue = {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
+function readStored(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeStored(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Storage can be blocked; the in-memory choice still applies for this visit.
+  }
+}
+
 function readTheme(): ThemeMode {
-  const stored = localStorage.getItem(THEME_KEY);
+  const stored = readStored(THEME_KEY);
   if (stored === "light" || stored === "dark" || stored === "system") return stored;
   return "system";
 }
 
 function readDensity(): Density {
-  return localStorage.getItem(DENSITY_KEY) === "comfortable" ? "comfortable" : "compact";
+  return readStored(DENSITY_KEY) === "comfortable" ? "comfortable" : "compact";
 }
 
 function applyTheme(mode: ThemeMode): void {
@@ -53,7 +69,7 @@ export function ThemeProvider({ children }: { readonly children: ReactNode }) {
 
   useEffect(() => {
     applyTheme(theme);
-    localStorage.setItem(THEME_KEY, theme);
+    writeStored(THEME_KEY, theme);
     if (theme !== "system") return;
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const onChange = () => applyTheme("system");
@@ -63,7 +79,7 @@ export function ThemeProvider({ children }: { readonly children: ReactNode }) {
 
   useEffect(() => {
     applyDensity(density);
-    localStorage.setItem(DENSITY_KEY, density);
+    writeStored(DENSITY_KEY, density);
   }, [density]);
 
   const setTheme = useCallback((mode: ThemeMode) => setThemeState(mode), []);

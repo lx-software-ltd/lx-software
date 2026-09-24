@@ -6,7 +6,7 @@
   --bs-secondary-color: var(--admin-text-2);
   --bs-tertiary-color: var(--admin-text-3);
   --bs-border-color: var(--admin-line);
-  --bs-primary: #0f766e;
+  --bs-primary: var(--admin-accent);
   --bs-primary-rgb: 15, 118, 110;
   --bs-link-color: var(--admin-accent-text);
   --bs-link-hover-color: var(--admin-accent-hover);
@@ -16,14 +16,18 @@
 }
 
 [data-bs-theme="dark"] {
-  --bs-primary: #5eead4;
+  /* Channels cannot use light-dark(); the accent itself follows the token. */
   --bs-primary-rgb: 94, 234, 212;
-  --bs-body-bg: #101318;
-  --bs-body-color: #f3f4f6;
-  --bs-secondary-color: #c5cad3;
-  --bs-tertiary-color: #9aa3af;
-  --bs-border-color: #2a3038;
-  --bs-emphasis-color: #f3f4f6;
+}
+
+[data-bs-theme="dark"] .bg-white,
+[data-bs-theme="dark"] .bg-light {
+  background-color: var(--admin-surface) !important;
+}
+
+[data-bs-theme="dark"] .text-bg-light {
+  color: var(--admin-text) !important;
+  background-color: var(--admin-hover) !important;
 }
 
 body {

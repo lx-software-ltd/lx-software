@@ -118,28 +118,41 @@ export function AdminTabList<T extends string>({
       </ul>
   );
 
-  return (
-    <div className={className}>
-      <div className="d-md-none admin-section-select">
-        <label className="form-label small mb-1" htmlFor={selectId}>
-          {label}
-        </label>
-        <select
-          id={selectId}
-          className="form-select admin-tab-select"
-          value={active}
-          disabled={disabled}
-          onChange={(ev) => onChange(ev.target.value as T)}
-        >
-          {tabs.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
-              {item.badge ? ` (${item.badge.value})` : ""}
-            </option>
-          ))}
-        </select>
-      </div>
-      {slot ? createPortal(list, slot) : list}
+  const select = (
+    <div className={`d-md-none admin-section-select${className ? ` ${className}` : ""}`}>
+      <label className="form-label small mb-1" htmlFor={selectId}>
+        {label}
+      </label>
+      <select
+        id={selectId}
+        className="form-select admin-tab-select"
+        value={active}
+        disabled={disabled}
+        onChange={(ev) => onChange(ev.target.value as T)}
+      >
+        {tabs.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.label}
+            {item.badge ? ` (${item.badge.value})` : ""}
+          </option>
+        ))}
+      </select>
     </div>
+  );
+
+  if (slot) {
+    return (
+      <>
+        {select}
+        {createPortal(list, slot)}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {select}
+      <div className={className}>{list}</div>
+    </>
   );
 }

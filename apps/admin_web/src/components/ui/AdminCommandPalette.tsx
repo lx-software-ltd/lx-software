@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { adminCommandItems } from "../../lib/adminNav";
 
@@ -7,6 +8,7 @@ export function AdminCommandPalette() {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
+  const listId = useId();
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const items = useMemo(() => adminCommandItems(), []);
@@ -50,6 +52,72 @@ export function AdminCommandPalette() {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
+  const activeId = filtered[active] ? `${listId}-option-${active}` : undefined;
+
+  const dialog = (
+    <dialog
+      ref={dialogRef}
+      className="admin-command-dialog"
+      aria-labelledby={titleId}
+      onClose={() => setQuery("")}
+    >
+      <h2 id={titleId} className="visually-hidden">
+        Search the admin
+      </h2>
+      <input
+        ref={inputRef}
+        className="form-control admin-command-input"
+        placeholder="Jump to a page or section"
+        aria-label="Jump to a page or section"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded="true"
+        aria-controls={filtered.length > 0 ? listId : undefined}
+        aria-activedescendant={activeId}
+        value={query}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setActive(0);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setActive((index) => Math.min(filtered.length - 1, index + 1));
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setActive((index) => Math.max(0, index - 1));
+          } else if (event.key === "Enter" && filtered[active]) {
+            event.preventDefault();
+            go(filtered[active].to);
+          }
+        }}
+      />
+      {filtered.length === 0 ? (
+        <p className="admin-command-empty" role="status">
+          No matches
+        </p>
+      ) : (
+        <div id={listId} className="admin-command-list" role="listbox" aria-label="Matching pages">
+          {filtered.map((item, index) => (
+            <button
+              key={item.id}
+              id={`${listId}-option-${index}`}
+              type="button"
+              role="option"
+              aria-selected={index === active}
+              className={`admin-command-item${index === active ? " is-active" : ""}`}
+              onMouseEnter={() => setActive(index)}
+              onClick={() => go(item.to)}
+            >
+              <span>{item.label}</span>
+              <span className="admin-command-hint">{item.hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </dialog>
+  );
+
   return (
     <>
       <button type="button" className="admin-rail-tool admin-command-launch" onClick={open}>
@@ -57,60 +125,7 @@ export function AdminCommandPalette() {
         <span className="admin-nav-label">Search</span>
         <kbd className="admin-kbd admin-nav-label">⌘K</kbd>
       </button>
-      <dialog
-        ref={dialogRef}
-        className="admin-command-dialog"
-        aria-labelledby={titleId}
-        onClose={() => setQuery("")}
-      >
-        <h2 id={titleId} className="visually-hidden">
-          Search the admin
-        </h2>
-        <input
-          ref={inputRef}
-          className="form-control admin-command-input"
-          placeholder="Jump to a page or section"
-          aria-label="Jump to a page or section"
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setActive(0);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              setActive((index) => Math.min(filtered.length - 1, index + 1));
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault();
-              setActive((index) => Math.max(0, index - 1));
-            } else if (event.key === "Enter" && filtered[active]) {
-              event.preventDefault();
-              go(filtered[active].to);
-            }
-          }}
-        />
-        <ul className="admin-command-list" role="listbox">
-          {filtered.length === 0 ? (
-            <li className="admin-command-empty">No matches</li>
-          ) : (
-            filtered.map((item, index) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={index === active}
-                  className={`admin-command-item${index === active ? " is-active" : ""}`}
-                  onMouseEnter={() => setActive(index)}
-                  onClick={() => go(item.to)}
-                >
-                  <span>{item.label}</span>
-                  <span className="admin-command-hint">{item.hint}</span>
-                </button>
-              </li>
-            ))
-          )}
-        </ul>
-      </dialog>
+      {createPortal(dialog, document.body)}
     </>
   );
 }

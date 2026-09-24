@@ -15,6 +15,26 @@ export function formatMoneyAmount(amount: number, currency: string): string {
   }
 }
 
+/**
+ * Every non-zero currency in a bucket, with the house default (HKD) first.
+ * An all-zero bucket is an em dash so a tile does not look like a single total.
+ */
+export function formatNonZeroMoneyLines(
+  buckets: Readonly<Record<string, number>>,
+): readonly string[] {
+  const preferred = GLOBAL_DEFAULT_CURRENCY;
+  const entries = Object.entries(buckets).filter(
+    ([, amount]) => Number.isFinite(amount) && amount !== 0,
+  );
+  if (entries.length === 0) return ["—"];
+  entries.sort(([a], [b]) => {
+    if (a === preferred) return -1;
+    if (b === preferred) return 1;
+    return a.localeCompare(b);
+  });
+  return entries.map(([currency, amount]) => formatMoneyAmount(amount, currency));
+}
+
 /** Same digit grouping as {@link formatMoneyAmount}, but omits currency symbol/code (for tables that show currency in another column). */
 export function formatMoneyAmountWithoutCurrency(
   amount: number,

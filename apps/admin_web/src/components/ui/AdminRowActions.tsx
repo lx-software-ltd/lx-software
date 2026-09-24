@@ -23,9 +23,9 @@ export function AdminRowActions({ actions }: AdminRowActionsProps) {
   const moreRef = useRef<HTMLButtonElement>(null);
   const visible = actions.filter((action) => !action.hidden);
   if (visible.length === 0) return null;
-  const inline = visible.filter((action) => action.inline);
-  const menuActions = visible.length === 1 ? [] : visible.filter((action) => !action.inline);
   const solo = visible.length === 1 ? visible[0] : null;
+  const inline = solo ? [] : visible.filter((action) => action.inline);
+  const menuActions = solo ? [] : visible.filter((action) => !action.inline);
 
   const hideMenu = (menu: HTMLElement | null) => {
     if (!menu || typeof menu.hidePopover !== "function") return;
@@ -78,11 +78,12 @@ export function AdminRowActions({ actions }: AdminRowActionsProps) {
             id={menuId}
             popover="auto"
             className="admin-row-menu"
-            onToggle={(event) => {
-              const menu = event.currentTarget;
+            onBeforeToggle={(event) => {
+              if (event.newState !== "open") return;
               const button = moreRef.current;
-              if (!menu.matches(":popover-open") || !button) return;
+              if (!button) return;
               const rect = button.getBoundingClientRect();
+              const menu = event.currentTarget;
               const width = menu.offsetWidth || 192;
               menu.style.top = `${rect.bottom + 4}px`;
               menu.style.left = `${Math.max(8, rect.right - width)}px`;

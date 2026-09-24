@@ -13,7 +13,7 @@ import { PensionDashboardCard } from "../components/dashboard/PensionDashboardCa
 import { adminFetchJson } from "../lib/apiAdminClient";
 import { useFinance } from "../hooks/useFinance";
 import { useStatementBook } from "../hooks/useStatementBook";
-import { formatMoneyAmount } from "../lib/formatDisplay";
+import { formatNonZeroMoneyLines } from "../lib/formatDisplay";
 import {
   defaultFiscalYearIdForNowUtc,
   fiscalYearIdToStartCalendarYear,
@@ -29,18 +29,26 @@ import {
   STATEMENT_BOOK_DISPLAY_LABEL,
 } from "../lib/statementOwners";
 
-function leadAmount(buckets: Readonly<Record<string, number>>): string {
-  const entries = Object.entries(buckets).filter(([, amount]) => amount !== 0);
-  if (entries.length === 0) return "—";
-  entries.sort(([a], [b]) => a.localeCompare(b));
-  const [currency, amount] = entries[0] ?? [];
-  if (!currency || amount === undefined) return "—";
-  return formatMoneyAmount(amount, currency);
+function bookNet(
+  lines: Parameters<typeof sumHouseStatementLinesForFiscalYear>[0],
+  year: number,
+): readonly string[] {
+  const sums = sumHouseStatementLinesForFiscalYear(lines, year);
+  return formatNonZeroMoneyLines(
+    netGainsMinusExpensesByCurrency(sums.incomeByCurrency, sums.expensesByCurrency),
+  );
 }
 
-function bookNet(lines: Parameters<typeof sumHouseStatementLinesForFiscalYear>[0], year: number): string {
-  const sums = sumHouseStatementLinesForFiscalYear(lines, year);
-  return leadAmount(netGainsMinusExpensesByCurrency(sums.incomeByCurrency, sums.expensesByCurrency));
+function MoneyStack({ lines }: { readonly lines: readonly string[] }) {
+  return (
+    <span className="admin-kpi-amounts">
+      {lines.map((line, index) => (
+        <span key={`${line}-${index}`} className="admin-kpi-amount">
+          {line}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 export function DashboardPage() {
@@ -88,7 +96,7 @@ export function DashboardPage() {
         finance.expenseIncomeAllocationPercents,
         finance.allocationRecords,
       );
-      return leadAmount(monthlyLedgerNetByCurrency(monthly));
+      return formatNonZeroMoneyLines(monthlyLedgerNetByCurrency(monthly));
     };
     return {
       lx: bookNet(lx.lines, fiscalYearStart),
@@ -106,10 +114,10 @@ export function DashboardPage() {
       />
       {kpis ? (
         <div className="admin-kpi-row">
-          <AdminKpi label="LX Software net" value={kpis.lx} hint="This fiscal year" />
-          <AdminKpi label="Siu Tin Dei net" value={kpis.siu} hint="This fiscal year" />
-          <AdminKpi label="Hillmarton" value={kpis.hillmarton} hint="Monthly net" />
-          <AdminKpi label="The Morrison" value={kpis.morrison} hint="Monthly net" />
+          <AdminKpi label="LX Software net" value={<MoneyStack lines={kpis.lx} />} hint="This fiscal year" />
+          <AdminKpi label="Siu Tin Dei net" value={<MoneyStack lines={kpis.siu} />} hint="This fiscal year" />
+          <AdminKpi label="Hillmarton" value={<MoneyStack lines={kpis.hillmarton} />} hint="Monthly net" />
+          <AdminKpi label="The Morrison" value={<MoneyStack lines={kpis.morrison} />} hint="Monthly net" />
         </div>
       ) : null}
 

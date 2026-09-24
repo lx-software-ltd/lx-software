@@ -155,14 +155,14 @@ export function ExecutiveBoardTab() {
     overview?.settings.staff?.enabled ? "review" : "actions",
   );
   const setSection = useCallback((id: BoardSection) => {
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(location.search);
     params.set("section", id);
     const keep = id === "market" ? "watch" : id === "pipeline" ? "prospect" : null;
     for (const key of [...params.keys()]) {
       if (key !== keep && isRowExpandedParam(key)) params.delete(key);
     }
     navigate({ pathname: location.pathname, search: params.toString() }, { replace: true });
-  }, [location.pathname, navigate]);
+  }, [location.pathname, location.search, navigate]);
   useEffect(() => {
     const keep = section === "market" ? "watch" : section === "pipeline" ? "prospect" : null;
     clearExpandedParamsExcept(keep);

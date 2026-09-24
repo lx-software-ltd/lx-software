@@ -17,8 +17,6 @@ export { AdminDialog } from "./AdminDialog";
 export { AdminKpi, AdminSparkline } from "./AdminKpi";
 export { AdminPageHeader } from "./AdminPageHeader";
 export type { AdminPageHeaderProps } from "./AdminPageHeader";
-export { AdminPageIntro } from "./AdminPageIntro";
-export type { AdminPageIntroProps } from "./AdminPageIntro";
 export { AdminTableTotalCurrency, AdminTableTotalLabel } from "./AdminTableTotalCurrency";
 export type {
   AdminTableTotalCurrencyProps,
