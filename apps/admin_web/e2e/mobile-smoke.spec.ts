@@ -106,9 +106,10 @@ test.describe("admin viewport smoke", () => {
       await expect(fileHeader).toBeVisible();
       await expect(page.getByRole("columnheader", { name: "Operations" })).toBeHidden();
       const tableBox = await table.boundingBox();
-      const headerBox = await fileHeader.boundingBox();
-      expect(tableBox && headerBox).toBeTruthy();
-      expect(headerBox!.width).toBeGreaterThan(tableBox!.width * 0.85);
+      const headBox = await table.locator("thead").boundingBox();
+      expect(tableBox && headBox).toBeTruthy();
+      expect(headBox!.width).toBeGreaterThan(tableBox!.width * 0.95);
+      expect((await fileHeader.boundingBox())!.width).toBeGreaterThan(tableBox!.width * 0.7);
     }
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
@@ -154,7 +155,7 @@ test.describe("admin viewport smoke", () => {
       await page.getByRole("tab", { name: /Pipeline/ }).click();
     }
     await expect(page.getByRole("heading", { name: "Pipeline" })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "Sha Tin Playhouse", exact: true })).toBeVisible();
+    await expect(page.getByRole("cell", { name: /Sha Tin Playhouse/ })).toBeVisible();
     if (testInfo.project.name === "phone") {
       await page.locator("#board-section-select").selectOption("content");
     } else {

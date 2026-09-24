@@ -35,6 +35,7 @@
   }
 
   .admin-data-table thead th:not(.admin-col-secondary):not(.admin-col-tertiary):not(.admin-col-ops) {
+    display: block;
     flex: 1 1 0;
     min-width: 0;
   }
