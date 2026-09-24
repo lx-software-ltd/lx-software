@@ -1,11 +1,9 @@
 /*
  * Admin design tokens. Bootstrap variables in theme.css point at these.
- * color-scheme is set on <html> by ThemeProvider (and the head script) so
- * light-dark() follows the chosen theme, including an explicit light or dark
- * override of the system preference.
+ * The console is light only; light-dark() stays on the light side.
  */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --admin-font: "Inter Variable", "Inter", system-ui, -apple-system, sans-serif;
   --admin-canvas: light-dark(#f4f6f8, #101318);
   --admin-surface: light-dark(#ffffff, #181c22);
@@ -26,8 +24,4 @@
   --admin-radius: 10px;
   --admin-radius-sm: 6px;
   --admin-row-py: 0.45rem;
-}
-
-:root[data-density="comfortable"] {
-  --admin-row-py: 0.7rem;
 }

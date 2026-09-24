@@ -180,16 +180,6 @@
   white-space: nowrap;
 }
 
-.admin-kbd {
-  margin-left: auto;
-  border: 1px solid var(--admin-line-strong);
-  border-radius: 4px;
-  padding: 0 0.3rem;
-  font-size: 0.68rem;
-  color: var(--admin-text-3);
-  font-family: inherit;
-}
-
 .admin-main {
   flex: 1;
   min-width: 0;
@@ -353,66 +343,19 @@
   border-radius: inherit;
 }
 
-.admin-command-dialog,
 .admin-form-dialog {
   border: 1px solid var(--admin-line);
   border-radius: 12px;
-  padding: 0.85rem;
   background: var(--admin-surface);
   color: var(--admin-text);
   box-shadow: var(--admin-shadow);
-  width: min(32rem, calc(100vw - 2rem));
-}
-
-.admin-form-dialog {
   width: min(36rem, calc(100vw - 2rem));
   padding: 1.1rem 1.15rem 1.15rem;
 }
 
-.admin-command-dialog::backdrop,
 .admin-form-dialog::backdrop,
 .admin-confirm-dialog::backdrop {
   background: rgba(16, 19, 24, 0.48);
-}
-
-.admin-command-input {
-  border: 0;
-  border-bottom: 1px solid var(--admin-line);
-  border-radius: 0;
-  padding-left: 0;
-  box-shadow: none !important;
-}
-
-.admin-command-list {
-  list-style: none;
-  margin: 0.45rem 0 0;
-  padding: 0;
-  max-height: 22rem;
-  overflow: auto;
-}
-
-.admin-command-item {
-  display: flex;
-  width: 100%;
-  justify-content: space-between;
-  gap: 1rem;
-  border: 0;
-  background: transparent;
-  color: var(--admin-text);
-  border-radius: 8px;
-  padding: 0.45rem 0.55rem;
-  text-align: start;
-}
-
-.admin-command-item.is-active,
-.admin-command-item:hover {
-  background: var(--admin-accent-soft);
-}
-
-.admin-command-hint,
-.admin-command-empty {
-  color: var(--admin-text-3);
-  font-size: 0.8rem;
 }
 
 .admin-login {
@@ -489,8 +432,7 @@
   }
 
   .admin-nav-label,
-  .admin-rail-user,
-  .admin-kbd {
+  .admin-rail-user {
     position: absolute;
     width: 1px;
     height: 1px;

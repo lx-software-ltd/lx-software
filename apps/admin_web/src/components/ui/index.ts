@@ -12,7 +12,6 @@ export type {
   AdminDataTableSortDirection,
 } from "./AdminDataTable";
 export type { AdminTableColumnPriority } from "../../lib/adminTablePriority";
-export { AdminCommandPalette } from "./AdminCommandPalette";
 export { AdminDialog } from "./AdminDialog";
 export { AdminKpi, AdminSparkline } from "./AdminKpi";
 export { AdminPageHeader } from "./AdminPageHeader";

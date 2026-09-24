@@ -2,9 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { NavLink, Outlet, useMatch } from "react-router-dom";
 import { ADMIN_NAV_GROUPS, type AdminNavItem } from "../lib/adminNav";
 import { useAuth, type AuthUser } from "./AuthProvider";
-import { ThemeControls } from "./ThemeProvider";
 import { AdminChromeProvider, AdminRailSections } from "./ui/AdminChrome";
-import { AdminCommandPalette } from "./ui/AdminCommandPalette";
 
 function NavEntry({ item }: { readonly item: AdminNavItem }) {
   const match = useMatch({ path: item.to, end: item.end ?? false });
@@ -51,11 +49,18 @@ function NavGroups({ onNavigate }: { readonly onNavigate?: () => void }) {
   );
 }
 
+function RailBrand({ className = "" }: { readonly className?: string }) {
+  return (
+    <div className={`admin-brand${className ? ` ${className}` : ""}`}>
+      <span className="admin-brand-mark" aria-hidden="true">LX</span>
+      <span className="admin-nav-label">Admin</span>
+    </div>
+  );
+}
+
 function RailFooter({ user, onLogout }: { readonly user: AuthUser | null; readonly onLogout: () => void }) {
   return (
     <div className="admin-rail-footer">
-      <AdminCommandPalette />
-      <ThemeControls />
       {user?.email ? <div className="admin-rail-user" title={user.email}>{user.email}</div> : null}
       <button type="button" className="admin-rail-tool" onClick={onLogout}>
         <i className="bi bi-box-arrow-right" aria-hidden="true" />
@@ -139,7 +144,7 @@ export function AuthenticatedShell() {
           inert={!isNavOpen}
         >
           <div className="d-flex align-items-center justify-content-between mb-3">
-            <span className="fw-semibold">Menu</span>
+            <RailBrand className="p-0" />
             <button
               ref={closeRef}
               type="button"
@@ -153,18 +158,14 @@ export function AuthenticatedShell() {
             <NavGroups onNavigate={closeNav} />
           </nav>
           <div className="mt-3">
-            <ThemeControls />
-            <button type="button" className="btn btn-outline-secondary w-100 mt-2" onClick={() => logout()}>
+            <button type="button" className="btn btn-outline-secondary w-100" onClick={() => logout()}>
               Sign out
             </button>
           </div>
         </aside>
         <aside className="admin-sidebar">
           <div className="admin-rail-primary">
-            <div className="admin-brand">
-              <span className="admin-brand-mark" aria-hidden="true">LX</span>
-              <span className="admin-nav-label">LX Admin</span>
-            </div>
+            <RailBrand />
             <nav className="admin-rail-scroll" aria-label="Admin pages">
               <NavGroups />
             </nav>
