@@ -107,7 +107,7 @@ export function DashboardPage() {
   }, [financeQuery.data, fiscalYearStart, lxSoftwareQuery.data, siuTinDeiQuery.data]);
 
   return (
-    <div>
+    <div className="admin-dashboard">
       {kpis ? (
         <div className="admin-kpi-row">
           <AdminKpi label="LX Software net" value={<MoneyStack lines={kpis.lx} />} hint="This fiscal year" />

@@ -225,7 +225,7 @@ export function BoardMailView({ status, focusThreadId, onFocusConsumed, errorTex
     <div className="card shadow-sm mb-4">
       <div className="card-body">
         <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-          <h2 className="h6 text-uppercase text-muted mb-0">Company mail</h2>
+          <h2 className="admin-card-title mb-0">Company mail</h2>
           <div className="small text-muted">
             {totalIndexed} thread{totalIndexed === 1 ? "" : "s"} · {payload?.status.unreadCount ?? status.unreadCount} unread ·{" "}
             {status.sendEnabled ? (

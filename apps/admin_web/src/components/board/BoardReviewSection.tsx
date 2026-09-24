@@ -26,7 +26,7 @@ function Section({
   return (
     <section id={id} data-lane={lane} className="card shadow-sm mb-3">
       <div className="card-body">
-        <h3 className="h6 mb-3">{title}</h3>
+        <h3 className="admin-card-title">{title}</h3>
         {children}
       </div>
     </section>

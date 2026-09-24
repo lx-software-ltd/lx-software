@@ -23,5 +23,7 @@
   --admin-shadow: light-dark(0 12px 40px rgba(18, 21, 26, 0.14), 0 12px 40px rgba(0, 0, 0, 0.45));
   --admin-radius: 10px;
   --admin-radius-sm: 6px;
-  --admin-row-py: 0.45rem;
+  /* One cell size for every list table. Matches the Evolve Sprouts admin (px-4 / py-3). */
+  --admin-row-py: 0.75rem;
+  --admin-cell-px: 1rem;
 }

@@ -32,7 +32,7 @@ export function BoardMinutesView({ minutes, members, createdActionCount, reaffir
 
       {minutes.discussion.length > 0 ? (
         <section className="mb-3">
-          <h3 className="h6 text-uppercase text-muted">Discussion</h3>
+          <h3 className="admin-card-title">Discussion</h3>
           <ol className="mb-0 ps-3">
             {minutes.discussion.map((d, i) => {
               const agenda = minutes.agenda[d.agendaIndex - 1];
@@ -50,7 +50,7 @@ export function BoardMinutesView({ minutes, members, createdActionCount, reaffir
 
       {minutes.decisions.length > 0 ? (
         <section className="mb-3">
-          <h3 className="h6 text-uppercase text-muted">Decisions</h3>
+          <h3 className="admin-card-title">Decisions</h3>
           <ul className="mb-0 ps-3">
             {minutes.decisions.map((d, i) => (
               <li key={i} className="mb-1">
@@ -64,7 +64,7 @@ export function BoardMinutesView({ minutes, members, createdActionCount, reaffir
 
       {minutes.risks.length > 0 ? (
         <section className="mb-3">
-          <h3 className="h6 text-uppercase text-muted">Risks</h3>
+          <h3 className="admin-card-title">Risks</h3>
           <ul className="list-unstyled mb-0">
             {minutes.risks.map((r, i) => (
               <li key={i} className="mb-1">
@@ -78,7 +78,7 @@ export function BoardMinutesView({ minutes, members, createdActionCount, reaffir
       ) : null}
 
       <section className="mb-3">
-        <h3 className="h6 text-uppercase text-muted">
+        <h3 className="admin-card-title">
           Actions for you
           <span className="fw-normal text-lowercase ms-2 small">
             {createdActionCount} new · {reaffirmedActionCount} re-raised
@@ -107,7 +107,7 @@ export function BoardMinutesView({ minutes, members, createdActionCount, reaffir
 
       {minutes.questionsForOwner.length > 0 ? (
         <section>
-          <h3 className="h6 text-uppercase text-muted">Questions only you can answer</h3>
+          <h3 className="admin-card-title">Questions only you can answer</h3>
           <ul className="mb-0 ps-3">
             {minutes.questionsForOwner.map((q, i) => (
               <li key={i}>{q}</li>

@@ -260,7 +260,7 @@ export function BoardMarketSection() {
         district when the URLs share one, or leave it blank so the crawl guesses from the path (for example
         /area/tung_chung). Discovery adds candidates on Monday; promote the ones that keep showing up.
       </p>
-      <h3 className="h6 text-uppercase text-muted mb-2">Watchlist</h3>
+      <h3 className="admin-card-title">Watchlist</h3>
       <AdminRecordTable
         label="Watchlist"
         filters={
@@ -362,7 +362,7 @@ export function BoardMarketSection() {
       />
       </AdminRecordTable>
 
-      <h3 className="h6 text-uppercase text-muted mt-4">Candidates</h3>
+      <h3 className="admin-card-title mt-4">Candidates</h3>
       <AdminRecordTable
         label="Candidates"
         filters={

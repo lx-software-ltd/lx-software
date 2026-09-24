@@ -52,7 +52,7 @@ export function BoardHoldsList({
   return (
     <div className="card shadow-sm mb-4">
       <div className="card-body">
-        <h2 className="h6 text-uppercase text-muted mb-2">Scheduled (veto to stop)</h2>
+        <h2 className="admin-card-title">Scheduled (veto to stop)</h2>
         <p className="text-muted small">
           These writes already passed the boundaries and will run at the time shown unless you veto.
           They are not Approvals: you do not need to say yes.
