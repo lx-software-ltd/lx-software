@@ -24,6 +24,28 @@ describe("AdminDataTable", () => {
     expect(screen.getByText("Alpha").className).not.toContain("admin-col-");
   });
 
+  it("marks the operations column on the header and body cells", () => {
+    render(
+      <AdminDataTable
+        columns={[
+          { key: "name", header: "Name" },
+          { key: "ops", header: <span className="visually-hidden">Operations</span> },
+        ]}
+        filterValue=""
+        onFilterChange={() => undefined}
+      >
+        <tr>
+          <AdminCell column="name">Alpha</AdminCell>
+          <AdminCell column="ops">Menu</AdminCell>
+        </tr>
+      </AdminDataTable>,
+    );
+    expect(screen.getByRole("columnheader", { name: "Operations" }).className).toContain(
+      "admin-col-ops",
+    );
+    expect(screen.getByText("Menu").className).toContain("admin-col-ops");
+  });
+
   it("exposes a phone sort control when sort is provided", () => {
     const onChange = vi.fn();
     render(

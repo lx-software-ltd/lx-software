@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { AdminCell, AdminDataTable, AdminDataTableEmptyRow, AdminEditorSection } from "../ui";
+import {
+  AdminCell,
+  AdminDataTable,
+  AdminDataTableCellMeta,
+  AdminDataTableEmptyRow,
+  AdminEditorSection,
+} from "../ui";
 import { useBoardContent } from "../../hooks/useBoardContent";
 import { adminFetchJson, getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { boardContentCreativePath, type BoardContentItem } from "../../lib/boardModel";
@@ -100,6 +106,9 @@ export function BoardContentSection() {
                 <button type="button" className="btn btn-link btn-sm p-0" onClick={() => setSelectedId(item.contentId)}>
                   {item.slotAt?.slice(0, 16) || "—"}
                 </button>
+                <AdminDataTableCellMeta>
+                  {item.channel} · {item.status}
+                </AdminDataTableCellMeta>
               </AdminCell>
               <AdminCell column="channel">{item.channel}</AdminCell>
               <AdminCell column="pillar">{item.pillar}</AdminCell>

@@ -842,6 +842,8 @@ export function FinanceAllocationsPanel(props: {
                         /mo
                       </>
                     )}
+                    {" · "}
+                    <MoneyAmount amount={r.accumulatedAmount} currency={r.currency} />
                   </AdminDataTableCellMeta>
                 </AdminCell>
                 <AdminCell column="tags" className="small text-muted">{allocationTagsCellLabel(r)}</AdminCell>
@@ -906,6 +908,26 @@ export function FinanceAllocationsPanel(props: {
                   fxError={fxError}
                   fxLoading={fxLoading}
                   ratesQuery={ratesQuery}
+                  phoneValue={
+                    <>
+                      {convertedAccumulatedTotal !== null ? (
+                        <MoneyAmount
+                          amount={convertedAccumulatedTotal}
+                          currency={totalDisplayCurrency}
+                          amountOnly
+                        />
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                      <br />
+                      <AdminTableTotalCurrency
+                        id="finance-allocations-total-ccy-phone"
+                        value={totalDisplayCurrency}
+                        onChange={setTotalDisplayCurrency}
+                        disabled={fxLoading}
+                      />
+                    </>
+                  }
                 />
               </AdminCell>
               <AdminCell column="tags" className="small" />

@@ -839,7 +839,11 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
                       <AdminCell key="label" column="label" className="small">
                         Allocation
                         <AdminDataTableCellMeta>
-                          {a.description} · {a.currency}
+                          {a.description} · {a.currency} ·{" "}
+                          <MoneyAmount
+                            amount={a.accumulatedAmount}
+                            currency={a.currency}
+                          />
                         </AdminDataTableCellMeta>
                       </AdminCell>
                     ),
@@ -881,7 +885,8 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
                     <AdminCell key="label" column="label" className="small">
                       {r.fund}
                       <AdminDataTableCellMeta>
-                        {r.description} · {r.currency}
+                        {r.description} · {r.currency} ·{" "}
+                        <MoneyAmount amount={r.value} currency={r.currency} />
                       </AdminDataTableCellMeta>
                       <AdminDataTableCellMeta until="tertiary">
                         <StaleValuationBadge lastUpdated={r.lastUpdated} />
@@ -950,7 +955,8 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
                     <AdminCell key="label" column="label" className="small">
                       {r.deposit}
                       <AdminDataTableCellMeta>
-                        {r.assetType} · {r.description} · {r.currency}
+                        {r.assetType} · {r.description} · {r.currency} ·{" "}
+                        <MoneyAmount amount={r.value} currency={r.currency} />
                       </AdminDataTableCellMeta>
                     </AdminCell>
                   ),
@@ -1038,6 +1044,26 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
                         fxError={fxError}
                         fxLoading={fxLoading}
                         ratesQuery={ratesQuery}
+                        phoneValue={
+                          <>
+                            {convertedTotal !== null ? (
+                              <MoneyAmount
+                                amount={convertedTotal}
+                                currency={totalDisplayCurrency}
+                                amountOnly
+                              />
+                            ) : (
+                              <span className="text-muted">—</span>
+                            )}
+                            <br />
+                            <AdminTableTotalCurrency
+                              id={`${sheetId}-total-ccy-phone`}
+                              value={totalDisplayCurrency}
+                              onChange={setTotalDisplayCurrency}
+                              disabled={fxLoading}
+                            />
+                          </>
+                        }
                       />
                     </AdminCell>
                   );

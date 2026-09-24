@@ -1064,6 +1064,11 @@ export function HouseStatementPanel({
                     </span>
                     {" · "}
                     {line.currency}
+                    {" · "}
+                    <MoneyAmount
+                      amount={line.grossAmount}
+                      currency={line.currency}
+                    />
                   </AdminDataTableCellMeta>
                 </AdminCell>
                 <AdminCell column="net" className="small text-end">

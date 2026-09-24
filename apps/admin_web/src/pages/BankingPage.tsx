@@ -526,6 +526,7 @@ export function BankingPage() {
           ) : (
             <AdminDataTable
               bare
+              tableClassName="admin-table-keep-cols"
               columns={[
                 { key: "account", header: "Bank account" },
                 { key: "record", header: "Accounts-sheet record" },
@@ -602,7 +603,16 @@ export function BankingPage() {
                   <AdminCell column="record">
                     {recordLabelById[result.accountRecordId] ?? result.accountRecordId}
                     <AdminDataTableCellMeta>
-                      {result.status === "ok" ? result.balanceType : result.message}
+                      {result.status === "ok" ? "OK" : "Error"}
+                      {result.status === "ok" ? ` · ${result.balanceType}` : ` · ${result.message}`}
+                      {result.status === "ok" &&
+                      result.balance !== undefined &&
+                      result.currency ? (
+                        <>
+                          {" · "}
+                          <MoneyAmount amount={result.balance} currency={result.currency} />
+                        </>
+                      ) : null}
                     </AdminDataTableCellMeta>
                   </AdminCell>
                   <AdminCell column="status">
