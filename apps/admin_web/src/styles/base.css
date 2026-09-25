@@ -48,7 +48,8 @@ body.admin-nav-open {
 @media (max-width: 767.98px) {
   /* iOS Safari zooms into inputs below 16px; keep compact controls readable without the jump. */
   .form-control-sm,
-  .form-select-sm {
+  .form-select-sm,
+  .admin-filter-create .btn {
     font-size: 1rem;
   }
 }

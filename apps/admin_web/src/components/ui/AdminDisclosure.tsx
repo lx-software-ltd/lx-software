@@ -24,7 +24,7 @@ export function AdminDisclosure({
   if (presentation === "dialog") {
     return (
       <>
-        <button type="button" className="btn btn-outline-secondary" onClick={() => setOpen(true)}>
+        <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => setOpen(true)}>
           {title}
         </button>
         <AdminDialog open={open} title={title} onClose={() => setOpen(false)}>

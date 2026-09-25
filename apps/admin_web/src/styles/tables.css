@@ -105,6 +105,10 @@
 .admin-filter-create {
   order: 2;
   margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
 }
 
 .admin-filter-fields {
@@ -356,7 +360,7 @@
 
 @media (max-width: 767.98px) {
   .admin-filter-create,
-  .admin-filter-create .admin-create-btn,
+  .admin-filter-create .btn,
   .admin-filter-trailing,
   .admin-filter-trailing .btn {
     flex: 1 1 100%;
