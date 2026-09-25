@@ -15,17 +15,19 @@ test.describe("admin viewport smoke", () => {
     expect(viewport).not.toBeNull();
     const topbar = await page.locator(".admin-topbar").boundingBox();
     const main = await page.locator(".admin-main").boundingBox();
-    const title = await page.getByRole("heading", { name: "Banking", level: 1 }).boundingBox();
+    const connect = await page.getByRole("button", { name: "Connect a bank" }).boundingBox();
     expect(topbar).not.toBeNull();
     expect(main).not.toBeNull();
-    expect(title).not.toBeNull();
+    expect(connect).not.toBeNull();
     expect(topbar!.x).toBeLessThanOrEqual(1);
     expect(topbar!.width).toBeGreaterThanOrEqual(viewport!.width - 1);
     expect(main!.x).toBeLessThanOrEqual(1);
     expect(main!.width).toBeGreaterThanOrEqual(viewport!.width - 1);
     expect(main!.y).toBeGreaterThanOrEqual(topbar!.y + topbar!.height - 1);
-    expect(title!.x).toBeGreaterThan(8);
-    expect(title!.x).toBeLessThan(48);
+    expect(connect!.y).toBeGreaterThanOrEqual(topbar!.y + topbar!.height - 1);
+    expect(connect!.x).toBeGreaterThan(8);
+    expect(connect!.x).toBeLessThan(48);
+    await expect(page.locator(".admin-topbar-brand")).toHaveCount(0);
   });
 
   test("dashboard loads fixture summaries", async ({ page }) => {
@@ -33,13 +35,15 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByText("LX Software net")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
+    await expect(page.locator(".admin-brand, .admin-topbar-brand")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Hillmarton" })).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 
   test("LX Software dashboard shows the OpenRouter bill", async ({ page }) => {
     await page.goto("/lx-software");
-    await expect(page.getByRole("heading", { name: "LX Software", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "LX Software" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "AWS", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "OpenRouter", exact: true })).toBeVisible();
     const awsMonth = page.getByLabel("AWS month");
@@ -48,11 +52,12 @@ test.describe("admin viewport smoke", () => {
     await expect(openrouterMonth).toBeVisible();
     expect(await awsMonth.locator("option").count()).toBe(13);
     expect(await openrouterMonth.locator("option").count()).toBe(13);
-    await expect(page.getByText("LX Software pays the AWS invoice")).toBeVisible();
+    await expect(page.getByText(/Cost Explorer UnblendedCost/)).toBeVisible();
+    await expect(page.getByText(/LX Software pays/)).toHaveCount(0);
     await expect(page.getByText("USD 434.12 · 50.6%")).toBeVisible();
     await expect(page.getByText("USD 420.64 · 49.0%")).toBeVisible();
     await expect(page.getByRole("button", { name: "Download allocation PDF" })).toBeVisible();
-    await expect(page.getByText("LX Software pays the OpenRouter invoice")).toBeVisible();
+    await expect(page.getByText(/UTC month/)).toBeVisible();
     await expect(page.getByText("USD 0.42")).toBeVisible();
     await expect(page.getByText("calls metered in this admin")).toBeVisible();
     await expect(page.getByText("Pulled from OpenRouter", { exact: true })).toHaveCount(2);
@@ -79,7 +84,7 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByRole("heading", { name: "Finance", level: 1 })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
     await expect(page.getByText("HSBC HK current")).toBeVisible();
-    await expect(page.getByText("128,430.50").first()).toBeVisible();
+    await expect(page.getByText("128,430.50").filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByText("Stale").filter({ visible: true }).first()).toBeVisible();
 
     if (testInfo.project.name === "phone") {
@@ -103,13 +108,16 @@ test.describe("admin viewport smoke", () => {
       await page.locator("#finance-tab-investments").click();
     }
     await expect(page.getByRole("cell", { name: /Hillmarton Road/ }).first()).toBeVisible();
-    await expect(page.getByText("512,000.00").or(page.getByText("512,000")).first()).toBeVisible();
+    await expect(
+      page.getByText("512,000.00").or(page.getByText("512,000")).filter({ visible: true }).first(),
+    ).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 
   test("banking shows expiring consent on phones", async ({ page }, testInfo) => {
     await page.goto("/banking");
-    await expect(page.getByRole("heading", { name: "Banking", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Banking", level: 1 })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
     await expect(page.getByRole("cell", { name: /Monzo/ }).first()).toBeVisible();
     await expect(page.getByText(/Consent expires/i).filter({ visible: true }).first()).toBeVisible();
     if (testInfo.project.name === "desktop") {
@@ -120,7 +128,8 @@ test.describe("admin viewport smoke", () => {
 
   test("assets lists inbound statement PDFs", async ({ page }, testInfo) => {
     await page.goto("/assets");
-    await expect(page.getByRole("heading", { name: "Assets", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Assets", level: 1 })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
     await expect(page.getByText("KDQ170167_-_Landlord_Statement.pdf")).toBeVisible();
     await expect(page.getByText("32 Hillmarton").filter({ visible: true }).first()).toBeVisible();
     if (testInfo.project.name === "phone") {
@@ -139,7 +148,8 @@ test.describe("admin viewport smoke", () => {
 
   test("siu tin dei board sections stay reachable", async ({ page }, testInfo) => {
     await page.goto("/siu-tin-dei");
-    await expect(page.getByRole("heading", { name: "Siu Tin Dei", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Siu Tin Dei", level: 1 })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Executive Board" })).toHaveAttribute(
       "aria-selected",
       "true",

@@ -47,11 +47,13 @@ function CurrencyBucketList({
 
 export function StatementBookDashboardCard({
   title,
+  showTitle = true,
   data,
   fiscalYear,
   onFiscalYearChange,
 }: {
   readonly title: string;
+  readonly showTitle?: boolean;
   readonly data: HouseFinanceData;
   readonly fiscalYear: FiscalYearId;
   readonly onFiscalYearChange: (id: FiscalYearId) => void;
@@ -74,9 +76,11 @@ export function StatementBookDashboardCard({
   return (
     <div className="card h-100 shadow-sm">
       <div className="card-body d-flex flex-column">
-        <h2 className="h6 mb-3">
-          <strong>{title}</strong>
-        </h2>
+        {showTitle ? (
+          <h2 className="h6 mb-3">
+            <strong>{title}</strong>
+          </h2>
+        ) : null}
         <div className="mb-3">
           <select
             className="form-select form-select-sm"
@@ -106,7 +110,9 @@ export function StatementBookDashboardCard({
           </dd>
         </dl>
         <p className="text-muted small mb-0 mt-3">
-          Totals use net amounts from {title} lines in this fiscal year.
+          {showTitle
+            ? `Totals use net amounts from ${title} lines in this fiscal year.`
+            : "Totals use net amounts in this fiscal year."}{" "}
           Default currency is HKD.
         </p>
       </div>

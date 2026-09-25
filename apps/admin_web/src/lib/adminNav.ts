@@ -1,3 +1,4 @@
+import lxMark from "../assets/lx-logo-mark.svg";
 import siutindeiMark from "../assets/siutindei-logo-mark.svg";
 
 export type AdminNavItem = {
@@ -14,7 +15,7 @@ export const ADMIN_NAV_GROUPS: readonly (readonly AdminNavItem[])[] = [
   [{ to: "/", label: "Dashboard", icon: "bi-grid", end: true }],
   [
     { to: "/finance", label: "House Finance", icon: "bi-house" },
-    { to: "/lx-software", label: "LX Software", icon: "bi-building" },
+    { to: "/lx-software", label: "LX Software", mark: lxMark },
     { to: "/siu-tin-dei", label: "Siu Tin Dei", mark: siutindeiMark },
   ],
   [

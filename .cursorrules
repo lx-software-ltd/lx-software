@@ -63,7 +63,7 @@ repo root
 - Lambda env vars stay short (`BOARD_*`, `OUTREACH_*`); do not rename them when adding a second prefix.
 
 ### Admin web (`apps/admin_web`) — console layout
-- The left rail lists pages only. `AdminTabList` renders in the page (a phone `<select>` when there are more than six sections). Page help is the `?` popover on `AdminPageHeader`.
+- The left rail lists pages only and has no LX Admin brand. `AdminTabList` renders in the page (a phone `<select>` when there are more than six sections). Dashboard, House Finance, LX Software, Siu Tin Dei, Banking, and Assets have no page title and no help popover.
 - A list is one untitled card: toolbar, then the table. Create spells the noun (`New account`). The editor opens under the clicked row. One row is open; its id is a query parameter (`new` is the draft). Opening that id fills the editor from the record. An unknown id is removed. Only the active table’s row parameter stays in the URL.
 - The row editor has no title and no Cancel. One primary button, labeled with the verb (`Add line`, `Update record`) and `Saving…` while the save is in flight. Deletes and dirty-row switches use `ConfirmDialog`. Dirty means any editor field differs from the saved record.
 - The summary row is keyboard-focusable. Selecting text does not toggle it. Every row action sits in the kebab menu, which closes when an action is chosen. Record-table icon buttons are bordered; other tables stay link-style.

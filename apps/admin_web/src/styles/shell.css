@@ -27,11 +27,6 @@
   z-index: 1020;
 }
 
-.admin-topbar-brand {
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
 .admin-brand {
   display: flex;
   align-items: center;
@@ -63,7 +58,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0.25rem 0.6rem 1rem;
+  padding: 0.85rem 0.6rem 1rem;
 }
 
 .admin-nav-group + .admin-nav-group {

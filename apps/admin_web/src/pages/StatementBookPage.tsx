@@ -4,13 +4,17 @@ import { FinanceDataLoadOrError, FinanceSaveStatus } from "../components/Finance
 import { HouseStatementPanel } from "../components/HouseStatementPanel";
 import { StatementBookDashboardCard } from "../components/StatementBookDashboardCard";
 import { ExecutiveBoardTab } from "../components/board/ExecutiveBoardTab";
-import { AdminPageHeader, AdminTabList, type AdminTabItem } from "../components/ui";
+import { AdminTabList, type AdminTabItem } from "../components/ui";
 import { useStatementBook } from "../hooks/useStatementBook";
 import { adminTabButtonId } from "../lib/adminTabs";
 import { isRowExpandedParam } from "../lib/expandedRecord";
 import { defaultFiscalYearIdForNowUtc, type FiscalYearId } from "../lib/fiscalYearFinance";
 import { defaultStatementBookTab, type StatementBookTab } from "../lib/statementBookTabs";
-import { SIU_TIN_DEI_BOOK_KEY, STATEMENT_BOOK_DISPLAY_LABEL } from "../lib/statementOwners";
+import {
+  LX_SOFTWARE_BOOK_KEY,
+  SIU_TIN_DEI_BOOK_KEY,
+  STATEMENT_BOOK_DISPLAY_LABEL,
+} from "../lib/statementOwners";
 import type { StatementBookKey } from "../lib/financeTypes";
 
 const STATEMENT_BOOK_TABS: readonly AdminTabItem<StatementBookTab>[] = [
@@ -85,15 +89,6 @@ export function StatementBookPage({
 
   return (
     <div>
-      <AdminPageHeader
-        title={title}
-        help={
-          <>
-            Record invoices and receipts for {title}. Upload a PDF or image to extract lines, or
-            add a row by hand. Expenses and gains are stored separately. Default currency is HKD.
-          </>
-        }
-      />
       <FinanceDataLoadOrError
         isLoading={isLoading}
         isError={isError}
@@ -133,6 +128,7 @@ export function StatementBookPage({
               <>
                 <StatementBookDashboardCard
                   title={title}
+                  showTitle={bookKey !== LX_SOFTWARE_BOOK_KEY}
                   data={data}
                   fiscalYear={fiscalYear}
                   onFiscalYearChange={setFiscalYear}
