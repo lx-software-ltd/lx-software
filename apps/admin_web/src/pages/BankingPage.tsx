@@ -9,7 +9,7 @@ import {
   AdminExpandableRow,
   AdminFilterBar,
   AdminFilterField,
-  AdminPageHeader,
+  AdminPage,
   AdminRecordTable,
   AdminRowActions,
   ConfirmDialog,
@@ -200,14 +200,24 @@ export function BankingPage() {
     });
   };
 
+  const pageHelp = (
+    <>
+      Link bank accounts through Enable Banking and refresh the Finance accounts sheet from
+      live balances. A scheduled sync also runs daily.
+    </>
+  );
+
   if (isLoading) {
-    return <p className="text-muted">Loading bank connections…</p>;
+    return (
+      <AdminPage title="Banking" help={pageHelp}>
+        <p className="text-muted">Loading bank connections…</p>
+      </AdminPage>
+    );
   }
 
   if (isError) {
     return (
-      <div>
-        <h1 className="h4 mb-3">Banking</h1>
+      <AdminPage title="Banking" help={pageHelp}>
         <FinanceDataLoadOrError
           isLoading={false}
           isError
@@ -215,21 +225,15 @@ export function BankingPage() {
           onRetry={() => void refetch()}
           isRetrying={isRefetching}
         />
-      </div>
+      </AdminPage>
     );
   }
 
   return (
-    <div>
-      <AdminPageHeader
-        title="Banking"
-        help={
-          <>
-            Link bank accounts through Enable Banking and refresh the Finance accounts sheet from
-            live balances. A scheduled sync also runs daily.
-          </>
-        }
-        actions={
+    <AdminPage
+      title="Banking"
+      help={pageHelp}
+      actions={
           <>
             <button type="button" className="btn btn-outline-secondary" onClick={() => setConnectOpen(true)}>
               Connect a bank
@@ -243,8 +247,8 @@ export function BankingPage() {
               {syncNow.isPending ? "Syncing…" : "Sync now"}
             </button>
           </>
-        }
-      />
+      }
+    >
 
       {state && !state.enabled ? (
         <div className="alert alert-warning" role="alert">
@@ -640,6 +644,6 @@ export function BankingPage() {
           </AdminDataTable>
         ) : null}
       </AdminRecordTable>
-    </div>
+    </AdminPage>
   );
 }

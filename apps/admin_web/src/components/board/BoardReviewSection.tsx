@@ -203,7 +203,6 @@ export function BoardReviewSection() {
   return (
     <div className="admin-review">
       <div className="admin-review-header d-flex flex-wrap align-items-center gap-2 mb-3">
-        <h2 className="h5 mb-0">Daily review</h2>
         <span className="small text-muted">{review.date}</span>
         <button type="button" className="btn btn-link btn-sm p-0" onClick={() => setShowDigest((v) => !v)}>
           {showDigest ? "Hide digest preview" : "Preview digest email"}

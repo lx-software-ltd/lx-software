@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import {
   AdminCell,
-  AdminPageHeader,
+  AdminPage,
   AdminDataTable,
   AdminDataTableCellMeta,
   AdminDataTableEmptyRow,
@@ -205,11 +205,10 @@ export function AssetsPage() {
   }, [hasNextPage, isFetchingNextPage, isError, fetchNextPage]);
 
   return (
-    <div>
-      <AdminPageHeader
-        title="Assets"
-        help="Statement uploads and other files stored in the admin assets bucket. Metadata is stored in DynamoDB."
-      />
+    <AdminPage
+      title="Assets"
+      help="Statement uploads and other files stored in the admin assets bucket. Metadata is stored in DynamoDB."
+    >
       {q.isLoading ? (
         <p className="text-muted">Loading…</p>
       ) : q.isError ? (
@@ -351,6 +350,6 @@ export function AssetsPage() {
           ) : null}
         </>
       )}
-    </div>
+    </AdminPage>
   );
 }

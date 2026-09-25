@@ -12,6 +12,8 @@ export type {
 export type { AdminTableColumnPriority } from "../../lib/adminTablePriority";
 export { AdminDialog } from "./AdminDialog";
 export { AdminKpi, AdminSparkline } from "./AdminKpi";
+export { AdminPage } from "./AdminPage";
+export type { AdminPageProps } from "./AdminPage";
 export { AdminPageHeader } from "./AdminPageHeader";
 export type { AdminPageHeaderProps } from "./AdminPageHeader";
 export { AdminTableTotalCurrency, AdminTableTotalLabel } from "./AdminTableTotalCurrency";

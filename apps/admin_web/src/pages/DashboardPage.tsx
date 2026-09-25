@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FinanceDataLoadOrError } from "../components/FinanceDataStatus";
-import { AdminKpi } from "../components/ui";
+import { AdminKpi, AdminPage } from "../components/ui";
 import { StatementBookDashboardCard } from "../components/StatementBookDashboardCard";
 import { AllocationCoverageDashboardCard } from "../components/dashboard/AllocationCoverageDashboardCard";
 import { DashboardApiHealthCard } from "../components/dashboard/DashboardApiHealthCard";
@@ -107,7 +107,11 @@ export function DashboardPage() {
   }, [financeQuery.data, fiscalYearStart, lxSoftwareQuery.data, siuTinDeiQuery.data]);
 
   return (
-    <div className="admin-dashboard">
+    <AdminPage
+      className="admin-dashboard"
+      title="Dashboard"
+      help="Fiscal-year nets for LX Software and Siu Tin Dei, monthly nets for the houses, and the signed-in session."
+    >
       {kpis ? (
         <div className="admin-kpi-row">
           <AdminKpi label="LX Software net" value={<MoneyStack lines={kpis.lx} />} hint="This fiscal year" />
@@ -200,6 +204,6 @@ export function DashboardPage() {
         sub={meQuery.data?.sub}
         email={meQuery.data?.email}
       />
-    </div>
+    </AdminPage>
   );
 }

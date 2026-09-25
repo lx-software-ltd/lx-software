@@ -8,7 +8,7 @@ import { FinanceAllocationsPanel } from "../components/FinanceAllocationsPanel";
 import { FinanceLiabilitiesPanel } from "../components/FinanceLiabilitiesPanel";
 import { FinanceLedgerSheetPanel } from "../components/FinanceLedgerSheetPanel";
 import { HouseStatementPanel } from "../components/HouseStatementPanel";
-import { AdminTabList, type AdminTabItem } from "../components/ui";
+import { AdminPage, AdminTabList, type AdminTabItem } from "../components/ui";
 import { useFinance } from "../hooks/useFinance";
 import { adminTabButtonId } from "../lib/adminTabs";
 import { isRowExpandedParam } from "../lib/expandedRecord";
@@ -119,7 +119,10 @@ export function FinancePage() {
   }, [location.pathname, location.search, navigate, tab]);
 
   return (
-    <div>
+    <AdminPage
+      title="House Finance"
+      help="Statements for 32 Hillmarton and The Morrison, then investments, savings, pension, income, expenses, allocations, accounts, and liabilities."
+    >
       <FinanceDataLoadOrError
         isLoading={isLoading}
         isError={isError}
@@ -247,6 +250,6 @@ export function FinancePage() {
           )}
         </>
       ) : null}
-    </div>
+    </AdminPage>
   );
 }

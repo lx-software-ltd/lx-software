@@ -4,7 +4,7 @@ import { FinanceDataLoadOrError, FinanceSaveStatus } from "../components/Finance
 import { HouseStatementPanel } from "../components/HouseStatementPanel";
 import { StatementBookDashboardCard } from "../components/StatementBookDashboardCard";
 import { ExecutiveBoardTab } from "../components/board/ExecutiveBoardTab";
-import { AdminPageHeader, AdminTabList, type AdminTabItem } from "../components/ui";
+import { AdminPage, AdminTabList, type AdminTabItem } from "../components/ui";
 import { useStatementBook } from "../hooks/useStatementBook";
 import { adminTabButtonId } from "../lib/adminTabs";
 import { isRowExpandedParam } from "../lib/expandedRecord";
@@ -84,16 +84,15 @@ export function StatementBookPage({
   const canShowTab = !isError || tab === "board";
 
   return (
-    <div>
-      <AdminPageHeader
-        title={title}
-        help={
-          <>
-            Record invoices and receipts for {title}. Upload a PDF or image to extract lines, or
-            add a row by hand. Expenses and gains are stored separately. Default currency is HKD.
-          </>
-        }
-      />
+    <AdminPage
+      title={title}
+      help={
+        <>
+          Record invoices and receipts for {title}. Upload a PDF or image to extract lines, or
+          add a row by hand. Expenses and gains are stored separately. Default currency is HKD.
+        </>
+      }
+    >
       <FinanceDataLoadOrError
         isLoading={isLoading}
         isError={isError}
@@ -179,6 +178,6 @@ export function StatementBookPage({
           )}
         </>
       ) : null}
-    </div>
+    </AdminPage>
   );
 }

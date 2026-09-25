@@ -30,9 +30,9 @@ test.describe("admin viewport smoke", () => {
 
   test("dashboard loads fixture summaries", async ({ page }) => {
     await page.goto("/");
+    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
+    await expect(page.getByRole("button", { name: "About this page" })).toBeVisible();
     await expect(page.getByText("LX Software net")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Hillmarton" })).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
@@ -76,8 +76,8 @@ test.describe("admin viewport smoke", () => {
     page,
   }, testInfo) => {
     await page.goto("/finance");
-    await expect(page.getByRole("heading", { name: "Finance", level: 1 })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "House Finance", level: 1 })).toBeVisible();
+    await expect(page.getByRole("button", { name: "About this page" })).toBeVisible();
     await expect(page.getByText("HSBC HK current")).toBeVisible();
     await expect(page.getByText("128,430.50").first()).toBeVisible();
     await expect(page.getByText("Stale").filter({ visible: true }).first()).toBeVisible();
@@ -144,7 +144,6 @@ test.describe("admin viewport smoke", () => {
       "aria-selected",
       "true",
     );
-    await expect(page.getByRole("heading", { name: "Daily review" })).toBeVisible();
     await expect(page.getByText(/Three parent threads closed/i)).toBeVisible();
     await expect(page.getByRole("button", { name: "Sync from main" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Promote" })).toBeVisible();
@@ -154,7 +153,6 @@ test.describe("admin viewport smoke", () => {
     } else {
       await page.getByRole("tab", { name: /Progress/ }).click();
     }
-    await expect(page.getByRole("heading", { name: "Progress" })).toBeVisible();
     await expect(page.getByText("Live listings", { exact: true })).toBeVisible();
     await expect(page.getByText("12 / 1000")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Bulk catalog sources" })).toBeVisible();
@@ -170,21 +168,21 @@ test.describe("admin viewport smoke", () => {
       await expect(page.getByRole("tab", { name: /Next actions/ })).toBeVisible();
       await page.getByRole("tab", { name: /Market/ }).click();
     }
-    await expect(page.getByRole("heading", { name: "Market" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Watchlist" })).toBeVisible();
     await expect(page.getByRole("cell", { name: "Kiztopia", exact: true })).toBeVisible();
     if (testInfo.project.name === "phone") {
       await page.locator("#board-section-select").selectOption("pipeline");
     } else {
       await page.getByRole("tab", { name: /Pipeline/ }).click();
     }
-    await expect(page.getByRole("heading", { name: "Pipeline" })).toBeVisible();
+    await expect(page.getByText(/Qualified this week/i)).toBeVisible();
     await expect(page.getByRole("cell", { name: /Sha Tin Playhouse/ })).toBeVisible();
     if (testInfo.project.name === "phone") {
       await page.locator("#board-section-select").selectOption("content");
     } else {
       await page.getByRole("tab", { name: /Content/ }).click();
     }
-    await expect(page.getByRole("heading", { name: "Content" })).toBeVisible();
+    await expect(page.getByText("Two-week calendar. Assisted packs wait for a manual post.")).toBeVisible();
     await expect(page.getByRole("row", { name: /facebook Saturday play in Sha Tin/i })).toBeVisible();
     if (testInfo.project.name === "phone") {
       await page.locator("#board-section-select").selectOption("staff");

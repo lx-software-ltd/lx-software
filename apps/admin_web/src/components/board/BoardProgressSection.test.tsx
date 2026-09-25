@@ -71,7 +71,6 @@ vi.mock("../../hooks/useBoardCatalog", () => ({
 describe("BoardProgressSection", () => {
   it("shows catalog, signings, stalled outreach and bottlenecks", () => {
     render(<BoardProgressSection />);
-    expect(screen.getByRole("heading", { name: "Progress" })).toBeInTheDocument();
     expect(screen.getByText("Bulk catalog sources")).toBeInTheDocument();
     expect(screen.getByText("Live listings")).toBeInTheDocument();
     expect(screen.getByText("Sha Tin Playhouse")).toBeInTheDocument();

@@ -85,7 +85,6 @@ export function BoardPipelineSection() {
   return (
     <div className="d-flex flex-column gap-3">
       <section>
-        <h2 className="h5 mb-2">Pipeline</h2>
         <p className="small text-muted mb-2">
           Qualified this week vs weekly target {target}. Stages:
           {BOARD_STAFF_PROSPECT_STAGES.map((s) => ` ${s} ${funnel[s] ?? 0}`).join(" ·")}

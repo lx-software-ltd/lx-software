@@ -254,7 +254,6 @@ export function BoardMarketSection() {
 
   return (
     <div>
-      <h2 className="h5 mb-3">Market</h2>
       <p className="small text-muted">
         Start with five competitors. A listingsIndex watch turns each page into catalog names only — set a
         district when the URLs share one, or leave it blank so the crawl guesses from the path (for example
