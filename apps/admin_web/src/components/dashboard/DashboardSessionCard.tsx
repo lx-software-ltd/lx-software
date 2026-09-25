@@ -10,9 +10,11 @@ export function DashboardSessionCard({
   readonly email: string | undefined;
 }) {
   return (
-    <div className="card mt-3 shadow-sm">
-      <div className="card-body">
-        <h2 className="h6 text-uppercase text-muted">Session</h2>
+    <div className="card h-100 shadow-sm">
+      <div className="card-body d-flex flex-column">
+        <h2 className="h6 mb-3">
+          <strong>Session</strong>
+        </h2>
         {isLoading ? (
           <p className="mb-0 small text-muted">Loading profile…</p>
         ) : isError ? (
@@ -21,10 +23,10 @@ export function DashboardSessionCard({
           </p>
         ) : (
           <dl className="row small mb-0">
-            <dt className="col-sm-3">Subject</dt>
-            <dd className="col-sm-9">{sub ?? "—"}</dd>
-            <dt className="col-sm-3">Email</dt>
-            <dd className="col-sm-9">{email ?? "—"}</dd>
+            <dt className="col-sm-5 text-muted">Subject</dt>
+            <dd className="col-sm-7 text-end mb-0">{sub ?? "—"}</dd>
+            <dt className="col-sm-5 text-muted pt-2">Email</dt>
+            <dd className="col-sm-7 text-end pt-2 mb-0">{email ?? "—"}</dd>
           </dl>
         )}
       </div>

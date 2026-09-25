@@ -189,17 +189,23 @@ export function DashboardPage() {
         </>
       ) : null}
 
-      <DashboardApiHealthCard
-        isLoading={healthQuery.isLoading}
-        isError={healthQuery.isError}
-        status={healthQuery.data?.status}
-      />
-      <DashboardSessionCard
-        isLoading={meQuery.isLoading}
-        isError={meQuery.isError}
-        sub={meQuery.data?.sub}
-        email={meQuery.data?.email}
-      />
+      <div className="row g-3">
+        <div className="col-md-6">
+          <DashboardApiHealthCard
+            isLoading={healthQuery.isLoading}
+            isError={healthQuery.isError}
+            status={healthQuery.data?.status}
+          />
+        </div>
+        <div className="col-md-6">
+          <DashboardSessionCard
+            isLoading={meQuery.isLoading}
+            isError={meQuery.isError}
+            sub={meQuery.data?.sub}
+            email={meQuery.data?.email}
+          />
+        </div>
+      </div>
     </div>
   );
 }
