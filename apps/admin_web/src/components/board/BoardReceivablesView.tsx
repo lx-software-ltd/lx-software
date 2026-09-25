@@ -114,20 +114,11 @@ export function BoardReceivablesView({ overdueCount, errorText }: BoardReceivabl
   return (
     <div className="card shadow-sm mb-4">
       <div className="card-body">
-        <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-          <h2 className="admin-card-title mb-0">Receivables</h2>
-          <div className="small text-muted">
-            {data?.configured
-              ? `${data.aging.outstandingHkd ?? 0} HKD outstanding${pastDue ? ` · ${pastDue} past due` : ""}`
-              : "Data API not configured"}
-          </div>
+        <div className="small text-muted mb-2">
+          {data?.configured
+            ? `${data.aging.outstandingHkd ?? 0} HKD outstanding${pastDue ? ` · ${pastDue} past due` : ""}`
+            : "Data API not configured"}
         </div>
-        <p className="text-muted small">
-          Listing subscriptions and invoices live in the siutindei Aurora database (
-          <code>scripts/siutindei/receivables.sql</code>). Matched payments and issued invoices are
-          mirrored nightly into the Siu Tin Dei statement book. The board never moves money out of
-          the account.
-        </p>
         {query.isError ? <div className="alert alert-danger py-2 small">{errorText(query.error)}</div> : null}
         {!data?.configured && !query.isLoading ? (
           <div className="alert alert-light border small mb-0">

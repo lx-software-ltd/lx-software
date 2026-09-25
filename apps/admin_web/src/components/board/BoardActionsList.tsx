@@ -215,8 +215,7 @@ export function BoardActionsList({
   return (
     <div className="card shadow-sm mb-4">
       <div className="card-body">
-        <div className="d-flex justify-content-between align-items-center mb-2">
-          <h2 className="admin-card-title mb-0">Next actions</h2>
+        <div className="d-flex justify-content-end align-items-center mb-2">
           <div className="form-check form-switch mb-0 small">
             <input
               className="form-check-input"

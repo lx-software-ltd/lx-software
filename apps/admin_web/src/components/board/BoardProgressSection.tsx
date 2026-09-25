@@ -48,18 +48,10 @@ function ProgressBody({
   const target = partnerships.weeklyTarget || 15;
   return (
     <div>
-      <div className="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
-        <div>
-          <h2 className="h5 mb-1">Progress</h2>
-          <p className="small text-muted mb-0">
-            Live catalog, vendor onboarding and outreach, plus the next week of content. Refreshes every 30 seconds.
-          </p>
-        </div>
-        <span className="small text-muted">Updated {snap.fetchedAt.replace("T", " ").replace("Z", " UTC")}</span>
-      </div>
+      <p className="small text-muted mb-3">Updated {snap.fetchedAt.replace("T", " ").replace("Z", " UTC")}</p>
 
-      <div className="row g-3 mb-3">
-        <Kpi
+      <div className="admin-kpi-row">
+        <AdminKpi
           label="Live listings"
           value={`${listings.activities} / ${listings.launchTarget ?? BOARD_CATALOG_LAUNCH_LISTING_TARGET}`}
           hint={
@@ -68,22 +60,22 @@ function ProgressBody({
               : `${listings.providers} providers · completeness ${pct(listings.completenessAvg)} · photo ${pct(listings.hasPhotoAvg)} · price ${pct(listings.hasPriceAvg)} · hours ${pct(listings.hasScheduleAvg)} · geo ${pct(listings.hasGeoAvg)}`
           }
         />
-        <Kpi
+        <AdminKpi
           label="Listing views (7d)"
           value={String(listings.funnel7d.listingViews)}
           hint={`${listings.funnel7d.leads} leads · ${listings.funnel7d.bookings} bookings`}
         />
-        <Kpi
+        <AdminKpi
           label="Vendor signings"
           value={String(signings.count)}
           hint={signings.error ? signings.error : `${signings.stalled.length} idle ≥ 7 days`}
         />
-        <Kpi
+        <AdminKpi
           label="Partnerships this week"
           value={`${warm} / ${target}`}
           hint={`${partnerships.needsContact} still need a contact`}
         />
-        <Kpi
+        <AdminKpi
           label="Content next 7 days"
           value={String(content.scheduledNext7)}
           hint={content.emptyChannels.length ? `Empty: ${content.emptyChannels.join(", ")}` : "Channels have slots"}
@@ -248,13 +240,5 @@ function Panel({ title, children }: { readonly title: string; readonly children:
         {children}
       </div>
     </section>
-  );
-}
-
-function Kpi({ label, value, hint }: { readonly label: string; readonly value: string; readonly hint: string }) {
-  return (
-    <div className="col-6 col-md d-flex">
-      <AdminKpi label={label} value={value} hint={hint} />
-    </div>
   );
 }

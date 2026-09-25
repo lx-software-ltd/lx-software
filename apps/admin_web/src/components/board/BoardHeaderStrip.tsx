@@ -1,4 +1,6 @@
-import { DateTimeDisplay } from "../ui";
+import type { ReactNode } from "react";
+import { AdminKpi } from "../ui";
+import { formatDateTimeHKT } from "../../lib/formatDisplay";
 import {
   formatUsageCost,
   meetingPhaseProgress,
@@ -26,91 +28,71 @@ export function BoardHeaderStrip({
   const running = overview.runningMeeting;
   const latest = overview.latestMeeting;
   const usage = overview.usageToday;
-  const budgetPct =
-    usage.budgetUsd > 0 ? Math.min(100, Math.round((usage.cost / usage.budgetUsd) * 100)) : 0;
   const isBudgetOut = usage.budgetUsd > 0 && usage.cost >= usage.budgetUsd;
+  const meetingActionsDisabled = isStarting || Boolean(running) || isBudgetOut;
 
   return (
-    <div className="card shadow-sm mb-4">
-      <div className="card-body">
-        <div className="row g-3 align-items-start">
-          <div className="col-12 col-lg-6">
-            {running ? (
-              <>
-                <div className="d-flex align-items-center gap-2 mb-1">
-                  <span className="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true" />
-                  <span className="fw-semibold">
-                    {MEETING_MODE_LABELS[running.mode]} in progress
-                  </span>
-                  <span className="badge text-bg-primary">{meetingPhaseProgress(running).label}</span>
-                </div>
-                <div className="progress mb-2" style={{ height: 6 }} aria-hidden="true">
-                  <div
-                    className="progress-bar progress-bar-striped progress-bar-animated"
-                    style={{ width: `${meetingPhaseProgress(running).percent}%` }}
-                  />
-                </div>
-                <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => onOpenMeeting(running.meetingId)}>
-                  Watch the meeting
-                </button>
-              </>
-            ) : latest ? (
-              <>
-                <div className="text-uppercase small text-muted">Latest meeting</div>
-                <div className="fw-semibold">{latest.headline || `${MEETING_MODE_LABELS[latest.mode]} meeting`}</div>
-                <div className="small text-muted">
-                  <DateTimeDisplay iso={latest.createdAt} /> · {latest.actionCount} action
-                  {latest.actionCount === 1 ? "" : "s"} · {formatUsageCost(latest.usage?.cost)}
-                </div>
-                <button type="button" className="btn btn-sm btn-link px-0" onClick={() => onOpenMeeting(latest.meetingId)}>
-                  Read the minutes
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="text-uppercase small text-muted">No meetings yet</div>
-                <div className="text-muted small">
-                  Write the company brief, then run the first stand-up. The board reads the brief, your
-                  updates and open actions before every meeting.
-                </div>
-              </>
-            )}
-          </div>
-          <div className="col-6 col-lg-2">
-            <div className="text-uppercase small text-muted">Open actions</div>
-            <div className="h3 mb-0">{overview.openActionCount}</div>
-          </div>
-          <div className="col-6 col-lg-2">
-            <div className="text-uppercase small text-muted">Spend today</div>
-            <div className={`fw-semibold ${isBudgetOut ? "text-danger" : ""}`}>
-              {formatUsageCost(usage.cost)}
-              <span className="text-muted small"> / {formatUsageCost(usage.budgetUsd)}</span>
-            </div>
-            <div className="progress mt-1" style={{ height: 4 }} aria-hidden="true">
-              <div className={`progress-bar ${isBudgetOut ? "bg-danger" : ""}`} style={{ width: `${budgetPct}%` }} />
-            </div>
-          </div>
-          <div className="col-12 col-lg-2 d-grid gap-2">
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={onRunStandup}
-              disabled={isStarting || Boolean(running) || isBudgetOut}
-            >
-              {isStarting ? "Starting…" : "Run stand-up"}
-            </button>
-            <button
-              type="button"
-              className="btn btn-outline-secondary btn-sm"
-              onClick={onPlanDeepDive}
-              disabled={isStarting || Boolean(running) || isBudgetOut}
-            >
-              Deep dive…
-            </button>
-          </div>
-        </div>
-        {startError ? <div className="alert alert-danger py-2 mt-3 mb-0 small">{startError}</div> : null}
+    <div>
+      <div className="admin-kpi-row">
+        <MeetingTile running={running} latest={latest} />
+        <AdminKpi label="Open actions" value={overview.openActionCount} />
+        <AdminKpi
+          label="Spend today"
+          value={
+            <span className={isBudgetOut ? "text-danger" : undefined}>
+              {formatUsageCost(usage.cost)} / {formatUsageCost(usage.budgetUsd)}
+            </span>
+          }
+          hint={isBudgetOut ? "Over the daily budget" : "Daily budget"}
+        />
       </div>
+      <div className="admin-page-actions mb-4">
+        {running ? (
+          <button type="button" className="btn btn-outline-primary" onClick={() => onOpenMeeting(running.meetingId)}>
+            Watch the meeting
+          </button>
+        ) : latest ? (
+          <button type="button" className="btn btn-outline-primary" onClick={() => onOpenMeeting(latest.meetingId)}>
+            Read the minutes
+          </button>
+        ) : null}
+        <button type="button" className="btn btn-primary" onClick={onRunStandup} disabled={meetingActionsDisabled}>
+          {isStarting ? "Starting…" : "Run stand-up"}
+        </button>
+        <button type="button" className="btn btn-outline-secondary" onClick={onPlanDeepDive} disabled={meetingActionsDisabled}>
+          Deep dive…
+        </button>
+      </div>
+      {startError ? <div className="alert alert-danger py-2 mb-4 small">{startError}</div> : null}
     </div>
   );
+}
+
+function MeetingTile({
+  running,
+  latest,
+}: {
+  readonly running: BoardOverview["runningMeeting"];
+  readonly latest: BoardOverview["latestMeeting"];
+}): ReactNode {
+  if (running) {
+    return (
+      <AdminKpi
+        label="Meeting"
+        value={`${MEETING_MODE_LABELS[running.mode]} in progress`}
+        hint={meetingPhaseProgress(running).label}
+      />
+    );
+  }
+  if (latest) {
+    const actions = `${latest.actionCount} action${latest.actionCount === 1 ? "" : "s"}`;
+    return (
+      <AdminKpi
+        label="Latest meeting"
+        value={latest.headline || `${MEETING_MODE_LABELS[latest.mode]} meeting`}
+        hint={`${formatDateTimeHKT(latest.createdAt)} · ${actions} · ${formatUsageCost(latest.usage?.cost)}`}
+      />
+    );
+  }
+  return <AdminKpi label="Meetings" value="None yet" />;
 }

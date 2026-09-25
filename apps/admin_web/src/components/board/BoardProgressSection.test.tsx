@@ -70,8 +70,10 @@ vi.mock("../../hooks/useBoardCatalog", () => ({
 
 describe("BoardProgressSection", () => {
   it("shows catalog, signings, stalled outreach and bottlenecks", () => {
-    render(<BoardProgressSection />);
-    expect(screen.getByRole("heading", { name: "Progress" })).toBeInTheDocument();
+    const { container } = render(<BoardProgressSection />);
+    expect(container.querySelector(".admin-kpi-row")).toHaveTextContent("Live listings");
+    expect(screen.queryByRole("heading", { name: "Progress" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Updated 2026-09-13 14:00:00 UTC/)).toBeInTheDocument();
     expect(screen.getByText("Bulk catalog sources")).toBeInTheDocument();
     expect(screen.getByText("Live listings")).toBeInTheDocument();
     expect(screen.getByText("Sha Tin Playhouse")).toBeInTheDocument();

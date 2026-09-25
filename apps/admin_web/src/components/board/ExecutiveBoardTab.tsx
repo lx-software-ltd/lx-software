@@ -419,19 +419,13 @@ export function ExecutiveBoardTab() {
           ) : null}
 
           {overview && section === "members" ? (
-            <>
-              <p className="text-muted small">
-                Eight fixed roles. Each member argues from its own vision, mission and mandate; edit them to
-                change how that member thinks. Chat with anyone; the chair can also propose a meeting.
-              </p>
-              <BoardMembersStrip
-                members={members}
-                chairId={overview.settings.defaultChair}
-                openActionsByPersona={openActionsByPersona}
-                onChat={setChatPersonaId}
-                onEdit={setEditPersonaId}
-              />
-            </>
+            <BoardMembersStrip
+              members={members}
+              chairId={overview.settings.defaultChair}
+              openActionsByPersona={openActionsByPersona}
+              onChat={setChatPersonaId}
+              onEdit={setEditPersonaId}
+            />
           ) : null}
 
           {overview && section === "brief" ? (

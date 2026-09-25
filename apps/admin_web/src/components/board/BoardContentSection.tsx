@@ -54,10 +54,6 @@ export function BoardContentSection() {
 
   return (
     <div className="d-flex flex-column gap-3">
-      <section>
-        <h2 className="h5 mb-2">Content</h2>
-        <p className="small text-muted mb-0">Two-week calendar. Assisted packs wait for a manual post.</p>
-      </section>
       <div className="table-responsive">
         <table className="table table-sm table-bordered admin-table-compact mb-0">
           <thead>

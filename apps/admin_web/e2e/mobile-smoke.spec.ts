@@ -154,7 +154,7 @@ test.describe("admin viewport smoke", () => {
       "aria-selected",
       "true",
     );
-    await expect(page.getByRole("heading", { name: "Daily review" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Daily review" })).toHaveCount(0);
     await expect(page.getByText(/Three parent threads closed/i)).toBeVisible();
     await expect(page.getByRole("button", { name: "Sync from main" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Promote" })).toBeVisible();
@@ -164,7 +164,7 @@ test.describe("admin viewport smoke", () => {
     } else {
       await page.getByRole("tab", { name: /Progress/ }).click();
     }
-    await expect(page.getByRole("heading", { name: "Progress" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Progress" })).toHaveCount(0);
     await expect(page.getByText("Live listings", { exact: true })).toBeVisible();
     await expect(page.getByText("12 / 1000")).toBeVisible();
     await expect(page.getByRole("heading", { name: "Bulk catalog sources" })).toBeVisible();
@@ -180,21 +180,22 @@ test.describe("admin viewport smoke", () => {
       await expect(page.getByRole("tab", { name: /Next actions/ })).toBeVisible();
       await page.getByRole("tab", { name: /Market/ }).click();
     }
-    await expect(page.getByRole("heading", { name: "Market" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Market" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Watchlist" })).toBeVisible();
     await expect(page.getByRole("cell", { name: "Kiztopia", exact: true })).toBeVisible();
     if (testInfo.project.name === "phone") {
       await page.locator("#board-section-select").selectOption("pipeline");
     } else {
       await page.getByRole("tab", { name: /Pipeline/ }).click();
     }
-    await expect(page.getByRole("heading", { name: "Pipeline" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Pipeline" })).toHaveCount(0);
     await expect(page.getByRole("cell", { name: /Sha Tin Playhouse/ })).toBeVisible();
     if (testInfo.project.name === "phone") {
       await page.locator("#board-section-select").selectOption("content");
     } else {
       await page.getByRole("tab", { name: /Content/ }).click();
     }
-    await expect(page.getByRole("heading", { name: "Content" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Content" })).toHaveCount(0);
     await expect(page.getByRole("row", { name: /facebook Saturday play in Sha Tin/i })).toBeVisible();
     if (testInfo.project.name === "phone") {
       await page.locator("#board-section-select").selectOption("staff");
@@ -217,7 +218,8 @@ test.describe("admin viewport smoke", () => {
     } else {
       await page.getByRole("tab", { name: /Approvals/ }).click();
     }
-    await expect(page.getByRole("heading", { name: "Approvals" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Approvals" })).toHaveCount(0);
+    await expect(page.getByText(/Show decided/)).toBeVisible();
     await expect(page.getByLabel("Approval apr-1")).toBeVisible();
     await expect(page.getByText("Send launch confirmation to a newly onboarded provider")).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
