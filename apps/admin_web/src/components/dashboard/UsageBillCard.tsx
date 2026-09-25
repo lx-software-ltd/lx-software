@@ -29,7 +29,9 @@ export function UsageBillCard({
   return (
     <div className="card h-100 shadow-sm">
       <div className="card-body d-flex flex-column">
-        <h2 className="h6 text-uppercase text-muted">{title}</h2>
+        <h2 className="h6 mb-3">
+          <strong>{title}</strong>
+        </h2>
         <div className="mb-3">
           <select
             className="form-select form-select-sm"
