@@ -20,15 +20,23 @@ export function AdminFilterField({ label, htmlFor, children }: AdminFilterFieldP
 
 export type AdminFilterBarProps = {
   readonly children?: ReactNode;
+  /** Sits immediately left of `create` in the same group. */
+  readonly beforeCreate?: ReactNode;
   readonly create?: ReactNode;
   readonly trailing?: ReactNode;
 };
 
 /** Filters on one desktop line. Create sits above them at full width on a phone. */
-export function AdminFilterBar({ children, create, trailing }: AdminFilterBarProps) {
+export function AdminFilterBar({ children, beforeCreate, create, trailing }: AdminFilterBarProps) {
+  const actions = beforeCreate || create ? (
+    <div className="admin-filter-create">
+      {beforeCreate}
+      {create}
+    </div>
+  ) : null;
   return (
     <search className="admin-filter-bar">
-      {create ? <div className="admin-filter-create">{create}</div> : null}
+      {actions}
       {children ? <div className="admin-filter-fields">{children}</div> : null}
       {trailing ? <div className="admin-filter-trailing">{trailing}</div> : null}
     </search>
@@ -45,7 +53,7 @@ export function AdminCreateButton({ label, onClick, disabled }: AdminCreateButto
   return (
     <button
       type="button"
-      className="btn btn-primary admin-create-btn"
+      className="btn btn-primary btn-sm admin-create-btn"
       onClick={onClick}
       disabled={disabled}
     >
