@@ -9,7 +9,6 @@ import {
   AdminExpandableRow,
   AdminFilterBar,
   AdminFilterField,
-  AdminPageHeader,
   AdminRecordTable,
   AdminRowActions,
   ConfirmDialog,
@@ -206,45 +205,31 @@ export function BankingPage() {
 
   if (isError) {
     return (
-      <div>
-        <h1 className="h4 mb-3">Banking</h1>
-        <FinanceDataLoadOrError
-          isLoading={false}
-          isError
-          loadErrorMessage={`Could not load bank connections: ${errorText(error, "request failed")}`}
-          onRetry={() => void refetch()}
-          isRetrying={isRefetching}
-        />
-      </div>
+      <FinanceDataLoadOrError
+        isLoading={false}
+        isError
+        loadErrorMessage={`Could not load bank connections: ${errorText(error, "request failed")}`}
+        onRetry={() => void refetch()}
+        isRetrying={isRefetching}
+      />
     );
   }
 
   return (
     <div>
-      <AdminPageHeader
-        title="Banking"
-        help={
-          <>
-            Link bank accounts through Enable Banking and refresh the Finance accounts sheet from
-            live balances. A scheduled sync also runs daily.
-          </>
-        }
-        actions={
-          <>
-            <button type="button" className="btn btn-outline-secondary" onClick={() => setConnectOpen(true)}>
-              Connect a bank
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => syncNow.mutate()}
-              disabled={!state?.enabled || syncNow.isPending || mappings.length === 0}
-            >
-              {syncNow.isPending ? "Syncing…" : "Sync now"}
-            </button>
-          </>
-        }
-      />
+      <div className="admin-page-actions mb-3">
+        <button type="button" className="btn btn-outline-secondary" onClick={() => setConnectOpen(true)}>
+          Connect a bank
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => syncNow.mutate()}
+          disabled={!state?.enabled || syncNow.isPending || mappings.length === 0}
+        >
+          {syncNow.isPending ? "Syncing…" : "Sync now"}
+        </button>
+      </div>
 
       {state && !state.enabled ? (
         <div className="alert alert-warning" role="alert">

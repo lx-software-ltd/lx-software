@@ -24,7 +24,7 @@ export function OpenRouterUsageCard() {
       isLoading={query.isPending}
       loadingMessage="Loading OpenRouter usage…"
       isError={query.isError}
-      errorMessage="Could not load OpenRouter usage. LX Software still pays the invoice."
+      errorMessage="Could not load OpenRouter usage."
       emptyMessage="No OpenRouter usage recorded yet."
     >
       {query.data ? (
@@ -49,8 +49,7 @@ function OpenRouterUsageBody({
   return (
     <>
       <p className="small text-muted">
-        {data.payer.label} pays the OpenRouter invoice. {periodLabel} (
-        {data.from} – {data.to}). Total {formatUsageCost(data.total.cost)}.{" "}
+        {periodLabel} ({data.from} – {data.to}). Total {formatUsageCost(data.total.cost)}.{" "}
         {meteredCalls} calls metered in this admin. Named keys are pulled
         from OpenRouter. Other is Chat and any spend that is not on an API
         key. The current UTC day&apos;s call count is added after Activity

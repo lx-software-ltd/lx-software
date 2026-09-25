@@ -21,7 +21,7 @@ export function AwsUsageCard() {
       isLoading={query.isPending}
       loadingMessage="Loading AWS cost split…"
       isError={query.isError}
-      errorMessage="Could not load the AWS cost split. LX Software still pays the account invoice; Cost Explorer needs the Organization and Project cost-allocation tags."
+      errorMessage="Could not load the AWS cost split. Cost Explorer needs the Organization and Project cost-allocation tags."
       emptyMessage="No AWS cost data yet."
     >
       {query.data ? <AwsUsageBody data={query.data} /> : null}
@@ -66,10 +66,8 @@ function AwsUsageBody({ data }: { readonly data: AwsBillingPayload }) {
   return (
     <>
       <p className="small text-muted">
-        {data.payer.label} pays the AWS invoice for this account. Cost Explorer
-        UnblendedCost for {data.from} – {data.to} is grouped by {tags} so Siu
-        Tin Dei, Evolve Sprouts, and LX Software can share the bill. Total{" "}
-        {formatUsageCost(data.total.usd)}. AWS&apos;s own invoice PDF stays one
+        Cost Explorer UnblendedCost for {data.from} – {data.to} is grouped by {tags}.
+        Total {formatUsageCost(data.total.usd)}. AWS&apos;s own invoice PDF stays one
         account total; download the allocation PDF for the tagged split.
       </p>
       <ul className="list-unstyled mb-3 small">

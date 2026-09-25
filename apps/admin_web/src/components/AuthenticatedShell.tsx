@@ -31,15 +31,6 @@ function NavGroups({ onNavigate }: { readonly onNavigate?: () => void }) {
   );
 }
 
-function RailBrand({ className = "" }: { readonly className?: string }) {
-  return (
-    <div className={`admin-brand${className ? ` ${className}` : ""}`}>
-      <span className="admin-brand-mark" aria-hidden="true">LX</span>
-      <span className="admin-nav-label">Admin</span>
-    </div>
-  );
-}
-
 function RailFooter({ user, onLogout }: { readonly user: AuthUser | null; readonly onLogout: () => void }) {
   return (
     <div className="admin-rail-footer">
@@ -105,7 +96,6 @@ export function AuthenticatedShell() {
           >
             <i className="bi bi-list" aria-hidden="true" />
           </button>
-          <span className="admin-topbar-brand">LX Admin</span>
         </header>
         {isNavOpen ? (
           <button
@@ -124,8 +114,7 @@ export function AuthenticatedShell() {
           aria-hidden={!isNavOpen}
           inert={!isNavOpen}
         >
-          <div className="d-flex align-items-center justify-content-between mb-3">
-            <RailBrand className="p-0" />
+          <div className="d-flex justify-content-end mb-3">
             <button
               ref={closeRef}
               type="button"
@@ -146,7 +135,6 @@ export function AuthenticatedShell() {
         </aside>
         <aside className="admin-sidebar">
           <div className="admin-rail-primary">
-            <RailBrand />
             <nav className="admin-rail-scroll" aria-label="Admin pages">
               <NavGroups />
             </nav>
