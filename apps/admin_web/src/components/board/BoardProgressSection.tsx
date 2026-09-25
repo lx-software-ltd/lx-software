@@ -48,15 +48,7 @@ function ProgressBody({
   const target = partnerships.weeklyTarget || 15;
   return (
     <div>
-      <div className="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
-        <div>
-          <h2 className="h5 mb-1">Progress</h2>
-          <p className="small text-muted mb-0">
-            Live catalog, vendor onboarding and outreach, plus the next week of content. Refreshes every 30 seconds.
-          </p>
-        </div>
-        <span className="small text-muted">Updated {snap.fetchedAt.replace("T", " ").replace("Z", " UTC")}</span>
-      </div>
+      <p className="small text-muted mb-3">Updated {snap.fetchedAt.replace("T", " ").replace("Z", " UTC")}</p>
 
       <div className="row g-3 mb-3">
         <Kpi

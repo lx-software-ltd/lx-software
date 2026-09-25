@@ -224,27 +224,20 @@ export function BoardMailView({ status, focusThreadId, onFocusConsumed, errorTex
   return (
     <div className="card shadow-sm mb-4">
       <div className="card-body">
-        <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-          <h2 className="admin-card-title mb-0">Company mail</h2>
-          <div className="small text-muted">
-            {totalIndexed} thread{totalIndexed === 1 ? "" : "s"} · {payload?.status.unreadCount ?? status.unreadCount} unread ·{" "}
-            {status.sendEnabled ? (
-              <span className={health ? (sendHealthy ? "text-success" : "text-danger") : "text-muted"}>
-                <i className={`bi ${health && !sendHealthy ? "bi-send-exclamation" : "bi-send-check"} me-1`} aria-hidden="true" />
-                {health ? (sendHealthy ? "sending on" : "sending not ready") : "sending enabled"}
-              </span>
-            ) : (
-              <span>
-                <i className="bi bi-send-slash me-1" aria-hidden="true" />
-                sending off
-              </span>
-            )}
-          </div>
+        <div className="small text-muted mb-2">
+          {totalIndexed} thread{totalIndexed === 1 ? "" : "s"} · {payload?.status.unreadCount ?? status.unreadCount} unread ·{" "}
+          {status.sendEnabled ? (
+            <span className={health ? (sendHealthy ? "text-success" : "text-danger") : "text-muted"}>
+              <i className={`bi ${health && !sendHealthy ? "bi-send-exclamation" : "bi-send-check"} me-1`} aria-hidden="true" />
+              {health ? (sendHealthy ? "sending on" : "sending not ready") : "sending enabled"}
+            </span>
+          ) : (
+            <span>
+              <i className="bi bi-send-slash me-1" aria-hidden="true" />
+              sending off
+            </span>
+          )}
         </div>
-        <p className="text-muted small">
-          Everything sent to <code>@{status.domain}</code>, as the board sees it — except that you see real names and
-          addresses. Replies the board sends (or you approve) appear here as <span className="badge text-bg-primary">sent</span>.
-        </p>
         <SendHealthStrip status={status} health={health} errorText={errorText} />
         {list.isError ? <div className="alert alert-danger py-2 small">{errorText(list.error)}</div> : null}
         {markRead.isError ? <div className="alert alert-danger py-2 small">{errorText(markRead.error)}</div> : null}
