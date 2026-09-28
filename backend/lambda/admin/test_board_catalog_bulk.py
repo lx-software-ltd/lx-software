@@ -1894,6 +1894,64 @@ class AutonomyCatalogTests(BoardTestCase):
         with patch("board_github.issue_state", return_value="closed"):
             self.assertFalse(board_catalog_bulk.source_is_paused(self.table, "lcsd"))
 
+    def test_repeat_500_after_the_issue_was_opened_re_arms_the_pause(self) -> None:
+        """Production 23-28 Sep: the importer Approval had executed before the
+        pause marker shipped, so every 2 h re-hold POSTed the same 500 (#536
+        open). A decided-but-open issue must pause the source too."""
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+        for sid in ("a", "b"):
+            board_catalog_candidates.upsert_candidate(
+                self.table,
+                {"source": "lcsd", "sourceId": sid, "nameEn": f"Park {sid}", "district": "Eastern"},
+            )
+        board_store.put_approval(
+            self.table,
+            {
+                "approvalId": "old-importer-issue",
+                "op": "github_create_issue",
+                "status": "executed",
+                "createdAt": "2026-09-22T12:00:00Z",
+                "arguments": {"title": board_catalog_bulk.IMPORTER_ISSUE_TITLE},
+                "result": {"number": 536, "ok": True},
+            },
+        )
+
+        def always_500(payload, token, *, timeout=None):
+            raise board_catalog_import.CatalogImportError(
+                "siutindei admin POST https://siu.example/v1/admin/imports failed: 500 down"
+            )
+
+        def dry_ok(payload, token):
+            return {"ok": True, "summary": {"failed": 0}, "results": []}
+
+        with (
+            patch.object(board_catalog_bulk, "BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT", 2),
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=[]),
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "_id_token", return_value="tok"),
+            patch.object(board_catalog_import, "_run_remote_import", side_effect=always_500),
+            patch.object(board_catalog_import, "_remote_dry_run", side_effect=dry_ok),
+            patch("board_github.validate_create_issue", return_value=None),
+            patch("board_github.issue_state", return_value="open"),
+        ):
+            # First run records the parent 500; the next re-hold bisects it.
+            board_catalog_bulk.import_source(self.table, "lcsd")
+            board_catalog_bulk.import_source(self.table, "lcsd")
+            info = board_catalog_bulk.source_pause_info(self.table, "lcsd")
+        self.assertTrue(info["paused"])
+        self.assertIn("#536 open", info["reason"])
+        # No second Approval: the issue is already on GitHub.
+        self.assertEqual(
+            len([r for r in board_store.list_approvals(self.table) if r.get("op") == "github_create_issue"]),
+            1,
+        )
+        self.table.delete_item(Key=board_store.cache_key("catalog:importer-issue:536"))
+        with patch("board_github.issue_state", return_value="closed"):
+            self.assertFalse(board_catalog_bulk.source_is_paused(self.table, "lcsd"))
+
     def test_pause_without_an_issue_number_stays_visible(self) -> None:
         board_store.put_cache(
             self.table,

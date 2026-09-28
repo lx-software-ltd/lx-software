@@ -238,8 +238,15 @@ def chat_completion(
     service: str = SERVICE_STATEMENT_PARSER,
     owner: str | None = None,
     fallback_models: list[str] | tuple[str, ...] | None = None,
+    wall_clock_seconds: float | None = None,
 ) -> ChatCompletion:
     """POST one chat completion and return the assistant text plus usage.
+
+    ``timeout`` is socket inactivity plus the retry budget. ``wall_clock_seconds``
+    is an optional hard abort measured from this call: staff steps pass their
+    remaining Lambda budget so a provider that keeps the socket busy cannot
+    outlive the step. Meetings, chat and reviews leave it unset and may run
+    past ``timeout`` while the provider keeps sending.
 
     With ``deny_data_collection`` (the default) OpenRouter only routes to
     providers that do not retain prompts. ``tools`` follows the OpenAI
@@ -289,10 +296,24 @@ def chat_completion(
     raw: dict[str, Any] | None = None
     current = model
     deadline = _clock() + max(1.0, float(timeout))
+    hard_deadline = (
+        _clock() + max(1.0, float(wall_clock_seconds)) if wall_clock_seconds is not None else None
+    )
+
+    def _wall_clock_left() -> float | None:
+        if hard_deadline is None:
+            return None
+        return hard_deadline - _clock()
+
     for index, current in enumerate(chain):
         remaining = deadline - _clock()
         if remaining < _MIN_RETRY_REMAINING_SECONDS:
             break
+        wall_left = _wall_clock_left()
+        if wall_left is not None and wall_left <= 0:
+            if last_error is not None:
+                raise last_error
+            raise OpenRouterError("OpenRouter request timed out: wall-clock budget exhausted")
         payload["model"] = current
         rest = chain[index + 1 :]
         if rest:
@@ -310,6 +331,7 @@ def chat_completion(
                 timeout=attempt_timeout,
                 max_retries=max_retries if index == 0 else min(1, max_retries),
                 service=service,
+                wall_clock_seconds=wall_left,
             )
             raw = _load_json_object(body_text, what="OpenRouter response")
             break
@@ -334,6 +356,7 @@ def chat_completion(
                             timeout=attempt_timeout,
                             max_retries=min(1, max_retries),
                             service=service,
+                            wall_clock_seconds=_wall_clock_left(),
                         )
                         raw = _load_json_object(body_text, what="OpenRouter response")
                         payload = retry_payload
@@ -468,15 +491,36 @@ def _can_retry(*, deadline: float, sleep_s: float) -> bool:
     return _clock() + max(0.0, sleep_s) + _MIN_RETRY_REMAINING_SECONDS < deadline
 
 
-def _read_http_response(req: Any, sock_timeout: int, deadline: float) -> str:
+def _read_plain(req: Any, sock_timeout: int) -> str:
+    """Read one response with socket-inactivity semantics only."""
+    resp = urlrequest.urlopen(req, timeout=sock_timeout)  # noqa: S310
+    try:
+        raw = resp.read()
+    finally:
+        close = getattr(resp, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+    if isinstance(raw, str):
+        return raw
+    return bytes(raw).decode("utf-8")
+
+
+def _read_http_response(req: Any, sock_timeout: int, deadline: float | None) -> str:
     """Read one response, aborting when the wall-clock ``deadline`` passes.
 
     ``urlopen``'s timeout is socket inactivity. A provider that trickles
     tokens (or heartbeats) resets it, so a generation that started with
     little of the staff-step budget left can run until the Lambda is killed.
-    The read runs on a daemon thread; the caller closes the socket and raises
-    once ``deadline`` is reached.
+    With a ``deadline`` the read runs on a daemon thread; the caller closes
+    the socket and raises once it is reached. Without one (meetings, chat,
+    reviews) the call may outlive ``sock_timeout`` while bytes keep coming,
+    which is how those callers have always behaved.
     """
+    if deadline is None:
+        return _read_plain(req, sock_timeout)
     remaining = deadline - _clock()
     if remaining <= 0:
         raise OpenRouterError("OpenRouter request timed out: wall-clock budget exhausted")
@@ -536,11 +580,18 @@ def post_json(
     timeout: int,
     max_retries: int = _MAX_RETRIES_DEFAULT,
     service: str = SERVICE_STATEMENT_PARSER,
+    wall_clock_seconds: float | None = None,
 ) -> str:
-    # ``timeout`` is the wall-clock budget for this call, including backoff
-    # and retries. Each attempt uses only the time left so a late 5xx cannot
-    # stack another full OpenRouter timeout and kill the Lambda.
+    # ``timeout`` is the retry budget for this call: socket inactivity per
+    # attempt, and each later attempt uses only the time left so a late 5xx
+    # cannot stack another full OpenRouter timeout. ``wall_clock_seconds`` is
+    # the optional hard abort for a busy socket (staff steps only).
     deadline = _clock() + max(1.0, float(timeout))
+    hard_deadline: float | None = None
+    if wall_clock_seconds is not None:
+        if wall_clock_seconds <= 0:
+            raise OpenRouterError("OpenRouter request timed out: wall-clock budget exhausted")
+        hard_deadline = _clock() + float(wall_clock_seconds)
     attempt = 0
     while True:
         # First attempt keeps the caller's timeout. Later attempts use only
@@ -566,16 +617,18 @@ def post_json(
         try:
             remaining_s = deadline - _clock()
             if remaining_s <= 0:
+                raise OpenRouterError("OpenRouter request timed out: retry budget exhausted")
+            if hard_deadline is not None and hard_deadline - _clock() <= 0:
                 raise OpenRouterError("OpenRouter request timed out: wall-clock budget exhausted")
             # First attempt keeps the caller's socket timeout. ``int(remaining)``
             # is one second short of a just-started budget and would turn the
-            # 45 s final-answer floor into 44. The reader still aborts at
-            # ``deadline``, so a trickle cannot outlive the wall clock.
+            # 45 s final-answer floor into 44. Later attempts use the leftover
+            # retry budget as the inactivity timeout.
             if attempt == 0:
                 sock_timeout = req_timeout
             else:
                 sock_timeout = max(1, min(int(req_timeout), max(1, int(remaining_s))))
-            return _read_http_response(req, sock_timeout, deadline)
+            return _read_http_response(req, sock_timeout, hard_deadline)
         except urlerror.HTTPError as exc:
             body = ""
             try:

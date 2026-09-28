@@ -7,6 +7,8 @@ import os
 import threading
 import time
 import unittest
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import board_budget
@@ -730,6 +732,52 @@ class TestLoopRuntimeLimits(ToolsTestCase):
         self.assertLess(seen[0], 90, "round call must be clamped to the remaining loop budget")
         self.assertGreaterEqual(seen[0], board_tools.MODEL_CALL_TIMEOUT_FLOOR_SECONDS)
         self.assertEqual(seen[1], board_tools.FINAL_CALL_TIMEOUT_FLOOR_SECONDS)
+
+    def test_loop_deadline_becomes_the_model_wall_clock(self) -> None:
+        """Staff steps pass their remaining budget as the hard abort; a context
+        without a deadline (owner chat, jobs) leaves the socket semantics alone."""
+        seen: list[dict[str, Any]] = []
+
+        def fake_completion(**kwargs: Any) -> Any:
+            seen.append(kwargs)
+            return SimpleNamespace(text="ok", usage={}, model="m", finish_reason="stop", tool_calls=[])
+
+        ctx = ToolContext(table=self.table, settings=board_store.default_settings(), persona_id="cto", display_name="CTO")
+        ctx.deadline = time.monotonic() + 120
+        # Plenty of budget left: the call may run the whole leftover.
+        self.assertEqual(board_tools._loop_wall_clock(ctx, 120.0, 90), 120.0)
+        # Leftover below the granted socket timeout: never cut the call shorter
+        # than the timeout the floor rules already allowed.
+        self.assertEqual(board_tools._loop_wall_clock(ctx, 10.0, 45), 45.0)
+        ctx.deadline = 0.0
+        self.assertIsNone(board_tools._loop_wall_clock(ctx, 120.0, 90))
+
+        with patch.object(board_budget, "board_completion", side_effect=fake_completion):
+            board_tools._board_completion_with_length_retry(
+                ctx=ctx, messages=[], model="m", timeout_s=90, max_tokens=100, temperature=0.1,
+                json_mode=False, tag="t", wall_clock_seconds=120.0,
+            )
+            board_tools._board_completion_with_length_retry(
+                ctx=ctx, messages=[], model="m", timeout_s=90, max_tokens=100, temperature=0.1, json_mode=False, tag="t"
+            )
+        self.assertEqual(len(seen), 2)
+        self.assertEqual(seen[0]["wall_clock_seconds"], 120.0)
+        self.assertNotIn("wall_clock_seconds", seen[1])
+
+    def test_tool_loop_passes_a_wall_clock_no_shorter_than_the_floor(self) -> None:
+        seen: list[Any] = []
+        original = board_budget.board_completion
+
+        def spy(**kwargs: Any) -> Any:
+            seen.append(kwargs.get("wall_clock_seconds"))
+            return original(**kwargs)
+
+        self.use_script([[("github_search_issues", {"query": "a"})]], "ok")
+        with patch.object(board_budget, "board_completion", side_effect=spy):
+            job = self.chat("cto")
+        self.assertEqual(job["status"], "succeeded")
+        self.assertTrue(seen)
+        self.assertTrue(all(v is not None and v >= 45 for v in seen), seen)
 
     def test_op_timeout_is_clamped_to_the_turn_deadline(self) -> None:
         seen: list[int] = []

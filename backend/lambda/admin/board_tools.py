@@ -3627,12 +3627,20 @@ def _board_completion_with_length_retry(
     tag: str,
     tools: list[dict[str, Any]] | None = None,
     tool_choice: Any = None,
+    wall_clock_seconds: float | None = None,
 ) -> ChatCompletion:
-    """Call the model; if the reply hits the token cap below 6000, retry once at 6000."""
+    """Call the model; if the reply hits the token cap below 6000, retry once at 6000.
+
+    ``wall_clock_seconds`` is the hard abort for a provider that keeps the
+    socket busy (staff steps pass their loop budget); ``None`` keeps
+    socket-inactivity semantics for owner chat and jobs.
+    """
     kwargs: dict[str, Any] = {}
     if tools is not None:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = tool_choice
+    if wall_clock_seconds is not None:
+        kwargs["wall_clock_seconds"] = wall_clock_seconds
     completion = board_budget.board_completion(
         table=ctx.table,
         messages=messages,
@@ -3669,6 +3677,19 @@ def _board_completion_with_length_retry(
         retry.usage = add_usage(completion.usage, retry.usage)
         return retry
     return completion
+
+
+def _loop_wall_clock(ctx: ToolContext, left: float, timeout_s: int) -> float | None:
+    """Hard abort for one model call inside a deadline-bound loop.
+
+    The call may use the rest of the loop budget while the provider keeps
+    the socket busy, and never less than the socket timeout it was granted
+    (the final-answer floor may exceed the leftover budget by design).
+    Contexts without a deadline (owner chat, jobs) get ``None``.
+    """
+    if not ctx.deadline:
+        return None
+    return float(max(1, int(timeout_s), math.ceil(max(0.0, left))))
 
 
 def run_tool_loop(
@@ -3719,6 +3740,7 @@ def run_tool_loop(
             temperature=temperature,
             json_mode=json_mode,
             tag=tag,
+            wall_clock_seconds=_loop_wall_clock(ctx, float(max_seconds), timeout),
         )
         return ToolLoopResult(text=completion.text, usage=completion.usage, model=completion.model, rounds=1, completion=completion)
 
@@ -3773,6 +3795,7 @@ def run_tool_loop(
             tag=tag,
             tools=schemas,
             tool_choice=choice,
+            wall_clock_seconds=_loop_wall_clock(ctx, left, timeout_s),
         )
         usage = add_usage(usage, completion.usage)
         tool_calls = list(completion.tool_calls or [])
@@ -3832,6 +3855,7 @@ def run_tool_loop(
             tag=tag,
             tools=schemas,
             tool_choice="none",
+            wall_clock_seconds=_loop_wall_clock(ctx, left, timeout_s),
         )
         usage = add_usage(usage, final.usage)
     return ToolLoopResult(text=final.text, usage=usage, model=final.model, calls=calls, rounds=rounds, completion=final)

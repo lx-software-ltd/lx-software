@@ -906,7 +906,10 @@ def _import_group(
                 )
             except Exception as exc:
                 _log_event("info", tag="board_catalog_bulk_500_issue_skipped", source=source, error=str(exc)[:200])
-            if opened:
+            # A decided Approval returns False from the proposal. When the
+            # issue it opened is still open, pause anyway: without this the
+            # 2 h re-hold POSTs the same 500 until the fix is deployed.
+            if opened or _importer_issue_still_open(table):
                 _pause_source_until_issue(table, source)
         return
     if left_status == "http500":
@@ -1330,6 +1333,23 @@ def _cached_issue_state(table: Any, number: int) -> str | None:
 def _importer_issue_already_decided(table: Any) -> bool:
     """True once a founder has approved or rejected this importer issue."""
     return any(str(row.get("status") or "") != "pending" for row in _importer_issue_approvals(table))
+
+
+def _importer_issue_still_open(table: Any) -> bool:
+    """True while the latest executed importer Approval points at an issue that is not closed.
+
+    A missing number or an unreadable GitHub state counts as open so the
+    source stays paused rather than retrying a known 500.
+    """
+    executed = [
+        row for row in _importer_issue_approvals(table) if str(row.get("status") or "") == "executed"
+    ]
+    if not executed:
+        return False
+    number = _issue_number_from_approval(executed[-1])
+    if not number:
+        return True
+    return _cached_issue_state(table, number) != "closed"
 
 
 def _propose_importer_issue(
