@@ -59,14 +59,13 @@ function consumeLoginDeniedFlash(): string | null {
 export function LoginPage() {
   const { loginWithGoogle } = useAuth();
   const [deniedMessage] = useState<string | null>(() =>
-    consumeLoginDeniedFlash()
+    consumeLoginDeniedFlash(),
   );
 
   return (
     <div className="admin-login">
       <div className="admin-login-card">
-        <div className="admin-brand px-0 pt-0 mb-4">
-          <span className="admin-brand-mark" aria-hidden="true">LX</span>
+        <div className="admin-brand px-0 pt-0 mb-4" aria-label="Admin sign in">
           <span>Admin</span>
         </div>
         {deniedMessage ? (
