@@ -107,8 +107,13 @@ def board_completion(
     usage_sink: Callable[[dict[str, Any]], None] | None = None,
     fallback_models: list[str] | None = None,
     settings: dict[str, Any] | None = None,
+    wall_clock_seconds: float | None = None,
 ) -> openrouter_client.ChatCompletion:
-    """One board LLM call with usage recorded against today's budget."""
+    """One board LLM call with usage recorded against today's budget.
+
+    ``wall_clock_seconds`` is the hard abort for staff steps (their remaining
+    Lambda budget); other callers leave it unset.
+    """
     if fallback_models is None:
         fallback_models = fallback_models_for(model, settings)
     completion = openrouter_client.chat_completion(
@@ -127,6 +132,7 @@ def board_completion(
         service=openrouter_client.SERVICE_EXECUTIVE_BOARD,
         owner=board_store.BOARD_KEY,
         fallback_models=fallback_models,
+        wall_clock_seconds=wall_clock_seconds,
     )
     try:
         board_store.add_usage_day(table, completion.usage)

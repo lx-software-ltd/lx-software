@@ -222,10 +222,86 @@ class TestOpenRouterAttribution(unittest.TestCase):
                     url="https://openrouter.ai/api/v1/chat/completions",
                     api_key="sk-test",
                     payload={"model": "m"},
-                    timeout=1,
+                    timeout=30,
+                    wall_clock_seconds=1,
                 )
         self.assertIn("wall-clock", str(ctx.exception))
         self.assertLess(openrouter_client._clock() - started, 4)
+
+    def test_post_json_without_wall_clock_lets_a_busy_socket_finish(self) -> None:
+        """Meetings and chat keep socket-inactivity semantics: a provider that
+        keeps sending may run past ``timeout`` and still return its body."""
+
+        class _SlowButAlive:
+            def read(self) -> bytes:
+                openrouter_client.time.sleep(0.4)
+                return json.dumps({"ok": True}).encode("utf-8")
+
+            def close(self) -> None:
+                pass
+
+        seen: dict[str, Any] = {}
+
+        def fake_urlopen(req, timeout=None):  # noqa: ARG001
+            seen["timeout"] = timeout
+            return _SlowButAlive()
+
+        started = openrouter_client._clock()
+        with (
+            patch("openrouter_client.urlrequest.urlopen", fake_urlopen),
+            patch("openrouter_client.threading.Thread", side_effect=AssertionError("no reader thread")),
+        ):
+            text = openrouter_client.post_json(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                api_key="sk-test",
+                payload={"model": "m"},
+                timeout=1,
+            )
+        self.assertEqual(json.loads(text), {"ok": True})
+        self.assertEqual(seen["timeout"], 1)
+        self.assertGreaterEqual(openrouter_client._clock() - started, 0.4)
+
+    def test_chat_completion_shares_the_wall_clock_across_the_model_walk(self) -> None:
+        seen: list[float | None] = []
+
+        def fake_post_json(**kwargs: Any) -> str:
+            seen.append(kwargs.get("wall_clock_seconds"))
+            if len(seen) == 1:
+                raise openrouter_client.OpenRouterError("rate limited", status=429)
+            return json.dumps(
+                {
+                    "model": "b",
+                    "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                }
+            )
+
+        secrets = MagicMock()
+        with (
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-test"}, clear=False),
+            patch("openrouter_client.post_json", side_effect=fake_post_json),
+        ):
+            completion = openrouter_client.chat_completion(
+                messages=[{"role": "user", "content": "hi"}],
+                model="a",
+                secrets_client=secrets,
+                timeout=90,
+                fallback_models=["b"],
+                wall_clock_seconds=120,
+            )
+            plain = openrouter_client.chat_completion(
+                messages=[{"role": "user", "content": "hi"}],
+                model="a",
+                secrets_client=secrets,
+                timeout=90,
+            )
+        self.assertEqual(completion.text, "ok")
+        self.assertEqual(plain.text, "ok")
+        self.assertEqual(len(seen), 3)
+        self.assertIsNotNone(seen[0])
+        self.assertIsNotNone(seen[1])
+        self.assertLessEqual(seen[1], seen[0])
+        self.assertIsNone(seen[2])
 
     def test_post_json_success_does_not_read_monotonic(self) -> None:
         """Tool-loop tests patch time.monotonic as a fake clock; do not steal ticks."""

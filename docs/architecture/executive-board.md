@@ -460,7 +460,9 @@ GitHub issue is proposed with the `requestId`, and the source is paused
 (no 2 h re-hold and no `handle_job` re-enqueue of the same rows) until
 that GitHub issue is closed. A rejected Approval clears the pause. An
 executed Approval stays paused while the issue is open; a failed GitHub
-state lookup stays paused. A bulk import that imports nothing records
+state lookup stays paused. A later both-halves 500 while that issue is
+still open re-arms the pause instead of proposing again, so the 2 h
+re-hold does not POST a known 500 until the fix ships. A bulk import that imports nothing records
 `error` on the result (the first batch error, or `imported 0 with no
 batch error`). Places and competitor candidates keep the query district when the
 address also names it. They move only when the address names exactly
@@ -631,9 +633,14 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
   `staffStepMaxSeconds` 150, step completion tokens 2500 (6000 for JSON
   deliverables, content-plan steps, and the last/idle step). Content-plan
   weeks are staged with `content_stage_items` (at most 6 items a call) and
-  merged on `task_finish`. OpenRouter reads abort on that step's wall-clock
-  budget, not only on socket inactivity, and each tool round is written to
-  the scratchpad before the next model call. A content-plan brief that names
+  merged on `task_finish`. Inside a tool loop each OpenRouter read carries a
+  hard wall clock (`wall_clock_seconds`): the loop budget left, never less
+  than the socket timeout the floor rules granted, so a provider that keeps
+  the socket busy cannot outlive the step. Meeting phases, owner chat,
+  reviews, triage and intel calls set no wall clock and keep
+  socket-inactivity semantics (a 100 s phase may run longer while bytes keep
+  coming, as before 23 Sep). Each tool round is written to the scratchpad
+  before the next model call. A content-plan brief that names
   `web_sessions` / `web_conversions` / `web_gtm_status` has those reads run
   before the model starts, and `task_finish` cites the latest same-attempt
   ok call when the model omits it.
