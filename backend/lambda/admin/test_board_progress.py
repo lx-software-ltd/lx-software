@@ -80,7 +80,7 @@ class ProgressSnapshotTests(BoardTestCase):
 
     def _execute(self, sql: str, _params: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
         low = sql.lower()
-        if "v_catalog_health" in low:
+        if "v_board_catalog_health" in low:
             return list(self.catalog)
         if "v_funnel_daily" in low:
             return list(self.funnel)

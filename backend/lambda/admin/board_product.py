@@ -93,7 +93,7 @@ def refresh_caches(table: Any) -> dict[str, str]:
 
 _CATALOG_SQL = (
     "SELECT district, category, activities, providers, stores, completeness, "
-    "has_photo, has_price, has_schedule, has_geo FROM v_catalog_health"
+    "has_photo, has_price, has_schedule, has_geo FROM v_board_catalog_health"
 )
 _PROVIDER_COUNTS_SQL = "SELECT providers, providers_with_venue FROM v_catalog_provider_counts"
 _FUNNEL_SQL = (

@@ -94,7 +94,10 @@ CREATE TABLE IF NOT EXISTS listing_events_daily (
 -- Completeness is scored once per activity (photos, price, schedule, any
 -- geocoded venue) and then averaged per district × category. Scoring inside
 -- the grouped join would weight an activity once per venue row.
-CREATE OR REPLACE VIEW v_catalog_health AS
+-- The product owns v_catalog_health (Alembic 0032+: approved orgs only,
+-- has_* as integer counts). The board view keeps a separate name so this
+-- script never replaces it; CREATE OR REPLACE cannot change column types.
+CREATE OR REPLACE VIEW v_board_catalog_health AS
 WITH activity_completeness AS (
     SELECT
         a.id AS activity_id,
@@ -140,22 +143,22 @@ SELECT
         2
     ) AS completeness,
     ROUND(
-        SUM(ac.has_photo) FILTER (WHERE p.venue_rank = 1)
+        SUM(ac.has_photo::numeric) FILTER (WHERE p.venue_rank = 1)
         / COUNT(DISTINCT p.activity_id),
         2
     ) AS has_photo,
     ROUND(
-        SUM(ac.has_price) FILTER (WHERE p.venue_rank = 1)
+        SUM(ac.has_price::numeric) FILTER (WHERE p.venue_rank = 1)
         / COUNT(DISTINCT p.activity_id),
         2
     ) AS has_price,
     ROUND(
-        SUM(ac.has_schedule) FILTER (WHERE p.venue_rank = 1)
+        SUM(ac.has_schedule::numeric) FILTER (WHERE p.venue_rank = 1)
         / COUNT(DISTINCT p.activity_id),
         2
     ) AS has_schedule,
     ROUND(
-        SUM(ac.has_geo) FILTER (WHERE p.venue_rank = 1)
+        SUM(ac.has_geo::numeric) FILTER (WHERE p.venue_rank = 1)
         / COUNT(DISTINCT p.activity_id),
         2
     ) AS has_geo
@@ -164,7 +167,7 @@ JOIN activity_completeness ac ON ac.activity_id = p.activity_id
 LEFT JOIN activity_categories c ON c.id = p.category_id
 GROUP BY 1, 2;
 
--- v_catalog_health counts an organisation once per district × category.
+-- v_board_catalog_health counts an organisation once per district × category.
 -- Summing those cells double-counts an org that spans districts or
 -- categories, and subtracting the unknown cell is not a distinct venue count.
 -- providers_with_venue is organisations with at least one location in a
@@ -229,7 +232,7 @@ END
 $$;
 
 GRANT USAGE ON SCHEMA public TO board_api;
-GRANT SELECT ON v_catalog_health, v_funnel_daily, v_provider_pipeline, v_catalog_provider_counts TO board_api;
+GRANT SELECT ON v_board_catalog_health, v_funnel_daily, v_provider_pipeline, v_catalog_provider_counts TO board_api;
 GRANT SELECT ON listing_plans, listing_subscriptions, invoices, payments TO board_api;
 GRANT INSERT, UPDATE ON invoices, payments, listing_plans TO board_api;
 GRANT UPDATE (status) ON listing_subscriptions TO board_api;

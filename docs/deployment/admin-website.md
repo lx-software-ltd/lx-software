@@ -644,7 +644,7 @@ catalog duty pauses when `catalog.maxAwaitingImport` (3) sheets are
 waiting (`awaiting_import` plus parked import `needs_owner` rows), and
 when more than `maxLowCompletenessDistricts` (3) imported districts sit
 below 50% completeness (then `catalog-enrich` refills hours, price and
-address on existing orgs). The gate uses the cached `v_catalog_health`
+address on existing orgs). The gate uses the cached `v_board_catalog_health`
 rows only and ignores districts with no score, so a cold cache does not
 pause new districts. After deploy, live districts around 28% completeness
 will pause `catalog-micro-batch` until enrich + import raise them. The
