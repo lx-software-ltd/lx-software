@@ -566,7 +566,7 @@ class TestSqlFileAndSmokeCli(unittest.TestCase):
         self.assertIn("listing_events_daily", text)
         self.assertRegex(text, r"IF NOT EXISTS \(SELECT 1 FROM pg_roles WHERE rolname = 'board_api'\)")
         self.assertIn(
-            "GRANT SELECT ON v_catalog_health, v_funnel_daily, v_provider_pipeline, v_catalog_provider_counts TO board_api;",
+            "GRANT SELECT ON v_board_catalog_health, v_funnel_daily, v_provider_pipeline, v_catalog_provider_counts TO board_api;",
             text,
         )
         self.assertIn("GRANT SELECT ON listing_plans, listing_subscriptions, invoices, payments TO board_api;", text)
@@ -591,6 +591,11 @@ class TestSqlFileAndSmokeCli(unittest.TestCase):
             "FROM activity_schedule",
         ):
             self.assertIn(needle, text)
+        # The product's Alembic migrations own v_catalog_health with integer
+        # has_* columns; replacing it fails the whole script.
+        self.assertNotRegex(text, r"VIEW\s+v_catalog_health\b")
+        for part in ("has_photo", "has_price", "has_schedule", "has_geo"):
+            self.assertIn(f"SUM(ac.{part}::numeric) FILTER", text)
 
     def test_smoke_cli_dry_run_prints_typed_statements_without_aws(self) -> None:
         import importlib.util
@@ -607,7 +612,7 @@ class TestSqlFileAndSmokeCli(unittest.TestCase):
             code = module.main(["--dry-run"])
         self.assertEqual(code, 0)
         text = buf.getvalue()
-        self.assertIn("v_catalog_health", text)
+        self.assertIn("v_board_catalog_health", text)
         self.assertIn("v_funnel_daily", text)
         self.assertIn("v_provider_pipeline", text)
         self.assertIn("INSERT INTO invoices", text)

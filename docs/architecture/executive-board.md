@@ -297,7 +297,7 @@ snapshot of its `defaults`.
 | `research` | `board_research.py` | Brave Search or OpenRouter `:online`, cached 24 h | — | Secret `…-search-api-key` |
 | `aws` | `board_aws.py` | Cost Explorer by `Project` tag, CloudWatch alarms, Lambda health, Health events | budget-alert proposal | Alarm prefix `SiutindeiBoardAwsStackPrefix`; functions `SiutindeiBoardAwsLambdaNames` |
 | `security` | `board_security.py`, `board_dmarc.py` | GitHub alerts, Security Hub, Access Analyzer, Cognito MFA, DMARC aggregate summary | remediation issue proposal | Daily check is deterministic; see §6.1 |
-| `product` | `board_product.py`, `board_data_api.py` | `v_catalog_health`, `v_funnel_daily`, `v_provider_pipeline` views only | flag listing | RDS Data API on the siutindei Aurora cluster; see 6.3 |
+| `product` | `board_product.py`, `board_data_api.py` | `v_board_catalog_health`, `v_catalog_provider_counts`, `v_funnel_daily`, `v_provider_pipeline` views only | flag listing | RDS Data API on the siutindei Aurora cluster; see 6.3 |
 | `finance` | `board_finance.py`, `board_receivables.py`, `board_invoice_pdf.py` | subscriptions, invoices, aging, cash snapshot | draft / send invoice, reminder, match or record payment, price-change proposal | See 6.3. The board never initiates a bank payment. |
 | `meta` | `board_meta.py` | Page / Instagram insights, comments, DMs, WhatsApp threads, ad spend, templates | post, story, reply, WhatsApp reply, ad set, boost, lead relay | See 6.2 |
 | `stores` | `board_stores.py` | App Store Connect + Play metrics, crashes, ratings, reviews (cached 20 h) | reply to review (CMO may `act`), release-notes draft (always Approval) | Secrets `…-app-store-connect-key` (ES256 JWT signed in Lambda), `…-google-play-sa` |
@@ -384,8 +384,13 @@ allow-list, otherwise an Approval (optionally a template).
 Listing plans, subscriptions, invoices and payments live in the
 **siutindei** Aurora database (`scripts/siutindei/receivables.sql`:
 tables `listing_plans`, `listing_subscriptions`, `invoices`, `payments`,
-`listing_events_daily`; views `v_catalog_health`, `v_funnel_daily`,
-`v_provider_pipeline` written against the live siutindei Alembic schema).
+`listing_events_daily`; views `v_board_catalog_health`,
+`v_catalog_provider_counts`, `v_funnel_daily`, `v_provider_pipeline`
+written against the live siutindei Alembic schema). The product's own
+`v_catalog_health` (Alembic 0032+, approved organisations only, integer
+`has_*` counts) is not touched: `CREATE OR REPLACE VIEW` cannot change a
+column type, so replacing it stopped the script at that statement and
+left the later views and grants unapplied.
 When `SiutindeiClusterArn` is set the stack enables the RDS HTTP Data API,
 applies the script through the `SiutindeiDataApiSetup` custom resource
 (`backend/lambda/siutindei_schema/`, packaged copy of the SQL) and a

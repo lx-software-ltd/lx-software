@@ -245,7 +245,7 @@ class FakeAurora:
             if self.provider_counts:
                 return [dict(self.provider_counts)]
             return [{"providers": 0, "providers_with_venue": 0}]
-        if "from v_catalog_health" in low:
+        if "from v_board_catalog_health" in low:
             rows = list(self.catalog)
             if p.get("district"):
                 rows = [r for r in rows if r.get("district") == p["district"]]
