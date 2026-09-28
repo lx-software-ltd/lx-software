@@ -65,11 +65,8 @@ export function LoginPage() {
   return (
     <div className="admin-login">
       <div className="admin-login-card">
-        <div className="admin-brand px-0 pt-0 mb-4" aria-label="Admin sign in">
-          <span>Admin</span>
-        </div>
         {deniedMessage ? (
-          <div className="alert alert-danger small mb-0" role="alert">
+          <div className="alert alert-danger small mb-3" role="alert">
             {deniedMessage}
           </div>
         ) : null}
