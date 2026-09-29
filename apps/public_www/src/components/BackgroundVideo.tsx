@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react'
+import flagUrl from '../assets/hk-flag.png'
+import { BOAT_FLAG, boatFlagAtTime } from '../lib/boatFlag'
 import { pickHeight, posterUrl, videoSources, type RenditionHeight } from '../lib/media'
 
 export function BackgroundVideo({ still }: { still: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const frameRef = useRef<HTMLDivElement>(null)
+  const flagRef = useRef<HTMLImageElement>(null)
   const [failed, setFailed] = useState(false)
   const [height] = useState<RenditionHeight>(pickHeight)
 
@@ -38,10 +42,66 @@ export function BackgroundVideo({ still }: { still: boolean }) {
     return () => document.removeEventListener('visibilitychange', onVisibility)
   }, [still, failed])
 
+  useEffect(() => {
+    const video = videoRef.current
+    const frame = frameRef.current
+    const flag = flagRef.current
+    if (!video || !frame || !flag || still || failed) return
+
+    const place = () => {
+      const box = boatFlagAtTime(video.currentTime)
+      const width = frame.clientWidth
+      const heightPx = frame.clientHeight
+      if (!box || width === 0 || heightPx === 0) {
+        flag.hidden = true
+        return
+      }
+      flag.hidden = false
+      flag.style.width = `${(box.width / BOAT_FLAG.videoWidth) * width}px`
+      flag.style.height = `${(box.height / BOAT_FLAG.videoHeight) * heightPx}px`
+      flag.style.transform = `translate(${(box.x / BOAT_FLAG.videoWidth) * width}px, ${(box.y / BOAT_FLAG.videoHeight) * heightPx}px)`
+    }
+
+    const onMeta = () => {
+      if (video.videoWidth > 0) {
+        frame.style.setProperty('--video-aspect', String(video.videoWidth / video.videoHeight))
+      }
+      place()
+    }
+    video.addEventListener('loadedmetadata', onMeta)
+    if (video.videoWidth > 0) onMeta()
+
+    const resize = new ResizeObserver(() => place())
+    resize.observe(frame)
+
+    let vfc = 0
+    let raf = 0
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      const onFrame: VideoFrameRequestCallback = () => {
+        place()
+        vfc = video.requestVideoFrameCallback(onFrame)
+      }
+      vfc = video.requestVideoFrameCallback(onFrame)
+    } else {
+      const tick = () => {
+        place()
+        raf = requestAnimationFrame(tick)
+      }
+      raf = requestAnimationFrame(tick)
+    }
+
+    return () => {
+      video.removeEventListener('loadedmetadata', onMeta)
+      resize.disconnect()
+      if (vfc) video.cancelVideoFrameCallback(vfc)
+      if (raf) cancelAnimationFrame(raf)
+    }
+  }, [still, failed])
+
   if (still || failed) {
     return (
       <div className="bg-video" aria-hidden="true">
-        <img src={posterUrl} alt="" width={1280} height={720} fetchPriority="high" />
+        <img className="bg-still" src={posterUrl} alt="" width={1280} height={720} fetchPriority="high" />
       </div>
     )
   }
@@ -55,27 +115,30 @@ export function BackgroundVideo({ still }: { still: boolean }) {
   }
   return (
     <div className="bg-video" aria-hidden="true">
-      <video
-        ref={bindVideo}
-        autoPlay
-        muted
-        loop
-        playsInline
-        poster={posterUrl}
-        preload={height === 480 ? 'metadata' : 'auto'}
-        disablePictureInPicture
-        disableRemotePlayback
-        onCanPlay={(event) => {
-          const video = event.currentTarget
-          video.muted = true
-          void video.play().catch(() => undefined)
-        }}
-      >
-        {sources.map((source) => (
-          <source key={source.type} src={source.src} type={source.type} onError={failIfExhausted} />
-        ))}
-        <img src={posterUrl} alt="" />
-      </video>
+      <div className="bg-video-frame" ref={frameRef}>
+        <video
+          ref={bindVideo}
+          autoPlay
+          muted
+          loop
+          playsInline
+          poster={posterUrl}
+          preload={height === 480 ? 'metadata' : 'auto'}
+          disablePictureInPicture
+          disableRemotePlayback
+          onCanPlay={(event) => {
+            const video = event.currentTarget
+            video.muted = true
+            void video.play().catch(() => undefined)
+          }}
+        >
+          {sources.map((source) => (
+            <source key={source.type} src={source.src} type={source.type} onError={failIfExhausted} />
+          ))}
+          <img src={posterUrl} alt="" />
+        </video>
+        <img className="boat-flag" ref={flagRef} src={flagUrl} alt="" hidden draggable={false} />
+      </div>
     </div>
   )
 }
