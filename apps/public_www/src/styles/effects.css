@@ -5,6 +5,8 @@
   bottom: 0;
   left: 0;
   z-index: 0;
+  max-width: var(--site-max-width);
+  margin: 0 auto;
   background: #000;
   pointer-events: none;
 }
@@ -20,8 +22,13 @@
 
 .cinema {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 1;
+  max-width: var(--site-max-width);
+  margin: 0 auto;
   pointer-events: none;
   contain: paint;
 }

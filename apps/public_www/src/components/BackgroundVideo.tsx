@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react'
-import { pickHeight, posterUrl, VIDEO_HEIGHT, VIDEO_WIDTH, videoSources, type RenditionHeight } from '../lib/media'
+import { pickHeight, posterUrl, videoSources, type RenditionHeight } from '../lib/media'
 
 export function BackgroundVideo({ still }: { still: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -41,7 +41,7 @@ export function BackgroundVideo({ still }: { still: boolean }) {
   if (still || failed) {
     return (
       <div className="bg-video" aria-hidden="true">
-        <img src={posterUrl} alt="" width={VIDEO_WIDTH} height={VIDEO_HEIGHT} fetchPriority="high" />
+        <img src={posterUrl} alt="" width={1280} height={720} fetchPriority="high" />
       </div>
     )
   }

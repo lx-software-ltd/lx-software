@@ -52,6 +52,8 @@ a {
   left: 0;
   right: 0;
   height: 2px;
+  max-width: var(--site-max-width);
+  margin: 0 auto;
   pointer-events: none;
 }
 
@@ -74,6 +76,9 @@ a {
   align-items: center;
   gap: 1rem;
   height: var(--nav-h);
+  box-sizing: border-box;
+  max-width: var(--site-max-width);
+  margin: 0 auto;
   padding: 0 1rem;
   background: #000;
 }
@@ -110,9 +115,17 @@ a {
   color: var(--accent-green);
 }
 
+.site-main,
+.bottom-bar {
+  max-width: var(--site-max-width);
+  margin: 0 auto;
+}
+
+/* Bootstrap's grid caps .container at 1140/1320px by viewport; inside the
+   locked column it should simply fill the column. */
 .container {
   box-sizing: border-box;
-  max-width: var(--video-frame-width);
+  max-width: var(--site-max-width);
 }
 
 .site-main {

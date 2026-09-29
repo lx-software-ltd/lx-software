@@ -1,7 +1,5 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { isAppleTouch, VIDEO_HEIGHT, VIDEO_WIDTH, videoSources, videoUrl } from './media'
+import { isAppleTouch, videoSources, videoUrl } from './media'
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -44,15 +42,5 @@ describe('video urls', () => {
     })
     expect(isAppleTouch()).toBe(true)
     expect(videoSources(720).map((source) => source.type)).toEqual(['video/mp4'])
-  })
-})
-
-describe('video frame width', () => {
-  it('keeps the content column on the letterboxed 16:9 frame', () => {
-    const tokens = readFileSync(resolve(import.meta.dirname, '../styles/tokens.css'), 'utf8')
-    const site = readFileSync(resolve(import.meta.dirname, '../styles/site.css'), 'utf8')
-    expect(VIDEO_WIDTH / VIDEO_HEIGHT).toBe(16 / 9)
-    expect(tokens).toContain('--video-frame-width: min(100%, calc((100vh - var(--nav-h)) * 16 / 9))')
-    expect(site).toContain('max-width: var(--video-frame-width)')
   })
 })
