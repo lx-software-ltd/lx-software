@@ -234,10 +234,12 @@ apps/public_www/
 
 ## 5. Video pipeline (rendered offline, checked into `media/README.md`)
 
-Source: 121 frames at 24 fps = 5.04 s. At 0.25× that is 20.2 s. Plain
+Source: 121 frames at 24 fps = 5.04 s. At 0.25× that is ~20 s. Plain
 `setpts=4*PTS` would hold each frame four times (6 fps look); use
 motion-compensated interpolation to 96 fps first, then stretch to 24 fps.
-`minterpolate` is slow but this runs once.
+`minterpolate` is slow (2 m 43 s for this clip on 4 cores) but it runs once.
+Every command below was run against the uploaded master; the measured
+outputs are in the comments.
 
 ```bash
 cd apps/public_www/media
@@ -247,17 +249,19 @@ mkdir -p build out
 ffmpeg -i source/hk-harbour-master.mp4 -an \
   -vf "minterpolate=fps=96:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1,setpts=4*PTS,format=yuv420p" \
   -r 24 -c:v libx264 -preset slow -crf 18 -movflags +faststart \
-  build/hk-harbour-slow.mp4                      # ≈ 20.2 s
+  build/hk-harbour-slow.mp4                      # measured: 19.875 s, 477 frames, no audio
 
 # 2. Seamless loop: crossfade the last 1.5 s into the first 1.5 s so the
-#    loop point is invisible. Output ≈ 18.7 s and starts/ends on the same frame.
+#    loop point is invisible. The output starts and ends on the same frame.
+D=$(ffprobe -v error -show_entries format=duration -of csv=p=0 build/hk-harbour-slow.mp4)
+T=$(python3 -c "print(round($D - 1.5, 3))")   # measured: 18.375
 ffmpeg -i build/hk-harbour-slow.mp4 -filter_complex "
   [0:v]split[m][t];
-  [t]trim=start=18.7,setpts=PTS-STARTPTS[tail];
-  [m]trim=end=18.7,setpts=PTS-STARTPTS[main];
+  [t]trim=start=$T,setpts=PTS-STARTPTS[tail];
+  [m]trim=end=$T,setpts=PTS-STARTPTS[main];
   [tail][main]xfade=transition=fade:duration=1.5:offset=0[v]" \
   -map "[v]" -c:v libx264 -preset slow -crf 18 -movflags +faststart \
-  build/hk-harbour-loop.mp4
+  build/hk-harbour-loop.mp4                      # measured: 18.375 s, 441 frames
 
 # 3. Delivery renditions (versioned filenames → immutable caching)
 for h in 720 480; do
@@ -275,12 +279,17 @@ ffmpeg -i build/hk-harbour-loop.mp4 -frames:v 1 -q:v 3 out/hk-harbour-v1-poster.
 ffmpeg -i build/hk-harbour-loop.mp4 -frames:v 1 -c:v libwebp -quality 80 out/hk-harbour-v1-poster.webp
 ```
 
-Targets: 720p MP4 ≈ 4–5 MB, 480p MP4 ≈ 2 MB, AV1 roughly half of that.
-Review step: play `build/hk-harbour-loop.mp4` on loop and check the
-crossfade region for ghosting on boats (interpolation artefacts). If the
-ping-pong alternative (append the reversed clip) looks better for this
-footage, use `-vf reverse` + `concat` instead of the xfade — it doubles the
-length and is trivially seamless but boats travel backwards.
+Measured on the master (CRF 23, `-preset fast` for the check; `slow` will
+be a little smaller): 720p MP4 4.4 MB, 480p MP4 2.0 MB, 480p AV1 1.8 MB
+(`-preset 8`; use `6` for the real render), poster JPEG 172 KB / WebP 116 KB.
+The footage is a night skyline with a junk boat crossing mid-clip; frame 0
+and the last frame are identical (verified with a contact sheet), and the
+boat is absent at the loop point, so the crossfade only touches water and
+lights. Review step: play `build/hk-harbour-loop.mp4` on loop and check
+the crossfade region for ghosting on the boat's wake (interpolation
+artefacts). If the ping-pong alternative (append the reversed clip) looks
+better, use `-vf reverse` + `concat` instead of the xfade — it doubles the
+length and is trivially seamless but the boat travels backwards.
 
 ## 6. Cloudflare setup (`docs/deployment/public-website.md` gets a "Media" section)
 
