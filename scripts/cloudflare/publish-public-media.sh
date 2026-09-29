@@ -2,6 +2,7 @@
 # Publish the harbour renditions to R2 and attach media.lx-software.com.
 #
 # Requires CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.
+# The token needs Account → Workers R2 Storage → Edit.
 # R2 has to be enabled in the Cloudflare dashboard first. The API returns
 # error 10042 until that one-time terms acceptance is done, and it cannot
 # be completed from this script.
@@ -55,9 +56,20 @@ ZONE="$(api GET "https://api.cloudflare.com/client/v4/zones?name=$ZONE_NAME")"
 ZONE_ID="$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["result"][0]["id"])' <<<"$ZONE")"
 
 echo "Attaching custom domain $DOMAIN"
-api POST "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/r2/buckets/$BUCKET/domains/custom" \
-  "{\"domain\":\"$DOMAIN\",\"enabled\":true,\"zoneId\":\"$ZONE_ID\",\"minTLS\":\"1.2\"}" \
-  | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("success"), d.get("errors"))'
+DOMAIN_RESULT="$(api POST "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/r2/buckets/$BUCKET/domains/custom" \
+  "{\"domain\":\"$DOMAIN\",\"enabled\":true,\"zoneId\":\"$ZONE_ID\",\"minTLS\":\"1.2\"}")"
+python3 - "$DOMAIN_RESULT" << 'PY'
+import json, sys
+payload = json.loads(sys.argv[1])
+if payload.get("success"):
+    raise SystemExit(0)
+errors = payload.get("errors") or []
+if any("already" in (err.get("message") or "").lower() for err in errors):
+    print("Custom domain already attached")
+    raise SystemExit(0)
+print(payload, file=sys.stderr)
+raise SystemExit(1)
+PY
 
 upload() {
   local file="$1"
@@ -79,3 +91,10 @@ upload hk-harbour-v1-poster.jpg image/jpeg
 
 echo "Uploaded. Set the production GitHub variable VITE_MEDIA_BASE_URL=https://$DOMAIN"
 echo "Then confirm a ranged GET: curl -I -H 'Range: bytes=0-1' https://$DOMAIN/hk-harbour-v1-720.mp4"
+echo "After that GET returns 206, drop the video binaries from git. The posters stay; the page preloads them from this origin."
+echo "Do not rewrite history with Git LFS."
+echo "  git rm apps/public_www/public/media/hk-harbour-v1-720.mp4 \\"
+echo "         apps/public_www/public/media/hk-harbour-v1-480.mp4 \\"
+echo "         apps/public_www/public/media/hk-harbour-v1-720.webm \\"
+echo "         apps/public_www/public/media/hk-harbour-v1-480.webm \\"
+echo "         apps/public_www/media/source/hk-harbour-master.mp4"
