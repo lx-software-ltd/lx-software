@@ -9,6 +9,12 @@
   --overlay: rgba(0, 0, 0, 0.45);
   --font-mono: 'IBM Plex Mono', ui-monospace, 'Courier New', monospace;
   --nav-h: 48px;
+  /* Harbour clip is 1280×720; content must not outrun that frame. */
+  --video-max-width: 1280px;
+  --video-frame-width: min(
+    var(--video-max-width),
+    calc((100vh - var(--nav-h)) * 16 / 9)
+  );
   --bs-body-bg: #000;
   --bs-body-color: #fff;
   --bs-body-font-family: var(--font-mono);

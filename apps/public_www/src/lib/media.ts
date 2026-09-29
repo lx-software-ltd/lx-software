@@ -1,5 +1,9 @@
 export const posterUrl = '/media/hk-harbour-v1-poster.webp'
 
+/** Native harbour clip size. Site content shares this max width. */
+export const VIDEO_WIDTH = 1280
+export const VIDEO_HEIGHT = 720
+
 export type RenditionHeight = 480 | 720
 
 function mediaBase(): string {

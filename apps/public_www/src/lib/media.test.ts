@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { isAppleTouch, videoSources, videoUrl } from './media'
+import { isAppleTouch, VIDEO_WIDTH, videoSources, videoUrl } from './media'
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -42,5 +44,12 @@ describe('video urls', () => {
     })
     expect(isAppleTouch()).toBe(true)
     expect(videoSources(720).map((source) => source.type)).toEqual(['video/mp4'])
+  })
+})
+
+describe('video frame width', () => {
+  it('keeps the content max-width token on the native clip width', () => {
+    const tokens = readFileSync(resolve(import.meta.dirname, '../styles/tokens.css'), 'utf8')
+    expect(tokens).toContain(`--video-max-width: ${VIDEO_WIDTH}px`)
   })
 })
