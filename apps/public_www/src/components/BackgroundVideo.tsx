@@ -9,12 +9,21 @@ export function BackgroundVideo({ still }: { still: boolean }) {
   useEffect(() => {
     const video = videoRef.current
     if (!video || still || failed) return
+    video.defaultMuted = true
+    video.muted = true
+    const tryPlay = () => {
+      void video.play().catch(() => {
+        // iPad rejects play() while a source is still switching. Leave the
+        // element in place so the next canplay can start it.
+      })
+    }
+    tryPlay()
     const onVisibility = () => {
       if (document.hidden) {
         video.pause()
         return
       }
-      void video.play().catch(() => setFailed(true))
+      tryPlay()
     }
     document.addEventListener('visibilitychange', onVisibility)
     return () => document.removeEventListener('visibilitychange', onVisibility)
@@ -41,15 +50,17 @@ export function BackgroundVideo({ still }: { still: boolean }) {
         ref={videoRef}
         autoPlay
         muted
+        defaultMuted
         loop
         playsInline
         poster={posterUrl}
         preload={height === 480 ? 'metadata' : 'auto'}
         disablePictureInPicture
         disableRemotePlayback
-        onError={() => setFailed(true)}
         onCanPlay={(event) => {
-          void event.currentTarget.play().catch(() => setFailed(true))
+          const video = event.currentTarget
+          video.muted = true
+          void video.play().catch(() => undefined)
         }}
       >
         {sources.map((source) => (
