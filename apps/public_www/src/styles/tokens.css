@@ -1,5 +1,6 @@
 :root {
-  --bg: #000;
+  /* Harbour night sky, sampled from the home-page video. */
+  --bg: #050505;
   --fg: #fff;
   --fg-dim: #b3b3b3;
   --line: #2a2a2a;
@@ -11,7 +12,7 @@
   --nav-h: 48px;
   /* The harbour clip is 1280 wide. The whole site is locked to that width. */
   --site-max-width: 1280px;
-  --bs-body-bg: #000;
+  --bs-body-bg: #050505;
   --bs-body-color: #fff;
   --bs-body-font-family: var(--font-mono);
   --bs-link-color: #fff;
