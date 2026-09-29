@@ -9,6 +9,8 @@
   --overlay: rgba(0, 0, 0, 0.45);
   --font-mono: 'IBM Plex Mono', ui-monospace, 'Courier New', monospace;
   --nav-h: 48px;
+  /* The harbour clip is 1280 wide. The whole site is locked to that width. */
+  --site-max-width: 1280px;
   --bs-body-bg: #000;
   --bs-body-color: #fff;
   --bs-body-font-family: var(--font-mono);
