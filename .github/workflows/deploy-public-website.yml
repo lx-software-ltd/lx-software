@@ -40,8 +40,8 @@ jobs:
       # Vite inlines VITE_* at build time. Contact values are public on the
       # page but must not live in git. Empty telephone / WhatsApp shows
       # "Not configured". Empty VITE_MEDIA_BASE_URL serves the harbour
-      # files from this site; set it to https://media.lx-software.com once
-      # the R2 bucket is live. Empty VITE_OWNER_NAME omits the Person node.
+      # files from this site. The live host is https://media.lx-software.com.
+      # Empty VITE_OWNER_NAME omits the Person node.
       - name: Build public website
         working-directory: apps/public_www
         env:

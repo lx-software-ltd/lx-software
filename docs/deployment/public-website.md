@@ -7,8 +7,8 @@ environment variables) are in [`setup.md`](./setup.md).
 
 Set these on the **production** environment (the deploy job uses
 `environment: production`). Vite inlines every `VITE_*` value into the
-public JavaScript, so they are variables, not secrets. Leave a contact
-variable empty to keep that icon disabled.
+public JavaScript, so they are variables, not secrets. Leave telephone
+or WhatsApp empty to show "Not configured".
 
 | Variable | Required | Description |
 |----------|----------|-------------|
@@ -16,7 +16,7 @@ variable empty to keep that icon disabled.
 | `AWS_REGION` | yes, to deploy | Target AWS region |
 | `CDK_PARAM_FILE` | for CDK | Path to parameter file, e.g. `backend/infrastructure/params/production.json` |
 | `PUBLIC_WEBSITE_STACK_NAME` | no | Stack that owns the bucket and distribution. Default `lxsoftware-public-www` |
-| `VITE_MEDIA_BASE_URL` | no | Harbour video host, no trailing slash. Empty serves `/media/*` from this site. After R2 is live: `https://media.lx-software.com` |
+| `VITE_MEDIA_BASE_URL` | no | `https://media.lx-software.com` (no trailing slash). Empty keeps serving `/media/*` from this site |
 | `VITE_CONTACT_TEL` | no | Telephone, E.164 with a leading `+`. Empty shows "Not configured" |
 | `VITE_CONTACT_WHATSAPP` | no | WhatsApp digits only, country code, no `+`. Empty shows "Not configured" |
 | `VITE_CONTACT_EMAIL` | no | Mailto target. Empty uses `hello@lx-software.com` |

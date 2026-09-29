@@ -341,16 +341,14 @@ burden.
 
 ### Common
 
-- CSP for the site (add a `ResponseHeadersPolicy` to
-  `public-website-stack.ts`, modelled on the admin web stack):
-  `default-src 'self'; media-src 'self' https://media.lx-software.com; img-src 'self' data: https://media.lx-software.com; connect-src 'self' <admin API origin>; font-src 'self'; style-src 'self' 'unsafe-inline'`.
-- `index.html`: `<link rel="preconnect" href="https://media.lx-software.com">`
-  and `<link rel="preload" as="image" href="…poster.webp" fetchpriority="high">`
-  (poster is the LCP candidate; the video is never preloaded above
-  `metadata` on mobile).
-- `src/lib/media.ts` holds `MEDIA_BASE` from `VITE_MEDIA_BASE_URL`
-  (default `https://media.lx-software.com`), so dev can point at a local
-  copy in `media/out/` served by Vite.
+- CSP on the distribution (`public-website-stack.ts`):
+  `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://media.lx-software.com; media-src 'self' https://media.lx-software.com; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`.
+- `index.html` preloads the same-origin poster (`fetchpriority="high"`).
+  A preconnect to `https://media.lx-software.com` is added only when
+  `VITE_MEDIA_BASE_URL` is set. The video is `preload="metadata"` below
+  900px and `preload="auto"` otherwise.
+- `src/lib/media.ts` reads `VITE_MEDIA_BASE_URL` when a URL is built.
+  Empty serves `/media/*` from this site. The poster stays same-origin.
 
 ## 7. SEO and LLM SEO
 
@@ -359,11 +357,10 @@ burden.
   meta description, `<link rel="canonical" href="https://www.lx-software.com/">`,
   Open Graph (`og:type=website`, `og:image` 1200×630), Twitter
   `summary_large_image`, `theme-color #000`, `lang="en"`.
-- JSON-LD in `index.html`: `WebSite`, `Organization` (LX Software, logo,
-  `sameAs`), `Person` (placeholder name/jobTitle until the owner supplies
-  copy — real names are fine on the live site but check the PII denylist
-  before committing), `FAQPage` generated from `content.json` at build via
-  a small Vite plugin or rendered by `Faq.tsx` as a `<script type="application/ld+json">`.
+- JSON-LD is injected at build by the Vite plugin in `vite.config.ts`:
+  `WebSite`, `Organization`, and `FAQPage` from `content.json`. A `Person`
+  node is inserted only when `VITE_OWNER_NAME` is set. That name stays a
+  GitHub variable, not a committed string.
 - Per-route title/canonical via `seo.ts` (`useEffect`). Optional stretch:
   prerender `/privacy` and `/terms` to static HTML with `react-dom/server`
   in a `postbuild` script, plus a CloudFront Function that rewrites
@@ -371,11 +368,10 @@ burden.
   documents). Without it those pages still work (SPA fallback via the
   existing 403/404 → `/index.html` error responses) but share the home
   meta tags.
-- `public/robots.txt` (allow all, `Sitemap:` line), `public/sitemap.xml`
-  (`/`, `/privacy`, `/terms`, `/wechat`), `public/llms.txt` (short: who,
-  what, contact route, links to `/llms-full.txt`), `public/llms-full.txt`
-  (plain-text dump of every section + FAQ — regenerate from `content.json`
-  in the same postbuild step so it never drifts).
+- `robots.txt`, `sitemap.xml` (`/`, `/privacy`, `/terms`, `/wechat`,
+  `lastmod` from `content.json` `site.updated`), `llms.txt`, and
+  `llms-full.txt` are emitted into `dist/` by the same plugin. They are
+  not tracked under `public/`.
 - Semantic HTML: one `<h1>` in the hero, `<h2>` per section, `<nav>`,
   `<main>`, `<footer>`, `<address>` around contact links, `<details>` FAQ.
   Nothing important lives only in ASCII art (`<pre aria-hidden>` always
