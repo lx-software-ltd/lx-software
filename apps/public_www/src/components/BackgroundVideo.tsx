@@ -6,6 +6,15 @@ export function BackgroundVideo({ still }: { still: boolean }) {
   const [failed, setFailed] = useState(false)
   const [height] = useState<RenditionHeight>(pickHeight)
 
+  const bindVideo = (node: HTMLVideoElement | null) => {
+    videoRef.current = node
+    if (!node) return
+    // React's video typings omit defaultMuted. Set the DOM property so iOS
+    // treats the element as muted before the first autoplay attempt.
+    node.defaultMuted = true
+    node.muted = true
+  }
+
   useEffect(() => {
     const video = videoRef.current
     if (!video || still || failed) return
@@ -47,10 +56,9 @@ export function BackgroundVideo({ still }: { still: boolean }) {
   return (
     <div className="bg-video" aria-hidden="true">
       <video
-        ref={videoRef}
+        ref={bindVideo}
         autoPlay
         muted
-        defaultMuted
         loop
         playsInline
         poster={posterUrl}
