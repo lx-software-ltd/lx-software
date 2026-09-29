@@ -438,10 +438,10 @@ home in git history for rollback.
 
 1. **Newsletter:** removed from the public site. The board newsletter API
    stays for other clients.
-2. **Video:** Option A, R2 plus two renditions. R2 is not enabled on the
-   account yet (API error 10042), so the renditions also ship on the site
-   and `VITE_MEDIA_BASE_URL` switches the player to
-   `https://media.lx-software.com` after `scripts/cloudflare/publish-public-media.sh`.
+2. **Video:** Option A, R2 plus two renditions. Bucket `lx-software-media`
+   and `media.lx-software.com` are live (ranged GET returns 206). The
+   renditions still ship on the site until `VITE_MEDIA_BASE_URL` is
+   `https://media.lx-software.com` and the public site is redeployed.
 3. **Loop:** crossfade.
 4. **Arrow-key section jumps:** implemented, off by default
    (`keyboardSections` in `content.json`) because they replace native arrow

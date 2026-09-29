@@ -16,8 +16,9 @@ and a 1.5 second crossfade, then writes the delivery files into
 The filenames carry `v1`. A new render is `v2`; do not overwrite a
 published name. `media/build/` is intermediate and is not deployed.
 
-Until `VITE_MEDIA_BASE_URL` points at Cloudflare R2, the site serves these
-files from the same origin. Publishing them to R2 is
+The same files are already on R2 at `https://media.lx-software.com`. The
+site keeps serving them from this origin until `VITE_MEDIA_BASE_URL` is
+that host and the public site is redeployed. Republishing is
 `scripts/cloudflare/publish-public-media.sh`. The token needs Workers R2
 Storage edit permission. A failed custom-domain attach stops the script.
 

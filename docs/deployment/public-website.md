@@ -63,37 +63,29 @@ video from `'self'` and `https://media.lx-software.com`.
 
 The slowed silent harbour loop is rendered by
 `apps/public_www/media/render.sh` into `apps/public_www/public/media/`.
-The site plays it from the same origin until `VITE_MEDIA_BASE_URL` is set.
+Bucket `lx-software-media` is live, and `media.lx-software.com` is a proxied
+CNAME on the `lx-software.com` zone. The v1 renditions are uploaded with
+`Cache-Control: public, max-age=31536000, immutable`. A ranged GET of the
+720p MP4 returns 206, and a repeat request is a Cloudflare cache HIT.
 
-R2 is **not enabled** on the Cloudflare account yet. The API returns error
-10042 (`Please enable R2 through the Cloudflare Dashboard`) and that
-switch cannot be flipped from the API. After enabling R2 and accepting the
-terms:
+The site still plays `/media/*` from this origin until the production
+variable is set and **Deploy Public Website** runs again:
 
-```bash
-CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=... \
-  bash scripts/cloudflare/publish-public-media.sh
+```text
+VITE_MEDIA_BASE_URL=https://media.lx-software.com
 ```
 
-The script creates bucket `lx-software-media`, attaches the custom domain
-`media.lx-software.com` on the `lx-software.com` zone, and uploads the
-versioned renditions with `Cache-Control: public, max-age=31536000, immutable`.
-
-Then set the production variable `VITE_MEDIA_BASE_URL` to
-`https://media.lx-software.com` and redeploy. Confirm a ranged response:
-
-```bash
-curl -I -H 'Range: bytes=0-1' https://media.lx-software.com/hk-harbour-v1-720.mp4
-```
+No trailing slash. After that deploy is serving the R2 URLs, the video
+renditions and the master can leave git. The posters stay in
+`apps/public_www/public/media/` because the page preloads them from this
+origin. Do not rewrite history with Git LFS. Re-running
+`scripts/cloudflare/publish-public-media.sh` treats an existing bucket and
+custom domain as success.
 
 `www.lx-software.com` stays a grey-cloud CNAME to CloudFront. Do not proxy
-it. The apex is already proxied; leave that record alone. A cache rule for
-`media.lx-software.com` (cache eligible, edge and browser TTL respect the
-origin `Cache-Control`) needs a token that can edit zone rulesets. The
-current token can read DNS and tiered-cache settings and cannot write
-rulesets (HTTP 403). Add that rule in the dashboard after the hostname
-exists. Tiered Cache is currently off; turn it on for the zone once the
-media hostname is serving traffic.
+it. The apex is already proxied; leave that record alone. Tiered Cache is
+off. The media hostname is already caching from the object `Cache-Control`,
+so an extra cache rule is optional.
 
 ## Troubleshooting
 
