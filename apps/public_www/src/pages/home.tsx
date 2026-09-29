@@ -1,68 +1,106 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { AsciiDivider } from '../components/AsciiDivider'
+import { ContactIcons } from '../components/ContactIcons'
+import { Faq } from '../components/Faq'
+import { ProjectCarousel } from '../components/ProjectCarousel'
 import { defaultSiteContent, fetchSiteContent } from '../lib/content'
+import { useReducedMotion } from '../lib/motion'
+import { usePageMeta } from '../lib/seo'
+import { useSectionKeys } from '../lib/useSectionKeys'
 
 export function HomePage() {
-  const { data, isLoading, isError, error } = useQuery({
+  const reduced = useReducedMotion()
+  const { data } = useQuery({
     queryKey: ['site-content'],
     queryFn: fetchSiteContent,
   })
-
   const content = data ?? defaultSiteContent
-  const errorMessage =
-    error instanceof Error ? error.message : 'Unable to load content.'
+
+  usePageMeta(
+    'LX Software — independent software studio, Hong Kong',
+    '/',
+    content.site.description,
+  )
+  useSectionKeys(content.keyboardSections, !reduced)
 
   return (
-    <section className="container py-5">
-      <div className="row align-items-center g-4">
-        <div className="col-12 col-lg-6">
-          <span className="badge text-bg-primary mb-3">
-            LX Software Public Website
-          </span>
-          <h1 className="display-5 fw-semibold">
-            Build the public presence your team deserves.
-          </h1>
-          <p className="lead text-muted">{content.mission}</p>
-          <div className="d-flex flex-wrap gap-2">
-            <Link className="btn btn-primary" to="/contact">
-              Start a project
-            </Link>
-            <Link className="btn btn-outline-secondary" to="/about">
-              Learn more
-            </Link>
-          </div>
-        </div>
-        <div className="col-12 col-lg-6">
-          <div className="bg-white border rounded-4 p-4 shadow-sm">
-            <h2 className="h5 fw-semibold mb-3">What we deliver</h2>
-            <ul className="list-unstyled mb-0">
-              {content.highlights.map((item) => (
-                <li
-                  key={item.title}
-                  className="highlight-item border-bottom pb-3 mb-3"
-                >
-                  <h3 className="h6 fw-semibold mb-1">{item.title}</h3>
-                  <p className="text-muted mb-0">{item.description}</p>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </div>
+    <>
+      <section className="hero container" id="top">
+        <p className="visually-hidden">
+          Background: a slowed, silent night harbour, shown in full without cropping.
+        </p>
+        <h1>
+          <span className="kicker">{content.hero.kicker}</span>
+          <span className="cursor" aria-hidden="true" />
+        </h1>
+        <p className="lede">{content.hero.summary}</p>
+        <a className="scroll-cue" href="#who-i-am">
+          [ {content.hero.scrollLabel} ]
+        </a>
+      </section>
 
-      <div className="mt-5">
-        {isLoading && (
-          <div className="d-flex align-items-center gap-2">
-            <div className="spinner-border spinner-border-sm" />
-            <span className="text-muted">Loading highlights...</span>
+      <AsciiDivider />
+
+      <section className="section" id="who-i-am" aria-labelledby="who-heading">
+        <div className="container who">
+          <pre className="ascii" aria-hidden="true">
+            {content.whoIAm.portrait.join('\n')}
+          </pre>
+          <div>
+            <h2 id="who-heading">{content.whoIAm.heading}</h2>
+            {content.whoIAm.paragraphs.map((paragraph) => (
+              <p key={paragraph}>{paragraph}</p>
+            ))}
           </div>
-        )}
-        {isError && (
-          <div className="alert alert-warning mt-3" role="alert">
-            {errorMessage}
+        </div>
+      </section>
+
+      <AsciiDivider />
+
+      <section className="section fold" id="what-i-do" aria-labelledby="do-heading">
+        <div className="container">
+          <h2 id="do-heading">{content.whatIDo.heading}</h2>
+          <p>{content.whatIDo.intro}</p>
+          <div className="cards">
+            {content.whatIDo.services.map((service) => (
+              <article key={service.title} className="card-block">
+                <h3>{service.title}</h3>
+                <p>{service.description}</p>
+              </article>
+            ))}
           </div>
-        )}
-      </div>
-    </section>
+          <ul className="skills" aria-label="Skills">
+            {content.whatIDo.skills.map((skill) => (
+              <li key={skill}>[ {skill} ]</li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      <AsciiDivider />
+
+      <section className="section fold" id="projects" aria-labelledby="projects-heading">
+        <div className="container">
+          <h2 id="projects-heading">{content.projects.heading}</h2>
+          <p>{content.projects.intro}</p>
+          <ProjectCarousel items={content.projects.items} />
+        </div>
+      </section>
+
+      <AsciiDivider />
+
+      <section className="section fold" id="contact" aria-labelledby="contact-heading">
+        <div className="container">
+          <h2 id="contact-heading">{content.contact.heading}</h2>
+          <p>{content.contact.intro}</p>
+          <address>
+            <ContactIcons />
+          </address>
+        </div>
+      </section>
+
+      <AsciiDivider />
+      <Faq items={content.faq} />
+    </>
   )
 }

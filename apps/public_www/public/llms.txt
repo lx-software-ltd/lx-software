@@ -1,0 +1,21 @@
+# LX Software
+
+> Independent software studio, Hong Kong.
+
+Independent software studio in Hong Kong. I design and ship software that stays fast, legible, and easy to change.
+
+## Contact
+
+- Email: hello@lx-software.com
+- Telephone, WhatsApp, and WeChat appear on the contact section when they are configured at build time. Those values are not stored in the repository.
+
+## Pages
+
+- [Home](https://www.lx-software.com/): Home. Who I am, what I do, projects, contact, and a short FAQ.
+- [privacy](https://www.lx-software.com/privacy): Draft privacy policy.
+- [terms](https://www.lx-software.com/terms): Draft terms and conditions.
+- [wechat](https://www.lx-software.com/wechat): WeChat contact placeholder.
+
+## Optional
+
+- [Full text](https://www.lx-software.com/llms-full.txt): every section in plain text
