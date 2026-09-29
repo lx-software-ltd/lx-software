@@ -36,7 +36,7 @@ a {
   top: 8px;
   left: 12px;
   padding: 0.4rem 0.7rem;
-  background: #000;
+  background: var(--bg);
   color: var(--accent-cyan);
   transform: translateY(-160%);
 }
@@ -80,7 +80,7 @@ a {
   max-width: var(--site-max-width);
   margin: 0 auto;
   padding: 0 1rem;
-  background: #000;
+  background: var(--bg);
 }
 
 .nav-toggle {
@@ -88,7 +88,7 @@ a {
   margin-left: auto;
   padding: 0.35rem 0.6rem;
   border: 1px solid #333;
-  background: #000;
+  background: var(--bg);
   color: #fff;
   font: inherit;
 }
@@ -296,7 +296,7 @@ h1 {
 .carousel-toolbar button {
   padding: 0.3rem 0.55rem;
   border: 1px solid #333;
-  background: #000;
+  background: var(--bg);
   color: #fff;
   font: inherit;
 }
@@ -436,7 +436,7 @@ address {
   position: relative;
   z-index: 10;
   border-top: 1px solid #222;
-  background: #000;
+  background: var(--bg);
   color: var(--fg-dim);
 }
 
@@ -498,7 +498,7 @@ address {
     flex-direction: column;
     gap: 0.85rem;
     padding: 0.4rem 1rem 1rem;
-    background: #000;
+    background: var(--bg);
     border-bottom: 1px solid #222;
   }
 
