@@ -3,7 +3,6 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useReducedMotion } from '../lib/motion'
 import { pageSections } from '../lib/sections'
 import { useActiveSection } from '../lib/useActiveSection'
-import { Logo } from './Logo'
 
 const mobileNav = '(max-width: 760px)'
 
@@ -62,7 +61,6 @@ export function TopNav() {
 
   return (
     <header className="top-nav">
-      <Logo />
       <button
         ref={toggleRef}
         type="button"

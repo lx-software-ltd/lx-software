@@ -76,18 +76,6 @@ a {
   height: var(--nav-h);
   padding: 0 1rem;
   background: #000;
-  border-bottom: 1px solid #222;
-}
-
-.logo {
-  display: flex;
-  flex: none;
-  line-height: 0;
-}
-
-.logo svg {
-  width: 60px;
-  height: 60px;
 }
 
 .nav-toggle {
@@ -302,9 +290,11 @@ h1 {
   margin: 0;
   padding: 0.25rem 0 1rem;
   overflow-x: auto;
+  overflow-y: hidden;
   list-style: none;
   scroll-snap-type: x mandatory;
   overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
   scrollbar-width: thin;
   scrollbar-color: #444 transparent;
   cursor: grab;
