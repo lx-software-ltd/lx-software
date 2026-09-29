@@ -1,6 +1,6 @@
 export const posterUrl = '/media/hk-harbour-v1-poster.webp'
 
-/** Native harbour clip size. Site content shares this max width. */
+/** Native harbour clip size; the 16:9 ratio also sizes the content column. */
 export const VIDEO_WIDTH = 1280
 export const VIDEO_HEIGHT = 720
 

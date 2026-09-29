@@ -9,12 +9,12 @@
   --overlay: rgba(0, 0, 0, 0.45);
   --font-mono: 'IBM Plex Mono', ui-monospace, 'Courier New', monospace;
   --nav-h: 48px;
-  /* Harbour clip is 1280×720; content must not outrun that frame. */
-  --video-max-width: 1280px;
-  --video-frame-width: min(
-    var(--video-max-width),
-    calc((100vh - var(--nav-h)) * 16 / 9)
-  );
+  /*
+   * The 16:9 harbour clip is letterboxed with object-fit: contain under the
+   * nav. Copy shares the frame's edges: the full width while the frame is
+   * width-bound, the frame's own width once a wide window height-binds it.
+   */
+  --video-frame-width: min(100%, calc((100vh - var(--nav-h)) * 16 / 9));
   --bs-body-bg: #000;
   --bs-body-color: #fff;
   --bs-body-font-family: var(--font-mono);
