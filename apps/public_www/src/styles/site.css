@@ -121,11 +121,19 @@ a {
   margin: 0 auto;
 }
 
-/* Bootstrap's grid caps .container at 1140/1320px by viewport; inside the
-   locked column it should simply fill the column. */
+/* The grid is imported without Bootstrap's reboot, so width: 100% plus the
+   gutters overflowed narrow phones by 24px. */
 .container {
   box-sizing: border-box;
-  max-width: var(--site-max-width);
+}
+
+/* Bootstrap's xxl container (1320px) is wider than the locked column, which
+   would leave the copy flush with the video edge. Keep the xl width so the
+   column has the same side room as the smaller breakpoints. */
+@media (min-width: 1400px) {
+  .container {
+    max-width: 1140px;
+  }
 }
 
 .site-main {
