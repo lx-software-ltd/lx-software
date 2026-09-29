@@ -32,10 +32,10 @@ ffmpeg -y -i "$ROOT/build/hk-harbour-loop.mp4" -vf "scale=-2:480" \
   -g 48 -keyint_min 48 -sc_threshold 0 -movflags +faststart \
   "$OUT/hk-harbour-v1-480.mp4"
 ffmpeg -y -i "$ROOT/build/hk-harbour-loop.mp4" \
-  -c:v libsvtav1 -crf 34 -preset 8 -g 48 -pix_fmt yuv420p \
+  -c:v libsvtav1 -crf 34 -preset 6 -g 48 -pix_fmt yuv420p \
   "$OUT/hk-harbour-v1-720.webm"
 ffmpeg -y -i "$ROOT/build/hk-harbour-loop.mp4" -vf "scale=-2:480" \
-  -c:v libsvtav1 -crf 34 -preset 8 -g 48 -pix_fmt yuv420p \
+  -c:v libsvtav1 -crf 34 -preset 6 -g 48 -pix_fmt yuv420p \
   "$OUT/hk-harbour-v1-480.webm"
 ffmpeg -y -i "$ROOT/build/hk-harbour-loop.mp4" -frames:v 1 -q:v 3 \
   "$OUT/hk-harbour-v1-poster.jpg"

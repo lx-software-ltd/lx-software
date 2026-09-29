@@ -1,3 +1,5 @@
+import { useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { AsciiDivider } from '../components/AsciiDivider'
 import { ContactIcons } from '../components/ContactIcons'
@@ -10,6 +12,7 @@ import { useSectionKeys } from '../lib/useSectionKeys'
 
 export function HomePage() {
   const reduced = useReducedMotion()
+  const location = useLocation()
   const { data } = useQuery({
     queryKey: ['site-content'],
     queryFn: fetchSiteContent,
@@ -22,6 +25,15 @@ export function HomePage() {
     content.site.description,
   )
   useSectionKeys(content.keyboardSections, !reduced)
+
+  useEffect(() => {
+    const id = location.hash.replace(/^#/, '')
+    if (!id) return
+    document.getElementById(id)?.scrollIntoView({
+      behavior: reduced ? 'auto' : 'smooth',
+      block: 'start',
+    })
+  }, [location.hash, reduced])
 
   return (
     <>
@@ -42,16 +54,11 @@ export function HomePage() {
       <AsciiDivider />
 
       <section className="section" id="who-i-am" aria-labelledby="who-heading">
-        <div className="container who">
-          <pre className="ascii" aria-hidden="true">
-            {content.whoIAm.portrait.join('\n')}
-          </pre>
-          <div>
-            <h2 id="who-heading">{content.whoIAm.heading}</h2>
-            {content.whoIAm.paragraphs.map((paragraph) => (
-              <p key={paragraph}>{paragraph}</p>
-            ))}
-          </div>
+        <div className="container">
+          <h2 id="who-heading">{content.whoIAm.heading}</h2>
+          {content.whoIAm.paragraphs.map((paragraph) => (
+            <p key={paragraph}>{paragraph}</p>
+          ))}
         </div>
       </section>
 

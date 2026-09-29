@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { pickHeight, posterUrl, videoUrl, type RenditionHeight } from '../lib/media'
+import { useEffect, useRef, useState, type SyntheticEvent } from 'react'
+import { pickHeight, posterUrl, videoSources, type RenditionHeight } from '../lib/media'
 
 export function BackgroundVideo({ still }: { still: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -28,7 +28,13 @@ export function BackgroundVideo({ still }: { still: boolean }) {
     )
   }
 
-  const narrow = height === 480
+  const sources = videoSources(height)
+  const failIfExhausted = (event: SyntheticEvent<HTMLSourceElement>) => {
+    const video = event.currentTarget.parentElement
+    if (!(video instanceof HTMLVideoElement)) return
+    const listed = video.querySelectorAll('source')
+    if (listed[listed.length - 1] === event.currentTarget) setFailed(true)
+  }
   return (
     <div className="bg-video" aria-hidden="true">
       <video
@@ -38,7 +44,7 @@ export function BackgroundVideo({ still }: { still: boolean }) {
         loop
         playsInline
         poster={posterUrl}
-        preload={narrow ? 'metadata' : 'auto'}
+        preload={height === 480 ? 'metadata' : 'auto'}
         disablePictureInPicture
         disableRemotePlayback
         onError={() => setFailed(true)}
@@ -46,8 +52,9 @@ export function BackgroundVideo({ still }: { still: boolean }) {
           void event.currentTarget.play().catch(() => setFailed(true))
         }}
       >
-        <source src={videoUrl(height, 'webm')} type="video/webm; codecs=av01.0.05M.08" />
-        <source src={videoUrl(height, 'mp4')} type="video/mp4" />
+        {sources.map((source) => (
+          <source key={source.type} src={source.src} type={source.type} onError={failIfExhausted} />
+        ))}
         <img src={posterUrl} alt="" />
       </video>
     </div>

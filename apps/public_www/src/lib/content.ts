@@ -36,6 +36,7 @@ export interface SiteContent {
     email: string
     tagline: string
     description: string
+    updated: string
   }
   hero: {
     kicker: string
@@ -44,7 +45,6 @@ export interface SiteContent {
   }
   whoIAm: {
     heading: string
-    portrait: string[]
     paragraphs: string[]
   }
   whatIDo: {

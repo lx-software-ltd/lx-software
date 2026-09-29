@@ -1,8 +1,9 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useReducedMotion } from '../lib/motion'
 
 export function Logo() {
   const location = useLocation()
+  const navigate = useNavigate()
   const reduced = useReducedMotion()
 
   return (
@@ -13,8 +14,8 @@ export function Logo() {
       onClick={(event) => {
         if (location.pathname !== '/') return
         event.preventDefault()
+        navigate('/', { replace: true })
         window.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' })
-        history.replaceState(null, '', '/')
       }}
     >
       <svg width="60" height="60" viewBox="0 0 60 60" aria-hidden="true">

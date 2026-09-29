@@ -17,10 +17,11 @@ variable empty to keep that icon disabled.
 | `CDK_PARAM_FILE` | for CDK | Path to parameter file, e.g. `backend/infrastructure/params/production.json` |
 | `PUBLIC_WEBSITE_STACK_NAME` | no | Stack that owns the bucket and distribution. Default `lxsoftware-public-www` |
 | `VITE_MEDIA_BASE_URL` | no | Harbour video host, no trailing slash. Empty serves `/media/*` from this site. After R2 is live: `https://media.lx-software.com` |
-| `VITE_CONTACT_TEL` | no | Telephone, E.164 with a leading `+`. Empty disables the icon |
-| `VITE_CONTACT_WHATSAPP` | no | WhatsApp digits only, country code, no `+`. Empty disables the icon |
+| `VITE_CONTACT_TEL` | no | Telephone, E.164 with a leading `+`. Empty shows "Not configured" |
+| `VITE_CONTACT_WHATSAPP` | no | WhatsApp digits only, country code, no `+`. Empty shows "Not configured" |
 | `VITE_CONTACT_EMAIL` | no | Mailto target. Empty uses `hello@lx-software.com` |
 | `VITE_CONTACT_WECHAT_ID` | no | Shown on `/wechat`. Empty leaves the placeholder |
+| `VITE_OWNER_NAME` | no | schema.org Person name. Empty omits the Person node |
 
 `ADMIN_API_BASE_URL` is no longer read by this workflow. The public site
 does not call the admin API.
@@ -39,10 +40,13 @@ Output lands in `apps/public_www/dist`.
 
 **Deploy Public Website** runs on pushes to `main` that touch
 `apps/public_www/**`, `backend/infrastructure/**` or `scripts/deploy/**`,
-or manually. It builds the site, then syncs `dist/` and invalidates the
-distribution. Hashed assets and `media/hk-harbour-v1-*` are cached for a
-year. `index.html`, `content.json`, the sitemap, robots, and `llms.txt`
-are uploaded again with `Cache-Control: no-cache`.
+or manually. It builds the site, then uploads `dist/` and invalidates the
+distribution. Hashed files under `assets/` go up first and are cached for a
+year. `index.html`, `content.json`, robots, the sitemap, `llms.txt`,
+`llms-full.txt`, and `site.webmanifest` are copied with
+`Cache-Control: no-cache` and are never written as immutable. `media/`
+syncs with `--size-only`. Retired hashed assets are deleted only after the
+new shell is uploaded.
 
 ```bash
 PUBLIC_WEBSITE_STACK_NAME=lxsoftware-public-www \

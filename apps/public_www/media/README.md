@@ -9,8 +9,8 @@ and a 1.5 second crossfade, then writes the delivery files into
 
 | File | Role |
 |------|------|
-| `hk-harbour-v1-720.mp4` / `.webm` | Desktop rendition |
-| `hk-harbour-v1-480.mp4` / `.webm` | Narrow-screen rendition |
+| `hk-harbour-v1-720.mp4` / `.webm` | Desktop rendition. AV1 is SVT preset 6 |
+| `hk-harbour-v1-480.mp4` / `.webm` | Narrow screens play the MP4 only. The webm is rendered and not selected |
 | `hk-harbour-v1-poster.jpg` / `.webp` | Poster. The WebP is also the LCP image |
 
 The filenames carry `v1`. A new render is `v2`; do not overwrite a
@@ -18,4 +18,13 @@ published name. `media/build/` is intermediate and is not deployed.
 
 Until `VITE_MEDIA_BASE_URL` points at Cloudflare R2, the site serves these
 files from the same origin. Publishing them to R2 is
-`scripts/cloudflare/publish-public-media.sh`.
+`scripts/cloudflare/publish-public-media.sh`. The token needs Workers R2
+Storage edit permission. A failed custom-domain attach stops the script.
+
+## After R2 is verified
+
+The page preloads the posters from this origin, so those files stay in
+`public/media/`. Once a ranged GET of the 720p MP4 returns 206, the video
+renditions and the master can leave git. The publish script prints the
+`git rm` lines. Do not rewrite history with Git LFS; converting existing
+blobs without a history rewrite only makes clones larger.

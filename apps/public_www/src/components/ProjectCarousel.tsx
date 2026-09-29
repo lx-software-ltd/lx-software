@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { carouselIndex } from '../lib/carouselIndex'
 import type { ProjectItem } from '../lib/content'
 import { useReducedMotion } from '../lib/motion'
 
@@ -10,18 +11,18 @@ export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
 
   const syncIndex = () => {
     const list = scroller.current
-    if (!list || list.children.length === 0) return
-    const left = list.scrollLeft
-    let closest = 0
-    let distance = Number.POSITIVE_INFINITY
-    Array.from(list.children).forEach((child, position) => {
-      const delta = Math.abs((child as HTMLElement).offsetLeft - left)
-      if (delta < distance) {
-        distance = delta
-        closest = position
-      }
-    })
-    setIndex(closest)
+    if (!list) return
+    const offsets = Array.from(list.children).map((child) => (child as HTMLElement).offsetLeft)
+    setIndex(carouselIndex(list.scrollLeft, list.scrollWidth - list.clientWidth, offsets))
+  }
+
+  const endDrag = (event: { pointerId: number }) => {
+    const list = scroller.current
+    if (!list) return
+    list.dataset.dragging = '0'
+    list.classList.remove('is-dragging')
+    if (list.hasPointerCapture(event.pointerId)) list.releasePointerCapture(event.pointerId)
+    syncIndex()
   }
 
   const scrollByCard = (direction: 1 | -1) => {
@@ -64,7 +65,7 @@ export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
         className="carousel-track"
         onScroll={syncIndex}
         onPointerDown={(event) => {
-          if (event.pointerType === 'mouse' && event.button !== 0) return
+          if (event.pointerType !== 'mouse' || event.button !== 0) return
           const list = scroller.current
           if (!list) return
           list.dataset.dragX = String(event.clientX)
@@ -85,14 +86,8 @@ export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
           }
           list.scrollLeft = startLeft - delta
         }}
-        onPointerUp={(event) => {
-          const list = scroller.current
-          if (!list) return
-          list.dataset.dragging = '0'
-          list.classList.remove('is-dragging')
-          if (list.hasPointerCapture(event.pointerId)) list.releasePointerCapture(event.pointerId)
-          syncIndex()
-        }}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
         onClickCapture={(event) => {
           if (!dragged.current) return
           event.preventDefault()

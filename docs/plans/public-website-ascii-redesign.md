@@ -1,9 +1,8 @@
 # Public website redesign — ASCII cinematic single page
 
-Developer plan for `www.lx-software.com` (`apps/public_www`). Planning
-document only; nothing here is built yet. Scope, decisions, work packages,
-acceptance criteria and the Cloudflare video setup are below so a developer
-can pick it up without re-deriving the brief.
+Developer plan for `www.lx-software.com` (`apps/public_www`). The site
+described here is built. Sections 2–10 are the brief; section 11 records
+the decisions that shipped.
 
 ## 1. Brief (condensed)
 
@@ -29,9 +28,9 @@ can pick it up without re-deriving the brief.
 | Item | Today | Plan |
 |------|-------|------|
 | Stack | Vite 8, React 19, React Router 7, TanStack Query 5, Bootstrap 5 (`apps/public_www`) | Keep. Repo rules require this stack; Bootstrap stays for grid/utilities and is re-themed with CSS tokens (`data-bs-theme="dark"` + overrides). |
-| Routes | `/`, `/about`, `/contact`, `*` | `/` (single page), `/privacy`, `/terms`, `/wechat` (QR page); `/about` → `/#who-i-am`, `/contact` → `/#contact` redirects so old links keep working. |
+| Routes | `/`, `/about`, `/contact`, `*` | `/` (single page), `/privacy`, `/terms`, `/wechat` (QR page). `/about` and `/contact` are dropped with no redirects. |
 | Content | `public/content.json` fetched with TanStack Query | Extend the JSON (bio, services, projects, FAQ). Placeholders live there, not in components. |
-| Footer | `NewsletterForm` (WP8 double opt-in, needs `VITE_PUBLIC_API_URL`) + copyright | Keep the form. It moves into the bottom bar (or the Contact section — see open decisions). |
+| Footer | `NewsletterForm` (WP8 double opt-in, needs `VITE_PUBLIC_API_URL`) + copyright | Removed from the public site. The bottom bar is copyright plus Privacy Policy and Terms. |
 | Hosting | S3 + CloudFront (`backend/infrastructure/lib/public-website-stack.ts`), Cloudflare DNS gray-cloud, deploy via `scripts/deploy/deploy-public-website.sh` | Unchanged for HTML/JS/CSS. Video and poster move to a Cloudflare-served media host. |
 | Video | `apps/public_www/public/openrouter-video-gen-vid-…mp4` — 3.85 MB, 1280×720, 24 fps, 121 frames (5.04 s), H.264 + AAC | **Move out of `public/`** (it is copied into `dist/` and synced to S3 on every deploy and pushed to `main` already triggered **Deploy Public Website**). Keep the master at `apps/public_www/media/source/hk-harbour-master.mp4`; render the deliverables offline (§5). |
 
@@ -81,11 +80,8 @@ subset, `font-display: swap`). No Google Fonts request.
 │ ─────────────────────── ═══ ─────────────────────── ═══ ──────────────── │ ← ASCII divider
 │                                                                          │
 │ ## WHO I AM                                                              │
-│ ┌──────────────┐  Bio paragraph (placeholder). Second paragraph.         │
-│ │ ASCII        │  Third paragraph.                                       │
-│ │ portrait     │                                                         │
-│ │ placeholder  │  [ github ]  [ linkedin ]                               │
-│ └──────────────┘                                                         │
+│ Bio paragraph (placeholder). Second paragraph says the biography         │
+│ will be replaced. No portrait.                                           │
 │                                                                          │
 │ ## WHAT I DO                                                             │
 │ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐          │
@@ -111,8 +107,7 @@ subset, `font-display: swap`). No Google Fonts request.
 │ ## FAQ  (LLM SEO; collapsible <details>)                                 │
 │                                                                          │
 ├──────────────────────────────────────────────────────────────────────────┤
-│ newsletter [ you@example.com ] [ subscribe ]     Privacy Policy · Terms   │ ← bottom bar, in normal flow
-│ © 2026 LX Software                                                       │
+│ © 2026 LX Software                          Privacy Policy · Terms       │ ← bottom bar, in normal flow
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -125,7 +120,7 @@ horizontal snap with one card + peek; contact icons wrap 2×2.
 
 ### 3.3 Logo and favicon
 
-- `src/components/Logo.tsx`: `<a href="#top" aria-label="LX Software — back to top">` wrapping an inline SVG, 60×60, `rx="14"`, fill `#000`, 1px stroke `#333` (a black square on a black nav is invisible without it), "LX" in white IBM Plex Mono Bold, centred. Click → `scrollTo({ top: 0, behavior })` and `history.replaceState` to drop the hash.
+- `src/components/Logo.tsx`: `<a href="/" aria-label="LX Software — back to top">` wrapping an inline SVG, 60×60, `rx="14"`, fill `#000`, 1px stroke `#444` (a black square on a black nav is invisible without it), "LX" in white IBM Plex Mono Bold, centred. On the home page, click calls `navigate('/', { replace: true })` and `scrollTo({ top: 0, behavior })`.
 - Favicon set in `public/`: `favicon.svg` (same mark), `favicon-32.png`, `apple-touch-icon.png` (180, no transparency), `site.webmanifest`, plus `og-image.png` 1200×630 (poster frame + logo + name; also the Twitter card).
 
 ### 3.4 Effects layer (`src/components/CinemaLayer.tsx` + `src/styles/effects.css`)
@@ -137,7 +132,7 @@ children. Everything is CSS; no per-frame JavaScript.
 |--------|----------------|--------------|
 | Dark overlay | `.overlay { background: var(--overlay) }` | none |
 | Scanlines | `repeating-linear-gradient(0deg, transparent 0 2px, rgba(0,0,0,.25) 2px 3px)` | static |
-| Film grain | 256×256 SVG `feTurbulence` tile as data-URI background, `animation: grain 1s steps(8) infinite` shifting `background-position` (8 discrete positions) | `will-change: background-position`; disabled on reduced motion |
+| Film grain | SVG `feTurbulence` tile as a data-URI background on a layer with `inset: -20%`. The animation is `transform: translate3d` so it stays on the compositor | `will-change: transform`; the layer is hidden on reduced motion |
 | Vignette | `radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,.8) 100%)` | static |
 | CRT curvature | `border-radius: 1.5% / 2.5%` + `box-shadow: inset 0 0 120px rgba(0,0,0,.6)` on the video frame | subtle; true barrel distortion (WebGL) is out of scope |
 | Cursor | `.cursor::after { content: '█'; animation: blink 1s steps(1) infinite }` | one element in the hero |
@@ -153,35 +148,40 @@ content 10 → nav 20 → progress bar 30.
 
 ```
 apps/public_www/
-├── index.html                      static meta, JSON-LD, preload poster
+├── index.html                      static meta, preload poster (JSON-LD injected at build)
 ├── media/source/hk-harbour-master.mp4   original upload (not served)
 ├── media/README.md                 render commands (§5)
+├── scripts/site-seo.ts             JSON-LD, llms, sitemap, robots from content.json
 ├── public/
-│   ├── content.json                extended
+│   ├── content.json                extended; site.updated is the sitemap lastmod
 │   ├── favicon.svg, favicon-32.png, apple-touch-icon.png, site.webmanifest
 │   ├── og-image.png
-│   ├── robots.txt, sitemap.xml, llms.txt, llms-full.txt
+│   └── media/                      harbour renditions until R2 is live
 └── src/
-    ├── styles/tokens.css, effects.css, base.css
+    ├── styles/tokens.css, effects.css, site.css
     ├── components/
     │   ├── Logo.tsx, TopNav.tsx, ScrollProgress.tsx, BottomBar.tsx
     │   ├── BackgroundVideo.tsx, CinemaLayer.tsx
-    │   ├── AsciiDivider.tsx, AsciiFrame.tsx (portrait / card art)
+    │   ├── AsciiDivider.tsx
     │   ├── ProjectCarousel.tsx, ContactIcons.tsx, Faq.tsx
-    │   └── NewsletterForm.tsx (existing)
     ├── lib/
-    │   ├── content.ts (types extended), media.ts (URLs, rendition pick)
-    │   ├── useReducedMotion.ts, useActiveSection.ts, useSectionKeys.ts
+    │   ├── content.ts, media.ts, contact.ts, carouselIndex.ts
+    │   ├── motion.ts, useActiveSection.ts, useSectionKeys.ts
     │   └── seo.ts (document.title / canonical per route)
-    └── pages/home.tsx, privacy.tsx, terms.tsx, wechat.tsx, not-found.tsx
+    └── pages/home.tsx, legal.tsx, wechat.tsx, not-found.tsx
 ```
+
+`robots.txt`, `sitemap.xml`, `llms.txt`, and `llms-full.txt` are emitted by
+the Vite plugin. They are not tracked under `public/`.
 
 ### 4.2 Behaviour
 
 - **Single page**: sections are `<section id="who-i-am" aria-labelledby>`
-  etc. Nav links are `<a href="#what-i-do">` (works without JS); a click
-  handler calls `scrollIntoView({ behavior: motionOk ? 'smooth' : 'auto' })`
-  and `history.pushState`. `scroll-margin-top: var(--nav-h)` on sections.
+  etc. Nav links are React Router `<Link to="/#what-i-do">`. On the home
+  page a click calls `navigate` when the hash changes and
+  `scrollIntoView({ behavior: motionOk ? 'smooth' : 'auto' })`. A direct
+  visit to `/#projects`, including from a legal page, scrolls once the
+  section exists. `scroll-margin-top` on sections clears the nav.
   `useActiveSection` (IntersectionObserver, `rootMargin: -40% 0px -55%`) sets
   `aria-current="true"` on the matching link.
 - **Progress bar**: `ScrollProgress` updates `transform: scaleX()` from a
@@ -194,8 +194,8 @@ apps/public_www/
   carousel, a form control, or a `<details>`), so native arrow scrolling is
   only replaced when nothing has focus. Behind a `keyboardSections` flag in
   `content.json` so it can be turned off if it feels wrong.
-- **Carousel** (`ProjectCarousel`): `<section role="region" aria-roledescription="carousel" aria-label="Projects">`, a `<ul>` with `scroll-snap-type: x mandatory`, `overscroll-behavior-x: contain`, cards `scroll-snap-align: start`. Drag with pointer events (`setPointerCapture`, threshold 6px, suppress the card link click after a drag). Prev/Next `<button aria-label="Previous project">` call `scrollBy({ left: ±cardWidth })`, `disabled` at the ends, plus `aria-live="polite"` "Project 2 of 6". Card art is an `<AsciiFrame>` (`<pre aria-hidden>` block from `asciiArt` in content.json) with the real description in text. Accent green border and title on hover/focus-within.
-- **Contact**: four `<a>`s with inline SVG (`aria-hidden`) and visible ASCII labels `[ TEL ]`. Values are **build-time env**, not source (repo PII rule: phone numbers must not appear in source or docs): `VITE_CONTACT_TEL` (E.164), `VITE_CONTACT_WHATSAPP` (digits only → `https://wa.me/<digits>`), `VITE_CONTACT_EMAIL` (default `hello@lx-software.com`), `VITE_CONTACT_WECHAT_ID`. Add them as GitHub repository variables and pass them in **Deploy Public Website** like `ADMIN_API_BASE_URL`. If a value is empty the icon renders disabled with `aria-disabled`. WeChat: `weixin://dl/chat?<id>` is unreliable on desktop, so the icon links to `/wechat` (QR image `public/wechat-qr.png` + the ID as text); on a WeChat-capable mobile UA it tries the `weixin://` link first.
+- **Carousel** (`ProjectCarousel`): a region with `aria-roledescription="carousel"`, a `<ul>` with `scroll-snap-type: x mandatory`, `overscroll-behavior-x: contain`, cards `scroll-snap-align: start`. Mouse drag uses pointer capture (threshold 6px, suppress the card link click after a drag). Touch scrolling is left to the browser, and `pointercancel` clears a drag so snap cannot stick off. Prev/Next buttons are `disabled` at the ends. The index treats `scrollLeft` within 1px of the maximum as the last card, so Next can reach "6 of 6". `aria-live="polite"` announces the position. Card art is a `<pre aria-hidden>` block from `ascii` in content.json. Accent green border and title on hover/focus-within.
+- **Contact**: four items with inline SVG (`aria-hidden`) and visible ASCII labels `[ TEL ]`. Values are **build-time env**, not source (repo PII rule: phone numbers must not appear in source or docs): `VITE_CONTACT_TEL` (E.164), `VITE_CONTACT_WHATSAPP` (digits only → `https://wa.me/<digits>`), `VITE_CONTACT_EMAIL` (default `hello@lx-software.com`), `VITE_CONTACT_WECHAT_ID`. Pass them as production GitHub variables in **Deploy Public Website**. An empty telephone or WhatsApp value is a plain note, "Not configured", with no link role. WeChat: `weixin://dl/chat?<id>` is unreliable on desktop, so the icon links to `/wechat` (QR image `public/wechat-qr.png` + the ID as text); on a WeChat-capable mobile UA it tries the `weixin://` link first. `VITE_OWNER_NAME`, when set, adds the schema.org Person node. Empty omits it.
 - **Legal pages**: `/privacy`, `/terms` render `content.json` `legal.privacy` / `legal.terms` (array of `{ heading, paragraphs[] }`) inside the same layout: nav, cinema layer, video **paused and poster only** (legal text needs stillness), bottom bar. Placeholder text until counsel supplies copy.
 - **Reduced motion / data**: `useReducedMotion` combines `matchMedia('(prefers-reduced-motion: reduce)')`, `matchMedia('(prefers-reduced-data: reduce)')`, `navigator.connection?.saveData`. When true: `<html data-motion="off">`, `BackgroundVideo` renders only `<img src=poster>`, `effects.css` zeroes every `animation` and `transition`, `scroll-behavior: auto`.
 
@@ -280,8 +280,9 @@ ffmpeg -i build/hk-harbour-loop.mp4 -frames:v 1 -c:v libwebp -quality 80 out/hk-
 ```
 
 Measured on the master (CRF 23, `-preset fast` for the check; `slow` will
-be a little smaller): 720p MP4 4.4 MB, 480p MP4 2.0 MB, 480p AV1 1.8 MB
-(`-preset 8`; use `6` for the real render), poster JPEG 172 KB / WebP 116 KB.
+be a little smaller): 720p MP4 4.4 MB, 480p MP4 2.0 MB, 480p AV1 about
+1.7 MB. The checked-in AV1 files and `render.sh` use SVT `-preset 6`.
+Poster JPEG 169 KB / WebP 114 KB.
 The footage is a night skyline with a junk boat crossing mid-clip; frame 0
 and the last frame are identical (verified with a contact sheet), and the
 boat is absent at the loop point, so the crossfade only touches water and
@@ -414,7 +415,7 @@ burden.
 - Reduced motion honoured (§4.2); the site is fully usable with effects
   off.
 - Contrast verified over the brightest video frame with the overlay.
-- Bootstrap collapse for the mobile menu with `aria-expanded`, Escape closes.
+- Mobile menu: `[ menu ]` toggle with `aria-expanded`. Below 760px, opening the menu focuses the first link, Escape closes and returns focus, Tab cycles the links, and a pointerdown outside the menu closes it.
 
 ## 10. Work packages
 
@@ -424,7 +425,7 @@ burden.
 | B. Shell | Tokens, fonts, `TopNav`, `Logo`, `ScrollProgress`, `BottomBar`, `CinemaLayer`, `BackgroundVideo`, reduced-motion hook, routes/redirects | Empty single page with video + effects, nav smooth-scrolls, reduced motion shows poster, Lighthouse a11y 100 |
 | C. Sections | Who I Am, What I Do, Projects carousel, Contact icons, FAQ; `content.json` schema + placeholders; contact env vars in the deploy workflow | All content from JSON, carousel passes keyboard/drag/button tests, contact links resolve from env |
 | D. Legal pages | `/privacy`, `/terms`, `/wechat` in the same layout | Pages render placeholder copy, video paused, bottom bar present |
-| E. SEO | `index.html` meta/JSON-LD, `robots.txt`, `sitemap.xml`, `llms.txt`, `llms-full.txt`, `seo.ts`, OG image | Rich Results test passes for Organization/Person/WebSite/FAQPage; `llms.txt` served |
+| E. SEO | `index.html` meta, JSON-LD injected by the Vite plugin, `robots.txt`, `sitemap.xml`, `llms.txt`, `llms-full.txt` emitted into `dist/`, `seo.ts`, OG image | Rich Results test passes for Organization/WebSite/FAQPage; Person only when `VITE_OWNER_NAME` is set; `llms.txt` served |
 | F. Infra | CSP `ResponseHeadersPolicy` in `public-website-stack.ts`, cache-control in the deploy script, GitHub variables (`VITE_CONTACT_*`, `VITE_MEDIA_BASE_URL`), docs update | `cdk diff` clean, deploy green, headers visible in production |
 | G. Polish | Glitch tuning, grain density, mobile menu, performance pass, cross-browser (Safari iOS, Chrome Android, Firefox) | Budget in §8 met; iOS autoplays with muted/playsinline; Low Power Mode shows poster |
 

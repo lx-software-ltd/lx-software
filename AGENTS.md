@@ -41,6 +41,7 @@ tests use the same mode (`npm run test:e2e`).
 | Command | Directory | Purpose |
 |---------|-----------|---------|
 | `npm run lint` | `apps/public_www` | ESLint (flat config, TS + React) |
+| `npm run test` | `apps/public_www` | Vitest for carousel, contact, media URLs, and SEO files |
 | `npm run build` | `apps/public_www` | TypeScript check + Vite production build |
 | `npm run lint` | `apps/admin_web` | ESLint (flat config, TS + React) |
 | `npm run build` | `apps/admin_web` | TypeScript check + Vite build |
@@ -49,7 +50,7 @@ tests use the same mode (`npm run test:e2e`).
 | `npm run dev:mock` | `apps/admin_web` | Vite + fixture admin API (no AWS) |
 | `npm run build` | `backend/infrastructure` | Compile CDK TypeScript |
 
-There are no automated test suites for `apps/public_www` or CDK currently.
+There is no automated test suite for CDK. `apps/public_www` unit tests are `npm test` in that directory.
 
 ### Gotchas
 

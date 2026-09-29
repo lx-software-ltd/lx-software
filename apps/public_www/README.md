@@ -13,25 +13,25 @@ npm run dev
 
 The dev server is `http://localhost:5173/`. Copy `.env.example` if you want
 contact links or a Cloudflare media host. With the variables empty, telephone
-and WhatsApp render as disabled icons and the video is served from
+and WhatsApp show "Not configured" and the video is served from
 `public/media/`.
 
-## Build
+## Build and test
 
 ```bash
+npm test
 npm run build
 npm run preview
 ```
 
-`prebuild` regenerates `public/llms.txt`, `public/llms-full.txt`,
-`public/sitemap.xml`, `public/robots.txt`, and the JSON-LD block in
-`index.html` from `public/content.json`.
+The Vite build emits `llms.txt`, `llms-full.txt`, `sitemap.xml`, `robots.txt`,
+and the JSON-LD block in `index.html` from `public/content.json`. A Person
+node is included only when `VITE_OWNER_NAME` is set.
 
 ## Content
 
 Edit `public/content.json` for the biography, services, projects, FAQ, and
-the draft legal pages. Re-run `node scripts/generate-seo.mjs` (or `npm run
-build`) afterwards.
+the draft legal pages. `site.updated` is the sitemap `lastmod`.
 
 ## Video
 

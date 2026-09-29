@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { pageSections } from './sections'
 
 function scrollToId(id: string, smooth: boolean) {
@@ -13,6 +14,7 @@ function scrollToId(id: string, smooth: boolean) {
 }
 
 export function useSectionKeys(enabled: boolean, smooth: boolean) {
+  const navigate = useNavigate()
   useEffect(() => {
     if (!enabled) return
 
@@ -37,10 +39,10 @@ export function useSectionKeys(enabled: boolean, smooth: boolean) {
       if (!next || next === ids[index]) return
       event.preventDefault()
       scrollToId(next, smooth)
-      history.replaceState(null, '', next === 'top' ? '/' : `#${next}`)
+      navigate(next === 'top' ? '/' : `/#${next}`, { replace: true })
     }
 
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [enabled, smooth])
+  }, [enabled, smooth, navigate])
 }

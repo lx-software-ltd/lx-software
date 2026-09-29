@@ -44,9 +44,10 @@ function Icon({ id }: { id: ContactLink['id'] }) {
 function Shell({ item, children }: { item: ContactLink; children: ReactNode }) {
   if (!item.href) {
     return (
-      <span aria-disabled="true" aria-label={item.accessibleName}>
+      <div className="contact-unavailable">
         {children}
-      </span>
+        <span className="contact-note">Not configured</span>
+      </div>
     )
   }
   if (item.href.startsWith('/')) {
@@ -74,7 +75,7 @@ export function ContactIcons() {
         <li key={item.id}>
           <Shell item={item}>
             <Icon id={item.id} />
-            <span aria-hidden="true">[ {item.label.toUpperCase()} ]</span>
+            <span>[ {item.label.toUpperCase()} ]</span>
           </Shell>
         </li>
       ))}

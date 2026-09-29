@@ -5,7 +5,8 @@
     "url": "https://www.lx-software.com",
     "email": "hello@lx-software.com",
     "tagline": "Independent software studio, Hong Kong.",
-    "description": "LX Software is an independent software studio in Hong Kong. One page: who I am, what I do, projects, and how to get in touch."
+    "description": "LX Software is an independent software studio in Hong Kong. One page: who I am, what I do, projects, and how to get in touch.",
+    "updated": "2026-09-29"
   },
   "hero": {
     "kicker": "LX SOFTWARE",
@@ -14,20 +15,9 @@
   },
   "whoIAm": {
     "heading": "Who I Am",
-    "portrait": [
-      "      .-\"\"\"\"\"-.",
-      "    .'         '.",
-      "   /   O     O   \\",
-      "  :       ^       :",
-      "  |               |",
-      "  :    .-----.    :",
-      "   \\  '       '  /",
-      "    '.         .'",
-      "      '-.....-'"
-    ],
     "paragraphs": [
       "I am the person behind LX Software. I work with founders and small teams on products that have to be clear on day one and still make sense a year later.",
-      "This biography is a placeholder. The portrait is ASCII art, not a photograph. Both will be replaced with the real introduction."
+      "This biography is a placeholder and will be replaced with the real introduction."
     ]
   },
   "whatIDo": {
