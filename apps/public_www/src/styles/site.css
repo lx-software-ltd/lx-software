@@ -82,8 +82,8 @@ a {
   display: none;
   margin-left: auto;
   padding: 0.35rem 0.6rem;
-  border: 1px solid #333;
-  background: #000;
+  border: 0;
+  background: transparent;
   color: #fff;
   font: inherit;
 }
