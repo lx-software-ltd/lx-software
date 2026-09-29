@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { videoSources, videoUrl } from './media'
+import { isAppleTouch, videoSources, videoUrl } from './media'
 
 afterEach(() => {
   vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
 })
 
 describe('video urls', () => {
@@ -23,5 +24,23 @@ describe('video urls', () => {
       'video/webm; codecs=av01.0.05M.08',
       'video/mp4',
     ])
+  })
+
+  it('serves mp4 only on iPad, including desktop-mode iPadOS', () => {
+    vi.stubGlobal('navigator', {
+      userAgent: 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)',
+      platform: 'iPad',
+      maxTouchPoints: 5,
+    })
+    expect(isAppleTouch()).toBe(true)
+    expect(videoSources(720)).toEqual([{ src: '/media/hk-harbour-v1-720.mp4', type: 'video/mp4' }])
+
+    vi.stubGlobal('navigator', {
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+      platform: 'MacIntel',
+      maxTouchPoints: 5,
+    })
+    expect(isAppleTouch()).toBe(true)
+    expect(videoSources(720).map((source) => source.type)).toEqual(['video/mp4'])
   })
 })

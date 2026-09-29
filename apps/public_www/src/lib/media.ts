@@ -22,10 +22,18 @@ export function videoUrl(height: RenditionHeight, ext: 'mp4' | 'webm'): string {
   return configured ? `${configured}/${file}` : `/media/${file}`
 }
 
-/** Narrow screens skip AV1. Software AV1 decode is expensive on low-end phones. */
+/** iPadOS reports a desktop Macintosh UA. Touch points distinguish it. */
+export function isAppleTouch(): boolean {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent
+  if (/iPad|iPhone|iPod/.test(ua)) return true
+  return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
+}
+
+/** Narrow screens and iPad skip AV1. Safari treats a failed WebM source as a dead video. */
 export function videoSources(height: RenditionHeight): { src: string; type: string }[] {
   const mp4 = { src: videoUrl(height, 'mp4'), type: 'video/mp4' }
-  if (height === 480) return [mp4]
+  if (height === 480 || isAppleTouch()) return [mp4]
   return [{ src: videoUrl(height, 'webm'), type: 'video/webm; codecs=av01.0.05M.08' }, mp4]
 }
 
