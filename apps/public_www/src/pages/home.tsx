@@ -64,7 +64,7 @@ export function HomePage() {
 
       <AsciiDivider />
 
-      <section className="section fold" id="what-i-do" aria-labelledby="do-heading">
+      <section className="section" id="what-i-do" aria-labelledby="do-heading">
         <div className="container">
           <h2 id="do-heading">{content.whatIDo.heading}</h2>
           <p>{content.whatIDo.intro}</p>
@@ -86,7 +86,7 @@ export function HomePage() {
 
       <AsciiDivider />
 
-      <section className="section fold" id="projects" aria-labelledby="projects-heading">
+      <section className="section" id="projects" aria-labelledby="projects-heading">
         <div className="container">
           <h2 id="projects-heading">{content.projects.heading}</h2>
           <p>{content.projects.intro}</p>
@@ -96,7 +96,7 @@ export function HomePage() {
 
       <AsciiDivider />
 
-      <section className="section fold" id="contact" aria-labelledby="contact-heading">
+      <section className="section" id="contact" aria-labelledby="contact-heading">
         <div className="container">
           <h2 id="contact-heading">{content.contact.heading}</h2>
           <p>{content.contact.intro}</p>

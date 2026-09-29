@@ -176,11 +176,6 @@ h1 {
   scroll-margin-top: calc(var(--nav-h) + 8px);
 }
 
-.fold {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 520px;
-}
-
 .section h2,
 .legal h1 {
   margin-bottom: 1rem;

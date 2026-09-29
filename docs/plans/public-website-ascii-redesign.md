@@ -388,15 +388,16 @@ burden.
   third-party scripts.
 - JS ≤ 120 KB gzipped (React + Router + Query already ≈ 70 KB). No
   animation library; `hls.js` only in Option B and lazy-loaded.
-- Effects layer is three fixed elements with CSS animations only; measure
+- Effects layer is fixed elements with CSS animations only; measure
   with DevTools Performance — target no long tasks and paint time < 4 ms
-  per frame on a 2019 laptop. `contain: strict` on the layer,
-  `content-visibility: auto` on sections below the fold.
-- `aws s3 sync` today uploads without `Cache-Control`. Add
-  `--cache-control "public,max-age=31536000,immutable"` for `assets/**`
-  and `"no-cache"` for `index.html`, `*.json`, `*.txt`, `*.xml` in
-  `scripts/deploy/deploy-public-website.sh` (two sync passes with
-  `--exclude/--include`).
+  per frame on a 2019 laptop. `contain: paint` on the layer. Sections are
+  not `content-visibility: auto`, because that changes their height after
+  a hash scroll and leaves the heading in the wrong place.
+- Deploy uploads `assets/` with a year-long immutable cache first, copies
+  each root file on its own (`no-cache` for the shell and the SEO files),
+  syncs `media/` with `--size-only`, then deletes retired hashed assets.
+  One `sync --delete` of the whole tree is not used: it would cache
+  `index.html` as immutable until a second copy landed.
 - Lighthouse ≥ 95 Performance / 100 Accessibility / 100 SEO / 100 Best
   Practices on mobile before sign-off.
 

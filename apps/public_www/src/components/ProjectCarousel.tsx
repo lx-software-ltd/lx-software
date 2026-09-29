@@ -31,8 +31,10 @@ export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
     if (!list || !card) return
     const styles = window.getComputedStyle(list)
     const gap = Number.parseFloat(styles.columnGap || styles.gap || '0') || 0
-    list.scrollBy({
-      left: direction * (card.getBoundingClientRect().width + gap),
+    const step = card.getBoundingClientRect().width + gap
+    const maxScroll = Math.max(0, list.scrollWidth - list.clientWidth)
+    list.scrollTo({
+      left: Math.min(maxScroll, Math.max(0, list.scrollLeft + direction * step)),
       behavior: reduced ? 'auto' : 'smooth',
     })
   }
