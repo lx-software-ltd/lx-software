@@ -37,18 +37,21 @@ jobs:
         run: npm ci
         working-directory: apps/public_www
 
-      # NewsletterForm posts to the admin HTTP API. Same origin as the admin
-      # SPA (`vars.ADMIN_API_BASE_URL`); Vite inlines it at build time.
+      # Vite inlines VITE_* at build time. Contact values are public on the
+      # page but must not live in git. Empty telephone / WhatsApp shows
+      # "Not configured". Empty VITE_MEDIA_BASE_URL serves the harbour
+      # files from this site. The live host is https://media.lx-software.com.
+      # Empty VITE_OWNER_NAME omits the Person node.
       - name: Build public website
         working-directory: apps/public_www
         env:
-          VITE_PUBLIC_API_URL: ${{ vars.ADMIN_API_BASE_URL }}
-        run: |
-          if [ -z "${VITE_PUBLIC_API_URL}" ]; then
-            echo "::error::ADMIN_API_BASE_URL is empty. Set it on the production environment (same value as the admin SPA) so NewsletterForm can POST /public/newsletter/subscribe."
-            exit 1
-          fi
-          npm run build
+          VITE_MEDIA_BASE_URL: ${{ vars.VITE_MEDIA_BASE_URL }}
+          VITE_CONTACT_TEL: ${{ vars.VITE_CONTACT_TEL }}
+          VITE_CONTACT_WHATSAPP: ${{ vars.VITE_CONTACT_WHATSAPP }}
+          VITE_CONTACT_EMAIL: ${{ vars.VITE_CONTACT_EMAIL }}
+          VITE_CONTACT_WECHAT_ID: ${{ vars.VITE_CONTACT_WECHAT_ID }}
+          VITE_OWNER_NAME: ${{ vars.VITE_OWNER_NAME }}
+        run: npm run build
 
       - name: Configure AWS credentials
         if: ${{ vars.AWS_ACCOUNT_ID != '' && vars.AWS_REGION != '' }}

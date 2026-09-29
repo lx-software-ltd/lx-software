@@ -933,9 +933,9 @@ double opt-in mail from `news@{SiutindeiBoardMailDomain}`),
 and sent through a `publish:newsletter` hold via SES `SendBulkEmail` in
 batches with per-recipient unsubscribe links, configuration set
 `lxsoftware-admin-siutindei-newsletter` sharing the outreach SQS path
-(routed by tag / `issueId`, plus OPEN / CLICK events). The public site
-`NewsletterForm` needs `VITE_PUBLIC_API_URL` and the origin in
-`PublicSiteOrigins`.
+(routed by tag / `issueId`, plus OPEN / CLICK events). The public
+marketing site does not embed a signup form. `PublicSiteOrigins` stays on
+the stack for any other browser client of these routes.
 
 ## 11. Engineering runner
 

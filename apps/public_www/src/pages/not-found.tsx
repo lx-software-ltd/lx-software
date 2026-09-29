@@ -1,16 +1,18 @@
 import { Link } from 'react-router-dom'
+import { usePageMeta } from '../lib/seo'
 
 export function NotFoundPage() {
+  usePageMeta(
+    'Page not found — LX Software',
+    '/404',
+    'That page is not on the LX Software site.',
+  )
+
   return (
-    <section className="container py-5 text-center">
-      <h1 className="display-6 fw-semibold">Page not found</h1>
-      <p className="text-muted">
-        The page you are looking for does not exist. Let us get you back to the
-        LX Software public website.
-      </p>
-      <Link className="btn btn-primary" to="/">
-        Return home
-      </Link>
+    <section className="section legal container">
+      <h1>Page not found</h1>
+      <p>That address is not on this site.</p>
+      <Link to="/">[ back to the top ]</Link>
     </section>
   )
 }

@@ -5,9 +5,10 @@ ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 APP_DIR="$ROOT_DIR/apps/public_www"
 BUILD_DIR="$APP_DIR/dist"
 STACK_NAME="${PUBLIC_WEBSITE_STACK_NAME:-lxsoftware-public-www}"
+IMMUTABLE="public,max-age=31536000,immutable"
 
-if [ ! -d "$BUILD_DIR" ]; then
-  echo "Build output not found at $BUILD_DIR"
+if [ ! -d "$BUILD_DIR/assets" ]; then
+  echo "Hashed assets not found at $BUILD_DIR/assets"
   echo "Run: (cd apps/public_www && npm run build)"
   exit 1
 fi
@@ -24,8 +25,57 @@ if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" = "None" ]; then
   exit 1
 fi
 
-echo "Syncing public website to s3://$BUCKET_NAME"
-aws s3 sync "$BUILD_DIR" "s3://$BUCKET_NAME" --delete
+# Never sync the whole dist tree with one Cache-Control. That writes
+# index.html as immutable and only corrects it afterwards, so a fetch in
+# the gap caches the shell for a year.
+echo "Uploading hashed assets to s3://$BUCKET_NAME/assets"
+aws s3 sync "$BUILD_DIR/assets" "s3://$BUCKET_NAME/assets" \
+  --cache-control "$IMMUTABLE"
+
+if [ -d "$BUILD_DIR/media" ]; then
+  echo "Syncing media by size"
+  aws s3 sync "$BUILD_DIR/media" "s3://$BUCKET_NAME/media" \
+    --size-only --delete \
+    --cache-control "$IMMUTABLE"
+fi
+
+content_type() {
+  case "$1" in
+    *.html) printf '%s' "text/html; charset=utf-8" ;;
+    *.json) printf '%s' "application/json; charset=utf-8" ;;
+    *.txt) printf '%s' "text/plain; charset=utf-8" ;;
+    *.xml) printf '%s' "application/xml; charset=utf-8" ;;
+    *.webmanifest) printf '%s' "application/manifest+json" ;;
+    *.svg) printf '%s' "image/svg+xml" ;;
+    *.png) printf '%s' "image/png" ;;
+    *.jpg|*.jpeg) printf '%s' "image/jpeg" ;;
+    *.webp) printf '%s' "image/webp" ;;
+    *.ico) printf '%s' "image/x-icon" ;;
+    *) printf '%s' "application/octet-stream" ;;
+  esac
+}
+
+cache_control() {
+  case "$1" in
+    index.html|content.json|robots.txt|sitemap.xml|llms.txt|llms-full.txt|site.webmanifest)
+      printf '%s' "no-cache" ;;
+    *)
+      printf '%s' "$IMMUTABLE" ;;
+  esac
+}
+
+echo "Uploading site root"
+for path in "$BUILD_DIR"/*; do
+  [ -f "$path" ] || continue
+  name="$(basename "$path")"
+  aws s3 cp "$path" "s3://$BUCKET_NAME/$name" \
+    --cache-control "$(cache_control "$name")" \
+    --content-type "$(content_type "$name")"
+done
+
+echo "Pruning retired hashed assets"
+aws s3 sync "$BUILD_DIR/assets" "s3://$BUCKET_NAME/assets" --delete \
+  --cache-control "$IMMUTABLE"
 
 DISTRIBUTION_QUERY="Stacks[0].Outputs[?OutputKey=='PublicWebsiteDistributionId']."
 DISTRIBUTION_QUERY+="OutputValue"

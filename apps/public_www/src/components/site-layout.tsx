@@ -1,15 +1,38 @@
-import { Outlet } from 'react-router-dom'
-import { SiteFooter } from './site-footer'
-import { SiteHeader } from './site-header'
+import { Outlet, useLocation } from 'react-router-dom'
+import { BackgroundVideo } from './BackgroundVideo'
+import { BottomBar } from './BottomBar'
+import { CinemaLayer } from './CinemaLayer'
+import { MotionProvider } from './MotionProvider'
+import { ScrollProgress } from './ScrollProgress'
+import { TopNav } from './TopNav'
+import { useReducedMotion } from '../lib/motion'
+
+function Shell() {
+  const location = useLocation()
+  const reduced = useReducedMotion()
+  const still = reduced || location.pathname !== '/'
+
+  return (
+    <div className={`site-shell${still ? ' is-still' : ''}`}>
+      <a className="skip-link" href="#content">
+        Skip to content
+      </a>
+      <ScrollProgress />
+      <BackgroundVideo still={still} />
+      <CinemaLayer />
+      <TopNav />
+      <main id="content" tabIndex={-1} className="site-main">
+        <Outlet />
+      </main>
+      <BottomBar />
+    </div>
+  )
+}
 
 export function SiteLayout() {
   return (
-    <div className="min-vh-100 d-flex flex-column">
-      <SiteHeader />
-      <main className="flex-grow-1">
-        <Outlet />
-      </main>
-      <SiteFooter />
-    </div>
+    <MotionProvider>
+      <Shell />
+    </MotionProvider>
   )
 }

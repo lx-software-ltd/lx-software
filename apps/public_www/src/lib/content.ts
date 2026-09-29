@@ -1,30 +1,75 @@
-export interface Highlight {
+import bundled from '../../public/content.json'
+
+export interface Service {
   title: string
   description: string
 }
 
-export interface SiteContent {
-  mission: string
-  highlights: Highlight[]
+export interface ProjectItem {
+  title: string
+  description: string
+  ascii: string[]
+  href?: string
 }
 
-export const defaultSiteContent: SiteContent = {
-  mission: 'LX Software crafts public websites that are clear, fast, and easy to evolve.',
-  highlights: [
-    {
-      title: 'Strategy-led delivery',
-      description: 'We keep messaging, design, and engineering aligned from day one.',
-    },
-    {
-      title: 'Modern web foundations',
-      description: 'Vite, React Router, and TanStack Query keep performance high.',
-    },
-    {
-      title: 'Infrastructure-ready',
-      description: 'We ship artifacts that deploy cleanly to S3 and CloudFront.',
-    },
-  ],
+export interface FaqItem {
+  q: string
+  a: string
 }
+
+export interface LegalSection {
+  heading: string
+  paragraphs: string[]
+}
+
+export interface LegalDocument {
+  title: string
+  updated: string
+  sections: LegalSection[]
+}
+
+export interface SiteContent {
+  keyboardSections: boolean
+  site: {
+    name: string
+    url: string
+    email: string
+    tagline: string
+    description: string
+    updated: string
+  }
+  hero: {
+    kicker: string
+    summary: string
+    scrollLabel: string
+  }
+  whoIAm: {
+    heading: string
+    paragraphs: string[]
+  }
+  whatIDo: {
+    heading: string
+    intro: string
+    services: Service[]
+    skills: string[]
+  }
+  projects: {
+    heading: string
+    intro: string
+    items: ProjectItem[]
+  }
+  contact: {
+    heading: string
+    intro: string
+  }
+  faq: FaqItem[]
+  legal: {
+    privacy: LegalDocument
+    terms: LegalDocument
+  }
+}
+
+export const defaultSiteContent = bundled as SiteContent
 
 export async function fetchSiteContent(): Promise<SiteContent> {
   const response = await fetch('/content.json')

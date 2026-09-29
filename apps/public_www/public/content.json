@@ -1,17 +1,173 @@
 {
-  "mission": "LX Software crafts public websites that are clear, fast, and easy to evolve.",
-  "highlights": [
+  "keyboardSections": false,
+  "site": {
+    "name": "LX Software",
+    "url": "https://www.lx-software.com",
+    "email": "hello@lx-software.com",
+    "tagline": "Independent software studio, Hong Kong.",
+    "description": "LX Software is an independent software studio in Hong Kong. One page: who I am, what I do, projects, and how to get in touch.",
+    "updated": "2026-09-29"
+  },
+  "hero": {
+    "kicker": "LX SOFTWARE",
+    "summary": "Independent software studio in Hong Kong. I design and ship software that stays fast, legible, and easy to change.",
+    "scrollLabel": "scroll"
+  },
+  "whoIAm": {
+    "heading": "Who I Am",
+    "paragraphs": [
+      "I am the person behind LX Software. I work with founders and small teams on products that have to be clear on day one and still make sense a year later.",
+      "This biography is a placeholder and will be replaced with the real introduction."
+    ]
+  },
+  "whatIDo": {
+    "heading": "What I Do",
+    "intro": "Four kinds of work. The descriptions are placeholders until the real service list is written.",
+    "services": [
+      {
+        "title": "Product engineering",
+        "description": "Web applications, from the first sketch to a deploy that can be repeated."
+      },
+      {
+        "title": "Interface design",
+        "description": "Screens that stay readable, keyboard friendly, and quiet under the content."
+      },
+      {
+        "title": "Cloud delivery",
+        "description": "Static sites and services on AWS, with the infrastructure described in code."
+      },
+      {
+        "title": "Care and repair",
+        "description": "Taking over an existing codebase, naming what is fragile, and making the next change safer."
+      }
+    ],
+    "skills": ["TypeScript", "React", "Python", "AWS", "CDK", "SQL"]
+  },
+  "projects": {
+    "heading": "Projects",
+    "intro": "Placeholder cards. These are not real engagements.",
+    "items": [
+      {
+        "title": "Harbour Line",
+        "description": "Placeholder. A fictional operations console for a ferry timetable.",
+        "ascii": ["  ~  ~   ~", " _|_|_  ~", "|  |  |", "|__|__|", "~~~~~~~~"]
+      },
+      {
+        "title": "Paper Route",
+        "description": "Placeholder. A fictional invoicing desk.",
+        "ascii": ["+--------+", "| INV 01 |", "| ------ |", "| DUE    |", "+--------+"]
+      },
+      {
+        "title": "Signal Desk",
+        "description": "Placeholder. A fictional status page.",
+        "ascii": [" [ OK ]", " [ OK ]", " [ .. ]", " [ OK ]", " ______"]
+      },
+      {
+        "title": "North Archive",
+        "description": "Placeholder. A fictional document shelf.",
+        "ascii": ["| || |||", "| || |||", "| || |||", "| || |||", "+-------+"]
+      },
+      {
+        "title": "Quiet Ledger",
+        "description": "Placeholder. A fictional bookkeeping view.",
+        "ascii": ["  01  02", "  --  --", "  14  03", "  08  11", "  ====="]
+      },
+      {
+        "title": "Lantern",
+        "description": "Placeholder. A fictional field guide.",
+        "ascii": ["   /\\", "  /  \\", " ( () )", "  \\  /", "   \\/"]
+      }
+    ]
+  },
+  "contact": {
+    "heading": "Contact Me",
+    "intro": "Four ways to reach me. An icon with no destination is not configured yet."
+  },
+  "faq": [
     {
-      "title": "Strategy-led delivery",
-      "description": "We keep messaging, design, and engineering aligned from day one."
+      "q": "What does LX Software do?",
+      "a": "LX Software is an independent software studio in Hong Kong. I design and build web software, then look after it."
     },
     {
-      "title": "Modern web foundations",
-      "description": "Vite, React Router, and TanStack Query keep performance high."
+      "q": "Where are you based?",
+      "a": "Hong Kong."
     },
     {
-      "title": "Infrastructure-ready",
-      "description": "We ship artifacts that deploy cleanly to S3 and CloudFront."
+      "q": "How do I get in touch?",
+      "a": "Use the Contact Me section: telephone, email, WhatsApp, or WeChat, whichever is configured. Email reaches hello@lx-software.com."
+    },
+    {
+      "q": "Does this site collect email addresses?",
+      "a": "No. There is no newsletter signup and no account. If you write, call, or message, that conversation is used only to reply."
     }
-  ]
+  ],
+  "legal": {
+    "privacy": {
+      "title": "Privacy Policy",
+      "updated": "2026-09-29",
+      "sections": [
+        {
+          "heading": "Draft",
+          "paragraphs": [
+            "This is a placeholder privacy policy, not legal advice. Replace it before relying on it."
+          ]
+        },
+        {
+          "heading": "Who",
+          "paragraphs": [
+            "This site is published by LX Software, an independent studio in Hong Kong. The contact mailbox is hello@lx-software.com."
+          ]
+        },
+        {
+          "heading": "What this site collects",
+          "paragraphs": [
+            "The site does not run accounts, comments, or a newsletter. It does not ask you to create a profile.",
+            "The host keeps ordinary server logs (IP address, user agent, requested URL, and time) to operate and secure the site. Those logs are not used for advertising."
+          ]
+        },
+        {
+          "heading": "When you get in touch",
+          "paragraphs": [
+            "If you email, call, or message through the contact links, I use that conversation to reply. I do not sell it and I do not add you to a mailing list."
+          ]
+        },
+        {
+          "heading": "Cookies and media",
+          "paragraphs": [
+            "This site does not set advertising cookies. The harbour video is decoration. It has no audio and carries no extra tracking pixel of its own. It is served from this site, or from media.lx-software.com when that host is configured."
+          ]
+        }
+      ]
+    },
+    "terms": {
+      "title": "Terms & Conditions",
+      "updated": "2026-09-29",
+      "sections": [
+        {
+          "heading": "Draft",
+          "paragraphs": [
+            "These are placeholder terms, not legal advice. Replace them before relying on them."
+          ]
+        },
+        {
+          "heading": "Using the site",
+          "paragraphs": [
+            "The pages are information about LX Software. They are not an offer to contract, and the project cards are fictional placeholders."
+          ]
+        },
+        {
+          "heading": "No warranty",
+          "paragraphs": [
+            "The site is provided as published. I do not warrant that it will be uninterrupted or free of errors."
+          ]
+        },
+        {
+          "heading": "Questions",
+          "paragraphs": [
+            "Questions about these terms can go to hello@lx-software.com."
+          ]
+        }
+      ]
+    }
+  }
 }

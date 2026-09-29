@@ -119,7 +119,13 @@ Variables:
 | `CDK_BOOTSTRAP_QUALIFIER` | Only if you did not use the default `hnb659fds`. |
 | `CDK_PARAM_FILE` | e.g. `backend/infrastructure/params/production.json` (`backend/infrastructure/params/README.md` lists the keys). |
 | `PUBLIC_WEBSITE_STACK_NAME` | Defaults to `lxsoftware-public-www`. |
-| `ADMIN_API_BASE_URL` | Admin HTTP API origin; also inlined into the public site as `VITE_PUBLIC_API_URL`. |
+| `VITE_MEDIA_BASE_URL` | Public site only. `https://media.lx-software.com` (no trailing slash). Empty serves the harbour files from the site itself. |
+| `VITE_CONTACT_TEL` | Public site only. E.164 with a leading `+`, or empty. |
+| `VITE_CONTACT_WHATSAPP` | Public site only. Digits only, or empty. |
+| `VITE_CONTACT_EMAIL` | Public site only. Empty uses `hello@lx-software.com`. |
+| `VITE_CONTACT_WECHAT_ID` | Public site only. Shown on `/wechat`, or empty. |
+| `VITE_OWNER_NAME` | Public site only. schema.org Person name, or empty to omit Person. |
+| `ADMIN_API_BASE_URL` | Admin HTTP API origin for the admin SPA. The public site does not read it. |
 | `ADMIN_ACM_CERT_ARN`, `ADMIN_GOOGLE_CLIENT_ID`, `ADMIN_FEDERATED_EMAIL_ALLOWLIST`, `ADMIN_BOOTSTRAP_EMAIL`, `ADMIN_COGNITO_*` | Admin stack and SPA settings; see [`admin-website.md`](./admin-website.md). |
 
 Secrets:
