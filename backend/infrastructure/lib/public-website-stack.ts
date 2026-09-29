@@ -91,6 +91,55 @@ export class PublicWebsiteStack extends cdk.Stack {
     // OAC is more secure than the legacy OAI and supports additional features
     const origin = origins.S3BucketOrigin.withOriginAccessControl(this.bucket);
 
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: https://media.lx-software.com",
+      "media-src 'self' https://media.lx-software.com",
+      "font-src 'self'",
+      "connect-src 'self'",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+    ].join("; ");
+
+    const securityHeaders = new cloudfront.ResponseHeadersPolicy(
+      this,
+      "PublicWebsiteSecurityHeaders",
+      {
+        responseHeadersPolicyName: "lxsoftware-public-www-security-headers",
+        securityHeadersBehavior: {
+          strictTransportSecurity: {
+            accessControlMaxAge: cdk.Duration.seconds(31_536_000),
+            includeSubdomains: true,
+            preload: true,
+            override: true,
+          },
+          contentTypeOptions: { override: true },
+          referrerPolicy: {
+            referrerPolicy:
+              cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+            override: true,
+          },
+          contentSecurityPolicy: {
+            contentSecurityPolicy: csp,
+            override: true,
+          },
+        },
+        customHeadersBehavior: {
+          customHeaders: [
+            {
+              header: "Permissions-Policy",
+              value: "camera=(), microphone=(), geolocation=()",
+              override: true,
+            },
+          ],
+        },
+      },
+    );
+
     this.distribution = new cloudfront.Distribution(
       this,
       "PublicWebsiteDistribution",
@@ -104,6 +153,7 @@ export class PublicWebsiteStack extends cdk.Stack {
             cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
           cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+          responseHeadersPolicy: securityHeaders,
         },
         errorResponses: [
           {

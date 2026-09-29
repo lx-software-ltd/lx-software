@@ -432,20 +432,21 @@ Suggested order: A in parallel with B; then C → D → E → F → G. Deploy be
 nothing — the site has no traffic-sensitive features — but keep the current
 home in git history for rollback.
 
-## 11. Open decisions for the owner
+## 11. Decisions (29 Sep 2026)
 
-1. **Newsletter form placement**: bottom bar (keeps today's behaviour) or
-   inside Contact Me. Plan assumes the bottom bar.
-2. **Video rendition strategy**: Option A (R2, two renditions) vs Option B
-   (Stream). Plan assumes A.
-3. **Loop treatment**: crossfade (shorter, forward motion) vs ping-pong
-   (seamless, reversed motion). Decide after viewing the §5 output.
-4. **Keyboard section shortcuts** (`ArrowUp`/`ArrowDown` when nothing is
-   focused): on by default or off. They override native arrow scrolling.
-5. **Real copy**: bio, services, project list, FAQ answers, legal text,
-   WeChat QR, and the phone/WhatsApp numbers as GitHub variables (not in
-   the repo).
-6. **`/about` and `/contact` redirects**: keep for one release or drop.
+1. **Newsletter:** removed from the public site. The board newsletter API
+   stays for other clients.
+2. **Video:** Option A, R2 plus two renditions. R2 is not enabled on the
+   account yet (API error 10042), so the renditions also ship on the site
+   and `VITE_MEDIA_BASE_URL` switches the player to
+   `https://media.lx-software.com` after `scripts/cloudflare/publish-public-media.sh`.
+3. **Loop:** crossfade.
+4. **Arrow-key section jumps:** implemented, off by default
+   (`keyboardSections` in `content.json`) because they replace native arrow
+   scrolling and this was left unanswered.
+5. **Copy:** placeholders in `content.json`. Phone, WhatsApp, and WeChat ID
+   are GitHub variables, not source.
+6. **`/about` and `/contact`:** dropped. No redirects.
 
 ## 12. Risks
 

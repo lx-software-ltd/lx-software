@@ -119,7 +119,7 @@ Variables:
 | `CDK_BOOTSTRAP_QUALIFIER` | Only if you did not use the default `hnb659fds`. |
 | `CDK_PARAM_FILE` | e.g. `backend/infrastructure/params/production.json` (`backend/infrastructure/params/README.md` lists the keys). |
 | `PUBLIC_WEBSITE_STACK_NAME` | Defaults to `lxsoftware-public-www`. |
-| `ADMIN_API_BASE_URL` | Admin HTTP API origin; also inlined into the public site as `VITE_PUBLIC_API_URL`. |
+| `ADMIN_API_BASE_URL` | Admin HTTP API origin for the admin SPA. The public site does not read it. |
 | `ADMIN_ACM_CERT_ARN`, `ADMIN_GOOGLE_CLIENT_ID`, `ADMIN_FEDERATED_EMAIL_ALLOWLIST`, `ADMIN_BOOTSTRAP_EMAIL`, `ADMIN_COGNITO_*` | Admin stack and SPA settings; see [`admin-website.md`](./admin-website.md). |
 
 Secrets:

@@ -25,7 +25,27 @@ if [ -z "$BUCKET_NAME" ] || [ "$BUCKET_NAME" = "None" ]; then
 fi
 
 echo "Syncing public website to s3://$BUCKET_NAME"
-aws s3 sync "$BUILD_DIR" "s3://$BUCKET_NAME" --delete
+aws s3 sync "$BUILD_DIR" "s3://$BUCKET_NAME" --delete \
+  --cache-control "public,max-age=31536000,immutable"
+
+# The shell and the files editors replace must revalidate. Versioned
+# assets and media/hk-harbour-v1-* keep the long cache from the sync.
+no_cache() {
+  local file="$1"
+  local type="$2"
+  if [ -f "$BUILD_DIR/$file" ]; then
+    aws s3 cp "$BUILD_DIR/$file" "s3://$BUCKET_NAME/$file" \
+      --cache-control "no-cache" \
+      --content-type "$type"
+  fi
+}
+no_cache index.html "text/html; charset=utf-8"
+no_cache content.json "application/json; charset=utf-8"
+no_cache robots.txt "text/plain; charset=utf-8"
+no_cache sitemap.xml "application/xml; charset=utf-8"
+no_cache llms.txt "text/plain; charset=utf-8"
+no_cache llms-full.txt "text/plain; charset=utf-8"
+no_cache site.webmanifest "application/manifest+json"
 
 DISTRIBUTION_QUERY="Stacks[0].Outputs[?OutputKey=='PublicWebsiteDistributionId']."
 DISTRIBUTION_QUERY+="OutputValue"
