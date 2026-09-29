@@ -185,6 +185,10 @@ h1 {
   color: var(--accent-cyan);
 }
 
+.container {
+  box-sizing: border-box;
+}
+
 .section {
   padding: 3.25rem 0;
   scroll-margin-top: calc(var(--nav-h) + 8px);
@@ -257,6 +261,11 @@ h1 {
   font-weight: 700;
 }
 
+.project-card h3,
+.project-card p {
+  margin: 0;
+}
+
 .card-block h3::before {
   content: '> ';
   color: var(--accent-amber);
@@ -313,17 +322,24 @@ h1 {
 .carousel-track {
   display: flex;
   gap: 1rem;
+  min-width: 0;
   margin: 0;
-  padding: 0.25rem 0 1rem;
+  padding: 0.25rem 0;
   overflow-x: auto;
   overflow-y: hidden;
   list-style: none;
   scroll-snap-type: x mandatory;
   overscroll-behavior-x: contain;
   touch-action: pan-x pan-y;
-  scrollbar-width: thin;
-  scrollbar-color: #444 transparent;
+  scrollbar-width: none;
   cursor: grab;
+}
+
+@supports not (scrollbar-width: none) {
+  .carousel-track::-webkit-scrollbar {
+    display: none;
+    height: 0;
+  }
 }
 
 .carousel-track.is-dragging {
@@ -332,15 +348,18 @@ h1 {
 }
 
 .carousel-track > li {
+  display: flex;
   flex: 0 0 min(320px, 78vw);
   scroll-snap-align: start;
 }
 
 .project-card {
+  box-sizing: border-box;
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 0.4rem;
-  height: 100%;
+  width: 100%;
   padding: 1rem;
 }
 
