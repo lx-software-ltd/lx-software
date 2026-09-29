@@ -48,7 +48,7 @@ the decisions that shipped.
   --accent-cyan:  #00ffff;
   --overlay: rgba(0, 0, 0, .55);          /* keeps text ≥ 4.5:1 over the video */
   --font-mono: 'IBM Plex Mono', 'JetBrains Mono', ui-monospace, 'Courier New', monospace;
-  --nav-h: 72px;                            /* 60px logo + 6px padding */
+  --nav-h: 48px;                            /* text row, no corner mark */
   --radius-logo: 14px;
 }
 ```
@@ -120,7 +120,7 @@ horizontal snap with one card + peek; contact icons wrap 2×2.
 
 ### 3.3 Logo and favicon
 
-- `src/components/Logo.tsx`: `<a href="/" aria-label="LX Software — back to top">` wrapping an inline SVG, 60×60, `rx="14"`, fill `#000`, 1px stroke `#444` (a black square on a black nav is invisible without it), "LX" in white IBM Plex Mono Bold, centred. On the home page, click calls `navigate('/', { replace: true })` and `scrollTo({ top: 0, behavior })`.
+- The LX mark is the favicon and the apple touch icon. It is not in the nav. The nav is the section links only, 48px, with no bottom border. The harbour video starts at the bottom edge of that bar (`object-fit: contain`, `object-position: center top`) so there is no empty band between the nav and the picture.
 - Favicon set in `public/`: `favicon.svg` (same mark), `favicon-32.png`, `apple-touch-icon.png` (180, no transparency), `site.webmanifest`, plus `og-image.png` 1200×630 (poster frame + logo + name; also the Twitter card).
 
 ### 3.4 Effects layer (`src/components/CinemaLayer.tsx` + `src/styles/effects.css`)
@@ -160,7 +160,7 @@ apps/public_www/
 └── src/
     ├── styles/tokens.css, effects.css, site.css
     ├── components/
-    │   ├── Logo.tsx, TopNav.tsx, ScrollProgress.tsx, BottomBar.tsx
+    │   ├── TopNav.tsx, ScrollProgress.tsx, BottomBar.tsx
     │   ├── BackgroundVideo.tsx, CinemaLayer.tsx
     │   ├── AsciiDivider.tsx
     │   ├── ProjectCarousel.tsx, ContactIcons.tsx, Faq.tsx

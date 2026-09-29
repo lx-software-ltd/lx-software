@@ -8,7 +8,7 @@
   --accent-cyan: #00ffff;
   --overlay: rgba(0, 0, 0, 0.45);
   --font-mono: 'IBM Plex Mono', ui-monospace, 'Courier New', monospace;
-  --nav-h: 72px;
+  --nav-h: 48px;
   --bs-body-bg: #000;
   --bs-body-color: #fff;
   --bs-body-font-family: var(--font-mono);
