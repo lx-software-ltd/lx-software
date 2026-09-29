@@ -111,6 +111,7 @@ a {
 }
 
 .container {
+  box-sizing: border-box;
   max-width: var(--video-frame-width);
 }
 

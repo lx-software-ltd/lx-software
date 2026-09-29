@@ -50,6 +50,8 @@ describe('video urls', () => {
 describe('video frame width', () => {
   it('keeps the content max-width token on the native clip width', () => {
     const tokens = readFileSync(resolve(import.meta.dirname, '../styles/tokens.css'), 'utf8')
+    const site = readFileSync(resolve(import.meta.dirname, '../styles/site.css'), 'utf8')
     expect(tokens).toContain(`--video-max-width: ${VIDEO_WIDTH}px`)
+    expect(site).toContain('max-width: var(--video-frame-width)')
   })
 })
