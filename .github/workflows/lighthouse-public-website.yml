@@ -1,0 +1,93 @@
+name: Lighthouse Public Website
+
+on:
+  workflow_dispatch:
+    inputs:
+      page_paths:
+        description: 'Comma/newline-separated page paths or full URLs to audit (e.g. /, /privacy)'
+        required: false
+        default: '/'
+
+permissions:
+  contents: read
+
+jobs:
+  lighthouse:
+    name: Lighthouse audit
+    runs-on: ubuntu-latest
+    # The VITE_* build variables live on the production environment, the same
+    # ones Deploy Public Website reads, so the audited bundle matches the live site.
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+          cache-dependency-path: apps/public_www/package-lock.json
+
+      - name: Install dependencies
+        working-directory: apps/public_www
+        run: npm ci
+
+      - name: Build public website
+        working-directory: apps/public_www
+        env:
+          VITE_MEDIA_BASE_URL: ${{ vars.VITE_MEDIA_BASE_URL }}
+          VITE_CONTACT_TEL: ${{ vars.VITE_CONTACT_TEL }}
+          VITE_CONTACT_WHATSAPP: ${{ vars.VITE_CONTACT_WHATSAPP }}
+          VITE_CONTACT_EMAIL: ${{ vars.VITE_CONTACT_EMAIL }}
+          VITE_CONTACT_WECHAT_ID: ${{ vars.VITE_CONTACT_WECHAT_ID }}
+          VITE_CONTACT_LINKEDIN: ${{ vars.VITE_CONTACT_LINKEDIN }}
+        run: npm run build
+
+      - name: Run Lighthouse CI
+        working-directory: apps/public_www
+        env:
+          LIGHTHOUSE_PAGE_PATHS: ${{ inputs.page_paths }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const baseConfigPath = path.resolve('.lighthouserc.json');
+          const runtimeConfigPath = path.resolve('.lighthouserc.runtime.json');
+          const rawInput = (process.env.LIGHTHOUSE_PAGE_PATHS ?? '').trim();
+          const defaultTargets = ['/'];
+          const requestedTargets = (rawInput ? rawInput.split(/[\n,]+/) : defaultTargets)
+            .map((value) => value.trim())
+            .filter(Boolean);
+
+          const normalizedUrls = requestedTargets.map((target) => {
+            if (/^https?:\/\//i.test(target)) {
+              return target;
+            }
+            const normalizedPath = target.startsWith('/') ? target : `/${target}`;
+            return `http://localhost:9000${normalizedPath}`;
+          });
+
+          const config = JSON.parse(fs.readFileSync(baseConfigPath, 'utf8'));
+          config.ci = config.ci ?? {};
+          config.ci.collect = config.ci.collect ?? {};
+          config.ci.collect.url = normalizedUrls;
+          fs.writeFileSync(runtimeConfigPath, `${JSON.stringify(config, null, 2)}\n`);
+          console.log('Lighthouse targets:');
+          for (const url of normalizedUrls) {
+            console.log(`- ${url}`);
+          }
+          NODE
+
+          npx --yes @lhci/cli autorun --config=.lighthouserc.runtime.json
+
+      - name: Upload Lighthouse artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lighthouse-public-www-results
+          path: apps/public_www/.lighthouseci/**
+          if-no-files-found: warn
+          include-hidden-files: true
