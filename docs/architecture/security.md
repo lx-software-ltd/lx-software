@@ -10,13 +10,17 @@
 - S3 buckets stay private; CloudFront is the only public edge.
 - Lambda execution roles get DynamoDB access to the admin tables only, S3
   object access to the assets bucket only, plus CloudWatch Logs.
-- Public website content is free of PII and internal-only details.
+- Public website content stays free of phone numbers, personal inboxes,
+  street addresses, and internal-only details. The owner name is published.
 - Personal names, phone numbers, personal inboxes, street addresses, bank
   account numbers, and business-registration numbers stay out of source and
-  docs. `scripts/check-pii.sh` compares normalized text to SHA-256 digests in
-  `scripts/pii-denylist.sha256` (digests only; a hit is a path and line).
-  Product mailboxes (`hello@`, `board@`, `billing@`, inbound SES recipients)
-  remain. Pre-commit and **Security Scanning** both run the check.
+  docs. The public website owner name in
+  `apps/public_www/public/content.json` (`site.owner`) is intentionally
+  public and is not on the denylist. `scripts/check-pii.sh` compares
+  normalized text to SHA-256 digests in `scripts/pii-denylist.sha256`
+  (digests only; a hit is a path and line). Product mailboxes (`hello@`,
+  `board@`, `billing@`, inbound SES recipients) remain. Pre-commit and
+  **Security Scanning** both run the check.
 - A `.gitleaks.toml` rule flags any committed `lxpk_…` public API key.
 
 Review checklist: no credentials in code or config; sensitive CDK
