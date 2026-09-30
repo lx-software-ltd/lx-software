@@ -1,0 +1,47 @@
+name: Ensure labels
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/ensure-labels.yml"
+      - ".github/dependabot.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/ensure-labels.yml"
+      - ".github/dependabot.yml"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  dependabot-labels:
+    name: Dependabot labels
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create missing Dependabot labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          existing="$(gh label list --limit 200 --json name --jq '.[].name')"
+          ensure() {
+            local name="$1" color="$2" description="$3"
+            if printf '%s\n' "$existing" | grep -qx "$name"; then
+              echo "exists: $name"
+              return 0
+            fi
+            gh label create "$name" --color "$color" --description "$description"
+            echo "created: $name"
+          }
+          # Names match .github/dependabot.yml. Dependabot will not apply a
+          # label that does not already exist on the repository.
+          ensure dependencies 0366d6 "Dependency updates (Dependabot)"
+          ensure ci d4c5f9 "GitHub Actions / CI"
+          ensure web 1d76db "Public website (apps/public_www)"
+          ensure admin 0052cc "Admin SPA (apps/admin_web)"
+          ensure infrastructure 5319e7 "CDK / infrastructure"
+          ensure lambda c2e0c6 "Admin Lambda Python packages"
