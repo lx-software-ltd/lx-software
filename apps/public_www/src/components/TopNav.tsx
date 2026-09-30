@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { trackEvent } from '../lib/analytics'
 import { useReducedMotion } from '../lib/motion'
 import { pageSections } from '../lib/sections'
 import { useActiveSection } from '../lib/useActiveSection'
@@ -80,6 +81,7 @@ export function TopNav() {
                 aria-current={onHome && active === section.id ? 'true' : undefined}
                 onClick={(event) => {
                   setOpen(false)
+                  trackEvent({ event: 'nav_click', section: section.id })
                   if (!onHome) return
                   event.preventDefault()
                   const hash = `#${section.id}`

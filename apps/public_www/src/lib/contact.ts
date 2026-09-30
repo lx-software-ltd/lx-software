@@ -66,6 +66,25 @@ export function contactLinks(): ContactLink[] {
   ]
 }
 
+/**
+ * What a contact click points at, without the number or address itself:
+ * the scheme for `tel:` / `mailto:` / `weixin:`, the host for http(s), the
+ * path for an in-site route. This is what the analytics event records.
+ */
+export function contactDestination(href: string | null): string {
+  if (!href) return 'unavailable'
+  if (href.startsWith('/')) return href
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(href)?.[1]?.toLowerCase()
+  if (scheme === 'http' || scheme === 'https') {
+    try {
+      return new URL(href).hostname
+    } catch {
+      return scheme
+    }
+  }
+  return scheme ?? 'unknown'
+}
+
 export function wechatId(): string {
   return (import.meta.env.VITE_CONTACT_WECHAT_ID ?? '').trim()
 }

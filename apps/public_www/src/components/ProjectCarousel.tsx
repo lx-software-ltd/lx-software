@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { trackEvent } from '../lib/analytics'
 import { carouselIndex } from '../lib/carouselIndex'
 import type { ProjectItem } from '../lib/content'
 import { useReducedMotion } from '../lib/motion'
@@ -25,10 +26,11 @@ export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
     syncIndex()
   }
 
-  const scrollByCard = (direction: 1 | -1) => {
+  const scrollByCard = (direction: 1 | -1, method: 'button' | 'keyboard') => {
     const list = scroller.current
     const card = list?.querySelector('li')
     if (!list || !card) return
+    trackEvent({ event: 'project_navigate', direction: direction === 1 ? 'next' : 'prev', method })
     const styles = window.getComputedStyle(list)
     const gap = Number.parseFloat(styles.columnGap || styles.gap || '0') || 0
     const step = card.getBoundingClientRect().width + gap
@@ -46,7 +48,7 @@ export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
           type="button"
           aria-label="Previous project"
           disabled={index === 0}
-          onClick={() => scrollByCard(-1)}
+          onClick={() => scrollByCard(-1, 'button')}
         >
           [ prev ]
         </button>
@@ -57,7 +59,7 @@ export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
           type="button"
           aria-label="Next project"
           disabled={index >= items.length - 1}
-          onClick={() => scrollByCard(1)}
+          onClick={() => scrollByCard(1, 'button')}
         >
           [ next ]
         </button>
@@ -99,10 +101,10 @@ export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
         onKeyDown={(event) => {
           if (event.key === 'ArrowRight') {
             event.preventDefault()
-            scrollByCard(1)
+            scrollByCard(1, 'keyboard')
           } else if (event.key === 'ArrowLeft') {
             event.preventDefault()
-            scrollByCard(-1)
+            scrollByCard(-1, 'keyboard')
           }
         }}
       >
@@ -118,6 +120,13 @@ export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
                   target="_blank"
                   rel="noreferrer"
                   aria-label={`Open ${item.title} in a new tab`}
+                  onClick={() =>
+                    trackEvent({
+                      event: 'project_open',
+                      project: item.title,
+                      destination: item.url ?? '',
+                    })
+                  }
                 >
                   [ open ]
                 </a>

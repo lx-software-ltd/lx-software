@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { contactLinks } from './contact'
+import { contactDestination, contactLinks } from './contact'
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -40,5 +40,17 @@ describe('contactLinks', () => {
     expect(links.tel?.href).toBe('tel:+15555550100')
     expect(links.whatsapp?.href).toBe('https://wa.me/15555550100')
     expect(links.email?.href).toBe('mailto:board@example.com')
+  })
+})
+
+describe('contactDestination', () => {
+  it('keeps the scheme or host and drops the number or address', () => {
+    expect(contactDestination('tel:+15555550100')).toBe('tel')
+    expect(contactDestination('mailto:board@example.com')).toBe('mailto')
+    expect(contactDestination('https://wa.me/15555550100')).toBe('wa.me')
+    expect(contactDestination('https://www.linkedin.com/in/sample-owner')).toBe('www.linkedin.com')
+    expect(contactDestination('weixin://dl/chat?sample')).toBe('weixin')
+    expect(contactDestination('/wechat')).toBe('/wechat')
+    expect(contactDestination(null)).toBe('unavailable')
   })
 })

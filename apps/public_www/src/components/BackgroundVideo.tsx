@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import flagUrl from '../assets/hk-flag.png'
+import { trackEvent } from '../lib/analytics'
 import { BOAT_FLAG, boatFlagAtTime } from '../lib/boatFlag'
 import { afterFirstPaint, pickHeight, videoSources, type RenditionHeight } from '../lib/media'
 
@@ -63,7 +64,9 @@ export function BackgroundVideo({ still }: { still: boolean }) {
         el.type = source.type
         if (index === sources.length - 1) {
           el.addEventListener('error', () => {
-            if (!cancelled) setFailed(true)
+            if (cancelled) return
+            setFailed(true)
+            trackEvent({ event: 'media_error', source: el.src })
           })
         }
         video.appendChild(el)

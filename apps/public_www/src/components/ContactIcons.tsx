@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { contactLinks, type ContactLink } from '../lib/contact'
+import { trackEvent } from '../lib/analytics'
+import { contactDestination, contactLinks, type ContactLink } from '../lib/contact'
 
 function Icon({ id }: { id: ContactLink['id'] }) {
   if (id === 'whatsapp') return <WhatsAppIcon />
@@ -108,9 +109,15 @@ function Shell({ item, children }: { item: ContactLink; children: ReactNode }) {
       </div>
     )
   }
+  const record = () =>
+    trackEvent({
+      event: 'contact_click',
+      channel: item.id,
+      destination: contactDestination(item.href),
+    })
   if (item.href.startsWith('/')) {
     return (
-      <Link to={item.href} aria-label={item.accessibleName}>
+      <Link to={item.href} aria-label={item.accessibleName} onClick={record}>
         {children}
       </Link>
     )
@@ -119,6 +126,7 @@ function Shell({ item, children }: { item: ContactLink; children: ReactNode }) {
     <a
       href={item.href}
       aria-label={item.accessibleName}
+      onClick={record}
       {...(item.external ? { target: '_blank', rel: 'noreferrer' } : {})}
     >
       {children}
