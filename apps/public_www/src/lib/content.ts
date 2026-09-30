@@ -9,7 +9,8 @@ export interface ProjectItem {
   title: string
   description: string
   ascii: string[]
-  href?: string
+  url?: string
+  status?: string
 }
 
 export interface FaqItem {
@@ -32,14 +33,19 @@ export interface SiteContent {
   keyboardSections: boolean
   site: {
     name: string
+    owner: string
+    role: string
+    title: string
     url: string
     email: string
     tagline: string
     description: string
+    keywords: string[]
     updated: string
   }
   hero: {
     kicker: string
+    headline: string
     summary: string
     scrollLabel: string
   }

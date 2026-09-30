@@ -12,14 +12,13 @@ export function LegalPage({ kind }: { kind: 'privacy' | 'terms' }) {
   const path = kind === 'privacy' ? '/privacy' : '/terms'
 
   usePageMeta(
-    `${doc.title} — LX Software`,
+    `${doc.title} — ${content.site.name}`,
     path,
     doc.sections[0]?.paragraphs[0] ?? content.site.description,
   )
 
   return (
     <article className="section legal container">
-      <p className="draft">Draft placeholder. Not legal advice.</p>
       <h1>{doc.title}</h1>
       <p className="updated">Updated {doc.updated}</p>
       {doc.sections.map((section) => (

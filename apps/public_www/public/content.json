@@ -2,99 +2,144 @@
   "keyboardSections": false,
   "site": {
     "name": "LX Software",
+    "owner": "Luca Cacchiani",
+    "role": "Fractional CTO & CIO",
+    "title": "Luca Cacchiani | Fractional CTO & CIO, Hong Kong | LX Software",
     "url": "https://www.lx-software.com",
     "email": "hello@lx-software.com",
-    "tagline": "Independent software studio, Hong Kong.",
-    "description": "LX Software is an independent software studio in Hong Kong. One page: who I am, what I do, projects, and how to get in touch.",
-    "updated": "2026-09-29"
+    "tagline": "Fractional CTO & CIO for Hong Kong startups. AI, cloud, microservices.",
+    "description": "Fractional CTO and CIO in Hong Kong. Luca Cacchiani (LX Software) helps startups scale with AI, cloud, and microservices without a full-time executive hire.",
+    "keywords": [
+      "fractional CTO Hong Kong",
+      "fractional CIO Hong Kong",
+      "AI consultant Hong Kong",
+      "cloud consulting Hong Kong",
+      "AWS architect Hong Kong",
+      "microservices architecture",
+      "startup technical leadership",
+      "technical due diligence",
+      "Luca Cacchiani",
+      "LX Software"
+    ],
+    "updated": "2026-09-30"
   },
   "hero": {
-    "kicker": "LX SOFTWARE",
-    "summary": "Independent software studio in Hong Kong. I design and ship software that stays fast, legible, and easy to change.",
+    "kicker": "LUCA CACCHIANI - LX SOFTWARE",
+    "headline": "Fractional CTO & CIO for Hong Kong startups",
+    "summary": "I help founders scale with AI, cloud, and microservices: senior technical leadership without the full-time overhead.",
     "scrollLabel": "scroll"
   },
   "whoIAm": {
     "heading": "Who I Am",
     "paragraphs": [
-      "I am the person behind LX Software. I work with founders and small teams on products that have to be clear on day one and still make sense a year later.",
-      "This biography is a placeholder and will be replaced with the real introduction."
+      "I'm Luca Cacchiani, founder of LX Software. I work with Hong Kong startups and small teams as a fractional CTO or CIO: senior technical leadership, architecture, hiring support, and delivery accountability without the cost of a full-time executive.",
+      "My focus is AI, cloud, and microservices. I've built and scaled products including Evolve Sprouts (Montessori training for families), Siu Tin Dei (curated activities for kids in Hong Kong), and ai-cxo (an AI-powered SaaS for running a company with AI CEO, CTO, and CIO roles)."
     ]
   },
   "whatIDo": {
     "heading": "What I Do",
-    "intro": "Four kinds of work. The descriptions are placeholders until the real service list is written.",
+    "intro": "I plug in where the technical gap is: strategy, architecture, hiring, delivery, or rescue. Engagements can be a few days a month, a fixed project, or an interim leadership role.",
     "services": [
       {
-        "title": "Product engineering",
-        "description": "Web applications, from the first sketch to a deploy that can be repeated."
+        "title": "Fractional CTO / CIO",
+        "description": "Senior technical leadership for founders who need to scale. Roadmaps, hiring, architecture, vendor decisions, and delivery accountability."
       },
       {
-        "title": "Interface design",
-        "description": "Screens that stay readable, keyboard friendly, and quiet under the content."
+        "title": "AI & Automation",
+        "description": "Practical AI and LLM features, internal automation, and AI product strategy, from prototype to production."
       },
       {
-        "title": "Cloud delivery",
-        "description": "Static sites and services on AWS, with the infrastructure described in code."
+        "title": "Cloud & Microservices",
+        "description": "AWS, serverless, containers, and event-driven microservices. Infrastructure as code, CI/CD, observability, and cost control."
       },
       {
-        "title": "Care and repair",
-        "description": "Taking over an existing codebase, naming what is fragile, and making the next change safer."
+        "title": "Technical Due Diligence & Rescue",
+        "description": "Audit an existing codebase or team, name the risks, and make the next release safer. Support for fundraising, acquisitions, or turnaround."
       }
     ],
-    "skills": ["TypeScript", "React", "Python", "AWS", "CDK", "SQL"]
+    "skills": [
+      "Fractional CTO",
+      "Fractional CIO",
+      "AI/LLM",
+      "AWS",
+      "Cloud Architecture",
+      "Microservices",
+      "TypeScript",
+      "React",
+      "Python",
+      "CDK",
+      "SQL",
+      "Technical Due Diligence",
+      "Team Leadership"
+    ]
   },
   "projects": {
     "heading": "Projects",
-    "intro": "Placeholder cards. These are not real engagements.",
+    "intro": "Products and ventures I've built or co-founded. Each one applies the same approach: clear problem, simple system, fast iteration.",
     "items": [
       {
-        "title": "Harbour Line",
-        "description": "Placeholder. A fictional operations console for a ferry timetable.",
-        "ascii": ["  ~  ~   ~", " _|_|_  ~", "|  |  |", "|__|__|", "~~~~~~~~"]
+        "title": "Evolve Sprouts",
+        "description": "Montessori training for families. A digital learning platform that helps parents bring Montessori practice into the home.",
+        "url": "https://www.evolvesprouts.com",
+        "ascii": [
+          "   \\ | /",
+          "    \\|/",
+          "     |",
+          "  .-----.",
+          "  '-----'"
+        ]
       },
       {
-        "title": "Paper Route",
-        "description": "Placeholder. A fictional invoicing desk.",
-        "ascii": ["+--------+", "| INV 01 |", "| ------ |", "| DUE    |", "+--------+"]
+        "title": "Siu Tin Dei",
+        "description": "A curated guide to activities for kids in Hong Kong. Helps parents find the right next outing, class, or experience.",
+        "url": "https://siutindei.com",
+        "ascii": [
+          "    /\\",
+          "   /  \\",
+          "   \\  /",
+          "    \\/",
+          "    /~"
+        ]
       },
       {
-        "title": "Signal Desk",
-        "description": "Placeholder. A fictional status page.",
-        "ascii": [" [ OK ]", " [ OK ]", " [ .. ]", " [ OK ]", " ______"]
-      },
-      {
-        "title": "North Archive",
-        "description": "Placeholder. A fictional document shelf.",
-        "ascii": ["| || |||", "| || |||", "| || |||", "| || |||", "+-------+"]
-      },
-      {
-        "title": "Quiet Ledger",
-        "description": "Placeholder. A fictional bookkeeping view.",
-        "ascii": ["  01  02", "  --  --", "  14  03", "  08  11", "  ====="]
-      },
-      {
-        "title": "Lantern",
-        "description": "Placeholder. A fictional field guide.",
-        "ascii": ["   /\\", "  /  \\", " ( () )", "  \\  /", "   \\/"]
+        "title": "ai-cxo",
+        "description": "An AI-powered SaaS that helps founders run their company with AI in CEO, CTO, and CIO roles.",
+        "url": "",
+        "status": "Coming soon",
+        "ascii": [
+          "+----------+",
+          "| > ai     |",
+          "| > cxo _  |",
+          "|          |",
+          "+----------+"
+        ]
       }
     ]
   },
   "contact": {
     "heading": "Contact Me",
-    "intro": "Four ways to reach me. An icon with no destination is not configured yet."
+    "intro": "Need a fractional CTO, CIO, or AI/cloud lead? Tell me what you're building, where you're stuck, and what \"scale\" means for you. I'll reply with a clear next step."
   },
   "faq": [
     {
       "q": "What does LX Software do?",
-      "a": "LX Software is an independent software studio in Hong Kong. I design and build web software, then look after it."
+      "a": "LX Software is the consulting studio of Luca Cacchiani, a Hong Kong-based fractional CTO and CIO. I help startups scale with AI, cloud, and microservices."
     },
     {
-      "q": "Where are you based?",
-      "a": "Hong Kong."
+      "q": "What is a fractional CTO or CIO?",
+      "a": "It's senior technical leadership on a part-time or interim basis. You get CTO/CIO-level strategy, architecture, hiring, and delivery without the cost of a full-time executive."
+    },
+    {
+      "q": "Do you work with Hong Kong startups?",
+      "a": "Yes. I'm based in Hong Kong and work with local and remote-first startups. Engagements can be advisory, hands-on, or a mix of both."
+    },
+    {
+      "q": "Which technologies do you work with?",
+      "a": "AWS (serverless, containers, CDK), TypeScript and React, Python, SQL, and LLM tooling. I favour event-driven microservices, infrastructure as code, and CI/CD with observability built in."
     },
     {
       "q": "How do I get in touch?",
-      "a": "Use the Contact Me section: telephone, email, WhatsApp, or WeChat, whichever is configured. Email reaches hello@lx-software.com."
+      "a": "Use the Contact Me section: telephone, email, WhatsApp, WeChat, or LinkedIn, whichever is configured. Email reaches hello@lx-software.com."
     },
     {
       "q": "Does this site collect email addresses?",
@@ -104,18 +149,12 @@
   "legal": {
     "privacy": {
       "title": "Privacy Policy",
-      "updated": "2026-09-29",
+      "updated": "2026-09-30",
       "sections": [
-        {
-          "heading": "Draft",
-          "paragraphs": [
-            "This is a placeholder privacy policy, not legal advice. Replace it before relying on it."
-          ]
-        },
         {
           "heading": "Who",
           "paragraphs": [
-            "This site is published by LX Software, an independent studio in Hong Kong. The contact mailbox is hello@lx-software.com."
+            "This site is published by Luca Cacchiani / LX Software, an independent software and consulting studio in Hong Kong. The contact mailbox is hello@lx-software.com."
           ]
         },
         {
@@ -134,25 +173,20 @@
         {
           "heading": "Cookies and media",
           "paragraphs": [
-            "This site does not set advertising cookies. The harbour video is decoration. It has no audio and carries no extra tracking pixel of its own. It is served from this site, or from media.lx-software.com when that host is configured."
+            "This site does not set advertising cookies. The harbour video is decoration. It has no audio and carries no extra tracking pixel of its own. It is served from this site, or from media.lx-software.com when that host is configured.",
+            "Links to LinkedIn, WhatsApp, WeChat, and the project sites leave this site. Those services have their own privacy policies."
           ]
         }
       ]
     },
     "terms": {
       "title": "Terms & Conditions",
-      "updated": "2026-09-29",
+      "updated": "2026-09-30",
       "sections": [
-        {
-          "heading": "Draft",
-          "paragraphs": [
-            "These are placeholder terms, not legal advice. Replace them before relying on them."
-          ]
-        },
         {
           "heading": "Using the site",
           "paragraphs": [
-            "The pages are information about LX Software. They are not an offer to contract, and the project cards are fictional placeholders."
+            "The pages are information about LX Software and Luca Cacchiani. They are not an offer to contract. Project descriptions are provided for context and may change."
           ]
         },
         {

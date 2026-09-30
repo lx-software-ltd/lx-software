@@ -2,14 +2,14 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
-import { buildSeo, type SeoContent } from './scripts/site-seo.ts'
+import { applyHead, buildSeo, type SeoContent, type SeoOptions } from './scripts/site-seo.ts'
 
-function siteSeo(ownerName: string): Plugin {
+function siteSeo(options: SeoOptions): Plugin {
   const load = () => {
     const content = JSON.parse(
       readFileSync(resolve(process.cwd(), 'public/content.json'), 'utf8'),
     ) as SeoContent
-    return buildSeo(content, ownerName)
+    return buildSeo(content, options)
   }
   const types: Record<string, string> = {
     '/llms.txt': 'text/plain; charset=utf-8',
@@ -20,9 +20,11 @@ function siteSeo(ownerName: string): Plugin {
   return {
     name: 'site-seo',
     transformIndexHtml(html) {
-      if (html.includes('application/ld+json')) return html
-      const block = `    <script type="application/ld+json">\n${load().jsonld}\n    </script>\n`
-      return html.replace('</head>', `${block}  </head>`)
+      const seo = load()
+      const filled = applyHead(html, seo.head)
+      if (filled.includes('application/ld+json')) return filled
+      const block = `    <script type="application/ld+json">\n${seo.jsonld}\n    </script>\n`
+      return filled.replace('</head>', `${block}  </head>`)
     },
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
@@ -61,7 +63,7 @@ export default defineConfig(({ mode }) => {
     /\/$/,
     '',
   )
-  const ownerName = process.env.VITE_OWNER_NAME || env.VITE_OWNER_NAME || ''
+  const linkedin = process.env.VITE_CONTACT_LINKEDIN || env.VITE_CONTACT_LINKEDIN || ''
   let origin = ''
   if (media && !media.startsWith('/')) {
     try {
@@ -74,7 +76,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       react(),
-      siteSeo(ownerName),
+      siteSeo({ linkedin }),
       {
         name: 'media-preconnect',
         transformIndexHtml(html: string) {

@@ -6,6 +6,7 @@ interface ImportMetaEnv {
   readonly VITE_CONTACT_WHATSAPP?: string
   readonly VITE_CONTACT_EMAIL?: string
   readonly VITE_CONTACT_WECHAT_ID?: string
+  readonly VITE_CONTACT_LINKEDIN?: string
 }
 
 interface ImportMeta {

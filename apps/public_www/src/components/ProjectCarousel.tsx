@@ -112,10 +112,17 @@ export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
               <pre aria-hidden="true">{item.ascii.join('\n')}</pre>
               <h3>{item.title}</h3>
               <p>{item.description}</p>
-              {item.href ? (
-                <a href={item.href} rel="noreferrer">
+              {item.url ? (
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`Open ${item.title} in a new tab`}
+                >
                   [ open ]
                 </a>
+              ) : item.status ? (
+                <span className="project-status">[ {item.status.toLowerCase()} ]</span>
               ) : null}
             </article>
           </li>

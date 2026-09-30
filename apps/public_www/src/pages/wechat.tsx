@@ -1,12 +1,14 @@
 import { wechatId } from '../lib/contact'
+import { defaultSiteContent } from '../lib/content'
 import { usePageMeta } from '../lib/seo'
 
 export function WeChatPage() {
   const id = wechatId()
+  const siteName = defaultSiteContent.site.name
   usePageMeta(
-    'WeChat — LX Software',
+    `WeChat — ${siteName}`,
     '/wechat',
-    'WeChat contact for LX Software. The QR code is a placeholder until it is published.',
+    `WeChat contact for ${siteName}. The QR code is a placeholder until it is published.`,
   )
 
   return (

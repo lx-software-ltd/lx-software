@@ -3,35 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LX Software — independent software studio, Hong Kong</title>
-    <meta
-      name="description"
-      content="LX Software is an independent software studio in Hong Kong. One page: who I am, what I do, projects, and how to get in touch."
-    />
-    <link rel="canonical" href="https://www.lx-software.com/" />
+    <!-- {{token}} values are filled from public/content.json by the site-seo Vite plugin. -->
+    <title>{{title}}</title>
+    <meta name="description" content="{{description}}" />
+    <meta name="keywords" content="{{keywords}}" />
+    <meta name="author" content="{{author}}" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+    <link rel="canonical" href="{{url}}" />
     <meta name="theme-color" content="#050505" />
     <meta property="og:type" content="website" />
-    <meta property="og:site_name" content="LX Software" />
-    <meta property="og:title" content="LX Software — independent software studio, Hong Kong" />
-    <meta
-      property="og:description"
-      content="LX Software is an independent software studio in Hong Kong. One page: who I am, what I do, projects, and how to get in touch."
-    />
-    <meta property="og:url" content="https://www.lx-software.com/" />
-    <meta property="og:image" content="https://www.lx-software.com/og-image.png" />
+    <meta property="og:locale" content="en_GB" />
+    <meta property="og:site_name" content="{{siteName}}" />
+    <meta property="og:title" content="{{title}}" />
+    <meta property="og:description" content="{{description}}" />
+    <meta property="og:url" content="{{url}}" />
+    <meta property="og:image" content="{{ogImage}}" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="{{title}}" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="LX Software — independent software studio, Hong Kong" />
-    <meta
-      name="twitter:description"
-      content="LX Software is an independent software studio in Hong Kong. One page: who I am, what I do, projects, and how to get in touch."
-    />
-    <meta name="twitter:image" content="https://www.lx-software.com/og-image.png" />
+    <meta name="twitter:title" content="{{title}}" />
+    <meta name="twitter:description" content="{{description}}" />
+    <meta name="twitter:image" content="{{ogImage}}" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
     <link
       rel="preload"
       as="image"
@@ -49,8 +47,7 @@
         style="position:fixed;inset:0;width:100%;height:100%;object-fit:contain;background:#000"
       />
       <p style="position:relative;z-index:2;color:#fff;font-family:monospace;padding:6rem 1rem">
-        LX Software — independent software studio, Hong Kong. This page needs JavaScript for navigation.
-        Email hello@lx-software.com.
+        {{noscript}}
       </p>
     </noscript>
     <script type="module" src="/src/main.tsx"></script>

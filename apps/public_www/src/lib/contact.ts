@@ -1,5 +1,7 @@
+import { linkedinUrl } from './linkedin'
+
 export interface ContactLink {
-  id: 'tel' | 'email' | 'whatsapp' | 'wechat'
+  id: 'tel' | 'email' | 'whatsapp' | 'wechat' | 'linkedin'
   label: string
   accessibleName: string
   href: string | null
@@ -23,6 +25,7 @@ export function contactLinks(): ContactLink[] {
     (import.meta.env.VITE_CONTACT_EMAIL ?? '').trim() || 'hello@lx-software.com'
   const whatsapp = (import.meta.env.VITE_CONTACT_WHATSAPP ?? '').replace(/\D/g, '')
   const wechatId = (import.meta.env.VITE_CONTACT_WECHAT_ID ?? '').trim()
+  const linkedin = linkedinUrl(import.meta.env.VITE_CONTACT_LINKEDIN)
 
   return [
     {
@@ -52,6 +55,13 @@ export function contactLinks(): ContactLink[] {
       accessibleName: 'WeChat',
       href: wechatHref(wechatId),
       external: false,
+    },
+    {
+      id: 'linkedin',
+      label: 'LinkedIn',
+      accessibleName: linkedin ? 'LinkedIn profile' : 'LinkedIn not configured',
+      href: linkedin || null,
+      external: true,
     },
   ]
 }

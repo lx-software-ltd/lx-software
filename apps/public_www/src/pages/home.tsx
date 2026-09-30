@@ -19,11 +19,7 @@ export function HomePage() {
   })
   const content = data ?? defaultSiteContent
 
-  usePageMeta(
-    'LX Software — independent software studio, Hong Kong',
-    '/',
-    content.site.description,
-  )
+  usePageMeta(content.site.title, '/', content.site.description)
   useSectionKeys(content.keyboardSections, !reduced)
 
   useEffect(() => {
@@ -44,6 +40,7 @@ export function HomePage() {
         <h1>
           <span className="kicker">{content.hero.kicker}</span>
           <span className="cursor" aria-hidden="true" />
+          <span className="headline">{content.hero.headline}</span>
         </h1>
         <p className="lede">{content.hero.summary}</p>
         <a className="scroll-cue" href="#who-i-am">
