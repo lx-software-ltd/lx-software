@@ -43,6 +43,7 @@ jobs:
           VITE_CONTACT_EMAIL: ${{ vars.VITE_CONTACT_EMAIL }}
           VITE_CONTACT_WECHAT_ID: ${{ vars.VITE_CONTACT_WECHAT_ID }}
           VITE_CONTACT_LINKEDIN: ${{ vars.VITE_CONTACT_LINKEDIN }}
+          VITE_GTM_ID: ${{ vars.VITE_GTM_ID }}
         run: npm run build
 
       - name: Run Lighthouse CI
