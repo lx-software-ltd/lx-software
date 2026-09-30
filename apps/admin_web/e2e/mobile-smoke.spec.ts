@@ -47,9 +47,9 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByRole("heading", { name: "Evolve Sprouts", level: 1 })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: "Dashboard" })).toBeVisible();
-    await expect(page.getByText("Open invoices")).toBeVisible();
-    await expect(page.getByText("Submitted")).toBeVisible();
-    await expect(page.getByText("Paid")).toBeVisible();
+    await expect(page.getByText("Open invoices", { exact: true })).toBeVisible();
+    await expect(page.getByText("Submitted", { exact: true })).toBeVisible();
+    await expect(page.getByText("Paid", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Sync now" })).toBeVisible();
     await page.getByRole("button", { name: "Sync now" }).click();
     await expect(page.getByRole("button", { name: "Sync now" })).toBeEnabled();
