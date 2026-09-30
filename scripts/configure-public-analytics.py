@@ -496,6 +496,10 @@ class GtmPlan:
         return not (self.google_tag or self.variables or self.trigger or self.event_tag or self.builtin_event)
 
 
+def via_gtm_plan(_api: Api) -> None:
+    """Marker for drift that ``apply_gtm`` fixes through the workspace plan."""
+
+
 def plan_gtm(live: dict, measurement_id: str, container: dict, report: Report) -> GtmPlan:
     plan = GtmPlan()
     tags = live.get("tag", []) or []
@@ -509,7 +513,7 @@ def plan_gtm(live: dict, measurement_id: str, container: dict, report: Report) -
     if not measurement_id:
         report.drift("gtm", "cannot verify the Google tag without a GA4 web stream")
     elif not googtags:
-        report.drift("gtm", f"Google tag with {measurement_id} on Initialization - All Pages")
+        report.drift("gtm", f"Google tag with {measurement_id} on Initialization - All Pages", via_gtm_plan)
         plan.google_tag = True
     else:
         ids = [param(t, "tagId") for t in googtags]
@@ -525,13 +529,17 @@ def plan_gtm(live: dict, measurement_id: str, container: dict, report: Report) -
     have_vars = {v.get("name") for v in variables if v.get("type") == "v"}
     plan.variables = [p for p in SITE_EVENT_PARAMS if dl_variable_name(p) not in have_vars]
     if plan.variables:
-        report.drift("gtm", "Data Layer variables: " + ", ".join(dl_variable_name(p) for p in plan.variables))
+        report.drift(
+            "gtm",
+            "Data Layer variables: " + ", ".join(dl_variable_name(p) for p in plan.variables),
+            via_gtm_plan,
+        )
     else:
         report.note("  Data Layer variables present for every site event parameter")
 
     if "event" not in builtins:
         plan.builtin_event = True
-        report.drift("gtm", "built-in variable {{Event}}")
+        report.drift("gtm", "built-in variable {{Event}}", via_gtm_plan)
 
     trigger = next(
         (
@@ -544,7 +552,7 @@ def plan_gtm(live: dict, measurement_id: str, container: dict, report: Report) -
     want_regex = site_event_regex()
     if trigger is None:
         plan.trigger = True
-        report.drift("gtm", f"Custom Event trigger {EVENT_TRIGGER_NAME!r} for {want_regex}")
+        report.drift("gtm", f"Custom Event trigger {EVENT_TRIGGER_NAME!r} for {want_regex}", via_gtm_plan)
     else:
         got = ""
         for f in trigger.get("customEventFilter", []) or []:
@@ -557,7 +565,11 @@ def plan_gtm(live: dict, measurement_id: str, container: dict, report: Report) -
     event_tag = next((t for t in tags if t.get("type") == "gaawe" and t.get("name") == EVENT_TAG_NAME), None)
     if event_tag is None:
         plan.event_tag = True
-        report.drift("gtm", f"GA4 event tag {EVENT_TAG_NAME!r} forwarding {len(SITE_EVENT_PARAMS)} parameters")
+        report.drift(
+            "gtm",
+            f"GA4 event tag {EVENT_TAG_NAME!r} forwarding {len(SITE_EVENT_PARAMS)} parameters",
+            via_gtm_plan,
+        )
     else:
         rows = param(event_tag, "eventSettingsTable") or []
         forwarded = set()
@@ -577,7 +589,8 @@ def plan_gtm(live: dict, measurement_id: str, container: dict, report: Report) -
 
 
 def apply_gtm(api: Api, container_path: str, live: dict, plan: GtmPlan, measurement_id: str, publish: bool) -> str:
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    # GTM rejects ":" in workspace and version names.
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H%M UTC")
     ws = api.post(
         f"{TAGMANAGER_V2}/{container_path}/workspaces",
         {"name": f"public-analytics {stamp}"[:64], "description": "scripts/configure-public-analytics.py"},
@@ -685,13 +698,18 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if report.changes else 0
 
     for change in report.fixable:
-        if change.area == "ga4":
-            print(f"apply: {change.summary}")
-            change.apply(api)  # type: ignore[misc]
+        if change.apply is via_gtm_plan:
+            continue
+        print(f"apply: {change.summary}")
+        change.apply(api)  # type: ignore[misc]
     if gtm_plan.empty():
         print("GTM live version already matches; nothing to publish")
     else:
-        version_path = apply_gtm(api, container["path"], live, gtm_plan, ga4.measurement_id, not args.no_publish)
+        try:
+            version_path = apply_gtm(api, container["path"], live, gtm_plan, ga4.measurement_id, not args.no_publish)
+        except ApiError as e:
+            print(explain_access_error(e), file=sys.stderr)
+            return 2
         print(f"GTM version {'published' if not args.no_publish else 'created'}: {version_path}")
     if report.manual:
         print("\nStill needs the owner:")
