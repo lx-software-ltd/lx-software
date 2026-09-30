@@ -1,12 +1,11 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
 import { AsciiDivider } from '../components/AsciiDivider'
 import { ContactIcons } from '../components/ContactIcons'
 import { Faq } from '../components/Faq'
 import { ProjectCarousel } from '../components/ProjectCarousel'
 import { trackEvent } from '../lib/analytics'
-import { defaultSiteContent, fetchSiteContent } from '../lib/content'
+import { defaultSiteContent } from '../lib/content'
 import { useReducedMotion } from '../lib/motion'
 import { usePageMeta } from '../lib/seo'
 import { useSectionKeys } from '../lib/useSectionKeys'
@@ -14,11 +13,7 @@ import { useSectionKeys } from '../lib/useSectionKeys'
 export function HomePage() {
   const reduced = useReducedMotion()
   const location = useLocation()
-  const { data } = useQuery({
-    queryKey: ['site-content'],
-    queryFn: fetchSiteContent,
-  })
-  const content = data ?? defaultSiteContent
+  const content = defaultSiteContent
 
   usePageMeta(content.site.title, '/', content.site.description)
   useSectionKeys(content.keyboardSections, !reduced)

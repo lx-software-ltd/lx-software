@@ -1,35 +1,55 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { SiteLayout } from './components/site-layout'
 import { HomePage } from './pages/home'
-import { LegalPage } from './pages/legal'
-import { NotFoundPage } from './pages/not-found'
-import { WeChatPage } from './pages/wechat'
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
-})
+const LegalPage = lazy(() => import('./pages/legal').then((mod) => ({ default: mod.LegalPage })))
+const NotFoundPage = lazy(() =>
+  import('./pages/not-found').then((mod) => ({ default: mod.NotFoundPage })),
+)
+const WeChatPage = lazy(() => import('./pages/wechat').then((mod) => ({ default: mod.WeChatPage })))
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<SiteLayout />}>
-            <Route index element={<HomePage />} />
-            <Route path="privacy" element={<LegalPage kind="privacy" />} />
-            <Route path="terms" element={<LegalPage kind="terms" />} />
-            <Route path="wechat" element={<WeChatPage />} />
-            <Route path="*" element={<NotFoundPage />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </QueryClientProvider>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<SiteLayout />}>
+          <Route index element={<HomePage />} />
+          <Route
+            path="privacy"
+            element={
+              <Suspense fallback={null}>
+                <LegalPage kind="privacy" />
+              </Suspense>
+            }
+          />
+          <Route
+            path="terms"
+            element={
+              <Suspense fallback={null}>
+                <LegalPage kind="terms" />
+              </Suspense>
+            }
+          />
+          <Route
+            path="wechat"
+            element={
+              <Suspense fallback={null}>
+                <WeChatPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="*"
+            element={
+              <Suspense fallback={null}>
+                <NotFoundPage />
+              </Suspense>
+            }
+          />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   )
 }
 

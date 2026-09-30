@@ -36,11 +36,17 @@ only step needed to change the public copy.
 ## Lighthouse
 
 **Lighthouse Public Website** (`.github/workflows/lighthouse-public-website.yml`)
-is manual. It builds `apps/public_www` with the production variables, serves
-`dist/` locally, and runs Lighthouse CI against `/` (or the `page_paths`
-input, comma or newline separated). Every category must score 0.9 or better
-(`apps/public_www/.lighthouserc.json`). The HTML reports are uploaded as the
-`lighthouse-public-www-results` artifact.
+runs on pull requests that touch `apps/public_www/**`, every Monday, and on
+demand. It builds `apps/public_www` with the production variables, serves
+`dist/` locally, and runs Lighthouse CI against `/`, `/privacy`, `/terms`,
+and `/wechat` (or the `page_paths` input, comma or newline separated). Each
+URL is audited 3 times and assertions use the median run. Every category
+must score 0.9 or better. The gate also fails on a distorted image, an
+offscreen image, a render-blocking resource, simulated LCP above 3 s, total
+blocking time above 200 ms, or unused JavaScript whose estimated savings
+exceed 400 ms (`apps/public_www/.lighthouserc.json`). The HTML reports are uploaded as the
+`lighthouse-public-www-results` artifact, and the run posts a commit status
+when `GITHUB_TOKEN` can write statuses.
 
 ## Build locally
 
@@ -76,8 +82,9 @@ The distribution sends a content security policy that allows images and
 video from `'self'` and `https://media.lx-software.com`, scripts from
 `'self'` and `https://www.googletagmanager.com`, and analytics hits to
 `https://*.google-analytics.com` and `https://*.analytics.google.com`.
-Inline scripts are blocked. `backend/infrastructure/test/public-website-stack.test.ts`
-pins that list.
+Inline scripts are blocked. It also sends
+`Cross-Origin-Opener-Policy: same-origin`.
+`backend/infrastructure/test/public-website-stack.test.ts` pins the CSP list.
 
 ## Google Analytics 4 and Tag Manager
 

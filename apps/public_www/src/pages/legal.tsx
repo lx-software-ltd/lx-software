@@ -1,13 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
-import { defaultSiteContent, fetchSiteContent, type LegalDocument } from '../lib/content'
+import { defaultSiteContent, type LegalDocument } from '../lib/content'
 import { usePageMeta } from '../lib/seo'
 
 export function LegalPage({ kind }: { kind: 'privacy' | 'terms' }) {
-  const { data } = useQuery({
-    queryKey: ['site-content'],
-    queryFn: fetchSiteContent,
-  })
-  const content = data ?? defaultSiteContent
+  const content = defaultSiteContent
   const doc: LegalDocument = content.legal[kind]
   const path = kind === 'privacy' ? '/privacy' : '/terms'
 
