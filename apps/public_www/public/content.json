@@ -81,25 +81,13 @@
         "title": "Evolve Sprouts",
         "description": "Montessori training for families. A digital learning platform that helps parents bring Montessori practice into the home.",
         "url": "https://www.evolvesprouts.com",
-        "ascii": [
-          "   \\ | /",
-          "    \\|/",
-          "     |",
-          "  .-----.",
-          "  '-----'"
-        ]
+        "logo": "/images/evolvesprouts-logo.svg"
       },
       {
         "title": "Siu Tin Dei",
         "description": "A curated guide to activities for kids in Hong Kong. Helps parents find the right next outing, class, or experience.",
         "url": "https://siutindei.com",
-        "ascii": [
-          "    /\\",
-          "   /  \\",
-          "   \\  /",
-          "    \\/",
-          "    /~"
-        ]
+        "logo": "/images/siutindei-logo.svg"
       },
       {
         "title": "ai-cxo",

@@ -7,27 +7,38 @@ function Icon({ id }: { id: ContactLink['id'] }) {
   if (id === 'whatsapp') return <WhatsAppIcon />
   if (id === 'wechat') return <WeChatIcon />
   if (id === 'linkedin') return <LinkedInIcon />
+  if (id === 'tel') return <TelephoneIcon />
+  return <EmailIcon />
+}
 
-  const common = {
-    viewBox: '0 0 48 48',
-    width: 48,
-    height: 48,
-    'aria-hidden': true as const,
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeWidth: 1.6,
-  }
-  if (id === 'tel') {
-    return (
-      <svg {...common}>
-        <path d="M16 10h6l2 6-4 2a16 16 0 0 0 8 8l2-4 6 2v6c0 2-2 4-4 4C20 34 14 20 14 14c0-2 0-4 2-4z" />
-      </svg>
-    )
-  }
+function TelephoneIcon() {
   return (
-    <svg {...common}>
-      <rect x="8" y="12" width="32" height="24" />
-      <path d="M8 14l16 12L40 14" />
+    <svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">
+      <rect width="48" height="48" rx="11" fill="#34C759" />
+      <path
+        fill="#fff"
+        d="M14.2 20.1c1.7 3.3 4.4 6 7.7 7.7l2.6-2.6c.3-.3.8-.4 1.2-.3 1.3.4 2.7.7 4.2.7.6 0 1.2.5 1.2 1.2v4.1c0 .6-.5 1.2-1.2 1.2-11 0-19.9-8.9-19.9-19.9 0-.6.5-1.2 1.2-1.2h4.1c.6 0 1.2.5 1.2 1.2 0 1.5.2 2.9.7 4.2.1.4 0 .9-.3 1.2l-2.7 2.5z"
+      />
+    </svg>
+  )
+}
+
+function EmailIcon() {
+  return (
+    <svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">
+      <rect width="48" height="48" rx="11" fill="#0A84FF" />
+      <path
+        fill="#fff"
+        d="M11.5 16.8h25c1.2 0 2.2 1 2.2 2.2v12.2c0 1.2-1 2.2-2.2 2.2h-25c-1.2 0-2.2-1-2.2-2.2V19c0-1.2 1-2.2 2.2-2.2z"
+      />
+      <path
+        fill="none"
+        stroke="#0A84FF"
+        strokeWidth="2.4"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        d="M12.2 18.2 24 26.8 35.8 18.2"
+      />
     </svg>
   )
 }

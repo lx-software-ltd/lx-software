@@ -111,7 +111,11 @@ export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
         {items.map((item) => (
           <li key={item.title}>
             <article className="project-card">
-              <pre aria-hidden="true">{item.ascii.join('\n')}</pre>
+              {item.logo ? (
+                <img className="project-logo" src={item.logo} alt="" width={96} height={96} />
+              ) : item.ascii?.length ? (
+                <pre aria-hidden="true">{item.ascii.join('\n')}</pre>
+              ) : null}
               <h3>{item.title}</h3>
               <p>{item.description}</p>
               {item.url ? (
