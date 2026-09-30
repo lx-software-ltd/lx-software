@@ -91,14 +91,23 @@ export class PublicWebsiteStack extends cdk.Stack {
     // OAC is more secure than the legacy OAI and supports additional features
     const origin = origins.S3BucketOrigin.withOriginAccessControl(this.bucket);
 
+    // Google Tag Manager (`VITE_GTM_ID`) loads gtm.js and the GA4 gtag from
+    // www.googletagmanager.com; GA4 sends hits to *.google-analytics.com and
+    // *.analytics.google.com (regional endpoints). Inline scripts stay
+    // blocked, so the container must not use Custom HTML tags. frame-src is
+    // for the Tag Assistant preview badge.
+    const gtmScript = "https://www.googletagmanager.com";
+    const ga4Collect =
+      "https://*.google-analytics.com https://*.analytics.google.com";
     const csp = [
       "default-src 'self'",
-      "script-src 'self'",
+      `script-src 'self' ${gtmScript}`,
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: https://media.lx-software.com",
+      `img-src 'self' data: https://media.lx-software.com ${gtmScript} https://*.google-analytics.com`,
       "media-src 'self' https://media.lx-software.com",
       "font-src 'self'",
-      "connect-src 'self'",
+      `connect-src 'self' ${gtmScript} ${ga4Collect}`,
+      `frame-src 'self' ${gtmScript}`,
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",

@@ -125,6 +125,7 @@ Variables:
 | `VITE_CONTACT_EMAIL` | Public site only. Empty uses `hello@lx-software.com`. |
 | `VITE_CONTACT_WECHAT_ID` | Public site only. Shown on `/wechat`, or empty. |
 | `VITE_CONTACT_LINKEDIN` | Public site only. LinkedIn profile URL or `in/<slug>`, or empty. |
+| `VITE_GTM_ID` | Public site only. Google Tag Manager container id (`GTM-XXXXXXX`), or empty for no analytics. Setup in [`public-website.md`](./public-website.md#google-analytics-4-and-tag-manager). |
 | `ADMIN_API_BASE_URL` | Admin HTTP API origin for the admin SPA. The public site does not read it. |
 | `ADMIN_ACM_CERT_ARN`, `ADMIN_GOOGLE_CLIENT_ID`, `ADMIN_FEDERATED_EMAIL_ALLOWLIST`, `ADMIN_BOOTSTRAP_EMAIL`, `ADMIN_COGNITO_*` | Admin stack and SPA settings; see [`admin-website.md`](./admin-website.md). |
 

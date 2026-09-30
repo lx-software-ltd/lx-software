@@ -171,9 +171,16 @@
           ]
         },
         {
+          "heading": "Analytics",
+          "paragraphs": [
+            "The site uses Google Analytics 4, loaded through Google Tag Manager, to count visits and see which pages and links are used. Google sets first-party cookies (_ga and _ga_*) to tell returning visitors from new ones. The data is aggregated and is not used for advertising. Google's own privacy policy applies to that processing.",
+            "If your browser sends the Global Privacy Control or Do Not Track signal, the analytics script is not loaded at all. You can also block it with a content blocker or the Google Analytics opt-out add-on."
+          ]
+        },
+        {
           "heading": "Cookies and media",
           "paragraphs": [
-            "This site does not set advertising cookies. The harbour video is decoration. It has no audio and carries no extra tracking pixel of its own. It is served from this site, or from media.lx-software.com when that host is configured.",
+            "This site does not set advertising cookies. Beyond the analytics cookies above, it sets none of its own. The harbour video is decoration. It has no audio and carries no extra tracking pixel of its own. It is served from this site, or from media.lx-software.com when that host is configured.",
             "Links to LinkedIn, WhatsApp, WeChat, and the project sites leave this site. Those services have their own privacy policies."
           ]
         }
