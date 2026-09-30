@@ -66,7 +66,9 @@ or manually. It builds the site, then uploads `dist/` and invalidates the
 distribution. Hashed files under `assets/` go up first and are cached for a
 year. `index.html`, `content.json`, robots, the sitemap, `llms.txt`,
 `llms-full.txt`, and `site.webmanifest` are copied with
-`Cache-Control: no-cache` and are never written as immutable. `media/`
+`Cache-Control: no-cache` and are never written as immutable. Other
+unhashed directories that Vite copies from `public/` (including `images/`)
+are uploaded the same way, with a content type and `no-cache`. `media/`
 syncs with `--size-only`. Retired hashed assets are deleted only after the
 new shell is uploaded.
 
