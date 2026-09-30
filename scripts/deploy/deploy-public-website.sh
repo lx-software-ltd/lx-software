@@ -57,20 +57,44 @@ content_type() {
 
 cache_control() {
   case "$1" in
-    index.html|content.json|robots.txt|sitemap.xml|llms.txt|llms-full.txt|site.webmanifest)
+    index.html|content.json|robots.txt|sitemap.xml|llms.txt|llms-full.txt|site.webmanifest|*/*)
+      # Unhashed paths (the shell, and public/ directories such as images/)
+      # must revalidate. A year-long immutable cache would keep a replaced
+      # logo after the next deploy.
       printf '%s' "no-cache" ;;
     *)
       printf '%s' "$IMMUTABLE" ;;
   esac
 }
 
+upload_file() {
+  local path="$1"
+  local key="$2"
+  aws s3 cp "$path" "s3://$BUCKET_NAME/$key" \
+    --cache-control "$(cache_control "$key")" \
+    --content-type "$(content_type "$path")"
+}
+
 echo "Uploading site root"
 for path in "$BUILD_DIR"/*; do
   [ -f "$path" ] || continue
+  upload_file "$path" "$(basename "$path")"
+done
+
+# Vite copies public/ into dist/, including directories such as images/.
+# The root loop only uploads files, and the earlier syncs only cover
+# assets/ and media/, so those directories never reached S3. CloudFront
+# then served index.html for the logo URLs.
+echo "Uploading unhashed public directories"
+for path in "$BUILD_DIR"/*; do
+  [ -d "$path" ] || continue
   name="$(basename "$path")"
-  aws s3 cp "$path" "s3://$BUCKET_NAME/$name" \
-    --cache-control "$(cache_control "$name")" \
-    --content-type "$(content_type "$name")"
+  case "$name" in
+    assets|media) continue ;;
+  esac
+  while IFS= read -r -d '' file; do
+    upload_file "$file" "${file#"$BUILD_DIR"/}"
+  done < <(find "$path" -type f -print0)
 done
 
 echo "Pruning retired hashed assets"
