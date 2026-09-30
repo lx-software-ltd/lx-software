@@ -32,6 +32,14 @@ services as `makesOffer`), `Person` (from `site.owner` / `site.role`),
 `WebPage`, and `FAQPage`. `VITE_CONTACT_LINKEDIN` adds the LinkedIn contact
 icon and the `sameAs` links.
 
+## Analytics
+
+`VITE_GTM_ID` (a `GTM-XXXXXXX` container id) makes `src/lib/gtm.ts` load
+Google Tag Manager; GA4 is configured inside that container. Empty means no
+Google script is requested. Browsers sending Global Privacy Control or Do
+Not Track are never tracked. Console setup and the CloudFront CSP hosts are
+in [`docs/deployment/public-website.md`](../../docs/deployment/public-website.md#google-analytics-4-and-tag-manager).
+
 ## Content
 
 Edit `public/content.json` for the title, description, keywords, biography,
