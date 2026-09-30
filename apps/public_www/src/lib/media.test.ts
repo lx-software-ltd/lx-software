@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { isAppleTouch, videoSources, videoUrl } from './media'
+import { afterFirstPaint, isAppleTouch, videoSources, videoUrl } from './media'
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -42,5 +42,50 @@ describe('video urls', () => {
     })
     expect(isAppleTouch()).toBe(true)
     expect(videoSources(720).map((source) => source.type)).toEqual(['video/mp4'])
+  })
+})
+
+describe('afterFirstPaint', () => {
+  it('waits for load, then runs on an idle callback', () => {
+    const task = vi.fn()
+    const listeners = new Map<string, () => void>()
+    vi.stubGlobal('document', { readyState: 'loading' })
+    vi.stubGlobal('window', {
+      addEventListener: (type: string, fn: () => void) => listeners.set(type, fn),
+      removeEventListener: (type: string) => listeners.delete(type),
+      requestIdleCallback: (cb: () => void) => {
+        cb()
+        return 7
+      },
+      cancelIdleCallback: () => undefined,
+    })
+
+    const cancel = afterFirstPaint(task)
+    expect(task).not.toHaveBeenCalled()
+    listeners.get('load')?.()
+    expect(task).toHaveBeenCalledOnce()
+    cancel()
+  })
+
+  it('does not run the task when cancelled before load', () => {
+    const task = vi.fn()
+    let load: (() => void) | undefined
+    vi.stubGlobal('document', { readyState: 'loading' })
+    vi.stubGlobal('window', {
+      addEventListener: (_type: string, fn: () => void) => {
+        load = fn
+      },
+      removeEventListener: () => undefined,
+      requestIdleCallback: (cb: () => void) => {
+        cb()
+        return 7
+      },
+      cancelIdleCallback: () => undefined,
+    })
+
+    const cancel = afterFirstPaint(task)
+    cancel()
+    load?.()
+    expect(task).not.toHaveBeenCalled()
   })
 })

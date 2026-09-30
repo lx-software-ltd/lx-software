@@ -41,3 +41,38 @@ export function pickHeight(): RenditionHeight {
   if (typeof window === 'undefined') return 720
   return window.matchMedia('(max-width: 900px)').matches ? 480 : 720
 }
+
+/** Runs `task` after load, on an idle slice, so the harbour file stays off the first paint. */
+export function afterFirstPaint(task: () => void): () => void {
+  if (typeof window === 'undefined') return () => undefined
+
+  let cancelled = false
+  let idleHandle = 0
+  let timerHandle = 0
+
+  const run = () => {
+    if (cancelled) return
+    if (typeof window.requestIdleCallback === 'function') {
+      idleHandle = window.requestIdleCallback(
+        () => {
+          if (!cancelled) task()
+        },
+        { timeout: 1500 },
+      )
+      return
+    }
+    timerHandle = window.setTimeout(() => {
+      if (!cancelled) task()
+    }, 1)
+  }
+
+  if (document.readyState === 'complete') run()
+  else window.addEventListener('load', run, { once: true })
+
+  return () => {
+    cancelled = true
+    window.removeEventListener('load', run)
+    if (idleHandle) window.cancelIdleCallback(idleHandle)
+    if (timerHandle) window.clearTimeout(timerHandle)
+  }
+}

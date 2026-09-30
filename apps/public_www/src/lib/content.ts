@@ -76,11 +76,3 @@ export interface SiteContent {
 }
 
 export const defaultSiteContent = bundled as SiteContent
-
-export async function fetchSiteContent(): Promise<SiteContent> {
-  const response = await fetch('/content.json')
-  if (!response.ok) {
-    throw new Error(`Failed to fetch site content: ${response.status}`)
-  }
-  return response.json() as Promise<SiteContent>
-}

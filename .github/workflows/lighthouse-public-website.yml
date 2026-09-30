@@ -6,10 +6,21 @@ on:
       page_paths:
         description: 'Comma/newline-separated page paths or full URLs to audit (e.g. /, /privacy)'
         required: false
-        default: '/'
+        default: '/, /privacy, /terms, /wechat'
+  pull_request:
+    paths:
+      - 'apps/public_www/**'
+      - '.github/workflows/lighthouse-public-website.yml'
+  schedule:
+    - cron: '15 6 * * 1'
 
 permissions:
   contents: read
+  statuses: write
+
+concurrency:
+  group: lighthouse-public-website-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lighthouse:
@@ -18,7 +29,7 @@ jobs:
     # The VITE_* build variables live on the production environment, the same
     # ones Deploy Public Website reads, so the audited bundle matches the live site.
     environment: production
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -50,6 +61,7 @@ jobs:
         working-directory: apps/public_www
         env:
           LIGHTHOUSE_PAGE_PATHS: ${{ inputs.page_paths }}
+          LHCI_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           node <<'NODE'
           const fs = require('node:fs');
@@ -58,7 +70,7 @@ jobs:
           const baseConfigPath = path.resolve('.lighthouserc.json');
           const runtimeConfigPath = path.resolve('.lighthouserc.runtime.json');
           const rawInput = (process.env.LIGHTHOUSE_PAGE_PATHS ?? '').trim();
-          const defaultTargets = ['/'];
+          const defaultTargets = ['/', '/privacy', '/terms', '/wechat'];
           const requestedTargets = (rawInput ? rawInput.split(/[\n,]+/) : defaultTargets)
             .map((value) => value.trim())
             .filter(Boolean);

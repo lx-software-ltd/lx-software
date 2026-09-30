@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import { deferStylesheetLinks, fontPreloadTags } from './scripts/index-html.ts'
 import { applyHead, buildSeo, type SeoContent, type SeoOptions } from './scripts/site-seo.ts'
 
 function siteSeo(options: SeoOptions): Plugin {
@@ -86,6 +87,39 @@ export default defineConfig(({ mode }) => {
           return html.replace('</head>', `    ${tag}\n  </head>`)
         },
       },
+      {
+        name: 'lcp-assets',
+        transformIndexHtml: {
+          order: 'post',
+          handler(html, ctx) {
+            const bundle = ctx.bundle
+            if (!bundle) return html
+            const fonts = fontPreloadTags(
+              Object.values(bundle)
+                .filter((item) => item.type === 'asset')
+                .map((item) => item.fileName),
+            )
+            const withFonts = fonts ? html.replace('</head>', `${fonts}\n  </head>`) : html
+            return deferStylesheetLinks(withFonts)
+          },
+        },
+      },
     ],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (
+              id.includes('node_modules/react-dom') ||
+              id.includes('node_modules/react/') ||
+              id.includes('node_modules/scheduler') ||
+              id.includes('node_modules/react-router')
+            ) {
+              return 'react'
+            }
+          },
+        },
+      },
+    },
   }
 })
