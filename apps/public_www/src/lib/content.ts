@@ -8,7 +8,8 @@ export interface Service {
 export interface ProjectItem {
   title: string
   description: string
-  ascii: string[]
+  ascii?: string[]
+  logo?: string
   url?: string
   status?: string
 }

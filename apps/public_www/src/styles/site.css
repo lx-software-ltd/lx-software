@@ -399,6 +399,14 @@ h1 {
   line-height: 1.15;
 }
 
+.project-logo {
+  display: block;
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  object-position: left center;
+}
+
 .project-card:hover,
 .project-card:focus-within {
   border-color: var(--accent-green);
