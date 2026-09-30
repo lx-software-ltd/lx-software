@@ -458,6 +458,14 @@ address {
   color: var(--accent-cyan);
 }
 
+.wechat-qr {
+  display: block;
+  width: min(280px, 100%);
+  height: auto;
+  margin-top: 1rem;
+  background: #fff;
+}
+
 .legal {
   max-width: 74ch;
 }
