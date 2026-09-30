@@ -9,7 +9,7 @@ export function deferStylesheetLinks(html: string): string {
       'rel="stylesheet" media="print" data-defer-css',
     )
     return [
-      `    <link rel="preload" href="${href}" as="style" />`,
+      `    <link rel="preload" href="${href}" as="style" crossorigin />`,
       deferred,
       `    <noscript><link rel="stylesheet" data-static-css href="${href}" /></noscript>`,
     ].join('\n')

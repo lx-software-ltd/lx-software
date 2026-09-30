@@ -5,7 +5,7 @@ describe('index html asset tags', () => {
   it('preloads a stylesheet without blocking first paint', () => {
     const html = '<head>\n<link rel="stylesheet" crossorigin href="/assets/index-abc.css">\n</head>'
     const next = deferStylesheetLinks(html)
-    expect(next).toContain('<link rel="preload" href="/assets/index-abc.css" as="style" />')
+    expect(next).toContain('<link rel="preload" href="/assets/index-abc.css" as="style" crossorigin />')
     expect(next).toContain('media="print" data-defer-css')
     expect(next).toContain('<noscript><link rel="stylesheet" data-static-css href="/assets/index-abc.css" /></noscript>')
     const twice = deferStylesheetLinks(next)
