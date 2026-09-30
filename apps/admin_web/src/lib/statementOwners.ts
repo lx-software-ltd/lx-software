@@ -1,6 +1,8 @@
 import {
   FINANCE_HOUSE_KEYS,
   FINANCE_STATEMENT_BOOK_KEYS,
+  MIRRORED_STATEMENT_BOOK_KEYS,
+  STATEMENT_BOOK_LABELS,
   type HouseKey,
   type StatementBookKey,
   type StatementOwnerKey,
@@ -8,13 +10,19 @@ import {
 
 export const SIU_TIN_DEI_BOOK_KEY: StatementBookKey = "siuTinDei";
 export const LX_SOFTWARE_BOOK_KEY: StatementBookKey = "lxSoftware";
+export const EVOLVE_SPROUTS_BOOK_KEY: StatementBookKey = "evolveSprouts";
 
-export const STATEMENT_BOOK_DISPLAY_LABEL: Readonly<
-  Record<StatementBookKey, string>
-> = {
-  siuTinDei: "Siu Tin Dei",
-  lxSoftware: "LX Software",
-};
+export const STATEMENT_BOOK_DISPLAY_LABEL = STATEMENT_BOOK_LABELS;
+
+/** Product books on the main dashboard: LX Software, then the remaining books. */
+export const STATEMENT_BOOK_DASHBOARD_ORDER: readonly StatementBookKey[] = [
+  LX_SOFTWARE_BOOK_KEY,
+  ...FINANCE_STATEMENT_BOOK_KEYS.filter((key) => key !== LX_SOFTWARE_BOOK_KEY),
+];
+
+export function isMirroredStatementBook(bookKey: StatementBookKey): boolean {
+  return (MIRRORED_STATEMENT_BOOK_KEYS as readonly string[]).includes(bookKey);
+}
 
 export function isHouseKey(value: string): value is HouseKey {
   return (FINANCE_HOUSE_KEYS as readonly string[]).includes(value);

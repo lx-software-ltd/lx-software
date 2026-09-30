@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { FinanceDataLoadOrError } from "../components/FinanceDataStatus";
-import { AdminKpi } from "../components/ui";
+import { AdminKpi, AdminKpiAmounts } from "../components/ui";
 import { StatementBookDashboardCard } from "../components/StatementBookDashboardCard";
 import { AllocationCoverageDashboardCard } from "../components/dashboard/AllocationCoverageDashboardCard";
 import { DashboardApiHealthCard } from "../components/dashboard/DashboardApiHealthCard";
@@ -12,7 +12,7 @@ import { AvailableBalanceDashboardCard } from "../components/dashboard/Available
 import { PensionDashboardCard } from "../components/dashboard/PensionDashboardCard";
 import { adminFetchJson } from "../lib/apiAdminClient";
 import { useFinance } from "../hooks/useFinance";
-import { useStatementBook } from "../hooks/useStatementBook";
+import { EMPTY_STATEMENT_BOOK, statementBookQuery } from "../hooks/useStatementBook";
 import { formatNonZeroMoneyLines } from "../lib/formatDisplay";
 import {
   defaultFiscalYearIdForNowUtc,
@@ -24,8 +24,7 @@ import {
 import { monthlyLedgerNetByCurrency, sumMonthlyFinanceLedgerAmountsByHouse } from "../lib/financeModel";
 import { HOUSE_DISPLAY_LABEL } from "../lib/houses";
 import {
-  LX_SOFTWARE_BOOK_KEY,
-  SIU_TIN_DEI_BOOK_KEY,
+  STATEMENT_BOOK_DASHBOARD_ORDER,
   STATEMENT_BOOK_DISPLAY_LABEL,
 } from "../lib/statementOwners";
 
@@ -36,18 +35,6 @@ function bookNet(
   const sums = sumHouseStatementLinesForFiscalYear(lines, year);
   return formatNonZeroMoneyLines(
     netGainsMinusExpensesByCurrency(sums.incomeByCurrency, sums.expensesByCurrency),
-  );
-}
-
-function MoneyStack({ lines }: { readonly lines: readonly string[] }) {
-  return (
-    <span className="admin-kpi-amounts">
-      {lines.map((line, index) => (
-        <span key={`${line}-${index}`} className="admin-kpi-amount">
-          {line}
-        </span>
-      ))}
-    </span>
   );
 }
 
@@ -63,12 +50,7 @@ export function DashboardPage() {
     queryFn: () =>
       adminFetchJson<{ sub?: string; email?: string }>("/me"),
   });
-  const [lxSoftwareFy, setLxSoftwareFy] = useState<FiscalYearId>(() =>
-    defaultFiscalYearIdForNowUtc(),
-  );
-  const [siuTinDeiFy, setSiuTinDeiFy] = useState<FiscalYearId>(() =>
-    defaultFiscalYearIdForNowUtc(),
-  );
+  const [bookFiscalYear, setBookFiscalYear] = useState<Partial<Record<string, FiscalYearId>>>({});
   const [hillmartonFy, setHillmartonFy] = useState<FiscalYearId>(() =>
     defaultFiscalYearIdForNowUtc(),
   );
@@ -76,18 +58,18 @@ export function DashboardPage() {
     defaultFiscalYearIdForNowUtc(),
   );
 
-  const lxSoftwareQuery = useStatementBook(LX_SOFTWARE_BOOK_KEY);
-  const siuTinDeiQuery = useStatementBook(SIU_TIN_DEI_BOOK_KEY);
-  const booksLoading = lxSoftwareQuery.isLoading || siuTinDeiQuery.isLoading;
-  const booksError = lxSoftwareQuery.isError || siuTinDeiQuery.isError;
+  const bookQueries = useQueries({
+    queries: STATEMENT_BOOK_DASHBOARD_ORDER.map((bookKey) => statementBookQuery(bookKey)),
+  });
+  const booksLoading = bookQueries.some((query) => query.isLoading);
+  const booksError = bookQueries.some((query) => query.isError);
+  const booksRetrying = bookQueries.some((query) => query.isRefetching);
 
   const financeQuery = useFinance();
   const fiscalYearStart = fiscalYearIdToStartCalendarYear(defaultFiscalYearIdForNowUtc());
   const kpis = useMemo(() => {
     const finance = financeQuery.data;
-    const lx = lxSoftwareQuery.data;
-    const siu = siuTinDeiQuery.data;
-    if (!finance || !lx || !siu) return null;
+    if (!finance || bookQueries.some((query) => !query.data)) return null;
     const houseNet = (houseKey: "hillmarton" | "morrison") => {
       const monthly = sumMonthlyFinanceLedgerAmountsByHouse(
         finance.incomeRecords,
@@ -99,53 +81,57 @@ export function DashboardPage() {
       return formatNonZeroMoneyLines(monthlyLedgerNetByCurrency(monthly));
     };
     return {
-      lx: bookNet(lx.lines, fiscalYearStart),
-      siu: bookNet(siu.lines, fiscalYearStart),
+      books: STATEMENT_BOOK_DASHBOARD_ORDER.map((bookKey, index) => ({
+        bookKey,
+        label: STATEMENT_BOOK_DISPLAY_LABEL[bookKey],
+        lines: bookNet(bookQueries[index]?.data?.lines ?? [], fiscalYearStart),
+      })),
       hillmarton: houseNet("hillmarton"),
       morrison: houseNet("morrison"),
     };
-  }, [financeQuery.data, fiscalYearStart, lxSoftwareQuery.data, siuTinDeiQuery.data]);
+  }, [bookQueries, financeQuery.data, fiscalYearStart]);
 
   return (
     <div className="admin-dashboard">
       {kpis ? (
         <div className="admin-kpi-row">
-          <AdminKpi label="LX Software net" value={<MoneyStack lines={kpis.lx} />} hint="This fiscal year" />
-          <AdminKpi label="Siu Tin Dei net" value={<MoneyStack lines={kpis.siu} />} hint="This fiscal year" />
-          <AdminKpi label="Hillmarton" value={<MoneyStack lines={kpis.hillmarton} />} hint="Monthly net" />
-          <AdminKpi label="The Morrison" value={<MoneyStack lines={kpis.morrison} />} hint="Monthly net" />
+          {kpis.books.map((book) => (
+            <AdminKpi
+              key={book.bookKey}
+              label={`${book.label} net`}
+              value={<AdminKpiAmounts lines={book.lines} />}
+              hint="This fiscal year"
+            />
+          ))}
+          <AdminKpi label="Hillmarton" value={<AdminKpiAmounts lines={kpis.hillmarton} />} hint="Monthly net" />
+          <AdminKpi label="The Morrison" value={<AdminKpiAmounts lines={kpis.morrison} />} hint="Monthly net" />
         </div>
       ) : null}
 
       <FinanceDataLoadOrError
         isLoading={booksLoading}
         isError={booksError}
-        loadingMessage="Loading LX Software and Siu Tin Dei summaries…"
-        loadErrorMessage="Could not load LX Software and Siu Tin Dei summaries. Check API configuration and sign-in."
+        loadingMessage="Loading statement book summaries…"
+        loadErrorMessage="Could not load statement book summaries. Check API configuration and sign-in."
         onRetry={() => {
-          void lxSoftwareQuery.refetch();
-          void siuTinDeiQuery.refetch();
+          for (const query of bookQueries) void query.refetch();
         }}
-        isRetrying={lxSoftwareQuery.isRefetching || siuTinDeiQuery.isRefetching}
+        isRetrying={booksRetrying}
       />
       {!booksLoading && !booksError ? (
         <div className="row g-3 mb-3">
-          <div className="col-md-6">
-            <StatementBookDashboardCard
-              title={STATEMENT_BOOK_DISPLAY_LABEL.lxSoftware}
-              data={lxSoftwareQuery.data}
-              fiscalYear={lxSoftwareFy}
-              onFiscalYearChange={setLxSoftwareFy}
-            />
-          </div>
-          <div className="col-md-6">
-            <StatementBookDashboardCard
-              title={STATEMENT_BOOK_DISPLAY_LABEL.siuTinDei}
-              data={siuTinDeiQuery.data}
-              fiscalYear={siuTinDeiFy}
-              onFiscalYearChange={setSiuTinDeiFy}
-            />
-          </div>
+          {STATEMENT_BOOK_DASHBOARD_ORDER.map((bookKey, index) => (
+            <div className="col-md-6 col-xl-4" key={bookKey}>
+              <StatementBookDashboardCard
+                title={STATEMENT_BOOK_DISPLAY_LABEL[bookKey]}
+                data={bookQueries[index]?.data ?? EMPTY_STATEMENT_BOOK}
+                fiscalYear={bookFiscalYear[bookKey] ?? defaultFiscalYearIdForNowUtc()}
+                onFiscalYearChange={(fiscalYear) =>
+                  setBookFiscalYear((current) => ({ ...current, [bookKey]: fiscalYear }))
+                }
+              />
+            </div>
+          ))}
         </div>
       ) : null}
 

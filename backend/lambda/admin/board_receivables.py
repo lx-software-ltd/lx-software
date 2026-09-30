@@ -22,12 +22,7 @@ import board_store
 import runtime
 from board_data_api import Date, Numeric, Uuid
 from contract_constants import BOARD_INVOICE_NUMBER_PREFIX, BOARD_KEY, BOARD_RECEIVABLES_LIST_MAX
-from finance_store import (
-    _finance_owner_ddb_key,
-    _load_finance_owner,
-    _normalize_finance_payload,
-)
-from ddb_convert import _to_ddb_nested
+from finance_store import upsert_mirrored_lines
 from http_common import _log_event
 
 BOOK = BOARD_KEY
@@ -768,23 +763,6 @@ def aging_for_owner() -> dict[str, Any]:
     }
 
 
-def _line_same(prev: dict[str, Any], line: dict[str, Any]) -> bool:
-    try:
-        return (
-            str(prev.get("description") or "") == str(line.get("description") or "")
-            and str(prev.get("dateUtc") or "") == str(line.get("dateUtc") or "")
-            and float(prev.get("grossAmount") or 0) == float(line.get("grossAmount") or 0)
-            and str(prev.get("type") or "") == str(line.get("type") or "")
-        )
-    except (TypeError, ValueError):
-        return False
-
-
-def _is_mirrored_line(line: dict[str, Any]) -> bool:
-    lid = str(line.get("id") or "")
-    return lid.startswith(LINE_ID_PREFIXES) or str(line.get("source") or "") == LINE_SOURCE
-
-
 def _upsert_book_lines(table: Any, desired: list[dict[str, Any]]) -> tuple[int, int]:
     """Replace the book's receivables lines with ``desired``.
 
@@ -793,48 +771,13 @@ def _upsert_book_lines(table: Any, desired: list[dict[str, Any]]) -> tuple[int, 
     shows a receivable next to the payment that settled it. Manually entered
     lines are never touched. Returns ``(written, removed)``.
     """
-    data = _load_finance_owner(table, BOOK)
-    existing = [ln for ln in (data.get("lines") or []) if isinstance(ln, dict)]
-    desired_by_id = {str(ln["id"]): ln for ln in desired}
-    kept: list[dict[str, Any]] = []
-    written = 0
-    removed = 0
-    seen: set[str] = set()
-    for prev in existing:
-        lid = str(prev.get("id") or "")
-        if not _is_mirrored_line(prev):
-            kept.append(prev)
-            continue
-        line = desired_by_id.get(lid)
-        if line is None:
-            removed += 1
-            continue
-        seen.add(lid)
-        if _line_same(prev, line) and str(prev.get("source") or "") == LINE_SOURCE:
-            kept.append(prev)
-        else:
-            kept.append(line)
-            written += 1
-    for lid, line in desired_by_id.items():
-        if lid not in seen:
-            kept.append(line)
-            written += 1
-    if not written and not removed:
-        return 0, 0
-    payload = _normalize_finance_payload(
-        {
-            "defaultCurrency": data.get("defaultCurrency") or "HKD",
-            "float": data.get("float") or {"amount": 0, "currency": "HKD"},
-            "lines": kept,
-        }
+    return upsert_mirrored_lines(
+        table,
+        BOOK,
+        desired,
+        id_prefixes=LINE_ID_PREFIXES,
+        source=LINE_SOURCE,
     )
-    # Normalisation drops unknown keys; re-tag our lines so consumers can
-    # tell mirrored rows from manual entries.
-    for line in payload["lines"]:
-        if str(line.get("id") or "").startswith(LINE_ID_PREFIXES):
-            line["source"] = LINE_SOURCE
-    table.put_item(Item={**_finance_owner_ddb_key(BOOK), **_to_ddb_nested(payload)})
-    return written, removed
 
 
 def _mirror_line(*, line_id: str, day: Any, description: str, amount: float) -> dict[str, Any]:

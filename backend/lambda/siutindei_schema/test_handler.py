@@ -199,6 +199,21 @@ class ApplySchemaTests(unittest.TestCase):
         body = json.loads(urlopen.call_args[0][0].data.decode())
         self.assertEqual(body["Status"], "SUCCESS")
 
+    def test_apply_sql_false_only_enables_the_http_endpoint(self) -> None:
+        rds = MagicMock()
+        rds.enable_http_endpoint.return_value = {"HttpEndpointEnabled": True}
+
+        with (
+            patch("handler.boto3.client", return_value=rds),
+            patch.dict("os.environ", {"DATA_API_CLUSTER_ARN": "arn:es", "DATA_API_APPLY_SQL": "false"}),
+        ):
+            out = handler.lambda_handler({"internal": "data_api_ensure", "applySql": "false"}, MagicMock())
+
+        rds.enable_http_endpoint.assert_called_once_with(ResourceArn="arn:es")
+        rds.execute_statement.assert_not_called()
+        self.assertTrue(out["Data"]["httpEndpointEnabled"])
+        self.assertNotIn("applied", out["Data"])
+
 
 if __name__ == "__main__":
     unittest.main()

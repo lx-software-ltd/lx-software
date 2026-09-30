@@ -11,13 +11,13 @@ from typing import Any
 
 import boto3
 
+from contract_constants import STATEMENT_BOOK_LABELS
 from http_common import _log_event
 
 _OWNER_LABELS = {
     "hillmarton": "32 Hillmarton",
     "morrison": "The Morrison",
-    "lxSoftware": "LX Software",
-    "siuTinDei": "Siu Tin Dei",
+    **STATEMENT_BOOK_LABELS,
 }
 
 _SOURCE_LABELS = {

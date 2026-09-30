@@ -33,10 +33,33 @@ test.describe("admin viewport smoke", () => {
   test("dashboard loads fixture summaries", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByText("LX Software net")).toBeVisible();
+    await expect(page.getByText("Evolve Sprouts net")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Evolve Sprouts" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
     await expect(page.locator(".admin-brand, .admin-topbar-brand")).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Hillmarton" })).toBeVisible();
+    expect(await pageHasHorizontalOverflow(page)).toBe(false);
+  });
+
+  test("Evolve Sprouts lines are read-only", async ({ page }) => {
+    await page.goto("/evolve-sprouts");
+    await expect(page.getByRole("heading", { name: "Evolve Sprouts", level: 1 })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Dashboard" })).toBeVisible();
+    await expect(page.getByText("Open invoices")).toBeVisible();
+    await expect(page.getByText("Submitted")).toBeVisible();
+    await expect(page.getByText("Paid")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sync now" })).toBeVisible();
+    await page.getByRole("button", { name: "Sync now" }).click();
+    await expect(page.getByRole("button", { name: "Sync now" })).toBeEnabled();
+    await page.getByRole("tab", { name: "Expenses" }).click();
+    await expect(page.getByRole("button", { name: "New expense" })).toHaveCount(0);
+    await expect(page.getByText("[evolve-sprouts] Expense Example Vendor INV-9")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Edit line" })).toHaveCount(0);
+    await page.getByRole("tab", { name: "Gains" }).click();
+    await expect(page.getByRole("button", { name: "New gain" })).toHaveCount(0);
+    await expect(page.getByText("[evolve-sprouts] Payment pay-1")).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 

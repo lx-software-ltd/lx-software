@@ -76,23 +76,54 @@ def Numeric(value: Any) -> Typed:  # noqa: N802
     return Typed(str(value), "DECIMAL")
 
 
-def configured() -> bool:
-    return bool(
-        (os.environ.get("SIUTINDEI_CLUSTER_ARN") or "").strip()
-        and (os.environ.get("SIUTINDEI_DB_SECRET_ARN") or "").strip()
+@dataclass(frozen=True)
+class DataApiTarget:
+    """One Aurora cluster reached through the RDS Data API."""
+
+    cluster_arn: str
+    secret_arn: str
+    database: str
+    label: str
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.cluster_arn and self.secret_arn)
+
+
+def target_from_env(prefix: str, *, default_database: str, label: str) -> DataApiTarget:
+    database = (os.environ.get(f"{prefix}_DB_NAME") or default_database).strip() or default_database
+    return DataApiTarget(
+        cluster_arn=(os.environ.get(f"{prefix}_CLUSTER_ARN") or "").strip(),
+        secret_arn=(os.environ.get(f"{prefix}_DB_SECRET_ARN") or "").strip(),
+        database=database,
+        label=label,
     )
 
 
+def siutindei_target() -> DataApiTarget:
+    return target_from_env("SIUTINDEI", default_database="siutindei", label="siutindei")
+
+
+def evolvesprouts_target() -> DataApiTarget:
+    return target_from_env(
+        "EVOLVESPROUTS", default_database="evolvesprouts", label="Evolve Sprouts"
+    )
+
+
+def configured() -> bool:
+    return siutindei_target().configured
+
+
 def cluster_arn() -> str:
-    return (os.environ.get("SIUTINDEI_CLUSTER_ARN") or "").strip()
+    return siutindei_target().cluster_arn
 
 
 def secret_arn() -> str:
-    return (os.environ.get("SIUTINDEI_DB_SECRET_ARN") or "").strip()
+    return siutindei_target().secret_arn
 
 
 def database_name() -> str:
-    return (os.environ.get("SIUTINDEI_DB_NAME") or "siutindei").strip() or "siutindei"
+    return siutindei_target().database
 
 
 def set_executor_for_tests(fn: Callable[[str, list[dict[str, Any]] | None], list[dict[str, Any]]] | None) -> None:
@@ -166,20 +197,43 @@ def statement_kwargs(
     return kwargs
 
 
-def execute(sql: str, parameters: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
-    if _executor is not None:
-        return _executor(sql, parameters)
-    if not configured():
-        raise DataApiError(
+def _not_configured_message(target: DataApiTarget) -> str:
+    if target.label == "siutindei":
+        return (
             "siutindei Data API is not configured. Set SiutindeiClusterArn and "
             "redeploy so CDK can enable the HTTP endpoint, resolve the DB secret, "
             "and apply scripts/siutindei/receivables.sql."
         )
+    return (
+        f"{target.label} Data API is not configured. Set the cluster ARN and "
+        "database secret, then redeploy so CDK can enable the HTTP endpoint."
+    )
+
+
+def execute(
+    sql: str,
+    parameters: list[dict[str, Any]] | None = None,
+    *,
+    target: DataApiTarget | None = None,
+) -> list[dict[str, Any]]:
+    chosen = target or siutindei_target()
+    if _executor is not None:
+        return _executor(sql, parameters)
+    if not chosen.configured:
+        raise DataApiError(_not_configured_message(chosen))
     client = boto3.client("rds-data")
     try:
-        resp = client.execute_statement(**statement_kwargs(sql, parameters))
+        resp = client.execute_statement(
+            **statement_kwargs(
+                sql,
+                parameters,
+                resource_arn=chosen.cluster_arn,
+                secret=chosen.secret_arn,
+                database=chosen.database,
+            )
+        )
     except ClientError as exc:
         raise DataApiError(f"Data API: {exc.response.get('Error', {}).get('Message', exc)}") from exc
     rows = _rows_from_rds(resp)
-    _log_event("info", tag="board_data_api", rows=len(rows))
+    _log_event("info", tag="board_data_api", rows=len(rows), database=chosen.database)
     return rows

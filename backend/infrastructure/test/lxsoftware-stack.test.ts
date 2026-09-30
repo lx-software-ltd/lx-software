@@ -308,6 +308,8 @@ describe("EventBridge Scheduler wiring", () => {
     };
     const accountSchedules: Record<string, string> = {
       "lxsoftware-admin-openrouter-usage-pull": "openrouter_usage_pull",
+      "lxsoftware-admin-evolvesprouts-data-api-ensure": "data_api_ensure",
+      "lxsoftware-admin-evolvesprouts-finance-mirror": "evolvesprouts_finance_mirror",
     };
     const schedules = Object.values(resourcesOfType("AWS::Scheduler::Schedule"));
     const byName = Object.fromEntries(
@@ -404,6 +406,7 @@ describe("Admin Lambda IAM policies", () => {
   test.each([
     ["AdminOpenRouterSecretPolicy", "HasOpenRouterSecret"],
     ["AdminSiutindeiDataApiPolicy", "HasSiutindeiDataApi"],
+    ["AdminEvolvesproutsDataApiPolicy", "HasEvolvesproutsDataApi"],
     ["SiutindeiBoardMailSendPolicy", "HasSiutindeiBoardMailSending"],
     ["SiutindeiBoardImporterAuthPolicy", "HasSiutindeiUserPool"],
   ])("%s keeps its %s condition", (constructId, conditionName) => {
@@ -996,5 +999,78 @@ describe("Board SES configuration-set IAM and public CORS", () => {
     const serialized = JSON.stringify(template.toJSON());
     expect(serialized).toContain("PublicSiteOrigins");
     expect(serialized).toContain("lx-software.com");
+  });
+});
+
+describe("Evolve Sprouts finance mirror", () => {
+  test("HasEvolvesproutsDataApi is the cluster ARN only", () => {
+    const cond = template.toJSON().Conditions.HasEvolvesproutsDataApi;
+    const serialized = JSON.stringify(cond);
+    expect(serialized).toContain("EvolvesproutsClusterArn");
+    expect(serialized).not.toContain("EvolvesproutsDbSecretArn");
+    expect(template.toJSON().Parameters.EvolvesproutsDbSecretName.Default).toBe(
+      "evolvesprouts-database-credentials"
+    );
+  });
+
+  test("enables the HTTP endpoint without applying SQL", () => {
+    const custom = Object.entries(resources).filter(
+      ([, r]) => r.Type === "Custom::AWS" || r.Type === "AWS::CloudFormation::CustomResource"
+    );
+    const enables = custom.filter(([, r]) =>
+      JSON.stringify(r.Properties ?? {}).includes("enableHttpEndpoint")
+    );
+    expect(enables).toHaveLength(2);
+    expect(enables[0]?.[1].Condition).toBe("HasSiutindeiDataApi");
+    expect(enables[1]?.[1].Condition).toBe("HasEvolvesproutsDataApi");
+
+    const schemas = custom.filter(([id]) => id.includes("ReceivablesSchema"));
+    expect(schemas).toHaveLength(1);
+    expect(schemas[0]?.[1].Condition).toBe("HasSiutindeiDataApi");
+
+    const httpFns = Object.entries(resourcesOfType("AWS::Lambda::Function")).filter(([id]) =>
+      id.includes("HttpEndpointFn")
+    );
+    expect(httpFns).toHaveLength(1);
+    expect(httpFns[0]?.[1].Condition).toBe("HasEvolvesproutsDataApi");
+    expect(httpFns[0]?.[1].Properties?.Environment?.Variables?.DATA_API_APPLY_SQL).toBe("false");
+  });
+
+  test("AdminApiFn can run statements and read only the resolved secret", () => {
+    const [policy] = findPoliciesByConstructId("AdminEvolvesproutsDataApiPolicy");
+    const statements = policyStatements(policy!);
+    const actions = statements.flatMap((s) => asArray<string>(s.Action));
+    expect(actions).toContain("rds-data:ExecuteStatement");
+    expect(actions).not.toContain("rds-data:BatchExecuteStatement");
+    expect(actions).toContain("secretsmanager:GetSecretValue");
+
+    const adminFn = Object.entries(resourcesOfType("AWS::Lambda::Function")).find(([id]) =>
+      id.startsWith("AdminApiFn")
+    );
+    const env = adminFn?.[1].Properties?.Environment?.Variables ?? {};
+    expect(env.EVOLVESPROUTS_DB_NAME).toBe("evolvesprouts");
+    expect(env.EVOLVESPROUTS_DB_SECRET_ARN).toEqual({
+      "Fn::If": ["HasEvolvesproutsDataApi", expect.anything(), ""],
+    });
+  });
+
+  test("nightly mirror is unconditional and the endpoint refresh does not apply SQL", () => {
+    const schedules = Object.values(resourcesOfType("AWS::Scheduler::Schedule"));
+    const mirror = schedules.find(
+      (s) => s.Properties?.Name === "lxsoftware-admin-evolvesprouts-finance-mirror"
+    );
+    expect(mirror).toBeDefined();
+    expect(mirror?.Condition).toBeUndefined();
+    expect(JSON.stringify(mirror?.Properties?.ScheduleExpression ?? "")).toContain("45");
+    expect(JSON.stringify(mirror?.Properties?.Target?.Input ?? "")).toContain(
+      "evolvesprouts_finance_mirror"
+    );
+    const ensure = schedules.find(
+      (s) => s.Properties?.Name === "lxsoftware-admin-evolvesprouts-data-api-ensure"
+    );
+    expect(ensure?.Condition).toBe("HasEvolvesproutsDataApi");
+    const input = JSON.stringify(ensure?.Properties?.Target?.Input ?? "");
+    expect(input).toContain("data_api_ensure");
+    expect(input).toContain("false");
   });
 });

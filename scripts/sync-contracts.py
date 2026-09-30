@@ -66,6 +66,8 @@ def write_python(finance: dict, timeouts: dict, domains: dict) -> None:
         "FINANCE_HOUSE_KEYS = frozenset(FINANCE_CONTRACT[\"houses\"])",
         "FINANCE_STATEMENT_BOOK_KEYS = frozenset(FINANCE_CONTRACT[\"statementBooks\"])",
         "FINANCE_STATEMENT_OWNER_KEYS = FINANCE_HOUSE_KEYS | FINANCE_STATEMENT_BOOK_KEYS",
+        "STATEMENT_BOOK_LABELS = dict(FINANCE_CONTRACT[\"statementBookLabels\"])",
+        "MIRRORED_STATEMENT_BOOK_KEYS = frozenset(FINANCE_CONTRACT[\"mirroredStatementBooks\"])",
         "FINANCE_LINE_TYPES = frozenset(FINANCE_CONTRACT[\"lineTypes\"])",
         "SUPPORTED_FINANCE_CURRENCIES = frozenset(FINANCE_CONTRACT[\"currencies\"])",
         "DEFAULT_FINANCE_CURRENCY = FINANCE_CONTRACT[\"defaultCurrency\"]",
@@ -321,6 +323,9 @@ export const FINANCE_STATEMENT_BOOK_KEYS = {json.dumps(finance["statementBooks"]
 export type StatementBookKey = (typeof FINANCE_STATEMENT_BOOK_KEYS)[number];
 export type StatementOwnerKey = HouseKey | StatementBookKey;
 
+export const STATEMENT_BOOK_LABELS = {json.dumps(finance["statementBookLabels"])} as const satisfies Readonly<Record<StatementBookKey, string>>;
+export const MIRRORED_STATEMENT_BOOK_KEYS = {json.dumps(finance["mirroredStatementBooks"])} as const satisfies readonly StatementBookKey[];
+
 export const INCOME_CATEGORIES = {json.dumps(finance["incomeCategories"])} as const;
 export const EXPENSE_CATEGORIES = {json.dumps(finance["expenseCategories"])} as const;
 export const INVESTMENT_CATEGORIES = {json.dumps(finance["investmentCategories"])} as const;
@@ -551,8 +556,20 @@ export const BOARD_TIMEOUTS = {{
     CDK_OUT.write_text(body, encoding="utf-8")
 
 
+def _validate_finance(finance: dict) -> None:
+    books = list(finance["statementBooks"])
+    labels = finance["statementBookLabels"]
+    mirrored = list(finance["mirroredStatementBooks"])
+    if set(labels) != set(books):
+        raise SystemExit("finance.json statementBookLabels must match statementBooks")
+    unknown = [key for key in mirrored if key not in books]
+    if unknown:
+        raise SystemExit(f"finance.json mirroredStatementBooks not in statementBooks: {unknown}")
+
+
 def main() -> None:
     finance = load("finance.json")
+    _validate_finance(finance)
     timeouts = load("parse-timeouts.json")
     domains = load("admin-domains.json")
     board = load("executive-board.json")

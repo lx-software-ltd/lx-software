@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   coerceSupportedCurrency,
@@ -192,6 +192,8 @@ export type HouseStatementPanelProps = {
   readonly importFileLabel?: string;
   /** Document save in flight. Line uploads use their own Uploading… label. */
   readonly isSaving?: boolean;
+  /** Product-database books: view the lines, with no create, import, or edit. */
+  readonly readOnly?: boolean;
 };
 
 const TABLE_COLUMNS: AdminDataTableColumn[] = [
@@ -227,7 +229,86 @@ const TABLE_COLUMNS: AdminDataTableColumn[] = [
   },
 ];
 
-const COL_SPAN = TABLE_COLUMNS.length;
+function statementColumns(readOnly: boolean): readonly AdminDataTableColumn[] {
+  return readOnly ? TABLE_COLUMNS.filter((column) => column.key !== "ops") : TABLE_COLUMNS;
+}
+
+/** Product-database rows are not editors. Own `<tbody>` so they stripe like records. */
+function ReadOnlyStatementRow({ children }: { readonly children: ReactNode }) {
+  return (
+    <tbody className="admin-record-group">
+      <tr>{children}</tr>
+    </tbody>
+  );
+}
+
+(ReadOnlyStatementRow as { recordGroup?: boolean }).recordGroup = true;
+
+function StatementLineCells({
+  line,
+  lockedLineType,
+  openingPdfKey,
+  onOpenPdf,
+}: {
+  readonly line: HouseStatementLine;
+  readonly lockedLineType?: Extract<FinanceLineType, "income" | "expenditure">;
+  readonly openingPdfKey: string | null;
+  readonly onOpenPdf: (assetKey: string) => void;
+}) {
+  return (
+    <>
+      <AdminCell column="when" className="small">
+        {formatDateUtc(line.dateUtc)}
+      </AdminCell>
+      <AdminCell column="type" className="small">
+        <span className={statementLineTypeClass(line.type)}>
+          {statementLineTypeLabel(line.type, lockedLineType)}
+        </span>
+      </AdminCell>
+      <AdminCell column="desc" className="small">
+        <div className="d-flex flex-wrap align-items-center gap-2">
+          <span>{line.description}</span>
+          {statementLineAssetKeys(line).map((assetKey) => (
+            <span
+              key={assetKey}
+              className="d-inline-flex flex-wrap align-items-center gap-2"
+            >
+              <StatementAssetLaunchButton
+                assetKey={assetKey}
+                openingPdfKey={openingPdfKey}
+                onOpen={onOpenPdf}
+              />
+              <span className="text-muted small text-break">
+                {basenameFromAssetKey(assetKey)}
+              </span>
+            </span>
+          ))}
+        </div>
+        <AdminDataTableCellMeta>
+          {formatDateUtc(line.dateUtc)}
+          {" · "}
+          <span className={statementLineTypeClass(line.type)}>
+            {statementLineTypeLabel(line.type, lockedLineType)}
+          </span>
+          {" · "}
+          {line.currency}
+          {" · "}
+          <MoneyAmount amount={line.grossAmount} currency={line.currency} />
+        </AdminDataTableCellMeta>
+      </AdminCell>
+      <AdminCell column="net" className="small text-end">
+        <MoneyAmount amount={line.netAmount} currency={line.currency} amountOnly />
+      </AdminCell>
+      <AdminCell column="vat" className="small text-end">
+        <MoneyAmount amount={line.vat} currency={line.currency} amountOnly />
+      </AdminCell>
+      <AdminCell column="ccy" className="small">{line.currency}</AdminCell>
+      <AdminCell column="gross" className="small text-end">
+        <MoneyAmount amount={line.grossAmount} currency={line.currency} amountOnly />
+      </AdminCell>
+    </>
+  );
+}
 
 export function HouseStatementPanel({
   houseKey,
@@ -243,8 +324,11 @@ export function HouseStatementPanel({
   emptyMessage = "No statement lines yet.",
   importFileLabel = "Statement file",
   isSaving: documentSaving = false,
+  readOnly = false,
 }: HouseStatementPanelProps) {
   const lineFormId = `${houseKey}-line-form`;
+  const columns = statementColumns(readOnly);
+  const colSpan = columns.length;
   const [floatAmount, setFloatAmount] = useState(String(data.float.amount));
   const [floatCurrency, setFloatCurrency] = useState(() =>
     coerceSupportedCurrency(data.float.currency, data.defaultCurrency),
@@ -851,6 +935,7 @@ export function HouseStatementPanel({
         filters={
           <AdminFilterBar
             beforeCreate={
+              readOnly ? undefined : (
               <AdminDisclosure title={importTitle} presentation="dialog">
                 <p className="small text-muted">{importDescription}</p>
                 <AdminEditorSection
@@ -965,18 +1050,21 @@ export function HouseStatementPanel({
                   ) : null}
                 </AdminEditorSection>
               </AdminDisclosure>
+              )
             }
             create={
-              <AdminCreateButton
-                label={
-                  lockedLineType === "income"
-                    ? "New gain"
-                    : lockedLineType === "expenditure"
-                      ? "New expense"
-                      : "New line"
-                }
-                onClick={openCreate}
-              />
+              readOnly ? undefined : (
+                <AdminCreateButton
+                  label={
+                    lockedLineType === "income"
+                      ? "New gain"
+                      : lockedLineType === "expenditure"
+                        ? "New expense"
+                        : "New line"
+                  }
+                  onClick={openCreate}
+                />
+              )
             }
           >
             <AdminFilterField label="Filter" htmlFor={`${houseKey}-line-filter`}>
@@ -993,10 +1081,10 @@ export function HouseStatementPanel({
           </AdminFilterBar>
         }
       >
-        <AdminDataTable bare columns={TABLE_COLUMNS}>
-          {expanded.expandedId === DRAFT_RECORD_ID ? (
+        <AdminDataTable bare columns={columns}>
+          {!readOnly && expanded.expandedId === DRAFT_RECORD_ID ? (
             <AdminExpandableRow
-              colSpan={COL_SPAN}
+              colSpan={colSpan}
               expanded
               onToggle={openCreate}
               editor={lineEditor}
@@ -1012,108 +1100,61 @@ export function HouseStatementPanel({
             </AdminExpandableRow>
           ) : null}
           {filteredLines.length ? (
-            filteredLines.map((line) => (
-              <AdminExpandableRow
-                key={line.id}
-                colSpan={COL_SPAN}
-                expanded={expanded.expandedId === line.id}
-                onToggle={() => openEdit(line)}
-                editor={lineEditor}
-              >
-                <AdminCell column="when" className="small">
-                  {formatDateUtc(line.dateUtc)}
-                </AdminCell>
-                <AdminCell column="type" className="small">
-                  <span className={statementLineTypeClass(line.type)}>
-                    {statementLineTypeLabel(line.type, lockedLineType)}
-                  </span>
-                </AdminCell>
-                <AdminCell column="desc" className="small">
-                  <div className="d-flex flex-wrap align-items-center gap-2">
-                    <span>{line.description}</span>
-                    {statementLineAssetKeys(line).map((assetKey) => (
-                      <span
-                        key={assetKey}
-                        className="d-inline-flex flex-wrap align-items-center gap-2"
-                      >
-                        <StatementAssetLaunchButton
-                          assetKey={assetKey}
-                          openingPdfKey={openingPdfKey}
-                          onOpen={openStatementPdf}
-                        />
-                        <span className="text-muted small text-break">
-                          {basenameFromAssetKey(assetKey)}
-                        </span>
-                      </span>
-                    ))}
-                  </div>
-                  <AdminDataTableCellMeta>
-                    {formatDateUtc(line.dateUtc)}
-                    {" · "}
-                    <span className={statementLineTypeClass(line.type)}>
-                      {statementLineTypeLabel(line.type, lockedLineType)}
-                    </span>
-                    {" · "}
-                    {line.currency}
-                    {" · "}
-                    <MoneyAmount
-                      amount={line.grossAmount}
-                      currency={line.currency}
+            filteredLines.map((line) =>
+              readOnly ? (
+                <ReadOnlyStatementRow key={line.id}>
+                  <StatementLineCells
+                    line={line}
+                    lockedLineType={lockedLineType}
+                    openingPdfKey={openingPdfKey}
+                    onOpenPdf={openStatementPdf}
+                  />
+                </ReadOnlyStatementRow>
+              ) : (
+                <AdminExpandableRow
+                  key={line.id}
+                  colSpan={colSpan}
+                  expanded={expanded.expandedId === line.id}
+                  onToggle={() => openEdit(line)}
+                  editor={lineEditor}
+                >
+                  <StatementLineCells
+                    line={line}
+                    lockedLineType={lockedLineType}
+                    openingPdfKey={openingPdfKey}
+                    onOpenPdf={openStatementPdf}
+                  />
+                  <AdminCell column="ops" className="small text-end">
+                    <AdminRowActions
+                      actions={[
+                        {
+                          id: "edit",
+                          label: "Edit line",
+                          iconClassName: "bi bi-pencil",
+                          onClick: () => openEdit(line),
+                        },
+                        {
+                          id: "duplicate",
+                          label: "Duplicate line",
+                          iconClassName: "bi bi-copy",
+                          onClick: () => openDuplicateIntoEditor(line),
+                        },
+                        {
+                          id: "delete",
+                          label: "Delete line",
+                          iconClassName: "bi bi-trash",
+                          danger: true,
+                          onClick: () => setPendingDeleteId(line.id),
+                        },
+                      ]}
                     />
-                  </AdminDataTableCellMeta>
-                </AdminCell>
-                <AdminCell column="net" className="small text-end">
-                  <MoneyAmount
-                    amount={line.netAmount}
-                    currency={line.currency}
-                    amountOnly
-                  />
-                </AdminCell>
-                <AdminCell column="vat" className="small text-end">
-                  <MoneyAmount
-                    amount={line.vat}
-                    currency={line.currency}
-                    amountOnly
-                  />
-                </AdminCell>
-                <AdminCell column="ccy" className="small">{line.currency}</AdminCell>
-                <AdminCell column="gross" className="small text-end">
-                  <MoneyAmount
-                    amount={line.grossAmount}
-                    currency={line.currency}
-                    amountOnly
-                  />
-                </AdminCell>
-                <AdminCell column="ops" className="small text-end">
-                  <AdminRowActions
-                    actions={[
-                      {
-                        id: "edit",
-                        label: "Edit line",
-                        iconClassName: "bi bi-pencil",
-                        onClick: () => openEdit(line),
-                      },
-                      {
-                        id: "duplicate",
-                        label: "Duplicate line",
-                        iconClassName: "bi bi-copy",
-                        onClick: () => openDuplicateIntoEditor(line),
-                      },
-                      {
-                        id: "delete",
-                        label: "Delete line",
-                        iconClassName: "bi bi-trash",
-                        danger: true,
-                        onClick: () => setPendingDeleteId(line.id),
-                      },
-                    ]}
-                  />
-                </AdminCell>
-              </AdminExpandableRow>
-            ))
+                  </AdminCell>
+                </AdminExpandableRow>
+              ),
+            )
           ) : (
             <AdminDataTableEmptyRow
-              colSpan={COL_SPAN}
+              colSpan={colSpan}
               message={
                 sortedLines.length ? "No lines match the filter." : emptyMessage
               }

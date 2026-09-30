@@ -1,3 +1,4 @@
+import evolvesproutsMark from "../assets/evolvesprouts-logo-mark.svg";
 import lxMark from "../assets/lx-logo-mark.svg";
 import siutindeiMark from "../assets/siutindei-logo-mark.svg";
 
@@ -17,6 +18,7 @@ export const ADMIN_NAV_GROUPS: readonly (readonly AdminNavItem[])[] = [
     { to: "/finance", label: "House Finance", icon: "bi-house" },
     { to: "/lx-software", label: "LX Software", mark: lxMark },
     { to: "/siu-tin-dei", label: "Siu Tin Dei", mark: siutindeiMark },
+    { to: "/evolve-sprouts", label: "Evolve Sprouts", mark: evolvesproutsMark },
   ],
   [
     { to: "/banking", label: "Banking", icon: "bi-bank" },

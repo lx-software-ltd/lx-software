@@ -2185,6 +2185,90 @@ def _finance_owner_ddb_key(owner: str) -> dict[str, str]:
     return _finance_ddb_key(owner)
 
 
+class MirroredBookError(RuntimeError):
+    """User-facing failure while reading a product database into a statement book."""
+
+
+def mirror_state_key(book: str) -> dict[str, str]:
+    """Snapshot row for a product-database mirror (summary, not statement lines)."""
+    return {"pk": f"FINANCE#book#{book}", "sk": "MIRROR"}
+
+
+def _mirrored_line(line: dict[str, Any], prefixes: tuple[str, ...], source: str) -> bool:
+    lid = str(line.get("id") or "")
+    return lid.startswith(prefixes) or str(line.get("source") or "") == source
+
+
+def _mirrored_line_same(prev: dict[str, Any], line: dict[str, Any]) -> bool:
+    try:
+        return (
+            str(prev.get("description") or "") == str(line.get("description") or "")
+            and str(prev.get("dateUtc") or "") == str(line.get("dateUtc") or "")
+            and float(prev.get("grossAmount") or 0) == float(line.get("grossAmount") or 0)
+            and str(prev.get("type") or "") == str(line.get("type") or "")
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def upsert_mirrored_lines(
+    table: Any,
+    book: str,
+    desired: list[dict[str, Any]],
+    *,
+    id_prefixes: tuple[str, ...],
+    source: str,
+) -> tuple[int, int]:
+    """Replace one mirror's lines on a statement book.
+
+    Lines this mirror wrote earlier that are no longer desired are removed.
+    Lines from other mirrors and manually entered lines are left in place.
+    Returns ``(written, removed)``.
+    """
+    data = _load_finance_owner(table, book)
+    existing = [ln for ln in (data.get("lines") or []) if isinstance(ln, dict)]
+    desired_by_id = {str(ln["id"]): ln for ln in desired}
+    kept: list[dict[str, Any]] = []
+    written = 0
+    removed = 0
+    seen: set[str] = set()
+    for prev in existing:
+        lid = str(prev.get("id") or "")
+        if not _mirrored_line(prev, id_prefixes, source):
+            kept.append(prev)
+            continue
+        line = desired_by_id.get(lid)
+        if line is None:
+            removed += 1
+            continue
+        seen.add(lid)
+        if _mirrored_line_same(prev, line) and str(prev.get("source") or "") == source:
+            kept.append(prev)
+        else:
+            kept.append(line)
+            written += 1
+    for lid, line in desired_by_id.items():
+        if lid not in seen:
+            kept.append(line)
+            written += 1
+    if not written and not removed:
+        return 0, 0
+    payload = _normalize_finance_payload(
+        {
+            "defaultCurrency": data.get("defaultCurrency") or DEFAULT_FINANCE_CURRENCY,
+            "float": data.get("float") or {"amount": 0, "currency": DEFAULT_FINANCE_CURRENCY},
+            "lines": kept,
+        }
+    )
+    # Normalisation drops unknown keys; re-tag mirrored lines so a later read
+    # can tell them from manual entries.
+    for line in payload["lines"]:
+        if str(line.get("id") or "").startswith(id_prefixes):
+            line["source"] = source
+    table.put_item(Item={**_finance_owner_ddb_key(book), **_to_ddb_nested(payload)})
+    return written, removed
+
+
 def _load_finance_owner(table: Any, owner: str) -> dict[str, Any]:
     res = table.get_item(Key=_finance_owner_ddb_key(owner))
     item = res.get("Item")

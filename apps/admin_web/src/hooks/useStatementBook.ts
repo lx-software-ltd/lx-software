@@ -9,7 +9,7 @@ import {
 } from "../lib/financeModel";
 import { statementBookApiPath } from "../lib/statementOwners";
 
-const EMPTY_BOOK: HouseFinanceData = {
+export const EMPTY_STATEMENT_BOOK: HouseFinanceData = {
   defaultCurrency: GLOBAL_DEFAULT_CURRENCY,
   float: { amount: 0, currency: GLOBAL_DEFAULT_CURRENCY },
   lines: [],
@@ -19,17 +19,21 @@ type PutBookResponse = {
   readonly data: HouseFinanceData;
 };
 
+export function statementBookQuery(bookKey: StatementBookKey) {
+  return {
+    queryKey: [bookKey] as const,
+    queryFn: async (): Promise<HouseFinanceData> => {
+      const raw = await adminFetchJson<PutBookResponse>(statementBookApiPath(bookKey));
+      return normalizeHouseFinanceData(raw.data);
+    },
+  };
+}
+
 export function useStatementBook(bookKey: StatementBookKey) {
   const qc = useQueryClient();
   const apiPath = statementBookApiPath(bookKey);
 
-  const q = useQuery({
-    queryKey: [bookKey],
-    queryFn: async (): Promise<HouseFinanceData> => {
-      const raw = await adminFetchJson<PutBookResponse>(apiPath);
-      return normalizeHouseFinanceData(raw.data);
-    },
-  });
+  const q = useQuery(statementBookQuery(bookKey));
 
   const saveBook = useMutation({
     mutationFn: async (data: HouseFinanceData) => {
@@ -50,14 +54,14 @@ export function useStatementBook(bookKey: StatementBookKey) {
 
   const patchBook = useCallback(
     (patch: (prev: HouseFinanceData) => HouseFinanceData) => {
-      const prev = qc.getQueryData<HouseFinanceData>([bookKey]) ?? EMPTY_BOOK;
+      const prev = qc.getQueryData<HouseFinanceData>([bookKey]) ?? EMPTY_STATEMENT_BOOK;
       saveBook.mutate(patch(prev));
     },
     [bookKey, qc, saveBook],
   );
 
   return {
-    data: q.data ?? EMPTY_BOOK,
+    data: q.data ?? EMPTY_STATEMENT_BOOK,
     isLoading: q.isLoading,
     isError: q.isError,
     isRefetching: q.isRefetching,

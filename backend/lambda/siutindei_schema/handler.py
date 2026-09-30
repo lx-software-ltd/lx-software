@@ -43,6 +43,25 @@ def _env(name: str, fallback: str = "") -> str:
     return (os.environ.get(name) or fallback).strip()
 
 
+def _flag_enabled(value: Any, default: bool = True) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() not in ("0", "false", "no")
+
+
+def _apply_sql(event: dict[str, Any], props: dict[str, Any]) -> bool:
+    if "applySql" in props:
+        return _flag_enabled(props.get("applySql"))
+    if "applySql" in event:
+        return _flag_enabled(event.get("applySql"))
+    env = _env("DATA_API_APPLY_SQL")
+    if env:
+        return _flag_enabled(env)
+    return True
+
+
 def _is_cfn(event: dict[str, Any]) -> bool:
     return bool(event.get("RequestType") and event.get("ResponseURL"))
 
@@ -141,20 +160,39 @@ def _cfn_respond(event: dict[str, Any], context: Any, status: str, data: dict[st
 
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     props = event.get("ResourceProperties") or {}
-    cluster_arn = str(props.get("clusterArn") or _env("SIUTINDEI_CLUSTER_ARN"))
-    secret_arn = str(props.get("secretArn") or _env("SIUTINDEI_DB_SECRET_ARN"))
-    database = str(props.get("database") or _env("SIUTINDEI_DB_NAME") or "siutindei")
+    cluster_arn = str(
+        props.get("clusterArn")
+        or event.get("clusterArn")
+        or _env("DATA_API_CLUSTER_ARN")
+        or _env("SIUTINDEI_CLUSTER_ARN")
+    )
+    secret_arn = str(
+        props.get("secretArn")
+        or event.get("secretArn")
+        or _env("DATA_API_DB_SECRET_ARN")
+        or _env("SIUTINDEI_DB_SECRET_ARN")
+    )
+    database = str(
+        props.get("database")
+        or event.get("database")
+        or _env("DATA_API_DB_NAME")
+        or _env("SIUTINDEI_DB_NAME")
+        or "siutindei"
+    )
+    apply_sql = _apply_sql(event, props)
     if event.get("RequestType") == "Delete":
         _cfn_respond(event, context, "SUCCESS", {})
         return {"PhysicalResourceId": event.get("PhysicalResourceId") or "siutindei-receivables-schema"}
-    if not cluster_arn or not secret_arn:
-        error = "clusterArn and secretArn are required"
+    if not cluster_arn or (apply_sql and not secret_arn):
+        error = "clusterArn and secretArn are required" if apply_sql else "clusterArn is required"
         if _is_cfn(event):
             _cfn_respond(event, context, "FAILED", {}, error)
         raise RuntimeError(error)
     try:
-        data = ensure_data_api(
-            cluster_arn=cluster_arn, secret_arn=secret_arn, database=database
+        data = (
+            ensure_data_api(cluster_arn=cluster_arn, secret_arn=secret_arn, database=database)
+            if apply_sql
+            else enable_http_endpoint(cluster_arn)
         )
     except Exception as exc:  # noqa: BLE001 — CFN must ACK; scheduler should retry
         if _is_cfn(event):
