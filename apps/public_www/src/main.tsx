@@ -5,6 +5,9 @@ import '@fontsource/ibm-plex-mono/latin-700.css'
 import { whenDeferredCssApplied } from './lib/deferredCss'
 import './index.css'
 import App from './App.tsx'
+import { installGtm } from './lib/gtm.ts'
+
+installGtm<HTMLScriptElement>(import.meta.env.VITE_GTM_ID, window, document)
 
 const root = document.getElementById('root')
 if (root) {

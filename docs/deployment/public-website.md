@@ -22,6 +22,7 @@ or WhatsApp empty to show "Not configured".
 | `VITE_CONTACT_EMAIL` | no | Mailto target. Empty uses `hello@lx-software.com` |
 | `VITE_CONTACT_WECHAT_ID` | no | Shown on `/wechat`. Empty leaves the placeholder |
 | `VITE_CONTACT_LINKEDIN` | no | LinkedIn profile URL or `in/<slug>`. Drives the contact icon, the JSON-LD `sameAs`, and `llms.txt`. Empty shows "Not configured" |
+| `VITE_GTM_ID` | no | Google Tag Manager web container id (`GTM-XXXXXXX`). Empty ships the site without Tag Manager or GA4. See [Google Analytics 4 and Tag Manager](#google-analytics-4-and-tag-manager) |
 
 `ADMIN_API_BASE_URL` is no longer read by this workflow. The public site
 does not call the admin API.
@@ -78,8 +79,66 @@ The script reads the stack outputs `PublicWebsiteBucketName` and
 `PublicWebsiteDistributionId`.
 
 The distribution sends a content security policy that allows images and
-video from `'self'` and `https://media.lx-software.com`, and
+video from `'self'` and `https://media.lx-software.com`, scripts from
+`'self'` and `https://www.googletagmanager.com`, and analytics hits to
+`https://*.google-analytics.com` and `https://*.analytics.google.com`.
+Inline scripts are blocked. It also sends
 `Cross-Origin-Opener-Policy: same-origin`.
+`backend/infrastructure/test/public-website-stack.test.ts` pins the CSP list.
+
+## Google Analytics 4 and Tag Manager
+
+The site loads one Google Tag Manager container (`apps/public_www/src/lib/gtm.ts`)
+when `VITE_GTM_ID` is set at build time. GA4 is configured inside the
+container, so a measurement id never lands in this repository. The loader
+does nothing when the visitor's browser sends Global Privacy Control or Do
+Not Track; the privacy policy in `content.json` (section "Analytics") says
+so and must stay in step with what the container does.
+
+Creating the Google properties needs the owner's Google account. GitHub
+Actions cannot do it, so this is a one-time manual run:
+
+1. **GA4 property.** [analytics.google.com](https://analytics.google.com) →
+   Admin → Create → Property. Name `LX Software`, reporting time zone
+   `Hong Kong (GMT+08:00)`, currency `HKD`. Business details are optional.
+2. **Web data stream.** In that property, Admin → Data streams → Add stream
+   → Web. URL `https://www.lx-software.com`, stream name `lx-software.com`.
+   Leave **Enhanced measurement** on: its *Page changes based on browser
+   history events* setting is what records `page_view` for React Router
+   navigation on this single-page site. Copy the **Measurement ID**
+   (`G-XXXXXXXXXX`).
+3. **Recommended GA4 settings.** Admin → Data settings → Data retention →
+   `14 months`. Admin → Data streams → the web stream → Configure tag
+   settings → Define internal traffic → add your own IP so your visits can
+   be filtered, then Admin → Data filters → set *Internal Traffic* to
+   Active.
+4. **GTM container.** [tagmanager.google.com](https://tagmanager.google.com)
+   → Create Account. Account `LX Software`, country `Hong Kong`, container
+   name `www.lx-software.com`, platform **Web**. Dismiss the install
+   snippet; this repository already loads `gtm.js`. Copy the container id
+   (`GTM-XXXXXXX`).
+5. **Google tag in GTM.** Tags → New → **Google Tag**. Tag ID = the
+   `G-XXXXXXXXXX` from step 2. Trigger **Initialization - All Pages**.
+   Save, then **Submit** and publish the version. Do not add Custom HTML
+   tags: the CloudFront CSP blocks inline scripts, and any other vendor
+   host would need adding to `public-website-stack.ts` first.
+6. **Wire the site.** GitHub → repository Settings → Environments →
+   `production` → Variables → add `VITE_GTM_ID` = `GTM-XXXXXXX`. Run
+   **Deploy Public Website** (`workflow_dispatch`) so the bundle is rebuilt
+   with the id. If the CSP change in `backend/infrastructure/` has not been
+   deployed yet, run **Deploy Backend** first; without it the browser
+   blocks `gtm.js`.
+7. **Verify.** Open `https://www.lx-software.com` in a browser without a
+   content blocker, then GA4 → Reports → Realtime should show the visit
+   within a minute. The browser network tab shows `gtm.js?id=GTM-…`,
+   `gtag/js?id=G-…`, and `collect` requests. No request to Google should
+   appear when the browser has GPC enabled. GTM **Preview** (Tag Assistant)
+   works for the tag-firing checks; the debug badge may report CSP
+   warnings for its own styling because only the `googletagmanager.com`
+   host is allowed.
+
+To switch analytics off again, clear `VITE_GTM_ID` and redeploy the site.
+The CSP entries can stay.
 
 ## Media (Cloudflare R2)
 

@@ -42,6 +42,7 @@ jobs:
       # "Not configured". Empty VITE_MEDIA_BASE_URL serves the harbour
       # files from this site. The live host is https://media.lx-software.com.
       # Empty VITE_CONTACT_LINKEDIN shows "Not configured" and omits sameAs.
+      # Empty VITE_GTM_ID ships the site without Google Tag Manager / GA4.
       - name: Build public website
         working-directory: apps/public_www
         env:
@@ -51,6 +52,7 @@ jobs:
           VITE_CONTACT_EMAIL: ${{ vars.VITE_CONTACT_EMAIL }}
           VITE_CONTACT_WECHAT_ID: ${{ vars.VITE_CONTACT_WECHAT_ID }}
           VITE_CONTACT_LINKEDIN: ${{ vars.VITE_CONTACT_LINKEDIN }}
+          VITE_GTM_ID: ${{ vars.VITE_GTM_ID }}
         run: npm run build
 
       - name: Configure AWS credentials
