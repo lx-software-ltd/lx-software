@@ -135,6 +135,11 @@ export class PublicWebsiteStack extends cdk.Stack {
               value: "camera=(), microphone=(), geolocation=()",
               override: true,
             },
+            {
+              header: "Cross-Origin-Opener-Policy",
+              value: "same-origin",
+              override: true,
+            },
           ],
         },
       },

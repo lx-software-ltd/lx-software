@@ -121,16 +121,36 @@ a {
   margin: 0 auto;
 }
 
-/* The grid is imported without Bootstrap's reboot, so width: 100% plus the
-   gutters overflowed narrow phones by 24px. */
+/* border-box keeps the 0.75rem gutters inside the width on narrow phones.
+   The column stops at 1140px so it stays inside the 1280px harbour frame. */
 .container {
   box-sizing: border-box;
+  width: 100%;
+  padding-right: 0.75rem;
+  padding-left: 0.75rem;
+  margin-right: auto;
+  margin-left: auto;
 }
 
-/* Bootstrap's xxl container (1320px) is wider than the locked column, which
-   would leave the copy flush with the video edge. Keep the xl width so the
-   column has the same side room as the smaller breakpoints. */
-@media (min-width: 1400px) {
+@media (min-width: 576px) {
+  .container {
+    max-width: 540px;
+  }
+}
+
+@media (min-width: 768px) {
+  .container {
+    max-width: 720px;
+  }
+}
+
+@media (min-width: 992px) {
+  .container {
+    max-width: 960px;
+  }
+}
+
+@media (min-width: 1200px) {
   .container {
     max-width: 1140px;
   }
@@ -139,6 +159,8 @@ a {
 .site-main {
   position: relative;
   z-index: 10;
+  /* Holds the footer below the first screen while a lazy route chunk loads. */
+  min-height: 100vh;
   padding-top: var(--nav-h);
 }
 
@@ -194,10 +216,6 @@ h1 {
 
 .scroll-cue:hover {
   color: var(--accent-cyan);
-}
-
-.container {
-  box-sizing: border-box;
 }
 
 .section {
