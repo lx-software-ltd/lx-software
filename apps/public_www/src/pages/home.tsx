@@ -5,6 +5,7 @@ import { AsciiDivider } from '../components/AsciiDivider'
 import { ContactIcons } from '../components/ContactIcons'
 import { Faq } from '../components/Faq'
 import { ProjectCarousel } from '../components/ProjectCarousel'
+import { trackEvent } from '../lib/analytics'
 import { defaultSiteContent, fetchSiteContent } from '../lib/content'
 import { useReducedMotion } from '../lib/motion'
 import { usePageMeta } from '../lib/seo'
@@ -43,7 +44,11 @@ export function HomePage() {
           <span className="headline">{content.hero.headline}</span>
         </h1>
         <p className="lede">{content.hero.summary}</p>
-        <a className="scroll-cue" href="#who-i-am">
+        <a
+          className="scroll-cue"
+          href="#who-i-am"
+          onClick={() => trackEvent({ event: 'nav_click', section: 'who-i-am' })}
+        >
           [ {content.hero.scrollLabel} ]
         </a>
       </section>

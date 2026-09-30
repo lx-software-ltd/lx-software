@@ -1,3 +1,4 @@
+import { trackEvent } from '../lib/analytics'
 import type { FaqItem } from '../lib/content'
 
 export function Faq({ items }: { items: FaqItem[] }) {
@@ -6,7 +7,16 @@ export function Faq({ items }: { items: FaqItem[] }) {
       <div className="container">
         <h2 id="faq-heading">FAQ</h2>
         {items.map((item) => (
-          <details key={item.q}>
+          <details
+            key={item.q}
+            onToggle={(event) =>
+              trackEvent({
+                event: 'faq_toggle',
+                question: item.q,
+                state: event.currentTarget.open ? 'open' : 'closed',
+              })
+            }
+          >
             <summary>{item.q}</summary>
             <p>{item.a}</p>
           </details>

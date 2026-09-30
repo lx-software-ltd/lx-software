@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react'
 import flagUrl from '../assets/hk-flag.png'
+import { trackEvent } from '../lib/analytics'
 import { BOAT_FLAG, boatFlagAtTime } from '../lib/boatFlag'
 import { pickHeight, posterUrl, videoSources, type RenditionHeight } from '../lib/media'
 
@@ -111,7 +112,9 @@ export function BackgroundVideo({ still }: { still: boolean }) {
     const video = event.currentTarget.parentElement
     if (!(video instanceof HTMLVideoElement)) return
     const listed = video.querySelectorAll('source')
-    if (listed[listed.length - 1] === event.currentTarget) setFailed(true)
+    if (listed[listed.length - 1] !== event.currentTarget) return
+    setFailed(true)
+    trackEvent({ event: 'media_error', source: event.currentTarget.src })
   }
   return (
     <div className="bg-video" aria-hidden="true">

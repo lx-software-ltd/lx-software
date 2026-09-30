@@ -133,6 +133,77 @@ Actions cannot do it, so this is a one-time manual run:
 To switch analytics off again, clear `VITE_GTM_ID` and redeploy the site.
 The CSP entries can stay.
 
+### Site events
+
+Enhanced measurement sees page views (including React Router navigation),
+scroll depth, clicks on outbound `http(s)` links, downloads and form
+interactions. It does not see `tel:` / `mailto:` links, in-site routes,
+`<details>` toggles, carousel buttons or a 404 route. For those the site
+pushes its own events onto `dataLayer` from
+`apps/public_www/src/lib/analytics.ts`, only after the container loaded (so
+GPC / DNT visitors still send nothing):
+
+| Event | Parameters | Fired by |
+|-------|------------|----------|
+| `contact_click` | `channel` (`tel`, `email`, `whatsapp`, `wechat`, `linkedin`), `destination` (scheme, host or route, never the number or address) | contact icons |
+| `faq_toggle` | `question`, `state` (`open` / `closed`) | FAQ `<details>` |
+| `project_open` | `project`, `destination` | `[ open ]` on a project card |
+| `project_navigate` | `direction` (`next` / `prev`), `method` (`button` / `keyboard`) | carousel controls |
+| `nav_click` | `section` | top navigation, hero scroll cue |
+| `page_not_found` | `path` | the 404 route |
+| `media_error` | `source` | every harbour video source failed |
+
+Inside GTM one Custom Event trigger (`Site events`, regex over those names)
+fires one GA4 event tag (`GA4 event - site events`, event name `{{Event}}`)
+that forwards every parameter through `DL - <param>` Data Layer variables.
+GA4 has one event-scoped custom dimension per parameter so they show up in
+reports, and `contact_click` / `project_open` are key events. Adding an
+event means editing `SiteEvent` in `analytics.ts`, the two tuples at the top
+of `scripts/configure-public-analytics.py` (a unit test fails when they
+differ), and running `apply` below.
+
+### Managing GA4 and GTM from a service account
+
+`scripts/configure-public-analytics.py` compares the property and the live
+container with the setup above and fixes the differences:
+
+```bash
+python3 -m pip install google-auth
+export LXSOFTWARE_GOOGLE_SERVICE_ACCOUNT_JSON='{...}'   # or GOOGLE_APPLICATION_CREDENTIALS=/path/key.json
+export LXSOFTWARE_GA4_PROPERTY_ID=123456789
+export LXSOFTWARE_GTM_ACCOUNT_ID=1234567890
+export LXSOFTWARE_CONTAINER_ID=GTM-XXXXXXX
+python3 scripts/configure-public-analytics.py check   # exit 1 on drift
+python3 scripts/configure-public-analytics.py apply   # GA4 patches + new GTM version, published
+```
+
+`check` reads only. `apply` patches time zone / currency / 14-month
+retention / enhanced measurement / e-mail redaction, creates missing custom
+dimensions and key events, then creates a fresh GTM workspace with the
+missing variables, trigger and tags, creates a version and publishes it
+(`--no-publish` stops before publishing). It never deletes anything and
+never adds a second Google tag; a container whose Google tag carries a
+different measurement id is reported for the owner to decide.
+
+One-time prerequisites (owner's Google account; the four Cloud Agent
+secrets above are already set):
+
+1. **APIs.** In the Cloud project that owns the service account, enable
+   the [Google Analytics Admin API](https://console.cloud.google.com/apis/library/analyticsadmin.googleapis.com)
+   and the [Tag Manager API](https://console.cloud.google.com/apis/library/tagmanager.googleapis.com).
+   No billing account is needed. Until then every call fails with
+   `SERVICE_DISABLED`, which the script prints with both links.
+2. **GA4 access.** Admin → Property access management → add the service
+   account e-mail with the **Editor** role.
+3. **GTM access.** Admin → User management → add the same e-mail with
+   container permission **Publish**.
+4. **User-provided data collection.** Admin → Data collection and
+   modification → Data collection → *Allow user-provided data collection*
+   is **on** by default on a new property and is not exposed by the Admin
+   API. The privacy policy promises analytics only, so switch it **off**.
+   The published `gtag/js` config shows the current state
+   (`__ogt_1p_data_v2` → `vtp_isAutoEnabled`).
+
 ## Media (Cloudflare R2)
 
 The slowed silent harbour loop is rendered by
