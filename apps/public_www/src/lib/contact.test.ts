@@ -13,6 +13,23 @@ describe('contactLinks', () => {
     expect(links.tel?.accessibleName).toBe('Telephone not configured')
     expect(links.whatsapp?.href).toBeNull()
     expect(links.wechat?.href).toBe('/wechat')
+    expect(links.linkedin?.href).toBeNull()
+    expect(links.linkedin?.accessibleName).toBe('LinkedIn not configured')
+    expect(contactLinks().map((item) => item.id)).toEqual([
+      'tel',
+      'email',
+      'whatsapp',
+      'wechat',
+      'linkedin',
+    ])
+  })
+
+  it('links LinkedIn from the public env', () => {
+    vi.stubEnv('VITE_CONTACT_LINKEDIN', 'https://www.linkedin.com/in/sample-owner/')
+    const links = Object.fromEntries(contactLinks().map((item) => [item.id, item]))
+    expect(links.linkedin?.href).toBe('https://www.linkedin.com/in/sample-owner')
+    expect(links.linkedin?.external).toBe(true)
+    expect(links.linkedin?.accessibleName).toBe('LinkedIn profile')
   })
 
   it('builds tel and WhatsApp links from the public env', () => {

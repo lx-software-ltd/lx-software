@@ -25,13 +25,28 @@ npm run preview
 ```
 
 The Vite build emits `llms.txt`, `llms-full.txt`, `sitemap.xml`, `robots.txt`,
-and the JSON-LD block in `index.html` from `public/content.json`. A Person
-node is included only when `VITE_OWNER_NAME` is set.
+the JSON-LD block, and the `<title>` / meta / Open Graph tags in `index.html`
+from `public/content.json` (`{{token}}` placeholders in `index.html`). The
+JSON-LD graph is `WebSite`, `Organization` + `ProfessionalService` (with the
+services as `makesOffer`), `Person` (from `site.owner` / `site.role`),
+`WebPage`, and `FAQPage`. `VITE_CONTACT_LINKEDIN` adds the LinkedIn contact
+icon and the `sameAs` links.
 
 ## Content
 
-Edit `public/content.json` for the biography, services, projects, FAQ, and
-the draft legal pages. `site.updated` is the sitemap `lastmod`.
+Edit `public/content.json` for the title, description, keywords, biography,
+services, projects, FAQ, and the legal pages. `site.updated` is the sitemap
+`lastmod`. A project with a `url` gets an `[ open ]` link; one with an empty
+`url` and a `status` shows the status instead.
+
+## Lighthouse
+
+`.lighthouserc.json` is used by the manual **Lighthouse Public Website**
+workflow. Run it locally with a built `dist/`:
+
+```bash
+npx @lhci/cli autorun
+```
 
 ## Video
 

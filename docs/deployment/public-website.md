@@ -21,10 +21,25 @@ or WhatsApp empty to show "Not configured".
 | `VITE_CONTACT_WHATSAPP` | no | WhatsApp digits only, country code, no `+`. Empty shows "Not configured" |
 | `VITE_CONTACT_EMAIL` | no | Mailto target. Empty uses `hello@lx-software.com` |
 | `VITE_CONTACT_WECHAT_ID` | no | Shown on `/wechat`. Empty leaves the placeholder |
-| `VITE_OWNER_NAME` | no | schema.org Person name. Empty omits the Person node |
+| `VITE_CONTACT_LINKEDIN` | no | LinkedIn profile URL or `in/<slug>`. Drives the contact icon, the JSON-LD `sameAs`, and `llms.txt`. Empty shows "Not configured" |
 
 `ADMIN_API_BASE_URL` is no longer read by this workflow. The public site
 does not call the admin API.
+
+`VITE_OWNER_NAME` is retired. The schema.org `Person` node, the `<title>`,
+the meta description, Open Graph tags, and the FAQ come from
+`apps/public_www/public/content.json` (`site.owner`, `site.role`,
+`site.title`, `site.description`, `site.keywords`). Editing that file is the
+only step needed to change the public copy.
+
+## Lighthouse
+
+**Lighthouse Public Website** (`.github/workflows/lighthouse-public-website.yml`)
+is manual. It builds `apps/public_www` with the production variables, serves
+`dist/` locally, and runs Lighthouse CI against `/` (or the `page_paths`
+input, comma or newline separated). Every category must score 0.9 or better
+(`apps/public_www/.lighthouserc.json`). The HTML reports are uploaded as the
+`lighthouse-public-www-results` artifact.
 
 ## Build locally
 

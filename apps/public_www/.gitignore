@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 media/build
+.lighthouseci
+.lighthouserc.runtime.json
 dist-ssr
 *.local
 

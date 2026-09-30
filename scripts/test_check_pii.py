@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -61,6 +62,23 @@ class CheckPiiTest(unittest.TestCase):
     def test_phone_digits_are_candidates_without_separators(self) -> None:
         candidates = check_pii._candidates("Call +852 5111 1111.")
         self.assertIn("85251111111", candidates)
+
+    def test_public_site_owner_name_is_not_denylisted(self) -> None:
+        content_path = (
+            Path(__file__).resolve().parents[1]
+            / "apps"
+            / "public_www"
+            / "public"
+            / "content.json"
+        )
+        owner = json.loads(content_path.read_text(encoding="utf-8"))["site"]["owner"]
+        denied = check_pii._load_denylist()
+        hits = [
+            candidate
+            for candidate in check_pii._candidates(owner)
+            if check_pii._digest(candidate) in denied
+        ]
+        self.assertEqual(hits, [])
 
     def test_matching_line_reports_the_line_not_the_value(self) -> None:
         denied = {check_pii._digest("sam rivera")}

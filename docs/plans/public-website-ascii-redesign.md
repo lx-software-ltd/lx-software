@@ -195,7 +195,7 @@ the Vite plugin. They are not tracked under `public/`.
   only replaced when nothing has focus. Behind a `keyboardSections` flag in
   `content.json` so it can be turned off if it feels wrong.
 - **Carousel** (`ProjectCarousel`): a region with `aria-roledescription="carousel"`, a `<ul>` with `scroll-snap-type: x mandatory`, `overscroll-behavior-x: contain`, cards `scroll-snap-align: start`. Mouse drag uses pointer capture (threshold 6px, suppress the card link click after a drag). Touch scrolling is left to the browser, and `pointercancel` clears a drag so snap cannot stick off. Prev/Next buttons are `disabled` at the ends. The index treats `scrollLeft` within 1px of the maximum as the last card, so Next can reach "6 of 6". `aria-live="polite"` announces the position. Card art is a `<pre aria-hidden>` block from `ascii` in content.json. Accent green border and title on hover/focus-within.
-- **Contact**: four items with inline SVG (`aria-hidden`) and visible ASCII labels `[ TEL ]`. Values are **build-time env**, not source (repo PII rule: phone numbers must not appear in source or docs): `VITE_CONTACT_TEL` (E.164), `VITE_CONTACT_WHATSAPP` (digits only → `https://wa.me/<digits>`), `VITE_CONTACT_EMAIL` (default `hello@lx-software.com`), `VITE_CONTACT_WECHAT_ID`. Pass them as production GitHub variables in **Deploy Public Website**. An empty telephone or WhatsApp value is a plain note, "Not configured", with no link role. WeChat: `weixin://dl/chat?<id>` is unreliable on desktop, so the icon links to `/wechat` (QR image `public/wechat-qr.png` + the ID as text); on a WeChat-capable mobile UA it tries the `weixin://` link first. `VITE_OWNER_NAME`, when set, adds the schema.org Person node. Empty omits it.
+- **Contact**: four items with inline SVG (`aria-hidden`) and visible ASCII labels `[ TEL ]`. Values are **build-time env**, not source (repo PII rule: phone numbers must not appear in source or docs): `VITE_CONTACT_TEL` (E.164), `VITE_CONTACT_WHATSAPP` (digits only → `https://wa.me/<digits>`), `VITE_CONTACT_EMAIL` (default `hello@lx-software.com`), `VITE_CONTACT_WECHAT_ID`, `VITE_CONTACT_LINKEDIN` (profile URL or `in/<slug>`; fifth icon). Pass them as production GitHub variables in **Deploy Public Website**. An empty telephone, WhatsApp, or LinkedIn value is a plain note, "Not configured", with no link role. WeChat: `weixin://dl/chat?<id>` is unreliable on desktop, so the icon links to `/wechat` (QR image `public/wechat-qr.png` + the ID as text); on a WeChat-capable mobile UA it tries the `weixin://` link first. The schema.org Person node comes from `content.json` `site.owner`.
 - **Legal pages**: `/privacy`, `/terms` render `content.json` `legal.privacy` / `legal.terms` (array of `{ heading, paragraphs[] }`) inside the same layout: nav, cinema layer, video **paused and poster only** (legal text needs stillness), bottom bar. Placeholder text until counsel supplies copy.
 - **Reduced motion / data**: `useReducedMotion` combines `matchMedia('(prefers-reduced-motion: reduce)')`, `matchMedia('(prefers-reduced-data: reduce)')`, `navigator.connection?.saveData`. When true: `<html data-motion="off">`, `BackgroundVideo` renders only `<img src=poster>`, `effects.css` zeroes every `animation` and `transition`, `scroll-behavior: auto`.
 
@@ -353,14 +353,19 @@ burden.
 ## 7. SEO and LLM SEO
 
 - `index.html` (home is the only page most crawlers and OG scrapers will
-  see): `<title>LX Software — independent software studio, Hong Kong</title>`,
-  meta description, `<link rel="canonical" href="https://www.lx-software.com/">`,
+  see): `<title>`, meta description, keywords, author,
+  `<link rel="canonical" href="https://www.lx-software.com/">`,
   Open Graph (`og:type=website`, `og:image` 1200×630), Twitter
-  `summary_large_image`, `theme-color #000`, `lang="en"`.
+  `summary_large_image`, `theme-color`, `lang="en"`. Since the 2026-09-30
+  content update these are `{{token}}` placeholders filled from
+  `content.json` (`site.title`, `site.description`, `site.keywords`,
+  `site.owner`) by the same Vite plugin, so the head and the page copy
+  cannot drift.
 - JSON-LD is injected at build by the Vite plugin in `vite.config.ts`:
-  `WebSite`, `Organization`, and `FAQPage` from `content.json`. A `Person`
-  node is inserted only when `VITE_OWNER_NAME` is set. That name stays a
-  GitHub variable, not a committed string.
+  `WebSite`, `Organization` + `ProfessionalService` (services as
+  `makesOffer`), `Person` (from `site.owner` / `site.role`), `WebPage`, and
+  `FAQPage` from `content.json`. `VITE_CONTACT_LINKEDIN` adds `sameAs` to
+  the Person and Organization nodes. (`VITE_OWNER_NAME` is retired.)
 - Per-route title/canonical via `seo.ts` (`useEffect`). Optional stretch:
   prerender `/privacy` and `/terms` to static HTML with `react-dom/server`
   in a `postbuild` script, plus a CloudFront Function that rewrites
@@ -422,7 +427,7 @@ burden.
 | B. Shell | Tokens, fonts, `TopNav`, `Logo`, `ScrollProgress`, `BottomBar`, `CinemaLayer`, `BackgroundVideo`, reduced-motion hook, routes/redirects | Empty single page with video + effects, nav smooth-scrolls, reduced motion shows poster, Lighthouse a11y 100 |
 | C. Sections | Who I Am, What I Do, Projects carousel, Contact icons, FAQ; `content.json` schema + placeholders; contact env vars in the deploy workflow | All content from JSON, carousel passes keyboard/drag/button tests, contact links resolve from env |
 | D. Legal pages | `/privacy`, `/terms`, `/wechat` in the same layout | Pages render placeholder copy, video paused, bottom bar present |
-| E. SEO | `index.html` meta, JSON-LD injected by the Vite plugin, `robots.txt`, `sitemap.xml`, `llms.txt`, `llms-full.txt` emitted into `dist/`, `seo.ts`, OG image | Rich Results test passes for Organization/WebSite/FAQPage; Person only when `VITE_OWNER_NAME` is set; `llms.txt` served |
+| E. SEO | `index.html` meta, JSON-LD injected by the Vite plugin, `robots.txt`, `sitemap.xml`, `llms.txt`, `llms-full.txt` emitted into `dist/`, `seo.ts`, OG image | Rich Results test passes for Organization/WebSite/FAQPage; Person from `content.json` `site.owner`; `llms.txt` served |
 | F. Infra | CSP `ResponseHeadersPolicy` in `public-website-stack.ts`, cache-control in the deploy script, GitHub variables (`VITE_CONTACT_*`, `VITE_MEDIA_BASE_URL`), docs update | `cdk diff` clean, deploy green, headers visible in production |
 | G. Polish | Glitch tuning, grain density, mobile menu, performance pass, cross-browser (Safari iOS, Chrome Android, Firefox) | Budget in §8 met; iOS autoplays with muted/playsinline; Low Power Mode shows poster |
 
