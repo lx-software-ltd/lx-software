@@ -272,20 +272,6 @@ export function FinanceAccountsPanel(props: {
         thAriaSort: ariaSort("stmt"),
       },
       {
-        key: "ccy",
-        header: (
-          <TableSortHeaderButton
-            label="Currency"
-            isActive={sortKey === "ccy"}
-            direction={directionFor("ccy")}
-            onClick={() => onSort("ccy")}
-          />
-        ),
-        className: "small",
-        priority: "secondary",
-        thAriaSort: ariaSort("ccy"),
-      },
-      {
         key: "day",
         header: (
           <TableSortHeaderButton
@@ -573,7 +559,6 @@ export function FinanceAccountsPanel(props: {
               <AdminCell column="atype" />
               <AdminCell column="amt" />
               <AdminCell column="stmt" />
-              <AdminCell column="ccy" />
               <AdminCell column="day" />
               <AdminCell column="lastUpdated" />
               <AdminCell column="ops" />
@@ -600,20 +585,19 @@ export function FinanceAccountsPanel(props: {
                 </AdminCell>
                 <AdminCell column="atype" className="small">{r.accountType}</AdminCell>
                 <AdminCell column="amt" className="small text-end">
-                  <MoneyAmount amount={r.recordedValue} currency={r.currency} amountOnly />
+                  <MoneyAmount amount={r.recordedValue} currency={r.currency} codePrefix />
                 </AdminCell>
                 <AdminCell column="stmt" className="small text-end">
                   {accountTypeIsCreditCard(r.accountType) ? (
                     <MoneyAmount
                       amount={r.lastStatementAmount ?? 0}
                       currency={r.currency}
-                      amountOnly
+                      codePrefix
                     />
                   ) : (
                     "—"
                   )}
                 </AdminCell>
-                <AdminCell column="ccy" className="small">{r.currency}</AdminCell>
                 <AdminCell column="day" className="small text-end">
                   {accountTypeUsesBillingCycleDay(r.accountType) ? r.billingCycleDay : "—"}
                 </AdminCell>
@@ -663,7 +647,6 @@ export function FinanceAccountsPanel(props: {
                 { kind: "empty", column: "atype" },
                 { kind: "amount", column: "amt", total: convertedTotal, picker: true },
                 { kind: "empty", column: "stmt" },
-                { kind: "empty", column: "ccy" },
                 { kind: "empty", column: "day" },
                 { kind: "empty", column: "lastUpdated" },
                 { kind: "empty", column: "ops" },

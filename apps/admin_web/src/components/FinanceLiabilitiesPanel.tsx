@@ -241,20 +241,6 @@ export function FinanceLiabilitiesPanel(props: {
         thAriaSort: ariaSort("amt"),
       },
       {
-        key: "ccy",
-        header: (
-          <TableSortHeaderButton
-            label="Currency"
-            isActive={sortKey === "ccy"}
-            direction={directionFor("ccy")}
-            onClick={() => onSort("ccy")}
-          />
-        ),
-        className: "small",
-        priority: "secondary",
-        thAriaSort: ariaSort("ccy"),
-      },
-      {
         key: "rate",
         header: (
           <TableSortHeaderButton
@@ -512,7 +498,6 @@ export function FinanceLiabilitiesPanel(props: {
               <AdminCell column="desc">New liability</AdminCell>
               <AdminCell column="ltype" />
               <AdminCell column="amt" />
-              <AdminCell column="ccy" />
               <AdminCell column="rate" />
               <AdminCell column="house" />
               <AdminCell column="lastUpdated" />
@@ -542,9 +527,8 @@ export function FinanceLiabilitiesPanel(props: {
                 </AdminCell>
                 <AdminCell column="ltype" className="small">{r.liabilityType}</AdminCell>
                 <AdminCell column="amt" className="small text-end">
-                  <MoneyAmount amount={r.outstandingBalance} currency={r.currency} amountOnly />
+                  <MoneyAmount amount={r.outstandingBalance} currency={r.currency} codePrefix />
                 </AdminCell>
-                <AdminCell column="ccy" className="small">{r.currency}</AdminCell>
                 <AdminCell column="rate" className="small text-end">
                   {r.interestRatePercent !== undefined ? `${r.interestRatePercent}%` : "—"}
                 </AdminCell>
@@ -586,7 +570,6 @@ export function FinanceLiabilitiesPanel(props: {
                 { kind: "label" },
                 { kind: "empty", column: "ltype" },
                 { kind: "amount", column: "amt", total: convertedTotal, picker: true },
-                { kind: "empty", column: "ccy" },
                 { kind: "empty", column: "rate" },
                 { kind: "empty", column: "house" },
                 { kind: "empty", column: "lastUpdated" },

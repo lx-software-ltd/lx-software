@@ -438,20 +438,6 @@ export function FinanceLedgerSheetPanel({
         thAriaSort: ariaSort("amt"),
       },
       {
-        key: "ccy",
-        header: (
-          <TableSortHeaderButton
-            label="Currency"
-            isActive={sortKey === "ccy"}
-            direction={directionFor("ccy")}
-            onClick={() => onSort("ccy")}
-          />
-        ),
-        className: "small",
-        priority: "secondary",
-        thAriaSort: ariaSort("ccy"),
-      },
-      {
         key: "ops",
         header: <span className="visually-hidden">Operations</span>,
         className: "text-end admin-nowrap",
@@ -902,10 +888,9 @@ export function FinanceLedgerSheetPanel({
                   <MoneyAmount
                     amount={ledgerMonthlyAmount(r)}
                     currency={r.currency}
-                    amountOnly
+                    codePrefix
                   />
                 </AdminCell>
-                <AdminCell column="ccy" className="small">{r.currency}</AdminCell>
                 <AdminCell column="ops" className="small text-end">
                   {r.isDerivedFromTaggedIncome ? (
                     <span className="text-muted small">Derived</span>
@@ -954,7 +939,6 @@ export function FinanceLedgerSheetPanel({
                   : []),
                 ...(showRelatedHouseCol ? [{ kind: "empty" as const, column: "house" }] : []),
                 { kind: "amount", column: "amt", total: convertedTotal, picker: true },
-                { kind: "empty", column: "ccy" },
                 { kind: "empty", column: "ops" },
               ]}
             />

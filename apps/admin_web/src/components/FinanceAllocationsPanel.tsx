@@ -251,20 +251,6 @@ export function FinanceAllocationsPanel(props: {
         thAriaSort: ariaSort("accum"),
       },
       {
-        key: "ccy",
-        header: (
-          <TableSortHeaderButton
-            label="Currency"
-            isActive={sortKey === "ccy"}
-            direction={directionFor("ccy")}
-            onClick={() => onSort("ccy")}
-          />
-        ),
-        className: "small",
-        priority: "secondary",
-        thAriaSort: ariaSort("ccy"),
-      },
-      {
         key: "last",
         header: (
           <TableSortHeaderButton
@@ -731,7 +717,6 @@ export function FinanceAllocationsPanel(props: {
               <AdminCell column="tags" />
               <AdminCell column="monthly" />
               <AdminCell column="accum" />
-              <AdminCell column="ccy" />
               <AdminCell column="last" />
               <AdminCell column="ops" />
             </AdminExpandableRow>
@@ -770,14 +755,13 @@ export function FinanceAllocationsPanel(props: {
                     <MoneyAmount
                       amount={monthlyCol.value}
                       currency={monthlyCol.currency}
-                      amountOnly
+                      codePrefix
                     />
                   )}
                 </AdminCell>
                 <AdminCell column="accum" className="small text-end">
-                  <MoneyAmount amount={r.accumulatedAmount} currency={r.currency} amountOnly />
+                  <MoneyAmount amount={r.accumulatedAmount} currency={r.currency} codePrefix />
                 </AdminCell>
-                <AdminCell column="ccy" className="small">{r.currency}</AdminCell>
                 <AdminCell column="last" className="small">{allocationLastUpdatedDisplay(r.lastUpdated)}</AdminCell>
                 <AdminCell column="ops" className="small text-end">
                   <AdminRowActions
@@ -835,7 +819,6 @@ export function FinanceAllocationsPanel(props: {
                 { kind: "empty", column: "tags" },
                 { kind: "empty", column: "monthly" },
                 { kind: "amount", column: "accum", total: convertedAccumulatedTotal, picker: true },
-                { kind: "empty", column: "ccy" },
                 { kind: "empty", column: "last" },
                 { kind: "empty", column: "ops" },
               ]}

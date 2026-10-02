@@ -70,13 +70,6 @@ function investmentLastUpdatedDisplay(lastUpdated: string | undefined): string {
   return formatDateUtc(`${lastUpdated}T00:00:00.000Z`);
 }
 
-function formatUnitCell(unit: number | undefined): string {
-  if (unit === undefined) {
-    return "—";
-  }
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 8 }).format(unit);
-}
-
 /**
  * For **sorting** by Current Value: notional in {@link displayCurrency} (Frankfurter when the
  * row currency differs). Table cells show notional in the row’s own currency instead.
@@ -340,51 +333,6 @@ export function FinanceInvestmentsPanel({
     });
     cols.push(
       {
-        key: "atype",
-        header: (
-          <TableSortHeaderButton
-            label="Asset type"
-            isActive={sortKey === "atype"}
-            direction={directionFor("atype")}
-            onClick={() => onSort("atype")}
-          />
-        ),
-        className: "small",
-        priority: "secondary",
-        thAriaSort: ariaSort("atype"),
-      },
-      {
-        key: "prov",
-        header: (
-          <TableSortHeaderButton
-            label="Provider"
-            isActive={sortKey === "prov"}
-            direction={directionFor("prov")}
-            onClick={() => onSort("prov")}
-          />
-        ),
-        className: "small",
-        priority: "secondary",
-        thAriaSort: ariaSort("prov"),
-      },
-      {
-        key: "amt",
-        header: (
-          <TableSortHeaderButton
-            label="Principal"
-            isActive={sortKey === "amt"}
-            direction={directionFor("amt")}
-            onClick={() => onSort("amt")}
-            align="end"
-          />
-        ),
-        className: "small text-end",
-        headerClassName: "small text-end",
-        // Current Value is the metric that matters on a phone; principal moves to md+.
-        priority: "secondary",
-        thAriaSort: ariaSort("amt"),
-      },
-      {
         key: "ccy",
         header: (
           <TableSortHeaderButton
@@ -392,27 +340,13 @@ export function FinanceInvestmentsPanel({
             isActive={sortKey === "ccy"}
             direction={directionFor("ccy")}
             onClick={() => onSort("ccy")}
-          />
-        ),
-        className: "small",
-        priority: "secondary",
-        thAriaSort: ariaSort("ccy"),
-      },
-      {
-        key: "unit",
-        header: (
-          <TableSortHeaderButton
-            label="Units"
-            isActive={sortKey === "unit"}
-            direction={directionFor("unit")}
-            onClick={() => onSort("unit")}
             align="end"
           />
         ),
         className: "small text-end",
         headerClassName: "small text-end",
-        priority: "tertiary",
-        thAriaSort: ariaSort("unit"),
+        priority: "secondary",
+        thAriaSort: ariaSort("ccy"),
       },
       {
         key: "currVal",
@@ -905,11 +839,7 @@ export function FinanceInvestmentsPanel({
             <AdminExpandableRow colSpan={colSpan} expanded onToggle={editor.openCreate} editor={investmentEditor}>
               <AdminCell column="cat">New investment</AdminCell>
               <AdminCell column="details" />
-              <AdminCell column="atype" />
-              <AdminCell column="prov" />
-              <AdminCell column="amt" />
               <AdminCell column="ccy" />
-              <AdminCell column="unit" />
               <AdminCell column="currVal" />
               <AdminCell column="lastUpd" />
               <AdminCell column="ops" />
@@ -932,14 +862,13 @@ export function FinanceInvestmentsPanel({
                       ? ` · ${investmentDetailsDisplay(r, relatedHouseLabelByValue)}`
                       : ""}
                     {" · "}
-                    Principal{" "}
-                    <MoneyAmount amount={r.principalAmount} currency={r.currency} />
+                    <MoneyAmount amount={r.principalAmount} currency={r.currency} codePrefix />
                     {(() => {
                       const current = currentValueInRowCurrencyByRowId.get(r.id);
                       return current === undefined ? null : (
                         <>
                           {" · "}
-                          <MoneyAmount amount={current} currency={r.currency} />
+                          <MoneyAmount amount={current} currency={r.currency} codePrefix />
                         </>
                       );
                     })()}
@@ -951,14 +880,8 @@ export function FinanceInvestmentsPanel({
                 <AdminCell column="details" className="small text-muted">
                   {investmentDetailsDisplay(r, relatedHouseLabelByValue) || "—"}
                 </AdminCell>
-                <AdminCell column="atype" className="small">{r.assetType}</AdminCell>
-                <AdminCell column="prov" className="small">{r.provider}</AdminCell>
-                <AdminCell column="amt" className="small text-end">
-                  <MoneyAmount amount={r.principalAmount} currency={r.currency} amountOnly />
-                </AdminCell>
-                <AdminCell column="ccy" className="small">{r.currency}</AdminCell>
-                <AdminCell column="unit" className="small text-end">
-                  {r.category === "Real Estate" ? "—" : formatUnitCell(r.unit)}
+                <AdminCell column="ccy" className="small text-end">
+                  <MoneyAmount amount={r.principalAmount} currency={r.currency} codePrefix />
                 </AdminCell>
                 <AdminCell column="currVal" className="small text-end">
                   {(() => {
@@ -1005,7 +928,7 @@ export function FinanceInvestmentsPanel({
                       return <span className="text-muted">—</span>;
                     }
                     return (
-                      <MoneyAmount amount={valueInRowCcy} currency={r.currency} amountOnly />
+                      <MoneyAmount amount={valueInRowCcy} currency={r.currency} codePrefix />
                     );
                   })()}
                 </AdminCell>
@@ -1068,7 +991,7 @@ export function FinanceInvestmentsPanel({
                         <MoneyAmount
                           amount={convertedCurrentValueTotal}
                           currency={totalDisplayCurrency}
-                          amountOnly
+                          codePrefix
                         />
                       ) : (
                         <span className="text-muted">—</span>
@@ -1096,18 +1019,14 @@ export function FinanceInvestmentsPanel({
               cells={[
                 { kind: "label" },
                 { kind: "empty", column: "details" },
-                { kind: "empty", column: "atype" },
-                { kind: "empty", column: "prov" },
                 {
                   kind: "amount",
-                  column: "amt",
+                  column: "ccy",
                   total:
                     needsFx && (ratesQuery.isPending || ratesQuery.isError)
                       ? null
                       : convertedPrincipalTotal,
                 },
-                { kind: "empty", column: "ccy" },
-                { kind: "empty", column: "unit" },
                 {
                   kind: "amount",
                   column: "currVal",

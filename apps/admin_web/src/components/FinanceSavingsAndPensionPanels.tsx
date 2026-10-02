@@ -344,20 +344,6 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
       headerClassName: "small text-end",
       thAriaSort: ariaSort("amt"),
     };
-    const ccyCol: AdminDataTableColumn = {
-      key: "ccy",
-      header: (
-        <TableSortHeaderButton
-          label="Currency"
-          isActive={sortKey === "ccy"}
-          direction={directionFor("ccy")}
-          onClick={() => onSort("ccy")}
-        />
-      ),
-      className: "small",
-      priority: "secondary",
-      thAriaSort: ariaSort("ccy"),
-    };
     const opsCol: AdminDataTableColumn = {
       key: "ops",
       header: <span className="visually-hidden">Operations</span>,
@@ -396,16 +382,11 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
     };
 
     if (variant === "pension") {
-      return columnOrder === "valueFirst"
-        ? [labelCol, descCol, valueCol, ccyCol, lastUpdatedCol, opsCol]
-        : [labelCol, descCol, ccyCol, valueCol, lastUpdatedCol, opsCol];
+      return [labelCol, descCol, valueCol, lastUpdatedCol, opsCol];
     }
-    return columnOrder === "valueFirst"
-      ? [labelCol, assetTypeCol, descCol, valueCol, ccyCol, opsCol]
-      : [labelCol, assetTypeCol, descCol, ccyCol, valueCol, opsCol];
+    return [labelCol, assetTypeCol, descCol, valueCol, opsCol];
   }, [
     ariaSort,
-    columnOrder,
     directionFor,
     labelColumnHeader,
     onSort,
@@ -745,12 +726,7 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
                     ),
                     amt: (
                       <AdminCell key="amt" column="amt" className="small text-end">
-                        <MoneyAmount amount={a.accumulatedAmount} currency={a.currency} amountOnly />
-                      </AdminCell>
-                    ),
-                    ccy: (
-                      <AdminCell key="ccy" column="ccy" className="small">
-                        {a.currency}
+                        <MoneyAmount amount={a.accumulatedAmount} currency={a.currency} codePrefix />
                       </AdminCell>
                     ),
                     lastUpdated: (
@@ -791,12 +767,7 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
                   ),
                   amt: (
                     <AdminCell key="amt" column="amt" className="small text-end">
-                      <MoneyAmount amount={r.value} currency={r.currency} amountOnly />
-                    </AdminCell>
-                  ),
-                  ccy: (
-                    <AdminCell key="ccy" column="ccy" className="small">
-                      {r.currency}
+                      <MoneyAmount amount={r.value} currency={r.currency} codePrefix />
                     </AdminCell>
                   ),
                   lastUpdated: (
@@ -863,12 +834,7 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
                   ),
                   amt: (
                     <AdminCell key="amt" column="amt" className="small text-end">
-                      <MoneyAmount amount={r.value} currency={r.currency} amountOnly />
-                    </AdminCell>
-                  ),
-                  ccy: (
-                    <AdminCell key="ccy" column="ccy" className="small">
-                      {r.currency}
+                      <MoneyAmount amount={r.value} currency={r.currency} codePrefix />
                     </AdminCell>
                   ),
                   ops: (
