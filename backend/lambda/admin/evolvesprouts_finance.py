@@ -1,18 +1,18 @@
 """Evolve Sprouts statement book, mirrored from the product database.
 
-Gains are issued customer invoices (the Admin Finance Client Invoices list).
-Refunds and submitted or paid expenses are expenditure. Issued invoices that
-are still unpaid also stay on the summary (outstanding), and are not omitted
-from Gains.
+Gains are issued customer invoices. Refunds and submitted or paid expenses
+are expenditure. Issued invoices that are still unpaid also stay on the
+summary (outstanding), and are not omitted from Gains.
 
-Dates use the Asia/Hong_Kong calendar day, stored as that day at 00:00 UTC
-(the same convention as a date typed into the other books). Expenses and
-gains use the document ``invoice_date``. An issued invoice without one
-(issued before evolvesprouts migration 0057 added the column) is dated by
-``created_at``, the same fallback Client Invoices shows. Gains also store
-``sortUtc`` from invoice ``created_at`` so the Gains tab follows Client
-Invoices (``created_at`` then ``id``, newest first). Refunds use
-``succeeded_at``.
+Dates follow the Evolve Sprouts Finance Tax panel (fiscal-year revenue and
+expense rows), which classifies by document date: the Asia/Hong_Kong
+calendar day, stored as that day at 00:00 UTC (the same convention as a
+date typed into the other books). Expenses and gains use ``invoice_date``;
+an issued invoice without one (issued before evolvesprouts migration 0057
+added the column) falls back to the HKT day of ``issued_at``, as that panel
+does. Refunds use ``succeeded_at``. The statement table orders by that
+date, so Gains read in the same order as the Tax panel rather than by the
+day the invoice record was created.
 
 The product database is read through the RDS Data API. This stack does not
 write to it.
@@ -53,11 +53,11 @@ REFUNDS_SQL = (
     "ORDER BY succeeded_at, id"
 )
 INVOICES_SQL = (
-    "SELECT id, invoice_number, invoice_date, created_at, currency, "
+    "SELECT id, invoice_number, invoice_date, issued_at, currency, "
     "subtotal, tax_total, total, bill_to_display_name "
     "FROM customer_invoices "
     "WHERE status = 'issued' "
-    "ORDER BY created_at DESC, id DESC"
+    "ORDER BY invoice_date, issued_at, id"
 )
 # Vendor names live on organizations (expenses.vendor_name was dropped in
 # evolvesprouts migration 0016).
@@ -147,20 +147,6 @@ def _currency_present(value: Any) -> bool:
     return len(str(value or "").strip()) >= 3
 
 
-def _sort_instant(value: Any) -> str | None:
-    """UTC instant for Client Invoices order, or None when the value is unusable."""
-    text = str(value or "").strip()
-    if not text:
-        return None
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00").replace(" ", "T"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
-
-
 def _line(
     *,
     line_id: str,
@@ -171,9 +157,8 @@ def _line(
     gross: float,
     currency: str,
     line_type: str,
-    sort_utc: str | None = None,
 ) -> dict[str, Any]:
-    line = {
+    return {
         "id": line_id,
         "dateUtc": _book_instant(day),
         "type": line_type,
@@ -184,9 +169,6 @@ def _line(
         "currency": currency,
         "source": SOURCE,
     }
-    if sort_utc:
-        line["sortUtc"] = sort_utc
-    return line
 
 
 def _invoice_description(row: dict[str, Any]) -> str:
@@ -245,7 +227,7 @@ def desired_book_lines() -> tuple[list[dict[str, Any]], int, int, int, int]:
     for row in _q(INVOICES_SQL):
         amounts = _invoice_amounts(row)
         row_id = str(row.get("id") or "").strip()
-        day = _hkt_day(row.get("invoice_date")) or _hkt_day(row.get("created_at"))
+        day = _hkt_day(row.get("invoice_date")) or _hkt_day(row.get("issued_at"))
         if not row_id or amounts is None:
             if row_id and amounts is None:
                 skipped_incomplete += 1
@@ -268,7 +250,6 @@ def desired_book_lines() -> tuple[list[dict[str, Any]], int, int, int, int]:
                 gross=gross,
                 currency=currency,
                 line_type="income",
-                sort_utc=_sort_instant(row.get("created_at")) or _book_instant(day),
             )
         )
     for row in _q(REFUNDS_SQL):

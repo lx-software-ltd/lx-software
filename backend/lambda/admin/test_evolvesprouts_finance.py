@@ -59,10 +59,10 @@ def _rows(sql: str, _parameters: list | None) -> list[dict]:
     if "bill_to_display_name" in sql:
         return [
             {
-                "id": "inv-recent",
+                "id": "inv-backdated",
                 "invoice_number": "INV-42",
-                "invoice_date": "2026-03-01",
-                "created_at": "2026-10-01T12:00:00Z",
+                "invoice_date": "2025-03-01",
+                "issued_at": "2026-05-06 09:00:00.000000",
                 "currency": "HKD",
                 "subtotal": 10,
                 "tax_total": 0,
@@ -70,10 +70,10 @@ def _rows(sql: str, _parameters: list | None) -> list[dict]:
                 "bill_to_display_name": "Alpha School",
             },
             {
-                "id": "inv-older",
+                "id": "inv-recent",
                 "invoice_number": "INV-41",
                 "invoice_date": "2026-09-15",
-                "created_at": "2026-09-16T00:00:00Z",
+                "issued_at": "2026-09-16T00:00:00Z",
                 "currency": "HKD",
                 "subtotal": 4,
                 "tax_total": 0,
@@ -84,7 +84,7 @@ def _rows(sql: str, _parameters: list | None) -> list[dict]:
                 "id": "inv-jpy",
                 "invoice_number": "INV-9",
                 "invoice_date": "2026-04-01",
-                "created_at": "2026-04-02T00:00:00Z",
+                "issued_at": "2026-04-02T00:00:00Z",
                 "currency": "JPY",
                 "subtotal": 3,
                 "tax_total": 0,
@@ -95,7 +95,7 @@ def _rows(sql: str, _parameters: list | None) -> list[dict]:
                 "id": "inv-nodate",
                 "invoice_number": "INV-0",
                 "invoice_date": None,
-                "created_at": "2026-05-01T18:30:00Z",
+                "issued_at": "2026-05-01T18:30:00Z",
                 "currency": "HKD",
                 "subtotal": 3,
                 "tax_total": 0,
@@ -106,7 +106,7 @@ def _rows(sql: str, _parameters: list | None) -> list[dict]:
                 "id": "inv-undated",
                 "invoice_number": "INV-1",
                 "invoice_date": None,
-                "created_at": "",
+                "issued_at": "",
                 "currency": "HKD",
                 "subtotal": 3,
                 "tax_total": 0,
@@ -243,27 +243,26 @@ class TestEvolveSproutsMirror(unittest.TestCase):
             set(by_id),
             {
                 "manual-1",
+                "es-inv-inv-backdated",
                 "es-inv-inv-recent",
-                "es-inv-inv-older",
                 "es-inv-inv-nodate",
                 "es-ref-r1",
                 "es-exp-e1",
                 "es-exp-e2",
             },
         )
-        # No invoice_date: Client Invoices shows createdAt, so the HKT day of
-        # created_at (02:30 on 2 May in Hong Kong) is the document date.
+        # No invoice_date: the Tax panel classifies by issued_at, so the HKT
+        # day of issued_at (02:30 on 2 May in Hong Kong) is the document date.
         self.assertEqual(by_id["es-inv-inv-nodate"]["dateUtc"], "2026-05-02T00:00:00.000Z")
-        self.assertEqual(by_id["es-inv-inv-nodate"]["sortUtc"], "2026-05-01T18:30:00.000Z")
-        self.assertEqual(by_id["es-inv-inv-recent"]["type"], "income")
-        self.assertEqual(by_id["es-inv-inv-recent"]["description"], "INV-42 Alpha School")
-        self.assertEqual(by_id["es-inv-inv-recent"]["dateUtc"], "2026-03-01T00:00:00.000Z")
-        self.assertEqual(by_id["es-inv-inv-recent"]["sortUtc"], "2026-10-01T12:00:00.000Z")
-        self.assertEqual(by_id["es-inv-inv-older"]["description"], "INV-41 Beta Family")
-        self.assertEqual(by_id["es-inv-inv-older"]["dateUtc"], "2026-09-15T00:00:00.000Z")
-        self.assertEqual(by_id["es-inv-inv-older"]["sortUtc"], "2026-09-16T00:00:00.000Z")
-        self.assertGreater(by_id["es-inv-inv-recent"]["sortUtc"], by_id["es-inv-inv-older"]["sortUtc"])
-        self.assertLess(by_id["es-inv-inv-recent"]["dateUtc"], by_id["es-inv-inv-older"]["dateUtc"])
+        # Backdated to FY24-25 and issued in May 2026: the book keeps the
+        # document date and does not carry the issue instant.
+        self.assertEqual(by_id["es-inv-inv-backdated"]["type"], "income")
+        self.assertEqual(by_id["es-inv-inv-backdated"]["description"], "INV-42 Alpha School")
+        self.assertEqual(by_id["es-inv-inv-backdated"]["dateUtc"], "2025-03-01T00:00:00.000Z")
+        self.assertEqual(by_id["es-inv-inv-recent"]["description"], "INV-41 Beta Family")
+        self.assertEqual(by_id["es-inv-inv-recent"]["dateUtc"], "2026-09-15T00:00:00.000Z")
+        for line in by_id.values():
+            self.assertNotIn("sortUtc", line)
         self.assertEqual(by_id["es-ref-r1"]["type"], "expenditure")
         self.assertEqual(by_id["es-ref-r1"]["currency"], "USD")
         self.assertEqual(by_id["es-ref-r1"]["dateUtc"], "2026-05-02T00:00:00.000Z")
@@ -276,7 +275,7 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         self.assertEqual(by_id["es-exp-e2"]["netAmount"], 4.5)
         self.assertEqual(by_id["es-exp-e2"]["vat"], 0.5)
         self.assertEqual(by_id["es-exp-e2"]["dateUtc"], "2026-03-01T00:00:00.000Z")
-        self.assertEqual(by_id["es-inv-inv-recent"]["source"], "evolvesprouts")
+        self.assertEqual(by_id["es-inv-inv-backdated"]["source"], "evolvesprouts")
         self.assertNotIn("source", by_id["manual-1"])
         self.assertEqual(by_id["manual-1"]["description"], "Kept")
 
@@ -287,8 +286,8 @@ class TestEvolveSproutsMirror(unittest.TestCase):
             {line["id"] for line in self._book_lines()},
             {
                 "manual-1",
+                "es-inv-inv-backdated",
                 "es-inv-inv-recent",
-                "es-inv-inv-older",
                 "es-inv-inv-nodate",
                 "es-ref-r1",
                 "es-exp-e1",
@@ -306,10 +305,12 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         self.assertIn("o.name AS vendor_name", es.EXPENSES_SQL)
         self.assertNotIn("e.vendor_name", es.EXPENSES_SQL)
 
-    def test_gains_are_issued_invoices_in_client_invoice_order(self) -> None:
+    def test_gains_are_issued_invoices_dated_like_the_tax_panel(self) -> None:
         self.assertIn("FROM customer_invoices", es.INVOICES_SQL)
-        self.assertIn("ORDER BY created_at DESC, id DESC", es.INVOICES_SQL)
+        self.assertIn("WHERE status = 'issued'", es.INVOICES_SQL)
         self.assertIn("invoice_date", es.INVOICES_SQL)
+        self.assertIn("issued_at", es.INVOICES_SQL)
+        self.assertNotIn("created_at", es.INVOICES_SQL)
         self.assertNotIn("payment_allocations", es.INVOICES_SQL)
 
     def test_expense_date_uses_issued_invoice_date(self) -> None:
@@ -327,7 +328,20 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         self.assertGreaterEqual(result["linesWritten"], 1)
         by_id = {line["id"]: line for line in self._book_lines()}
         self.assertEqual(by_id["es-inv-inv-recent"]["currency"], "HKD")
-        self.assertEqual(by_id["es-inv-inv-recent"]["netAmount"], 10)
+        self.assertEqual(by_id["es-inv-inv-recent"]["netAmount"], 4)
+
+    def test_line_with_retired_sort_utc_is_rewritten_once(self) -> None:
+        es.sync(self.table)
+        item = self.table.items[("FINANCE#book#evolveSprouts", "STATE")]
+        for line in item["lines"]:
+            if line["id"] == "es-inv-inv-backdated":
+                line["sortUtc"] = "2026-05-06T09:00:00.000Z"
+        result = es.sync(self.table)
+        self.assertEqual(result["linesWritten"], 1)
+        by_id = {line["id"]: line for line in self._book_lines()}
+        self.assertNotIn("sortUtc", by_id["es-inv-inv-backdated"])
+        self.assertEqual(by_id["es-inv-inv-backdated"]["dateUtc"], "2025-03-01T00:00:00.000Z")
+        self.assertEqual(es.sync(self.table)["linesWritten"], 0)
 
     def test_not_configured_skips_the_database(self) -> None:
         called = {"n": 0}

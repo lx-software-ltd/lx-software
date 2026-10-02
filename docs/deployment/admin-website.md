@@ -620,19 +620,20 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
    polls `GET /evolve-sprouts/summary`). The page load reads the last
    snapshot and does not query Aurora.
 5. Mirrored lines replace the previous mirror and leave any other lines
-   alone. Issued `customer_invoices` become income `es-inv-*` (Gains), in
-   the same `created_at DESC, id DESC` order as Evolve Sprouts Client
-   Invoices. Succeeded refunds become expenditure `es-ref-*`, and expenses
+   alone. Issued `customer_invoices` become income `es-inv-*` (Gains).
+   Succeeded refunds become expenditure `es-ref-*`, and expenses
    with status `submitted` or `paid` become expenditure `es-exp-*`. Draft,
    voided, and amended expenses are omitted. Issued invoices with
    `balance_due > 0` also stay on the summary (outstanding by currency,
    open-invoice count). Each row keeps its own currency. Invoice and
    expense net is `subtotal`, VAT is `tax` / `tax_total`, and gross is
-   `total`. Document dates are `invoice_date`. An issued invoice with no
-   `invoice_date` (issued before evolvesprouts migration `0057` added the
-   column, 2 May 2026) is dated by `created_at`, the same fallback the
-   Client Invoices list shows. Gains also store `sortUtc` from invoice
-   `created_at` so the Gains tab does not reorder by document date.
+   `total`. Dates follow the Evolve Sprouts Finance **Tax** panel, which
+   classifies revenue and expenses by document date: `invoice_date`, and
+   for an issued invoice with no `invoice_date` (issued before
+   evolvesprouts migration `0057` added the column, 2 May 2026) the HKT day
+   of `issued_at`. A backdated invoice therefore sits in its own fiscal
+   year even when the record was created later; the statement table orders
+   by that date, not by `created_at` (the Client Invoices list order).
    Refunds use `succeeded_at`. Calendar days are Asia/Hong_Kong,
    stored as that day at 00:00 UTC. Codes outside GBP, HKD, USD, EUR, CNY,
    SGD, AED are skipped and counted separately from rows missing an
