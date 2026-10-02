@@ -15,7 +15,7 @@
 - Personal names, phone numbers, personal inboxes, street addresses, bank
   account numbers, and business-registration numbers stay out of source and
   docs. The public website owner name in
-  `apps/public_www/public/content.json` (`site.owner`) is intentionally
+  `apps/public_www/src/content/site.json` (`site.owner`) is intentionally
   public and is not on the denylist. `scripts/check-pii.sh` compares
   normalized text to SHA-256 digests in `scripts/pii-denylist.sha256`
   (digests only; a hit is a path and line). Product mailboxes (`hello@`,
@@ -57,8 +57,8 @@ parameters use `noEcho: true`; S3 remains private behind CloudFront.
   client id, matching `aud` on **ID tokens**).
 - **The JWT authorizer is not sufficient.** Every handler reads
   `requestContext.authorizer.jwt.claims["cognito:groups"]` and returns
-  **403** without `admin`. An alternative Lambda-authorizer layout is kept
-  in `backend/lambda/authorizers/cognito_group/handler.py` but is not wired.
+  **403** without `admin`. The group check stays in the handlers; there is
+  no separate Lambda authorizer for it.
 - `/public/*` GET mirrors and the Executive Board `/public/siu-tin-dei/board`
   routes use the `PublicApiKeyAuthorizerFn` Lambda authorizer (`x-api-key`,
   scrypt digest lookup `pk=APIKEY#<digest>`, scopes, optional CIDR

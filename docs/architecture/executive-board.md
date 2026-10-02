@@ -1060,7 +1060,15 @@ payload includes `boardKey: "siuTinDei"`):
 | `board-targets` | 08:00 | `board_targets` |
 | `board-content-plan` / `-readout` | Sun 18:00 / Mon 09:00 | `board_content_plan` / `board_content_readout` |
 | `board-receivables-mirror` / `board-dunning` | 00:30 / 09:00 | `board_receivables_mirror` / `board_dunning` |
+| `board-catalog-discovery` | 03:30 | `board_catalog_discovery` |
 | `data-api-ensure` | every 15 min | Data API + schema custom resource |
+
+Schedules outside that name prefix, same Scheduler + IAM-role pattern:
+`lxsoftware-admin-openrouter-usage-pull` (hourly),
+`lxsoftware-admin-evolvesprouts-finance-mirror` (00:45 HKT, only when the
+Evolve Sprouts Data API parameters are set),
+`lxsoftware-admin-evolvesprouts-data-api-ensure` (every 15 min, same
+condition), and `lxsoftware-admin-bank-sync` (05:30 HKT, `internal: bank_sync`).
 
 **Kill switches, in order of reach:** `settings.staff.enabled` (UI) →
 `SiutindeiBoardStaffEnabled` → `SiutindeiBoardToolsEnabled` →

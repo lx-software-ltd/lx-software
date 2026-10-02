@@ -29,7 +29,7 @@ does not call the admin API.
 
 `VITE_OWNER_NAME` is retired. The schema.org `Person` node, the `<title>`,
 the meta description, Open Graph tags, and the FAQ come from
-`apps/public_www/public/content.json` (`site.owner`, `site.role`,
+`apps/public_www/src/content/site.json` (`site.owner`, `site.role`,
 `site.title`, `site.description`, `site.keywords`). Editing that file is the
 only step needed to change the public copy.
 
@@ -61,10 +61,10 @@ Output lands in `apps/public_www/dist`.
 ## Deploy to S3 + CloudFront
 
 **Deploy Public Website** runs on pushes to `main` that touch
-`apps/public_www/**`, `backend/infrastructure/**` or `scripts/deploy/**`,
+`apps/public_www/**` or `scripts/deploy/**`,
 or manually. It builds the site, then uploads `dist/` and invalidates the
 distribution. Hashed files under `assets/` go up first and are cached for a
-year. `index.html`, `content.json`, robots, the sitemap, `llms.txt`,
+year. `index.html`, robots, the sitemap, `llms.txt`,
 `llms-full.txt`, and `site.webmanifest` are copied with
 `Cache-Control: no-cache` and are never written as immutable. Other
 unhashed directories that Vite copies from `public/` (including `images/`)
@@ -94,7 +94,7 @@ The site loads one Google Tag Manager container (`apps/public_www/src/lib/gtm.ts
 when `VITE_GTM_ID` is set at build time. GA4 is configured inside the
 container, so a measurement id never lands in this repository. The loader
 does nothing when the visitor's browser sends Global Privacy Control or Do
-Not Track; the privacy policy in `content.json` (section "Analytics") says
+Not Track; the privacy policy in `src/content/site.json` (section "Analytics") says
 so and must stay in step with what the container does.
 
 Creating the Google properties needs the owner's Google account. GitHub

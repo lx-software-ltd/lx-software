@@ -289,7 +289,7 @@ curl -X POST -H "x-api-key: lxpk_..." -H "Content-Type: application/json" \
 The **Banking** page links PSD2 bank accounts via
 [Enable Banking](https://enablebanking.com) and refreshes `recordedValue`
 on the finance **Accounts** sheet from live balances ("Sync now" plus a
-daily EventBridge schedule at 05:30 HKT). Only balances are read.
+daily EventBridge Scheduler schedule `lxsoftware-admin-bank-sync` at 05:30 HKT). Only balances are read.
 Authentication is an RS256 JWT signed by the stack's asymmetric KMS key
 (`alias/lxsoftware-admin/enable-banking`); no private key material leaves
 KMS.
@@ -337,7 +337,7 @@ stack-wide knobs are unprefixed. Lambda env vars stay short
 
 | Parameter | Purpose |
 |-----------|---------|
-| `OpenRouterApiKeySecretArn` | Existing secret (also used by statement parsing). Must be JSON with named keys `statement-parser` and `executive-board`. |
+| `OpenRouterApiKeySecretArn` | Existing secret (also used by statement parsing). Must be JSON with named keys `statement-parser`, `executive-board`, and `management` (a Management API key, not an inference key). |
 | `SiutindeiBoardGitHubRepo` | `owner/name` to read (default `lx-software-ltd/siutindei`). |
 | `SiutindeiBoardToolsEnabled` | `true` (default) / `false`. Deploy-time kill switch for every tool call. |
 | `SiutindeiBoardStaffEnabled` | `false` (default) / `true`. Deploy-time kill switch for staff tasks; fail-closed (`1|true|yes|on`), set on `AdminApiFn` and `InboundStatementMailFn`. Production sets `true`; the Staff UI toggle is still required. |
