@@ -360,7 +360,7 @@ class TestOpenRouterUsagePull(unittest.TestCase):
                 patch("openrouter_usage_pull.http_get_json", fetch),
                 patch("admin_runtime._get_secretsmanager_client", return_value=object()),
                 patch(
-                    "secrets.read_secret_raw",
+                    "secret_store.read_secret_raw",
                     return_value='{"management":"mgmt-key","statement-parser":"sk"}',
                 ),
             ):
@@ -399,7 +399,7 @@ class TestOpenRouterUsagePull(unittest.TestCase):
                 patch("openrouter_usage_pull.http_get_json", fetch),
                 patch("admin_runtime._get_secretsmanager_client", return_value=object()),
                 patch(
-                    "secrets.read_secret_raw",
+                    "secret_store.read_secret_raw",
                     return_value='{"management":"mgmt-key"}',
                 ),
             ):

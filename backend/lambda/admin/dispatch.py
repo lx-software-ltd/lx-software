@@ -507,41 +507,41 @@ def _handle_sqs_batch(event):
     }
 
 
-def _http_0(event, method, path, user_sub, admin_claims):
+def _http_meta_webhook(event, method, path, user_sub, admin_claims):
     import board_meta as board_meta_mod
 
     return board_meta_mod.handle_http(event, method)
 
-def _http_1(event, method, path, user_sub, admin_claims):
+def _http_outreach_unsubscribe(event, method, path, user_sub, admin_claims):
     import board_outreach as board_outreach_mod
 
     token = path[len("/public/outreach/unsubscribe/") :]
     return board_outreach_mod.handle_unsubscribe(event, method, token)
 
-def _http_2(event, method, path, user_sub, admin_claims):
+def _http_newsletter_subscribe(event, method, path, user_sub, admin_claims):
     import board_newsletter as board_newsletter_mod
 
     return board_newsletter_mod.handle_subscribe(event)
 
-def _http_3(event, method, path, user_sub, admin_claims):
+def _http_newsletter_confirm(event, method, path, user_sub, admin_claims):
     import board_newsletter as board_newsletter_mod
 
     token = path[len("/public/newsletter/confirm/") :]
     return board_newsletter_mod.handle_confirm(event, token)
 
-def _http_4(event, method, path, user_sub, admin_claims):
+def _http_newsletter_unsubscribe(event, method, path, user_sub, admin_claims):
     import board_newsletter as board_newsletter_mod
 
     token = path[len("/public/newsletter/unsubscribe/") :]
     return board_newsletter_mod.handle_unsubscribe(event, method, token)
 
-def _http_5(event, method, path, user_sub, admin_claims):
+def _http_health(event, method, path, user_sub, admin_claims):
     return _json_response(200, {"status": "ok"})
 
-def _http_6(event, method, path, user_sub, admin_claims):
+def _http_public_api(event, method, path, user_sub, admin_claims):
     return _handle_public(event, method, path)
 
-def _http_7(event, method, path, user_sub, admin_claims):
+def _http_me(event, method, path, user_sub, admin_claims):
     return _json_response(
         200,
         {
@@ -551,56 +551,56 @@ def _http_7(event, method, path, user_sub, admin_claims):
         },
     )
 
-def _http_8(event, method, path, user_sub, admin_claims):
+def _http_openrouter_usage(event, method, path, user_sub, admin_claims):
     return handle_usage_get(event)
 
-def _http_9(event, method, path, user_sub, admin_claims):
+def _http_aws_usage(event, method, path, user_sub, admin_claims):
     from aws_billing import handle_usage_get as handle_aws_usage_get
 
     return handle_aws_usage_get(event)
 
-def _http_10(event, method, path, user_sub, admin_claims):
+def _http_aws_usage_pdf(event, method, path, user_sub, admin_claims):
     from aws_billing import handle_usage_pdf as handle_aws_usage_pdf
 
     return handle_aws_usage_pdf(event)
 
-def _http_11(event, method, path, user_sub, admin_claims):
+def _http_fx_rates(event, method, path, user_sub, admin_claims):
     return _proxy_fx_v2_rates(
         event.get("queryStringParameters"),
         _request_id(event),
     )
 
-def _http_12(event, method, path, user_sub, admin_claims):
+def _http_finance_quotes(event, method, path, user_sub, admin_claims):
     return _proxy_finance_quotes(
         event.get("queryStringParameters"),
         _request_id(event),
     )
 
-def _http_13(event, method, path, user_sub, admin_claims):
+def _http_banking(event, method, path, user_sub, admin_claims):
     return bank_sync_mod.handle_banking_get(event)
 
-def _http_14(event, method, path, user_sub, admin_claims):
+def _http_banking_banks(event, method, path, user_sub, admin_claims):
     return bank_sync_mod.handle_banking_banks(event)
 
-def _http_15(event, method, path, user_sub, admin_claims):
+def _http_banking_auth(event, method, path, user_sub, admin_claims):
     return bank_sync_mod.handle_banking_auth_start(event, user_sub)
 
-def _http_16(event, method, path, user_sub, admin_claims):
+def _http_banking_sessions(event, method, path, user_sub, admin_claims):
     return bank_sync_mod.handle_banking_auth_complete(event, user_sub)
 
-def _http_17(event, method, path, user_sub, admin_claims):
+def _http_banking_session_delete(event, method, path, user_sub, admin_claims):
     session_id = path[len("/banking/sessions/"):]
     return bank_sync_mod.handle_banking_session_delete(
         event, user_sub, session_id
     )
 
-def _http_18(event, method, path, user_sub, admin_claims):
+def _http_banking_mappings(event, method, path, user_sub, admin_claims):
     return bank_sync_mod.handle_banking_mappings_put(event, user_sub)
 
-def _http_19(event, method, path, user_sub, admin_claims):
+def _http_banking_sync(event, method, path, user_sub, admin_claims):
     return bank_sync_mod.handle_banking_sync_post(event, user_sub)
 
-def _http_20(event, method, path, user_sub, admin_claims):
+def _http_asset_upload_url(event, method, path, user_sub, admin_claims):
     body = _parse_json_body(event)
     filename = body.get("filename")
     content_type = body.get("contentType")
@@ -676,7 +676,7 @@ def _http_20(event, method, path, user_sub, admin_claims):
     _audit(user_sub, "ASSET_UPLOAD_URL", object_key, event)
     return _json_response(200, {"upload": post, "key": object_key})
 
-def _http_21(event, method, path, user_sub, admin_claims):
+def _http_asset_confirm(event, method, path, user_sub, admin_claims):
     body = _parse_json_body(event)
     key = body.get("key")
     if key is None:
@@ -760,26 +760,26 @@ def _http_21(event, method, path, user_sub, admin_claims):
     _audit(user_sub, "ASSET_CONFIRM", str(key), event)
     return _json_response(201, {"item": _from_ddb(item)})
 
-def _http_22(event, method, path, user_sub, admin_claims):
+def _http_assets_list(event, method, path, user_sub, admin_claims):
     return _assets_list_response(event)
 
-def _http_23(event, method, path, user_sub, admin_claims):
+def _http_asset_download_get(event, method, path, user_sub, admin_claims):
     qs = event.get("rawQueryString") or ""
     key_param = parse_qs(qs).get("key", [""])[0]
     return _asset_download_presigned_response(event, user_sub, key_param)
 
-def _http_24(event, method, path, user_sub, admin_claims):
+def _http_asset_download_post(event, method, path, user_sub, admin_claims):
     body = _parse_json_body(event)
     return _asset_download_presigned_response(event, user_sub, body.get("key"))
 
-def _http_25(event, method, path, user_sub, admin_claims):
+def _http_asset_delete(event, method, path, user_sub, admin_claims):
     body = _parse_json_body(event)
     return _asset_delete_response(event, user_sub, body.get("key"))
 
-def _http_26(event, method, path, user_sub, admin_claims):
+def _http_records_get(event, method, path, user_sub, admin_claims):
     return _records_get_response(event)
 
-def _http_27(event, method, path, user_sub, admin_claims):
+def _http_records_create(event, method, path, user_sub, admin_claims):
     body = _parse_json_body(event)
     pk = body.get("pk")
     sk = body.get("sk")
@@ -813,7 +813,7 @@ def _http_27(event, method, path, user_sub, admin_claims):
     _audit(user_sub, "RECORD_CREATE", f"{pk}|{sk}", event)
     return _json_response(201, {"item": _from_ddb(item)})
 
-def _http_28(event, method, path, user_sub, admin_claims):
+def _http_records_update(event, method, path, user_sub, admin_claims):
     body = _parse_json_body(event)
     pk = body.get("pk")
     sk = body.get("sk")
@@ -847,10 +847,10 @@ def _http_28(event, method, path, user_sub, admin_claims):
     _audit(user_sub, "RECORD_UPDATE", f"{pk}|{sk}", event)
     return _json_response(200, {"item": _from_ddb(item)})
 
-def _http_29(event, method, path, user_sub, admin_claims):
+def _http_finance_get(event, method, path, user_sub, admin_claims):
     return _finance_get_response()
 
-def _http_30(event, method, path, user_sub, admin_claims):
+def _http_finance_ledger_put(event, method, path, user_sub, admin_claims):
     sheet_routes: dict[str, tuple[str, frozenset[str], str]] = {
         "/finance/income": ("income", INCOME_RECORD_CATEGORIES, "incomeRecords"),
         "/finance/expenses": (
@@ -891,7 +891,7 @@ def _http_30(event, method, path, user_sub, admin_claims):
         )
     return _json_response(200, {body_key: normalized})
 
-def _http_31(event, method, path, user_sub, admin_claims):
+def _http_finance_investments_put(event, method, path, user_sub, admin_claims):
     body = _parse_json_body(event)
     try:
         normalized = _normalize_investment_sheet_payload(body)
@@ -904,7 +904,7 @@ def _http_31(event, method, path, user_sub, admin_claims):
     _audit(user_sub, "FINANCE_PUT", "investments", event)
     return _json_response(200, {"investmentRecords": merged})
 
-def _http_32(event, method, path, user_sub, admin_claims):
+def _http_finance_savings_put(event, method, path, user_sub, admin_claims):
     body = _parse_json_body(event)
     try:
         normalized = _normalize_savings_sheet_payload(body)
@@ -915,7 +915,7 @@ def _http_32(event, method, path, user_sub, admin_claims):
     _audit(user_sub, "FINANCE_PUT", "savings", event)
     return _json_response(200, {"savingsRecords": normalized})
 
-def _http_33(event, method, path, user_sub, admin_claims):
+def _http_finance_pension_put(event, method, path, user_sub, admin_claims):
     body = _parse_json_body(event)
     try:
         normalized = _normalize_pension_sheet_payload(body)
@@ -928,7 +928,7 @@ def _http_33(event, method, path, user_sub, admin_claims):
     _audit(user_sub, "FINANCE_PUT", "pension", event)
     return _json_response(200, {"pensionRecords": merged})
 
-def _http_34(event, method, path, user_sub, admin_claims):
+def _http_finance_accounts_put(event, method, path, user_sub, admin_claims):
     body = _parse_json_body(event)
     try:
         normalized = _normalize_accounts_sheet_payload(body)
@@ -941,7 +941,7 @@ def _http_34(event, method, path, user_sub, admin_claims):
     _audit(user_sub, "FINANCE_PUT", "accounts", event)
     return _json_response(200, {"accountRecords": merged})
 
-def _http_35(event, method, path, user_sub, admin_claims):
+def _http_finance_liabilities_put(event, method, path, user_sub, admin_claims):
     body = _parse_json_body(event)
     try:
         normalized = _normalize_liabilities_sheet_payload(body)
@@ -954,7 +954,7 @@ def _http_35(event, method, path, user_sub, admin_claims):
     _audit(user_sub, "FINANCE_PUT", "liabilities", event)
     return _json_response(200, {"liabilityRecords": merged})
 
-def _http_36(event, method, path, user_sub, admin_claims):
+def _http_finance_allocations_put(event, method, path, user_sub, admin_claims):
     body = _parse_json_body(event)
     table = board_store.records_table()
     allocated_ids = _allocated_expense_ids_for_allocations(table)
@@ -979,149 +979,149 @@ def _http_board(event, method, path, user_sub, admin_claims):
 def _http_statement_book(event, method, path, user_sub, admin_claims):
     book_match = _match_statement_book_path(path)
     if book_match:
-            book_key, slug = book_match
-            book_label = STATEMENT_BOOK_DISPLAY_LABEL.get(book_key, book_key)
-            mirrored = book_key in MIRRORED_STATEMENT_BOOK_KEYS
+        book_key, slug = book_match
+        book_label = STATEMENT_BOOK_DISPLAY_LABEL.get(book_key, book_key)
+        mirrored = book_key in MIRRORED_STATEMENT_BOOK_KEYS
 
-            mirror = _STATEMENT_BOOK_MIRRORS.get(book_key) if mirrored else None
-            if mirrored and mirror is None and path in (f"/{slug}/summary", f"/{slug}/sync"):
-                return not_found()
+        mirror = _STATEMENT_BOOK_MIRRORS.get(book_key) if mirrored else None
+        if mirrored and mirror is None and path in (f"/{slug}/summary", f"/{slug}/sync"):
+            return not_found()
 
-            if mirror is not None and method == "GET" and path == f"/{slug}/summary":
-                table = board_store.records_table()
-                return _json_response(200, mirror.load_summary(table))
+        if mirror is not None and method == "GET" and path == f"/{slug}/summary":
+            table = board_store.records_table()
+            return _json_response(200, mirror.load_summary(table))
 
-            if mirror is not None and method == "POST" and path == f"/{slug}/sync":
-                table = board_store.records_table()
-                try:
-                    result = mirror.queue_sync(table)
-                except MirroredBookError as exc:
-                    return _json_response(502, {"message": str(exc)})
-                return _json_response(200, result)
+        if mirror is not None and method == "POST" and path == f"/{slug}/sync":
+            table = board_store.records_table()
+            try:
+                result = mirror.queue_sync(table)
+            except MirroredBookError as exc:
+                return _json_response(502, {"message": str(exc)})
+            return _json_response(200, result)
 
-            if mirrored and method == "PUT":
-                return _json_response(
-                    403,
-                    {"message": f"{book_label} records come from the product database and cannot be edited here."},
-                )
+        if mirrored and method == "PUT":
+            return _json_response(
+                403,
+                {"message": f"{book_label} records come from the product database and cannot be edited here."},
+            )
 
-            if mirrored and method == "POST" and path == f"/{slug}/parse-statement":
-                return _json_response(
-                    403,
-                    {"message": f"{book_label} records come from the product database and cannot be edited here."},
-                )
+        if mirrored and method == "POST" and path == f"/{slug}/parse-statement":
+            return _json_response(
+                403,
+                {"message": f"{book_label} records come from the product database and cannot be edited here."},
+            )
 
-            if method == "GET" and path == f"/{slug}":
-                table = board_store.records_table()
-                return _json_response(200, {"data": _load_finance_owner(table, book_key)})
+        if method == "GET" and path == f"/{slug}":
+            table = board_store.records_table()
+            return _json_response(200, {"data": _load_finance_owner(table, book_key)})
 
-            if method == "PUT" and path == f"/{slug}":
-                body = _parse_json_body(event)
-                if not isinstance(body, dict):
-                    body = {}
-                body = {**body, "defaultCurrency": "HKD"}
-                if not isinstance(body.get("float"), dict):
-                    body["float"] = {"amount": 0, "currency": "HKD"}
-                try:
-                    normalized = _normalize_finance_payload(body)
-                except ValueError as exc:
-                    return _json_response(400, {"message": str(exc)})
-                for i, ln in enumerate(normalized.get("lines") or []):
-                    if ln.get("type") == "mortgage":
-                        return _json_response(
-                            400,
-                            {"message": f"lines[{i}].type must be income or expenditure"},
-                        )
-                table = board_store.records_table()
-                ddb_item = {
-                    **_finance_owner_ddb_key(book_key),
-                    **_to_ddb_nested(normalized),
-                }
-                table.put_item(Item=ddb_item)
-                _audit(user_sub, "FINANCE_PUT", book_key, event)
-                return _json_response(200, {"data": normalized})
-
-            if method == "GET" and path.startswith(f"/{slug}/parse-statement/jobs/"):
-                job_id = _path_statement_book_parse_job(event, path, slug)
-                if not job_id:
-                    return not_found()
-                if not user_sub:
-                    return _json_response(400, {"message": "Missing sub claim"})
-                table = board_store.records_table()
-                raw = table.get_item(Key=_parse_job_key(job_id))
-                item = raw.get("Item")
-                if not item:
-                    return _json_response(404, {"message": "Job not found"})
-                doc = _from_ddb_nested(item)
-                if doc.get("ownerSub") != user_sub:
-                    return _json_response(403, {"message": "Forbidden"})
-                if doc.get("house") != book_key:
-                    return _json_response(400, {"message": "Book does not match job"})
-                doc = _finalize_stuck_processing_job(table, _parse_job_key(job_id), doc)
-                return _json_response(200, _parse_job_public_doc(doc))
-
-            if method == "POST" and path == f"/{slug}/parse-statement":
-                if not user_sub:
-                    return _json_response(400, {"message": "Missing sub claim"})
-                body = _parse_json_body(event)
-                key = body.get("key")
-                if not isinstance(key, str) or not key.strip():
-                    return _json_response(400, {"message": "key is required"})
-                prefix = f"uploads/{user_sub}/"
-                if not key.startswith(prefix):
-                    return _json_response(400, {"message": "Invalid key for this user"})
-                line_type_only = body.get("lineTypeOnly")
-                if line_type_only not in ("income", "expenditure"):
+        if method == "PUT" and path == f"/{slug}":
+            body = _parse_json_body(event)
+            if not isinstance(body, dict):
+                body = {}
+            body = {**body, "defaultCurrency": "HKD"}
+            if not isinstance(body.get("float"), dict):
+                body["float"] = {"amount": 0, "currency": "HKD"}
+            try:
+                normalized = _normalize_finance_payload(body)
+            except ValueError as exc:
+                return _json_response(400, {"message": str(exc)})
+            for i, ln in enumerate(normalized.get("lines") or []):
+                if ln.get("type") == "mortgage":
                     return _json_response(
                         400,
-                        {"message": "lineTypeOnly must be income or expenditure"},
+                        {"message": f"lines[{i}].type must be income or expenditure"},
                     )
-                table = board_store.records_table()
-                book_data = _load_finance_owner(table, book_key)
-                file_name = os.path.basename(key)
-                if _statement_basename_already_imported(book_data, file_name):
-                    return _json_response(
-                        409,
-                        {
-                            "message": (
-                                f"A statement file named {file_name!r} was already imported "
-                                f"for {book_label}. Remove its imported lines or rename the "
-                                "file, then try again."
-                            )
-                        },
-                    )
-                try:
-                    job_id = enqueue_parse_statement_async_job(
-                        house=book_key,
-                        s3_keys=[key],
-                        owner_sub=user_sub,
-                        api_request_id=_request_id(event),
-                        source="api",
-                        line_type_only=line_type_only,
-                    )
-                except Exception as exc:
-                    _log_event(
-                        "error",
-                        tag="parse_job_enqueue_failed",
-                        err=str(exc)[:400],
-                        request_id=_request_id(event),
-                    )
-                    return _json_response(
-                        502,
-                        {"message": "Could not start statement parse job"},
-                    )
-                _log_event(
-                    "info",
-                    tag="parse_job_enqueued",
-                    sub=user_sub,
+            table = board_store.records_table()
+            ddb_item = {
+                **_finance_owner_ddb_key(book_key),
+                **_to_ddb_nested(normalized),
+            }
+            table.put_item(Item=ddb_item)
+            _audit(user_sub, "FINANCE_PUT", book_key, event)
+            return _json_response(200, {"data": normalized})
+
+        if method == "GET" and path.startswith(f"/{slug}/parse-statement/jobs/"):
+            job_id = _path_statement_book_parse_job(event, path, slug)
+            if not job_id:
+                return not_found()
+            if not user_sub:
+                return _json_response(400, {"message": "Missing sub claim"})
+            table = board_store.records_table()
+            raw = table.get_item(Key=_parse_job_key(job_id))
+            item = raw.get("Item")
+            if not item:
+                return _json_response(404, {"message": "Job not found"})
+            doc = _from_ddb_nested(item)
+            if doc.get("ownerSub") != user_sub:
+                return _json_response(403, {"message": "Forbidden"})
+            if doc.get("house") != book_key:
+                return _json_response(400, {"message": "Book does not match job"})
+            doc = _finalize_stuck_processing_job(table, _parse_job_key(job_id), doc)
+            return _json_response(200, _parse_job_public_doc(doc))
+
+        if method == "POST" and path == f"/{slug}/parse-statement":
+            if not user_sub:
+                return _json_response(400, {"message": "Missing sub claim"})
+            body = _parse_json_body(event)
+            key = body.get("key")
+            if not isinstance(key, str) or not key.strip():
+                return _json_response(400, {"message": "key is required"})
+            prefix = f"uploads/{user_sub}/"
+            if not key.startswith(prefix):
+                return _json_response(400, {"message": "Invalid key for this user"})
+            line_type_only = body.get("lineTypeOnly")
+            if line_type_only not in ("income", "expenditure"):
+                return _json_response(
+                    400,
+                    {"message": "lineTypeOnly must be income or expenditure"},
+                )
+            table = board_store.records_table()
+            book_data = _load_finance_owner(table, book_key)
+            file_name = os.path.basename(key)
+            if _statement_basename_already_imported(book_data, file_name):
+                return _json_response(
+                    409,
+                    {
+                        "message": (
+                            f"A statement file named {file_name!r} was already imported "
+                            f"for {book_label}. Remove its imported lines or rename the "
+                            "file, then try again."
+                        )
+                    },
+                )
+            try:
+                job_id = enqueue_parse_statement_async_job(
                     house=book_key,
-                    job_id=job_id,
+                    s3_keys=[key],
+                    owner_sub=user_sub,
+                    api_request_id=_request_id(event),
+                    source="api",
+                    line_type_only=line_type_only,
+                )
+            except Exception as exc:
+                _log_event(
+                    "error",
+                    tag="parse_job_enqueue_failed",
+                    err=str(exc)[:400],
                     request_id=_request_id(event),
                 )
-                return _json_response(202, {"jobId": job_id, "status": "pending"})
+                return _json_response(
+                    502,
+                    {"message": "Could not start statement parse job"},
+                )
+            _log_event(
+                "info",
+                tag="parse_job_enqueued",
+                sub=user_sub,
+                house=book_key,
+                job_id=job_id,
+                request_id=_request_id(event),
+            )
+            return _json_response(202, {"jobId": job_id, "status": "pending"})
     return None
 
-def _http_37(event, method, path, user_sub, admin_claims):
+def _http_finance_house_put(event, method, path, user_sub, admin_claims):
     house = _path_finance_house(event, path)
     if not house or house not in FINANCE_HOUSE_KEYS:
         return _json_response(
@@ -1139,7 +1139,7 @@ def _http_37(event, method, path, user_sub, admin_claims):
     _audit(user_sub, "FINANCE_PUT", house, event)
     return _json_response(200, {"data": normalized})
 
-def _http_38(event, method, path, user_sub, admin_claims):
+def _http_finance_parse_job(event, method, path, user_sub, admin_claims):
     house_j, job_id = _path_finance_parse_job(event, path)
     if not house_j or house_j not in FINANCE_HOUSE_KEYS or not job_id:
         return not_found()
@@ -1158,7 +1158,7 @@ def _http_38(event, method, path, user_sub, admin_claims):
     doc = _finalize_stuck_processing_job(table, _parse_job_key(job_id), doc)
     return _json_response(200, _parse_job_public_doc(doc))
 
-def _http_39(event, method, path, user_sub, admin_claims):
+def _http_finance_parse_post(event, method, path, user_sub, admin_claims):
     house = _path_finance_house_for_parse(event, path)
     if not house or house not in FINANCE_HOUSE_KEYS:
         return _json_response(
@@ -1248,50 +1248,50 @@ LATE_INTERNAL = {
 }
 
 HTTP_ROUTES = [
-    Route('*', '/webhooks/meta', _http_0, 'none', kind='exact', match=None),
-    Route('*', '/webhooks/meta/siutindei', _http_0, 'none', kind='exact', match=None),
-    Route('*', '/public/outreach/unsubscribe/', _http_1, 'none', kind='prefix', match=None),
-    Route('POST', '/public/newsletter/subscribe', _http_2, 'none', kind='exact', match=None),
-    Route('*', '/public/newsletter/confirm/', _http_3, 'none', kind='prefix', match=None),
-    Route('*', '/public/newsletter/unsubscribe/', _http_4, 'none', kind='prefix', match=None),
-    Route('GET', '/health', _http_5, 'none', kind='exact', match=None),
-    Route('*', '/public', _http_6, 'public', kind='public', match=None),
-    Route('GET', '/me', _http_7, 'admin', kind='exact', match=None),
-    Route('GET', '/openrouter/usage', _http_8, 'admin', kind='exact', match=None),
-    Route('GET', '/aws/usage', _http_9, 'admin', kind='exact', match=None),
-    Route('GET', '/aws/usage.pdf', _http_10, 'admin', kind='exact', match=None),
-    Route('GET', '/fx/v2/rates', _http_11, 'admin', kind='exact', match=None),
-    Route('GET', '/finance/quotes', _http_12, 'admin', kind='exact', match=None),
-    Route('GET', '/banking', _http_13, 'admin', kind='exact', match=None),
-    Route('GET', '/banking/banks', _http_14, 'admin', kind='exact', match=None),
-    Route('POST', '/banking/auth', _http_15, 'admin', kind='exact', match=None),
-    Route('POST', '/banking/sessions', _http_16, 'admin', kind='exact', match=None),
-    Route('DELETE', '/banking/sessions/', _http_17, 'admin', kind='prefix', match=None),
-    Route('PUT', '/banking/mappings', _http_18, 'admin', kind='exact', match=None),
-    Route('POST', '/banking/sync', _http_19, 'admin', kind='exact', match=None),
-    Route('POST', '/assets/upload-url', _http_20, 'admin', kind='exact', match=None),
-    Route('POST', '/assets/confirm', _http_21, 'admin', kind='exact', match=None),
-    Route('GET', '/assets', _http_22, 'admin', kind='exact', match=None),
-    Route('GET', '/assets/download-url', _http_23, 'admin', kind='exact', match=None),
-    Route('POST', '/assets/download-url', _http_24, 'admin', kind='exact', match=None),
-    Route('POST', '/assets/delete', _http_25, 'admin', kind='exact', match=None),
-    Route('GET', '/records', _http_26, 'admin', kind='exact', match=None),
-    Route('POST', '/records', _http_27, 'admin', kind='exact', match=None),
-    Route('PUT', '/records', _http_28, 'admin', kind='exact', match=None),
-    Route('GET', '/finance', _http_29, 'admin', kind='exact', match=None),
-    Route('PUT', '/finance/income', _http_30, 'admin', kind='exact', match=None),
-    Route('PUT', '/finance/expenses', _http_30, 'admin', kind='exact', match=None),
-    Route('PUT', '/finance/investments', _http_31, 'admin', kind='exact', match=None),
-    Route('PUT', '/finance/savings', _http_32, 'admin', kind='exact', match=None),
-    Route('PUT', '/finance/pension', _http_33, 'admin', kind='exact', match=None),
-    Route('PUT', '/finance/accounts', _http_34, 'admin', kind='exact', match=None),
-    Route('PUT', '/finance/liabilities', _http_35, 'admin', kind='exact', match=None),
-    Route('PUT', '/finance/allocations', _http_36, 'admin', kind='exact', match=None),
+    Route('*', '/webhooks/meta', _http_meta_webhook, 'none', kind='exact', match=None),
+    Route('*', '/webhooks/meta/siutindei', _http_meta_webhook, 'none', kind='exact', match=None),
+    Route('*', '/public/outreach/unsubscribe/', _http_outreach_unsubscribe, 'none', kind='prefix', match=None),
+    Route('POST', '/public/newsletter/subscribe', _http_newsletter_subscribe, 'none', kind='exact', match=None),
+    Route('*', '/public/newsletter/confirm/', _http_newsletter_confirm, 'none', kind='prefix', match=None),
+    Route('*', '/public/newsletter/unsubscribe/', _http_newsletter_unsubscribe, 'none', kind='prefix', match=None),
+    Route('GET', '/health', _http_health, 'none', kind='exact', match=None),
+    Route('*', '/public', _http_public_api, 'public', kind='public', match=None),
+    Route('GET', '/me', _http_me, 'admin', kind='exact', match=None),
+    Route('GET', '/openrouter/usage', _http_openrouter_usage, 'admin', kind='exact', match=None),
+    Route('GET', '/aws/usage', _http_aws_usage, 'admin', kind='exact', match=None),
+    Route('GET', '/aws/usage.pdf', _http_aws_usage_pdf, 'admin', kind='exact', match=None),
+    Route('GET', '/fx/v2/rates', _http_fx_rates, 'admin', kind='exact', match=None),
+    Route('GET', '/finance/quotes', _http_finance_quotes, 'admin', kind='exact', match=None),
+    Route('GET', '/banking', _http_banking, 'admin', kind='exact', match=None),
+    Route('GET', '/banking/banks', _http_banking_banks, 'admin', kind='exact', match=None),
+    Route('POST', '/banking/auth', _http_banking_auth, 'admin', kind='exact', match=None),
+    Route('POST', '/banking/sessions', _http_banking_sessions, 'admin', kind='exact', match=None),
+    Route('DELETE', '/banking/sessions/', _http_banking_session_delete, 'admin', kind='prefix', match=None),
+    Route('PUT', '/banking/mappings', _http_banking_mappings, 'admin', kind='exact', match=None),
+    Route('POST', '/banking/sync', _http_banking_sync, 'admin', kind='exact', match=None),
+    Route('POST', '/assets/upload-url', _http_asset_upload_url, 'admin', kind='exact', match=None),
+    Route('POST', '/assets/confirm', _http_asset_confirm, 'admin', kind='exact', match=None),
+    Route('GET', '/assets', _http_assets_list, 'admin', kind='exact', match=None),
+    Route('GET', '/assets/download-url', _http_asset_download_get, 'admin', kind='exact', match=None),
+    Route('POST', '/assets/download-url', _http_asset_download_post, 'admin', kind='exact', match=None),
+    Route('POST', '/assets/delete', _http_asset_delete, 'admin', kind='exact', match=None),
+    Route('GET', '/records', _http_records_get, 'admin', kind='exact', match=None),
+    Route('POST', '/records', _http_records_create, 'admin', kind='exact', match=None),
+    Route('PUT', '/records', _http_records_update, 'admin', kind='exact', match=None),
+    Route('GET', '/finance', _http_finance_get, 'admin', kind='exact', match=None),
+    Route('PUT', '/finance/income', _http_finance_ledger_put, 'admin', kind='exact', match=None),
+    Route('PUT', '/finance/expenses', _http_finance_ledger_put, 'admin', kind='exact', match=None),
+    Route('PUT', '/finance/investments', _http_finance_investments_put, 'admin', kind='exact', match=None),
+    Route('PUT', '/finance/savings', _http_finance_savings_put, 'admin', kind='exact', match=None),
+    Route('PUT', '/finance/pension', _http_finance_pension_put, 'admin', kind='exact', match=None),
+    Route('PUT', '/finance/accounts', _http_finance_accounts_put, 'admin', kind='exact', match=None),
+    Route('PUT', '/finance/liabilities', _http_finance_liabilities_put, 'admin', kind='exact', match=None),
+    Route('PUT', '/finance/allocations', _http_finance_allocations_put, 'admin', kind='exact', match=None),
     Route('*', '', _http_board, 'admin', kind='any', match=None),
     Route('*', '', _http_statement_book, 'admin', kind='any', match=None),
-    Route('PUT', '/finance/', _http_37, 'admin', kind='custom', match=_match_finance_house_put),
-    Route('GET', '/parse-statement/jobs/', _http_38, 'admin', kind='custom', match=_match_finance_parse_job),
-    Route('POST', '/parse-statement', _http_39, 'admin', kind='custom', match=_match_finance_parse_post),
+    Route('PUT', '/finance/', _http_finance_house_put, 'admin', kind='custom', match=_match_finance_house_put),
+    Route('GET', '/parse-statement/jobs/', _http_finance_parse_job, 'admin', kind='custom', match=_match_finance_parse_job),
+    Route('POST', '/parse-statement', _http_finance_parse_post, 'admin', kind='custom', match=_match_finance_parse_post),
 ]
 
 
@@ -1306,8 +1306,6 @@ def _dispatch_http(event):
     for route in HTTP_ROUTES:
         if route.auth != "public":
             continue
-        if route.kind == "public" and (path == "/public" or path.startswith("/public/")):
-            return route.handler(event, method, path, None, None)
         if route_matches(route, method, path):
             return route.handler(event, method, path, None, None)
     admin_claims = _require_admin(event)

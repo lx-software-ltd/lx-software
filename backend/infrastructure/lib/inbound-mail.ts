@@ -9,11 +9,11 @@ import * as sesActions from "aws-cdk-lib/aws-ses-actions";
 import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import type * as kms from "aws-cdk-lib/aws-kms";
 import type * as sqs from "aws-cdk-lib/aws-sqs";
-import * as cr from "aws-cdk-lib/custom-resources";
 import { createPythonLambda } from "./constructs/python-lambda";
 import { PARSE_TIMEOUTS } from "./shared-contracts";
 import type { AdminParameters } from "./admin-parameters";
 import { sesSendFromDomainStatement } from "./ses-send";
+import { defineBoardMailSending, defineSharedReceiptRules } from "./inbound-mail-rules";
 
 export interface InboundMailResources {
   readonly inboundMailBucket: s3.Bucket;
@@ -206,6 +206,8 @@ export function defineInboundMail(
       INBOUND_RAW_MAIL_PREFIX: inboundRawMailPrefix,
       INBOUND_STATEMENT_MAILBOXES: inboundStatementMailboxEnv,
       INBOUND_AUDIT_USER_SUB: "inbound-email",
+      // Inbound keeps handler-defaulted keys that AdminApiFn omits to stay
+      // under the 4 KB environment cap (ASSET_MAX_BYTES, PARSE_JOB_TTL_SECONDS).
       ASSET_MAX_BYTES: String(20 * 1024 * 1024),
       OPENROUTER_API_KEY_SECRET_ARN: openRouterApiKeySecretArn.valueAsString,
       OPENROUTER_MODEL: openRouterModel.valueAsString,
@@ -294,96 +296,12 @@ export function defineInboundMail(
     ],
   });
 
-  // ------------------------------------------------------------------
-  // Evolve Sprouts invoices share this rule set. SES allows only one
-  // active receipt rule set per region; the evolvesprouts stack used to
-  // create and activate its own set, which hid hillmarton + board mail.
-  // The ES processor / bucket / SNS topic stay in that repo. This rule
-  // keeps the same SES receipt-rule name so ES bucket/role/KMS policies
-  // can allow both SourceArns during the cutover.
-  // ------------------------------------------------------------------
-  // Coupled to the evolvesprouts stack, which is not in this repo: the receipt
-  // role, SNS topic, and assets bucket keep their physical names. Fn.importValue
-  // cannot see that stack's exports from here.
-  const evolvesproutsInvoiceRuleName = "evolvesprouts-inbound-invoice-email-rule";
-  const evolvesproutsInvoiceRawPrefix = "inbound-email/raw/";
-  const evolvesproutsAssetsBucketName = cdk.Fn.join("-", [
-    "evolvesprouts-assets",
-    cdk.Aws.ACCOUNT_ID,
-    cdk.Aws.REGION,
-  ]);
-  const evolvesproutsInvoiceTopicArn = cdk.Stack.of(scope).formatArn({
-    service: "sns",
-    resource: "evolvesprouts-inbound-invoice-email-events",
-  });
-  const evolvesproutsInvoiceReceiptRoleArn = cdk.Stack.of(scope).formatArn({
-    service: "iam",
-    region: "",
-    resource: "role",
-    resourceName: evolvesproutsInvoiceReceiptRoleName.valueAsString,
+  defineSharedReceiptRules(scope, {
+    inboundReceiptRuleSet,
+    evolvesproutsInvoiceRecipient,
+    evolvesproutsInvoiceReceiptRoleName,
   });
 
-  const evolvesproutsInvoiceRule = new ses.CfnReceiptRule(
-    scope,
-    "InboundMailbox-evolvesprouts-invoices",
-    {
-      ruleSetName: inboundReceiptRuleSet.receiptRuleSetName,
-      rule: {
-        name: evolvesproutsInvoiceRuleName,
-        enabled: true,
-        scanEnabled: true,
-        tlsPolicy: "Optional",
-        recipients: [evolvesproutsInvoiceRecipient.valueAsString],
-        actions: [
-          {
-            s3Action: {
-              bucketName: evolvesproutsAssetsBucketName,
-              objectKeyPrefix: evolvesproutsInvoiceRawPrefix,
-              topicArn: evolvesproutsInvoiceTopicArn,
-              iamRoleArn: evolvesproutsInvoiceReceiptRoleArn,
-            },
-          },
-        ],
-      },
-    }
-  );
-  evolvesproutsInvoiceRule.node.addDependency(inboundReceiptRuleSet);
-
-  const activateInboundMailRuleSet = new cr.AwsCustomResource(
-    scope,
-    "ActivateInboundMailReceiptRuleSet",
-    {
-      policy: cr.AwsCustomResourcePolicy.fromStatements([
-        new iam.PolicyStatement({
-          actions: ["ses:SetActiveReceiptRuleSet"],
-          resources: ["*"],
-        }),
-      ]),
-      installLatestAwsSdk: false,
-      onCreate: {
-        service: "SES",
-        action: "setActiveReceiptRuleSet",
-        parameters: {
-          RuleSetName: inboundReceiptRuleSet.receiptRuleSetName,
-        },
-        physicalResourceId: cr.PhysicalResourceId.of(
-          "lxsoftware-inbound-mail-active"
-        ),
-      },
-      onUpdate: {
-        service: "SES",
-        action: "setActiveReceiptRuleSet",
-        parameters: {
-          RuleSetName: inboundReceiptRuleSet.receiptRuleSetName,
-        },
-        physicalResourceId: cr.PhysicalResourceId.of(
-          "lxsoftware-inbound-mail-active"
-        ),
-      },
-    }
-  );
-  activateInboundMailRuleSet.node.addDependency(inboundReceiptRuleSet);
-  activateInboundMailRuleSet.node.addDependency(evolvesproutsInvoiceRule);
 
   for (const fn of [adminFn, inboundStatementFn]) {
     fn.addEnvironment("BOARD_MAIL_DOMAIN", boardMailDomain.valueAsString);
@@ -422,56 +340,11 @@ export function defineInboundMail(
   );
   statementParseNotifyPolicy.attachToRole(adminFn.role!);
 
-  // Sending identity for SiutindeiBoardMailDomain, created only once the owner flips
-  // SiutindeiBoardMailSendingEnabled (DNS must carry the DKIM CNAMEs first). The send
-  // policy is scoped to that single identity so the board can never send
-  // from anything but the company domain.
-  const hasBoardMailSending = new cdk.CfnCondition(scope, "HasSiutindeiBoardMailSending", {
-    expression: cdk.Fn.conditionEquals(
-      boardMailSendingEnabled.valueAsString,
-      "true"
-    ),
+  const { boardMailIdentity, hasBoardMailSending } = defineBoardMailSending(scope, {
+    adminFn,
+    boardMailDomain,
+    boardMailSendingEnabled,
   });
-  const boardMailIdentity = new ses.CfnEmailIdentity(scope, "SiutindeiBoardMailSendingIdentity", {
-    emailIdentity: boardMailDomain.valueAsString,
-    dkimAttributes: { signingEnabled: true },
-    mailFromAttributes: { behaviorOnMxFailure: "USE_DEFAULT_VALUE" },
-  });
-  boardMailIdentity.cfnOptions.condition = hasBoardMailSending;
-  const boardMailSendPolicy = new iam.Policy(scope, "SiutindeiBoardMailSendPolicy", {
-      statements: [
-        sesSendFromDomainStatement(boardMailDomain.valueAsString),
-        // Mail header health: is the identity verified, are we out of the
-        // sandbox. GetAccount only supports Resource *.
-        new iam.PolicyStatement({
-          actions: ["ses:GetEmailIdentity"],
-          resources: [
-            cdk.Stack.of(scope).formatArn({
-              service: "ses",
-              resource: "identity",
-              resourceName: boardMailDomain.valueAsString,
-            }),
-          ],
-        }),
-        new iam.PolicyStatement({
-          actions: ["ses:GetAccount"],
-          resources: ["*"],
-        }),
-        new iam.PolicyStatement({
-          actions: ["ses:CreateEmailTemplate", "ses:GetEmailTemplate", "ses:UpdateEmailTemplate"],
-          resources: [
-            cdk.Stack.of(scope).formatArn({
-              service: "ses",
-              resource: "template",
-              resourceName: "lxsoftware-admin-siutindei-*",
-            }),
-          ],
-        }),
-      ],
-  });
-  boardMailSendPolicy.attachToRole(adminFn.role!);
-  const cfnBoardMailSendPolicy = boardMailSendPolicy.node.defaultChild as iam.CfnPolicy;
-  cfnBoardMailSendPolicy.cfnOptions.condition = hasBoardMailSending;
   return {
     inboundMailBucket,
     inboundReceiptRuleSet,

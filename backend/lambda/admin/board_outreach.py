@@ -93,9 +93,8 @@ def signing_secret() -> str:
     arn = (os.environ.get("BOARD_LINK_SIGNING_SECRET_ARN") or "").strip()
     if not arn:
         raise OutreachError("link signing secret is not configured")
-    from secrets import read_secret_string
-
     from admin_runtime import _get_secretsmanager_client
+    from secret_store import read_secret_string
 
     _signing_secret = read_secret_string(
         _get_secretsmanager_client(), arn, what="board link signing key"

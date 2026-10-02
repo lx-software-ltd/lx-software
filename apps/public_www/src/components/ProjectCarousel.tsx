@@ -120,13 +120,12 @@ export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
           dragged.current = false
         }}
         onKeyDown={(event) => {
-          if (event.key === 'ArrowRight') {
-            event.preventDefault()
-            scrollByCard(1, 'keyboard')
-          } else if (event.key === 'ArrowLeft') {
-            event.preventDefault()
-            scrollByCard(-1, 'keyboard')
-          }
+          if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+          if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+          const forward = event.key === 'ArrowRight'
+          if (forward ? atEnd : atStart) return
+          event.preventDefault()
+          scrollByCard(forward ? 1 : -1, 'keyboard')
         }}
       >
         {items.map((item) => (

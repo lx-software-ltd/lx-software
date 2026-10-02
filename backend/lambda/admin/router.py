@@ -28,4 +28,6 @@ def route_matches(route: Route, method: str, path: str) -> bool:
         return path == route.pattern
     if route.kind == "prefix":
         return path.startswith(route.pattern)
+    if route.kind == "public":
+        return path == route.pattern or path.startswith(f"{route.pattern}/")
     return False

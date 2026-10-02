@@ -33,14 +33,14 @@ repos:
     hooks:
       - id: eslint-public-website
         name: ESLint Public Website
-        entry: bash -c 'cd apps/public_www && npm run lint'
+        entry: bash -c 'test -x apps/public_www/node_modules/.bin/eslint || { echo "apps/public_www: run npm ci before committing"; exit 1; }; cd apps/public_www && npm run lint'
         language: system
         files: ^apps/public_www/.*\.(ts|tsx|js|jsx)$
         pass_filenames: false
 
       - id: eslint-admin-web
         name: ESLint Admin Web
-        entry: bash -c 'cd apps/admin_web && npm run lint'
+        entry: bash -c 'test -x apps/admin_web/node_modules/.bin/eslint || { echo "apps/admin_web: run npm ci before committing"; exit 1; }; cd apps/admin_web && npm run lint'
         language: system
         files: ^apps/admin_web/.*\.(ts|tsx|js|jsx)$
         pass_filenames: false

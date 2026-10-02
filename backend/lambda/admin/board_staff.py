@@ -17,7 +17,7 @@ import board_budget
 import board_personas
 import board_store
 import board_tools
-from board_tools_core import ToolContext, allows, effective_level, global_cap
+from board_tools_core import LEVEL_RANK, ToolContext, allows, effective_level, global_cap
 from contract_constants import (
     BOARD_CATALOG_EVENT_KINDS,
     BOARD_KEY,
@@ -46,7 +46,6 @@ from contract_constants import (
 )
 from http_common import _log_event, _utc_iso_z
 
-_LEVEL_RANK = {lvl: i for i, lvl in enumerate(BOARD_TOOL_LEVELS)}
 TERMINAL_STATUSES = frozenset({"delivered", "failed", "cancelled"})
 NON_TERMINAL_STATUSES = frozenset(s for s in BOARD_STAFF_TASK_STATUSES if s not in TERMINAL_STATUSES)
 OWNER_HELD_CHILD_STATUSES = frozenset({"review", "needs_owner"})
@@ -302,7 +301,7 @@ def is_seat_id(value: Any) -> bool:
 
 
 def _min_level(*levels: str) -> str:
-    ranks = [_LEVEL_RANK.get(lvl, 0) for lvl in levels]
+    ranks = [LEVEL_RANK.get(lvl, 0) for lvl in levels]
     return BOARD_TOOL_LEVELS[min(ranks)] if ranks else "off"
 
 
@@ -1218,7 +1217,11 @@ def resume_after_approval(table: Any, settings: dict[str, Any], approval: dict[s
         if board_code.on_sync_approval_outcome(table, approval) is not None:
             return
     except Exception:
-        logging.getLogger(__name__).debug("suppressed", exc_info=True)
+        logging.getLogger(__name__).warning(
+            "board code sync hook failed while resuming task %s",
+            task_id,
+            exc_info=True,
+        )
     if _is_code_implement(task) and str(approval.get("op") or "") == "code_run_task":
         _settle_code_implement_approval(table, task, approval)
         return

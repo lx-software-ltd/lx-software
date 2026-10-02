@@ -252,6 +252,7 @@ export function defineBoardSchedules(
       input: scheduler.ScheduleTargetInput.fromObject({
         internal: "bank_sync",
       }),
+      // One retry can run the sync twice; balance writes are idempotent.
       retryAttempts: 1,
     }),
   });

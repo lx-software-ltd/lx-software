@@ -14,7 +14,6 @@ import json
 import logging
 import os
 import re
-from secrets import read_secret_string
 from typing import Any
 from urllib import error as urlerror
 from urllib import parse as urlparse
@@ -33,6 +32,7 @@ from contract_constants import (
 )
 from http_common import _log_event
 from openrouter_client import OpenRouterError
+from secret_store import read_secret_string
 
 BRAVE_ORIGIN = "https://api.search.brave.com"
 HTTP_TIMEOUT_SECONDS = 10

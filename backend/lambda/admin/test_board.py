@@ -492,6 +492,8 @@ class BoardTestCase(unittest.TestCase):
             "RECORDS_TABLE_NAME": "records-test",
             "AUDIT_LOG_TABLE_NAME": "audit-test",
             "ASSETS_BUCKET_NAME": "assets-test",
+            # Inert while the bucket is set (the bucket wins). Tests that pop
+            # ASSETS_BUCKET_NAME use this flag for the in-memory blob store.
             "BOARD_BLOBS_IN_MEMORY": "1",
             "OPENROUTER_API_KEY": "sk-test",
             "BOARD_CHAT_MODEL": "",

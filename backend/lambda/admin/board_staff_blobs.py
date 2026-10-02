@@ -77,6 +77,13 @@ def _scratchpad_limit() -> int:
     return int(board_staff.BOARD_STAFF_SCRATCHPAD_MAX_CHARS)
 
 
+def _put_blob(key: str, body: bytes) -> None:
+    """Write through board_staff so patch.object(board_staff, "_blob_put") applies."""
+    import board_staff
+
+    board_staff._blob_put(key, body)
+
+
 def _append_scratchpad(task: dict[str, Any], text: str) -> str:
     key = str(task.get("scratchpadKey") or _scratchpad_key(str(task["taskId"])))
     existing = _blob_get(key).decode("utf-8", errors="replace")
@@ -84,7 +91,7 @@ def _append_scratchpad(task: dict[str, Any], text: str) -> str:
     limit = _scratchpad_limit()
     if len(combined) > limit:
         combined = combined[-limit:]
-    _blob_put(key, combined.encode("utf-8"))
+    _put_blob(key, combined.encode("utf-8"))
     return combined
 
 def _prepend_scratchpad(task: dict[str, Any], text: str) -> str:
@@ -96,7 +103,7 @@ def _prepend_scratchpad(task: dict[str, Any], text: str) -> str:
     limit = _scratchpad_limit()
     if len(banner) >= limit:
         combined = banner[:limit]
-        _blob_put(key, combined.encode("utf-8"))
+        _put_blob(key, combined.encode("utf-8"))
         return combined
     keep = limit - len(banner) - 2
     if keep <= 0:
@@ -108,7 +115,7 @@ def _prepend_scratchpad(task: dict[str, Any], text: str) -> str:
     combined = (banner + ("\n\n" if tail else "") + tail).strip()
     if len(combined) > limit:
         combined = combined[:limit]
-    _blob_put(key, combined.encode("utf-8"))
+    _put_blob(key, combined.encode("utf-8"))
     return combined
 
 def read_deliverable(task: dict[str, Any], *, limit: int = 12000) -> str:

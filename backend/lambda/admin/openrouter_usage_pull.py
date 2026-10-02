@@ -289,10 +289,9 @@ def pull_sibling_usage(
 def handle_pull(event: dict[str, Any]) -> dict[str, Any]:
     """EventBridge Scheduler entry: ``internal=openrouter_usage_pull``."""
     del event  # payload is only a schedule marker
-    from secrets import read_secret_raw
-
     from admin_runtime import _get_secretsmanager_client
     from openrouter_client import OpenRouterError
+    from secret_store import read_secret_raw
 
     table = board_store.records_table()
     arn = os.getenv("OPENROUTER_API_KEY_SECRET_ARN", "").strip()

@@ -1,6 +1,6 @@
 # SHA-256 digests of personal-data values that must not appear in source.
 # Store digests only. The checker reports a path and line, never the match.
-# The public website owner name (apps/public_www/public/content.json
+# The public website owner name (apps/public_www/src/content/site.json
 # site.owner) is published on the marketing site and is not listed here.
 f6511406f3083e021a235808a957dc283acf199853ce03fe83b36791e4436e5a
 66fc3fdbfa58f88ec06c6f13f45ec36063e6373e567582c41bc4bcd89a8e246c

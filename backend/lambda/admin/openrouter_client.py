@@ -831,14 +831,14 @@ def _pick_openrouter_key(raw: str, *, service: str) -> str:
 
 def read_secret_raw(secrets_client: Any, secret_arn: str, *, what: str) -> str:
     """Fetch a Secrets Manager secret and return the full string payload."""
-    from secrets import read_secret_raw as _read_secret_raw
+    from secret_store import read_secret_raw as _read_secret_raw
 
     return _read_secret_raw(secrets_client, secret_arn, what=what)
 
 
 def read_secret_string(secrets_client: Any, secret_arn: str, *, what: str) -> str:
     """Fetch a Secrets Manager secret and return the bare token inside it."""
-    from secrets import read_secret_string as _read_secret_string
+    from secret_store import read_secret_string as _read_secret_string
 
     return _read_secret_string(secrets_client, secret_arn, what=what)
 

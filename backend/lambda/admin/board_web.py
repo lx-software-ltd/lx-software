@@ -17,7 +17,6 @@ from __future__ import annotations
 import json
 import os
 import time
-from secrets import read_secret_raw
 from typing import Any
 
 import board_pii
@@ -27,6 +26,7 @@ from admin_runtime import _get_secretsmanager_client
 from contract_constants import BOARD_WEB_CACHE_TTL_HOURS, BOARD_WEB_LIST_MAX
 from http_common import _log_event
 from openrouter_client import OpenRouterError
+from secret_store import read_secret_raw
 
 GA4_ORIGIN = "https://analyticsdata.googleapis.com"
 GTM_ORIGIN = "https://tagmanager.googleapis.com"

@@ -29,8 +29,6 @@ def _first_specific_route(method: str, path: str):
     for route in HTTP_ROUTES:
         if route.kind == "any":
             continue
-        if route.auth == "public" and route.kind == "public" and (path == "/public" or path.startswith("/public/")):
-            return route
         if route_matches(route, method, path):
             return route
     return None
@@ -58,6 +56,16 @@ class RouteTableTests(unittest.TestCase):
         assert health is not None
         self.assertEqual(health.auth, "none")
         self.assertIsNone(_first_specific_route("POST", "/health"))
+
+    def test_public_kind_matches_the_public_prefix_only(self) -> None:
+        route = _first_specific_route("GET", "/public/finance")
+        self.assertIsNotNone(route)
+        assert route is not None
+        self.assertEqual(route.kind, "public")
+        self.assertTrue(route_matches(route, "GET", "/public"))
+        self.assertTrue(route_matches(route, "PUT", "/public/finance"))
+        self.assertFalse(route_matches(route, "GET", "/publicity"))
+        self.assertFalse(route_matches(route, "GET", "/health"))
 
     def test_internal_workers_from_handler_tests_are_registered(self) -> None:
         self.assertIn("parse_statement_async", EARLY_INTERNAL)

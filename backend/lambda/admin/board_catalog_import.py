@@ -17,7 +17,6 @@ import re
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
-from secrets import read_secret_raw
 from typing import Any, Callable
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -32,6 +31,7 @@ from contract_constants import (
     BOARD_CATALOG_TYPE_TO_CATEGORY,
 )
 from http_common import _log_event
+from secret_store import read_secret_raw
 
 CATALOG_EVENT_KIND = "catalog-micro-batch"
 CATALOG_ENRICH_KIND = "catalog-enrich"

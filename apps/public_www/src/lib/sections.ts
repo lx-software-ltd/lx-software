@@ -13,7 +13,6 @@ export const pageSections = [
 export type SectionId = (typeof pageSections)[number]['id']
 
 const sectionIds = pageSections.map((section) => section.id)
-const sectionOrder = ['top', ...sectionIds] as const
 
 function isSectionId(id: string): id is SectionId {
   return sectionIds.some((sectionId) => sectionId === id)
@@ -66,8 +65,7 @@ export function useSections() {
   useEffect(() => {
     if (!onHome) return
     const id = location.hash.replace(/^#/, '')
-    if (!id) return
-    scrollToElement(id, reduced)
+    scrollToElement(id || 'top', reduced)
   }, [onHome, location.hash, reduced])
 
   const scrollTo = (id: string) => {
@@ -75,22 +73,12 @@ export function useSections() {
     const alreadyThere = location.pathname === '/' && location.hash === targetHash
     scrollToElement(id, reduced)
     if (alreadyThere) return
-    navigate(targetHash ? `/${targetHash}` : '/', { replace: true })
-  }
-
-  const step = (direction: 1 | -1) => {
-    const current = active ?? 'top'
-    const index = sectionOrder.indexOf(current)
-    const target = sectionOrder[index + direction]
-    if (!target) return
-    scrollTo(target)
+    navigate(targetHash ? `/${targetHash}` : '/')
   }
 
   return {
     ids: sectionIds,
     active,
     scrollTo,
-    next: () => step(1),
-    prev: () => step(-1),
   }
 }

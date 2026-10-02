@@ -24,6 +24,10 @@ import { AuthConstruct } from "./constructs/auth";
  * Resources are created by stack-scoped functions (the stack is `scope`).
  * Logical IDs stay on the path from this stack; do not wrap existing
  * resources in a nested Construct.
+ *
+ * Feature flags such as `@aws-cdk/aws-iam:minimizePolicies` stay off.
+ * Turning them on changes synthesized IAM and logical IDs and needs a
+ * production `cdk diff` before it is safe.
  */
 export class LxsoftwareStack extends cdk.Stack {
   public readonly auth: AuthConstruct;

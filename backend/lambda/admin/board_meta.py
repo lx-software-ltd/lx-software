@@ -23,7 +23,6 @@ import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from secrets import read_secret_string
 from typing import Any
 from urllib import error as urlerror
 from urllib import parse as urlparse
@@ -42,6 +41,7 @@ from contract_constants import (
 )
 from http_common import _log_event, _utc_iso_z, method_not_allowed
 from openrouter_client import OpenRouterError
+from secret_store import read_secret_string
 
 GRAPH_ORIGIN = "https://graph.facebook.com/v21.0"
 HTTP_TIMEOUT_SECONDS = 12

@@ -13,7 +13,6 @@ import {
   type BoardUpdate,
 } from "../lib/boardModel";
 import { BOARD_QUERY_KEY } from "../lib/queryKeys";
-import { BOARD_STAFF_KEY } from "./useBoardStaff";
 
 export { BOARD_QUERY_KEY };
 
@@ -83,8 +82,10 @@ export function saveSettingsMutationOptions(qc: QueryClient) {
     },
     onSuccess: (settings: BoardSettings) => {
       qc.setQueryData<BoardOverview>(BOARD_QUERY_KEY, (prev) => (prev ? { ...prev, settings } : prev));
-      invalidateOverview(qc);
-      void qc.invalidateQueries({ queryKey: BOARD_STAFF_KEY });
+      // Settings feed tools, boundaries, review, holds, and staff. A prefix
+      // invalidation refreshes those child queries. Charter and member saves
+      // stay on the overview key only.
+      void qc.invalidateQueries({ queryKey: BOARD_QUERY_KEY });
     },
   };
 }

@@ -79,4 +79,16 @@ describe('ProjectCarousel', () => {
     expect(document.activeElement).toBe(next)
     expect(screen.getByText('2 of 2')).toBeTruthy()
   })
+
+  it('ignores arrow keys at the ends and does not block page scroll', () => {
+    render(<ProjectCarousel items={items} />)
+    const list = screen.getByRole('list', { name: 'Projects' })
+    armScroller(list)
+    expect(fireEvent.keyDown(list, { key: 'ArrowLeft' })).toBe(true)
+    expect(screen.getByText('1 of 2').textContent).toBe('1 of 2')
+    expect(fireEvent.keyDown(list, { key: 'ArrowRight' })).toBe(false)
+    expect(screen.getByText('2 of 2').textContent).toBe('2 of 2')
+    expect(fireEvent.keyDown(list, { key: 'ArrowRight' })).toBe(true)
+    expect(screen.getByText('2 of 2').textContent).toBe('2 of 2')
+  })
 })

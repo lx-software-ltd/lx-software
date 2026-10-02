@@ -664,7 +664,7 @@ def _without_schedules(org: dict[str, Any]) -> dict[str, Any]:
 def _mark_imported(table: Any, rows: list[dict[str, Any]], batch: list[dict[str, Any]], imported: dict[str, Any]) -> list[str]:
     succeeded = _succeeded_org_names(imported, batch)
     ids: list[str] = []
-    for row, org in zip(rows, batch, strict=False):
+    for row, org in zip(rows, batch, strict=True):
         if _org_name_key(org.get("name")) not in succeeded:
             continue
         board_catalog_candidates.set_status(table, str(row["candidateId"]), "imported")

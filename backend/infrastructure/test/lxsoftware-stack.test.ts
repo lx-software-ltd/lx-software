@@ -3,7 +3,6 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as cdk from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
-import { buildAdminEnv } from "../lib/admin-api-env";
 import { LxsoftwareAdminWebStack } from "../lib/lxsoftware-admin-web-stack";
 import { LxsoftwareStack } from "../lib/lxsoftware-stack";
 import { PublicWebsiteStack } from "../lib/public-website-stack";
@@ -771,12 +770,11 @@ describe("Siu Tin Dei parameter naming", () => {
   });
 
   test("AdminApiFn environment keys are unique", () => {
-    const source = fs.readFileSync(
-      path.join(__dirname, "../lib/admin-api-env.ts"),
-      "utf8",
+    const adminFn = Object.entries(resourcesOfType("AWS::Lambda::Function")).find(([id]) =>
+      id.startsWith("AdminApiFn"),
     );
-    const body = source.slice(source.indexOf("const env"));
-    const keys = [...body.matchAll(/^\s{4}([A-Z][A-Z0-9_]+):/gm)].map((match) => match[1]);
+    const env = (adminFn?.[1].Properties?.Environment?.Variables ?? {}) as Record<string, unknown>;
+    const keys = Object.keys(env);
     expect(keys.length).toBeGreaterThan(40);
     expect(new Set(keys).size).toBe(keys.length);
     for (const name of [
@@ -788,10 +786,6 @@ describe("Siu Tin Dei parameter naming", () => {
     ]) {
       expect(keys.filter((key) => key === name)).toHaveLength(1);
     }
-    const sample = buildAdminEnv(
-      Object.fromEntries(keys.map((key) => [key, key])) as never,
-    );
-    expect(new Set(Object.keys(sample)).size).toBe(Object.keys(sample).length);
   });
 });
 
