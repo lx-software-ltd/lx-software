@@ -516,7 +516,7 @@ export function FinanceLiabilitiesPanel(props: {
                 <AdminCell column="desc" className="small">
                   {r.description}
                   <AdminDataTableCellMeta>
-                    {r.liabilityType} · {r.currency}
+                    {r.liabilityType}
                     {r.relatedHouse ? ` · ${houseDisplayLabel(r.relatedHouse)}` : ""}
                     {" · "}
                     <MoneyAmount amount={r.outstandingBalance} currency={r.currency} />
@@ -527,7 +527,7 @@ export function FinanceLiabilitiesPanel(props: {
                 </AdminCell>
                 <AdminCell column="ltype" className="small">{r.liabilityType}</AdminCell>
                 <AdminCell column="amt" className="small text-end">
-                  <MoneyAmount amount={r.outstandingBalance} currency={r.currency} codePrefix />
+                  <MoneyAmount amount={r.outstandingBalance} currency={r.currency} />
                 </AdminCell>
                 <AdminCell column="rate" className="small text-end">
                   {r.interestRatePercent !== undefined ? `${r.interestRatePercent}%` : "—"}

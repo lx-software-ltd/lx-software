@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { listNonZeroMoneyLines } from "../../lib/formatDisplay";
+import { MoneyAmount } from "./MoneyAmount";
 
 export type AdminKpiProps = {
   readonly label: string;
@@ -7,13 +9,24 @@ export type AdminKpiProps = {
 };
 
 /** Stacked currency lines inside an `AdminKpi` value. */
-export function AdminKpiAmounts({ lines }: { readonly lines: readonly string[] }) {
+export function AdminKpiAmounts({
+  amounts,
+}: {
+  readonly amounts: Readonly<Record<string, number>>;
+}) {
+  const lines = listNonZeroMoneyLines(amounts);
+  if (lines.length === 0) {
+    return <span className="admin-kpi-amount">—</span>;
+  }
   return (
     <span className="admin-kpi-amounts">
-      {lines.map((line, index) => (
-        <span key={`${line}-${index}`} className="admin-kpi-amount">
-          {line}
-        </span>
+      {lines.map((line) => (
+        <MoneyAmount
+          key={line.currency}
+          amount={line.amount}
+          currency={line.currency}
+          className="admin-kpi-amount"
+        />
       ))}
     </span>
   );

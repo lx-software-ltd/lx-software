@@ -55,13 +55,6 @@ export function MonthlyViewExpenseAllocationsSection() {
           : kind === "net"
             ? c.net
             : c.net / 30;
-    if (kind === "net" || kind === "netDaily") {
-      return (
-        <span className={amt >= 0 ? "text-success" : "text-danger"}>
-          <MoneyAmount amount={amt} currency={GLOBAL_DEFAULT_CURRENCY} />
-        </span>
-      );
-    }
     return <MoneyAmount amount={amt} currency={GLOBAL_DEFAULT_CURRENCY} />;
   }
 

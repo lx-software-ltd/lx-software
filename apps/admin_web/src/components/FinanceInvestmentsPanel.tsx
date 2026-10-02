@@ -859,13 +859,13 @@ export function FinanceInvestmentsPanel({
                       ? ` · ${investmentDetailsDisplay(r, relatedHouseLabelByValue)}`
                       : ""}
                     {" · "}
-                    <MoneyAmount amount={r.principalAmount} currency={r.currency} codePrefix />
+                    <MoneyAmount amount={r.principalAmount} currency={r.currency} />
                     {(() => {
                       const current = currentValueInRowCurrencyByRowId.get(r.id);
                       return current === undefined ? null : (
                         <>
                           {" · "}
-                          <MoneyAmount amount={current} currency={r.currency} codePrefix />
+                          <MoneyAmount amount={current} currency={r.currency} />
                         </>
                       );
                     })()}
@@ -878,7 +878,7 @@ export function FinanceInvestmentsPanel({
                   {investmentDetailsDisplay(r, relatedHouseLabelByValue) || "—"}
                 </AdminCell>
                 <AdminCell column="amt" className="small text-end">
-                  <MoneyAmount amount={r.principalAmount} currency={r.currency} codePrefix />
+                  <MoneyAmount amount={r.principalAmount} currency={r.currency} />
                 </AdminCell>
                 <AdminCell column="currVal" className="small text-end">
                   {(() => {
@@ -925,7 +925,7 @@ export function FinanceInvestmentsPanel({
                       return <span className="text-muted">—</span>;
                     }
                     return (
-                      <MoneyAmount amount={valueInRowCcy} currency={r.currency} codePrefix />
+                      <MoneyAmount amount={valueInRowCcy} currency={r.currency} />
                     );
                   })()}
                 </AdminCell>
@@ -988,7 +988,6 @@ export function FinanceInvestmentsPanel({
                         <MoneyAmount
                           amount={convertedCurrentValueTotal}
                           currency={totalDisplayCurrency}
-                          codePrefix
                         />
                       ) : (
                         <span className="text-muted">—</span>

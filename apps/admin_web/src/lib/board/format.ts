@@ -1,3 +1,4 @@
+import { formatMoneyAmount } from "../formatDisplay";
 import type {
   ApprovalEditField,
   BoardAction,
@@ -165,9 +166,8 @@ export function uniqueTurnModels(turns: readonly BoardTurn[]): string[] {
 
 export function formatUsageCost(usd: number | undefined | null): string {
   const value = typeof usd === "number" && Number.isFinite(usd) ? usd : 0;
-  if (value === 0) return "USD 0.00";
-  if (value < 0.01) return `USD ${value.toFixed(4)}`;
-  return `USD ${value.toFixed(2)}`;
+  const fractionDigits = value !== 0 && Math.abs(value) < 0.01 ? 4 : 2;
+  return formatMoneyAmount(value, "USD", { fractionDigits });
 }
 
 
