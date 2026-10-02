@@ -109,6 +109,8 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByText("HSBC HK current")).toBeVisible();
     await expect(page.getByText(/128,430/).filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByText("Stale").filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: /Last Statement Amount/i })).toHaveCount(0);
+    await expect(page.getByRole("columnheader", { name: /Billing Cycle Day/i })).toHaveCount(0);
 
     if (testInfo.project.name === "phone") {
       await expect(page.locator("#finance-select")).toBeVisible();
