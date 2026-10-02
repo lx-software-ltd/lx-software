@@ -116,7 +116,12 @@ export function BoardReceivablesView({ overdueCount, errorText }: BoardReceivabl
       <div className="card-body">
         <div className="small text-muted mb-2">
           {data?.configured
-            ? `${data.aging.outstandingHkd ?? 0} HKD outstanding${pastDue ? ` · ${pastDue} past due` : ""}`
+            ? (
+                <>
+                  <MoneyAmount amount={data.aging.outstandingHkd ?? 0} currency="HKD" /> outstanding
+                  {pastDue ? ` · ${pastDue} past due` : ""}
+                </>
+              )
             : "Data API not configured"}
         </div>
         {query.isError ? <div className="alert alert-danger py-2 small">{errorText(query.error)}</div> : null}

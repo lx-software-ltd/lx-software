@@ -58,7 +58,7 @@ function MonthlyNetByCurrencyList({
   const amount = netByCurrency[currency] ?? 0;
   return (
     <ul className="list-unstyled mb-0 small">
-      <li className={amount >= 0 ? "text-success" : "text-danger"}>
+      <li>
         <MoneyAmount amount={amount} currency={currency} />
       </li>
     </ul>
@@ -79,7 +79,7 @@ function SignedBucketList({
   return (
     <ul className="list-unstyled mb-0 small">
       {entries.map(([currency, amount]) => (
-        <li key={currency} className={amount >= 0 ? "text-success" : "text-danger"}>
+        <li key={currency}>
           <MoneyAmount amount={amount} currency={currency} />
         </li>
       ))}

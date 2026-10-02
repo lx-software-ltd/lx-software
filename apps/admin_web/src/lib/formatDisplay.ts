@@ -2,17 +2,72 @@ import { GLOBAL_DEFAULT_CURRENCY } from "./currencies";
 
 /** Shared formatting for admin UI (money + Hong Kong local time display). */
 
-export function formatMoneyAmount(amount: number, currency: string): string {
-  const code =
-    currency.length === 3 ? currency.toUpperCase() : GLOBAL_DEFAULT_CURRENCY;
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: code,
-    }).format(amount);
-  } catch {
-    return `${amount.toFixed(2)} ${currency}`;
-  }
+const CURRENCY_SYMBOLS: Readonly<Record<string, string>> = {
+  AED: "AED",
+  CNY: "CN¥",
+  EUR: "€",
+  GBP: "£",
+  HKD: "HK$",
+  SGD: "S$",
+  USD: "US$",
+};
+
+export type FormatMoneyAmountOptions = {
+  readonly fractionDigits?: number;
+};
+
+export type MoneyAmountLine = {
+  readonly amount: number;
+  readonly currency: string;
+};
+
+export function normalizeCurrencyCode(currency: string): string {
+  return currency.length === 3 ? currency.toUpperCase() : GLOBAL_DEFAULT_CURRENCY;
+}
+
+/** Latin / common symbol for a supported code (`HKD` → `HK$`). Unknown 3-letter codes stay as the code. */
+export function currencySymbol(currency: string): string {
+  const code = normalizeCurrencyCode(currency);
+  return CURRENCY_SYMBOLS[code] ?? code;
+}
+
+/** Grouped number with a leading minus when negative (`3,300.23`, `-3,300.23`). */
+export function formatMoneyNumber(amount: number, fractionDigits = 2): string {
+  if (!Number.isFinite(amount)) return "—";
+  const formatted = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(Math.abs(amount));
+  return amount < 0 ? `-${formatted}` : formatted;
+}
+
+/** `HK$ 3,300.23` — symbol, space, then the signed grouped value. */
+export function formatMoneyAmount(
+  amount: number,
+  currency: string,
+  options: FormatMoneyAmountOptions = {},
+): string {
+  if (!Number.isFinite(amount)) return "—";
+  return `${currencySymbol(currency)} ${formatMoneyNumber(amount, options.fractionDigits ?? 2)}`;
+}
+
+/**
+ * Every non-zero currency in a bucket, with the house default (HKD) first.
+ * An all-zero bucket is empty so callers can show an em dash.
+ */
+export function listNonZeroMoneyLines(
+  buckets: Readonly<Record<string, number>>,
+): readonly MoneyAmountLine[] {
+  const preferred = GLOBAL_DEFAULT_CURRENCY;
+  const entries = Object.entries(buckets).filter(
+    ([, amount]) => Number.isFinite(amount) && amount !== 0,
+  );
+  entries.sort(([a], [b]) => {
+    if (a === preferred) return -1;
+    if (b === preferred) return 1;
+    return a.localeCompare(b);
+  });
+  return entries.map(([currency, amount]) => ({ currency, amount }));
 }
 
 /**
@@ -22,40 +77,18 @@ export function formatMoneyAmount(amount: number, currency: string): string {
 export function formatNonZeroMoneyLines(
   buckets: Readonly<Record<string, number>>,
 ): readonly string[] {
-  const preferred = GLOBAL_DEFAULT_CURRENCY;
-  const entries = Object.entries(buckets).filter(
-    ([, amount]) => Number.isFinite(amount) && amount !== 0,
-  );
-  if (entries.length === 0) return ["—"];
-  entries.sort(([a], [b]) => {
-    if (a === preferred) return -1;
-    if (b === preferred) return 1;
-    return a.localeCompare(b);
-  });
-  return entries.map(([currency, amount]) => formatMoneyAmount(amount, currency));
+  const lines = listNonZeroMoneyLines(buckets);
+  if (lines.length === 0) return ["—"];
+  return lines.map(({ currency, amount }) => formatMoneyAmount(amount, currency));
 }
 
-/** Same digit grouping as {@link formatMoneyAmount}, but omits currency symbol/code (for tables that show currency in another column). */
+/** Same digit grouping as {@link formatMoneyAmount}, but omits the currency symbol. */
 export function formatMoneyAmountWithoutCurrency(
   amount: number,
-  currency: string,
+  _currency?: string,
+  options: FormatMoneyAmountOptions = {},
 ): string {
-  const code =
-    currency.length === 3 ? currency.toUpperCase() : GLOBAL_DEFAULT_CURRENCY;
-  try {
-    const parts = new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: code,
-    }).formatToParts(amount);
-    const s = parts
-      .filter((p) => p.type !== "currency")
-      .map((p) => p.value)
-      .join("")
-      .trim();
-    return s.length > 0 ? s : amount.toFixed(2);
-  } catch {
-    return amount.toFixed(2);
-  }
+  return formatMoneyNumber(amount, options.fractionDigits ?? 2);
 }
 
 /**

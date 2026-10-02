@@ -187,7 +187,6 @@ export function PensionDashboardCard() {
       <MoneyAmount
         amount={convertedPensionTotal.sum}
         currency={totalDisplayCurrency}
-        amountOnly
       />
     );
   }

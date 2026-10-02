@@ -37,7 +37,7 @@ export type AdminFxTotalRowProps = FrankfurterRatesFooterNoteProps & {
 
 function amountNode(total: number | null, currency: CurrencyCode): ReactNode {
   if (total === null) return <span className="text-muted">—</span>;
-  return <MoneyAmount amount={total} currency={currency} codePrefix />;
+  return <MoneyAmount amount={total} currency={currency} />;
 }
 
 export function AdminFxTotalRow({

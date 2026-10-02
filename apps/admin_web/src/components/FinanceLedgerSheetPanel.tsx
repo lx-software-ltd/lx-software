@@ -863,7 +863,7 @@ export function FinanceLedgerSheetPanel({
                 <AdminCell column="desc" className="small">
                   {r.description}
                   <AdminDataTableCellMeta>
-                    {[r.category, flagsLabel, r.currency].filter(Boolean).join(" · ")}
+                    {[r.category, flagsLabel].filter(Boolean).join(" · ")}
                     {" · "}
                     <MoneyAmount
                       amount={ledgerMonthlyAmount(r)}
@@ -888,7 +888,6 @@ export function FinanceLedgerSheetPanel({
                   <MoneyAmount
                     amount={ledgerMonthlyAmount(r)}
                     currency={r.currency}
-                    codePrefix
                   />
                 </AdminCell>
                 <AdminCell column="ops" className="small text-end">

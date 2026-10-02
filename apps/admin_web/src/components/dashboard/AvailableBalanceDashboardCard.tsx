@@ -30,11 +30,7 @@ function monthlyNetForFormulas(converted: ReturnType<typeof useGeneralMonthlyVie
 }
 
 function signedMoney(amount: number, currency: string): ReactNode {
-  return (
-    <span className={amount >= 0 ? "text-success" : "text-danger"}>
-      <MoneyAmount amount={amount} currency={currency} />
-    </span>
-  );
+  return <MoneyAmount amount={amount} currency={currency} />;
 }
 
 export function AvailableBalanceDashboardCard() {

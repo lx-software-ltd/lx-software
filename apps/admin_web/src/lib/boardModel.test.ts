@@ -170,9 +170,9 @@ describe("approvalEditableFields", () => {
 
 describe("formatting helpers", () => {
   it("formats costs", () => {
-    expect(formatUsageCost(0)).toBe("USD 0.00");
-    expect(formatUsageCost(0.0042)).toBe("USD 0.0042");
-    expect(formatUsageCost(1.234)).toBe("USD 1.23");
+    expect(formatUsageCost(0)).toBe("US$ 0.00");
+    expect(formatUsageCost(0.0042)).toBe("US$ 0.0042");
+    expect(formatUsageCost(1.234)).toBe("US$ 1.23");
   });
 
   it("lists unique served models from transcript turns", () => {
