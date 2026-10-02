@@ -7,8 +7,9 @@ unpaid stay on the summary and are not written as book lines.
 Dates use the Asia/Hong_Kong calendar day, stored as that day at 00:00 UTC
 (the same convention as a date typed into the other books). Expenses use
 the vendor invoice issued date (``invoice_date``). Gains use the customer
-invoice ``paid_at`` when the payment is allocated to a settled invoice,
-otherwise the payment ``succeeded_at``.
+invoice document date (``invoice_date``) from the newest allocated invoice
+(``created_at`` then ``id``, the same order as Evolve Sprouts Client
+Invoices), otherwise the payment ``succeeded_at``.
 
 The product database is read through the RDS Data API. This stack does not
 write to it.
@@ -46,12 +47,11 @@ PAYMENTS_SQL = (
     "WHERE status = 'succeeded' AND direction IN ('inbound', 'refund') "
     "ORDER BY succeeded_at, id"
 )
-INVOICE_PAID_SQL = (
-    "SELECT a.payment_id, MAX(i.paid_at) AS invoice_paid_at "
+INVOICE_DATE_SQL = (
+    "SELECT a.payment_id, i.invoice_date, i.created_at, i.id "
     "FROM payment_allocations a "
     "JOIN customer_invoices i ON i.id = a.invoice_id "
-    "WHERE i.paid_at IS NOT NULL "
-    "GROUP BY a.payment_id"
+    "WHERE i.invoice_date IS NOT NULL"
 )
 # Vendor names live on organizations (expenses.vendor_name was dropped in
 # evolvesprouts migration 0016).
@@ -188,20 +188,32 @@ def _expense_amounts(row: dict[str, Any]) -> tuple[float, float, float] | None:
     return net, vat, gross
 
 
-def _invoice_paid_at_by_payment() -> dict[str, Any]:
-    """payment_id → customer invoice paid_at. Empty when the lookup is unavailable."""
+def _invoice_list_sort_key(row: dict[str, Any]) -> tuple[str, str]:
+    """Newest first, matching Evolve Sprouts ``list_newest`` (created_at, id)."""
+    return (str(row.get("created_at") or ""), str(row.get("id") or ""))
+
+
+def _invoice_date_by_payment() -> dict[str, Any]:
+    """payment_id → invoice_date from the newest allocated invoice.
+
+    Empty when the lookup is unavailable. Several allocations pick the same
+    invoice the Client Invoices list would show first.
+    """
     try:
-        rows = _q(INVOICE_PAID_SQL)
+        rows = _q(INVOICE_DATE_SQL)
     except EvolveSproutsFinanceError:
-        _log_event("warning", tag="evolvesprouts_invoice_paid_at_unavailable")
+        _log_event("warning", tag="evolvesprouts_invoice_date_unavailable")
         return {}
-    paid_at: dict[str, Any] = {}
+    chosen: dict[str, dict[str, Any]] = {}
     for row in rows:
         payment_id = str(row.get("payment_id") or "").strip()
-        value = row.get("invoice_paid_at")
-        if payment_id and value:
-            paid_at[payment_id] = value
-    return paid_at
+        invoice_date = row.get("invoice_date")
+        if not payment_id or not invoice_date:
+            continue
+        previous = chosen.get(payment_id)
+        if previous is None or _invoice_list_sort_key(row) > _invoice_list_sort_key(previous):
+            chosen[payment_id] = row
+    return {payment_id: row["invoice_date"] for payment_id, row in chosen.items()}
 
 
 def desired_book_lines() -> tuple[list[dict[str, Any]], int, int, int, int]:
@@ -216,7 +228,7 @@ def desired_book_lines() -> tuple[list[dict[str, Any]], int, int, int, int]:
     submitted = 0
     paid = 0
     lines: list[dict[str, Any]] = []
-    invoice_paid_at = _invoice_paid_at_by_payment()
+    invoice_date = _invoice_date_by_payment()
     for row in _q(PAYMENTS_SQL):
         amount = _positive(row.get("amount"))
         row_id = str(row.get("id") or "").strip()
@@ -224,7 +236,7 @@ def desired_book_lines() -> tuple[list[dict[str, Any]], int, int, int, int]:
         if direction == "refund":
             day = _hkt_day(row.get("succeeded_at"))
         else:
-            day = _hkt_day(invoice_paid_at.get(row_id) or row.get("succeeded_at"))
+            day = _hkt_day(invoice_date.get(row_id) or row.get("succeeded_at"))
         if not row_id or amount is None:
             continue
         if not _currency_present(row.get("currency")) or day is None:
