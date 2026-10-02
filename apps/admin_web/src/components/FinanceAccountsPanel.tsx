@@ -56,7 +56,7 @@ function accountTypeIsCreditCard(t: FinanceAccountType): boolean {
   return t === "Credit Card";
 }
 
-type AccountsSortKey = "desc" | "atype" | "day" | "amt" | "stmt" | "ccy" | "lastUpdated";
+type AccountsSortKey = "desc" | "atype" | "amt" | "ccy" | "lastUpdated";
 
 type AccountFormState = {
   description: string;
@@ -151,23 +151,12 @@ function compareAccounts(
           return left.description.localeCompare(right.description, undefined, { sensitivity: "base" });
         case "atype":
           return left.accountType.localeCompare(right.accountType, undefined, { sensitivity: "base" });
-        case "day":
-          return left.billingCycleDay === right.billingCycleDay
-            ? 0
-            : left.billingCycleDay < right.billingCycleDay
-              ? -1
-              : 1;
         case "amt":
           return left.recordedValue === right.recordedValue
             ? 0
             : left.recordedValue < right.recordedValue
               ? -1
               : 1;
-        case "stmt": {
-          const sa = accountTypeIsCreditCard(left.accountType) ? (left.lastStatementAmount ?? 0) : 0;
-          const sb = accountTypeIsCreditCard(right.accountType) ? (right.lastStatementAmount ?? 0) : 0;
-          return sa === sb ? 0 : sa < sb ? -1 : 1;
-        }
         case "ccy":
           return left.currency.localeCompare(right.currency, undefined, { sensitivity: "base" });
         case "lastUpdated": {
@@ -255,36 +244,6 @@ export function FinanceAccountsPanel(props: {
         className: "small text-end",
         headerClassName: "text-end",
         thAriaSort: ariaSort("amt"),
-      },
-      {
-        key: "stmt",
-        header: (
-          <TableSortHeaderButton
-            label="Last Statement Amount"
-            isActive={sortKey === "stmt"}
-            direction={directionFor("stmt")}
-            onClick={() => onSort("stmt")}
-          />
-        ),
-        className: "small text-end",
-        headerClassName: "text-end",
-        priority: "tertiary",
-        thAriaSort: ariaSort("stmt"),
-      },
-      {
-        key: "day",
-        header: (
-          <TableSortHeaderButton
-            label="Billing Cycle Day"
-            isActive={sortKey === "day"}
-            direction={directionFor("day")}
-            onClick={() => onSort("day")}
-          />
-        ),
-        className: "small text-end",
-        headerClassName: "text-end",
-        priority: "tertiary",
-        thAriaSort: ariaSort("day"),
       },
       {
         key: "lastUpdated",
@@ -558,8 +517,6 @@ export function FinanceAccountsPanel(props: {
               <AdminCell column="desc">New account</AdminCell>
               <AdminCell column="atype" />
               <AdminCell column="amt" />
-              <AdminCell column="stmt" />
-              <AdminCell column="day" />
               <AdminCell column="lastUpdated" />
               <AdminCell column="ops" />
             </AdminExpandableRow>
@@ -586,20 +543,6 @@ export function FinanceAccountsPanel(props: {
                 <AdminCell column="atype" className="small">{r.accountType}</AdminCell>
                 <AdminCell column="amt" className="small text-end">
                   <MoneyAmount amount={r.recordedValue} currency={r.currency} codePrefix />
-                </AdminCell>
-                <AdminCell column="stmt" className="small text-end">
-                  {accountTypeIsCreditCard(r.accountType) ? (
-                    <MoneyAmount
-                      amount={r.lastStatementAmount ?? 0}
-                      currency={r.currency}
-                      codePrefix
-                    />
-                  ) : (
-                    "—"
-                  )}
-                </AdminCell>
-                <AdminCell column="day" className="small text-end">
-                  {accountTypeUsesBillingCycleDay(r.accountType) ? r.billingCycleDay : "—"}
                 </AdminCell>
                 <AdminCell column="lastUpdated" className="small">
                   {accountLastUpdatedDisplay(r.lastUpdated)}
@@ -646,8 +589,6 @@ export function FinanceAccountsPanel(props: {
                 { kind: "label" },
                 { kind: "empty", column: "atype" },
                 { kind: "amount", column: "amt", total: convertedTotal, picker: true },
-                { kind: "empty", column: "stmt" },
-                { kind: "empty", column: "day" },
                 { kind: "empty", column: "lastUpdated" },
                 { kind: "empty", column: "ops" },
               ]}
