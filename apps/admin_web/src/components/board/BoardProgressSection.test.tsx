@@ -85,5 +85,12 @@ describe("BoardProgressSection", () => {
     expect(screen.getByText("Price")).toBeInTheDocument();
     expect(screen.getByText("Hours")).toBeInTheDocument();
     expect(screen.getByText("Geo")).toBeInTheDocument();
+    const districtHeading = screen.getByRole("heading", { name: "Listings by district" });
+    const onboardingHeading = screen.getByRole("heading", { name: "Stalled vendor onboarding" });
+    expect(districtHeading.closest(".col-12")).not.toHaveClass("col-xl-6");
+    expect(onboardingHeading.closest(".col-12")).not.toHaveClass("col-xl-6");
+    expect(
+      districtHeading.compareDocumentPosition(onboardingHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 });
