@@ -225,10 +225,6 @@ def _normalize_finance_payload(body: dict[str, Any]) -> dict[str, Any]:
             "grossAmount": float(raw["grossAmount"]),
             "currency": c,
         }
-        sort_utc = raw.get("sortUtc")
-        if isinstance(sort_utc, str) and _valid_iso_instant(sort_utc):
-            line_out["sortUtc"] = sort_utc.strip()
-
         merged_keys = _validated_line_source_asset_keys(raw, i)
         if len(merged_keys) > MAX_SOURCE_ASSET_KEYS_PER_LINE:
             raise ValueError(
@@ -2246,7 +2242,9 @@ def _mirrored_line_same(prev: dict[str, Any], line: dict[str, Any]) -> bool:
         return (
             str(prev.get("description") or "") == str(line.get("description") or "")
             and str(prev.get("dateUtc") or "") == str(line.get("dateUtc") or "")
-            and str(prev.get("sortUtc") or "") == str(line.get("sortUtc") or "")
+            # A line that still carries the retired sortUtc field is rewritten
+            # once so the stored book drops it.
+            and "sortUtc" not in prev
             and float(prev.get("netAmount") or 0) == float(line.get("netAmount") or 0)
             and float(prev.get("vat") or 0) == float(line.get("vat") or 0)
             and float(prev.get("grossAmount") or 0) == float(line.get("grossAmount") or 0)
