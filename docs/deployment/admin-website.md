@@ -596,7 +596,10 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
    `EVOLVESPROUTS_DB_SECRET_ARN`, and `EVOLVESPROUTS_DB_NAME=evolvesprouts`.
    IAM is `rds-data:ExecuteStatement` on the cluster,
    `secretsmanager:GetSecretValue` on the resolved secret, and
-   `kms:Decrypt` on that secret's key (`AdminEvolvesproutsDataApiPolicy`).
+   `kms:Decrypt` via Secrets Manager (`AdminEvolvesproutsDataApiPolicy`).
+   Decrypt stays on `*` because `DescribeSecret` returns an alias for the
+   AWS-managed key. A customer-managed key still needs this role in its
+   key policy.
 3. Scheduler `lxsoftware-admin-evolvesprouts-data-api-ensure` (15 min)
    re-enables the HTTP endpoint only (`applySql` false). It exists only
    when the cluster and secret are set. The product stack should still

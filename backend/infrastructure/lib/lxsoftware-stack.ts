@@ -1876,7 +1876,7 @@ export class LxsoftwareStack extends cdk.Stack {
         }),
         new iam.PolicyStatement({
           actions: ["kms:Decrypt", "kms:DescribeKey"],
-          resources: [evolvesproutsDataApi.resolvedKmsKeyId],
+          resources: ["*"],
           conditions: {
             StringEquals: {
               "kms:ViaService": `secretsmanager.${this.region}.amazonaws.com`,

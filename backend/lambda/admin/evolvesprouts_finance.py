@@ -412,7 +412,11 @@ def queue_sync(table: Any) -> dict[str, Any]:
     invoked = board_async.try_invoke_event({"internal": MIRROR_INTERNAL})
     if not invoked:
         _log_event("warning", tag="evolvesprouts_finance_enqueue_deferred")
-    return {"ok": True, "queued": True, "invoked": invoked, "requestedAt": summary["pendingSince"], **summary}
+        summary["pendingSince"] = None
+        summary["syncError"] = "Could not start the sync. Try again."
+        _save_summary(table, summary)
+        return {"ok": False, "queued": False, "invoked": False, **summary}
+    return {"ok": True, "queued": True, "invoked": True, "requestedAt": summary["pendingSince"], **summary}
 
 
 def handle_mirror_trigger(_event: dict[str, Any]) -> dict[str, Any]:

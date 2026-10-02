@@ -74,7 +74,7 @@ export function MirroredBookSummaryCard({
         ) : null}
         {waitTimedOut ? (
           <p className="small text-muted mb-0 mt-3">
-            Sync is still running. Refresh this page in a minute.
+            The last sync did not finish. Sync now to try again.
           </p>
         ) : null}
         {syncError ? (

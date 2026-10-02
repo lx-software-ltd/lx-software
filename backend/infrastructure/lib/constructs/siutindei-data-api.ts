@@ -58,8 +58,6 @@ export type SiutindeiDataApiSetupProps = AuroraDataApiSetupProps;
 export class AuroraDataApiSetup extends Construct {
   /** Secrets Manager ARN Data API / AdminApiFn should use. */
   public readonly resolvedSecretArn: string;
-  /** KMS key on that secret (ARN or alias), for Decrypt via Secrets Manager. */
-  public readonly resolvedKmsKeyId: string;
 
   constructor(scope: Construct, id: string, props: AuroraDataApiSetupProps) {
     super(scope, id);
@@ -132,7 +130,6 @@ export class AuroraDataApiSetup extends Construct {
     });
 
     this.resolvedSecretArn = describeSecret.getResponseField("ARN");
-    this.resolvedKmsKeyId = describeSecret.getResponseField("KmsKeyId");
 
     const enableHttp = new cr.AwsCustomResource(this, "EnableHttpEndpoint", {
       policy: cr.AwsCustomResourcePolicy.fromStatements([
@@ -208,10 +205,14 @@ export class AuroraDataApiSetup extends Construct {
           resources: [this.resolvedSecretArn, ...secretNameArns],
         })
       );
+      // DescribeSecret.KmsKeyId is a key ARN for a customer key and an alias
+      // for aws/secretsmanager. kms:Decrypt does not accept an alias, so the
+      // grant stays on * through Secrets Manager. A tightened CMK policy must
+      // still allow this role.
       endpointFn.addToRolePolicy(
         new iam.PolicyStatement({
           actions: ["kms:Decrypt", "kms:DescribeKey"],
-          resources: [this.resolvedKmsKeyId],
+          resources: ["*"],
           conditions: {
             StringEquals: {
               "kms:ViaService": `secretsmanager.${stack.region}.amazonaws.com`,

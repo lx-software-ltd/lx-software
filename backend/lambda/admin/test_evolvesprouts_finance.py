@@ -287,6 +287,16 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         stored = es.load_summary(self.table)
         self.assertEqual(stored["pendingSince"], result["pendingSince"])
 
+    def test_queue_sync_clears_pending_when_invoke_fails(self) -> None:
+        with patch("board_async.try_invoke_event", return_value=False):
+            result = es.queue_sync(self.table)
+        self.assertFalse(result["queued"])
+        self.assertIsNone(result["pendingSince"])
+        self.assertIn("Could not start", result["syncError"])
+        stored = es.load_summary(self.table)
+        self.assertIsNone(stored["pendingSince"])
+        self.assertIn("Could not start", stored["syncError"])
+
 
 class TestEvolveSproutsRoutes(unittest.TestCase):
     def setUp(self) -> None:
@@ -443,10 +453,8 @@ class TestDataApiPages(unittest.TestCase):
 
 
 class TestMirroredLineLimits(unittest.TestCase):
-    def test_item_too_large_is_a_mirrored_book_error(self) -> None:
+    def _table(self) -> MagicMock:
         table = MagicMock()
-        from botocore.exceptions import ClientError
-
         table.get_item.return_value = {
             "Item": {
                 "pk": "FINANCE#book#evolveSprouts",
@@ -456,28 +464,68 @@ class TestMirroredLineLimits(unittest.TestCase):
                 "lines": [],
             }
         }
-        table.put_item.side_effect = ClientError("too big", {"Error": {"Code": "ValidationException", "Message": "Item size has exceeded the maximum allowed size of 400 KB"}})
+        return table
+
+    @staticmethod
+    def _line() -> dict:
+        return {
+            "id": "es-pay-1",
+            "dateUtc": "2026-01-01T00:00:00.000Z",
+            "type": "income",
+            "description": "x",
+            "netAmount": 1,
+            "vat": 0,
+            "grossAmount": 1,
+            "currency": "HKD",
+            "source": "evolvesprouts",
+        }
+
+    def test_item_too_large_is_a_mirrored_book_error(self) -> None:
+        # Subclass the ClientError finance_store already imported. The suite
+        # stubs botocore later, so a fresh import is a different class and
+        # the except clause never sees it.
+        import finance_store
+
+        class SizeError(finance_store.ClientError):
+            def __init__(self) -> None:
+                Exception.__init__(self, "too big")
+                self.response = {
+                    "Error": {
+                        "Code": "ValidationException",
+                        "Message": "Item size has exceeded the maximum allowed size of 400 KB",
+                    }
+                }
+
+        table = self._table()
+        table.put_item.side_effect = SizeError()
         with self.assertRaises(MirroredBookError) as ctx:
             upsert_mirrored_lines(
                 table,
                 "evolveSprouts",
-                [
-                    {
-                        "id": "es-pay-1",
-                        "dateUtc": "2026-01-01T00:00:00.000Z",
-                        "type": "income",
-                        "description": "x",
-                        "netAmount": 1,
-                        "vat": 0,
-                        "grossAmount": 1,
-                        "currency": "HKD",
-                        "source": "evolvesprouts",
-                    }
-                ],
+                [self._line()],
                 id_prefixes=("es-pay-",),
                 source="evolvesprouts",
             )
         self.assertIn("too large", str(ctx.exception))
+
+    def test_other_client_errors_propagate(self) -> None:
+        import finance_store
+
+        class Denied(finance_store.ClientError):
+            def __init__(self) -> None:
+                Exception.__init__(self, "no")
+                self.response = {"Error": {"Code": "AccessDeniedException", "Message": "no"}}
+
+        table = self._table()
+        table.put_item.side_effect = Denied()
+        with self.assertRaises(finance_store.ClientError):
+            upsert_mirrored_lines(
+                table,
+                "evolveSprouts",
+                [self._line()],
+                id_prefixes=("es-pay-",),
+                source="evolvesprouts",
+            )
 
 
 if __name__ == "__main__":

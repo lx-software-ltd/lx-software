@@ -2231,8 +2231,10 @@ def _put_finance_owner_payload(table: Any, book: str, payload: dict[str, Any]) -
     try:
         table.put_item(Item=item)
     except ClientError as exc:
-        code = str(exc.response.get("Error", {}).get("Code") or "")
-        message = str(exc.response.get("Error", {}).get("Message") or exc)
+        response = getattr(exc, "response", None)
+        error = response.get("Error", {}) if isinstance(response, dict) else {}
+        code = str(error.get("Code") or "")
+        message = str(error.get("Message") or exc)
         if code == "ValidationException" or "400 KB" in message or "item size" in message.lower():
             raise MirroredBookError(
                 f"The {book} statement book is too large to store "
