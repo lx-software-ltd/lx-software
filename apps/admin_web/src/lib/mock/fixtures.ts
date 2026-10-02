@@ -180,11 +180,15 @@ export const evolveSproutsBookFixture: HouseFinanceData = {
 export const evolveSproutsSummaryFixture: MirroredBookSummary = {
   configured: true,
   syncedAt: isoDaysAgo(0),
+  lastAttemptAt: isoDaysAgo(0),
+  pendingSince: null,
+  syncError: null,
   outstandingByCurrency: { HKD: 1280, USD: 45 },
   openInvoices: 3,
   submittedExpenses: 2,
   paidExpenses: 4,
   skippedUnsupportedCurrency: 0,
+  skippedIncomplete: 0,
 };
 
 export const assetsFixture: readonly AdminAssetMeta[] = [

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from datetime import date, datetime, timezone
@@ -2204,11 +2205,40 @@ def _mirrored_line_same(prev: dict[str, Any], line: dict[str, Any]) -> bool:
         return (
             str(prev.get("description") or "") == str(line.get("description") or "")
             and str(prev.get("dateUtc") or "") == str(line.get("dateUtc") or "")
+            and float(prev.get("netAmount") or 0) == float(line.get("netAmount") or 0)
+            and float(prev.get("vat") or 0) == float(line.get("vat") or 0)
             and float(prev.get("grossAmount") or 0) == float(line.get("grossAmount") or 0)
+            and str(prev.get("currency") or "") == str(line.get("currency") or "")
             and str(prev.get("type") or "") == str(line.get("type") or "")
         )
     except (TypeError, ValueError):
         return False
+
+
+# DynamoDB items are capped at 400 KB; type tags make the on-wire size larger
+# than the JSON we send, so fail before the write when we are already close.
+_MIRROR_ITEM_SOFT_LIMIT = 350_000
+
+
+def _put_finance_owner_payload(table: Any, book: str, payload: dict[str, Any]) -> None:
+    item = {**_finance_owner_ddb_key(book), **_to_ddb_nested(payload)}
+    encoded = json.dumps(item, default=str).encode("utf-8")
+    if len(encoded) > _MIRROR_ITEM_SOFT_LIMIT:
+        raise MirroredBookError(
+            f"The {book} statement book is too large to store "
+            f"({len(payload.get('lines') or [])} lines). Split the history or raise the store."
+        )
+    try:
+        table.put_item(Item=item)
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code") or "")
+        message = str(exc.response.get("Error", {}).get("Message") or exc)
+        if code == "ValidationException" or "400 KB" in message or "item size" in message.lower():
+            raise MirroredBookError(
+                f"The {book} statement book is too large to store "
+                f"({len(payload.get('lines') or [])} lines)."
+            ) from exc
+        raise
 
 
 def upsert_mirrored_lines(
@@ -2253,19 +2283,22 @@ def upsert_mirrored_lines(
             written += 1
     if not written and not removed:
         return 0, 0
-    payload = _normalize_finance_payload(
-        {
-            "defaultCurrency": data.get("defaultCurrency") or DEFAULT_FINANCE_CURRENCY,
-            "float": data.get("float") or {"amount": 0, "currency": DEFAULT_FINANCE_CURRENCY},
-            "lines": kept,
-        }
-    )
+    try:
+        payload = _normalize_finance_payload(
+            {
+                "defaultCurrency": data.get("defaultCurrency") or DEFAULT_FINANCE_CURRENCY,
+                "float": data.get("float") or {"amount": 0, "currency": DEFAULT_FINANCE_CURRENCY},
+                "lines": kept,
+            }
+        )
+    except ValueError as exc:
+        raise MirroredBookError(str(exc)) from exc
     # Normalisation drops unknown keys; re-tag mirrored lines so a later read
     # can tell them from manual entries.
     for line in payload["lines"]:
         if str(line.get("id") or "").startswith(id_prefixes):
             line["source"] = source
-    table.put_item(Item={**_finance_owner_ddb_key(book), **_to_ddb_nested(payload)})
+    _put_finance_owner_payload(table, book, payload)
     return written, removed
 
 

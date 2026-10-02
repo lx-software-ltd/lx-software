@@ -30,8 +30,8 @@ import type { Construct } from "constructs";
 import { AuthConstruct } from "./constructs/auth";
 import { createPythonLambda } from "./constructs/python-lambda";
 import {
+  AuroraDataApiSetup,
   SIUTINDEI_DB_SECRET_NAME_DEFAULT,
-  SiutindeiDataApiSetup,
 } from "./constructs/siutindei-data-api";
 import { ADMIN_WEB_HOSTNAME, PARSE_TIMEOUTS } from "./shared-contracts";
 
@@ -443,7 +443,7 @@ export class LxsoftwareStack extends cdk.Stack {
         type: "String",
         default: "",
         description:
-          "Aurora cluster ARN for the Evolve Sprouts database (RDS Data API, read-only). Leave blank to keep the Evolve Sprouts statement book manual-sync idle.",
+          "Aurora cluster ARN for the Evolve Sprouts database (RDS Data API, read-only). Leave blank to keep the Evolve Sprouts statement book idle. Also set a read-only secret (ARN or name); the cluster master secret must not be used.",
       }
     );
     const evolvesproutsDbSecretArn = new cdk.CfnParameter(
@@ -453,7 +453,7 @@ export class LxsoftwareStack extends cdk.Stack {
         type: "String",
         default: "",
         description:
-          "Secrets Manager ARN of a read-only Evolve Sprouts DB user. Leave blank to resolve EvolvesproutsDbSecretName.",
+          "Secrets Manager ARN of a read-only Evolve Sprouts DB user. Leave blank to resolve EvolvesproutsDbSecretName. Do not point this at the cluster master secret.",
       }
     );
     const evolvesproutsDbSecretName = new cdk.CfnParameter(
@@ -461,9 +461,9 @@ export class LxsoftwareStack extends cdk.Stack {
       "EvolvesproutsDbSecretName",
       {
         type: "String",
-        default: "evolvesprouts-database-credentials",
+        default: "",
         description:
-          "Secrets Manager name of the Evolve Sprouts DB credentials when EvolvesproutsDbSecretArn is blank. Do not set this to an empty string.",
+          "Secrets Manager name of a read-only Evolve Sprouts DB user when EvolvesproutsDbSecretArn is blank. Leave blank until that user exists. Do not use the cluster master name (evolvesprouts-database-credentials).",
       }
     );
     const siutindeiAdminApiBaseUrl = new cdk.CfnParameter(
@@ -1096,7 +1096,7 @@ export class LxsoftwareStack extends cdk.Stack {
         cdk.Fn.conditionEquals(siutindeiClusterArn.valueAsString, "")
       ),
     });
-    const siutindeiDataApi = new SiutindeiDataApiSetup(this, "SiutindeiDataApi", {
+    const siutindeiDataApi = new AuroraDataApiSetup(this, "SiutindeiDataApi", {
       clusterArn: siutindeiClusterArn.valueAsString,
       secretArn: siutindeiDbSecretArn.valueAsString,
       secretName: siutindeiDbSecretName.valueAsString,
@@ -1106,11 +1106,15 @@ export class LxsoftwareStack extends cdk.Stack {
       deadLetterQueue: this.lambdaDeadLetterQueue,
     });
     const hasEvolvesproutsDataApi = new cdk.CfnCondition(this, "HasEvolvesproutsDataApi", {
-      expression: cdk.Fn.conditionNot(
-        cdk.Fn.conditionEquals(evolvesproutsClusterArn.valueAsString, "")
+      expression: cdk.Fn.conditionAnd(
+        cdk.Fn.conditionNot(cdk.Fn.conditionEquals(evolvesproutsClusterArn.valueAsString, "")),
+        cdk.Fn.conditionOr(
+          cdk.Fn.conditionNot(cdk.Fn.conditionEquals(evolvesproutsDbSecretArn.valueAsString, "")),
+          cdk.Fn.conditionNot(cdk.Fn.conditionEquals(evolvesproutsDbSecretName.valueAsString, ""))
+        )
       ),
     });
-    const evolvesproutsDataApi = new SiutindeiDataApiSetup(this, "EvolvesproutsDataApi", {
+    const evolvesproutsDataApi = new AuroraDataApiSetup(this, "EvolvesproutsDataApi", {
       clusterArn: evolvesproutsClusterArn.valueAsString,
       secretArn: evolvesproutsDbSecretArn.valueAsString,
       secretName: evolvesproutsDbSecretName.valueAsString,
@@ -1284,22 +1288,28 @@ export class LxsoftwareStack extends cdk.Stack {
       { internal: "board_receivables_mirror" },
       1
     );
-    new scheduler.Schedule(this, "EvolvesproutsFinanceMirrorSchedule", {
-      scheduleName: "lxsoftware-admin-evolvesprouts-finance-mirror",
-      description:
-        "Nightly mirror of Evolve Sprouts payments, refunds and submitted expenses into the Evolve Sprouts statement book (HKT 00:45).",
-      schedule: scheduler.ScheduleExpression.cron({
-        minute: "45",
-        hour: "0",
-        timeZone: cdk.TimeZone.ASIA_HONG_KONG,
-      }),
-      target: new schedulerTargets.LambdaInvoke(adminFn, {
-        input: scheduler.ScheduleTargetInput.fromObject({
-          internal: "evolvesprouts_finance_mirror",
+    const evolvesproutsFinanceMirror = new scheduler.Schedule(
+      this,
+      "EvolvesproutsFinanceMirrorSchedule",
+      {
+        scheduleName: "lxsoftware-admin-evolvesprouts-finance-mirror",
+        description:
+          "Nightly mirror of Evolve Sprouts payments, refunds and submitted expenses into the Evolve Sprouts statement book (HKT 00:45).",
+        schedule: scheduler.ScheduleExpression.cron({
+          minute: "45",
+          hour: "0",
+          timeZone: cdk.TimeZone.ASIA_HONG_KONG,
         }),
-        retryAttempts: 1,
-      }),
-    });
+        target: new schedulerTargets.LambdaInvoke(adminFn, {
+          input: scheduler.ScheduleTargetInput.fromObject({
+            internal: "evolvesprouts_finance_mirror",
+          }),
+          retryAttempts: 1,
+        }),
+      }
+    );
+    (evolvesproutsFinanceMirror.node.defaultChild as cdk.CfnResource).cfnOptions.condition =
+      hasEvolvesproutsDataApi;
     siutindeiBoardSchedule(
       "SiutindeiBoardDunningSchedule",
       "lxsoftware-admin-siutindei-board-dunning",
@@ -1866,7 +1876,7 @@ export class LxsoftwareStack extends cdk.Stack {
         }),
         new iam.PolicyStatement({
           actions: ["kms:Decrypt", "kms:DescribeKey"],
-          resources: ["*"],
+          resources: [evolvesproutsDataApi.resolvedKmsKeyId],
           conditions: {
             StringEquals: {
               "kms:ViaService": `secretsmanager.${this.region}.amazonaws.com`,

@@ -1003,14 +1003,13 @@ describe("Board SES configuration-set IAM and public CORS", () => {
 });
 
 describe("Evolve Sprouts finance mirror", () => {
-  test("HasEvolvesproutsDataApi is the cluster ARN only", () => {
+  test("HasEvolvesproutsDataApi requires the cluster and a read-only secret", () => {
     const cond = template.toJSON().Conditions.HasEvolvesproutsDataApi;
     const serialized = JSON.stringify(cond);
     expect(serialized).toContain("EvolvesproutsClusterArn");
-    expect(serialized).not.toContain("EvolvesproutsDbSecretArn");
-    expect(template.toJSON().Parameters.EvolvesproutsDbSecretName.Default).toBe(
-      "evolvesprouts-database-credentials"
-    );
+    expect(serialized).toContain("EvolvesproutsDbSecretArn");
+    expect(serialized).toContain("EvolvesproutsDbSecretName");
+    expect(template.toJSON().Parameters.EvolvesproutsDbSecretName.Default).toBe("");
   });
 
   test("enables the HTTP endpoint without applying SQL", () => {
@@ -1054,13 +1053,13 @@ describe("Evolve Sprouts finance mirror", () => {
     });
   });
 
-  test("nightly mirror is unconditional and the endpoint refresh does not apply SQL", () => {
+  test("nightly mirror and the endpoint refresh are conditioned; refresh does not apply SQL", () => {
     const schedules = Object.values(resourcesOfType("AWS::Scheduler::Schedule"));
     const mirror = schedules.find(
       (s) => s.Properties?.Name === "lxsoftware-admin-evolvesprouts-finance-mirror"
     );
     expect(mirror).toBeDefined();
-    expect(mirror?.Condition).toBeUndefined();
+    expect(mirror?.Condition).toBe("HasEvolvesproutsDataApi");
     expect(JSON.stringify(mirror?.Properties?.ScheduleExpression ?? "")).toContain("45");
     expect(JSON.stringify(mirror?.Properties?.Target?.Input ?? "")).toContain(
       "evolvesprouts_finance_mirror"
@@ -1072,5 +1071,27 @@ describe("Evolve Sprouts finance mirror", () => {
     const input = JSON.stringify(ensure?.Properties?.Target?.Input ?? "");
     expect(input).toContain("data_api_ensure");
     expect(input).toContain("false");
+  });
+
+  test("Data API scheduler roles are inside the conditioned construct", () => {
+    const roles = Object.entries(resourcesOfType("AWS::IAM::Role")).filter(([id]) =>
+      id.includes("EnsureScheduleRole")
+    );
+    expect(roles.length).toBeGreaterThanOrEqual(2);
+    for (const [id, role] of roles) {
+      if (id.includes("EvolvesproutsDataApi")) {
+        expect(role.Condition).toBe("HasEvolvesproutsDataApi");
+      }
+      if (id.includes("SiutindeiDataApi")) {
+        expect(role.Condition).toBe("HasSiutindeiDataApi");
+      }
+    }
+    const dangling = Object.entries(resources).filter(([, r]) => {
+      if (r.Type !== "AWS::IAM::Policy" || r.Condition) {
+        return false;
+      }
+      return JSON.stringify(r.Properties ?? {}).includes("EvolvesproutsDataApiHttpEndpointFn");
+    });
+    expect(dangling).toEqual([]);
   });
 });

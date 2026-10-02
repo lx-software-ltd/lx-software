@@ -1001,7 +1001,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if mirror is not None and method == "POST" and path == f"/{slug}/sync":
             table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
             try:
-                result = mirror.sync(table)
+                result = mirror.queue_sync(table)
             except MirroredBookError as exc:
                 return _json_response(502, {"message": str(exc)})
             return _json_response(200, result)

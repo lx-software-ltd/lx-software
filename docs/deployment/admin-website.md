@@ -582,27 +582,30 @@ The Evolve Sprouts page is the statement book `evolveSprouts`. It is
 read-only: expenses and gains are mirrored, and `PUT` or statement import
 on that book returns 403. LX Software and Siu Tin Dei stay editable.
 
-1. On the Evolve Sprouts database, enable the RDS HTTP Data API
-   (`enableDataApi: true` on that product stack) and create a **read-only**
-   database user. This stack never writes that database and does not apply
-   SQL there.
-2. Set `lxsoftware:EvolvesproutsClusterArn` to the cluster ARN. Leave
-   `EvolvesproutsDbSecretArn` blank to resolve
-   `EvolvesproutsDbSecretName` (default
-   `evolvesprouts-database-credentials`). Do not set that name to an empty
-   string. Redeploy. `HasEvolvesproutsDataApi` is the cluster ARN only.
+1. On the Evolve Sprouts database, set `enableDataApi: true` on that
+   product stack and create a **read-only** database user. This stack
+   never writes that database and does not apply SQL there. The secret's
+   KMS key policy must allow `AdminApiFn` to decrypt via Secrets Manager
+   (the default account-root key policy is enough).
+2. Set `lxsoftware:EvolvesproutsClusterArn` and either
+   `EvolvesproutsDbSecretArn` or `EvolvesproutsDbSecretName` to the
+   **read-only** user. Both secret fields default to blank — do not use
+   the cluster master name `evolvesprouts-database-credentials`.
+   `HasEvolvesproutsDataApi` is the cluster ARN **and** a secret. Redeploy.
    `AdminApiFn` receives `EVOLVESPROUTS_CLUSTER_ARN`,
    `EVOLVESPROUTS_DB_SECRET_ARN`, and `EVOLVESPROUTS_DB_NAME=evolvesprouts`.
-   IAM is `rds-data:ExecuteStatement` on the cluster and
-   `secretsmanager:GetSecretValue` on the resolved secret
-   (`AdminEvolvesproutsDataApiPolicy`).
+   IAM is `rds-data:ExecuteStatement` on the cluster,
+   `secretsmanager:GetSecretValue` on the resolved secret, and
+   `kms:Decrypt` on that secret's key (`AdminEvolvesproutsDataApiPolicy`).
 3. Scheduler `lxsoftware-admin-evolvesprouts-data-api-ensure` (15 min)
-   re-enables the HTTP endpoint only (`applySql` false). The product stack
-   should still set `enableDataApi: true`.
+   re-enables the HTTP endpoint only (`applySql` false). It exists only
+   when the cluster and secret are set. The product stack should still
+   set `enableDataApi: true`.
 4. Scheduler `lxsoftware-admin-evolvesprouts-finance-mirror` runs at 00:45
-   HKT. **Sync now** on the Evolve Sprouts dashboard is the same mirror
-   (`POST /evolve-sprouts/sync`, signed-in admin). The page load reads the
-   last snapshot (`GET /evolve-sprouts/summary`) and does not query Aurora.
+   HKT when the Data API is configured. **Sync now** queues the same
+   mirror (`POST /evolve-sprouts/sync` returns `{queued}` and the page
+   polls `GET /evolve-sprouts/summary`). The page load reads the last
+   snapshot and does not query Aurora.
 5. Cash lines replace the previous mirror and leave any other lines alone:
    succeeded inbound `customer_payments` become income `es-pay-*`, succeeded
    refunds become expenditure `es-ref-*`, and expenses with status
@@ -610,8 +613,14 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
    amended expenses are omitted. Issued invoices with `balance_due > 0`
    stay on the summary (outstanding by currency, open-invoice count,
    submitted and paid expense counts). Each row keeps its own currency.
-   Codes outside GBP, HKD, USD, EUR, CNY, SGD, AED are skipped and counted.
-   Payment and refund descriptions use the row id only.
+   Expense net is `subtotal`, VAT is `tax`, and gross is `total`. Paid
+   expenses are dated by `paid_at`; submitted expenses by `invoice_date`.
+   Calendar days are Asia/Hong_Kong, stored as that day at 00:00 UTC.
+   Codes outside GBP, HKD, USD, EUR, CNY, SGD, AED are skipped and
+   counted separately from rows missing an amount, currency, or date.
+   Payment and refund descriptions use the row id only. A book that
+   exceeds the DynamoDB item limit (or 5,000 lines) fails the sync with
+   a clear error instead of a 500.
 
 ### Catalog import
 

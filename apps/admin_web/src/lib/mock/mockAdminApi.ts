@@ -305,24 +305,33 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
       state.mirrorSummaries[mirrored.key] ?? {
         configured: false,
         syncedAt: null,
+        lastAttemptAt: null,
+        pendingSince: null,
+        syncError: null,
         outstandingByCurrency: {},
         openInvoices: 0,
         submittedExpenses: 0,
         paidExpenses: 0,
         skippedUnsupportedCurrency: 0,
+        skippedIncomplete: 0,
       },
     );
   }
   if (mirrored && mirrored.rest === "sync" && method === "POST") {
     const current = state.mirrorSummaries[mirrored.key];
+    const now = new Date().toISOString();
     const next: MirroredBookSummary = {
       configured: current?.configured ?? true,
-      syncedAt: new Date().toISOString(),
+      syncedAt: now,
+      lastAttemptAt: now,
+      pendingSince: null,
+      syncError: null,
       outstandingByCurrency: { ...(current?.outstandingByCurrency ?? {}) },
       openInvoices: current?.openInvoices ?? 0,
       submittedExpenses: current?.submittedExpenses ?? 0,
       paidExpenses: current?.paidExpenses ?? 0,
       skippedUnsupportedCurrency: current?.skippedUnsupportedCurrency ?? 0,
+      skippedIncomplete: current?.skippedIncomplete ?? 0,
     };
     state.mirrorSummaries[mirrored.key] = next;
     return json(next);

@@ -6,13 +6,13 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import * as schedulerTargets from "aws-cdk-lib/aws-scheduler-targets";
 import * as cr from "aws-cdk-lib/custom-resources";
-import { Construct } from "constructs";
+import { Construct, type IConstruct } from "constructs";
 import { createPythonLambda } from "./python-lambda";
 
 export const SIUTINDEI_DB_SECRET_NAME_DEFAULT =
   "lxsoftware-siutindei-database-credentials";
 
-export interface SiutindeiDataApiSetupProps {
+export interface AuroraDataApiSetupProps {
   readonly clusterArn: string;
   /** Complete secret ARN when known; otherwise leave blank and pass secretName. */
   readonly secretArn: string;
@@ -33,22 +33,35 @@ export interface SiutindeiDataApiSetupProps {
   readonly deadLetterQueue: cdk.aws_sqs.IQueue;
 }
 
+/** @deprecated Use {@link AuroraDataApiSetupProps}. Construct ids are unchanged. */
+export type SiutindeiDataApiSetupProps = AuroraDataApiSetupProps;
+
 /**
- * Turns on the RDS HTTP Data API for an existing Aurora cluster (owned by
- * the ``lxsoftware-siutindei`` stack) and applies ``receivables.sql``.
+ * Turns on the RDS HTTP Data API for an existing Aurora cluster.
  *
- * A 15-minute EventBridge Scheduler re-enables the HTTP endpoint and
- * reapplies the script so a later siutindei deploy (which still creates the
- * cluster without ``enableDataApi: true``) cannot leave Data API off.
- * The product CDK should still set that flag; the schedule is the guard.
+ * Siu Tin Dei also applies ``receivables.sql``. Evolve Sprouts only enables
+ * the HTTP endpoint (``applySql: false``); this stack never writes that
+ * database.
+ *
+ * A 15-minute EventBridge Scheduler re-enables the HTTP endpoint (and
+ * reapplies the script when ``applySql`` is true) so a later product-stack
+ * deploy cannot leave Data API off. The product CDK should still set
+ * ``enableDataApi: true``; the schedule is the guard.
  *
  * Delete is a no-op: we do not disable the HTTP endpoint or drop tables.
+ *
+ * The EventBridge role is created inside this construct and shares
+ * ``condition``. CDK's default target role is a stack-level resource and
+ * would fail CloudFormation when the cluster ARN (and this construct) is
+ * absent.
  */
-export class SiutindeiDataApiSetup extends Construct {
+export class AuroraDataApiSetup extends Construct {
   /** Secrets Manager ARN Data API / AdminApiFn should use. */
   public readonly resolvedSecretArn: string;
+  /** KMS key on that secret (ARN or alias), for Decrypt via Secrets Manager. */
+  public readonly resolvedKmsKeyId: string;
 
-  constructor(scope: Construct, id: string, props: SiutindeiDataApiSetupProps) {
+  constructor(scope: Construct, id: string, props: AuroraDataApiSetupProps) {
     super(scope, id);
 
     const stack = cdk.Stack.of(this);
@@ -119,6 +132,7 @@ export class SiutindeiDataApiSetup extends Construct {
     });
 
     this.resolvedSecretArn = describeSecret.getResponseField("ARN");
+    this.resolvedKmsKeyId = describeSecret.getResponseField("KmsKeyId");
 
     const enableHttp = new cr.AwsCustomResource(this, "EnableHttpEndpoint", {
       policy: cr.AwsCustomResourcePolicy.fromStatements([
@@ -197,7 +211,7 @@ export class SiutindeiDataApiSetup extends Construct {
       endpointFn.addToRolePolicy(
         new iam.PolicyStatement({
           actions: ["kms:Decrypt", "kms:DescribeKey"],
-          resources: ["*"],
+          resources: [this.resolvedKmsKeyId],
           conditions: {
             StringEquals: {
               "kms:ViaService": `secretsmanager.${stack.region}.amazonaws.com`,
@@ -235,8 +249,18 @@ export class SiutindeiDataApiSetup extends Construct {
       internal: "siutindei_data_api_ensure",
       boardKey: "siuTinDei",
     };
-    // IAM-role target (no scheduler.amazonaws.com resource policy on the
-    // function). Conditioned with the rest of this construct.
+    // Role lives under this construct so ``condition`` applies. CDK's
+    // default Scheduler role is created at the stack and would reference
+    // a function that does not exist when the cluster ARN is blank.
+    const scheduleRole = new iam.Role(this, "EnsureScheduleRole", {
+      assumedBy: new iam.ServicePrincipal("scheduler.amazonaws.com"),
+    });
+    scheduleRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: ["lambda:InvokeFunction"],
+        resources: [endpointFn.functionArn, `${endpointFn.functionArn}:*`],
+      })
+    );
     new scheduler.Schedule(this, "EnsureHttpEndpoint", {
       scheduleName:
         props.scheduleName ?? "lxsoftware-admin-siutindei-data-api-ensure",
@@ -247,17 +271,23 @@ export class SiutindeiDataApiSetup extends Construct {
       target: new schedulerTargets.LambdaInvoke(endpointFn, {
         input: scheduler.ScheduleTargetInput.fromObject(scheduleInput),
         retryAttempts: 2,
+        role: scheduleRole,
       }),
     });
 
-    for (const child of this.node.findAll()) {
-      if (
-        child instanceof cdk.CfnResource &&
-        !(child instanceof cdk.CfnCondition) &&
-        !child.cfnOptions.condition
-      ) {
-        child.cfnOptions.condition = props.condition;
-      }
-    }
+    cdk.Aspects.of(this).add({
+      visit(node: IConstruct) {
+        if (
+          node instanceof cdk.CfnResource &&
+          !(node instanceof cdk.CfnCondition) &&
+          !node.cfnOptions.condition
+        ) {
+          node.cfnOptions.condition = props.condition;
+        }
+      },
+    });
   }
 }
+
+/** Construct ids stay ``SiutindeiDataApi`` / ``EvolvesproutsDataApi``. */
+export { AuroraDataApiSetup as SiutindeiDataApiSetup };

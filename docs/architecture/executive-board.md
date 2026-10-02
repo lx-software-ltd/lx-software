@@ -392,7 +392,8 @@ written against the live siutindei Alembic schema). The product's own
 column type, so replacing it stopped the script at that statement and
 left the later views and grants unapplied.
 When `SiutindeiClusterArn` is set the stack enables the RDS HTTP Data API,
-applies the script through the `SiutindeiDataApiSetup` custom resource
+applies the script through the `AuroraDataApiSetup` custom resource
+(construct id `SiutindeiDataApi`)
 (`backend/lambda/siutindei_schema/`, packaged copy of the SQL) and a
 15-minute scheduler `…-data-api-ensure` keeps both in place. `AdminApiFn`
 gets `rds-data:ExecuteStatement` / `BatchExecuteStatement` and the DB

@@ -1,8 +1,9 @@
-"""RDS Data API client for the siutindei Aurora cluster.
+"""RDS Data API client for Aurora clusters this admin reads.
 
-Used by ``board_receivables`` and ``board_product``. No VPC: IAM auth against
-the cluster ARN + DB secret imported as stack parameters. When those are
-blank the board tools return a clear "not configured" error.
+Used by ``board_receivables``, ``board_product``, and the Evolve Sprouts
+statement-book mirror. No VPC: IAM auth against the cluster ARN + DB
+secret imported as stack parameters. When those are blank the caller
+returns a clear "not configured" error.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from botocore.exceptions import ClientError
 from http_common import _log_event
 
 _executor: Callable[[str, list[dict[str, Any]] | None], list[dict[str, Any]]] | None = None
+_MAX_RESULT_PAGES = 100
 
 # Postgres-side substrings that mark a unique-constraint violation (SQLSTATE 23505).
 _UNIQUE_VIOLATION_MARKERS = ("duplicate key", "23505")
@@ -222,18 +224,31 @@ def execute(
     if not chosen.configured:
         raise DataApiError(_not_configured_message(chosen))
     client = boto3.client("rds-data")
+    rows: list[dict[str, Any]] = []
+    next_token = ""
+    pages = 0
     try:
-        resp = client.execute_statement(
-            **statement_kwargs(
+        while True:
+            pages += 1
+            if pages > _MAX_RESULT_PAGES:
+                raise DataApiError(
+                    f"Data API: {chosen.label} returned more than {_MAX_RESULT_PAGES} pages"
+                )
+            kwargs = statement_kwargs(
                 sql,
                 parameters,
                 resource_arn=chosen.cluster_arn,
                 secret=chosen.secret_arn,
                 database=chosen.database,
             )
-        )
+            if next_token:
+                kwargs["nextToken"] = next_token
+            resp = client.execute_statement(**kwargs)
+            rows.extend(_rows_from_rds(resp))
+            next_token = str(resp.get("nextToken") or "")
+            if not next_token:
+                break
     except ClientError as exc:
         raise DataApiError(f"Data API: {exc.response.get('Error', {}).get('Message', exc)}") from exc
-    rows = _rows_from_rds(resp)
-    _log_event("info", tag="board_data_api", rows=len(rows), database=chosen.database)
+    _log_event("info", tag="board_data_api", rows=len(rows), pages=pages, database=chosen.database)
     return rows

@@ -12,9 +12,9 @@ export function MirroredBookSummaryCard({
   readonly bookKey: StatementBookKey;
 }) {
   const title = STATEMENT_BOOK_DISPLAY_LABEL[bookKey];
-  const { query, sync } = useMirroredBookSummary(bookKey);
+  const { query, sync, isSyncing, waitTimedOut } = useMirroredBookSummary(bookKey);
   const summary = query.data;
-  const syncError = getAdminApiErrorMessage(sync.error);
+  const syncError = getAdminApiErrorMessage(sync.error) || summary?.syncError || "";
 
   return (
     <div className="card shadow-sm">
@@ -23,10 +23,10 @@ export function MirroredBookSummaryCard({
           <button
             type="button"
             className="btn btn-sm btn-outline-primary"
-            disabled={sync.isPending || query.isLoading}
+            disabled={isSyncing || query.isLoading}
             onClick={() => void sync.mutate()}
           >
-            {sync.isPending ? "Syncing…" : "Sync now"}
+            {isSyncing ? "Syncing…" : "Sync now"}
           </button>
         </div>
         {query.isLoading ? (
@@ -60,10 +60,22 @@ export function MirroredBookSummaryCard({
             )}
             {summary.skippedUnsupportedCurrency > 0 ? (
               <p className="small text-muted mb-0 mt-3">
-                {summary.skippedUnsupportedCurrency} rows used a currency this admin does not keep.
+                {summary.skippedUnsupportedCurrency} payments, expenses, or invoices used a
+                currency this admin does not keep.
+              </p>
+            ) : null}
+            {summary.skippedIncomplete > 0 ? (
+              <p className="small text-muted mb-0 mt-3">
+                {summary.skippedIncomplete} payments, expenses, or invoices were missing an
+                amount, currency, or date.
               </p>
             ) : null}
           </>
+        ) : null}
+        {waitTimedOut ? (
+          <p className="small text-muted mb-0 mt-3">
+            Sync is still running. Refresh this page in a minute.
+          </p>
         ) : null}
         {syncError ? (
           <div className="alert alert-danger py-2 small mb-0 mt-3" role="alert">

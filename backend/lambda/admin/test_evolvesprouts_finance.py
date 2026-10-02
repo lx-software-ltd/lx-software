@@ -6,6 +6,7 @@ import json
 import sys
 import types
 import unittest
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 
@@ -13,7 +14,9 @@ def _install_stubs() -> None:
     sys.modules["boto3"] = MagicMock()
 
     class ClientError(Exception):
-        pass
+        def __init__(self, message: str = "", response: dict | None = None) -> None:
+            super().__init__(message)
+            self.response = response or {"Error": {"Code": "", "Message": message}}
 
     botocore = types.ModuleType("botocore")
     exceptions = types.ModuleType("botocore.exceptions")
@@ -28,6 +31,7 @@ _install_stubs()
 import board_data_api  # noqa: E402
 from dispatch import lambda_handler  # noqa: E402
 import evolvesprouts_finance as es  # noqa: E402
+from finance_store import MirroredBookError, upsert_mirrored_lines  # noqa: E402
 
 
 class _MemTable:
@@ -53,6 +57,13 @@ def _rows(sql: str, _parameters: list | None) -> list[dict]:
                 "succeeded_at": "2026-05-01T12:00:00Z",
             },
             {
+                "id": "late",
+                "direction": "inbound",
+                "amount": 4,
+                "currency": "HKD",
+                "succeeded_at": "2026-10-01T17:30:00Z",
+            },
+            {
                 "id": "r1",
                 "direction": "refund",
                 "amount": 2,
@@ -73,6 +84,13 @@ def _rows(sql: str, _parameters: list | None) -> list[dict]:
                 "currency": "HKD",
                 "succeeded_at": "2026-05-03",
             },
+            {
+                "id": "nodate",
+                "direction": "inbound",
+                "amount": 6,
+                "currency": "HKD",
+                "succeeded_at": "",
+            },
         ]
     if "FROM expenses" in sql:
         return [
@@ -80,6 +98,8 @@ def _rows(sql: str, _parameters: list | None) -> list[dict]:
                 "id": "e1",
                 "status": "submitted",
                 "total": 8,
+                "subtotal": 7,
+                "tax": 1,
                 "currency": "HKD",
                 "invoice_date": "2026-04-01",
                 "vendor_name": "Example Vendor",
@@ -89,7 +109,9 @@ def _rows(sql: str, _parameters: list | None) -> list[dict]:
                 "id": "e2",
                 "status": "paid",
                 "total": 5,
+                "tax": 0.5,
                 "currency": "EUR",
+                "invoice_date": "2026-03-01",
                 "paid_at": "2026-04-02",
                 "vendor_name": "",
                 "invoice_number": "",
@@ -101,11 +123,26 @@ def _rows(sql: str, _parameters: list | None) -> list[dict]:
                 "currency": "XXX",
                 "invoice_date": "2026-04-03",
             },
+            {
+                "id": "e4",
+                "status": "submitted",
+                "total": 3,
+                "currency": "",
+                "invoice_date": "2026-04-04",
+            },
+            {
+                "id": "e5",
+                "status": "paid",
+                "total": None,
+                "currency": "HKD",
+                "paid_at": "2026-04-05",
+            },
         ]
     if "customer_invoices" in sql:
         return [
             {"currency": "HKD", "outstanding": 12.5, "n": 2},
             {"currency": "JPY", "outstanding": 9, "n": 1},
+            {"currency": "", "outstanding": 2, "n": 1},
         ]
     return []
 
@@ -124,8 +161,6 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         )
         self.env.start()
         board_data_api.set_executor_for_tests(_rows)
-        from decimal import Decimal
-
         self.table.items[("FINANCE#book#evolveSprouts", "STATE")] = {
             "pk": "FINANCE#book#evolveSprouts",
             "sk": "STATE",
@@ -172,15 +207,28 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         self.assertEqual(result["openInvoices"], 2)
         self.assertEqual(result["outstandingByCurrency"]["HKD"], 12.5)
         self.assertEqual(result["skippedUnsupportedCurrency"], 3)
+        self.assertEqual(result["skippedIncomplete"], 4)
         self.assertEqual(result["linesRemoved"], 1)
         by_id = {line["id"]: line for line in self._book_lines()}
-        self.assertEqual(set(by_id), {"manual-1", "es-pay-p1", "es-ref-r1", "es-exp-e1", "es-exp-e2"})
+        self.assertEqual(
+            set(by_id),
+            {"manual-1", "es-pay-p1", "es-pay-late", "es-ref-r1", "es-exp-e1", "es-exp-e2"},
+        )
         self.assertEqual(by_id["es-pay-p1"]["type"], "income")
         self.assertEqual(by_id["es-pay-p1"]["description"], "[evolve-sprouts] Payment p1")
+        self.assertEqual(by_id["es-pay-p1"]["dateUtc"], "2026-05-01T00:00:00.000Z")
+        self.assertEqual(by_id["es-pay-late"]["dateUtc"], "2026-10-02T00:00:00.000Z")
         self.assertEqual(by_id["es-ref-r1"]["type"], "expenditure")
         self.assertEqual(by_id["es-ref-r1"]["currency"], "USD")
         self.assertEqual(by_id["es-exp-e1"]["description"], "[evolve-sprouts] Expense Example Vendor INV-9")
+        self.assertEqual(by_id["es-exp-e1"]["netAmount"], 7)
+        self.assertEqual(by_id["es-exp-e1"]["vat"], 1)
+        self.assertEqual(by_id["es-exp-e1"]["grossAmount"], 8)
+        self.assertEqual(by_id["es-exp-e1"]["dateUtc"], "2026-04-01T00:00:00.000Z")
         self.assertEqual(by_id["es-exp-e2"]["description"], "[evolve-sprouts] Expense e2")
+        self.assertEqual(by_id["es-exp-e2"]["netAmount"], 4.5)
+        self.assertEqual(by_id["es-exp-e2"]["vat"], 0.5)
+        self.assertEqual(by_id["es-exp-e2"]["dateUtc"], "2026-04-02T00:00:00.000Z")
         self.assertEqual(by_id["es-pay-p1"]["source"], "evolvesprouts")
         self.assertNotIn("source", by_id["manual-1"])
         self.assertEqual(by_id["manual-1"]["description"], "Kept")
@@ -190,12 +238,26 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         self.assertEqual(again["linesRemoved"], 0)
         self.assertEqual(
             {line["id"] for line in self._book_lines()},
-            {"manual-1", "es-pay-p1", "es-ref-r1", "es-exp-e1", "es-exp-e2"},
+            {"manual-1", "es-pay-p1", "es-pay-late", "es-ref-r1", "es-exp-e1", "es-exp-e2"},
         )
         summary = es.load_summary(self.table)
         self.assertEqual(summary["submittedExpenses"], 1)
         self.assertEqual(summary["paidExpenses"], 1)
+        self.assertIsNone(summary["syncError"])
         self.assertTrue(summary["configured"])
+
+    def test_currency_only_correction_is_written(self) -> None:
+        es.sync(self.table)
+        item = self.table.items[("FINANCE#book#evolveSprouts", "STATE")]
+        for line in item["lines"]:
+            if line["id"] == "es-pay-p1":
+                line["currency"] = "USD"
+                line["netAmount"] = Decimal("99")
+        result = es.sync(self.table)
+        self.assertGreaterEqual(result["linesWritten"], 1)
+        by_id = {line["id"]: line for line in self._book_lines()}
+        self.assertEqual(by_id["es-pay-p1"]["currency"], "HKD")
+        self.assertEqual(by_id["es-pay-p1"]["netAmount"], 10)
 
     def test_not_configured_skips_the_database(self) -> None:
         called = {"n": 0}
@@ -214,6 +276,16 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         self.assertFalse(result["configured"])
         self.assertEqual(called["n"], 0)
         self.assertEqual(self._book_lines()[0]["id"], "manual-1")
+
+    def test_queue_sync_stamps_pending_and_invokes(self) -> None:
+        with patch("board_async.try_invoke_event", return_value=True) as invoke:
+            result = es.queue_sync(self.table)
+        self.assertTrue(result["queued"])
+        self.assertTrue(result["invoked"])
+        self.assertTrue(result["pendingSince"])
+        invoke.assert_called_once_with({"internal": "evolvesprouts_finance_mirror"})
+        stored = es.load_summary(self.table)
+        self.assertEqual(stored["pendingSince"], result["pendingSince"])
 
 
 class TestEvolveSproutsRoutes(unittest.TestCase):
@@ -296,7 +368,24 @@ class TestEvolveSproutsRoutes(unittest.TestCase):
         self.assertEqual(out["statusCode"], 200)
         self.assertEqual(json.loads(out["body"])["data"]["lines"], [])
 
-    def test_sync_reports_a_database_error(self) -> None:
+    def test_http_sync_queues_when_configured(self) -> None:
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "EVOLVESPROUTS_CLUSTER_ARN": "arn:cluster",
+                    "EVOLVESPROUTS_DB_SECRET_ARN": "arn:secret",
+                },
+            ),
+            patch("board_async.try_invoke_event", return_value=True) as invoke,
+        ):
+            out = lambda_handler(self._event("/evolve-sprouts/sync", method="POST"), None)
+        self.assertEqual(out["statusCode"], 200)
+        body = json.loads(out["body"])
+        self.assertTrue(body["queued"])
+        invoke.assert_called_once()
+
+    def test_mirror_trigger_records_a_database_error(self) -> None:
         def explode(sql: str, parameters: list | None) -> list[dict]:
             raise board_data_api.DataApiError("database refused the statement")
 
@@ -308,13 +397,87 @@ class TestEvolveSproutsRoutes(unittest.TestCase):
                 "EVOLVESPROUTS_DB_SECRET_ARN": "arn:secret",
             },
         ):
-            out = lambda_handler(self._event("/evolve-sprouts/sync", method="POST"), None)
-        self.assertEqual(out["statusCode"], 502)
-        self.assertIn("refused", json.loads(out["body"])["message"])
+            with self.assertRaises(es.EvolveSproutsFinanceError):
+                lambda_handler({"internal": "evolvesprouts_finance_mirror"}, None)
+        saved = self.table.put_item.call_args.kwargs["Item"]
+        self.assertIn("refused", str(saved.get("syncError")))
 
     def test_nightly_trigger_skips_when_unconfigured(self) -> None:
         out = lambda_handler({"internal": "evolvesprouts_finance_mirror"}, None)
         self.assertEqual(out["skipped"], "not_configured")
+
+
+class TestDataApiPages(unittest.TestCase):
+    def tearDown(self) -> None:
+        board_data_api.set_executor_for_tests(None)
+
+    def test_follows_next_token(self) -> None:
+        board_data_api.set_executor_for_tests(None)
+        responses = [
+            {
+                "columnMetadata": [{"name": "id"}],
+                "records": [[{"stringValue": "a"}]],
+                "nextToken": "n1",
+            },
+            {
+                "columnMetadata": [{"name": "id"}],
+                "records": [[{"stringValue": "b"}]],
+            },
+        ]
+        client = MagicMock()
+        client.execute_statement.side_effect = responses
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "EVOLVESPROUTS_CLUSTER_ARN": "arn:cluster",
+                    "EVOLVESPROUTS_DB_SECRET_ARN": "arn:secret",
+                },
+            ),
+            patch.object(board_data_api.boto3, "client", return_value=client),
+        ):
+            rows = board_data_api.execute("SELECT 1", target=board_data_api.evolvesprouts_target())
+        self.assertEqual([row["id"] for row in rows], ["a", "b"])
+        self.assertEqual(client.execute_statement.call_count, 2)
+        self.assertEqual(client.execute_statement.call_args_list[1].kwargs.get("nextToken"), "n1")
+
+
+class TestMirroredLineLimits(unittest.TestCase):
+    def test_item_too_large_is_a_mirrored_book_error(self) -> None:
+        table = MagicMock()
+        from botocore.exceptions import ClientError
+
+        table.get_item.return_value = {
+            "Item": {
+                "pk": "FINANCE#book#evolveSprouts",
+                "sk": "STATE",
+                "defaultCurrency": "HKD",
+                "float": {"amount": Decimal("0"), "currency": "HKD"},
+                "lines": [],
+            }
+        }
+        table.put_item.side_effect = ClientError("too big", {"Error": {"Code": "ValidationException", "Message": "Item size has exceeded the maximum allowed size of 400 KB"}})
+        with self.assertRaises(MirroredBookError) as ctx:
+            upsert_mirrored_lines(
+                table,
+                "evolveSprouts",
+                [
+                    {
+                        "id": "es-pay-1",
+                        "dateUtc": "2026-01-01T00:00:00.000Z",
+                        "type": "income",
+                        "description": "x",
+                        "netAmount": 1,
+                        "vat": 0,
+                        "grossAmount": 1,
+                        "currency": "HKD",
+                        "source": "evolvesprouts",
+                    }
+                ],
+                id_prefixes=("es-pay-",),
+                source="evolvesprouts",
+            )
+        self.assertIn("too large", str(ctx.exception))
 
 
 if __name__ == "__main__":
