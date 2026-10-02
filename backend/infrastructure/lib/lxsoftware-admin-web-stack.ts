@@ -225,11 +225,41 @@ export class LxsoftwareAdminWebStack extends cdk.Stack {
       )
     );
 
-    const bucketPolicy = new s3.BucketPolicy(this, "AdminWebBucketPolicy", {
-      bucket: this.bucket,
-    });
+    // The bucket's own policy (`AdminWebBucket/Policy`, created by
+    // `enforceSSL`) already carries the OAC read grant that
+    // `S3BucketOrigin.withOriginAccessControl` adds for an owned bucket:
+    // statement 0 is the `aws:SecureTransport` deny, statement 1 is the
+    // CloudFront `s3:GetObject` allow. Naming that statement forces one
+    // PutBucketPolicy of the complete document on the next deploy.
+    const bucketOwnPolicy = this.bucket.policy;
+    if (!bucketOwnPolicy) {
+      throw new Error("AdminWebBucket has no bucket policy; enforceSSL must stay on");
+    }
+    const cfnBucketOwnPolicy = bucketOwnPolicy.node
+      .defaultChild as s3.CfnBucketPolicy;
+    cfnBucketOwnPolicy.addPropertyOverride(
+      "PolicyDocument.Statement.1.Sid",
+      "AllowCloudFrontServicePrincipalReadOnly"
+    );
 
-    bucketPolicy.document.addStatements(
+    // Legacy duplicate of that OAC grant. A bucket holds one policy, so two
+    // AWS::S3::BucketPolicy resources on the same bucket race: whichever
+    // CloudFormation applied last was the live policy, and the other one's
+    // statements (here the HTTPS-only deny) were silently dropped.
+    //
+    // Deleting an AWS::S3::BucketPolicy calls DeleteBucketPolicy, which would
+    // wipe the merged policy applied above in the same deploy. Retain it for
+    // one deploy so a later removal is a template-only change; see
+    // docs/deployment/admin-website.md ("Admin web bucket policy").
+    const legacyBucketPolicy = new s3.BucketPolicy(
+      this,
+      "AdminWebBucketPolicy",
+      {
+        bucket: this.bucket,
+        removalPolicy: cdk.RemovalPolicy.RETAIN,
+      }
+    );
+    legacyBucketPolicy.document.addStatements(
       new iam.PolicyStatement({
         sid: "AllowCloudFrontServicePrincipalReadOnly",
         effect: iam.Effect.ALLOW,
@@ -251,6 +281,8 @@ export class LxsoftwareAdminWebStack extends cdk.Stack {
         },
       })
     );
+    // Deploy order: the complete policy must be the last PutBucketPolicy.
+    bucketOwnPolicy.node.addDependency(legacyBucketPolicy);
 
     new cdk.CfnOutput(this, "AdminWebBucketName", {
       value: this.bucket.bucketName,
