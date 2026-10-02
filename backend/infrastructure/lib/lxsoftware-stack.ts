@@ -2928,6 +2928,28 @@ export class LxsoftwareStack extends cdk.Stack {
       authorizer: jwtAuthorizer,
     });
 
+    // Read-only mirrored book: no PUT or parse-statement routes.
+    this.httpApi.addRoutes({
+      path: "/evolve-sprouts",
+      methods: [apigwv2.HttpMethod.GET],
+      integration,
+      authorizer: jwtAuthorizer,
+    });
+
+    this.httpApi.addRoutes({
+      path: "/evolve-sprouts/summary",
+      methods: [apigwv2.HttpMethod.GET],
+      integration,
+      authorizer: jwtAuthorizer,
+    });
+
+    this.httpApi.addRoutes({
+      path: "/evolve-sprouts/sync",
+      methods: [apigwv2.HttpMethod.POST],
+      integration,
+      authorizer: jwtAuthorizer,
+    });
+
     // Enable Banking sync management (admin JWT only; never mirrored under
     // /public/*: these routes can move money-adjacent consent state).
     this.httpApi.addRoutes({

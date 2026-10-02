@@ -1012,6 +1012,23 @@ describe("Evolve Sprouts finance mirror", () => {
     expect(template.toJSON().Parameters.EvolvesproutsDbSecretName.Default).toBe("");
   });
 
+  test("routes the read-only book, summary, and sync behind the admin JWT", () => {
+    const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
+    const keys = routes
+      .map((r) => String(r.Properties?.RouteKey))
+      .filter((key) => key.includes("/evolve-sprouts"))
+      .sort();
+    expect(keys).toEqual([
+      "GET /evolve-sprouts",
+      "GET /evolve-sprouts/summary",
+      "POST /evolve-sprouts/sync",
+    ]);
+    for (const route of routes) {
+      if (!String(route.Properties?.RouteKey).includes("/evolve-sprouts")) continue;
+      expect(route.Properties?.AuthorizationType).toBe("JWT");
+    }
+  });
+
   test("enables the HTTP endpoint without applying SQL", () => {
     const custom = Object.entries(resources).filter(
       ([, r]) => r.Type === "Custom::AWS" || r.Type === "AWS::CloudFormation::CustomResource"

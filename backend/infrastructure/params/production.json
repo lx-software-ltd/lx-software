@@ -13,5 +13,7 @@
   "lxsoftware:SiutindeiBoardImporterClientId": "316qm9jifoo6n7e10kf8eddgv1",
   "lxsoftware:SiutindeiBoardCatalogManagerId": "c9cad5fc-40a1-70f7-73ea-7d35fb00d573",
   "lxsoftware:SiutindeiBoardCatalogImportEnabled": "true",
+  "lxsoftware:EvolvesproutsClusterArn": "arn:aws:rds:ap-southeast-1:588024549699:cluster:evolvesprouts-db-cluster",
+  "lxsoftware:EvolvesproutsDbSecretName": "evolvesprouts-db-finance-readonly-credentials",
   "lxsoftware-admin-web:CspCognitoConnectOrigin": "https://auth.lx-software.com"
 }
