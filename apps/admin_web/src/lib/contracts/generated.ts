@@ -7,9 +7,12 @@ export const GLOBAL_DEFAULT_CURRENCY: CurrencyCode = "HKD";
 export const FINANCE_HOUSE_KEYS = ["hillmarton", "morrison"] as const;
 export type HouseKey = (typeof FINANCE_HOUSE_KEYS)[number];
 
-export const FINANCE_STATEMENT_BOOK_KEYS = ["siuTinDei", "lxSoftware"] as const;
+export const FINANCE_STATEMENT_BOOK_KEYS = ["siuTinDei", "lxSoftware", "evolveSprouts"] as const;
 export type StatementBookKey = (typeof FINANCE_STATEMENT_BOOK_KEYS)[number];
 export type StatementOwnerKey = HouseKey | StatementBookKey;
+
+export const STATEMENT_BOOK_LABELS = {"siuTinDei": "Siu Tin Dei", "lxSoftware": "LX Software", "evolveSprouts": "Evolve Sprouts"} as const satisfies Readonly<Record<StatementBookKey, string>>;
+export const MIRRORED_STATEMENT_BOOK_KEYS = ["evolveSprouts"] as const satisfies readonly StatementBookKey[];
 
 export const INCOME_CATEGORIES = ["Salary", "Rent"] as const;
 export const EXPENSE_CATEGORIES = ["Utility", "Saving", "Investment", "Rent", "Mortgage", "Insurance", "Retirement", "Tax", "Amenities", "Helper", "Education"] as const;

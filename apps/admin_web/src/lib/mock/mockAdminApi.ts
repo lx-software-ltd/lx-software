@@ -9,6 +9,13 @@
 import { saveTokensFromOAuthResponse } from "../auth";
 import { isAdminMockEnabled } from "./isAdminMockEnabled";
 import type { HouseFinanceData, FinancePersistedState } from "../financeModel";
+import type { MirroredBookSummary } from "../mirroredBook";
+import {
+  MIRRORED_STATEMENT_BOOK_KEYS,
+  STATEMENT_BOOK_LABELS,
+  type StatementBookKey,
+} from "../financeTypes";
+import { kebabBookKey } from "../statementOwners";
 import {
   assetsFixture,
   bankingFixture,
@@ -34,6 +41,8 @@ import {
   boardContentFixture,
   boardMailThreadsFixture,
   financeFixture,
+  evolveSproutsBookFixture,
+  evolveSproutsSummaryFixture,
   lxSoftwareBookFixture,
   openrouterUsageFixture,
   awsUsageFixture,
@@ -97,6 +106,7 @@ export function installAdminMockSession(): void {
 type MockState = {
   finance: FinancePersistedState;
   books: Record<string, HouseFinanceData>;
+  mirrorSummaries: Partial<Record<StatementBookKey, MirroredBookSummary>>;
   seats: BoardSeat[];
   tasks: BoardTask[];
   actions: BoardAction[];
@@ -120,6 +130,10 @@ function initialMockState(): MockState {
     books: {
       "siu-tin-dei": structuredClone(siuTinDeiBookFixture) as HouseFinanceData,
       "lx-software": structuredClone(lxSoftwareBookFixture) as HouseFinanceData,
+      "evolve-sprouts": structuredClone(evolveSproutsBookFixture) as HouseFinanceData,
+    },
+    mirrorSummaries: {
+      evolveSprouts: structuredClone(evolveSproutsSummaryFixture),
     },
     seats: structuredClone(boardStaffFixture.seats) as BoardSeat[],
     tasks: structuredClone(boardTasksFixture),
@@ -153,6 +167,16 @@ export function resetAdminMockState(): void {
 
 export function setMockStaging(preview: BoardStagingPreview): void {
   state.staging = { ...preview };
+}
+
+function mirroredBookFromPath(
+  pathname: string,
+): { key: StatementBookKey; rest: string } | null {
+  const [slug, ...tail] = pathname.split("/").filter(Boolean);
+  if (!slug) return null;
+  const key = MIRRORED_STATEMENT_BOOK_KEYS.find((book) => kebabBookKey(book) === slug);
+  if (!key) return null;
+  return { key, rest: tail.join("/") };
 }
 
 function json(body: unknown, status = 200): Response {
@@ -273,6 +297,55 @@ export async function mockAdminFetch(path: string, init: RequestInit = {}): Prom
         expenseIncomeAllocationPercents: state.finance.expenseIncomeAllocationPercents,
       });
     }
+  }
+
+  const mirrored = mirroredBookFromPath(p);
+  if (mirrored && mirrored.rest === "summary" && method === "GET") {
+    return json(
+      state.mirrorSummaries[mirrored.key] ?? {
+        configured: false,
+        syncedAt: null,
+        lastAttemptAt: null,
+        pendingSince: null,
+        syncError: null,
+        outstandingByCurrency: {},
+        openInvoices: 0,
+        submittedExpenses: 0,
+        paidExpenses: 0,
+        skippedUnsupportedCurrency: 0,
+        skippedIncomplete: 0,
+      },
+    );
+  }
+  if (mirrored && mirrored.rest === "sync" && method === "POST") {
+    const current = state.mirrorSummaries[mirrored.key];
+    const now = new Date().toISOString();
+    const next: MirroredBookSummary = {
+      configured: current?.configured ?? true,
+      syncedAt: now,
+      lastAttemptAt: now,
+      pendingSince: null,
+      syncError: null,
+      outstandingByCurrency: { ...(current?.outstandingByCurrency ?? {}) },
+      openInvoices: current?.openInvoices ?? 0,
+      submittedExpenses: current?.submittedExpenses ?? 0,
+      paidExpenses: current?.paidExpenses ?? 0,
+      skippedUnsupportedCurrency: current?.skippedUnsupportedCurrency ?? 0,
+      skippedIncomplete: current?.skippedIncomplete ?? 0,
+    };
+    state.mirrorSummaries[mirrored.key] = next;
+    return json(next);
+  }
+  if (
+    mirrored &&
+    (method === "PUT" || (method === "POST" && mirrored.rest === "parse-statement"))
+  ) {
+    return json(
+      {
+        message: `${STATEMENT_BOOK_LABELS[mirrored.key]} records come from the product database and cannot be edited here.`,
+      },
+      403,
+    );
   }
 
   const book = state.books[p.slice(1)];

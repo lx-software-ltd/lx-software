@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { FinanceDataLoadOrError, FinanceSaveStatus } from "../components/FinanceDataStatus";
 import { HouseStatementPanel } from "../components/HouseStatementPanel";
+import { MirroredBookSummaryCard } from "../components/MirroredBookSummaryCard";
 import { StatementBookDashboardCard } from "../components/StatementBookDashboardCard";
 import { ExecutiveBoardTab } from "../components/board/ExecutiveBoardTab";
 import { AdminTabList, type AdminTabItem } from "../components/ui";
@@ -14,6 +15,7 @@ import {
   LX_SOFTWARE_BOOK_KEY,
   SIU_TIN_DEI_BOOK_KEY,
   STATEMENT_BOOK_DISPLAY_LABEL,
+  isMirroredStatementBook,
 } from "../lib/statementOwners";
 import type { StatementBookKey } from "../lib/financeTypes";
 
@@ -36,6 +38,7 @@ export function StatementBookPage({
   readonly dashboardExtra?: ReactNode;
 }) {
   const title = STATEMENT_BOOK_DISPLAY_LABEL[bookKey];
+  const readOnly = isMirroredStatementBook(bookKey);
   const hasExecutiveBoard = bookKey === SIU_TIN_DEI_BOOK_KEY;
   const tabs = hasExecutiveBoard
     ? [...STATEMENT_BOOK_TABS, EXECUTIVE_BOARD_TAB]
@@ -98,11 +101,13 @@ export function StatementBookPage({
       />
       {!isLoading ? (
         <>
-          <FinanceSaveStatus
-            isSaving={isSaving}
-            saveError={saveError}
-            saveErrorDetail={saveErrorDetail}
-          />
+          {readOnly ? null : (
+            <FinanceSaveStatus
+              isSaving={isSaving}
+              saveError={saveError}
+              saveErrorDetail={saveErrorDetail}
+            />
+          )}
 
           <AdminTabList
             tabs={tabs}
@@ -133,6 +138,11 @@ export function StatementBookPage({
                   fiscalYear={fiscalYear}
                   onFiscalYearChange={setFiscalYear}
                 />
+                {readOnly ? (
+                  <div className="mt-3">
+                    <MirroredBookSummaryCard bookKey={bookKey} />
+                  </div>
+                ) : null}
                 {dashboardExtra ? <div className="mt-3">{dashboardExtra}</div> : null}
               </>
             ) : null}
@@ -142,6 +152,7 @@ export function StatementBookPage({
                 data={data}
                 onPatch={patchBook}
                 isSaving={isSaving}
+                readOnly={readOnly}
                 lockedLineType="expenditure"
                 showHouseDetails={false}
                 showMortgageImport={false}
@@ -159,6 +170,7 @@ export function StatementBookPage({
                 data={data}
                 onPatch={patchBook}
                 isSaving={isSaving}
+                readOnly={readOnly}
                 lockedLineType="income"
                 showHouseDetails={false}
                 showMortgageImport={false}

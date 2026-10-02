@@ -40,6 +40,7 @@ import { DEFAULT_BOARD_BOUNDARIES } from "../boardModel";
 import type { OpenRouterUsagePayload } from "../openrouterUsage";
 import type { AwsBillingPayload } from "../awsBilling";
 import type { FinancePersistedState, HouseFinanceData } from "../financeModel";
+import type { MirroredBookSummary } from "../mirroredBook";
 
 const TODAY = new Date();
 const isoDaysAgo = (days: number): string =>
@@ -164,6 +165,30 @@ export const lxSoftwareBookFixture: HouseFinanceData = {
     { id: "lx-1", dateUtc: isoDaysAgo(1), type: "income", description: "Consulting — invoice 2026-031", netAmount: 48000, vat: 0, currency: "HKD", grossAmount: 48000 },
     { id: "lx-2", dateUtc: isoDaysAgo(15), type: "expenditure", description: "Company secretary annual fee", netAmount: 3800, vat: 0, currency: "HKD", grossAmount: 3800 },
   ],
+};
+
+export const evolveSproutsBookFixture: HouseFinanceData = {
+  defaultCurrency: "HKD",
+  float: { amount: 0, currency: "HKD" },
+  lines: [
+    { id: "es-pay-1", dateUtc: isoDaysAgo(3), type: "income", description: "[evolve-sprouts] Payment pay-1", netAmount: 860, vat: 0, currency: "HKD", grossAmount: 860 },
+    { id: "es-exp-1", dateUtc: isoDaysAgo(4), type: "expenditure", description: "[evolve-sprouts] Expense Example Vendor INV-9", netAmount: 240, vat: 0, currency: "HKD", grossAmount: 240 },
+    { id: "es-ref-1", dateUtc: isoDaysAgo(8), type: "expenditure", description: "[evolve-sprouts] Refund ref-1", netAmount: 40, vat: 0, currency: "HKD", grossAmount: 40 },
+  ],
+};
+
+export const evolveSproutsSummaryFixture: MirroredBookSummary = {
+  configured: true,
+  syncedAt: isoDaysAgo(0),
+  lastAttemptAt: isoDaysAgo(0),
+  pendingSince: null,
+  syncError: null,
+  outstandingByCurrency: { HKD: 1280, USD: 45 },
+  openInvoices: 3,
+  submittedExpenses: 2,
+  paidExpenses: 4,
+  skippedUnsupportedCurrency: 0,
+  skippedIncomplete: 0,
 };
 
 export const assetsFixture: readonly AdminAssetMeta[] = [

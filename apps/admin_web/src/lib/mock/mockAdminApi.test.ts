@@ -284,4 +284,42 @@ describe("mockAdminFetch", () => {
     const next = (await updated.json()) as { watch: { district?: string } };
     expect(next.watch.district).toBeUndefined();
   });
+
+  it("serves the Evolve Sprouts book and refuses edits", async () => {
+    const book = await mockAdminFetch("/evolve-sprouts");
+    expect(book.ok).toBe(true);
+    const bookBody = (await book.json()) as { data: { lines: { id: string }[] } };
+    expect(bookBody.data.lines.map((line) => line.id)).toEqual(["es-pay-1", "es-exp-1", "es-ref-1"]);
+
+    const summary = await mockAdminFetch("/evolve-sprouts/summary");
+    expect(summary.ok).toBe(true);
+    const summaryBody = (await summary.json()) as { openInvoices: number; submittedExpenses: number; paidExpenses: number };
+    expect(summaryBody.openInvoices).toBe(3);
+    expect(summaryBody.submittedExpenses).toBe(2);
+    expect(summaryBody.paidExpenses).toBe(4);
+
+    const synced = await mockAdminFetch("/evolve-sprouts/sync", { method: "POST" });
+    expect(synced.ok).toBe(true);
+    const syncedBody = (await synced.json()) as { syncedAt: string | null };
+    expect(syncedBody.syncedAt).toBeTruthy();
+
+    const denied = await mockAdminFetch("/evolve-sprouts", {
+      method: "PUT",
+      body: JSON.stringify({ lines: [] }),
+    });
+    expect(denied.status).toBe(403);
+    const still = await mockAdminFetch("/evolve-sprouts");
+    const stillBody = (await still.json()) as { data: { lines: { id: string }[] } };
+    expect(stillBody.data.lines).toHaveLength(3);
+
+    const lx = await mockAdminFetch("/lx-software", {
+      method: "PUT",
+      body: JSON.stringify({
+        defaultCurrency: "HKD",
+        float: { amount: 0, currency: "HKD" },
+        lines: [],
+      }),
+    });
+    expect(lx.ok).toBe(true);
+  });
 });

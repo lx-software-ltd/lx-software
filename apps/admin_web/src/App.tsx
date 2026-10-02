@@ -10,6 +10,7 @@ import { BankingPage } from "./pages/BankingPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { FinancePage } from "./pages/FinancePage";
 import { LxSoftwarePage } from "./pages/LxSoftwarePage";
+import { EvolveSproutsPage } from "./pages/EvolveSproutsPage";
 import { SiuTinDeiPage } from "./pages/SiuTinDeiPage";
 
 const queryClient = new QueryClient({
@@ -36,6 +37,7 @@ export function App() {
                 <Route path="banking" element={<BankingPage />} />
                 <Route path="banking/callback" element={<BankingCallbackPage />} />
                 <Route path="siu-tin-dei" element={<SiuTinDeiPage />} />
+                <Route path="evolve-sprouts" element={<EvolveSproutsPage />} />
                 <Route path="lx-software" element={<LxSoftwarePage />} />
               </Route>
             </Route>

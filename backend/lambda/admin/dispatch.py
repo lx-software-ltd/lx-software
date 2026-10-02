@@ -17,6 +17,7 @@ import board_chat as board_chat_mod
 import board_meeting as board_meeting_mod
 import board_public_api as board_public_api_mod
 import board_receivables as board_receivables_mod
+import evolvesprouts_finance as evolvesprouts_finance_mod
 import board_intel as board_intel_mod
 import board_review as board_review_mod
 import board_staff as board_staff_mod
@@ -31,6 +32,8 @@ from contract_constants import (
     FINANCE_STATEMENT_BOOK_KEYS,
     FINANCE_STATEMENT_OWNER_KEYS,
     INCOME_RECORD_CATEGORIES,
+    MIRRORED_STATEMENT_BOOK_KEYS,
+    STATEMENT_BOOK_LABELS,
 )
 from assets import (
     _asset_delete_response,
@@ -60,6 +63,7 @@ from finance_store import (
     _merge_allocation_stored_last_updated,
     _merge_investment_last_updated,
     _merge_liabilities_last_updated,
+    MirroredBookError,
     _merge_pension_last_updated,
     _normalize_accounts_sheet_payload,
     _normalize_allocations_sheet_payload,
@@ -129,9 +133,11 @@ def _is_public_path(path: str) -> bool:
 def _is_public_board_write_path(path: str) -> bool:
     return path.startswith(PUBLIC_BOARD_PREFIX + "/")
 
-STATEMENT_BOOK_DISPLAY_LABEL = {
-    "siuTinDei": "Siu Tin Dei",
-    "lxSoftware": "LX Software",
+STATEMENT_BOOK_DISPLAY_LABEL = STATEMENT_BOOK_LABELS
+
+# One module per mirrored book. Each exposes load_summary(table) and sync(table).
+_STATEMENT_BOOK_MIRRORS = {
+    evolvesprouts_finance_mod.BOOK: evolvesprouts_finance_mod,
 }
 
 
@@ -462,6 +468,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if isinstance(event, dict) and event.get("internal") == "board_receivables_mirror":
         board_receivables_mod.handle_mirror_trigger(event)
         return {}
+
+    if isinstance(event, dict) and event.get("internal") == "evolvesprouts_finance_mirror":
+        return evolvesprouts_finance_mod.handle_mirror_trigger(event)
 
     if isinstance(event, dict) and event.get("internal") == "board_dunning":
         board_receivables_mod.handle_dunning_trigger(event)
@@ -979,6 +988,35 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     if book_match:
         book_key, slug = book_match
         book_label = STATEMENT_BOOK_DISPLAY_LABEL.get(book_key, book_key)
+        mirrored = book_key in MIRRORED_STATEMENT_BOOK_KEYS
+
+        mirror = _STATEMENT_BOOK_MIRRORS.get(book_key) if mirrored else None
+        if mirrored and mirror is None and path in (f"/{slug}/summary", f"/{slug}/sync"):
+            return _json_response(404, {"message": "Not found"})
+
+        if mirror is not None and method == "GET" and path == f"/{slug}/summary":
+            table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+            return _json_response(200, mirror.load_summary(table))
+
+        if mirror is not None and method == "POST" and path == f"/{slug}/sync":
+            table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+            try:
+                result = mirror.queue_sync(table)
+            except MirroredBookError as exc:
+                return _json_response(502, {"message": str(exc)})
+            return _json_response(200, result)
+
+        if mirrored and method == "PUT":
+            return _json_response(
+                403,
+                {"message": f"{book_label} records come from the product database and cannot be edited here."},
+            )
+
+        if mirrored and method == "POST" and path == f"/{slug}/parse-statement":
+            return _json_response(
+                403,
+                {"message": f"{book_label} records come from the product database and cannot be edited here."},
+            )
 
         if method == "GET" and path == f"/{slug}":
             table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])

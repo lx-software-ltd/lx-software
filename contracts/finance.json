@@ -2,7 +2,13 @@
   "currencies": ["GBP", "HKD", "USD", "EUR", "CNY", "SGD", "AED"],
   "defaultCurrency": "HKD",
   "houses": ["hillmarton", "morrison"],
-  "statementBooks": ["siuTinDei", "lxSoftware"],
+  "statementBooks": ["siuTinDei", "lxSoftware", "evolveSprouts"],
+  "statementBookLabels": {
+    "siuTinDei": "Siu Tin Dei",
+    "lxSoftware": "LX Software",
+    "evolveSprouts": "Evolve Sprouts"
+  },
+  "mirroredStatementBooks": ["evolveSprouts"],
   "lineTypes": ["income", "expenditure", "mortgage"],
   "incomeCategories": ["Salary", "Rent"],
   "expenseCategories": [
