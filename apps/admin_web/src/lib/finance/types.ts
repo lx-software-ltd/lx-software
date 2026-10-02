@@ -44,6 +44,8 @@ export type HouseStatementLine = {
   readonly id: string;
   /** ISO 8601 instant (UTC), e.g. 2026-05-08T14:30:00.000Z */
   readonly dateUtc: string;
+  /** When set, tables sort by this instant instead of `dateUtc`. */
+  readonly sortUtc?: string;
   readonly type: FinanceLineType;
   readonly description: string;
   readonly netAmount: number;

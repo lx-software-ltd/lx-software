@@ -590,8 +590,7 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
 1. On the Evolve Sprouts database, set `enableDataApi: true` on that
    product stack and create a **read-only** database user with a
    password login and `SELECT` on `customer_payments`, `expenses`,
-   `organizations` (vendor names), `customer_invoices`, and
-   `payment_allocations` (invoice document dates on gains). Do not reuse
+   `organizations` (vendor names), and `customer_invoices`. Do not reuse
    `evolvesprouts_app`: it has `rds_iam`, which blocks the password login
    the Data API uses. This stack never writes that database and does not
    apply SQL there. The secret's
@@ -620,25 +619,26 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
    mirror (`POST /evolve-sprouts/sync` returns `{queued}` and the page
    polls `GET /evolve-sprouts/summary`). The page load reads the last
    snapshot and does not query Aurora.
-5. Cash lines replace the previous mirror and leave any other lines alone:
-   succeeded inbound `customer_payments` become income `es-pay-*`, succeeded
-   refunds become expenditure `es-ref-*`, and expenses with status
-   `submitted` or `paid` become expenditure `es-exp-*`. Draft, voided, and
-   amended expenses are omitted. Issued invoices with `balance_due > 0`
-   stay on the summary (outstanding by currency, open-invoice count,
-   submitted and paid expense counts). Each row keeps its own currency.
-   Expense net is `subtotal`, VAT is `tax`, and gross is `total`. Expenses
-   are dated by the issued `invoice_date`. Gains are dated by the allocated
-   customer invoice `invoice_date` (the Client Invoices document date; the
-   newest `created_at` / `id` when a payment covers several invoices), or
-   `succeeded_at` when that lookup is empty.
-   Calendar days are Asia/Hong_Kong, stored as that day at 00:00 UTC.
-   Codes outside GBP, HKD, USD, EUR, CNY, SGD, AED are skipped and
-   counted separately from rows missing an amount, currency, or date.
-   Expense descriptions are the vendor name and invoice number. Payment
-   and refund descriptions use the row id only. A book that
-   exceeds the DynamoDB item limit (or 5,000 lines) fails the sync with
-   a clear error instead of a 500.
+5. Mirrored lines replace the previous mirror and leave any other lines
+   alone. Issued `customer_invoices` become income `es-inv-*` (Gains), in
+   the same `created_at DESC, id DESC` order as Evolve Sprouts Client
+   Invoices. Succeeded refunds become expenditure `es-ref-*`, and expenses
+   with status `submitted` or `paid` become expenditure `es-exp-*`. Draft,
+   voided, and amended expenses are omitted. Issued invoices with
+   `balance_due > 0` also stay on the summary (outstanding by currency,
+   open-invoice count). Each row keeps its own currency. Invoice and
+   expense net is `subtotal`, VAT is `tax` / `tax_total`, and gross is
+   `total`. Document dates are `invoice_date`. Gains also store `sortUtc`
+   from invoice `created_at` so the Gains tab does not reorder by document
+   date. Refunds use `succeeded_at`. Calendar days are Asia/Hong_Kong,
+   stored as that day at 00:00 UTC. Codes outside GBP, HKD, USD, EUR, CNY,
+   SGD, AED are skipped and counted separately from rows missing an
+   amount, currency, or date. Expense descriptions are the vendor name and
+   invoice number. Gain descriptions are the invoice number and bill-to
+   name. Refund descriptions use the row id only. Previous `es-pay-*`
+   payment income is removed on the next sync. A book that exceeds the
+   DynamoDB item limit (or 5,000 lines) fails the sync with a clear error
+   instead of a 500.
 
 ### Catalog import
 

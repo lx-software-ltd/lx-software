@@ -14,6 +14,7 @@ import {
   statementLineAssetKeys,
 } from "../lib/financeModel";
 import { formatDateUtc } from "../lib/formatDisplay";
+import { compareStatementLinesNewestFirst } from "../lib/statementLineSort";
 import { parseAmount } from "../lib/formParse";
 import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
 import { useRecordEditor } from "../hooks/useRecordEditor";
@@ -398,11 +399,7 @@ export function HouseStatementPanel({
   }, [data.lines, lockedLineType]);
 
   const sortedLines = useMemo(() => {
-    return [...scopedLines].sort((a, b) => {
-      const ta = new Date(a.dateUtc).getTime();
-      const tb = new Date(b.dateUtc).getTime();
-      return tb - ta;
-    });
+    return [...scopedLines].sort(compareStatementLinesNewestFirst);
   }, [scopedLines]);
 
   const filteredLines = useMemo(() => {

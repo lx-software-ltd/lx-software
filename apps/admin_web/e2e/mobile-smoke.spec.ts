@@ -63,7 +63,7 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByRole("button", { name: "Edit line" })).toHaveCount(0);
     await page.getByRole("tab", { name: "Gains" }).click();
     await expect(page.getByRole("button", { name: "New gain" })).toHaveCount(0);
-    await expect(page.getByText("pay-1")).toBeVisible();
+    await expect(page.getByText("INV-42 Alpha School")).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 

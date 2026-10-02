@@ -46,6 +46,8 @@ export type HouseFloat = {
 export type HouseStatementLine = {
   readonly id: string;
   readonly dateUtc: string;
+  /** When set, tables sort by this instant instead of `dateUtc`. */
+  readonly sortUtc?: string;
   readonly type: FinanceLineType;
   readonly description: string;
   readonly netAmount: number;

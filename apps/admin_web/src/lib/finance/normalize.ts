@@ -543,6 +543,7 @@ export function normalizeHouseFinanceData(input: unknown): HouseFinanceData {
       const row = raw as Record<string, unknown>;
       const id = str(row, "id");
       const dateUtc = str(row, "dateUtc");
+      const sortUtc = str(row, "sortUtc");
       const type = oneOf(row.type, ["income", "expenditure", "mortgage"] as const);
       const description = str(row, "description");
       if (!id.trim() || !dateUtc || !type || !description.trim()) {
@@ -559,6 +560,7 @@ export function normalizeHouseFinanceData(input: unknown): HouseFinanceData {
       linesOut.push({
         id: id.trim(),
         dateUtc: dateUtc.trim(),
+        ...(sortUtc.trim() ? { sortUtc: sortUtc.trim() } : {}),
         type,
         description: description.trim(),
         netAmount: net,
