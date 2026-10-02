@@ -232,18 +232,18 @@ export function BoardReviewSection() {
         <Headline review={review} />
       </Section>
 
-      <Section id="holdsDue" title="On hold, executing soon" lane="aside">
-        <BoardHoldsList
-          holds={holds.holds}
-          isLoading={holds.isLoading}
-          isVetoing={holds.veto.isPending || holds.vetoClass.isPending}
-          errorMessage={errorText(holds.veto.error) ?? errorText(holds.vetoClass.error)}
-          onVeto={(holdId, reason) => holds.veto.mutate({ holdId, reason })}
-          onVetoClass={(classKey) => holds.vetoClass.mutate(classKey)}
-        />
-      </Section>
+      <BoardHoldsList
+        id="holdsDue"
+        headingLevel="h3"
+        holds={holds.holds}
+        isLoading={holds.isLoading}
+        isVetoing={holds.veto.isPending || holds.vetoClass.isPending}
+        errorMessage={errorText(holds.veto.error) ?? errorText(holds.vetoClass.error)}
+        onVeto={(holdId, reason) => holds.veto.mutate({ holdId, reason })}
+        onVetoClass={(classKey) => holds.vetoClass.mutate(classKey)}
+      />
 
-      <Section id="escalations" title="Escalations" lane="aside">
+      <Section id="escalations" title="Escalations">
         {review.escalations.length === 0 ? (
           <p className="text-muted small mb-0">None waiting.</p>
         ) : (

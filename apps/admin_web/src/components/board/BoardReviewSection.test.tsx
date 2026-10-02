@@ -80,9 +80,15 @@ vi.mock("../../hooks/useBoardContent", () => ({
 }));
 
 describe("BoardReviewSection card lanes", () => {
-  it("puts headline, assisted, sample and market on the full row and status cards on half rows", () => {
+  it("puts headline, holds, escalations, assisted, sample and market on the full row and status cards on half rows", () => {
     const { container } = render(<BoardReviewSection />);
     expect(container.querySelector("#headline")).toHaveAttribute("data-lane", "main");
+    expect(container.querySelector("#holdsDue")).toHaveClass("card");
+    expect(container.querySelector("#holdsDue")?.querySelector(".admin-card-title")).toHaveTextContent(
+      "Scheduled (veto to stop)",
+    );
+    expect(screen.queryByRole("heading", { name: "On hold, executing soon" })).not.toBeInTheDocument();
+    expect(container.querySelector("#escalations")).toHaveAttribute("data-lane", "main");
     expect(container.querySelector("#assisted")).toHaveAttribute("data-lane", "main");
     expect(container.querySelector("#sample")).toHaveAttribute("data-lane", "main");
     expect(container.querySelector("#market")).toHaveAttribute("data-lane", "main");
