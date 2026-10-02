@@ -53,6 +53,61 @@ function policyStatements(policy: CfnResource): Record<string, any>[] {
   return Array.isArray(statements) ? statements : [];
 }
 
+/** Production parameter values, keyed by CloudFormation parameter id. */
+function productionParamValues(): Record<string, string> {
+  const raw = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "../params/production.json"), "utf8")
+  ) as Record<string, unknown>;
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (typeof value !== "string" || !key.startsWith("lxsoftware:")) continue;
+    out[key.slice("lxsoftware:".length)] = value;
+  }
+  return out;
+}
+
+/**
+ * Resolved length of one Lambda environment value.
+ * Parameter refs use the production value when set, otherwise the template default.
+ * A generated physical id (table, bucket, key) is budgeted at 64 bytes.
+ * A resolved Secrets Manager ARN (DescribeSecret) is budgeted at 120 bytes.
+ */
+function cfnStringBytes(
+  value: unknown,
+  parameters: Record<string, { Default?: unknown }>,
+  production: Record<string, string>
+): number {
+  if (typeof value === "string") return value.length;
+  if (typeof value === "number" || typeof value === "boolean") return String(value).length;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return 64;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.Ref === "string") {
+    if (obj.Ref.startsWith("AWS::")) return 16;
+    if (Object.prototype.hasOwnProperty.call(production, obj.Ref)) return production[obj.Ref]!.length;
+    if (Object.prototype.hasOwnProperty.call(parameters, obj.Ref)) {
+      const def = parameters[obj.Ref]?.Default;
+      return typeof def === "string" ? def.length : 0;
+    }
+    return 64;
+  }
+  const join = obj["Fn::Join"];
+  if (Array.isArray(join) && Array.isArray(join[1])) {
+    return (join[1] as unknown[]).reduce<number>(
+      (total, part) => total + cfnStringBytes(part, parameters, production),
+      0
+    );
+  }
+  const branch = obj["Fn::If"];
+  if (Array.isArray(branch)) {
+    return Math.max(
+      cfnStringBytes(branch[1], parameters, production),
+      cfnStringBytes(branch[2], parameters, production)
+    );
+  }
+  if (obj["Fn::GetAtt"]) return 120;
+  return 64;
+}
+
 function asArray<T>(value: T | T[] | undefined): T[] {
   if (value === undefined) return [];
   return Array.isArray(value) ? value : [value];
@@ -1099,10 +1154,34 @@ describe("Evolve Sprouts finance mirror", () => {
       id.startsWith("AdminApiFn")
     );
     const env = adminFn?.[1].Properties?.Environment?.Variables ?? {};
-    expect(env.EVOLVESPROUTS_DB_NAME).toBe("evolvesprouts");
+    expect(env.EVOLVESPROUTS_DB_NAME).toBeUndefined();
     expect(env.EVOLVESPROUTS_DB_SECRET_ARN).toEqual({
       "Fn::If": ["HasEvolvesproutsDataApi", expect.anything(), ""],
     });
+  });
+
+  test("AdminApiFn environment stays under the Lambda 4 KB cap", () => {
+    const adminFn = Object.entries(resourcesOfType("AWS::Lambda::Function")).find(([id]) =>
+      id.startsWith("AdminApiFn")
+    );
+    const env = (adminFn?.[1].Properties?.Environment?.Variables ?? {}) as Record<string, unknown>;
+    const parameters = template.toJSON().Parameters as Record<string, { Default?: unknown }>;
+    const production = productionParamValues();
+    const bytes = Object.entries(env).reduce(
+      (sum, [key, value]) => sum + key.length + cfnStringBytes(value, parameters, production),
+      0
+    );
+    // Deploy #503 measured 4216 bytes and Lambda rejected it (limit 4096).
+    expect(bytes).toBeLessThanOrEqual(3600);
+    expect(env.GITHUB_READ_TOKEN_SECRET_ARN).toBe(
+      "lxsoftware-admin-siutindei-board-github-token"
+    );
+    expect(env.BOARD_IMPORTER_CREDENTIALS_SECRET_ARN).toBe(
+      "lxsoftware-admin-siutindei-board-importer-credentials"
+    );
+    expect(env.NEWSLETTER_CONFIG_SET).toBeUndefined();
+    expect(env.ASSET_MAX_BYTES).toBeUndefined();
+    expect(env.PARSE_JOB_TTL_SECONDS).toBeUndefined();
   });
 
   test("nightly mirror and the endpoint refresh are conditioned; refresh does not apply SQL", () => {
