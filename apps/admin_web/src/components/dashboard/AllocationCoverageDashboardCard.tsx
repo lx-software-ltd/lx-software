@@ -151,9 +151,7 @@ export function AllocationCoverageDashboardCard() {
               <dt className="col-sm-5 text-muted pt-2">Net</dt>
               <dd className="col-sm-7 text-end pt-2 mb-0">
                 {sheet.status === "ok" ? (
-                  <span className={sheet.diff >= 0 ? "text-success" : "text-danger"}>
-                    <MoneyAmount amount={sheet.diff} currency={base} />
-                  </span>
+                  <MoneyAmount amount={sheet.diff} currency={base} />
                 ) : (
                   loadingOrErrorMessage(sheet)
                 )}

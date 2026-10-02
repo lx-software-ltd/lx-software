@@ -16,7 +16,6 @@ import { useConvertedNetHkd } from "../hooks/useConvertedNetHkd";
 import { useFinance } from "../hooks/useFinance";
 import { keys } from "../lib/queryKeys";
 import { EMPTY_STATEMENT_BOOK, statementBookQuery } from "../hooks/useStatementBook";
-import { formatNonZeroMoneyLines } from "../lib/formatDisplay";
 import {
   defaultFiscalYearIdForNowUtc,
   fiscalYearIdToStartCalendarYear,
@@ -97,7 +96,7 @@ export function DashboardPage() {
         finance.expenseIncomeAllocationPercents,
         finance.allocationRecords,
       );
-      return formatNonZeroMoneyLines(monthlyLedgerNetByCurrency(monthly));
+      return monthlyLedgerNetByCurrency(monthly);
     };
     return {
       books: STATEMENT_BOOK_DASHBOARD_ORDER.map((bookKey, index) => ({
@@ -122,8 +121,8 @@ export function DashboardPage() {
               fiscalYearStart={fiscalYearStart}
             />
           ))}
-          <AdminKpi label="Hillmarton" value={<AdminKpiAmounts lines={kpis.hillmarton} />} hint="Monthly net" />
-          <AdminKpi label="The Morrison" value={<AdminKpiAmounts lines={kpis.morrison} />} hint="Monthly net" />
+          <AdminKpi label="Hillmarton" value={<AdminKpiAmounts amounts={kpis.hillmarton} />} hint="Monthly net" />
+          <AdminKpi label="The Morrison" value={<AdminKpiAmounts amounts={kpis.morrison} />} hint="Monthly net" />
         </div>
       ) : null}
 

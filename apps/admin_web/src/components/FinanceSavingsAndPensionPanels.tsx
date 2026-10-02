@@ -711,7 +711,7 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
                       <AdminCell key="label" column="label" className="small">
                         Allocation
                         <AdminDataTableCellMeta>
-                          {a.description} · {a.currency} ·{" "}
+                          {a.description} ·{" "}
                           <MoneyAmount
                             amount={a.accumulatedAmount}
                             currency={a.currency}
@@ -726,7 +726,7 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
                     ),
                     amt: (
                       <AdminCell key="amt" column="amt" className="small text-end">
-                        <MoneyAmount amount={a.accumulatedAmount} currency={a.currency} codePrefix />
+                        <MoneyAmount amount={a.accumulatedAmount} currency={a.currency} />
                       </AdminCell>
                     ),
                     lastUpdated: (
@@ -752,7 +752,7 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
                     <AdminCell key="label" column="label" className="small">
                       {r.fund}
                       <AdminDataTableCellMeta>
-                        {r.description} · {r.currency} ·{" "}
+                        {r.description} ·{" "}
                         <MoneyAmount amount={r.value} currency={r.currency} />
                       </AdminDataTableCellMeta>
                       <AdminDataTableCellMeta until="tertiary">
@@ -767,7 +767,7 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
                   ),
                   amt: (
                     <AdminCell key="amt" column="amt" className="small text-end">
-                      <MoneyAmount amount={r.value} currency={r.currency} codePrefix />
+                      <MoneyAmount amount={r.value} currency={r.currency} />
                     </AdminCell>
                   ),
                   lastUpdated: (
@@ -817,7 +817,7 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
                     <AdminCell key="label" column="label" className="small">
                       {r.deposit}
                       <AdminDataTableCellMeta>
-                        {r.assetType} · {r.description} · {r.currency} ·{" "}
+                        {r.assetType} · {r.description} ·{" "}
                         <MoneyAmount amount={r.value} currency={r.currency} />
                       </AdminDataTableCellMeta>
                     </AdminCell>
@@ -834,7 +834,7 @@ function SimpleMoneyRecordsPanel(props: SimpleMoneyRecordsPanelProps) {
                   ),
                   amt: (
                     <AdminCell key="amt" column="amt" className="small text-end">
-                      <MoneyAmount amount={r.value} currency={r.currency} codePrefix />
+                      <MoneyAmount amount={r.value} currency={r.currency} />
                     </AdminCell>
                   ),
                   ops: (

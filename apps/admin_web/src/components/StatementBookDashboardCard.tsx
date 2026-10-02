@@ -101,7 +101,7 @@ export function StatementBookDashboardCard({
           </dd>
           <dt className="col-sm-4 text-muted pt-2">Net</dt>
           <dd className="col-sm-8 pt-2">
-            <ConvertedNetHkdValue converted={converted} signed />
+            <ConvertedNetHkdValue converted={converted} />
           </dd>
         </dl>
         <p className="text-muted small mb-0 mt-3">

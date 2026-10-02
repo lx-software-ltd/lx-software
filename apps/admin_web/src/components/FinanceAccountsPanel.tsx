@@ -533,7 +533,7 @@ export function FinanceAccountsPanel(props: {
                 <AdminCell column="desc" className="small">
                   {r.description || "—"}
                   <AdminDataTableCellMeta>
-                    {r.accountType} · {r.currency} ·{" "}
+                    {r.accountType} ·{" "}
                     <MoneyAmount amount={r.recordedValue} currency={r.currency} />
                   </AdminDataTableCellMeta>
                   <AdminDataTableCellMeta until="tertiary">
@@ -542,7 +542,7 @@ export function FinanceAccountsPanel(props: {
                 </AdminCell>
                 <AdminCell column="atype" className="small">{r.accountType}</AdminCell>
                 <AdminCell column="amt" className="small text-end">
-                  <MoneyAmount amount={r.recordedValue} currency={r.currency} codePrefix />
+                  <MoneyAmount amount={r.recordedValue} currency={r.currency} />
                 </AdminCell>
                 <AdminCell column="lastUpdated" className="small">
                   {accountLastUpdatedDisplay(r.lastUpdated)}

@@ -34,7 +34,7 @@ describe("BoardHeaderStrip", () => {
     expect(row).toHaveTextContent("Open actions");
     expect(row).toHaveTextContent("2");
     expect(row).toHaveTextContent("Spend today");
-    expect(row).toHaveTextContent("USD 0.41 / USD 15.00");
+    expect(row).toHaveTextContent("US$ 0.41 / US$ 15.00");
     expect(screen.getByRole("button", { name: "Read the minutes" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run stand-up" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Deep dive…" })).toBeInTheDocument();

@@ -1,7 +1,7 @@
 import { AdminKpi, AdminKpiAmounts } from "./ui";
 import { useMirroredBookSummary } from "../hooks/useMirroredBookSummary";
 import { getAdminApiErrorMessage } from "../lib/apiAdminClient";
-import { formatDateTimeHKT, formatNonZeroMoneyLines } from "../lib/formatDisplay";
+import { formatDateTimeHKT } from "../lib/formatDisplay";
 import type { StatementBookKey } from "../lib/financeTypes";
 import { STATEMENT_BOOK_DISPLAY_LABEL } from "../lib/statementOwners";
 
@@ -42,7 +42,7 @@ export function MirroredBookSummaryCard({
             <div className="admin-kpi-row">
               <AdminKpi
                 label="Outstanding"
-                value={<AdminKpiAmounts lines={formatNonZeroMoneyLines(summary.outstandingByCurrency)} />}
+                value={<AdminKpiAmounts amounts={summary.outstandingByCurrency} />}
                 hint="Issued, unpaid"
               />
               <AdminKpi label="Open invoices" value={summary.openInvoices} hint="Count" />

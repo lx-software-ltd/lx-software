@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
-import { formatMoneyAmountWithoutCurrency } from "../lib/formatDisplay";
+import { formatMoneyAmount } from "../lib/formatDisplay";
 import { financeFixture } from "../lib/mock/fixtures";
 import { HouseStatementPanel } from "./HouseStatementPanel";
 
@@ -51,7 +51,7 @@ describe("HouseStatementPanel columns", () => {
 });
 
 function expectGrossCell(currency: string, amount: number): void {
-  const expected = `${currency} ${formatMoneyAmountWithoutCurrency(amount, currency)}`;
+  const expected = formatMoneyAmount(amount, currency);
   const cells = screen
     .getAllByRole("cell")
     .filter((cell) => cell.getAttribute("data-column") === "gross");

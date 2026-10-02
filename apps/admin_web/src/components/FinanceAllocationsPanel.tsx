@@ -735,7 +735,7 @@ export function FinanceAllocationsPanel(props: {
                 <AdminCell column="desc" className="small">
                   {r.description}
                   <AdminDataTableCellMeta>
-                    {allocationTagsCellLabel(r)} · {r.currency}
+                    {allocationTagsCellLabel(r)}
                     {monthlyCol.kind === "dash" ? null : (
                       <>
                         {" · "}
@@ -755,12 +755,11 @@ export function FinanceAllocationsPanel(props: {
                     <MoneyAmount
                       amount={monthlyCol.value}
                       currency={monthlyCol.currency}
-                      codePrefix
                     />
                   )}
                 </AdminCell>
                 <AdminCell column="accum" className="small text-end">
-                  <MoneyAmount amount={r.accumulatedAmount} currency={r.currency} codePrefix />
+                  <MoneyAmount amount={r.accumulatedAmount} currency={r.currency} />
                 </AdminCell>
                 <AdminCell column="last" className="small">{allocationLastUpdatedDisplay(r.lastUpdated)}</AdminCell>
                 <AdminCell column="ops" className="small text-end">

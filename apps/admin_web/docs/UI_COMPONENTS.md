@@ -16,7 +16,7 @@ This document defines **reusable patterns** for the LX Software admin SPA (`apps
 
 | Component | Purpose |
 |-----------|---------|
-| `MoneyAmount` | Displays a numeric amount with ISO currency via `Intl.NumberFormat`. Props: `amount`, `currency`, optional `className` and `amountOnly` (the form finance tables use). |
+| `MoneyAmount` | Displays a numeric amount as `HK$ 3,300.23` (symbol, space, then the grouped value). Negative amounts are `--admin-danger`; non-negative stay `--admin-text`. Props: `amount`, `currency`, optional `className`, `amountOnly`, and `fractionDigits`. |
 | `CurrencySelect` | Bootstrap `form-select` for admin-supported currency codes only (`src/lib/currencies.ts`). Props: `id`, `value`, `onChange`, optional `className`, `disabled`, `ariaLabel`. |
 | `DateTimeDisplay` | Formats an ISO instant for **Hong Kong** wall time, e.g. `May 26, 2026 at 10:12pm HKT`. Uses `formatDateTimeHKT` in `src/lib/formatDisplay.ts`. |
 | `AdminRecordTable` | Untitled card: `AdminFilterBar`, optional `beforeTable` (disclosures), then the table. `label` is the accessible name. |
@@ -43,9 +43,9 @@ Import from the barrel: `import { MoneyAmount, … } from "../components/ui"` (a
 
 ## Formatting helpers (`src/lib/formatDisplay.ts`)
 
-- `formatMoneyAmount(amount, currency)` — string for non-React contexts.
-- `formatMoneyAmountWithoutCurrency(amount, currency)` — amount only.
-- `formatNonZeroMoneyLines(...)` — skips zero amounts.
+- `formatMoneyAmount(amount, currency)` — `HK$ 3,300.23` for non-React contexts.
+- `formatMoneyAmountWithoutCurrency(amount, currency)` — amount only (`3,300.23`).
+- `listNonZeroMoneyLines(...)` / `formatNonZeroMoneyLines(...)` — skips zero amounts.
 - `formatDateTimeHKT(iso)` — string for HKT display.
 - `formatDateUtc(iso)` — UTC calendar date.
 
