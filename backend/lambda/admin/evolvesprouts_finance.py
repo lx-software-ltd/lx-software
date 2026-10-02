@@ -5,8 +5,10 @@ submitted or paid expenses (expenditure). Issued invoices that are still
 unpaid stay on the summary and are not written as book lines.
 
 Dates use the Asia/Hong_Kong calendar day, stored as that day at 00:00 UTC
-(the same convention as a date typed into the other books). Paid expenses
-are dated by ``paid_at``; submitted expenses by ``invoice_date``.
+(the same convention as a date typed into the other books). Expenses use
+the vendor invoice issued date (``invoice_date``). Gains use the customer
+invoice ``paid_at`` when the payment is allocated to a settled invoice,
+otherwise the payment ``succeeded_at``.
 
 The product database is read through the RDS Data API. This stack does not
 write to it.
@@ -44,11 +46,18 @@ PAYMENTS_SQL = (
     "WHERE status = 'succeeded' AND direction IN ('inbound', 'refund') "
     "ORDER BY succeeded_at, id"
 )
+INVOICE_PAID_SQL = (
+    "SELECT a.payment_id, MAX(i.paid_at) AS invoice_paid_at "
+    "FROM payment_allocations a "
+    "JOIN customer_invoices i ON i.id = a.invoice_id "
+    "WHERE i.paid_at IS NOT NULL "
+    "GROUP BY a.payment_id"
+)
 # Vendor names live on organizations (expenses.vendor_name was dropped in
 # evolvesprouts migration 0016).
 EXPENSES_SQL = (
     "SELECT e.id, e.status, e.total, e.subtotal, e.tax, e.currency, "
-    "e.invoice_date, e.paid_at, o.name AS vendor_name, e.invoice_number "
+    "e.invoice_date, o.name AS vendor_name, e.invoice_number "
     "FROM expenses e "
     "LEFT JOIN organizations o ON o.id = e.vendor_id "
     "WHERE e.status IN ('submitted', 'paid') "
@@ -161,7 +170,7 @@ def _expense_description(row: dict[str, Any]) -> str:
     number = " ".join(str(row.get("invoice_number") or "").split())
     parts = [part for part in (vendor, number) if part]
     detail = " ".join(parts) if parts else str(row.get("id") or "")
-    return f"[evolve-sprouts] Expense {detail}"[:8000]
+    return detail[:8000]
 
 
 def _expense_amounts(row: dict[str, Any]) -> tuple[float, float, float] | None:
@@ -179,6 +188,22 @@ def _expense_amounts(row: dict[str, Any]) -> tuple[float, float, float] | None:
     return net, vat, gross
 
 
+def _invoice_paid_at_by_payment() -> dict[str, Any]:
+    """payment_id → customer invoice paid_at. Empty when the lookup is unavailable."""
+    try:
+        rows = _q(INVOICE_PAID_SQL)
+    except EvolveSproutsFinanceError:
+        _log_event("warning", tag="evolvesprouts_invoice_paid_at_unavailable")
+        return {}
+    paid_at: dict[str, Any] = {}
+    for row in rows:
+        payment_id = str(row.get("payment_id") or "").strip()
+        value = row.get("invoice_paid_at")
+        if payment_id and value:
+            paid_at[payment_id] = value
+    return paid_at
+
+
 def desired_book_lines() -> tuple[list[dict[str, Any]], int, int, int, int]:
     """Lines, unsupported-currency rows, incomplete rows, submitted count, paid count.
 
@@ -191,10 +216,15 @@ def desired_book_lines() -> tuple[list[dict[str, Any]], int, int, int, int]:
     submitted = 0
     paid = 0
     lines: list[dict[str, Any]] = []
+    invoice_paid_at = _invoice_paid_at_by_payment()
     for row in _q(PAYMENTS_SQL):
         amount = _positive(row.get("amount"))
         row_id = str(row.get("id") or "").strip()
-        day = _hkt_day(row.get("succeeded_at"))
+        direction = str(row.get("direction") or "")
+        if direction == "refund":
+            day = _hkt_day(row.get("succeeded_at"))
+        else:
+            day = _hkt_day(invoice_paid_at.get(row_id) or row.get("succeeded_at"))
         if not row_id or amount is None:
             continue
         if not _currency_present(row.get("currency")) or day is None:
@@ -204,7 +234,6 @@ def desired_book_lines() -> tuple[list[dict[str, Any]], int, int, int, int]:
         if currency is None:
             skipped_currency += 1
             continue
-        direction = str(row.get("direction") or "")
         if direction == "refund":
             lines.append(
                 _line(
@@ -223,7 +252,7 @@ def desired_book_lines() -> tuple[list[dict[str, Any]], int, int, int, int]:
                 _line(
                     line_id=f"es-pay-{row_id}",
                     day=day,
-                    description=f"[evolve-sprouts] Payment {row_id}",
+                    description=row_id[:8000],
                     net=amount,
                     vat=0,
                     gross=amount,
@@ -235,7 +264,7 @@ def desired_book_lines() -> tuple[list[dict[str, Any]], int, int, int, int]:
         amounts = _expense_amounts(row)
         row_id = str(row.get("id") or "").strip()
         status = str(row.get("status") or "")
-        day = _hkt_day(row.get("paid_at") if status == "paid" else row.get("invoice_date"))
+        day = _hkt_day(row.get("invoice_date"))
         if not row_id or amounts is None:
             if row_id and amounts is None:
                 skipped_incomplete += 1
