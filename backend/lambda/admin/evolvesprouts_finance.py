@@ -7,9 +7,12 @@ from Gains.
 
 Dates use the Asia/Hong_Kong calendar day, stored as that day at 00:00 UTC
 (the same convention as a date typed into the other books). Expenses and
-gains use the document ``invoice_date``. Gains also store ``sortUtc`` from
-invoice ``created_at`` so the Gains tab follows Client Invoices
-(``created_at`` then ``id``, newest first). Refunds use ``succeeded_at``.
+gains use the document ``invoice_date``. An issued invoice without one
+(issued before evolvesprouts migration 0057 added the column) is dated by
+``created_at``, the same fallback Client Invoices shows. Gains also store
+``sortUtc`` from invoice ``created_at`` so the Gains tab follows Client
+Invoices (``created_at`` then ``id``, newest first). Refunds use
+``succeeded_at``.
 
 The product database is read through the RDS Data API. This stack does not
 write to it.
@@ -242,7 +245,7 @@ def desired_book_lines() -> tuple[list[dict[str, Any]], int, int, int, int]:
     for row in _q(INVOICES_SQL):
         amounts = _invoice_amounts(row)
         row_id = str(row.get("id") or "").strip()
-        day = _hkt_day(row.get("invoice_date"))
+        day = _hkt_day(row.get("invoice_date")) or _hkt_day(row.get("created_at"))
         if not row_id or amounts is None:
             if row_id and amounts is None:
                 skipped_incomplete += 1

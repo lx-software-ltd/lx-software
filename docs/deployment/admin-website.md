@@ -628,9 +628,12 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
    `balance_due > 0` also stay on the summary (outstanding by currency,
    open-invoice count). Each row keeps its own currency. Invoice and
    expense net is `subtotal`, VAT is `tax` / `tax_total`, and gross is
-   `total`. Document dates are `invoice_date`. Gains also store `sortUtc`
-   from invoice `created_at` so the Gains tab does not reorder by document
-   date. Refunds use `succeeded_at`. Calendar days are Asia/Hong_Kong,
+   `total`. Document dates are `invoice_date`. An issued invoice with no
+   `invoice_date` (issued before evolvesprouts migration `0057` added the
+   column, 2 May 2026) is dated by `created_at`, the same fallback the
+   Client Invoices list shows. Gains also store `sortUtc` from invoice
+   `created_at` so the Gains tab does not reorder by document date.
+   Refunds use `succeeded_at`. Calendar days are Asia/Hong_Kong,
    stored as that day at 00:00 UTC. Codes outside GBP, HKD, USD, EUR, CNY,
    SGD, AED are skipped and counted separately from rows missing an
    amount, currency, or date. Expense descriptions are the vendor name and

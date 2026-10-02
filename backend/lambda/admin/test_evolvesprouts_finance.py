@@ -94,13 +94,24 @@ def _rows(sql: str, _parameters: list | None) -> list[dict]:
             {
                 "id": "inv-nodate",
                 "invoice_number": "INV-0",
-                "invoice_date": "",
-                "created_at": "2026-04-03T00:00:00Z",
+                "invoice_date": None,
+                "created_at": "2026-05-01T18:30:00Z",
                 "currency": "HKD",
                 "subtotal": 3,
                 "tax_total": 0,
                 "total": 3,
-                "bill_to_display_name": "Missing date",
+                "bill_to_display_name": "Before migration 0057",
+            },
+            {
+                "id": "inv-undated",
+                "invoice_number": "INV-1",
+                "invoice_date": None,
+                "created_at": "",
+                "currency": "HKD",
+                "subtotal": 3,
+                "tax_total": 0,
+                "total": 3,
+                "bill_to_display_name": "No date at all",
             },
         ]
     if "FROM expenses" in sql:
@@ -234,11 +245,16 @@ class TestEvolveSproutsMirror(unittest.TestCase):
                 "manual-1",
                 "es-inv-inv-recent",
                 "es-inv-inv-older",
+                "es-inv-inv-nodate",
                 "es-ref-r1",
                 "es-exp-e1",
                 "es-exp-e2",
             },
         )
+        # No invoice_date: Client Invoices shows createdAt, so the HKT day of
+        # created_at (02:30 on 2 May in Hong Kong) is the document date.
+        self.assertEqual(by_id["es-inv-inv-nodate"]["dateUtc"], "2026-05-02T00:00:00.000Z")
+        self.assertEqual(by_id["es-inv-inv-nodate"]["sortUtc"], "2026-05-01T18:30:00.000Z")
         self.assertEqual(by_id["es-inv-inv-recent"]["type"], "income")
         self.assertEqual(by_id["es-inv-inv-recent"]["description"], "INV-42 Alpha School")
         self.assertEqual(by_id["es-inv-inv-recent"]["dateUtc"], "2026-03-01T00:00:00.000Z")
@@ -273,6 +289,7 @@ class TestEvolveSproutsMirror(unittest.TestCase):
                 "manual-1",
                 "es-inv-inv-recent",
                 "es-inv-inv-older",
+                "es-inv-inv-nodate",
                 "es-ref-r1",
                 "es-exp-e1",
                 "es-exp-e2",
