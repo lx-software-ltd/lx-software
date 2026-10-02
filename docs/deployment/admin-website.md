@@ -596,8 +596,9 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
    **read-only** user. Both secret fields default to blank — do not use
    the cluster master name `evolvesprouts-database-credentials`.
    `HasEvolvesproutsDataApi` is the cluster ARN **and** a secret. Redeploy.
-   `AdminApiFn` receives `EVOLVESPROUTS_CLUSTER_ARN`,
-   `EVOLVESPROUTS_DB_SECRET_ARN`, and `EVOLVESPROUTS_DB_NAME=evolvesprouts`.
+   `AdminApiFn` receives `EVOLVESPROUTS_CLUSTER_ARN` and
+   `EVOLVESPROUTS_DB_SECRET_ARN` (a secret name or ARN). The database name
+   defaults to `evolvesprouts`.
    IAM is `rds-data:ExecuteStatement` on the cluster,
    `secretsmanager:GetSecretValue` on the resolved secret, and
    `kms:Decrypt` via Secrets Manager (`AdminEvolvesproutsDataApiPolicy`).
