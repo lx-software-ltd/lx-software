@@ -1,3 +1,6 @@
 {
-  "app": "bash ../scripts/run-cdk-app.sh"
+  "app": "bash ../scripts/run-cdk-app.sh",
+  "context": {
+    "@lxsoftware/feature-flags": "Feature flags such as @aws-cdk/aws-iam:minimizePolicies were not enabled because they change synthesized IAM/logical IDs and need a production cdk diff."
+  }
 }

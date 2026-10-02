@@ -26,16 +26,23 @@ describe("DOCKER_BUNDLE_SCRIPT", () => {
     const output = path.join(root, "asset-output");
     fs.mkdirSync(path.join(input, "fonts"), { recursive: true });
     fs.mkdirSync(path.join(input, "brand", "__pycache__"), { recursive: true });
+    fs.mkdirSync(path.join(input, "contracts"), { recursive: true });
+    fs.mkdirSync(path.join(input, "test_fixtures"), { recursive: true });
     fs.mkdirSync(path.join(input, "__pycache__"), { recursive: true });
     fs.mkdirSync(path.join(input, ".pytest_cache"), { recursive: true });
     fs.mkdirSync(output);
     fs.writeFileSync(path.join(input, "handler.py"), "def lambda_handler(e, c): return e\n");
     fs.writeFileSync(path.join(input, "board_x.py"), "");
+    fs.writeFileSync(path.join(input, "test_handler.py"), "not copied");
     fs.writeFileSync(path.join(input, "receivables.sql"), "CREATE TABLE t (id int);\n");
     fs.writeFileSync(path.join(input, "README.md"), "not copied");
     fs.writeFileSync(path.join(input, "fonts", "NotoSans-Regular.ttf"), "ttf");
+    fs.writeFileSync(path.join(input, "fonts", "README.md"), "not copied");
     fs.writeFileSync(path.join(input, "brand", "logo.png"), "png");
+    fs.writeFileSync(path.join(input, "brand", "test_logo.py"), "not copied");
     fs.writeFileSync(path.join(input, "brand", "__pycache__", "x.pyc"), "pyc");
+    fs.writeFileSync(path.join(input, "contracts", "board.json"), "{}");
+    fs.writeFileSync(path.join(input, "test_fixtures", "row.json"), "{}");
     fs.writeFileSync(path.join(input, "__pycache__", "handler.cpython-312.pyc"), "pyc");
 
     const script = DOCKER_BUNDLE_SCRIPT.split("/asset-output").join(output);
@@ -51,6 +58,8 @@ describe("DOCKER_BUNDLE_SCRIPT", () => {
       "board_x.py",
       "brand",
       path.join("brand", "logo.png"),
+      "contracts",
+      path.join("contracts", "board.json"),
       "fonts",
       path.join("fonts", "NotoSans-Regular.ttf"),
       "handler.py",

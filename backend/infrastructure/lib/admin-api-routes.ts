@@ -1,0 +1,159 @@
+import * as apigwv2 from "aws-cdk-lib/aws-apigatewayv2";
+
+const GET = apigwv2.HttpMethod.GET;
+const POST = apigwv2.HttpMethod.POST;
+const PUT = apigwv2.HttpMethod.PUT;
+const DELETE = apigwv2.HttpMethod.DELETE;
+
+/** Per-route throttle copied onto the $default stage RouteSettings. */
+export const WEBHOOK_THROTTLE = { ThrottlingRateLimit: 10, ThrottlingBurstLimit: 20 };
+export const PUBLIC_READ_THROTTLE = { ThrottlingRateLimit: 2, ThrottlingBurstLimit: 10 };
+export const PUBLIC_WRITE_THROTTLE = { ThrottlingRateLimit: 1, ThrottlingBurstLimit: 5 };
+
+export type RouteAuth = "none" | "jwt" | "apiKey";
+
+export interface AdminApiRoute {
+  readonly path: string;
+  readonly methods: readonly apigwv2.HttpMethod[];
+  readonly auth: RouteAuth;
+  readonly throttle?: {
+    readonly ThrottlingRateLimit: number;
+    readonly ThrottlingBurstLimit: number;
+  };
+}
+
+/**
+ * Every HTTP API route. Order matches the historical addRoutes calls so the
+ * shared Lambda integration stays parented under GET /health.
+ * /siu-tin-dei/board paths stay individual routes (not one {proxy+}).
+ */
+export const ROUTES: readonly AdminApiRoute[] = [
+  { path: "/health", methods: [GET], auth: "none" },
+  { path: "/webhooks/meta", methods: [GET, POST], auth: "none", throttle: WEBHOOK_THROTTLE },
+  { path: "/webhooks/meta/siutindei", methods: [GET, POST], auth: "none", throttle: WEBHOOK_THROTTLE },
+  { path: "/public/outreach/unsubscribe/{token}", methods: [GET, POST], auth: "none", throttle: WEBHOOK_THROTTLE },
+  { path: "/public/newsletter/subscribe", methods: [POST], auth: "none", throttle: WEBHOOK_THROTTLE },
+  { path: "/public/newsletter/confirm/{token}", methods: [GET], auth: "none", throttle: WEBHOOK_THROTTLE },
+  { path: "/public/newsletter/unsubscribe/{token}", methods: [GET, POST], auth: "none", throttle: WEBHOOK_THROTTLE },
+  { path: "/me", methods: [GET], auth: "jwt" },
+  { path: "/openrouter/usage", methods: [GET], auth: "jwt" },
+  { path: "/aws/usage", methods: [GET], auth: "jwt" },
+  { path: "/aws/usage.pdf", methods: [GET], auth: "jwt" },
+  { path: "/fx/v2/rates", methods: [GET], auth: "jwt" },
+  { path: "/assets", methods: [GET], auth: "jwt" },
+  { path: "/assets/upload-url", methods: [POST], auth: "jwt" },
+  { path: "/assets/confirm", methods: [POST], auth: "jwt" },
+  { path: "/assets/download-url", methods: [GET, POST], auth: "jwt" },
+  { path: "/assets/delete", methods: [POST], auth: "jwt" },
+  { path: "/records", methods: [GET, POST, PUT], auth: "jwt" },
+  { path: "/finance", methods: [GET], auth: "jwt" },
+  { path: "/finance/quotes", methods: [GET], auth: "jwt" },
+  { path: "/finance/income", methods: [PUT], auth: "jwt" },
+  { path: "/finance/expenses", methods: [PUT], auth: "jwt" },
+  { path: "/finance/investments", methods: [PUT], auth: "jwt" },
+  { path: "/finance/savings", methods: [PUT], auth: "jwt" },
+  { path: "/finance/pension", methods: [PUT], auth: "jwt" },
+  { path: "/finance/accounts", methods: [PUT], auth: "jwt" },
+  { path: "/finance/liabilities", methods: [PUT], auth: "jwt" },
+  { path: "/finance/allocations", methods: [PUT], auth: "jwt" },
+  { path: "/finance/{house}", methods: [PUT], auth: "jwt" },
+  { path: "/finance/{house}/parse-statement", methods: [POST], auth: "jwt" },
+  { path: "/finance/{house}/parse-statement/jobs/{jobId}", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei", methods: [GET, PUT], auth: "jwt" },
+  { path: "/siu-tin-dei/parse-statement", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/parse-statement/jobs/{jobId}", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/charter", methods: [PUT], auth: "jwt" },
+  { path: "/siu-tin-dei/board/members/{personaId}", methods: [PUT, DELETE], auth: "jwt" },
+  { path: "/siu-tin-dei/board/brief", methods: [PUT], auth: "jwt" },
+  { path: "/siu-tin-dei/board/settings", methods: [PUT], auth: "jwt" },
+  { path: "/siu-tin-dei/board/updates", methods: [GET, POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/chat/{personaId}", methods: [GET, POST, DELETE], auth: "jwt" },
+  { path: "/siu-tin-dei/board/chat/{personaId}/jobs/{jobId}", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/meetings", methods: [GET, POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/meetings/{meetingId}", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/meetings/{meetingId}/cancel", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/actions", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/actions/{actionId}", methods: [PUT], auth: "jwt" },
+  { path: "/siu-tin-dei/board/repo-snapshot/refresh", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/tools", methods: [GET, PUT], auth: "jwt" },
+  { path: "/siu-tin-dei/board/tools/calls", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/approvals", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/approvals/{approvalId}/approve", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/approvals/{approvalId}/reject", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/mail", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/mail/selftest", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/mail/{threadId}", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/mail/{threadId}/read", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/receivables", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/staff", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/staff/{seatId}", methods: [PUT, DELETE], auth: "jwt" },
+  { path: "/siu-tin-dei/board/tasks", methods: [GET, POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/tasks/{taskId}", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/tasks/{taskId}/cancel", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/tasks/{taskId}/review", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/tasks/{taskId}/retry", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/holds", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/holds/{holdId}/veto", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/holds/veto-class", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/boundaries", methods: [PUT], auth: "jwt" },
+  { path: "/siu-tin-dei/board/ramp", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/ramp/{classKey}/promote", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/review", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/progress", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/review/sample/{callId}/wrong", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/lessons", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/lessons/{lessonId}/confirm", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/lessons/{lessonId}/dismiss", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/breakers", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/breakers/{name}/reset", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/watchlist", methods: [GET, POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/watchlist/{watchId}", methods: [PUT, DELETE], auth: "jwt" },
+  { path: "/siu-tin-dei/board/changes", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/prospects", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/prospects/import", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/prospects/{id}", methods: [GET, PUT], auth: "jwt" },
+  { path: "/siu-tin-dei/board/prospects/{id}/merge", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/sequences/{type}", methods: [GET, PUT], auth: "jwt" },
+  { path: "/siu-tin-dei/board/outreach/stats", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/content", methods: [GET, POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/content/{id}", methods: [GET, PUT], auth: "jwt" },
+  { path: "/siu-tin-dei/board/content/{id}/render", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/content/{id}/creative/{n}", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/code/staging", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/code/promote", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/code/sync-staging", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/catalog/preview", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/catalog/import", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/catalog/skip", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/catalog/requeue", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/catalog/reimport", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/catalog/sources", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/catalog/bulk/{source}/preview", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/catalog/bulk/{source}/import", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/catalog/candidates", methods: [GET], auth: "jwt" },
+  { path: "/siu-tin-dei/board/catalog/candidates/bulk", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/catalog/candidates/{candidateId}/approve", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/catalog/candidates/{candidateId}/reject", methods: [POST], auth: "jwt" },
+  { path: "/siu-tin-dei/board/catalog/discovery/run", methods: [POST], auth: "jwt" },
+  { path: "/lx-software", methods: [GET, PUT], auth: "jwt" },
+  { path: "/lx-software/parse-statement", methods: [POST], auth: "jwt" },
+  { path: "/lx-software/parse-statement/jobs/{jobId}", methods: [GET], auth: "jwt" },
+  { path: "/evolve-sprouts", methods: [GET], auth: "jwt" },
+  { path: "/evolve-sprouts/summary", methods: [GET], auth: "jwt" },
+  { path: "/evolve-sprouts/sync", methods: [POST], auth: "jwt" },
+  { path: "/banking", methods: [GET], auth: "jwt" },
+  { path: "/banking/banks", methods: [GET], auth: "jwt" },
+  { path: "/banking/auth", methods: [POST], auth: "jwt" },
+  { path: "/banking/sessions", methods: [POST], auth: "jwt" },
+  { path: "/banking/sessions/{sessionId}", methods: [DELETE], auth: "jwt" },
+  { path: "/banking/mappings", methods: [PUT], auth: "jwt" },
+  { path: "/banking/sync", methods: [POST], auth: "jwt" },
+  { path: "/public/finance", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
+  { path: "/public/finance/quotes", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
+  { path: "/public/records", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
+  { path: "/public/fx/v2/rates", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
+  { path: "/public/siu-tin-dei/board", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
+  { path: "/public/siu-tin-dei/board/{proxy+}", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
+  { path: "/public/siu-tin-dei/board/{proxy+}", methods: [PUT, POST, DELETE], auth: "apiKey", throttle: PUBLIC_WRITE_THROTTLE },
+];

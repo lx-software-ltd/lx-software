@@ -1,7 +1,6 @@
 import * as cdk from "aws-cdk-lib";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as cr from "aws-cdk-lib/custom-resources";
-import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
 import * as sqs from "aws-cdk-lib/aws-sqs";
@@ -389,20 +388,5 @@ export class AuthConstruct extends Construct {
     );
     addBootstrapToGroup.node.addDependency(setBootstrapPassword);
     addBootstrapToGroup.node.addDependency(this.adminGroup);
-  }
-
-  /**
-   * REST API Gateway Cognito authorizer (optional). The HTTP API uses an
-   * HttpJwtAuthorizer instead; see LxsoftwareStack.
-   */
-  createApiAuthorizer(
-    scope: Construct,
-    id: string
-  ): apigateway.CognitoUserPoolsAuthorizer {
-    return new apigateway.CognitoUserPoolsAuthorizer(scope, id, {
-      cognitoUserPools: [this.userPool],
-      identitySource: "method.request.header.Authorization",
-      authorizerName: "lxsoftware-admin-cognito",
-    });
   }
 }
