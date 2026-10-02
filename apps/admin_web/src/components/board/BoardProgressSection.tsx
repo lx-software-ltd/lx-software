@@ -113,7 +113,7 @@ function ProgressBody({
       )}
 
       <div className="row g-3">
-        <div className="col-12 col-xl-6">
+        <div className="col-12">
           <Panel title="Listings by district">
             {listings.byDistrict.length === 0 ? (
               <p className="small text-muted mb-0">{listings.error || "Catalog health is empty."}</p>
@@ -149,7 +149,7 @@ function ProgressBody({
             )}
           </Panel>
         </div>
-        <div className="col-12 col-xl-6">
+        <div className="col-12">
           <Panel title="Stalled vendor onboarding">
             {signings.stalled.length === 0 ? (
               <p className="small text-muted mb-0">{signings.error || "No idle onboarding."}</p>
