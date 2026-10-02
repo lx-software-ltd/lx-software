@@ -1,31 +1,42 @@
-import { useCallback, useRef, useState } from "react";
-import {
-  readExpandedParam,
-  writeExpandedParam,
-} from "../lib/expandedRecord";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { isRowExpandedParam } from "../lib/expandedRecord";
 
 type PendingExpand = {
   readonly id: string | null;
   readonly commit: () => void;
 };
 
+function writeParam(prev: URLSearchParams, param: string, id: string | null): URLSearchParams {
+  const next = new URLSearchParams(prev);
+  for (const key of [...next.keys()]) {
+    if (key !== param && isRowExpandedParam(key)) next.delete(key);
+  }
+  if (id) next.set(param, id);
+  else next.delete(param);
+  return next;
+}
+
 /**
  * One open record at a time, synced to a query parameter.
  * `request` asks before discarding a dirty editor.
  */
 export function useExpandedRecord(param: string) {
-  const [expandedId, setExpandedId] = useState<string | null>(() => readExpandedParam(param));
+  const [params, setParams] = useSearchParams();
+  const expandedId = params.get(param);
   const [pending, setPending] = useState<PendingExpand | null>(null);
   const expandedRef = useRef(expandedId);
+  useEffect(() => {
+    expandedRef.current = expandedId;
+  }, [expandedId]);
 
   const apply = useCallback(
     (id: string | null, commit?: () => void) => {
       expandedRef.current = id;
-      setExpandedId(id);
-      writeExpandedParam(param, id);
+      setParams((prev) => writeParam(prev, param, id), { replace: true });
       commit?.();
     },
-    [param],
+    [param, setParams],
   );
 
   const request = useCallback(

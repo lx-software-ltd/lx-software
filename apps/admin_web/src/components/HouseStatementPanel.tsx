@@ -16,8 +16,7 @@ import {
 import { formatDateUtc } from "../lib/formatDisplay";
 import { parseAmount } from "../lib/formParse";
 import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
-import { useExpandedRecord } from "../hooks/useExpandedRecord";
-import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
+import { useRecordEditor } from "../hooks/useRecordEditor";
 import {
   existingImportedStatementBasenames,
   useParseStatement,
@@ -34,6 +33,8 @@ import {
   AdminEditorPanel,
   AdminEditorSection,
   AdminExpandableRow,
+  AdminField,
+  AdminFieldGrid,
   AdminFilterBar,
   AdminFilterField,
   AdminRecordTable,
@@ -335,17 +336,6 @@ export function HouseStatementPanel({
   );
   const [houseDefaultDraft, setHouseDefaultDraft] = useState(data.defaultCurrency);
 
-  const expanded = useExpandedRecord(`${houseKey}-line`);
-  const editingId =
-    expanded.expandedId && expanded.expandedId !== DRAFT_RECORD_ID
-      ? expanded.expandedId
-      : null;
-  const formOpen = expanded.expandedId !== null;
-  const [formError, setFormError] = useState<string | null>(null);
-  const [lineForm, setLineForm] = useState<LineFormState>(() => {
-    const next = emptyLineForm(data.defaultCurrency);
-    return lockedLineType ? { ...next, type: lockedLineType } : next;
-  });
   const [tableFilter, setTableFilter] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -365,8 +355,48 @@ export function HouseStatementPanel({
     string[] | null
   >(null);
   const [lineSubmitBusy, setLineSubmitBusy] = useState(false);
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [statementPdfOpenError, setStatementPdfOpenError] = useState<string | null>(null);
+
+  const editor = useRecordEditor<LineFormState, HouseStatementLine>({
+    param: `${houseKey}-line`,
+    records: data.lines,
+    emptyForm: () => {
+      const next = emptyLineForm(data.defaultCurrency);
+      return lockedLineType ? { ...next, type: lockedLineType } : next;
+    },
+    lineToForm,
+    extraDirty:
+      pendingLineFiles.length > 0 ||
+      removedAssetKeys.length > 0 ||
+      prefillStatementAssetKeys !== null,
+    onReset: () => {
+      setPendingLineFiles([]);
+      setRemovedAssetKeys([]);
+      setPrefillStatementAssetKeys(null);
+      if (linePdfInputRef.current) linePdfInputRef.current.value = "";
+    },
+    onApply: () => {
+      setPendingLineFiles([]);
+      setRemovedAssetKeys([]);
+      setPrefillStatementAssetKeys(null);
+      if (linePdfInputRef.current) linePdfInputRef.current.value = "";
+      queueMicrotask(() => lineDescriptionRef.current?.focus());
+    },
+    onDelete: (id) => {
+      onPatch((prev) => ({
+        ...prev,
+        lines: prev.lines.filter((line) => line.id !== id),
+      }));
+    },
+  });
+  const {
+    form: lineForm,
+    setForm: setLineForm,
+    editingId,
+    formError,
+    formOpen,
+    expandedId,
+  } = editor;
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -384,7 +414,7 @@ export function HouseStatementPanel({
     queueMicrotask(() => {
       setLineForm((f) => ({ ...f, currency: data.defaultCurrency }));
     });
-  }, [data.defaultCurrency, editingId, prefillStatementAssetKeys]);
+  }, [data.defaultCurrency, editingId, prefillStatementAssetKeys, setLineForm]);
 
   const scopedLines = useMemo(() => {
     if (!lockedLineType) return data.lines;
@@ -452,78 +482,19 @@ export function HouseStatementPanel({
     setFloatCurrency(floatCur);
   }
 
-  function blankLineForm() {
-    const next = emptyLineForm(data.defaultCurrency);
-    return lockedLineType ? { ...next, type: lockedLineType } : next;
-  }
-
-  useHydrateExpandedRecord({
-    expandedId: expanded.expandedId,
-    recordsReady: true,
-    record: editingLine ?? null,
-    apply: (line) => {
-      setFormError(null);
-      setLineForm(lineToForm(line));
-    },
-    onMissing: () => expanded.request(null, false),
-  });
-
-  function resetLineFields() {
-    setFormError(null);
-    setLineForm(blankLineForm());
-    setPendingLineFiles([]);
-    setRemovedAssetKeys([]);
-    setPrefillStatementAssetKeys(null);
-    if (linePdfInputRef.current) {
-      linePdfInputRef.current.value = "";
-    }
-  }
-
-  function applyLineToForm(line: HouseStatementLine, duplicate: boolean) {
-    setFormError(null);
-    setLineForm(lineToForm(line));
-    setPendingLineFiles([]);
-    setRemovedAssetKeys([]);
-    setPrefillStatementAssetKeys(
-      duplicate ? dedupeAssetKeys(statementLineAssetKeys(line)) : null,
-    );
-    if (linePdfInputRef.current) {
-      linePdfInputRef.current.value = "";
-    }
-    queueMicrotask(() => lineDescriptionRef.current?.focus());
-  }
-
-  function lineDirty(): boolean {
-    if (!formOpen) return false;
-    if (pendingLineFiles.length > 0 || removedAssetKeys.length > 0) return true;
-    if (prefillStatementAssetKeys !== null) return true;
-    if (editingId) {
-      const line = data.lines.find((row) => row.id === editingId);
-      if (!line) return false;
-      return JSON.stringify(lineForm) !== JSON.stringify(lineToForm(line));
-    }
-    return JSON.stringify(lineForm) !== JSON.stringify(blankLineForm());
-  }
-
   function openEdit(line: HouseStatementLine) {
-    expanded.toggle(
-      line.id,
-      lineDirty(),
-      () => applyLineToForm(line, false),
-      resetLineFields,
-    );
+    editor.openEdit(line);
   }
 
   function openDuplicateIntoEditor(line: HouseStatementLine) {
-    expanded.request(DRAFT_RECORD_ID, lineDirty(), () => applyLineToForm(line, true));
-  }
-
-  function openCreate() {
-    if (expanded.expandedId === DRAFT_RECORD_ID) {
-      expanded.request(null, lineDirty(), resetLineFields);
-      return;
-    }
-    expanded.request(DRAFT_RECORD_ID, lineDirty(), resetLineFields);
+    editor.request(DRAFT_RECORD_ID, () => {
+      editor.setForm(lineToForm(line));
+      setPendingLineFiles([]);
+      setRemovedAssetKeys([]);
+      setPrefillStatementAssetKeys(dedupeAssetKeys(statementLineAssetKeys(line)));
+      if (linePdfInputRef.current) linePdfInputRef.current.value = "";
+      queueMicrotask(() => lineDescriptionRef.current?.focus());
+    });
   }
 
   async function submitLine(e: FormEvent) {
@@ -532,11 +503,11 @@ export function HouseStatementPanel({
     const vat = parseAmount(lineForm.vat);
     const gross = parseAmount(lineForm.grossAmount);
     if (!lineForm.description.trim()) {
-      setFormError("Description is required.");
+      editor.setFormError("Description is required.");
       return;
     }
     if (net === null || vat === null || gross === null) {
-      setFormError("Net, VAT, and gross must be valid numbers.");
+      editor.setFormError("Net, VAT, and gross must be valid numbers.");
       return;
     }
     const currency = coerceSupportedCurrency(lineForm.currency, data.defaultCurrency);
@@ -546,14 +517,14 @@ export function HouseStatementPanel({
     const pendingNames = new Set<string>();
     for (const f of pendingLineFiles) {
       if (pendingNames.has(f.name)) {
-        setFormError(
+        editor.setFormError(
           `You added "${f.name}" more than once. Remove duplicate staged files.`,
         );
         return;
       }
       pendingNames.add(f.name);
       if (basenames.has(f.name)) {
-        setFormError(
+        editor.setFormError(
           `A statement file named "${f.name}" is already linked to another line for this house. Remove it from that line or rename the file.`,
         );
         return;
@@ -563,14 +534,14 @@ export function HouseStatementPanel({
     const uploadedKeys: string[] = [];
     if (pendingLineFiles.length > 0) {
       setLineSubmitBusy(true);
-      setFormError(null);
+      editor.setFormError(null);
       try {
         for (const file of pendingLineFiles) {
           uploadedKeys.push(await uploadFinanceAsset(file, houseKey, queryClient));
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        setFormError(msg || "Could not upload a statement file.");
+        editor.setFormError(msg || "Could not upload a statement file.");
         return;
       } finally {
         setLineSubmitBusy(false);
@@ -604,8 +575,7 @@ export function HouseStatementPanel({
       };
     });
 
-    resetLineFields();
-    expanded.request(null, false);
+    editor.close();
   }
 
   function openStatementPdf(assetKey: string) {
@@ -630,19 +600,7 @@ export function HouseStatementPanel({
       });
   }
 
-  function deleteLine(id: string) {
-    onPatch((prev) => ({
-      ...prev,
-      lines: prev.lines.filter((l) => l.id !== id),
-    }));
-    if (editingId === id) {
-      resetLineFields();
-      expanded.request(null, false);
-    }
-    setPendingDeleteId(null);
-  }
-
-      const lineEditor = formOpen ? (
+  const lineEditor = formOpen ? (
         <AdminEditorPanel
           formId={lineFormId}
           onSubmit={submitLine}
@@ -652,11 +610,8 @@ export function HouseStatementPanel({
           error={formError}
         >
           <span className="visually-hidden">{lineSectionTitle}</span>
-          <div className="row g-3">
-            <div className="col-12 col-sm-6 col-md-3">
-              <label className="form-label small" htmlFor={`${houseKey}-fin-date-utc`}>
-                Date (UTC)
-              </label>
+          <AdminFieldGrid columns={4}>
+            <AdminField label="Date (UTC)" htmlFor={`${houseKey}-fin-date-utc`}>
               <input
                 id={`${houseKey}-fin-date-utc`}
                 type="date"
@@ -667,12 +622,9 @@ export function HouseStatementPanel({
                   setLineForm((f) => ({ ...f, datePart: ev.target.value }))
                 }
               />
-            </div>
+            </AdminField>
             {lockedLineType ? null : (
-            <div className="col-12 col-sm-6 col-md-3">
-              <label className="form-label small" htmlFor={`${houseKey}-fin-type`}>
-                Type
-              </label>
+            <AdminField label="Type" htmlFor={`${houseKey}-fin-type`}>
               <select
                 id={`${houseKey}-fin-type`}
                 className="form-select form-select-sm"
@@ -688,12 +640,9 @@ export function HouseStatementPanel({
                 <option value="expenditure">Expenditure</option>
                 <option value="mortgage">Mortgage</option>
               </select>
-            </div>
+            </AdminField>
             )}
-            <div className="col-12 col-md-6">
-              <label className="form-label small" htmlFor={`${houseKey}-fin-desc`}>
-                Description
-              </label>
+            <AdminField label="Description" htmlFor={`${houseKey}-fin-desc`} span={2}>
               <input
                 id={`${houseKey}-fin-desc`}
                 ref={lineDescriptionRef}
@@ -705,11 +654,8 @@ export function HouseStatementPanel({
                   setLineForm((f) => ({ ...f, description: ev.target.value }))
                 }
               />
-            </div>
-            <div className="col-12 col-sm-6 col-md-3">
-              <label className="form-label small" htmlFor={`${houseKey}-fin-net`}>
-                Net amount
-              </label>
+            </AdminField>
+            <AdminField label="Net amount" htmlFor={`${houseKey}-fin-net`}>
               <input
                 id={`${houseKey}-fin-net`}
                 type="number"
@@ -721,11 +667,8 @@ export function HouseStatementPanel({
                   setLineForm((f) => ({ ...f, netAmount: ev.target.value }))
                 }
               />
-            </div>
-            <div className="col-12 col-sm-6 col-md-3">
-              <label className="form-label small" htmlFor={`${houseKey}-fin-vat`}>
-                VAT
-              </label>
+            </AdminField>
+            <AdminField label="VAT" htmlFor={`${houseKey}-fin-vat`}>
               <input
                 id={`${houseKey}-fin-vat`}
                 type="number"
@@ -737,11 +680,8 @@ export function HouseStatementPanel({
                   setLineForm((f) => ({ ...f, vat: ev.target.value }))
                 }
               />
-            </div>
-            <div className="col-12 col-sm-6 col-md-3">
-              <label className="form-label small" htmlFor={`${houseKey}-fin-gross`}>
-                Gross amount
-              </label>
+            </AdminField>
+            <AdminField label="Gross amount" htmlFor={`${houseKey}-fin-gross`}>
               <input
                 id={`${houseKey}-fin-gross`}
                 type="number"
@@ -753,11 +693,8 @@ export function HouseStatementPanel({
                   setLineForm((f) => ({ ...f, grossAmount: ev.target.value }))
                 }
               />
-            </div>
-            <div className="col-12 col-sm-6 col-md-3">
-              <label className="form-label small" htmlFor={`${houseKey}-fin-cur`}>
-                Currency
-              </label>
+            </AdminField>
+            <AdminField label="Currency" htmlFor={`${houseKey}-fin-cur`}>
               <CurrencySelect
                 id={`${houseKey}-fin-cur`}
                 value={lineForm.currency}
@@ -765,12 +702,9 @@ export function HouseStatementPanel({
                   setLineForm((f) => ({ ...f, currency: code }))
                 }
               />
-            </div>
-            <div className="col-12">
-              <label className="form-label small mb-1" htmlFor={`${houseKey}-line-pdf`}>
-                Statement files{" "}
-                <span className="text-muted fw-normal">(optional, PDF or images)</span>
-              </label>
+            </AdminField>
+            <AdminField span={4} label="Statement files" htmlFor={`${houseKey}-line-pdf`}>
+              <span className="d-block small text-muted fw-normal mb-1">(optional, PDF or images)</span>
               <input
                 id={`${houseKey}-line-pdf`}
                 ref={linePdfInputRef}
@@ -782,7 +716,7 @@ export function HouseStatementPanel({
                 onChange={(ev) => {
                   const picked = ev.target.files ? Array.from(ev.target.files) : [];
                   setPendingLineFiles((prev) => [...prev, ...picked]);
-                  setFormError(null);
+                  editor.setFormError(null);
                   ev.target.value = "";
                 }}
               />
@@ -853,8 +787,8 @@ export function HouseStatementPanel({
                   Removed attachments are dropped when you save this line.
                 </p>
               ) : null}
-            </div>
-          </div>
+            </AdminField>
+          </AdminFieldGrid>
         </AdminEditorPanel>
       ) : null;
 
@@ -1062,7 +996,7 @@ export function HouseStatementPanel({
                         ? "New expense"
                         : "New line"
                   }
-                  onClick={openCreate}
+                  onClick={editor.openCreate}
                 />
               )
             }
@@ -1082,11 +1016,11 @@ export function HouseStatementPanel({
         }
       >
         <AdminDataTable bare columns={columns}>
-          {!readOnly && expanded.expandedId === DRAFT_RECORD_ID ? (
+          {!readOnly && expandedId === DRAFT_RECORD_ID ? (
             <AdminExpandableRow
               colSpan={colSpan}
               expanded
-              onToggle={openCreate}
+              onToggle={editor.openCreate}
               editor={lineEditor}
             >
               <AdminCell column="when" className="small">New</AdminCell>
@@ -1114,7 +1048,7 @@ export function HouseStatementPanel({
                 <AdminExpandableRow
                   key={line.id}
                   colSpan={colSpan}
-                  expanded={expanded.expandedId === line.id}
+                  expanded={expandedId === line.id}
                   onToggle={() => openEdit(line)}
                   editor={lineEditor}
                 >
@@ -1144,7 +1078,7 @@ export function HouseStatementPanel({
                           label: "Delete line",
                           iconClassName: "bi bi-trash",
                           danger: true,
-                          onClick: () => setPendingDeleteId(line.id),
+                          onClick: () => editor.requestDelete(line.id),
                         },
                       ]}
                     />
@@ -1162,25 +1096,23 @@ export function HouseStatementPanel({
           )}
         </AdminDataTable>
         <ConfirmDialog
-          open={pendingDeleteId !== null}
+          open={editor.pendingDeleteId !== null}
           title="Delete line"
           body="Delete this statement line?"
           confirmLabel="Delete"
           tone="danger"
-          onConfirm={() => {
-            if (pendingDeleteId) deleteLine(pendingDeleteId);
-          }}
-          onCancel={() => setPendingDeleteId(null)}
+          onConfirm={editor.confirmDelete}
+          onCancel={editor.cancelDelete}
         />
         <ConfirmDialog
-          open={expanded.confirmOpen}
+          open={editor.confirmOpen}
           title="Discard unsaved edits?"
           body="This line has unsaved changes."
           confirmLabel="Discard"
           cancelLabel="Keep editing"
           tone="danger"
-          onConfirm={expanded.acceptPending}
-          onCancel={expanded.cancelPending}
+          onConfirm={editor.acceptPending}
+          onCancel={editor.cancelPending}
         />
       </AdminRecordTable>
     </div>

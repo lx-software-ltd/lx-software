@@ -1,4 +1,6 @@
+import type { ReactElement } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import type { BoardTask } from "../../lib/boardModel";
 import { BoardTasksSection } from "./BoardTasksSection";
@@ -110,9 +112,13 @@ vi.mock("../../hooks/useBoardTasks", () => ({
   useBoardTask: () => ({ data: undefined, isLoading: false, error: null }),
 }));
 
+function renderSection(ui: ReactElement = <BoardTasksSection />) {
+  return render(<MemoryRouter>{ui}</MemoryRouter>);
+}
+
 describe("BoardTasksSection", () => {
   it("shows failed tasks and can retry or dismiss them", () => {
-    render(<BoardTasksSection />);
+    renderSection();
     expect(screen.getByRole("button", { name: "New task" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Failed \(1\)/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Needs owner \(1\)/ })).toBeInTheDocument();
@@ -141,7 +147,7 @@ describe("BoardTasksSection", () => {
   });
 
   it("filters cards by task id prefix", () => {
-    render(<BoardTasksSection />);
+    renderSection();
     fireEvent.change(screen.getByLabelText("Search tasks"), { target: { value: "task-fai" } });
     expect(screen.getByText(/Complete backend integration/)).toBeInTheDocument();
     expect(screen.queryByText(/Verify GA4 visitor sources/)).not.toBeInTheDocument();
@@ -149,14 +155,14 @@ describe("BoardTasksSection", () => {
 
   it("surfaces a dismiss error above the board when the drawer is closed", () => {
     cancelState.error = new Error("Delivered tasks cannot be cancelled");
-    render(<BoardTasksSection />);
+    renderSection();
     expect(screen.getByText("Delivered tasks cannot be cancelled")).toBeInTheDocument();
     cancelState.error = null;
   });
 
   it("opens a focused task and tells the parent the focus was consumed", () => {
     const onFocusConsumed = vi.fn();
-    render(<BoardTasksSection focusTaskId="task-owner" onFocusConsumed={onFocusConsumed} />);
+    renderSection(<BoardTasksSection focusTaskId="task-owner" onFocusConsumed={onFocusConsumed} />);
     expect(onFocusConsumed).toHaveBeenCalled();
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getAllByLabelText("Task task-owner").length).toBeGreaterThan(0);

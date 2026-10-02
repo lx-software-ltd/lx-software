@@ -1,9 +1,10 @@
-import { type FormEvent, useCallback, useMemo, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import {
   coerceSupportedCurrency,
   GLOBAL_DEFAULT_CURRENCY,
   type CurrencyCode,
 } from "../lib/currencies";
+import { compareBy } from "../lib/compareBy";
 import { formatDateUtc } from "../lib/formatDisplay";
 import { parseAmount } from "../lib/formParse";
 import { convertAmountToBase } from "../lib/frankfurterRates";
@@ -14,9 +15,8 @@ import {
   type FinanceAccountRecord,
   type FinanceAccountType,
 } from "../lib/financeModel";
-import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
-import { useExpandedRecord } from "../hooks/useExpandedRecord";
-import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
+import { useRecordEditor } from "../hooks/useRecordEditor";
+import { useSortState } from "../hooks/useSortState";
 import { useFrankfurterRatesForTotals } from "../hooks/useFrankfurterRatesForTotals";
 import {
   AdminCell,
@@ -27,13 +27,14 @@ import {
   AdminCreateButton,
   AdminEditorPanel,
   AdminExpandableRow,
+  AdminField,
+  AdminFieldGrid,
   AdminFilterBar,
   AdminFilterField,
+  AdminFxTotalRow,
   AdminRecordTable,
   AdminRowActions,
   ConfirmDialog,
-  AdminTableTotalCurrency,
-  AdminTableTotalLabel,
   CurrencySelect,
   MoneyAmount,
   StaleValuationBadge,
@@ -57,61 +58,132 @@ function accountTypeIsCreditCard(t: FinanceAccountType): boolean {
 
 type AccountsSortKey = "desc" | "atype" | "day" | "amt" | "stmt" | "ccy" | "lastUpdated";
 
+type AccountFormState = {
+  description: string;
+  accountType: FinanceAccountType;
+  billingDay: string;
+  value: string;
+  lastStatement: string;
+  currency: CurrencyCode;
+};
+
+function emptyAccountForm(): AccountFormState {
+  return {
+    description: "",
+    accountType: "Bank Account",
+    billingDay: "1",
+    value: "",
+    lastStatement: "",
+    currency: GLOBAL_DEFAULT_CURRENCY,
+  };
+}
+
+function lineToForm(row: FinanceAccountRecord): AccountFormState {
+  return {
+    description: row.description,
+    accountType: row.accountType,
+    billingDay: String(row.billingCycleDay),
+    value: String(row.recordedValue),
+    lastStatement: accountTypeIsCreditCard(row.accountType)
+      ? String(row.lastStatementAmount ?? "")
+      : "",
+    currency: coerceSupportedCurrency(row.currency, GLOBAL_DEFAULT_CURRENCY),
+  };
+}
+
+function formToRecord(
+  form: AccountFormState,
+  editingId: string | null,
+  previous: FinanceAccountRecord | null,
+): { ok: true; record: FinanceAccountRecord } | { ok: false; error: string } {
+  const valueNum = parseAmount(form.value);
+  let billingCycleDay: number;
+  if (accountTypeUsesBillingCycleDay(form.accountType)) {
+    const dayParsed = Number.parseInt(form.billingDay.trim(), 10);
+    if (!Number.isInteger(dayParsed) || dayParsed < 1 || dayParsed > 31) {
+      return { ok: false, error: "Billing cycle day must be a whole number from 1 to 31." };
+    }
+    billingCycleDay = dayParsed;
+  } else if (editingId) {
+    billingCycleDay = previous?.billingCycleDay ?? 1;
+  } else {
+    billingCycleDay = 1;
+  }
+  if (valueNum === null) {
+    return { ok: false, error: "Current balance must be a valid number." };
+  }
+  let lastStatementNum: number | undefined;
+  if (accountTypeIsCreditCard(form.accountType)) {
+    const parsedStmt = parseAmount(form.lastStatement);
+    if (parsedStmt === null) {
+      return { ok: false, error: "Last Statement Amount must be a valid number." };
+    }
+    lastStatementNum = parsedStmt;
+  }
+  const currency = coerceSupportedCurrency(form.currency, GLOBAL_DEFAULT_CURRENCY);
+  return {
+    ok: true,
+    record: {
+      id: editingId ?? newStatementLineId(),
+      description: form.description.trim(),
+      accountType: form.accountType,
+      billingCycleDay,
+      recordedValue: valueNum,
+      ...(lastStatementNum !== undefined ? { lastStatementAmount: lastStatementNum } : {}),
+      currency,
+    },
+  };
+}
+
 function compareAccounts(
   a: FinanceAccountRecord,
   b: FinanceAccountRecord,
   sortKey: AccountsSortKey,
   sortDir: "asc" | "desc",
 ): number {
-  const dir = sortDir === "asc" ? 1 : -1;
-  let cmp = 0;
-  switch (sortKey) {
-    case "desc":
-      cmp = a.description.localeCompare(b.description, undefined, { sensitivity: "base" });
-      break;
-    case "atype":
-      cmp = a.accountType.localeCompare(b.accountType, undefined, { sensitivity: "base" });
-      break;
-    case "day": {
-      const da = a.billingCycleDay;
-      const db = b.billingCycleDay;
-      cmp = da === db ? 0 : da < db ? -1 : 1;
-      break;
-    }
-    case "amt": {
-      const ma = a.recordedValue;
-      const mb = b.recordedValue;
-      cmp = ma === mb ? 0 : ma < mb ? -1 : 1;
-      break;
-    }
-    case "stmt": {
-      const sa = accountTypeIsCreditCard(a.accountType) ? (a.lastStatementAmount ?? 0) : 0;
-      const sb = accountTypeIsCreditCard(b.accountType) ? (b.lastStatementAmount ?? 0) : 0;
-      cmp = sa === sb ? 0 : sa < sb ? -1 : 1;
-      break;
-    }
-    case "ccy":
-      cmp = a.currency.localeCompare(b.currency, undefined, { sensitivity: "base" });
-      break;
-    case "lastUpdated": {
-      const sa = a.lastUpdated ?? "";
-      const sb = b.lastUpdated ?? "";
-      if (!sa && !sb) {
-        cmp = 0;
-      } else if (!sa) {
-        cmp = 1;
-      } else if (!sb) {
-        cmp = -1;
-      } else {
-        cmp = sa.localeCompare(sb);
+  return compareBy(
+    a,
+    b,
+    sortDir,
+    (left, right) => {
+      switch (sortKey) {
+        case "desc":
+          return left.description.localeCompare(right.description, undefined, { sensitivity: "base" });
+        case "atype":
+          return left.accountType.localeCompare(right.accountType, undefined, { sensitivity: "base" });
+        case "day":
+          return left.billingCycleDay === right.billingCycleDay
+            ? 0
+            : left.billingCycleDay < right.billingCycleDay
+              ? -1
+              : 1;
+        case "amt":
+          return left.recordedValue === right.recordedValue
+            ? 0
+            : left.recordedValue < right.recordedValue
+              ? -1
+              : 1;
+        case "stmt": {
+          const sa = accountTypeIsCreditCard(left.accountType) ? (left.lastStatementAmount ?? 0) : 0;
+          const sb = accountTypeIsCreditCard(right.accountType) ? (right.lastStatementAmount ?? 0) : 0;
+          return sa === sb ? 0 : sa < sb ? -1 : 1;
+        }
+        case "ccy":
+          return left.currency.localeCompare(right.currency, undefined, { sensitivity: "base" });
+        case "lastUpdated": {
+          const sa = left.lastUpdated ?? "";
+          const sb = right.lastUpdated ?? "";
+          if (!sa && !sb) return 0;
+          if (!sa) return 1;
+          if (!sb) return -1;
+          return sa.localeCompare(sb);
+        }
+        default:
+          return 0;
       }
-      break;
-    }
-    default:
-      break;
-  }
-  if (cmp !== 0) return dir * cmp;
-  return a.id.localeCompare(b.id);
+    },
+    (left, right) => left.id.localeCompare(right.id),
+  );
 }
 
 export function FinanceAccountsPanel(props: {
@@ -124,51 +196,24 @@ export function FinanceAccountsPanel(props: {
   const { records, onPatch, isSaving = false } = props;
   const sheetId = "accounts";
   const formId = `${sheetId}-form`;
-  const expanded = useExpandedRecord("account");
-  const editingId =
-    expanded.expandedId && expanded.expandedId !== DRAFT_RECORD_ID
-      ? expanded.expandedId
-      : null;
-  const formOpen = expanded.expandedId !== null;
+  const { sortKey, sortDir, onSort, ariaSort, directionFor } = useSortState<AccountsSortKey>("atype");
 
-  const [sortKey, setSortKey] = useState<AccountsSortKey | null>("atype");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const onSort = useCallback((key: AccountsSortKey) => {
-    setSortKey((prevKey) => {
-      if (prevKey !== key) {
-        setSortDir("asc");
-        return key;
-      }
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-      return prevKey;
-    });
-  }, []);
-
-  const [formError, setFormError] = useState<string | null>(null);
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [descriptionInput, setDescriptionInput] = useState("");
-  const [accountTypeInput, setAccountTypeInput] = useState<FinanceAccountType>("Bank Account");
-  const [billingDayStr, setBillingDayStr] = useState("1");
-  const [valueStr, setValueStr] = useState("");
-  const [lastStatementStr, setLastStatementStr] = useState("");
-  const [formCurrency, setFormCurrency] = useState(GLOBAL_DEFAULT_CURRENCY);
   const [tableFilter, setTableFilter] = useState("");
   const [totalDisplayCurrency, setTotalDisplayCurrency] = useState<CurrencyCode>(
     GLOBAL_DEFAULT_CURRENCY,
   );
 
-  const tableColumns = useMemo((): AdminDataTableColumn[] => {
-    const manualSort = sortKey !== null;
-    const thAria = (
-      key: AccountsSortKey,
-    ): "ascending" | "descending" | "none" | "other" | undefined => {
-      if (!manualSort) return undefined;
-      if (sortKey === key) return sortDir === "asc" ? "ascending" : "descending";
-      return "none";
-    };
-    const dirFor = (key: AccountsSortKey): "asc" | "desc" | null =>
-      sortKey === key ? sortDir : null;
+  const editor = useRecordEditor<AccountFormState, FinanceAccountRecord>({
+    param: "account",
+    records,
+    emptyForm: emptyAccountForm,
+    lineToForm,
+    onDelete: (id) => {
+      onPatch((prev) => prev.filter((row) => row.id !== id));
+    },
+  });
 
+  const tableColumns = useMemo((): AdminDataTableColumn[] => {
     return [
       {
         key: "desc",
@@ -176,12 +221,12 @@ export function FinanceAccountsPanel(props: {
           <TableSortHeaderButton
             label="Description"
             isActive={sortKey === "desc"}
-            direction={dirFor("desc")}
+            direction={directionFor("desc")}
             onClick={() => onSort("desc")}
           />
         ),
         className: "small",
-        thAriaSort: thAria("desc"),
+        thAriaSort: ariaSort("desc"),
       },
       {
         key: "atype",
@@ -189,13 +234,13 @@ export function FinanceAccountsPanel(props: {
           <TableSortHeaderButton
             label="Account Type"
             isActive={sortKey === "atype"}
-            direction={dirFor("atype")}
+            direction={directionFor("atype")}
             onClick={() => onSort("atype")}
           />
         ),
         className: "small",
         priority: "secondary",
-        thAriaSort: thAria("atype"),
+        thAriaSort: ariaSort("atype"),
       },
       {
         key: "amt",
@@ -203,13 +248,13 @@ export function FinanceAccountsPanel(props: {
           <TableSortHeaderButton
             label="Current Balance"
             isActive={sortKey === "amt"}
-            direction={dirFor("amt")}
+            direction={directionFor("amt")}
             onClick={() => onSort("amt")}
           />
         ),
         className: "small text-end",
         headerClassName: "text-end",
-        thAriaSort: thAria("amt"),
+        thAriaSort: ariaSort("amt"),
       },
       {
         key: "stmt",
@@ -217,14 +262,14 @@ export function FinanceAccountsPanel(props: {
           <TableSortHeaderButton
             label="Last Statement Amount"
             isActive={sortKey === "stmt"}
-            direction={dirFor("stmt")}
+            direction={directionFor("stmt")}
             onClick={() => onSort("stmt")}
           />
         ),
         className: "small text-end",
         headerClassName: "text-end",
         priority: "tertiary",
-        thAriaSort: thAria("stmt"),
+        thAriaSort: ariaSort("stmt"),
       },
       {
         key: "ccy",
@@ -232,13 +277,13 @@ export function FinanceAccountsPanel(props: {
           <TableSortHeaderButton
             label="Currency"
             isActive={sortKey === "ccy"}
-            direction={dirFor("ccy")}
+            direction={directionFor("ccy")}
             onClick={() => onSort("ccy")}
           />
         ),
         className: "small",
         priority: "secondary",
-        thAriaSort: thAria("ccy"),
+        thAriaSort: ariaSort("ccy"),
       },
       {
         key: "day",
@@ -246,14 +291,14 @@ export function FinanceAccountsPanel(props: {
           <TableSortHeaderButton
             label="Billing Cycle Day"
             isActive={sortKey === "day"}
-            direction={dirFor("day")}
+            direction={directionFor("day")}
             onClick={() => onSort("day")}
           />
         ),
         className: "small text-end",
         headerClassName: "text-end",
         priority: "tertiary",
-        thAriaSort: thAria("day"),
+        thAriaSort: ariaSort("day"),
       },
       {
         key: "lastUpdated",
@@ -261,13 +306,13 @@ export function FinanceAccountsPanel(props: {
           <TableSortHeaderButton
             label="Last Update"
             isActive={sortKey === "lastUpdated"}
-            direction={dirFor("lastUpdated")}
+            direction={directionFor("lastUpdated")}
             onClick={() => onSort("lastUpdated")}
           />
         ),
         className: "small admin-nowrap",
         priority: "tertiary",
-        thAriaSort: thAria("lastUpdated"),
+        thAriaSort: ariaSort("lastUpdated"),
       },
       {
         key: "ops",
@@ -276,7 +321,7 @@ export function FinanceAccountsPanel(props: {
         headerClassName: "text-end",
       },
     ];
-  }, [onSort, sortDir, sortKey]);
+  }, [ariaSort, directionFor, onSort, sortKey]);
 
   const colSpan = tableColumns.length;
 
@@ -357,271 +402,144 @@ export function FinanceAccountsPanel(props: {
     totalDisplayCurrency,
   ]);
 
-  function resetFields() {
-    setFormError(null);
-    setDescriptionInput("");
-    setAccountTypeInput("Bank Account");
-    setBillingDayStr("1");
-    setValueStr("");
-    setLastStatementStr("");
-    setFormCurrency(GLOBAL_DEFAULT_CURRENCY);
-  }
-
-  function applyAccount(row: FinanceAccountRecord) {
-    setFormError(null);
-    setDescriptionInput(row.description);
-    setAccountTypeInput(row.accountType);
-    setBillingDayStr(String(row.billingCycleDay));
-    setValueStr(String(row.recordedValue));
-    setLastStatementStr(
-      accountTypeIsCreditCard(row.accountType)
-        ? String(row.lastStatementAmount ?? "")
-        : "",
-    );
-    setFormCurrency(coerceSupportedCurrency(row.currency, GLOBAL_DEFAULT_CURRENCY));
-  }
-
-  function accountDirty(): boolean {
-    if (!formOpen) return false;
-    if (!editingId) {
-      return (
-        descriptionInput !== "" ||
-        valueStr !== "" ||
-        lastStatementStr !== "" ||
-        accountTypeInput !== "Bank Account" ||
-        billingDayStr !== "1" ||
-        formCurrency !== GLOBAL_DEFAULT_CURRENCY
-      );
-    }
-    const row = records.find((record) => record.id === editingId);
-    if (!row) return false;
-    const savedStatement = accountTypeIsCreditCard(row.accountType)
-      ? String(row.lastStatementAmount ?? "")
-      : "";
-    return (
-      descriptionInput !== row.description ||
-      accountTypeInput !== row.accountType ||
-      billingDayStr !== String(row.billingCycleDay) ||
-      valueStr !== String(row.recordedValue) ||
-      lastStatementStr !== savedStatement ||
-      formCurrency !== coerceSupportedCurrency(row.currency, GLOBAL_DEFAULT_CURRENCY)
-    );
-  }
-
-  const editingAccount = editingId
-    ? (records.find((record) => record.id === editingId) ?? null)
-    : null;
-  useHydrateExpandedRecord({
-    expandedId: expanded.expandedId,
-    recordsReady: true,
-    record: editingAccount,
-    apply: applyAccount,
-    onMissing: () => expanded.request(null, false),
-  });
-
-  function openEdit(row: FinanceAccountRecord) {
-    expanded.toggle(row.id, accountDirty(), () => applyAccount(row), resetFields);
-  }
-
-  function openCreate() {
-    if (expanded.expandedId === DRAFT_RECORD_ID) {
-      expanded.request(null, accountDirty(), resetFields);
-      return;
-    }
-    expanded.request(DRAFT_RECORD_ID, accountDirty(), resetFields);
-  }
-
   function submit(e: FormEvent) {
     e.preventDefault();
-    const valueNum = parseAmount(valueStr);
-    let billingCycleDay: number;
-    if (accountTypeUsesBillingCycleDay(accountTypeInput)) {
-      const dayParsed = Number.parseInt(billingDayStr.trim(), 10);
-      if (!Number.isInteger(dayParsed) || dayParsed < 1 || dayParsed > 31) {
-        setFormError("Billing cycle day must be a whole number from 1 to 31.");
-        return;
-      }
-      billingCycleDay = dayParsed;
-    } else if (editingId) {
-      const prev = records.find((r) => r.id === editingId);
-      billingCycleDay = prev?.billingCycleDay ?? 1;
-    } else {
-      billingCycleDay = 1;
-    }
-    if (valueNum === null) {
-      setFormError("Current balance must be a valid number.");
+    const built = formToRecord(editor.form, editor.editingId, editor.editingRecord);
+    if (!built.ok) {
+      editor.setFormError(built.error);
       return;
     }
-    let lastStatementNum: number | undefined;
-    if (accountTypeIsCreditCard(accountTypeInput)) {
-      const parsedStmt = parseAmount(lastStatementStr);
-      if (parsedStmt === null) {
-        setFormError("Last Statement Amount must be a valid number.");
-        return;
-      }
-      lastStatementNum = parsedStmt;
-    }
-    const currency = coerceSupportedCurrency(formCurrency, GLOBAL_DEFAULT_CURRENCY);
-    const id = editingId ?? newStatementLineId();
-    const row: FinanceAccountRecord = {
-      id,
-      description: descriptionInput.trim(),
-      accountType: accountTypeInput,
-      billingCycleDay,
-      recordedValue: valueNum,
-      ...(lastStatementNum !== undefined ? { lastStatementAmount: lastStatementNum } : {}),
-      currency,
-    };
+    const { record } = built;
     onPatch((prev) => {
-      if (editingId) {
-        return prev.map((r) => (r.id === editingId ? row : r));
+      if (editor.editingId) {
+        return prev.map((r) => (r.id === editor.editingId ? record : r));
       }
-      return [...prev, row];
+      return [...prev, record];
     });
-    resetFields();
-    expanded.request(null, false);
+    editor.close();
   }
 
-  function deleteRow(id: string) {
-    onPatch((prev) => prev.filter((r) => r.id !== id));
-    if (editingId === id) {
-      resetFields();
-      expanded.request(null, false);
-    }
-    setPendingDeleteId(null);
-  }
+  const form = editor.form;
+  const creditCard = accountTypeIsCreditCard(form.accountType);
+  const billingDay = accountTypeUsesBillingCycleDay(form.accountType);
 
-      const accountEditor = formOpen ? (
-        <AdminEditorPanel
-          formId={formId}
-          onSubmit={submit}
-          submitLabel={editingId ? "Update record" : "Add record"}
-          isSaving={isSaving}
-          error={formError}
-        >
-          <div className="row g-3">
-            <div className="col-12 col-sm-6 col-lg-2">
-              <label className="form-label small" htmlFor={`${sheetId}-description`}>
-                Description
-              </label>
-              <input
-                id={`${sheetId}-description`}
-                type="text"
-                className="form-control form-control-sm"
-                value={descriptionInput}
-                onChange={(ev) => setDescriptionInput(ev.target.value)}
-                placeholder="e.g. bank or card name"
-                autoComplete="off"
-              />
-            </div>
-            <div className="col-12 col-sm-6 col-lg-2">
-              <label className="form-label small" htmlFor={`${sheetId}-account-type`}>
-                Account Type
-              </label>
-              <select
-                id={`${sheetId}-account-type`}
-                className="form-select form-select-sm"
-                value={accountTypeInput}
-                onChange={(ev) => {
-                  const next = ev.target.value as FinanceAccountType;
-                  setAccountTypeInput(next);
-                  if (!accountTypeIsCreditCard(next)) {
-                    setLastStatementStr("");
-                  }
-                }}
-              >
-                {FINANCE_ACCOUNT_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="col-12 col-sm-6 col-lg-2">
-              <label className="form-label small" htmlFor={`${sheetId}-value`}>
-                Current Balance
-              </label>
-              <input
-                id={`${sheetId}-value`}
-                type="number"
-                step="0.01"
-                className="form-control form-control-sm"
-                required
-                value={valueStr}
-                onChange={(ev) => setValueStr(ev.target.value)}
-              />
-            </div>
-            <div className="col-12 col-sm-6 col-lg-2">
-              <label
-                className="form-label small"
-                htmlFor={accountTypeIsCreditCard(accountTypeInput) ? `${sheetId}-last-statement` : undefined}
-              >
-                Last Statement Amount
-              </label>
-              {accountTypeIsCreditCard(accountTypeInput) ? (
-                <input
-                  id={`${sheetId}-last-statement`}
-                  type="number"
-                  step="0.01"
-                  className="form-control form-control-sm"
-                  required
-                  value={lastStatementStr}
-                  onChange={(ev) => setLastStatementStr(ev.target.value)}
-                />
-              ) : (
-                <div className="form-control form-control-sm bg-light text-muted" aria-hidden>
-                  —
-                </div>
-              )}
-            </div>
-            <div className="col-12 col-sm-6 col-lg-2">
-              <label className="form-label small" htmlFor={`${sheetId}-ccy`}>
-                Currency
-              </label>
-              <CurrencySelect
-                id={`${sheetId}-ccy`}
-                value={formCurrency}
-                onChange={(code) =>
-                  setFormCurrency(coerceSupportedCurrency(code, GLOBAL_DEFAULT_CURRENCY))
-                }
-              />
-            </div>
-            <div className="col-12 col-sm-6 col-lg-2">
-              <label
-                className="form-label small"
-                htmlFor={
-                  accountTypeUsesBillingCycleDay(accountTypeInput)
-                    ? `${sheetId}-billing-day`
-                    : undefined
-                }
-              >
-                Billing cycle day
-              </label>
-              {accountTypeUsesBillingCycleDay(accountTypeInput) ? (
-                <input
-                  id={`${sheetId}-billing-day`}
-                  type="number"
-                  min={1}
-                  max={31}
-                  step={1}
-                  className="form-control form-control-sm"
-                  required
-                  value={billingDayStr}
-                  onChange={(ev) => setBillingDayStr(ev.target.value)}
-                />
-              ) : (
-                <div
-                  className="form-control form-control-sm bg-light text-muted"
-                  id={`${sheetId}-billing-day`}
-                  aria-hidden
-                >
-                  —
-                </div>
-              )}
-            </div>
-          </div>
-        </AdminEditorPanel>
-      ) : null;
+  const accountEditor = editor.formOpen ? (
+    <AdminEditorPanel
+      formId={formId}
+      onSubmit={submit}
+      submitLabel={editor.editingId ? "Update record" : "Add record"}
+      isSaving={isSaving}
+      error={editor.formError}
+    >
+      <AdminFieldGrid columns={4}>
+        <AdminField label="Description" htmlFor={`${sheetId}-description`}>
+          <input
+            id={`${sheetId}-description`}
+            type="text"
+            className="form-control form-control-sm"
+            value={form.description}
+            onChange={(ev) =>
+              editor.setForm((prev) => ({ ...prev, description: ev.target.value }))
+            }
+            placeholder="e.g. bank or card name"
+            autoComplete="off"
+          />
+        </AdminField>
+        <AdminField label="Account Type" htmlFor={`${sheetId}-account-type`}>
+          <select
+            id={`${sheetId}-account-type`}
+            className="form-select form-select-sm"
+            value={form.accountType}
+            onChange={(ev) => {
+              const next = ev.target.value as FinanceAccountType;
+              editor.setForm((prev) => ({
+                ...prev,
+                accountType: next,
+                lastStatement: accountTypeIsCreditCard(next) ? prev.lastStatement : "",
+              }));
+            }}
+          >
+            {FINANCE_ACCOUNT_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+        </AdminField>
+        <AdminField label="Current Balance" htmlFor={`${sheetId}-value`}>
+          <input
+            id={`${sheetId}-value`}
+            type="number"
+            step="0.01"
+            className="form-control form-control-sm"
+            required
+            value={form.value}
+            onChange={(ev) => editor.setForm((prev) => ({ ...prev, value: ev.target.value }))}
+          />
+        </AdminField>
+        <AdminField label="Last Statement Amount" htmlFor={`${sheetId}-last-statement`}>
+          {creditCard ? (
+            <input
+              id={`${sheetId}-last-statement`}
+              type="number"
+              step="0.01"
+              className="form-control form-control-sm"
+              required
+              value={form.lastStatement}
+              onChange={(ev) =>
+                editor.setForm((prev) => ({ ...prev, lastStatement: ev.target.value }))
+              }
+            />
+          ) : (
+            <input
+              id={`${sheetId}-last-statement`}
+              type="text"
+              className="form-control form-control-sm"
+              value="—"
+              disabled
+            />
+          )}
+        </AdminField>
+        <AdminField label="Currency" htmlFor={`${sheetId}-ccy`}>
+          <CurrencySelect
+            id={`${sheetId}-ccy`}
+            value={form.currency}
+            onChange={(code) =>
+              editor.setForm((prev) => ({
+                ...prev,
+                currency: coerceSupportedCurrency(code, GLOBAL_DEFAULT_CURRENCY),
+              }))
+            }
+          />
+        </AdminField>
+        <AdminField label="Billing cycle day" htmlFor={`${sheetId}-billing-day`}>
+          {billingDay ? (
+            <input
+              id={`${sheetId}-billing-day`}
+              type="number"
+              min={1}
+              max={31}
+              step={1}
+              className="form-control form-control-sm"
+              required
+              value={form.billingDay}
+              onChange={(ev) =>
+                editor.setForm((prev) => ({ ...prev, billingDay: ev.target.value }))
+              }
+            />
+          ) : (
+            <input
+              id={`${sheetId}-billing-day`}
+              type="text"
+              className="form-control form-control-sm"
+              value="—"
+              disabled
+            />
+          )}
+        </AdminField>
+      </AdminFieldGrid>
+    </AdminEditorPanel>
+  ) : null;
 
   return (
     <div>
@@ -629,7 +547,7 @@ export function FinanceAccountsPanel(props: {
         label="Accounts"
         filters={
           <AdminFilterBar
-            create={<AdminCreateButton label="New account" onClick={openCreate} />}
+            create={<AdminCreateButton label="New account" onClick={editor.openCreate} />}
           >
             <AdminFilterField label="Filter" htmlFor="accounts-filter">
               <input
@@ -649,8 +567,8 @@ export function FinanceAccountsPanel(props: {
           bare
           columns={tableColumns}
         >
-          {expanded.expandedId === DRAFT_RECORD_ID ? (
-            <AdminExpandableRow colSpan={colSpan} expanded onToggle={openCreate} editor={accountEditor}>
+          {editor.expandedId === "new" ? (
+            <AdminExpandableRow colSpan={colSpan} expanded onToggle={editor.openCreate} editor={accountEditor}>
               <AdminCell column="desc">New account</AdminCell>
               <AdminCell column="atype" />
               <AdminCell column="amt" />
@@ -666,8 +584,8 @@ export function FinanceAccountsPanel(props: {
               <AdminExpandableRow
                 key={r.id}
                 colSpan={colSpan}
-                expanded={expanded.expandedId === r.id}
-                onToggle={() => openEdit(r)}
+                expanded={editor.expandedId === r.id}
+                onToggle={() => editor.openEdit(r)}
                 editor={accountEditor}
               >
                 <AdminCell column="desc" className="small">
@@ -710,14 +628,14 @@ export function FinanceAccountsPanel(props: {
                         id: "edit",
                         label: "Edit record",
                         iconClassName: "bi bi-pencil",
-                        onClick: () => openEdit(r),
+                        onClick: () => editor.openEdit(r),
                       },
                       {
                         id: "delete",
                         label: "Delete record",
                         iconClassName: "bi bi-trash",
                         danger: true,
-                        onClick: () => setPendingDeleteId(r.id),
+                        onClick: () => editor.requestDelete(r.id),
                       },
                     ]}
                   />
@@ -731,80 +649,46 @@ export function FinanceAccountsPanel(props: {
             />
           )}
           {records.length > 0 ? (
-            <tr className="table-group-divider table-secondary fw-semibold">
-              <AdminCell column="desc" className="small">
-                <AdminTableTotalLabel
-                  needsFx={needsFx}
-                  fxError={fxError}
-                  fxLoading={fxLoading}
-                  ratesQuery={ratesQuery}
-                  phoneValue={
-                    <>
-                      {convertedTotal !== null ? (
-                        <MoneyAmount
-                          amount={convertedTotal}
-                          currency={totalDisplayCurrency}
-                          amountOnly
-                        />
-                      ) : (
-                        <span className="text-muted">—</span>
-                      )}
-                      <br />
-                      <AdminTableTotalCurrency
-                        id={`${sheetId}-total-ccy-phone`}
-                        value={totalDisplayCurrency}
-                        onChange={setTotalDisplayCurrency}
-                        disabled={fxLoading}
-                      />
-                    </>
-                  }
-                />
-              </AdminCell>
-              <AdminCell column="atype" className="small" />
-              <AdminCell column="amt" className="small text-end">
-                {convertedTotal !== null ? (
-                  <MoneyAmount
-                    amount={convertedTotal}
-                    currency={totalDisplayCurrency}
-                    amountOnly
-                  />
-                ) : (
-                  <span className="text-muted">—</span>
-                )}
-                <br />
-                <AdminTableTotalCurrency
-                  id={`${sheetId}-total-ccy`}
-                  value={totalDisplayCurrency}
-                  onChange={setTotalDisplayCurrency}
-                  disabled={fxLoading}
-                />
-              </AdminCell>
-              <AdminCell column="stmt" className="small" />
-              <AdminCell column="ccy" className="small" />
-              <AdminCell column="day" className="small" />
-              <AdminCell column="lastUpdated" className="small" />
-              <AdminCell column="ops" className="small text-end" />
-            </tr>
+            <AdminFxTotalRow
+              labelColumn="desc"
+              sheetId={sheetId}
+              currency={totalDisplayCurrency}
+              onCurrencyChange={setTotalDisplayCurrency}
+              needsFx={needsFx}
+              fxError={fxError}
+              fxLoading={fxLoading}
+              ratesQuery={ratesQuery}
+              cells={[
+                { kind: "label" },
+                { kind: "empty", column: "atype" },
+                { kind: "amount", column: "amt", total: convertedTotal, picker: true },
+                { kind: "empty", column: "stmt" },
+                { kind: "empty", column: "ccy" },
+                { kind: "empty", column: "day" },
+                { kind: "empty", column: "lastUpdated" },
+                { kind: "empty", column: "ops" },
+              ]}
+            />
           ) : null}
         </AdminDataTable>
         <ConfirmDialog
-          open={pendingDeleteId !== null}
+          open={editor.pendingDeleteId !== null}
           title="Delete account"
           body="Delete this account record?"
           confirmLabel="Delete"
           tone="danger"
-          onConfirm={() => { if (pendingDeleteId) deleteRow(pendingDeleteId); }}
-          onCancel={() => setPendingDeleteId(null)}
+          onConfirm={editor.confirmDelete}
+          onCancel={editor.cancelDelete}
         />
         <ConfirmDialog
-          open={expanded.confirmOpen}
+          open={editor.confirmOpen}
           title="Discard unsaved edits?"
           body="This account has unsaved changes."
           confirmLabel="Discard"
           cancelLabel="Keep editing"
           tone="danger"
-          onConfirm={expanded.acceptPending}
-          onCancel={expanded.cancelPending}
+          onConfirm={editor.acceptPending}
+          onCancel={editor.cancelPending}
         />
       </AdminRecordTable>
     </div>

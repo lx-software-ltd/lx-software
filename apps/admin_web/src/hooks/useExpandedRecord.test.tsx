@@ -1,6 +1,12 @@
 import { act, renderHook } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { BrowserRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { useExpandedRecord } from "./useExpandedRecord";
+
+function wrapper({ children }: { children: ReactNode }) {
+  return <BrowserRouter>{children}</BrowserRouter>;
+}
 
 describe("useExpandedRecord", () => {
   afterEach(() => {
@@ -8,14 +14,14 @@ describe("useExpandedRecord", () => {
   });
 
   it("opens a row and writes its id into the query string", () => {
-    const { result } = renderHook(() => useExpandedRecord("account"));
+    const { result } = renderHook(() => useExpandedRecord("account"), { wrapper });
     act(() => result.current.request("row-1", false));
     expect(result.current.expandedId).toBe("row-1");
     expect(new URLSearchParams(window.location.search).get("account")).toBe("row-1");
   });
 
   it("asks before replacing a dirty open row", () => {
-    const { result } = renderHook(() => useExpandedRecord("account"));
+    const { result } = renderHook(() => useExpandedRecord("account"), { wrapper });
     act(() => result.current.request("row-1", false));
     act(() => result.current.request("row-2", true));
     expect(result.current.expandedId).toBe("row-1");
@@ -26,7 +32,7 @@ describe("useExpandedRecord", () => {
   });
 
   it("keeps the open row when the discard is cancelled", () => {
-    const { result } = renderHook(() => useExpandedRecord("account"));
+    const { result } = renderHook(() => useExpandedRecord("account"), { wrapper });
     act(() => result.current.request("row-1", false));
     act(() => result.current.request(null, true));
     act(() => result.current.cancelPending());
@@ -36,7 +42,7 @@ describe("useExpandedRecord", () => {
 
   it("drops other row params when one row opens", () => {
     window.history.replaceState(null, "", "/finance?investment=inv-1&account=ac-1&tab=finance");
-    const { result } = renderHook(() => useExpandedRecord("liability"));
+    const { result } = renderHook(() => useExpandedRecord("liability"), { wrapper });
     act(() => result.current.request("li-1", false));
     const params = new URLSearchParams(window.location.search);
     expect(params.get("liability")).toBe("li-1");
@@ -46,7 +52,7 @@ describe("useExpandedRecord", () => {
   });
 
   it("toggles the same row closed", () => {
-    const { result } = renderHook(() => useExpandedRecord("line"));
+    const { result } = renderHook(() => useExpandedRecord("line"), { wrapper });
     act(() => result.current.toggle("row-1", false, () => undefined, () => undefined));
     expect(result.current.expandedId).toBe("row-1");
     act(() => result.current.toggle("row-1", false, () => undefined, () => undefined));

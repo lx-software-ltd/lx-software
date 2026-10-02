@@ -16,7 +16,7 @@ function selectionText(): string {
 
 /**
  * One record: a focusable summary row plus, when open, a detail row.
- * Each record is its own `<tbody>` so zebra striping follows records.
+ * Each record is its own `<tbody>` so the open editor stays with that record.
  * Clicking the row toggles. Dragging to select text, and clicks inside the editor, do not.
  */
 export function AdminExpandableRow({

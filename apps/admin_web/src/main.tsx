@@ -5,10 +5,8 @@ import "bootstrap-icons/font/bootstrap-icons.css";
 import "@fontsource-variable/inter/wght.css";
 import "./index.css";
 import App from "./App.tsx";
-import { isAdminMockEnabled } from "./lib/mock/isAdminMockEnabled";
-
 async function bootstrap(): Promise<void> {
-  if (isAdminMockEnabled()) {
+  if (import.meta.env.VITE_ADMIN_MOCK === "1") {
     const { installAdminMockSession } = await import("./lib/mock/mockAdminApi");
     installAdminMockSession();
   }

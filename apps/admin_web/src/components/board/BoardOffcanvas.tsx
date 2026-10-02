@@ -22,11 +22,15 @@ export function BoardOffcanvas({
 }: BoardOffcanvasProps) {
   useEffect(() => {
     if (!isOpen) return;
+    const previous = document.activeElement;
     const onKey = (ev: KeyboardEvent) => {
       if (ev.key === "Escape") onClose();
     };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      if (previous instanceof HTMLElement) previous.focus();
+    };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;

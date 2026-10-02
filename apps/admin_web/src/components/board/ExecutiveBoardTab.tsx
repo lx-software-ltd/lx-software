@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { FinanceDataLoadOrError } from "../FinanceDataStatus";
 import { BoardActionsList } from "./BoardActionsList";
 import { BoardApprovalsList } from "./BoardApprovalsList";
@@ -47,13 +47,13 @@ import {
 import { AdminTabList, type AdminTabItem } from "../ui";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { adminTabButtonId } from "../../lib/adminTabs";
-import { clearExpandedParamsExcept, isRowExpandedParam } from "../../lib/expandedRecord";
+import { isRowExpandedParam } from "../../lib/expandedRecord";
 import {
   DEFAULT_BOARD_BOUNDARIES,
   effectiveToolLevel,
   readBoardTaskIdFromSearch,
   staffDraft,
-  syncBoardTaskSearchParams,
+  useBoardTaskParamWriter,
   type BoardMeetingMode,
   type BoardOverview,
 } from "../../lib/boardModel";
@@ -120,24 +120,30 @@ function sectionFromSearch(search: string, fallback: BoardSection): BoardSection
 }
 
 export function ExecutiveBoardTab() {
-  const board = useBoard();
-  const updatesQuery = useBoardUpdates();
-  const actions = useBoardActions();
-  const meetingsQuery = useBoardMeetings();
-  const startMeeting = useStartBoardMeeting();
-  const cancelMeeting = useCancelBoardMeeting();
-  const approvals = useBoardApprovals();
-  const holds = useBoardHolds();
-  const boundaries = useBoardBoundaries();
-  const tools = useBoardTools();
-  const staff = useBoardStaff();
-  const qc = useQueryClient();
-  const handToStaff = useMutation(createTaskMutationOptions(qc));
-  const lessons = useBoardReview(true);
-
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const writeTaskParam = useBoardTaskParamWriter();
   const [chatPersonaId, setChatPersonaId] = useState<string | null>(null);
+  const board = useBoard();
+  const staff = useBoardStaff();
+  const overviewEarly = board.overview;
+  const section = sectionFromSearch(
+    location.search,
+    overviewEarly?.settings.staff?.enabled ? "review" : "actions",
+  );
+  const updatesQuery = useBoardUpdates(section === "brief");
+  const actions = useBoardActions(section === "actions" || section === "members");
+  const meetingsQuery = useBoardMeetings(section === "meetings");
+  const startMeeting = useStartBoardMeeting();
+  const cancelMeeting = useCancelBoardMeeting();
+  const approvals = useBoardApprovals(section === "approvals");
+  const holds = useBoardHolds(section === "approvals");
+  const boundaries = useBoardBoundaries();
+  const tools = useBoardTools(section === "settings" || chatPersonaId !== null);
+  const qc = useQueryClient();
+  const handToStaff = useMutation(createTaskMutationOptions(qc));
+  const lessons = useBoardReview(section === "settings");
   const [editPersonaId, setEditPersonaId] = useState<string | null>(null);
   // null = follow the running meeting (if any); CLOSED_MEETING = user closed the panel.
   const [selectedMeeting, setSelectedMeeting] = useState<string | null>(null);
@@ -149,11 +155,7 @@ export function ExecutiveBoardTab() {
   );
   const [showCallLog, setShowCallLog] = useState(false);
 
-  const overview = board.overview;
-  const section = sectionFromSearch(
-    location.search,
-    overview?.settings.staff?.enabled ? "review" : "actions",
-  );
+  const overview = overviewEarly;
   const setSection = useCallback((id: BoardSection) => {
     const params = new URLSearchParams(location.search);
     params.set("section", id);
@@ -165,15 +167,23 @@ export function ExecutiveBoardTab() {
   }, [location.pathname, location.search, navigate]);
   useEffect(() => {
     const keep = section === "market" ? "watch" : section === "pipeline" ? "prospect" : null;
-    clearExpandedParamsExcept(keep);
-  }, [section]);
+    const next = new URLSearchParams(searchParams);
+    let changed = false;
+    for (const key of [...next.keys()]) {
+      if (key !== keep && isRowExpandedParam(key)) {
+        next.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) setSearchParams(next, { replace: true });
+  }, [section, searchParams, setSearchParams]);
   const callLog = useBoardToolCalls(section === "settings" && showCallLog);
   const members = overview?.members ?? [];
   const toolsConfig = tools.data?.config ?? overview?.settings.tools;
   const runningId = overview?.runningMeeting?.meetingId ?? null;
   const selectedMeetingId =
     selectedMeeting === CLOSED_MEETING ? null : selectedMeeting ?? runningId;
-  const meetingQuery = useBoardMeeting(selectedMeetingId);
+  const meetingQuery = useBoardMeeting(section === "meetings" ? selectedMeetingId : null);
 
   const openActionsByPersona = useMemo(() => {
     const out: Record<string, number> = {};
@@ -190,9 +200,8 @@ export function ExecutiveBoardTab() {
 
   const openStaffTask = useCallback((taskId: string) => {
     setFocusTaskId(taskId);
-    setSection("tasks");
-    syncBoardTaskSearchParams(taskId);
-  }, [setSection]);
+    writeTaskParam(taskId);
+  }, [writeTaskParam]);
 
   const openApproval = useCallback((approvalId: string) => {
     setChatPersonaId(null);

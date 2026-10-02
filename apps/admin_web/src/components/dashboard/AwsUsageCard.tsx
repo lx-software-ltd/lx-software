@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { AWS_BILLING_COST_ALLOCATION_TAGS } from "../../lib/contracts/generated";
 import { formatUsageCost } from "../../lib/boardModel";
-import { adminFetch } from "../../lib/apiAdminClient";
-import { AWS_USAGE_PDF_PATH, type AwsBillingPayload } from "../../lib/awsBilling";
-import { defaultAwsUsageMonth, usageRangeQuery } from "../../lib/usageMonth";
-import { useAwsUsage } from "../../hooks/useAwsUsage";
+import type { AwsBillingPayload } from "../../lib/awsBilling";
+import { defaultAwsUsageMonth } from "../../lib/usageMonth";
+import { downloadAwsUsagePdfMutationOptions, useAwsUsage } from "../../hooks/useAwsUsage";
 import { useUsageMonth } from "../../hooks/useUsageMonth";
 import { UsageBillCard } from "./UsageBillCard";
 
@@ -34,34 +33,10 @@ function shareLabel(share: number): string {
 }
 
 function AwsUsageBody({ data }: { readonly data: AwsBillingPayload }) {
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const download = useMutation(downloadAwsUsagePdfMutationOptions());
   const tags = data.costAllocationTags.length
     ? data.costAllocationTags.join(" + ")
     : AWS_BILLING_COST_ALLOCATION_TAGS.join(" + ");
-
-  async function downloadPdf() {
-    setDownloadError(null);
-    setIsDownloading(true);
-    try {
-      const res = await adminFetch(
-        `${AWS_USAGE_PDF_PATH}${usageRangeQuery(data.from, data.to)}`,
-      );
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `lx-software-aws-${data.from.slice(0, 7)}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    } catch {
-      setDownloadError("Could not download the allocation PDF.");
-    } finally {
-      setIsDownloading(false);
-    }
-  }
 
   return (
     <>
@@ -101,13 +76,13 @@ function AwsUsageBody({ data }: { readonly data: AwsBillingPayload }) {
       <button
         type="button"
         className="btn btn-outline-secondary btn-sm mt-auto"
-        onClick={() => void downloadPdf()}
-        disabled={isDownloading}
+        onClick={() => download.mutate({ from: data.from, to: data.to })}
+        disabled={download.isPending}
       >
-        {isDownloading ? "Downloading…" : "Download allocation PDF"}
+        {download.isPending ? "Downloading…" : "Download allocation PDF"}
       </button>
-      {downloadError ? (
-        <p className="small text-danger mb-0 mt-2">{downloadError}</p>
+      {download.isError ? (
+        <p className="small text-danger mb-0 mt-2">Could not download the allocation PDF.</p>
       ) : null}
     </>
   );

@@ -1,6 +1,5 @@
 import { ensureFreshTokens } from "./auth";
 import { getAdminConfig } from "./config";
-import { isAdminMockEnabled } from "./mock/isAdminMockEnabled";
 
 export class AdminApiError extends Error {
   readonly status: number;
@@ -53,8 +52,8 @@ export async function adminFetch(
   init: AdminFetchOptions = {}
 ): Promise<Response> {
   const { requireAuth = true, ...rest } = init;
-  // Compile-time `VITE_ADMIN_MOCK` so production builds drop the fixture module.
-  if (isAdminMockEnabled()) {
+  // The comparison is on `import.meta.env` so Vite can drop the mock chunk when the flag is "0".
+  if (import.meta.env.VITE_ADMIN_MOCK === "1") {
     const { mockAdminFetch } = await import("./mock/mockAdminApi");
     const res = await mockAdminFetch(path, rest);
     if (!res.ok) {

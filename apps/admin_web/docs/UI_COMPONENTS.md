@@ -16,7 +16,7 @@ This document defines **reusable patterns** for the LX Software admin SPA (`apps
 
 | Component | Purpose |
 |-----------|---------|
-| `MoneyAmount` | Displays a numeric amount with ISO currency via `Intl.NumberFormat`. Props: `amount`, `currency`. |
+| `MoneyAmount` | Displays a numeric amount with ISO currency via `Intl.NumberFormat`. Props: `amount`, `currency`, optional `className` and `amountOnly` (the form finance tables use). |
 | `CurrencySelect` | Bootstrap `form-select` for admin-supported currency codes only (`src/lib/currencies.ts`). Props: `id`, `value`, `onChange`, optional `className`, `disabled`, `ariaLabel`. |
 | `DateTimeDisplay` | Formats an ISO instant for **Hong Kong** wall time, e.g. `May 26, 2026 at 10:12pm HKT`. Uses `formatDateTimeHKT` in `src/lib/formatDisplay.ts`. |
 | `AdminRecordTable` | Untitled card: `AdminFilterBar`, optional `beforeTable` (disclosures), then the table. `label` is the accessible name. |
@@ -25,21 +25,29 @@ This document defines **reusable patterns** for the LX Software admin SPA (`apps
 | `AdminExpandableRow` | Focusable summary row plus a detail row when open. Own `<tbody>` per record. Clicks inside the editor, and text selection, do not toggle the row. |
 | `AdminRowActions` | Every operation, including a single one, sits in the kebab menu (Popover API). |
 | `ConfirmDialog` | Native `<dialog>` confirm. Use for delete and for discarding a dirty row. |
-| `AdminDisclosure` | Native `<details>` block between filters and the table (statement import, CSV import). |
+| `AdminDisclosure` | Native `<details>` block between filters and the table (CSV import). `presentation="dialog"` opens the same control in a dialog; statement PDF import uses that. |
 | `AdminEditorSection` | Card for a form that is not a table row (house details, connect-a-bank, sequences, settings). Optional title, body, footer. Pass `embedded` to drop the card chrome inside another panel. |
 | `AdminDataTable` | Hairline table. With `bare`, the parent `AdminRecordTable` supplies the card and text filter. Pass columns and row children via `AdminCell`. Column sort stays on desktop headers; phones show the label only. |
 | `AdminCell` | Body cell bound to a column key. Applies that column’s priority class so headers and cells hide together. |
-| `AdminPageHeader` | Optional page title, `?` help popover, and primary actions. The main pages do not use it. |
+| `AdminDialog` | Native `<dialog>` shell for statement import and connect-a-bank. |
 | `AdminTableTotalLabel` / `AdminTableTotalCurrency` | Render the FX note and display-currency picker **once** in a finance table footer (never a mobile duplicate). |
 | `AdminTabList` | WAI-ARIA tablist (arrow / Home / End) in the page. Phones use a native `<select>` (`${idPrefix}-select`) when there are more than six tabs. Pass `disabled` when the backing query failed. |
-| `TableIconButton` | Icon-only button. `appearance="bordered"` is for record-table operations; the default is the link style used by other tables. |
+| `AdminKpi` / `AdminKpiAmounts` | Summary tiles in `.admin-kpi-row`. |
+| `StaleValuationBadge` | Marks a valuation that is past its freshness window. |
+| `FrankfurterRatesFooterNote` | FX attribution under a converted total. |
+| `TableSortHeaderButton` | Desktop column sort control. |
+| `AdminField` / `AdminFieldGrid` / `AdminEditorActions` | Labelled field grid inside an editor. |
+| `AdminDataTableCellMeta` / `AdminDataTableEmptyRow` | Phone meta line under a cell, and the empty-table row. |
 
 Import from the barrel: `import { MoneyAmount, … } from "../components/ui"` (adjust path).
 
 ## Formatting helpers (`src/lib/formatDisplay.ts`)
 
 - `formatMoneyAmount(amount, currency)` — string for non-React contexts.
+- `formatMoneyAmountWithoutCurrency(amount, currency)` — amount only.
+- `formatNonZeroMoneyLines(...)` — skips zero amounts.
 - `formatDateTimeHKT(iso)` — string for HKT display.
+- `formatDateUtc(iso)` — UTC calendar date.
 
 ## Executive Board components (`src/components/board/`)
 
@@ -70,7 +78,7 @@ The Siu Tin Dei **Executive Board** tab (`ExecutiveBoardTab`) is the reference f
 | `BoardContentSection` | **Content** tab: two-week days×channels grid, calendar table, item drawer (EN/ZH copy, creative preview, re-render, veto), assisted packs with Mark posted. |
 | `BoardLessonsList` | Settings card: pending lesson drafts with Confirm (optional edit) / Dismiss, plus a confirmed list. |
 
-Async work (chat replies, meetings) always goes through a job row + polling hook, never a long HTTP request; keep poll deadlines aligned with `contracts/board-timeouts.json`. Containers that show polling progress (the pending chat bubble, the transcript's "phase…" line) carry `aria-live="polite"` so screen readers hear tool-progress lines as they arrive. Icon-only `<i class="bi …">` elements that convey status get `role="img"` + `aria-label`; decorative icons beside text stay `aria-hidden="true"`. Mutations live in `src/hooks/useBoard*.ts`; keep request/invalidation logic in exported `*MutationOptions(qc)` factories (see `approvalDecisionMutationOptions`, `toolsSaveMutationOptions`) so they are unit-testable in the node Vitest environment without rendering React. Tool ids, levels and defaults come from `contracts/board-tools.json`; `effectiveToolLevel()` in `boardModel.ts` mirrors the Lambda's capping rule so the matrix can preview the effect of the global mode before saving.
+Async work (chat replies, meetings) always goes through a job row + polling hook, never a long HTTP request; keep poll deadlines aligned with `contracts/board-timeouts.json`. Containers that show polling progress (the pending chat bubble, the transcript's "phase…" line) carry `aria-live="polite"` so screen readers hear tool-progress lines as they arrive. Icon-only `<i class="bi …">` elements that convey status get `role="img"` + `aria-label`; decorative icons beside text stay `aria-hidden="true"`. Mutations live in `src/hooks/use*.ts` (board, finance, banking, statement books); keep request/invalidation logic in exported `*MutationOptions(qc)` factories (see `approvalDecisionMutationOptions`, `toolsSaveMutationOptions`) so they are unit-testable in the node Vitest environment without rendering React. Query keys live in `src/lib/queryKeys.ts`. Tool ids, levels and defaults come from `contracts/board-tools.json`; `effectiveToolLevel()` in `boardModel.ts` mirrors the Lambda's capping rule so the matrix can preview the effect of the global mode before saving. Digest HTML renders in a sandboxed iframe (`sandbox=""`, no scripts, no same-origin), never via `dangerouslySetInnerHTML`. `BoardMarkdown` is the only markdown renderer and does not use `dangerouslySetInnerHTML` either.
 
 ## Dependencies
 
@@ -79,4 +87,4 @@ Async work (chat replies, meetings) always goes through a job row + polling hook
 
 ## Reference implementation
 
-`HouseStatementPanel` (`src/components/HouseStatementPanel.tsx`) is the reference: house details stay their own card, statement import is a disclosure, and each line expands under its row. `FinanceAccountsPanel` is the same pattern for a single record list.
+`HouseStatementPanel` (`src/components/HouseStatementPanel.tsx`) is the reference: house details stay their own card, statement import opens in a dialog, and each line expands under its row. `FinanceAccountsPanel` is the same pattern for a single record list. Finance lists save one sheet at a time (`PUT /finance/{sheet}`); a house form PUTs `/finance/{house}`. Statement books still save the whole document. Confirmations use `ConfirmDialog`, including catalog bulk import.

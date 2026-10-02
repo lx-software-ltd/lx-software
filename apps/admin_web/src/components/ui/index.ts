@@ -11,9 +11,7 @@ export type {
 } from "./AdminDataTable";
 export type { AdminTableColumnPriority } from "../../lib/adminTablePriority";
 export { AdminDialog } from "./AdminDialog";
-export { AdminKpi, AdminKpiAmounts, AdminSparkline } from "./AdminKpi";
-export { AdminPageHeader } from "./AdminPageHeader";
-export type { AdminPageHeaderProps } from "./AdminPageHeader";
+export { AdminKpi, AdminKpiAmounts } from "./AdminKpi";
 export { AdminTableTotalCurrency, AdminTableTotalLabel } from "./AdminTableTotalCurrency";
 export type {
   AdminTableTotalCurrencyProps,
@@ -33,8 +31,6 @@ export { MoneyAmount } from "./MoneyAmount";
 export type { MoneyAmountProps } from "./MoneyAmount";
 export { StaleValuationBadge } from "./StaleValuationBadge";
 export type { StaleValuationBadgeProps } from "./StaleValuationBadge";
-export { TableIconButton } from "./TableIconButton";
-export type { TableIconButtonProps } from "./TableIconButton";
 export { TableSortHeaderButton } from "./TableSortHeaderButton";
 export type { TableSortHeaderButtonProps } from "./TableSortHeaderButton";
 export {
@@ -51,6 +47,8 @@ export type {
 } from "./AdminRecordTable";
 export { AdminExpandableRow } from "./AdminExpandableRow";
 export type { AdminExpandableRowProps } from "./AdminExpandableRow";
+export { AdminFxTotalRow } from "./AdminFxTotalRow";
+export type { AdminFxTotalCell, AdminFxTotalRowProps } from "./AdminFxTotalRow";
 export {
   AdminEditorActions,
   AdminEditorPanel,

@@ -1,5 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { adminFetchJson } from "./apiAdminClient";
+import { log } from "./log";
+import { keys } from "./queryKeys";
 import type { StatementOwnerKey } from "./financeModel";
 
 type PresignedUpload = {
@@ -53,7 +55,7 @@ async function uploadToS3(presigned: PresignedUpload, file: File): Promise<void>
 
   const contentTypeField = presigned.fields["Content-Type"];
   const keyField = presigned.fields.key;
-  console.info("[uploadFinanceAsset] uploading to S3", {
+  log.info("[uploadFinanceAsset] uploading to S3", {
     url: presigned.url,
     key: keyField,
     contentTypeField,
@@ -66,7 +68,7 @@ async function uploadToS3(presigned: PresignedUpload, file: File): Promise<void>
   try {
     res = await fetch(presigned.url, { method: "POST", body: form });
   } catch (err) {
-    console.error("[uploadFinanceAsset] S3 POST transport failure", err);
+    log.error("[uploadFinanceAsset] S3 POST transport failure", err);
     const reason = err instanceof Error ? err.message : String(err);
     throw new Error(
       `S3 upload network/CORS failure (no HTTP response): ${reason}`,
@@ -77,7 +79,7 @@ async function uploadToS3(presigned: PresignedUpload, file: File): Promise<void>
     const text = await res.text().catch(() => "");
     const code = extractS3ErrorCode(text);
     const summary = code ? `${code}` : text.slice(0, 200) || "no body";
-    console.error("[uploadFinanceAsset] S3 POST rejected", {
+    log.error("[uploadFinanceAsset] S3 POST rejected", {
       status: res.status,
       code,
       bodyPreview: text.slice(0, 1000),
@@ -86,7 +88,7 @@ async function uploadToS3(presigned: PresignedUpload, file: File): Promise<void>
     });
     throw new Error(`S3 upload failed (${res.status}): ${summary}`);
   }
-  console.info("[uploadFinanceAsset] S3 upload OK", { status: res.status });
+  log.info("[uploadFinanceAsset] S3 upload OK", { status: res.status });
 }
 
 /**
@@ -136,7 +138,7 @@ export async function uploadFinanceAsset(
     }),
   });
 
-  void queryClient.invalidateQueries({ queryKey: ["admin", "asset-records"] });
+  void queryClient.invalidateQueries({ queryKey: [...keys.admin, "asset-records"] });
 
   return upload.key;
 }

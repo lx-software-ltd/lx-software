@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { adminFetchJson } from "../lib/apiAdminClient";
 import {
   boardChatJobPath,
@@ -42,21 +42,10 @@ async function pollChatJob(
   throw new Error("The reply is taking longer than expected. Reload the thread in a moment.");
 }
 
-export function useBoardChat(personaId: string | null) {
-  const qc = useQueryClient();
+export function sendBoardChatMutationOptions(qc: QueryClient, personaId: string | null) {
   const key = boardChatQueryKey(personaId ?? "");
-
-  const thread = useQuery({
-    queryKey: key,
-    enabled: Boolean(personaId),
-    queryFn: async () => {
-      const res = await adminFetchJson<ThreadResponse>(boardChatPath(personaId!));
-      return res.messages;
-    },
-  });
-
-  const send = useMutation<BoardChatMessage, Error, string>({
-    mutationFn: async (text) => {
+  return {
+    mutationFn: async (text: string) => {
       if (!personaId) throw new Error("No board member selected");
       const posted = await adminFetchJson<PostResponse>(boardChatPath(personaId), {
         method: "POST",
@@ -67,7 +56,7 @@ export function useBoardChat(personaId: string | null) {
         posted.userMessage,
         {
           messageId: `pending-${posted.jobId}`,
-          role: "assistant",
+          role: "assistant" as const,
           text: "",
           createdAt: posted.userMessage.createdAt,
           isPending: true,
@@ -79,7 +68,7 @@ export function useBoardChat(personaId: string | null) {
         );
       });
     },
-    onSuccess: (reply) => {
+    onSuccess: (reply: BoardChatMessage) => {
       qc.setQueryData<BoardChatMessage[]>(key, (prev) => [
         ...(prev ?? []).filter((m) => !m.isPending),
         reply,
@@ -95,9 +84,12 @@ export function useBoardChat(personaId: string | null) {
     onError: () => {
       qc.setQueryData<BoardChatMessage[]>(key, (prev) => (prev ?? []).filter((m) => !m.isPending));
     },
-  });
+  };
+}
 
-  const clear = useMutation({
+export function clearBoardChatMutationOptions(qc: QueryClient, personaId: string | null) {
+  const key = boardChatQueryKey(personaId ?? "");
+  return {
     mutationFn: async () => {
       if (!personaId) return;
       await adminFetchJson<{ ok: boolean }>(boardChatPath(personaId), { method: "DELETE" });
@@ -105,7 +97,24 @@ export function useBoardChat(personaId: string | null) {
     onSuccess: () => {
       qc.setQueryData<BoardChatMessage[]>(key, []);
     },
+  };
+}
+
+export function useBoardChat(personaId: string | null) {
+  const qc = useQueryClient();
+  const key = boardChatQueryKey(personaId ?? "");
+
+  const thread = useQuery({
+    queryKey: key,
+    enabled: Boolean(personaId),
+    queryFn: async () => {
+      const res = await adminFetchJson<ThreadResponse>(boardChatPath(personaId!));
+      return res.messages;
+    },
   });
+
+  const send = useMutation<BoardChatMessage, Error, string>(sendBoardChatMutationOptions(qc, personaId));
+  const clear = useMutation(clearBoardChatMutationOptions(qc, personaId));
 
   return {
     messages: thread.data ?? [],

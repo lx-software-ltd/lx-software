@@ -2,13 +2,6 @@
 
 import { AdminApiError, adminFetch } from "./apiAdminClient";
 
-export type FrankfurterV2RateRow = {
-  readonly date?: string;
-  readonly base: string;
-  readonly quote: string;
-  readonly rate: number;
-};
-
 /**
  * Fetches cross-rates with a chosen base. Each returned row means: `1 base` = `rate` units of `quote`.
  * To express an amount held in `quote` in terms of `base`, divide by `rate`: `amountBase = amountQuote / rate`.

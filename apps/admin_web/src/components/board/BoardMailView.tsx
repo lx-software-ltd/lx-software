@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { DateTimeDisplay } from "../ui";
 import {
   formatMailBytes,
@@ -181,7 +182,7 @@ function SendHealthStrip({
 export function BoardMailView({ status, focusThreadId, onFocusConsumed, errorText }: BoardMailViewProps) {
   const [mailbox, setMailbox] = useState("");
   const [searchText, setSearchText] = useState("");
-  const [query, setQuery] = useState("");
+  const query = useDebouncedValue(searchText, 300);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [archivedOnly, setArchivedOnly] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -201,12 +202,6 @@ export function BoardMailView({ status, focusThreadId, onFocusConsumed, errorTex
     autoReadFor.current = doc.thread.threadId;
     markRead.mutate({ threadId: doc.thread.threadId, read: true });
   }, [thread.data, markRead]);
-
-  useEffect(() => {
-    if (!searchText.trim() && !query) return;
-    const handle = window.setTimeout(() => setQuery(searchText), 300);
-    return () => window.clearTimeout(handle);
-  }, [searchText, query]);
 
   const selectThread = (threadId: string) => {
     setSelectedId(threadId);

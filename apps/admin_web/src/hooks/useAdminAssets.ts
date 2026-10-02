@@ -1,6 +1,7 @@
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { objectKeyFromAssetPk } from "../lib/adminAssets";
-import { adminFetchJson } from "../lib/apiAdminClient";
+import { adminFetchJson, deleteAdminAsset } from "../lib/apiAdminClient";
+import { keys } from "../lib/queryKeys";
 import {
   FINANCE_STATEMENT_BOOK_KEYS,
   statementLineAssetKeys,
@@ -38,14 +39,27 @@ export interface AdminAssetMeta {
   readonly house?: string;
 }
 
+export function deleteAssetMutationOptions(
+  qc: QueryClient,
+  onDeleted?: (objectKey: string) => void,
+) {
+  return {
+    mutationFn: (objectKey: string) => deleteAdminAsset(objectKey),
+    onSuccess: (_data: void, objectKey: string) => {
+      void qc.invalidateQueries({ queryKey: [...keys.admin, "asset-records"] });
+      onDeleted?.(objectKey);
+    },
+  };
+}
+
 export function useAdminAssets() {
   const qc = useQueryClient();
-  const financeUpdatedAt = qc.getQueryState(["finance"])?.dataUpdatedAt ?? 0;
+  const financeUpdatedAt = qc.getQueryState(keys.finance)?.dataUpdatedAt ?? 0;
   const bookUpdatedAt = FINANCE_STATEMENT_BOOK_KEYS.map(
-    (key) => qc.getQueryState([key])?.dataUpdatedAt ?? 0,
+    (key) => qc.getQueryState(keys.book(key))?.dataUpdatedAt ?? 0,
   );
   return useInfiniteQuery({
-    queryKey: ["admin", "asset-records", financeUpdatedAt, ...bookUpdatedAt],
+    queryKey: [...keys.admin, "asset-records", financeUpdatedAt, ...bookUpdatedAt],
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
       const qs = pageParam
@@ -55,10 +69,10 @@ export function useAdminAssets() {
         items: AdminAssetMeta[];
         nextCursor?: string | null;
       }>(`/assets${qs}`);
-      const finance = qc.getQueryData<FinancePersistedState>(["finance"]);
+      const finance = qc.getQueryData<FinancePersistedState>(keys.finance);
       const books = FINANCE_STATEMENT_BOOK_KEYS.map((key) => ({
         key,
-        data: qc.getQueryData<HouseFinanceData>([key]),
+        data: qc.getQueryData<HouseFinanceData>(keys.book(key)),
       }));
       const items = data.items
         .filter(

@@ -22,7 +22,7 @@ import {
   isFinishedBoardTaskStatus,
   liveCatalogPreviewForTask,
   sumTaskUsageCost,
-  syncBoardTaskSearchParams,
+  useBoardTaskParamWriter,
   taskActorLabel,
   type BoardTaskLaneId,
   type BoardTaskStatus,
@@ -52,6 +52,7 @@ export function BoardTasksSection({
   readonly onFocusConsumed?: () => void;
 }) {
   const staff = useBoardStaff();
+  const writeTaskParam = useBoardTaskParamWriter();
   const [includeFinished, setIncludeFinished] = useState(false);
   const [query, setQuery] = useState("");
   const [assignee, setAssignee] = useState("");
@@ -78,8 +79,8 @@ export function BoardTasksSection({
   }, [focusTaskId, onFocusConsumed]);
 
   useEffect(() => {
-    syncBoardTaskSearchParams(selectedId);
-  }, [selectedId]);
+    writeTaskParam(selectedId);
+  }, [selectedId, writeTaskParam]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 30_000);

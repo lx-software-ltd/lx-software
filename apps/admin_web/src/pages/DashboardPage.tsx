@@ -11,6 +11,7 @@ import { MonthlyViewExpenseAllocationsSection } from "../components/dashboard/Mo
 import { AvailableBalanceDashboardCard } from "../components/dashboard/AvailableBalanceDashboardCard";
 import { PensionDashboardCard } from "../components/dashboard/PensionDashboardCard";
 import { adminFetchJson } from "../lib/apiAdminClient";
+import { keys } from "../lib/queryKeys";
 import { useFinance } from "../hooks/useFinance";
 import { EMPTY_STATEMENT_BOOK, statementBookQuery } from "../hooks/useStatementBook";
 import { formatNonZeroMoneyLines } from "../lib/formatDisplay";
@@ -40,13 +41,13 @@ function bookNet(
 
 export function DashboardPage() {
   const healthQuery = useQuery({
-    queryKey: ["admin", "health"],
+    queryKey: [...keys.admin, "health"],
     queryFn: () =>
       adminFetchJson<{ status?: string }>("/health", { requireAuth: false }),
   });
 
   const meQuery = useQuery({
-    queryKey: ["admin", "me"],
+    queryKey: [...keys.admin, "me"],
     queryFn: () =>
       adminFetchJson<{ sub?: string; email?: string }>("/me"),
   });

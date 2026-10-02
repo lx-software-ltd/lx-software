@@ -1,9 +1,10 @@
-import { type FormEvent, useCallback, useMemo, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import {
   coerceSupportedCurrency,
   GLOBAL_DEFAULT_CURRENCY,
   type CurrencyCode,
 } from "../lib/currencies";
+import { compareBy } from "../lib/compareBy";
 import { convertAmountToBase } from "../lib/frankfurterRates";
 import { parseAmount } from "../lib/formParse";
 import {
@@ -20,8 +21,8 @@ import {
   syntheticIncomeLedgerRowsFromAllocations,
 } from "../lib/financeModel";
 import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
-import { useExpandedRecord } from "../hooks/useExpandedRecord";
-import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
+import { useRecordEditor } from "../hooks/useRecordEditor";
+import { useSortState } from "../hooks/useSortState";
 import { useFrankfurterRatesForTotals } from "../hooks/useFrankfurterRatesForTotals";
 import {
   AdminCell,
@@ -32,14 +33,15 @@ import {
   AdminCreateButton,
   AdminEditorPanel,
   AdminExpandableRow,
+  AdminField,
+  AdminFieldGrid,
+  AdminFxTotalRow,
   AdminFilterBar,
   AdminFilterField,
   AdminRecordTable,
   AdminRowActions,
   ConfirmDialog,
   AdminEditorSection,
-  AdminTableTotalCurrency,
-  AdminTableTotalLabel,
   CurrencySelect,
   MoneyAmount,
   TableSortHeaderButton,
@@ -62,36 +64,50 @@ function compareLedgerRecords(
   sortDir: "asc" | "desc",
   relatedHouseLabelByValue: ReadonlyMap<HouseKey, string>,
 ): number {
-  const dir = sortDir === "asc" ? 1 : -1;
-  let cmp = 0;
-  switch (sortKey) {
-    case "cat":
-      cmp = a.category.localeCompare(b.category, undefined, { sensitivity: "base" });
-      break;
-    case "desc":
-      cmp = a.description.localeCompare(b.description, undefined, { sensitivity: "base" });
-      break;
-    case "house":
-      cmp = relatedHouseSortLabel(a, relatedHouseLabelByValue).localeCompare(
-        relatedHouseSortLabel(b, relatedHouseLabelByValue),
-        undefined,
-        { sensitivity: "base" },
-      );
-      break;
-    case "amt": {
-      const ma = ledgerMonthlyAmount(a);
-      const mb = ledgerMonthlyAmount(b);
-      cmp = ma === mb ? 0 : ma < mb ? -1 : 1;
-      break;
-    }
-    case "ccy":
-      cmp = a.currency.localeCompare(b.currency, undefined, { sensitivity: "base" });
-      break;
-    default:
-      break;
-  }
-  if (cmp !== 0) return dir * cmp;
-  return a.id.localeCompare(b.id);
+  return compareBy(
+    a,
+    b,
+    sortDir,
+    (left, right) => {
+      switch (sortKey) {
+        case "cat":
+          return left.category.localeCompare(right.category, undefined, { sensitivity: "base" });
+        case "desc":
+          return left.description.localeCompare(right.description, undefined, { sensitivity: "base" });
+        case "house":
+          return relatedHouseSortLabel(left, relatedHouseLabelByValue).localeCompare(
+            relatedHouseSortLabel(right, relatedHouseLabelByValue),
+            undefined,
+            { sensitivity: "base" },
+          );
+        case "amt": {
+          const ma = ledgerMonthlyAmount(left);
+          const mb = ledgerMonthlyAmount(right);
+          return ma === mb ? 0 : ma < mb ? -1 : 1;
+        }
+        case "ccy":
+          return left.currency.localeCompare(right.currency, undefined, { sensitivity: "base" });
+        default:
+          return 0;
+      }
+    },
+    (left, right) => left.id.localeCompare(right.id),
+  );
+}
+
+function lineToForm(row: FinanceLedgerRecord): LineFormState {
+  return {
+    category: row.category,
+    description: row.description,
+    amount: String(row.amount),
+    currency: row.currency,
+    amountPeriod: row.amountPeriod,
+    relatedHouse: row.relatedHouse ?? "",
+    isTax: row.isTax === true,
+    isSaving: row.isSaving === true,
+    isInvestment: row.isInvestment === true,
+    isAllocate: row.isAllocate === true,
+  };
 }
 
 type LineFormState = {
@@ -207,11 +223,8 @@ function TaggedIncomeAllocationSection({
         property&quot;. Derived expense lines appear in the table below and cannot be edited or
         deleted.
       </p>
-      <div className="row g-3">
-        <div className="col-md-4">
-          <label className="form-label small" htmlFor={`${sheetId}-alloc-tax`}>
-            % Tax on Income
-          </label>
+      <AdminFieldGrid columns={4}>
+        <AdminField label="% Tax on Income" htmlFor={`${sheetId}-alloc-tax`}>
           <input
             id={`${sheetId}-alloc-tax`}
             type="number"
@@ -231,11 +244,8 @@ function TaggedIncomeAllocationSection({
               }));
             }}
           />
-        </div>
-        <div className="col-md-4">
-          <label className="form-label small" htmlFor={`${sheetId}-alloc-inv`}>
-            % Investments on Income
-          </label>
+        </AdminField>
+        <AdminField label="% Investments on Income" htmlFor={`${sheetId}-alloc-inv`}>
           <input
             id={`${sheetId}-alloc-inv`}
             type="number"
@@ -255,11 +265,8 @@ function TaggedIncomeAllocationSection({
               }));
             }}
           />
-        </div>
-        <div className="col-md-4">
-          <label className="form-label small" htmlFor={`${sheetId}-alloc-save`}>
-            % Savings on Income
-          </label>
+        </AdminField>
+        <AdminField label="% Savings on Income" htmlFor={`${sheetId}-alloc-save`}>
           <input
             id={`${sheetId}-alloc-save`}
             type="number"
@@ -279,8 +286,8 @@ function TaggedIncomeAllocationSection({
               }));
             }}
           />
-        </div>
-      </div>
+        </AdminField>
+      </AdminFieldGrid>
     </AdminEditorSection>
   );
 }
@@ -357,31 +364,9 @@ export function FinanceLedgerSheetPanel({
     relatedHouseOptions,
   ]);
 
-  const [sortKey, setSortKey] = useState<LedgerSortColumnKey | null>(null);
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-
-  const onLedgerSort = useCallback((key: LedgerSortColumnKey) => {
-    setSortKey((prevKey) => {
-      if (prevKey !== key) {
-        setSortDir("asc");
-        return key;
-      }
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-      return prevKey;
-    });
-  }, []);
+  const { sortKey, sortDir, onSort, ariaSort, directionFor } = useSortState<LedgerSortColumnKey>(null);
 
   const tableColumns = useMemo((): AdminDataTableColumn[] => {
-    const manualSort = sortKey !== null;
-    const thAria = (
-      key: LedgerSortColumnKey,
-    ): "ascending" | "descending" | "none" | "other" | undefined => {
-      if (!manualSort) return undefined;
-      if (sortKey === key) return sortDir === "asc" ? "ascending" : "descending";
-      return "none";
-    };
-    const dirFor = (key: LedgerSortColumnKey): "asc" | "desc" | null =>
-      sortKey === key ? sortDir : null;
 
     const cols: AdminDataTableColumn[] = [
       {
@@ -390,13 +375,13 @@ export function FinanceLedgerSheetPanel({
           <TableSortHeaderButton
             label="Category"
             isActive={sortKey === "cat"}
-            direction={dirFor("cat")}
-            onClick={() => onLedgerSort("cat")}
+            direction={directionFor("cat")}
+            onClick={() => onSort("cat")}
           />
         ),
         className: "small",
         priority: "secondary",
-        thAriaSort: thAria("cat"),
+        thAriaSort: ariaSort("cat"),
       },
       {
         key: "desc",
@@ -404,12 +389,12 @@ export function FinanceLedgerSheetPanel({
           <TableSortHeaderButton
             label="Description"
             isActive={sortKey === "desc"}
-            direction={dirFor("desc")}
-            onClick={() => onLedgerSort("desc")}
+            direction={directionFor("desc")}
+            onClick={() => onSort("desc")}
           />
         ),
         className: "small",
-        thAriaSort: thAria("desc"),
+        thAriaSort: ariaSort("desc"),
       },
     ];
     if (showIncomeFlagsCol || showExpenseFlagsCol) {
@@ -427,13 +412,13 @@ export function FinanceLedgerSheetPanel({
           <TableSortHeaderButton
             label="Related property"
             isActive={sortKey === "house"}
-            direction={dirFor("house")}
-            onClick={() => onLedgerSort("house")}
+            direction={directionFor("house")}
+            onClick={() => onSort("house")}
           />
         ),
         className: "small",
         priority: "tertiary",
-        thAriaSort: thAria("house"),
+        thAriaSort: ariaSort("house"),
       });
     }
     cols.push(
@@ -443,14 +428,14 @@ export function FinanceLedgerSheetPanel({
           <TableSortHeaderButton
             label="Monthly amount"
             isActive={sortKey === "amt"}
-            direction={dirFor("amt")}
-            onClick={() => onLedgerSort("amt")}
+            direction={directionFor("amt")}
+            onClick={() => onSort("amt")}
             align="end"
           />
         ),
         className: "small text-end",
         headerClassName: "small text-end",
-        thAriaSort: thAria("amt"),
+        thAriaSort: ariaSort("amt"),
       },
       {
         key: "ccy",
@@ -458,13 +443,13 @@ export function FinanceLedgerSheetPanel({
           <TableSortHeaderButton
             label="Currency"
             isActive={sortKey === "ccy"}
-            direction={dirFor("ccy")}
-            onClick={() => onLedgerSort("ccy")}
+            direction={directionFor("ccy")}
+            onClick={() => onSort("ccy")}
           />
         ),
         className: "small",
         priority: "secondary",
-        thAriaSort: thAria("ccy"),
+        thAriaSort: ariaSort("ccy"),
       },
       {
         key: "ops",
@@ -474,7 +459,7 @@ export function FinanceLedgerSheetPanel({
       },
     );
     return cols;
-  }, [showRelatedHouseCol, showIncomeFlagsCol, showExpenseFlagsCol, sortKey, sortDir, onLedgerSort]);
+  }, [ariaSort, directionFor, onSort, showExpenseFlagsCol, showIncomeFlagsCol, showRelatedHouseCol, sortKey]);
   const colSpan = tableColumns.length;
 
   const formId = `${sheetId}-ledger-form`;
@@ -498,16 +483,23 @@ export function FinanceLedgerSheetPanel({
     isInvestment: false,
     isAllocate: false,
   });
-
-  const expanded = useExpandedRecord(sheetId);
-  const editingId =
-    expanded.expandedId && expanded.expandedId !== DRAFT_RECORD_ID
-      ? expanded.expandedId
-      : null;
-  const formOpen = expanded.expandedId !== null;
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [lineForm, setLineForm] = useState<LineFormState>(() => emptyForm());
+  const editableRecords = useMemo(
+    () =>
+      tableSourceRecords.filter(
+        (row) => !row.isDerivedFromTaggedIncome && !row.isDerivedFromAllocation,
+      ),
+    [tableSourceRecords],
+  );
+  const editor = useRecordEditor<LineFormState, FinanceLedgerRecord>({
+    param: sheetId,
+    records: editableRecords,
+    emptyForm,
+    lineToForm,
+    onDelete: (id) => {
+      onPatch((prev) => prev.filter((row) => row.id !== id));
+    },
+  });
+  const { form: lineForm, setForm: setLineForm, editingId, formError, formOpen, expandedId } = editor;
   const [tableFilter, setTableFilter] = useState("");
   const [totalDisplayCurrency, setTotalDisplayCurrency] = useState<CurrencyCode>(
     GLOBAL_DEFAULT_CURRENCY,
@@ -616,80 +608,24 @@ export function FinanceLedgerSheetPanel({
     totalDisplayCurrency,
   ]);
 
-  function resetFields() {
-    setFormError(null);
-    setLineForm(emptyForm());
-  }
-
-  function formFromLedger(row: FinanceLedgerRecord): LineFormState {
-    return {
-      category: row.category,
-      description: row.description,
-      amount: String(row.amount),
-      currency: row.currency,
-      amountPeriod: row.amountPeriod,
-      relatedHouse: row.relatedHouse ?? "",
-      isTax: row.isTax === true,
-      isSaving: row.isSaving === true,
-      isInvestment: row.isInvestment === true,
-      isAllocate: row.isAllocate === true,
-    };
-  }
-
-  function applyLedger(row: FinanceLedgerRecord) {
-    setFormError(null);
-    setLineForm(formFromLedger(row));
-  }
-
-  function ledgerDirty(): boolean {
-    if (!formOpen) return false;
-    if (!editingId) return JSON.stringify(lineForm) !== JSON.stringify(emptyForm());
-    const row = tableSourceRecords.find((record) => record.id === editingId);
-    if (!row || row.isDerivedFromTaggedIncome || row.isDerivedFromAllocation) return false;
-    return JSON.stringify(lineForm) !== JSON.stringify(formFromLedger(row));
-  }
-
-  const editingLedger = editingId
-    ? (tableSourceRecords.find((record) => record.id === editingId) ?? null)
-    : null;
-  const editableLedger =
-    editingLedger && !editingLedger.isDerivedFromTaggedIncome && !editingLedger.isDerivedFromAllocation
-      ? editingLedger
-      : null;
-  useHydrateExpandedRecord({
-    expandedId: expanded.expandedId,
-    recordsReady: true,
-    record: editableLedger,
-    apply: applyLedger,
-    onMissing: () => expanded.request(null, false),
-  });
-
   function openEdit(row: FinanceLedgerRecord) {
     if (row.isDerivedFromTaggedIncome || row.isDerivedFromAllocation) return;
-    expanded.toggle(row.id, ledgerDirty(), () => applyLedger(row), resetFields);
-  }
-
-  function openCreate() {
-    if (expanded.expandedId === DRAFT_RECORD_ID) {
-      expanded.request(null, ledgerDirty(), resetFields);
-      return;
-    }
-    expanded.request(DRAFT_RECORD_ID, ledgerDirty(), resetFields);
+    editor.openEdit(row);
   }
 
   function submitLine(e: FormEvent) {
     e.preventDefault();
     const amount = parseAmount(lineForm.amount);
     if (!lineForm.description.trim()) {
-      setFormError("Description is required.");
+      editor.setFormError("Description is required.");
       return;
     }
     if (amount === null) {
-      setFormError("Amount must be a valid number.");
+      editor.setFormError("Amount must be a valid number.");
       return;
     }
     if (!categories.includes(lineForm.category)) {
-      setFormError("Pick a valid category.");
+      editor.setFormError("Pick a valid category.");
       return;
     }
     const currency = coerceSupportedCurrency(lineForm.currency, GLOBAL_DEFAULT_CURRENCY);
@@ -720,21 +656,7 @@ export function FinanceLedgerSheetPanel({
       return [...prev, row];
     });
 
-    resetFields();
-    expanded.request(null, false);
-  }
-
-  function deleteRow(id: string) {
-    const row = tableSourceRecords.find((r) => r.id === id);
-    if (row?.isDerivedFromTaggedIncome || row?.isDerivedFromAllocation) {
-      return;
-    }
-    onPatch((prev) => prev.filter((r) => r.id !== id));
-    if (editingId === id) {
-      resetFields();
-      expanded.request(null, false);
-    }
-    setPendingDeleteId(null);
+    editor.close();
   }
 
                   const ledgerEditor = formOpen ? (
@@ -746,11 +668,8 @@ export function FinanceLedgerSheetPanel({
           error={formError}
         >
           <span className="visually-hidden">{formSectionTitle}</span>
-          <div className="row g-3">
-            <div className={showRelatedHouseCol ? "col-md-2" : "col-md-3"}>
-              <label className="form-label small" htmlFor={`${sheetId}-ledger-cat`}>
-                Category
-              </label>
+          <AdminFieldGrid columns={4}>
+            <AdminField label="Category" htmlFor={`${sheetId}-ledger-cat`}>
               <select
                 id={`${sheetId}-ledger-cat`}
                 className="form-select form-select-sm"
@@ -765,11 +684,8 @@ export function FinanceLedgerSheetPanel({
                   </option>
                 ))}
               </select>
-            </div>
-            <div className={showRelatedHouseCol ? "col-md-2" : "col-md-3"}>
-              <label className="form-label small" htmlFor={`${sheetId}-ledger-desc`}>
-                Description
-              </label>
+            </AdminField>
+            <AdminField label="Description" htmlFor={`${sheetId}-ledger-desc`}>
               <input
                 id={`${sheetId}-ledger-desc`}
                 type="text"
@@ -780,12 +696,9 @@ export function FinanceLedgerSheetPanel({
                   setLineForm((f) => ({ ...f, description: ev.target.value }))
                 }
               />
-            </div>
+            </AdminField>
             {showRelatedHouseCol ? (
-              <div className="col-md-2">
-                <label className="form-label small" htmlFor={`${sheetId}-ledger-house`}>
-                  Related property
-                </label>
+              <AdminField label="Related property" htmlFor={`${sheetId}-ledger-house`}>
                 <select
                   id={`${sheetId}-ledger-house`}
                   className="form-select form-select-sm"
@@ -804,12 +717,9 @@ export function FinanceLedgerSheetPanel({
                     </option>
                   ))}
                 </select>
-              </div>
+              </AdminField>
             ) : null}
-            <div className="col-md-2">
-              <label className="form-label small" htmlFor={`${sheetId}-ledger-amt`}>
-                Amount
-              </label>
+            <AdminField label="Amount" htmlFor={`${sheetId}-ledger-amt`}>
               <input
                 id={`${sheetId}-ledger-amt`}
                 type="number"
@@ -821,11 +731,8 @@ export function FinanceLedgerSheetPanel({
                   setLineForm((f) => ({ ...f, amount: ev.target.value }))
                 }
               />
-            </div>
-            <div className="col-md-2">
-              <label className="form-label small" htmlFor={`${sheetId}-ledger-period`}>
-                Amount is
-              </label>
+            </AdminField>
+            <AdminField label="Amount is" htmlFor={`${sheetId}-ledger-period`}>
               <select
                 id={`${sheetId}-ledger-period`}
                 className="form-select form-select-sm"
@@ -840,11 +747,8 @@ export function FinanceLedgerSheetPanel({
                 <option value="month">Per month</option>
                 <option value="year">Per year</option>
               </select>
-            </div>
-            <div className="col-md-2">
-              <label className="form-label small" htmlFor={`${sheetId}-ledger-ccy`}>
-                Currency
-              </label>
+            </AdminField>
+            <AdminField label="Currency" htmlFor={`${sheetId}-ledger-ccy`}>
               <CurrencySelect
                 id={`${sheetId}-ledger-ccy`}
                 value={lineForm.currency}
@@ -852,12 +756,11 @@ export function FinanceLedgerSheetPanel({
                   setLineForm((f) => ({ ...f, currency: code }))
                 }
               />
-            </div>
-          </div>
+            </AdminField>
+          </AdminFieldGrid>
           {showIncomeFlagsCol && incomeFlagFields ? (
-            <div className="row g-3 mt-0">
-              <div className="col-12">
-                <span className="form-label small d-block mb-1">Tags</span>
+            <AdminFieldGrid columns={4}>
+              <AdminField label="Tags" span={4}>
                 <div className="d-flex flex-wrap gap-3">
                   {incomeFlagFields.map(({ field, label }) => (
                     <div key={field} className="form-check mb-0">
@@ -879,13 +782,12 @@ export function FinanceLedgerSheetPanel({
                     </div>
                   ))}
                 </div>
-              </div>
-            </div>
+              </AdminField>
+            </AdminFieldGrid>
           ) : null}
           {showExpenseFlagsCol && expenseFlagFields ? (
-            <div className="row g-3 mt-0">
-              <div className="col-12">
-                <span className="form-label small d-block mb-1">Tags</span>
+            <AdminFieldGrid columns={4}>
+              <AdminField label="Tags" span={4}>
                 <div className="d-flex flex-wrap gap-3">
                   {expenseFlagFields.map(({ field, label }) => (
                     <div key={field} className="form-check mb-0">
@@ -907,8 +809,8 @@ export function FinanceLedgerSheetPanel({
                     </div>
                   ))}
                 </div>
-              </div>
-            </div>
+              </AdminField>
+            </AdminFieldGrid>
           ) : null}
         </AdminEditorPanel>
       ) : null;
@@ -928,7 +830,7 @@ export function FinanceLedgerSheetPanel({
       <AdminRecordTable
         label={tableSectionTitle}
         filters={
-          <AdminFilterBar create={<AdminCreateButton label={sheetId === "income" ? "New income" : "New expense"} onClick={openCreate} />}>
+          <AdminFilterBar create={<AdminCreateButton label={sheetId === "income" ? "New income" : "New expense"} onClick={editor.openCreate} />}>
             <AdminFilterField label="Filter" htmlFor={`${sheetId}-ledger-filter`}>
               <input id={`${sheetId}-ledger-filter`} type="search" className="form-control form-control-sm" placeholder={filterPlaceholder} autoComplete="off" value={tableFilter} onChange={(ev) => setTableFilter(ev.target.value)} />
             </AdminFilterField>
@@ -939,8 +841,8 @@ export function FinanceLedgerSheetPanel({
           bare
           columns={tableColumns}
         >
-          {expanded.expandedId === DRAFT_RECORD_ID ? (
-            <AdminExpandableRow colSpan={colSpan} expanded onToggle={openCreate} editor={ledgerEditor}>
+          {expandedId === DRAFT_RECORD_ID ? (
+            <AdminExpandableRow colSpan={colSpan} expanded onToggle={editor.openCreate} editor={ledgerEditor}>
               {tableColumns.map((col) => (
                 <AdminCell key={col.key} column={col.key}>
                   {col.key === "desc" ? "New record" : null}
@@ -967,7 +869,7 @@ export function FinanceLedgerSheetPanel({
               <AdminExpandableRow
                 key={r.id}
                 colSpan={colSpan}
-                expanded={expanded.expandedId === r.id}
+                expanded={expandedId === r.id}
                 onToggle={() => openEdit(r)}
                 editor={editable ? ledgerEditor : null}
               >
@@ -1013,7 +915,9 @@ export function FinanceLedgerSheetPanel({
                     <AdminRowActions
                       actions={[
                         { id: "edit", label: "Edit record", iconClassName: "bi bi-pencil", onClick: () => openEdit(r) },
-                        { id: "delete", label: "Delete record", iconClassName: "bi bi-trash", danger: true, onClick: () => setPendingDeleteId(r.id) },
+                        { id: "delete", label: "Delete record", iconClassName: "bi bi-trash", danger: true, onClick: () => {
+                          if (!r.isDerivedFromTaggedIncome && !r.isDerivedFromAllocation) editor.requestDelete(r.id);
+                        } },
                       ]}
                     />
                   )}
@@ -1032,65 +936,32 @@ export function FinanceLedgerSheetPanel({
             />
           )}
           {tableSourceRecords.length > 0 ? (
-            <tr className="table-group-divider table-secondary fw-semibold">
-              <AdminCell column="cat" className="small" />
-              <AdminCell column="desc" className="small">
-                <AdminTableTotalLabel
-                  needsFx={needsFx}
-                  fxError={fxError}
-                  fxLoading={fxLoading}
-                  ratesQuery={ratesQuery}
-                  phoneValue={
-                    <>
-                      {convertedTotal !== null ? (
-                        <MoneyAmount
-                          amount={convertedTotal}
-                          currency={totalDisplayCurrency}
-                          amountOnly
-                        />
-                      ) : (
-                        <span className="text-muted">—</span>
-                      )}
-                      <br />
-                      <AdminTableTotalCurrency
-                        id={`${sheetId}-total-ccy-phone`}
-                        value={totalDisplayCurrency}
-                        onChange={setTotalDisplayCurrency}
-                        disabled={fxLoading}
-                      />
-                    </>
-                  }
-                />
-              </AdminCell>
-              {showIncomeFlagsCol || showExpenseFlagsCol ? (
-                <AdminCell column="flags" className="small" />
-              ) : null}
-              {showRelatedHouseCol ? <AdminCell column="house" className="small" /> : null}
-              <AdminCell column="amt" className="small text-end">
-                {convertedTotal !== null ? (
-                  <MoneyAmount
-                    amount={convertedTotal}
-                    currency={totalDisplayCurrency}
-                    amountOnly
-                  />
-                ) : (
-                  <span className="text-muted">—</span>
-                )}
-                <br />
-                <AdminTableTotalCurrency
-                  id={`${sheetId}-ledger-total-ccy`}
-                  value={totalDisplayCurrency}
-                  onChange={setTotalDisplayCurrency}
-                  disabled={fxLoading}
-                />
-              </AdminCell>
-              <AdminCell column="ccy" className="small" />
-              <AdminCell column="ops" className="small text-end" />
-            </tr>
+            <AdminFxTotalRow
+              labelColumn="desc"
+              sheetId={sheetId}
+              pickerId={`${sheetId}-ledger-total-ccy`}
+              currency={totalDisplayCurrency}
+              onCurrencyChange={setTotalDisplayCurrency}
+              needsFx={needsFx}
+              fxError={fxError}
+              fxLoading={fxLoading}
+              ratesQuery={ratesQuery}
+              cells={[
+                { kind: "empty", column: "cat" },
+                { kind: "label" },
+                ...(showIncomeFlagsCol || showExpenseFlagsCol
+                  ? [{ kind: "empty" as const, column: "flags" }]
+                  : []),
+                ...(showRelatedHouseCol ? [{ kind: "empty" as const, column: "house" }] : []),
+                { kind: "amount", column: "amt", total: convertedTotal, picker: true },
+                { kind: "empty", column: "ccy" },
+                { kind: "empty", column: "ops" },
+              ]}
+            />
           ) : null}
         </AdminDataTable>
-        <ConfirmDialog open={pendingDeleteId !== null} title="Delete record" body={deleteConfirmMessage} confirmLabel="Delete" tone="danger" onConfirm={() => { if (pendingDeleteId) deleteRow(pendingDeleteId); }} onCancel={() => setPendingDeleteId(null)} />
-        <ConfirmDialog open={expanded.confirmOpen} title="Discard unsaved edits?" body="This record has unsaved changes." confirmLabel="Discard" cancelLabel="Keep editing" tone="danger" onConfirm={expanded.acceptPending} onCancel={expanded.cancelPending} />
+        <ConfirmDialog open={editor.pendingDeleteId !== null} title="Delete record" body={deleteConfirmMessage} confirmLabel="Delete" tone="danger" onConfirm={editor.confirmDelete} onCancel={editor.cancelDelete} />
+        <ConfirmDialog open={editor.confirmOpen} title="Discard unsaved edits?" body="This record has unsaved changes." confirmLabel="Discard" cancelLabel="Keep editing" tone="danger" onConfirm={editor.acceptPending} onCancel={editor.cancelPending} />
       </AdminRecordTable>
     </div>
   );

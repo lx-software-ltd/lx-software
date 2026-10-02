@@ -211,7 +211,14 @@ export function BoardReviewSection() {
       {showDigest ? (
         <div className="border rounded p-3 mb-3 bg-body-tertiary small">
           {review.digestHtml ? (
-            <div dangerouslySetInnerHTML={{ __html: review.digestHtml }} />
+            <iframe
+              sandbox=""
+              srcDoc={review.digestHtml}
+              title="Digest preview"
+              referrerPolicy="no-referrer"
+              className="w-100 border-0"
+              style={{ minHeight: "16rem" }}
+            />
           ) : (
             <p className="mb-0 text-muted">
               Digest is emailed at 07:30 HKT to <code>settings.review.digestTo</code>. The mail

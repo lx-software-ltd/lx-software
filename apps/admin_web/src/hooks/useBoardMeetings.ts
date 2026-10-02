@@ -18,9 +18,10 @@ export type MeetingWithTurns = {
   readonly turns: readonly BoardTurn[];
 };
 
-export function useBoardMeetings() {
+export function useBoardMeetings(enabled = true) {
   return useQuery({
     queryKey: BOARD_MEETINGS_KEY,
+    enabled,
     queryFn: async () => {
       const res = await adminFetchJson<{ meetings: BoardMeetingSummary[] }>(`${BOARD_API_BASE}/meetings`);
       return res.meetings;

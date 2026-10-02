@@ -16,11 +16,12 @@ export type UpdateActionVariables = {
   readonly note?: string;
 };
 
-export function useBoardActions() {
+export function useBoardActions(enabled = true) {
   const qc = useQueryClient();
 
   const query = useQuery({
     queryKey: BOARD_ACTIONS_KEY,
+    enabled,
     queryFn: async () => {
       const res = await adminFetchJson<{ actions: BoardAction[] }>(`${BOARD_API_BASE}/actions`);
       return res.actions;

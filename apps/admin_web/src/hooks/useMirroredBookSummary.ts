@@ -1,5 +1,6 @@
 import { useRef } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { keys } from "../lib/queryKeys";
 import { adminFetchJson } from "../lib/apiAdminClient";
 import {
   mirroredSyncIsPending,
@@ -12,20 +13,35 @@ import { statementBookApiPath } from "../lib/statementOwners";
 
 const SYNC_POLL_MS = 2_000;
 
+export function mirroredBookSyncMutationOptions(
+  qc: QueryClient,
+  bookKey: StatementBookKey,
+  path: string,
+) {
+  return {
+    mutationFn: () => adminFetchJson<MirroredBookSyncResponse>(`${path}/sync`, { method: "POST" }),
+    onSuccess: (data: MirroredBookSyncResponse) => {
+      qc.setQueryData([...keys.book(bookKey), "summary"], data);
+      if (data.queued && data.pendingSince) return;
+      void qc.invalidateQueries({ queryKey: keys.book(bookKey) });
+    },
+  };
+}
+
 export function useMirroredBookSummary(bookKey: StatementBookKey) {
   const qc = useQueryClient();
   const path = statementBookApiPath(bookKey);
-  const wasPending = useRef(false);
+  const wasPendingRef = useRef(false);
   const query = useQuery({
-    queryKey: [bookKey, "summary"] as const,
+    queryKey: [...keys.book(bookKey), "summary"] as const,
     queryFn: async () => {
       const data = await adminFetchJson<MirroredBookSummary>(`${path}/summary`);
-      if (wasPending.current && !mirroredSyncIsPending(data)) {
-        wasPending.current = false;
-        void qc.invalidateQueries({ queryKey: [bookKey] });
+      if (wasPendingRef.current && !mirroredSyncIsPending(data)) {
+        wasPendingRef.current = false;
+        void qc.invalidateQueries({ queryKey: keys.book(bookKey) });
       }
       if (mirroredSyncIsPending(data)) {
-        wasPending.current = true;
+        wasPendingRef.current = true;
       }
       return data;
     },
@@ -37,16 +53,12 @@ export function useMirroredBookSummary(bookKey: StatementBookKey) {
       return SYNC_POLL_MS;
     },
   });
+  const syncOptions = mirroredBookSyncMutationOptions(qc, bookKey, path);
   const sync = useMutation({
-    mutationFn: () =>
-      adminFetchJson<MirroredBookSyncResponse>(`${path}/sync`, { method: "POST" }),
+    ...syncOptions,
     onSuccess: (data) => {
-      qc.setQueryData([bookKey, "summary"], data);
-      if (data.queued && data.pendingSince) {
-        wasPending.current = true;
-        return;
-      }
-      void qc.invalidateQueries({ queryKey: [bookKey] });
+      if (data.queued && data.pendingSince) wasPendingRef.current = true;
+      syncOptions.onSuccess(data);
     },
   });
   const isSyncing =

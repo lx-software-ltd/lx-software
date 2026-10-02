@@ -41,10 +41,6 @@ export function getStoredIdToken(): string | null {
   return sessionStorage.getItem(STORAGE_ID);
 }
 
-export function hasStoredSession(): boolean {
-  return Boolean(sessionStorage.getItem(STORAGE_ID));
-}
-
 /**
  * Returns true only when a stored ID token exists and includes the Cognito
  * `admin` group. Removes tokens that are present but not admin-eligible.

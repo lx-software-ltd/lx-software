@@ -90,33 +90,45 @@ export function catalogBulkDecideMutationOptions(qc: QueryClient) {
   };
 }
 
-export function useBoardCatalogMutations() {
-  const qc = useQueryClient();
-  const preview = useMutation({
+export function catalogPreviewMutationOptions(qc: QueryClient) {
+  return {
     mutationFn: (source: string) =>
       adminFetchJson<{ ok?: boolean; queued?: boolean; source?: string }>(boardCatalogBulkPreviewPath(source), {
         method: "POST",
         body: JSON.stringify({ remote: true }),
       }),
     onSuccess: () => invalidateCatalog(qc),
-  });
-  const importSource = useMutation({
+  };
+}
+
+export function catalogImportSourceMutationOptions(qc: QueryClient) {
+  return {
     mutationFn: (source: string) =>
       adminFetchJson<{ ok?: boolean; queued?: boolean; source?: string }>(boardCatalogBulkImportPath(source), {
         method: "POST",
         body: JSON.stringify({}),
       }),
     onSuccess: () => invalidateCatalog(qc),
-  });
-  const decide = useMutation(catalogDecideMutationOptions(qc));
-  const bulkDecide = useMutation(catalogBulkDecideMutationOptions(qc));
-  const runDiscovery = useMutation({
+  };
+}
+
+export function catalogDiscoveryMutationOptions(qc: QueryClient) {
+  return {
     mutationFn: () =>
       adminFetchJson<{ ok?: boolean; queued?: boolean; skipped?: string }>(boardCatalogDiscoveryRunPath(), {
         method: "POST",
         body: JSON.stringify({}),
       }),
     onSuccess: () => invalidateCatalog(qc),
-  });
+  };
+}
+
+export function useBoardCatalogMutations() {
+  const qc = useQueryClient();
+  const preview = useMutation(catalogPreviewMutationOptions(qc));
+  const importSource = useMutation(catalogImportSourceMutationOptions(qc));
+  const decide = useMutation(catalogDecideMutationOptions(qc));
+  const bulkDecide = useMutation(catalogBulkDecideMutationOptions(qc));
+  const runDiscovery = useMutation(catalogDiscoveryMutationOptions(qc));
   return { preview, importSource, decide, bulkDecide, runDiscovery };
 }

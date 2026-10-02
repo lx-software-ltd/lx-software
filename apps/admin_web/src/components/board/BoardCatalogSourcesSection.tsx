@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { BOARD_CATALOG_BULK_SOURCES, BOARD_CATALOG_DISTRICTS, BOARD_CATALOG_LAUNCH_LISTING_TARGET } from "../../lib/contracts/generated";
 import type { BoardCatalogJob } from "../../lib/boardModel";
 import { useBoardCatalogCandidates, useBoardCatalogMutations, useBoardCatalogSources } from "../../hooks/useBoardCatalog";
-import { AdminCell, AdminDataTable, AdminDataTableEmptyRow, AdminRowActions } from "../ui";
+import { useDebouncedValue } from "../../hooks/useDebouncedValue";
+import { AdminCell, AdminDataTable, AdminDataTableEmptyRow, AdminRowActions, ConfirmDialog } from "../ui";
 
 function errorText(err: unknown): string | null {
   if (!err) return null;
@@ -31,15 +32,6 @@ function competitorCutoffIso(): string {
 
 const CANDIDATE_FILTER_DEBOUNCE_MS = 300;
 
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const handle = window.setTimeout(() => setDebounced(value), delayMs);
-    return () => window.clearTimeout(handle);
-  }, [value, delayMs]);
-  return debounced;
-}
-
 const CANDIDATE_COLUMNS = [
   { key: "name", header: "Name" },
   { key: "district", header: "District", priority: "secondary" as const },
@@ -64,6 +56,8 @@ export function BoardCatalogSourcesSection() {
   );
   const candidates = useBoardCatalogCandidates(filters);
   const mutations = useBoardCatalogMutations();
+  const [importConfirm, setImportConfirm] = useState<{ id: string; count: number } | null>(null);
+  const [closeLeftoverConfirm, setCloseLeftoverConfirm] = useState(false);
   const rows = sources.data?.sources ?? [];
   const target = sources.data?.launchTarget ?? BOARD_CATALOG_LAUNCH_LISTING_TARGET;
   const queuedPreview = Boolean(mutations.preview.isSuccess && mutations.preview.data?.queued);
@@ -156,14 +150,7 @@ export function BoardCatalogSourcesSection() {
                       }
                       onClick={() => {
                         const n = row.counts.approved ?? 0;
-                        if (
-                          !window.confirm(
-                            `Import ${n} approved ${row.id} organisation${n === 1 ? "" : "s"} into the live catalog?`,
-                          )
-                        ) {
-                          return;
-                        }
-                        mutations.importSource.mutate(row.id);
+                        setImportConfirm({ id: row.id, count: n });
                       }}
                     >
                       Import
@@ -181,22 +168,7 @@ export function BoardCatalogSourcesSection() {
             type="button"
             className="btn btn-outline-secondary btn-sm"
             disabled={mutations.bulkDecide.isPending}
-            onClick={() => {
-              if (
-                !window.confirm(
-                  "Close leftover competitor candidates that are still new, have no Places match, and are older than 7 days?",
-                )
-              ) {
-                return;
-              }
-              mutations.bulkDecide.mutate({
-                decision: "close",
-                source: "competitor",
-                status: "new",
-                before: competitorCutoffIso(),
-                missingPlaceId: true,
-              });
-            }}
+            onClick={() => setCloseLeftoverConfirm(true)}
           >
             {mutations.bulkDecide.isPending ? "Closing…" : "Close leftover competitors"}
           </button>
@@ -303,6 +275,39 @@ export function BoardCatalogSourcesSection() {
         ) : candidates.total > candidateRows.length ? (
           <p className="small text-muted mb-0 mt-2">{candidates.total} matching candidates.</p>
         ) : null}
+        <ConfirmDialog
+          open={importConfirm !== null}
+          title="Import organisations"
+          body={
+            importConfirm
+              ? `Import ${importConfirm.count} approved ${importConfirm.id} organisation${importConfirm.count === 1 ? "" : "s"} into the live catalog?`
+              : ""
+          }
+          confirmLabel="Import"
+          onConfirm={() => {
+            if (importConfirm) mutations.importSource.mutate(importConfirm.id);
+            setImportConfirm(null);
+          }}
+          onCancel={() => setImportConfirm(null)}
+        />
+        <ConfirmDialog
+          open={closeLeftoverConfirm}
+          title="Close leftover competitors"
+          body="Close leftover competitor candidates that are still new, have no Places match, and are older than 7 days?"
+          confirmLabel="Close"
+          tone="danger"
+          onConfirm={() => {
+            setCloseLeftoverConfirm(false);
+            mutations.bulkDecide.mutate({
+              decision: "close",
+              source: "competitor",
+              status: "new",
+              before: competitorCutoffIso(),
+              missingPlaceId: true,
+            });
+          }}
+          onCancel={() => setCloseLeftoverConfirm(false)}
+        />
       </div>
     </section>
   );

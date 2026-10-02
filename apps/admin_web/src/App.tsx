@@ -1,17 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./components/AuthProvider";
 import { AuthenticatedShell } from "./components/AuthenticatedShell";
 import { RequireAuth } from "./components/RequireAuth";
-import { AssetsPage } from "./pages/AssetsPage";
 import { AuthCallbackPage } from "./pages/AuthCallbackPage";
 import { BankingCallbackPage } from "./pages/BankingCallbackPage";
-import { BankingPage } from "./pages/BankingPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { FinancePage } from "./pages/FinancePage";
 import { LxSoftwarePage } from "./pages/LxSoftwarePage";
 import { EvolveSproutsPage } from "./pages/EvolveSproutsPage";
-import { SiuTinDeiPage } from "./pages/SiuTinDeiPage";
+
+const AssetsPage = lazy(() => import("./pages/AssetsPage").then((m) => ({ default: m.AssetsPage })));
+const BankingPage = lazy(() => import("./pages/BankingPage").then((m) => ({ default: m.BankingPage })));
+const SiuTinDeiPage = lazy(() => import("./pages/SiuTinDeiPage").then((m) => ({ default: m.SiuTinDeiPage })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -27,6 +29,7 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <BrowserRouter>
+          <Suspense fallback={<p className="text-muted small p-3 mb-0">Loading…</p>}>
           <Routes>
             <Route path="/auth/callback" element={<AuthCallbackPage />} />
             <Route element={<RequireAuth />}>
@@ -43,6 +46,7 @@ export function App() {
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          </Suspense>
         </BrowserRouter>
       </AuthProvider>
     </QueryClientProvider>
