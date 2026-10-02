@@ -167,12 +167,17 @@ export const FINANCE_LIST_KEYS: Readonly<Record<string, keyof FinancePersistedSt
 export function fxRates(url: URL): Response {
   const base = url.searchParams.get("base") ?? "HKD";
   const quotes = (url.searchParams.get("quotes") ?? "").split(",").filter(Boolean);
-  // Approximate cross rates expressed in HKD, enough for totals to look plausible.
+  // HKD per 1 unit of each currency. Frankfurter rows mean 1 base = rate quote.
   const inHkd: Record<string, number> = { HKD: 1, USD: 7.8, GBP: 9.9, EUR: 8.5, CNY: 1.08, SGD: 5.8, AED: 2.12 };
   const baseHkd = inHkd[base] ?? 1;
   const date = new Date().toISOString().slice(0, 10);
   return json(
-    quotes.map((quote) => ({ date, base, quote, rate: (inHkd[quote] ?? 1) / baseHkd })),
+    quotes.map((quote) => ({
+      date,
+      base,
+      quote,
+      rate: baseHkd / (inHkd[quote] ?? 1),
+    })),
   );
 }
 

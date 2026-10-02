@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useFrankfurterRatesToBase } from "./useFrankfurterRatesToBase";
 import { useFinance } from "./useFinance";
 import { GLOBAL_DEFAULT_CURRENCY } from "../lib/currencies";
-import { convertAmountToBase } from "../lib/frankfurterRates";
+import { quoteCurrenciesFromBuckets, sumAmountsToBase } from "../lib/frankfurterRates";
 import { LEDGER_RELATED_HOUSE_OPTIONS } from "../lib/houses";
 import {
   sumMonthlyFinanceLedgerAmountsGeneral,
@@ -43,16 +43,14 @@ export function useGeneralMonthlyViewConvertedHkd() {
     return false;
   }, [generalBuckets]);
 
-  const quoteCurrencies = useMemo(() => {
-    const s = new Set<string>();
-    for (const [ccy, amt] of Object.entries(generalBuckets.incomeByCurrency)) {
-      if (amt !== 0) s.add(ccy);
-    }
-    for (const [ccy, amt] of Object.entries(generalBuckets.expensesByCurrency)) {
-      if (amt !== 0) s.add(ccy);
-    }
-    return [...s];
-  }, [generalBuckets]);
+  const quoteCurrencies = useMemo(
+    () =>
+      quoteCurrenciesFromBuckets(
+        generalBuckets.incomeByCurrency,
+        generalBuckets.expensesByCurrency,
+      ),
+    [generalBuckets],
+  );
 
   const needsFx = useMemo(
     () =>
@@ -83,14 +81,7 @@ export function useGeneralMonthlyViewConvertedHkd() {
     }
     try {
       const sumBucket = (rec: Readonly<Record<string, number>>): number =>
-        Object.entries(rec).reduce(
-          (sum, [ccy, amt]) =>
-            amt === 0
-              ? sum
-              : sum +
-                convertAmountToBase(amt, ccy, GLOBAL_DEFAULT_CURRENCY, rateByQuote),
-          0,
-        );
+        sumAmountsToBase(rec, GLOBAL_DEFAULT_CURRENCY, rateByQuote);
       const income = sumBucket(generalBuckets.incomeByCurrency);
       const expenses = sumBucket(generalBuckets.expensesByCurrency);
       const expenseByCategory = sumMonthlyGeneralExpenseAmountsByCategory(

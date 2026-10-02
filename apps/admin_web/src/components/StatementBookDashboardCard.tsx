@@ -1,14 +1,15 @@
 import { useMemo } from "react";
+import { ConvertedNetHkdValue } from "./ConvertedNetHkdValue";
+import { useConvertedNetHkd } from "../hooks/useConvertedNetHkd";
 import {
   FISCAL_YEAR_OPTIONS,
   formatFiscalYearIdLabel,
   fiscalYearIdToStartCalendarYear,
-  netGainsMinusExpensesByCurrency,
   sumHouseStatementLinesForFiscalYear,
   type FiscalYearId,
 } from "../lib/fiscalYearFinance";
 import type { HouseFinanceData } from "../lib/financeModel";
-import { MoneyAmount } from "./ui";
+import { FrankfurterRatesFooterNote, MoneyAmount } from "./ui";
 
 function sortedCurrencyEntries(
   record: Readonly<Record<string, number>>,
@@ -21,11 +22,9 @@ function sortedCurrencyEntries(
 function CurrencyBucketList({
   buckets,
   emptyLabel,
-  signed = false,
 }: {
   readonly buckets: Readonly<Record<string, number>>;
   readonly emptyLabel: string;
-  readonly signed?: boolean;
 }) {
   const entries = sortedCurrencyEntries(buckets);
   if (entries.length === 0) {
@@ -34,10 +33,7 @@ function CurrencyBucketList({
   return (
     <ul className="list-unstyled mb-0 small">
       {entries.map(([currency, amount]) => (
-        <li
-          key={currency}
-          className={signed ? (amount >= 0 ? "text-success" : "text-danger") : undefined}
-        >
+        <li key={currency}>
           <MoneyAmount amount={amount} currency={currency} />
         </li>
       ))}
@@ -66,10 +62,9 @@ export function StatementBookDashboardCard({
       ),
     [data.lines, fiscalYear],
   );
-  const net = useMemo(
-    () =>
-      netGainsMinusExpensesByCurrency(sums.incomeByCurrency, sums.expensesByCurrency),
-    [sums.expensesByCurrency, sums.incomeByCurrency],
+  const { converted, needsFx, ratesQuery, fxLoading, fxError } = useConvertedNetHkd(
+    sums.incomeByCurrency,
+    sums.expensesByCurrency,
   );
   const fyLabel = formatFiscalYearIdLabel(fiscalYear);
 
@@ -106,14 +101,25 @@ export function StatementBookDashboardCard({
           </dd>
           <dt className="col-sm-4 text-muted pt-2">Net</dt>
           <dd className="col-sm-8 pt-2">
-            <CurrencyBucketList buckets={net} emptyLabel="—" signed />
+            <ConvertedNetHkdValue converted={converted} signed />
           </dd>
         </dl>
         <p className="text-muted small mb-0 mt-3">
           {showTitle
             ? `Totals use net amounts from ${title} lines in this fiscal year.`
             : "Totals use net amounts in this fiscal year."}{" "}
-          Default currency is HKD.
+          Gains and expenses stay in the line currency. Net is one HKD total.
+          {needsFx ? (
+            <>
+              {" "}
+              <FrankfurterRatesFooterNote
+                needsFx={needsFx}
+                fxError={fxError}
+                fxLoading={fxLoading}
+                ratesQuery={ratesQuery}
+              />
+            </>
+          ) : null}
         </p>
       </div>
     </div>

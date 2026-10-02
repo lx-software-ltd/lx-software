@@ -322,4 +322,18 @@ describe("mockAdminFetch", () => {
     });
     expect(lx.ok).toBe(true);
   });
+
+  it("serves Frankfurter-shaped FX rows (1 base = rate quote)", async () => {
+    const res = await mockAdminFetch("/fx/v2/rates?base=HKD&quotes=USD");
+    expect(res.ok).toBe(true);
+    const rows = (await res.json()) as readonly {
+      base: string;
+      quote: string;
+      rate: number;
+    }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.base).toBe("HKD");
+    expect(rows[0]?.quote).toBe("USD");
+    expect(rows[0]?.rate).toBeCloseTo(1 / 7.8, 6);
+  });
 });

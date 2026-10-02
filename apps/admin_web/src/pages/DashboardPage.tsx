@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
+import { ConvertedNetHkdValue } from "../components/ConvertedNetHkdValue";
 import { FinanceDataLoadOrError } from "../components/FinanceDataStatus";
-import { AdminKpi, AdminKpiAmounts } from "../components/ui";
 import { StatementBookDashboardCard } from "../components/StatementBookDashboardCard";
+import { AdminKpi, AdminKpiAmounts } from "../components/ui";
 import { AllocationCoverageDashboardCard } from "../components/dashboard/AllocationCoverageDashboardCard";
 import { DashboardApiHealthCard } from "../components/dashboard/DashboardApiHealthCard";
 import { DashboardSessionCard } from "../components/dashboard/DashboardSessionCard";
@@ -11,31 +12,48 @@ import { MonthlyViewExpenseAllocationsSection } from "../components/dashboard/Mo
 import { AvailableBalanceDashboardCard } from "../components/dashboard/AvailableBalanceDashboardCard";
 import { PensionDashboardCard } from "../components/dashboard/PensionDashboardCard";
 import { adminFetchJson } from "../lib/apiAdminClient";
-import { keys } from "../lib/queryKeys";
+import { useConvertedNetHkd } from "../hooks/useConvertedNetHkd";
 import { useFinance } from "../hooks/useFinance";
+import { keys } from "../lib/queryKeys";
 import { EMPTY_STATEMENT_BOOK, statementBookQuery } from "../hooks/useStatementBook";
 import { formatNonZeroMoneyLines } from "../lib/formatDisplay";
 import {
   defaultFiscalYearIdForNowUtc,
   fiscalYearIdToStartCalendarYear,
-  netGainsMinusExpensesByCurrency,
   sumHouseStatementLinesForFiscalYear,
   type FiscalYearId,
 } from "../lib/fiscalYearFinance";
-import { monthlyLedgerNetByCurrency, sumMonthlyFinanceLedgerAmountsByHouse } from "../lib/financeModel";
+import {
+  monthlyLedgerNetByCurrency,
+  sumMonthlyFinanceLedgerAmountsByHouse,
+  type HouseStatementLine,
+} from "../lib/financeModel";
 import { HOUSE_DISPLAY_LABEL } from "../lib/houses";
 import {
   STATEMENT_BOOK_DASHBOARD_ORDER,
   STATEMENT_BOOK_DISPLAY_LABEL,
 } from "../lib/statementOwners";
 
-function bookNet(
-  lines: Parameters<typeof sumHouseStatementLinesForFiscalYear>[0],
-  year: number,
-): readonly string[] {
-  const sums = sumHouseStatementLinesForFiscalYear(lines, year);
-  return formatNonZeroMoneyLines(
-    netGainsMinusExpensesByCurrency(sums.incomeByCurrency, sums.expensesByCurrency),
+function StatementBookNetKpi({
+  label,
+  lines,
+  fiscalYearStart,
+}: {
+  readonly label: string;
+  readonly lines: readonly HouseStatementLine[];
+  readonly fiscalYearStart: number;
+}) {
+  const sums = useMemo(
+    () => sumHouseStatementLinesForFiscalYear(lines, fiscalYearStart),
+    [fiscalYearStart, lines],
+  );
+  const { converted } = useConvertedNetHkd(sums.incomeByCurrency, sums.expensesByCurrency);
+  return (
+    <AdminKpi
+      label={`${label} net`}
+      value={<ConvertedNetHkdValue converted={converted} />}
+      hint="This fiscal year"
+    />
   );
 }
 
@@ -85,23 +103,23 @@ export function DashboardPage() {
       books: STATEMENT_BOOK_DASHBOARD_ORDER.map((bookKey, index) => ({
         bookKey,
         label: STATEMENT_BOOK_DISPLAY_LABEL[bookKey],
-        lines: bookNet(bookQueries[index]?.data?.lines ?? [], fiscalYearStart),
+        lines: bookQueries[index]?.data?.lines ?? [],
       })),
       hillmarton: houseNet("hillmarton"),
       morrison: houseNet("morrison"),
     };
-  }, [bookQueries, financeQuery.data, fiscalYearStart]);
+  }, [bookQueries, financeQuery.data]);
 
   return (
     <div className="admin-dashboard">
       {kpis ? (
         <div className="admin-kpi-row">
           {kpis.books.map((book) => (
-            <AdminKpi
+            <StatementBookNetKpi
               key={book.bookKey}
-              label={`${book.label} net`}
-              value={<AdminKpiAmounts lines={book.lines} />}
-              hint="This fiscal year"
+              label={book.label}
+              lines={book.lines}
+              fiscalYearStart={fiscalYearStart}
             />
           ))}
           <AdminKpi label="Hillmarton" value={<AdminKpiAmounts lines={kpis.hillmarton} />} hint="Monthly net" />
