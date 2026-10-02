@@ -56,6 +56,47 @@ export async function fetchFrankfurterRatesToBase(
   return { date, rateByQuote };
 }
 
+/** Distinct currencies with a non-zero amount across one or more buckets. */
+export function quoteCurrenciesFromBuckets(
+  ...buckets: readonly Readonly<Record<string, number>>[]
+): string[] {
+  const codes = new Set<string>();
+  for (const bucket of buckets) {
+    for (const [currency, amount] of Object.entries(bucket)) {
+      if (amount !== 0) codes.add(currency);
+    }
+  }
+  return [...codes];
+}
+
+/** Sums a currency bucket after converting each amount into `toCurrency`. */
+export function sumAmountsToBase(
+  amounts: Readonly<Record<string, number>>,
+  toCurrency: string,
+  rateByQuote: ReadonlyMap<string, number>,
+): number {
+  return Object.entries(amounts).reduce((sum, [currency, amount]) => {
+    if (amount === 0) return sum;
+    return sum + convertAmountToBase(amount, currency, toCurrency, rateByQuote);
+  }, 0);
+}
+
+/**
+ * Converts every gain and expense into `toCurrency`, then returns gains minus expenses.
+ * Zero-amount currencies are skipped; a missing Frankfurter rate throws.
+ */
+export function netGainsMinusExpensesInBase(
+  gains: Readonly<Record<string, number>>,
+  expenses: Readonly<Record<string, number>>,
+  toCurrency: string,
+  rateByQuote: ReadonlyMap<string, number>,
+): number {
+  return (
+    sumAmountsToBase(gains, toCurrency, rateByQuote) -
+    sumAmountsToBase(expenses, toCurrency, rateByQuote)
+  );
+}
+
 /** Converts `amount` from `fromCurrency` into `toCurrency` using `rateByQuote` from {@link fetchFrankfurterRatesToBase} with `base === toCurrency`. */
 export function convertAmountToBase(
   amount: number,
