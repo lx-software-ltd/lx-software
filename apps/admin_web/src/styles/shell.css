@@ -413,41 +413,38 @@
   }
 }
 
-@media (min-width: 992px) {
-  .admin-review {
-    display: flow-root;
-  }
-
-  .admin-review > section[data-lane="aside"] {
-    float: right;
-    width: min(22rem, 38%);
-    clear: right;
-    margin: 0 0 0.75rem 1.25rem;
-  }
+.admin-review {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
-.admin-review > section[data-lane="main"].card,
-.admin-review > .admin-review-header + section.card {
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--admin-line);
-  border-radius: 0;
-  box-shadow: none;
+.admin-review-header {
+  margin-bottom: 0;
 }
 
-.admin-review section.card .card-body {
-  padding-left: 0;
-  padding-right: 0;
-}
-
-.admin-review > section[data-lane="aside"].card {
+.admin-review > section.card {
+  margin-bottom: 0;
   background: var(--admin-surface);
   border: 1px solid var(--admin-line);
   border-radius: var(--admin-radius);
+  box-shadow: none;
 }
 
-.admin-review > section[data-lane="aside"].card .card-body {
+.admin-review > section.card .card-body {
   padding: 0.9rem 1rem;
+}
+
+@media (min-width: 768px) {
+  .admin-review {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .admin-review > :not([data-lane="aside"]) {
+    grid-column: 1 / -1;
+  }
 }
 
 .board-task-card {

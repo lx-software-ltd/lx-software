@@ -202,14 +202,14 @@ export function BoardReviewSection() {
 
   return (
     <div className="admin-review">
-      <div className="admin-review-header d-flex flex-wrap align-items-center gap-2 mb-3">
+      <div className="admin-review-header d-flex flex-wrap align-items-center gap-2">
         <span className="small text-muted">{review.date}</span>
         <button type="button" className="btn btn-link btn-sm p-0" onClick={() => setShowDigest((v) => !v)}>
           {showDigest ? "Hide digest preview" : "Preview digest email"}
         </button>
       </div>
       {showDigest ? (
-        <div className="border rounded p-3 mb-3 bg-body-tertiary small">
+        <div className="border rounded p-3 bg-body-tertiary small">
           {review.digestHtml ? (
             <iframe
               sandbox=""
@@ -334,7 +334,7 @@ export function BoardReviewSection() {
         )}
       </Section>
 
-      <Section id="breakers" title="Tripped breakers">
+      <Section id="breakers" title="Tripped breakers" lane="aside">
         {data.breakers.filter((b) => b.tripped).length === 0 ? (
           <p className="text-muted small mb-0">None tripped.</p>
         ) : (
@@ -391,7 +391,7 @@ export function BoardReviewSection() {
         )}
       </Section>
 
-      <Section id="configGaps" title="Unconfigured integrations">
+      <Section id="configGaps" title="Unconfigured integrations" lane="aside">
         {(review.configGaps ?? []).length === 0 ? (
           <p className="text-muted small mb-0">None.</p>
         ) : (
@@ -406,7 +406,7 @@ export function BoardReviewSection() {
         )}
       </Section>
 
-      <Section id="dmarc" title="DMARC">
+      <Section id="dmarc" title="DMARC" lane="aside">
         <p className="small mb-2">
           {review.dmarc?.line || "DMARC (reports received in the last 24 h): no summary yet."}
         </p>
@@ -422,7 +422,7 @@ export function BoardReviewSection() {
         ) : null}
       </Section>
 
-      <Section id="engineering" title="Engineering">
+      <Section id="engineering" title="Engineering" lane="aside">
         {(review.engineering ?? []).length === 0 ? (
           <p className="text-muted small mb-0">No open board pull requests.</p>
         ) : (
