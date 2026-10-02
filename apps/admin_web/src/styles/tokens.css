@@ -27,3 +27,13 @@
   --admin-row-py: 0.75rem;
   --admin-cell-px: 1rem;
 }
+
+/* Money: symbol, space, then the value. Negative amounts use --admin-danger. */
+.admin-money {
+  color: var(--admin-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-money-negative {
+  color: var(--admin-danger);
+}

@@ -278,11 +278,11 @@ function StatementLineCells({
             {statementLineTypeLabel(line.type, lockedLineType)}
           </span>
           {" · "}
-          <MoneyAmount amount={line.grossAmount} currency={line.currency} codePrefix />
+          <MoneyAmount amount={line.grossAmount} currency={line.currency} />
         </AdminDataTableCellMeta>
       </AdminCell>
       <AdminCell column="gross" className="small text-end">
-        <MoneyAmount amount={line.grossAmount} currency={line.currency} codePrefix />
+        <MoneyAmount amount={line.grossAmount} currency={line.currency} />
       </AdminCell>
     </>
   );

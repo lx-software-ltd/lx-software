@@ -171,7 +171,7 @@ export const evolveSproutsBookFixture: HouseFinanceData = {
   defaultCurrency: "HKD",
   float: { amount: 0, currency: "HKD" },
   lines: [
-    { id: "es-inv-1", dateUtc: isoDaysAgo(3), sortUtc: isoDaysAgo(1), type: "income", description: "INV-42 Alpha School", netAmount: 860, vat: 0, currency: "HKD", grossAmount: 860 },
+    { id: "es-inv-1", dateUtc: isoDaysAgo(3), type: "income", description: "INV-42 Alpha School", netAmount: 860, vat: 0, currency: "HKD", grossAmount: 860 },
     { id: "es-exp-1", dateUtc: isoDaysAgo(4), type: "expenditure", description: "Example Vendor INV-9", netAmount: 240, vat: 0, currency: "HKD", grossAmount: 240 },
     { id: "es-ref-1", dateUtc: isoDaysAgo(8), type: "expenditure", description: "[evolve-sprouts] Refund ref-1", netAmount: 40, vat: 0, currency: "HKD", grossAmount: 40 },
   ],

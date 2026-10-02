@@ -335,7 +335,7 @@ export function BoardSettingsCard({
                 Staff daily budget
               </label>
               <div className="input-group input-group-sm">
-                <span className="input-group-text">USD</span>
+                <span className="input-group-text">US$</span>
                 <input
                   id="board-staff-daily-budget"
                   type="number"
@@ -520,7 +520,7 @@ export function BoardSettingsCard({
 
           <h3 className="h6 mt-4">Daily budget</h3>
           <div className="input-group input-group-sm board-budget-input">
-            <span className="input-group-text">USD</span>
+            <span className="input-group-text">US$</span>
             <input
               type="number"
               className="form-control"
@@ -538,8 +538,8 @@ export function BoardSettingsCard({
           </div>
           {overview.usageToday.external ? (
             <div className="form-text">
-              External APIs: {overview.usageToday.external.searchCalls} web searches today · Meta ads USD{" "}
-              {overview.usageToday.external.metaAdsMonthUsd.toFixed(2)} this month
+              External APIs: {overview.usageToday.external.searchCalls} web searches today · Meta ads{" "}
+              {formatUsageCost(overview.usageToday.external.metaAdsMonthUsd)} this month
             </div>
           ) : null}
         </div>

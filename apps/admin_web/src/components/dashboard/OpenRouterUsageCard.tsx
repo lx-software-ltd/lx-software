@@ -114,7 +114,7 @@ function PullNotice({ pull }: { readonly pull: OpenRouterUsagePull | null | unde
         ? "The last OpenRouter pull failed. Saved days are still shown."
         : reason === "partial"
           ? "The last OpenRouter pull was incomplete. Saved days are still shown."
-          : "Sibling spend stays at USD 0.00 until the admin OpenRouter secret includes a management key (OpenRouter Management API key). The hourly pull reads Activity for each named sibling key.";
+          : "Sibling spend stays at US$ 0.00 until the admin OpenRouter secret includes a management key (OpenRouter Management API key). The hourly pull reads Activity for each named sibling key.";
   return (
     <p className="small text-warning-emphasis" role="status">
       {message}

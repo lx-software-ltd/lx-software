@@ -81,18 +81,18 @@ test.describe("admin viewport smoke", () => {
     expect(await openrouterMonth.locator("option").count()).toBe(13);
     await expect(page.getByText(/Cost Explorer UnblendedCost/)).toBeVisible();
     await expect(page.getByText(/LX Software pays/)).toHaveCount(0);
-    await expect(page.getByText("USD 434.12 · 50.6%")).toBeVisible();
-    await expect(page.getByText("USD 420.64 · 49.0%")).toBeVisible();
+    await expect(page.getByText("US$ 434.12 · 50.6%")).toBeVisible();
+    await expect(page.getByText("US$ 420.64 · 49.0%")).toBeVisible();
     await expect(page.getByRole("button", { name: "Download allocation PDF" })).toBeVisible();
     await expect(page.getByText(/UTC month/)).toBeVisible();
-    await expect(page.getByText("USD 0.42")).toBeVisible();
+    await expect(page.getByText("US$ 0.42")).toBeVisible();
     await expect(page.getByText("calls metered in this admin")).toBeVisible();
     await expect(page.getByText("Pulled from OpenRouter", { exact: true })).toHaveCount(2);
     await expect(page.getByText("Pulled from OpenRouter · no spend on this key yet.")).toBeVisible();
     await expect(page.getByText("scratch", { exact: true })).toBeVisible();
-    await expect(page.getByText("USD 0.11")).toBeVisible();
+    await expect(page.getByText("US$ 0.11")).toBeVisible();
     await expect(page.getByText("Other", { exact: true })).toBeVisible();
-    await expect(page.getByText("USD 0.18", { exact: true })).toBeVisible();
+    await expect(page.getByText("US$ 0.18", { exact: true })).toBeVisible();
     await expect(
       page.getByText("OpenRouter Chat and spend that is not on an API key."),
     ).toBeVisible();

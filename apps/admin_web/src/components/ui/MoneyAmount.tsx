@@ -1,7 +1,4 @@
-import {
-  formatMoneyAmount,
-  formatMoneyAmountWithoutCurrency,
-} from "../../lib/formatDisplay";
+import { formatMoneyAmount, formatMoneyAmountWithoutCurrency } from "../../lib/formatDisplay";
 
 export type MoneyAmountProps = {
   readonly amount: number;
@@ -9,23 +6,26 @@ export type MoneyAmountProps = {
   readonly className?: string;
   /** When true, only the numeric part is shown (currency is omitted). */
   readonly amountOnly?: boolean;
-  /** ISO code then the numeric part (`GBP 2,100.00`). Overrides `amountOnly`. */
-  readonly codePrefix?: boolean;
+  readonly fractionDigits?: number;
 };
 
-/** Renders a currency amount using ISO currency codes and `Intl.NumberFormat`. */
+function moneyClassName(amount: number, className?: string): string {
+  return ["admin-money", amount < 0 ? "admin-money-negative" : "", className]
+    .filter(Boolean)
+    .join(" ");
+}
+
+/** Renders `HK$ 3,300.23`. Negative amounts are red; non-negative stay the default text colour. */
 export function MoneyAmount({
   amount,
   currency,
   className,
   amountOnly = false,
-  codePrefix = false,
+  fractionDigits,
 }: MoneyAmountProps) {
-  const bare = formatMoneyAmountWithoutCurrency(amount, currency);
-  const text = codePrefix
-    ? `${currency} ${bare}`
-    : amountOnly
-      ? bare
-      : formatMoneyAmount(amount, currency);
-  return <span className={className ?? undefined}>{text}</span>;
+  const options = fractionDigits === undefined ? undefined : { fractionDigits };
+  const text = amountOnly
+    ? formatMoneyAmountWithoutCurrency(amount, currency, options)
+    : formatMoneyAmount(amount, currency, options);
+  return <span className={moneyClassName(amount, className)}>{text}</span>;
 }

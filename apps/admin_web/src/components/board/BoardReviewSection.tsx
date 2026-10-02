@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
-import type { BoardContentItem, BoardReviewSnapshot } from "../../lib/boardModel";
+import { formatUsageCost, type BoardContentItem, type BoardReviewSnapshot } from "../../lib/boardModel";
 import { BoardHoldsList } from "./BoardHoldsList";
 import { useBoardContent } from "../../hooks/useBoardContent";
 import { useBoardHolds } from "../../hooks/useBoardHolds";
@@ -155,7 +155,7 @@ function Headline({ review }: { readonly review: BoardReviewSnapshot }) {
         ) : null}
         <div className="col-auto">Holds executed/vetoed <strong>{h.holds.executed}/{h.holds.vetoed}</strong></div>
         <div className="col-auto">
-          Staff spend <strong>{h.spend.staffUsd}</strong> / {h.spend.budgetUsd} USD
+          Staff spend <strong>{formatUsageCost(h.spend.staffUsd)}</strong> / {formatUsageCost(h.spend.budgetUsd)}
         </div>
         {h.catalog && (h.catalog.importedDistricts || h.catalog.nextDistrict) ? (
           <div className="col-auto">

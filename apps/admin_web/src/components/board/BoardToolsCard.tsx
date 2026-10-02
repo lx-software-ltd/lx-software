@@ -394,7 +394,7 @@ export function BoardToolsCard({
           <div className="row g-2">
             <div className="col-6">
               <label className="form-label small mb-1" htmlFor="board-ads-daily-cap">
-                Daily (USD)
+                Daily (US$)
               </label>
               <input
                 id="board-ads-daily-cap"
@@ -409,7 +409,7 @@ export function BoardToolsCard({
             </div>
             <div className="col-6">
               <label className="form-label small mb-1" htmlFor="board-ads-monthly-cap">
-                Monthly (USD)
+                Monthly (US$)
               </label>
               <input
                 id="board-ads-monthly-cap"
@@ -425,7 +425,7 @@ export function BoardToolsCard({
           </div>
           <div className="form-text">
             Hitting either cap turns <code>create_ad_set</code> and <code>boost_post</code> into
-            Approvals. Clamped to USD 500 / day and USD 2,000 / month.
+            Approvals. Clamped to US$ 500 / day and US$ 2,000 / month.
           </div>
           {adsSpend ? (
             <div className="small mt-2">
