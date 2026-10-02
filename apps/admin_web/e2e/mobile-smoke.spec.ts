@@ -33,7 +33,11 @@ test.describe("admin viewport smoke", () => {
   test("dashboard loads fixture summaries", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByText("LX Software net")).toBeVisible();
+    await expect(page.getByText("Siu Tin Dei net")).toBeVisible();
     await expect(page.getByText("Evolve Sprouts net")).toBeVisible();
+    const siuTinDeiNet = page.locator(".admin-kpi").filter({ hasText: "Siu Tin Dei net" });
+    await expect(siuTinDeiNet.locator(".admin-kpi-value")).toContainText(/HK|HKD/);
+    await expect(siuTinDeiNet.getByText(/US\$|\bUSD\b/)).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Evolve Sprouts" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
@@ -55,11 +59,11 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByRole("button", { name: "Sync now" })).toBeEnabled();
     await page.getByRole("tab", { name: "Expenses" }).click();
     await expect(page.getByRole("button", { name: "New expense" })).toHaveCount(0);
-    await expect(page.getByText("[evolve-sprouts] Expense Example Vendor INV-9")).toBeVisible();
+    await expect(page.getByText("Example Vendor INV-9")).toBeVisible();
     await expect(page.getByRole("button", { name: "Edit line" })).toHaveCount(0);
     await page.getByRole("tab", { name: "Gains" }).click();
     await expect(page.getByRole("button", { name: "New gain" })).toHaveCount(0);
-    await expect(page.getByText("[evolve-sprouts] Payment pay-1")).toBeVisible();
+    await expect(page.getByText("pay-1")).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 
@@ -109,6 +113,8 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByText("HSBC HK current")).toBeVisible();
     await expect(page.getByText(/128,430/).filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByText("Stale").filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: /Last Statement Amount/i })).toHaveCount(0);
+    await expect(page.getByRole("columnheader", { name: /Billing Cycle Day/i })).toHaveCount(0);
 
     if (testInfo.project.name === "phone") {
       await expect(page.locator("#finance-select")).toBeVisible();
