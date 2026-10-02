@@ -9,9 +9,9 @@ can be tagged across this admin and sibling products.
 
 from __future__ import annotations
 
-import base64
 import http.client
 import json
+import logging
 import math
 import os
 import re
@@ -366,7 +366,7 @@ def chat_completion(
                         payload = retry_payload
             if last_error.status in _MODEL_WALK_STATUSES and index < len(chain) - 1:
                 continue
-            raise last_error
+            raise last_error from None
     if raw is None:
         if last_error:
             raise last_error
@@ -502,7 +502,7 @@ def _read_plain(req: Any, sock_timeout: int) -> str:
             try:
                 close()
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("suppressed", exc_info=True)
     if isinstance(raw, str):
         return raw
     return bytes(raw).decode("utf-8")
@@ -546,7 +546,7 @@ def _read_http_response(req: Any, sock_timeout: int, deadline: float | None) -> 
                 try:
                     resp.close()
                 except Exception:
-                    pass
+                    logging.getLogger(__name__).debug("suppressed", exc_info=True)
 
     thread = threading.Thread(target=_worker, name="openrouter-read", daemon=True)
     thread.start()
@@ -558,7 +558,7 @@ def _read_http_response(req: Any, sock_timeout: int, deadline: float | None) -> 
                 try:
                     resp.close()
                 except Exception:
-                    pass
+                    logging.getLogger(__name__).debug("suppressed", exc_info=True)
             # The socket timeout is already the leftover budget, so the
             # daemon ends within about a second. Don't sit on it here.
             thread.join(0.25)
@@ -830,49 +830,17 @@ def _pick_openrouter_key(raw: str, *, service: str) -> str:
 
 
 def read_secret_raw(secrets_client: Any, secret_arn: str, *, what: str) -> str:
-    """Fetch a Secrets Manager secret and return the full string payload.
+    """Fetch a Secrets Manager secret and return the full string payload."""
+    from secrets import read_secret_raw as _read_secret_raw
 
-    Unlike :func:`read_secret_string`, this does not unwrap a JSON object to a
-    single token field. Service-account blobs (GA4, Play, App Store Connect)
-    must stay intact so callers can read ``client_email`` / ``private_key``.
-    """
-    response = secrets_client.get_secret_value(SecretId=secret_arn)
-    secret_string = response.get("SecretString")
-    if not secret_string and response.get("SecretBinary"):
-        secret_string = base64.b64decode(response["SecretBinary"]).decode("utf-8")
-    if not secret_string:
-        raise OpenRouterError(f"{what} secret is empty")
-    raw = secret_string.strip()
-    if not raw:
-        raise OpenRouterError(f"{what} value is blank")
-    return raw
+    return _read_secret_raw(secrets_client, secret_arn, what=what)
 
 
 def read_secret_string(secrets_client: Any, secret_arn: str, *, what: str) -> str:
-    """Fetch a Secrets Manager secret and return the bare token inside it.
+    """Fetch a Secrets Manager secret and return the bare token inside it."""
+    from secrets import read_secret_string as _read_secret_string
 
-    Accepts either a plain string secret or a JSON object with one of the
-    conventional key names.
-    """
-    raw = read_secret_raw(secrets_client, secret_arn, what=what)
-    if raw.startswith("{"):
-        payload = json.loads(raw)
-        if not isinstance(payload, dict):
-            raise OpenRouterError(f"{what} secret JSON must be an object")
-        for key_name in (
-            "openrouter_api_key",
-            "OPENROUTER_API_KEY",
-            "github_token",
-            "GITHUB_TOKEN",
-            "api_key",
-            "key",
-            "token",
-        ):
-            candidate = payload.get(key_name)
-            if isinstance(candidate, str) and candidate.strip():
-                return candidate.strip()
-        raise OpenRouterError(f"{what} is missing in secret JSON")
-    return raw
+    return _read_secret_string(secrets_client, secret_arn, what=what)
 
 
 def reset_api_key_cache_for_tests() -> None:

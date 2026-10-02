@@ -10,14 +10,12 @@ import urllib.error
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-from test_board import BoardTestCase
-
 import board_catalog
 import board_catalog_import
 import board_holds
 import board_staff
 import board_store
-
+from test_board import BoardTestCase
 
 SHEET = {
     "district": "Eastern",

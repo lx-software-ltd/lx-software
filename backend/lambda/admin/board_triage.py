@@ -13,11 +13,11 @@ import board_budget
 import board_hk
 import board_mail
 import board_personas
-import board_policy
 import board_staff
 import board_store
 import board_templates
 import board_tools
+from board_tools_core import ToolContext
 from contract_constants import BOARD_KEY
 from http_common import _log_event
 
@@ -461,16 +461,6 @@ def _send_ack(
     payload.setdefault("reason", "escalation acknowledgement")
     manager = str(task.get("managerId") or "coo")
     display = next((p.get("shortName") or manager for p in board_personas.effective_roster({}) if p["id"] == manager), manager)
-    ctx = board_tools.ToolContext(
-        table=table,
-        settings=settings,
-        persona_id=manager,
-        display_name=str(display),
-        kind="task",
-        actor="persona",
-        task_id=str(task.get("taskId") or ""),
-        seat_id=str(task.get("assignee") or ""),
-    )
     try:
         import board_async
 
@@ -501,7 +491,7 @@ def run_ack(payload: dict[str, Any]) -> None:
     op = board_tools.REGISTRY.get(str(payload.get("op") or ""))
     if op is None:
         return
-    ctx = board_tools.ToolContext(
+    ctx = ToolContext(
         table=table,
         settings=settings,
         persona_id=str(payload.get("personaId") or "coo"),

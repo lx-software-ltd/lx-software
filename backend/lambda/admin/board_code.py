@@ -13,17 +13,16 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import board_github
+import board_hk
+import board_staff
+import board_store
 from contract_constants import (
     BOARD_CODE_CI_FIX_MAX_ROUNDS,
     BOARD_CODE_REVIEW_MAX_ROUNDS,
     BOARD_CODE_RUN_COOLDOWN_SECONDS,
     BOARD_CODE_RUN_MAX_ROUNDS,
 )
-
-import board_github
-import board_hk
-import board_staff
-import board_store
 from http_common import _log_event
 
 WORKFLOW_AGENT = "board-agent.yml"
@@ -368,9 +367,6 @@ def ci_state(sha: str) -> str:
     return "pending"
 
 
-def ci_success(sha: str) -> bool:
-    return ci_state(sha) == "success"
-
 
 def _pr_files(number: int) -> list[dict[str, Any]]:
     repo = _repo()
@@ -630,13 +626,9 @@ def _code_run_limits() -> tuple[int, int]:
 
 
 def _parse_iso(value: str) -> datetime | None:
-    raw = str(value or "").strip()
-    if not raw:
-        return None
-    try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        return None
+    from timeutil import parse_iso
+
+    return parse_iso(value)
 
 
 def _run_for_pr(table: Any, pr_number: int) -> tuple[str, dict[str, Any]]:
@@ -917,9 +909,6 @@ def _failure_for_run(run: dict[str, Any]) -> dict[str, str]:
     return empty
 
 
-def _failure_line_for_run(run: dict[str, Any]) -> str:
-    return _failure_for_run(run).get("line") or ""
-
 
 def _failure_for_sha(sha: str) -> dict[str, str]:
     """Last pytest / policy excerpt from failed PR CI jobs on this head SHA."""
@@ -947,9 +936,6 @@ def _failure_for_sha(sha: str) -> dict[str, str]:
             return found
     return empty
 
-
-def _failure_line_for_sha(sha: str) -> str:
-    return _failure_for_sha(sha).get("line") or ""
 
 
 def _workflow_yaml_has_revision_inputs(text: str) -> bool:

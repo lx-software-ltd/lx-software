@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from typing import Any
 
@@ -203,7 +204,7 @@ def common_preamble(charter: dict[str, Any]) -> str:
                 + "."
             )
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed", exc_info=True)
     return "\n".join(lines)
 
 

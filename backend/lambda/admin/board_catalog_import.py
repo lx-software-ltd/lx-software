@@ -11,11 +11,13 @@ See docs/deployment/admin-website.md → Catalog import.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import urllib.error
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from secrets import read_secret_raw
 from typing import Any, Callable
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -30,7 +32,6 @@ from contract_constants import (
     BOARD_CATALOG_TYPE_TO_CATEGORY,
 )
 from http_common import _log_event
-from openrouter_client import read_secret_raw
 
 CATALOG_EVENT_KIND = "catalog-micro-batch"
 CATALOG_ENRICH_KIND = "catalog-enrich"
@@ -120,10 +121,9 @@ def set_secret_for_tests(fn: Callable[[], dict[str, str]] | None) -> None:
 
 
 def import_enabled() -> bool:
-    raw = (os.environ.get("BOARD_CATALOG_IMPORT_ENABLED") or "").strip().lower()
-    if raw:
-        return raw in ("1", "true", "yes", "on")
-    return bool(BOARD_CATALOG_IMPORT_ENABLED_DEFAULT)
+    from config import env_flag
+
+    return env_flag("BOARD_CATALOG_IMPORT_ENABLED", default=bool(BOARD_CATALOG_IMPORT_ENABLED_DEFAULT))
 
 
 def admin_api_base() -> str:
@@ -1171,12 +1171,9 @@ def preview_task(table: Any, task: dict[str, Any], *, sheet_text: str | None = N
 
 
 def _now_iso() -> str:
-    try:
-        import board_store
+    from timeutil import now_iso
 
-        return board_store.now_iso()
-    except Exception:
-        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return now_iso()
 
 
 def _append_questions(task: dict[str, Any], lines: list[str]) -> None:
@@ -1210,7 +1207,7 @@ def _park_needs_owner(table: Any, task: dict[str, Any], now: str, *, phase: str,
 
             board_staff.note_parent_if_child_needs_owner(table, task)
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed", exc_info=True)
     return task
 
 
@@ -1363,17 +1360,6 @@ def accept_catalog_task(table: Any, task: dict[str, Any], now: str) -> dict[str,
         preview = {"ok": False, "error": str(exc)[:300], "taskId": task.get("taskId")}
     return _apply_preview_outcome(table, task, preview, now, promote=True)
 
-
-def attach_accept_preview(table: Any, task: dict[str, Any]) -> dict[str, Any]:
-    """Backward-compatible local preview. Prefer ``accept_catalog_task``."""
-    try:
-        preview = preview_task(table, task, remote=False)
-    except CatalogImportError as exc:
-        preview = {"ok": False, "error": str(exc)[:300], "taskId": task.get("taskId")}
-    except Exception as exc:
-        preview = {"ok": False, "error": str(exc)[:300], "taskId": task.get("taskId")}
-    task["importPreview"] = preview
-    return preview
 
 
 def _result_errors(results: list[Any]) -> list[str]:
@@ -1775,15 +1761,6 @@ def _task_row(task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def ready_sheets(table: Any) -> list[dict[str, Any]]:
-    """Sheets waiting to import (digest)."""
-    out: list[dict[str, Any]] = []
-    for task in _catalog_tasks(table, "awaiting_import"):
-        if task.get("importedAt"):
-            continue
-        out.append(_task_row(task))
-    return out[:20]
-
 
 def catalog_headline(table: Any) -> dict[str, Any]:
     awaiting = [t for t in _catalog_tasks(table, "awaiting_import") if not t.get("importedAt")]
@@ -1861,9 +1838,8 @@ def catalog_coverage(table: Any) -> dict[str, Any]:
                     continue
                 if str(row.get("type") or "").lower() == "activities" and str(row.get("status") or "").lower() == "failed":
                     failed += 1
-    from contract_constants import BOARD_CATALOG_LAUNCH_LISTING_TARGET
-
     import board_catalog_candidates
+    from contract_constants import BOARD_CATALOG_LAUNCH_LISTING_TARGET
 
     return {
         "importedDistricts": len(imported),
@@ -1946,10 +1922,9 @@ def _schedule_or_run(table: Any, settings: dict[str, Any], task: dict[str, Any])
 
 
 def _parse_iso(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed
+    from timeutil import parse_iso_strict
+
+    return parse_iso_strict(value)
 
 
 def _revalidate_due(task: dict[str, Any], now: str) -> bool:

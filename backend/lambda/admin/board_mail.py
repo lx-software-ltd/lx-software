@@ -38,10 +38,9 @@ from email.parser import BytesParser
 from email.utils import formataddr, getaddresses, make_msgid, parseaddr, parsedate_to_datetime
 from typing import Any
 
-import boto3
-
 import board_pii
 import board_store
+import boto3
 from contract_constants import (
     BOARD_MAIL_BODY_MAX_CHARS,
     BOARD_MAIL_LIST_MAX_THREADS,
@@ -89,7 +88,9 @@ def inbound_address() -> str:
 
 
 def sending_enabled() -> bool:
-    return (os.environ.get("BOARD_MAIL_SENDING_ENABLED") or "").strip().lower() in ("1", "true", "yes")
+    from config import env_flag
+
+    return env_flag("BOARD_MAIL_SENDING_ENABLED")
 
 
 def own_domains() -> set[str]:

@@ -13,6 +13,7 @@ against duplicate deliveries), does its LLM calls, stores the resulting
 
 from __future__ import annotations
 
+import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -25,6 +26,7 @@ import board_context
 import board_personas
 import board_store
 import board_tools
+from board_tools_core import ToolContext, ToolLoopResult
 from contract_constants import (
     BOARD_ACTION_EFFORTS,
     BOARD_ACTION_PRIORITIES,
@@ -37,7 +39,7 @@ from contract_constants import (
     BOARD_PHASE_OPENROUTER_TIMEOUT_SECONDS,
     BOARD_REPO_SNAPSHOT_STALE_SECONDS,
 )
-from http_common import _audit, _json_response, _log_event, _parse_json_body, _request_id, _utc_iso_z
+from http_common import _audit, _json_response, _log_event, _parse_json_body, _utc_iso_z
 from openrouter_client import OpenRouterError, add_usage, parse_json_object_text
 from runtime import logger
 
@@ -462,9 +464,9 @@ def _member_call(
     max_tokens: int,
     temperature: float = 0.4,
     tag: str,
-) -> board_tools.ToolLoopResult:
+) -> ToolLoopResult:
     """One member statement, with that member's tools available."""
-    ctx = board_tools.ToolContext(
+    ctx = ToolContext(
         table=table,
         settings=board_store.load_settings(table),
         persona_id=str(profile["id"]),
@@ -749,7 +751,7 @@ def normalize_action_proposal(
                 if seat and seat.get("isActive"):
                     out["assignee"] = assignee
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("suppressed", exc_info=True)
     return out
 
 

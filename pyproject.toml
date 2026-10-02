@@ -1,0 +1,16 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+extend-exclude = []
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "BLE", "S110", "I"]
+# E501: existing lines are long; not mass-rewrapped.
+# BLE001: AWS and HTTP boundaries still catch Exception and log. Silent
+# `pass` is the regression gate (S110), not the breadth of the type.
+ignore = ["E501", "BLE001"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests install import stubs before importing the modules under test.
+"backend/lambda/**/test_*.py" = ["E402"]
+"scripts/manage-public-api-keys.py" = ["E402"]

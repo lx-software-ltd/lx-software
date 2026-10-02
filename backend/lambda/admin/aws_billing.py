@@ -22,9 +22,8 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import parse_qs
 
-from botocore.exceptions import ClientError
-
 import board_invoice_pdf
+from botocore.exceptions import ClientError
 from contract_constants import (
     AWS_BILLING_COMPANIES,
     AWS_BILLING_COST_ALLOCATION_TAGS,

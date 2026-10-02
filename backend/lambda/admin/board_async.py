@@ -8,12 +8,12 @@ stops the chain at ~16 unless AdminApiFn's RecursiveLoop is Allow
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections.abc import Callable
 from typing import Any
 
 import boto3
-
 from admin_runtime import _get_lambda_client
 
 # Safari / API Gateway drop the HTTP call if we wait on the default boto3
@@ -66,7 +66,7 @@ def try_invoke_event(payload: dict[str, Any]) -> bool:
         )
     except Exception:
         # Unit-test stubs replace ``botocore`` with a bare module (not a package).
-        pass
+        logging.getLogger(__name__).debug("suppressed", exc_info=True)
     try:
         client = boto3.client("lambda", **client_kwargs)
         client.invoke(

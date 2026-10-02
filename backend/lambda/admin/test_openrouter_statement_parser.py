@@ -28,8 +28,8 @@ def _install_stubs() -> None:
 
 _install_stubs()
 
-import openrouter_statement_parser as parser  # noqa: E402
 import openrouter_client  # noqa: E402
+import openrouter_statement_parser as parser  # noqa: E402
 
 
 def _fake_completion_body(content_obj: dict[str, object]) -> bytes:

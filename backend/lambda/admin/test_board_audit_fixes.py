@@ -10,8 +10,6 @@ from email.message import EmailMessage
 from typing import Any
 from unittest.mock import patch
 
-from test_board import BoardTestCase
-
 import board_async
 import board_breakers
 import board_code
@@ -29,6 +27,7 @@ import board_staff
 import board_store
 import board_tools
 import board_watch
+from test_board import BoardTestCase
 
 
 def _enable_staff(table: Any, **staff: Any) -> dict[str, Any]:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 import random
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -333,7 +334,7 @@ def _config_gaps_section(table: Any) -> list[dict[str, Any]]:
         if gap:
             items = [*items, gap]
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed", exc_info=True)
     return items
 
 
@@ -604,13 +605,13 @@ def _engineering_section(table: Any) -> list[dict[str, Any]]:
         if row:
             extra.append(row)
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed", exc_info=True)
     try:
         import board_code
 
         extra.extend(board_code.list_open_run_summaries(table))
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed", exc_info=True)
     return extra
 
 
@@ -775,7 +776,7 @@ def maybe_create_headline_duty(table: Any, settings: dict[str, Any]) -> dict[str
         if board_triage.find_open_event_task(table, "duty", duty_id):
             return None
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed", exc_info=True)
     for status in ("delivered", "failed", "cancelled"):
         for row in board_store.list_tasks(table, status, limit=50):
             ref = row.get("eventRef") or {}

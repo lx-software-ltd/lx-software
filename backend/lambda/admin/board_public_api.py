@@ -3,27 +3,19 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from contract_constants import BOARD_KEY
-from http_common import _log_event, _request_id
 
-SCOPE_FINANCE = "finance"
-SCOPE_BOARD_OPS = "siutindei-board-ops"
-SCOPE_BOARD_FULL = "siutindei-board-full"
-SCOPE_PII = "siutindei-pii"
-SCOPE_ASSETS = "siutindei-assets"
-
-ALL_SCOPES = frozenset(
-    {
-        SCOPE_FINANCE,
-        SCOPE_BOARD_OPS,
-        SCOPE_BOARD_FULL,
-        SCOPE_PII,
-        SCOPE_ASSETS,
-    }
+from contract_constants import (
+    ALL_SCOPES,
+    BOARD_KEY,
+    SCOPE_ASSETS,
+    SCOPE_BOARD_FULL,
+    SCOPE_BOARD_OPS,
+    SCOPE_FINANCE,
+    SCOPE_PII,
 )
+from http_common import _log_event, _request_id
 
 PUBLIC_BOARD_PREFIX = "/public/siu-tin-dei/board"
 FINANCE_PATHS = frozenset(
@@ -109,12 +101,9 @@ def path_allowed(path: str, scopes: list[str]) -> bool:
 
 def writes_enabled() -> bool:
     """Fail-closed stack kill switch (``PublicApiWritesEnabled``)."""
-    return (os.environ.get("PUBLIC_API_WRITES_ENABLED") or "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
+    from config import env_flag
+
+    return env_flag("PUBLIC_API_WRITES_ENABLED")
 
 
 def key_context_allows_write(key_ctx: dict[str, Any]) -> bool:

@@ -118,8 +118,8 @@ def openrouter_credits_paused(table: Any) -> bool:
 
 def _credits_recovered() -> bool:
     try:
-        from admin_runtime import _get_secretsmanager_client
         import openrouter_client
+        from admin_runtime import _get_secretsmanager_client
 
         remaining = openrouter_client.remaining_credits(_get_secretsmanager_client())
         return remaining is not None and remaining > 0
@@ -128,12 +128,19 @@ def _credits_recovered() -> bool:
         return False
 
 
+# Returned by ``_op_channel`` when the hold-class lookup itself fails.
+# ``write_blocked`` treats it as blocked so a hold-class write cannot run.
+CHANNEL_LOOKUP_FAILED = "channel:unknown"
+
+
 def write_blocked(table: Any, op: Any) -> dict[str, Any] | None:
     """Structured error when a write op is stopped by a channel or tool breaker."""
     tool_id = str(getattr(op, "tool_id", "") or "")
     if tool_id and tool_id not in _INTERNAL_TOOLS and is_tripped(table, f"tool:{tool_id}"):
         return {"error": "breaker tripped", "breaker": f"tool:{tool_id}"}
     channel = _op_channel(op)
+    if channel == CHANNEL_LOOKUP_FAILED:
+        return {"error": "breaker check failed", "breaker": CHANNEL_LOOKUP_FAILED}
     if channel and is_tripped(table, f"channel:{channel}"):
         return {"error": "breaker tripped", "breaker": f"channel:{channel}"}
     name = str(getattr(op, "name", "") or "")
@@ -151,8 +158,9 @@ def _op_channel(op: Any) -> str:
             return str(board_holds.INBOUND_REPLY_OPS[name])
         if name in board_holds.PUBLISH_OPS:
             return str(board_holds.PUBLISH_OPS[name])
-    except Exception:
-        pass
+    except Exception as exc:
+        _log_event("error", tag="board_breaker_channel_lookup_failed", op=name, error=str(exc)[:300])
+        return CHANNEL_LOOKUP_FAILED
     return ""
 
 
@@ -335,10 +343,6 @@ def list_all(table: Any) -> list[dict[str, Any]]:
 
 
 def _parse_iso(value: str) -> datetime | None:
-    raw = str(value or "").strip()
-    if not raw:
-        return None
-    try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        return None
+    from timeutil import parse_iso
+
+    return parse_iso(value)

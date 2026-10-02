@@ -14,11 +14,10 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-import boto3
-from botocore.exceptions import ClientError
-
 import board_github
 import board_store
+import boto3
+from botocore.exceptions import ClientError
 from http_common import _log_event
 
 FINDINGS_CACHE = "security:findings"

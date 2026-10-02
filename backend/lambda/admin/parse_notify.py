@@ -10,7 +10,6 @@ import os
 from typing import Any
 
 import boto3
-
 from contract_constants import STATEMENT_BOOK_LABELS
 from http_common import _log_event
 

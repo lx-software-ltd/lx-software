@@ -26,6 +26,7 @@ def _install_stubs() -> None:
 
 _install_stubs()
 
+from dispatch import lambda_handler  # noqa: E402
 from finance_store import (  # noqa: E402
     _finance_owner_ddb_key,
     _statement_book_ddb_key,
@@ -35,7 +36,6 @@ from parse_jobs import (  # noqa: E402
     _path_statement_book_parse_job,
 )
 from parse_statement import _resolve_parse_line_type_filter  # noqa: E402
-from dispatch import lambda_handler  # noqa: E402
 
 
 class TestStatementBookKeys(unittest.TestCase):

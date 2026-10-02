@@ -34,18 +34,19 @@ import subprocess
 import tempfile
 import time
 from datetime import date, datetime, timedelta, timezone
+from secrets import read_secret_raw
 from typing import Any
 from urllib import error as urlerror
 from urllib import parse as urlparse
 from urllib import request as urlrequest
 
-from admin_runtime import _get_secretsmanager_client
 import board_deadline
 import board_pii
 import board_store
+from admin_runtime import _get_secretsmanager_client
 from contract_constants import BOARD_STORES_CACHE_TTL_HOURS, BOARD_STORES_LIST_MAX
 from http_common import _log_event, _utc_iso_z
-from openrouter_client import OpenRouterError, read_secret_raw
+from openrouter_client import OpenRouterError
 
 ASC_ORIGIN = "https://api.appstoreconnect.apple.com"
 PLAY_ORIGIN = "https://androidpublisher.googleapis.com"

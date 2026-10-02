@@ -375,10 +375,9 @@ class TestInvoicePdfStorage(ToolsTestCase):
 
 class TestUnitEconomicsMeta(ToolsTestCase):
     def _run(self, *, graph: dict, recorded: float):
+        import board_data_api
         import board_receivables
         from test_board_t4 import FakeAurora
-
-        import board_data_api
 
         db = FakeAurora()
         board_data_api.set_executor_for_tests(db)
@@ -852,9 +851,8 @@ class TestUpdateActionReprioritise(ToolsTestCase):
 
 class TestExternalUsage(ToolsTestCase):
     def test_search_calls_are_counted_and_shown_in_overview(self) -> None:
-        from test_board_t2 import FakeBrave
-
         import board_research
+        from test_board_t2 import FakeBrave
 
         brave = FakeBrave()
         os.environ["SEARCH_API_KEY"] = "brave-local"

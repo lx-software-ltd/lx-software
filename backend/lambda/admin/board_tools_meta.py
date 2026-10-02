@@ -1,0 +1,251 @@
+"""Tool operations for the meta family."""
+
+from __future__ import annotations
+
+import board_meta
+from board_tools_core import (
+    REASON_PARAM,
+    ToolOp,
+    _int_param,
+    _obj,
+    _reply_guard,
+    _str_param,
+    _summ,
+)
+from contract_constants import (
+    BOARD_META_LIST_MAX,
+    BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
+)
+
+
+def ops() -> list[ToolOp]:
+    return [
+        ToolOp(
+            name="meta_page_insights",
+            tool_id="meta",
+            kind="read",
+            description="Facebook Page daily insights (impressions, engaged users).",
+            parameters=_obj({"metric": _str_param("Comma-separated insight metrics.", max_len=120)}),
+            run=board_meta.op_page_insights,
+            summarize=_summ("Read Page insights"),
+            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
+        ),
+        ToolOp(
+            name="meta_ig_insights",
+            tool_id="meta",
+            kind="read",
+            description="Instagram daily insights (impressions, reach, profile views).",
+            parameters=_obj({"metric": _str_param("Comma-separated insight metrics.", max_len=120)}),
+            run=board_meta.op_ig_insights,
+            summarize=_summ("Read Instagram insights"),
+            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
+        ),
+        ToolOp(
+            name="meta_list_comments",
+            tool_id="meta",
+            kind="read",
+            description="Recent Page posts and their comments (contacts masked).",
+            parameters=_obj({"limit": _int_param("How many posts.", maximum=BOARD_META_LIST_MAX)}),
+            run=board_meta.op_list_comments,
+            summarize=_summ("Listed Page comments"),
+            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
+        ),
+        ToolOp(
+            name="meta_list_dms",
+            tool_id="meta",
+            kind="read",
+            description="Inbound Facebook Page DMs stored from the webhook (masked).",
+            parameters=_obj({"limit": _int_param("How many threads.", maximum=40)}),
+            run=board_meta.op_list_dms,
+            summarize=_summ("Listed Page DMs"),
+        ),
+        ToolOp(
+            name="meta_list_whatsapp",
+            tool_id="meta",
+            kind="read",
+            description="Inbound WhatsApp threads stored from the webhook (masked). Notes the 24-hour window.",
+            parameters=_obj({"limit": _int_param("How many threads.", maximum=40)}),
+            run=board_meta.op_list_whatsapp,
+            summarize=_summ("Listed WhatsApp threads"),
+        ),
+        ToolOp(
+            name="meta_list_whatsapp_templates",
+            tool_id="meta",
+            kind="read",
+            description="List approved WhatsApp message templates (name, language, status). Use a template name when the 24-hour window is closed.",
+            parameters=_obj({}),
+            run=board_meta.op_list_whatsapp_templates,
+            summarize=_summ("Listed WhatsApp templates"),
+            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
+        ),
+        ToolOp(
+            name="meta_ad_spend",
+            tool_id="meta",
+            kind="read",
+            description="This month's ad account spend versus the monthly cap.",
+            parameters=_obj({}),
+            run=board_meta.op_ad_spend,
+            summarize=_summ("Read ad spend"),
+            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
+        ),
+        ToolOp(
+            name="meta_propose_post",
+            tool_id="meta",
+            kind="write",
+            always_propose=True,
+            description="Draft a Facebook Page post. Publishes only after the founder approves.",
+            parameters=_obj(
+                {
+                    "message": _str_param("Post text.", max_len=2000),
+                    "reason": REASON_PARAM,
+                },
+                ["message", "reason"],
+            ),
+            run=board_meta.op_propose_post,
+            summarize=_summ("Propose Page post"),
+            preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_propose_post"),
+        ),
+        ToolOp(
+            name="meta_propose_story",
+            tool_id="meta",
+            kind="write",
+            always_propose=True,
+            description="Draft an Instagram story from an image URL.",
+            parameters=_obj(
+                {
+                    "imageUrl": _str_param("Public image URL.", max_len=500),
+                    "caption": _str_param("Optional caption.", max_len=500),
+                    "reason": REASON_PARAM,
+                },
+                ["imageUrl", "reason"],
+            ),
+            run=board_meta.op_propose_story,
+            summarize=_summ("Propose Instagram story"),
+            preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_propose_story"),
+        ),
+        ToolOp(
+            name="meta_reply_comment",
+            tool_id="meta",
+            kind="write",
+            description="Reply to a Page or Instagram comment.",
+            parameters=_obj(
+                {
+                    "commentId": _str_param("Graph comment id.", max_len=64),
+                    "message": _str_param("Reply text.", max_len=1000),
+                    "templateId": _str_param("Optional approved template id.", max_len=80),
+                    "reason": REASON_PARAM,
+                },
+                ["commentId", "message", "reason"],
+            ),
+            run=board_meta.op_reply_comment,
+            summarize=_summ("Reply to comment {commentId}"),
+            act_guard=_reply_guard("meta_reply_comment"),
+            preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_comment"),
+        ),
+        ToolOp(
+            name="meta_reply_dm",
+            tool_id="meta",
+            kind="write",
+            description="Reply to a Page DM. Act only to allow-listed recipients.",
+            parameters=_obj(
+                {
+                    "threadId": _str_param("Stored DM thread id (preferred; the recipient is taken from it). One of threadId or recipientId is required.", max_len=40),
+                    "recipientId": _str_param("Page-scoped user id, only when no thread is stored.", max_len=64),
+                    "message": _str_param("Reply text.", max_len=1000),
+                    "reason": REASON_PARAM,
+                },
+                ["message", "reason"],
+            ),
+            run=board_meta.op_reply_dm,
+            summarize=_summ("Reply to Page DM {threadId}"),
+            act_guard=_reply_guard(
+                "meta_reply_dm",
+                lambda ctx, args: board_meta.act_guard_allow_list(ctx, args, field="recipientId"),
+            ),
+            preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_dm"),
+        ),
+        ToolOp(
+            name="meta_reply_whatsapp",
+            tool_id="meta",
+            kind="write",
+            description="Reply on WhatsApp. Act only inside the 24-hour window to an allow-listed number; otherwise propose a template.",
+            parameters=_obj(
+                {
+                    "threadId": _str_param("Stored WhatsApp thread id (preferred; the number is taken from it). One of threadId or to is required.", max_len=40),
+                    "to": _str_param("WhatsApp number (E.164), only when no thread is stored.", max_len=20),
+                    "message": _str_param("Reply text (session message).", max_len=1000),
+                    "template": _str_param("Pre-approved template name when the window is closed.", max_len=80),
+                    "language": _str_param("Template language code.", max_len=8),
+                    "reason": REASON_PARAM,
+                },
+                ["reason"],
+            ),
+            run=board_meta.op_reply_whatsapp,
+            summarize=_summ("WhatsApp reply in thread {threadId}"),
+            act_guard=_reply_guard("meta_reply_whatsapp", board_meta.act_guard_whatsapp),
+            preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_whatsapp"),
+        ),
+        ToolOp(
+            name="meta_create_ad_set",
+            tool_id="meta",
+            kind="write",
+            description="Create a PAUSED ad set. Act only when the daily and monthly ads caps still have room; otherwise propose.",
+            parameters=_obj(
+                {
+                    "name": _str_param("Ad set name.", max_len=80),
+                    "dailyBudgetUsd": {"type": "number", "description": "Daily budget in USD."},
+                    "campaignId": _str_param("Existing campaign id.", max_len=64),
+                    "reason": REASON_PARAM,
+                },
+                ["name", "dailyBudgetUsd", "reason"],
+            ),
+            run=board_meta.op_create_ad_set,
+            summarize=_summ("Create ad set {name}"),
+            act_guard=board_meta.act_guard_ad_set,
+            preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_create_ad_set"),
+        ),
+        ToolOp(
+            name="meta_boost_post",
+            tool_id="meta",
+            kind="write",
+            description="Boost a Page post. Act only when the daily and monthly ads caps still have room; otherwise propose.",
+            parameters=_obj(
+                {
+                    "postId": _str_param("Page post id (or pageId_postId).", max_len=80),
+                    "dailyBudgetUsd": {"type": "number", "description": "Daily budget in USD."},
+                    "days": {"type": "integer", "description": "How many days to boost (1–30)."},
+                    "reason": REASON_PARAM,
+                },
+                ["postId", "dailyBudgetUsd", "days", "reason"],
+            ),
+            run=board_meta.op_boost_post,
+            summarize=_summ("Boost post {postId}"),
+            act_guard=board_meta.act_guard_boost_post,
+            preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_boost_post"),
+        ),
+        ToolOp(
+            name="meta_relay_lead",
+            tool_id="meta",
+            kind="write",
+            description=(
+                "COO: hand a parent lead to the provider (email, or WhatsApp template with providerPhone) and confirm to the parent. "
+                "Recorded as a board action. Always propose until every address/number is allow-listed."
+            ),
+            parameters=_obj(
+                {
+                    "providerEmail": _str_param("Provider address.", max_len=120),
+                    "providerPhone": _str_param("Provider WhatsApp number (E.164) for a template hand-off.", max_len=20),
+                    "template": _str_param("Approved WhatsApp template name (required with providerPhone).", max_len=80),
+                    "language": _str_param("Template language code.", max_len=8),
+                    "parentEmail": _str_param("Parent address.", max_len=120),
+                    "summary": _str_param("What the parent asked for.", max_len=800),
+                    "reason": REASON_PARAM,
+                },
+                ["parentEmail", "reason"],
+            ),
+            run=board_meta.op_relay_lead,
+            summarize=_summ("Relay lead for {parentEmail}"),
+            act_guard=board_meta.act_guard_relay,
+            preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_relay_lead"),
+        ),
+    ]

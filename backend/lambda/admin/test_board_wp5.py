@@ -6,10 +6,9 @@ import json
 import unittest
 from unittest.mock import patch
 
-from botocore.exceptions import ClientError
-
 import board_mail
 import board_store
+from botocore.exceptions import ClientError
 from contract_constants import BOARD_MAIL_BODY_MAX_CHARS
 from test_board_mail import MailTestCase, build_mail
 

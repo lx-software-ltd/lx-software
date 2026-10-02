@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from botocore.exceptions import ClientError
-
 import runtime
+from botocore.exceptions import ClientError
 from contract_constants import (
     ASSET_TYPES,
     DEFAULT_EXPENSE_INCOME_ALLOCATION_PERCENTAGES,
@@ -20,9 +21,9 @@ from contract_constants import (
     FINANCE_ACCOUNT_TYPES,
     FINANCE_HOUSE_KEYS,
     FINANCE_LIABILITY_TYPES,
+    FINANCE_LINE_TYPES,
     FINANCE_STATEMENT_BOOK_KEYS,
     FINANCE_STATEMENT_OWNER_KEYS,
-    FINANCE_LINE_TYPES,
     INCOME_RECORD_CATEGORIES,
     INVESTMENT_RECORD_CATEGORIES,
     LEDGER_RECORD_AMOUNT_PERIODS,
@@ -36,7 +37,7 @@ from contract_constants import (
     MAX_SOURCE_ASSET_KEYS_PER_LINE,
     SUPPORTED_FINANCE_CURRENCIES,
 )
-from ddb_convert import _from_ddb, _from_ddb_nested, _to_ddb, _to_ddb_nested
+from ddb_convert import _from_ddb_nested, _to_ddb, _to_ddb_nested
 from http_common import _log_event, _utc_iso_z
 from runtime import RECORD_PK_PREFIX
 
@@ -587,22 +588,24 @@ def _investment_row_signature(row: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
-def _merge_investment_last_updated(
+def _merge_sheet_last_updated(
     normalized: list[dict[str, Any]],
     existing: list[dict[str, Any]],
+    signature: Callable[[dict[str, Any]], Any],
     *,
+    id_field: str = "id",
     today_iso: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Attach `lastUpdated` (UTC calendar date) per row: new/changed rows get today; unchanged keep prior."""
+    """Stamp lastUpdated: new or changed rows get today; unchanged rows keep a valid prior date."""
     today = today_iso or datetime.now(timezone.utc).date().isoformat()
-    by_id = {r["id"]: r for r in existing}
+    by_id = {r[id_field]: r for r in existing}
     out: list[dict[str, Any]] = []
     for row in normalized:
         merged = dict(row)
-        prev = by_id.get(merged["id"])
+        prev = by_id.get(merged[id_field])
         if prev is None:
             merged["lastUpdated"] = today
-        elif _investment_row_signature(prev) == _investment_row_signature(merged):
+        elif signature(prev) == signature(merged):
             lu = prev.get("lastUpdated")
             if isinstance(lu, str) and _is_calendar_date_string(lu):
                 merged["lastUpdated"] = lu
@@ -610,6 +613,90 @@ def _merge_investment_last_updated(
             merged["lastUpdated"] = today
         out.append(merged)
     return out
+
+
+@dataclass(frozen=True)
+class SheetSpec:
+    """One finance sheet: slug plus the id field used when merging lastUpdated."""
+
+    slug: str
+    id_field: str = "id"
+
+
+def put_finance_sheet(
+    table: Any,
+    slug: str,
+    records: list[dict[str, Any]],
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """Write a sheet document. Callers keep their own normalize/merge wrappers."""
+    doc: dict[str, Any] = {"records": records}
+    if extra:
+        doc.update(extra)
+    table.put_item(Item={**_finance_sheet_ddb_key(slug), **_to_ddb_nested(doc)})
+
+
+def _merge_investment_last_updated(
+    normalized: list[dict[str, Any]],
+    existing: list[dict[str, Any]],
+    *,
+    today_iso: str | None = None,
+) -> list[dict[str, Any]]:
+    """Attach `lastUpdated` (UTC calendar date) per row: new/changed rows get today; unchanged keep prior."""
+    return _merge_sheet_last_updated(
+        normalized,
+        existing,
+        _investment_row_signature,
+        today_iso=today_iso,
+    )
+
+
+def _reject_investment_detail_fields(
+    *,
+    index: int,
+    allowed: frozenset[str],
+    house_raw: Any,
+    ticker_raw: Any,
+    crypto_raw: Any,
+    current_value_raw: Any,
+) -> None:
+    """Reject investment fields that the category does not use.
+
+    Hoisted out of the record loop so it does not close over loop variables.
+    """
+    checks: tuple[tuple[str, Any], ...] = (
+        ("relatedHouse", house_raw),
+        ("ticker", ticker_raw),
+        ("cryptoCurrency", crypto_raw),
+        ("currentValue", current_value_raw),
+    )
+    for field, raw in checks:
+        if field in allowed:
+            continue
+        if field == "relatedHouse":
+            if house_raw is not None and str(house_raw).strip() != "":
+                raise ValueError(
+                    f"investmentRecords[{index}].relatedHouse is only allowed when "
+                    "category is Real Estate"
+                )
+        elif field == "currentValue":
+            if raw is None:
+                continue
+            if isinstance(raw, bool) or isinstance(raw, (int, float)) or isinstance(raw, Decimal):
+                raise ValueError(
+                    f"investmentRecords[{index}].currentValue is only allowed when "
+                    "category is Real Estate"
+                )
+            if isinstance(raw, str) and raw.strip() != "":
+                raise ValueError(
+                    f"investmentRecords[{index}].currentValue is only allowed when "
+                    "category is Real Estate"
+                )
+        elif _investment_non_empty_strip(raw) is not None:
+            raise ValueError(
+                f"investmentRecords[{index}].{field} is only allowed when category "
+                "uses this field"
+            )
 
 
 def _normalize_investment_sheet_payload(body: dict[str, Any]) -> list[dict[str, Any]]:
@@ -675,54 +762,14 @@ def _normalize_investment_sheet_payload(body: dict[str, Any]) -> list[dict[str, 
         crypto_raw = row.get("cryptoCurrency")
         current_value_raw = row.get("currentValue")
 
-        def _reject_investment_detail_fields(*, allowed: frozenset[str]) -> None:
-            checks: tuple[tuple[str, Any], ...] = (
-                ("relatedHouse", house_raw),
-                ("ticker", ticker_raw),
-                ("cryptoCurrency", crypto_raw),
-                ("currentValue", current_value_raw),
-            )
-            for field, raw in checks:
-                if field in allowed:
-                    continue
-                if field == "relatedHouse":
-                    if house_raw is not None and str(house_raw).strip() != "":
-                        raise ValueError(
-                            f"investmentRecords[{i}].relatedHouse is only allowed when "
-                            "category is Real Estate"
-                        )
-                elif field == "currentValue":
-                    if raw is None:
-                        continue
-                    if isinstance(raw, bool):
-                        raise ValueError(
-                            f"investmentRecords[{i}].currentValue is only allowed when "
-                            "category is Real Estate"
-                        )
-                    if isinstance(raw, (int, float)):
-                        raise ValueError(
-                            f"investmentRecords[{i}].currentValue is only allowed when "
-                            "category is Real Estate"
-                        )
-                    if isinstance(raw, Decimal):
-                        raise ValueError(
-                            f"investmentRecords[{i}].currentValue is only allowed when "
-                            "category is Real Estate"
-                        )
-                    if isinstance(raw, str) and raw.strip() != "":
-                        raise ValueError(
-                            f"investmentRecords[{i}].currentValue is only allowed when "
-                            "category is Real Estate"
-                        )
-                elif _investment_non_empty_strip(raw) is not None:
-                    raise ValueError(
-                        f"investmentRecords[{i}].{field} is only allowed when category "
-                        "uses this field"
-                    )
-
         if cat == "Real Estate":
             _reject_investment_detail_fields(
-                allowed=frozenset({"relatedHouse", "currentValue"})
+                index=i,
+                allowed=frozenset({"relatedHouse", "currentValue"}),
+                house_raw=house_raw,
+                ticker_raw=ticker_raw,
+                crypto_raw=crypto_raw,
+                current_value_raw=current_value_raw,
             )
             if house_raw is not None and str(house_raw).strip() != "":
                 if not isinstance(house_raw, str) or house_raw not in FINANCE_HOUSE_KEYS:
@@ -760,7 +807,14 @@ def _normalize_investment_sheet_payload(body: dict[str, Any]) -> list[dict[str, 
                     )
                 rec["currentValue"] = cv_f
         elif cat == "ETF":
-            _reject_investment_detail_fields(allowed=frozenset({"ticker"}))
+            _reject_investment_detail_fields(
+                index=i,
+                allowed=frozenset({"ticker"}),
+                house_raw=house_raw,
+                ticker_raw=ticker_raw,
+                crypto_raw=crypto_raw,
+                current_value_raw=current_value_raw,
+            )
             if ticker_raw is not None and str(ticker_raw).strip() != "":
                 if not isinstance(ticker_raw, str):
                     raise ValueError(
@@ -771,7 +825,14 @@ def _normalize_investment_sheet_payload(body: dict[str, Any]) -> list[dict[str, 
                     raise ValueError(f"investmentRecords[{i}].ticker is too long")
                 rec["ticker"] = t_st
         elif cat == "Crypto":
-            _reject_investment_detail_fields(allowed=frozenset({"cryptoCurrency"}))
+            _reject_investment_detail_fields(
+                index=i,
+                allowed=frozenset({"cryptoCurrency"}),
+                house_raw=house_raw,
+                ticker_raw=ticker_raw,
+                crypto_raw=crypto_raw,
+                current_value_raw=current_value_raw,
+            )
             if crypto_raw is not None and str(crypto_raw).strip() != "":
                 if not isinstance(crypto_raw, str):
                     raise ValueError(
@@ -784,7 +845,14 @@ def _normalize_investment_sheet_payload(body: dict[str, Any]) -> list[dict[str, 
                     )
                 rec["cryptoCurrency"] = c_st
         elif cat == "Fixed Term Deposit":
-            _reject_investment_detail_fields(allowed=frozenset())
+            _reject_investment_detail_fields(
+                index=i,
+                allowed=frozenset(),
+                house_raw=house_raw,
+                ticker_raw=ticker_raw,
+                crypto_raw=crypto_raw,
+                current_value_raw=current_value_raw,
+            )
         if cat != "Real Estate":
             unit_raw = row.get("unit")
             if unit_raw is not None and not (
@@ -909,22 +977,12 @@ def _merge_pension_last_updated(
     today_iso: str | None = None,
 ) -> list[dict[str, Any]]:
     """Attach `lastUpdated` (UTC calendar date) per row: new/changed rows get today; unchanged keep prior."""
-    today = today_iso or datetime.now(timezone.utc).date().isoformat()
-    by_id = {r["id"]: r for r in existing}
-    out: list[dict[str, Any]] = []
-    for row in normalized:
-        merged = dict(row)
-        prev = by_id.get(merged["id"])
-        if prev is None:
-            merged["lastUpdated"] = today
-        elif _pension_row_signature(prev) == _pension_row_signature(merged):
-            lu = prev.get("lastUpdated")
-            if isinstance(lu, str) and _is_calendar_date_string(lu):
-                merged["lastUpdated"] = lu
-        else:
-            merged["lastUpdated"] = today
-        out.append(merged)
-    return out
+    return _merge_sheet_last_updated(
+        normalized,
+        existing,
+        _pension_row_signature,
+        today_iso=today_iso,
+    )
 
 
 def _account_row_signature(row: dict[str, Any]) -> tuple[str, str, int, float, str, float | None]:
@@ -964,22 +1022,12 @@ def _merge_accounts_last_updated(
     today_iso: str | None = None,
 ) -> list[dict[str, Any]]:
     """Attach `lastUpdated` (UTC calendar date) when account fields change."""
-    today = today_iso or datetime.now(timezone.utc).date().isoformat()
-    by_id = {r["id"]: r for r in existing}
-    out: list[dict[str, Any]] = []
-    for row in normalized:
-        merged = dict(row)
-        prev = by_id.get(merged["id"])
-        if prev is None:
-            merged["lastUpdated"] = today
-        elif _account_row_signature(prev) == _account_row_signature(merged):
-            lu = prev.get("lastUpdated")
-            if isinstance(lu, str) and _is_calendar_date_string(lu):
-                merged["lastUpdated"] = lu
-        else:
-            merged["lastUpdated"] = today
-        out.append(merged)
-    return out
+    return _merge_sheet_last_updated(
+        normalized,
+        existing,
+        _account_row_signature,
+        today_iso=today_iso,
+    )
 
 
 def _parse_account_billing_cycle_day(raw: Any, field_label: str) -> int:
@@ -2141,22 +2189,12 @@ def _merge_liabilities_last_updated(
     today_iso: str | None = None,
 ) -> list[dict[str, Any]]:
     """Attach `lastUpdated` (UTC calendar date) when liability fields change."""
-    today = today_iso or datetime.now(timezone.utc).date().isoformat()
-    by_id = {r["id"]: r for r in existing}
-    out: list[dict[str, Any]] = []
-    for row in normalized:
-        merged = dict(row)
-        prev = by_id.get(merged["id"])
-        if prev is None:
-            merged["lastUpdated"] = today
-        elif _liability_row_signature(prev) == _liability_row_signature(merged):
-            lu = prev.get("lastUpdated")
-            if isinstance(lu, str) and _is_calendar_date_string(lu):
-                merged["lastUpdated"] = lu
-        else:
-            merged["lastUpdated"] = today
-        out.append(merged)
-    return out
+    return _merge_sheet_last_updated(
+        normalized,
+        existing,
+        _liability_row_signature,
+        today_iso=today_iso,
+    )
 
 
 def _load_liabilities_records(table: Any) -> list[dict[str, Any]]:

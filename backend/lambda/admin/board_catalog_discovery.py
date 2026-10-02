@@ -19,7 +19,6 @@ import board_store
 from contract_constants import (
     BOARD_CATALOG_DISCOVERY_DISTRICTS_PER_DAY,
     BOARD_CATALOG_DISTRICTS,
-    BOARD_KEY,
 )
 from http_common import _log_event
 

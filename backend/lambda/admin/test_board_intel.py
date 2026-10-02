@@ -4,22 +4,21 @@ from __future__ import annotations
 
 import os
 import unittest
+import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
-from contract_constants import BOARD_KEY
-from test_board import BoardTestCase, FakeTable
-
 import board_crawl
 import board_intel
-import board_research
 import board_opendata
+import board_research
 import board_staff
 import board_store
 import board_watch
-
+from contract_constants import BOARD_KEY
+from test_board import BoardTestCase, FakeTable
 
 FIXTURES = Path(__file__).resolve().parent / "test_fixtures"
 
@@ -86,7 +85,7 @@ class SsrfTests(BoardTestCase):
         slept.assert_not_called()
 
     def test_link_local_and_redirect_refused(self) -> None:
-        with self.assertRaises(Exception):
+        with self.assertRaises(urllib.error.URLError):
             board_crawl.fetch("http://169.254.169.254/")
         self.assertTrue(board_crawl.host_is_blocked("127.0.0.1"))
         self.assertTrue(board_crawl.host_is_blocked("169.254.169.254"))
@@ -149,6 +148,8 @@ class CrawlHelperTests(unittest.TestCase):
         self.assertTrue(board_crawl.robots_allows(table, "https://example.com/public"))
 
     def test_put_digest_key_uses_board_key(self) -> None:
+        os.environ["BOARD_BLOBS_IN_MEMORY"] = "1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_BLOBS_IN_MEMORY", None))
         key = board_crawl.put_digest("watch-1", "https://example.com/page", "2026-09-11", "hello")
         self.assertEqual(
             key,

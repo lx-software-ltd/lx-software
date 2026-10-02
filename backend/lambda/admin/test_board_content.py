@@ -194,14 +194,6 @@ class ContentTests(BoardTestCase):
         )
         live["platformPostId"] = "fb-best"
         board_store.put_content(self.table, live)
-        ctx = board_tools.ToolContext(
-            table=self.table,
-            settings=self.settings,
-            persona_id="cmo",
-            kind="task",
-            actor="persona",
-            seat_id="growth-specialist",
-        )
         with patch.object(board_tools, "execute_call", return_value=board_tools.ToolOutcome(status="held", result={"status": "held"}, summary="boost")) as boost:
             perf = board_content.write_performance(self.table, self.settings)
         self.assertGreaterEqual(perf["updated"], 1)

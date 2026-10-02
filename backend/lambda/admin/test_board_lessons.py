@@ -8,13 +8,12 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
-from test_board import BoardTestCase
-
 import board_budget
 import board_lessons
 import board_personas
 import board_staff
 import board_store
+from test_board import BoardTestCase
 
 
 def _enable_staff(table: Any, **staff: Any) -> dict[str, Any]:

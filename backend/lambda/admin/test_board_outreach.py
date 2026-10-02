@@ -14,7 +14,6 @@ import board_holds
 import board_outreach
 import board_prospects
 import board_sequences
-import board_staff
 import board_store
 import board_targets
 import board_tools
@@ -163,7 +162,6 @@ class OutreachTests(BoardTestCase):
         self.assertEqual(msg["Reply-To"], "partnerships@siutindei.com")
         self.assertEqual(self.ses.calls[0]["ConfigurationSetName"], board_outreach.CONFIG_SET)
         self.assertEqual(self.ses.calls[0]["FromEmailAddress"], "partnerships@partners.siutindei.com")
-        threads = [t for t in board_store.list_mail_threads(self.table) if t]
         self.assertTrue(any(t.get("direction") == "outbound" or True for t in [board_store.get_mail_thread(self.table, sent["threadId"])] if t))
 
     def test_unsubscribe_token_round_trip_and_tamper(self) -> None:
@@ -219,8 +217,9 @@ class OutreachTests(BoardTestCase):
         self.assertIn("outreach", tripped)
 
     def test_cap_raise_and_target_tasks(self) -> None:
-        import board_hk
         from datetime import timedelta
+
+        import board_hk
 
         bounds = dict(self.settings.get("boundaries") or {})
         outreach = dict(bounds.get("outreach") or {})
@@ -331,7 +330,7 @@ class OutreachTests(BoardTestCase):
         handled2 = board_outreach.maybe_handle_reply(self.table, self.settings, "info@stop.example", "unsubscribe")
         self.assertTrue(handled2["suppressed"])
         self.assertEqual(board_store.get_prospect(self.table, bare["prospectId"])["stage"], "suppressed")
-        zh = _prospect(self.table, name="Zh", website="https://zh2.example", email="info@zh2.example")
+        _zh = _prospect(self.table, name="Zh", website="https://zh2.example", email="info@zh2.example")
         handled3 = board_outreach.maybe_handle_reply(self.table, self.settings, "info@zh2.example", "請取消")
         self.assertTrue(handled3["suppressed"])
 
@@ -352,7 +351,6 @@ class OutreachTests(BoardTestCase):
         sent = board_outreach.send(self.table, self.settings, prospect_id=row["prospectId"])
         self.assertTrue(sent.get("ok"))
         raw = self.ses.calls[-1]["Content"]["Raw"]["Data"]
-        msg = message_from_bytes(raw)
         raw_text = raw.decode("utf-8", errors="replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
         self.assertIn("https://", raw_text)
         self.assertNotIn("mailto:", raw_text)

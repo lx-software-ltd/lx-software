@@ -11,13 +11,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
+from secrets import read_secret_string
 from typing import Any
 from urllib import error as urlerror
 from urllib import parse as urlparse
 from urllib import request as urlrequest
 
+import board_budget
+import board_deadline
+import board_store
 from admin_runtime import _get_secretsmanager_client
 from contract_constants import (
     BOARD_CATALOG_EVENT_KINDS,
@@ -27,11 +32,7 @@ from contract_constants import (
     BOARD_RESEARCH_QUERY_MAX_LEN,
 )
 from http_common import _log_event
-from openrouter_client import OpenRouterError, read_secret_string
-
-import board_budget
-import board_deadline
-import board_store
+from openrouter_client import OpenRouterError
 
 BRAVE_ORIGIN = "https://api.search.brave.com"
 HTTP_TIMEOUT_SECONDS = 10
@@ -308,9 +309,9 @@ def fetch_cap_for_task(table: Any, task_id: str, *, ctx: Any = None) -> int:
             cap = max(RESEARCH_FETCH_CAP, int(BOARD_CATALOG_FETCH_CAP))
     if ctx is not None:
         try:
-            setattr(ctx, "_research_fetch_cap", cap)
+            ctx._research_fetch_cap = cap
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed", exc_info=True)
     return cap
 
 
@@ -357,9 +358,9 @@ def _enrich_fetch_rules(ctx: Any, task_id: str) -> dict[str, Any] | None:
         rules = getattr(ctx, "_enrich_fetch_rules", None)
         return rules if isinstance(rules, dict) else None
     try:
-        setattr(ctx, "_enrich_fetch_loaded", True)
+        ctx._enrich_fetch_loaded = True
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed", exc_info=True)
     table = getattr(ctx, "table", None)
     if not task_id or table is None:
         return None
@@ -381,9 +382,9 @@ def _enrich_fetch_rules(ctx: Any, task_id: str) -> dict[str, Any] | None:
     names = [str(name).strip() for name in (ref.get("orgNames") or []) if str(name or "").strip()]
     rules = {"urls": urls, "names": names}
     try:
-        setattr(ctx, "_enrich_fetch_rules", rules)
+        ctx._enrich_fetch_rules = rules
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed", exc_info=True)
     return rules
 
 

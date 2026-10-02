@@ -664,7 +664,7 @@ def _without_schedules(org: dict[str, Any]) -> dict[str, Any]:
 def _mark_imported(table: Any, rows: list[dict[str, Any]], batch: list[dict[str, Any]], imported: dict[str, Any]) -> list[str]:
     succeeded = _succeeded_org_names(imported, batch)
     ids: list[str] = []
-    for row, org in zip(rows, batch):
+    for row, org in zip(rows, batch, strict=False):
         if _org_name_key(org.get("name")) not in succeeded:
             continue
         board_catalog_candidates.set_status(table, str(row["candidateId"]), "imported")
@@ -974,7 +974,11 @@ def import_source(
     schedules_dropped: list[dict[str, str]] = []
     budget = [_BISECT_MAX_CALLS]
     saw_success = [False]
-    for batch, rows in zip(_batches(orgs, BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT), _batches(approved, BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT)):
+    for batch, rows in zip(
+        _batches(orgs, BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT),
+        _batches(approved, BOARD_CATALOG_MAX_ORGS_PER_BULK_IMPORT),
+        strict=False,
+    ):
         _import_group(
             table,
             source,

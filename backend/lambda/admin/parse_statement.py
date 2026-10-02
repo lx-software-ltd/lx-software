@@ -6,11 +6,11 @@ import os
 import uuid
 from typing import Any
 
-from botocore.exceptions import ClientError
-
-import runtime
+import board_store
 import openrouter_usage
+import runtime
 from admin_runtime import _get_secretsmanager_client
+from botocore.exceptions import ClientError
 from contract_constants import (
     DEFAULT_FINANCE_CURRENCY,
     FINANCE_LINE_TYPES,
@@ -130,7 +130,7 @@ def execute_parse_statement(
         line_type_only=line_type_only,
     )
 
-    table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+    table = board_store.records_table()
     house_data = _load_finance_owner(table, house)
 
     file_meta: list[tuple[str, str, dict[str, Any]]] = []

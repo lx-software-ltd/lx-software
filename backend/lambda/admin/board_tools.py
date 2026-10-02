@@ -20,24 +20,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
-import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Callable
 
-import board_actions
 import board_aws
 import board_budget
 import board_catalog_import
 import board_deadline
-import board_dmarc
-import board_finance
 import board_github
 import board_mail
 import board_meta
@@ -49,35 +46,64 @@ import board_security
 import board_store
 import board_stores
 import board_web
+from board_tools_core import (
+    GLOBAL_MODE_CAP,
+    LEVEL_RANK,
+    REASON_PARAM,
+    TOOL_LABELS,
+    InvalidArgumentsError,
+    ToolContext,
+    ToolLoopResult,
+    ToolOp,
+    ToolOutcome,
+    ToolPermissionError,
+    allows,
+    configured_level,
+    effective_level,
+    effective_matrix,
+    env_disabled,
+    global_cap,
+    tools_enabled,
+)
 from contract_constants import (
-    BOARD_ACTION_EFFORTS,
-    BOARD_ACTION_PRIORITIES,
-    BOARD_ACTION_STATUSES,
-    BOARD_MAIL_BODY_MAX_CHARS,
-    BOARD_MAIL_SUBJECT_MAX_LEN,
-    BOARD_RESEARCH_QUERY_MAX_LEN,
     BOARD_MAX_PENDING_APPROVALS,
-    BOARD_STAFF_APPROVAL_EXPIRY_HOURS,
     BOARD_MAX_TOOL_CALLS_PER_TURN,
     BOARD_MAX_TOOL_ROUNDS_PER_TURN,
-    BOARD_TOOL_DEFINITIONS,
-    BOARD_TOOL_LEVELS,
-    BOARD_TOOL_RESULT_MAX_CHARS,
+    BOARD_STAFF_APPROVAL_EXPIRY_HOURS,
     BOARD_TOOL_CALL_TIMEOUT_SECONDS,
     BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
-    BOARD_META_LIST_MAX,
-    BOARD_STORES_LIST_MAX,
-    BOARD_WEB_LIST_MAX,
-    BOARD_STAFF_DELIVERABLE_TYPES,
-    BOARD_STAFF_NEWSLETTER_LISTS,
-    BOARD_STAFF_PROSPECT_TYPES,
+    BOARD_TOOL_DEFINITIONS,
+    BOARD_TOOL_RESULT_MAX_CHARS,
 )
-from http_common import _log_event, _utc_iso_z
+from http_common import _log_event
 from openrouter_client import ChatCompletion, ToolCall, add_usage
 
-LEVEL_RANK: dict[str, int] = {lvl: i for i, lvl in enumerate(BOARD_TOOL_LEVELS)}
-GLOBAL_MODE_CAP: dict[str, str] = {"readOnly": "read", "propose": "propose", "act": "act"}
-TOOL_LABELS: dict[str, str] = {str(t["id"]): str(t["label"]) for t in BOARD_TOOL_DEFINITIONS}
+__all__ = [
+    "GLOBAL_MODE_CAP",
+    "LEVEL_RANK",
+    "TOOL_LABELS",
+    "InvalidArgumentsError",
+    "REASON_PARAM",
+    "ToolContext",
+    "ToolLoopResult",
+    "ToolOp",
+    "ToolOutcome",
+    "ToolPermissionError",
+    "allows",
+    "configured_level",
+    "effective_level",
+    "effective_matrix",
+    "env_disabled",
+    "global_cap",
+    "tools_enabled",
+    "REGISTRY",
+    "build_registry",
+    "execute_call",
+    "run_tool_loop",
+    "BOARD_TOOL_CALL_TIMEOUT_SECONDS",
+    "BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS",
+]
+
 MAX_ARGUMENT_CHARS = 8000
 # task_finish deliverables (content plans, catalog sheets) routinely exceed 8k.
 MAX_ARGUMENT_CHARS_TASK_FINISH = 40000
@@ -120,2642 +146,225 @@ def completion_timeout(
     return 0
 
 
-class ToolPermissionError(RuntimeError):
-    """The member is not allowed to run this operation at this level."""
+def build_registry() -> dict[str, ToolOp]:
+    """Assemble the operation registry from per-family modules."""
+    import board_tools_aws
+    import board_tools_board
+    import board_tools_catalog
+    import board_tools_code
+    import board_tools_content
+    import board_tools_finance
+    import board_tools_github
+    import board_tools_intel
+    import board_tools_mail
+    import board_tools_meta
+    import board_tools_newsletter
+    import board_tools_outreach
+    import board_tools_product
+    import board_tools_research
+    import board_tools_security
+    import board_tools_staff
+    import board_tools_stores
+    import board_tools_task
+    import board_tools_web
+
+    families = (
+        board_tools_github,
+        board_tools_board,
+        board_tools_mail,
+        board_tools_research,
+        board_tools_aws,
+        board_tools_security,
+        board_tools_product,
+        board_tools_catalog,
+        board_tools_meta,
+        board_tools_finance,
+        board_tools_stores,
+        board_tools_web,
+        board_tools_intel,
+        board_tools_outreach,
+        board_tools_content,
+        board_tools_newsletter,
+        board_tools_code,
+        board_tools_staff,
+        board_tools_task,
+    )
+    ops: list[ToolOp] = []
+    for family in families:
+        ops.extend(family.ops())
+    return {op.name: op for op in ops}
 
 
-class InvalidArgumentsError(ValueError):
-    """Arguments (from the model or an owner override) do not match the op schema."""
 
 
-@dataclass
-class ToolContext:
-    """Who is calling, from where. ``actor`` is ``persona`` or ``owner``."""
-
-    table: Any
-    settings: dict[str, Any]
-    persona_id: str
-    display_name: str = ""
-    kind: str = "chat"
-    meeting_id: str = ""
-    phase: str = ""
-    job_id: str = ""
-    actor: str = "persona"
-    owner_sub: str = ""
-    task_id: str = ""
-    seat_id: str = ""
-    # Sweep-created holds skip the persona matrix (still re-check tools / guards).
-    internal: bool = False
-    # OpenRouter / model ``tool_call_id`` for this invocation (staff evidence alias).
-    llm_tool_call_id: str = ""
-    usage_sink: Callable[[dict[str, Any]], None] | None = None
-    # ``time.monotonic()`` value after which no new op should start and running
-    # ops are cut short; 0 means "no loop deadline" (owner approvals, jobs).
-    deadline: float = 0.0
-    # Cached staff-task attempt metadata so each op does not re-read the row.
-    task_attempt: int | None = None
-    task_retried_at: str = ""
-
-    def bind_task_meta(self) -> None:
-        if not self.task_id or self.task_attempt is not None:
-            return
-        try:
-            row = board_store.get_task(self.table, self.task_id)
-        except Exception:
-            return
-        if row is None:
-            return
-        try:
-            self.task_attempt = int(row.get("attempt") or 1)
-        except (TypeError, ValueError):
-            self.task_attempt = 1
-        self.task_retried_at = str(row.get("retriedAt") or "")
-
-    def seconds_left(self) -> float | None:
-        if not self.deadline:
-            return None
-        return max(0.0, self.deadline - time.monotonic())
-
-    def public(self) -> dict[str, Any]:
-        out: dict[str, Any] = {"kind": self.kind}
-        if self.meeting_id:
-            out["meetingId"] = self.meeting_id
-        if self.phase:
-            out["phase"] = self.phase
-        if self.job_id:
-            out["jobId"] = self.job_id
-        if self.task_id:
-            out["taskId"] = self.task_id
-        if self.seat_id:
-            out["seatId"] = self.seat_id
-        return out
 
 
-@dataclass(frozen=True)
-class ToolOp:
-    name: str
-    tool_id: str
-    kind: str  # "read" | "write"
-    description: str
-    parameters: dict[str, Any]
-    run: Callable[[ToolContext, dict[str, Any]], dict[str, Any]]
-    summarize: Callable[[dict[str, Any]], str]
-    # Staff steps use kind="task". Default includes it so seat tools
-    # (github, mail, finance, AWS, Meta, …) are offered; only task_note /
-    # task_finish stay task-exclusive.
-    contexts: tuple[str, ...] = ("chat", "meeting", "task")
-    # Write ops only. ``act_guard`` returns a reason why an ``act``-level call
-    # must still be approved (e.g. recipient not allow-listed); ``preview``
-    # renders the owner-facing, un-masked payload stored on the approval.
-    act_guard: Callable[[ToolContext, dict[str, Any]], str | None] | None = None
-    preview: Callable[[ToolContext, dict[str, Any]], dict[str, Any] | None] | None = None
-    # None → BOARD_TOOL_CALL_TIMEOUT_SECONDS. Slow Graph / GitHub reads use 25s.
-    timeout_seconds: int | None = None
-    # None → propose for writes, read for reads. CISO phishing is a write at read.
-    level_floor: str | None = None
-    # Writes that the plan keeps in Approvals even when the member is at ``act``.
-    always_propose: bool = False
-    action_class: str | None = None
-    # Return a reason string to refuse a propose/act before it is queued.
-    validate: Callable[["ToolContext", dict[str, Any]], str | None] | None = None
-
-    @property
-    def is_write(self) -> bool:
-        return self.kind == "write"
-
-    @property
-    def min_level(self) -> str:
-        if self.level_floor:
-            return self.level_floor
-        return "propose" if self.is_write else "read"
-
-    def schema(self) -> dict[str, Any]:
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": self.parameters,
-            },
-        }
 
 
-@dataclass
-class ToolOutcome:
-    status: str  # ok | error | pending_approval | held
-    result: dict[str, Any]
-    summary: str
-    approval_id: str = ""
-    duration_ms: int = 0
-    call_id: str = ""
-    blocks_task: bool = True
-
-    def public(self, op: ToolOp) -> dict[str, Any]:
-        out = {
-            "callId": self.call_id,
-            "op": op.name,
-            "toolId": op.tool_id,
-            "toolLabel": TOOL_LABELS.get(op.tool_id, op.tool_id),
-            "kind": op.kind,
-            "status": self.status,
-            "summary": self.summary,
-            "durationMs": self.duration_ms,
-        }
-        if self.approval_id:
-            out["approvalId"] = self.approval_id
-        if not self.blocks_task:
-            out["blocksTask"] = False
-        if self.status == "held":
-            out["holdId"] = str(self.result.get("holdId") or "")
-            out["executeAt"] = str(self.result.get("executeAt") or "")
-        if self.status in ("error", "refused"):
-            out["error"] = str(self.result.get("error") or "")[:300]
-        return out
 
 
-@dataclass
-class ToolLoopResult:
-    text: str
-    usage: dict[str, Any]
-    model: str
-    calls: list[dict[str, Any]] = field(default_factory=list)
-    rounds: int = 0
-    completion: ChatCompletion | None = None
+
+
 
 
 # ---------------------------------------------------------------------------
 # Levels
 # ---------------------------------------------------------------------------
 
-def env_disabled() -> bool:
-    """Deploy-time kill switch: ``BOARD_TOOLS_ENABLED=false`` on the Lambda."""
-    env = (os.environ.get("BOARD_TOOLS_ENABLED") or "").strip().lower()
-    return env in ("0", "false", "no", "off")
 
 
-def tools_enabled(settings: dict[str, Any]) -> bool:
-    if env_disabled():
-        return False
-    return bool((settings.get("tools") or {}).get("enabled", True))
 
 
-def global_cap(settings: dict[str, Any]) -> str:
-    mode = str((settings.get("tools") or {}).get("globalMode") or "propose")
-    return GLOBAL_MODE_CAP.get(mode, "propose")
 
 
-def configured_level(settings: dict[str, Any], tool_id: str, persona_id: str) -> str:
-    matrix = (settings.get("tools") or {}).get("matrix") or {}
-    level = str((matrix.get(tool_id) or {}).get(persona_id) or "off")
-    return level if level in LEVEL_RANK else "off"
 
 
-def effective_level(
-    settings: dict[str, Any],
-    tool_id: str,
-    persona_id: str,
-    *,
-    seat_id: str = "",
-    seats_by_id: dict[str, dict[str, Any]] | None = None,
-) -> str:
-    """Configured level capped by the global mode; ``off`` when tools are disabled."""
-    if not tools_enabled(settings):
-        return "off"
-    if seat_id:
-        import board_staff
-
-        return board_staff.seat_level(settings, seats_by_id or {}, seat_id, tool_id)
-    configured = configured_level(settings, tool_id, persona_id)
-    cap = global_cap(settings)
-    return configured if LEVEL_RANK[configured] <= LEVEL_RANK[cap] else cap
 
 
-def effective_matrix(settings: dict[str, Any]) -> dict[str, dict[str, str]]:
-    matrix = (settings.get("tools") or {}).get("matrix") or {}
-    return {
-        tool_id: {pid: effective_level(settings, tool_id, pid) for pid in cells}
-        for tool_id, cells in matrix.items()
-    }
 
 
-def allows(level: str, required: str) -> bool:
-    return LEVEL_RANK.get(level, 0) >= LEVEL_RANK.get(required, 0)
 
 
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 
-def _str_param(description: str, *, max_len: int | None = None, enum: list[str] | None = None) -> dict[str, Any]:
-    out: dict[str, Any] = {"type": "string", "description": description}
-    if max_len:
-        out["maxLength"] = max_len
-    if enum:
-        out["enum"] = enum
-    return out
 
 
-def _int_param(description: str, *, minimum: int = 1, maximum: int = 20) -> dict[str, Any]:
-    return {"type": "integer", "description": description, "minimum": minimum, "maximum": maximum}
 
 
-def _obj(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": required or [],
-        "additionalProperties": False,
-    }
 
 
-REASON_PARAM = _str_param(
-    "One sentence for the founder explaining why this action is needed now.", max_len=400
-)
 
 
-def _gh(fn: Callable[[dict[str, Any]], dict[str, Any]]) -> Callable[[ToolContext, dict[str, Any]], dict[str, Any]]:
-    return lambda _ctx, args: fn(args)
 
 
 # --- board operations -------------------------------------------------------
 
-def _board_list_actions(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    status = str(args.get("status") or "open").lower()
-    persona = str(args.get("persona") or "").lower()
-    items = board_store.list_actions(ctx.table)
-    if status != "all":
-        items = [a for a in items if a.get("status") == status]
-    if persona:
-        items = [a for a in items if a.get("persona") == persona]
-    items.sort(key=board_actions._sort_key)
-    return {
-        "count": len(items),
-        "items": [
-            {
-                "actionId": a.get("actionId"),
-                "title": a.get("title"),
-                "detail": str(a.get("detail") or "")[:300],
-                "persona": a.get("persona"),
-                "priority": a.get("priority"),
-                "effort": a.get("effort"),
-                "status": a.get("status"),
-                "dueAt": a.get("dueAt"),
-                "note": str(a.get("note") or "")[:300],
-                "meetingId": a.get("meetingId"),
-                "createdAt": a.get("createdAt"),
-            }
-            for a in items[:40]
-        ],
-    }
-
-
-def _board_list_meetings(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    try:
-        limit = min(max(1, int(args.get("limit") or 10)), 20)
-    except (TypeError, ValueError):
-        limit = 10
-    out = []
-    for m in board_store.list_meetings(ctx.table, limit=limit):
-        minutes = m.get("minutes") if isinstance(m.get("minutes"), dict) else {}
-        out.append(
-            {
-                "meetingId": m.get("meetingId"),
-                "status": m.get("status"),
-                "mode": m.get("mode"),
-                "topic": m.get("topic") or "",
-                "chair": m.get("chair"),
-                "createdAt": m.get("createdAt"),
-                "headline": minutes.get("headline") or "",
-                "actionCount": len(minutes.get("actions") or []),
-            }
-        )
-    return {"items": out}
-
-
-def _board_get_minutes(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    meeting_id = str(args.get("meetingId") or "").strip()
-    doc = None
-    if meeting_id:
-        doc = board_store.get_meeting(ctx.table, meeting_id)
-    else:
-        for m in board_store.list_meetings(ctx.table, limit=10):
-            if m.get("status") == "succeeded" and isinstance(m.get("minutes"), dict):
-                doc = m
-                break
-    if not doc:
-        return {"error": "No minutes found" + (f" for meeting {meeting_id}" if meeting_id else "")}
-    minutes = doc.get("minutes") if isinstance(doc.get("minutes"), dict) else None
-    if not minutes:
-        return {"error": f"Meeting {doc.get('meetingId')} has no minutes (status {doc.get('status')})"}
-    return {
-        "meetingId": doc.get("meetingId"),
-        "createdAt": doc.get("createdAt"),
-        "mode": doc.get("mode"),
-        "topic": doc.get("topic") or "",
-        "minutes": minutes,
-    }
-
-
-def _board_search_decisions(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    query = " ".join(str(args.get("query") or "").lower().split())
-    entries = board_store.load_decision_log(ctx.table)
-    words = [w for w in query.split() if w]
-    if words:
-        entries = [e for e in entries if all(w in str(e.get("text") or "").lower() for w in words)]
-    return {"count": len(entries), "items": entries[-30:]}
-
-
-def _board_add_action(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    title = " ".join(str(args.get("title") or "").split())[:120]
-    if not title:
-        return {"error": "title is required"}
-    open_actions = [a for a in board_store.list_actions(ctx.table) if a.get("status") == "open"]
-    match = board_actions.find_similar_open_action(title, open_actions)
-    if match is not None:
-        return {
-            "ok": False,
-            "duplicateOf": match.get("actionId"),
-            "message": f"An open action already covers this: '{match.get('title')}' (id {match.get('actionId')}).",
-        }
-    priority = str(args.get("priority") or "next").lower()
-    if priority not in BOARD_ACTION_PRIORITIES:
-        priority = "next"
-    effort = str(args.get("effort") or "M").upper()[:1]
-    if effort not in BOARD_ACTION_EFFORTS:
-        effort = "M"
-    due_at = None
-    try:
-        due_days = int(args.get("dueInDays")) if args.get("dueInDays") is not None else None
-    except (TypeError, ValueError):
-        due_days = None
-    now = datetime.now(timezone.utc)
-    if due_days is not None and due_days > 0:
-        due_at = _utc_iso_z(now + timedelta(days=min(due_days, 180)))
-    doc = {
-        "actionId": board_store.new_id(),
-        "title": title,
-        "detail": str(args.get("detail") or "").strip()[:800],
-        "persona": ctx.persona_id,
-        "priority": priority,
-        "effort": effort,
-        "metric": str(args.get("metric") or "").strip()[:300],
-        "dependsOn": [],
-        "status": "open",
-        "note": "",
-        "meetingId": ctx.meeting_id or "",
-        "source": "tool" if ctx.actor == "persona" else "approval",
-        "reaffirmedByMeetingIds": [],
-        "dueAt": due_at,
-        "createdAt": _utc_iso_z(now),
-        "updatedAt": _utc_iso_z(now),
-    }
-    board_store.put_action(ctx.table, doc)
-    return {"ok": True, "actionId": doc["actionId"], "title": title, "priority": priority}
-
-
-def _board_update_action(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    action_id = str(args.get("actionId") or "").strip()
-    doc = board_store.get_action(ctx.table, action_id) if action_id else None
-    if not doc:
-        return {"error": f"Action {action_id or '(missing id)'} not found"}
-    if ctx.actor == "persona" and str(doc.get("persona") or "") != ctx.persona_id:
-        return {"error": "You may only update actions you own; ask the owner to change others."}
-    changed = False
-    status = args.get("status")
-    if isinstance(status, str) and status:
-        if status not in BOARD_ACTION_STATUSES:
-            return {"error": "status must be open, done or dismissed"}
-        if status != doc.get("status"):
-            doc["status"] = status
-            doc["statusChangedAt"] = board_store.now_iso()
-            changed = True
-    priority = args.get("priority")
-    if isinstance(priority, str) and priority:
-        if priority not in BOARD_ACTION_PRIORITIES:
-            return {"error": f"priority must be one of {', '.join(sorted(BOARD_ACTION_PRIORITIES))}"}
-        if priority != doc.get("priority"):
-            doc["priority"] = priority
-            changed = True
-    if args.get("dueInDays") is not None:
-        try:
-            due_days = int(args.get("dueInDays"))
-        except (TypeError, ValueError):
-            return {"error": "dueInDays must be a whole number of days"}
-        # 0 clears the due date; otherwise re-anchor from today.
-        doc["dueAt"] = _utc_iso_z(datetime.now(timezone.utc) + timedelta(days=min(due_days, 180))) if due_days > 0 else None
-        changed = True
-    note = args.get("note")
-    if isinstance(note, str) and note.strip():
-        stamp = f"[{ctx.display_name or ctx.persona_id}] {note.strip()[:600]}"
-        existing = str(doc.get("note") or "").strip()
-        doc["note"] = (existing + "\n" + stamp).strip()[:2000]
-        changed = True
-    if not changed:
-        return {"ok": False, "message": "Nothing to change; pass status, priority, dueInDays and/or note."}
-    doc["updatedAt"] = board_store.now_iso()
-    doc["updatedBy"] = f"{ctx.actor}:{ctx.persona_id}"
-    board_store.put_action(ctx.table, doc)
-    return {
-        "ok": True,
-        "actionId": action_id,
-        "status": doc.get("status"),
-        "priority": doc.get("priority"),
-        "dueAt": doc.get("dueAt"),
-        "note": doc.get("note"),
-    }
-
-
-def _run_catalog_bulk_import(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_catalog_bulk
 
-    return board_catalog_bulk.op_import_source(ctx, args)
 
 
-def _summ(template: str) -> Callable[[dict[str, Any]], str]:
-    def _fmt(args: dict[str, Any]) -> str:
-        try:
-            return template.format(**{k: _short(v) for k, v in args.items()})
-        except (KeyError, IndexError, ValueError):
-            return template.split("{")[0].strip() or template
-    return _fmt
 
 
-def _short(value: Any, limit: int = 80) -> str:
-    text = " ".join(str(value if value is not None else "").split())
-    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
-def _summ_search(args: dict[str, Any]) -> str:
-    q = _short(args.get("query") or "")
-    return f"Searched GitHub {args.get('type') or 'issue'}s" + (f" for '{q}'" if q else "") + f" ({args.get('state') or 'open'})"
 
 
-def _summ_labels(args: dict[str, Any]) -> str:
-    labels = args.get("labels") if isinstance(args.get("labels"), list) else []
-    return f"Set labels on #{args.get('number')}: {', '.join(str(x) for x in labels) or '(none)'}"
 
 
-def _summ_mail_list(args: dict[str, Any]) -> str:
-    parts = ["Listed email threads"]
-    if args.get("mailbox"):
-        parts.append(f"in {_short(args['mailbox'], 40)}")
-    if args.get("query"):
-        parts.append(f"matching '{_short(args['query'], 40)}'")
-    if args.get("unreadOnly"):
-        parts.append("(unread only)")
-    return " ".join(parts)
 
 
-def _intel_list_watchlist(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_intel
 
-    return board_intel.op_list_watchlist(ctx, args)
 
 
-def _intel_get_changes(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_intel
 
-    return board_intel.op_get_changes(ctx, args)
 
 
-def _intel_fetch_page(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_intel
 
-    return board_intel.op_fetch_page(ctx, args)
 
 
-def _intel_competitor_reviews(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_intel
 
-    return board_intel.op_competitor_reviews(ctx, args)
 
 
-def _intel_search_rank(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_intel
 
-    return board_intel.op_search_rank(ctx, args)
 
 
-def _outreach_search_places(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_outreach
 
-    return board_outreach.op_search_places(ctx, args)
 
 
-def _outreach_open_data(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_outreach
 
-    return board_outreach.op_open_data(ctx, args)
 
 
-def _outreach_list_prospects(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_outreach
 
-    return board_outreach.op_list_prospects(ctx, args)
 
 
-def _outreach_get_prospect(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_outreach
 
-    return board_outreach.op_get_prospect(ctx, args)
 
 
-def _outreach_upsert_prospect(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_outreach
 
-    return board_outreach.op_upsert_prospect(ctx, args)
 
 
-def _outreach_score_prospect(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_outreach
 
-    return board_outreach.op_score_prospect(ctx, args)
 
 
-def _outreach_start_sequence(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_outreach
 
-    return board_outreach.op_start_sequence(ctx, args)
 
 
-def _outreach_send(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_outreach
 
-    return board_outreach.op_send(ctx, args)
 
 
-def _outreach_personalisation_guard(_ctx: ToolContext, args: dict[str, Any]) -> str | None:
-    import board_policy
 
-    text = str(args.get("personalisation") or "")
-    if board_policy.PROMISE_RE.search(text):
-        return "the draft promises a refund, a guarantee, or to hold a place"
-    return None
 
 
-def _outreach_suppress(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_outreach
 
-    return board_outreach.op_suppress(ctx, args)
 
 
-def _content_list(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_content
 
-    return board_content.op_list(ctx, args)
 
 
-def _content_stage_items(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_content
 
-    return board_content.op_stage_items(ctx, args)
 
 
-def _content_get(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_content
 
-    return board_content.op_get(ctx, args)
 
 
-def _content_publish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_content
 
-    return board_content.op_publish(ctx, args)
 
 
-def _newsletter_draft_issue(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_newsletter
 
-    return board_newsletter.op_draft_issue(ctx, args)
 
 
-def _newsletter_send(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_newsletter
 
-    return board_newsletter.op_send(ctx, args)
 
 
-def _validate_content_publish(ctx: ToolContext, args: dict[str, Any]) -> str | None:
-    import board_content
 
-    return board_content.validate_publish(ctx.table, args)
 
 
-def _validate_code_run_task(ctx: ToolContext, args: dict[str, Any]) -> str | None:
-    import board_code
 
-    return board_code.validate_run_task(args, ctx)
 
 
-def _validate_github_create_issue(_ctx: ToolContext, args: dict[str, Any]) -> str | None:
-    return board_github.validate_create_issue(args)
 
 
-def _code_run_task(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_code
 
-    return board_code.op_run_task(ctx, args)
 
 
-def _code_get_run(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_code
 
-    return board_code.op_get_run(ctx, args)
 
 
-def _code_review_pr(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_code
 
-    return board_code.op_review_pr(ctx, args)
 
 
-def _code_merge_staging(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_code
 
-    return board_code.op_merge_staging(ctx, args)
 
 
-def _code_promote(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_code
 
-    return board_code.op_promote(ctx, args)
 
 
-def _code_sync_staging(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_code
 
-    return board_code.op_sync_staging(ctx, args)
 
 
-def _code_merge_guard(ctx: ToolContext, args: dict[str, Any]) -> str | None:
-    import board_code
 
-    return board_code.merge_guard(ctx, args)
 
 
-def _code_close_pr(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_code
 
-    return board_code.op_close_pr(ctx, args)
 
 
-def _code_close_guard(ctx: ToolContext, args: dict[str, Any]) -> str | None:
-    import board_code
 
-    return board_code.close_guard(ctx, args)
 
 
-def _preview_code_close_pr(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any] | None:
-    import board_code
 
-    return board_code.preview_close_pr(ctx, args)
 
 
-def _staff_assign(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_staff
 
-    return board_staff.op_staff_assign(ctx, args)
 
 
-def _staff_list_tasks(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_staff
 
-    return board_staff.op_staff_list_tasks(ctx, args)
 
 
-def _staff_get_deliverable(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_staff
 
-    return board_staff.op_staff_get_deliverable(ctx, args)
 
 
-def _staff_request_revision(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_staff
 
-    return board_staff.op_staff_request_revision(ctx, args)
-
-
-def _staff_cancel_task(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_staff
-
-    return board_staff.op_staff_cancel_task(ctx, args)
-
-
-def _staff_assign_guard(ctx: ToolContext, args: dict[str, Any]) -> str | None:
-    import board_staff
-
-    return board_staff.act_guard_staff_assign(ctx, args)
-
-
-def _reply_guard(op_name: str, inner: Any = None):
-    def _guard(ctx: ToolContext, args: dict[str, Any]) -> str | None:
-        if inner is not None:
-            reason = inner(ctx, args)
-            if reason:
-                return reason
-        import board_policy
-
-        thread = None
-        thread_id = str(args.get("threadId") or "")
-        if thread_id:
-            thread = board_store.get_mail_thread(ctx.table, thread_id) or board_store.get_meta_thread(ctx.table, thread_id)
-        op = REGISTRY.get(op_name)
-        if op is None:
-            return None
-        return board_policy.check_reply(ctx.settings, ctx, op, args, thread)
-
-    return _guard
-
-
-def _task_note(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_staff
-
-    return board_staff.op_task_note(ctx, args)
-
-
-def _task_finish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_staff
-
-    return board_staff.op_task_finish(ctx, args)
-
-
-def _task_request_help(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    import board_staff
-
-    return board_staff.op_task_request_help(ctx, args)
-
-
-def _task_request_help_guard(ctx: ToolContext, args: dict[str, Any]) -> str | None:
-    import board_staff
-
-    return board_staff.act_guard_task_request_help(ctx, args)
-
-
-def _validate_task_request_help(ctx: ToolContext, args: dict[str, Any]) -> str | None:
-    import board_staff
-
-    return board_staff.validate_task_request_help(ctx, args)
-
-
-def _preview_task_request_help(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any] | None:
-    import board_staff
-
-    return board_staff.preview_task_request_help(ctx, args)
-
-
-def _summ_request_help(args: dict[str, Any]) -> str:
-    import board_staff
-
-    return board_staff.summarize_help_request(args=args)
-
-
-def _summ_staff_assign(args: dict[str, Any]) -> str:
-    return f"Assigned {args.get('assignee')}: {_short(args.get('brief') or '', 80)}"
-
-
-def _summ_update_action(args: dict[str, Any]) -> str:
-    parts = []
-    if args.get("status"):
-        parts.append(f"status → {args['status']}")
-    if args.get("priority"):
-        parts.append(f"priority → {args['priority']}")
-    if args.get("dueInDays") is not None:
-        parts.append("due date cleared" if not args["dueInDays"] else f"due in {args['dueInDays']}d")
-    if args.get("note"):
-        parts.append("added a note")
-    return f"Update action {_short(args.get('actionId'), 12)}: {', '.join(parts) or 'no change'}"
-
-
-def build_registry() -> dict[str, ToolOp]:
-    ops: list[ToolOp] = [
-        ToolOp(
-            name="github_search_issues",
-            tool_id="github",
-            kind="read",
-            description="Search issues or pull requests in the siutindei repository by keywords. Use before proposing new work to avoid duplicates.",
-            parameters=_obj(
-                {
-                    "query": _str_param("Keywords (GitHub search syntax allowed, e.g. 'label:bug booking').", max_len=200),
-                    "state": _str_param("Filter by state.", enum=["open", "closed", "all"]),
-                    "type": _str_param("issue, pr or any.", enum=["issue", "pr", "any"]),
-                    "limit": _int_param("Max results (1-20).", maximum=20),
-                }
-            ),
-            run=_gh(board_github.op_search_issues),
-            summarize=_summ_search,
-            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
-        ),
-        ToolOp(
-            name="github_get_issue",
-            tool_id="github",
-            kind="read",
-            description="Read one issue or pull request in full, including its most recent comments.",
-            parameters=_obj({"number": _int_param("Issue or PR number.", maximum=100000)}, ["number"]),
-            run=_gh(board_github.op_get_issue),
-            summarize=_summ("Read issue #{number}"),
-        ),
-        ToolOp(
-            name="github_list_pull_requests",
-            tool_id="github",
-            kind="read",
-            description="List pull requests (newest updated first).",
-            parameters=_obj(
-                {
-                    "state": _str_param("open, closed or all.", enum=["open", "closed", "all"]),
-                    "limit": _int_param("Max results (1-20).", maximum=20),
-                }
-            ),
-            run=_gh(board_github.op_list_pull_requests),
-            summarize=_summ("Listed {state} pull requests"),
-        ),
-        ToolOp(
-            name="github_list_releases",
-            tool_id="github",
-            kind="read",
-            description="List recent GitHub releases (tag, draft/prerelease, notes). Discussions are not available (GraphQL only).",
-            parameters=_obj({"limit": _int_param("Max results (1-20).", maximum=20)}),
-            run=_gh(board_github.op_list_releases),
-            summarize=_summ("Listed releases"),
-        ),
-        ToolOp(
-            name="github_list_workflow_runs",
-            tool_id="github",
-            kind="read",
-            description="List recent GitHub Actions runs (CI status, conclusions, branch).",
-            parameters=_obj(
-                {
-                    "branch": _str_param("Optional branch filter.", max_len=100),
-                    "limit": _int_param("Max results (1-20).", maximum=20),
-                }
-            ),
-            run=_gh(board_github.op_list_workflow_runs),
-            summarize=_summ("Checked CI runs"),
-        ),
-        ToolOp(
-            name="github_list_commits",
-            tool_id="github",
-            kind="read",
-            description="List recent commits. Pass sha or branch (e.g. staging) — without it this is the default branch only.",
-            parameters=_obj(
-                {
-                    "path": _str_param("Optional file or directory path.", max_len=200),
-                    "sha": _str_param("Commit SHA or branch name (GitHub sha=).", max_len=100),
-                    "branch": _str_param("Alias for sha.", max_len=100),
-                    "limit": _int_param("Max results (1-20).", maximum=20),
-                }
-            ),
-            run=_gh(board_github.op_list_commits),
-            summarize=_summ("Listed recent commits"),
-        ),
-        ToolOp(
-            name="github_compare",
-            tool_id="github",
-            kind="read",
-            description="Compare two refs (behindBy / aheadBy / commits). Defaults to main...staging. Use this to verify a staging sync.",
-            parameters=_obj(
-                {
-                    "base": _str_param("Base ref (default main).", max_len=100),
-                    "head": _str_param("Head ref (default staging).", max_len=100),
-                }
-            ),
-            run=_gh(board_github.op_compare),
-            summarize=_summ("Compared {base}...{head}"),
-        ),
-        ToolOp(
-            name="github_get_file",
-            tool_id="github",
-            kind="read",
-            description="Read a file (text, truncated) or list a directory in the repository.",
-            parameters=_obj(
-                {
-                    "path": _str_param("Path from the repository root, e.g. README.md or docs/architecture.", max_len=200),
-                    "ref": _str_param("Optional branch or tag.", max_len=100),
-                },
-                ["path"],
-            ),
-            run=_gh(board_github.op_get_file),
-            summarize=_summ("Read {path}"),
-            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
-        ),
-        ToolOp(
-            name="github_list_security_alerts",
-            tool_id="github",
-            kind="read",
-            description="List open Dependabot and code-scanning alerts (needs a token with security_events access; otherwise reports why).",
-            parameters=_obj({"limit": _int_param("Max alerts per kind (1-50).", maximum=50)}),
-            run=_gh(board_github.op_list_security_alerts),
-            summarize=_summ("Checked security alerts"),
-            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
-        ),
-        ToolOp(
-            name="github_get_security_alert",
-            tool_id="github",
-            kind="read",
-            description="Read one Dependabot, code-scanning or secret-scanning alert by number, including CVE/GHSA, vulnerable range and patched version.",
-            parameters=_obj(
-                {
-                    "kind": _str_param(
-                        "Alert family from the task brief (gh:dependabot:N → dependabot).",
-                        enum=["dependabot", "codeScanning", "secretScanning"],
-                    ),
-                    "number": _int_param("Alert number from GitHub (e.g. 153).", maximum=100000),
-                },
-                ["kind", "number"],
-            ),
-            run=_gh(board_github.op_get_security_alert),
-            summarize=_summ("Read {kind} alert #{number}"),
-            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
-        ),
-        ToolOp(
-            name="github_create_issue",
-            tool_id="github",
-            kind="write",
-            always_propose=True,
-            description="Open a new GitHub issue. Search first; never duplicate an open issue.",
-            parameters=_obj(
-                {
-                    "title": _str_param("Short imperative title.", max_len=200),
-                    "body": _str_param("Markdown body: context, acceptance criteria, links.", max_len=4000),
-                    "labels": {"type": "array", "items": {"type": "string"}, "description": "Optional labels."},
-                    "reason": REASON_PARAM,
-                },
-                ["title", "body", "reason"],
-            ),
-            run=_gh(board_github.op_create_issue),
-            summarize=_summ("Open GitHub issue: {title}"),
-            validate=_validate_github_create_issue,
-        ),
-        ToolOp(
-            name="github_comment_issue",
-            tool_id="github",
-            kind="write",
-            description="Add a comment to an existing issue or pull request.",
-            parameters=_obj(
-                {
-                    "number": _int_param("Issue or PR number.", maximum=100000),
-                    "body": _str_param("Markdown comment.", max_len=4000),
-                    "reason": REASON_PARAM,
-                },
-                ["number", "body", "reason"],
-            ),
-            run=_gh(board_github.op_comment_issue),
-            summarize=_summ("Comment on #{number}"),
-        ),
-        ToolOp(
-            name="github_set_labels",
-            tool_id="github",
-            kind="write",
-            description="Replace the labels on an issue or pull request. Include board-ready (keep existing labels) when an issue is ready for code_run_task.",
-            parameters=_obj(
-                {
-                    "number": _int_param("Issue or PR number.", maximum=100000),
-                    "labels": {"type": "array", "items": {"type": "string"}, "description": "Full label set to apply."},
-                    "reason": REASON_PARAM,
-                },
-                ["number", "labels", "reason"],
-            ),
-            run=_gh(board_github.op_set_labels),
-            summarize=_summ_labels,
-        ),
-        ToolOp(
-            name="board_list_actions",
-            tool_id="board",
-            kind="read",
-            description="List the founder's action items with ids, owners, priorities and status.",
-            parameters=_obj(
-                {
-                    "status": _str_param("open (default), done, dismissed or all.", enum=["open", "done", "dismissed", "all"]),
-                    "persona": _str_param("Optional owner persona id (ceo, cfo, ...).", max_len=10),
-                }
-            ),
-            run=_board_list_actions,
-            summarize=_summ("Listed {status} actions"),
-        ),
-        ToolOp(
-            name="board_list_meetings",
-            tool_id="board",
-            kind="read",
-            description="List recent board meetings with their headlines.",
-            parameters=_obj({"limit": _int_param("Max meetings (1-20).", maximum=20)}),
-            run=_board_list_meetings,
-            summarize=_summ("Listed recent meetings"),
-        ),
-        ToolOp(
-            name="board_get_minutes",
-            tool_id="board",
-            kind="read",
-            description="Read the full minutes of a meeting (latest successful meeting when meetingId is omitted).",
-            parameters=_obj({"meetingId": _str_param("Optional meeting id.", max_len=64)}),
-            run=_board_get_minutes,
-            summarize=_summ("Read meeting minutes"),
-        ),
-        ToolOp(
-            name="board_search_decisions",
-            tool_id="board",
-            kind="read",
-            description="Search the board's decision log by keywords.",
-            parameters=_obj({"query": _str_param("Keywords; all must match.", max_len=200)}),
-            run=_board_search_decisions,
-            summarize=_summ("Searched decisions for '{query}'"),
-        ),
-        ToolOp(
-            name="board_add_action",
-            tool_id="board",
-            kind="write",
-            description="Add one action item for the founder, owned by you. Check board_list_actions first; duplicates are rejected.",
-            parameters=_obj(
-                {
-                    "title": _str_param("Imperative, <= 100 chars.", max_len=120),
-                    "detail": _str_param("What done looks like.", max_len=800),
-                    "priority": _str_param("now, next or later.", enum=list(BOARD_ACTION_PRIORITIES)),
-                    "effort": _str_param("S, M or L.", enum=sorted(BOARD_ACTION_EFFORTS)),
-                    "dueInDays": _int_param("Days until due (1-180).", maximum=180),
-                    "metric": _str_param("How we know it worked.", max_len=300),
-                    "reason": REASON_PARAM,
-                },
-                ["title", "detail", "priority", "reason"],
-            ),
-            run=_board_add_action,
-            summarize=_summ("Add action: {title}"),
-        ),
-        ToolOp(
-            name="board_update_action",
-            tool_id="board",
-            kind="write",
-            description="Change the status, priority or due date of, or append a note to, an action item you own.",
-            parameters=_obj(
-                {
-                    "actionId": _str_param("Action id from board_list_actions.", max_len=64),
-                    "status": _str_param("open, done or dismissed.", enum=sorted(BOARD_ACTION_STATUSES)),
-                    "priority": _str_param("Re-prioritise: now, next or later.", enum=sorted(BOARD_ACTION_PRIORITIES)),
-                    "dueInDays": _int_param("New due date as days from today (0 clears it, max 180).", minimum=0, maximum=180),
-                    "note": _str_param("Note to append.", max_len=600),
-                    "reason": REASON_PARAM,
-                },
-                ["actionId", "reason"],
-            ),
-            run=_board_update_action,
-            summarize=_summ_update_action,
-        ),
-        ToolOp(
-            name="mail_list_mailboxes",
-            tool_id="mail",
-            kind="read",
-            description="List the company mailboxes (hello@, billing@, ...) with thread and unread counts.",
-            parameters=_obj({}),
-            run=board_mail.op_list_mailboxes,
-            summarize=_summ("Listed mailboxes"),
-        ),
-        ToolOp(
-            name="mail_list_threads",
-            tool_id="mail",
-            kind="read",
-            description=(
-                "List email threads, newest first, optionally for one mailbox, matching keywords, or unread only. "
-                "Contacts appear as stable aliases like contact#12; never guess real names or addresses. "
-                "hasAttachments only signals files are present; PDF contents are not readable."
-            ),
-            parameters=_obj(
-                {
-                    "mailbox": _str_param("Optional mailbox (local part or full address).", max_len=120),
-                    "query": _str_param("Optional keywords; all must match subject, snippet or sender.", max_len=200),
-                    "unreadOnly": {"type": "boolean", "description": "Only threads the founder has not read yet."},
-                    "limit": _int_param("Max threads (1-30).", maximum=30),
-                }
-            ),
-            run=board_mail.op_list_threads,
-            summarize=_summ_mail_list,
-        ),
-        ToolOp(
-            name="mail_get_thread",
-            tool_id="mail",
-            kind="read",
-            description=(
-                "Read every message in one thread (bodies, text attachments and attachment names; contacts pseudonymised). "
-                "PDF attachment text is NOT extracted: such files are listed under attachmentsSkipped, so ask the founder for anything inside a PDF."
-            ),
-            parameters=_obj({"threadId": _str_param("Thread id from mail_list_threads.", max_len=64)}, ["threadId"]),
-            run=board_mail.op_get_thread,
-            summarize=_summ("Read email thread {threadId}"),
-        ),
-        ToolOp(
-            name="mail_contact_history",
-            tool_id="mail",
-            kind="read",
-            description="List the threads a contact alias (e.g. contact#12) has taken part in.",
-            parameters=_obj({"contact": _str_param("Contact alias exactly as shown in a thread.", max_len=40)}, ["contact"]),
-            run=board_mail.op_contact_history,
-            summarize=_summ("Looked up history for {contact}"),
-        ),
-        ToolOp(
-            name="mail_reply",
-            tool_id="mail",
-            kind="write",
-            description=(
-                "Reply to the last inbound message of a thread from the mailbox it was sent to. "
-                "Plain text only; write as the company, sign off as 'The siutindei team'."
-            ),
-            parameters=_obj(
-                {
-                    "threadId": _str_param("Thread id from mail_list_threads.", max_len=64),
-                    "body": _str_param("Plain-text reply body.", max_len=BOARD_MAIL_BODY_MAX_CHARS),
-                    "templateId": _str_param("Optional approved template id.", max_len=80),
-                    "reason": REASON_PARAM,
-                },
-                ["threadId", "body", "reason"],
-            ),
-            run=board_mail._op_write("mail_reply"),
-            summarize=_summ("Reply in email thread {threadId}"),
-            act_guard=_reply_guard(
-                "mail_reply",
-                lambda ctx, args: board_mail.act_guard(ctx, args, op="mail_reply"),
-            ),
-            preview=lambda ctx, args: board_mail.owner_preview(ctx, args, op="mail_reply"),
-        ),
-        ToolOp(
-            name="mail_send",
-            tool_id="mail",
-            kind="write",
-            description="Start a new email from a company mailbox to one or more contacts (aliases or full addresses).",
-            parameters=_obj(
-                {
-                    "fromMailbox": _str_param("Sending mailbox, e.g. hello or billing@siutindei.com.", max_len=120),
-                    "to": {"type": "array", "items": {"type": "string"}, "description": "Recipients: contact aliases or addresses."},
-                    "subject": _str_param("Subject line.", max_len=BOARD_MAIL_SUBJECT_MAX_LEN),
-                    "body": _str_param("Plain-text body.", max_len=BOARD_MAIL_BODY_MAX_CHARS),
-                    "reason": REASON_PARAM,
-                },
-                ["fromMailbox", "to", "subject", "body", "reason"],
-            ),
-            run=board_mail._op_write("mail_send"),
-            summarize=_summ("Send email: {subject}"),
-            act_guard=lambda ctx, args: board_mail.act_guard(ctx, args, op="mail_send"),
-            preview=lambda ctx, args: board_mail.owner_preview(ctx, args, op="mail_send"),
-        ),
-        ToolOp(
-            name="mail_forward",
-            tool_id="mail",
-            kind="write",
-            description="Forward the latest message of a thread to a provider or vendor with a short note.",
-            parameters=_obj(
-                {
-                    "threadId": _str_param("Thread id from mail_list_threads.", max_len=64),
-                    "to": {"type": "array", "items": {"type": "string"}, "description": "Recipients: contact aliases or addresses."},
-                    "note": _str_param("Short note placed above the forwarded message.", max_len=2000),
-                    "reason": REASON_PARAM,
-                },
-                ["threadId", "to", "reason"],
-            ),
-            run=board_mail._op_write("mail_forward"),
-            summarize=_summ("Forward email thread {threadId}"),
-            act_guard=lambda ctx, args: board_mail.act_guard(ctx, args, op="mail_forward"),
-            preview=lambda ctx, args: board_mail.owner_preview(ctx, args, op="mail_forward"),
-        ),
-        ToolOp(
-            name="mail_report_phishing",
-            tool_id="mail",
-            kind="write",
-            description=(
-                "Flag a mailbox thread as suspected phishing for the founder. Always queued to Approvals; "
-                "available to every role that can read mail, including the CISO."
-            ),
-            parameters=_obj(
-                {
-                    "threadId": _str_param("Thread id from mail_list_threads.", max_len=64),
-                    "note": _str_param("Why this looks like phishing.", max_len=800),
-                    "reason": REASON_PARAM,
-                },
-                ["threadId", "reason"],
-            ),
-            run=board_mail.op_report_phishing,
-            summarize=_summ("Report phishing on thread {threadId}"),
-            level_floor="read",
-            always_propose=True,
-            preview=board_mail.owner_preview_phishing,
-        ),
-        ToolOp(
-            name="research_search",
-            tool_id="research",
-            kind="read",
-            description="Search the public web (cached 24h). Use for competitor pages, market facts, or anything not in GitHub or company mail.",
-            parameters=_obj(
-                {
-                    "query": _str_param("Search query.", max_len=BOARD_RESEARCH_QUERY_MAX_LEN),
-                    "limit": _int_param("Max results (1-8).", maximum=8),
-                },
-                ["query"],
-            ),
-            run=board_research.op_search,
-            summarize=_summ("Searched the web for '{query}'"),
-        ),
-        ToolOp(
-            name="research_hk_news",
-            tool_id="research",
-            kind="read",
-            description="Hong Kong market / education news (gov.hk, SCMP, The Standard), cached 24h.",
-            parameters=_obj(
-                {
-                    "query": _str_param("Topic, e.g. 'after-school activities regulation'.", max_len=BOARD_RESEARCH_QUERY_MAX_LEN),
-                    "limit": _int_param("Max results (1-8).", maximum=8),
-                }
-            ),
-            run=board_research.op_hk_news,
-            summarize=_summ("Looked up HK news on '{query}'"),
-        ),
-        ToolOp(
-            name="research_edb_holidays",
-            tool_id="research",
-            kind="read",
-            description="Education Bureau school-holiday calendar for Hong Kong (cached 24h).",
-            parameters=_obj({"year": _str_param("Calendar year, e.g. 2026.", max_len=12)}),
-            run=board_research.op_edb_holidays,
-            summarize=_summ("Looked up EDB holidays"),
-        ),
-        ToolOp(
-            name="research_venues",
-            tool_id="research",
-            kind="read",
-            description="Public listings of children's activity venues in a Hong Kong district (cached 24h).",
-            parameters=_obj(
-                {
-                    "district": _str_param("Hong Kong district, e.g. 'tuen mun' or 'kwun tong'.", max_len=40),
-                    "kind": _str_param("Venue type, e.g. 'swimming' or 'coding class'.", max_len=80),
-                    "limit": _int_param("Max results (1-8).", maximum=8),
-                }
-            ),
-            run=board_research.op_venues,
-            summarize=_summ("Looked up venues in {district}"),
-        ),
-        ToolOp(
-            name="research_fetch_page",
-            tool_id="research",
-            kind="read",
-            description=(
-                "Fetch a public http(s) page as text. Refuses private/link-local hosts. "
-                "At most 6 fetches per task (9 on catalog-micro-batch / catalog-enrich). "
-                "Prefer official LCSD or provider pages."
-            ),
-            parameters=_obj({"url": _str_param("https URL to fetch.", max_len=500)}, ["url"]),
-            run=board_research.op_fetch_page,
-            summarize=_summ("Fetched {url}"),
-        ),
-        ToolOp(
-            name="aws_monthly_cost",
-            tool_id="aws",
-            kind="read",
-            description="Last full month of AWS UnblendedCost by service. scope is 'siutindei' when the stack tag filter matched, or 'account' (whole account, see note) when it did not (cached hourly).",
-            parameters=_obj({}),
-            run=board_aws.op_monthly_cost,
-            summarize=_summ("Read AWS monthly cost"),
-        ),
-        ToolOp(
-            name="aws_list_alarms",
-            tool_id="aws",
-            kind="read",
-            description="CloudWatch alarms currently in ALARM, filtered to siutindei stacks (cached hourly).",
-            parameters=_obj({}),
-            run=board_aws.op_alarms,
-            summarize=_summ("Listed CloudWatch alarms"),
-        ),
-        ToolOp(
-            name="aws_lambda_health",
-            tool_id="aws",
-            kind="read",
-            description="24-hour error count and average duration for the Lambda functions listed in BOARD_AWS_LAMBDA_NAMES; reports 'no functions configured' otherwise (cached hourly).",
-            parameters=_obj({}),
-            run=board_aws.op_lambda_health,
-            summarize=_summ("Read Lambda health"),
-        ),
-        ToolOp(
-            name="aws_health_events",
-            tool_id="aws",
-            kind="read",
-            description="Open or upcoming AWS Health events (needs Business support; cached hourly).",
-            parameters=_obj({}),
-            run=board_aws.op_health_events,
-            summarize=_summ("Listed AWS Health events"),
-        ),
-        ToolOp(
-            name="aws_propose_budget_alert",
-            tool_id="aws",
-            kind="write",
-            always_propose=True,
-            description="Propose that the founder create an AWS Budget alert. Does not change AWS; approval adds an action item.",
-            parameters=_obj(
-                {
-                    "monthlyUsd": {"type": "number", "description": "Monthly ceiling in USD."},
-                    "thresholdPercent": {"type": "number", "description": "Alert at this percent of the ceiling (default 80)."},
-                    "reason": REASON_PARAM,
-                },
-                ["monthlyUsd", "reason"],
-            ),
-            run=board_aws.op_propose_budget_alert,
-            summarize=_summ("Propose AWS budget alert at ${monthlyUsd}/mo"),
-        ),
-        ToolOp(
-            name="security_github_alerts",
-            tool_id="security",
-            kind="read",
-            description="Open Dependabot, code-scanning and secret-scanning alerts on the siutindei repo (cached hourly).",
-            parameters=_obj({"limit": _int_param("Max alerts per type (1-50).", maximum=50)}),
-            run=board_security.op_github_alerts,
-            summarize=_summ("Listed GitHub security alerts"),
-        ),
-        ToolOp(
-            name="security_aws_findings",
-            tool_id="security",
-            kind="read",
-            description="Active HIGH/CRITICAL Security Hub findings and IAM Access Analyzer findings (cached hourly).",
-            parameters=_obj({}),
-            run=board_security.op_hub_findings,
-            summarize=_summ("Listed AWS security findings"),
-        ),
-        ToolOp(
-            name="security_cognito",
-            tool_id="security",
-            kind="read",
-            description="Cognito user-pool MFA, tier, threat-protection mode, password policy, and 24h CloudWatch sign-in throttles/successes. Failed sign-ins are not measured; no user listing.",
-            parameters=_obj({}),
-            run=board_security.op_cognito,
-            summarize=_summ("Read Cognito security posture"),
-        ),
-        ToolOp(
-            name="security_dmarc_summary",
-            tool_id="security",
-            kind="read",
-            description=(
-                "DMARC aggregate summary for the last 24 hours, 7 days and 30 days: "
-                "aligned percent, reporting orgs, per-source results and findings. Reads the hourly cache and does not recompute it."
-            ),
-            parameters=_obj({}),
-            run=board_dmarc.op_summary,
-            summarize=_summ("Read DMARC aggregate summary"),
-        ),
-        ToolOp(
-            name="security_open_remediation",
-            tool_id="security",
-            kind="write",
-            always_propose=True,
-            description="Open a GitHub issue describing a finding and the fix. Always a proposal until the founder approves.",
-            parameters=_obj(
-                {
-                    "title": _str_param("Issue title.", max_len=200),
-                    "body": _str_param("Markdown: finding, impact, proposed fix.", max_len=4000),
-                    "labels": {"type": "array", "items": {"type": "string"}, "description": "Labels; 'security' is added if missing."},
-                    "reason": REASON_PARAM,
-                },
-                ["title", "body", "reason"],
-            ),
-            run=board_security.op_open_remediation,
-            summarize=_summ("Propose security issue: {title}"),
-        ),
-        ToolOp(
-            name="product_catalog_health",
-            tool_id="product",
-            kind="read",
-            description="Catalog counts by district/category with completeness (photos, price, schedule, geocode).",
-            parameters=_obj(
-                {
-                    "district": _str_param("Optional Hong Kong district.", max_len=40),
-                    "category": _str_param("Optional activity category.", max_len=40),
-                }
-            ),
-            run=board_product.op_catalog_health,
-            summarize=_summ("Read catalog health"),
-        ),
-        ToolOp(
-            name="product_funnel",
-            tool_id="product",
-            kind="read",
-            description="Daily searches, listing views, CTA taps, leads and bookings from v_funnel_daily.",
-            parameters=_obj(
-                {
-                    "from": _str_param("Start date YYYY-MM-DD.", max_len=10),
-                    "to": _str_param("End date YYYY-MM-DD.", max_len=10),
-                    "district": _str_param("Optional district.", max_len=40),
-                }
-            ),
-            run=board_product.op_funnel,
-            summarize=_summ("Read product funnel"),
-        ),
-        ToolOp(
-            name="product_provider_pipeline",
-            tool_id="product",
-            kind="read",
-            description="Provider sign-ups, onboarding step, days since last edit, subscription status.",
-            parameters=_obj({"status": _str_param("Optional subscription status.", enum=["trial", "active", "past_due", "cancelled"])}),
-            run=board_product.op_provider_pipeline,
-            summarize=_summ("Read provider pipeline"),
-        ),
-        ToolOp(
-            name="product_flag_listing",
-            tool_id="product",
-            kind="write",
-            description="Flag a listing for the founder to review. Does not change the catalog.",
-            parameters=_obj(
-                {
-                    "listingId": _str_param("Listing or activity id.", max_len=64),
-                    "reason": REASON_PARAM,
-                },
-                ["listingId", "reason"],
-            ),
-            run=board_product.op_flag_listing,
-            summarize=_summ("Flag listing {listingId}"),
-        ),
-        ToolOp(
-            name="catalog_preview",
-            tool_id="catalog",
-            kind="read",
-            description=(
-                "Transform an accepted catalog micro-batch sheet into siutindei importer JSON. "
-                "Copies verified_fields only. Does not call the importer."
-            ),
-            parameters=_obj(
-                {
-                    "taskId": _str_param("Staff task id of the catalog sheet.", max_len=40),
-                    "sheet": _str_param("Optional sheet JSON; defaults to the task deliverable.", max_len=12000),
-                },
-                ["taskId"],
-            ),
-            run=board_catalog_import.op_preview,
-            summarize=_summ("Previewed catalog import for {taskId}"),
-        ),
-        ToolOp(
-            name="catalog_dry_run",
-            tool_id="catalog",
-            kind="read",
-            description=(
-                "Local verified-fields dry-run of a catalog sheet, plus a remote dry_run when "
-                "the siutindei admin API is configured. Never writes the catalog."
-            ),
-            parameters=_obj(
-                {
-                    "taskId": _str_param("Staff task id of the catalog sheet.", max_len=40),
-                    "sheet": _str_param("Optional sheet JSON; defaults to the task deliverable.", max_len=12000),
-                },
-                ["taskId"],
-            ),
-            run=board_catalog_import.op_dry_run,
-            summarize=_summ("Dry-ran catalog import for {taskId}"),
-            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
-        ),
-        ToolOp(
-            name="catalog_import",
-            tool_id="catalog",
-            kind="write",
-            always_propose=True,
-            action_class="catalog_import",
-            description=(
-                "Propose importing the accepted catalog-micro-batch deliverable through the "
-                "siutindei admin importer. Uses the stored sheet only (no sheet override). "
-                "Always an Approval. Refused while SiutindeiBoardCatalogImportEnabled is false "
-                "or the task is not waiting to import. Does not write Aurora from this stack."
-            ),
-            parameters=_obj(
-                {
-                    "taskId": _str_param("Staff task id of the catalog sheet waiting to import.", max_len=40),
-                    "reason": REASON_PARAM,
-                },
-                ["taskId", "reason"],
-            ),
-            run=board_catalog_import.op_import,
-            summarize=_summ("Import catalog sheet {taskId}"),
-            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
-        ),
-        ToolOp(
-            name="catalog_bulk_import",
-            tool_id="catalog",
-            kind="write",
-            always_propose=True,
-            action_class="catalog_import",
-            description=(
-                "Import approved catalog candidates from one bulk source (lcsd, edb, swd, "
-                "places, competitor). Auto-import schedules this as an internal hold."
-            ),
-            parameters=_obj(
-                {
-                    "source": _str_param("Bulk source id.", enum=["lcsd", "edb", "swd", "places", "competitor"]),
-                    "reason": REASON_PARAM,
-                    "limit": _int_param(
-                        "Max approved rows to import. Auto-import sets the room left under the launch target.",
-                        minimum=1,
-                        maximum=5000,
-                    ),
-                },
-                ["source", "reason"],
-            ),
-            run=_run_catalog_bulk_import,
-            summarize=_summ("Import catalog source {source}"),
-            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
-        ),
-        ToolOp(
-            name="meta_page_insights",
-            tool_id="meta",
-            kind="read",
-            description="Facebook Page daily insights (impressions, engaged users).",
-            parameters=_obj({"metric": _str_param("Comma-separated insight metrics.", max_len=120)}),
-            run=board_meta.op_page_insights,
-            summarize=_summ("Read Page insights"),
-            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
-        ),
-        ToolOp(
-            name="meta_ig_insights",
-            tool_id="meta",
-            kind="read",
-            description="Instagram daily insights (impressions, reach, profile views).",
-            parameters=_obj({"metric": _str_param("Comma-separated insight metrics.", max_len=120)}),
-            run=board_meta.op_ig_insights,
-            summarize=_summ("Read Instagram insights"),
-            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
-        ),
-        ToolOp(
-            name="meta_list_comments",
-            tool_id="meta",
-            kind="read",
-            description="Recent Page posts and their comments (contacts masked).",
-            parameters=_obj({"limit": _int_param("How many posts.", maximum=BOARD_META_LIST_MAX)}),
-            run=board_meta.op_list_comments,
-            summarize=_summ("Listed Page comments"),
-            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
-        ),
-        ToolOp(
-            name="meta_list_dms",
-            tool_id="meta",
-            kind="read",
-            description="Inbound Facebook Page DMs stored from the webhook (masked).",
-            parameters=_obj({"limit": _int_param("How many threads.", maximum=40)}),
-            run=board_meta.op_list_dms,
-            summarize=_summ("Listed Page DMs"),
-        ),
-        ToolOp(
-            name="meta_list_whatsapp",
-            tool_id="meta",
-            kind="read",
-            description="Inbound WhatsApp threads stored from the webhook (masked). Notes the 24-hour window.",
-            parameters=_obj({"limit": _int_param("How many threads.", maximum=40)}),
-            run=board_meta.op_list_whatsapp,
-            summarize=_summ("Listed WhatsApp threads"),
-        ),
-        ToolOp(
-            name="meta_list_whatsapp_templates",
-            tool_id="meta",
-            kind="read",
-            description="List approved WhatsApp message templates (name, language, status). Use a template name when the 24-hour window is closed.",
-            parameters=_obj({}),
-            run=board_meta.op_list_whatsapp_templates,
-            summarize=_summ("Listed WhatsApp templates"),
-            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
-        ),
-        ToolOp(
-            name="meta_ad_spend",
-            tool_id="meta",
-            kind="read",
-            description="This month's ad account spend versus the monthly cap.",
-            parameters=_obj({}),
-            run=board_meta.op_ad_spend,
-            summarize=_summ("Read ad spend"),
-            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
-        ),
-        ToolOp(
-            name="meta_propose_post",
-            tool_id="meta",
-            kind="write",
-            always_propose=True,
-            description="Draft a Facebook Page post. Publishes only after the founder approves.",
-            parameters=_obj(
-                {
-                    "message": _str_param("Post text.", max_len=2000),
-                    "reason": REASON_PARAM,
-                },
-                ["message", "reason"],
-            ),
-            run=board_meta.op_propose_post,
-            summarize=_summ("Propose Page post"),
-            preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_propose_post"),
-        ),
-        ToolOp(
-            name="meta_propose_story",
-            tool_id="meta",
-            kind="write",
-            always_propose=True,
-            description="Draft an Instagram story from an image URL.",
-            parameters=_obj(
-                {
-                    "imageUrl": _str_param("Public image URL.", max_len=500),
-                    "caption": _str_param("Optional caption.", max_len=500),
-                    "reason": REASON_PARAM,
-                },
-                ["imageUrl", "reason"],
-            ),
-            run=board_meta.op_propose_story,
-            summarize=_summ("Propose Instagram story"),
-            preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_propose_story"),
-        ),
-        ToolOp(
-            name="meta_reply_comment",
-            tool_id="meta",
-            kind="write",
-            description="Reply to a Page or Instagram comment.",
-            parameters=_obj(
-                {
-                    "commentId": _str_param("Graph comment id.", max_len=64),
-                    "message": _str_param("Reply text.", max_len=1000),
-                    "templateId": _str_param("Optional approved template id.", max_len=80),
-                    "reason": REASON_PARAM,
-                },
-                ["commentId", "message", "reason"],
-            ),
-            run=board_meta.op_reply_comment,
-            summarize=_summ("Reply to comment {commentId}"),
-            act_guard=_reply_guard("meta_reply_comment"),
-            preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_comment"),
-        ),
-        ToolOp(
-            name="meta_reply_dm",
-            tool_id="meta",
-            kind="write",
-            description="Reply to a Page DM. Act only to allow-listed recipients.",
-            parameters=_obj(
-                {
-                    "threadId": _str_param("Stored DM thread id (preferred; the recipient is taken from it). One of threadId or recipientId is required.", max_len=40),
-                    "recipientId": _str_param("Page-scoped user id, only when no thread is stored.", max_len=64),
-                    "message": _str_param("Reply text.", max_len=1000),
-                    "reason": REASON_PARAM,
-                },
-                ["message", "reason"],
-            ),
-            run=board_meta.op_reply_dm,
-            summarize=_summ("Reply to Page DM {threadId}"),
-            act_guard=_reply_guard(
-                "meta_reply_dm",
-                lambda ctx, args: board_meta.act_guard_allow_list(ctx, args, field="recipientId"),
-            ),
-            preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_dm"),
-        ),
-        ToolOp(
-            name="meta_reply_whatsapp",
-            tool_id="meta",
-            kind="write",
-            description="Reply on WhatsApp. Act only inside the 24-hour window to an allow-listed number; otherwise propose a template.",
-            parameters=_obj(
-                {
-                    "threadId": _str_param("Stored WhatsApp thread id (preferred; the number is taken from it). One of threadId or to is required.", max_len=40),
-                    "to": _str_param("WhatsApp number (E.164), only when no thread is stored.", max_len=20),
-                    "message": _str_param("Reply text (session message).", max_len=1000),
-                    "template": _str_param("Pre-approved template name when the window is closed.", max_len=80),
-                    "language": _str_param("Template language code.", max_len=8),
-                    "reason": REASON_PARAM,
-                },
-                ["reason"],
-            ),
-            run=board_meta.op_reply_whatsapp,
-            summarize=_summ("WhatsApp reply in thread {threadId}"),
-            act_guard=_reply_guard("meta_reply_whatsapp", board_meta.act_guard_whatsapp),
-            preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_whatsapp"),
-        ),
-        ToolOp(
-            name="meta_create_ad_set",
-            tool_id="meta",
-            kind="write",
-            description="Create a PAUSED ad set. Act only when the daily and monthly ads caps still have room; otherwise propose.",
-            parameters=_obj(
-                {
-                    "name": _str_param("Ad set name.", max_len=80),
-                    "dailyBudgetUsd": {"type": "number", "description": "Daily budget in USD."},
-                    "campaignId": _str_param("Existing campaign id.", max_len=64),
-                    "reason": REASON_PARAM,
-                },
-                ["name", "dailyBudgetUsd", "reason"],
-            ),
-            run=board_meta.op_create_ad_set,
-            summarize=_summ("Create ad set {name}"),
-            act_guard=board_meta.act_guard_ad_set,
-            preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_create_ad_set"),
-        ),
-        ToolOp(
-            name="meta_boost_post",
-            tool_id="meta",
-            kind="write",
-            description="Boost a Page post. Act only when the daily and monthly ads caps still have room; otherwise propose.",
-            parameters=_obj(
-                {
-                    "postId": _str_param("Page post id (or pageId_postId).", max_len=80),
-                    "dailyBudgetUsd": {"type": "number", "description": "Daily budget in USD."},
-                    "days": {"type": "integer", "description": "How many days to boost (1–30)."},
-                    "reason": REASON_PARAM,
-                },
-                ["postId", "dailyBudgetUsd", "days", "reason"],
-            ),
-            run=board_meta.op_boost_post,
-            summarize=_summ("Boost post {postId}"),
-            act_guard=board_meta.act_guard_boost_post,
-            preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_boost_post"),
-        ),
-        ToolOp(
-            name="meta_relay_lead",
-            tool_id="meta",
-            kind="write",
-            description=(
-                "COO: hand a parent lead to the provider (email, or WhatsApp template with providerPhone) and confirm to the parent. "
-                "Recorded as a board action. Always propose until every address/number is allow-listed."
-            ),
-            parameters=_obj(
-                {
-                    "providerEmail": _str_param("Provider address.", max_len=120),
-                    "providerPhone": _str_param("Provider WhatsApp number (E.164) for a template hand-off.", max_len=20),
-                    "template": _str_param("Approved WhatsApp template name (required with providerPhone).", max_len=80),
-                    "language": _str_param("Template language code.", max_len=8),
-                    "parentEmail": _str_param("Parent address.", max_len=120),
-                    "summary": _str_param("What the parent asked for.", max_len=800),
-                    "reason": REASON_PARAM,
-                },
-                ["parentEmail", "reason"],
-            ),
-            run=board_meta.op_relay_lead,
-            summarize=_summ("Relay lead for {parentEmail}"),
-            act_guard=board_meta.act_guard_relay,
-            preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_relay_lead"),
-        ),
-        ToolOp(
-            name="finance_cash_snapshot",
-            tool_id="finance",
-            kind="read",
-            description=(
-                "Month-end cash pack: liquid cash and credit-card totals by currency from the "
-                "owner's accounts sheet (all houses, no account names), plus Siu Tin Dei "
-                "statement-book income/expenditure totals. The LX Software statement book is "
-                "not included. Use this for cash balance and Siu Tin Dei cash flow in the close memo."
-            ),
-            parameters=_obj({}),
-            run=board_finance.op_cash_snapshot,
-            summarize=_summ("Read cash snapshot"),
-        ),
-        ToolOp(
-            name="finance_list_subscriptions",
-            tool_id="finance",
-            kind="read",
-            description="Listing subscriptions from the Siu Tin Dei product database (not QuickBooks/Xero), with plan name, price and payer contact.",
-            parameters=_obj({"status": _str_param("Optional status.", enum=["trial", "active", "past_due", "cancelled"])}),
-            run=board_receivables.op_list_subscriptions,
-            summarize=_summ("Listed subscriptions"),
-        ),
-        ToolOp(
-            name="finance_list_invoices",
-            tool_id="finance",
-            kind="read",
-            description="Invoices from the Siu Tin Dei product database (the book of record; there is no QuickBooks/Xero), with FPS reference, amount and status.",
-            parameters=_obj({"status": _str_param("Optional status.", enum=["draft", "sent", "paid", "overdue", "void"])}),
-            run=board_receivables.op_list_invoices,
-            summarize=_summ("Listed invoices"),
-        ),
-        ToolOp(
-            name="finance_aging_report",
-            tool_id="finance",
-            kind="read",
-            description="Receivables aging from the Siu Tin Dei invoices table (the book of record; there is no QuickBooks/Xero): current / D+7 / D+21 / D+35, DSO (trailing 90-day paid revenue) and past-due by provider. An empty report is valid.",
-            parameters=_obj({}),
-            run=board_receivables.op_aging_report,
-            summarize=_summ("Ran aging report"),
-        ),
-        ToolOp(
-            name="finance_unit_economics",
-            tool_id="finance",
-            kind="read",
-            description="Revenue per subscription, month-to-date CPA (AWS + Meta USD per new subscription) and gross margin at a fixed 7.8 HKD/USD; Meta from Graph month-to-date.",
-            parameters=_obj({}),
-            run=board_receivables.op_unit_economics,
-            summarize=_summ("Read unit economics"),
-            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
-        ),
-        ToolOp(
-            name="finance_draft_invoice",
-            tool_id="finance",
-            kind="write",
-            always_propose=True,
-            description="Create a draft invoice with a unique FPS reference for a subscription.",
-            parameters=_obj(
-                {
-                    "subscriptionId": _str_param("listing_subscriptions.id.", max_len=64),
-                    "amountHkd": {"type": "number", "description": "Amount in HKD."},
-                    "dueInDays": _int_param("Days until due (1-90).", maximum=90),
-                    "reason": REASON_PARAM,
-                },
-                ["subscriptionId", "amountHkd", "reason"],
-            ),
-            run=board_receivables.op_draft_invoice,
-            summarize=_summ("Draft invoice for {subscriptionId}"),
-        ),
-        ToolOp(
-            name="finance_send_invoice",
-            tool_id="finance",
-            kind="write",
-            description="Email an invoice from billing@siutindei.com. Act only for allow-listed payers.",
-            parameters=_obj(
-                {
-                    "invoiceId": _str_param("invoices.id.", max_len=64),
-                    "reason": REASON_PARAM,
-                },
-                ["invoiceId", "reason"],
-            ),
-            run=board_receivables.op_send_invoice,
-            summarize=_summ("Send invoice {invoiceId}"),
-            act_guard=lambda ctx, args: board_receivables.act_guard_send(ctx, args, op="finance_send_invoice"),
-            preview=lambda ctx, args: board_receivables.owner_preview_send(ctx, args, op="finance_send_invoice"),
-        ),
-        ToolOp(
-            name="finance_send_reminder",
-            tool_id="finance",
-            kind="write",
-            description="Dunning reminder at D+7 / D+21 / D+35. Act only for allow-listed payers.",
-            parameters=_obj(
-                {
-                    "invoiceId": _str_param("invoices.id.", max_len=64),
-                    "stage": _str_param("Dunning stage; set by the nightly scheduler.", enum=["d7", "d21", "d35"]),
-                    "reason": REASON_PARAM,
-                },
-                ["invoiceId", "reason"],
-            ),
-            run=board_receivables.op_send_reminder,
-            summarize=_summ("Send reminder for {invoiceId}"),
-            act_guard=lambda ctx, args: board_receivables.act_guard_send(ctx, args, op="finance_send_reminder"),
-            preview=lambda ctx, args: board_receivables.owner_preview_send(ctx, args, op="finance_send_reminder"),
-        ),
-        ToolOp(
-            name="finance_match_payment",
-            tool_id="finance",
-            kind="write",
-            description="Attach a payment to an invoice. Act only when amount and FPS reference agree and the invoice is open; otherwise propose with candidate invoices.",
-            parameters=_obj(
-                {
-                    "paymentId": _str_param("payments.id.", max_len=64),
-                    "invoiceId": _str_param("invoices.id.", max_len=64),
-                    "reason": REASON_PARAM,
-                },
-                ["paymentId", "invoiceId", "reason"],
-            ),
-            run=board_receivables.op_match_payment,
-            summarize=_summ("Match payment {paymentId} to {invoiceId}"),
-            act_guard=board_receivables.act_guard_match,
-        ),
-        ToolOp(
-            name="finance_propose_price_change",
-            tool_id="finance",
-            kind="write",
-            always_propose=True,
-            description="Create a listing_plans row (pricing proposal). First approved plan seeds the price list.",
-            parameters=_obj(
-                {
-                    "name": _str_param("Plan name, e.g. 'Store listing — monthly'.", max_len=80),
-                    "priceHkd": {"type": "number", "description": "Price in HKD."},
-                    "billingPeriod": _str_param("monthly or annual.", enum=["monthly", "annual"]),
-                    "reason": REASON_PARAM,
-                },
-                ["name", "priceHkd", "billingPeriod", "reason"],
-            ),
-            run=board_receivables.op_propose_price_change,
-            summarize=_summ("Propose plan {name} at ${priceHkd}"),
-        ),
-        ToolOp(
-            name="finance_record_manual_payment",
-            tool_id="finance",
-            kind="write",
-            always_propose=True,
-            description="Record cash or cheque handed over in person (source=manual).",
-            parameters=_obj(
-                {
-                    "amountHkd": {"type": "number", "description": "Amount in HKD."},
-                    "receivedOn": _str_param("Date received YYYY-MM-DD.", max_len=10),
-                    "payerName": _str_param("Who paid.", max_len=120),
-                    "bankReference": _str_param("Optional FPS or cheque reference.", max_len=80),
-                    "invoiceId": _str_param("Optional invoice to match.", max_len=64),
-                    "reason": REASON_PARAM,
-                },
-                ["amountHkd", "reason"],
-            ),
-            run=board_receivables.op_record_manual_payment,
-            summarize=_summ("Record manual payment of ${amountHkd}"),
-        ),
-        ToolOp(
-            name="stores_metrics",
-            tool_id="stores",
-            kind="read",
-            description="Cached App Store Connect and Google Play ratings, review counts and latest App Store version. Apple downloads come from yesterday's daily sales report (needs ASC_VENDOR_NUMBER); installs are not available from these APIs and are reported as null.",
-            parameters=_obj({}),
-            run=board_stores.op_metrics,
-            summarize=_summ("Read store metrics"),
-        ),
-        ToolOp(
-            name="stores_crashes",
-            tool_id="stores",
-            kind="read",
-            description="Play daily crash rate (last 7 days) and App Store hang/performance metrics — Apple exposes no crash counts (cached).",
-            parameters=_obj({}),
-            run=board_stores.op_crashes,
-            summarize=_summ("Read store crashes"),
-        ),
-        ToolOp(
-            name="stores_ratings",
-            tool_id="stores",
-            kind="read",
-            description="Average ratings and review counts for App Store and Play (cached).",
-            parameters=_obj({}),
-            run=board_stores.op_ratings,
-            summarize=_summ("Read store ratings"),
-        ),
-        ToolOp(
-            name="stores_list_reviews",
-            tool_id="stores",
-            kind="read",
-            description="Recent customer reviews and reply status. Contacts in the text are masked.",
-            parameters=_obj(
-                {
-                    "store": _str_param("apple, play, or both.", enum=["apple", "play", "both"]),
-                    "limit": _int_param("How many reviews.", maximum=BOARD_STORES_LIST_MAX),
-                }
-            ),
-            run=board_stores.op_list_reviews,
-            summarize=_summ("Listed store reviews"),
-        ),
-        ToolOp(
-            name="stores_reply_review",
-            tool_id="stores",
-            kind="write",
-            description="Reply to an App Store or Play review. The CMO may act; everyone else proposes.",
-            parameters=_obj(
-                {
-                    "store": _str_param("Which store.", enum=["apple", "play"]),
-                    "reviewId": _str_param("Store review id.", max_len=80),
-                    "message": _str_param("Reply text.", max_len=1000),
-                    "templateId": _str_param("Optional approved template id.", max_len=80),
-                    "reason": REASON_PARAM,
-                },
-                ["store", "reviewId", "message", "reason"],
-            ),
-            run=board_stores.op_reply_review,
-            summarize=_summ("Reply to {store} review {reviewId}"),
-            act_guard=_reply_guard("stores_reply_review"),
-            preview=lambda ctx, args: board_stores.owner_preview_message(ctx, args, op="stores_reply_review"),
-        ),
-        ToolOp(
-            name="stores_draft_release_notes",
-            tool_id="stores",
-            kind="write",
-            description="Draft What's New / release notes. Always goes to Approvals; never published automatically.",
-            parameters=_obj(
-                {
-                    "store": _str_param("apple, play, or both.", enum=["apple", "play", "both"]),
-                    "version": _str_param("Version string, if known.", max_len=20),
-                    "locale": _str_param("Locale code.", max_len=12),
-                    "notes": _str_param("Draft What's New text.", max_len=2000),
-                    "reason": REASON_PARAM,
-                },
-                ["notes", "reason"],
-            ),
-            run=board_stores.op_draft_release_notes,
-            summarize=_summ("Draft release notes"),
-            act_guard=board_stores.act_guard_release_notes,
-            preview=lambda ctx, args: board_stores.owner_preview_message(ctx, args, op="stores_draft_release_notes"),
-        ),
-        ToolOp(
-            name="web_sessions",
-            tool_id="web",
-            kind="read",
-            description="GA4 sessions, users, top pages and referrers (sessionSource / sessionMedium) for the last 7 days (cached). This is the book of record for visitor sources; do not ask for GA4 console access. Zero sessions is a valid connected result. Optional propertyId when several properties are configured.",
-            parameters=_obj(
-                {
-                    "propertyId": _str_param("GA4 property id. Omit to read every configured property.", max_len=32),
-                    "limit": _int_param("How many pages / referrers.", maximum=BOARD_WEB_LIST_MAX),
-                }
-            ),
-            run=board_web.op_sessions,
-            summarize=_summ("Read GA4 sessions"),
-        ),
-        ToolOp(
-            name="web_conversions",
-            tool_id="web",
-            kind="read",
-            description="GA4 event counts and key events for the last 7 days (cached). This is the book of record for event tracking; do not ask for GA4 console access.",
-            parameters=_obj(
-                {
-                    "propertyId": _str_param("GA4 property id. Omit to read every configured property.", max_len=32),
-                    "limit": _int_param("How many events.", maximum=BOARD_WEB_LIST_MAX),
-                }
-            ),
-            run=board_web.op_conversions,
-            summarize=_summ("Read GA4 conversions"),
-        ),
-        ToolOp(
-            name="web_gtm_status",
-            tool_id="web",
-            kind="read",
-            description="GTM container name, public id and live version (cached). This is the book of record for tag-manager setup; do not ask for GA4 or GTM console access. Publish is a later milestone.",
-            parameters=_obj(
-                {"containerId": _str_param("GTM container id. Omit to read every configured container.", max_len=32)}
-            ),
-            run=board_web.op_gtm_status,
-            summarize=_summ("Read GTM status"),
-        ),
-        ToolOp(
-            name="intel_list_watchlist",
-            tool_id="intel",
-            kind="read",
-            description="List competitor, directory and candidate watches.",
-            parameters=_obj({}),
-            run=_intel_list_watchlist,
-            summarize=_summ("Listed the watchlist"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="intel_get_changes",
-            tool_id="intel",
-            kind="read",
-            description="Change notes from the daily crawl (pricing, features, categories, other).",
-            parameters=_obj({"days": _int_param("How many days back (1-30).", minimum=1, maximum=30)}),
-            run=_intel_get_changes,
-            summarize=_summ("Read watchlist changes"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="intel_fetch_page",
-            tool_id="intel",
-            kind="read",
-            description="Fetch one allowed public URL (robots-checked). Returns a short text digest, never a whole page.",
-            parameters=_obj({"url": _str_param("https URL to fetch.", max_len=500)}, ["url"]),
-            run=_intel_fetch_page,
-            summarize=_summ("Fetched a public page"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="intel_competitor_reviews",
-            tool_id="intel",
-            kind="read",
-            description="Public App Store / Play reviews for a watch that has app ids.",
-            parameters=_obj({"watchId": _str_param("Watch id.", max_len=40)}, ["watchId"]),
-            run=_intel_competitor_reviews,
-            summarize=_summ("Read competitor store reviews"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="intel_search_rank",
-            tool_id="intel",
-            kind="read",
-            description="Search-rank snapshot for a query (research_search, cached).",
-            parameters=_obj({"query": _str_param("Search query.", max_len=BOARD_RESEARCH_QUERY_MAX_LEN)}, ["query"]),
-            run=_intel_search_rank,
-            summarize=_summ("Checked search rank"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="outreach_search_places",
-            tool_id="outreach",
-            kind="read",
-            description="Search Google Places (New) in Hong Kong. Costs count against the monthly Places cap.",
-            parameters=_obj(
-                {
-                    "query": _str_param("What to search for.", max_len=200),
-                    "district": _str_param("Optional Hong Kong district.", max_len=40),
-                },
-                ["query"],
-            ),
-            run=_outreach_search_places,
-            summarize=_summ("Searched Places"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="outreach_open_data",
-            tool_id="outreach",
-            kind="read",
-            description="Read FEHD restaurants, EDB schools or LCSD venues (cached open data).",
-            parameters=_obj(
-                {
-                    "kind": _str_param("Dataset.", enum=["fehd", "edb", "lcsd"]),
-                    "district": _str_param("Optional district filter.", max_len=40),
-                },
-                ["kind"],
-            ),
-            run=_outreach_open_data,
-            summarize=_summ("Read open data"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="outreach_list_prospects",
-            tool_id="outreach",
-            kind="read",
-            description="List prospects. Contacts are masked.",
-            parameters=_obj(
-                {
-                    "stage": _str_param("Optional stage filter.", max_len=20),
-                    "type": _str_param("Optional type filter.", max_len=20),
-                    "limit": _int_param("Max rows (1-50).", maximum=50),
-                }
-            ),
-            run=_outreach_list_prospects,
-            summarize=_summ("Listed prospects"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="outreach_get_prospect",
-            tool_id="outreach",
-            kind="read",
-            description="Get one prospect. Email and phone are masked.",
-            parameters=_obj({"id": _str_param("Prospect id.", max_len=40)}, ["id"]),
-            run=_outreach_get_prospect,
-            summarize=_summ("Read a prospect"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="outreach_upsert_prospect",
-            tool_id="outreach",
-            kind="write",
-            description="Create or update a prospect from public data. Dedupes by domain, phone or place id.",
-            parameters=_obj(
-                {
-                    "name": _str_param("Organisation name.", max_len=200),
-                    "type": _str_param("Prospect type.", enum=list(BOARD_STAFF_PROSPECT_TYPES)),
-                    "district": _str_param("Hong Kong district.", max_len=40),
-                    "website": _str_param("Public website.", max_len=300),
-                    "phone": _str_param("Public phone.", max_len=40),
-                    "email": _str_param("Public email.", max_len=120),
-                    "placeId": _str_param("Google place id.", max_len=80),
-                    "source": _str_param("Where this came from.", max_len=40),
-                    "reason": REASON_PARAM,
-                },
-                ["name", "type"],
-            ),
-            run=_outreach_upsert_prospect,
-            summarize=_summ("Upserted a prospect"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="outreach_score_prospect",
-            tool_id="outreach",
-            kind="read",
-            description="Score a prospect with the fit rubric (one desk model call) and qualify it.",
-            parameters=_obj({"id": _str_param("Prospect id.", max_len=40)}, ["id"]),
-            run=_outreach_score_prospect,
-            summarize=_summ("Scored a prospect"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="outreach_start_sequence",
-            tool_id="outreach",
-            kind="write",
-            description="Start the outreach sequence for a qualified prospect with a contact.",
-            parameters=_obj(
-                {
-                    "id": _str_param("Prospect id.", max_len=40),
-                    "reason": REASON_PARAM,
-                },
-                ["id"],
-            ),
-            run=_outreach_start_sequence,
-            summarize=_summ("Started a sequence"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="outreach_send",
-            tool_id="outreach",
-            kind="write",
-            description="Send one sequence step to a prospect. First touches are cold-outreach holds until the class is promoted.",
-            parameters=_obj(
-                {
-                    "prospectId": _str_param("Prospect id.", max_len=40),
-                    "stepIndex": _int_param("Sequence step (0-2).", minimum=0, maximum=5),
-                    "personalisation": _str_param("Fit note, at most 400 characters.", max_len=400),
-                    "reason": REASON_PARAM,
-                },
-                ["prospectId"],
-            ),
-            run=_outreach_send,
-            summarize=_summ("Sent outreach"),
-            contexts=("chat", "meeting", "task"),
-            act_guard=_outreach_personalisation_guard,
-        ),
-        ToolOp(
-            name="outreach_suppress",
-            tool_id="outreach",
-            kind="write",
-            description="Suppress a prospect so they are never emailed again.",
-            parameters=_obj(
-                {
-                    "id": _str_param("Prospect id.", max_len=40),
-                    "reason": _str_param("Why they are suppressed.", max_len=200),
-                },
-                ["id", "reason"],
-            ),
-            run=_outreach_suppress,
-            summarize=_summ("Suppressed a prospect"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="content_list",
-            tool_id="content",
-            kind="read",
-            description="List calendar items, optionally filtered by status.",
-            parameters=_obj({"status": _str_param("Content status.", max_len=20), "limit": _int_param("Max rows.", minimum=1, maximum=80)}),
-            run=_content_list,
-            summarize=_summ("Listed calendar items"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="content_stage_items",
-            tool_id="content",
-            kind="read",
-            description=(
-                "Save up to 6 content-calendar items on this task. Call it once per batch "
-                "(facebook, then instagram, then stories) instead of putting the whole week "
-                "in task_finish. Items with the same slotAt and channel replace earlier ones. "
-                "task_finish merges staged items into the deliverable."
-            ),
-            parameters=_obj(
-                {
-                    "items": {
-                        "type": "array",
-                        "maxItems": 6,
-                        "description": "Calendar items for this batch.",
-                        "items": _obj(
-                            {
-                                "slotAt": _str_param("ISO slot time.", max_len=40),
-                                "channel": _str_param("facebook, instagram, instagram_story, or seo.", max_len=40),
-                                "pillar": _str_param("Content pillar.", max_len=80),
-                                "copyEn": _str_param("English caption.", max_len=400),
-                                "copyZh": _str_param("Traditional Chinese caption.", max_len=400),
-                                "hashtags": _str_param("Hashtags.", max_len=200),
-                                "template": _str_param("Card template.", max_len=40),
-                                "fields": {
-                                    "type": "object",
-                                    "description": "Template fields such as title, body, and titleZh.",
-                                    "additionalProperties": True,
-                                },
-                                "linkPath": _str_param("Site path.", max_len=120),
-                            },
-                            ["slotAt", "channel"],
-                        ),
-                    }
-                },
-                ["items"],
-            ),
-            run=_content_stage_items,
-            summarize=_summ("Staged calendar items"),
-            contexts=("task",),
-        ),
-        ToolOp(
-            name="content_get",
-            tool_id="content",
-            kind="read",
-            description="Get one calendar item including copy and creative keys.",
-            parameters=_obj({"contentId": _str_param("Content id.", max_len=40)}, ["contentId"]),
-            run=_content_get,
-            summarize=_summ("Read a calendar item"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="content_publish",
-            tool_id="content",
-            kind="write",
-            description="Publish a scheduled calendar item to Facebook or Instagram. Held until slotAt.",
-            parameters=_obj(
-                {
-                    "contentId": _str_param("Content id.", max_len=40),
-                    "slotAt": _str_param("ISO slot time (HKT).", max_len=40),
-                    "channel": _str_param("Publish channel.", max_len=40),
-                    "reason": REASON_PARAM,
-                },
-                ["contentId"],
-            ),
-            run=_content_publish,
-            summarize=_summ("Published a calendar item"),
-            contexts=("chat", "meeting", "task"),
-            validate=_validate_content_publish,
-        ),
-        ToolOp(
-            name="newsletter_draft_issue",
-            tool_id="newsletter",
-            kind="write",
-            description="Draft a fortnightly newsletter issue from recent content and catalogue highlights.",
-            parameters=_obj(
-                {
-                    "list": _str_param("parents or providers.", enum=list(BOARD_STAFF_NEWSLETTER_LISTS)),
-                    "markdown": _str_param("Optional Markdown body.", max_len=20000),
-                    "reason": REASON_PARAM,
-                },
-                ["list"],
-            ),
-            run=_newsletter_draft_issue,
-            summarize=_summ("Drafted a newsletter issue"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="newsletter_send",
-            tool_id="newsletter",
-            kind="write",
-            description="Send a drafted issue to one confirmed list. Held as publish:newsletter.",
-            parameters=_obj(
-                {
-                    "issueId": _str_param("Issue id.", max_len=40),
-                    "list": _str_param("parents or providers.", enum=list(BOARD_STAFF_NEWSLETTER_LISTS)),
-                    "reason": REASON_PARAM,
-                },
-                ["issueId", "list"],
-            ),
-            run=_newsletter_send,
-            summarize=_summ("Sent a newsletter issue"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="code_run_task",
-            tool_id="code",
-            kind="write",
-            description=(
-                "Dispatch the coding runner. Opens a draft PR on board/{taskId} from staging. Does not merge. "
-                "CI rejects PRs over 400 lines (2000 for content/**); split the brief. "
-                "One open board PR per issue — for a second slice, open a new issue first. "
-                "If a run is already in flight, call code_get_run instead of dispatching again."
-            ),
-            parameters=_obj(
-                {
-                    "issueNumber": _int_param("GitHub issue number.", minimum=1, maximum=100000),
-                    "brief": _str_param("What to implement. Include acceptance criteria.", max_len=4000),
-                    "kind": _str_param("feature, fix or content (SEO).", enum=["feature", "fix", "content"]),
-                    "reason": REASON_PARAM,
-                },
-                ["issueNumber", "brief"],
-            ),
-            run=_code_run_task,
-            summarize=_summ("Dispatched the coding runner"),
-            contexts=("chat", "meeting", "task"),
-            validate=_validate_code_run_task,
-        ),
-        ToolOp(
-            name="code_get_run",
-            tool_id="code",
-            kind="read",
-            description="Poll the Actions run and draft PR for a runner task_id.",
-            parameters=_obj({"taskId": _str_param("Staff or runner task id.", max_len=40)}),
-            run=_code_get_run,
-            summarize=_summ("Polled a coding run"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="code_review_pr",
-            tool_id="code",
-            kind="read",
-            description="Read a pull request: diff stats, paths, CI, and a 30 000 character diff for architect review.",
-            parameters=_obj({"prNumber": _int_param("Pull request number.", minimum=1, maximum=100000)}, ["prNumber"]),
-            run=_code_review_pr,
-            summarize=_summ("Reviewed a pull request"),
-            contexts=("chat", "meeting", "task"),
-            timeout_seconds=25,
-        ),
-        ToolOp(
-            name="code_merge_staging",
-            tool_id="code",
-            kind="write",
-            description="Merge a board/* PR into staging after CI, architect accept, size and path checks. Held as code_staging.",
-            parameters=_obj(
-                {
-                    "prNumber": _int_param("Pull request number.", minimum=1, maximum=100000),
-                    "kind": _str_param("feature, fix or content.", enum=["feature", "fix", "content"]),
-                    "reason": REASON_PARAM,
-                },
-                ["prNumber"],
-            ),
-            run=_code_merge_staging,
-            summarize=_summ("Merged a pull request to staging"),
-            contexts=("chat", "meeting", "task"),
-            act_guard=_code_merge_guard,
-            always_propose=True,
-        ),
-        ToolOp(
-            name="code_close_pr",
-            tool_id="code",
-            kind="write",
-            description=(
-                "Close a board/* pull request without merging (founder veto, superseded work, "
-                "or a review that will not be revised). Does not delete the branch. Always an "
-                "Approval (not a hold). After a vetoed merge, call this instead of retrying "
-                "code_merge_staging. Relabels the linked GitHub issue: removes board-ready and "
-                "adds board-closed so the runner will not pick it up again until an architect "
-                "re-adds board-ready."
-            ),
-            parameters=_obj(
-                {
-                    "prNumber": _int_param("Pull request number.", minimum=1, maximum=100000),
-                    "reason": REASON_PARAM,
-                },
-                ["prNumber", "reason"],
-            ),
-            run=_code_close_pr,
-            summarize=_summ("Closed pull request #{prNumber}"),
-            contexts=("chat", "meeting", "task"),
-            act_guard=_code_close_guard,
-            validate=_code_close_guard,
-            preview=_preview_code_close_pr,
-            always_propose=True,
-            action_class="code_close",
-        ),
-        ToolOp(
-            name="code_promote",
-            tool_id="code",
-            kind="write",
-            description="Open or update the staging→main promotion PR. Always an Approval; the owner merges in GitHub.",
-            parameters=_obj(
-                {
-                    "kind": _str_param("Always production in v1.", enum=["production"]),
-                    "reason": REASON_PARAM,
-                }
-            ),
-            run=_code_promote,
-            summarize=_summ("Proposed a staging promotion"),
-            contexts=("chat", "meeting", "task"),
-            always_propose=True,
-            action_class="code_production",
-        ),
-        ToolOp(
-            name="code_sync_staging",
-            tool_id="code",
-            kind="write",
-            description="Merge main into staging so staging is current (GitHub merges API). Confirm with github_compare. Does not force-push. Act-level calls follow the code_staging hold.",
-            parameters=_obj({"reason": REASON_PARAM}),
-            run=_code_sync_staging,
-            summarize=_summ("Synced staging with main"),
-            contexts=("chat", "meeting", "task"),
-            action_class="code_staging",
-        ),
-        ToolOp(
-            name="staff_assign",
-            tool_id="staff",
-            kind="write",
-            description="Assign a background task to a board member or an active staff seat. The assignee works in steps and produces a deliverable for review. GA4 / visitor-source / event-tracking / GTM briefs go to data-analyst (or business-analyst if that seat is inactive), not community-manager.",
-            parameters=_obj(
-                {
-                    "assignee": _str_param("Persona id or active seat id.", max_len=40),
-                    "brief": _str_param("What to do. Be specific about the evidence to gather.", max_len=4000),
-                    "deliverableType": _str_param(
-                        "Deliverable format.",
-                        enum=list(BOARD_STAFF_DELIVERABLE_TYPES),
-                    ),
-                    "slaHours": _int_param("Hours until the SLA (1-168).", minimum=1, maximum=168),
-                    "budgetUsd": {"type": "number", "description": "Optional USD cap for this task."},
-                    "actionId": _str_param("Optional action id to close when the task is accepted.", max_len=40),
-                    "reason": REASON_PARAM,
-                },
-                ["assignee", "brief", "deliverableType"],
-            ),
-            run=_staff_assign,
-            summarize=_summ_staff_assign,
-            act_guard=_staff_assign_guard,
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="staff_list_tasks",
-            tool_id="staff",
-            kind="read",
-            description="List staff tasks. Seats see only their own; executives see all.",
-            parameters=_obj(
-                {
-                    "status": _str_param("Optional status filter.", max_len=20),
-                    "limit": _int_param("Max tasks (1-50).", maximum=50),
-                }
-            ),
-            run=_staff_list_tasks,
-            summarize=_summ("Listed staff tasks"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="staff_get_deliverable",
-            tool_id="staff",
-            kind="read",
-            description="Read a task summary and the first 6000 characters of its deliverable.",
-            parameters=_obj({"taskId": _str_param("Task id.", max_len=40)}, ["taskId"]),
-            run=_staff_get_deliverable,
-            summarize=_summ("Read staff deliverable"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="staff_request_revision",
-            tool_id="staff",
-            kind="write",
-            description="Ask the assignee to revise a task that is in review. Only the manager of the task may do this.",
-            parameters=_obj(
-                {
-                    "taskId": _str_param("Task id.", max_len=40),
-                    "notes": _str_param("What to change.", max_len=2000),
-                    "reason": REASON_PARAM,
-                },
-                ["taskId", "notes"],
-            ),
-            run=_staff_request_revision,
-            summarize=_summ("Requested a staff revision"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="staff_cancel_task",
-            tool_id="staff",
-            kind="write",
-            description="Cancel a queued, running, waiting, or failed staff task. Manager or founder only. Delivered tasks cannot be cancelled.",
-            parameters=_obj(
-                {
-                    "taskId": _str_param("Task id.", max_len=40),
-                    "reason": _str_param("Why the task is cancelled.", max_len=400),
-                },
-                ["taskId", "reason"],
-            ),
-            run=_staff_cancel_task,
-            summarize=_summ("Cancelled a staff task"),
-            contexts=("chat", "meeting", "task"),
-        ),
-        ToolOp(
-            name="task_note",
-            tool_id="task",
-            kind="write",
-            description="Record progress on the current task and continue. Call this when you are not finished.",
-            parameters=_obj(
-                {
-                    "text": _str_param("Progress note to append to the scratchpad.", max_len=4000),
-                    "reason": REASON_PARAM,
-                },
-                ["text"],
-            ),
-            run=_task_note,
-            summarize=_summ("Noted task progress"),
-            contexts=("task",),
-        ),
-        ToolOp(
-            name="task_finish",
-            tool_id="task",
-            kind="write",
-            description="Finish the current task. Provide the deliverable and evidence call ids from read or write tools — task_note ids are not evidence. If no offered function can verify more, finish anyway with confidence low and openQuestions.",
-            parameters=_obj(
-                {
-                    "summary": _str_param("One-paragraph summary of the result.", max_len=800),
-                    "deliverableType": _str_param(
-                        "Deliverable format.",
-                        enum=list(BOARD_STAFF_DELIVERABLE_TYPES),
-                    ),
-                    "deliverable": _str_param("The deliverable body as text."),
-                    "evidence": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Tool-call ids from this task that support the deliverable. Do not pass task_note call ids.",
-                    },
-                    "openQuestions": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Questions you could not answer.",
-                    },
-                    "confidence": _str_param("How confident you are.", enum=["high", "medium", "low"]),
-                    "status": _str_param(
-                        "Use blocked when a breaker or runner guard stops the work.",
-                        enum=["ok", "blocked"],
-                    ),
-                    "blockedReason": _str_param(
-                        "Why the work cannot proceed. Required with status=blocked.",
-                        max_len=300,
-                    ),
-                    "reason": REASON_PARAM,
-                },
-                ["summary", "deliverableType", "deliverable", "confidence"],
-            ),
-            run=_task_finish,
-            summarize=_summ("Finished the task"),
-            contexts=("task",),
-        ),
-        ToolOp(
-            name="task_request_help",
-            tool_id="task",
-            kind="write",
-            description=(
-                "Ask another active seat that has tools you were not offered to gather that "
-                "information. Use tool ids such as web or finance, not operation names. "
-                "The founder must usually approve. Do not call this when you already have "
-                "the tools, and do not call it from a help task."
-            ),
-            parameters=_obj(
-                {
-                    "need": _str_param("What information to obtain, specifically.", max_len=2000),
-                    "toolIds": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Board tool ids you need (web, finance, aws), not operation names.",
-                    },
-                    "suggestedAssignee": _str_param(
-                        "Optional active seat id you believe has those tools.",
-                        max_len=40,
-                    ),
-                    "reason": REASON_PARAM,
-                },
-                ["need", "toolIds"],
-            ),
-            run=_task_request_help,
-            summarize=_summ_request_help,
-            act_guard=_task_request_help_guard,
-            validate=_validate_task_request_help,
-            preview=_preview_task_request_help,
-            contexts=("task",),
-        ),
-    ]
-    return {op.name: op for op in ops}
 
 
 REGISTRY: dict[str, ToolOp] = build_registry()
@@ -3241,7 +850,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
                     arguments = _union_github_labels(arguments)
                 except Exception:
                     # Fetch failed — do not replace labels unattended.
-                    pass
+                    logging.getLogger(__name__).debug("suppressed", exc_info=True)
                 else:
                     level = "act"
             else:
@@ -3259,7 +868,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
                 prepared=_staff_help.prepare_help_request(ctx, arguments)
             )
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed", exc_info=True)
     approval_id = ""
     guard_reason = ""
     hold_fail = ""
@@ -3277,8 +886,8 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
     breaker_error: dict[str, Any] | None = None
     if op.is_write and not invalid and not hold_fail and safety_actor:
         try:
-            import board_staff as _staff
             import board_breakers
+            import board_staff as _staff
 
             if _staff.enabled(ctx.settings):
                 breaker_error = board_breakers.write_blocked(ctx.table, op)
@@ -3388,7 +997,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
                     if op.name in board_policy.REPLY_OPS:
                         board_policy.record_reply(ctx.table, op.name, arguments)
                 except Exception:
-                    pass
+                    logging.getLogger(__name__).debug("suppressed", exc_info=True)
                 if op.is_write and ctx.actor == "persona" and class_key:
                     try:
                         import board_holds as _holds_ramp
@@ -3397,7 +1006,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
                         if hours <= 0:
                             _holds_ramp.record_ramp(ctx.table, ctx.settings, class_key, vetoed=False)
                     except Exception:
-                        pass
+                        logging.getLogger(__name__).debug("suppressed", exc_info=True)
         except Exception as exc:
             if getattr(exc, "refused", False):
                 outcome = ToolOutcome(status="refused", result={"error": str(exc)[:500]}, summary=summary)
@@ -3827,7 +1436,7 @@ def run_tool_loop(
             try:
                 on_progress(list(calls))
             except Exception:  # pragma: no cover - progress is best effort
-                pass
+                logging.getLogger(__name__).debug("suppressed", exc_info=True)
 
     if final is None:
         if stop_reason:

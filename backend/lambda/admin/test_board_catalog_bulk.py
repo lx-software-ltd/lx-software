@@ -7,8 +7,6 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-from test_board import BoardTestCase
-
 import board_async
 import board_catalog_bulk
 import board_catalog_candidates
@@ -20,6 +18,7 @@ import board_opendata
 import board_places
 import board_staff
 import board_store
+from test_board import BoardTestCase
 
 
 def _enable_staff(table):

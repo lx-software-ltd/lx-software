@@ -23,24 +23,25 @@ import os
 import re
 import time
 from datetime import datetime, timedelta, timezone
+from secrets import read_secret_string
 from typing import Any
 from urllib import error as urlerror
 from urllib import parse as urlparse
 from urllib import request as urlrequest
 from urllib.parse import parse_qs
 
-from admin_runtime import _get_secretsmanager_client
 import board_deadline
 import board_mail
 import board_pii
 import board_store
+from admin_runtime import _get_secretsmanager_client
 from contract_constants import (
     BOARD_META_ADS_DAILY_CAP_USD,
     BOARD_META_ADS_MONTHLY_CAP_USD,
     BOARD_META_LIST_MAX,
 )
-from http_common import _log_event, _utc_iso_z
-from openrouter_client import OpenRouterError, read_secret_string
+from http_common import _log_event, _utc_iso_z, method_not_allowed
+from openrouter_client import OpenRouterError
 
 GRAPH_ORIGIN = "https://graph.facebook.com/v21.0"
 HTTP_TIMEOUT_SECONDS = 12
@@ -404,7 +405,7 @@ def handle_http(event: dict[str, Any], method: str) -> dict[str, Any]:
         return {"statusCode": 403, "headers": {"Content-Type": "text/plain"}, "body": "forbidden"}
 
     if method != "POST":
-        return {"statusCode": 405, "headers": {"Content-Type": "application/json"}, "body": json.dumps({"message": "Method not allowed"})}
+        return method_not_allowed()
 
     body = _raw_body(event)
     if not verify_signature(event, body):
@@ -729,9 +730,6 @@ def _mask_sender(raw: Any, pseud: board_pii.Pseudonymizer | None) -> str:
         return pseud.alias_for_external("fb", ident, display=display)
     return pseud.alias_for_external("fbname", display, display=display)
 
-
-def _mask_for_model(text: str) -> str:
-    return _mask_text(text, None)
 
 
 _waba_resolved: dict[str, str] = {}

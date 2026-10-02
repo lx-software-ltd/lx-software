@@ -14,9 +14,10 @@ write to it.
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
+
+import board_store
 
 try:
     from zoneinfo import ZoneInfo
@@ -27,7 +28,6 @@ except Exception:  # pragma: no cover - Lambda images ship tzdata
 
 import board_async
 import board_data_api
-import runtime
 from contract_constants import SUPPORTED_FINANCE_CURRENCIES
 from ddb_convert import _from_ddb_nested, _to_ddb_nested
 from finance_store import MirroredBookError, mirror_state_key, upsert_mirrored_lines
@@ -100,7 +100,9 @@ def _book_instant(day: str) -> str:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:23] + "Z"
+    from timeutil import now_iso
+
+    return now_iso()
 
 
 def _money(value: Any) -> float | None:
@@ -425,7 +427,7 @@ def queue_sync(table: Any) -> dict[str, Any]:
 def handle_mirror_trigger(_event: dict[str, Any]) -> dict[str, Any]:
     if not configured():
         return {"ok": True, "skipped": "not_configured"}
-    table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+    table = board_store.records_table()
     try:
         return sync(table)
     except Exception as exc:

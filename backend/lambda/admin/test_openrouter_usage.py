@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import unittest
 
-from test_board import FakeTable  # noqa: E402
-
 import openrouter_usage  # noqa: E402
 from openrouter_client import SERVICE_EXECUTIVE_BOARD, SERVICE_STATEMENT_PARSER  # noqa: E402
+from test_board import FakeTable  # noqa: E402
 
 
 class TestOpenRouterUsage(unittest.TestCase):
