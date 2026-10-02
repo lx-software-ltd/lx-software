@@ -33,7 +33,11 @@ test.describe("admin viewport smoke", () => {
   test("dashboard loads fixture summaries", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByText("LX Software net")).toBeVisible();
+    await expect(page.getByText("Siu Tin Dei net")).toBeVisible();
     await expect(page.getByText("Evolve Sprouts net")).toBeVisible();
+    const siuTinDeiNet = page.locator(".admin-kpi").filter({ hasText: "Siu Tin Dei net" });
+    await expect(siuTinDeiNet.locator(".admin-kpi-value")).toContainText(/HK|HKD/);
+    await expect(siuTinDeiNet.getByText(/US\$|\bUSD\b/)).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Evolve Sprouts" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Dashboard", level: 1 })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
