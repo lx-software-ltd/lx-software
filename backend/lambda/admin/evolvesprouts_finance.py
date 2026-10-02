@@ -1,15 +1,15 @@
 """Evolve Sprouts statement book, mirrored from the product database.
 
-Cash only: succeeded customer payments (income), refunds (expenditure) and
-submitted or paid expenses (expenditure). Issued invoices that are still
-unpaid stay on the summary and are not written as book lines.
+Gains are issued customer invoices (the Admin Finance Client Invoices list).
+Refunds and submitted or paid expenses are expenditure. Issued invoices that
+are still unpaid also stay on the summary (outstanding), and are not omitted
+from Gains.
 
 Dates use the Asia/Hong_Kong calendar day, stored as that day at 00:00 UTC
-(the same convention as a date typed into the other books). Expenses use
-the vendor invoice issued date (``invoice_date``). Gains use the customer
-invoice document date (``invoice_date``) from the newest allocated invoice
-(``created_at`` then ``id``, the same order as Evolve Sprouts Client
-Invoices), otherwise the payment ``succeeded_at``.
+(the same convention as a date typed into the other books). Expenses and
+gains use the document ``invoice_date``. Gains also store ``sortUtc`` from
+invoice ``created_at`` so the Gains tab follows Client Invoices
+(``created_at`` then ``id``, newest first). Refunds use ``succeeded_at``.
 
 The product database is read through the RDS Data API. This stack does not
 write to it.
@@ -38,20 +38,23 @@ from http_common import _log_event
 
 BOOK = "evolveSprouts"
 SOURCE = "evolvesprouts"
-ID_PREFIXES = ("es-pay-", "es-ref-", "es-exp-")
+ID_PREFIXES = ("es-pay-", "es-inv-", "es-ref-", "es-exp-")
 MIRROR_INTERNAL = "evolvesprouts_finance_mirror"
 
-PAYMENTS_SQL = (
-    "SELECT id, direction, amount, currency, succeeded_at "
+# es-pay-* is kept in ID_PREFIXES so a later sync removes payment income
+# after gains moved to issued invoices.
+REFUNDS_SQL = (
+    "SELECT id, amount, currency, succeeded_at "
     "FROM customer_payments "
-    "WHERE status = 'succeeded' AND direction IN ('inbound', 'refund') "
+    "WHERE status = 'succeeded' AND direction = 'refund' "
     "ORDER BY succeeded_at, id"
 )
-INVOICE_DATE_SQL = (
-    "SELECT a.payment_id, i.invoice_date, i.created_at, i.id "
-    "FROM payment_allocations a "
-    "JOIN customer_invoices i ON i.id = a.invoice_id "
-    "WHERE i.invoice_date IS NOT NULL"
+INVOICES_SQL = (
+    "SELECT id, invoice_number, invoice_date, created_at, currency, "
+    "subtotal, tax_total, total, bill_to_display_name "
+    "FROM customer_invoices "
+    "WHERE status = 'issued' "
+    "ORDER BY created_at DESC, id DESC"
 )
 # Vendor names live on organizations (expenses.vendor_name was dropped in
 # evolvesprouts migration 0016).
@@ -141,6 +144,20 @@ def _currency_present(value: Any) -> bool:
     return len(str(value or "").strip()) >= 3
 
 
+def _sort_instant(value: Any) -> str | None:
+    """UTC instant for Client Invoices order, or None when the value is unusable."""
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00").replace(" ", "T"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
 def _line(
     *,
     line_id: str,
@@ -151,8 +168,9 @@ def _line(
     gross: float,
     currency: str,
     line_type: str,
+    sort_utc: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    line = {
         "id": line_id,
         "dateUtc": _book_instant(day),
         "type": line_type,
@@ -163,6 +181,27 @@ def _line(
         "currency": currency,
         "source": SOURCE,
     }
+    if sort_utc:
+        line["sortUtc"] = sort_utc
+    return line
+
+
+def _invoice_description(row: dict[str, Any]) -> str:
+    number = " ".join(str(row.get("invoice_number") or "").split())
+    bill_to = " ".join(str(row.get("bill_to_display_name") or "").split())
+    parts = [part for part in (number, bill_to) if part]
+    detail = " ".join(parts) if parts else str(row.get("id") or "")
+    return detail[:8000]
+
+
+def _invoice_amounts(row: dict[str, Any]) -> tuple[float, float, float] | None:
+    return _expense_amounts(
+        {
+            "total": row.get("total"),
+            "tax": row.get("tax_total"),
+            "subtotal": row.get("subtotal"),
+        }
+    )
 
 
 def _expense_description(row: dict[str, Any]) -> str:
@@ -188,34 +227,6 @@ def _expense_amounts(row: dict[str, Any]) -> tuple[float, float, float] | None:
     return net, vat, gross
 
 
-def _invoice_list_sort_key(row: dict[str, Any]) -> tuple[str, str]:
-    """Newest first, matching Evolve Sprouts ``list_newest`` (created_at, id)."""
-    return (str(row.get("created_at") or ""), str(row.get("id") or ""))
-
-
-def _invoice_date_by_payment() -> dict[str, Any]:
-    """payment_id → invoice_date from the newest allocated invoice.
-
-    Empty when the lookup is unavailable. Several allocations pick the same
-    invoice the Client Invoices list would show first.
-    """
-    try:
-        rows = _q(INVOICE_DATE_SQL)
-    except EvolveSproutsFinanceError:
-        _log_event("warning", tag="evolvesprouts_invoice_date_unavailable")
-        return {}
-    chosen: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        payment_id = str(row.get("payment_id") or "").strip()
-        invoice_date = row.get("invoice_date")
-        if not payment_id or not invoice_date:
-            continue
-        previous = chosen.get(payment_id)
-        if previous is None or _invoice_list_sort_key(row) > _invoice_list_sort_key(previous):
-            chosen[payment_id] = row
-    return {payment_id: row["invoice_date"] for payment_id, row in chosen.items()}
-
-
 def desired_book_lines() -> tuple[list[dict[str, Any]], int, int, int, int]:
     """Lines, unsupported-currency rows, incomplete rows, submitted count, paid count.
 
@@ -228,15 +239,39 @@ def desired_book_lines() -> tuple[list[dict[str, Any]], int, int, int, int]:
     submitted = 0
     paid = 0
     lines: list[dict[str, Any]] = []
-    invoice_date = _invoice_date_by_payment()
-    for row in _q(PAYMENTS_SQL):
+    for row in _q(INVOICES_SQL):
+        amounts = _invoice_amounts(row)
+        row_id = str(row.get("id") or "").strip()
+        day = _hkt_day(row.get("invoice_date"))
+        if not row_id or amounts is None:
+            if row_id and amounts is None:
+                skipped_incomplete += 1
+            continue
+        if not _currency_present(row.get("currency")) or day is None:
+            skipped_incomplete += 1
+            continue
+        currency = _currency(row.get("currency"))
+        if currency is None:
+            skipped_currency += 1
+            continue
+        net, vat, gross = amounts
+        lines.append(
+            _line(
+                line_id=f"es-inv-{row_id}",
+                day=day,
+                description=_invoice_description(row),
+                net=net,
+                vat=vat,
+                gross=gross,
+                currency=currency,
+                line_type="income",
+                sort_utc=_sort_instant(row.get("created_at")) or _book_instant(day),
+            )
+        )
+    for row in _q(REFUNDS_SQL):
         amount = _positive(row.get("amount"))
         row_id = str(row.get("id") or "").strip()
-        direction = str(row.get("direction") or "")
-        if direction == "refund":
-            day = _hkt_day(row.get("succeeded_at"))
-        else:
-            day = _hkt_day(invoice_date.get(row_id) or row.get("succeeded_at"))
+        day = _hkt_day(row.get("succeeded_at"))
         if not row_id or amount is None:
             continue
         if not _currency_present(row.get("currency")) or day is None:
@@ -246,32 +281,18 @@ def desired_book_lines() -> tuple[list[dict[str, Any]], int, int, int, int]:
         if currency is None:
             skipped_currency += 1
             continue
-        if direction == "refund":
-            lines.append(
-                _line(
-                    line_id=f"es-ref-{row_id}",
-                    day=day,
-                    description=f"[evolve-sprouts] Refund {row_id}",
-                    net=amount,
-                    vat=0,
-                    gross=amount,
-                    currency=currency,
-                    line_type="expenditure",
-                )
+        lines.append(
+            _line(
+                line_id=f"es-ref-{row_id}",
+                day=day,
+                description=f"[evolve-sprouts] Refund {row_id}",
+                net=amount,
+                vat=0,
+                gross=amount,
+                currency=currency,
+                line_type="expenditure",
             )
-        else:
-            lines.append(
-                _line(
-                    line_id=f"es-pay-{row_id}",
-                    day=day,
-                    description=row_id[:8000],
-                    net=amount,
-                    vat=0,
-                    gross=amount,
-                    currency=currency,
-                    line_type="income",
-                )
-            )
+        )
     for row in _q(EXPENSES_SQL):
         amounts = _expense_amounts(row)
         row_id = str(row.get("id") or "").strip()

@@ -289,7 +289,7 @@ describe("mockAdminFetch", () => {
     const book = await mockAdminFetch("/evolve-sprouts");
     expect(book.ok).toBe(true);
     const bookBody = (await book.json()) as { data: { lines: { id: string }[] } };
-    expect(bookBody.data.lines.map((line) => line.id)).toEqual(["es-pay-1", "es-exp-1", "es-ref-1"]);
+    expect(bookBody.data.lines.map((line) => line.id)).toEqual(["es-inv-1", "es-exp-1", "es-ref-1"]);
 
     const summary = await mockAdminFetch("/evolve-sprouts/summary");
     expect(summary.ok).toBe(true);

@@ -50,73 +50,57 @@ def _rows(sql: str, _parameters: list | None) -> list[dict]:
     if "customer_payments" in sql:
         return [
             {
-                "id": "p1",
-                "direction": "inbound",
-                "amount": 10,
-                "currency": "HKD",
-                "succeeded_at": "2026-05-01T12:00:00Z",
-            },
-            {
-                "id": "late",
-                "direction": "inbound",
-                "amount": 4,
-                "currency": "HKD",
-                "succeeded_at": "2026-10-01T17:30:00Z",
-            },
-            {
                 "id": "r1",
-                "direction": "refund",
                 "amount": 2,
                 "currency": "USD",
                 "succeeded_at": "2026-05-02",
             },
-            {
-                "id": "bad",
-                "direction": "inbound",
-                "amount": 3,
-                "currency": "JPY",
-                "succeeded_at": "2026-05-03",
-            },
-            {
-                "id": "zero",
-                "direction": "inbound",
-                "amount": 0,
-                "currency": "HKD",
-                "succeeded_at": "2026-05-03",
-            },
-            {
-                "id": "nodate",
-                "direction": "inbound",
-                "amount": 6,
-                "currency": "HKD",
-                "succeeded_at": "",
-            },
         ]
-    if "payment_allocations" in sql:
+    if "bill_to_display_name" in sql:
         return [
             {
-                "payment_id": "p1",
+                "id": "inv-recent",
+                "invoice_number": "INV-42",
                 "invoice_date": "2026-03-01",
-                "created_at": "2026-03-02T00:00:00Z",
-                "id": "inv-old",
+                "created_at": "2026-10-01T12:00:00Z",
+                "currency": "HKD",
+                "subtotal": 10,
+                "tax_total": 0,
+                "total": 10,
+                "bill_to_display_name": "Alpha School",
             },
             {
-                "payment_id": "p1",
-                "invoice_date": "2026-04-20",
-                "created_at": "2026-04-21T00:00:00Z",
-                "id": "inv-new",
+                "id": "inv-older",
+                "invoice_number": "INV-41",
+                "invoice_date": "2026-09-15",
+                "created_at": "2026-09-16T00:00:00Z",
+                "currency": "HKD",
+                "subtotal": 4,
+                "tax_total": 0,
+                "total": 4,
+                "bill_to_display_name": "Beta Family",
             },
             {
-                "payment_id": "late",
-                "invoice_date": "2026-12-01",
-                "created_at": "2026-09-01T00:00:00Z",
-                "id": "inv-earlier",
+                "id": "inv-jpy",
+                "invoice_number": "INV-9",
+                "invoice_date": "2026-04-01",
+                "created_at": "2026-04-02T00:00:00Z",
+                "currency": "JPY",
+                "subtotal": 3,
+                "tax_total": 0,
+                "total": 3,
+                "bill_to_display_name": "Yen",
             },
             {
-                "payment_id": "late",
-                "invoice_date": "2026-10-01",
-                "created_at": "2026-10-02T00:00:00Z",
-                "id": "inv-later",
+                "id": "inv-nodate",
+                "invoice_number": "INV-0",
+                "invoice_date": "",
+                "created_at": "2026-04-03T00:00:00Z",
+                "currency": "HKD",
+                "subtotal": 3,
+                "tax_total": 0,
+                "total": 3,
+                "bill_to_display_name": "Missing date",
             },
         ]
     if "FROM expenses" in sql:
@@ -233,7 +217,7 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         item = self.table.items[("FINANCE#book#evolveSprouts", "STATE")]
         return list(item["lines"])
 
-    def test_sync_maps_cash_and_keeps_manual_lines(self) -> None:
+    def test_sync_maps_invoices_and_keeps_manual_lines(self) -> None:
         result = es.sync(self.table)
         self.assertTrue(result["ok"])
         self.assertEqual(result["submittedExpenses"], 1)
@@ -246,12 +230,24 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         by_id = {line["id"]: line for line in self._book_lines()}
         self.assertEqual(
             set(by_id),
-            {"manual-1", "es-pay-p1", "es-pay-late", "es-ref-r1", "es-exp-e1", "es-exp-e2"},
+            {
+                "manual-1",
+                "es-inv-inv-recent",
+                "es-inv-inv-older",
+                "es-ref-r1",
+                "es-exp-e1",
+                "es-exp-e2",
+            },
         )
-        self.assertEqual(by_id["es-pay-p1"]["type"], "income")
-        self.assertEqual(by_id["es-pay-p1"]["description"], "p1")
-        self.assertEqual(by_id["es-pay-p1"]["dateUtc"], "2026-04-20T00:00:00.000Z")
-        self.assertEqual(by_id["es-pay-late"]["dateUtc"], "2026-10-01T00:00:00.000Z")
+        self.assertEqual(by_id["es-inv-inv-recent"]["type"], "income")
+        self.assertEqual(by_id["es-inv-inv-recent"]["description"], "INV-42 Alpha School")
+        self.assertEqual(by_id["es-inv-inv-recent"]["dateUtc"], "2026-03-01T00:00:00.000Z")
+        self.assertEqual(by_id["es-inv-inv-recent"]["sortUtc"], "2026-10-01T12:00:00.000Z")
+        self.assertEqual(by_id["es-inv-inv-older"]["description"], "INV-41 Beta Family")
+        self.assertEqual(by_id["es-inv-inv-older"]["dateUtc"], "2026-09-15T00:00:00.000Z")
+        self.assertEqual(by_id["es-inv-inv-older"]["sortUtc"], "2026-09-16T00:00:00.000Z")
+        self.assertGreater(by_id["es-inv-inv-recent"]["sortUtc"], by_id["es-inv-inv-older"]["sortUtc"])
+        self.assertLess(by_id["es-inv-inv-recent"]["dateUtc"], by_id["es-inv-inv-older"]["dateUtc"])
         self.assertEqual(by_id["es-ref-r1"]["type"], "expenditure")
         self.assertEqual(by_id["es-ref-r1"]["currency"], "USD")
         self.assertEqual(by_id["es-ref-r1"]["dateUtc"], "2026-05-02T00:00:00.000Z")
@@ -264,7 +260,7 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         self.assertEqual(by_id["es-exp-e2"]["netAmount"], 4.5)
         self.assertEqual(by_id["es-exp-e2"]["vat"], 0.5)
         self.assertEqual(by_id["es-exp-e2"]["dateUtc"], "2026-03-01T00:00:00.000Z")
-        self.assertEqual(by_id["es-pay-p1"]["source"], "evolvesprouts")
+        self.assertEqual(by_id["es-inv-inv-recent"]["source"], "evolvesprouts")
         self.assertNotIn("source", by_id["manual-1"])
         self.assertEqual(by_id["manual-1"]["description"], "Kept")
 
@@ -273,7 +269,14 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         self.assertEqual(again["linesRemoved"], 0)
         self.assertEqual(
             {line["id"] for line in self._book_lines()},
-            {"manual-1", "es-pay-p1", "es-pay-late", "es-ref-r1", "es-exp-e1", "es-exp-e2"},
+            {
+                "manual-1",
+                "es-inv-inv-recent",
+                "es-inv-inv-older",
+                "es-ref-r1",
+                "es-exp-e1",
+                "es-exp-e2",
+            },
         )
         summary = es.load_summary(self.table)
         self.assertEqual(summary["submittedExpenses"], 1)
@@ -286,45 +289,28 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         self.assertIn("o.name AS vendor_name", es.EXPENSES_SQL)
         self.assertNotIn("e.vendor_name", es.EXPENSES_SQL)
 
-    def test_gain_date_uses_newest_invoice_document_date(self) -> None:
-        self.assertIn("payment_allocations", es.INVOICE_DATE_SQL)
-        self.assertIn("i.invoice_date", es.INVOICE_DATE_SQL)
-        self.assertIn("i.created_at", es.INVOICE_DATE_SQL)
-        self.assertNotIn("paid_at", es.INVOICE_DATE_SQL)
-        chosen = es._invoice_date_by_payment()
-        self.assertEqual(chosen["p1"], "2026-04-20")
-        self.assertEqual(chosen["late"], "2026-10-01")
+    def test_gains_are_issued_invoices_in_client_invoice_order(self) -> None:
+        self.assertIn("FROM customer_invoices", es.INVOICES_SQL)
+        self.assertIn("ORDER BY created_at DESC, id DESC", es.INVOICES_SQL)
+        self.assertIn("invoice_date", es.INVOICES_SQL)
+        self.assertNotIn("payment_allocations", es.INVOICES_SQL)
 
     def test_expense_date_uses_issued_invoice_date(self) -> None:
         self.assertIn("e.invoice_date", es.EXPENSES_SQL)
         self.assertNotIn("e.paid_at", es.EXPENSES_SQL)
 
-    def test_gain_date_falls_back_to_succeeded_at(self) -> None:
-        def rows(sql: str, _parameters: list | None) -> list[dict]:
-            if "payment_allocations" in sql:
-                raise board_data_api.DataApiError("permission denied for payment_allocations")
-            return _rows(sql, _parameters)
-
-        board_data_api.set_executor_for_tests(rows)
-        result = es.sync(self.table)
-        self.assertTrue(result["ok"])
-        by_id = {line["id"]: line for line in self._book_lines()}
-        self.assertEqual(by_id["es-pay-p1"]["dateUtc"], "2026-05-01T00:00:00.000Z")
-        self.assertEqual(by_id["es-pay-late"]["dateUtc"], "2026-10-02T00:00:00.000Z")
-        self.assertEqual(by_id["es-exp-e2"]["dateUtc"], "2026-03-01T00:00:00.000Z")
-
     def test_currency_only_correction_is_written(self) -> None:
         es.sync(self.table)
         item = self.table.items[("FINANCE#book#evolveSprouts", "STATE")]
         for line in item["lines"]:
-            if line["id"] == "es-pay-p1":
+            if line["id"] == "es-inv-inv-recent":
                 line["currency"] = "USD"
                 line["netAmount"] = Decimal("99")
         result = es.sync(self.table)
         self.assertGreaterEqual(result["linesWritten"], 1)
         by_id = {line["id"]: line for line in self._book_lines()}
-        self.assertEqual(by_id["es-pay-p1"]["currency"], "HKD")
-        self.assertEqual(by_id["es-pay-p1"]["netAmount"], 10)
+        self.assertEqual(by_id["es-inv-inv-recent"]["currency"], "HKD")
+        self.assertEqual(by_id["es-inv-inv-recent"]["netAmount"], 10)
 
     def test_not_configured_skips_the_database(self) -> None:
         called = {"n": 0}
