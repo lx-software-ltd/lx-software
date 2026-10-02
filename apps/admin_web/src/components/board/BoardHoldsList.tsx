@@ -11,6 +11,8 @@ export type BoardHoldsListProps = {
   readonly onVeto: (holdId: string, reason: string) => void;
   readonly onVetoClass: (classKey: string) => void;
   readonly onOpenMailThread?: (threadId: string) => void;
+  readonly id?: string;
+  readonly headingLevel?: "h2" | "h3";
 };
 
 function countdown(executeAt: string, nowMs: number): string {
@@ -36,6 +38,8 @@ export function BoardHoldsList({
   onVeto,
   onVetoClass,
   onOpenMailThread,
+  id,
+  headingLevel = "h2",
 }: BoardHoldsListProps) {
   const [nowMs] = useState(() => Date.now());
   const groups = useMemo(() => {
@@ -49,10 +53,11 @@ export function BoardHoldsList({
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [holds]);
 
+  const Heading = headingLevel;
   return (
-    <div className="card shadow-sm mb-4">
+    <section id={id} className="card shadow-sm mb-4">
       <div className="card-body">
-        <h2 className="admin-card-title">Scheduled (veto to stop)</h2>
+        <Heading className="admin-card-title">Scheduled (veto to stop)</Heading>
         <p className="text-muted small">
           These writes already passed the boundaries and will run at the time shown unless you veto.
           They are not Approvals: you do not need to say yes.
@@ -112,6 +117,6 @@ export function BoardHoldsList({
           </div>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
