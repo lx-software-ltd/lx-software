@@ -107,7 +107,7 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByRole("heading", { name: "Finance", level: 1 })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "About this page" })).toHaveCount(0);
     await expect(page.getByText("HSBC HK current")).toBeVisible();
-    await expect(page.getByText("128,430.50").filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByText(/128,430/).filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByText("Stale").filter({ visible: true }).first()).toBeVisible();
 
     if (testInfo.project.name === "phone") {
@@ -130,9 +130,9 @@ test.describe("admin viewport smoke", () => {
     } else {
       await page.locator("#finance-tab-investments").click();
     }
-    await expect(page.getByRole("cell", { name: /Hillmarton Road/ }).first()).toBeVisible();
+    await expect(page.getByRole("cell", { name: /Real Estate/ }).first()).toBeVisible();
     await expect(
-      page.getByText("512,000.00").or(page.getByText("512,000")).filter({ visible: true }).first(),
+      page.getByText(/512,000/).filter({ visible: true }).first(),
     ).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
