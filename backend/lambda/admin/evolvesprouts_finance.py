@@ -168,7 +168,7 @@ def _expense_description(row: dict[str, Any]) -> str:
     number = " ".join(str(row.get("invoice_number") or "").split())
     parts = [part for part in (vendor, number) if part]
     detail = " ".join(parts) if parts else str(row.get("id") or "")
-    return f"[evolve-sprouts] Expense {detail}"[:8000]
+    return detail[:8000]
 
 
 def _expense_amounts(row: dict[str, Any]) -> tuple[float, float, float] | None:
@@ -250,7 +250,7 @@ def desired_book_lines() -> tuple[list[dict[str, Any]], int, int, int, int]:
                 _line(
                     line_id=f"es-pay-{row_id}",
                     day=day,
-                    description=f"[evolve-sprouts] Payment {row_id}",
+                    description=row_id[:8000],
                     net=amount,
                     vat=0,
                     gross=amount,

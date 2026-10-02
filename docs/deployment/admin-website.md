@@ -628,7 +628,8 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
    Calendar days are Asia/Hong_Kong, stored as that day at 00:00 UTC.
    Codes outside GBP, HKD, USD, EUR, CNY, SGD, AED are skipped and
    counted separately from rows missing an amount, currency, or date.
-   Payment and refund descriptions use the row id only. A book that
+   Expense descriptions are the vendor name and invoice number. Payment
+   and refund descriptions use the row id only. A book that
    exceeds the DynamoDB item limit (or 5,000 lines) fails the sync with
    a clear error instead of a 500.
 

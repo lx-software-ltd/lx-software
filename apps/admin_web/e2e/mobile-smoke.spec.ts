@@ -55,11 +55,11 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByRole("button", { name: "Sync now" })).toBeEnabled();
     await page.getByRole("tab", { name: "Expenses" }).click();
     await expect(page.getByRole("button", { name: "New expense" })).toHaveCount(0);
-    await expect(page.getByText("[evolve-sprouts] Expense Example Vendor INV-9")).toBeVisible();
+    await expect(page.getByText("Example Vendor INV-9")).toBeVisible();
     await expect(page.getByRole("button", { name: "Edit line" })).toHaveCount(0);
     await page.getByRole("tab", { name: "Gains" }).click();
     await expect(page.getByRole("button", { name: "New gain" })).toHaveCount(0);
-    await expect(page.getByText("[evolve-sprouts] Payment pay-1")).toBeVisible();
+    await expect(page.getByText("pay-1")).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 
