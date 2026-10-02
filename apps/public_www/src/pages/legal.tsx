@@ -15,7 +15,9 @@ export function LegalPage({ kind }: { kind: 'privacy' | 'terms' }) {
   return (
     <article className="section legal container">
       <h1>{doc.title}</h1>
-      <p className="updated">Updated {doc.updated}</p>
+      <p className="updated">
+        {content.chrome.updated} {doc.updated}
+      </p>
       {doc.sections.map((section) => (
         <section key={section.heading}>
           <h2>{section.heading}</h2>

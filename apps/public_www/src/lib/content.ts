@@ -1,4 +1,4 @@
-import bundled from '../../public/content.json'
+import bundled from '../content/site.json' with { type: 'json' }
 
 export interface Service {
   title: string
@@ -30,8 +30,25 @@ export interface LegalDocument {
   sections: LegalSection[]
 }
 
+export interface SiteChrome {
+  skipToContent: string
+  notConfigured: string
+  menu: string
+  close: string
+  carouselPrev: string
+  carouselNext: string
+  carouselPrevLabel: string
+  carouselNextLabel: string
+  carouselLabel: string
+  faqHeading: string
+  notFoundTitle: string
+  notFoundDescription: string
+  notFoundBody: string
+  notFoundBack: string
+  updated: string
+}
+
 export interface SiteContent {
-  keyboardSections: boolean
   site: {
     name: string
     owner: string
@@ -44,6 +61,7 @@ export interface SiteContent {
     keywords: string[]
     updated: string
   }
+  chrome: SiteChrome
   hero: {
     kicker: string
     headline: string
@@ -76,4 +94,9 @@ export interface SiteContent {
   }
 }
 
-export const defaultSiteContent = bundled as SiteContent
+/** Rejects a content module that is missing a key `SiteContent` requires. */
+export function asSiteContent(value: SiteContent): SiteContent {
+  return value
+}
+
+export const defaultSiteContent = asSiteContent(bundled)

@@ -7,7 +7,6 @@ on:
       - main
     paths:
       - "apps/public_www/**"
-      - "backend/infrastructure/**"
       - "scripts/deploy/**"
 
 permissions:

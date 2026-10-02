@@ -1,5 +1,4 @@
 {
-  "keyboardSections": false,
   "site": {
     "name": "LX Software",
     "owner": "Luca Cacchiani",
@@ -22,6 +21,23 @@
       "LX Software"
     ],
     "updated": "2026-09-30"
+  },
+  "chrome": {
+    "skipToContent": "Skip to content",
+    "notConfigured": "Not configured",
+    "menu": "[ menu ]",
+    "close": "[ close ]",
+    "carouselPrev": "[ prev ]",
+    "carouselNext": "[ next ]",
+    "carouselPrevLabel": "Previous project",
+    "carouselNextLabel": "Next project",
+    "carouselLabel": "Projects",
+    "faqHeading": "FAQ",
+    "notFoundTitle": "Page not found",
+    "notFoundDescription": "That page is not on the LX Software site.",
+    "notFoundBody": "That address is not on this site.",
+    "notFoundBack": "[ back to the top ]",
+    "updated": "Updated"
   },
   "hero": {
     "kicker": "LX SOFTWARE",

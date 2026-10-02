@@ -9,14 +9,26 @@ function element<T extends HTMLElement>(id: string, kind: { new (): T }): T | nu
   return node instanceof kind ? node : null
 }
 
+function videoFrame(): { video: HTMLVideoElement; frame: HTMLDivElement } | null {
+  const video = element('bg-video-el', HTMLVideoElement)
+  const frame = element('bg-video-frame', HTMLDivElement)
+  if (!video || !frame) return null
+  return { video, frame }
+}
+
+function applyVideoAspect(video: HTMLVideoElement, frame: HTMLElement) {
+  if (video.videoWidth <= 0) return
+  frame.style.setProperty('--video-aspect', String(video.videoWidth / video.videoHeight))
+}
+
 export function BackgroundVideo({ still }: { still: boolean }) {
   const [failed, setFailed] = useState(false)
   const [height] = useState<RenditionHeight>(pickHeight)
 
   useEffect(() => {
-    const video = element('bg-video-el', HTMLVideoElement)
-    const frame = element('bg-video-frame', HTMLDivElement)
-    if (!video || !frame) return
+    const nodes = videoFrame()
+    if (!nodes) return
+    const { video, frame } = nodes
 
     // React's video typings omit defaultMuted. Set the DOM property so iOS
     // treats the element as muted before the first autoplay attempt.
@@ -49,11 +61,7 @@ export function BackgroundVideo({ still }: { still: boolean }) {
       }
       tryPlay()
     }
-    const onMeta = () => {
-      if (video.videoWidth > 0) {
-        frame.style.setProperty('--video-aspect', String(video.videoWidth / video.videoHeight))
-      }
-    }
+    const onMeta = () => applyVideoAspect(video, frame)
 
     const attach = () => {
       if (cancelled || video.querySelector('source')) return
@@ -93,10 +101,10 @@ export function BackgroundVideo({ still }: { still: boolean }) {
   }, [still, failed, height])
 
   useEffect(() => {
-    const video = element('bg-video-el', HTMLVideoElement)
-    const frame = element('bg-video-frame', HTMLDivElement)
+    const nodes = videoFrame()
     const flag = element('boat-flag', HTMLDivElement)
-    if (!video || !frame || !flag) return
+    if (!nodes || !flag) return
+    const { video, frame } = nodes
 
     flag.style.backgroundImage = `url("${flagUrl}")`
     if (still || failed) {
@@ -129,9 +137,7 @@ export function BackgroundVideo({ still }: { still: boolean }) {
     }
 
     const onMeta = () => {
-      if (video.videoWidth > 0) {
-        frame.style.setProperty('--video-aspect', String(video.videoWidth / video.videoHeight))
-      }
+      applyVideoAspect(video, frame)
       lastFrame = -1
       place()
     }

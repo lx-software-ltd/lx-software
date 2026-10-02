@@ -2,15 +2,17 @@ export const posterUrl = '/media/hk-harbour-v1-poster.webp'
 
 export type RenditionHeight = 480 | 720
 
-function mediaBase(): string {
-  return (import.meta.env.VITE_MEDIA_BASE_URL ?? '').replace(/\/$/, '')
+function mediaBase(configured?: string): string {
+  const value = configured ?? import.meta.env.VITE_MEDIA_BASE_URL ?? ''
+  return value.replace(/\/$/, '')
 }
 
-export function mediaOrigin(): string {
-  const configured = mediaBase()
-  if (!configured || configured.startsWith('/')) return ''
+/** Origin of the media host, or '' when files are served from this site. */
+export function mediaOrigin(configured?: string): string {
+  const base = mediaBase(configured)
+  if (!base || base.startsWith('/')) return ''
   try {
-    return new URL(configured).origin
+    return new URL(base).origin
   } catch {
     return ''
   }

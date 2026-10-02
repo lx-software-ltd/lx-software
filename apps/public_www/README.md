@@ -26,7 +26,8 @@ npm run preview
 
 The Vite build emits `llms.txt`, `llms-full.txt`, `sitemap.xml`, `robots.txt`,
 the JSON-LD block, and the `<title>` / meta / Open Graph tags in `index.html`
-from `public/content.json` (`{{token}}` placeholders in `index.html`). The
+from `src/content/site.json` (`{{token}}` placeholders in `index.html`). The
+file is bundled at build time; editing it needs a rebuild. The
 JSON-LD graph is `WebSite`, `Organization` + `ProfessionalService` (with the
 services as `makesOffer`), `Person` (from `site.owner` / `site.role`),
 `WebPage`, and `FAQPage`. `VITE_CONTACT_LINKEDIN` adds the LinkedIn contact
@@ -51,10 +52,13 @@ CloudFront CSP hosts are in
 
 ## Content
 
-Edit `public/content.json` for the title, description, keywords, biography,
+Edit `src/content/site.json` for the title, description, keywords, biography,
 services, projects, FAQ, and the legal pages. `site.updated` is the sitemap
 `lastmod`. A project with a `url` gets an `[ open ]` link; one with an empty
 `url` and a `status` shows the status instead.
+
+`npm run lint` runs ESLint. Routes are `/`, `/privacy`, `/terms`, `/wechat`,
+and a noindex 404.
 
 ## Lighthouse
 

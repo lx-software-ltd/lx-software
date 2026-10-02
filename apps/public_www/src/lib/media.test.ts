@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { afterFirstPaint, isAppleTouch, videoSources, videoUrl } from './media'
+import { afterFirstPaint, isAppleTouch, mediaOrigin, videoSources, videoUrl } from './media'
 
 afterEach(() => {
   vi.unstubAllEnvs()
@@ -42,6 +42,15 @@ describe('video urls', () => {
     })
     expect(isAppleTouch()).toBe(true)
     expect(videoSources(720).map((source) => source.type)).toEqual(['video/mp4'])
+  })
+})
+
+describe('mediaOrigin', () => {
+  it('keeps same-origin and relative media hosts empty', () => {
+    expect(mediaOrigin('')).toBe('')
+    expect(mediaOrigin('/media')).toBe('')
+    expect(mediaOrigin('https://media.example.com/files/')).toBe('https://media.example.com')
+    expect(mediaOrigin('not a url')).toBe('')
   })
 })
 

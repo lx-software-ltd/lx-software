@@ -1,7 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { applyHead, buildSeo, type SeoContent } from './site-seo'
+import type { SiteContent } from '../src/lib/content'
+import { applyHead, buildSeo } from './site-seo'
 
-const content: SeoContent = {
+const chrome: SiteContent['chrome'] = {
+  skipToContent: 'Skip to content',
+  notConfigured: 'Not configured',
+  menu: '[ menu ]',
+  close: '[ close ]',
+  carouselPrev: '[ prev ]',
+  carouselNext: '[ next ]',
+  carouselPrevLabel: 'Previous project',
+  carouselNextLabel: 'Next project',
+  carouselLabel: 'Projects',
+  faqHeading: 'FAQ',
+  notFoundTitle: 'Page not found',
+  notFoundDescription: 'That page is not on the example site.',
+  notFoundBody: 'That address is not on this site.',
+  notFoundBack: '[ back to the top ]',
+  updated: 'Updated',
+}
+
+const content: SiteContent = {
+  chrome,
   site: {
     name: 'Example Studio',
     owner: 'Sample Owner',
@@ -14,7 +34,12 @@ const content: SeoContent = {
     keywords: ['fractional CTO', 'Hong Kong'],
     updated: '2026-09-30',
   },
-  hero: { headline: 'Fractional CTO for startups', summary: 'A studio in Hong Kong.' },
+  hero: {
+    kicker: 'EXAMPLE',
+    headline: 'Fractional CTO for startups',
+    summary: 'A studio in Hong Kong.',
+    scrollLabel: 'scroll',
+  },
   whoIAm: { heading: 'Who I Am', paragraphs: ['Biography.'] },
   whatIDo: {
     heading: 'What I Do',
@@ -33,8 +58,16 @@ const content: SeoContent = {
   contact: { heading: 'Contact Me', intro: 'Write.' },
   faq: [{ q: 'Where?', a: 'Hong Kong.' }],
   legal: {
-    privacy: { title: 'Privacy Policy', sections: [{ heading: 'Who', paragraphs: ['Us.'] }] },
-    terms: { title: 'Terms', sections: [{ heading: 'Use', paragraphs: ['Read.'] }] },
+    privacy: {
+      title: 'Privacy Policy',
+      updated: '2026-09-30',
+      sections: [{ heading: 'Who', paragraphs: ['Us.'] }],
+    },
+    terms: {
+      title: 'Terms',
+      updated: '2026-09-30',
+      sections: [{ heading: 'Use', paragraphs: ['Read.'] }],
+    },
   },
 }
 
