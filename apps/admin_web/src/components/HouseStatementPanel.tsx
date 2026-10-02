@@ -202,21 +202,6 @@ const TABLE_COLUMNS: AdminDataTableColumn[] = [
   { key: "type", header: "Type", className: "small", priority: "secondary" },
   { key: "desc", header: "Description", className: "small" },
   {
-    key: "net",
-    header: "Net",
-    className: "small text-end",
-    headerClassName: "small text-end",
-    priority: "tertiary",
-  },
-  {
-    key: "vat",
-    header: "VAT",
-    className: "small text-end",
-    headerClassName: "small text-end",
-    priority: "tertiary",
-  },
-  { key: "ccy", header: "Currency", className: "small", priority: "secondary" },
-  {
     key: "gross",
     header: "Gross",
     className: "small text-end",
@@ -292,19 +277,12 @@ function StatementLineCells({
             {statementLineTypeLabel(line.type, lockedLineType)}
           </span>
           {" · "}
-          {line.currency}
-          {" · "}
-          <MoneyAmount amount={line.grossAmount} currency={line.currency} />
+          {line.currency}{" "}
+          <MoneyAmount amount={line.grossAmount} currency={line.currency} amountOnly />
         </AdminDataTableCellMeta>
       </AdminCell>
-      <AdminCell column="net" className="small text-end">
-        <MoneyAmount amount={line.netAmount} currency={line.currency} amountOnly />
-      </AdminCell>
-      <AdminCell column="vat" className="small text-end">
-        <MoneyAmount amount={line.vat} currency={line.currency} amountOnly />
-      </AdminCell>
-      <AdminCell column="ccy" className="small">{line.currency}</AdminCell>
       <AdminCell column="gross" className="small text-end">
+        {line.currency}{" "}
         <MoneyAmount amount={line.grossAmount} currency={line.currency} amountOnly />
       </AdminCell>
     </>
@@ -1026,9 +1004,6 @@ export function HouseStatementPanel({
               <AdminCell column="when" className="small">New</AdminCell>
               <AdminCell column="type" className="small">—</AdminCell>
               <AdminCell column="desc" className="small">New line</AdminCell>
-              <AdminCell column="net" />
-              <AdminCell column="vat" />
-              <AdminCell column="ccy" />
               <AdminCell column="gross" />
               <AdminCell column="ops" />
             </AdminExpandableRow>
