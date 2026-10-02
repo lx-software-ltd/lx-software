@@ -583,8 +583,12 @@ read-only: expenses and gains are mirrored, and `PUT` or statement import
 on that book returns 403. LX Software and Siu Tin Dei stay editable.
 
 1. On the Evolve Sprouts database, set `enableDataApi: true` on that
-   product stack and create a **read-only** database user. This stack
-   never writes that database and does not apply SQL there. The secret's
+   product stack and create a **read-only** database user with a
+   password login and `SELECT` on `customer_payments`, `expenses`,
+   `organizations` (vendor names), and `customer_invoices`. Do not reuse
+   `evolvesprouts_app`: it has `rds_iam`, which blocks the password login
+   the Data API uses. This stack never writes that database and does not
+   apply SQL there. The secret's
    KMS key policy must allow `AdminApiFn` to decrypt via Secrets Manager
    (the default account-root key policy is enough).
 2. Set `lxsoftware:EvolvesproutsClusterArn` and either

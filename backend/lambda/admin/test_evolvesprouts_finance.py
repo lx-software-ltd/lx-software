@@ -246,6 +246,11 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         self.assertIsNone(summary["syncError"])
         self.assertTrue(summary["configured"])
 
+    def test_expense_vendor_name_comes_from_organizations(self) -> None:
+        self.assertIn("LEFT JOIN organizations o ON o.id = e.vendor_id", es.EXPENSES_SQL)
+        self.assertIn("o.name AS vendor_name", es.EXPENSES_SQL)
+        self.assertNotIn("e.vendor_name", es.EXPENSES_SQL)
+
     def test_currency_only_correction_is_written(self) -> None:
         es.sync(self.table)
         item = self.table.items[("FINANCE#book#evolveSprouts", "STATE")]

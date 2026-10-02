@@ -44,12 +44,15 @@ PAYMENTS_SQL = (
     "WHERE status = 'succeeded' AND direction IN ('inbound', 'refund') "
     "ORDER BY succeeded_at, id"
 )
+# Vendor names live on organizations (expenses.vendor_name was dropped in
+# evolvesprouts migration 0016).
 EXPENSES_SQL = (
-    "SELECT id, status, total, subtotal, tax, currency, invoice_date, paid_at, "
-    "vendor_name, invoice_number "
-    "FROM expenses "
-    "WHERE status IN ('submitted', 'paid') "
-    "ORDER BY invoice_date, id"
+    "SELECT e.id, e.status, e.total, e.subtotal, e.tax, e.currency, "
+    "e.invoice_date, e.paid_at, o.name AS vendor_name, e.invoice_number "
+    "FROM expenses e "
+    "LEFT JOIN organizations o ON o.id = e.vendor_id "
+    "WHERE e.status IN ('submitted', 'paid') "
+    "ORDER BY e.invoice_date, e.id"
 )
 OUTSTANDING_SQL = (
     "SELECT currency, COALESCE(SUM(balance_due), 0) AS outstanding, COUNT(*) AS n "
