@@ -8,8 +8,6 @@ from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import patch
 
-from test_board import BoardTestCase
-
 import board_async
 import board_duties
 import board_hk
@@ -19,7 +17,7 @@ import board_review
 import board_staff
 import board_store
 from contract_constants import BOARD_STAFF_RAMP_MIN_ACTIONS, BOARD_STAFF_SEATS
-
+from test_board import BoardTestCase
 
 BA_KPI = "0 8 * * MON"
 ACCOUNTANT_MONTH = "0 9 1 * *"

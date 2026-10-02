@@ -1,6 +1,6 @@
-import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../components/AuthProvider";
+import { useRunOncePerPageLoad } from "../hooks/useRunOncePerPageLoad";
 import {
   clearStoredSession,
   LOGIN_DENIED_FLASH_KEY,
@@ -9,19 +9,11 @@ import {
 import { getAdminConfig } from "../lib/config";
 import { idTokenHasAdminAccess } from "../lib/jwt";
 
-const OAUTH_CALLBACK_GUARD = "__lxAdminOauthCallbackStarted";
-
 export function AuthCallbackPage() {
   const navigate = useNavigate();
   const { refreshUser } = useAuth();
 
-  useEffect(() => {
-    const win = window as unknown as Record<string, boolean>;
-    if (win[OAUTH_CALLBACK_GUARD]) {
-      return;
-    }
-    win[OAUTH_CALLBACK_GUARD] = true;
-
+  useRunOncePerPageLoad("oauth-callback", () => {
     let cancelled = false;
     const run = async () => {
       const params = new URLSearchParams(window.location.search);
@@ -95,8 +87,7 @@ export function AuthCallbackPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run OAuth exchange once per full page load (see guard above)
-  }, []);
+  });
 
   return (
     <div className="container py-5 text-center">

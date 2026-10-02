@@ -7,8 +7,6 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-from test_board import BoardTestCase
-
 import board_async
 import board_catalog
 import board_catalog_import
@@ -22,6 +20,7 @@ from contract_constants import (
     BOARD_CATALOG_FETCH_CAP,
     BOARD_CATALOG_OUTPUT_CONTRACT,
 )
+from test_board import BoardTestCase
 
 
 def _enable(table, **staff):

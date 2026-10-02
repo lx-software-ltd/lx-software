@@ -5,15 +5,13 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from unittest.mock import patch
-
-from test_board import BoardTestCase
 
 import board_content
 import board_data_api
 import board_hk
 import board_progress
 import board_store
+from test_board import BoardTestCase
 
 
 def _enable_staff(table: Any) -> dict[str, Any]:

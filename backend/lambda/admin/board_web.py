@@ -19,13 +19,14 @@ import os
 import time
 from typing import Any
 
-from admin_runtime import _get_secretsmanager_client
 import board_pii
 import board_store
 import board_stores
+from admin_runtime import _get_secretsmanager_client
 from contract_constants import BOARD_WEB_CACHE_TTL_HOURS, BOARD_WEB_LIST_MAX
 from http_common import _log_event
-from openrouter_client import OpenRouterError, read_secret_raw
+from openrouter_client import OpenRouterError
+from secret_store import read_secret_raw
 
 GA4_ORIGIN = "https://analyticsdata.googleapis.com"
 GTM_ORIGIN = "https://tagmanager.googleapis.com"
@@ -278,19 +279,19 @@ def _run_report(property_id: str, *, dimensions: list[str], metrics: list[str], 
     for row in data.get("rows") or []:
         dims = [_mask_cell(str((d or {}).get("value") or "")) for d in (row.get("dimensionValues") or [])]
         mets: dict[str, Any] = {}
-        for name, cell in zip(metrics, row.get("metricValues") or []):
+        for name, cell in zip(metrics, row.get("metricValues") or [], strict=False):
             raw = str((cell or {}).get("value") or "0")
             try:
                 mets[name] = float(raw) if "." in raw else int(raw)
             except ValueError:
                 mets[name] = raw
         item: dict[str, Any] = {"metrics": mets}
-        for name, value in zip(dimensions, dims):
+        for name, value in zip(dimensions, dims, strict=False):
             item[name] = value
         rows_out.append(item)
     totals: dict[str, Any] = {}
     if data.get("totals"):
-        for name, cell in zip(metrics, (data["totals"][0] or {}).get("metricValues") or []):
+        for name, cell in zip(metrics, (data["totals"][0] or {}).get("metricValues") or [], strict=False):
             raw = str((cell or {}).get("value") or "0")
             try:
                 totals[name] = float(raw) if "." in raw else int(raw)

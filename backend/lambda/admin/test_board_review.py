@@ -8,15 +8,13 @@ from datetime import timedelta
 from typing import Any
 from unittest.mock import patch
 
-from test_board import BoardTestCase
-
 import board_code
 import board_github
 import board_hk
 import board_mail
 import board_review
-import board_staff
 import board_store
+from test_board import BoardTestCase
 
 
 def _enable_staff(table: Any, **staff: Any) -> dict[str, Any]:

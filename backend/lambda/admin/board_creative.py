@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -56,7 +57,7 @@ def _font(path: Path, size: int, *, weight: int = 400) -> ImageFont.FreeTypeFont
             try:
                 setter([float(weight)])
             except Exception:
-                pass
+                logging.getLogger(__name__).debug("suppressed", exc_info=True)
     return font
 
 

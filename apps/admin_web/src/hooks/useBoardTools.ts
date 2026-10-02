@@ -35,11 +35,12 @@ export function toolsSaveMutationOptions(qc: QueryClient) {
   };
 }
 
-export function useBoardTools() {
+export function useBoardTools(enabled = true) {
   const qc = useQueryClient();
 
   const query = useQuery({
     queryKey: BOARD_TOOLS_KEY,
+    enabled,
     queryFn: () => adminFetchJson<BoardToolsPayload>(`${BOARD_API_BASE}/tools`),
   });
 

@@ -30,14 +30,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote, urlencode
 
+import board_store
 import boto3
-
 import runtime
 from ddb_convert import _from_ddb_nested, _to_ddb_nested
 from finance_store import (
-    _finance_sheet_ddb_key,
     _load_accounts_records,
     _merge_accounts_last_updated,
+    put_finance_sheet,
 )
 from http_common import _audit, _json_response, _log_event, _parse_json_body
 
@@ -289,7 +289,11 @@ def _auth_state_key(state_token: str) -> dict[str, str]:
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    """Second-precision UTC timestamp persisted on bank-sync rows."""
+    import board_hk
+    from timeutil import utc_now
+
+    return board_hk.to_iso(utc_now())
 
 
 # ---------------------------------------------------------------------------
@@ -326,7 +330,7 @@ def _disabled_response() -> dict[str, Any]:
 
 
 def handle_banking_get(event: dict[str, Any]) -> dict[str, Any]:
-    table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+    table = board_store.records_table()
     state = _load_bank_sync_state(table)
     return _json_response(
         200,
@@ -424,7 +428,7 @@ def handle_banking_auth_start(
             {"message": f"Unknown bank {bank_name.strip()!r} for country {country}"},
         )
     state_token = str(uuid.uuid4())
-    table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+    table = board_store.records_table()
     table.put_item(
         Item={
             **_auth_state_key(state_token),
@@ -515,7 +519,7 @@ def handle_banking_auth_complete(
         return _json_response(400, {"message": "code is required"})
     if not isinstance(state_token, str) or not state_token.strip():
         return _json_response(400, {"message": "state is required"})
-    table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+    table = board_store.records_table()
     key = _auth_state_key(state_token.strip())
     pending_raw = table.get_item(Key=key).get("Item")
     if not pending_raw:
@@ -582,7 +586,7 @@ def handle_banking_session_delete(
 ) -> dict[str, Any]:
     if not session_id.strip():
         return _json_response(404, {"message": "Not found"})
-    table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+    table = board_store.records_table()
     state = _load_bank_sync_state(table)
     remaining = [s for s in state["sessions"] if s["sessionId"] != session_id]
     if len(remaining) == len(state["sessions"]):
@@ -623,7 +627,7 @@ def handle_banking_mappings_put(
         return _json_response(
             400, {"message": f"At most {MAX_BANK_MAPPINGS} mappings allowed"}
         )
-    table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+    table = board_store.records_table()
     state = _load_bank_sync_state(table)
     known_uids = {
         a["uid"] for s in state["sessions"] for a in s.get("accounts", [])
@@ -771,10 +775,7 @@ def run_bank_sync(table: Any) -> dict[str, Any]:
             updated.pop("lastUpdated", None)
             new_records.append(updated)
         merged = _merge_accounts_last_updated(new_records, existing_records)
-        doc = {"records": merged}
-        table.put_item(
-            Item={**_finance_sheet_ddb_key("accounts"), **_to_ddb_nested(doc)}
-        )
+        put_finance_sheet(table, "accounts", merged)
     report = {"at": _utc_now_iso(), "results": results}
     state["lastSync"] = report
     _save_bank_sync_state(table, state)
@@ -793,7 +794,7 @@ def handle_banking_sync_post(
 ) -> dict[str, Any]:
     if not bank_sync_enabled():
         return _disabled_response()
-    table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+    table = board_store.records_table()
     report = run_bank_sync(table)
     _audit(user_sub, "BANKING_SYNC", str(len(report["results"])), event)
     return _json_response(200, report)
@@ -804,7 +805,7 @@ def handle_bank_sync_worker(event: dict[str, Any]) -> None:
     if not bank_sync_enabled():
         _log_event("info", tag="bank_sync_skipped", reason="not_configured")
         return
-    table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+    table = board_store.records_table()
     try:
         run_bank_sync(table)
     except Exception as exc:  # pragma: no cover - defensive top-level guard

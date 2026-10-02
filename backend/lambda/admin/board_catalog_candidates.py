@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import re
 from datetime import datetime, timedelta, timezone
@@ -161,7 +162,9 @@ def _maybe_auto_approve(row: dict[str, Any], *, source: str, district: str) -> b
 
 
 def _now() -> str:
-    return board_store.now_iso()
+    from timeutil import now_iso
+
+    return now_iso()
 
 
 # Official / category-specific Places queries may name the thing they seek.
@@ -407,9 +410,9 @@ def seed_listing_mirror(table: Any) -> int:
     if getattr(table, "_catalog_mirror_seeded", False):
         return 0
     try:
-        setattr(table, "_catalog_mirror_seeded", True)
+        table._catalog_mirror_seeded = True
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed", exc_info=True)
     n = 0
     for status in ("delivered", "awaiting_import", "needs_owner"):
         for task in board_store.list_tasks(table, status, limit=200):
@@ -531,11 +534,9 @@ def _as_int(value: Any, default: int) -> int:
 
 
 def as_bool(value: Any) -> bool:
-    if value is True:
-        return True
-    if value is False or value is None:
-        return False
-    return str(value).strip().lower() in ("1", "true", "yes")
+    from config import flag_value
+
+    return flag_value(value, default=False)
 
 
 def list_filtered(

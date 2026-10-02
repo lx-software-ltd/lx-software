@@ -1,31 +1,17 @@
-import { useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
 import { AsciiDivider } from '../components/AsciiDivider'
 import { ContactIcons } from '../components/ContactIcons'
 import { Faq } from '../components/Faq'
 import { ProjectCarousel } from '../components/ProjectCarousel'
 import { trackEvent } from '../lib/analytics'
 import { defaultSiteContent } from '../lib/content'
-import { useReducedMotion } from '../lib/motion'
 import { usePageMeta } from '../lib/seo'
-import { useSectionKeys } from '../lib/useSectionKeys'
+import { useSections } from '../lib/sections'
 
 export function HomePage() {
-  const reduced = useReducedMotion()
-  const location = useLocation()
   const content = defaultSiteContent
+  const { scrollTo } = useSections()
 
   usePageMeta(content.site.title, '/', content.site.description)
-  useSectionKeys(content.keyboardSections, !reduced)
-
-  useEffect(() => {
-    const id = location.hash.replace(/^#/, '')
-    if (!id) return
-    document.getElementById(id)?.scrollIntoView({
-      behavior: reduced ? 'auto' : 'smooth',
-      block: 'start',
-    })
-  }, [location.hash, reduced])
 
   return (
     <>
@@ -42,7 +28,14 @@ export function HomePage() {
         <a
           className="scroll-cue"
           href="#who-i-am"
-          onClick={() => trackEvent({ event: 'nav_click', section: 'who-i-am' })}
+          onClick={(event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+              return
+            }
+            event.preventDefault()
+            trackEvent({ event: 'nav_click', section: 'who-i-am' })
+            scrollTo('who-i-am')
+          }}
         >
           [ {content.hero.scrollLabel} ]
         </a>

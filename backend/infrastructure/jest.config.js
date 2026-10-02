@@ -11,6 +11,6 @@ module.exports = {
   transform: {
     "^.+\\.tsx?$": ["ts-jest", { tsconfig: "<rootDir>/tsconfig.json" }],
   },
-  // Synthesizing the full stack (Cognito, ~80 routes, asset staging) is slow.
+  // Synthesizing the full stack (Cognito, 153 ApiGatewayV2 routes, asset staging) is slow.
   testTimeout: 120_000,
 };

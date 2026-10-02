@@ -1,11 +1,12 @@
 import { Outlet, useLocation } from 'react-router-dom'
+import { defaultSiteContent } from '../lib/content'
+import { useReducedMotion } from '../lib/motion'
 import { BackgroundVideo } from './BackgroundVideo'
 import { BottomBar } from './BottomBar'
 import { CinemaLayer } from './CinemaLayer'
 import { MotionProvider } from './MotionProvider'
 import { ScrollProgress } from './ScrollProgress'
 import { TopNav } from './TopNav'
-import { useReducedMotion } from '../lib/motion'
 
 function Shell() {
   const location = useLocation()
@@ -15,7 +16,7 @@ function Shell() {
   return (
     <div className={`site-shell${still ? ' is-still' : ''}`}>
       <a className="skip-link" href="#content">
-        Skip to content
+        {defaultSiteContent.chrome.skipToContent}
       </a>
       <ScrollProgress />
       <BackgroundVideo still={still} />

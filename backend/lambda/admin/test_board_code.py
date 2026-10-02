@@ -10,9 +10,6 @@ from typing import Any
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
-from test_board import BoardTestCase
-from test_board_tools import ToolsTestCase
-
 import board_async
 import board_code
 import board_github
@@ -21,6 +18,8 @@ import board_staff
 import board_store
 import board_tools
 from board_tools import REGISTRY, ToolContext, execute_call
+from test_board import BoardTestCase
+from test_board_tools import ToolsTestCase
 
 _REVISION_WORKFLOW_YAML = """
 on:
@@ -2160,6 +2159,10 @@ class RunnerTests(BoardTestCase):
         merge = REGISTRY["code_merge_staging"]
         promote = REGISTRY["code_promote"]
         self.assertEqual(board_holds.classify(merge, self.ctx, {"prNumber": 7}, self.settings), ("code_staging", "code_staging"))
+        self.assertEqual(
+            board_holds.classify(promote, self.ctx, {"prNumber": 7}, self.settings),
+            ("code_production", "code_production"),
+        )
         self.assertEqual(
             board_holds.classify(REGISTRY["code_sync_staging"], self.ctx, {"reason": "Keep staging current."}, self.settings),
             ("code_staging", "code_staging"),

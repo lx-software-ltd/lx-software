@@ -1,38 +1,5 @@
+import type { SiteContent } from '../src/lib/content.ts'
 import { linkedinUrl } from '../src/lib/linkedin.ts'
-
-export interface SeoContent {
-  site: {
-    name: string
-    owner: string
-    role: string
-    title: string
-    url: string
-    email: string
-    tagline: string
-    description: string
-    keywords: string[]
-    updated: string
-  }
-  hero: { headline: string; summary: string }
-  whoIAm: { heading: string; paragraphs: string[] }
-  whatIDo: {
-    heading: string
-    intro: string
-    services: { title: string; description: string }[]
-    skills: string[]
-  }
-  projects: {
-    heading: string
-    intro: string
-    items: { title: string; description: string; url?: string; status?: string }[]
-  }
-  contact: { heading: string; intro: string }
-  faq: { q: string; a: string }[]
-  legal: {
-    privacy: { title: string; sections: { heading: string; paragraphs: string[] }[] }
-    terms: { title: string; sections: { heading: string; paragraphs: string[] }[] }
-  }
-}
 
 export interface SeoOptions {
   /** Public LinkedIn profile URL or slug. Empty omits `sameAs`. */
@@ -74,7 +41,7 @@ export function applyHead(html: string, head: SeoHead): string {
   return html.replace(HEAD_TOKEN, (_match, key: keyof SeoHead) => escapeHtml(head[key]))
 }
 
-export function buildSeo(content: SeoContent, options: SeoOptions = {}): SeoFiles {
+export function buildSeo(content: SiteContent, options: SeoOptions = {}): SeoFiles {
   const origin = content.site.url.replace(/\/$/, '')
   const lastmod = content.site.updated
   const owner = content.site.owner.trim()
@@ -170,7 +137,7 @@ export function buildSeo(content: SeoContent, options: SeoOptions = {}): SeoFile
     ['/wechat', 'WeChat', 'WeChat contact details.'],
   ]
 
-  const projectLine = (item: SeoContent['projects']['items'][number]) => {
+  const projectLine = (item: SiteContent['projects']['items'][number]) => {
     const suffix = item.url ? ` (${item.url})` : item.status ? ` (${item.status})` : ''
     return `${item.title}${suffix}: ${item.description}`
   }
@@ -229,7 +196,7 @@ ${pages.map(([path, label, blurb]) => `- [${label}](${origin}${path}): ${blurb}`
     content.contact.intro,
     `Email: ${content.site.email}`,
     ...(linkedin ? [`LinkedIn: ${linkedin}`] : []),
-    '# FAQ',
+    `# ${content.chrome.faqHeading}`,
     ...content.faq.map((item) => `${item.q}\n${item.a}`),
     `# ${content.legal.privacy.title}`,
     ...content.legal.privacy.sections.flatMap((section) => [section.heading, ...section.paragraphs]),

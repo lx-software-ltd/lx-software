@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import timedelta
 from email.message import EmailMessage
 from typing import Any
+
 import board_hk
 import board_mail
 import board_outreach
@@ -198,7 +200,6 @@ def handle_unsubscribe(event: dict[str, Any], method: str, token: str) -> dict[s
         return _html_response(400, "<!doctype html><html><body><p>This unsubscribe link is not valid.</p></body></html>")
     _, list_name, digest = parsed
     row = _sub_row(board_store.get_newsletter_sub(table, digest, list_name))
-    email = str((row or {}).get("email") or "")
     if row:
         now = board_store.now_iso()
         row["unsubscribedAt"] = now
@@ -337,7 +338,7 @@ def _ensure_template(ses: Any) -> None:
         ses.get_email_template(TemplateName=TEMPLATE_NAME)
         return
     except Exception:
-        pass
+        logging.getLogger(__name__).debug("suppressed", exc_info=True)
     ses.create_email_template(
         TemplateName=TEMPLATE_NAME,
         TemplateContent={

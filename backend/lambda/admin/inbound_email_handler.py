@@ -33,9 +33,8 @@ from email import policy
 from email.parser import BytesParser
 from typing import Any, NamedTuple
 
-import boto3
-
 import board_mail
+import boto3
 import runtime
 from contract_constants import (
     FINANCE_HOUSE_KEYS,

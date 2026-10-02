@@ -242,7 +242,7 @@ class TestAwsAndSecurity(ToolsTestCase):
         self.assertEqual(health["functions"][0]["errors24h"], 1)
 
     def test_budget_alert_propose_then_execute(self) -> None:
-        from board_tools import ToolContext, execute_call, REGISTRY
+        from board_tools import REGISTRY, ToolContext, execute_call
 
         settings = board_store.load_settings(self.table)
         tctx = ToolContext(table=self.table, settings=settings, persona_id="cto", display_name="CTO")

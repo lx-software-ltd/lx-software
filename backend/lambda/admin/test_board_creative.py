@@ -5,9 +5,8 @@ from __future__ import annotations
 import unittest
 from io import BytesIO
 
-from PIL import Image
-
 import board_creative
+from PIL import Image
 
 
 class CreativeTests(unittest.TestCase):

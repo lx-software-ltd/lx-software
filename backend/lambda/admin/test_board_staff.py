@@ -10,9 +10,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import patch
 
-from test_board import BoardTestCase
-from test_board_tools import ScriptedOpenRouter, ToolsTestCase
-
 import board_async
 import board_budget
 import board_code
@@ -28,6 +25,8 @@ from contract_constants import (
     BOARD_STAFF_STEP_MODELS,
     BOARD_STAFF_TASK_BUDGET_DESK_USD,
 )
+from test_board import BoardTestCase
+from test_board_tools import ScriptedOpenRouter, ToolsTestCase
 
 
 def _enable_staff(table: Any, **staff: Any) -> dict[str, Any]:

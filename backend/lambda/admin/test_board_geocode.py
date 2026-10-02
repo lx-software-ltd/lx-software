@@ -10,7 +10,6 @@ import board_geocode
 import board_store
 from test_board import FakeTable
 
-
 ALS_EASTERN = {
     "SuggestedAddress": [
         {

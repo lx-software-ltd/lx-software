@@ -11,18 +11,25 @@ import board_budget
 import board_chat
 import board_code
 import board_github
+import board_holds
 import board_mail
-import board_meta
 import board_meeting
+import board_meta
 import board_personas
 import board_receivables
 import board_research
-import board_holds
 import board_staff
 import board_store
 import board_stores
 import board_tools
 import board_web
+from board_tools_core import (
+    InvalidArgumentsError,
+    ToolPermissionError,
+    effective_matrix,
+    env_disabled,
+    tools_enabled,
+)
 from contract_constants import (
     BOARD_CHAIR_DEFAULT,
     BOARD_MAIL_ALLOW_LIST_MAX_ENTRIES,
@@ -35,7 +42,15 @@ from contract_constants import (
     BOARD_TOOL_GLOBAL_MODES,
     BOARD_TOOL_LEVELS,
 )
-from http_common import _audit, _claims, _json_response, _log_event, _parse_json_body
+from http_common import (
+    _audit,
+    _claims,
+    _json_response,
+    _log_event,
+    _parse_json_body,
+    method_not_allowed,
+    not_found,
+)
 
 BOARD_BASE_PATH = "/siu-tin-dei/board"
 ALLOW_LIST_EMAIL_RE = re.compile(r"^(?:[a-z0-9._%+\-]+)?@[a-z0-9.\-]+\.[a-z]{2,}$")
@@ -53,7 +68,7 @@ def handle_board_route(
     if not rest:
         if method == "GET":
             return _overview()
-        return _json_response(405, {"message": "Method not allowed"})
+        return method_not_allowed()
 
     head = rest[0]
 
@@ -198,7 +213,7 @@ def handle_board_route(
     if head == "catalog":
         return _catalog_route(event, method, rest, user_sub)
 
-    return _json_response(404, {"message": "Not found"})
+    return not_found()
 
 
 # ---------------------------------------------------------------------------
@@ -236,7 +251,7 @@ def _overview() -> dict[str, Any]:
             "mail": mail,
             "outreachIdentity": board_outreach.identity_health(),
             "receivables": recv,
-            "toolsEnabled": board_tools.tools_enabled(settings),
+            "toolsEnabled": tools_enabled(settings),
             "runningMeeting": board_meeting.public_meeting_summary(running) if running else None,
             "latestMeeting": board_meeting.public_meeting_summary(latest_done) if latest_done else None,
             "usageToday": {
@@ -269,9 +284,9 @@ def _tools_get() -> dict[str, Any]:
 def _tools_payload(settings: dict[str, Any]) -> dict[str, Any]:
     return {
         "config": settings.get("tools") or board_store.default_tools_config(),
-        "effective": board_tools.effective_matrix(settings),
-        "enabled": board_tools.tools_enabled(settings),
-        "envDisabled": board_tools.env_disabled(),
+        "effective": effective_matrix(settings),
+        "enabled": tools_enabled(settings),
+        "envDisabled": env_disabled(),
         "registry": board_tools.public_registry(),
         "defaults": board_store.default_tools_config(),
         "repoWriteEnabled": board_github.write_enabled(),
@@ -356,8 +371,6 @@ def _tools_put(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
 
 
 def _tool_calls_get(event: dict[str, Any]) -> dict[str, Any]:
-    from urllib.parse import parse_qs
-
     qs = parse_qs(event.get("rawQueryString") or "")
     try:
         limit = min(max(1, int((qs.get("limit") or ["50"])[0])), 200)
@@ -373,8 +386,6 @@ def _tool_calls_get(event: dict[str, Any]) -> dict[str, Any]:
 
 
 def _approvals_get(event: dict[str, Any]) -> dict[str, Any]:
-    from urllib.parse import parse_qs
-
     qs = parse_qs(event.get("rawQueryString") or "")
     status = (qs.get("status") or [""])[0].strip().lower()
     table = board_store.records_table()
@@ -412,7 +423,7 @@ def _approval_decide(event: dict[str, Any], approval_id: str, *, approve: bool, 
         )
     except LookupError as exc:
         return _json_response(404, {"message": str(exc)})
-    except board_tools.InvalidArgumentsError as exc:
+    except InvalidArgumentsError as exc:
         return _json_response(400, {"message": str(exc)})
     except ValueError as exc:
         return _json_response(409, {"message": str(exc)})
@@ -639,10 +650,10 @@ def _staff_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
                     "counts": board_staff.staff_counts(table),
                 },
             )
-        return _json_response(405, {"message": "Method not allowed"})
+        return method_not_allowed()
     if len(rest) == 2 and rest[1] == "tick":
         if method != "POST":
-            return _json_response(405, {"message": "Method not allowed"})
+            return method_not_allowed()
         if not board_staff.enabled(settings):
             return _staff_disabled()
         import board_async
@@ -673,8 +684,8 @@ def _staff_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
             board_store.delete_staff_override(table, seat_id)
             _audit(user_sub, "BOARD_STAFF_RESET", seat_id, event)
             return _json_response(200, {"seat": next((s for s in board_staff.seats(table) if s["id"] == seat_id), None)})
-        return _json_response(405, {"message": "Method not allowed"})
-    return _json_response(404, {"message": "Not found"})
+        return method_not_allowed()
+    return not_found()
 
 
 def _owner_revision_event_ref(
@@ -771,10 +782,10 @@ def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
                 return _json_response(400, {"message": str(exc)})
             _audit(user_sub, "BOARD_TASK_CREATE", task.get("taskId") or "", event)
             return _json_response(201, {"task": board_staff.public_task(task)})
-        return _json_response(405, {"message": "Method not allowed"})
+        return method_not_allowed()
     if len(rest) == 2:
         if method != "GET":
-            return _json_response(405, {"message": "Method not allowed"})
+            return method_not_allowed()
         if not board_staff.env_enabled():
             return _staff_disabled()
         task = board_store.get_task(table, rest[1])
@@ -835,7 +846,7 @@ def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
             return _json_response(400, {"message": message})
         _audit(user_sub, "BOARD_TASK_RETRY", rest[1], event)
         return _json_response(200, {"task": board_staff.public_task(task)})
-    return _json_response(404, {"message": "Not found"})
+    return not_found()
 
 
 def _holds_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
@@ -852,7 +863,7 @@ def _holds_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
                 limit = 50
             holds = [board_holds.public_hold(h) for h in board_store.list_holds(table, status, limit=limit)]
             return _json_response(200, {"holds": holds})
-        return _json_response(405, {"message": "Method not allowed"})
+        return method_not_allowed()
     if len(rest) == 2 and rest[1] == "veto-class" and method == "POST":
         body = _parse_json_body(event)
         class_key = str(body.get("classKey") or "").strip()
@@ -869,7 +880,7 @@ def _holds_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
             return _json_response(404 if "not found" in str(exc).lower() else 400, {"message": str(exc)})
         _audit(user_sub, "BOARD_HOLD_VETO", rest[1], event)
         return _json_response(200, {"hold": board_holds.public_hold(hold)})
-    return _json_response(404, {"message": "Not found"})
+    return not_found()
 
 
 def _boundaries_put(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
@@ -956,7 +967,7 @@ def _review_route(event: dict[str, Any], method: str, rest: list[str], user_sub:
         lesson = board_lessons.create_from_correction(table, rest[2], note)
         _audit(user_sub, "BOARD_REVIEW_WRONG", rest[2], event)
         return _json_response(200, {"lesson": lesson})
-    return _json_response(404, {"message": "Not found"})
+    return not_found()
 
 
 def board_hk_today() -> str:
@@ -987,7 +998,7 @@ def _lessons_route(event: dict[str, Any], method: str, rest: list[str], user_sub
             return _json_response(404, {"message": "Lesson not found"})
         _audit(user_sub, "BOARD_LESSON_CONFIRM" if rest[2] == "confirm" else "BOARD_LESSON_DISMISS", rest[1], event)
         return _json_response(200, {"lesson": lesson})
-    return _json_response(404, {"message": "Not found"})
+    return not_found()
 
 
 def _watchlist_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
@@ -1011,7 +1022,7 @@ def _watchlist_route(event: dict[str, Any], method: str, rest: list[str], user_s
                 return _json_response(400, {"message": str(exc)})
             _audit(user_sub, "BOARD_WATCH_ADD", watch.get("watchId") or "", event)
             return _json_response(201, {"watch": board_intel.public_watch(table, watch)})
-        return _json_response(405, {"message": "Method not allowed"})
+        return method_not_allowed()
     if len(rest) == 2:
         watch_id = rest[1]
         if method == "PUT":
@@ -1033,15 +1044,15 @@ def _watchlist_route(event: dict[str, Any], method: str, rest: list[str], user_s
                 return _json_response(404, {"message": "Watch not found"})
             _audit(user_sub, "BOARD_WATCH_DELETE", watch_id, event)
             return _json_response(200, {"ok": True})
-        return _json_response(405, {"message": "Method not allowed"})
-    return _json_response(404, {"message": "Not found"})
+        return method_not_allowed()
+    return not_found()
 
 
 def _prospects_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
     if not board_staff.env_enabled():
         return _staff_disabled()
-    import board_prospects
     import board_outreach
+    import board_prospects
 
     table = board_store.records_table()
     settings = board_store.load_settings(table)
@@ -1072,7 +1083,7 @@ def _prospects_route(event: dict[str, Any], method: str, rest: list[str], user_s
                     "stats": board_outreach.stats(table, settings, days=28),
                 },
             )
-        return _json_response(405, {"message": "Method not allowed"})
+        return method_not_allowed()
     if len(rest) == 2 and rest[1] == "import" and method == "POST":
         body = _parse_json_body(event)
         csv_text = str(body.get("csv") or body.get("text") or "")
@@ -1102,7 +1113,7 @@ def _prospects_route(event: dict[str, Any], method: str, rest: list[str], user_s
                 return _json_response(400, {"message": str(exc)})
             _audit(user_sub, "BOARD_PROSPECT_PUT", prospect_id, event)
             return _json_response(200, {"prospect": board_prospects.public_row(saved)})
-        return _json_response(405, {"message": "Method not allowed"})
+        return method_not_allowed()
     if len(rest) == 3 and rest[2] == "merge" and method == "POST":
         body = _parse_json_body(event)
         into = str(body.get("into") or "")
@@ -1114,7 +1125,7 @@ def _prospects_route(event: dict[str, Any], method: str, rest: list[str], user_s
             return _json_response(400, {"message": str(exc)})
         _audit(user_sub, "BOARD_PROSPECT_MERGE", f"{rest[1]}->{into}", event)
         return _json_response(200, {"prospect": board_prospects.public_row(dest)})
-    return _json_response(404, {"message": "Not found"})
+    return not_found()
 
 
 def _sequences_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
@@ -1124,7 +1135,7 @@ def _sequences_route(event: dict[str, Any], method: str, rest: list[str], user_s
     from contract_constants import BOARD_STAFF_PROSPECT_TYPES
 
     if len(rest) != 2:
-        return _json_response(404, {"message": "Not found"})
+        return not_found()
     ptype = rest[1]
     if ptype not in BOARD_STAFF_PROSPECT_TYPES:
         return _json_response(404, {"message": "Unknown sequence type"})
@@ -1138,7 +1149,7 @@ def _sequences_route(event: dict[str, Any], method: str, rest: list[str], user_s
             return _json_response(400, {"message": str(exc)})
         _audit(user_sub, "BOARD_SEQUENCE_PUT", ptype, event)
         return _json_response(200, {"sequence": saved})
-    return _json_response(405, {"message": "Method not allowed"})
+    return method_not_allowed()
 
 
 def _outreach_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
@@ -1157,7 +1168,7 @@ def _outreach_route(event: dict[str, Any], method: str, rest: list[str], user_su
         return _json_response(200, board_outreach.stats(table, settings, days=days))
     if len(rest) == 2 and rest[1] == "identity" and method == "GET":
         return _json_response(200, board_outreach.identity_health(force=True))
-    return _json_response(404, {"message": "Not found"})
+    return not_found()
 
 
 def _content_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
@@ -1189,7 +1200,7 @@ def _content_route(event: dict[str, Any], method: str, rest: list[str], user_sub
                 return _json_response(400, {"message": str(exc)})
             _audit(user_sub, "BOARD_CONTENT_CREATE", str(doc.get("contentId") or ""), event)
             return _json_response(200, {"item": board_content.public_row(doc)})
-        return _json_response(405, {"message": "Method not allowed"})
+        return method_not_allowed()
     if len(rest) == 2:
         content_id = rest[1]
         row = board_store.get_content(table, content_id)
@@ -1206,7 +1217,7 @@ def _content_route(event: dict[str, Any], method: str, rest: list[str], user_sub
                 return _json_response(404, {"message": "Content not found"})
             _audit(user_sub, "BOARD_CONTENT_PUT", content_id, event)
             return _json_response(200, {"item": board_content.public_row(saved)})
-        return _json_response(405, {"message": "Method not allowed"})
+        return method_not_allowed()
     if len(rest) == 3 and rest[2] == "render" and method == "POST":
         row = board_store.get_content(table, rest[1])
         if not row:
@@ -1221,12 +1232,12 @@ def _content_route(event: dict[str, Any], method: str, rest: list[str], user_sub
         try:
             index = int(rest[3])
         except ValueError:
-            return _json_response(404, {"message": "Not found"})
+            return not_found()
         keys = list(row.get("creativeKeys") or [])
         if index < 0 or index >= len(keys):
             return _json_response(404, {"message": "Creative not found"})
         return _json_response(200, {"url": board_content.presigned_url(str(keys[index])), "key": keys[index]})
-    return _json_response(404, {"message": "Not found"})
+    return not_found()
 
 
 def _code_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
@@ -1243,7 +1254,7 @@ def _code_route(event: dict[str, Any], method: str, rest: list[str], user_sub: s
             out = board_code.queue_promote_approval(table, settings, user_sub or "")
         except board_code.CodeError as exc:
             return _json_response(409, {"message": str(exc)})
-        except board_tools.ToolPermissionError as exc:
+        except ToolPermissionError as exc:
             return _json_response(409, {"message": str(exc)})
         _audit(user_sub, "BOARD_CODE_PROMOTE", "staging", event)
         return _json_response(201, out)
@@ -1254,7 +1265,7 @@ def _code_route(event: dict[str, Any], method: str, rest: list[str], user_sub: s
             return _json_response(409, {"message": str(exc)})
         _audit(user_sub, "BOARD_CODE_SYNC_STAGING", "staging", event)
         return _json_response(200, out)
-    return _json_response(404, {"message": "Not found"})
+    return not_found()
 
 
 def _catalog_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
@@ -1408,7 +1419,7 @@ def _catalog_route(event: dict[str, Any], method: str, rest: list[str], user_sub
             _log_event("warning", tag="board_catalog_discovery_enqueue_deferred", reason="invoke_timeout_or_unavailable")
         _audit(user_sub, "BOARD_CATALOG_DISCOVERY", "run", event)
         return _json_response(200, {"ok": True, "queued": True, "invoked": invoked})
-    return _json_response(404, {"message": "Not found"})
+    return not_found()
 
 
 def _changes_get(event: dict[str, Any]) -> dict[str, Any]:
@@ -1437,7 +1448,7 @@ def _breakers_route(event: dict[str, Any], method: str, rest: list[str], user_su
         breaker = board_breakers.reset(table, rest[1], user_sub or "")
         _audit(user_sub, "BOARD_BREAKER_RESET", rest[1], event)
         return _json_response(200, {"breaker": breaker})
-    return _json_response(404, {"message": "Not found"})
+    return not_found()
 
 
 def _settings_put(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:

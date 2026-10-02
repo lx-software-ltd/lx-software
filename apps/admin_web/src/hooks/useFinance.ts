@@ -35,6 +35,7 @@ import {
   normalizePensionRecords,
   normalizeSavingsRecords,
 } from "../lib/financeModel";
+import { keys } from "../lib/queryKeys";
 
 const LEDGER_CONFIG: Record<
   FinanceLedgerSheetKey,
@@ -80,7 +81,7 @@ type FinanceListStateKey =
   | "liabilityRecords"
   | "allocationRecords";
 
-function financeRecordsPutMutationOptions(
+export function financeRecordsPutMutationOptions(
   qc: QueryClient,
   spec: {
     readonly path: string;
@@ -102,7 +103,7 @@ function financeRecordsPutMutationOptions(
       return { records: spec.normalize(list) };
     },
     onSuccess: ({ records }) => {
-      qc.setQueryData<FinancePersistedState>(["finance"], (old) => ({
+      qc.setQueryData<FinancePersistedState>(keys.finance, (old) => ({
         ...(old ?? DEFAULT_FINANCE_STATE),
         [spec.listKey]: records,
       }));
@@ -110,14 +111,8 @@ function financeRecordsPutMutationOptions(
   };
 }
 
-export function useFinance() {
-  const qc = useQueryClient();
-  const q = useQuery({
-    queryKey: ["finance"],
-    queryFn: fetchFinance,
-  });
-
-  const saveHouse = useMutation({
+export function saveHouseMutationOptions(qc: QueryClient) {
+  return {
     mutationFn: async ({
       house,
       data,
@@ -131,55 +126,17 @@ export function useFinance() {
       });
       return { house, data: res.data };
     },
-    onSuccess: ({ house, data }) => {
-      qc.setQueryData<FinancePersistedState>(["finance"], (old) => ({
+    onSuccess: ({ house, data }: { house: HouseKey; data: HouseFinanceData }) => {
+      qc.setQueryData<FinancePersistedState>(keys.finance, (old) => ({
         ...(old ?? DEFAULT_FINANCE_STATE),
         [house]: data,
       }));
     },
-  });
+  };
+}
 
-  const saveInvestmentRecords = useMutation(
-    financeRecordsPutMutationOptions(qc, {
-      path: "/finance/investments",
-      listKey: "investmentRecords",
-      normalize: normalizeInvestmentRecords,
-    }),
-  );
-
-  const saveSavingsRecords = useMutation(
-    financeRecordsPutMutationOptions(qc, {
-      path: "/finance/savings",
-      listKey: "savingsRecords",
-      normalize: normalizeSavingsRecords,
-    }),
-  );
-
-  const savePensionRecords = useMutation(
-    financeRecordsPutMutationOptions(qc, {
-      path: "/finance/pension",
-      listKey: "pensionRecords",
-      normalize: normalizePensionRecords,
-    }),
-  );
-
-  const saveAccountRecords = useMutation(
-    financeRecordsPutMutationOptions(qc, {
-      path: "/finance/accounts",
-      listKey: "accountRecords",
-      normalize: normalizeAccountRecords,
-    }),
-  );
-
-  const saveLiabilityRecords = useMutation(
-    financeRecordsPutMutationOptions(qc, {
-      path: "/finance/liabilities",
-      listKey: "liabilityRecords",
-      normalize: normalizeLiabilityRecords,
-    }),
-  );
-
-  const saveAllocationRecords = useMutation({
+export function saveAllocationRecordsMutationOptions(qc: QueryClient) {
+  return {
     mutationFn: async (records: readonly FinanceAllocationRecord[]) => {
       const res = await adminFetchJson<Record<string, unknown>>("/finance/allocations", {
         method: "PUT",
@@ -190,15 +147,17 @@ export function useFinance() {
       const list = res.allocationRecords;
       return { records: normalizeAllocationRecords(list) };
     },
-    onSuccess: ({ records }) => {
-      qc.setQueryData<FinancePersistedState>(["finance"], (old) => ({
+    onSuccess: ({ records }: { records: FinancePersistedState["allocationRecords"] }) => {
+      qc.setQueryData<FinancePersistedState>(keys.finance, (old) => ({
         ...(old ?? DEFAULT_FINANCE_STATE),
         allocationRecords: records,
       }));
     },
-  });
+  };
+}
 
-  const saveLedgerSheet = useMutation({
+export function saveLedgerSheetMutationOptions(qc: QueryClient) {
+  return {
     mutationFn: async ({
       sheet,
       records,
@@ -209,7 +168,7 @@ export function useFinance() {
       expenseAllocationPercents?: ExpenseIncomeAllocationPercents;
     }) => {
       const { path, bodyKey } = LEDGER_CONFIG[sheet];
-      const state = qc.getQueryData<FinancePersistedState>(["finance"]);
+      const state = qc.getQueryData<FinancePersistedState>(keys.finance);
       const bodyPayload: Record<string, unknown> = { [bodyKey]: records };
       if (sheet === "expenses") {
         bodyPayload.expenseIncomeAllocationPercents =
@@ -240,13 +199,18 @@ export function useFinance() {
         expenseIncomeAllocationPercents: nextPercents,
       };
     },
-    onSuccess: async (payload) => {
+    onSuccess: async (payload: {
+      sheet: FinanceLedgerSheetKey;
+      bodyKey: keyof FinancePersistedState;
+      records: readonly FinanceLedgerRecord[];
+      expenseIncomeAllocationPercents?: ExpenseIncomeAllocationPercents;
+    }) => {
       if (payload.sheet === "expenses") {
         const fresh = await fetchFinance();
-        qc.setQueryData<FinancePersistedState>(["finance"], fresh);
+        qc.setQueryData<FinancePersistedState>(keys.finance, fresh);
         return;
       }
-      qc.setQueryData<FinancePersistedState>(["finance"], (old) => ({
+      qc.setQueryData<FinancePersistedState>(keys.finance, (old) => ({
         ...(old ?? DEFAULT_FINANCE_STATE),
         [payload.bodyKey]: payload.records,
         ...(payload.expenseIncomeAllocationPercents !== undefined
@@ -254,11 +218,58 @@ export function useFinance() {
           : {}),
       }));
     },
+  };
+}
+
+export function useFinance() {
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: keys.finance,
+    queryFn: fetchFinance,
   });
+
+  const saveHouse = useMutation(saveHouseMutationOptions(qc));
+  const saveInvestmentRecords = useMutation(
+    financeRecordsPutMutationOptions(qc, {
+      path: "/finance/investments",
+      listKey: "investmentRecords",
+      normalize: normalizeInvestmentRecords,
+    }),
+  );
+  const saveSavingsRecords = useMutation(
+    financeRecordsPutMutationOptions(qc, {
+      path: "/finance/savings",
+      listKey: "savingsRecords",
+      normalize: normalizeSavingsRecords,
+    }),
+  );
+  const savePensionRecords = useMutation(
+    financeRecordsPutMutationOptions(qc, {
+      path: "/finance/pension",
+      listKey: "pensionRecords",
+      normalize: normalizePensionRecords,
+    }),
+  );
+  const saveAccountRecords = useMutation(
+    financeRecordsPutMutationOptions(qc, {
+      path: "/finance/accounts",
+      listKey: "accountRecords",
+      normalize: normalizeAccountRecords,
+    }),
+  );
+  const saveLiabilityRecords = useMutation(
+    financeRecordsPutMutationOptions(qc, {
+      path: "/finance/liabilities",
+      listKey: "liabilityRecords",
+      normalize: normalizeLiabilityRecords,
+    }),
+  );
+  const saveAllocationRecords = useMutation(saveAllocationRecordsMutationOptions(qc));
+  const saveLedgerSheet = useMutation(saveLedgerSheetMutationOptions(qc));
 
   const patchHouse = useCallback(
     (house: HouseKey, patch: (prev: HouseFinanceData) => HouseFinanceData) => {
-      const state = qc.getQueryData<FinancePersistedState>(["finance"]);
+      const state = qc.getQueryData<FinancePersistedState>(keys.finance);
       const prev = state?.[house] ?? DEFAULT_FINANCE_STATE[house];
       const next = patch(prev);
       saveHouse.mutate({ house, data: next });
@@ -272,7 +283,7 @@ export function useFinance() {
         prev: readonly FinanceInvestmentRecord[],
       ) => readonly FinanceInvestmentRecord[],
     ) => {
-      const state = qc.getQueryData<FinancePersistedState>(["finance"]);
+      const state = qc.getQueryData<FinancePersistedState>(keys.finance);
       const prev = state?.investmentRecords ?? DEFAULT_FINANCE_STATE.investmentRecords;
       const next = patch(prev);
       saveInvestmentRecords.mutate(next);
@@ -282,7 +293,7 @@ export function useFinance() {
 
   const patchSavingsRecords = useCallback(
     (patch: (prev: readonly FinanceSavingsRecord[]) => FinanceSavingsRecord[]) => {
-      const state = qc.getQueryData<FinancePersistedState>(["finance"]);
+      const state = qc.getQueryData<FinancePersistedState>(keys.finance);
       const prev = state?.savingsRecords ?? DEFAULT_FINANCE_STATE.savingsRecords;
       const next = patch(prev);
       saveSavingsRecords.mutate(next);
@@ -292,7 +303,7 @@ export function useFinance() {
 
   const patchPensionRecords = useCallback(
     (patch: (prev: readonly FinancePensionRecord[]) => FinancePensionRecord[]) => {
-      const state = qc.getQueryData<FinancePersistedState>(["finance"]);
+      const state = qc.getQueryData<FinancePersistedState>(keys.finance);
       const prev = state?.pensionRecords ?? DEFAULT_FINANCE_STATE.pensionRecords;
       const next = patch(prev);
       savePensionRecords.mutate(next);
@@ -302,7 +313,7 @@ export function useFinance() {
 
   const patchAccountRecords = useCallback(
     (patch: (prev: readonly FinanceAccountRecord[]) => FinanceAccountRecord[]) => {
-      const state = qc.getQueryData<FinancePersistedState>(["finance"]);
+      const state = qc.getQueryData<FinancePersistedState>(keys.finance);
       const prev = state?.accountRecords ?? DEFAULT_FINANCE_STATE.accountRecords;
       const next = patch(prev);
       saveAccountRecords.mutate(next);
@@ -312,7 +323,7 @@ export function useFinance() {
 
   const patchLiabilityRecords = useCallback(
     (patch: (prev: readonly FinanceLiabilityRecord[]) => FinanceLiabilityRecord[]) => {
-      const state = qc.getQueryData<FinancePersistedState>(["finance"]);
+      const state = qc.getQueryData<FinancePersistedState>(keys.finance);
       const prev = state?.liabilityRecords ?? DEFAULT_FINANCE_STATE.liabilityRecords;
       const next = patch(prev);
       saveLiabilityRecords.mutate(next);
@@ -326,7 +337,7 @@ export function useFinance() {
         prev: readonly FinanceAllocationRecord[],
       ) => readonly FinanceAllocationRecord[],
     ) => {
-      const state = qc.getQueryData<FinancePersistedState>(["finance"]);
+      const state = qc.getQueryData<FinancePersistedState>(keys.finance);
       const prev = state?.allocationRecords ?? DEFAULT_FINANCE_STATE.allocationRecords;
       const next = patch(prev);
       saveAllocationRecords.mutate([...next]);
@@ -339,7 +350,7 @@ export function useFinance() {
       sheet: FinanceLedgerSheetKey,
       patch: (prev: readonly FinanceLedgerRecord[]) => FinanceLedgerRecord[],
     ) => {
-      const state = qc.getQueryData<FinancePersistedState>(["finance"]);
+      const state = qc.getQueryData<FinancePersistedState>(keys.finance);
       const prev =
         sheet === "income"
           ? (state?.incomeRecords ?? DEFAULT_FINANCE_STATE.incomeRecords)
@@ -356,7 +367,7 @@ export function useFinance() {
 
   const patchExpenseIncomeAllocationPercents = useCallback(
     (next: ExpenseIncomeAllocationPercents) => {
-      const state = qc.getQueryData<FinancePersistedState>(["finance"]);
+      const state = qc.getQueryData<FinancePersistedState>(keys.finance);
       const records = state?.expenseRecords ?? DEFAULT_FINANCE_STATE.expenseRecords;
       saveLedgerSheet.mutate({
         sheet: "expenses",

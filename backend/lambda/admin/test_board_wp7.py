@@ -12,16 +12,15 @@ from typing import Any
 from unittest.mock import patch
 from urllib import error as urlerror
 
-from botocore.exceptions import ClientError
-
 import board_aws
 import board_github
 import board_security
 import board_store
 import board_stores
 from board_tools import ToolContext
+from botocore.exceptions import ClientError
 from test_board import _FakeResp
-from test_board_t2 import FakeCW, FakeHealth, FakeSecurityHub, FakeAnalyzer
+from test_board_t2 import FakeAnalyzer, FakeCW, FakeHealth, FakeSecurityHub
 from test_board_t6 import FakeStoresHttp, StoresTestCase
 from test_board_tools import ToolsTestCase
 

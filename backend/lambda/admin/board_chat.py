@@ -9,6 +9,7 @@ the thread and marks the job succeeded. The SPA polls the job.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -19,6 +20,7 @@ import board_context
 import board_personas
 import board_store
 import board_tools
+from board_tools_core import ToolContext
 from contract_constants import (
     BOARD_CHAT_HISTORY_TURNS,
     BOARD_CHAT_JOB_STUCK_SECONDS,
@@ -30,6 +32,7 @@ from contract_constants import (
 from http_common import _audit, _json_response, _log_event, _parse_json_body, _request_id, _utc_iso_z
 from openrouter_client import OpenRouterError
 from runtime import logger
+from timeutil import utc_now
 
 THREAD_PAGE_SIZE = 100
 _SUGGEST_MEETING_RE = re.compile(r"^\s*SUGGEST_MEETING:\s*(\{.*\})\s*$", re.MULTILINE)
@@ -153,7 +156,7 @@ def _finalize_stuck_job(table: Any, job: dict[str, Any]) -> dict[str, Any]:
     updated = _iso_to_dt(job.get("updatedAt"))
     if updated is None:
         return job
-    age = (datetime.now(timezone.utc) - updated).total_seconds()
+    age = (utc_now() - updated).total_seconds()
     if age <= BOARD_CHAT_JOB_STUCK_SECONDS:
         return job
     failed = {
@@ -189,7 +192,7 @@ def run_chat_worker(payload: dict[str, Any]) -> None:
         _log_event("warning", tag="board_chat_worker_bad_payload")
         return
     table = board_store.records_table()
-    stale = _utc_iso_z(datetime.now(timezone.utc) - timedelta(seconds=BOARD_CHAT_JOB_STUCK_SECONDS))
+    stale = _utc_iso_z(utc_now() - timedelta(seconds=BOARD_CHAT_JOB_STUCK_SECONDS))
     if not board_store.claim_chat_job(table, job_id, stale_before_iso=stale):
         _log_event("info", tag="board_chat_skip_duplicate_worker", job_id=job_id[:64])
         return
@@ -275,13 +278,13 @@ def generate_reply(
         try:
             _pseud.save()
         except Exception:
-            pass
+            logging.getLogger(__name__).debug("suppressed", exc_info=True)
     if not history or history[-1].get("role") != "user":
         messages.append(
             {"role": "user", "content": "(The founder is waiting for your reply to the thread above.)"}
         )
 
-    ctx = board_tools.ToolContext(
+    ctx = ToolContext(
         table=table,
         settings=settings,
         persona_id=persona_id,

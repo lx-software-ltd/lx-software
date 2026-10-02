@@ -7,10 +7,9 @@ export default defineConfig(({ mode }) => ({
     outDir: "dist",
   },
   plugins: [react()],
-  // `.env.mock` should set this; pin it in mock mode so Playwright and
-  // `npm run dev:mock` never fall through to the login screen.
-  define:
-    mode === "mock"
-      ? { "import.meta.env.VITE_ADMIN_MOCK": JSON.stringify("1") }
-      : undefined,
+  // Pin the flag so production builds replace it with "0" and drop the mock
+  // chunk. Mock mode (`npm run dev:mock`, `build:mock`) stays "1".
+  define: {
+    "import.meta.env.VITE_ADMIN_MOCK": JSON.stringify(mode === "mock" ? "1" : "0"),
+  },
 }));

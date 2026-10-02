@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import json
+from pathlib import Path
 
 _CONTRACTS_DIR = Path(__file__).resolve().parent / "contracts"
 
@@ -240,3 +240,18 @@ AWS_BILLING_PAYER = AWS_BILLING_CONTRACT["payer"]
 AWS_BILLING_CURRENCY = AWS_BILLING_CONTRACT["currency"]
 AWS_BILLING_COST_ALLOCATION_TAGS: list[str] = list(AWS_BILLING_CONTRACT["costAllocationTags"])
 AWS_BILLING_COMPANIES: list[dict] = list(AWS_BILLING_CONTRACT["companies"])
+
+PUBLIC_API_SCOPES_CONTRACT = _load("public-api-scopes.json")
+LEGACY_READ_SCOPE = PUBLIC_API_SCOPES_CONTRACT["legacyReadScope"]
+SCOPE_FINANCE = next(row["value"] for row in PUBLIC_API_SCOPES_CONTRACT["scopes"] if row["name"] == 'SCOPE_FINANCE')
+SCOPE_BOARD_OPS = next(row["value"] for row in PUBLIC_API_SCOPES_CONTRACT["scopes"] if row["name"] == 'SCOPE_BOARD_OPS')
+SCOPE_BOARD_FULL = next(row["value"] for row in PUBLIC_API_SCOPES_CONTRACT["scopes"] if row["name"] == 'SCOPE_BOARD_FULL')
+SCOPE_PII = next(row["value"] for row in PUBLIC_API_SCOPES_CONTRACT["scopes"] if row["name"] == 'SCOPE_PII')
+SCOPE_ASSETS = next(row["value"] for row in PUBLIC_API_SCOPES_CONTRACT["scopes"] if row["name"] == 'SCOPE_ASSETS')
+ALL_SCOPES = frozenset({
+    SCOPE_FINANCE,
+    SCOPE_BOARD_OPS,
+    SCOPE_BOARD_FULL,
+    SCOPE_PII,
+    SCOPE_ASSETS,
+})

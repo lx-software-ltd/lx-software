@@ -26,29 +26,31 @@ def _install_stubs() -> None:
 
 _install_stubs()
 
+from dispatch import lambda_handler  # noqa: E402
 from handler import (  # noqa: E402
     DEFAULT_EXPENSE_INCOME_ALLOCATION_PERCENTAGES,
     EXPENSE_RECORD_CATEGORIES,
     INCOME_RECORD_CATEGORIES,
-    _groups_include_admin,
-    _is_allowed_upload_content_type,
     _build_allocation_records_for_response,
     _derived_expense_rows_from_tagged_income,
-    _merge_allocation_stored_last_updated,
+    _groups_include_admin,
+    _is_allowed_upload_content_type,
+    _load_investment_records,
     _merge_accounts_last_updated,
+    _merge_allocation_stored_last_updated,
     _merge_investment_last_updated,
     _merge_liabilities_last_updated,
     _merge_pension_last_updated,
-    _normalize_allocations_sheet_payload,
     _normalize_accounts_sheet_payload,
+    _normalize_allocations_sheet_payload,
     _normalize_finance_payload,
+    _normalize_finance_quote_symbol,
     _normalize_investment_sheet_payload,
     _normalize_ledger_sheet_payload,
     _normalize_liabilities_sheet_payload,
     _normalize_pension_sheet_payload,
     _normalize_public_asset_key,
     _normalize_savings_sheet_payload,
-    _normalize_finance_quote_symbol,
     _normalize_yahoo_price_currency,
     _parse_finance_quotes_query,
     _parse_fx_v2_rates_query,
@@ -56,16 +58,14 @@ from handler import (  # noqa: E402
     _path_finance_parse_job,
     _sanitize_accounts_records_list,
     _sanitize_expense_income_allocation_percentages,
-    _sanitize_liabilities_records_list,
     _sanitize_investment_records_list,
     _sanitize_ledger_records_list,
+    _sanitize_liabilities_records_list,
     _sanitize_pension_records_list,
     _sanitize_savings_records_list,
-    _load_investment_records,
     _statement_basename_already_imported,
     _utc_iso_z,
 )
-from dispatch import lambda_handler  # noqa: E402
 from http_common import _public_authorizer_context  # noqa: E402
 
 
@@ -99,7 +99,7 @@ class TestNormalizePublicAssetKey(unittest.TestCase):
             _normalize_public_asset_key(f"inbound/unknown/{batch}/00_x.pdf")
         )
         self.assertIsNone(
-            _normalize_public_asset_key(f"inbound/hillmarton/short/00_x.pdf")
+            _normalize_public_asset_key("inbound/hillmarton/short/00_x.pdf")
         )
         self.assertIsNone(
             _normalize_public_asset_key(f"inbound/hillmarton/{'g' * 32}/x.pdf")

@@ -23,8 +23,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import boto3
-from botocore.exceptions import ClientError
-
 from api_key_hash import hash_api_key
 from api_key_scopes import (
     LEGACY_READ_SCOPE,
@@ -35,6 +33,7 @@ from api_key_scopes import (
     scopes_csv,
     source_ip_from_event,
 )
+from botocore.exceptions import ClientError
 
 API_KEY_PK_PREFIX = "APIKEY#"
 MAX_API_KEY_LEN = 256

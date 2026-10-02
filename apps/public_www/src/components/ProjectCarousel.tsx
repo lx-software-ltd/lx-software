@@ -1,14 +1,18 @@
 import { useRef, useState } from 'react'
 import { trackEvent } from '../lib/analytics'
 import { carouselIndex } from '../lib/carouselIndex'
-import type { ProjectItem } from '../lib/content'
+import { defaultSiteContent, type ProjectItem } from '../lib/content'
 import { useReducedMotion } from '../lib/motion'
 
 export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
+  const chrome = defaultSiteContent.chrome
   const scroller = useRef<HTMLUListElement>(null)
   const dragged = useRef(false)
+  const drag = useRef({ x: 0, left: 0, active: false })
   const reduced = useReducedMotion()
   const [index, setIndex] = useState(0)
+  const atStart = index === 0
+  const atEnd = index >= items.length - 1
 
   const syncIndex = () => {
     const list = scroller.current
@@ -20,7 +24,7 @@ export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
   const endDrag = (event: { pointerId: number }) => {
     const list = scroller.current
     if (!list) return
-    list.dataset.dragging = '0'
+    drag.current.active = false
     list.classList.remove('is-dragging')
     if (list.hasPointerCapture(event.pointerId)) list.releasePointerCapture(event.pointerId)
     syncIndex()
@@ -42,53 +46,70 @@ export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
   }
 
   return (
-    <div className="carousel" role="region" aria-roledescription="carousel" aria-label="Projects">
+    <div
+      className="carousel"
+      role="region"
+      aria-roledescription="carousel"
+      aria-label={chrome.carouselLabel}
+    >
       <div className="carousel-toolbar">
         <button
           type="button"
-          aria-label="Previous project"
-          disabled={index === 0}
-          onClick={() => scrollByCard(-1, 'button')}
+          aria-label={chrome.carouselPrevLabel}
+          aria-disabled={atStart}
+          onClick={(event) => {
+            if (atStart) {
+              event.preventDefault()
+              return
+            }
+            scrollByCard(-1, 'button')
+          }}
         >
-          [ prev ]
+          {chrome.carouselPrev}
         </button>
         <span aria-live="polite">
           {index + 1} of {items.length}
         </span>
         <button
           type="button"
-          aria-label="Next project"
-          disabled={index >= items.length - 1}
-          onClick={() => scrollByCard(1, 'button')}
+          aria-label={chrome.carouselNextLabel}
+          aria-disabled={atEnd}
+          onClick={(event) => {
+            if (atEnd) {
+              event.preventDefault()
+              return
+            }
+            scrollByCard(1, 'button')
+          }}
         >
-          [ next ]
+          {chrome.carouselNext}
         </button>
       </div>
       <ul
         ref={scroller}
         className="carousel-track"
+        tabIndex={0}
+        aria-label={chrome.carouselLabel}
         onScroll={syncIndex}
         onPointerDown={(event) => {
           if (event.pointerType !== 'mouse' || event.button !== 0) return
           const list = scroller.current
           if (!list) return
-          list.dataset.dragX = String(event.clientX)
-          list.dataset.dragLeft = String(list.scrollLeft)
-          list.dataset.dragging = '1'
+          drag.current.x = event.clientX
+          drag.current.left = list.scrollLeft
+          drag.current.active = true
           dragged.current = false
           list.setPointerCapture(event.pointerId)
         }}
         onPointerMove={(event) => {
           const list = scroller.current
-          if (!list || list.dataset.dragging !== '1') return
-          const startX = Number(list.dataset.dragX)
-          const startLeft = Number(list.dataset.dragLeft)
-          const delta = event.clientX - startX
+          if (!list || !drag.current.active) return
+          const delta = event.clientX - drag.current.x
           if (Math.abs(delta) > 6) {
             dragged.current = true
             list.classList.add('is-dragging')
           }
-          list.scrollLeft = startLeft - delta
+          list.scrollLeft = drag.current.left - delta
         }}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
@@ -99,13 +120,12 @@ export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
           dragged.current = false
         }}
         onKeyDown={(event) => {
-          if (event.key === 'ArrowRight') {
-            event.preventDefault()
-            scrollByCard(1, 'keyboard')
-          } else if (event.key === 'ArrowLeft') {
-            event.preventDefault()
-            scrollByCard(-1, 'keyboard')
-          }
+          if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+          if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+          const forward = event.key === 'ArrowRight'
+          if (forward ? atEnd : atStart) return
+          event.preventDefault()
+          scrollByCard(forward ? 1 : -1, 'keyboard')
         }}
       >
         {items.map((item) => (

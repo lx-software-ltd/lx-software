@@ -18,13 +18,12 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from typing import Any, Iterator, Protocol
 
-from defusedxml import ElementTree
-from defusedxml.common import DefusedXmlException
-
 import board_hk
 import board_mail
 import board_store
 from contract_constants import BOARD_KEY, BOARD_MAIL_MESSAGE_TTL_DAYS
+from defusedxml import ElementTree
+from defusedxml.common import DefusedXmlException
 from http_common import _log_event
 
 SUMMARY_CACHE = "dmarc:summary"

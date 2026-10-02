@@ -109,15 +109,9 @@ jobs:
             if [ -n "${CDK_PARAM_FILE:-}" ]; then
               RESOLVED_PARAM_FILE=$(resolve_param_file "$CDK_PARAM_FILE" || true)
               if [ -n "$RESOLVED_PARAM_FILE" ]; then
-                PUBLIC_PARAM_FILE="$(mktemp)"
-                ADMIN_LX_PARAM_FILE="$(mktemp)"
-                ADMIN_WEB_PARAM_FILE="$(mktemp)"
-                jq -r 'to_entries[] | select(.value != null) | .value = (if .value | type == "string" then .value else .value | tostring end) | .value = (.value | gsub("\r\n"; "\n") | gsub("\r"; "\n") | gsub("\n"; "\\n") | ltrimstr(" ") | rtrimstr(" ")) | select(.value != "") | select((.key | contains(":") | not) or (.key | startswith("lxsoftware-public-www:"))) | .key = (if (.key | test(":")) then .key else "lxsoftware-public-www:\(.key)" end) | "--parameters", "\(.key)=\(.value)"' "$RESOLVED_PARAM_FILE" > "$PUBLIC_PARAM_FILE"
-                jq -r 'to_entries[] | select(.value != null) | .value = (if .value | type == "string" then .value else .value | tostring end) | .value = (.value | gsub("\r\n"; "\n") | gsub("\r"; "\n") | gsub("\n"; "\\n") | ltrimstr(" ") | rtrimstr(" ")) | select(.value != "") | select(.key | test("^lxsoftware:")) | "--parameters", "\(.key)=\(.value)"' "$RESOLVED_PARAM_FILE" > "$ADMIN_LX_PARAM_FILE"
-                jq -r 'to_entries[] | select(.value != null) | .value = (if .value | type == "string" then .value else .value | tostring end) | .value = (.value | gsub("\r\n"; "\n") | gsub("\r"; "\n") | gsub("\n"; "\\n") | ltrimstr(" ") | rtrimstr(" ")) | select(.value != "") | select(.key | test("^lxsoftware-admin-web:")) | "--parameters", "\(.key)=\(.value)"' "$RESOLVED_PARAM_FILE" > "$ADMIN_WEB_PARAM_FILE"
-                readarray -t PUBLIC_PARAM_ARGS < "$PUBLIC_PARAM_FILE"
-                readarray -t ADMIN_LX_PARAM_ARGS < "$ADMIN_LX_PARAM_FILE"
-                readarray -t ADMIN_WEB_PARAM_ARGS < "$ADMIN_WEB_PARAM_FILE"
+                # shellcheck source=../../scripts/deploy/cdk-params.sh
+                source ../../scripts/deploy/cdk-params.sh
+                cdk_load_param_args "$RESOLVED_PARAM_FILE"
               else
                 echo "CDK_PARAM_FILE '$CDK_PARAM_FILE' not found"
                 exit 1

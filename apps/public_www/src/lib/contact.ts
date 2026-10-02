@@ -1,3 +1,4 @@
+import { defaultSiteContent } from './content'
 import { linkedinUrl } from './linkedin'
 
 export interface ContactLink {
@@ -22,7 +23,7 @@ function wechatHref(id: string): string {
 export function contactLinks(): ContactLink[] {
   const tel = (import.meta.env.VITE_CONTACT_TEL ?? '').trim()
   const email =
-    (import.meta.env.VITE_CONTACT_EMAIL ?? '').trim() || 'hello@lx-software.com'
+    (import.meta.env.VITE_CONTACT_EMAIL ?? '').trim() || defaultSiteContent.site.email
   const whatsapp = (import.meta.env.VITE_CONTACT_WHATSAPP ?? '').replace(/\D/g, '')
   const wechatId = (import.meta.env.VITE_CONTACT_WECHAT_ID ?? '').trim()
   const linkedin = linkedinUrl(import.meta.env.VITE_CONTACT_LINKEDIN)

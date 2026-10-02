@@ -47,10 +47,11 @@ export function holdVetoClassMutationOptions(qc: QueryClient) {
   };
 }
 
-export function useBoardHolds() {
+export function useBoardHolds(enabled = true) {
   const qc = useQueryClient();
   const query = useQuery({
     queryKey: BOARD_HOLDS_KEY,
+    enabled,
     queryFn: async () => {
       const res = await adminFetchJson<{ holds: BoardHold[] }>(boardHoldsPath({ status: "scheduled" }));
       return res.holds;

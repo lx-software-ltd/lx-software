@@ -13,8 +13,6 @@ from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 from typing import Any
 
-import boto3
-
 import board_breakers
 import board_hk
 import board_mail
@@ -22,12 +20,11 @@ import board_pii
 import board_prospects
 import board_sequences
 import board_store
+import boto3
 from contract_constants import (
-    BOARD_STAFF_COMPLAINT_RATE_BREAKER,
-    BOARD_STAFF_BOUNCE_RATE_BREAKER,
     BOARD_STAFF_OUTREACH_MAX_TOUCHES,
 )
-from http_common import _json_response, _log_event
+from http_common import _log_event
 
 CONFIG_SET = "lxsoftware-admin-siutindei-outreach"
 REPLY_TO_LOCAL = "partnerships"
@@ -97,7 +94,7 @@ def signing_secret() -> str:
     if not arn:
         raise OutreachError("link signing secret is not configured")
     from admin_runtime import _get_secretsmanager_client
-    from openrouter_client import read_secret_string
+    from secret_store import read_secret_string
 
     _signing_secret = read_secret_string(
         _get_secretsmanager_client(), arn, what="board link signing key"

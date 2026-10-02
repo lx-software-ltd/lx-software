@@ -9,10 +9,9 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from botocore.exceptions import ClientError
-
-import runtime
+import board_store
 from admin_runtime import _get_lambda_client
+from botocore.exceptions import ClientError
 from contract_constants import (
     PARSE_JOB_STALE_SECONDS_DEFAULT,
     PARSE_JOB_STUCK_SECONDS_DEFAULT,
@@ -95,7 +94,7 @@ def enqueue_parse_statement_async_job(
     line_type_only: str | None = None,
 ) -> str:
     """Persist a pending PARSE_JOB and invoke the worker Lambda (async)."""
-    table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+    table = board_store.records_table()
     job_id = uuid.uuid4().hex
     created = _utc_iso_z(datetime.now(timezone.utc))
     job_item: dict[str, Any] = {
@@ -269,7 +268,7 @@ def _handle_parse_statement_async_worker(payload: dict[str, Any]) -> None:
         _log_event("warning", tag="parse_job_worker_bad_payload")
         return
 
-    table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+    table = board_store.records_table()
     key = _parse_job_key(job_id.strip())
     now = _utc_iso_z(datetime.now(timezone.utc))
     stale_cutoff = _parse_job_stale_cutoff_iso()

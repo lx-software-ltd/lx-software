@@ -16,9 +16,8 @@ import board_store
 import board_tools
 import inbound_email_handler
 from dispatch import lambda_handler
-from test_board import BoardTestCase, FakeTable
+from test_board import BoardTestCase
 from test_board_tools import ToolsTestCase
-
 
 # ---------------------------------------------------------------------------
 # Helpers

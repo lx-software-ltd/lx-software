@@ -64,12 +64,14 @@ class CheckPiiTest(unittest.TestCase):
         self.assertIn("85251111111", candidates)
 
     def test_public_site_owner_name_is_not_denylisted(self) -> None:
-        content_path = (
-            Path(__file__).resolve().parents[1]
-            / "apps"
-            / "public_www"
-            / "public"
-            / "content.json"
+        root = Path(__file__).resolve().parents[1] / "apps" / "public_www"
+        content_path = next(
+            path
+            for path in (
+                root / "src" / "content" / "site.json",
+                root / "public" / "content.json",
+            )
+            if path.is_file()
         )
         owner = json.loads(content_path.read_text(encoding="utf-8"))["site"]["owner"]
         denied = check_pii._load_denylist()

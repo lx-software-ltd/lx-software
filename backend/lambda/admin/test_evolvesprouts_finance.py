@@ -29,8 +29,8 @@ def _install_stubs() -> None:
 _install_stubs()
 
 import board_data_api  # noqa: E402
-from dispatch import lambda_handler  # noqa: E402
 import evolvesprouts_finance as es  # noqa: E402
+from dispatch import lambda_handler  # noqa: E402
 from finance_store import MirroredBookError, upsert_mirrored_lines  # noqa: E402
 
 

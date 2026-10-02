@@ -5,8 +5,8 @@ hosts them:
 
 | Piece | Path | Purpose |
 |-------|------|---------|
-| Public website | `apps/public_www` | LX Software marketing site (Vite, React Router, TanStack Query, Bootstrap 5). One scrolling page plus privacy, terms, and a WeChat placeholder. Fetches `/content.json` at runtime. |
-| Admin console | `apps/admin_web` | Private SPA for finance books, statement import, banking sync and the Siu Tin Dei Executive Board. Same stack as the public site. |
+| Public website | `apps/public_www` | LX Software marketing site (Vite, React Router, hand-written CSS). One scrolling page plus privacy, terms, and a WeChat placeholder. Copy is bundled from `src/content/site.json` at build time. |
+| Admin console | `apps/admin_web` | Private SPA for finance books, statement import, banking sync and the Siu Tin Dei Executive Board (Vite, React Router, TanStack Query, Bootstrap 5). |
 | Infrastructure | `backend/infrastructure` | AWS CDK (TypeScript) defining the three stacks below. |
 | Lambda code | `backend/lambda` | Python: admin API (`admin/`), public API key authorizer, Cognito pre-token hook, inbound-mail handlers, siutindei schema custom resource. |
 | Shared contracts | `contracts/*.json` | Constants synced into Python, TypeScript and CDK by `scripts/sync-contracts.py`. |
@@ -103,11 +103,12 @@ flowchart TD
   `dist/` to S3 and invalidate CloudFront (`scripts/deploy/*.sh`).
 - **Deploy Backend** runs `cdk deploy` when `backend/infrastructure/**`,
   `backend/lambda/**` or `contracts/**` change.
-- **Test** runs Vitest, the Python unit tests, the CDK assertion tests,
-  `scripts/check-contracts.py`, `scripts/check_pii.py`, and the Playwright
-  viewport smoke. **Security Scanning** runs the same PII check on every pull
-  request.
-- Dependabot watches the workflows and the three npm projects.
+- **Test** runs Vitest, the Python unit tests, the CDK Jest assertion tests
+  (`backend/infrastructure`, `npm test`), `scripts/check-contracts.py`,
+  `scripts/check_pii.py`, and the Playwright viewport smoke. **Security
+  Scanning** runs the same PII check on every pull request.
+- Dependabot watches the workflows, the three npm projects, and the admin
+  Lambda pip requirements.
 
 ## Executive Board
 

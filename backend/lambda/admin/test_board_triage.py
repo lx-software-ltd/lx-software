@@ -8,13 +8,8 @@ from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import patch
 
-from contract_constants import BOARD_KEY
-from test_board import BoardTestCase
-from test_board_mail import build_mail
-
 import board_async
 import board_budget
-import board_holds
 import board_mail
 import board_policy
 import board_staff
@@ -22,6 +17,9 @@ import board_store
 import board_templates
 import board_tools
 import board_triage
+from contract_constants import BOARD_KEY
+from test_board import BoardTestCase
+from test_board_mail import build_mail
 
 
 def _enable_staff(table: Any) -> dict[str, Any]:

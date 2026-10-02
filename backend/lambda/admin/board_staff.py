@@ -6,7 +6,7 @@ See docs/architecture/executive-board.md §7 (Staff).
 from __future__ import annotations
 
 import json
-import os
+import logging
 import re
 import time
 from datetime import datetime, timedelta, timezone
@@ -17,20 +17,16 @@ import board_budget
 import board_personas
 import board_store
 import board_tools
+from board_tools_core import LEVEL_RANK, ToolContext, allows, effective_level, global_cap
 from contract_constants import (
     BOARD_CATALOG_EVENT_KINDS,
-    BOARD_CHAIR_DEFAULT,
     BOARD_KEY,
-    BOARD_PERSONA_IDS,
     BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
     BOARD_STAFF_DELIVERABLE_MAX_BYTES,
     BOARD_STAFF_DELIVERABLE_TYPES,
     BOARD_STAFF_HELP_DEPTH_MAX,
-    BOARD_STAFF_MAX_HELP_REQUESTS_PER_TASK,
     BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK,
-    BOARD_STAFF_MAX_REVISIONS,
     BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
-    BOARD_STAFF_WAITING_EXPIRY_HOURS,
     BOARD_STAFF_MAX_STEPS_PER_TASK,
     BOARD_STAFF_MODEL_TIERS,
     BOARD_STAFF_RETENTION_DAYS,
@@ -38,20 +34,18 @@ from contract_constants import (
     BOARD_STAFF_SEAT_IDS,
     BOARD_STAFF_SEATS,
     BOARD_STAFF_STEP_MAX_SECONDS,
+    BOARD_STAFF_STEP_MODEL_LIST,
+    BOARD_STAFF_STEP_MODELS,
     BOARD_STAFF_TASK_BUDGET_DESK_USD,
     BOARD_STAFF_TASK_BUDGET_MAX_USD,
     BOARD_STAFF_TASK_BUDGET_SENIOR_USD,
     BOARD_STAFF_TASK_ORIGINS,
-    BOARD_STAFF_TASK_STUCK_SECONDS,
     BOARD_STAFF_TASK_STATUSES,
     BOARD_TOOL_IDS,
     BOARD_TOOL_LEVELS,
-    BOARD_STAFF_STEP_MODELS,
-    BOARD_STAFF_STEP_MODEL_LIST,
 )
 from http_common import _log_event, _utc_iso_z
 
-_LEVEL_RANK = {lvl: i for i, lvl in enumerate(BOARD_TOOL_LEVELS)}
 TERMINAL_STATUSES = frozenset({"delivered", "failed", "cancelled"})
 NON_TERMINAL_STATUSES = frozenset(s for s in BOARD_STAFF_TASK_STATUSES if s not in TERMINAL_STATUSES)
 OWNER_HELD_CHILD_STATUSES = frozenset({"review", "needs_owner"})
@@ -156,9 +150,137 @@ class StaffError(ValueError):
         self.code = code
 
 
+
+from board_staff_blobs import (  # noqa: E402
+    _append_scratchpad,
+    _blob_bucket,
+    _blob_delete,
+    _blob_get,
+    _blob_put,
+    _deliverable_key,
+    _memory_blobs_enabled,
+    _prepend_scratchpad,
+    _scratchpad_key,
+    presign_deliverable,
+    read_deliverable,
+)
+from board_staff_help import (  # noqa: E402
+    _cancel_open_help_children,
+    _child_evidence_records,
+    _expire_help_wait,
+    _help_child_brief,
+    _help_children_held_for_owner,
+    _help_evidence_block,
+    _help_finish_blocked,
+    _normalize_help_tool_ids,
+    _note_parent_child_waiting,
+    _notify_parent_of_child,
+    _open_help_child_ids,
+    _park_waiting_subtask,
+    _pending_help_approvals,
+    _persona_covers_tools,
+    _reject_pending_help_approvals,
+    _remap_help_tool_ids,
+    _resume_parent_after_help,
+    _seat_covers_tools,
+    act_guard_task_request_help,
+    expire_waiting_help,
+    help_available_line,
+    op_task_request_help,
+    pick_helper,
+    prepare_help_request,
+    preview_task_request_help,
+    summarize_help_request,
+    validate_task_request_help,
+)
+from board_staff_review import (  # noqa: E402
+    _accept_task,
+    _catalog_quality_return,
+    _is_review_headline_duty,
+    _mark_delivered,
+    _note_parent_if_child_needs_owner,
+    _review_flag_line,
+    _review_user_prompt,
+    _reviewer_id,
+    _should_close_linked_action,
+    _should_hold_unverified_accept,
+    _task_attempted_required_tools,
+    _task_has_open_approvals,
+    apply_review,
+    note_parent_if_child_needs_owner,
+    owner_review,
+    run_review,
+)
+from board_staff_tick import _continue_tick_stages, _run_tick_stage, handle_tick  # noqa: E402
+
+# Names tests and other modules look up on this module. Submodules read the
+# scratchpad cap from here so patch.object(board_staff, "BOARD_STAFF_SCRATCHPAD_MAX_CHARS") works.
+__all__ = [
+    "BOARD_STAFF_SCRATCHPAD_MAX_CHARS",
+    "_MEMORY_BLOBS",
+    "_append_scratchpad",
+    "_blob_bucket",
+    "_blob_delete",
+    "_blob_get",
+    "_blob_put",
+    "_deliverable_key",
+    "_memory_blobs_enabled",
+    "_prepend_scratchpad",
+    "_scratchpad_key",
+    "presign_deliverable",
+    "read_deliverable",
+    "_cancel_open_help_children",
+    "_child_evidence_records",
+    "_expire_help_wait",
+    "_help_child_brief",
+    "_help_children_held_for_owner",
+    "_help_evidence_block",
+    "_help_finish_blocked",
+    "_normalize_help_tool_ids",
+    "_note_parent_child_waiting",
+    "_notify_parent_of_child",
+    "_open_help_child_ids",
+    "_park_waiting_subtask",
+    "_pending_help_approvals",
+    "_persona_covers_tools",
+    "_reject_pending_help_approvals",
+    "_remap_help_tool_ids",
+    "_resume_parent_after_help",
+    "_seat_covers_tools",
+    "act_guard_task_request_help",
+    "expire_waiting_help",
+    "help_available_line",
+    "op_task_request_help",
+    "pick_helper",
+    "prepare_help_request",
+    "preview_task_request_help",
+    "summarize_help_request",
+    "validate_task_request_help",
+    "_accept_task",
+    "_catalog_quality_return",
+    "_is_review_headline_duty",
+    "_mark_delivered",
+    "_note_parent_if_child_needs_owner",
+    "_review_flag_line",
+    "_review_user_prompt",
+    "_reviewer_id",
+    "_should_close_linked_action",
+    "_should_hold_unverified_accept",
+    "_task_attempted_required_tools",
+    "_task_has_open_approvals",
+    "apply_review",
+    "note_parent_if_child_needs_owner",
+    "owner_review",
+    "run_review",
+    "_continue_tick_stages",
+    "_run_tick_stage",
+    "handle_tick",
+]
+
 def env_enabled() -> bool:
-    env = (os.environ.get("BOARD_STAFF_ENABLED") or "").strip().lower()
-    return env in ("1", "true", "yes", "on")
+    from config import env_flag
+
+    return env_flag("BOARD_STAFF_ENABLED")
 
 
 def enabled(settings: dict[str, Any]) -> bool:
@@ -179,7 +301,7 @@ def is_seat_id(value: Any) -> bool:
 
 
 def _min_level(*levels: str) -> str:
-    ranks = [_LEVEL_RANK.get(lvl, 0) for lvl in levels]
+    ranks = [LEVEL_RANK.get(lvl, 0) for lvl in levels]
     return BOARD_TOOL_LEVELS[min(ranks)] if ranks else "off"
 
 
@@ -196,8 +318,8 @@ def seat_level(
         return "off"
     seat_default_level = str((seat.get("tools") or {}).get(tool_id) or "off")
     manager_id = str(seat.get("reportsTo") or "")
-    manager_level = board_tools.effective_level(settings, tool_id, manager_id)
-    cap = board_tools.global_cap(settings)
+    manager_level = effective_level(settings, tool_id, manager_id)
+    cap = global_cap(settings)
     return _min_level(seat_default_level, manager_level, cap)
 
 
@@ -432,83 +554,22 @@ def drain_queue(table: Any, settings: dict[str, Any]) -> int:
     return started
 
 
-def _blob_put(key: str, body: bytes) -> None:
-    bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
-    if not bucket:
-        _MEMORY_BLOBS[key] = body
-        return
-    import runtime
-
-    runtime._s3.put_object(Bucket=bucket, Key=key, Body=body)
 
 
-def _blob_delete(key: str) -> None:
-    _MEMORY_BLOBS.pop(key, None)
-    bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
-    if not bucket:
-        return
-    import runtime
-
-    runtime._s3.delete_object(Bucket=bucket, Key=key)
 
 
-def _blob_get(key: str) -> bytes:
-    if key in _MEMORY_BLOBS:
-        return _MEMORY_BLOBS[key]
-    bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
-    if not bucket:
-        return b""
-    import runtime
-
-    try:
-        res = runtime._s3.get_object(Bucket=bucket, Key=key)
-        return res["Body"].read()
-    except Exception:
-        return b""
 
 
-def _scratchpad_key(task_id: str) -> str:
-    return f"board/{BOARD_KEY}/staff/{task_id}/scratchpad.md"
 
 
-def _deliverable_key(task_id: str, deliverable_type: str) -> str:
-    ext = {"markdown": "md", "csv": "csv", "json": "json", "messages": "json"}.get(deliverable_type, "md")
-    return f"board/{BOARD_KEY}/staff/{task_id}/deliverable.{ext}"
 
 
-def _append_scratchpad(task: dict[str, Any], text: str) -> str:
-    key = str(task.get("scratchpadKey") or _scratchpad_key(str(task["taskId"])))
-    existing = _blob_get(key).decode("utf-8", errors="replace")
-    combined = (existing + ("\n\n" if existing and text else "") + text).strip()
-    if len(combined) > BOARD_STAFF_SCRATCHPAD_MAX_CHARS:
-        combined = combined[-BOARD_STAFF_SCRATCHPAD_MAX_CHARS:]
-    _blob_put(key, combined.encode("utf-8"))
-    return combined
 
 
-def _prepend_scratchpad(task: dict[str, Any], text: str) -> str:
-    key = str(task.get("scratchpadKey") or _scratchpad_key(str(task["taskId"])))
-    existing = _blob_get(key).decode("utf-8", errors="replace")
-    banner = str(text or "").strip()
-    if not banner:
-        return existing
-    limit = BOARD_STAFF_SCRATCHPAD_MAX_CHARS
-    if len(banner) >= limit:
-        combined = banner[:limit]
-        _blob_put(key, combined.encode("utf-8"))
-        return combined
-    keep = limit - len(banner) - 2
-    if keep <= 0:
-        tail = ""
-    elif keep < len(existing):
-        tail = existing[-keep:]
-    else:
-        tail = existing
-    combined = (banner + ("\n\n" if tail else "") + tail).strip()
-    if len(combined) > limit:
-        combined = combined[:limit]
-    _blob_put(key, combined.encode("utf-8"))
-    return combined
+
+
+
+
 
 
 def _requeue_unstarted(table: Any, task_id: str) -> None:
@@ -567,24 +628,8 @@ def _model_for_seat(settings: dict[str, Any], seat_id: str, kind: str) -> str:
     return board_budget.model_for(kind, settings)
 
 
-def _review_flag_line(task: dict[str, Any]) -> str:
-    flags = [str(f) for f in (task.get("flags") or []) if f]
-    if not flags:
-        return ""
-    extra = ""
-    if "salvaged" in flags or "no_evidence" in flags:
-        extra = " — verify official_url and address fields before accepting"
-    if "brief_mismatch" in flags:
-        extra += " — runner brief may not match the GitHub issue title"
-    return f"FLAGS: {', '.join(flags)}{extra}\n"
 
 
-def _reviewer_id(task: dict[str, Any]) -> str:
-    if task.get("assigneeKind") == "persona" and task.get("assignee") == BOARD_CHAIR_DEFAULT:
-        return "cfo"
-    if task.get("assigneeKind") == "persona":
-        return BOARD_CHAIR_DEFAULT
-    return str(task.get("managerId") or BOARD_CHAIR_DEFAULT)
 
 
 def run_step(payload: dict[str, Any]) -> None:
@@ -666,7 +711,7 @@ def run_step(payload: dict[str, Any]) -> None:
     def _sink(usage: dict[str, Any]) -> None:
         board_store.add_staff_usage_day(table, seat_id or persona_id, {**usage, "calls": 1})
 
-    ctx = board_tools.ToolContext(
+    ctx = ToolContext(
         table=table,
         settings=settings,
         persona_id=persona_id,
@@ -905,24 +950,6 @@ def _maybe_archive_mail_from_finish(table: Any, task: dict[str, Any], deliverabl
     board_store.put_mail_thread(table, thread)
 
 
-def _help_finish_blocked(table: Any, task: dict[str, Any], deliverable: str) -> bool:
-    """Refuse a 'help is in flight' memo while help is still open or the last ask failed."""
-    if not _HELP_IN_FLIGHT_RE.search(deliverable or ""):
-        return False
-    if task.get("blockedOn"):
-        return True
-    for hid in task.get("helpTaskIds") or []:
-        child = board_store.get_task(table, str(hid))
-        if child and str(child.get("status") or "") not in TERMINAL_STATUSES:
-            return True
-    help_calls = [
-        call
-        for call in board_store.list_tool_calls_for_task(table, str(task.get("taskId") or ""))
-        if str(call.get("op") or "") == "task_request_help"
-    ]
-    if help_calls and str(help_calls[0].get("status") or "") in ("error", "refused"):
-        return True
-    return False
 
 
 def _call_fingerprint(call: dict[str, Any]) -> tuple[str, str]:
@@ -998,8 +1025,10 @@ def _block_evidence(table: Any, task: dict[str, Any]) -> dict[str, str] | None:
         for tool_id in used:
             if board_breakers.is_tripped(table, f"tool:{tool_id}"):
                 return {"toolId": tool_id, "callId": ""}
-    except Exception:
-        pass
+    except Exception as exc:
+        _log_event("error", tag="board_staff_breaker_lookup_failed", error=str(exc)[:300])
+        tripped = next(iter(used), "unknown")
+        return {"toolId": tripped, "callId": ""}
     return None
 
 
@@ -1188,7 +1217,11 @@ def resume_after_approval(table: Any, settings: dict[str, Any], approval: dict[s
         if board_code.on_sync_approval_outcome(table, approval) is not None:
             return
     except Exception:
-        pass
+        logging.getLogger(__name__).warning(
+            "board code sync hook failed while resuming task %s",
+            task_id,
+            exc_info=True,
+        )
     if _is_code_implement(task) and str(approval.get("op") or "") == "code_run_task":
         _settle_code_implement_approval(table, task, approval)
         return
@@ -1350,7 +1383,7 @@ def _brief_required_evidence_tools(brief: str, *, offered: set[str] | None = Non
     return needed
 
 
-def _offered_task_ops(ctx: board_tools.ToolContext) -> set[str]:
+def _offered_task_ops(ctx: ToolContext) -> set[str]:
     roster = seats_by_id(ctx.table, ctx.settings) if ctx.seat_id else None
     return {
         op.name
@@ -1472,7 +1505,7 @@ def _persist_step_progress(table: Any, task_id: str, calls: list[dict[str, Any]]
     board_store.put_task(table, task)
 
 
-def _seed_content_plan_evidence(table: Any, task: dict[str, Any], ctx: board_tools.ToolContext) -> str:
+def _seed_content_plan_evidence(table: Any, task: dict[str, Any], ctx: ToolContext) -> str:
     """Run GA4 reads the content-plan brief requires, before the model generates the week."""
     if not _is_content_plan(task):
         return ""
@@ -1504,20 +1537,6 @@ def _seed_content_plan_evidence(table: Any, task: dict[str, Any], ctx: board_too
     return note + ". Cite these call ids in task_finish evidence."
 
 
-def _known_evidence_ids(table: Any, task: dict[str, Any]) -> set[str]:
-    known, _, _, _ = _evidence_catalog(table, task)
-    return known
-
-
-def _cited_evidence_ops(table: Any, task: dict[str, Any], evidence: list[str]) -> set[str]:
-    _, alias_to_id, id_to_op, _ = _evidence_catalog(table, task)
-    ops: set[str] = set()
-    for raw in evidence:
-        cid = alias_to_id.get(str(raw), str(raw))
-        op = id_to_op.get(cid)
-        if op:
-            ops.add(op)
-    return ops
 
 
 def _canonical_evidence_ids(table: Any, task: dict[str, Any], evidence: list[str]) -> list[str]:
@@ -1532,7 +1551,7 @@ def _canonical_evidence_ids(table: Any, task: dict[str, Any], evidence: list[str
     return out
 
 
-def _offered_evidence_ops(ctx: board_tools.ToolContext, task: dict[str, Any]) -> set[str]:
+def _offered_evidence_ops(ctx: ToolContext, task: dict[str, Any]) -> set[str]:
     offered = _offered_task_ops(ctx)
     roster = seats_by_id(ctx.table, ctx.settings)
     for hid in task.get("helpTaskIds") or []:
@@ -1597,531 +1616,57 @@ def _remaining_sla_hours(task: dict[str, Any]) -> int:
     return max(1, min(168, int(hours)))
 
 
-def _seat_covers_tools(seat: dict[str, Any], tool_ids: list[str]) -> bool:
-    levels = seat.get("effectiveLevels") or {}
-    return all(str(levels.get(tid) or "off") != "off" for tid in tool_ids)
 
 
-def _persona_covers_tools(settings: dict[str, Any], persona_id: str, tool_ids: list[str]) -> bool:
-    return all(board_tools.effective_level(settings, tid, persona_id) != "off" for tid in tool_ids)
 
 
-def _normalize_help_tool_ids(raw: Any) -> list[str]:
-    ids: list[str] = []
-    items = raw if isinstance(raw, list) else []
-    for item in items:
-        tid = str(item or "").strip()
-        if tid and tid in BOARD_TOOL_IDS and tid not in _HELP_INTERNAL_TOOLS and tid not in ids:
-            ids.append(tid)
-    return ids
 
 
 _PAGE_FETCH_NEED = ("fetch", "page", "official", "website", "url", "lcsd", "provider site")
 
 
-def _remap_help_tool_ids(tool_ids: list[str], need: str) -> list[str]:
-    """``web`` is GA4. Page-fetch help must go to ``research`` (or be refused)."""
-    lower = (need or "").lower()
-    if not any(token in lower for token in _PAGE_FETCH_NEED):
-        return tool_ids
-    out: list[str] = []
-    for tid in tool_ids:
-        mapped = "research" if tid == "web" else tid
-        if mapped not in out:
-            out.append(mapped)
-    return out
 
 
-def pick_helper(
-    table: Any,
-    settings: dict[str, Any],
-    parent: dict[str, Any],
-    tool_ids: list[str],
-    suggested: str = "",
-) -> tuple[str, str]:
-    """Return ``(assignee, assigneeKind)`` for a seat or persona that covers ``tool_ids``."""
-    roster = seats(table, settings)
-    parent_assignee = str(parent.get("assignee") or "")
-    parent_manager = str(parent.get("managerId") or "")
-    candidates = [
-        seat
-        for seat in roster
-        if seat.get("isActive")
-        and str(seat.get("id")) != parent_assignee
-        and _seat_covers_tools(seat, tool_ids)
-    ]
-    if suggested:
-        for seat in candidates:
-            if str(seat.get("id")) == suggested:
-                return suggested, "seat"
-        if board_personas.is_persona_id(suggested) and suggested != parent_assignee:
-            if _persona_covers_tools(settings, suggested, tool_ids):
-                return suggested, "persona"
-    def _score(seat: dict[str, Any]) -> tuple[int, int, int, str]:
-        levels = seat.get("effectiveLevels") or {}
-        extra = sum(1 for lvl in levels.values() if str(lvl or "off") != "off")
-        writes = sum(1 for lvl in levels.values() if str(lvl) in ("propose", "act"))
-        same_mgr = 0 if str(seat.get("reportsTo") or "") == parent_manager else 1
-        return (same_mgr, extra, writes, str(seat.get("id") or ""))
-
-    if candidates:
-        best = min(candidates, key=_score)
-        return str(best["id"]), "seat"
-    # Last resort: the parent's manager persona at desk tier. Their reviewer
-    # is the chair (see ``_reviewer_id``), so they do not accept their own work.
-    if (
-        parent_manager
-        and parent_manager != parent_assignee
-        and _persona_covers_tools(settings, parent_manager, tool_ids)
-    ):
-        return parent_manager, "persona"
-    raise StaffError(
-        "No active seat has those tools. Finish with confidence low and write unavailable."
-    )
 
 
-def _open_help_child_ids(table: Any, task: dict[str, Any]) -> list[str]:
-    open_ids: list[str] = []
-    for hid in task.get("helpTaskIds") or []:
-        child = board_store.get_task(table, str(hid))
-        if child and child.get("status") not in TERMINAL_STATUSES:
-            open_ids.append(str(hid))
-    return open_ids
 
 
-def _pending_help_approvals(table: Any, task_id: str) -> list[dict[str, Any]]:
-    return [
-        approval
-        for approval in board_store.list_approvals(table)
-        if approval.get("status") == "pending"
-        and approval.get("op") == "task_request_help"
-        and str((approval.get("context") or {}).get("taskId") or "") == task_id
-    ]
 
 
-def prepare_help_request(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    if not enabled(ctx.settings):
-        raise StaffError("Staff is disabled")
-    if not ctx.task_id:
-        raise StaffError("task_request_help is only available on a running task")
-    parent = board_store.get_task(ctx.table, ctx.task_id)
-    if not parent:
-        raise StaffError("Task not found")
-    if parent.get("parentTaskId"):
-        raise StaffError("Help tasks cannot request further help. Finish with what you have.")
-    if int(parent.get("helpRequests") or 0) >= BOARD_STAFF_MAX_HELP_REQUESTS_PER_TASK:
-        raise StaffError("This task already used its one help request. Finish with what you have.")
-    if parent.get("status") == "waiting_subtask":
-        raise StaffError("A help request is already in flight")
-    if parent.get("status") == "waiting_approval" and ctx.actor != "owner":
-        raise StaffError("A help request is already in flight")
-    pending_help = _pending_help_approvals(ctx.table, str(parent.get("taskId") or ""))
-    if _open_help_child_ids(ctx.table, parent) or (pending_help and ctx.actor != "owner"):
-        raise StaffError("A help request is already in flight")
-    need = " ".join(str(args.get("need") or "").split())
-    if not need:
-        raise StaffError("need is required")
-    if len(need) > 2000:
-        raise StaffError("need must be at most 2000 characters")
-    tool_ids = _remap_help_tool_ids(_normalize_help_tool_ids(args.get("toolIds")), str(args.get("need") or ""))
-    if not tool_ids:
-        raise StaffError(
-            "toolIds must be one or more board tools you were not offered (for example web or finance). "
-            "If nobody has those tools, finish with unavailable."
-        )
-    roster = seats_by_id(ctx.table, ctx.settings) if ctx.seat_id else None
-    offered_tools = {
-        op.tool_id
-        for op, _ in board_tools.available_ops(
-            ctx.settings,
-            ctx.persona_id,
-            context="task",
-            seat_id=ctx.seat_id,
-            seats_by_id=roster,
-        )
-        if op.tool_id != "task"
-    }
-    # web_* is GA4. Remap a page-fetch ask to research. A need that names GA4
-    # (sessions, visitor source, GTM) keeps web so a seat with GA4 can take it.
-    asked_web = "web" in _normalize_help_tool_ids(args.get("toolIds"))
-    ga4_need = any(_brief_has_alias(need.lower(), alias) for alias in _GA4_ASSIGN_ALIASES)
-    if (
-        "web" in tool_ids
-        and "research" in offered_tools
-        and "web" not in offered_tools
-        and not ga4_need
-    ):
-        mapped: list[str] = []
-        for tid in tool_ids:
-            mapped_id = "research" if tid == "web" else tid
-            if mapped_id not in mapped:
-                mapped.append(mapped_id)
-        tool_ids = mapped
-    if all(tid in offered_tools for tid in tool_ids):
-        if asked_web and not ga4_need and "research" in offered_tools and "web" not in offered_tools:
-            raise StaffError(
-                "You already have research. web_* is GA4 only; fetch pages with "
-                "research_search and research_fetch_page instead of task_request_help."
-            )
-        raise StaffError("You already have those tools; call them on this task instead of requesting help")
-    suggested = str(args.get("suggestedAssignee") or "").strip()
-    assignee, kind = pick_helper(ctx.table, ctx.settings, parent, tool_ids, suggested)
-    manager_id = str(parent.get("managerId") or "")
-    staff_level = board_tools.effective_level(ctx.settings, "staff", manager_id)
-    if not board_tools.allows(staff_level, "propose"):
-        raise StaffError("Your manager cannot assign staff help. Finish with unavailable.")
-    return {
-        "parent": parent,
-        "need": need,
-        "toolIds": tool_ids,
-        "assignee": assignee,
-        "assigneeKind": kind,
-        "staffLevel": staff_level,
-    }
 
 
-def validate_task_request_help(ctx: board_tools.ToolContext, args: dict[str, Any]) -> str | None:
-    try:
-        prepare_help_request(ctx, args)
-    except StaffError as exc:
-        return str(exc)
-    return None
 
 
-def act_guard_task_request_help(ctx: board_tools.ToolContext, _args: dict[str, Any]) -> str | None:
-    try:
-        prepared = prepare_help_request(ctx, _args)
-    except StaffError:
-        return None
-    if prepared["staffLevel"] != "act":
-        return "staff assign is propose-level for this manager"
-    return None
 
 
-def _help_child_brief(parent: dict[str, Any], need: str, tool_ids: list[str]) -> str:
-    excerpt = str(parent.get("brief") or "")[:800]
-    return (
-        f"{need}\n\n"
-        f"Parent task {parent.get('taskId')} assigned to {parent.get('assignee')}: {excerpt}\n"
-        f"Use {', '.join(tool_ids)} (or the equivalent offered functions) and write a markdown "
-        f"memo the parent can cite as evidence. Call the tools; pass their call ids in evidence."
-    )
 
 
-def _park_waiting_subtask(table: Any, task: dict[str, Any], child_id: str) -> None:
-    stored = board_store.get_task(table, str(task.get("taskId") or ""))
-    if stored is not None and stored.get("status") not in ("running", "waiting_approval"):
-        return
-    if stored is None and task.get("status") not in ("running", "waiting_approval"):
-        return
-    help_ids = [str(x) for x in (task.get("helpTaskIds") or []) if x]
-    if child_id not in help_ids:
-        help_ids.append(child_id)
-    task["status"] = "waiting_subtask"
-    task["blockedOn"] = [child_id]
-    task["helpTaskIds"] = help_ids
-    task["helpRequests"] = int(task.get("helpRequests") or 0) + 1
-    task["idleSteps"] = 0
-    _stamp_parked(task, reason=f"waiting on help task {child_id}", reset_clock=True)
-    _align_step_claim(task)
-    board_store.put_task(table, task)
-    _log_event("info", tag="board_staff_waiting_subtask", taskId=task.get("taskId"), childTaskId=child_id)
 
 
-def op_task_request_help(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
-    prepared = prepare_help_request(ctx, args)
-    parent = board_store.get_task(ctx.table, str(prepared["parent"].get("taskId") or "")) or prepared["parent"]
-    if ctx.actor != "owner" and parent.get("status") != "running":
-        raise StaffError("Task is not running")
-    if ctx.actor == "owner" and parent.get("status") not in ("running", "waiting_approval"):
-        raise StaffError("Help request is no longer waiting")
-    child = create_task(
-        ctx.table,
-        ctx.settings,
-        assignee=prepared["assignee"],
-        origin="task",
-        brief=_help_child_brief(parent, prepared["need"], prepared["toolIds"]),
-        deliverable_type="markdown",
-        sla_hours=_remaining_sla_hours(parent),
-        created_by=ctx.seat_id or ctx.persona_id or ctx.owner_sub,
-        parent_task_id=str(parent.get("taskId") or ""),
-    )
-    _park_waiting_subtask(ctx.table, parent, str(child.get("taskId") or ""))
-    return {
-        "ok": True,
-        "childTaskId": child.get("taskId"),
-        "assignee": prepared["assignee"],
-        "status": "waiting_subtask",
-    }
 
 
-def preview_task_request_help(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any] | None:
-    try:
-        prepared = prepare_help_request(ctx, args)
-    except StaffError:
-        return None
-    parent = prepared["parent"]
-    return {
-        "kind": "staff_help",
-        "from": parent.get("assignee"),
-        "helper": prepared["assignee"],
-        "need": prepared["need"],
-        "toolIds": prepared["toolIds"],
-        "parentTaskId": parent.get("taskId"),
-        "parentBrief": str(parent.get("brief") or "")[:200],
-    }
 
 
-def summarize_help_request(
-    *, prepared: dict[str, Any] | None = None, args: dict[str, Any] | None = None
-) -> str:
-    payload = args or {}
-    tool_ids = list((prepared or {}).get("toolIds") or _normalize_help_tool_ids(payload.get("toolIds")))
-    tools = ", ".join(str(t) for t in tool_ids if t) or "tools"
-    helper = str((prepared or {}).get("assignee") or "a helper")
-    need = str((prepared or {}).get("need") or payload.get("need") or "")
-    return f"Ask {helper} for {tools}: {need[:80]}"
 
 
-def help_available_line(
-    table: Any,
-    settings: dict[str, Any],
-    task: dict[str, Any],
-    *,
-    roster: list[dict[str, Any]] | None = None,
-) -> str:
-    if task.get("parentTaskId"):
-        return ""
-    if int(task.get("helpRequests") or 0) >= BOARD_STAFF_MAX_HELP_REQUESTS_PER_TASK:
-        return ""
-    seats_list = roster if roster is not None else seats(table, settings)
-    self_id = str(task.get("assignee") or "")
-    self_seat = next((seat for seat in seats_list if str(seat.get("id")) == self_id), None)
-    if self_seat:
-        self_tools = {
-            tid
-            for tid, lvl in (self_seat.get("effectiveLevels") or {}).items()
-            if str(lvl or "off") != "off" and tid not in _HELP_INTERNAL_TOOLS
-        }
-    elif board_personas.is_persona_id(self_id):
-        self_tools = {
-            tid
-            for tid in BOARD_TOOL_IDS
-            if tid not in _HELP_INTERNAL_TOOLS and board_tools.effective_level(settings, tid, self_id) != "off"
-        }
-    else:
-        self_tools = set()
-    parts: list[str] = []
-    for seat in seats_list:
-        if not seat.get("isActive") or str(seat.get("id")) == self_id:
-            continue
-        extras = sorted(
-            tid
-            for tid, lvl in (seat.get("effectiveLevels") or {}).items()
-            if str(lvl or "off") != "off" and tid not in self_tools and tid not in _HELP_INTERNAL_TOOLS
-        )
-        if extras:
-            parts.append(f"{seat.get('id')} ({', '.join(extras)})")
-    if not parts:
-        return ""
-    return (
-        "Help available: "
-        + "; ".join(parts[:8])
-        + ".\nIf the brief needs a tool you were not offered, call task_request_help once "
-        "with those tool ids instead of finishing unable to verify."
-    )
 
 
-def _child_evidence_records(table: Any, child: dict[str, Any]) -> list[dict[str, str]]:
-    """Call ids the parent can cite from a help child's tool work."""
-    child_id = str(child.get("taskId") or "")
-    if not child_id:
-        return []
-    wanted = [str(x) for x in (child.get("evidence") or []) if x]
-    calls = board_store.list_tool_calls_for_task(table, child_id)
-    by_id = {str(c.get("callId")): c for c in calls if c.get("callId")}
-    records: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for cid in wanted:
-        if cid in seen:
-            continue
-        seen.add(cid)
-        call = by_id.get(cid) or {}
-        records.append(
-            {
-                "callId": cid,
-                "op": str(call.get("op") or ""),
-                "summary": str(call.get("summary") or "")[:200],
-            }
-        )
-    for call in calls:
-        cid = str(call.get("callId") or "")
-        op = str(call.get("op") or "")
-        if not cid or cid in seen or op.startswith("task_"):
-            continue
-        if str(call.get("status") or "ok") not in ("ok", ""):
-            continue
-        seen.add(cid)
-        records.append(
-            {
-                "callId": cid,
-                "op": op,
-                "summary": str(call.get("summary") or "")[:200],
-            }
-        )
-    return records
 
 
-def _help_evidence_block(table: Any, child: dict[str, Any]) -> str:
-    lines = [
-        f"HELP FROM {child.get('assignee')} (task {child.get('taskId')}): "
-        f"{child.get('summary') or ''}".strip(),
-        "",
-        read_deliverable(child, limit=6000),
-    ]
-    records = _child_evidence_records(table, child)
-    if records:
-        lines.append("")
-        lines.append("Cite these call ids in task_finish evidence:")
-        for rec in records:
-            extra = f" {rec['summary']}" if rec.get("summary") else ""
-            lines.append(f"EVIDENCE: {rec['callId']} ({rec['op']}){extra}".rstrip())
-    return "\n".join(line for line in lines if line is not None).strip()
 
 
-def _resume_parent_after_help(
-    table: Any,
-    settings: dict[str, Any],
-    parent_id: str,
-    message: str,
-    *,
-    child: dict[str, Any] | None = None,
-    success: bool = False,
-) -> None:
-    parent = board_store.get_task(table, parent_id)
-    if not parent or parent.get("status") != "waiting_subtask":
-        return
-    if success and child:
-        text = _help_evidence_block(table, child)
-    else:
-        text = f"HELP: {message}"
-    combined = _append_scratchpad(parent, text)
-    parent["scratchpadKey"] = _scratchpad_key(parent_id)
-    parent["scratchpadChars"] = len(combined)
-    parent["status"] = "running"
-    _clear_parked(parent)
-    parent["updatedAt"] = board_store.now_iso()
-    _align_step_claim(parent)
-    board_store.put_task(table, parent)
-    if enabled(settings):
-        board_async.invoke_async(
-            {
-                "internal": "board_staff_step",
-                "boardKey": BOARD_KEY,
-                "taskId": parent_id,
-                "step": int(parent.get("step") or 0) + 1,
-            },
-            fallback=run_step,
-        )
 
 
-def _notify_parent_of_child(table: Any, child: dict[str, Any], message: str) -> None:
-    parent_id = str(child.get("parentTaskId") or "")
-    if not parent_id:
-        return
-    settings = board_store.load_settings(table)
-    _resume_parent_after_help(table, settings, parent_id, message, child=child, success=False)
 
 
-def _note_parent_child_waiting(table: Any, child: dict[str, Any], message: str, *, reason: str) -> None:
-    """Leave the parent parked and tell it a child is waiting on the founder."""
-    parent_id = str(child.get("parentTaskId") or "")
-    if not parent_id:
-        return
-    parent = board_store.get_task(table, parent_id)
-    if not parent or parent.get("status") != "waiting_subtask":
-        return
-    combined = _append_scratchpad(parent, message)
-    parent["scratchpadKey"] = _scratchpad_key(parent_id)
-    parent["scratchpadChars"] = len(combined)
-    _stamp_parked(parent, reason=reason, reset_clock=False)
-    board_store.put_task(table, parent)
 
 
-def _help_children_held_for_owner(table: Any, task: dict[str, Any]) -> list[dict[str, Any]]:
-    held: list[dict[str, Any]] = []
-    for hid in task.get("helpTaskIds") or []:
-        child = board_store.get_task(table, str(hid))
-        if child and child.get("status") in OWNER_HELD_CHILD_STATUSES:
-            held.append(child)
-    return held
 
 
-def _reject_pending_help_approvals(table: Any, task_id: str, note: str) -> None:
-    now = board_store.now_iso()
-    for approval in _pending_help_approvals(table, task_id):
-        approval_id = str(approval.get("approvalId") or "")
-        if not approval_id:
-            continue
-        if not board_store.claim_approval_decision(table, approval_id, status="rejected"):
-            continue
-        board_store.put_approval(
-            table,
-            {
-                **approval,
-                "status": "rejected",
-                "note": note[:1000],
-                "decidedAt": now,
-                "decidedBySub": "system:expiry",
-                "updatedAt": now,
-            },
-        )
 
 
-def _cancel_open_help_children(table: Any, parent: dict[str, Any], by_sub: str) -> None:
-    for hid in list(parent.get("helpTaskIds") or []):
-        child = board_store.get_task(table, str(hid))
-        if not child or child.get("status") in TERMINAL_STATUSES:
-            continue
-        cancel_task(table, str(hid), by_sub, notify_parent=False)
 
 
-def _expire_help_wait(table: Any, settings: dict[str, Any], task: dict[str, Any]) -> None:
-    status = str(task.get("status") or "")
-    if status == "waiting_subtask":
-        if _help_children_held_for_owner(table, task):
-            return
-        _cancel_open_help_children(table, task, "system:expiry")
-        _resume_parent_after_help(
-            table, settings, str(task.get("taskId") or ""), "help unavailable: no answer"
-        )
-        return
-    if status != "waiting_approval":
-        return
-    task_id = str(task.get("taskId") or "")
-    if not _pending_help_approvals(table, task_id):
-        return
-    _reject_pending_help_approvals(
-        table, task_id, "Help request expired with no founder decision."
-    )
-    _append_scratchpad(task, "HELP: the help request expired with no founder decision. Finish with what you have.")
-    task["scratchpadKey"] = _scratchpad_key(task_id)
-    task["helpRequests"] = int(task.get("helpRequests") or 0) + 1
-    task["status"] = "running"
-    _clear_parked(task)
-    task["updatedAt"] = board_store.now_iso()
-    _align_step_claim(task)
-    board_store.put_task(table, task)
-    if enabled(settings):
-        board_async.invoke_async(
-            {
-                "internal": "board_staff_step",
-                "boardKey": BOARD_KEY,
-                "taskId": task.get("taskId"),
-                "step": int(task.get("step") or 0) + 1,
-            },
-            fallback=run_step,
-        )
 
 
 _DUTY_DATE_SUFFIX_RE = re.compile(r":\d{4}-\d{2}-\d{2}$")
@@ -2222,20 +1767,6 @@ def supersede_stale_failed_duties(table: Any) -> int:
     return cancelled
 
 
-def expire_waiting_help(table: Any, settings: dict[str, Any]) -> int:
-    cut = datetime.now(timezone.utc) - timedelta(hours=BOARD_STAFF_WAITING_EXPIRY_HOURS)
-    cut_iso = _utc_iso_z(cut)
-    expired = 0
-    for status in ("waiting_approval", "waiting_subtask"):
-        for task in board_store.list_tasks(table, status):
-            parked = str(task.get("parkedAt") or task.get("updatedAt") or "")
-            if parked < cut_iso:
-                before = str(task.get("status") or "")
-                _expire_help_wait(table, settings, task)
-                latest = board_store.get_task(table, str(task.get("taskId") or "")) or task
-                if str(latest.get("status") or "") != before:
-                    expired += 1
-    return expired
 
 
 def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, wanted: int) -> None:
@@ -2377,7 +1908,7 @@ def _confirmed_lessons(table: Any, subject: str) -> list[str]:
     return out
 
 
-def _origin_from_ctx(ctx: board_tools.ToolContext) -> str:
+def _origin_from_ctx(ctx: ToolContext) -> str:
     if ctx.actor == "owner":
         return "owner"
     if ctx.kind == "meeting":
@@ -2389,7 +1920,7 @@ def _origin_from_ctx(ctx: board_tools.ToolContext) -> str:
     return "chat"
 
 
-def act_guard_staff_assign(ctx: board_tools.ToolContext, _args: dict[str, Any]) -> str | None:
+def act_guard_staff_assign(ctx: ToolContext, _args: dict[str, Any]) -> str | None:
     cap = int((ctx.settings.get("staff") or {}).get("maxRunningTasks") or BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT)
     running = len([t for t in board_store.list_tasks(ctx.table, "running") if t.get("status") == "running"])
     reviewing = len([t for t in board_store.list_tasks(ctx.table, "review") if t.get("status") == "review"])
@@ -2398,7 +1929,7 @@ def act_guard_staff_assign(ctx: board_tools.ToolContext, _args: dict[str, Any]) 
     return None
 
 
-def reuse_open_assignment(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any] | None:
+def reuse_open_assignment(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any] | None:
     """Attach a minutes action to an existing open task instead of proposing again."""
     if _origin_from_ctx(ctx) != "minutes":
         return None
@@ -2431,7 +1962,7 @@ def reuse_open_assignment(ctx: board_tools.ToolContext, args: dict[str, Any]) ->
     return public_task(match)
 
 
-def op_staff_assign(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+def op_staff_assign(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     task = create_task(
         ctx.table,
         ctx.settings,
@@ -2447,7 +1978,7 @@ def op_staff_assign(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[
     return public_task(task)
 
 
-def op_staff_list_tasks(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+def op_staff_list_tasks(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     status = str(args.get("status") or "") or None
     if status and status not in BOARD_STAFF_TASK_STATUSES:
         raise StaffError(f"status must be one of {', '.join(BOARD_STAFF_TASK_STATUSES)}")
@@ -2458,7 +1989,7 @@ def op_staff_list_tasks(ctx: board_tools.ToolContext, args: dict[str, Any]) -> d
     return {"tasks": [public_task(t) for t in tasks[:limit]]}
 
 
-def op_staff_get_deliverable(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+def op_staff_get_deliverable(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     task = board_store.get_task(ctx.table, str(args.get("taskId") or ""))
     if not task:
         raise StaffError("Task not found")
@@ -2477,7 +2008,7 @@ def op_staff_get_deliverable(ctx: board_tools.ToolContext, args: dict[str, Any])
     }
 
 
-def op_staff_request_revision(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+def op_staff_request_revision(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     task = board_store.get_task(ctx.table, str(args.get("taskId") or ""))
     if not task:
         raise StaffError("Task not found")
@@ -2489,7 +2020,7 @@ def op_staff_request_revision(ctx: board_tools.ToolContext, args: dict[str, Any]
     return public_task(apply_review(ctx.table, ctx.settings, task, verdict="return", notes=notes, by=ctx.persona_id))
 
 
-def op_staff_cancel_task(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+def op_staff_cancel_task(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     task = board_store.get_task(ctx.table, str(args.get("taskId") or ""))
     if not task:
         raise StaffError("Task not found")
@@ -2514,7 +2045,7 @@ def _require_running_task(task: dict[str, Any] | None) -> dict[str, Any]:
     return task
 
 
-def op_task_note(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+def op_task_note(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     task = _require_running_task(board_store.get_task(ctx.table, ctx.task_id))
     text = str(args.get("text") or "").strip()
     combined = _append_scratchpad(task, text)
@@ -2526,7 +2057,7 @@ def op_task_note(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str
 
 
 def _finish_blocked(
-    ctx: board_tools.ToolContext,
+    ctx: ToolContext,
     task: dict[str, Any],
     args: dict[str, Any],
     deliverable: str,
@@ -2580,7 +2111,7 @@ def _finish_blocked(
     return {"ok": True, "status": "needs_owner", "blocked": True, "parkedReason": parked}
 
 
-def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[str, Any]:
+def op_task_finish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     task = _require_running_task(board_store.get_task(ctx.table, ctx.task_id))
     status_arg = str(args.get("status") or "").strip().lower()
     deliverable = _strip_function_call_leak(str(args.get("deliverable") or ""))
@@ -2718,424 +2249,30 @@ def op_task_finish(ctx: board_tools.ToolContext, args: dict[str, Any]) -> dict[s
     return {"ok": True, "status": "review", "deliverableKey": key}
 
 
-def _catalog_quality_return(task: dict[str, Any], raw: str) -> str:
-    kind = str(((task or {}).get("eventRef") or {}).get("kind") or "")
-    if kind not in BOARD_CATALOG_EVENT_KINDS:
-        return ""
-    try:
-        import board_catalog_import
-
-        sheet = board_catalog_import.parse_sheet(raw)
-        kept, dropped = board_catalog_import.keep_quality_orgs(sheet)
-        issues = board_catalog_import.sheet_quality_issues(
-            kept if kept.get("organisations") else sheet
-        )
-    except Exception as exc:
-        return f"Catalog sheet does not parse: {exc}"[:300]
-    if kept.get("organisations") and not issues:
-        return ""
-    if not issues and not dropped:
-        return ""
-    prefix = "Return — "
-    if dropped:
-        prefix = f"Return — dropped {len(dropped)} thin org(s); "
-    if not issues:
-        return prefix + ", ".join(dropped[:6])
-    return prefix + "; ".join(issues[:6])
 
 
-def _review_user_prompt(
-    task: dict[str, Any],
-    raw: str,
-    evidence_lines: list[str],
-    *,
-    catalog_note: str = "",
-) -> str:
-    """User message for the manager review call."""
-    catalog_line = (catalog_note.strip() + "\n") if catalog_note.strip() else ""
-    return (
-        f"You are reviewing work assigned to {task.get('assignee')}.\n"
-        f"Brief: {task.get('brief')}\n"
-        f"Deliverable type: {task.get('deliverableType')}\n"
-        f"Confidence: {task.get('confidence')}\n"
-        f"{_review_flag_line(task)}"
-        f"Evidence:\n" + ("\n".join(evidence_lines) or "(none)") + "\n\n"
-        f"{catalog_line}"
-        f"Deliverable:\n{raw}\n\n"
-        "Books of record: there is no QuickBooks or Xero. This board is Siu Tin Dei "
-        "only. For receivables aging, accept a report backed by finance_aging_report "
-        "(including zero outstanding or a Data API not-configured error from that tool). "
-        "Cash and Siu Tin Dei statement-book flow come from finance_cash_snapshot; AWS "
-        "from aws_monthly_cost; Meta from meta_ad_spend or finance_unit_economics. Return "
-        "if the deliverable reports the LX Software statement book or other houses as "
-        "Siu Tin Dei product P&L. Return if the deliverable still has "
-        "[Insert …] placeholders or 0-30/31-60 aging buckets instead of current / D+7 / "
-        "D+21 / D+35. Accept a memo that states a figure is unavailable with the tool error. "
-        "Do not return asking for accounting software or credentials.\n"
-        "If the deliverable claims an action (label, publish, reply, create, send, rebase, merge, sync, implement, fix) "
-        "and Evidence is (none), you MUST return.\n"
-        "If the deliverable uses Campaign A / Article 1 / screenshotN.png template data, return.\n"
-        "Visitor sources and tracking: proof is web_sessions (referrers / sessionSource), "
-        "web_conversions (events), and web_gtm_status when GTM is in the brief. Zero "
-        "sessions or empty referrers is a valid connected result. A not-configured or "
-        "WebError from those tools is a valid unavailable. Do not return asking for GA4 "
-        "console access, analytics credentials, or direct access to analytics tools.\n"
-        "Evidence tagged (via seat, task id) was gathered by a help subtask; accept it "
-        "as if the assignee called those tools.\n"
-        "If the brief demands JSON and the Deliverable is not valid JSON, or contains "
-        "`!function_call:` text, you MUST return.\n"
-        "Catalog sheets: return if any organisation has fewer than two of "
-        "opening_hours, (free_or_paid or price_note), and address_en in verified_fields. "
-        "Accept only facts read on the official page. When a quality-filter note "
-        "gives a kept organisation count, that count is authoritative — do not "
-        "return only because it differs from an 'exactly N' line in the brief.\n"
-        'Return JSON {"verdict":"accept"|"return","notes":"…"}.'
-    )
 
 
-def run_review(payload: dict[str, Any]) -> None:
-    if not board_store.event_targets_this_board(payload):
-        return
-    table = board_store.records_table()
-    settings = board_store.load_settings(table)
-    if not enabled(settings):
-        return
-    task_id = str(payload.get("taskId") or "")
-    task = board_store.get_task(table, task_id)
-    if not task or task.get("status") != "review":
-        return
-    reviewer_id = _reviewer_id(task)
-    overrides = board_store.load_member_overrides(table)
-    charter = board_store.load_charter(table)
-    default = board_personas.persona_default(reviewer_id) or {}
-    profile = board_personas.effective_profile(default, overrides.get(reviewer_id))
-    raw = _blob_get(str(task.get("deliverableKey") or "")).decode("utf-8", errors="replace")
-    if len(raw) > 12000:
-        raw = raw[:12000] + "\n[… truncated]"
-    catalog_note = ""
-    try:
-        import board_catalog_import
-
-        if str(((task or {}).get("eventRef") or {}).get("kind") or "") in BOARD_CATALOG_EVENT_KINDS:
-            sheet = board_catalog_import.parse_sheet(raw)
-            kept, dropped = board_catalog_import.keep_quality_orgs(sheet)
-            kept_orgs = kept.get("organisations") if isinstance(kept.get("organisations"), list) else []
-            catalog_note = (
-                f"Quality filter kept {len(kept_orgs)} organisation(s). "
-                "That count is authoritative. Do not return because it differs "
-                "from an 'exactly N' line in the brief."
-            )
-            if dropped:
-                catalog_note += " Dropped as thin: " + ", ".join(str(name) for name in dropped[:6]) + "."
-            if dropped and kept_orgs:
-                raw = json.dumps(kept, ensure_ascii=False, indent=2)
-                key = str(task.get("deliverableKey") or "")
-                if key:
-                    _blob_put(key, raw.encode("utf-8"))
-                task["openQuestions"] = [
-                    *(task.get("openQuestions") or []),
-                    *(f"dropped thin org: {name}" for name in dropped[:6]),
-                ][:20]
-                board_store.put_task(table, task)
-    except Exception as exc:
-        _log_event("warning", tag="board_staff_catalog_keep_failed", error=str(exc)[:200])
-    quality = _catalog_quality_return(task, raw)
-    if quality:
-        apply_review(table, settings, task, verdict="return", notes=quality, by="manager")
-        return
-    cited = set(task.get("evidence") or [])
-    evidence_lines: list[str] = []
-    for call in board_store.list_tool_calls_for_task(table, task_id):
-        if str(call.get("callId")) in cited:
-            evidence_lines.append(f"- {call.get('op')}: {call.get('summary')}")
-    for hid in task.get("helpTaskIds") or []:
-        child = board_store.get_task(table, str(hid))
-        via = str((child or {}).get("assignee") or "helper")
-        for call in board_store.list_tool_calls_for_task(table, str(hid)):
-            if str(call.get("callId")) in cited:
-                evidence_lines.append(
-                    f"- {call.get('op')} (via {via}, task {hid}): {call.get('summary')}"
-                )
-    prompt = _review_user_prompt(task, raw, evidence_lines, catalog_note=catalog_note)
-    system = board_personas.render_system_prompt(profile, charter)
-    model = board_budget.model_for("standup", settings)
-    completion = board_budget.board_completion(
-        table=table,
-        messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-        model=model,
-        timeout=60,
-        json_mode=True,
-        temperature=0.2,
-        max_tokens=800,
-        tag="board_staff_review",
-    )
-    board_store.add_staff_usage_day(table, reviewer_id, {**(completion.usage or {}), "calls": 1})
-    verdict = "return"
-    notes = ""
-    parsed_ok = False
-    try:
-        parsed = json.loads(completion.text or "")
-        raw_verdict = str(parsed.get("verdict") or "").lower()
-        if raw_verdict in ("accept", "return"):
-            verdict = raw_verdict
-            parsed_ok = True
-        notes = str(parsed.get("notes") or "")[:2000]
-    except json.JSONDecodeError:
-        notes = (completion.text or "")[:2000]
-    if not parsed_ok:
-        _log_event("warning", tag="board_staff_review_unparsed", taskId=task_id)
-        verdict = "return"
-    apply_review(table, settings, task, verdict=verdict, notes=notes, by="manager")
 
 
-def apply_review(
-    table: Any,
-    settings: dict[str, Any],
-    task: dict[str, Any],
-    *,
-    verdict: str,
-    notes: str,
-    by: str,
-) -> dict[str, Any]:
-    now = board_store.now_iso()
-    seq = int(task.get("reviews") or 0) + 1
-    review = {"seq": seq, "verdict": verdict, "notes": notes, "at": now, "by": by}
-    board_store.put_task_review(table, str(task["taskId"]), review)
-    task["reviews"] = seq
-    task["lastReview"] = {"verdict": verdict, "notes": notes, "at": now, "by": by}
-    task["updatedAt"] = now
-    if verdict == "accept":
-        is_owner_accept = str(by or "").startswith("owner")
-        if not is_owner_accept and _should_hold_unverified_accept(table, task):
-            task["status"] = "needs_owner"
-            task["finishedAt"] = None
-            board_store.put_task(table, task)
-            _note_parent_if_child_needs_owner(table, task)
-            return task
-        task["acceptedBy"] = by
-        return _accept_task(table, task, now, bypass_unverified=is_owner_accept)
-    revisions = int(task.get("revisions") or 0)
-    is_owner = str(by or "").startswith("owner")
-    is_final = revisions >= BOARD_STAFF_MAX_REVISIONS
-    if is_owner or is_final:
-        try:
-            import board_lessons
-
-            board_lessons.create_from_return(table, task)
-        except Exception as exc:
-            _log_event("warning", tag="board_lesson_from_return_failed", error=str(exc)[:200])
-    if revisions < BOARD_STAFF_MAX_REVISIONS:
-        _append_scratchpad(task, f"MANAGER NOTES: {notes}")
-        task["revisions"] = revisions + 1
-        task["status"] = "running"
-        task["idleSteps"] = 0
-        task["failureReason"] = ""
-        _align_step_claim(task)
-        board_store.put_task(table, task)
-        board_async.invoke_async(
-            {
-                "internal": "board_staff_step",
-                "boardKey": BOARD_KEY,
-                "taskId": task["taskId"],
-                "step": int(task.get("step") or 0) + 1,
-            },
-            fallback=run_step,
-        )
-        return task
-    task["status"] = "needs_owner"
-    task["finishedAt"] = None
-    board_store.put_task(table, task)
-    _note_parent_if_child_needs_owner(table, task)
-    return task
 
 
-def _task_attempted_required_tools(table: Any, task: dict[str, Any]) -> bool:
-    """True when the seat called every tool the brief names, even if those calls errored."""
-    needed = _brief_required_evidence_tools(str(task.get("brief") or ""))
-    if not needed:
-        return False
-    task_id = str(task.get("taskId") or "")
-    if not task_id:
-        return False
-    ops: set[str] = set()
-    for call in board_store.list_tool_calls_for_task(table, task_id):
-        op = str(call.get("op") or "")
-        if op and op not in _IDLE_TOOL_OPS:
-            ops.add(op)
-    return all(tool in ops for tool in needed)
 
 
-def note_parent_if_child_needs_owner(table: Any, task: dict[str, Any]) -> None:
-    """Public wrapper so catalog import can park a help child without calling a private."""
-    _note_parent_if_child_needs_owner(table, task)
 
 
-def _note_parent_if_child_needs_owner(table: Any, task: dict[str, Any]) -> None:
-    if not task.get("parentTaskId") or task.get("status") != "needs_owner":
-        return
-    notes = str((task.get("lastReview") or {}).get("notes") or "").strip()
-    extra = f" Last review: {notes[:200]}" if notes else ""
-    _note_parent_child_waiting(
-        table,
-        task,
-        f"HELP: task {task.get('taskId')} is waiting for founder review.{extra} "
-        "Stay parked until the founder accepts or cancels that help task.",
-        reason=f"help task {task.get('taskId')} needs founder review",
-    )
 
 
-def _is_review_headline_duty(task: dict[str, Any]) -> bool:
-    ref = task.get("eventRef") or {}
-    return ref.get("kind") == "duty" and str(ref.get("id") or "").startswith("review-headline:")
 
 
-def _should_hold_unverified_accept(table: Any, task: dict[str, Any]) -> bool:
-    flags = {str(f) for f in (task.get("flags") or [])}
-    if "no_evidence" not in flags and "salvaged" not in flags:
-        return False
-    if _is_review_headline_duty(task):
-        return False
-    if str((task.get("eventRef") or {}).get("kind") or "") in BOARD_CATALOG_EVENT_KINDS:
-        return False
-    if "salvaged" not in flags and _task_attempted_required_tools(table, task):
-        return False
-    if str(task.get("origin") or "") in _EVIDENCE_REQUIRED_ORIGINS:
-        return True
-    brief = str(task.get("brief") or "")
-    return bool(_CLAIMED_ACTION_RE.search(brief))
 
 
-def _task_has_open_approvals(table: Any, task: dict[str, Any]) -> bool:
-    task_id = str(task.get("taskId") or "")
-    if not task_id:
-        return False
-    blocked = [str(x) for x in (task.get("blockedOn") or []) if x]
-    if blocked:
-        return True
-    for approval in board_store.list_approvals(table):
-        if str(approval.get("status") or "") != "pending":
-            continue
-        ctx = approval.get("context") or {}
-        if str(ctx.get("taskId") or "") == task_id:
-            return True
-    return False
 
 
-def _should_close_linked_action(table: Any, task: dict[str, Any]) -> bool:
-    flags = {str(f) for f in (task.get("flags") or [])}
-    if flags & {"no_evidence", "salvaged", "staging_behind", "sync_scheduled"}:
-        return False
-    if _task_has_open_approvals(table, task):
-        return False
-    return True
 
 
-def _mark_delivered(table: Any, task: dict[str, Any], now: str) -> dict[str, Any]:
-    """Persist a delivered task, TTL, linked-action close, and parent/duty hooks."""
-    task["status"] = "delivered"
-    task["finishedAt"] = now
-    task["updatedAt"] = now
-    task["expiresAt"] = int(datetime.now(timezone.utc).timestamp()) + BOARD_STAFF_RETENTION_DAYS * 86400
-    action_id = task.get("actionId")
-    dtype = str(task.get("deliverableType") or "")
-    if action_id and dtype in ("markdown", "csv", "json", "issues", "pr") and _should_close_linked_action(table, task):
-        action = board_store.get_action(table, str(action_id))
-        if action:
-            action["note"] = (
-                (str(action.get("note") or "") + "\n" if action.get("note") else "")
-                + f"Closed by staff task {task['taskId']}: {task.get('summary') or ''}"
-            )[:2000]
-            action["status"] = "done"
-            action["closedBy"] = f"staff:{task['taskId']}"
-            action["updatedAt"] = now
-            board_store.put_action(table, action)
-    board_store.put_task(table, task)
-    if task.get("parentTaskId"):
-        _resume_parent_after_help(
-            table,
-            board_store.load_settings(table),
-            str(task.get("parentTaskId") or ""),
-            "help delivered",
-            child=task,
-            success=True,
-        )
-        return task
-    ref = task.get("eventRef") or {}
-    if ref.get("kind") == "duty" and str(ref.get("id") or "").startswith("market-brief:"):
-        try:
-            import board_intel
-
-            board_intel.on_brief_delivered(table, task)
-        except Exception as exc:
-            _log_event("warning", tag="board_intel_brief_deliver_failed", error=str(exc)[:200])
-    if ref.get("kind") == "duty" and str(ref.get("id") or "").startswith("content-plan:"):
-        try:
-            import board_content
-
-            board_content.on_plan_delivered(table, board_store.load_settings(table), task)
-        except Exception as exc:
-            _log_event("warning", tag="board_content_plan_deliver_failed", error=str(exc)[:200])
-    if ref.get("kind") == "duty" and str(ref.get("id") or "").startswith("content-readout:"):
-        try:
-            import board_content
-
-            board_content.on_readout_delivered(table, board_store.load_settings(table), task)
-        except Exception as exc:
-            _log_event("warning", tag="board_content_readout_deliver_failed", error=str(exc)[:200])
-    if ref.get("kind") == "code-review":
-        try:
-            import board_code
-
-            board_code.on_review_delivered(table, board_store.load_settings(table), task)
-        except Exception as exc:
-            _log_event("warning", tag="board_code_review_deliver_failed", error=str(exc)[:200])
-    return task
 
 
-def _accept_task(table: Any, task: dict[str, Any], now: str, *, bypass_unverified: bool = False) -> dict[str, Any]:
-    last = task.get("lastReview") or {}
-    if last.get("verdict") and last.get("verdict") != "accept":
-        task["status"] = "needs_owner"
-        task["finishedAt"] = None
-        task["updatedAt"] = now
-        board_store.put_task(table, task)
-        _note_parent_if_child_needs_owner(table, task)
-        return task
-    ref = task.get("eventRef") or {}
-    if ref.get("kind") == "ops" and str(ref.get("id") or "") == "rebase-staging":
-        import board_code
-
-        return board_code.accept_sync_staging_task(
-            table, task, now, bypass_unverified=bypass_unverified
-        )
-    if not bypass_unverified and _should_hold_unverified_accept(table, task):
-        task["status"] = "needs_owner"
-        task["finishedAt"] = None
-        task["updatedAt"] = now
-        board_store.put_task(table, task)
-        _note_parent_if_child_needs_owner(table, task)
-        return task
-    if ref.get("kind") in BOARD_CATALOG_EVENT_KINDS:
-        import board_catalog_import
-
-        try:
-            accepted = board_catalog_import.accept_catalog_task(table, task, now)
-            try:
-                import board_catalog
-
-                settings = board_store.load_settings(table)
-                sheet = board_catalog_import.parse_sheet(
-                    _blob_get(str(task.get("deliverableKey") or "")).decode("utf-8", errors="replace")
-                )
-                board_catalog.handoff_commercial_providers(table, settings, accepted, sheet)
-            except Exception as exc:
-                _log_event("info", tag="board_catalog_handoff_failed", error=str(exc)[:200])
-            return accepted
-        except Exception as exc:
-            _log_event("warning", tag="board_catalog_import_accept_failed", error=str(exc)[:200])
-            task["importPreview"] = {"ok": False, "error": str(exc)[:300], "taskId": task.get("taskId")}
-            return board_catalog_import._set_awaiting(table, task, now, phase="pending")
-    return _mark_delivered(table, task, now)
 
 
 def retry_task(table: Any, settings: dict[str, Any], task_id: str, by_sub: str) -> dict[str, Any]:
@@ -3242,153 +2379,12 @@ def cancel_task(
     return task
 
 
-def owner_review(table: Any, settings: dict[str, Any], task_id: str, verdict: str, notes: str, by_sub: str) -> dict[str, Any]:
-    task = board_store.get_task(table, task_id)
-    if not task:
-        raise StaffError("Task not found")
-    if verdict not in ("accept", "return"):
-        raise StaffError("verdict must be accept or return")
-    return apply_review(table, settings, task, verdict=verdict, notes=notes, by=f"owner:{by_sub}")
 
 
-def handle_tick(event: dict[str, Any]) -> dict[str, Any]:
-    if not board_store.event_targets_this_board(event):
-        return {"ok": True, "skipped": "other_board"}
-    table = board_store.records_table()
-    try:
-        settings = board_store.ensure_autonomy_defaults(table)
-    except Exception as exc:
-        _log_event("warning", tag="board_autonomy_defaults_failed", error=str(exc)[:200])
-        settings = board_store.load_settings(table)
-    try:
-        import board_holds
 
-        board_holds.expire_stale(table, settings, board_store.now_iso())
-    except Exception as exc:
-        _log_event("warning", tag="board_holds_expire_failed", error=str(exc)[:300])
-    if not enabled(settings):
-        return {"ok": True, "skipped": "disabled"}
-    try:
-        import board_breakers
 
-        board_breakers.evaluate(table, settings)
-        settings = board_store.load_settings(table)
-        if not enabled(settings):
-            return {"ok": True, "skipped": "disabled", "breaker": "budget"}
-    except ImportError:
-        pass
-    except Exception as exc:
-        _log_event("error", tag="board_breakers_tick_failed", error=str(exc)[:300])
-    try:
-        import board_holds
 
-        board_holds.execute_due(table, settings, board_store.now_iso())
-    except ImportError:
-        pass
-    except Exception as exc:
-        _log_event("error", tag="board_holds_tick_failed", error=str(exc)[:300])
-    try:
-        import board_catalog_import
 
-        board_catalog_import.handle_tick(table, settings)
-    except Exception as exc:
-        _log_event("warning", tag="board_catalog_import_tick_failed", error=str(exc)[:300])
-    try:
-        import board_catalog_bulk
-
-        board_catalog_bulk.maybe_queue_auto_imports(table, settings)
-    except Exception as exc:
-        _log_event("warning", tag="board_catalog_auto_bulk_failed", error=str(exc)[:300])
-    try:
-        import board_tools as _board_tools
-
-        _board_tools.expire_stale_approvals(table, settings)
-    except Exception as exc:
-        _log_event("warning", tag="board_approval_expiry_failed", error=str(exc)[:300])
-    try:
-        import board_duties
-
-        board_duties.run_due(table, settings)
-    except Exception as exc:
-        _log_event("warning", tag="board_duties_tick_failed", error=str(exc)[:300])
-    try:
-        import board_code
-
-        board_code.handle_tick(table, settings)
-    except Exception as exc:
-        _log_event("warning", tag="board_code_tick_failed", error=str(exc)[:300])
-    try:
-        import board_meeting
-
-        board_meeting.maybe_retry_failed_schedule(table, settings)
-    except Exception as exc:
-        _log_event("warning", tag="board_meeting_retry_failed", error=str(exc)[:300])
-    try:
-        supersede_stale_failed_duties(table)
-    except Exception as exc:
-        _log_event("warning", tag="board_staff_supersede_failed", error=str(exc)[:300])
-    try:
-        expire_waiting_help(table, settings)
-    except Exception as exc:
-        _log_event("warning", tag="board_staff_help_expiry_failed", error=str(exc)[:300])
-    started = drain_queue(table, settings)
-    stuck_cut = datetime.now(timezone.utc) - timedelta(seconds=BOARD_STAFF_TASK_STUCK_SECONDS)
-    cut_iso = _utc_iso_z(stuck_cut)
-    # AdminApiFn timeout is 300 s; only re-invoke after that plus a margin so
-    # a live hung step cannot race a replacement invocation.
-    claim_stale_cut = datetime.now(timezone.utc) - timedelta(seconds=BOARD_STAFF_STEP_MAX_SECONDS + 180)
-    claim_stale_iso = _utc_iso_z(claim_stale_cut)
-    for task in board_store.list_tasks(table, "running"):
-        claimed_at = str(task.get("stepClaimedAt") or "")
-        updated = str(task.get("updatedAt") or "")
-        claim_is_stale = bool(claimed_at and claimed_at < claim_stale_iso)
-        # Drain promotes queued→running without stepClaimedAt. If the Event
-        # invoke never ran, retry once the same way as a hung claim.
-        never_started = (not claimed_at) and int(task.get("step") or 0) == 0 and updated < claim_stale_iso
-        if (claim_is_stale or never_started) and not task.get("stuckRetried"):
-            wanted = int(task.get("step") or 0) + 1
-            _release_step_claim(table, task, wanted)
-            latest = board_store.get_task(table, str(task.get("taskId") or "")) or task
-            latest["stuckRetried"] = True
-            latest["updatedAt"] = board_store.now_iso()
-            board_store.put_task(table, latest)
-            try:
-                board_async.invoke_async(
-                    {
-                        "internal": "board_staff_step",
-                        "boardKey": BOARD_KEY,
-                        "taskId": latest.get("taskId"),
-                        "step": wanted,
-                    },
-                    fallback=run_step,
-                )
-            except Exception as exc:
-                _log_event(
-                    "error",
-                    tag="board_staff_stuck_reinvoke_failed",
-                    taskId=latest.get("taskId"),
-                    error=str(exc)[:300],
-                )
-        elif (claim_is_stale or never_started or updated < claim_stale_iso) and task.get("stuckRetried"):
-            _finish_incomplete(table, task, "stuck")
-        elif updated < cut_iso:
-            _finish_incomplete(table, task, "stuck")
-    for task in board_store.list_tasks(table, "review"):
-        if str(task.get("updatedAt") or "") < cut_iso:
-            if not task.get("reviewRetried"):
-                task["reviewRetried"] = True
-                task["updatedAt"] = board_store.now_iso()
-                board_store.put_task(table, task)
-                board_async.invoke_async(
-                    {"internal": "board_staff_review", "boardKey": BOARD_KEY, "taskId": task["taskId"]},
-                    fallback=run_review,
-                )
-            else:
-                task["status"] = "needs_owner"
-                task["updatedAt"] = board_store.now_iso()
-                board_store.put_task(table, task)
-                _note_parent_if_child_needs_owner(table, task)
-    return {"ok": True, "started": started}
 
 
 def list_tasks_for_api(
@@ -3458,13 +2454,13 @@ def assign_from_minutes(table: Any, settings: dict[str, Any], *, action: dict[st
         return
     if not enabled(settings):
         return
-    level = board_tools.effective_level(settings, "staff", chair_id)
-    if not board_tools.allows(level, "propose"):
+    level = effective_level(settings, "staff", chair_id)
+    if not allows(level, "propose"):
         return
     overrides = board_store.load_member_overrides(table)
     default = board_personas.persona_default(chair_id) or {}
     profile = board_personas.effective_profile(default, overrides.get(chair_id))
-    ctx = board_tools.ToolContext(
+    ctx = ToolContext(
         table=table,
         settings=settings,
         persona_id=chair_id,
@@ -3543,19 +2539,5 @@ def public_task(doc: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in doc.items() if k not in ("pk", "sk", "gsi1pk", "gsi1sk")}
 
 
-def read_deliverable(task: dict[str, Any], *, limit: int = 12000) -> str:
-    raw = _blob_get(str(task.get("deliverableKey") or "")).decode("utf-8", errors="replace")
-    return raw[:limit]
 
 
-def presign_deliverable(key: str) -> str:
-    bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
-    if not bucket or not key:
-        return ""
-    import runtime
-
-    return runtime._s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": bucket, "Key": key},
-        ExpiresIn=900,
-    )

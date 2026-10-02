@@ -11,13 +11,12 @@ from typing import Any
 from unittest.mock import patch
 from urllib import error as urlerror
 
-from test_board import BoardTestCase, _FakeResp, _completion  # noqa: E402
-
 import board_github  # noqa: E402
 import board_store  # noqa: E402
 import board_tools  # noqa: E402
 import openrouter_client  # noqa: E402
 from board_routes import validate_tools_config  # noqa: E402
+from test_board import BoardTestCase, _completion, _FakeResp  # noqa: E402
 
 
 def _tool_call_completion(calls: list[tuple[str, dict[str, Any]]], text: str = "") -> bytes:
@@ -181,6 +180,130 @@ class ToolsTestCase(BoardTestCase):
         return approval
 
 
+_REGISTRY_SNAPSHOT = (
+    ("github_search_issues", "github", "read"),
+    ("github_get_issue", "github", "read"),
+    ("github_list_pull_requests", "github", "read"),
+    ("github_list_releases", "github", "read"),
+    ("github_list_workflow_runs", "github", "read"),
+    ("github_list_commits", "github", "read"),
+    ("github_compare", "github", "read"),
+    ("github_get_file", "github", "read"),
+    ("github_list_security_alerts", "github", "read"),
+    ("github_get_security_alert", "github", "read"),
+    ("github_create_issue", "github", "write"),
+    ("github_comment_issue", "github", "write"),
+    ("github_set_labels", "github", "write"),
+    ("board_list_actions", "board", "read"),
+    ("board_list_meetings", "board", "read"),
+    ("board_get_minutes", "board", "read"),
+    ("board_search_decisions", "board", "read"),
+    ("board_add_action", "board", "write"),
+    ("board_update_action", "board", "write"),
+    ("mail_list_mailboxes", "mail", "read"),
+    ("mail_list_threads", "mail", "read"),
+    ("mail_get_thread", "mail", "read"),
+    ("mail_contact_history", "mail", "read"),
+    ("mail_reply", "mail", "write"),
+    ("mail_send", "mail", "write"),
+    ("mail_forward", "mail", "write"),
+    ("mail_report_phishing", "mail", "write"),
+    ("research_search", "research", "read"),
+    ("research_hk_news", "research", "read"),
+    ("research_edb_holidays", "research", "read"),
+    ("research_venues", "research", "read"),
+    ("research_fetch_page", "research", "read"),
+    ("aws_monthly_cost", "aws", "read"),
+    ("aws_list_alarms", "aws", "read"),
+    ("aws_lambda_health", "aws", "read"),
+    ("aws_health_events", "aws", "read"),
+    ("aws_propose_budget_alert", "aws", "write"),
+    ("security_github_alerts", "security", "read"),
+    ("security_aws_findings", "security", "read"),
+    ("security_cognito", "security", "read"),
+    ("security_dmarc_summary", "security", "read"),
+    ("security_open_remediation", "security", "write"),
+    ("product_catalog_health", "product", "read"),
+    ("product_funnel", "product", "read"),
+    ("product_provider_pipeline", "product", "read"),
+    ("product_flag_listing", "product", "write"),
+    ("catalog_preview", "catalog", "read"),
+    ("catalog_dry_run", "catalog", "read"),
+    ("catalog_import", "catalog", "write"),
+    ("catalog_bulk_import", "catalog", "write"),
+    ("meta_page_insights", "meta", "read"),
+    ("meta_ig_insights", "meta", "read"),
+    ("meta_list_comments", "meta", "read"),
+    ("meta_list_dms", "meta", "read"),
+    ("meta_list_whatsapp", "meta", "read"),
+    ("meta_list_whatsapp_templates", "meta", "read"),
+    ("meta_ad_spend", "meta", "read"),
+    ("meta_propose_post", "meta", "write"),
+    ("meta_propose_story", "meta", "write"),
+    ("meta_reply_comment", "meta", "write"),
+    ("meta_reply_dm", "meta", "write"),
+    ("meta_reply_whatsapp", "meta", "write"),
+    ("meta_create_ad_set", "meta", "write"),
+    ("meta_boost_post", "meta", "write"),
+    ("meta_relay_lead", "meta", "write"),
+    ("finance_cash_snapshot", "finance", "read"),
+    ("finance_list_subscriptions", "finance", "read"),
+    ("finance_list_invoices", "finance", "read"),
+    ("finance_aging_report", "finance", "read"),
+    ("finance_unit_economics", "finance", "read"),
+    ("finance_draft_invoice", "finance", "write"),
+    ("finance_send_invoice", "finance", "write"),
+    ("finance_send_reminder", "finance", "write"),
+    ("finance_match_payment", "finance", "write"),
+    ("finance_propose_price_change", "finance", "write"),
+    ("finance_record_manual_payment", "finance", "write"),
+    ("stores_metrics", "stores", "read"),
+    ("stores_crashes", "stores", "read"),
+    ("stores_ratings", "stores", "read"),
+    ("stores_list_reviews", "stores", "read"),
+    ("stores_reply_review", "stores", "write"),
+    ("stores_draft_release_notes", "stores", "write"),
+    ("web_sessions", "web", "read"),
+    ("web_conversions", "web", "read"),
+    ("web_gtm_status", "web", "read"),
+    ("intel_list_watchlist", "intel", "read"),
+    ("intel_get_changes", "intel", "read"),
+    ("intel_fetch_page", "intel", "read"),
+    ("intel_competitor_reviews", "intel", "read"),
+    ("intel_search_rank", "intel", "read"),
+    ("outreach_search_places", "outreach", "read"),
+    ("outreach_open_data", "outreach", "read"),
+    ("outreach_list_prospects", "outreach", "read"),
+    ("outreach_get_prospect", "outreach", "read"),
+    ("outreach_upsert_prospect", "outreach", "write"),
+    ("outreach_score_prospect", "outreach", "read"),
+    ("outreach_start_sequence", "outreach", "write"),
+    ("outreach_send", "outreach", "write"),
+    ("outreach_suppress", "outreach", "write"),
+    ("content_list", "content", "read"),
+    ("content_stage_items", "content", "read"),
+    ("content_get", "content", "read"),
+    ("content_publish", "content", "write"),
+    ("newsletter_draft_issue", "newsletter", "write"),
+    ("newsletter_send", "newsletter", "write"),
+    ("code_run_task", "code", "write"),
+    ("code_get_run", "code", "read"),
+    ("code_review_pr", "code", "read"),
+    ("code_merge_staging", "code", "write"),
+    ("code_close_pr", "code", "write"),
+    ("code_promote", "code", "write"),
+    ("code_sync_staging", "code", "write"),
+    ("staff_assign", "staff", "write"),
+    ("staff_list_tasks", "staff", "read"),
+    ("staff_get_deliverable", "staff", "read"),
+    ("staff_request_revision", "staff", "write"),
+    ("staff_cancel_task", "staff", "write"),
+    ("task_note", "task", "write"),
+    ("task_finish", "task", "write"),
+    ("task_request_help", "task", "write"),
+)
+
+
 # ---------------------------------------------------------------------------
 # Levels and registry
 # ---------------------------------------------------------------------------
@@ -271,6 +394,30 @@ class TestLevels(unittest.TestCase):
             ["github", "board", "mail", "research", "aws", "security", "product", "catalog", "meta", "finance", "stores", "staff", "intel", "outreach", "content", "code", "newsletter", "web"],
         )
         self.assertTrue(all(t["operations"] for t in registry))
+
+    def test_registry_public_ops_snapshot(self) -> None:
+        """Public tool ids and ops stay the pre-split registry."""
+        import ast
+        from pathlib import Path
+
+        actual = tuple((op.name, op.tool_id, op.kind) for op in board_tools.REGISTRY.values())
+        self.assertEqual(actual, _REGISTRY_SNAPSHOT)
+        self.assertEqual(len(actual), 120)
+        public_ids = [tool["id"] for tool in board_tools.public_registry()]
+        self.assertEqual(
+            public_ids,
+            ["github", "board", "mail", "research", "aws", "security", "product", "catalog", "meta", "finance", "stores", "staff", "intel", "outreach", "content", "code", "newsletter", "web"],
+        )
+        root = Path(__file__).resolve().parent
+        for family in sorted(root.glob("board_tools_*.py")):
+            tree = ast.parse(family.read_text(encoding="utf-8"))
+            for node in tree.body:
+                mods: list[str] = []
+                if isinstance(node, ast.Import):
+                    mods = [alias.name.split(".")[0] for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    mods = [node.module.split(".")[0]]
+                self.assertNotIn("board_tools", mods, family.name)
 
 
 class TestToolCallParsing(unittest.TestCase):

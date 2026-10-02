@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 
@@ -138,7 +138,9 @@ def _adds_this_week(existing: list[dict[str, Any]], week: str) -> int:
 
 
 def _utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    from timeutil import utc_now
+
+    return utc_now()
 
 
 def public_watch(doc: dict[str, Any]) -> dict[str, Any]:

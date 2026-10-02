@@ -7,12 +7,11 @@ import binascii
 import json
 import os
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
-from botocore.exceptions import ClientError
-
 import runtime
+from botocore.exceptions import ClientError
 from runtime import ADMIN_GROUP, logger
 
 
@@ -27,11 +26,22 @@ def _json_response(
     }
 
 
+def not_found() -> dict[str, Any]:
+    return _json_response(404, {"message": "Not found"})
+
+
+def method_not_allowed() -> dict[str, Any]:
+    return _json_response(405, {"message": "Method not allowed"})
+
+
 def _parse_json_body(event: dict[str, Any]) -> dict[str, Any]:
     try:
-        return json.loads(event.get("body") or "{}")
+        parsed = json.loads(event.get("body") or "{}")
     except json.JSONDecodeError:
         return {}
+    if not isinstance(parsed, dict):
+        return {}
+    return parsed
 
 
 def _claims(event: dict[str, Any]) -> dict[str, Any]:
@@ -113,8 +123,13 @@ def _audit(user_sub: str | None, action: str, target: str, event: dict[str, Any]
                 "requestId": _request_id(event),
             }
         )
-    except ClientError:
-        pass
+    except ClientError as exc:
+        _log_event(
+            "warning",
+            tag="audit_write_failed",
+            action=action,
+            error=exc.response.get("Error", {}).get("Code", "ClientError"),
+        )
 
 
 def _log_event(level: str, **fields: Any) -> None:
@@ -148,10 +163,33 @@ def _decode_cursor(raw: str) -> dict[str, Any] | None:
 
 def _utc_iso_z(dt: datetime) -> str:
     """Format an aware or naive datetime as UTC with millisecond precision."""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    utc = dt.astimezone(timezone.utc)
-    return utc.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    from timeutil import format_iso_millis
+
+    return format_iso_millis(dt)
+
+
+def utc_now() -> datetime:
+    from timeutil import utc_now as _utc_now
+
+    return _utc_now()
+
+
+def now_iso() -> str:
+    from timeutil import now_iso as _now_iso
+
+    return _now_iso()
+
+
+def parse_iso(value: Any) -> datetime | None:
+    from timeutil import parse_iso as _parse_iso
+
+    return _parse_iso(value)
+
+
+def parse_iso_strict(value: str) -> datetime:
+    from timeutil import parse_iso_strict as _parse_iso_strict
+
+    return _parse_iso_strict(value)
 
 
 def _encode_cursor(key: dict[str, Any]) -> str:

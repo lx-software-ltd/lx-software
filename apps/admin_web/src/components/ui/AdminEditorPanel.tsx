@@ -13,10 +13,23 @@ export type AdminFieldProps = {
   readonly children: ReactNode;
   /** Width inside the grid. Defaults to one column. */
   readonly span?: 1 | 2 | 4;
+  readonly label?: string;
+  readonly htmlFor?: string;
+  readonly className?: string;
 };
 
-export function AdminField({ children, span = 1 }: AdminFieldProps) {
-  return <div className={`admin-field admin-field-span-${span}`}>{children}</div>;
+export function AdminField({ children, span = 1, label, htmlFor, className }: AdminFieldProps) {
+  const spanClass = `admin-field admin-field-span-${span}${className ? ` ${className}` : ""}`;
+  return (
+    <div className={spanClass}>
+      {label ? (
+        <label className="form-label small" htmlFor={htmlFor}>
+          {label}
+        </label>
+      ) : null}
+      {children}
+    </div>
+  );
 }
 
 export type AdminEditorActionsProps = {

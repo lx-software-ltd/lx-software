@@ -3,28 +3,35 @@
 ### Repository structure
 repo root
 ├── apps/
-│   └── public_www/          # Vite + React Router public website
-│       ├── public/
+│   ├── public_www/          # Vite + React Router public website (hand-written CSS)
+│   │   ├── public/
+│   │   ├── src/
+│   │   │   ├── components/
+│   │   │   ├── content/     # site.json, bundled at build time
+│   │   │   ├── lib/
+│   │   │   └── pages/
+│   │   ├── index.html
+│   │   └── package.json
+│   └── admin_web/           # Vite + React Router + TanStack Query + Bootstrap 5
 │       ├── src/
-│       │   ├── components/
-│       │   ├── lib/
-│       │   └── pages/
-│       ├── index.html
 │       └── package.json
 ├── backend/
-│   └── infrastructure/      # AWS CDK (S3 + CloudFront)
-│       ├── bin/
-│       ├── lib/
-│       ├── params/
-│       ├── cdk.json
-│       └── package.json
+│   ├── infrastructure/      # AWS CDK (S3, CloudFront, admin API)
+│   │   ├── bin/
+│   │   ├── lib/
+│   │   ├── params/
+│   │   ├── cdk.json
+│   │   └── package.json
+│   └── lambda/              # Python: admin API, authorizer, schema, pre-token
+├── contracts/               # Shared JSON, synced by scripts/sync-contracts.py
 ├── scripts/
 │   └── deploy/
 └── docs/
 
 ### Architecture decisions
-- The repo hosts a single public website in `apps/public_www`.
-- The website is built with Vite, React Router, TanStack Query, and Bootstrap 5.
+- The repo hosts the public website in `apps/public_www` and the admin console in `apps/admin_web`.
+- The public site is Vite + React Router with hand-written CSS. Copy is bundled from `src/content/site.json`.
+- The admin console is Vite, React Router, TanStack Query, and Bootstrap 5.
 - Infrastructure is managed with AWS CDK (TypeScript).
 - Static assets are hosted on S3 and served via CloudFront.
 - CI uses GitHub OIDC with IAM roles (no long-lived keys).
@@ -36,7 +43,7 @@ repo root
 
 ### PII in source
 - Real personal names, phone numbers, personal email addresses, street addresses, bank account numbers, and business-registration numbers must not appear in source or docs.
-- The public website owner name is intentionally public. It lives in `apps/public_www/public/content.json` (`site.owner`) and may appear in that site's copy and docs. It is not on the hashed denylist. Phone numbers, personal inboxes, and street addresses still must not.
+- The public website owner name is intentionally public. It lives in `apps/public_www/src/content/site.json` (`site.owner`) and may appear in that site's copy and docs. It is not on the hashed denylist. Phone numbers, personal inboxes, and street addresses still must not.
 - Product mailboxes that are service configuration (`hello@`, `board@`, `billing@`, `news@`, `partnerships@`, `dmarc@`, and the inbound SES recipients) stay in source. They are not personal data.
 - Tests use fictional people and `example.com` addresses.
 - `scripts/check-pii.sh` enforces a hashed denylist (`scripts/pii-denylist.sha256`). Do not add plaintext denylist entries to the repository.
@@ -49,8 +56,8 @@ repo root
 - Favor named exports for components.
 - Keep components in `src/components`, pages in `src/pages`, helpers in `src/lib`.
 - Use React Router for navigation; avoid full-page reloads.
-- Use TanStack Query for async data and cache management.
-- Use Bootstrap 5 utility classes for styling (avoid Tailwind).
+- Admin console: TanStack Query for async data and cache management.
+- Admin console: Bootstrap 5 utility classes for styling (avoid Tailwind). The public site stays on its own CSS.
 
 ### Code style
 - Write concise, readable TypeScript.

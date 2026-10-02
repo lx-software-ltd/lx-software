@@ -18,13 +18,13 @@ import { useExpandedRecord } from "../hooks/useExpandedRecord";
 import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
 import { clearExpandedParamsExcept } from "../lib/expandedRecord";
 import {
+  deleteAssetMutationOptions,
   useAdminAssets,
   type AdminAssetMeta,
 } from "../hooks/useAdminAssets";
 import {
   AdminApiError,
   adminFetchJson,
-  deleteAdminAsset,
   getAdminApiErrorMessage,
 } from "../lib/apiAdminClient";
 import { formatFileSizeBytes, objectKeyFromAssetPk } from "../lib/adminAssets";
@@ -143,16 +143,14 @@ export function AssetsPage() {
   const [pageError, setPageError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<AdminAssetMeta | null>(null);
   const [openingKey, setOpeningKey] = useState<string | null>(null);
-  const del = useMutation({
-    mutationFn: (objectKey: string) => deleteAdminAsset(objectKey),
-    onSuccess: (_data, objectKey) => {
-      void qc.invalidateQueries({ queryKey: ["admin", "asset-records"] });
+  const del = useMutation(
+    deleteAssetMutationOptions(qc, (objectKey) => {
       setPendingDelete(null);
       if (expanded.expandedId && objectKeyFromAssetPk(expanded.expandedId) === objectKey) {
         expanded.request(null, false);
       }
-    },
-  });
+    }),
+  );
 
   const openAsset = async (objectKey: string) => {
     setOpeningKey(objectKey);

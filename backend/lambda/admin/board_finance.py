@@ -34,18 +34,12 @@ def _fiscal_year_start(now: datetime) -> datetime:
 
 
 def _parse_iso(value: Any) -> datetime | None:
-    if not isinstance(value, str) or not value.strip():
+    from timeutil import parse_iso
+
+    parsed = parse_iso(value)
+    if parsed is None:
         return None
-    try:
-        text = value.strip()
-        if text.endswith("Z"):
-            text = text[:-1] + "+00:00"
-        dt = datetime.fromisoformat(text)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc)
-    except ValueError:
-        return None
+    return parsed.astimezone(timezone.utc)
 
 
 def summarize_book(data: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:

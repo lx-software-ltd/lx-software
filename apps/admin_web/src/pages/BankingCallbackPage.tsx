@@ -1,9 +1,8 @@
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useBankSync } from "../hooks/useBankSync";
+import { useRunOncePerPageLoad } from "../hooks/useRunOncePerPageLoad";
 import { getAdminApiErrorMessage } from "../lib/apiAdminClient";
-
-const BANKING_CALLBACK_GUARD = "__lxAdminBankingCallbackStarted";
 
 /**
  * Landing page for the Enable Banking redirect (`/banking/callback?code=…&state=…`).
@@ -21,18 +20,13 @@ export function BankingCallbackPage() {
   const state = params.get("state");
   const bankError = params.get("error");
 
-  useEffect(() => {
-    const win = window as unknown as Record<string, boolean>;
-    if (win[BANKING_CALLBACK_GUARD] || !code || !state) {
-      return;
-    }
-    win[BANKING_CALLBACK_GUARD] = true;
+  useRunOncePerPageLoad("banking-callback", () => {
+    if (!code || !state) return;
     completeAuth.mutate(
       { code, state },
       { onSuccess: () => navigate("/banking", { replace: true }) },
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run the code exchange once per full page load (see guard above)
-  }, []);
+  });
 
   const errorMessage = !code || !state
     ? bankError

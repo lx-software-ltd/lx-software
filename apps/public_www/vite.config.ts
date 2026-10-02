@@ -1,16 +1,15 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { deferStylesheetLinks, fontPreloadTags } from './scripts/index-html.ts'
-import { applyHead, buildSeo, type SeoContent, type SeoOptions } from './scripts/site-seo.ts'
+import { applyHead, buildSeo, type SeoFiles, type SeoOptions } from './scripts/site-seo.ts'
+import { defaultSiteContent } from './src/lib/content.ts'
+import { mediaOrigin } from './src/lib/media.ts'
 
 function siteSeo(options: SeoOptions): Plugin {
+  let files: SeoFiles | undefined
   const load = () => {
-    const content = JSON.parse(
-      readFileSync(resolve(process.cwd(), 'public/content.json'), 'utf8'),
-    ) as SeoContent
-    return buildSeo(content, options)
+    files ??= buildSeo(defaultSiteContent, options)
+    return files
   }
   const types: Record<string, string> = {
     '/llms.txt': 'text/plain; charset=utf-8',
@@ -60,19 +59,8 @@ function siteSeo(options: SeoOptions): Plugin {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const media = (process.env.VITE_MEDIA_BASE_URL || env.VITE_MEDIA_BASE_URL || '').replace(
-    /\/$/,
-    '',
-  )
+  const origin = mediaOrigin(process.env.VITE_MEDIA_BASE_URL || env.VITE_MEDIA_BASE_URL || '')
   const linkedin = process.env.VITE_CONTACT_LINKEDIN || env.VITE_CONTACT_LINKEDIN || ''
-  let origin = ''
-  if (media && !media.startsWith('/')) {
-    try {
-      origin = new URL(media).origin
-    } catch {
-      origin = ''
-    }
-  }
 
   return {
     plugins: [

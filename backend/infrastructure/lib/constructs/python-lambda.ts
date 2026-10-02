@@ -77,14 +77,31 @@ function requirementsNeedPip(reqPath: string): boolean {
   return nonComment.length > 0;
 }
 
+function skipPythonBundleEntry(name: string): boolean {
+  if (
+    name === "__pycache__" ||
+    name === ".pytest_cache" ||
+    name === "test_fixtures"
+  ) {
+    return true;
+  }
+  if (name.endsWith(".md")) {
+    return true;
+  }
+  if (name.startsWith("test_") && name.endsWith(".py")) {
+    return true;
+  }
+  return false;
+}
+
 function copyDirRecursive(src: string, dest: string): void {
   fs.mkdirSync(dest, { recursive: true });
   for (const name of fs.readdirSync(src, { withFileTypes: true })) {
-    const srcPath = path.join(src, name.name);
-    const destPath = path.join(dest, name.name);
-    if (name.name === "__pycache__" || name.name === ".pytest_cache") {
+    if (skipPythonBundleEntry(name.name)) {
       continue;
     }
+    const srcPath = path.join(src, name.name);
+    const destPath = path.join(dest, name.name);
     if (name.isDirectory()) {
       copyDirRecursive(srcPath, destPath);
     } else {
@@ -106,7 +123,8 @@ function tryLocalPythonBundle(entry: string, outputDir: string): boolean {
  * Bash script run inside the SAM build image (`bash -c "$SCRIPT"`) when a
  * requirements.txt has packages. Lines must be newline-joined: bash needs
  * statement separators, so a space-joined script is a syntax error.
- * Mirrors `copyDirRecursive` (skips `__pycache__` / `.pytest_cache`).
+ * Mirrors `copyDirRecursive`: skips `__pycache__`, `.pytest_cache`,
+ * `test_fixtures`, `test_*.py`, and `*.md`. `fonts/` and `contracts/` stay.
  */
 export const DOCKER_BUNDLE_SCRIPT = [
   "set -euo pipefail",
@@ -116,10 +134,11 @@ export const DOCKER_BUNDLE_SCRIPT = [
   "fi",
   "shopt -s dotglob nullglob",
   "for item in *; do",
-  '  case "$item" in requirements.txt|__pycache__|.pytest_cache) continue ;; esac',
+  '  case "$item" in requirements.txt|__pycache__|.pytest_cache|test_fixtures|*.md|test_*.py) continue ;; esac',
   '  if [[ -d "$item" ]]; then',
   '    cp -a "$item" /asset-output/',
-  '    find /asset-output/"$item" -type d \\( -name __pycache__ -o -name .pytest_cache \\) -prune -exec rm -rf {} +',
+  '    find /asset-output/"$item" -type d \\( -name __pycache__ -o -name .pytest_cache -o -name test_fixtures \\) -prune -exec rm -rf {} +',
+  '    find /asset-output/"$item" -type f \\( -name "*.md" -o -name "test_*.py" \\) -delete',
   '  elif [[ "$item" == *.py || "$item" == *.sql ]]; then',
   '    cp -a "$item" /asset-output/',
   "  fi",

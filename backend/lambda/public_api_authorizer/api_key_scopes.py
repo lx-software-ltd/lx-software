@@ -10,22 +10,11 @@ from __future__ import annotations
 import ipaddress
 from typing import Any
 
-SCOPE_FINANCE = "finance"
-SCOPE_BOARD_OPS = "siutindei-board-ops"
-SCOPE_BOARD_FULL = "siutindei-board-full"
-SCOPE_PII = "siutindei-pii"
-SCOPE_ASSETS = "siutindei-assets"
-
-ALL_SCOPES = frozenset(
-    {
-        SCOPE_FINANCE,
-        SCOPE_BOARD_OPS,
-        SCOPE_BOARD_FULL,
-        SCOPE_PII,
-        SCOPE_ASSETS,
-    }
+from public_api_scopes_generated import (
+    ALL_SCOPES,
+    LEGACY_READ_SCOPE,
+    SCOPE_FINANCE,
 )
-LEGACY_READ_SCOPE = "read"
 
 
 def key_allows_write(item: dict[str, Any]) -> bool:

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { AdminApiError, adminFetchJson, getAdminApiErrorMessage } from "../lib/apiAdminClient";
 import {
@@ -7,7 +8,7 @@ import {
   type BoardSeatOverride,
   type BoardStaffPayload,
 } from "../lib/boardModel";
-import { BOARD_QUERY_KEY } from "./useBoard";
+import { BOARD_QUERY_KEY, BOARD_TASKS_KEY } from "../lib/queryKeys";
 
 export const BOARD_STAFF_KEY = [...BOARD_QUERY_KEY, "staff"] as const;
 
@@ -74,29 +75,46 @@ export async function postStaffTick(): Promise<StaffTickResult> {
   }
 }
 
-export function staffTickMutationOptions(qc: QueryClient) {
+export type StaffTickScheduler = (refetch: () => void, delayMs: number) => void;
+
+export function staffTickMutationOptions(qc: QueryClient, schedule?: StaffTickScheduler) {
   const refetch = () => {
     void qc.invalidateQueries({ queryKey: BOARD_STAFF_KEY });
-    void qc.invalidateQueries({ queryKey: [...BOARD_QUERY_KEY, "tasks"] });
+    void qc.invalidateQueries({ queryKey: BOARD_TASKS_KEY });
   };
+  const scheduleRefetch = schedule ?? ((fn, delayMs) => {
+    window.setTimeout(fn, delayMs);
+  });
   return {
     mutationFn: postStaffTick,
     onSuccess: () => {
       refetch();
-      window.setTimeout(refetch, STAFF_TICK_REFETCH_DELAY_MS);
+      scheduleRefetch(refetch, STAFF_TICK_REFETCH_DELAY_MS);
     },
   };
 }
 
 export function useBoardStaff() {
   const qc = useQueryClient();
+  const [timers] = useState(() => ({ ids: [] as number[] }));
+  useEffect(() => {
+    const pending = timers.ids;
+    return () => {
+      for (const id of pending) window.clearTimeout(id);
+    };
+  }, [timers]);
   const query = useQuery({
     queryKey: BOARD_STAFF_KEY,
     queryFn: () => adminFetchJson<BoardStaffPayload>(boardStaffPath()),
   });
   const override = useMutation(staffOverrideMutationOptions(qc));
   const reset = useMutation(staffResetMutationOptions(qc));
-  const tick = useMutation(staffTickMutationOptions(qc));
+  const tick = useMutation(
+    staffTickMutationOptions(qc, (refetch, delayMs) => {
+      const id = window.setTimeout(refetch, delayMs);
+      timers.ids.push(id);
+    }),
+  );
   return {
     seats: query.data?.seats ?? [],
     counts: query.data?.counts ?? {},

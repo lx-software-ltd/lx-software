@@ -25,8 +25,7 @@ import board_hk
 import board_store
 from admin_runtime import _get_secretsmanager_client
 from contract_constants import BOARD_STAFF_PLACES_MONTHLY_CAP_USD
-from http_common import _log_event
-from openrouter_client import read_secret_string
+from secret_store import read_secret_string
 
 # Spec field mask (no ``places.`` prefix). Search requests prefix each path.
 FIELD_MASK = (

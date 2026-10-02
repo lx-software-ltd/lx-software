@@ -289,7 +289,7 @@ curl -X POST -H "x-api-key: lxpk_..." -H "Content-Type: application/json" \
 The **Banking** page links PSD2 bank accounts via
 [Enable Banking](https://enablebanking.com) and refreshes `recordedValue`
 on the finance **Accounts** sheet from live balances ("Sync now" plus a
-daily EventBridge schedule at 05:30 HKT). Only balances are read.
+daily EventBridge Scheduler schedule `lxsoftware-admin-bank-sync` at 05:30 HKT). Only balances are read.
 Authentication is an RS256 JWT signed by the stack's asymmetric KMS key
 (`alias/lxsoftware-admin/enable-banking`); no private key material leaves
 KMS.
@@ -337,7 +337,7 @@ stack-wide knobs are unprefixed. Lambda env vars stay short
 
 | Parameter | Purpose |
 |-----------|---------|
-| `OpenRouterApiKeySecretArn` | Existing secret (also used by statement parsing). Must be JSON with named keys `statement-parser` and `executive-board`. |
+| `OpenRouterApiKeySecretArn` | Existing secret (also used by statement parsing). Must be JSON with named keys `statement-parser`, `executive-board`, and `management` (a Management API key, not an inference key). |
 | `SiutindeiBoardGitHubRepo` | `owner/name` to read (default `lx-software-ltd/siutindei`). |
 | `SiutindeiBoardToolsEnabled` | `true` (default) / `false`. Deploy-time kill switch for every tool call. |
 | `SiutindeiBoardStaffEnabled` | `false` (default) / `true`. Deploy-time kill switch for staff tasks; fail-closed (`1|true|yes|on`), set on `AdminApiFn` and `InboundStatementMailFn`. Production sets `true`; the Staff UI toggle is still required. |
@@ -352,7 +352,7 @@ stack-wide knobs are unprefixed. Lambda env vars stay short
 | `SiutindeiBoardAppStoreConnectAppId` / `AppStoreConnectVendorNumber` / `GooglePlayPackageName` | Store ids if not inside the secrets. The vendor number is needed for Apple download counts. |
 | `SiutindeiBoardGa4PropertyIds` / `SiutindeiBoardGtmContainers` | CSV of GA4 properties; `account:container` pairs. |
 | `SiutindeiBoardMailDomain` | Domain the board indexes (default `siutindei.com`). |
-| `SiutindeiBoardMailSendingEnabled` | `false` (default) / `true`. Flip only after DKIM / SPF / DMARC are in the zone; creates the SES identity and send policy. |
+| `SiutindeiBoardMailSendingEnabled` | `false` (default) / `true`. Flip only after DKIM / SPF / DMARC are in the zone; creates the SES identity and send policy. The Lambda reads `BOARD_MAIL_SENDING_ENABLED` with the shared flag parser (`1`, `true`, `yes`, `on`). |
 | `SiutindeiBoardChatModel` / `MeetingModel` / `DeepDiveModel` | Default OpenRouter slugs (`openai/gpt-4.1-mini`, `openai/gpt-4.1-mini`, `anthropic/claude-sonnet-4`); overridable in **Settings**. They are also sent as `models` fallbacks so a 429 on a cheap primary continues on the defaults. |
 | `SiutindeiBoardCatalogImportEnabled` | `false` (CDK default) / `true`. Kill switch for `catalog_import`; preview and local dry-run work while it is off. Production is `true`. |
 | `SiutindeiAdminApiBaseUrl` / `SiutindeiUserPoolId` / `SiutindeiBoardImporterClientId` / `SiutindeiBoardCatalogManagerId` | siutindei admin API base URL, Cognito user pool and importer app client for the catalog importer user, and the default manager id stamped on imported organisations. Blank until the product side exists. |
@@ -376,8 +376,13 @@ Secrets Manager (`ap-southeast-1`):
 | `…-board-importer-credentials` | `{username, password}` of the siutindei Cognito `importer` service user (catalog import). |
 | `…-board-link-signing-key` | Generated on first deploy; leave as is. |
 
-The older `lxsoftware-admin-*` connector set stays in the stack, unused,
-for a future LX Software board.
+The seven unused `lxsoftware-admin-*` connector placeholders (github read
+token, search, meta token, meta app secret, app store, play, analytics)
+are not in this stack. They were created with `RemovalPolicy.RETAIN`, so
+dropping them from the template leaves the Secrets Manager values in the
+account. Delete those orphans in the console when they are no longer
+needed. `AdminApiFn` reads the imported `lxsoftware-admin-siutindei-board-*`
+secrets instead.
 
 ### OpenRouter bill (shared account)
 

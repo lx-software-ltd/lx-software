@@ -1,23 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { trackEvent } from '../lib/analytics'
-import { useReducedMotion } from '../lib/motion'
-import { pageSections } from '../lib/sections'
-import { useActiveSection } from '../lib/useActiveSection'
+import { defaultSiteContent } from '../lib/content'
+import { pageSections, useSections } from '../lib/sections'
 
 const mobileNav = '(max-width: 760px)'
 
 export function TopNav() {
   const location = useLocation()
-  const navigate = useNavigate()
-  const reduced = useReducedMotion()
+  const { active, scrollTo } = useSections()
   const onHome = location.pathname === '/'
-  const active = useActiveSection(onHome)
   const routeKey = `${location.pathname}${location.hash}`
   const [menuRoute, setMenuRoute] = useState(routeKey)
   const [open, setOpen] = useState(false)
   const toggleRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLUListElement>(null)
+  const { menu, close } = defaultSiteContent.chrome
   if (menuRoute !== routeKey) {
     setMenuRoute(routeKey)
     setOpen(false)
@@ -25,8 +23,8 @@ export function TopNav() {
 
   useEffect(() => {
     if (!open || !window.matchMedia(mobileNav).matches) return
-    const menu = menuRef.current
-    const links = menu ? [...menu.querySelectorAll<HTMLAnchorElement>('a')] : []
+    const menuList = menuRef.current
+    const links = menuList ? [...menuList.querySelectorAll<HTMLAnchorElement>('a')] : []
     links[0]?.focus()
 
     const onKey = (event: KeyboardEvent) => {
@@ -49,7 +47,7 @@ export function TopNav() {
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target
       if (!(target instanceof Node)) return
-      if (menu?.contains(target) || toggleRef.current?.contains(target)) return
+      if (menuList?.contains(target) || toggleRef.current?.contains(target)) return
       setOpen(false)
     }
     window.addEventListener('keydown', onKey)
@@ -70,7 +68,7 @@ export function TopNav() {
         aria-controls="primary-nav"
         onClick={() => setOpen((value) => !value)}
       >
-        {open ? '[ close ]' : '[ menu ]'}
+        {open ? close : menu}
       </button>
       <nav id="primary-nav" aria-label="Primary">
         <ul ref={menuRef} className={`nav-links${open ? ' is-open' : ''}`}>
@@ -80,16 +78,19 @@ export function TopNav() {
                 to={`/#${section.id}`}
                 aria-current={onHome && active === section.id ? 'true' : undefined}
                 onClick={(event) => {
+                  if (
+                    event.metaKey ||
+                    event.ctrlKey ||
+                    event.shiftKey ||
+                    event.altKey ||
+                    event.button !== 0
+                  ) {
+                    return
+                  }
+                  event.preventDefault()
                   setOpen(false)
                   trackEvent({ event: 'nav_click', section: section.id })
-                  if (!onHome) return
-                  event.preventDefault()
-                  const hash = `#${section.id}`
-                  if (location.hash !== hash) navigate(`/${hash}`)
-                  document.getElementById(section.id)?.scrollIntoView({
-                    behavior: reduced ? 'auto' : 'smooth',
-                    block: 'start',
-                  })
+                  scrollTo(section.id)
                 }}
               >
                 {section.label}

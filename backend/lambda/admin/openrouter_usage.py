@@ -8,12 +8,12 @@ in ``contracts/openrouter-apps.json``.
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 from urllib.parse import parse_qs
 
+import board_store
 from contract_constants import (
     BOARD_KEY,
     FINANCE_STATEMENT_OWNER_KEYS,
@@ -473,7 +473,6 @@ def summarize(
 def handle_usage_get(event: dict[str, Any]) -> dict[str, Any]:
     """GET /openrouter/usage?from=YYYY-MM-DD&to=YYYY-MM-DD (UTC month default)."""
     from http_common import _json_response
-    import runtime
 
     qs = parse_qs(event.get("rawQueryString") or "")
     default_from, default_to = default_month_range()
@@ -481,7 +480,7 @@ def handle_usage_get(event: dict[str, Any]) -> dict[str, Any]:
     to_day = (qs.get("to", [default_to])[0] or default_to).strip()
     try:
         payload = list_usage(
-            runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"]),
+            board_store.records_table(),
             from_day=from_day,
             to_day=to_day,
         )

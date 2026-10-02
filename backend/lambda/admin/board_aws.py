@@ -19,10 +19,9 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import board_store
 import boto3
 from botocore.exceptions import ClientError
-
-import board_store
 from contract_constants import AWS_BILLING_COMPANIES
 from http_common import _log_event, _utc_iso_z
 

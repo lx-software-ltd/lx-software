@@ -5,9 +5,10 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from botocore.exceptions import ClientError
-
+import board_store
 import runtime
+from botocore.exceptions import ClientError
+from contract_constants import FINANCE_STATEMENT_OWNER_KEYS
 from http_common import (
     _audit,
     _decode_cursor,
@@ -16,7 +17,6 @@ from http_common import (
     _log_event,
     _request_id,
 )
-from contract_constants import FINANCE_STATEMENT_OWNER_KEYS
 from runtime import ALLOWED_UPLOAD_CONTENT_TYPES
 
 ASSET_PK_PREFIX = "ASSET#"
@@ -75,7 +75,7 @@ def _assets_list_response(event: dict[str, Any]) -> dict[str, Any]:
     qs = event.get("rawQueryString") or ""
     cursor_raw = parse_qs(qs).get("cursor", [""])[0]
     start_key = _decode_cursor(cursor_raw)
-    table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+    table = board_store.records_table()
     kwargs: dict[str, Any] = {
         "Limit": 50,
         "FilterExpression": "begins_with(pk, :asset)",
@@ -106,7 +106,7 @@ def _asset_download_presigned_response(
     norm = _normalize_public_asset_key(raw_key)
     if norm is None:
         return _json_response(400, {"message": "key is required"})
-    table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+    table = board_store.records_table()
     meta = table.get_item(Key={"pk": f"ASSET#{norm}", "sk": "META"})
     if "Item" not in meta:
         _log_event(
@@ -171,7 +171,7 @@ def _asset_delete_response(
     norm = _normalize_public_asset_key(raw_key)
     if norm is None:
         return _json_response(400, {"message": "key is required"})
-    table = runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+    table = board_store.records_table()
     ddb_key = {"pk": f"ASSET#{norm}", "sk": "META"}
     meta = table.get_item(Key=ddb_key)
     if "Item" not in meta:

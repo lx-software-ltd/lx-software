@@ -18,11 +18,11 @@ import {
   type BoardTaskDetailPayload,
   type BoardTaskListPayload,
 } from "../lib/boardModel";
-import { BOARD_QUERY_KEY } from "./useBoard";
+import { BOARD_TASKS_KEY } from "../lib/queryKeys";
 import { BOARD_ACTIONS_KEY } from "./useBoardActions";
 import { BOARD_STAFF_KEY } from "./useBoardStaff";
 
-export const BOARD_TASKS_KEY = [...BOARD_QUERY_KEY, "tasks"] as const;
+export { BOARD_TASKS_KEY };
 
 export function boardTaskDetailKey(taskId: string) {
   return [...BOARD_TASKS_KEY, "detail", taskId] as const;

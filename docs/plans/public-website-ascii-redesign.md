@@ -29,7 +29,7 @@ the decisions that shipped.
 |------|-------|------|
 | Stack | Vite 8, React 19, React Router 7, TanStack Query 5, Bootstrap 5 (`apps/public_www`) | Keep. Repo rules require this stack; Bootstrap stays for grid/utilities and is re-themed with CSS tokens (`data-bs-theme="dark"` + overrides). |
 | Routes | `/`, `/about`, `/contact`, `*` | `/` (single page), `/privacy`, `/terms`, `/wechat` (QR page). `/about` and `/contact` are dropped with no redirects. |
-| Content | `public/content.json` fetched with TanStack Query | Extend the JSON (bio, services, projects, FAQ). Placeholders live there, not in components. |
+| Content | `public/content.json` fetched with TanStack Query | Copy lives in `src/content/site.json` and is bundled at build time. The shipped site does not use TanStack Query. |
 | Footer | `NewsletterForm` (WP8 double opt-in, needs `VITE_PUBLIC_API_URL`) + copyright | Removed from the public site. The bottom bar is copyright plus Privacy Policy and Terms. |
 | Hosting | S3 + CloudFront (`backend/infrastructure/lib/public-website-stack.ts`), Cloudflare DNS gray-cloud, deploy via `scripts/deploy/deploy-public-website.sh` | Unchanged for HTML/JS/CSS. Video and poster move to a Cloudflare-served media host. |
 | Video | `apps/public_www/public/openrouter-video-gen-vid-…mp4` — 3.85 MB, 1280×720, 24 fps, 121 frames (5.04 s), H.264 + AAC | **Move out of `public/`** (it is copied into `dist/` and synced to S3 on every deploy and pushed to `main` already triggered **Deploy Public Website**). Keep the master at `apps/public_www/media/source/hk-harbour-master.mp4`; render the deliverables offline (§5). |
@@ -189,12 +189,11 @@ the Vite plugin. They are not tracked under `public/`.
 - **Bottom bar**: ordinary `<footer>` at the end of the document — not
   sticky — so it "appears only at the end".
 - **Keyboard**: `Tab` order is nav → hero → sections → carousel → footer.
-  `useSectionKeys` maps `ArrowDown`/`ArrowUp` (and `j`/`k`) to next/previous
-  section only when `document.activeElement` is `body` (not inside the
-  carousel, a form control, or a `<details>`), so native arrow scrolling is
-  only replaced when nothing has focus. Behind a `keyboardSections` flag in
-  `content.json` so it can be turned off if it feels wrong.
-- **Carousel** (`ProjectCarousel`): a region with `aria-roledescription="carousel"`, a `<ul>` with `scroll-snap-type: x mandatory`, `overscroll-behavior-x: contain`, cards `scroll-snap-align: start`. Mouse drag uses pointer capture (threshold 6px, suppress the card link click after a drag). Touch scrolling is left to the browser, and `pointercancel` clears a drag so snap cannot stick off. Prev/Next buttons are `disabled` at the ends. The index treats `scrollLeft` within 1px of the maximum as the last card, so Next can reach "6 of 6". `aria-live="polite"` announces the position. Card art is a brand logo (`logo` in content.json, rendered as a decorative image) when the project has one, otherwise a `<pre aria-hidden>` block from `ascii`. Accent green border and title on hover/focus-within.
+  Arrow-key section jumps (`useSectionKeys`, `j`/`k`, `keyboardSections`)
+  were removed. Section links call `useSections().scrollTo`, which pushes a
+  hash so Back returns to the previous section. Arrow keys outside the
+  carousel keep native scrolling.
+- **Carousel** (`ProjectCarousel`): a region with `aria-roledescription="carousel"`, a `<ul>` with `scroll-snap-type: x mandatory`, `overscroll-behavior-x: contain`, cards `scroll-snap-align: start`. Mouse drag uses pointer capture (threshold 6px, suppress the card link click after a drag). Touch scrolling is left to the browser, and `pointercancel` clears a drag so snap cannot stick off. Prev/Next buttons use `aria-disabled` at the ends and stay focusable. Arrow keys on the track no-op at those ends and do not call `preventDefault`, so the page can still scroll. The index treats `scrollLeft` within 1px of the maximum as the last card, so Next can reach "6 of 6". `aria-live="polite"` announces the position. Card art is a brand logo (`logo` in `src/content/site.json`, rendered as a decorative image) when the project has one, otherwise a `<pre aria-hidden>` block from `ascii`. Accent green border and title on hover/focus-within.
 - **Contact**: four items with inline SVG (`aria-hidden`) and visible ASCII labels `[ TEL ]`. Values are **build-time env**, not source (repo PII rule: phone numbers must not appear in source or docs): `VITE_CONTACT_TEL` (E.164), `VITE_CONTACT_WHATSAPP` (digits only → `https://wa.me/<digits>`), `VITE_CONTACT_EMAIL` (default `hello@lx-software.com`), `VITE_CONTACT_WECHAT_ID`, `VITE_CONTACT_LINKEDIN` (profile URL or `in/<slug>`; fifth icon). Pass them as production GitHub variables in **Deploy Public Website**. An empty telephone, WhatsApp, or LinkedIn value is a plain note, "Not configured", with no link role. WeChat: `weixin://dl/chat?<id>` is unreliable on desktop, so the icon links to `/wechat` (QR image `public/wechat-qr.png` + the ID as text); on a WeChat-capable mobile UA it tries the `weixin://` link first. The schema.org Person node comes from `content.json` `site.owner`.
 - **Legal pages**: `/privacy`, `/terms` render `content.json` `legal.privacy` / `legal.terms` (array of `{ heading, paragraphs[] }`) inside the same layout: nav, cinema layer, video **paused and poster only** (legal text needs stillness), bottom bar. Placeholder text until counsel supplies copy.
 - **Reduced motion / data**: `useReducedMotion` combines `matchMedia('(prefers-reduced-motion: reduce)')`, `matchMedia('(prefers-reduced-data: reduce)')`, `navigator.connection?.saveData`. When true: `<html data-motion="off">`, `BackgroundVideo` renders only `<img src=poster>`, `effects.css` zeroes every `animation` and `transition`, `scroll-behavior: auto`.
@@ -444,9 +443,8 @@ home in git history for rollback.
    renditions still ship on the site until `VITE_MEDIA_BASE_URL` is
    `https://media.lx-software.com` and the public site is redeployed.
 3. **Loop:** crossfade.
-4. **Arrow-key section jumps:** implemented, off by default
-   (`keyboardSections` in `content.json`) because they replace native arrow
-   scrolling and this was left unanswered.
+4. **Arrow-key section jumps:** removed. The flag replaced native arrow
+   scrolling and was off in `site.json`, so the hook never ran.
 5. **Copy:** placeholders in `content.json`. Phone, WhatsApp, and WeChat ID
    are GitHub variables, not source.
 6. **`/about` and `/contact`:** dropped. No redirects.
@@ -459,8 +457,8 @@ home in git history for rollback.
   field; accepted by the brief, but the hero text and effects must carry
   the screen — check the mobile mockup early.
 - iOS Low Power Mode blocks autoplay; poster fallback covers it.
-- Bootstrap's default dark theme colours leak into components; re-theme via
-  tokens and audit with the effects layer off.
+- The shipped site does not use Bootstrap or TanStack Query. Colour comes
+  from `src/styles/tokens.css`.
 - The current `Deploy Public Website` trigger includes `apps/public_www/**`,
   so pushing the master video to `main` uploads 3.85 MB to S3 each time
   until it moves to `media/` (Vite only copies `public/`).

@@ -15,7 +15,6 @@ from typing import Any, Callable
 
 import boto3
 from botocore.exceptions import ClientError
-
 from http_common import _log_event
 
 _executor: Callable[[str, list[dict[str, Any]] | None], list[dict[str, Any]]] | None = None

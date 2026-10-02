@@ -89,7 +89,7 @@ function renderTableBody(children: ReactNode): ReactNode {
 }
 
 /**
- * Standard admin table: filter field, striped rows, last column reserved for operations.
+ * Standard admin table: filter field, plain rows, last column reserved for operations.
  * Pass table body rows as `children` (typically `<tr>` elements). Use
  * `AdminCell` for body cells so column priority is applied from the column
  * definition instead of being repeated per cell.

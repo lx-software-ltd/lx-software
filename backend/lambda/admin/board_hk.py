@@ -248,13 +248,9 @@ def is_hk_address(address: str) -> bool:
 
 
 def parse_iso(value: str) -> datetime:
-    text = (value or "").strip()
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    dt = datetime.fromisoformat(text)
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt
+    from timeutil import parse_iso_strict
+
+    return parse_iso_strict(value)
 
 
 def as_hkt(dt: datetime) -> datetime:
@@ -292,7 +288,9 @@ def to_iso(dt: datetime) -> str:
 
 
 def now_hkt() -> datetime:
-    return as_hkt(datetime.now(timezone.utc))
+    from timeutil import utc_now
+
+    return as_hkt(utc_now())
 
 
 def today_hkt() -> str:

@@ -3,7 +3,9 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as cdk from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
+import { LxsoftwareAdminWebStack } from "../lib/lxsoftware-admin-web-stack";
 import { LxsoftwareStack } from "../lib/lxsoftware-stack";
+import { PublicWebsiteStack } from "../lib/public-website-stack";
 
 type CfnResource = {
   Type: string;
@@ -335,12 +337,16 @@ describe("EventBridge Scheduler wiring", () => {
     }
   });
 
-  test("no Lambda resource-policy statement is granted to scheduler.amazonaws.com", () => {
+  test("no Lambda resource-policy statement is granted to scheduler.amazonaws.com or events.amazonaws.com", () => {
     const permissions = Object.values(resourcesOfType("AWS::Lambda::Permission"));
     const schedulerGrants = permissions.filter(
       (p) => p.Properties?.Principal === "scheduler.amazonaws.com"
     );
     expect(schedulerGrants).toEqual([]);
+    const eventRuleGrants = permissions.filter(
+      (p) => p.Properties?.Principal === "events.amazonaws.com"
+    );
+    expect(eventRuleGrants).toEqual([]);
   });
 
   test("Siu Tin Dei board schedules use tenant names and boardKey", () => {
@@ -365,6 +371,7 @@ describe("EventBridge Scheduler wiring", () => {
       "lxsoftware-admin-openrouter-usage-pull": "openrouter_usage_pull",
       "lxsoftware-admin-evolvesprouts-data-api-ensure": "data_api_ensure",
       "lxsoftware-admin-evolvesprouts-finance-mirror": "evolvesprouts_finance_mirror",
+      "lxsoftware-admin-bank-sync": "bank_sync",
     };
     const schedules = Object.values(resourcesOfType("AWS::Scheduler::Schedule"));
     const byName = Object.fromEntries(
@@ -587,54 +594,16 @@ describe("Executive Board placeholder secrets", () => {
     );
   }
 
-  function expectRetainedPlaceholders(
-    secrets: CfnResource[],
-    tenant: string,
-    purpose: string,
-  ) {
-    for (const secret of secrets) {
-      expect(secret.Properties?.GenerateSecretString).toBeDefined();
-      expect(secret.UpdateReplacePolicy).toBe("Retain");
-      expect(secret.DeletionPolicy).toBe("Retain");
-      const tags = asArray<{ Key: string; Value: string }>(secret.Properties?.Tags);
-      expect(tags).toEqual(
-        expect.arrayContaining([
-          { Key: "lxsoftware:tenant", Value: tenant },
-          { Key: "lxsoftware:purpose", Value: purpose },
-        ]),
-      );
-    }
-  }
-
-  test("keeps the deployed LX Software board secrets and imports the Siu Tin Dei set", () => {
-    const reserved = secretsNamed(reservedNames);
-    const siutindei = secretsNamed(siutindeiNames);
-    expect(reserved.map((s) => s.Properties?.Name).sort()).toEqual([...reservedNames].sort());
-    expect(siutindei).toEqual([]);
-    expectRetainedPlaceholders(reserved, "lxsoftware", "lxsoftware-executive-board");
-  });
-
-  test("the JSON store / analytics secrets include a generated private-key field", () => {
-    const byName = Object.fromEntries(
-      secretsNamed(reservedNames).map((s) => [s.Properties?.Name as string, s])
-    );
-    expect(byName["lxsoftware-admin-app-store-connect-key"].Properties?.GenerateSecretString).toEqual(
-      expect.objectContaining({
-        GenerateStringKey: "privateKey",
-        SecretStringTemplate: expect.stringContaining("keyId"),
-      })
-    );
-    for (const name of [
-      "lxsoftware-admin-google-play-sa",
-      "lxsoftware-admin-google-analytics-sa",
-    ]) {
-      expect(byName[name].Properties?.GenerateSecretString).toEqual(
-        expect.objectContaining({
-          GenerateStringKey: "private_key",
-          SecretStringTemplate: expect.stringContaining("client_email"),
-        })
-      );
-    }
+  test("omits unused LX Software placeholder secrets and imports the Siu Tin Dei set", () => {
+    // Those seven secrets were RETAIN placeholders AdminApiFn never read.
+    // Dropping them from the template orphans the secret values in the account.
+    expect(secretsNamed(reservedNames)).toEqual([]);
+    expect(secretsNamed(siutindeiNames)).toEqual([]);
+    const importer = secretsNamed([
+      "lxsoftware-admin-siutindei-board-importer-credentials",
+    ]);
+    expect(importer).toHaveLength(1);
+    expect(importer[0].DeletionPolicy).toBe("Retain");
   });
 
   test("removed CfnParameters no longer exist", () => {
@@ -746,7 +715,7 @@ describe("Siu Tin Dei parameter naming", () => {
     expect(withWrites.every(([id]) => id.startsWith("AdminApiFn"))).toBe(true);
   });
 
-  test("production.json lxsoftware keys name existing CfnParameters", () => {
+  test("production.json keys name parameters on the stack that defines them", () => {
     const raw = fs.readFileSync(
       path.join(__dirname, "../params/production.json"),
       "utf8",
@@ -760,8 +729,62 @@ describe("Siu Tin Dei parameter naming", () => {
     expect(file["lxsoftware:SiutindeiBoardStaffEnabled"]).toBe("true");
     expect(lxsoftwareKeys).toContain("lxsoftware:PublicApiWritesEnabled");
     expect(file["lxsoftware:PublicApiWritesEnabled"]).toBe("true");
-    for (const key of lxsoftwareKeys) {
-      expect(parameters[key.slice("lxsoftware:".length)]).toBeDefined();
+
+    const env = { account: "123456789012", region: "ap-southeast-1" };
+    const publicApp = new cdk.App({
+      context: { "aws:cdk:bundling-stacks": [] },
+    });
+    const publicParameters = Template.fromStack(
+      new PublicWebsiteStack(publicApp, "lxsoftware-public-www", { env }),
+    ).toJSON().Parameters as Record<string, unknown>;
+    const adminWebApp = new cdk.App({
+      context: { "aws:cdk:bundling-stacks": [] },
+    });
+    const adminWebParameters = Template.fromStack(
+      new LxsoftwareAdminWebStack(adminWebApp, "lxsoftware-admin-web", {
+        env,
+        cspApiConnectOrigin: "https://example.execute-api.ap-southeast-1.amazonaws.com",
+        cspAssetsConnectOrigins: "https://bucket.s3.amazonaws.com",
+      }),
+    ).toJSON().Parameters as Record<string, unknown>;
+
+    for (const key of Object.keys(file)) {
+      if (key.startsWith("lxsoftware-admin-web:")) {
+        expect(adminWebParameters[key.slice("lxsoftware-admin-web:".length)]).toBeDefined();
+      } else if (key.startsWith("lxsoftware-public-www:")) {
+        expect(publicParameters[key.slice("lxsoftware-public-www:".length)]).toBeDefined();
+      } else if (key.startsWith("lxsoftware:")) {
+        expect(parameters[key.slice("lxsoftware:".length)]).toBeDefined();
+      } else if (!key.includes(":")) {
+        expect(publicParameters[key]).toBeDefined();
+      } else {
+        throw new Error(`unknown parameter key prefix: ${key}`);
+      }
+    }
+    expect(() => {
+      const unknown = "other-stack:NotAParameter";
+      if (unknown.includes(":") && !unknown.startsWith("lxsoftware:") && !unknown.startsWith("lxsoftware-admin-web:") && !unknown.startsWith("lxsoftware-public-www:")) {
+        throw new Error(`unknown parameter key prefix: ${unknown}`);
+      }
+    }).toThrow(/unknown parameter key prefix/);
+  });
+
+  test("AdminApiFn environment keys are unique", () => {
+    const adminFn = Object.entries(resourcesOfType("AWS::Lambda::Function")).find(([id]) =>
+      id.startsWith("AdminApiFn"),
+    );
+    const env = (adminFn?.[1].Properties?.Environment?.Variables ?? {}) as Record<string, unknown>;
+    const keys = Object.keys(env);
+    expect(keys.length).toBeGreaterThan(40);
+    expect(new Set(keys).size).toBe(keys.length);
+    for (const name of [
+      "BOARD_STAFF_ENABLED",
+      "BOARD_TOOLS_ENABLED",
+      "BOARD_MAIL_SENDING_ENABLED",
+      "OUTREACH_SENDING_DOMAIN",
+      "OUTREACH_FROM_LOCAL_PART",
+    ]) {
+      expect(keys.filter((key) => key === name)).toHaveLength(1);
     }
   });
 });
@@ -1054,6 +1077,12 @@ describe("Board SES configuration-set IAM and public CORS", () => {
     const serialized = JSON.stringify(template.toJSON());
     expect(serialized).toContain("PublicSiteOrigins");
     expect(serialized).toContain("lx-software.com");
+    const api = Object.values(resourcesOfType("AWS::ApiGatewayV2::Api"))[0];
+    const allowOrigins = JSON.stringify(api.Properties?.CorsConfiguration?.AllowOrigins);
+    expect(allowOrigins).toContain("HasPublicSiteOrigins");
+    expect(allowOrigins).toContain("Fn::If");
+    const conditions = template.toJSON().Conditions as Record<string, unknown>;
+    expect(conditions.HasPublicSiteOrigins).toBeDefined();
   });
 });
 

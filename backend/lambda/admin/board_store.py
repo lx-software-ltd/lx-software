@@ -49,24 +49,23 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
-from botocore.exceptions import ClientError
-
 import runtime
+from botocore.exceptions import ClientError
 from contract_constants import (
     BOARD_APPROVAL_TTL_DAYS,
+    BOARD_CACHE_REFRESH_TTL_HOURS,
+    BOARD_CATALOG_AUTO_IMPORT_DEFAULT,
+    BOARD_CATALOG_IMPORT_HOLD_HOURS,
     BOARD_CHAIR_DEFAULT,
     BOARD_CHAT_JOB_TTL_SECONDS,
     BOARD_DEFAULT_DAILY_BUDGET_USD,
     BOARD_KEY,
-    BOARD_CACHE_REFRESH_TTL_HOURS,
     BOARD_MAIL_ALLOW_LIST_MAX_ENTRIES,
     BOARD_MAIL_MESSAGE_TTL_DAYS,
     BOARD_PERSONA_IDS,
     BOARD_STAFF_ACTION_CLASSES,
     BOARD_STAFF_DAILY_BUDGET_DEFAULT_USD,
     BOARD_STAFF_DAILY_BUDGET_MAX_USD,
-    BOARD_CATALOG_AUTO_IMPORT_DEFAULT,
-    BOARD_CATALOG_IMPORT_HOLD_HOURS,
     BOARD_STAFF_DEFAULT_MODEL_BY_SEAT,
     BOARD_STAFF_HOLD_CODE_STAGING_HOURS,
     BOARD_STAFF_MAX_RUNNING_TASKS_DEFAULT,
@@ -107,11 +106,15 @@ def event_targets_this_board(event: dict[str, Any] | None) -> bool:
 
 
 def records_table() -> Any:
-    return runtime._ddb.Table(os.environ["RECORDS_TABLE_NAME"])
+    from config import records_table_name
+
+    return runtime._ddb.Table(records_table_name())
 
 
 def now_iso() -> str:
-    return _utc_iso_z(datetime.now(timezone.utc))
+    from timeutil import now_iso as _now_iso
+
+    return _now_iso()
 
 
 def new_id() -> str:
@@ -1408,9 +1411,6 @@ def put_mail_message(table: Any, doc: dict[str, Any]) -> None:
     )
 
 
-def delete_mail_message(table: Any, thread_id: str, received_at: str, message_id: str) -> None:
-    table.delete_item(Key=mail_message_key(thread_id, received_at, message_id))
-
 
 def list_mail_messages(table: Any, thread_id: str) -> list[dict[str, Any]]:
     """Oldest first."""
@@ -1425,10 +1425,6 @@ def list_mail_messages(table: Any, thread_id: str) -> list[dict[str, Any]]:
 def _msgid_key(digest: str) -> dict[str, str]:
     return {"pk": board_pk("mail#msgids"), "sk": f"MSGID#{digest}"}
 
-
-def delete_mail_msgid(table: Any, digest: str) -> None:
-    """Undo :func:`put_mail_msgid` when the message it claimed could not be stored."""
-    table.delete_item(Key=_msgid_key(digest))
 
 
 def put_mail_msgid(table: Any, digest: str, *, thread_id: str, message_id: str) -> bool:
@@ -1503,16 +1499,6 @@ def get_cache(table: Any, name: str) -> dict[str, Any] | None:
         return None
     return doc
 
-
-def cache_digest(table: Any) -> dict[str, Any]:
-    """Tiny summary of cached AWS / security reads for the context pack."""
-    keys = ("aws:monthly_cost", "aws:alarms", "security:findings", "stores:metrics", "web:sessions")
-    out: dict[str, Any] = {}
-    for name in keys:
-        hit = get_cache(table, name)
-        if hit:
-            out[name] = {"fetchedAt": hit.get("fetchedAt"), "payload": hit.get("payload")}
-    return out
 
 
 def add_usage_day(table: Any, usage: dict[str, Any], *, calls: int = 1) -> None:

@@ -50,11 +50,10 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
-from defusedxml import ElementTree as ET
-
 import board_hk
 import board_store
 from contract_constants import BOARD_KEY
+from defusedxml import ElementTree as ET
 from http_common import _log_event
 
 FEHD_EN_URL = "http://www.fehd.gov.hk/english/licensing/license/text/LP_Restaurants_EN.XML"

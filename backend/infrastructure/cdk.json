@@ -1,3 +1,4 @@
 {
-  "app": "bash ../scripts/run-cdk-app.sh"
+  "app": "bash ../scripts/run-cdk-app.sh",
+  "context": {}
 }

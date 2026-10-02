@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminFetchJson, getAdminApiErrorMessage } from "../lib/apiAdminClient";
+import { log } from "../lib/log";
 import {
   statementLineAssetKeys,
   type FinanceLineType,
@@ -161,7 +162,7 @@ export function useParseStatement(owner: StatementOwnerKey) {
         }
       }
 
-      console.info("[useParseStatement] start", {
+      log.info("[useParseStatement] start", {
         owner,
         fileName: file.name,
         fileType: file.type,
@@ -172,7 +173,7 @@ export function useParseStatement(owner: StatementOwnerKey) {
       });
 
       const uploadKey = await uploadFinanceAsset(file, owner, qc);
-      console.info("[useParseStatement] upload + confirm ok", {
+      log.info("[useParseStatement] upload + confirm ok", {
         key: uploadKey,
         size: file.size,
       });
@@ -202,7 +203,7 @@ export function useParseStatement(owner: StatementOwnerKey) {
       const result = await pollParseJob(owner, jobStart.jobId.trim());
       await qc.invalidateQueries({ queryKey: [...statementOwnerQueryKey(owner)] });
 
-      console.info("[useParseStatement] parse job ok", {
+      log.info("[useParseStatement] parse job ok", {
         key: uploadKey,
         addedLines: result.addedLines,
       });

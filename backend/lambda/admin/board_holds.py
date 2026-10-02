@@ -13,6 +13,7 @@ import board_mail
 import board_staff
 import board_store
 import board_tools
+from board_tools_core import ToolContext, ToolOp
 from contract_constants import (
     BOARD_STAFF_HOLD_DEFAULT_HOURS,
     BOARD_STAFF_RAMP_DEMOTE_VETO_RATE,
@@ -64,12 +65,12 @@ class HoldError(ValueError):
     """Hold is missing or cannot be changed."""
 
 
-def action_class_exempt(op: board_tools.ToolOp) -> bool:
+def action_class_exempt(op: ToolOp) -> bool:
     """Writes that stay Approvals even when staff holds are on (R-37)."""
     return getattr(op, "action_class", None) in ("code_production", "code_close", "catalog_import")
 
 
-def classify(op: board_tools.ToolOp, ctx: board_tools.ToolContext, args: dict[str, Any], settings: dict[str, Any]) -> tuple[str, str]:
+def classify(op: ToolOp, ctx: ToolContext, args: dict[str, Any], settings: dict[str, Any]) -> tuple[str, str]:
     name = op.name
     if op.tool_id in ("board", "staff", "task"):
         return "internal", "internal"
@@ -106,7 +107,7 @@ def classify(op: board_tools.ToolOp, ctx: board_tools.ToolContext, args: dict[st
     return "internal", "internal"
 
 
-def _outbound_known(ctx: board_tools.ToolContext, args: dict[str, Any], settings: dict[str, Any]) -> bool:
+def _outbound_known(ctx: ToolContext, args: dict[str, Any], settings: dict[str, Any]) -> bool:
     recipients = _recipients(args)
     if not recipients:
         return False
@@ -188,8 +189,8 @@ def _shift_quiet(execute_at: datetime, settings: dict[str, Any]) -> datetime:
 
 
 def create_hold(
-    ctx: board_tools.ToolContext,
-    op: board_tools.ToolOp,
+    ctx: ToolContext,
+    op: ToolOp,
     arguments: dict[str, Any],
     *,
     action_class: str,
@@ -241,8 +242,8 @@ def create_hold(
 
 
 def maybe_hold(
-    ctx: board_tools.ToolContext,
-    op: board_tools.ToolOp,
+    ctx: ToolContext,
+    op: ToolOp,
     arguments: dict[str, Any],
     *,
     summary: str,
@@ -366,7 +367,7 @@ def _execute_one(table: Any, settings: dict[str, Any], hold: dict[str, Any]) -> 
         if reason:
             _finish_hold(table, hold, "failed", now, error=reason)
             return True
-    ctx = board_tools.ToolContext(
+    ctx = ToolContext(
         table=table,
         settings=settings,
         persona_id=str(hold.get("personaId") or ""),

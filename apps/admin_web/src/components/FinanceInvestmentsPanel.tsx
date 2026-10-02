@@ -4,6 +4,7 @@ import {
   GLOBAL_DEFAULT_CURRENCY,
   type CurrencyCode,
 } from "../lib/currencies";
+import { compareBy } from "../lib/compareBy";
 import { convertAmountToBase, convertAmountWithBase } from "../lib/frankfurterRates";
 import { parseAmount } from "../lib/formParse";
 import {
@@ -23,8 +24,8 @@ import {
   type InvestmentCategory,
 } from "../lib/financeModel";
 import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
-import { useExpandedRecord } from "../hooks/useExpandedRecord";
-import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
+import { useRecordEditor } from "../hooks/useRecordEditor";
+import { useSortState } from "../hooks/useSortState";
 import { buildQuoteMap, type FinanceQuoteResult } from "../lib/financeQuotes";
 import { useFinanceQuotes } from "../hooks/useFinanceQuotes";
 import { useFrankfurterRatesForTotals } from "../hooks/useFrankfurterRatesForTotals";
@@ -38,6 +39,9 @@ import {
   AdminCreateButton,
   AdminEditorPanel,
   AdminExpandableRow,
+  AdminField,
+  AdminFieldGrid,
+  AdminFxTotalRow,
   AdminFilterBar,
   AdminFilterField,
   AdminRecordTable,
@@ -45,7 +49,6 @@ import {
   ConfirmDialog,
   AdminTableTotalCurrency,
   CurrencySelect,
-  FrankfurterRatesFooterNote,
   MoneyAmount,
   StaleValuationBadge,
   TableSortHeaderButton,
@@ -124,65 +127,56 @@ function compareInv(
   houseLabelByValue: ReadonlyMap<HouseKey, string>,
   rowNotionalInDisplayCurrencyForSort: (r: FinanceInvestmentRecord) => number,
 ): number {
-  const dir = sortDir === "asc" ? 1 : -1;
-  let cmp = 0;
-  switch (sortKey) {
-    case "cat":
-      cmp = a.category.localeCompare(b.category, undefined, { sensitivity: "base" });
-      break;
-    case "details":
-      cmp = investmentDetailsDisplay(a, houseLabelByValue).localeCompare(
-        investmentDetailsDisplay(b, houseLabelByValue),
-        undefined,
-        { sensitivity: "base" },
-      );
-      break;
-    case "atype":
-      cmp = a.assetType.localeCompare(b.assetType, undefined, { sensitivity: "base" });
-      break;
-    case "prov":
-      cmp = a.provider.localeCompare(b.provider, undefined, { sensitivity: "base" });
-      break;
-    case "amt": {
-      const ma = a.principalAmount;
-      const mb = b.principalAmount;
-      cmp = ma === mb ? 0 : ma < mb ? -1 : 1;
-      break;
-    }
-    case "ccy":
-      cmp = a.currency.localeCompare(b.currency, undefined, { sensitivity: "base" });
-      break;
-    case "unit": {
-      const ua = a.unit;
-      const ub = b.unit;
-      if (ua === undefined && ub === undefined) {
-        cmp = 0;
-      } else if (ua === undefined) {
-        cmp = 1;
-      } else if (ub === undefined) {
-        cmp = -1;
-      } else {
-        cmp = ua === ub ? 0 : ua < ub ? -1 : 1;
+  return compareBy(
+    a,
+    b,
+    sortDir,
+    (left, right) => {
+      switch (sortKey) {
+        case "cat":
+          return left.category.localeCompare(right.category, undefined, { sensitivity: "base" });
+        case "details":
+          return investmentDetailsDisplay(left, houseLabelByValue).localeCompare(
+            investmentDetailsDisplay(right, houseLabelByValue),
+            undefined,
+            { sensitivity: "base" },
+          );
+        case "atype":
+          return left.assetType.localeCompare(right.assetType, undefined, { sensitivity: "base" });
+        case "prov":
+          return left.provider.localeCompare(right.provider, undefined, { sensitivity: "base" });
+        case "amt":
+          return left.principalAmount === right.principalAmount
+            ? 0
+            : left.principalAmount < right.principalAmount
+              ? -1
+              : 1;
+        case "ccy":
+          return left.currency.localeCompare(right.currency, undefined, { sensitivity: "base" });
+        case "unit": {
+          const ua = left.unit;
+          const ub = right.unit;
+          if (ua === undefined && ub === undefined) return 0;
+          if (ua === undefined) return 1;
+          if (ub === undefined) return -1;
+          return ua === ub ? 0 : ua < ub ? -1 : 1;
+        }
+        case "currVal": {
+          const va = rowNotionalInDisplayCurrencyForSort(left);
+          const vb = rowNotionalInDisplayCurrencyForSort(right);
+          return va === vb ? 0 : va < vb ? -1 : 1;
+        }
+        case "lastUpd": {
+          const sa = left.lastUpdated ?? "";
+          const sb = right.lastUpdated ?? "";
+          return sa.localeCompare(sb, undefined, { sensitivity: "base" });
+        }
+        default:
+          return 0;
       }
-      break;
-    }
-    case "currVal": {
-      const va = rowNotionalInDisplayCurrencyForSort(a);
-      const vb = rowNotionalInDisplayCurrencyForSort(b);
-      cmp = va === vb ? 0 : va < vb ? -1 : 1;
-      break;
-    }
-    case "lastUpd": {
-      const sa = a.lastUpdated ?? "";
-      const sb = b.lastUpdated ?? "";
-      cmp = sa.localeCompare(sb, undefined, { sensitivity: "base" });
-      break;
-    }
-    default:
-      break;
-  }
-  if (cmp !== 0) return dir * cmp;
-  return a.id.localeCompare(b.id);
+    },
+    (left, right) => left.id.localeCompare(right.id),
+  );
 }
 
 type FormState = {
@@ -198,7 +192,22 @@ type FormState = {
   cryptoCurrency: string;
 };
 
-function formFromInvestment(row: FinanceInvestmentRecord): FormState {
+function emptyInvestmentForm(): FormState {
+  return {
+    category: INVESTMENT_CATEGORIES[0],
+    assetType: "Fixed",
+    provider: "",
+    principal: "",
+    currency: GLOBAL_DEFAULT_CURRENCY,
+    unit: "",
+    currentValue: "",
+    relatedHouse: "",
+    ticker: "",
+    cryptoCurrency: "",
+  };
+}
+
+function lineToForm(row: FinanceInvestmentRecord): FormState {
   return {
     category: row.category,
     assetType: row.assetType,
@@ -215,6 +224,57 @@ function formFromInvestment(row: FinanceInvestmentRecord): FormState {
         : "",
     ticker: row.category === "ETF" ? (row.ticker ?? "") : "",
     cryptoCurrency: row.category === "Crypto" ? (row.cryptoCurrency ?? "") : "",
+  };
+}
+
+function formToRecord(
+  form: FormState,
+  editingId: string | null,
+): { ok: true; record: FinanceInvestmentRecord } | { ok: false; error: string } {
+  const principalAmount = parseAmount(form.principal);
+  if (!form.provider.trim()) return { ok: false, error: "Provider is required." };
+  if (principalAmount === null) return { ok: false, error: "Principal must be a valid number." };
+  const unitParsed = form.category === "Real Estate" ? undefined : parseOptionalUnit(form.unit);
+  if (form.category !== "Real Estate" && unitParsed === null) {
+    return { ok: false, error: "Units must be a valid number." };
+  }
+  let realEstateCurrentValue: number | undefined;
+  if (form.category === "Real Estate") {
+    const cv = parseAmount(form.currentValue);
+    if (cv === null) return { ok: false, error: "Current value must be a valid number." };
+    realEstateCurrentValue = cv;
+  }
+  if (!INVESTMENT_CATEGORIES.includes(form.category)) {
+    return { ok: false, error: "Pick a valid category." };
+  }
+  if (!ASSET_TYPES.includes(form.assetType)) {
+    return { ok: false, error: "Pick a valid asset type." };
+  }
+  const currency = coerceSupportedCurrency(form.currency, GLOBAL_DEFAULT_CURRENCY);
+  const tickerTrim = form.ticker.trim();
+  const cryptoTrim = form.cryptoCurrency.trim();
+  return {
+    ok: true,
+    record: {
+      id: editingId ?? newStatementLineId(),
+      category: form.category,
+      assetType: form.assetType,
+      provider: form.provider.trim(),
+      principalAmount,
+      currency,
+      ...(form.category !== "Real Estate" && unitParsed !== undefined && unitParsed !== null
+        ? { unit: unitParsed }
+        : {}),
+      ...(form.category === "Real Estate" && realEstateCurrentValue !== undefined
+        ? { currentValue: realEstateCurrentValue }
+        : {}),
+      ...(form.category === "Real Estate" &&
+      (form.relatedHouse === "hillmarton" || form.relatedHouse === "morrison")
+        ? { relatedHouse: form.relatedHouse }
+        : {}),
+      ...(form.category === "ETF" && tickerTrim ? { ticker: tickerTrim } : {}),
+      ...(form.category === "Crypto" && cryptoTrim ? { cryptoCurrency: cryptoTrim } : {}),
+    },
   };
 }
 
@@ -237,7 +297,6 @@ export function FinanceInvestmentsPanel({
   isSaving = false,
 }: FinanceInvestmentsPanelProps) {
   const sheetId = "investments";
-  const defaultCategory = INVESTMENT_CATEGORIES[0];
   const hasHouseOptions = relatedHouseOptions.length > 0;
   const relatedHouseLabelByValue = useMemo(() => {
     const m = new Map<HouseKey, string>();
@@ -247,44 +306,9 @@ export function FinanceInvestmentsPanel({
     return m;
   }, [relatedHouseOptions]);
 
-  const emptyForm = (): FormState => ({
-    category: defaultCategory,
-    assetType: "Fixed",
-    provider: "",
-    principal: "",
-    currency: GLOBAL_DEFAULT_CURRENCY,
-    unit: "",
-    currentValue: "",
-    relatedHouse: "",
-    ticker: "",
-    cryptoCurrency: "",
-  });
-
-  const [sortKey, setSortKey] = useState<InvSortKey | null>(null);
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const onSort = useCallback((key: InvSortKey) => {
-    setSortKey((prevKey) => {
-      if (prevKey !== key) {
-        setSortDir("asc");
-        return key;
-      }
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-      return prevKey;
-    });
-  }, []);
+  const { sortKey, sortDir, onSort, ariaSort, directionFor } = useSortState<InvSortKey>(null);
 
   const tableColumns = useMemo((): AdminDataTableColumn[] => {
-    const manualSort = sortKey !== null;
-    const thAria = (
-      key: InvSortKey,
-    ): "ascending" | "descending" | "none" | "other" | undefined => {
-      if (!manualSort) return undefined;
-      if (sortKey === key) return sortDir === "asc" ? "ascending" : "descending";
-      return "none";
-    };
-    const dirFor = (key: InvSortKey): "asc" | "desc" | null =>
-      sortKey === key ? sortDir : null;
-
     const cols: AdminDataTableColumn[] = [
       {
         key: "cat",
@@ -292,12 +316,12 @@ export function FinanceInvestmentsPanel({
           <TableSortHeaderButton
             label="Category"
             isActive={sortKey === "cat"}
-            direction={dirFor("cat")}
+            direction={directionFor("cat")}
             onClick={() => onSort("cat")}
           />
         ),
         className: "small",
-        thAriaSort: thAria("cat"),
+        thAriaSort: ariaSort("cat"),
       },
     ];
     cols.push({
@@ -306,13 +330,13 @@ export function FinanceInvestmentsPanel({
         <TableSortHeaderButton
           label="Details"
           isActive={sortKey === "details"}
-          direction={dirFor("details")}
+          direction={directionFor("details")}
           onClick={() => onSort("details")}
         />
       ),
       className: "small",
       priority: "secondary",
-      thAriaSort: thAria("details"),
+      thAriaSort: ariaSort("details"),
     });
     cols.push(
       {
@@ -321,13 +345,13 @@ export function FinanceInvestmentsPanel({
           <TableSortHeaderButton
             label="Asset type"
             isActive={sortKey === "atype"}
-            direction={dirFor("atype")}
+            direction={directionFor("atype")}
             onClick={() => onSort("atype")}
           />
         ),
         className: "small",
         priority: "secondary",
-        thAriaSort: thAria("atype"),
+        thAriaSort: ariaSort("atype"),
       },
       {
         key: "prov",
@@ -335,13 +359,13 @@ export function FinanceInvestmentsPanel({
           <TableSortHeaderButton
             label="Provider"
             isActive={sortKey === "prov"}
-            direction={dirFor("prov")}
+            direction={directionFor("prov")}
             onClick={() => onSort("prov")}
           />
         ),
         className: "small",
         priority: "secondary",
-        thAriaSort: thAria("prov"),
+        thAriaSort: ariaSort("prov"),
       },
       {
         key: "amt",
@@ -349,7 +373,7 @@ export function FinanceInvestmentsPanel({
           <TableSortHeaderButton
             label="Principal"
             isActive={sortKey === "amt"}
-            direction={dirFor("amt")}
+            direction={directionFor("amt")}
             onClick={() => onSort("amt")}
             align="end"
           />
@@ -358,7 +382,7 @@ export function FinanceInvestmentsPanel({
         headerClassName: "small text-end",
         // Current Value is the metric that matters on a phone; principal moves to md+.
         priority: "secondary",
-        thAriaSort: thAria("amt"),
+        thAriaSort: ariaSort("amt"),
       },
       {
         key: "ccy",
@@ -366,13 +390,13 @@ export function FinanceInvestmentsPanel({
           <TableSortHeaderButton
             label="Currency"
             isActive={sortKey === "ccy"}
-            direction={dirFor("ccy")}
+            direction={directionFor("ccy")}
             onClick={() => onSort("ccy")}
           />
         ),
         className: "small",
         priority: "secondary",
-        thAriaSort: thAria("ccy"),
+        thAriaSort: ariaSort("ccy"),
       },
       {
         key: "unit",
@@ -380,7 +404,7 @@ export function FinanceInvestmentsPanel({
           <TableSortHeaderButton
             label="Units"
             isActive={sortKey === "unit"}
-            direction={dirFor("unit")}
+            direction={directionFor("unit")}
             onClick={() => onSort("unit")}
             align="end"
           />
@@ -388,7 +412,7 @@ export function FinanceInvestmentsPanel({
         className: "small text-end",
         headerClassName: "small text-end",
         priority: "tertiary",
-        thAriaSort: thAria("unit"),
+        thAriaSort: ariaSort("unit"),
       },
       {
         key: "currVal",
@@ -396,14 +420,14 @@ export function FinanceInvestmentsPanel({
           <TableSortHeaderButton
             label="Current Value"
             isActive={sortKey === "currVal"}
-            direction={dirFor("currVal")}
+            direction={directionFor("currVal")}
             onClick={() => onSort("currVal")}
             align="end"
           />
         ),
         className: "small text-end",
         headerClassName: "small text-end",
-        thAriaSort: thAria("currVal"),
+        thAriaSort: ariaSort("currVal"),
       },
       {
         key: "lastUpd",
@@ -411,13 +435,13 @@ export function FinanceInvestmentsPanel({
           <TableSortHeaderButton
             label="Last Update"
             isActive={sortKey === "lastUpd"}
-            direction={dirFor("lastUpd")}
+            direction={directionFor("lastUpd")}
             onClick={() => onSort("lastUpd")}
           />
         ),
         className: "small admin-nowrap",
         priority: "tertiary",
-        thAriaSort: thAria("lastUpd"),
+        thAriaSort: ariaSort("lastUpd"),
       },
       {
         key: "ops",
@@ -427,19 +451,20 @@ export function FinanceInvestmentsPanel({
       },
     );
     return cols;
-  }, [sortKey, sortDir, onSort]);
+  }, [ariaSort, directionFor, onSort, sortKey]);
 
   const colSpan = tableColumns.length;
   const formId = `${sheetId}-form`;
-  const expanded = useExpandedRecord("investment");
-  const editingId =
-    expanded.expandedId && expanded.expandedId !== DRAFT_RECORD_ID
-      ? expanded.expandedId
-      : null;
-  const formOpen = expanded.expandedId !== null;
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>(() => emptyForm());
+  const editor = useRecordEditor<FormState, FinanceInvestmentRecord>({
+    param: "investment",
+    records,
+    emptyForm: emptyInvestmentForm,
+    lineToForm,
+    onDelete: (id) => {
+      onPatch((prev) => prev.filter((row) => row.id !== id));
+    },
+  });
+  const { form, setForm, editingId, formError, formOpen, expandedId } = editor;
   const [tableFilter, setTableFilter] = useState("");
   const [totalDisplayCurrency, setTotalDisplayCurrency] = useState<CurrencyCode>(
     GLOBAL_DEFAULT_CURRENCY,
@@ -675,125 +700,21 @@ export function FinanceInvestmentsPanel({
     quotesErrored,
   ]);
 
-  function resetFields() {
-    setFormError(null);
-    setForm(emptyForm());
-  }
-
-  function applyInvestment(row: FinanceInvestmentRecord) {
-    setFormError(null);
-    setForm(formFromInvestment(row));
-  }
-
-  function investmentDirty(): boolean {
-    if (!formOpen) return false;
-    if (!editingId) return JSON.stringify(form) !== JSON.stringify(emptyForm());
-    const row = records.find((record) => record.id === editingId);
-    if (!row) return false;
-    return JSON.stringify(form) !== JSON.stringify(formFromInvestment(row));
-  }
-
-  const editingInvestment = editingId
-    ? (records.find((record) => record.id === editingId) ?? null)
-    : null;
-  useHydrateExpandedRecord({
-    expandedId: expanded.expandedId,
-    recordsReady: true,
-    record: editingInvestment,
-    apply: applyInvestment,
-    onMissing: () => expanded.request(null, false),
-  });
-
-  function openEdit(row: FinanceInvestmentRecord) {
-    expanded.toggle(row.id, investmentDirty(), () => applyInvestment(row), resetFields);
-  }
-
-  function openCreate() {
-    if (expanded.expandedId === DRAFT_RECORD_ID) {
-      expanded.request(null, investmentDirty(), resetFields);
-      return;
-    }
-    expanded.request(DRAFT_RECORD_ID, investmentDirty(), resetFields);
-  }
-
   function submit(e: FormEvent) {
     e.preventDefault();
-    const principalAmount = parseAmount(form.principal);
-    if (!form.provider.trim()) {
-      setFormError("Provider is required.");
+    const built = formToRecord(form, editingId);
+    if (!built.ok) {
+      editor.setFormError(built.error);
       return;
     }
-    if (principalAmount === null) {
-      setFormError("Principal must be a valid number.");
-      return;
-    }
-    const unitParsed =
-      form.category === "Real Estate" ? undefined : parseOptionalUnit(form.unit);
-    if (form.category !== "Real Estate" && unitParsed === null) {
-      setFormError("Units must be a valid number.");
-      return;
-    }
-    let realEstateCurrentValue: number | undefined;
-    if (form.category === "Real Estate") {
-      const cv = parseAmount(form.currentValue);
-      if (cv === null) {
-        setFormError("Current value must be a valid number.");
-        return;
-      }
-      realEstateCurrentValue = cv;
-    }
-    if (!INVESTMENT_CATEGORIES.includes(form.category)) {
-      setFormError("Pick a valid category.");
-      return;
-    }
-    if (!ASSET_TYPES.includes(form.assetType)) {
-      setFormError("Pick a valid asset type.");
-      return;
-    }
-    const currency = coerceSupportedCurrency(form.currency, GLOBAL_DEFAULT_CURRENCY);
-    const tickerTrim = form.ticker.trim();
-    const cryptoTrim = form.cryptoCurrency.trim();
-    const row: FinanceInvestmentRecord = {
-      id: editingId ?? newStatementLineId(),
-      category: form.category,
-      assetType: form.assetType,
-      provider: form.provider.trim(),
-      principalAmount,
-      currency,
-      ...(form.category !== "Real Estate" &&
-      unitParsed !== undefined &&
-      unitParsed !== null
-        ? { unit: unitParsed }
-        : {}),
-      ...(form.category === "Real Estate" && realEstateCurrentValue !== undefined
-        ? { currentValue: realEstateCurrentValue }
-        : {}),
-      ...(form.category === "Real Estate" &&
-      (form.relatedHouse === "hillmarton" || form.relatedHouse === "morrison")
-        ? { relatedHouse: form.relatedHouse }
-        : {}),
-      ...(form.category === "ETF" && tickerTrim ? { ticker: tickerTrim } : {}),
-      ...(form.category === "Crypto" && cryptoTrim ? { cryptoCurrency: cryptoTrim } : {}),
-    };
-
+    const { record } = built;
     onPatch((prev) => {
       if (editingId) {
-        return prev.map((r) => (r.id === editingId ? row : r));
+        return prev.map((r) => (r.id === editingId ? record : r));
       }
-      return [...prev, row];
+      return [...prev, record];
     });
-
-    resetFields();
-    expanded.request(null, false);
-  }
-
-  function deleteRow(id: string) {
-    onPatch((prev) => prev.filter((r) => r.id !== id));
-    if (editingId === id) {
-      resetFields();
-      expanded.request(null, false);
-    }
-    setPendingDeleteId(null);
+    editor.close();
   }
 
   const investmentEditor = formOpen ? (
@@ -804,11 +725,8 @@ export function FinanceInvestmentsPanel({
       isSaving={isSaving}
       error={formError}
     >
-          <div className="row g-3">
-            <div className="col-12 col-md-2">
-              <label className="form-label small" htmlFor={`${sheetId}-cat`}>
-                Category
-              </label>
+          <AdminFieldGrid columns={4}>
+            <AdminField label="Category" htmlFor={`${sheetId}-cat`}>
               <select
                 id={`${sheetId}-cat`}
                 className="form-select form-select-sm"
@@ -837,14 +755,11 @@ export function FinanceInvestmentsPanel({
                   </option>
                 ))}
               </select>
-            </div>
+            </AdminField>
             {(form.category === "Real Estate" && hasHouseOptions) ||
             form.category === "ETF" ||
             form.category === "Crypto" ? (
-              <div className="col-12 col-md-2">
-                <label className="form-label small" htmlFor={`${sheetId}-details`}>
-                  Details
-                </label>
+              <AdminField label="Details" htmlFor={`${sheetId}-details`}>
                 {form.category === "Real Estate" ? (
                   <select
                     id={`${sheetId}-details`}
@@ -885,12 +800,9 @@ export function FinanceInvestmentsPanel({
                     }
                   />
                 )}
-              </div>
+              </AdminField>
             ) : null}
-            <div className="col-12 col-md-2">
-              <label className="form-label small" htmlFor={`${sheetId}-atype`}>
-                Asset type
-              </label>
+            <AdminField label="Asset type" htmlFor={`${sheetId}-atype`}>
               <select
                 id={`${sheetId}-atype`}
                 className="form-select form-select-sm"
@@ -905,11 +817,8 @@ export function FinanceInvestmentsPanel({
                   </option>
                 ))}
               </select>
-            </div>
-            <div className="col-12 col-md-2">
-              <label className="form-label small" htmlFor={`${sheetId}-prov`}>
-                Provider
-              </label>
+            </AdminField>
+            <AdminField label="Provider" htmlFor={`${sheetId}-prov`}>
               <input
                 id={`${sheetId}-prov`}
                 type="text"
@@ -918,11 +827,8 @@ export function FinanceInvestmentsPanel({
                 value={form.provider}
                 onChange={(ev) => setForm((f) => ({ ...f, provider: ev.target.value }))}
               />
-            </div>
-            <div className="col-12 col-md-2">
-              <label className="form-label small" htmlFor={`${sheetId}-principal`}>
-                Principal
-              </label>
+            </AdminField>
+            <AdminField label="Principal" htmlFor={`${sheetId}-principal`}>
               <input
                 id={`${sheetId}-principal`}
                 type="number"
@@ -932,22 +838,16 @@ export function FinanceInvestmentsPanel({
                 value={form.principal}
                 onChange={(ev) => setForm((f) => ({ ...f, principal: ev.target.value }))}
               />
-            </div>
-            <div className="col-12 col-md-2">
-              <label className="form-label small" htmlFor={`${sheetId}-ccy`}>
-                Currency
-              </label>
+            </AdminField>
+            <AdminField label="Currency" htmlFor={`${sheetId}-ccy`}>
               <CurrencySelect
                 id={`${sheetId}-ccy`}
                 value={form.currency}
                 onChange={(code) => setForm((f) => ({ ...f, currency: code }))}
               />
-            </div>
+            </AdminField>
             {form.category === "Real Estate" ? (
-              <div className="col-12 col-md-2">
-                <label className="form-label small" htmlFor={`${sheetId}-curval`}>
-                  Current value
-                </label>
+              <AdminField label="Current value" htmlFor={`${sheetId}-curval`}>
                 <input
                   id={`${sheetId}-curval`}
                   type="number"
@@ -957,13 +857,10 @@ export function FinanceInvestmentsPanel({
                   value={form.currentValue}
                   onChange={(ev) => setForm((f) => ({ ...f, currentValue: ev.target.value }))}
                 />
-              </div>
+              </AdminField>
             ) : null}
             {form.category !== "Real Estate" ? (
-              <div className="col-12 col-md-2">
-                <label className="form-label small" htmlFor={`${sheetId}-unit`}>
-                  Units
-                </label>
+              <AdminField label="Units" htmlFor={`${sheetId}-unit`}>
                 <input
                   id={`${sheetId}-unit`}
                   type="number"
@@ -972,9 +869,9 @@ export function FinanceInvestmentsPanel({
                   value={form.unit}
                   onChange={(ev) => setForm((f) => ({ ...f, unit: ev.target.value }))}
                 />
-              </div>
+              </AdminField>
             ) : null}
-          </div>
+          </AdminFieldGrid>
     </AdminEditorPanel>
   ) : null;
 
@@ -984,7 +881,7 @@ export function FinanceInvestmentsPanel({
         label="Investments"
         filters={
           <AdminFilterBar
-            create={<AdminCreateButton label="New investment" onClick={openCreate} />}
+            create={<AdminCreateButton label="New investment" onClick={editor.openCreate} />}
           >
             <AdminFilterField label="Filter" htmlFor={`${sheetId}-filter`}>
               <input
@@ -1004,8 +901,8 @@ export function FinanceInvestmentsPanel({
           bare
           columns={tableColumns}
         >
-          {expanded.expandedId === DRAFT_RECORD_ID ? (
-            <AdminExpandableRow colSpan={colSpan} expanded onToggle={openCreate} editor={investmentEditor}>
+          {expandedId === DRAFT_RECORD_ID ? (
+            <AdminExpandableRow colSpan={colSpan} expanded onToggle={editor.openCreate} editor={investmentEditor}>
               <AdminCell column="cat">New investment</AdminCell>
               <AdminCell column="details" />
               <AdminCell column="atype" />
@@ -1023,8 +920,8 @@ export function FinanceInvestmentsPanel({
               <AdminExpandableRow
                 key={r.id}
                 colSpan={colSpan}
-                expanded={expanded.expandedId === r.id}
-                onToggle={() => openEdit(r)}
+                expanded={expandedId === r.id}
+                onToggle={() => editor.openEdit(r)}
                 editor={investmentEditor}
               >
                 <AdminCell column="cat" className="small">
@@ -1123,14 +1020,14 @@ export function FinanceInvestmentsPanel({
                         id: "edit",
                         label: "Edit record",
                         iconClassName: "bi bi-pencil",
-                        onClick: () => openEdit(r),
+                        onClick: () => editor.openEdit(r),
                       },
                       {
                         id: "delete",
                         label: "Delete record",
                         iconClassName: "bi bi-trash",
                         danger: true,
-                        onClick: () => setPendingDeleteId(r.id),
+                        onClick: () => editor.requestDelete(r.id),
                       },
                     ]}
                   />
@@ -1146,123 +1043,104 @@ export function FinanceInvestmentsPanel({
             />
           )}
           {records.length > 0 ? (
-            <tr className="table-group-divider table-secondary fw-semibold">
-              <AdminCell column="cat" className="small">
-                Total
-                <span className="d-md-none d-block mt-1">
-                  {needsFx && (ratesQuery.isPending || ratesQuery.isError) ? (
-                    <span className="text-muted">—</span>
-                  ) : convertedCurrentValueTotal !== null ? (
-                    <MoneyAmount
-                      amount={convertedCurrentValueTotal}
-                      currency={totalDisplayCurrency}
-                      amountOnly
-                    />
-                  ) : (
-                    <span className="text-muted">—</span>
-                  )}
-                  <br />
-                  <AdminTableTotalCurrency
-                    id={`${sheetId}-total-ccy-phone`}
-                    value={totalDisplayCurrency}
-                    onChange={setTotalDisplayCurrency}
-                    disabled={fxLoading}
-                  />
-                </span>
-                <span className="d-block small text-muted fw-normal admin-table-total-note">
-                  {quotesPending ? (
-                    "Loading quotes…"
-                  ) : quotesErrored ? (
-                    <span className="text-danger">
-                      {quotesQuery.error?.message ?? "Could not load quotes."}
+            <AdminFxTotalRow
+              labelColumn="cat"
+              sheetId={sheetId}
+              currency={totalDisplayCurrency}
+              onCurrencyChange={setTotalDisplayCurrency}
+              needsFx={needsFx}
+              fxError={fxError}
+              fxLoading={fxLoading}
+              ratesQuery={ratesQuery}
+              phoneTotal={
+                needsFx && (ratesQuery.isPending || ratesQuery.isError)
+                  ? null
+                  : convertedCurrentValueTotal
+              }
+              labelContent={
+                quotesPending || quotesErrored ? (
+                  <>
+                    Total
+                    <span className="d-md-none d-block mt-1">
+                      {needsFx && (ratesQuery.isPending || ratesQuery.isError) ? (
+                        <span className="text-muted">—</span>
+                      ) : convertedCurrentValueTotal !== null ? (
+                        <MoneyAmount
+                          amount={convertedCurrentValueTotal}
+                          currency={totalDisplayCurrency}
+                          amountOnly
+                        />
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                      <br />
+                      <AdminTableTotalCurrency
+                        id={`${sheetId}-total-ccy-phone`}
+                        value={totalDisplayCurrency}
+                        onChange={setTotalDisplayCurrency}
+                        disabled={fxLoading}
+                      />
                     </span>
-                  ) : (
-                    <FrankfurterRatesFooterNote
-                      needsFx={needsFx}
-                      fxError={fxError}
-                      fxLoading={fxLoading}
-                      ratesQuery={ratesQuery}
-                    />
-                  )}
-                </span>
-              </AdminCell>
-              <AdminCell column="details" className="small" />
-              <AdminCell column="atype" className="small" />
-              <AdminCell column="prov" className="small" />
-              <AdminCell column="amt" className="small text-end">
-                {(() => {
-                  if (needsFx && ratesQuery.isPending) {
-                    return <span className="text-muted">—</span>;
-                  }
-                  if (needsFx && ratesQuery.isError) {
-                    return <span className="text-muted">—</span>;
-                  }
-                  if (convertedPrincipalTotal !== null) {
-                    return (
-                      <MoneyAmount
-                        amount={convertedPrincipalTotal}
-                        currency={totalDisplayCurrency}
-                        amountOnly
-                      />
-                    );
-                  }
-                  return <span className="text-muted">—</span>;
-                })()}
-              </AdminCell>
-              <AdminCell column="ccy" className="small" />
-              <AdminCell column="unit" className="small" />
-              <AdminCell column="currVal" className="small text-end">
-                {(() => {
-                  if (needsFx && ratesQuery.isPending) {
-                    return <span className="text-muted">—</span>;
-                  }
-                  if (needsFx && ratesQuery.isError) {
-                    return <span className="text-muted">—</span>;
-                  }
-                  if (convertedCurrentValueTotal !== null) {
-                    return (
-                      <MoneyAmount
-                        amount={convertedCurrentValueTotal}
-                        currency={totalDisplayCurrency}
-                        amountOnly
-                      />
-                    );
-                  }
-                  return <span className="text-muted">—</span>;
-                })()}
-                <br />
-                <AdminTableTotalCurrency
-                  id={`${sheetId}-total-ccy`}
-                  value={totalDisplayCurrency}
-                  onChange={setTotalDisplayCurrency}
-                  disabled={fxLoading}
-                />
-              </AdminCell>
-              <AdminCell column="lastUpd" className="small" />
-              <AdminCell column="ops" className="small text-end" />
-            </tr>
+                    <span className="d-block small text-muted fw-normal admin-table-total-note">
+                      {quotesPending ? (
+                        "Loading quotes…"
+                      ) : (
+                        <span className="text-danger">
+                          {quotesQuery.error?.message ?? "Could not load quotes."}
+                        </span>
+                      )}
+                    </span>
+                  </>
+                ) : undefined
+              }
+              cells={[
+                { kind: "label" },
+                { kind: "empty", column: "details" },
+                { kind: "empty", column: "atype" },
+                { kind: "empty", column: "prov" },
+                {
+                  kind: "amount",
+                  column: "amt",
+                  total:
+                    needsFx && (ratesQuery.isPending || ratesQuery.isError)
+                      ? null
+                      : convertedPrincipalTotal,
+                },
+                { kind: "empty", column: "ccy" },
+                { kind: "empty", column: "unit" },
+                {
+                  kind: "amount",
+                  column: "currVal",
+                  total:
+                    needsFx && (ratesQuery.isPending || ratesQuery.isError)
+                      ? null
+                      : convertedCurrentValueTotal,
+                  picker: true,
+                },
+                { kind: "empty", column: "lastUpd" },
+                { kind: "empty", column: "ops" },
+              ]}
+            />
           ) : null}
         </AdminDataTable>
         <ConfirmDialog
-          open={pendingDeleteId !== null}
+          open={editor.pendingDeleteId !== null}
           title="Delete investment"
           body="Delete this investment record?"
           confirmLabel="Delete"
           tone="danger"
-          onConfirm={() => {
-            if (pendingDeleteId) deleteRow(pendingDeleteId);
-          }}
-          onCancel={() => setPendingDeleteId(null)}
+          onConfirm={editor.confirmDelete}
+          onCancel={editor.cancelDelete}
         />
         <ConfirmDialog
-          open={expanded.confirmOpen}
+          open={editor.confirmOpen}
           title="Discard unsaved edits?"
           body="This investment has unsaved changes."
           confirmLabel="Discard"
           cancelLabel="Keep editing"
           tone="danger"
-          onConfirm={expanded.acceptPending}
-          onCancel={expanded.cancelPending}
+          onConfirm={editor.acceptPending}
+          onCancel={editor.cancelPending}
         />
       </AdminRecordTable>
     </div>

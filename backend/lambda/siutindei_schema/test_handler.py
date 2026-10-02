@@ -6,9 +6,8 @@ import json
 import unittest
 from unittest.mock import MagicMock, patch
 
-from botocore.exceptions import ClientError
-
 import handler
+from botocore.exceptions import ClientError
 
 
 class ApplySchemaTests(unittest.TestCase):

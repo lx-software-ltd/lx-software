@@ -688,7 +688,9 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
   `qwen/qwen-2.5-72b-instruct`, `holds.catalog_import` 2 unless a ramp
   override exists; recorded in the `autonomy_defaults` state row so later
   owner edits are never re-applied) → expire stale holds → evaluate
-  breakers → execute due holds → expire pending approvals that carry
+  breakers → execute due holds (a failure in either of those two stages
+  aborts the tick before duties, drain, and stuck recovery; other stages
+  log and continue) → expire pending approvals that carry
   `autoRejectAt` and are due (`approvalExpiryHours` 168; legacy rows without
   the stamp are left for the founder) → schedule one auto bulk-import
   hold when `catalog.autoImport` is on and a source has ≥
@@ -789,7 +791,9 @@ before 12:00 HKT pauses `senior` work; ≥ 100 % flips
 `settings.staff.enabled` off), `tool:{toolId}` (≥ 10 errors in an hour),
 `outreach` (7-day bounce rate > 5 % or complaint rate > 0.1 % over ≥ 50
 sends). Tripping writes an owner update so the next stand-up sees it;
-reset from the review page (`POST …/breakers/{name}/reset`).
+reset from the review page (`POST …/breakers/{name}/reset`). A failed
+channel or action-class lookup is fail-closed: the write is refused with
+`breaker check failed` (`channel:unknown`) instead of being allowed through.
 
 ## 9. Triage and daily review
 
@@ -1060,7 +1064,15 @@ payload includes `boardKey: "siuTinDei"`):
 | `board-targets` | 08:00 | `board_targets` |
 | `board-content-plan` / `-readout` | Sun 18:00 / Mon 09:00 | `board_content_plan` / `board_content_readout` |
 | `board-receivables-mirror` / `board-dunning` | 00:30 / 09:00 | `board_receivables_mirror` / `board_dunning` |
+| `board-catalog-discovery` | 03:30 | `board_catalog_discovery` |
 | `data-api-ensure` | every 15 min | Data API + schema custom resource |
+
+Schedules outside that name prefix, same Scheduler + IAM-role pattern:
+`lxsoftware-admin-openrouter-usage-pull` (hourly),
+`lxsoftware-admin-evolvesprouts-finance-mirror` (00:45 HKT, only when the
+Evolve Sprouts Data API parameters are set),
+`lxsoftware-admin-evolvesprouts-data-api-ensure` (every 15 min, same
+condition), and `lxsoftware-admin-bank-sync` (05:30 HKT, `internal: bank_sync`).
 
 **Kill switches, in order of reach:** `settings.staff.enabled` (UI) →
 `SiutindeiBoardStaffEnabled` → `SiutindeiBoardToolsEnabled` →

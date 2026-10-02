@@ -49,11 +49,12 @@ export function approvalDecisionMutationOptions(qc: QueryClient) {
   };
 }
 
-export function useBoardApprovals() {
+export function useBoardApprovals(enabled = true) {
   const qc = useQueryClient();
 
   const query = useQuery({
     queryKey: BOARD_APPROVALS_KEY,
+    enabled,
     queryFn: async () => {
       const res = await adminFetchJson<{ approvals: BoardApproval[] }>(`${BOARD_API_BASE}/approvals`);
       return res.approvals;

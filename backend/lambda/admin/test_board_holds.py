@@ -8,9 +8,6 @@ from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import patch
 
-from test_board import BoardTestCase, freeze_board_daytime
-from test_board_tools import ToolsTestCase
-
 import board_holds
 import board_store
 import board_tools
@@ -18,6 +15,8 @@ from contract_constants import (
     BOARD_STAFF_RAMP_DEMOTE_WINDOW_ACTIONS,
     BOARD_STAFF_RAMP_MIN_ACTIONS,
 )
+from test_board import BoardTestCase, freeze_board_daytime
+from test_board_tools import ToolsTestCase
 
 
 def _enable_staff(table: Any, **staff: Any) -> dict[str, Any]:

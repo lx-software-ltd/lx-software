@@ -7,6 +7,9 @@ on:
       - "apps/public_www/**"
       - "apps/admin_web/**"
       - "backend/infrastructure/**"
+      - "backend/lambda/**"
+      - "scripts/**"
+      - "pyproject.toml"
   push:
     branches:
       - main
@@ -14,6 +17,9 @@ on:
       - "apps/public_www/**"
       - "apps/admin_web/**"
       - "backend/infrastructure/**"
+      - "backend/lambda/**"
+      - "scripts/**"
+      - "pyproject.toml"
 
 jobs:
   lint-web:
@@ -81,3 +87,21 @@ jobs:
       - name: Build CDK
         working-directory: backend/infrastructure
         run: npm run build
+
+  lint-python:
+    name: Lint Python
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff
+        run: python3 -m pip install ruff
+
+      - name: Ruff
+        run: python3 -m ruff check backend/lambda scripts

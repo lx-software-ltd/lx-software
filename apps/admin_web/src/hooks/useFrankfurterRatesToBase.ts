@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { CurrencyCode } from "../lib/currencies";
 import { fetchFrankfurterRatesToBase } from "../lib/frankfurterRates";
+import { keys } from "../lib/queryKeys";
 
 /**
  * Latest FX rows where `1 baseCurrency` equals `rate` units of each quote.
@@ -20,7 +21,7 @@ export function useFrankfurterRatesToBase(
   }, [baseCurrency, quoteCurrencies]);
 
   return useQuery({
-    queryKey: ["frankfurter", "v2", "rates", baseCurrency, sortedUniqueQuotes.join(",")],
+    queryKey: [...keys.frankfurter, "v2", "rates", baseCurrency, sortedUniqueQuotes.join(",")],
     queryFn: () => fetchFrankfurterRatesToBase(baseCurrency, sortedUniqueQuotes),
     enabled: sortedUniqueQuotes.length > 0,
     staleTime: 1000 * 60 * 60 * 4,

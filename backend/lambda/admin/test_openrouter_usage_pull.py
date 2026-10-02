@@ -8,12 +8,10 @@ from datetime import datetime, timezone
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
-from test_board import FakeTable  # noqa: E402
-
 import openrouter_usage  # noqa: E402
 import openrouter_usage_pull as pull  # noqa: E402
 import runtime  # noqa: E402
-
+from test_board import FakeTable  # noqa: E402
 
 NOW = datetime(2026, 9, 22, 8, 0, tzinfo=timezone.utc)
 SPROUT_HASH = "aa" * 32
@@ -362,7 +360,7 @@ class TestOpenRouterUsagePull(unittest.TestCase):
                 patch("openrouter_usage_pull.http_get_json", fetch),
                 patch("admin_runtime._get_secretsmanager_client", return_value=object()),
                 patch(
-                    "openrouter_client.read_secret_raw",
+                    "secret_store.read_secret_raw",
                     return_value='{"management":"mgmt-key","statement-parser":"sk"}',
                 ),
             ):
@@ -401,7 +399,7 @@ class TestOpenRouterUsagePull(unittest.TestCase):
                 patch("openrouter_usage_pull.http_get_json", fetch),
                 patch("admin_runtime._get_secretsmanager_client", return_value=object()),
                 patch(
-                    "openrouter_client.read_secret_raw",
+                    "secret_store.read_secret_raw",
                     return_value='{"management":"mgmt-key"}',
                 ),
             ):

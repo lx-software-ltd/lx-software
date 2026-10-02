@@ -19,7 +19,7 @@ from contract_constants import (
     BOARD_STAFF_CONTENT_STATUSES,
     BOARD_STAFF_IG_PUBLISHES_PER_DAY,
 )
-from http_common import _json_response, _log_event
+from http_common import _log_event
 
 TEMPLATES = board_creative.TEMPLATES
 ASSISTED_PREFIX = "assisted_"

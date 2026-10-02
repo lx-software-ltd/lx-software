@@ -57,7 +57,7 @@ content_type() {
 
 cache_control() {
   case "$1" in
-    index.html|content.json|robots.txt|sitemap.xml|llms.txt|llms-full.txt|site.webmanifest|*/*)
+    index.html|robots.txt|sitemap.xml|llms.txt|llms-full.txt|site.webmanifest|*/*)
       # Unhashed paths (the shell, and public/ directories such as images/)
       # must revalidate. A year-long immutable cache would keep a replaced
       # logo after the next deploy.

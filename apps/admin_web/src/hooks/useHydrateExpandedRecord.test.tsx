@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { useState } from "react";
+import { BrowserRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { useExpandedRecord } from "./useExpandedRecord";
 import { useHydrateExpandedRecord } from "./useHydrateExpandedRecord";
@@ -31,22 +32,22 @@ describe("useHydrateExpandedRecord", () => {
 
   it("fills the editor from the deep-linked record before the user can save blanks", () => {
     window.history.replaceState(null, "", "/finance?account=ac-1");
-    render(<Editor recordsReady records={[{ id: "ac-1", name: "HSBC HK current" }]} />);
+    render(<BrowserRouter><Editor recordsReady records={[{ id: "ac-1", name: "HSBC HK current" }]} /></BrowserRouter>);
     expect(screen.getByLabelText("Description")).toHaveProperty("value", "HSBC HK current");
   });
 
   it("clears an id that is not in the loaded list", () => {
     window.history.replaceState(null, "", "/finance?account=missing");
-    render(<Editor recordsReady records={[{ id: "ac-1", name: "HSBC HK current" }]} />);
+    render(<BrowserRouter><Editor recordsReady records={[{ id: "ac-1", name: "HSBC HK current" }]} /></BrowserRouter>);
     expect(new URLSearchParams(window.location.search).get("account")).toBeNull();
     expect(screen.getByRole("button", { name: "Add record" })).toBeTruthy();
   });
 
   it("does not clear the id while the list is still loading", () => {
     window.history.replaceState(null, "", "/finance?account=ac-1");
-    const { rerender } = render(<Editor recordsReady={false} records={[]} />);
+    const { rerender } = render(<BrowserRouter><Editor recordsReady={false} records={[]} /></BrowserRouter>);
     expect(new URLSearchParams(window.location.search).get("account")).toBe("ac-1");
-    rerender(<Editor recordsReady records={[{ id: "ac-1", name: "HSBC HK current" }]} />);
+    rerender(<BrowserRouter><Editor recordsReady records={[{ id: "ac-1", name: "HSBC HK current" }]} /></BrowserRouter>);
     expect(screen.getByLabelText("Description")).toHaveProperty("value", "HSBC HK current");
   });
 });

@@ -8,16 +8,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import patch
 
-from test_board import BoardTestCase
-from test_board_tools import ToolsTestCase
-
 import board_async
 import board_breakers
 import board_hk
-import board_holds
 import board_staff
 import board_store
 import board_tools
+from test_board import BoardTestCase
+from test_board_tools import ToolsTestCase
 
 
 def _enable_staff(table: Any, **staff: Any) -> dict[str, Any]:
@@ -259,6 +257,27 @@ class BreakerRuleTests(BoardTestCase):
             {"error": "breaker tripped", "breaker": "channel:mail"},
         )
         self.assertIsNone(board_breakers.write_blocked(self.table, task_finish))
+
+    def test_channel_lookup_failure_blocks_the_write(self) -> None:
+        import board_holds
+
+        class _Boom:
+            def __contains__(self, _item: object) -> bool:
+                raise RuntimeError("holds unavailable")
+
+        op = type("Op", (), {"tool_id": "mail", "name": "mail_reply"})()
+        with patch.object(board_holds, "INBOUND_REPLY_OPS", _Boom()):
+            blocked = board_breakers.write_blocked(self.table, op)
+        self.assertEqual(
+            blocked,
+            {"error": "breaker check failed", "breaker": board_breakers.CHANNEL_LOOKUP_FAILED},
+        )
+
+    def test_breaker_evaluation_exception_fails_the_tick(self) -> None:
+        with patch.object(board_breakers, "evaluate", side_effect=RuntimeError("breaker down")):
+            with self.assertRaises(RuntimeError) as raised:
+                board_staff.handle_tick({"internal": "board_staff_tick"})
+        self.assertEqual(str(raised.exception), "breaker down")
 
     def test_reset(self) -> None:
         board_breakers.trip(self.table, "tool:mail", "test")
