@@ -94,8 +94,30 @@ def _rows(sql: str, _parameters: list | None) -> list[dict]:
         ]
     if "payment_allocations" in sql:
         return [
-            {"payment_id": "p1", "invoice_paid_at": "2026-04-15"},
-            {"payment_id": "late", "invoice_paid_at": "2026-10-01"},
+            {
+                "payment_id": "p1",
+                "invoice_date": "2026-03-01",
+                "created_at": "2026-03-02T00:00:00Z",
+                "id": "inv-old",
+            },
+            {
+                "payment_id": "p1",
+                "invoice_date": "2026-04-20",
+                "created_at": "2026-04-21T00:00:00Z",
+                "id": "inv-new",
+            },
+            {
+                "payment_id": "late",
+                "invoice_date": "2026-12-01",
+                "created_at": "2026-09-01T00:00:00Z",
+                "id": "inv-earlier",
+            },
+            {
+                "payment_id": "late",
+                "invoice_date": "2026-10-01",
+                "created_at": "2026-10-02T00:00:00Z",
+                "id": "inv-later",
+            },
         ]
     if "FROM expenses" in sql:
         return [
@@ -228,7 +250,7 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         )
         self.assertEqual(by_id["es-pay-p1"]["type"], "income")
         self.assertEqual(by_id["es-pay-p1"]["description"], "p1")
-        self.assertEqual(by_id["es-pay-p1"]["dateUtc"], "2026-04-15T00:00:00.000Z")
+        self.assertEqual(by_id["es-pay-p1"]["dateUtc"], "2026-04-20T00:00:00.000Z")
         self.assertEqual(by_id["es-pay-late"]["dateUtc"], "2026-10-01T00:00:00.000Z")
         self.assertEqual(by_id["es-ref-r1"]["type"], "expenditure")
         self.assertEqual(by_id["es-ref-r1"]["currency"], "USD")
@@ -264,9 +286,14 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         self.assertIn("o.name AS vendor_name", es.EXPENSES_SQL)
         self.assertNotIn("e.vendor_name", es.EXPENSES_SQL)
 
-    def test_gain_date_uses_invoice_paid_at(self) -> None:
-        self.assertIn("payment_allocations", es.INVOICE_PAID_SQL)
-        self.assertIn("invoice_paid_at", es.INVOICE_PAID_SQL)
+    def test_gain_date_uses_newest_invoice_document_date(self) -> None:
+        self.assertIn("payment_allocations", es.INVOICE_DATE_SQL)
+        self.assertIn("i.invoice_date", es.INVOICE_DATE_SQL)
+        self.assertIn("i.created_at", es.INVOICE_DATE_SQL)
+        self.assertNotIn("paid_at", es.INVOICE_DATE_SQL)
+        chosen = es._invoice_date_by_payment()
+        self.assertEqual(chosen["p1"], "2026-04-20")
+        self.assertEqual(chosen["late"], "2026-10-01")
 
     def test_expense_date_uses_issued_invoice_date(self) -> None:
         self.assertIn("e.invoice_date", es.EXPENSES_SQL)

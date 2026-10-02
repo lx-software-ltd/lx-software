@@ -71,6 +71,33 @@ aws cloudformation continue-update-rollback \
   --stack-name lxsoftware --resources-to-skip <logical-id>
 ```
 
+### Admin web bucket policy
+
+`lxsoftware-admin-web` used to declare two `AWS::S3::BucketPolicy` resources
+on the SPA origin bucket: the bucket's own policy (`enforceSSL` deny plus the
+OAC read grant CDK adds for `S3BucketOrigin.withOriginAccessControl`) and a
+hand-written `AdminWebBucketPolicy` that repeated the OAC grant. S3 keeps one
+policy per bucket, so whichever CloudFormation applied last was live and the
+other's statements were dropped. The CDK synth reported it as
+`Primary identifiers {'Bucket': …} should have unique values`.
+
+The migration is two deploys because deleting an `AWS::S3::BucketPolicy`
+calls `DeleteBucketPolicy`, which would wipe the merged policy in the same
+run:
+
+1. Current `main`: the bucket's own policy names its OAC statement
+   (`AllowCloudFrontServicePrincipalReadOnly`), is applied after the legacy
+   resource, and the legacy `AdminWebBucketPolicy` has `DeletionPolicy:
+   Retain`. After this deploy the live policy is the complete one. Confirm
+   with `aws s3api get-bucket-policy --bucket <origin bucket>`: both the
+   `aws:SecureTransport` deny and the CloudFront allow must be present.
+2. Follow-up: delete the `legacyBucketPolicy` block (and the `DependsOn`) in
+   `backend/infrastructure/lib/lxsoftware-admin-web-stack.ts`, update
+   `test/lxsoftware-admin-web-stack.test.ts` to assert a single policy, and
+   deploy. Retain means CloudFormation drops the resource from the stack
+   without an API call, so the live policy is untouched and the synth
+   warning disappears.
+
 ## 3. DNS and Google IdP
 
 Create a **CNAME** from `admin.lx-software.com` to the CloudFront domain
@@ -591,7 +618,7 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
    product stack and create a **read-only** database user with a
    password login and `SELECT` on `customer_payments`, `expenses`,
    `organizations` (vendor names), `customer_invoices`, and
-   `payment_allocations` (invoice paid dates on gains). Do not reuse
+   `payment_allocations` (invoice document dates on gains). Do not reuse
    `evolvesprouts_app`: it has `rds_iam`, which blocks the password login
    the Data API uses. This stack never writes that database and does not
    apply SQL there. The secret's
@@ -629,7 +656,9 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
    submitted and paid expense counts). Each row keeps its own currency.
    Expense net is `subtotal`, VAT is `tax`, and gross is `total`. Expenses
    are dated by the issued `invoice_date`. Gains are dated by the allocated
-   customer invoice `paid_at`, or `succeeded_at` when that lookup is empty.
+   customer invoice `invoice_date` (the Client Invoices document date; the
+   newest `created_at` / `id` when a payment covers several invoices), or
+   `succeeded_at` when that lookup is empty.
    Calendar days are Asia/Hong_Kong, stored as that day at 00:00 UTC.
    Codes outside GBP, HKD, USD, EUR, CNY, SGD, AED are skipped and
    counted separately from rows missing an amount, currency, or date.

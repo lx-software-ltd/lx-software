@@ -46,8 +46,6 @@ export function MirroredBookSummaryCard({
                 hint="Issued, unpaid"
               />
               <AdminKpi label="Open invoices" value={summary.openInvoices} hint="Count" />
-              <AdminKpi label="Submitted" value={summary.submittedExpenses} hint="Expenses" />
-              <AdminKpi label="Paid" value={summary.paidExpenses} hint="Expenses" />
               <AdminKpi
                 label="Last synced"
                 value={summary.syncedAt ? formatDateTimeHKT(summary.syncedAt) : "—"}
