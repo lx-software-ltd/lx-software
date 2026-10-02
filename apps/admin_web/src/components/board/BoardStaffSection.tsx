@@ -154,7 +154,7 @@ function SeatCard({
         </>
       }
     >
-      <div className="form-check form-switch mb-2">
+      <div className="form-check form-switch mb-3">
         <input
           className="form-check-input"
           type="checkbox"
@@ -166,27 +166,34 @@ function SeatCard({
           Active
         </label>
       </div>
-      <label className="form-label small">
-        Model tier
-        <select
-          className="form-select form-select-sm"
-          value={seat.modelTier}
-          onChange={(ev) => onSave({ modelTier: ev.target.value as "desk" | "senior" })}
-        >
-          {BOARD_STAFF_MODEL_TIERS.map((tier) => (
-            <option key={tier} value={tier}>
-              {tier}
-            </option>
-          ))}
-        </select>
-      </label>
-      {onSaveModel ? (
-        <label className="form-label small">
-          Step model
+      <div className="row row-cols-2 g-2">
+        <div className="col">
+          <label className="form-label small mb-1" htmlFor={`seat-tier-${seat.id}`}>
+            Model tier
+          </label>
           <select
+            id={`seat-tier-${seat.id}`}
+            className="form-select form-select-sm"
+            value={seat.modelTier}
+            onChange={(ev) => onSave({ modelTier: ev.target.value as "desk" | "senior" })}
+          >
+            {BOARD_STAFF_MODEL_TIERS.map((tier) => (
+              <option key={tier} value={tier}>
+                {tier}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="col">
+          <label className="form-label small mb-1" htmlFor={`seat-model-${seat.id}`}>
+            Step model
+          </label>
+          <select
+            id={`seat-model-${seat.id}`}
             className="form-select form-select-sm"
             value={model ?? ""}
-            onChange={(ev) => onSaveModel(ev.target.value)}
+            disabled={!onSaveModel}
+            onChange={(ev) => onSaveModel?.(ev.target.value)}
           >
             {SEAT_MODEL_CHOICES.map((choice) => (
               <option key={choice.value || "default"} value={choice.value}>
@@ -194,16 +201,33 @@ function SeatCard({
               </option>
             ))}
           </select>
-        </label>
-      ) : null}
-      <label className="form-label small">
-        Display name
-        <input className="form-control form-control-sm" value={name} onChange={(ev) => setName(ev.target.value)} placeholder={seat.defaults.displayName} />
-      </label>
-      <label className="form-label small mb-0">
-        Brief
-        <textarea className="form-control form-control-sm" rows={4} value={brief} onChange={(ev) => setBrief(ev.target.value)} placeholder={seat.defaults.brief} />
-      </label>
+        </div>
+        <div className="col">
+          <label className="form-label small mb-1" htmlFor={`seat-name-${seat.id}`}>
+            Display name
+          </label>
+          <input
+            id={`seat-name-${seat.id}`}
+            className="form-control form-control-sm"
+            value={name}
+            onChange={(ev) => setName(ev.target.value)}
+            placeholder={seat.defaults.displayName}
+          />
+        </div>
+        <div className="col d-flex flex-column">
+          <label className="form-label small mb-1" htmlFor={`seat-brief-${seat.id}`}>
+            Brief
+          </label>
+          <textarea
+            id={`seat-brief-${seat.id}`}
+            className="form-control form-control-sm flex-grow-1"
+            rows={4}
+            value={brief}
+            onChange={(ev) => setBrief(ev.target.value)}
+            placeholder={seat.defaults.brief}
+          />
+        </div>
+      </div>
     </AdminEditorSection>
   );
 }
