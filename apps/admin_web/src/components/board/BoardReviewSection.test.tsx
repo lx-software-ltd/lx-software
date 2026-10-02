@@ -79,6 +79,20 @@ vi.mock("../../hooks/useBoardContent", () => ({
   }),
 }));
 
+describe("BoardReviewSection card lanes", () => {
+  it("puts headline, assisted, sample and market on the full row and status cards on half rows", () => {
+    const { container } = render(<BoardReviewSection />);
+    expect(container.querySelector("#headline")).toHaveAttribute("data-lane", "main");
+    expect(container.querySelector("#assisted")).toHaveAttribute("data-lane", "main");
+    expect(container.querySelector("#sample")).toHaveAttribute("data-lane", "main");
+    expect(container.querySelector("#market")).toHaveAttribute("data-lane", "main");
+    expect(container.querySelector("#breakers")).toHaveAttribute("data-lane", "aside");
+    expect(container.querySelector("#configGaps")).toHaveAttribute("data-lane", "aside");
+    expect(container.querySelector("#dmarc")).toHaveAttribute("data-lane", "aside");
+    expect(container.querySelector("#engineering")).toHaveAttribute("data-lane", "aside");
+  });
+});
+
 describe("BoardReviewSection staging sync", () => {
   it("shows Sync from main when staging is behind and keeps Promote disabled", () => {
     reviewState.syncMutate.mockClear();
