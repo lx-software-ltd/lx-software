@@ -92,6 +92,11 @@ def _rows(sql: str, _parameters: list | None) -> list[dict]:
                 "succeeded_at": "",
             },
         ]
+    if "payment_allocations" in sql:
+        return [
+            {"payment_id": "p1", "invoice_paid_at": "2026-04-15"},
+            {"payment_id": "late", "invoice_paid_at": "2026-10-01"},
+        ]
     if "FROM expenses" in sql:
         return [
             {
@@ -136,6 +141,13 @@ def _rows(sql: str, _parameters: list | None) -> list[dict]:
                 "total": None,
                 "currency": "HKD",
                 "paid_at": "2026-04-05",
+            },
+            {
+                "id": "e6",
+                "status": "paid",
+                "total": 9,
+                "currency": "HKD",
+                "paid_at": "2026-04-06",
             },
         ]
     if "customer_invoices" in sql:
@@ -207,7 +219,7 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         self.assertEqual(result["openInvoices"], 2)
         self.assertEqual(result["outstandingByCurrency"]["HKD"], 12.5)
         self.assertEqual(result["skippedUnsupportedCurrency"], 3)
-        self.assertEqual(result["skippedIncomplete"], 4)
+        self.assertEqual(result["skippedIncomplete"], 5)
         self.assertEqual(result["linesRemoved"], 1)
         by_id = {line["id"]: line for line in self._book_lines()}
         self.assertEqual(
@@ -216,10 +228,11 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         )
         self.assertEqual(by_id["es-pay-p1"]["type"], "income")
         self.assertEqual(by_id["es-pay-p1"]["description"], "[evolve-sprouts] Payment p1")
-        self.assertEqual(by_id["es-pay-p1"]["dateUtc"], "2026-05-01T00:00:00.000Z")
-        self.assertEqual(by_id["es-pay-late"]["dateUtc"], "2026-10-02T00:00:00.000Z")
+        self.assertEqual(by_id["es-pay-p1"]["dateUtc"], "2026-04-15T00:00:00.000Z")
+        self.assertEqual(by_id["es-pay-late"]["dateUtc"], "2026-10-01T00:00:00.000Z")
         self.assertEqual(by_id["es-ref-r1"]["type"], "expenditure")
         self.assertEqual(by_id["es-ref-r1"]["currency"], "USD")
+        self.assertEqual(by_id["es-ref-r1"]["dateUtc"], "2026-05-02T00:00:00.000Z")
         self.assertEqual(by_id["es-exp-e1"]["description"], "[evolve-sprouts] Expense Example Vendor INV-9")
         self.assertEqual(by_id["es-exp-e1"]["netAmount"], 7)
         self.assertEqual(by_id["es-exp-e1"]["vat"], 1)
@@ -228,7 +241,7 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         self.assertEqual(by_id["es-exp-e2"]["description"], "[evolve-sprouts] Expense e2")
         self.assertEqual(by_id["es-exp-e2"]["netAmount"], 4.5)
         self.assertEqual(by_id["es-exp-e2"]["vat"], 0.5)
-        self.assertEqual(by_id["es-exp-e2"]["dateUtc"], "2026-04-02T00:00:00.000Z")
+        self.assertEqual(by_id["es-exp-e2"]["dateUtc"], "2026-03-01T00:00:00.000Z")
         self.assertEqual(by_id["es-pay-p1"]["source"], "evolvesprouts")
         self.assertNotIn("source", by_id["manual-1"])
         self.assertEqual(by_id["manual-1"]["description"], "Kept")
@@ -250,6 +263,28 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         self.assertIn("LEFT JOIN organizations o ON o.id = e.vendor_id", es.EXPENSES_SQL)
         self.assertIn("o.name AS vendor_name", es.EXPENSES_SQL)
         self.assertNotIn("e.vendor_name", es.EXPENSES_SQL)
+
+    def test_gain_date_uses_invoice_paid_at(self) -> None:
+        self.assertIn("payment_allocations", es.INVOICE_PAID_SQL)
+        self.assertIn("invoice_paid_at", es.INVOICE_PAID_SQL)
+
+    def test_expense_date_uses_issued_invoice_date(self) -> None:
+        self.assertIn("e.invoice_date", es.EXPENSES_SQL)
+        self.assertNotIn("e.paid_at", es.EXPENSES_SQL)
+
+    def test_gain_date_falls_back_to_succeeded_at(self) -> None:
+        def rows(sql: str, _parameters: list | None) -> list[dict]:
+            if "payment_allocations" in sql:
+                raise board_data_api.DataApiError("permission denied for payment_allocations")
+            return _rows(sql, _parameters)
+
+        board_data_api.set_executor_for_tests(rows)
+        result = es.sync(self.table)
+        self.assertTrue(result["ok"])
+        by_id = {line["id"]: line for line in self._book_lines()}
+        self.assertEqual(by_id["es-pay-p1"]["dateUtc"], "2026-05-01T00:00:00.000Z")
+        self.assertEqual(by_id["es-pay-late"]["dateUtc"], "2026-10-02T00:00:00.000Z")
+        self.assertEqual(by_id["es-exp-e2"]["dateUtc"], "2026-03-01T00:00:00.000Z")
 
     def test_currency_only_correction_is_written(self) -> None:
         es.sync(self.table)

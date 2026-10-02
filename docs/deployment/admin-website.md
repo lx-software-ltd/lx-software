@@ -585,7 +585,8 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
 1. On the Evolve Sprouts database, set `enableDataApi: true` on that
    product stack and create a **read-only** database user with a
    password login and `SELECT` on `customer_payments`, `expenses`,
-   `organizations` (vendor names), and `customer_invoices`. Do not reuse
+   `organizations` (vendor names), `customer_invoices`, and
+   `payment_allocations` (invoice paid dates on gains). Do not reuse
    `evolvesprouts_app`: it has `rds_iam`, which blocks the password login
    the Data API uses. This stack never writes that database and does not
    apply SQL there. The secret's
@@ -621,8 +622,9 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
    amended expenses are omitted. Issued invoices with `balance_due > 0`
    stay on the summary (outstanding by currency, open-invoice count,
    submitted and paid expense counts). Each row keeps its own currency.
-   Expense net is `subtotal`, VAT is `tax`, and gross is `total`. Paid
-   expenses are dated by `paid_at`; submitted expenses by `invoice_date`.
+   Expense net is `subtotal`, VAT is `tax`, and gross is `total`. Expenses
+   are dated by the issued `invoice_date`. Gains are dated by the allocated
+   customer invoice `paid_at`, or `succeeded_at` when that lookup is empty.
    Calendar days are Asia/Hong_Kong, stored as that day at 00:00 UTC.
    Codes outside GBP, HKD, USD, EUR, CNY, SGD, AED are skipped and
    counted separately from rows missing an amount, currency, or date.
