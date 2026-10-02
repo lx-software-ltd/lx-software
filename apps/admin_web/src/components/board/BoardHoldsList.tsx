@@ -53,11 +53,14 @@ export function BoardHoldsList({
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
   }, [holds]);
 
-  const Heading = headingLevel;
   return (
     <section id={id} className="card shadow-sm mb-4">
       <div className="card-body">
-        <Heading className="admin-card-title">Scheduled (veto to stop)</Heading>
+        {headingLevel === "h3" ? (
+          <h3 className="admin-card-title">Scheduled (veto to stop)</h3>
+        ) : (
+          <h2 className="admin-card-title">Scheduled (veto to stop)</h2>
+        )}
         <p className="text-muted small">
           These writes already passed the boundaries and will run at the time shown unless you veto.
           They are not Approvals: you do not need to say yes.
