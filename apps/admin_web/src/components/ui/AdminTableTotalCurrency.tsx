@@ -40,15 +40,23 @@ export type AdminTableTotalCurrencyProps = {
   readonly value: CurrencyCode;
   readonly onChange: (code: CurrencyCode) => void;
   readonly disabled?: boolean;
+  /** Accessible name. Defaults to "Total display currency". */
+  readonly ariaLabel?: string;
 };
 
 /** Display-currency picker for a table total, labelled for screen readers and rendered once. */
-export function AdminTableTotalCurrency({ id, value, onChange, disabled }: AdminTableTotalCurrencyProps) {
+export function AdminTableTotalCurrency({
+  id,
+  value,
+  onChange,
+  disabled,
+  ariaLabel = "Total display currency",
+}: AdminTableTotalCurrencyProps) {
   return (
     <CurrencySelect
       id={id}
       className="form-select form-select-sm w-auto d-inline-block mt-1 admin-table-total-ccy"
-      ariaLabel="Total display currency"
+      ariaLabel={ariaLabel}
       value={value}
       onChange={onChange}
       disabled={disabled}

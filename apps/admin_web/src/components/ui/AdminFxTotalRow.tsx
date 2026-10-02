@@ -13,6 +13,9 @@ export type AdminFxTotalCell =
       readonly column: string;
       readonly total: number | null;
       readonly picker?: boolean;
+      /** Overrides the row-level desktop picker id when several amount cells have a picker. */
+      readonly pickerId?: string;
+      readonly pickerAriaLabel?: string;
     };
 
 export type AdminFxTotalRowProps = FrankfurterRatesFooterNoteProps & {
@@ -88,7 +91,8 @@ export function AdminFxTotalRow({
               <>
                 <br />
                 <AdminTableTotalCurrency
-                  id={pickerId}
+                  id={cell.pickerId ?? pickerId}
+                  ariaLabel={cell.pickerAriaLabel}
                   value={currency}
                   onChange={onCurrencyChange}
                   disabled={note.fxLoading}

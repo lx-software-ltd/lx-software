@@ -107,7 +107,6 @@ type InvSortKey =
   | "atype"
   | "prov"
   | "amt"
-  | "ccy"
   | "unit"
   | "currVal"
   | "lastUpd";
@@ -144,8 +143,6 @@ function compareInv(
             : left.principalAmount < right.principalAmount
               ? -1
               : 1;
-        case "ccy":
-          return left.currency.localeCompare(right.currency, undefined, { sensitivity: "base" });
         case "unit": {
           const ua = left.unit;
           const ub = right.unit;
@@ -333,20 +330,20 @@ export function FinanceInvestmentsPanel({
     });
     cols.push(
       {
-        key: "ccy",
+        key: "amt",
         header: (
           <TableSortHeaderButton
-            label="Currency"
-            isActive={sortKey === "ccy"}
-            direction={directionFor("ccy")}
-            onClick={() => onSort("ccy")}
+            label="Principal"
+            isActive={sortKey === "amt"}
+            direction={directionFor("amt")}
+            onClick={() => onSort("amt")}
             align="end"
           />
         ),
         className: "small text-end",
         headerClassName: "small text-end",
         priority: "secondary",
-        thAriaSort: ariaSort("ccy"),
+        thAriaSort: ariaSort("amt"),
       },
       {
         key: "currVal",
@@ -839,7 +836,7 @@ export function FinanceInvestmentsPanel({
             <AdminExpandableRow colSpan={colSpan} expanded onToggle={editor.openCreate} editor={investmentEditor}>
               <AdminCell column="cat">New investment</AdminCell>
               <AdminCell column="details" />
-              <AdminCell column="ccy" />
+              <AdminCell column="amt" />
               <AdminCell column="currVal" />
               <AdminCell column="lastUpd" />
               <AdminCell column="ops" />
@@ -880,7 +877,7 @@ export function FinanceInvestmentsPanel({
                 <AdminCell column="details" className="small text-muted">
                   {investmentDetailsDisplay(r, relatedHouseLabelByValue) || "—"}
                 </AdminCell>
-                <AdminCell column="ccy" className="small text-end">
+                <AdminCell column="amt" className="small text-end">
                   <MoneyAmount amount={r.principalAmount} currency={r.currency} codePrefix />
                 </AdminCell>
                 <AdminCell column="currVal" className="small text-end">
@@ -1021,11 +1018,14 @@ export function FinanceInvestmentsPanel({
                 { kind: "empty", column: "details" },
                 {
                   kind: "amount",
-                  column: "ccy",
+                  column: "amt",
                   total:
                     needsFx && (ratesQuery.isPending || ratesQuery.isError)
                       ? null
                       : convertedPrincipalTotal,
+                  picker: true,
+                  pickerId: `${sheetId}-principal-total-ccy`,
+                  pickerAriaLabel: "Principal total display currency",
                 },
                 {
                   kind: "amount",
@@ -1035,6 +1035,7 @@ export function FinanceInvestmentsPanel({
                       ? null
                       : convertedCurrentValueTotal,
                   picker: true,
+                  pickerAriaLabel: "Current value total display currency",
                 },
                 { kind: "empty", column: "lastUpd" },
                 { kind: "empty", column: "ops" },
