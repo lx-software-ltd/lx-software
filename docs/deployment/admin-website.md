@@ -591,7 +591,7 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
    product stack and create a **read-only** database user with a
    password login and `SELECT` on `customer_payments`, `expenses`,
    `organizations` (vendor names), `customer_invoices`, and
-   `payment_allocations` (invoice paid dates on gains). Do not reuse
+   `payment_allocations` (invoice document dates on gains). Do not reuse
    `evolvesprouts_app`: it has `rds_iam`, which blocks the password login
    the Data API uses. This stack never writes that database and does not
    apply SQL there. The secret's
@@ -629,7 +629,9 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
    submitted and paid expense counts). Each row keeps its own currency.
    Expense net is `subtotal`, VAT is `tax`, and gross is `total`. Expenses
    are dated by the issued `invoice_date`. Gains are dated by the allocated
-   customer invoice `paid_at`, or `succeeded_at` when that lookup is empty.
+   customer invoice `invoice_date` (the Client Invoices document date; the
+   newest `created_at` / `id` when a payment covers several invoices), or
+   `succeeded_at` when that lookup is empty.
    Calendar days are Asia/Hong_Kong, stored as that day at 00:00 UTC.
    Codes outside GBP, HKD, USD, EUR, CNY, SGD, AED are skipped and
    counted separately from rows missing an amount, currency, or date.
