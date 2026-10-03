@@ -13,7 +13,7 @@ import urllib.robotparser
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import board_mail
 import board_store
@@ -144,7 +144,38 @@ def _transient_oserror(exc: BaseException) -> bool:
     return isinstance(exc, OSError) and not isinstance(exc, TimeoutError)
 
 
+_META_REFRESH_RE = re.compile(
+    r"""<meta[^>]+http-equiv\s*=\s*["']?refresh["']?[^>]*content\s*=\s*["']?\s*\d+\s*;\s*url\s*=\s*["']?([^"'>\s]+)""",
+    re.IGNORECASE,
+)
+
+
+def meta_refresh_target(markup: str, base_url: str) -> str:
+    """The URL a ``<meta http-equiv="refresh">`` stub page points at, else ``""``.
+
+    Government sites (LCSD facility pages) answer with a 135-byte stub whose
+    only content is this tag; without following it the page reads as empty.
+    """
+    match = _META_REFRESH_RE.search(str(markup or "")[:4000])
+    if not match:
+        return ""
+    target = urljoin(base_url, match.group(1).strip())
+    parsed = urlparse(target)
+    if parsed.scheme not in ("http", "https") or host_is_blocked(parsed.hostname or ""):
+        return ""
+    return target
+
+
 def fetch(url: str, *, max_bytes: int = BOARD_STAFF_CRAWL_MAX_BYTES, timeout: int = 10) -> FetchResult:
+    result = _fetch_once(url, max_bytes=max_bytes, timeout=timeout)
+    if result.status < 400 and not html_to_text(result.text).strip():
+        target = meta_refresh_target(result.text, result.final_url or url)
+        if target and target != url:
+            return _fetch_once(target, max_bytes=max_bytes, timeout=timeout)
+    return result
+
+
+def _fetch_once(url: str, *, max_bytes: int, timeout: int) -> FetchResult:
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or host_is_blocked(parsed.hostname or ""):
         raise urllib.error.URLError("refusing private or disallowed host")

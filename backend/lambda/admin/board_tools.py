@@ -988,7 +988,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
     else:
         try:
             result = _invoke_op(ctx, op, arguments)
-            status = "error" if result.get("error") and len(result) == 1 else "ok"
+            status = "error" if _is_error_result(result) else "ok"
             outcome = ToolOutcome(status=status, result=result, summary=summary)
             if status == "ok":
                 try:
@@ -1058,6 +1058,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
             "taskId": ctx.task_id,
             "seatId": ctx.seat_id,
             "classKey": class_key,
+            **({"errorCause": cause} if (cause := _error_cause(outcome)) else {}),
             **({"attempt": attempt} if attempt is not None else {}),
             **({"toolCallId": ctx.llm_tool_call_id} if ctx.llm_tool_call_id else {}),
         },
@@ -1085,6 +1086,24 @@ def render_preview(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> d
     except Exception as exc:  # pragma: no cover - preview is best effort
         _log_event("warning", tag="board_tool_preview_failed", op=op.name, error=str(exc)[:300])
         return {"error": "Preview unavailable"}
+
+
+# Keys an op may return next to ``error`` without the call counting as ``ok``.
+# ``cause: "page"`` marks a research fetch that ran but hit a bad page; the
+# breaker ignores those (``board_breakers.evaluate``).
+_ERROR_META_KEYS = frozenset({"cause"})
+
+
+def _is_error_result(result: dict[str, Any]) -> bool:
+    if not result.get("error"):
+        return False
+    return all(key in _ERROR_META_KEYS for key in result if key != "error")
+
+
+def _error_cause(outcome: ToolOutcome) -> str:
+    if outcome.status != "error" or not isinstance(outcome.result, dict):
+        return ""
+    return str(outcome.result.get("cause") or "")[:40]
 
 
 def _validate_world(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> str:

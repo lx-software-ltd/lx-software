@@ -611,6 +611,9 @@ class CatalogDutyTests(BoardTestCase):
         ):
             empty = board_research.op_fetch_page(ctx, {"url": "https://www.lcsd.gov.hk/empty"})
         self.assertIn("empty", empty["error"].lower())
+        # Page problems are the page's fault: flagged so the breaker skips them.
+        self.assertEqual(missing.get("cause"), "page")
+        self.assertEqual(empty.get("cause"), "page")
         # Three distinct ok URLs used; still under the catalog cap of 9.
         with patch.object(
             board_crawl,
@@ -619,6 +622,35 @@ class CatalogDutyTests(BoardTestCase):
         ):
             ok = board_research.op_fetch_page(ctx, {"url": "https://www.lcsd.gov.hk/fresh"})
         self.assertNotIn("error", ok)
+
+    def test_fetch_page_does_not_refetch_a_url_that_already_failed(self) -> None:
+        import board_crawl
+
+        settings = _enable(self.table)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            task = board_catalog.create_next(self.table, settings)
+        tid = task["taskId"]
+        ctx = type("Ctx", (), {"table": self.table, "task_id": tid})()
+        board_store.add_tool_call(
+            self.table,
+            {
+                "op": "research_fetch_page",
+                "status": "error",
+                "errorCause": "page",
+                "resultPreview": '{"error": "empty page body", "cause": "page"}',
+                "taskId": tid,
+                "attempt": 1,
+                "arguments": {"url": "http://www.lcsd.gov.hk/tc/facilities.php?ftid=55&did=2"},
+                "createdAt": "2026-09-18T00:00:00Z",
+            },
+        )
+        with patch.object(board_crawl, "fetch") as fetch:
+            again = board_research.op_fetch_page(ctx, {"url": "http://www.lcsd.gov.hk/tc/facilities.php?ftid=55&did=2"})
+        fetch.assert_not_called()
+        self.assertIn("already failed", again["error"])
+        self.assertIn("empty page body", again["error"])
+        self.assertEqual(again.get("cause"), "page")
 
     def test_fetch_cap_resets_after_retry(self) -> None:
         settings = _enable(self.table)
