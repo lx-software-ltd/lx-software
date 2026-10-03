@@ -392,6 +392,58 @@ class BulkTransformTests(BoardTestCase):
         self.assertEqual(board_store.get_candidate(self.table, keep["candidateId"])["status"], "imported")
         self.assertEqual(board_store.get_candidate(self.table, drop["candidateId"])["status"], "approved")
 
+    def test_rejected_rows_record_the_importer_error_and_close_after_repeats(self) -> None:
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+        drop = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "edb", "sourceId": "drop", "nameEn": "Drop Kindergarten", "district": "Tuen Mun"},
+        )
+        board_catalog_candidates.set_status(self.table, drop["candidateId"], "approved")
+
+        def fake_import(payload, token, **_kwargs):
+            return {
+                "ok": False,
+                "summary": {"failed": 1, "created": 0, "updated": 0},
+                "results": [
+                    {
+                        "type": "organizations",
+                        "key": "Drop Kindergarten",
+                        "status": "failed",
+                        "errors": [{"field": "name", "message": "organization name already exists"}],
+                    }
+                ],
+            }
+
+        patches = (
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=[]),
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "_id_token", return_value="tok"),
+            patch.object(board_catalog_import, "_run_remote_import", side_effect=fake_import),
+        )
+        with patches[0], patches[1], patches[2], patches[3]:
+            out = board_catalog_bulk.import_source(self.table, "edb")
+        self.assertEqual(out["imported"], 0)
+        self.assertIn("organization name already exists", out["error"])
+        row = board_store.get_candidate(self.table, drop["candidateId"])
+        self.assertEqual(row["status"], "approved")
+        self.assertEqual(row["importRejects"], 1)
+        self.assertIn("already exists", row["importError"])
+        for _ in range(2):
+            with patches[0], patches[1], patches[2], patches[3]:
+                out = board_catalog_bulk.import_source(self.table, "edb")
+        row = board_store.get_candidate(self.table, drop["candidateId"])
+        self.assertEqual(row["status"], "closed")
+        self.assertEqual(row["importRejects"], 3)
+        self.assertIn("importer rejected 3x", row["closeReason"])
+        self.assertEqual(out["batches"][0]["closed"][0]["candidateId"], drop["candidateId"])
+        # Nothing approved is left, so the next run has nothing to send.
+        with patches[0], patches[1], patches[2], patches[3]:
+            out = board_catalog_bulk.import_source(self.table, "edb")
+        self.assertEqual(out["batches"], [])
+
     def test_import_marks_long_org_name(self) -> None:
         os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
         os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
