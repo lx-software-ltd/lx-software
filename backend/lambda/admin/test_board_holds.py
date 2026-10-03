@@ -125,6 +125,28 @@ class ExecuteCallHoldTests(BoardTestCase):
         approvals = [a for a in board_store.list_approvals(self.table) if a.get("status") == "pending"]
         self.assertEqual(approvals, [])
 
+    def test_mail_to_an_unknown_alias_errors_before_a_hold_is_created(self) -> None:
+        settings = _enable_staff(self.table)
+        settings["boundaries"]["holds"]["outbound_mail"] = 2
+        settings["tools"]["allowList"] = ["@example.com"]
+        board_store.save_settings(self.table, settings)
+        outcome = board_tools.execute_call(
+            _ctx(self.table, settings, "cmo"),
+            _op("mail_send"),
+            {
+                "fromMailbox": "hello@siutindei.com",
+                "to": ["contact#12345"],
+                "subject": "Partnership",
+                "body": "Hello",
+                "reason": "outreach",
+            },
+        )
+        self.assertEqual(outcome.status, "error")
+        self.assertIn("Unknown contact", str(outcome.result.get("error") or ""))
+        self.assertEqual(board_store.list_holds(self.table, "scheduled"), [])
+        approvals = [a for a in board_store.list_approvals(self.table) if a.get("status") == "pending"]
+        self.assertEqual(approvals, [])
+
     def test_staff_off_keeps_always_propose_as_approval(self) -> None:
         settings = board_store.load_settings(self.table)
         settings["tools"]["globalMode"] = "act"

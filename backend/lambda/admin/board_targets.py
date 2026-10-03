@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -113,7 +114,9 @@ def check(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
     gaps = board_store.get_cache(table, "intel:gaps")
     gap_text = ""
     if gaps and isinstance(gaps.get("payload"), dict):
-        gap_text = str(gaps["payload"].get("gaps") or gaps["payload"])[:800]
+        # json.dumps, not str(): Dynamo numbers come back as Decimal and the
+        # brief used to read "Decimal('2')".
+        gap_text = json.dumps(gaps["payload"].get("gaps") or gaps["payload"], ensure_ascii=False, default=str)[:800]
     if shortfall:
         brief = (
             f"Find and qualify {shortfall} prospects of types {types} in districts {districts} "

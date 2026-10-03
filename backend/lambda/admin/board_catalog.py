@@ -596,6 +596,7 @@ def handoff_commercial_providers(
         event_id = f"handoff:{_slug(name)}"
         if find_open_event_task(table, "catalog-handoff", event_id):
             continue
+        official_url = str(org.get("official_url") or org.get("website") or org.get("source_url") or "").strip()
         try:
             created.append(
                 board_staff.create_task(
@@ -603,11 +604,7 @@ def handoff_commercial_providers(
                     settings,
                     assignee="provider-success",
                     origin="duty",
-                    brief=(
-                        f"Send the Siu Tin Dei provider onboarding link to {name} in {district} "
-                        f"and ask them to add photos, prices and opening hours on their listing. "
-                        f"Do not write the listing yourself."
-                    )[:4000],
+                    brief=handoff_brief(name, district, official_url),
                     deliverable_type="markdown",
                     sla_hours=24,
                     event_ref={
@@ -615,6 +612,7 @@ def handoff_commercial_providers(
                         "id": event_id,
                         "district": district,
                         "name": name,
+                        **({"officialUrl": official_url} if official_url else {}),
                     },
                     created_by="board_catalog",
                 )
@@ -622,6 +620,28 @@ def handoff_commercial_providers(
         except board_staff.StaffError as exc:
             _log_event("info", tag="board_catalog_handoff_skipped", name=name[:80], error=str(exc)[:200])
     return created
+
+
+def handoff_brief(name: str, district: str, official_url: str) -> str:
+    """Brief for a provider-success onboarding handoff.
+
+    The sheet carries no mailbox for the org, so the brief says where the
+    address comes from and what to do when there is none. Without that the
+    seat invented ``contact#N`` aliases (holds that failed at execution) or
+    asked for help every attempt.
+    """
+    where = f" ({official_url})" if official_url else ""
+    return (
+        f"Send the Siu Tin Dei provider onboarding link to {name} in {district} "
+        f"and ask them to add photos, prices and opening hours on their listing. "
+        f"Do not write the listing yourself.\n\n"
+        f"Contact: the board has no mailbox for {name}. Fetch their official page{where} "
+        f"with research_fetch_page and use a contact email printed on it as a full address "
+        f"in mail_send (it goes to the founder for approval). Do not use a contact#N alias "
+        f"unless it came from a mail thread you read on this task, and do not call "
+        f"task_request_help for this. If the page shows no email, finish with status "
+        f"blocked and note the phone number or contact form you found instead."
+    )[:4000]
 
 
 def _slug(value: str) -> str:

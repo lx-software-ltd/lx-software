@@ -204,6 +204,14 @@ class TestResearch(ResearchTestCase):
         self.assertEqual(len(out["results"]), 1)
         self.assertIn("tuen mun", self.brave.queries[0].lower().replace("+", " "))
 
+    def test_venues_area_alias_maps_to_its_district(self) -> None:
+        tctx = __import__("board_tools", fromlist=["ToolContext"]).ToolContext(
+            table=self.table, settings=board_store.load_settings(self.table), persona_id="cmo"
+        )
+        out = board_research.op_venues(tctx, {"district": "Tseung Kwan O", "kind": "climbing"})
+        self.assertEqual(len(out["results"]), 1)
+        self.assertIn("sai kung", self.brave.queries[0].lower().replace("+", " "))
+
 
 class TestAwsAndSecurity(ToolsTestCase):
     def setUp(self) -> None:

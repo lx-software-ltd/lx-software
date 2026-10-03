@@ -766,6 +766,15 @@ level, `act_guard`, breakers and the tools kill switch before running it;
 failures are recorded, not retried. `mail_reply` holds fail with "thread
 changed" if a newer inbound message arrived.
 
+`ToolOp.validate` ("would this succeed if executed?") runs **before** the
+hold is created. The three mail write ops validate through
+`board_mail.validate_outgoing` (the same `outgoing_plan` the executor
+uses), so a `mail_send` to an invented alias such as `contact#12345`, a
+`mail_reply` on a thread with no inbound message, or a `content_publish`
+slot in the past is returned to the model as an `error` it can correct,
+instead of becoming a scheduled hold that fails hours later and shows up
+on the owner's **Scheduled** list.
+
 An **Approval** is "the founder must say yes"; a **hold** is "the founder
 may say no". They stay separate lists (**Approvals** and **Approvals →
 Scheduled (veto to stop)**). When staff is on, `always_propose` publish
@@ -790,7 +799,14 @@ triggers escalation keywords within 24 h), `budget` (staff spend ≥ 80 %
 before 12:00 HKT pauses `senior` work; ≥ 100 % flips
 `settings.staff.enabled` off), `tool:{toolId}` (≥ 10 errors in an hour),
 `outreach` (7-day bounce rate > 5 % or complaint rate > 0.1 % over ≥ 50
-sends). Tripping writes an owner update so the next stand-up sees it;
+sends). A `tool:` breaker counts `error` calls only; `refused`, `held` and
+`pending_approval` do not count, and neither do `research_fetch_page`
+results about the *page* rather than the tool (HTTP ≥ 400, empty body,
+blocked host, wrong content type), which are stored with
+`errorCause: page`. A seat that keeps hitting such a page is told
+`already failed on this task (…)` and the URL is not fetched again on
+that attempt; `board_crawl.fetch` follows one `<meta http-equiv="refresh">`
+stub (LCSD pages) to a public host before giving up on an empty body. Tripping writes an owner update so the next stand-up sees it;
 reset from the review page (`POST …/breakers/{name}/reset`). A failed
 channel or action-class lookup is fail-closed: the write is refused with
 `breaker check failed` (`channel:unknown`) instead of being allowed through.
