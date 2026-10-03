@@ -478,6 +478,10 @@ class CatalogDutyTests(BoardTestCase):
         self.assertEqual(created[0]["assignee"], "provider-success")
         self.assertEqual(created[0]["eventRef"]["kind"], "catalog-handoff")
         self.assertEqual(created[0]["eventRef"]["name"], "Kidz Club")
+        self.assertEqual(created[0]["eventRef"]["officialUrl"], "https://kidzclub.example/wan-chai")
+        self.assertIn("https://kidzclub.example/wan-chai", created[0]["brief"])
+        self.assertIn("research_fetch_page", created[0]["brief"])
+        self.assertIn("do not call task_request_help", created[0]["brief"])
         self.assertFalse(board_catalog.is_commercial_org(sheet["organisations"][0]))
         self.assertTrue(board_catalog.is_commercial_org(sheet["organisations"][1]))
         self.assertFalse(
