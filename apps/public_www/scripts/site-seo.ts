@@ -1,4 +1,4 @@
-import type { SiteContent } from '../src/lib/content.ts'
+import type { ContentPage, SiteContent } from '../src/lib/content.ts'
 import { linkedinUrl } from '../src/lib/linkedin.ts'
 
 export interface SeoOptions {
@@ -17,9 +17,18 @@ export interface SeoHead {
   noscript: string
 }
 
-export interface SeoFiles {
+/** Head values and structured data for one pre-rendered route. */
+export interface RouteSeo {
+  path: string
   head: SeoHead
   jsonld: string
+}
+
+export interface SeoFiles {
+  /** Home page head; `routes` carries every page including this one. */
+  head: SeoHead
+  jsonld: string
+  routes: RouteSeo[]
   llms: string
   llmsFull: string
   sitemap: string
@@ -41,6 +50,12 @@ export function applyHead(html: string, head: SeoHead): string {
   return html.replace(HEAD_TOKEN, (_match, key: keyof SeoHead) => escapeHtml(head[key]))
 }
 
+type JsonLdNode = Record<string, unknown>
+
+function jsonld(graph: JsonLdNode[]): string {
+  return JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }, null, 2)
+}
+
 export function buildSeo(content: SiteContent, options: SeoOptions = {}): SeoFiles {
   const origin = content.site.url.replace(/\/$/, '')
   const lastmod = content.site.updated
@@ -50,14 +65,33 @@ export function buildSeo(content: SiteContent, options: SeoOptions = {}): SeoFil
   const sameAs = linkedin ? [linkedin] : undefined
   const place = { '@type': 'PostalAddress', addressLocality: 'Hong Kong', addressCountry: 'HK' }
   const area = { '@type': 'Place', name: 'Hong Kong' }
+  const websiteId = `${origin}/#website`
   const organizationId = `${origin}/#organization`
   const personId = `${origin}/#person`
   const title = content.site.title.trim() || content.site.name
+  const pageUrl = (page: ContentPage) => `${origin}/${page.slug}`
+  const serviceId = (serviceTitle: string) =>
+    `${origin}/#service-${serviceTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`
+  const pageForService = (serviceTitle: string) =>
+    content.pages.find((page) => page.service === serviceTitle)
 
-  const graph: Record<string, unknown>[] = [
+  const serviceNodes = content.whatIDo.services.map((service) => {
+    const page = pageForService(service.title)
+    return {
+      '@type': 'Service',
+      '@id': serviceId(service.title),
+      name: service.title,
+      description: service.description,
+      provider: { '@id': organizationId },
+      areaServed: area,
+      url: page ? pageUrl(page) : service.href ? `${origin}${service.href}` : undefined,
+    }
+  })
+
+  const graph: JsonLdNode[] = [
     {
       '@type': 'WebSite',
-      '@id': `${origin}/#website`,
+      '@id': websiteId,
       url: `${origin}/`,
       name: content.site.name,
       alternateName: owner ? `${owner} - ${content.site.name}` : undefined,
@@ -81,15 +115,9 @@ export function buildSeo(content: SiteContent, options: SeoOptions = {}): SeoFil
       founder: owner ? { '@id': personId } : undefined,
       knowsAbout: content.whatIDo.skills,
       sameAs,
-      makesOffer: content.whatIDo.services.map((service) => ({
+      makesOffer: serviceNodes.map((service) => ({
         '@type': 'Offer',
-        itemOffered: {
-          '@type': 'Service',
-          name: service.title,
-          description: service.description,
-          provider: { '@id': organizationId },
-          areaServed: area,
-        },
+        itemOffered: service,
       })),
     },
     {
@@ -98,7 +126,7 @@ export function buildSeo(content: SiteContent, options: SeoOptions = {}): SeoFil
       url: `${origin}/`,
       name: title,
       description: content.site.description,
-      isPartOf: { '@id': `${origin}/#website` },
+      isPartOf: { '@id': websiteId },
       about: owner ? { '@id': personId } : { '@id': organizationId },
       inLanguage: 'en',
       dateModified: lastmod,
@@ -113,25 +141,116 @@ export function buildSeo(content: SiteContent, options: SeoOptions = {}): SeoFil
       })),
     },
   ]
-  if (owner) {
-    graph.splice(2, 0, {
-      '@type': 'Person',
-      '@id': personId,
-      name: owner,
-      jobTitle: role || undefined,
-      description: content.hero.summary,
-      url: `${origin}/`,
-      email: content.site.email,
-      image: `${origin}/og-image.png`,
-      address: place,
-      worksFor: { '@id': organizationId },
-      knowsAbout: content.whatIDo.skills,
-      sameAs,
-    })
+  const personNode: JsonLdNode | undefined = owner
+    ? {
+        '@type': 'Person',
+        '@id': personId,
+        name: owner,
+        jobTitle: role || undefined,
+        description: content.hero.summary,
+        url: `${origin}/`,
+        email: content.site.email,
+        image: `${origin}/og-image.png`,
+        address: place,
+        worksFor: { '@id': organizationId },
+        knowsAbout: content.whatIDo.skills,
+        sameAs,
+      }
+    : undefined
+  if (personNode) graph.splice(2, 0, personNode)
+
+  const head = (pageTitle: string, description: string, path: string): SeoHead => ({
+    title: pageTitle,
+    description,
+    keywords: content.site.keywords.join(', '),
+    author: owner || content.site.name,
+    siteName: content.site.name,
+    ogImage: `${origin}/og-image.png`,
+    url: `${origin}${path}`,
+    noscript: `${pageTitle}. ${description} This page needs JavaScript for navigation. Email ${content.site.email}.`,
+  })
+
+  const breadcrumb = (path: string, label: string): JsonLdNode => ({
+    '@type': 'BreadcrumbList',
+    '@id': `${origin}${path}#breadcrumb`,
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: content.chrome.breadcrumbHome, item: `${origin}/` },
+      { '@type': 'ListItem', position: 2, name: label, item: `${origin}${path}` },
+    ],
+  })
+
+  const simplePage = (path: string, name: string, description: string): RouteSeo => ({
+    path,
+    head: head(`${name} — ${content.site.name}`, description, path),
+    jsonld: jsonld([
+      {
+        '@type': 'WebPage',
+        '@id': `${origin}${path}#webpage`,
+        url: `${origin}${path}`,
+        name,
+        description,
+        isPartOf: { '@id': websiteId },
+        inLanguage: 'en',
+        dateModified: lastmod,
+        breadcrumb: { '@id': `${origin}${path}#breadcrumb` },
+      },
+      breadcrumb(path, name),
+    ]),
+  })
+
+  const contentPage = (page: ContentPage): RouteSeo => {
+    const path = `/${page.slug}`
+    const url = pageUrl(page)
+    const isAbout = page.slug === 'about'
+    const service = page.service ? serviceNodes.find((node) => node.name === page.service) : undefined
+    const nodes: JsonLdNode[] = [
+      {
+        '@type': isAbout ? ['WebPage', 'AboutPage'] : 'WebPage',
+        '@id': `${url}#webpage`,
+        url,
+        name: page.metaTitle,
+        headline: page.title,
+        description: page.description,
+        isPartOf: { '@id': websiteId },
+        about: service ? { '@id': service['@id'] } : personNode ? { '@id': personId } : { '@id': organizationId },
+        mainEntity: isAbout && personNode ? { '@id': personId } : service ? { '@id': service['@id'] } : undefined,
+        inLanguage: 'en',
+        dateModified: lastmod,
+        breadcrumb: { '@id': `${url}#breadcrumb` },
+      },
+      breadcrumb(path, page.navLabel),
+    ]
+    if (service) nodes.push({ ...service, provider: { '@id': organizationId } })
+    if (isAbout && personNode) nodes.push(personNode)
+    nodes.push({ '@type': ['Organization', 'ProfessionalService'], '@id': organizationId, name: content.site.name, url: `${origin}/` })
+    if (page.faq && page.faq.length > 0) {
+      nodes.push({
+        '@type': 'FAQPage',
+        '@id': `${url}#faq`,
+        mainEntity: page.faq.map((item) => ({
+          '@type': 'Question',
+          name: item.q,
+          acceptedAnswer: { '@type': 'Answer', text: item.a },
+        })),
+      })
+    }
+    return { path, head: head(page.metaTitle, page.description, path), jsonld: jsonld(nodes) }
   }
+
+  const homeHead = head(title, content.site.description, '/')
+  const routes: RouteSeo[] = [
+    { path: '/', head: homeHead, jsonld: jsonld(graph) },
+    ...content.pages.map(contentPage),
+    simplePage('/privacy', content.legal.privacy.title, 'What the site collects and how contact messages are used.'),
+    simplePage('/terms', content.legal.terms.title, 'Terms for using this site.'),
+    simplePage('/wechat', 'WeChat', 'WeChat contact details.'),
+  ]
 
   const pages: [string, string, string][] = [
     ['/', 'Home', `${content.hero.headline}. Who I am, what I do, projects, contact, and a short FAQ.`],
+    ...content.pages.map(
+      (page): [string, string, string] => [`/${page.slug}`, page.title, page.description],
+    ),
     ['/privacy', content.legal.privacy.title, 'What the site collects and how contact messages are used.'],
     ['/terms', content.legal.terms.title, 'Terms for using this site.'],
     ['/wechat', 'WeChat', 'WeChat contact details.'],
@@ -140,6 +259,12 @@ export function buildSeo(content: SiteContent, options: SeoOptions = {}): SeoFil
   const projectLine = (item: SiteContent['projects']['items'][number]) => {
     const suffix = item.url ? ` (${item.url})` : item.status ? ` (${item.status})` : ''
     return `${item.title}${suffix}: ${item.description}`
+  }
+
+  const serviceLine = (service: SiteContent['whatIDo']['services'][number]) => {
+    const page = pageForService(service.title)
+    const link = page ? ` (${pageUrl(page)})` : ''
+    return `- ${service.title}${link}: ${service.description}`
   }
 
   const contactLines = [
@@ -156,7 +281,7 @@ ${owner ? `${owner} is a ${role} based in Hong Kong. ` : ''}${content.hero.summa
 
 ## Services
 
-${content.whatIDo.services.map((service) => `- ${service.title}: ${service.description}`).join('\n')}
+${content.whatIDo.services.map(serviceLine).join('\n')}
 
 Skills: ${content.whatIDo.skills.join(', ')}.
 
@@ -178,6 +303,17 @@ ${pages.map(([path, label, blurb]) => `- [${label}](${origin}${path}): ${blurb}`
 - [Sitemap](${origin}/sitemap.xml)
 `
 
+  const pageBlocks = (page: ContentPage) => [
+    `# ${page.title}`,
+    page.intro,
+    ...page.sections.flatMap((section) => [
+      section.heading,
+      ...(section.paragraphs ?? []),
+      ...(section.bullets ?? []).map((bullet) => `- ${bullet}`),
+    ]),
+    ...(page.faq ?? []).map((item) => `${item.q}\n${item.a}`),
+  ]
+
   const blocks = [
     `# ${owner ? `${owner} - ${content.site.name}` : content.site.name}`,
     content.site.description,
@@ -198,6 +334,7 @@ ${pages.map(([path, label, blurb]) => `- [${label}](${origin}${path}): ${blurb}`
     ...(linkedin ? [`LinkedIn: ${linkedin}`] : []),
     `# ${content.chrome.faqHeading}`,
     ...content.faq.map((item) => `${item.q}\n${item.a}`),
+    ...content.pages.flatMap(pageBlocks),
     `# ${content.legal.privacy.title}`,
     ...content.legal.privacy.sections.flatMap((section) => [section.heading, ...section.paragraphs]),
     `# ${content.legal.terms.title}`,
@@ -209,17 +346,9 @@ ${pages.map(([path, label, blurb]) => `- [${label}](${origin}${path}): ${blurb}`
     .join('\n')
 
   return {
-    head: {
-      title,
-      description: content.site.description,
-      keywords: content.site.keywords.join(', '),
-      author: owner || content.site.name,
-      siteName: content.site.name,
-      ogImage: `${origin}/og-image.png`,
-      url: `${origin}/`,
-      noscript: `${title}. ${content.site.description} This page needs JavaScript for navigation. Email ${content.site.email}.`,
-    },
-    jsonld: JSON.stringify({ '@context': 'https://schema.org', '@graph': graph }, null, 2),
+    head: homeHead,
+    jsonld: jsonld(graph),
+    routes,
     llms,
     llmsFull: `${blocks.join('\n\n')}\n`,
     sitemap: `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`,

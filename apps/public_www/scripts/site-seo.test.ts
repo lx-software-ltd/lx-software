@@ -18,6 +18,9 @@ const chrome: SiteContent['chrome'] = {
   notFoundBody: 'That address is not on this site.',
   notFoundBack: '[ back to the top ]',
   updated: 'Updated',
+  readMore: '[ read more ]',
+  pagesLabel: 'Pages',
+  breadcrumbHome: 'Home',
 }
 
 const content: SiteContent = {
@@ -44,7 +47,7 @@ const content: SiteContent = {
   whatIDo: {
     heading: 'What I Do',
     intro: 'Services.',
-    services: [{ title: 'Build', description: 'Software.' }],
+    services: [{ title: 'Build', description: 'Software.', href: '/build-hong-kong' }],
     skills: ['TypeScript', 'AWS'],
   },
   projects: {
@@ -56,7 +59,30 @@ const content: SiteContent = {
     ],
   },
   contact: { heading: 'Contact Me', intro: 'Write.' },
+  cta: { heading: 'Next step', body: 'Write a note.', label: '[ contact me ]', href: '/#contact' },
   faq: [{ q: 'Where?', a: 'Hong Kong.' }],
+  pages: [
+    {
+      slug: 'build-hong-kong',
+      navLabel: 'Build',
+      title: 'Building software in Hong Kong',
+      metaTitle: 'Build | Example Studio',
+      description: 'A service page.',
+      intro: 'Intro line.',
+      service: 'Build',
+      sections: [{ heading: 'How', paragraphs: ['Carefully.'], bullets: ['Tests', 'Docs'] }],
+      faq: [{ q: 'How long?', a: 'Weeks.' }],
+    },
+    {
+      slug: 'about',
+      navLabel: 'About',
+      title: 'About Sample Owner',
+      metaTitle: 'About | Example Studio',
+      description: 'An about page.',
+      intro: 'Hello.',
+      sections: [{ heading: 'Story', paragraphs: ['Once.'] }],
+    },
+  ],
   legal: {
     privacy: {
       title: 'Privacy Policy',
@@ -133,7 +159,7 @@ describe('buildSeo', () => {
     const seo = buildSeo(content)
     expect(seo.llms.startsWith('# Sample Owner - Example Studio\n')).toBe(true)
     expect(seo.llms).toContain('Sample Owner is a Fractional CTO based in Hong Kong.')
-    expect(seo.llms).toContain('- Build: Software.')
+    expect(seo.llms).toContain('- Build (https://www.example.com/build-hong-kong): Software.')
     expect(seo.llms).toContain('- Live (https://live.example.com): A card.')
     expect(seo.llms).toContain('- Soon (Coming soon): Another card.')
     expect(seo.llms).not.toContain('LinkedIn')
@@ -143,6 +169,70 @@ describe('buildSeo', () => {
     expect(seo.llms).toContain('[WeChat](https://www.example.com/wechat)')
     expect(seo.llmsFull).toContain('Fractional CTO for startups')
     expect(seo.llmsFull).toContain('Live (https://live.example.com): A card.')
+  })
+
+  it('links each service to its page in the graph and llms.txt', () => {
+    const seo = buildSeo(content)
+    const organization = graphOf(seo.jsonld)[1]
+    expect(organization.makesOffer).toEqual([
+      expect.objectContaining({
+        itemOffered: expect.objectContaining({ url: 'https://www.example.com/build-hong-kong' }),
+      }),
+    ])
+    expect(seo.llms).toContain('- Build (https://www.example.com/build-hong-kong): Software.')
+    expect(seo.llms).toContain('[Building software in Hong Kong](https://www.example.com/build-hong-kong)')
+    expect(seo.llms).toContain('[About Sample Owner](https://www.example.com/about)')
+    expect(seo.sitemap).toContain('<loc>https://www.example.com/build-hong-kong</loc>')
+    expect(seo.sitemap).toContain('<loc>https://www.example.com/about</loc>')
+    expect(seo.llmsFull).toContain('# Building software in Hong Kong')
+    expect(seo.llmsFull).toContain('- Tests')
+    expect(seo.llmsFull).toContain('How long?\nWeeks.')
+  })
+
+  it('builds a head and structured data for every route', () => {
+    const seo = buildSeo(content)
+    expect(seo.routes.map((route) => route.path)).toEqual([
+      '/',
+      '/build-hong-kong',
+      '/about',
+      '/privacy',
+      '/terms',
+      '/wechat',
+    ])
+    expect(seo.routes[0].jsonld).toBe(seo.jsonld)
+    expect(seo.routes[0].head).toEqual(seo.head)
+
+    const service = seo.routes[1]
+    expect(service.head.title).toBe('Build | Example Studio')
+    expect(service.head.description).toBe('A service page.')
+    expect(service.head.url).toBe('https://www.example.com/build-hong-kong')
+    const serviceGraph = graphOf(service.jsonld)
+    expect(serviceGraph.map((node) => node['@type'])).toEqual([
+      'WebPage',
+      'BreadcrumbList',
+      'Service',
+      ['Organization', 'ProfessionalService'],
+      'FAQPage',
+    ])
+    expect(serviceGraph[0].about).toEqual({ '@id': 'https://www.example.com/#service-build' })
+    expect(serviceGraph[1].itemListElement).toEqual([
+      expect.objectContaining({ position: 1, name: 'Home' }),
+      expect.objectContaining({ position: 2, name: 'Build', item: 'https://www.example.com/build-hong-kong' }),
+    ])
+    expect(serviceGraph[4].mainEntity).toEqual([
+      expect.objectContaining({ name: 'How long?' }),
+    ])
+
+    const about = seo.routes[2]
+    const aboutGraph = graphOf(about.jsonld)
+    expect(aboutGraph[0]['@type']).toEqual(['WebPage', 'AboutPage'])
+    expect(aboutGraph[0].mainEntity).toEqual({ '@id': 'https://www.example.com/#person' })
+    expect(aboutGraph.some((node) => node['@type'] === 'Person')).toBe(true)
+    expect(aboutGraph.some((node) => node['@type'] === 'FAQPage')).toBe(false)
+
+    const privacy = seo.routes[3]
+    expect(privacy.head.title).toBe('Privacy Policy — Example Studio')
+    expect(graphOf(privacy.jsonld).map((node) => node['@type'])).toEqual(['WebPage', 'BreadcrumbList'])
   })
 
   it('fills and escapes the index.html head tokens', () => {
