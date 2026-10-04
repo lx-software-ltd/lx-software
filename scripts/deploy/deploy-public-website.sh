@@ -57,13 +57,16 @@ content_type() {
 
 cache_control() {
   case "$1" in
-    index.html|robots.txt|sitemap.xml|llms.txt|llms-full.txt|site.webmanifest|*/*)
-      # Unhashed paths (the shell, and public/ directories such as images/)
-      # must revalidate. A year-long immutable cache would keep a replaced
-      # logo after the next deploy.
+    *.html|*.txt|*.xml|site.webmanifest|*/*)
+      # Unhashed paths (the pre-rendered pages, crawler files, and public/
+      # directories such as images/) must revalidate. A year-long immutable
+      # cache would keep a replaced logo or stale copy after the next deploy.
       printf '%s' "no-cache" ;;
-    *)
+    *.*)
       printf '%s' "$IMMUTABLE" ;;
+    *)
+      # Extensionless keys are the pre-rendered routes (/about).
+      printf '%s' "no-cache" ;;
   esac
 }
 
@@ -79,6 +82,19 @@ echo "Uploading site root"
 for path in "$BUILD_DIR"/*; do
   [ -f "$path" ] || continue
   upload_file "$path" "$(basename "$path")"
+done
+
+# The build pre-renders every route to dist/<route>.html (and
+# dist/<route>/index.html for static previews). CloudFront maps the request
+# /about straight to the S3 key "about", so each page is also uploaded under
+# its extensionless key. Without that, /about would 403 and fall back to the
+# home shell, and crawlers would index the home copy under the page URL.
+echo "Uploading pre-rendered routes"
+for path in "$BUILD_DIR"/*.html; do
+  [ -f "$path" ] || continue
+  name="$(basename "$path")"
+  [ "$name" = "index.html" ] && continue
+  upload_file "$path" "${name%.html}"
 done
 
 # Vite copies public/ into dist/, including directories such as images/.
@@ -114,3 +130,56 @@ if [ -n "$DISTRIBUTION_ID" ] && [ "$DISTRIBUTION_ID" != "None" ]; then
     --distribution-id "$DISTRIBUTION_ID" \
     --paths "/*"
 fi
+
+# IndexNow tells Bing, Yandex, Naver, Seznam and Yep that these URLs changed
+# (Google does not take part; it reads sitemap.xml). The key file is public
+# by design (public/indexnow.txt, served at /indexnow.txt). The ping never
+# fails the deploy: a missing key, no curl, or a 4xx/5xx is only logged.
+# Set INDEXNOW_DISABLED=1 to skip it.
+indexnow_ping() {
+  local key_file="$BUILD_DIR/indexnow.txt"
+  local sitemap="$BUILD_DIR/sitemap.xml"
+  if [ "${INDEXNOW_DISABLED:-0}" = "1" ]; then
+    echo "IndexNow ping skipped (INDEXNOW_DISABLED=1)"
+    return 0
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "IndexNow ping skipped (curl not found)"
+    return 0
+  fi
+  if [ ! -f "$key_file" ] || [ ! -f "$sitemap" ]; then
+    echo "IndexNow ping skipped (indexnow.txt or sitemap.xml missing)"
+    return 0
+  fi
+  local key urls host origin body status
+  key="$(tr -d '[:space:]' < "$key_file")"
+  urls="$(sed -n 's:.*<loc>\(.*\)</loc>.*:\1:p' "$sitemap")"
+  if [ -z "$key" ] || [ -z "$urls" ]; then
+    echo "IndexNow ping skipped (empty key or sitemap)"
+    return 0
+  fi
+  origin="$(printf '%s\n' "$urls" | head -n 1 | sed -E 's#^(https?://[^/]+).*#\1#')"
+  host="${origin#*://}"
+  body="$(printf '%s\n' "$urls" | python3 -c '
+import json, sys
+host, origin, key = sys.argv[1:4]
+urls = [line.strip() for line in sys.stdin if line.strip()]
+print(json.dumps({
+    "host": host,
+    "key": key,
+    "keyLocation": f"{origin}/indexnow.txt",
+    "urlList": urls,
+}))
+' "$host" "$origin" "$key")"
+  echo "IndexNow: submitting $(printf '%s\n' "$urls" | wc -l | tr -d ' ') URLs for $host"
+  status="$(curl -sS -o /dev/null -w '%{http_code}' \
+    -X POST "https://api.indexnow.org/indexnow" \
+    -H "Content-Type: application/json; charset=utf-8" \
+    --data "$body" || true)"
+  case "$status" in
+    200|202) echo "IndexNow: accepted ($status)" ;;
+    *) echo "IndexNow: not accepted (HTTP ${status:-none}); continuing" ;;
+  esac
+}
+
+indexnow_ping
