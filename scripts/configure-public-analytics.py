@@ -67,6 +67,7 @@ SITE_EVENT_NAMES = (
     "project_open",
     "project_navigate",
     "nav_click",
+    "cta_click",
     "page_not_found",
     "media_error",
 )
@@ -79,6 +80,7 @@ SITE_EVENT_PARAMS = (
     "direction",
     "method",
     "section",
+    "page",
     "path",
     "source",
 )
@@ -178,6 +180,9 @@ class Api:
 
     def patch(self, url: str, body: Any, update_mask: str) -> Any:
         return self.request("PATCH", f"{url}?updateMask={urllib.parse.quote(update_mask)}", body)
+
+    def put(self, url: str, body: Any) -> Any:
+        return self.request("PUT", url, body)
 
     def delete(self, url: str) -> Any:
         return self.request("DELETE", url)
@@ -457,7 +462,7 @@ def event_trigger_body() -> dict:
     }
 
 
-def event_tag_body(measurement_id: str, trigger_id: str) -> dict:
+def event_tag_body(measurement_id: str, trigger_id: str, firing_trigger_ids: list[str] | None = None) -> dict:
     rows = [
         {
             "type": "map",
@@ -478,22 +483,33 @@ def event_tag_body(measurement_id: str, trigger_id: str) -> dict:
             {"type": "template", "key": "measurementIdOverride", "value": measurement_id},
             {"type": "list", "key": "eventSettingsTable", "list": rows},
         ],
-        "firingTriggerId": [trigger_id],
+        "firingTriggerId": firing_trigger_ids or [trigger_id],
     }
 
 
 @dataclass
 class GtmPlan:
-    """What ``apply`` must create in a workspace, in dependency order."""
+    """What ``apply`` must create or update in a workspace, in dependency order."""
 
     google_tag: bool = False
     variables: list[str] = field(default_factory=list)
     trigger: bool = False
     event_tag: bool = False
     builtin_event: bool = False
+    # Existing entities rewritten in place when the event / parameter lists grow.
+    update_trigger: bool = False
+    update_event_tag: bool = False
 
     def empty(self) -> bool:
-        return not (self.google_tag or self.variables or self.trigger or self.event_tag or self.builtin_event)
+        return not (
+            self.google_tag
+            or self.variables
+            or self.trigger
+            or self.event_tag
+            or self.builtin_event
+            or self.update_trigger
+            or self.update_event_tag
+        )
 
 
 def via_gtm_plan(_api: Api) -> None:
@@ -558,7 +574,8 @@ def plan_gtm(live: dict, measurement_id: str, container: dict, report: Report) -
         for f in trigger.get("customEventFilter", []) or []:
             got = param(f, "arg1") or ""
         if got != want_regex:
-            report.drift("gtm", f"trigger {EVENT_TRIGGER_NAME!r} matches {got!r}, expected {want_regex!r}")
+            plan.update_trigger = True
+            report.drift("gtm", f"trigger {EVENT_TRIGGER_NAME!r} matches {got!r}, expected {want_regex!r}", via_gtm_plan)
         else:
             report.note(f"  trigger {EVENT_TRIGGER_NAME!r} covers {len(SITE_EVENT_NAMES)} site events")
 
@@ -580,7 +597,8 @@ def plan_gtm(live: dict, measurement_id: str, container: dict, report: Report) -
         missing = [p for p in SITE_EVENT_PARAMS if p not in forwarded]
         mid = param(event_tag, "measurementIdOverride")
         if missing:
-            report.drift("gtm", f"event tag does not forward: {', '.join(missing)}")
+            plan.update_event_tag = True
+            report.drift("gtm", f"event tag does not forward: {', '.join(missing)}", via_gtm_plan)
         elif measurement_id and mid not in (measurement_id, None, ""):
             report.drift("gtm", f"event tag sends to {mid}, GA4 stream is {measurement_id}")
         else:
@@ -610,10 +628,24 @@ def apply_gtm(api: Api, container_path: str, live: dict, plan: GtmPlan, measurem
             for t in live.get("trigger", []) or []:
                 if t.get("name") == EVENT_TRIGGER_NAME:
                     trigger_id = t["triggerId"]
+        if plan.update_trigger:
+            if not trigger_id:
+                raise SystemExit("event trigger id unknown; cannot update the trigger")
+            # Entity ids are container-wide, so the workspace copy of the live
+            # trigger has the same id. PUT replaces the whole trigger.
+            api.put(f"{TAGMANAGER_V2}/{ws_path}/triggers/{trigger_id}", event_trigger_body())
         if plan.event_tag:
             if not trigger_id:
                 raise SystemExit("event trigger id unknown; cannot create the event tag")
             api.post(f"{TAGMANAGER_V2}/{ws_path}/tags", event_tag_body(measurement_id, trigger_id))
+        elif plan.update_event_tag:
+            live_tag = next(t for t in live.get("tag", []) or [] if t.get("name") == EVENT_TAG_NAME)
+            mid = param(live_tag, "measurementIdOverride") or measurement_id
+            firing = list(live_tag.get("firingTriggerId") or [trigger_id])
+            api.put(
+                f"{TAGMANAGER_V2}/{ws_path}/tags/{live_tag['tagId']}",
+                event_tag_body(mid, trigger_id, firing),
+            )
         version = api.post(
             f"{TAGMANAGER_V2}/{ws_path}:create_version",
             {"name": f"public analytics {stamp}", "notes": "configure-public-analytics.py"},

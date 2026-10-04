@@ -18,6 +18,7 @@ export type SiteEvent =
   | { event: 'project_open'; project: string; destination: string }
   | { event: 'project_navigate'; direction: 'next' | 'prev'; method: 'button' | 'keyboard' }
   | { event: 'nav_click'; section: string }
+  | { event: 'cta_click'; page: string }
   | { event: 'page_not_found'; path: string }
   | { event: 'media_error'; source: string }
 
@@ -29,6 +30,7 @@ export const SITE_EVENT_NAMES = [
   'project_open',
   'project_navigate',
   'nav_click',
+  'cta_click',
   'page_not_found',
   'media_error',
 ] as const satisfies readonly SiteEventName[]
@@ -42,6 +44,7 @@ export const SITE_EVENT_PARAMS = [
   'direction',
   'method',
   'section',
+  'page',
   'path',
   'source',
 ] as const

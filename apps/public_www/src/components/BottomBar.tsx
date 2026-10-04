@@ -7,6 +7,13 @@ export function BottomBar() {
   return (
     <footer className="bottom-bar">
       <div className="container bottom-bar-inner">
+        <nav aria-label={content.chrome.pagesLabel} className="bottom-bar-pages">
+          {content.pages.map((page) => (
+            <Link key={page.slug} to={`/${page.slug}`}>
+              {page.navLabel}
+            </Link>
+          ))}
+        </nav>
         <p>
           © {new Date().getFullYear()} {owner ? `${owner} · ${name}` : name}
         </p>
