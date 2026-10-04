@@ -346,7 +346,7 @@ def ga_totals(post: Callable[[str, dict[str, Any]], dict[str, Any]], property_id
     rows = []
     for index, days in enumerate(TOTAL_WINDOWS):
         mets = by_range.get(f"date_range_{index}", ["0"] * len(TOTAL_METRICS))
-        rows.append([f"Last {days} days"] + [fmt_metric(m, v) for m, v in zip(TOTAL_METRICS, mets)])
+        rows.append([f"Last {days} days"] + [fmt_metric(m, v) for m, v in zip(TOTAL_METRICS, mets, strict=True)])
     return Table("Totals", ["Window"] + [label(m) for m in TOTAL_METRICS], rows,
                  note="Ends yesterday; today is incomplete and left out.")
 
@@ -363,7 +363,7 @@ def ga_breakdown(
         response = post(f"{DATA_V1BETA}/properties/{property_id}:runReport", body)
     except ApiError as e:
         return Table(spec.title, columns, [], spec.note, error=f"{e.reason()}: {str(e)[:200]}")
-    rows = [dims + [fmt_metric(m, v) for m, v in zip(spec.metrics, mets)] for dims, mets in ga_rows(response)]
+    rows = [dims + [fmt_metric(m, v) for m, v in zip(spec.metrics, mets, strict=True)] for dims, mets in ga_rows(response)]
     return Table(spec.title, columns, rows, spec.note)
 
 
