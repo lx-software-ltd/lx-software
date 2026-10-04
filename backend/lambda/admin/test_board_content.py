@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 from unittest.mock import patch
 
@@ -70,8 +70,16 @@ class ContentTests(BoardTestCase):
 
     def test_plan_json_creates_rows_and_hold(self) -> None:
         freeze_board_daytime(self)
-        # A real future slot: validate_publish runs against the wall clock before the hold is created.
-        slot = (datetime.now(timezone.utc) + timedelta(days=7)).replace(microsecond=0).isoformat()
+        # Noon HKT, a week out. validate_publish compares slotAt to the wall
+        # clock, and the hold shifts any slot inside quiet hours [22, 8] HKT
+        # to 08:00. Keeping the clock hour (now + 7 days) landed in that
+        # window whenever CI ran after 14:00 UTC, so executeAt no longer
+        # matched the slot.
+        slot = (
+            (datetime.now(board_hk.HKT) + timedelta(days=7))
+            .replace(hour=12, minute=0, second=0, microsecond=0)
+            .isoformat()
+        )
         task = board_staff.create_task(
             self.table,
             self.settings,
