@@ -1,10 +1,13 @@
 # LX Software websites
 
-This repository hosts the LX Software **public** marketing site and a
-separate **admin** console. Both are Vite + React Router SPAs. The admin
-console uses TanStack Query and Bootstrap 5; the public site uses
-hand-written CSS. Static assets deploy to private S3 buckets and are served
-through CloudFront.
+[LX Software](https://www.lx-software.com) offers fractional CTO and CIO
+work for Hong Kong startups: part-time technology leadership, AI and
+automation, cloud and microservice architecture, and technical due
+diligence. This repository hosts that **public** marketing site and a
+separate **admin** console. Both are Vite + React Router apps. The public
+site uses hand-written CSS and is pre-rendered to static HTML at build time;
+the admin console uses TanStack Query and Bootstrap 5. Static assets deploy
+to private S3 buckets and are served through CloudFront.
 
 ## Quick start (public site)
 

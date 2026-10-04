@@ -33,13 +33,43 @@ the meta description, Open Graph tags, and the FAQ come from
 `site.title`, `site.description`, `site.keywords`). Editing that file is the
 only step needed to change the public copy.
 
+## Pages and pre-rendering
+
+The site is one React Router app, but every route is written to static
+HTML at build time so crawlers, link previews, and AI assistants see the
+copy without running JavaScript. `vite.config.ts` runs a second SSR build
+of `src/entry-server.tsx` after the client bundle, renders each route from
+`scripts/site-seo.ts` with `react-dom/static`, and writes
+`dist/<route>.html` plus `dist/<route>/index.html` (the second form is for
+`vite preview` and the Lighthouse static server). Each file carries that
+page's `<title>`, meta description, canonical, Open Graph tags, JSON-LD
+graph, and the site CSS inlined into a `<style>` tag. `main.tsx` hydrates
+the server markup when it is present and falls back to `createRoot` for
+the dev server. Set `PUBLIC_WWW_PRERENDER=0` to skip pre-rendering during a
+build. The build fails if a route renders without an `<h1>` or without
+inline CSS.
+
+Service and about pages come from `pages[]` in
+`apps/public_www/src/content/site.json`. Each entry has a `slug` (the
+route), `navLabel`, `title`, `metaTitle` (70 characters or fewer),
+`description` (70 to 200 characters), `intro`, optional `service` (the
+`whatIDo.services[].title` that links to it with `href`), `sections[]`
+(`heading`, `paragraphs`, `bullets`), and optional `faq[]`. Adding a page is
+a new `pages[]` entry; the route, sitemap, `llms.txt`, JSON-LD (`WebPage`,
+`BreadcrumbList`, `Service`, `FAQPage`) and bottom-bar link follow from it.
+`src/lib/content.test.ts` checks slugs, lengths, and that no page says
+"interim".
+
 ## Lighthouse
 
 **Lighthouse Public Website** (`.github/workflows/lighthouse-public-website.yml`)
 runs on pull requests that touch `apps/public_www/**`, every Monday, and on
 demand. It builds `apps/public_www` with the production variables, serves
-`dist/` locally, and runs Lighthouse CI against `/`, `/privacy`, `/terms`,
-and `/wechat` (or the `page_paths` input, comma or newline separated). Each
+`dist/` locally, and runs Lighthouse CI against `/`,
+`/fractional-cto-hong-kong`, `/about`, `/privacy`, `/terms`, and `/wechat`
+(or the `page_paths` input, comma or newline separated). The audit blocks
+the Tag Manager and Analytics hosts (`blockedUrlPatterns`), so the runs do
+not count as sessions on the production GA4 property. Each
 URL is audited 3 times and assertions use the median run. Every category
 must score 0.9 or better. The gate also fails on a distorted image, an
 offscreen image, a render-blocking resource, simulated LCP above 3 s, total
@@ -64,13 +94,16 @@ Output lands in `apps/public_www/dist`.
 `apps/public_www/**` or `scripts/deploy/**`,
 or manually. It builds the site, then uploads `dist/` and invalidates the
 distribution. Hashed files under `assets/` go up first and are cached for a
-year. `index.html`, robots, the sitemap, `llms.txt`,
-`llms-full.txt`, and `site.webmanifest` are copied with
-`Cache-Control: no-cache` and are never written as immutable. Other
-unhashed directories that Vite copies from `public/` (including `images/`)
-are uploaded the same way, with a content type and `no-cache`. `media/`
-syncs with `--size-only`. Retired hashed assets are deleted only after the
-new shell is uploaded.
+year. Every `.html`, `.txt`, and `.xml` file plus `site.webmanifest` is
+copied with `Cache-Control: no-cache` and is never written as immutable.
+Each pre-rendered page is uploaded twice: as `dist/<route>.html` and under
+the extensionless key `<route>`, because CloudFront maps the request
+`/about` straight to the S3 key `about` (the 403 → `index.html` fallback
+remains for unknown paths and for `/about/` with a trailing slash). Other
+unhashed directories that Vite copies from `public/` (including `images/`
+and the `<route>/index.html` copies) are uploaded the same way, with a
+content type and `no-cache`. `media/` syncs with `--size-only`. Retired
+hashed assets are deleted only after the new shell is uploaded.
 
 ```bash
 PUBLIC_WEBSITE_STACK_NAME=lxsoftware-public-www \
@@ -79,6 +112,15 @@ PUBLIC_WEBSITE_STACK_NAME=lxsoftware-public-www \
 
 The script reads the stack outputs `PublicWebsiteBucketName` and
 `PublicWebsiteDistributionId`.
+
+After the CloudFront invalidation the script submits every sitemap URL to
+[IndexNow](https://www.indexnow.org/) (Bing, Yandex, Naver, Seznam, Yep;
+Google does not take part and reads `sitemap.xml` instead). The key is
+`apps/public_www/public/indexnow.txt`, served at `/indexnow.txt`; it is
+public by design, not a secret. The ping never fails the deploy: a 4xx/5xx,
+missing `curl`, or a missing key file is logged and the job continues. Set
+`INDEXNOW_DISABLED=1` to skip it. A new key is any 8 to 128 character
+string of letters, digits, and dashes written to that file.
 
 The distribution sends a content security policy that allows images and
 video from `'self'` and `https://media.lx-software.com`, scripts from
@@ -159,6 +201,7 @@ GPC / DNT visitors still send nothing):
 | `project_open` | `project`, `destination` | `[ open ]` on a project card |
 | `project_navigate` | `direction` (`next` / `prev`), `method` (`button` / `keyboard`) | carousel controls |
 | `nav_click` | `section` | top navigation, hero scroll cue |
+| `cta_click` | `page` (the content page slug) | the call-to-action block on service and about pages |
 | `page_not_found` | `path` | the 404 route |
 | `media_error` | `source` | every harbour video source failed |
 
@@ -190,9 +233,36 @@ python3 scripts/configure-public-analytics.py apply   # GA4 patches + new GTM ve
 retention / enhanced measurement / e-mail redaction, creates missing custom
 dimensions and key events, then creates a fresh GTM workspace with the
 missing variables, trigger and tags, creates a version and publishes it
-(`--no-publish` stops before publishing). It never deletes anything and
-never adds a second Google tag; a container whose Google tag carries a
-different measurement id is reported for the owner to decide.
+(`--no-publish` stops before publishing). When the `Site events` trigger or
+the event tag already exist but lag the event / parameter lists, the
+workspace rewrites them in place (the tag keeps its firing triggers and
+measurement id). It never deletes anything and never adds a second Google
+tag; a container whose Google tag carries a different measurement id is
+reported for the owner to decide.
+
+### Traffic report
+
+`scripts/report-public-analytics.py` prints a read-only Markdown report
+from the GA4 Data API and the Search Console API with the same service
+account: 7 / 28 / 90-day totals, channels, source / medium, countries,
+landing pages, pages, event counts, `contact_click` by channel, FAQ
+questions, projects opened, CTA clicks by page, then Search Console totals,
+top queries, top pages, and sitemap status.
+
+```bash
+python3 scripts/report-public-analytics.py                 # 28-day window, Markdown
+python3 scripts/report-public-analytics.py --days 90 --json
+python3 scripts/report-public-analytics.py --no-gsc --out /tmp/report.md
+```
+
+It needs the [Analytics Data API](https://console.cloud.google.com/apis/library/analyticsdata.googleapis.com)
+and the [Search Console API](https://console.cloud.google.com/apis/library/searchconsole.googleapis.com)
+enabled, Viewer on the GA4 property, and the service account added as a
+user on the Search Console domain property (`sc-domain:lx-software.com`,
+override with `LXSOFTWARE_GSC_PROPERTY`). The window ends yesterday because
+the current day is incomplete. A GA4 dimension that does not exist yet (for
+example `customEvent:page` before `apply` has run) is reported inside its
+table rather than failing the run.
 
 One-time prerequisites (owner's Google account; the four Cloud Agent
 secrets above are already set):
