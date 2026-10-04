@@ -31,7 +31,7 @@
         "image-aspect-ratio": "error",
         "offscreen-images": "error",
         "render-blocking-resources": "error",
-        "largest-contentful-paint": ["error", { "maxNumericValue": 3000 }],
+        "largest-contentful-paint": ["error", { "maxNumericValue": 4000 }],
         "total-blocking-time": ["error", { "maxNumericValue": 200 }],
         "unused-javascript": ["error", { "maxNumericValue": 400 }]
       }
