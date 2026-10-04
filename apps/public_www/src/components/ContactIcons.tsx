@@ -1,7 +1,12 @@
-import type { ReactNode } from 'react'
+import { useSyncExternalStore, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { trackEvent } from '../lib/analytics'
-import { contactDestination, contactLinks, type ContactLink as ContactChannel } from '../lib/contact'
+import {
+  contactDestination,
+  contactLinks,
+  isWeChatBrowser,
+  type ContactLink as ContactChannel,
+} from '../lib/contact'
 import { defaultSiteContent } from '../lib/content'
 import { EmailIcon, LinkedInIcon, TelephoneIcon, WeChatIcon, WhatsAppIcon } from './icons'
 
@@ -47,10 +52,15 @@ function ContactLink({ item, children }: { item: ContactChannel; children: React
   )
 }
 
+const noSubscription = () => () => undefined
+const notInWeChat = () => false
+
 export function ContactIcons() {
+  // Hydrates with the pre-rendered `/wechat` href, then deep-links inside WeChat.
+  const inWeChat = useSyncExternalStore(noSubscription, isWeChatBrowser, notInWeChat)
   return (
     <ul className="contact-list">
-      {contactLinks().map((item) => (
+      {contactLinks({ inWeChat }).map((item) => (
         <li key={item.id}>
           <ContactLink item={item}>
             <Icon id={item.id} />

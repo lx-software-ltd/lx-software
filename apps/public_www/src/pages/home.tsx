@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { AsciiDivider } from '../components/AsciiDivider'
 import { ContactIcons } from '../components/ContactIcons'
 import { Faq } from '../components/Faq'
@@ -63,6 +64,12 @@ export function HomePage() {
               <article key={service.title} className="card-block">
                 <h3>{service.title}</h3>
                 <p>{service.description}</p>
+                {service.href ? (
+                  <Link className="card-more" to={service.href}>
+                    {content.chrome.readMore}
+                    <span className="visually-hidden">: {service.title}</span>
+                  </Link>
+                ) : null}
               </article>
             ))}
           </div>

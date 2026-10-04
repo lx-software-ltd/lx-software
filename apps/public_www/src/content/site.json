@@ -11,16 +11,18 @@
     "keywords": [
       "fractional CTO Hong Kong",
       "fractional CIO Hong Kong",
+      "part-time CTO Hong Kong",
+      "remote fractional CTO Asia time zone",
       "AI consultant Hong Kong",
       "cloud consulting Hong Kong",
       "AWS architect Hong Kong",
       "microservices architecture",
       "startup technical leadership",
-      "technical due diligence",
+      "technical due diligence Hong Kong",
       "Luca Cacchiani",
       "LX Software"
     ],
-    "updated": "2026-09-30"
+    "updated": "2026-10-04"
   },
   "chrome": {
     "skipToContent": "Skip to content",
@@ -37,7 +39,10 @@
     "notFoundDescription": "That page is not on the LX Software site.",
     "notFoundBody": "That address is not on this site.",
     "notFoundBack": "[ back to the top ]",
-    "updated": "Updated"
+    "updated": "Updated",
+    "readMore": "[ read more ]",
+    "pagesLabel": "Pages",
+    "breadcrumbHome": "Home"
   },
   "hero": {
     "kicker": "LX SOFTWARE",
@@ -54,23 +59,27 @@
   },
   "whatIDo": {
     "heading": "What I Do",
-    "intro": "I plug in where the technical gap is: strategy, architecture, hiring, delivery, or rescue. Engagements can be a few days a month, a fixed project, or an interim leadership role.",
+    "intro": "I plug in where the technical gap is: strategy, architecture, hiring, delivery, or rescue. Engagements are an advisory retainer of a few hours a week, a fixed-scope project such as an architecture review or a due-diligence report, or a short AI prototype sprint.",
     "services": [
       {
         "title": "Fractional CTO / CIO",
-        "description": "Senior technical leadership for founders who need to scale. Roadmaps, hiring, architecture, vendor decisions, and delivery accountability."
+        "description": "Senior technical leadership for founders who need to scale. Roadmaps, hiring, architecture, vendor decisions, and delivery accountability.",
+        "href": "/fractional-cto-hong-kong"
       },
       {
         "title": "AI & Automation",
-        "description": "Practical AI and LLM features, internal automation, and AI product strategy, from prototype to production."
+        "description": "Practical AI and LLM features, internal automation, and AI product strategy, from prototype to production.",
+        "href": "/ai-automation-hong-kong"
       },
       {
         "title": "Cloud & Microservices",
-        "description": "AWS, serverless, containers, and event-driven microservices. Infrastructure as code, CI/CD, observability, and cost control."
+        "description": "AWS, serverless, containers, and event-driven microservices. Infrastructure as code, CI/CD, observability, and cost control.",
+        "href": "/cloud-architecture-hong-kong"
       },
       {
         "title": "Technical Due Diligence & Rescue",
-        "description": "Audit an existing codebase or team, name the risks, and make the next release safer. Support for fundraising, acquisitions, or turnaround."
+        "description": "Audit an existing codebase or team, name the risks, and make the next release safer. Support for fundraising, acquisitions, or turnaround.",
+        "href": "/technical-due-diligence-hong-kong"
       }
     ],
     "skills": [
@@ -122,7 +131,13 @@
   },
   "contact": {
     "heading": "Contact Me",
-    "intro": "Need a fractional CTO, CIO, or AI/cloud lead? Tell me what you're building, where you're stuck, and what \"scale\" means for you. I'll reply with a clear next step."
+    "intro": "Need a fractional CTO, CIO, or AI/cloud lead? Tell me what you're building, where you're stuck, and what \"scale\" means for you. I'll reply with a clear next step. Calls are early morning or evening Hong Kong time, which is daytime in Europe and the Gulf; the rest of the week runs async."
+  },
+  "cta": {
+    "heading": "Next step",
+    "body": "Send a short note on what you're building and where it hurts. I reply with a clear next step, usually a 30-minute call.",
+    "label": "[ contact me ]",
+    "href": "/#contact"
   },
   "faq": [
     {
@@ -131,11 +146,23 @@
     },
     {
       "q": "What is a fractional CTO or CIO?",
-      "a": "It's senior technical leadership on a part-time or interim basis. You get CTO/CIO-level strategy, architecture, hiring, and delivery without the cost of a full-time executive."
+      "a": "It's senior technical leadership on a part-time basis. You get CTO/CIO-level strategy, architecture, hiring, and delivery accountability without the cost of a full-time executive."
+    },
+    {
+      "q": "How much of your time does an engagement get?",
+      "a": "An advisory retainer is a few hours a week: a standing call, async review of decisions, documents, and pull requests, and a monthly written summary. A scoped project such as a due-diligence report or an architecture review has its own timeline. I do not take full-time or interim roles."
+    },
+    {
+      "q": "How is an engagement priced?",
+      "a": "Advisory work is a monthly retainer. Due diligence, architecture reviews, and prototype sprints are fixed-fee against a written scope. I quote after a first call, once I understand the stage, the stack, and what you need decided."
     },
     {
       "q": "Do you work with Hong Kong startups?",
-      "a": "Yes. I'm based in Hong Kong and work with local and remote-first startups. Engagements can be advisory, hands-on, or a mix of both."
+      "a": "Yes. I'm based in Hong Kong and work with local and remote-first startups. Calls are early morning or evening Hong Kong time, which is daytime in Europe and the Gulf, so founders there get live hours too."
+    },
+    {
+      "q": "Can you do technical due diligence for an investment?",
+      "a": "Yes. For an angel, seed, or Series A ticket I review the codebase, architecture, infrastructure, security posture, and team practices, then deliver a written report that names the risks and what they would cost to fix."
     },
     {
       "q": "Which technologies do you work with?",
@@ -144,10 +171,265 @@
     {
       "q": "How do I get in touch?",
       "a": "Use the Contact Me section: telephone, email, WhatsApp, WeChat, or LinkedIn, whichever is configured. Email reaches hello@lx-software.com."
+    }
+  ],
+  "pages": [
+    {
+      "slug": "fractional-cto-hong-kong",
+      "navLabel": "Fractional CTO",
+      "title": "Fractional CTO & CIO in Hong Kong",
+      "metaTitle": "Fractional CTO Hong Kong | Part-time tech leadership | LX Software",
+      "description": "Part-time CTO and CIO for Hong Kong startups: roadmap, architecture, hiring, vendor decisions, and delivery accountability on an advisory retainer. Luca Cacchiani, LX Software.",
+      "intro": "A fractional CTO gives a founder the judgement of an experienced technical executive for a few hours a week instead of a full-time salary and an equity grant. I work with Hong Kong and remote-first startups from pre-seed to Series A, in English, on Hong Kong time.",
+      "service": "Fractional CTO / CIO",
+      "sections": [
+        {
+          "heading": "When it fits",
+          "bullets": [
+            "A non-technical founder is making architecture, hiring, or vendor decisions alone.",
+            "The team ships, but releases are slow, incidents repeat, or the cloud bill keeps climbing.",
+            "An investor or enterprise customer wants to see a technical owner before signing.",
+            "A first engineering hire or an agency handover needs someone to hold the standard."
+          ]
+        },
+        {
+          "heading": "What the retainer covers",
+          "bullets": [
+            "A standing weekly call with the founder and, when useful, the engineers.",
+            "Technology roadmap and architecture decisions written down, with the trade-offs.",
+            "Hiring support: role scopes, interview loops, take-home reviews, offer calibration.",
+            "Vendor, agency, and build-versus-buy decisions with a recommendation, not a menu.",
+            "Review of pull requests, designs, and incident write-ups during the week, async.",
+            "A monthly written summary you can forward to your board or investors."
+          ]
+        },
+        {
+          "heading": "Fractional CIO",
+          "paragraphs": [
+            "Smaller companies rarely need a CTO and a CIO. When the questions are internal systems, SaaS sprawl, identity and access, device security, data protection, or audit readiness rather than product engineering, the same retainer runs as a fractional CIO engagement.",
+            "Typical deliverables are a systems map, a consolidation plan with costs, an access and offboarding process, and a security baseline that an enterprise customer's questionnaire will accept."
+          ]
+        },
+        {
+          "heading": "How it runs",
+          "paragraphs": [
+            "Calls are early morning or evening Hong Kong time, which is daytime in Europe and the Gulf, so founders in those regions get live hours as well. Everything else runs async in your tools: Slack, GitHub, Notion, Linear, or whatever the team already uses.",
+            "The first month starts with a short review of the codebase, infrastructure, delivery practice, and the roadmap. You get a written picture of where the risks are and a 90-day plan. From there the retainer runs month to month; there is no minimum term.",
+            "I do not take full-time or interim roles, and I do not run your engineering team day to day. The retainer is judgement, direction, and accountability, so that the people who do run it ship better."
+          ]
+        },
+        {
+          "heading": "What I bring",
+          "paragraphs": [
+            "I have founded and built LX Software's own products: Evolve Sprouts, Siu Tin Dei, and ai-cxo, an AI executive board that runs parts of the company. The stack is AWS, TypeScript, React, Python, and LLM tooling, with infrastructure as code and CI/CD from the first commit. The advice is grounded in running production systems, not in slides."
+          ]
+        }
+      ],
+      "faq": [
+        {
+          "q": "How many hours a week is a fractional CTO?",
+          "a": "Usually two to six hours a week, depending on stage: a standing call, async review, and a monthly summary. It flexes up for a hiring round or a fundraise and down when things are steady."
+        },
+        {
+          "q": "What does a fractional CTO cost in Hong Kong?",
+          "a": "Less than one full-time senior engineer. Advisory work is priced as a monthly retainer against the hours above and quoted after a first call. Scoped projects such as a due-diligence report are fixed fee."
+        },
+        {
+          "q": "Do you write code?",
+          "a": "I review code every week and will prototype to settle an argument, but a retainer is not an engineering seat. If you need an engineer, I help you hire one and then hold the bar."
+        },
+        {
+          "q": "Can you work with our existing agency or offshore team?",
+          "a": "Yes. Much of the value is having one person on your side of the table who reads their estimates, reviews their pull requests, and tells you when to push back."
+        }
+      ]
     },
     {
-      "q": "Does this site collect email addresses?",
-      "a": "No. There is no newsletter signup and no account. If you write, call, or message, that conversation is used only to reply."
+      "slug": "technical-due-diligence-hong-kong",
+      "navLabel": "Due diligence",
+      "title": "Technical Due Diligence in Hong Kong",
+      "metaTitle": "Technical Due Diligence Hong Kong | Code & architecture | LX Software",
+      "description": "Independent technical due diligence for angels, seed funds, and acquirers in Hong Kong: codebase, architecture, infrastructure, security, and team, delivered as a written risk report.",
+      "intro": "Before you wire the money, know what you are buying. I review a startup's code, architecture, infrastructure, security posture, and engineering practice and tell you, in writing, where the risks are and roughly what each would cost to fix.",
+      "service": "Technical Due Diligence & Rescue",
+      "sections": [
+        {
+          "heading": "Who it is for",
+          "bullets": [
+            "Angels and seed funds writing a ticket into a company whose product is software.",
+            "Acquirers taking over a codebase, a team, or a cloud account.",
+            "Founders who want an independent read before a raise, so there are no surprises in the data room.",
+            "Boards that have lost confidence in delivery and need a plain account of why."
+          ]
+        },
+        {
+          "heading": "What gets reviewed",
+          "bullets": [
+            "Codebase: structure, test coverage, dependency health, licence exposure, and how much of it one person knows.",
+            "Architecture: whether it will carry the plan in the pitch deck, and what breaks first when it does not.",
+            "Infrastructure and cost: cloud account hygiene, infrastructure as code, environments, backups, and the real monthly bill.",
+            "Security and data: access control, secrets handling, personal data flows, and readiness for a customer questionnaire or a PCPD question.",
+            "Delivery: release cadence, incident history, on-call, and how decisions are recorded.",
+            "Team: key-person risk, contractor and agency dependencies, and what the hiring plan assumes."
+          ]
+        },
+        {
+          "heading": "What you receive",
+          "paragraphs": [
+            "A written report with a one-page summary, a risk register ranked by likelihood and impact, the evidence for each finding, and a remediation list with a rough cost and sequence. Findings are specific enough that the founding team can act on them, and the language is plain enough for an investment committee.",
+            "A review call to walk through the findings with the investor, the founder, or both. Where the engagement is for the founder, the report is written so it can go straight into a data room."
+          ]
+        },
+        {
+          "heading": "How it runs",
+          "paragraphs": [
+            "A scoped review needs read access to the repositories, the cloud account, and the ticketing system, plus two or three conversations with whoever runs engineering. Most reviews run over one to three weeks depending on size, with the report at the end and interim notes if something urgent turns up.",
+            "The work is fixed fee against a written scope agreed before access is granted. Confidentiality terms are signed up front; I do not take engagements where I have a conflict with the target or the investor."
+          ]
+        },
+        {
+          "heading": "Rescue",
+          "paragraphs": [
+            "Sometimes the review is the start, not the end: a release that cannot ship, a platform that falls over at every campaign, or an agency handover that left nobody who understands the system. In those cases the same review turns into a short stabilisation plan, run on an advisory retainer with the existing team."
+          ]
+        }
+      ],
+      "faq": [
+        {
+          "q": "How long does technical due diligence take?",
+          "a": "One to three weeks for a seed or Series A company, depending on the size of the codebase and how quickly access is granted. Urgent findings are shared as soon as they are confirmed."
+        },
+        {
+          "q": "Do you need full access to the code?",
+          "a": "Read access to the repositories, the cloud console, and the issue tracker. I do not need production data, and I ask for the minimum access that answers the questions in scope."
+        },
+        {
+          "q": "Can the founders see the report?",
+          "a": "That is the client's decision. For investor-commissioned work I recommend sharing it: the remediation list is most useful to the team that will do the work."
+        }
+      ]
+    },
+    {
+      "slug": "ai-automation-hong-kong",
+      "navLabel": "AI & automation",
+      "title": "AI & Automation for Hong Kong Startups",
+      "metaTitle": "AI Consultant Hong Kong | LLM features that ship | LX Software",
+      "description": "Practical AI for Hong Kong startups: LLM features, internal automation, and an AI product strategy taken from prototype to production, with costs and guardrails. LX Software.",
+      "intro": "Most AI work fails between the demo and production. I help founders pick the use cases that pay, build them on a stack you can operate, and put the guardrails, evaluation, and cost controls in place before customers see them.",
+      "service": "AI & Automation",
+      "sections": [
+        {
+          "heading": "What it covers",
+          "bullets": [
+            "LLM features in your product: retrieval over your own data, structured extraction, agents with tool access, and the evaluation harness that proves they work.",
+            "Internal automation: the support inbox, document intake, reconciliation, reporting, and the glue between SaaS tools, built so it runs without a person watching.",
+            "AI product strategy: where a model earns its cost, where a rule is cheaper, and what to build versus buy.",
+            "Model and vendor choice, routing, caching, and budgets, so the bill tracks usage rather than surprising you."
+          ]
+        },
+        {
+          "heading": "Built the way it will be run",
+          "paragraphs": [
+            "I run an AI executive board inside LX Software: a set of role-specific agents with tools, budgets, approval gates, and audit trails that handle routine work in a real company every day. That system is also the base of ai-cxo. The patterns it taught, function calling with strict schemas, propose-before-act permissions, daily budgets, and plain logs, are what I bring to client work.",
+            "Delivery follows the same rules as any other production system: infrastructure as code, CI/CD, observability, and a rollback path. A prototype is welcome; a prototype in production without those is not."
+          ]
+        },
+        {
+          "heading": "How it runs",
+          "paragraphs": [
+            "A prototype sprint is a fixed scope over two to four weeks: one use case, a working build against your data, an evaluation set, and a cost model. If it earns its keep, the retainer carries it into production with your team.",
+            "Guardrails are part of the scope from the first day: what the system may read, what it may write, what needs a human, and what is logged. For Hong Kong companies that includes PDPO data-handling questions and the customer questionnaires that follow."
+          ]
+        }
+      ],
+      "faq": [
+        {
+          "q": "Which models and providers do you use?",
+          "a": "Whatever fits the task and the data rules: hosted frontier models through a router for most work, smaller or self-hosted models where cost or residency demands it. The architecture keeps the provider swappable."
+        },
+        {
+          "q": "Can you automate an existing manual process?",
+          "a": "Usually, and often without a model at all. The first step is mapping the process and finding the parts that are rules; the LLM handles the unstructured remainder, with a human on the exceptions."
+        }
+      ]
+    },
+    {
+      "slug": "cloud-architecture-hong-kong",
+      "navLabel": "Cloud & microservices",
+      "title": "Cloud Architecture & Microservices on AWS",
+      "metaTitle": "AWS Architect Hong Kong | Cloud & microservices | LX Software",
+      "description": "AWS architecture for Hong Kong startups: serverless, containers, event-driven microservices, infrastructure as code, CI/CD, observability, and cost control. LX Software.",
+      "intro": "A startup's cloud should be boring: cheap when idle, fast to change, and recoverable when it breaks. I design and review AWS platforms that meet that bar, and I help teams get there from whatever they have today.",
+      "service": "Cloud & Microservices",
+      "sections": [
+        {
+          "heading": "What it covers",
+          "bullets": [
+            "Architecture reviews with a written recommendation: what to keep, what to change, and in which order.",
+            "Serverless and container platforms on AWS: Lambda, API Gateway, ECS and Fargate, Aurora, DynamoDB, S3 and CloudFront, EventBridge and SQS.",
+            "Event-driven microservices where they pay for themselves, and a well-structured monolith where they do not.",
+            "Infrastructure as code with AWS CDK, environments, CI/CD with GitHub Actions and OIDC, and no long-lived keys.",
+            "Observability, alarms, and an on-call that a small team can actually carry.",
+            "Cost control: tagging, budgets, right-sizing, and a monthly bill split by product."
+          ]
+        },
+        {
+          "heading": "How I work",
+          "paragraphs": [
+            "LX Software's own products run on this stack: static sites behind CloudFront, Python and TypeScript on Lambda, Aurora and DynamoDB, EventBridge schedules, SES mail, and CDK for all of it, with costs split by product tags and reviewed every month. I apply the same patterns to client systems, scaled to the team that will run them.",
+            "A review starts with the account, the infrastructure code, the deployment pipeline, and the last few incidents. The output is a short document the team can act on, not a diagram for a wall."
+          ]
+        }
+      ],
+      "faq": [
+        {
+          "q": "Do you only work on AWS?",
+          "a": "AWS is where I am deepest and where most of my own systems run. I review other clouds and will say so when another provider is the better fit for a specific workload."
+        },
+        {
+          "q": "Should an early-stage startup use microservices?",
+          "a": "Usually not yet. A modular monolith with clear boundaries and event hooks gets most teams to product-market fit faster. I help decide when, and which, services to split out."
+        }
+      ]
+    },
+    {
+      "slug": "about",
+      "navLabel": "About",
+      "title": "About Luca Cacchiani",
+      "metaTitle": "About Luca Cacchiani | Fractional CTO & CIO, Hong Kong | LX Software",
+      "description": "Luca Cacchiani is the founder of LX Software, a Hong Kong consulting studio offering fractional CTO and CIO work, AI and automation, cloud architecture, and technical due diligence.",
+      "intro": "I'm Luca Cacchiani, founder of LX Software. I help founders make technical decisions they will not regret, on a part-time basis, from Hong Kong.",
+      "sections": [
+        {
+          "heading": "What I do",
+          "paragraphs": [
+            "LX Software is a one-person consulting studio. I work with startups and small teams as a fractional CTO or CIO: senior technical leadership, architecture, hiring support, and delivery accountability without a full-time executive hire. I also take fixed-scope work: technical due diligence for investors, architecture reviews, and short AI prototype sprints.",
+            "My focus is AI, cloud, and microservices. The engagements are advisory by design, a few hours a week on a retainer or a scoped project, and I do not take full-time or interim roles."
+          ]
+        },
+        {
+          "heading": "What I have built",
+          "paragraphs": [
+            "Evolve Sprouts is a digital Montessori training platform for families. Siu Tin Dei is a curated guide to activities for kids in Hong Kong. ai-cxo is an AI executive board that runs parts of a company through role-specific agents with tools, budgets, and approval gates; I run it on LX Software itself.",
+            "All three run on AWS with infrastructure as code, CI/CD, and a monthly cost review. They are where the advice on this site comes from."
+          ]
+        },
+        {
+          "heading": "How I work",
+          "bullets": [
+            "Written decisions. Every recommendation comes with the trade-offs and the reason, in a document the team keeps.",
+            "Small systems. The simplest architecture that carries the plan, and a clear trigger for when to change it.",
+            "Fast iteration. Short loops, real data, and a release path from the first week.",
+            "Plain language. Reports a board can read and a developer can act on."
+          ]
+        },
+        {
+          "heading": "Where and when",
+          "paragraphs": [
+            "I'm based in Hong Kong. Calls are early morning or evening Hong Kong time, which is daytime in Europe and the Gulf; the rest of the week runs async in your tools. English is the working language; the site's WeChat page is there for Chinese-speaking founders who prefer that channel."
+          ]
+        }
+      ]
     }
   ],
   "legal": {

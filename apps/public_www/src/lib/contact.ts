@@ -9,24 +9,33 @@ export interface ContactLink {
   external: boolean
 }
 
-function wechatHref(id: string): string {
-  if (
-    id &&
-    typeof navigator !== 'undefined' &&
-    /MicroMessenger|WeChat/i.test(navigator.userAgent)
-  ) {
+export function isWeChatBrowser(): boolean {
+  return typeof navigator !== 'undefined' && /MicroMessenger|WeChat/i.test(navigator.userAgent)
+}
+
+function wechatHref(id: string, inWeChat: boolean): string {
+  if (id && inWeChat) {
     return `weixin://dl/chat?${encodeURIComponent(id)}`
   }
   return '/wechat'
 }
 
-export function contactLinks(): ContactLink[] {
+export interface ContactLinkOptions {
+  /**
+   * Whether to deep-link WeChat. Components read this in an effect so the
+   * pre-rendered `/wechat` href hydrates cleanly; defaults to UA detection.
+   */
+  inWeChat?: boolean
+}
+
+export function contactLinks(options: ContactLinkOptions = {}): ContactLink[] {
   const tel = (import.meta.env.VITE_CONTACT_TEL ?? '').trim()
   const email =
     (import.meta.env.VITE_CONTACT_EMAIL ?? '').trim() || defaultSiteContent.site.email
   const whatsapp = (import.meta.env.VITE_CONTACT_WHATSAPP ?? '').replace(/\D/g, '')
   const wechatId = (import.meta.env.VITE_CONTACT_WECHAT_ID ?? '').trim()
   const linkedin = linkedinUrl(import.meta.env.VITE_CONTACT_LINKEDIN)
+  const inWeChat = options.inWeChat ?? isWeChatBrowser()
 
   return [
     {
@@ -54,7 +63,7 @@ export function contactLinks(): ContactLink[] {
       id: 'wechat',
       label: 'WeChat',
       accessibleName: 'WeChat',
-      href: wechatHref(wechatId),
+      href: wechatHref(wechatId, inWeChat),
       external: false,
     },
     {

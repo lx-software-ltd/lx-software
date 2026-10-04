@@ -50,6 +50,10 @@ class FakeApi:
         self.calls.append(("PATCH", url, (body, update_mask)))
         return {}
 
+    def put(self, url, body):
+        self.calls.append(("PUT", url, body))
+        return body
+
     def delete(self, url):
         self.calls.append(("DELETE", url, None))
         return {}
@@ -230,10 +234,52 @@ class GtmPlanTests(unittest.TestCase):
         rows = self.mod.param(live["tag"][1], "eventSettingsTable")
         rows.pop()
         report = self.mod.Report()
-        self.mod.plan_gtm(live, "G-TEST123456", self.container, report)
+        plan = self.mod.plan_gtm(live, "G-TEST123456", self.container, report)
         summaries = [c.summary for c in report.changes]
         self.assertTrue(any("expected '^(" in s for s in summaries))
         self.assertTrue(any("does not forward: source" in s for s in summaries))
+        self.assertTrue(plan.update_trigger)
+        self.assertTrue(plan.update_event_tag)
+        self.assertFalse(plan.trigger)
+        self.assertFalse(plan.event_tag)
+        self.assertEqual(report.manual, [])
+
+    def test_apply_rewrites_stale_trigger_and_event_tag_in_place(self) -> None:
+        live = _live_container(self.mod)
+        live["trigger"][0]["customEventFilter"][0]["parameter"][1]["value"] = "^(contact_click)$"
+        live["tag"][1]["tagId"] = "11"
+        live["tag"][1]["firingTriggerId"] = ["7", "99"]
+        self.mod.param(live["tag"][1], "eventSettingsTable").pop()
+        report = self.mod.Report()
+        plan = self.mod.plan_gtm(live, "G-TEST123456", self.container, report)
+        ws = "accounts/1/containers/2/workspaces/5"
+        api = FakeApi(
+            {
+                ("POST", f"{self.mod.TAGMANAGER_V2}/accounts/1/containers/2/workspaces"): {"path": ws},
+                ("POST", f"{self.mod.TAGMANAGER_V2}/{ws}:create_version"): {
+                    "containerVersion": {"path": "accounts/1/containers/2/versions/4"}
+                },
+            }
+        )
+        self.mod.apply_gtm(api, "accounts/1/containers/2", live, plan, "G-TEST123456", publish=False)
+        puts = [(u, b) for m, u, b in api.calls if m == "PUT"]
+        self.assertEqual([u for u, b in puts], [
+            f"{self.mod.TAGMANAGER_V2}/{ws}/triggers/7",
+            f"{self.mod.TAGMANAGER_V2}/{ws}/tags/11",
+        ])
+        self.assertEqual(self.mod.param(puts[0][1]["customEventFilter"][0], "arg1"), self.mod.site_event_regex())
+        tag = puts[1][1]
+        self.assertEqual(tag["firingTriggerId"], ["7", "99"])
+        forwarded = {
+            {m["key"]: m["value"] for m in row["map"]}["parameter"]
+            for row in self.mod.param(tag, "eventSettingsTable")
+        }
+        self.assertEqual(forwarded, set(self.mod.SITE_EVENT_PARAMS))
+        # No new trigger or tag, and nothing published.
+        posted = [u for m, u, b in api.calls if m == "POST"]
+        self.assertNotIn(f"{self.mod.TAGMANAGER_V2}/{ws}/triggers", posted)
+        self.assertNotIn(f"{self.mod.TAGMANAGER_V2}/{ws}/tags", posted)
+        self.assertFalse(any(u.endswith(":publish") for u in posted))
 
     def test_apply_creates_workspace_entities_and_publishes(self) -> None:
         live = _live_container(self.mod, complete=False)

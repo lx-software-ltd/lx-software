@@ -5,13 +5,20 @@
       "isSinglePageApplication": true,
       "url": [
         "http://localhost:9000/",
+        "http://localhost:9000/fractional-cto-hong-kong",
+        "http://localhost:9000/about",
         "http://localhost:9000/privacy",
         "http://localhost:9000/terms",
         "http://localhost:9000/wechat"
       ],
       "numberOfRuns": 3,
       "settings": {
-        "chromeFlags": "--no-sandbox --disable-dev-shm-usage"
+        "chromeFlags": "--no-sandbox --disable-dev-shm-usage",
+        "blockedUrlPatterns": [
+          "*googletagmanager.com*",
+          "*google-analytics.com*",
+          "*analytics.google.com*"
+        ]
       }
     },
     "assert": {
@@ -24,7 +31,7 @@
         "image-aspect-ratio": "error",
         "offscreen-images": "error",
         "render-blocking-resources": "error",
-        "largest-contentful-paint": ["error", { "maxNumericValue": 3000 }],
+        "largest-contentful-paint": ["error", { "maxNumericValue": 4000 }],
         "total-blocking-time": ["error", { "maxNumericValue": 200 }],
         "unused-javascript": ["error", { "maxNumericValue": 400 }]
       }

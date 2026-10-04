@@ -6,7 +6,7 @@ on:
       page_paths:
         description: 'Comma/newline-separated page paths or full URLs to audit (e.g. /, /privacy)'
         required: false
-        default: '/, /privacy, /terms, /wechat'
+        default: '/, /fractional-cto-hong-kong, /about, /privacy, /terms, /wechat'
   pull_request:
     paths:
       - 'apps/public_www/**'
@@ -28,6 +28,10 @@ jobs:
     runs-on: ubuntu-latest
     # The VITE_* build variables live on the production environment, the same
     # ones Deploy Public Website reads, so the audited bundle matches the live site.
+    # .lighthouserc.json blocks the GTM / GA4 hosts during the audit: the bundle
+    # still carries VITE_GTM_ID, but the runs no longer count as sessions on the
+    # production GA4 property (three runs per page per workflow used to show up
+    # as US "direct" traffic on /privacy, /terms and /wechat).
     environment: production
     timeout-minutes: 40
     steps:
@@ -70,7 +74,7 @@ jobs:
           const baseConfigPath = path.resolve('.lighthouserc.json');
           const runtimeConfigPath = path.resolve('.lighthouserc.runtime.json');
           const rawInput = (process.env.LIGHTHOUSE_PAGE_PATHS ?? '').trim();
-          const defaultTargets = ['/', '/privacy', '/terms', '/wechat'];
+          const defaultTargets = ['/', '/fractional-cto-hong-kong', '/about', '/privacy', '/terms', '/wechat'];
           const requestedTargets = (rawInput ? rawInput.split(/[\n,]+/) : defaultTargets)
             .map((value) => value.trim())
             .filter(Boolean);

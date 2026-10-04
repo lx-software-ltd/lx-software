@@ -1,4 +1,5 @@
-import { Outlet, useLocation } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Outlet, useLocation, useNavigationType } from 'react-router-dom'
 import { defaultSiteContent } from '../lib/content'
 import { useReducedMotion } from '../lib/motion'
 import { BackgroundVideo } from './BackgroundVideo'
@@ -10,8 +11,18 @@ import { TopNav } from './TopNav'
 
 function Shell() {
   const location = useLocation()
+  const navigationType = useNavigationType()
   const reduced = useReducedMotion()
   const still = reduced || location.pathname !== '/'
+
+  // A link clicked mid-page (service card → service page) opens the new
+  // route at the top with focus on its content; the home page keeps its own
+  // hash scrolling, and Back/Forward keep the browser's scroll restoration.
+  useEffect(() => {
+    if (location.pathname === '/' || navigationType !== 'PUSH') return
+    window.scrollTo({ top: 0, behavior: 'auto' })
+    document.getElementById('content')?.focus({ preventScroll: true })
+  }, [location.pathname, navigationType])
 
   return (
     <div className={`site-shell${still ? ' is-still' : ''}`}>
