@@ -132,7 +132,15 @@ export function ProjectCarousel({ items }: { items: ProjectItem[] }) {
           <li key={item.title}>
             <article className="project-card">
               {item.logo ? (
-                <img className="project-logo" src={item.logo} alt="" width={96} height={96} />
+                <img
+                  className="project-logo"
+                  src={item.logo}
+                  alt=""
+                  width={96}
+                  height={96}
+                  loading="lazy"
+                  decoding="async"
+                />
               ) : item.ascii?.length ? (
                 <pre aria-hidden="true">{item.ascii.join('\n')}</pre>
               ) : null}
