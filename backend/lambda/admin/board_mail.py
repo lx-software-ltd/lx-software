@@ -1324,6 +1324,19 @@ def _op_write(op: str):
     return _run
 
 
+def validate_outgoing(ctx: Any, args: dict[str, Any], *, op: str) -> str | None:
+    """Reason a mail write can never send (unknown alias, not an address, unsourced).
+
+    Runs before a hold or Approval is created so the seat sees the problem on
+    this step instead of a failed hold a day later.
+    """
+    try:
+        outgoing_plan(ctx.table, op, args)
+    except MailError as exc:
+        return str(exc)
+    return None
+
+
 def act_guard(ctx: Any, args: dict[str, Any], *, op: str) -> str | None:
     """Reason an ``act``-level write must still go to the founder, or None."""
     try:

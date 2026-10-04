@@ -106,6 +106,7 @@ def ops() -> list[ToolOp]:
                 "mail_reply",
                 lambda ctx, args: board_mail.act_guard(ctx, args, op="mail_reply"),
             ),
+            validate=lambda ctx, args: board_mail.validate_outgoing(ctx, args, op="mail_reply"),
             preview=lambda ctx, args: board_mail.owner_preview(ctx, args, op="mail_reply"),
         ),
         ToolOp(
@@ -126,6 +127,7 @@ def ops() -> list[ToolOp]:
             run=board_mail._op_write("mail_send"),
             summarize=_summ("Send email: {subject}"),
             act_guard=lambda ctx, args: board_mail.act_guard(ctx, args, op="mail_send"),
+            validate=lambda ctx, args: board_mail.validate_outgoing(ctx, args, op="mail_send"),
             preview=lambda ctx, args: board_mail.owner_preview(ctx, args, op="mail_send"),
         ),
         ToolOp(
@@ -145,6 +147,7 @@ def ops() -> list[ToolOp]:
             run=board_mail._op_write("mail_forward"),
             summarize=_summ("Forward email thread {threadId}"),
             act_guard=lambda ctx, args: board_mail.act_guard(ctx, args, op="mail_forward"),
+            validate=lambda ctx, args: board_mail.validate_outgoing(ctx, args, op="mail_forward"),
             preview=lambda ctx, args: board_mail.owner_preview(ctx, args, op="mail_forward"),
         ),
         ToolOp(

@@ -278,9 +278,19 @@ def op_edb_holidays(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def op_venues(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
-    district = " ".join(str(args.get("district") or "").lower().split())
+    raw_district = " ".join(str(args.get("district") or "").split())
+    district = raw_district.lower()
     if district and district not in HK_DISTRICTS:
-        raise ResearchError(f"Unknown Hong Kong district '{district}'. Use one of: {', '.join(HK_DISTRICTS)}.")
+        # Area names the briefs use (Tseung Kwan O, Tung Chung, Mong Kok …)
+        # map to their 18-district name instead of being refused.
+        import board_hk
+
+        canonical = board_hk.canonical_district(raw_district)
+        if canonical == "unknown":
+            raise ResearchError(
+                f"Unknown Hong Kong district '{district}'. Use one of: {', '.join(HK_DISTRICTS)}."
+            )
+        district = canonical.lower()
     kind_of = str(args.get("kind") or "children's activity venue").strip()[:80]
     where = f" in {district}" if district else " Hong Kong"
     return _run_search(ctx, f"{kind_of} listing{where}", kind="venues", count=args.get("limit"))
@@ -401,6 +411,29 @@ def _page_mentions_org(text: str, names: list[str]) -> bool:
     return False
 
 
+def _page_error(message: str) -> dict[str, Any]:
+    """An error the page caused, not the tool: it does not count toward ``tool:research``.
+
+    A 404, an empty body or a refused URL is a successful fetch of a bad
+    page. Counting those tripped the research breaker during every enrich
+    duty and parked unrelated provider-success tasks for a day.
+    """
+    return {"error": message, "cause": "page"}
+
+
+def _preview_error(preview: Any) -> str:
+    if isinstance(preview, dict):
+        return str(preview.get("error") or "")[:120]
+    text = str(preview or "")
+    try:
+        doc = json.loads(text)
+    except (TypeError, ValueError):
+        return text[:120]
+    if isinstance(doc, dict):
+        return str(doc.get("error") or "")[:120]
+    return text[:120]
+
+
 def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Fetch a public page. Refuses private/link-local hosts. Cap 6 per task (9 for catalog).
 
@@ -424,7 +457,7 @@ def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if rules and rules.get("urls"):
         wanted = {_normalize_page_url(item) for item in rules["urls"]}
         if _normalize_page_url(url) not in wanted:
-            return {"error": "url is not an official page for this enrich sheet"}
+            return _page_error("url is not an official page for this enrich sheet")
     if task_id:
         bind = getattr(ctx, "bind_task_meta", None)
         if callable(bind):
@@ -445,38 +478,46 @@ def op_fetch_page(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
                 retried_at = str(row.get("retriedAt") or "")
         task = {"attempt": attempt or 1, "retriedAt": retried_at}
         seen: set[str] = set()
+        page_errors: dict[str, str] = {}
         for call in board_store.list_tool_calls_for_task(ctx.table, task_id):
             if str(call.get("op") or "") != "research_fetch_page":
-                continue
-            if str(call.get("status") or "") != "ok":
                 continue
             if not _call_counts_for_current_attempt(call, task):
                 continue
             raw_url = str((call.get("arguments") or {}).get("url") or "").strip()
+            if str(call.get("status") or "") == "error":
+                if raw_url and str(call.get("errorCause") or "") == "page":
+                    page_errors[_normalize_page_url(raw_url)] = _preview_error(call.get("resultPreview"))
+                continue
+            if str(call.get("status") or "") != "ok":
+                continue
             if raw_url:
                 seen.add(_normalize_page_url(raw_url))
             else:
                 # Older audit rows omit arguments; each still burns one slot.
                 seen.add(f"call:{call.get('callId') or len(seen)}")
         current_key = _normalize_page_url(url)
+        if current_key in page_errors:
+            # The page already failed on this attempt; do not fetch it again.
+            return _page_error(f"already failed on this task ({page_errors[current_key]}); try another URL")
         used = len(seen)
         if current_key not in seen and used >= cap:
-            return {"error": f"per-task fetch cap ({cap}) reached"}
+            return _page_error(f"per-task fetch cap ({cap}) reached")
     try:
         result = board_crawl.fetch(url, max_bytes=RESEARCH_FETCH_MAX_BYTES, timeout=RESEARCH_FETCH_TIMEOUT)
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
         return {"error": str(exc)[:200]}
     board_crawl._remember_fetch_status(getattr(ctx, "table", None), url, int(result.status or 0))  # noqa: SLF001
     if int(result.status or 0) >= 400:
-        return {"error": f"HTTP {result.status}"}
+        return _page_error(f"HTTP {result.status}")
     ctype = str(result.content_type or "").split(";", 1)[0].strip().lower()
     if ctype and not any(ctype.startswith(allowed) for allowed in _RESEARCH_FETCH_TYPES):
-        return {"error": f"content type {ctype} is not text/html or text/plain"}
+        return _page_error(f"content type {ctype} is not text/html or text/plain")
     text = board_crawl.html_to_text(result.text) if "html" in ctype or "<html" in result.text[:200].lower() else result.text
     if not str(text or "").strip():
-        return {"error": "empty page body"}
+        return _page_error("empty page body")
     if rules and not rules.get("urls") and rules.get("names") and not _page_mentions_org(text, rules["names"]):
-        return {"error": "page does not mention an organisation on this enrich sheet"}
+        return _page_error("page does not mention an organisation on this enrich sheet")
     return {
         "status": result.status,
         "finalUrl": result.final_url,

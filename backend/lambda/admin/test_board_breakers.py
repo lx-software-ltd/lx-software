@@ -69,6 +69,27 @@ class BreakerRuleTests(BoardTestCase):
         self.assertIn("tool:mail", tripped)
         self.assertTrue(board_breakers.is_tripped(self.table, "tool:mail"))
 
+    def test_page_errors_do_not_trip_the_research_breaker(self) -> None:
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for i in range(12):
+            board_store.add_tool_call(
+                self.table,
+                {
+                    "callId": f"page-{i}",
+                    "op": "research_fetch_page",
+                    "toolId": "research",
+                    "status": "error",
+                    "errorCause": "page",
+                    "resultPreview": '{"error": "HTTP 404", "cause": "page"}',
+                    "summary": "failed",
+                    "createdAt": now,
+                    "personaId": "cmo",
+                },
+            )
+        tripped = board_breakers.evaluate(self.table, self.settings)
+        self.assertNotIn("tool:research", tripped)
+        self.assertFalse(board_breakers.is_tripped(self.table, "tool:research"))
+
     def test_reset_excludes_errors_before_reset_at(self) -> None:
         before = (datetime.now(timezone.utc) - timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
         after = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

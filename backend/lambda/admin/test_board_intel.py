@@ -66,6 +66,34 @@ class SsrfTests(BoardTestCase):
         self.assertEqual(result.status, 200)
         self.assertIn("hello", result.text)
 
+    def test_fetch_follows_a_meta_refresh_stub_once(self) -> None:
+        stub = (
+            '<html><meta http-equiv="Refresh" content="0; '
+            'url=https://www.lcsd.gov.hk/clpss/tc/webApp/Facility/Details.do?ftid=55&did=2"></html>'
+        )
+        seen: list[str] = []
+
+        def _once(url, *, max_bytes, timeout):  # noqa: ARG001
+            seen.append(url)
+            if len(seen) == 1:
+                return board_crawl.FetchResult(200, url, "text/html; charset=UTF-8", stub, "a")
+            return board_crawl.FetchResult(200, url, "text/html", "<html><body>共融遊樂設施</body></html>", "b")
+
+        with patch.object(board_crawl, "_fetch_once", side_effect=_once):
+            result = board_crawl.fetch("http://www.lcsd.gov.hk/tc/facilities/facilitieslist/facilities.php?ftid=55&did=2")
+        self.assertEqual(len(seen), 2)
+        self.assertTrue(seen[1].startswith("https://www.lcsd.gov.hk/clpss/"))
+        self.assertIn("共融遊樂設施", result.text)
+
+    def test_meta_refresh_to_a_private_host_is_ignored(self) -> None:
+        stub = '<meta http-equiv="refresh" content="0; url=http://127.0.0.1/admin">'
+        self.assertEqual(board_crawl.meta_refresh_target(stub, "https://example.com/"), "")
+        self.assertEqual(board_crawl.meta_refresh_target("<html><body>hi</body></html>", "https://example.com/"), "")
+        self.assertEqual(
+            board_crawl.meta_refresh_target('<meta http-equiv="refresh" content="0;URL=/next">', "https://example.com/a"),
+            "https://example.com/next",
+        )
+
     def test_fetch_does_not_retry_a_read_timeout(self) -> None:
         calls = {"n": 0}
 

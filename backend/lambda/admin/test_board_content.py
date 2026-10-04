@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import patch
 
@@ -69,7 +70,8 @@ class ContentTests(BoardTestCase):
 
     def test_plan_json_creates_rows_and_hold(self) -> None:
         freeze_board_daytime(self)
-        slot = "2026-09-14T02:00:00+00:00"
+        # A real future slot: validate_publish runs against the wall clock before the hold is created.
+        slot = (datetime.now(timezone.utc) + timedelta(days=7)).replace(microsecond=0).isoformat()
         task = board_staff.create_task(
             self.table,
             self.settings,
