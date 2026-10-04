@@ -284,6 +284,9 @@ def evaluate(table: Any, settings: dict[str, Any]) -> list[str]:
             continue
         if call.get("status") != "error":
             continue
+        if str(call.get("errorCause") or "") == "page":
+            # A 404 / empty / off-sheet page is the page's fault, not the tool's.
+            continue
         tool_id = str(call.get("toolId") or "")
         floor = reset_at.get(tool_id) or ""
         if floor and created and created <= floor:

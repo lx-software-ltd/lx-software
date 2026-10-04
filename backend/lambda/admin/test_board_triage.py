@@ -220,6 +220,19 @@ class PolicyTests(BoardTestCase):
                 "participants": ["wendy.chan@gmail.com"],
             },
         )
+        board_store.put_mail_message(
+            self.table,
+            {
+                "threadId": "th-q",
+                "receivedAt": "2026-09-10T10:00:00Z",
+                "messageId": "m-q1",
+                "direction": "in",
+                "from": {"address": "wendy.chan@gmail.com"},
+                "to": ["hello@siutindei.com"],
+                "subject": "hi",
+                "text": "hi",
+            },
+        )
         frozen = datetime(2026, 9, 10, 15, 0, tzinfo=timezone.utc)  # 23:00 HKT
         ctx = board_tools.ToolContext(table=self.table, settings=settings, persona_id="coo", display_name="COO", actor="persona")
         with patch("board_policy.datetime") as pdt, patch("board_holds.datetime") as hdt:

@@ -894,10 +894,17 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         except Exception as exc:
             _log_event("warning", tag="board_breaker_check_failed", op=op.name, error=str(exc)[:200])
             guard_reason = guard_reason or "the safety check could not be completed"
+    # A call that cannot succeed even if the founder approves is refused now,
+    # not scheduled as a hold that fails hours later (mail to an unsourced
+    # alias used to surface only when the hold executed).
+    world_error = ""
+    if not invalid and not hold_fail and not breaker_error and allows(level, op.min_level):
+        world_error = _validate_world(ctx, op, arguments)
     hold_doc: dict[str, Any] | None = None
     if (
         op.is_write
         and not invalid
+        and not world_error
         and not breaker_error
         and level == "act"
         and not guard_reason
@@ -933,7 +940,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
         # Never queue a malformed proposal: the model gets the schema problem back
         # and can retry with corrected arguments.
         outcome = ToolOutcome(status="error", result={"error": invalid[:500]}, summary=summary)
-    elif (world_error := _validate_world(ctx, op, arguments)):
+    elif world_error:
         world_status = "refused" if op.name == "code_run_task" else "error"
         outcome = ToolOutcome(status=world_status, result={"error": world_error[:500]}, summary=summary)
     elif breaker_error:
@@ -988,7 +995,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
     else:
         try:
             result = _invoke_op(ctx, op, arguments)
-            status = "error" if result.get("error") and len(result) == 1 else "ok"
+            status = "error" if _is_error_result(result) else "ok"
             outcome = ToolOutcome(status=status, result=result, summary=summary)
             if status == "ok":
                 try:
@@ -1058,6 +1065,7 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
             "taskId": ctx.task_id,
             "seatId": ctx.seat_id,
             "classKey": class_key,
+            **({"errorCause": cause} if (cause := _error_cause(outcome)) else {}),
             **({"attempt": attempt} if attempt is not None else {}),
             **({"toolCallId": ctx.llm_tool_call_id} if ctx.llm_tool_call_id else {}),
         },
@@ -1085,6 +1093,24 @@ def render_preview(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> d
     except Exception as exc:  # pragma: no cover - preview is best effort
         _log_event("warning", tag="board_tool_preview_failed", op=op.name, error=str(exc)[:300])
         return {"error": "Preview unavailable"}
+
+
+# Keys an op may return next to ``error`` without the call counting as ``ok``.
+# ``cause: "page"`` marks a research fetch that ran but hit a bad page; the
+# breaker ignores those (``board_breakers.evaluate``).
+_ERROR_META_KEYS = frozenset({"cause"})
+
+
+def _is_error_result(result: dict[str, Any]) -> bool:
+    if not result.get("error"):
+        return False
+    return all(key in _ERROR_META_KEYS for key in result if key != "error")
+
+
+def _error_cause(outcome: ToolOutcome) -> str:
+    if outcome.status != "error" or not isinstance(outcome.result, dict):
+        return ""
+    return str(outcome.result.get("cause") or "")[:40]
 
 
 def _validate_world(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> str:

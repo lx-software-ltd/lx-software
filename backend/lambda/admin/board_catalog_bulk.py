@@ -30,6 +30,9 @@ _HTTP_500_RE = re.compile(r"(?:failed:\s*500\b|\bHTTP/?\s*500\b|\bstatus(?:\s+co
 BULK_500_EVENT = "catalog-bulk-500"
 IMPORTER_ISSUE_TITLE = "Make activity_schedule_entries inserts idempotent"
 SCHEDULES_DROPPED_NOTE = "schedules dropped after HTTP 500"
+# A row the importer rejects this many times in a row is closed instead of
+# being re-sent on every daily hold (edb sent the same 5 rows for a week).
+_BULK_ROW_MAX_REJECTS = 3
 _REQUEST_ID_RE = re.compile(r"requestId=([0-9a-fA-F-]{8,})")
 OPEN_DATA_SOURCES = tuple(sorted(board_catalog_candidates.OFFICIAL_SOURCES))
 _TERMINAL_CANDIDATE = frozenset({"imported", "rejected", "closed"})
@@ -673,6 +676,63 @@ def _mark_imported(table: Any, rows: list[dict[str, Any]], batch: list[dict[str,
     return ids
 
 
+def _failed_org_messages(imported: dict[str, Any]) -> dict[str, str]:
+    """``{name key: first importer error}`` for organisations the importer rejected."""
+    out: dict[str, str] = {}
+    for row in imported.get("results") or []:
+        if not isinstance(row, dict):
+            continue
+        row_type = str(row.get("type") or "").lower()
+        if row_type and row_type not in ("organizations", "organization", "organisations"):
+            continue
+        if str(row.get("status") or "").lower() != "failed":
+            continue
+        key = _org_name_key(row.get("key") or row.get("name"))
+        if not key or key in out:
+            continue
+        errors = row.get("errors") or []
+        first = errors[0] if errors else None
+        if isinstance(first, dict):
+            message = str(first.get("message") or first)[:200]
+        else:
+            message = str(first or "importer rejected the row")[:200]
+        out[key] = message
+    return out
+
+
+def _mark_rejected(
+    table: Any, rows: list[dict[str, Any]], batch: list[dict[str, Any]], imported: dict[str, Any]
+) -> list[dict[str, str]]:
+    """Stamp ``importError`` on rows the importer rejected; close them after repeats.
+
+    Returns the closed rows (``candidateId``, ``name``, ``error``).
+    """
+    messages = _failed_org_messages(imported)
+    if not messages:
+        return []
+    closed: list[dict[str, str]] = []
+    now = board_store.now_iso()
+    for row, org in zip(rows, batch, strict=True):
+        key = _org_name_key(org.get("name"))
+        if key not in messages:
+            continue
+        candidate_id = str(row.get("candidateId") or "")
+        if not candidate_id:
+            continue
+        doc = board_store.get_candidate(table, candidate_id) or dict(row)
+        rejects = int(doc.get("importRejects") or 0) + 1
+        doc["importRejects"] = rejects
+        doc["importError"] = messages[key]
+        doc["lastImportAt"] = now
+        doc["updatedAt"] = now
+        if rejects >= _BULK_ROW_MAX_REJECTS and str(doc.get("status") or "") == "approved":
+            doc["status"] = "closed"
+            doc["closeReason"] = f"importer rejected {rejects}x: {messages[key]}"[:300]
+            closed.append({"candidateId": candidate_id, "name": str(org.get("name") or ""), "error": messages[key]})
+        board_store.put_candidate(table, doc)
+    return closed
+
+
 def _call_import(
     table: Any,
     source: str,
@@ -700,9 +760,13 @@ def _call_import(
             return "http500", message
         return "error", message
     failed = int((imported.get("summary") or {}).get("failed") or 0)
+    rejected = _mark_rejected(table, rows, batch, imported) if failed else []
+    row_errors = board_catalog_import._result_errors(imported.get("results") or []) if failed else []  # noqa: SLF001
     results.append(
         {
             "ok": bool(imported.get("ok")) and failed == 0,
+            **({"error": "; ".join(row_errors)[:300]} if row_errors else {}),
+            **({"closed": rejected} if rejected else {}),
             "sent": imported.get("sent"),
             "accepted": imported.get("accepted"),
             "summary": imported.get("summary"),
