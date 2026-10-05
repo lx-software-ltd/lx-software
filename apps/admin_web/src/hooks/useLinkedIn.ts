@@ -1,19 +1,29 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { adminFetchJson } from "../lib/apiAdminClient";
-import type { LinkedInIdea, LinkedInOverview, LinkedInPost, LinkedInSettings } from "../lib/linkedinModel";
+import type { LinkedInIdea, LinkedInOverview, LinkedInPost, LinkedInDraftSettings } from "../lib/linkedinModel";
 
 export const LINKEDIN_KEY = ["linkedin"] as const;
 
 type Job = { jobId: string; status: string; postIds: string[]; error: string };
 
+const POLL_ATTEMPTS = 200;
+const POLL_MS = 1500;
+
 async function pollJob(job: Job): Promise<Job> {
   let current = job;
-  for (let attempt = 0; attempt < 40 && (current.status === "queued" || current.status === "running"); attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+  for (let attempt = 0; attempt < POLL_ATTEMPTS && (current.status === "queued" || current.status === "running"); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
     const next = await adminFetchJson<{ job: Job }>(`/lx-software/linkedin/jobs/${current.jobId}`);
     current = next.job;
   }
   return current;
+}
+
+function assertJobDone(job: Job): Job {
+  if (job.status === "failed") throw new Error(job.error || "Generation failed.");
+  if (job.status !== "done") throw new Error("Generation is still queued.");
+  if (job.error) throw new Error(job.error);
+  return job;
 }
 
 export function useLinkedIn() {
@@ -34,8 +44,8 @@ export function useLinkedIn() {
     queryFn: () => adminFetchJson<{ items: LinkedInIdea[] }>("/lx-software/linkedin/ideas"),
   });
   const saveSettings = useMutation({
-    mutationFn: (body: LinkedInSettings) =>
-      adminFetchJson<{ settings: LinkedInSettings }>("/lx-software/linkedin/settings", {
+    mutationFn: (body: LinkedInDraftSettings) =>
+      adminFetchJson<{ settings: LinkedInDraftSettings }>("/lx-software/linkedin/settings", {
         method: "PUT",
         body: JSON.stringify(body),
       }),
@@ -84,12 +94,9 @@ export function useLinkedIn() {
         method: "POST",
         body: JSON.stringify({}),
       });
-      const job = await pollJob(queued.job);
-      if (job.status === "failed") throw new Error(job.error || "Generation failed.");
-      if (job.status !== "done") throw new Error("Generation is still queued.");
-      return job;
+      return assertJobDone(await pollJob(queued.job));
     },
-    onSuccess: refresh,
+    onSettled: refresh,
   });
   const generate = useMutation({
     mutationFn: async (body: { count?: number; pillar?: string }) => {
@@ -97,12 +104,9 @@ export function useLinkedIn() {
         method: "POST",
         body: JSON.stringify(body),
       });
-      const job = await pollJob(queued.job);
-      if (job.status === "failed") throw new Error(job.error || "Generation failed.");
-      if (job.status !== "done") throw new Error("Generation is still queued.");
-      return job;
+      return assertJobDone(await pollJob(queued.job));
     },
-    onSuccess: refresh,
+    onSettled: refresh,
   });
   return {
     overview,

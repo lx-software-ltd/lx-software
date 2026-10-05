@@ -48,7 +48,7 @@ export function LinkedInTab() {
       ) : null}
       {overview && !enabled ? (
         <p className="text-muted small">
-          LinkedIn writes are off until LxSoftwareLinkedinEnabled is true. You can still read what is stored.
+          LinkedIn writes are off. You can still read what is stored.
         </p>
       ) : null}
       <AdminTabList

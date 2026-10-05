@@ -489,7 +489,7 @@ Activity is not added to Other.
 
 LX Software → **LinkedIn** stores a personal posting queue. Drafts are
 written as a senior architect. The company name stays blocked in every draft.
-Generation uses the `linkedin` OpenRouter key above.
+Generation uses the `linkedin` OpenRouter key above and books each call on the OpenRouter usage ledger.
 
 | Parameter | Default | Production |
 |-----------|---------|------------|
@@ -499,10 +499,12 @@ Generation uses the `linkedin` OpenRouter key above.
 With the first switch on, Sunday 18:00 HKT
 (`lxsoftware-admin-linkedin-plan`) drafts the configured batch, and a
 15-minute schedule emails `notifyEmail` when an approved 08:30 HKT slot is
-due. You open the share box, post it yourself, and mark it posted. Add any
-employer name under Settings → extra phrases; do not put it in source.
-Flip `LxSoftwareLinkedinEnabled` to `true` and redeploy when the tab should
-accept writes.
+due. Both schedules are created only when `LxSoftwareLinkedinEnabled` is
+`true`, so turn it on and redeploy before expecting drafts. You open the
+share box, post it yourself, and mark it posted.
+`LxSoftwareLinkedinPublishEnabled` does not post and does not stop the
+reminder. Add any employer name under Settings → extra phrases; do not put
+it in source.
 
 ### AWS bill (shared account)
 

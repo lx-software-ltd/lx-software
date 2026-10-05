@@ -17,6 +17,7 @@ import linkedin_draft
 import linkedin_store
 from http_common import _audit, _json_response, _log_event, _parse_json_body
 from linkedin_store import LinkedInError
+from openrouter_client import OpenRouterError
 
 PREFIX = "/lx-software/linkedin"
 
@@ -139,12 +140,14 @@ def handle_http(event: dict[str, Any], method: str, path: str, user_sub: str | N
             )
         except LinkedInError as exc:
             return _json_response(400, {"message": str(exc)})
+        _audit(user_sub, "LINKEDIN_IDEA_CREATE", str(doc["ideaId"]), event)
         return _json_response(201, {"item": doc})
     if len(parts) == 2 and parts[0] == "ideas" and method == "DELETE":
         blocked = _require_enabled()
         if blocked:
             return blocked
         linkedin_store.delete_idea(_table(), parts[1])
+        _audit(user_sub, "LINKEDIN_IDEA_DELETE", parts[1], event)
         return _json_response(200, {"deleted": parts[1]})
     if parts == ["generate"] and method == "POST":
         return _generate(event, user_sub)
@@ -233,17 +236,28 @@ def _public_job(doc: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _fail_job(table: Any, job: dict[str, Any] | None, message: str) -> None:
+    if not job:
+        return
+    job["status"] = "failed"
+    job["error"] = message
+    linkedin_store.put_job(table, job)
+
+
 def handle_generate(event: dict[str, Any] | None = None) -> dict[str, Any]:
     event = event or {}
     if not linkedin_store.feature_enabled():
         return {"skipped": "disabled"}
-    table = _table()
     job_id = str(event.get("jobId") or "")
-    job = linkedin_store.get_job(table, job_id) if job_id else None
-    payload = dict((job or {}).get("payload") or {})
-    if job:
-        job["status"] = "running"
-        linkedin_store.put_job(table, job)
+    if not job_id:
+        return {"skipped": "missing_job"}
+    table = _table()
+    job = linkedin_store.get_job(table, job_id)
+    if not job:
+        return {"ok": False, "error": "job not found"}
+    payload = dict(job.get("payload") or {})
+    job["status"] = "running"
+    linkedin_store.put_job(table, job)
     replacing = str(payload.get("postId") or "")
     try:
         count = payload.get("count")
@@ -255,23 +269,23 @@ def handle_generate(event: dict[str, Any] | None = None) -> dict[str, Any]:
             job_id=job_id,
             persist=not replacing,
         )
-    except LinkedInError as exc:
-        if job:
-            job["status"] = "failed"
-            job["error"] = str(exc)
-            linkedin_store.put_job(table, job)
+        if replacing and result["posts"]:
+            _replace_post(table, replacing, result["posts"][0])
+            updated = linkedin_store.get_post(table, replacing) or {}
+            result = {**result, "posts": [linkedin_store.public_post(updated)]}
+    except (LinkedInError, linkedin_draft.DraftError, OpenRouterError) as exc:
+        _fail_job(table, job, str(exc))
         return {"ok": False, "error": str(exc)}
-    if replacing and result["posts"]:
-        _replace_post(table, replacing, result["posts"][0])
-        updated = linkedin_store.get_post(table, replacing) or {}
-        result = {**result, "posts": [linkedin_store.public_post(updated)]}
-    if job:
-        job["status"] = "done"
-        job["postIds"] = [row["postId"] for row in result["posts"]]
-        job["error"] = "; ".join(result["errors"])
-        linkedin_store.put_job(table, job)
+    except Exception as exc:  # noqa: BLE001 — a worker error must not leave the job running
+        _log_event("error", tag="linkedin_generate_failed", error=str(exc)[:300])
+        _fail_job(table, job, "Generation failed.")
+        return {"ok": False, "error": "Generation failed."}
+    job["status"] = "done"
+    job["postIds"] = [row["postId"] for row in result["posts"]]
+    job["error"] = "; ".join(result["errors"])
+    linkedin_store.put_job(table, job)
     _notify_ready(table, len(result["posts"]))
-    return {"ok": True, "postIds": [row.get("postId") for row in result["posts"]]}
+    return {"ok": True, "postIds": [row.get("postId") for row in result["posts"]], "error": job["error"]}
 
 
 def _replace_post(table: Any, post_id: str, generated: dict[str, Any]) -> None:
@@ -315,17 +329,14 @@ def handle_weekly_plan(event: dict[str, Any] | None = None) -> dict[str, Any]:
         return {"skipped": "disabled"}
     table = _table()
     today = linkedin_store._as_hkt().date().isoformat()
-    state = linkedin_store.load_state(table)
-    if str(state.get("lastPlanDate") or "") == today:
+    if linkedin_store.load_plan_date(table) == today:
         return {"skipped": "already_ran"}
     try:
         result = linkedin_draft.generate_drafts(table)
-    except LinkedInError as exc:
+    except (LinkedInError, linkedin_draft.DraftError, OpenRouterError) as exc:
         _log_event("warning", tag="linkedin_weekly_plan_failed", error=str(exc)[:300])
         return {"ok": False, "error": str(exc)}
-    state = linkedin_store.load_state(table)
-    state["lastPlanDate"] = today
-    linkedin_store.save_state(table, state)
+    linkedin_store.save_plan_date(table, today)
     _notify_ready(table, len(result["posts"]))
     return {"ok": True, "created": len(result["posts"])}
 
@@ -339,9 +350,10 @@ def handle_publish_due(event: dict[str, Any] | None = None) -> dict[str, Any]:
     del event
     if not linkedin_store.feature_enabled():
         return {"skipped": "disabled"}
+    publish = ""
     if linkedin_store.publish_enabled():
         _log_event("info", tag="linkedin_publish_not_implemented")
-        return {"skipped": "publish_not_implemented"}
+        publish = "publish_not_implemented"
     table = _table()
     settings = linkedin_store.load_settings(table)
     address = str(settings.get("notifyEmail") or "")
@@ -360,4 +372,7 @@ def handle_publish_due(event: dict[str, Any] | None = None) -> dict[str, Any]:
             )
         linkedin_store.stamp_due_notified(table, post_id)
         reminded += 1
-    return {"ok": True, "reminded": reminded}
+    result: dict[str, Any] = {"ok": True, "reminded": reminded}
+    if publish:
+        result["publish"] = publish
+    return result

@@ -44,7 +44,7 @@ import {
   SAMPLE_LINKEDIN_POSTS,
   type LinkedInIdea,
   type LinkedInPost,
-  type LinkedInSettings,
+  type LinkedInDraftSettings,
 } from "../../linkedinModel";
 import {
   DEFAULT_BOARD_BOUNDARIES,
@@ -85,7 +85,7 @@ type MockState = {
   staging: BoardStagingPreview;
   catalogJobs: Record<string, BoardCatalogJob>;
   linkedin: {
-    settings: LinkedInSettings;
+    settings: LinkedInDraftSettings;
     posts: LinkedInPost[];
     ideas: LinkedInIdea[];
   };

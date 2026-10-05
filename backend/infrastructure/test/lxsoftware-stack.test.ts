@@ -394,6 +394,9 @@ describe("EventBridge Scheduler wiring", () => {
       expect(input).toContain(internal);
       expect(input).not.toContain("siuTinDei");
     }
+    expect(byName["lxsoftware-admin-linkedin-plan"].Condition).toBe("LxSoftwareLinkedinSchedules");
+    expect(byName["lxsoftware-admin-linkedin-publish"].Condition).toBe("LxSoftwareLinkedinSchedules");
+    expect(byName["lxsoftware-admin-bank-sync"].Condition).toBeUndefined();
   });
 });
 

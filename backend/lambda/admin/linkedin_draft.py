@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 import linkedin_store
+import openrouter_usage
+from http_common import _log_event
 from linkedin_store import LinkedInError
+from openrouter_client import OpenRouterError
 
 SERVICE = "linkedin"
 
@@ -82,18 +86,40 @@ def parse_draft(text: str) -> dict[str, Any]:
     body = str(parsed.get("body") or "").strip()
     if not body:
         raise DraftError("The model returned an empty post.")
-    hashtags = parsed.get("hashtags") or []
-    if not isinstance(hashtags, list):
-        hashtags = []
     return {
         "body": body,
         "firstComment": str(parsed.get("firstComment") or "").strip(),
-        "hashtags": [str(tag).lstrip("#").strip() for tag in hashtags if str(tag).strip()],
+        "hashtags": _usable_hashtags(parsed.get("hashtags")),
         "pillar": str(parsed.get("pillar") or "").strip(),
     }
 
 
-def complete_json(messages: list[dict[str, str]]) -> tuple[dict[str, Any], float]:
+def _usable_hashtags(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for tag in value:
+        cleaned = str(tag).lstrip("#").strip()
+        if re.fullmatch(r"[\w]{1,40}", cleaned) and cleaned not in out:
+            out.append(cleaned)
+    return out
+
+
+def record_draft_usage(table: Any, usage: dict[str, Any] | None) -> None:
+    """Book this call on the OpenRouter ledger. A ledger failure does not drop the draft."""
+    try:
+        openrouter_usage.add_usage_day(
+            table,
+            service=SERVICE,
+            owner="draft",
+            usage=usage,
+            calls=1,
+        )
+    except Exception as exc:  # noqa: BLE001 — accounting must not drop the draft
+        _log_event("warning", tag="linkedin_usage_record_failed", error=str(exc)[:200])
+
+
+def complete_json(messages: list[dict[str, str]], *, table: Any | None = None) -> tuple[dict[str, Any], float]:
     """One JSON chat completion. Returns the parsed object and the USD cost."""
     import boto3
     import openrouter_client
@@ -112,6 +138,8 @@ def complete_json(messages: list[dict[str, str]]) -> tuple[dict[str, Any], float
         service=SERVICE,
         owner="draft",
     )
+    if table is not None:
+        record_draft_usage(table, result.usage)
     return parse_draft(result.text), float(result.cost_usd or 0)
 
 
@@ -153,10 +181,12 @@ def choose_topics(
     pillar: str | None = None,
     idea_ids: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    ideas = linkedin_store.unused_ideas(table)
+    ideas = linkedin_store.list_ideas(table)
     if idea_ids:
         wanted = set(idea_ids)
         ideas = [row for row in ideas if str(row.get("ideaId") or "") in wanted]
+    else:
+        ideas = [row for row in ideas if str(row.get("status") or "") == "new"]
     pillars = list(settings.get("pillars") or [])
     existing = linkedin_store.list_posts(table, limit=20)
     existing.sort(key=lambda doc: str(doc.get("createdAt") or ""), reverse=True)
@@ -223,7 +253,11 @@ def generate_drafts(
     wanted = max(1, min(int(wanted), 6))
     if linkedin_store.month_spend(table) >= float(settings["maxUsdPerMonth"]):
         raise LinkedInError("The monthly draft budget is used up.")
-    caller = complete or complete_json
+
+    def _live(messages: list[dict[str, str]]) -> tuple[dict[str, Any], float]:
+        return complete_json(messages, table=table)
+
+    caller = complete or _live
     topics = choose_topics(table, settings, count=wanted, pillar=pillar, idea_ids=idea_ids)
     avoid = linkedin_store.recent_hooks(table)
     created: list[dict[str, Any]] = []
@@ -242,7 +276,7 @@ def generate_drafts(
                 avoid=avoid,
                 complete=caller,
             )
-        except (DraftError, LinkedInError) as exc:
+        except (DraftError, LinkedInError, OpenRouterError) as exc:
             errors.append(str(exc))
             continue
         spent += cost

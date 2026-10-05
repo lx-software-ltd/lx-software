@@ -90,9 +90,11 @@ PILLARS: tuple[dict[str, str], ...] = (
 )
 
 _EMAIL = re.compile(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", re.I)
-_PHONE = re.compile(r"(?:\+\d{8,15})|(?:\b\d{8,}\b)")
+_PHONE_PLUS = re.compile(r"\+\d{8,15}")
+_PHONE_GROUP = re.compile(r"(?:\d[\s.\-()]*){8,}")
 _URL = re.compile(r"(https?://|www\.)\S+", re.I)
-_HASH = re.compile(r"#(\w+)")
+# A hashtag starts with a letter. "#42" is a number, not a tag.
+_HASH = re.compile(r"#([A-Za-z][\w]{0,39})")
 
 
 class LinkedInError(ValueError):
@@ -182,23 +184,16 @@ def _query(table: Any, gsi_pk: str, *, limit: int = 200) -> list[dict[str, Any]]
     return out
 
 
-def state_key() -> dict[str, str]:
-    return {"pk": "LINKEDIN#state", "sk": "STATE"}
+def _state_key(sk: str) -> dict[str, str]:
+    return {"pk": "LINKEDIN#state", "sk": sk}
 
 
-def load_state(table: Any) -> dict[str, Any]:
-    doc = _get(table, "LINKEDIN#state", "STATE")
-    return doc or {}
-
-
-def save_state(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
-    doc = {**doc, "updatedAt": board_store.now_iso()}
-    _put(table, {**state_key(), **doc})
-    return doc
+def _load_sk(table: Any, sk: str) -> dict[str, Any]:
+    return _get(table, "LINKEDIN#state", sk) or {}
 
 
 def load_settings(table: Any) -> dict[str, Any]:
-    stored = load_state(table).get("settings")
+    stored = _load_sk(table, "SETTINGS").get("settings")
     merged = default_settings()
     if isinstance(stored, dict):
         merged.update({k: v for k, v in stored.items() if k in merged})
@@ -296,9 +291,14 @@ def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
 
 def save_settings(table: Any, body: dict[str, Any]) -> dict[str, Any]:
     settings = validate_settings(body)
-    state = load_state(table)
-    state["settings"] = settings
-    save_state(table, state)
+    _put(
+        table,
+        {
+            **_state_key("SETTINGS"),
+            "settings": settings,
+            "updatedAt": board_store.now_iso(),
+        },
+    )
     return settings
 
 
@@ -308,7 +308,7 @@ def month_key(now: datetime | None = None) -> str:
 
 
 def month_spend(table: Any, now: datetime | None = None) -> float:
-    spend = load_state(table).get("spend")
+    spend = _load_sk(table, "SPEND").get("spend")
     if not isinstance(spend, dict):
         return 0.0
     try:
@@ -320,8 +320,8 @@ def month_spend(table: Any, now: datetime | None = None) -> float:
 def add_spend(table: Any, usd: float, now: datetime | None = None) -> float:
     if usd <= 0:
         return month_spend(table, now)
-    state = load_state(table)
-    spend = dict(state.get("spend") or {})
+    doc = _load_sk(table, "SPEND")
+    spend = dict(doc.get("spend") or {})
     key = month_key(now)
     try:
         current = float(spend.get(key) or 0)
@@ -330,9 +330,27 @@ def add_spend(table: Any, usd: float, now: datetime | None = None) -> float:
     spend[key] = round(current + usd, 6)
     # Keep the trailing thirteen months.
     keys = sorted(spend)[-13:]
-    state["spend"] = {k: spend[k] for k in keys}
-    save_state(table, state)
-    return float(state["spend"][key])
+    trimmed = {k: spend[k] for k in keys}
+    _put(
+        table,
+        {**_state_key("SPEND"), "spend": trimmed, "updatedAt": board_store.now_iso()},
+    )
+    return float(trimmed[key])
+
+
+def load_plan_date(table: Any) -> str:
+    return str(_load_sk(table, "PLAN").get("lastPlanDate") or "")
+
+
+def save_plan_date(table: Any, day: str) -> None:
+    _put(
+        table,
+        {
+            **_state_key("PLAN"),
+            "lastPlanDate": day,
+            "updatedAt": board_store.now_iso(),
+        },
+    )
 
 
 def hook_text(body: str) -> str:
@@ -342,6 +360,28 @@ def hook_text(body: str) -> str:
 def body_hash(body: str) -> str:
     folded = " ".join(body.lower().split())
     return hashlib.sha256(folded.encode("utf-8")).hexdigest()[:16]
+
+
+def contains_term(haystack: str, term: str) -> bool:
+    """Whole word or phrase. ``hire me`` does not match ``hire mentors``."""
+    if not term:
+        return False
+    return re.search(r"(?<![\w])" + re.escape(term) + r"(?![\w])", haystack) is not None
+
+
+def has_phone(text: str) -> bool:
+    """A plus-prefixed number, or digits with a separator between them.
+
+    A bare integer is not a phone, even when a space or period follows it.
+    """
+    if _PHONE_PLUS.search(text or ""):
+        return True
+    for match in _PHONE_GROUP.finditer(text or ""):
+        chunk = match.group(0)
+        digits = re.sub(r"\D", "", chunk)
+        if 8 <= len(digits) <= 15 and re.search(r"\d[\s.\-()]+\d", chunk):
+            return True
+    return False
 
 
 def forbidden_terms(settings: dict[str, Any]) -> list[str]:
@@ -386,7 +426,7 @@ def guardrails(body: str, comment: str, hashtags: list[str], settings: dict[str,
         )
     haystack = f"{text}\n{comment or ''}".lower()
     for term in forbidden_terms(settings):
-        if term and term in haystack:
+        if contains_term(haystack, term):
             findings.append(
                 {
                     "code": "forbidden_word",
@@ -396,7 +436,7 @@ def guardrails(body: str, comment: str, hashtags: list[str], settings: dict[str,
             )
     if not settings.get("allowProductMentions"):
         for term in PRODUCT_PHRASES:
-            if term in haystack:
+            if contains_term(haystack, term):
                 findings.append(
                     {
                         "code": "product_mention",
@@ -417,7 +457,7 @@ def guardrails(body: str, comment: str, hashtags: list[str], settings: dict[str,
         )
     if _EMAIL.search(text) or _EMAIL.search(comment or ""):
         findings.append({"code": "email", "severity": "error", "detail": "Remove the email address."})
-    if _PHONE.search(text) or _PHONE.search(comment or ""):
+    if has_phone(text) or has_phone(comment or ""):
         findings.append({"code": "phone", "severity": "error", "detail": "Remove the phone number."})
     if _URL.search(text):
         severity = "error" if settings.get("linksInFirstComment") else "warn"
@@ -501,6 +541,17 @@ def _format_slot(moment: datetime) -> str:
     from timeutil import format_iso_millis
 
     return format_iso_millis(moment)
+
+
+def normalize_slot(value: str) -> str:
+    """Store every slot as UTC millis with a Z suffix so string compare matches ``now_iso``."""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    parsed = _parse_slot(text)
+    if parsed is None:
+        raise LinkedInError("slotAt is invalid")
+    return _format_slot(parsed)
 
 
 def _parse_slot(value: str) -> datetime | None:
@@ -692,10 +743,7 @@ def update_post(table: Any, post_id: str, body: dict[str, Any]) -> dict[str, Any
         doc["approvedAt"] = ""
         doc["slotAt"] = ""
     if "slotAt" in body and str(doc.get("status") or "") == "approved":
-        slot = str(body.get("slotAt") or "").strip()
-        if slot and _parse_slot(slot) is None:
-            raise LinkedInError("slotAt is invalid")
-        doc["slotAt"] = slot
+        doc["slotAt"] = normalize_slot(str(body.get("slotAt") or ""))
     return put_post(table, doc)
 
 
@@ -837,10 +885,6 @@ def mark_idea_used(table: Any, idea_id: str, post_id: str) -> None:
     doc["status"] = "used"
     doc["usedBy"] = post_id
     put_idea(table, doc)
-
-
-def unused_ideas(table: Any) -> list[dict[str, Any]]:
-    return [row for row in list_ideas(table) if str(row.get("status") or "") == "new"]
 
 
 def put_job(table: Any, doc: dict[str, Any]) -> dict[str, Any]:

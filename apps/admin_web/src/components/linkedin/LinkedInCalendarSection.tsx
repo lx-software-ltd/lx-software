@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { useLinkedIn } from "../../hooks/useLinkedIn";
 import { formatDateTimeHKT } from "../../lib/formatDisplay";
-import { hookText, nextSlots, type LinkedInSettings } from "../../lib/linkedinModel";
+import { hookText, nextSlots, type LinkedInDraftSettings } from "../../lib/linkedinModel";
 
-export function LinkedInCalendarSection({ settings }: { readonly settings: LinkedInSettings | undefined }) {
+export function LinkedInCalendarSection({ settings }: { readonly settings: LinkedInDraftSettings | undefined }) {
   const linkedIn = useLinkedIn();
   const posts = linkedIn.posts.data?.items;
   const slots = useMemo(() => {

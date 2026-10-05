@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useLinkedIn } from "../../hooks/useLinkedIn";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { DRAFT_RECORD_ID } from "../../lib/expandedRecord";
-import { pillarLabel, type LinkedInSettings } from "../../lib/linkedinModel";
+import { pillarLabel, type LinkedInDraftSettings } from "../../lib/linkedinModel";
 import {
   AdminCell,
   AdminCreateButton,
@@ -30,7 +30,7 @@ export function LinkedInIdeasSection({
   settings,
   enabled,
 }: {
-  readonly settings: LinkedInSettings | undefined;
+  readonly settings: LinkedInDraftSettings | undefined;
   readonly enabled: boolean;
 }) {
   const linkedIn = useLinkedIn();
@@ -110,7 +110,7 @@ function IdeaDraftRow({
   enabled,
   onClose,
 }: {
-  readonly settings: LinkedInSettings;
+  readonly settings: LinkedInDraftSettings;
   readonly enabled: boolean;
   readonly onClose: () => void;
 }) {

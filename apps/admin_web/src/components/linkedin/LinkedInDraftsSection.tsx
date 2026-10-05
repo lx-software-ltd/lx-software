@@ -11,7 +11,7 @@ import {
   linkedInShareUrl,
   pillarLabel,
   type LinkedInPost,
-  type LinkedInSettings,
+  type LinkedInDraftSettings,
 } from "../../lib/linkedinModel";
 import {
   AdminCell,
@@ -54,7 +54,7 @@ export function LinkedInDraftsSection({
   settings,
   enabled,
 }: {
-  readonly settings: LinkedInSettings | undefined;
+  readonly settings: LinkedInDraftSettings | undefined;
   readonly enabled: boolean;
 }) {
   const linkedIn = useLinkedIn();
@@ -214,7 +214,7 @@ function DraftRow({
   onShare,
 }: {
   readonly post: LinkedInPost;
-  readonly settings: LinkedInSettings | undefined;
+  readonly settings: LinkedInDraftSettings | undefined;
   readonly expanded: boolean;
   readonly enabled: boolean;
   readonly onToggle: () => void;
@@ -292,7 +292,7 @@ function DraftEditorRow({
   enabled,
   onClose,
 }: {
-  readonly settings: LinkedInSettings;
+  readonly settings: LinkedInDraftSettings;
   readonly enabled: boolean;
   readonly onClose: () => void;
 }) {
@@ -338,7 +338,7 @@ function PostEditor({
   onMarkPosted,
 }: {
   readonly post: LinkedInPost | null;
-  readonly settings: LinkedInSettings;
+  readonly settings: LinkedInDraftSettings;
   readonly enabled: boolean;
   readonly saving: boolean;
   readonly error: string | null;

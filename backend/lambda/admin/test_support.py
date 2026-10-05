@@ -84,6 +84,34 @@ class FakeTable:
         self.items.pop(self._key(Key), None)
         return {}
 
+    def update_item(
+        self,
+        Key: dict[str, Any],
+        UpdateExpression: str = "",
+        ExpressionAttributeNames: dict[str, str] | None = None,
+        ExpressionAttributeValues: dict[str, Any] | None = None,
+        **_: Any,
+    ) -> dict[str, Any]:
+        """Enough of UpdateItem for ADD and SET clauses used by the usage ledger."""
+        key = (str(Key["pk"]), str(Key["sk"]))
+        item = dict(self.items.get(key) or {"pk": Key["pk"], "sk": Key["sk"]})
+        names = ExpressionAttributeNames or {}
+        values = ExpressionAttributeValues or {}
+        expression = UpdateExpression.strip()
+        add_part, _, set_part = expression.partition("SET")
+        if add_part.strip().upper().startswith("ADD"):
+            for piece in add_part.strip()[3:].split(","):
+                attr, placeholder = piece.split()
+                attr = names.get(attr, attr)
+                item[attr] = item.get(attr, 0) + values[placeholder]
+        if set_part:
+            for piece in set_part.split(","):
+                left, placeholder = piece.split("=", 1)
+                attr = names.get(left.strip(), left.strip())
+                item[attr] = values[placeholder.strip()]
+        self.items[key] = item
+        return {}
+
     def query(self, **kwargs: Any) -> dict[str, Any]:
         pk_attr, sk_attr = ("gsi1pk", "gsi1sk") if kwargs.get("IndexName") == "gsi1" else ("pk", "sk")
         values = kwargs.get("ExpressionAttributeValues") or {}

@@ -42,4 +42,22 @@ describe("linkedin guardrails", () => {
       "https://www.linkedin.com/feed/?shareActive=true&text=Hello",
     );
   });
+
+  it("matches a blocked phrase only on a word boundary", () => {
+    const allowed = guardrails("I hire mentors, and interimistic is not a status.", "", [], settings);
+    expect(allowed.some((row) => row.code === "forbidden_word")).toBe(false);
+    const blocked = guardrails("Please hire me. I am interim.", "", [], settings);
+    const details = blocked.filter((row) => row.code === "forbidden_word").map((row) => row.detail);
+    expect(details).toContain("Remove “hire me”.");
+    expect(details).toContain("Remove “interim”.");
+  });
+
+  it("does not treat a bare number or #42 as a phone or hashtag", () => {
+    const plain = guardrails("We served 10000000 requests. See issue #42.", "", [], settings);
+    expect(plain.some((row) => row.code === "phone" || row.code === "hashtags")).toBe(false);
+    expect(guardrails("Call +85212345678.", "", [], settings).some((row) => row.code === "phone")).toBe(true);
+    expect(guardrails("Call 852 1234 5678.", "", [], settings).some((row) => row.code === "phone")).toBe(true);
+    const tagged = guardrails("See #Architecture.", "", [], { ...settings, hashtagCap: 0 });
+    expect(tagged.some((row) => row.code === "hashtags")).toBe(true);
+  });
 });

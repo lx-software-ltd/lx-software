@@ -47,7 +47,7 @@ export type LinkedInGuardrail = {
   readonly detail: string;
 };
 
-export type LinkedInSettings = {
+export type LinkedInDraftSettings = {
   postsPerWeek: number;
   weekdays: number[];
   slotHour: number;
@@ -92,7 +92,7 @@ export type LinkedInIdea = {
 export type LinkedInOverview = {
   enabled: boolean;
   publishEnabled: boolean;
-  settings: LinkedInSettings;
+  settings: LinkedInDraftSettings;
   pillars: readonly { id: string; label: string }[];
   connection: { status: string; channel: string };
   counts: { drafted: number; approved: number; published: number; ideas: number };
@@ -142,7 +142,7 @@ export const SAMPLE_LINKEDIN_IDEAS: LinkedInIdea[] = [
   },
 ];
 
-export const DEFAULT_LINKEDIN_SETTINGS: LinkedInSettings = {
+export const DEFAULT_LINKEDIN_SETTINGS: LinkedInDraftSettings = {
   postsPerWeek: 2,
   weekdays: [1, 3],
   slotHour: 8,
@@ -180,16 +180,40 @@ export function isLinkedInPostUrl(url: string): boolean {
   return link.startsWith("https://www.linkedin.com/") || link.startsWith("https://linkedin.com/");
 }
 
-function terms(settings: Pick<LinkedInSettings, "forbiddenWords">): string[] {
+function terms(
+  settings: Pick<
+    LinkedInDraftSettings,
+    "forbiddenWords"
+  >,
+): string[] {
   const extra = settings.forbiddenWords.map((word) => word.trim().toLowerCase()).filter(Boolean);
   return [...new Set([...BUILTIN_FORBIDDEN, ...extra])];
+}
+
+function containsTerm(haystack: string, term: string): boolean {
+  if (!term) return false;
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\w])${escaped}(?![\\w])`).test(haystack);
+}
+
+function hasPhone(text: string): boolean {
+  if (/\+\d{8,15}/.test(text)) return true;
+  for (const match of text.matchAll(/(?:\d[\s.\-()]*){8,}/g)) {
+    const chunk = match[0] ?? "";
+    const digits = chunk.replace(/\D/g, "");
+    if (digits.length >= 8 && digits.length <= 15 && /\d[\s.\-()]+\d/.test(chunk)) return true;
+  }
+  return false;
 }
 
 export function guardrails(
   body: string,
   comment: string,
   hashtags: readonly string[],
-  settings: Pick<LinkedInSettings, "forbiddenWords" | "allowProductMentions" | "hashtagCap" | "linksInFirstComment">,
+  settings: Pick<
+    LinkedInDraftSettings,
+    "forbiddenWords" | "allowProductMentions" | "hashtagCap" | "linksInFirstComment"
+  >,
 ): LinkedInGuardrail[] {
   const findings: LinkedInGuardrail[] = [];
   const hook = hookText(body);
@@ -218,13 +242,13 @@ export function guardrails(
   }
   const haystack = `${body}\n${comment}`.toLowerCase();
   for (const term of terms(settings)) {
-    if (term && haystack.includes(term)) {
+    if (containsTerm(haystack, term)) {
       findings.push({ code: "forbidden_word", severity: "error", detail: `Remove “${term}”.` });
     }
   }
   if (!settings.allowProductMentions) {
     for (const term of PRODUCT_PHRASES) {
-      if (haystack.includes(term)) {
+      if (containsTerm(haystack, term)) {
         findings.push({
           code: "product_mention",
           severity: "error",
@@ -233,7 +257,7 @@ export function guardrails(
       }
     }
   }
-  const inline = [...body.matchAll(/#(\w+)/g)].map((match) => match[1] ?? "");
+  const inline = [...body.matchAll(/#([A-Za-z][\w]{0,39})/g)].map((match) => match[1] ?? "");
   const tags = hashtags.map((tag) => tag.replace(/^#/, "").trim()).filter(Boolean);
   const unique = new Set([...tags, ...inline]);
   if (unique.size > settings.hashtagCap) {
@@ -246,7 +270,7 @@ export function guardrails(
   if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(body + comment)) {
     findings.push({ code: "email", severity: "error", detail: "Remove the email address." });
   }
-  if (/(?:\+\d{8,15})|(?:\b\d{8,}\b)/.test(body + comment)) {
+  if (hasPhone(body + comment)) {
     findings.push({ code: "phone", severity: "error", detail: "Remove the phone number." });
   }
   if (/(https?:\/\/|www\.)\S+/i.test(body)) {
@@ -293,7 +317,7 @@ function isoWeek(year: number, month: number, day: number): string {
 
 /** Upcoming 08:30 HKT slots (or the saved hour) as UTC timestamps. */
 export function nextSlots(
-  settings: Pick<LinkedInSettings, "weekdays" | "postsPerWeek" | "slotHour" | "slotMinute">,
+  settings: Pick<LinkedInDraftSettings, "weekdays" | "postsPerWeek" | "slotHour" | "slotMinute">,
   now: Date,
   count: number,
   taken: ReadonlySet<string> = new Set(),

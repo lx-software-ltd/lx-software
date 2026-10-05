@@ -6,7 +6,7 @@ import {
   WEEKDAY_OPTIONS,
   pillarLabel,
   type LinkedInOverview,
-  type LinkedInSettings,
+  type LinkedInDraftSettings,
 } from "../../lib/linkedinModel";
 import { AdminEditorSection, AdminField, AdminFieldGrid } from "../ui";
 
@@ -18,7 +18,7 @@ export function LinkedInSettingsCard({
   readonly enabled: boolean;
 }) {
   const linkedIn = useLinkedIn();
-  const [settings, setSettings] = useState<LinkedInSettings>(overview.settings);
+  const [settings, setSettings] = useState<LinkedInDraftSettings>(overview.settings);
   const [extraWords, setExtraWords] = useState(overview.settings.forbiddenWords.join("\n"));
   const formId = "linkedin-settings";
   const spend = overview.spendUsdMonth.toFixed(2);
@@ -49,7 +49,13 @@ export function LinkedInSettingsCard({
               .split("\n")
               .map((word) => word.trim().toLowerCase())
               .filter(Boolean);
-            void linkedIn.saveSettings.mutate({ ...settings, forbiddenWords });
+            void linkedIn.saveSettings
+              .mutateAsync({ ...settings, forbiddenWords })
+              .then((saved) => {
+                setSettings(saved.settings);
+                setExtraWords(saved.settings.forbiddenWords.join("\n"));
+              })
+              .catch(() => undefined);
           }}
         >
           {linkedIn.saveSettings.isError ? (

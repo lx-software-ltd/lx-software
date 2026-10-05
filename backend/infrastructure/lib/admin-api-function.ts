@@ -264,7 +264,7 @@ export function defineAdminApiFunction(
 
   enableBankingSigningKey.grant(adminFn, "kms:Sign", "kms:GetPublicKey");
 
-  defineBoardSchedules(scope, adminFn, hasEvolvesproutsDataApi);
+  defineBoardSchedules(scope, adminFn, hasEvolvesproutsDataApi, lxSoftwareLinkedinEnabled);
   const outreach = defineOutreachEvents(
     scope,
     adminFn,
