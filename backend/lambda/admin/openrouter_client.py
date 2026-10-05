@@ -422,7 +422,7 @@ def generate_image(
     secrets_client: Any,
     timeout: int = 90,
     aspect_ratio: str = "",
-    resolution: str = "1K",
+    resolution: str = "2K",
     n: int = 1,
     output_format: str = "png",
     seed: int | None = None,
@@ -435,6 +435,8 @@ def generate_image(
     The Image API has no ``data_collection: deny`` routing, so a reference
     image is sent only when the caller passes one. A failed generation comes
     back as an ``OpenRouterError`` (typically 502) and is not billed.
+    The default resolution is ``2K``. Seedream 4.5 rejects ``1K``: those
+    sizes are under its 3,686,400 pixel minimum.
     """
     payload: dict[str, Any] = {
         "model": model,
