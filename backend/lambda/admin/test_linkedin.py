@@ -380,10 +380,73 @@ class LinkedInStoreTests(unittest.TestCase):
     def test_system_prompt_carries_substance_rules(self) -> None:
         prompt = linkedin_draft._system_prompt(linkedin_store.default_settings())  # noqa: SLF001
         self.assertIn("Substance rules always apply.", prompt)
+        self.assertIn("Write as I, never as a company 'we'", prompt)
         self.assertIn("one real situation", prompt)
+        self.assertIn("in the order it happened", prompt)
+        self.assertIn("No sensationalism, no wow.", prompt)
         self.assertIn("game-changer", prompt)
         self.assertIn("No emojis, arrows, or symbols", prompt)
         self.assertLess(prompt.index("Substance rules"), prompt.index("Voice"))
+
+    def test_company_we_forces_a_rewrite_but_one_conversation_does_not(self) -> None:
+        plural = linkedin_draft.slop_findings("We built it. Our team shipped it on Friday.")
+        self.assertEqual(len(plural), 1)
+        self.assertIn("Write as I, not we", plural[0]["detail"])
+        self.assertIn("2 times", plural[0]["detail"])
+        lunch = "I had lunch with a former colleague and we wondered why there was no list. So I built one."
+        self.assertEqual(linkedin_draft.slop_findings(lunch), [])
+        self.assertEqual(linkedin_draft.slop_findings("Power is not the same as powerful."), [])
+        self.assertEqual(linkedin_draft.slop_findings(linkedin_store.STYLE_EXAMPLE), [])
+
+    def test_style_example_is_a_setting_and_a_prompt_block(self) -> None:
+        settings = linkedin_store.default_settings()
+        self.assertEqual(settings["styleExample"], linkedin_store.STYLE_EXAMPLE)
+        self.assertLessEqual(len(linkedin_store.STYLE_EXAMPLE), linkedin_store.STYLE_EXAMPLE_MAX)
+        self.assertEqual(linkedin_store.overview(self.table)["styleExampleMax"], linkedin_store.STYLE_EXAMPLE_MAX)
+        prompt = linkedin_draft._system_prompt(settings)  # noqa: SLF001
+        self.assertIn("Example of the tone, written by the author.", prompt)
+        self.assertIn("Do not reuse its subject, its opening line, or any of its sentences.", prompt)
+        self.assertIn(f"---\n{linkedin_store.STYLE_EXAMPLE}\n---", prompt)
+        self.assertLess(prompt.index("Voice"), prompt.index("Example of the tone"))
+        self.assertLess(prompt.index("Example of the tone"), prompt.index("Reply with one JSON object"))
+        self.assertEqual(
+            linkedin_draft.style_example_hook(settings),
+            "Here is about building my AI exec board and its AI staff.",
+        )
+        blank = linkedin_draft._system_prompt({**settings, "styleExample": "  "})  # noqa: SLF001
+        self.assertNotIn("Example of the tone", blank)
+        self.assertNotIn("---", blank)
+        self.assertEqual(linkedin_draft.style_example_hook({**settings, "styleExample": ""}), "")
+
+    def test_style_example_saves_blank_and_rejects_over_length(self) -> None:
+        saved = linkedin_store.save_settings(
+            self.table, {**linkedin_store.default_settings(), "styleExample": "  A post I wrote.  "}
+        )
+        self.assertEqual(saved["styleExample"], "A post I wrote.")
+        self.assertEqual(linkedin_store.load_settings(self.table)["styleExample"], "A post I wrote.")
+        cleared = linkedin_store.save_settings(self.table, {**saved, "styleExample": ""})
+        self.assertEqual(cleared["styleExample"], "")
+        self.assertEqual(linkedin_store.load_settings(self.table)["styleExample"], "")
+        with self.assertRaises(LinkedInError):
+            linkedin_store.save_settings(
+                self.table, {**saved, "styleExample": "x" * (linkedin_store.STYLE_EXAMPLE_MAX + 1)}
+            )
+
+    def test_generation_keeps_the_example_opening_off_new_drafts(self) -> None:
+        captured: list[list[dict[str, str]]] = []
+
+        def complete(messages: list[dict[str, str]]):
+            captured.append(messages)
+            return (
+                {"body": "A short hook.\n\nOne lesson.", "firstComment": "", "hashtags": [], "pillar": ""},
+                0.01,
+            )
+
+        linkedin_draft.generate_drafts(self.table, count=1, complete=complete)
+        user = captured[0][1]["content"]
+        self.assertIn("Do not reuse these openings:", user)
+        self.assertIn("Here is about building my AI exec board and its AI staff.", user)
+        self.assertIn("Example of the tone", captured[0][0]["content"])
 
     def test_openrouter_error_becomes_a_failed_generation(self) -> None:
         from openrouter_client import OpenRouterError

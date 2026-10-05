@@ -133,18 +133,65 @@ _RETIRED_DEFAULT_VOICE = (
 )
 
 # Shown in Settings as "Use recommended voice" and used until the owner writes
-# their own. Kept under the 1000-character voice limit.
+# their own. Kept under the 1000-character voice limit. Derived from a post the
+# owner wrote: a plain opening line, a story told in order, honest hedging, an
+# answered objection at the end.
 RECOMMENDED_VOICE = (
-    "Plain, specific, first person. I write the way an engineer explains a problem to a "
-    "colleague, not the way a brand posts. Every post is one real situation: name the "
-    "technology, the constraint, the number, what I tried, what broke, and what I would do "
-    "again. Lead with the concrete detail, not the moral. Short declarative sentences. Dry, "
-    "a little wry, no drama. No emojis, no arrows, no symbols. No buzzwords, no hustle "
-    "lines, no 'humbled', no 'game-changer', no 'here's the thing', no 'let that sink in'. "
-    "Do not generalise into advice about mindset or leadership; a reader should learn "
-    "something they could check. End on the specific trade-off or on an open question I "
-    "actually have, never a call to action."
+    "First person singular, always I, never we. Conversational, as if I were telling a "
+    "former colleague over lunch what I have been building. Open with one plain line that "
+    "says what the post is about: no hook, no question, no claim. Then tell it in order: "
+    "what I noticed, what I decided, what I built, where it broke, where it stands now. "
+    "Name the real constraint (a full-time job, nights and weekends, a month of "
+    "development) and real figures when I have them. Plain dashes for a short list. "
+    "One-line paragraphs are fine: 'So I built it.' Dry, understated, a little "
+    "self-deprecating; an aside or an ellipsis now and then. Admit what is unfinished and "
+    "what might fail. No sensationalism, no wow, no lesson headline, no moral, no call to "
+    "action. Finish by naming the obvious objection and answering it honestly, or with a "
+    "shrug such as 'done is better than perfect'. Usually 250 to 450 words."
 )
+
+STYLE_EXAMPLE_MAX = 3000
+
+# A post the owner wrote, shown to the model as the tone to match. Subject and
+# sentences are not to be reused; its first line goes on the avoid list.
+STYLE_EXAMPLE = """Here is about building my AI exec board and its AI staff.
+
+Some time ago, I had lunch with a former colleague, and we found ourselves wondering why there wasn't a single place to find activities for children in Hong Kong, sorted by location, price, and other useful criteria. In reality, these lists already exist, but they're rarely curated and often out of date.
+
+A couple of months ago, I decided to build a solution myself. Backend, frontend, admin portal... the whole thing.
+
+Then I hit a major issue: when was I actually going to find the time to run it?
+
+I've got a full-time job, and I'd already spent nights and weekends building the platform. Now I needed to:
+
+- Manage the finances
+- Build partnerships
+- Add new features
+- Run marketing campaigns
+
+...and all the other great things they teach you in an MBA. The problem is, they all take time. Maybe I needed to focus on just a few priorities first.
+
+Then I had another thought: why not build an executive board made up of AI personas that could help me decide what to focus on? Full CEO, CIO, CMO, CFO etc.
+
+So I built it.
+
+The problem was that the board kept generating more ideas and more tasks, and I still couldn't keep up.
+
+Then came the next idea.
+
+If I could build an executive board, why couldn't I build the staff that would actually execute what the board recommended?
+
+And ta-da! Well, that "ta-da" is still a work in progress after a month of development.
+
+Today, I have an AI executive board that generates tasks, prioritizes them, and assigns them to a team of AI staff members that execute them. A new insight from a competitor? The system analyzes it, generates ideas (such as a new website feature), develops a solution, tests it, and delivers it. All automatically. The machine is still far from perfect, but on a good day, it runs without supervision for 15-20 hours.
+
+I still keep human oversight over certain activities, particularly customer and partner communications, but for the first time, I'm genuinely starting to feel like launch day is within reach.
+
+For the techies out there, all of the code is open source and available on my GitHub.
+
+What started as a simple idea to help parents find activities for their children has evolved into something much bigger: an experiment in building a business that can largely run itself. Whether it's a brilliant idea or a terrible one remains to be seen, but it's certainly been one of the most interesting projects I've ever worked on.
+
+I know what you're thinking - AI is going to mess up some decisions and deliver something poor to my customers. Yes, maybe, or maybe not. I'm happy to gamble, and put as many guardrails as possible. Eventually done is better than perfect."""
 
 
 def default_settings() -> dict[str, Any]:
@@ -156,6 +203,8 @@ def default_settings() -> dict[str, Any]:
         "draftsPerGeneration": DRAFTS_PER_GENERATION_DEFAULT,
         # Blank uses the tone defaults in the draft prompt. A stored note overrides them.
         "voiceNotes": RECOMMENDED_VOICE,
+        # Blank sends no example. The owner can paste a newer post here.
+        "styleExample": STYLE_EXAMPLE,
         "forbiddenWords": [],
         "hashtagCap": HASHTAG_CAP_DEFAULT,
         "linksInFirstComment": False,
@@ -296,6 +345,9 @@ def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
     voice = str(body.get("voiceNotes", current["voiceNotes"]) or "").strip()
     if len(voice) > 1000:
         raise LinkedInError("voiceNotes is too long")
+    example = str(body.get("styleExample", current["styleExample"]) or "").strip()
+    if len(example) > STYLE_EXAMPLE_MAX:
+        raise LinkedInError(f"styleExample is over {STYLE_EXAMPLE_MAX} characters")
     notify = str(body.get("notifyEmail", current["notifyEmail"]) or "").strip()
     if notify and (notify.count("@") != 1 or notify.startswith("@") or notify.endswith("@")):
         raise LinkedInError("notifyEmail is invalid")
@@ -313,6 +365,7 @@ def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
         "slotMinute": minute,
         "draftsPerGeneration": drafts,
         "voiceNotes": voice,
+        "styleExample": example,
         "forbiddenWords": _words(body.get("forbiddenWords", current["forbiddenWords"])),
         "hashtagCap": cap,
         "linksInFirstComment": bool(body.get("linksInFirstComment", False)),
@@ -992,6 +1045,7 @@ def overview(table: Any) -> dict[str, Any]:
         "builtinForbidden": list(BUILTIN_FORBIDDEN),
         "defaultModel": (os.environ.get("OPENROUTER_MODEL") or "").strip(),
         "recommendedVoice": RECOMMENDED_VOICE,
+        "styleExampleMax": STYLE_EXAMPLE_MAX,
     }
 
 

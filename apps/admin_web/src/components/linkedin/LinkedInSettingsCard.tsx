@@ -4,6 +4,7 @@ import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { formatDateTimeHKT } from "../../lib/formatDisplay";
 import {
   BUILTIN_FORBIDDEN,
+  STYLE_EXAMPLE_MAX,
   WEEKDAY_OPTIONS,
   linkedInAccessState,
   pillarLabel,
@@ -162,10 +163,11 @@ export function LinkedInSettingsCard({
                 onChange={(event) => setSettings({ ...settings, voiceNotes: event.target.value })}
               />
               <p className="form-text mb-0">
-                How the posts should sound. This overrides the default tone. Substance and safety rules still apply: one
-                real situation with its specifics, no buzzwords or emoji, no employer, no availability, and the blocked
-                phrases. Leave blank for the default tone: first person, short lines, and a closing question. When Ideas is
-                empty, drafts draw on a built-in bank of concrete engineering situations.
+                How the posts should sound. This overrides the default tone. Substance and safety rules still apply:
+                written as I, not we; one real situation told in order with its specifics; no sensationalism, buzzwords
+                or emoji; no employer, no availability, and the blocked phrases. Leave blank for the default tone: first
+                person, short lines, and a closing question. When Ideas is empty, drafts draw on a built-in bank of
+                concrete engineering situations.
               </p>
               {overview.recommendedVoice && settings.voiceNotes.trim() !== overview.recommendedVoice ? (
                 <button
@@ -176,6 +178,22 @@ export function LinkedInSettingsCard({
                   Use recommended voice
                 </button>
               ) : null}
+            </AdminField>
+            <AdminField label="Example post" htmlFor="linkedin-example" span={2}>
+              <textarea
+                id="linkedin-example"
+                className="form-control"
+                rows={6}
+                maxLength={overview.styleExampleMax ?? STYLE_EXAMPLE_MAX}
+                placeholder="Paste a post you wrote and liked."
+                value={settings.styleExample}
+                onChange={(event) => setSettings({ ...settings, styleExample: event.target.value })}
+              />
+              <p className="form-text mb-0">
+                A post in your own words, shown to the model as the tone to match: its pacing, paragraph length,
+                hedging, and ending. The subject, opening line, and sentences are not reused. Replace it with a newer
+                post when your writing moves on, or leave blank to send no example.
+              </p>
             </AdminField>
             <AdminField label="Extra phrases to block" htmlFor="linkedin-blocked" span={2}>
               <textarea
