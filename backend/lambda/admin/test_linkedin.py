@@ -311,6 +311,13 @@ class LinkedInStoreTests(unittest.TestCase):
         self.assertNotIn('"body":""', prompt)
         self.assertIn("never an empty string", prompt)
 
+    def test_system_prompt_includes_voice(self) -> None:
+        settings = {**linkedin_store.default_settings(), "voiceNotes": "Short sentences. Dry. No emoji."}
+        prompt = linkedin_draft._system_prompt(settings)  # noqa: SLF001
+        self.assertIn("Follow this voice exactly: Short sentences. Dry. No emoji.", prompt)
+        blank = linkedin_draft._system_prompt({**settings, "voiceNotes": "  "})  # noqa: SLF001
+        self.assertNotIn("Follow this voice exactly:", blank)
+
     def test_live_generation_books_usage(self) -> None:
         from openrouter_client import ChatCompletion
         from openrouter_usage import usage_day_pk, utc_today
@@ -434,6 +441,26 @@ class LinkedInStoreTests(unittest.TestCase):
                 linkedin_draft.generate_drafts(self.table, count=1)
         self.assertEqual(chat.call_args.kwargs["model"], "openai/gpt-4.1-mini")
 
+    def test_live_generation_sends_voice_to_openrouter(self) -> None:
+        from openrouter_client import ChatCompletion
+
+        voice = "Short sentences. Dry. No emoji."
+        linkedin_store.save_settings(
+            self.table,
+            {**linkedin_store.default_settings(), "voiceNotes": voice},
+        )
+        completion = ChatCompletion(
+            text='{"body":"A short hook.\\n\\nOne lesson.","firstComment":"","hashtags":["Architecture"],"pillar":"architecture"}',
+            model="test-model",
+            usage={"promptTokens": 4, "completionTokens": 6, "totalTokens": 10, "cost": 0.01},
+        )
+        with patch.dict("os.environ", {"OPENROUTER_MODEL": "test-model"}):
+            with patch("openrouter_client.chat_completion", return_value=completion) as chat:
+                linkedin_draft.generate_drafts(self.table, count=1)
+        messages = chat.call_args.kwargs["messages"]
+        self.assertIn(f"Follow this voice exactly: {voice}", messages[0]["content"])
+        self.assertIn(f"Voice: {voice}", messages[1]["content"])
+
     def test_user_prompt_includes_voice(self) -> None:
         text = linkedin_draft._user_prompt(  # noqa: SLF001
             pillar="architecture",
@@ -442,6 +469,35 @@ class LinkedInStoreTests(unittest.TestCase):
             avoid=[],
         )
         self.assertIn("Voice: Dry, first person, one lesson.", text)
+        blank = linkedin_draft._user_prompt(  # noqa: SLF001
+            pillar="architecture",
+            idea="A rollback that took too long.",
+            voice="  ",
+            avoid=[],
+        )
+        self.assertNotIn("Voice:", blank)
+
+    def test_generation_puts_saved_voice_in_the_model_messages(self) -> None:
+        voice = "Short sentences. Dry. No emoji."
+        linkedin_store.save_settings(
+            self.table,
+            {**linkedin_store.default_settings(), "voiceNotes": voice},
+        )
+        captured: list[list[dict[str, str]]] = []
+
+        def complete(messages: list[dict[str, str]]):
+            captured.append(messages)
+            return (
+                {"body": "A short hook.\n\nOne lesson.", "firstComment": "", "hashtags": [], "pillar": ""},
+                0.01,
+            )
+
+        result = linkedin_draft.generate_drafts(self.table, count=1, complete=complete)
+        self.assertEqual(len(result["posts"]), 1)
+        self.assertEqual(len(captured), 1)
+        system, user = captured[0]
+        self.assertIn(f"Follow this voice exactly: {voice}", system["content"])
+        self.assertIn(f"Voice: {voice}", user["content"])
 
 
 class LinkedInHttpTests(unittest.TestCase):
