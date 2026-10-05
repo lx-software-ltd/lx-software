@@ -130,7 +130,7 @@ export function LinkedInSettingsCard({
                 onChange={(event) => setSettings({ ...settings, maxUsdPerMonth: Number(event.target.value) })}
               />
             </AdminField>
-            <AdminField label="Notify" htmlFor="linkedin-notify" span={2}>
+            <AdminField label="Notify" htmlFor="linkedin-notify">
               <input
                 id="linkedin-notify"
                 className="form-control"
@@ -138,6 +138,17 @@ export function LinkedInSettingsCard({
                 value={settings.notifyEmail}
                 placeholder="you@example.com"
                 onChange={(event) => setSettings({ ...settings, notifyEmail: event.target.value })}
+              />
+            </AdminField>
+            <AdminField label="Model" htmlFor="linkedin-model">
+              <input
+                id="linkedin-model"
+                className="form-control"
+                value={settings.model}
+                placeholder={overview.defaultModel || "provider/model"}
+                spellCheck={false}
+                autoComplete="off"
+                onChange={(event) => setSettings({ ...settings, model: event.target.value })}
               />
             </AdminField>
             <AdminField label="Voice" htmlFor="linkedin-voice" span={2}>

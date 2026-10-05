@@ -93,6 +93,8 @@ PILLARS: tuple[dict[str, str], ...] = (
 )
 
 _EMAIL = re.compile(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", re.I)
+_MODEL = re.compile(r"[A-Za-z0-9_./:-]+")
+MODEL_MAX = 120
 _PHONE_PLUS = re.compile(r"\+\d{8,15}")
 _PHONE_GROUP = re.compile(r"(?:\d[\s.\-()]*){8,}")
 _URL = re.compile(r"(https?://|www\.)\S+", re.I)
@@ -140,6 +142,7 @@ def default_settings() -> dict[str, Any]:
         "allowProductMentions": False,
         "maxUsdPerMonth": MAX_USD_DEFAULT,
         "notifyEmail": "",
+        "model": "",
         "pillars": [row["id"] for row in PILLARS],
     }
 
@@ -274,6 +277,12 @@ def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
     notify = str(body.get("notifyEmail", current["notifyEmail"]) or "").strip()
     if notify and (notify.count("@") != 1 or notify.startswith("@") or notify.endswith("@")):
         raise LinkedInError("notifyEmail is invalid")
+    model = str(body.get("model", current["model"]) or "").strip()
+    if model:
+        if len(model) > MODEL_MAX:
+            raise LinkedInError("model is too long")
+        if not _MODEL.fullmatch(model):
+            raise LinkedInError("model is invalid")
     pillars = _pillars(body.get("pillars", current["pillars"]))
     return {
         "postsPerWeek": posts,
@@ -288,6 +297,7 @@ def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
         "allowProductMentions": bool(body.get("allowProductMentions", False)),
         "maxUsdPerMonth": round(budget, 2),
         "notifyEmail": notify,
+        "model": model,
         "pillars": pillars,
     }
 
@@ -956,6 +966,7 @@ def overview(table: Any) -> dict[str, Any]:
         "spendUsdMonth": round(month_spend(table), 4),
         "nextSlots": next_slots(settings, count=8, taken=taken_slots(table)),
         "builtinForbidden": list(BUILTIN_FORBIDDEN),
+        "defaultModel": (os.environ.get("OPENROUTER_MODEL") or "").strip(),
     }
 
 

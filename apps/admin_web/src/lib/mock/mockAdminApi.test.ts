@@ -336,4 +336,25 @@ describe("mockAdminFetch", () => {
     expect(rows[0]?.quote).toBe("USD");
     expect(rows[0]?.rate).toBeCloseTo(1 / 7.8, 6);
   });
+
+  it("persists the LinkedIn draft OpenRouter model", async () => {
+    const overview = (await (await mockAdminFetch("/lx-software/linkedin")).json()) as {
+      settings: { model: string; notifyEmail: string };
+      defaultModel: string;
+    };
+    expect(overview.settings.model).toBe("");
+    expect(overview.defaultModel).toBe("mistralai/mistral-medium-3");
+    const put = await mockAdminFetch("/lx-software/linkedin/settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        ...overview.settings,
+        notifyEmail: "owner@example.com",
+        model: "openai/gpt-4.1-mini",
+      }),
+    });
+    expect(put.ok).toBe(true);
+    const saved = (await put.json()) as { settings: { model: string; notifyEmail: string } };
+    expect(saved.settings.model).toBe("openai/gpt-4.1-mini");
+    expect(saved.settings.notifyEmail).toBe("owner@example.com");
+  });
 });

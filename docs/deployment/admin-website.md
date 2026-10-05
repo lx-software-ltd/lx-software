@@ -490,6 +490,8 @@ Activity is not added to Other.
 LX Software → **LinkedIn** stores a personal posting queue. Drafts are
 written as a senior architect. The company name stays blocked in every draft.
 Generation uses the `linkedin` OpenRouter key above and books each call on the OpenRouter usage ledger.
+Settings → Drafts can pin an OpenRouter model slug next to Notify; an empty field uses `OpenRouterModel`.
+Voice is the tone note sent to that model for new drafts.
 
 | Parameter | Default | Production |
 |-----------|---------|------------|

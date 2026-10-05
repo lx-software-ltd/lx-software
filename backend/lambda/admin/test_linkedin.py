@@ -234,6 +234,18 @@ class LinkedInStoreTests(unittest.TestCase):
         self.assertEqual(linkedin_store.load_plan_date(self.table), "2026-10-04")
         self.assertIn("first person", saved["voiceNotes"])
 
+    def test_settings_save_keeps_openrouter_model(self) -> None:
+        saved = linkedin_store.save_settings(
+            self.table,
+            {**linkedin_store.default_settings(), "model": "openai/gpt-4.1-mini"},
+        )
+        self.assertEqual(saved["model"], "openai/gpt-4.1-mini")
+        self.assertEqual(linkedin_store.load_settings(self.table)["model"], "openai/gpt-4.1-mini")
+        with self.assertRaises(LinkedInError):
+            linkedin_store.save_settings(self.table, {**saved, "model": "not a slug"})
+        with self.assertRaises(LinkedInError):
+            linkedin_store.save_settings(self.table, {**saved, "model": "x" * 121})
+
     def test_regenerate_reuses_a_used_idea(self) -> None:
         idea = linkedin_store.create_idea(self.table, "A used lesson about reviews.", "leadership")
         linkedin_store.mark_idea_used(self.table, idea["ideaId"], "li_old")
@@ -273,14 +285,41 @@ class LinkedInStoreTests(unittest.TestCase):
             usage={"promptTokens": 11, "completionTokens": 22, "totalTokens": 33, "cost": 0.03},
         )
         with patch.dict("os.environ", {"OPENROUTER_MODEL": "test-model"}):
-            with patch("openrouter_client.chat_completion", return_value=completion):
+            with patch("openrouter_client.chat_completion", return_value=completion) as chat:
                 result = linkedin_draft.generate_drafts(self.table, count=1)
         self.assertEqual(len(result["posts"]), 1)
+        self.assertEqual(chat.call_args.kwargs["model"], "test-model")
         item = self.table.items[(usage_day_pk(utc_today()), "linkedin#draft")]
         self.assertEqual(item["calls"], 1)
         self.assertEqual(item["promptTokens"], 11)
         self.assertEqual(item["costCenter"], "lxSoftware")
         self.assertAlmostEqual(linkedin_store.month_spend(self.table), 0.03)
+
+    def test_live_generation_uses_settings_model(self) -> None:
+        from openrouter_client import ChatCompletion
+
+        linkedin_store.save_settings(
+            self.table,
+            {**linkedin_store.default_settings(), "model": "openai/gpt-4.1-mini"},
+        )
+        completion = ChatCompletion(
+            text='{"body":"A short hook.\\n\\nOne lesson.","firstComment":"","hashtags":["Architecture"],"pillar":"architecture"}',
+            model="openai/gpt-4.1-mini",
+            usage={"promptTokens": 4, "completionTokens": 6, "totalTokens": 10, "cost": 0.01},
+        )
+        with patch.dict("os.environ", {"OPENROUTER_MODEL": "test-model"}):
+            with patch("openrouter_client.chat_completion", return_value=completion) as chat:
+                linkedin_draft.generate_drafts(self.table, count=1)
+        self.assertEqual(chat.call_args.kwargs["model"], "openai/gpt-4.1-mini")
+
+    def test_user_prompt_includes_voice(self) -> None:
+        text = linkedin_draft._user_prompt(  # noqa: SLF001
+            pillar="architecture",
+            idea="A rollback that took too long.",
+            voice="Dry, first person, one lesson.",
+            avoid=[],
+        )
+        self.assertIn("Voice: Dry, first person, one lesson.", text)
 
 
 class LinkedInHttpTests(unittest.TestCase):
@@ -305,6 +344,21 @@ class LinkedInHttpTests(unittest.TestCase):
                 None,
             )
             self.assertEqual(created["statusCode"], 403)
+
+    def test_settings_put_stores_model_and_overview_exposes_default(self) -> None:
+        with patch.dict("os.environ", {"OPENROUTER_MODEL": "mistralai/mistral-medium-3"}):
+            overview = lambda_handler(_event("/lx-software/linkedin"), None)
+            self.assertEqual(_body(overview)["defaultModel"], "mistralai/mistral-medium-3")
+            saved = lambda_handler(
+                _event(
+                    "/lx-software/linkedin/settings",
+                    "PUT",
+                    {**linkedin_store.default_settings(), "model": "openai/gpt-4.1-mini"},
+                ),
+                None,
+            )
+        self.assertEqual(saved["statusCode"], 200)
+        self.assertEqual(_body(saved)["settings"]["model"], "openai/gpt-4.1-mini")
 
     def test_create_approve_and_mark_posted(self) -> None:
         created = lambda_handler(

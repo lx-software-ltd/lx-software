@@ -128,7 +128,7 @@ export function LinkedInDraftsSection({
                 placeholder="Search drafts"
               />
             </AdminFilterField>
-            <AdminFilterField label="Pillar" htmlFor="linkedin-pillar">
+            <AdminFilterField label="Pillar" htmlFor="linkedin-pillar" hideLabel>
               <select
                 id="linkedin-pillar"
                 className="form-select form-select-sm"
@@ -141,7 +141,7 @@ export function LinkedInDraftsSection({
                 ))}
               </select>
             </AdminFilterField>
-            <AdminFilterField label="Status" htmlFor="linkedin-status">
+            <AdminFilterField label="Status" htmlFor="linkedin-status" hideLabel>
               <select
                 id="linkedin-status"
                 className="form-select form-select-sm"
