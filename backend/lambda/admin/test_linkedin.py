@@ -290,6 +290,26 @@ class LinkedInStoreTests(unittest.TestCase):
             linkedin_draft.parse_draft("")
         with self.assertRaises(linkedin_draft.DraftError):
             linkedin_draft.parse_draft("I drafted a post but will not use JSON.")
+        with self.assertRaises(linkedin_draft.DraftError) as caught:
+            linkedin_draft.parse_draft(
+                '{"body":"","firstComment":"","hashtags":[],"pillar":"architecture"}'
+            )
+        self.assertIn("empty post", str(caught.exception))
+
+    def test_parse_draft_reads_alternate_body_fields(self) -> None:
+        from_text = linkedin_draft.parse_draft(
+            '{"text":"A short hook.\\n\\nOne lesson.","hashtags":["Architecture"]}'
+        )
+        self.assertEqual(from_text["body"], "A short hook.\n\nOne lesson.")
+        from_lines = linkedin_draft.parse_draft(
+            '{"body":["A short hook.","One lesson."],"hashtags":["Architecture"]}'
+        )
+        self.assertEqual(from_lines["body"], "A short hook.\nOne lesson.")
+
+    def test_system_prompt_does_not_show_an_empty_body(self) -> None:
+        prompt = linkedin_draft._system_prompt(linkedin_store.default_settings())  # noqa: SLF001
+        self.assertNotIn('"body":""', prompt)
+        self.assertIn("never an empty string", prompt)
 
     def test_live_generation_books_usage(self) -> None:
         from openrouter_client import ChatCompletion
@@ -321,13 +341,14 @@ class LinkedInStoreTests(unittest.TestCase):
             usage={"promptTokens": 1, "completionTokens": 1, "totalTokens": 2, "cost": 0.01},
         )
         with patch.dict("os.environ", {"OPENROUTER_MODEL": "test-model"}):
-            with patch("openrouter_client.chat_completion", return_value=completion):
+            with patch("openrouter_client.chat_completion", return_value=completion) as chat:
                 with patch.object(linkedin_draft, "_log_event") as log:
                     with self.assertRaises(linkedin_draft.DraftError):
                         linkedin_draft.complete_json([{"role": "user", "content": "x"}])
         self.assertEqual(log.call_args.kwargs["tag"], "linkedin_draft_parse_failed")
         self.assertEqual(log.call_args.kwargs["text_len"], 8)
         self.assertEqual(log.call_args.kwargs["model"], "test-model")
+        self.assertEqual(chat.call_count, 2)
 
     def test_live_generation_uses_settings_model(self) -> None:
         from openrouter_client import ChatCompletion

@@ -18,6 +18,7 @@ from linkedin_store import LinkedInError
 from openrouter_client import OpenRouterError, parse_json_object_text
 
 SERVICE = "linkedin"
+_BODY_KEYS = ("body", "post", "text", "content", "commentary")
 
 
 class DraftError(RuntimeError):
@@ -41,8 +42,11 @@ def _system_prompt(settings: dict[str, Any]) -> str:
         f"At most {int(settings.get('hashtagCap') or 0)} hashtags, without the # sign, "
         "returned in the hashtags array rather than the body. "
         f"Never use these phrases: {terms}. "
-        "Reply with JSON only: "
-        '{"body":"","firstComment":"","hashtags":[],"pillar":""}'
+        "Reply with one JSON object. body is required and must be the full post, "
+        "never an empty string. Also include firstComment (string), hashtags "
+        "(array of strings without #), and pillar. Example: "
+        '{"body":"A short hook.\\n\\nOne concrete lesson.\\n\\nWhat would you '
+        'have done?","firstComment":"","hashtags":["Architecture"],"pillar":"architecture"}'
     )
 
 
@@ -72,6 +76,20 @@ def _user_prompt(
     return "\n".join(lines)
 
 
+def _field_text(value: Any) -> str:
+    if isinstance(value, list):
+        return "\n".join(str(part).rstrip() for part in value if str(part).strip()).strip()
+    return str(value or "").strip()
+
+
+def _draft_body(parsed: dict[str, Any]) -> str:
+    for key in _BODY_KEYS:
+        text = _field_text(parsed.get(key))
+        if text:
+            return text
+    return ""
+
+
 def parse_draft(text: str) -> dict[str, Any]:
     raw = (text or "").strip()
     if not raw:
@@ -80,14 +98,16 @@ def parse_draft(text: str) -> dict[str, Any]:
         parsed = parse_json_object_text(raw)
     except OpenRouterError as exc:
         raise DraftError("The model did not return JSON.") from exc
-    body = str(parsed.get("body") or "").strip()
+    body = _draft_body(parsed)
     if not body:
+        keys = ",".join(sorted(str(key) for key in parsed.keys())[:12])
+        _log_event("warning", tag="linkedin_draft_empty_body", keys=keys)
         raise DraftError("The model returned an empty post.")
     return {
         "body": body,
-        "firstComment": str(parsed.get("firstComment") or "").strip(),
+        "firstComment": _field_text(parsed.get("firstComment")),
         "hashtags": _usable_hashtags(parsed.get("hashtags")),
-        "pillar": str(parsed.get("pillar") or "").strip(),
+        "pillar": _field_text(parsed.get("pillar")),
     }
 
 
@@ -135,32 +155,52 @@ def complete_json(
     model = draft_model(settings)
     if not model:
         raise DraftError("OPENROUTER_MODEL is not set")
-    result = openrouter_client.chat_completion(
-        messages=messages,
-        model=model,
-        secrets_client=boto3.client("secretsmanager"),
-        timeout=int(os.environ.get("LINKEDIN_DRAFT_TIMEOUT_SECONDS") or "60"),
-        json_mode=True,
-        max_tokens=1200,
-        temperature=0.7,
-        service=SERVICE,
-        owner="draft",
-    )
-    if table is not None:
-        record_draft_usage(table, result.usage)
-    try:
-        return parse_draft(result.text), float(result.cost_usd or 0)
-    except DraftError:
-        preview = (result.text or "").lstrip()[:1]
-        _log_event(
-            "warning",
-            tag="linkedin_draft_parse_failed",
-            model=result.model,
-            finish_reason=result.finish_reason,
-            text_len=len(result.text or ""),
-            starts_with=preview,
+    pending = list(messages)
+    spent = 0.0
+    last_error: DraftError | None = None
+    for attempt in range(2):
+        result = openrouter_client.chat_completion(
+            messages=pending,
+            model=model,
+            secrets_client=boto3.client("secretsmanager"),
+            timeout=int(os.environ.get("LINKEDIN_DRAFT_TIMEOUT_SECONDS") or "60"),
+            json_mode=True,
+            max_tokens=1200,
+            temperature=0.7,
+            service=SERVICE,
+            owner="draft",
         )
-        raise
+        spent += float(result.cost_usd or 0)
+        if table is not None:
+            record_draft_usage(table, result.usage)
+        try:
+            return parse_draft(result.text), spent
+        except DraftError as exc:
+            preview = (result.text or "").lstrip()[:1]
+            _log_event(
+                "warning",
+                tag="linkedin_draft_parse_failed",
+                model=result.model,
+                finish_reason=result.finish_reason,
+                text_len=len(result.text or ""),
+                starts_with=preview,
+                attempt=attempt,
+            )
+            last_error = exc
+            if attempt == 0:
+                pending = [
+                    *pending,
+                    {
+                        "role": "user",
+                        "content": (
+                            "body must be the full post text. Do not return empty strings. "
+                            "Reply with the JSON object again."
+                        ),
+                    },
+                ]
+                continue
+            raise
+    raise last_error or DraftError("The model did not return a post.")
 
 
 def _messages(settings: dict[str, Any], pillar: str, idea: str, avoid: list[str]) -> list[dict[str, str]]:
