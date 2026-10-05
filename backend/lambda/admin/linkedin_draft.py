@@ -41,6 +41,10 @@ class DraftError(RuntimeError):
         self.stop = stop
 
 
+def _voice_notes(settings: dict[str, Any]) -> str:
+    return str(settings.get("voiceNotes") or "").strip()
+
+
 def _system_prompt(settings: dict[str, Any]) -> str:
     terms = ", ".join(linkedin_store.forbidden_terms(settings))
     product = (
@@ -48,9 +52,11 @@ def _system_prompt(settings: dict[str, Any]) -> str:
         if settings.get("allowProductMentions")
         else "Do not mention any product or company, including LX Software, Siu Tin Dei, and Evolve Sprouts."
     )
+    voice = _voice_notes(settings)
+    voice_block = f"Follow this voice exactly: {voice} " if voice else ""
     return (
         "You draft LinkedIn posts for a senior architect who is growing a personal "
-        "presence. Write in the first person. One idea per post. The first line is "
+        f"presence. {voice_block}Write in the first person. One idea per post. The first line is "
         f"the hook and must be at most {linkedin_store.HOOK_MAX} characters. Use short "
         "lines after that. End with a question or a reflection, not a pitch. Never say "
         "the author is available, open to work, or looking for clients. Never name an "
@@ -82,8 +88,9 @@ def _user_prompt(
     lines = [
         f"Pillar: {label} ({pillar}).",
         f"Angle: {brief}",
-        f"Voice: {voice}",
     ]
+    if voice.strip():
+        lines.append(f"Voice: {voice.strip()}")
     if idea:
         lines.append(f"Use this idea, in the author's words where you can: {idea}")
     if avoid:
@@ -244,7 +251,7 @@ def _messages(settings: dict[str, Any], pillar: str, idea: str, avoid: list[str]
             "content": _user_prompt(
                 pillar=pillar,
                 idea=idea,
-                voice=str(settings.get("voiceNotes") or ""),
+                voice=_voice_notes(settings),
                 avoid=avoid,
             ),
         },
