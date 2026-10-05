@@ -125,6 +125,14 @@ def pillar_label(pillar_id: str) -> str:
     return pillar_id
 
 
+# The previous default restated the safety rules and was not a voice. A stored
+# copy is treated as blank so generation uses the tone defaults instead.
+_RETIRED_DEFAULT_VOICE = (
+    "Senior architect writing in the first person. One lesson per post. "
+    "No company name, no employer, no offer of availability."
+)
+
+
 def default_settings() -> dict[str, Any]:
     return {
         "postsPerWeek": POSTS_PER_WEEK_DEFAULT,
@@ -132,10 +140,8 @@ def default_settings() -> dict[str, Any]:
         "slotHour": SLOT_HOUR_DEFAULT,
         "slotMinute": SLOT_MINUTE_DEFAULT,
         "draftsPerGeneration": DRAFTS_PER_GENERATION_DEFAULT,
-        "voiceNotes": (
-            "Senior architect writing in the first person. One lesson per post. "
-            "No company name, no employer, no offer of availability."
-        ),
+        # Blank uses the tone defaults in the draft prompt. A stored note overrides them.
+        "voiceNotes": "",
         "forbiddenWords": [],
         "hashtagCap": HASHTAG_CAP_DEFAULT,
         "linksInFirstComment": False,
@@ -206,6 +212,8 @@ def load_settings(table: Any) -> dict[str, Any]:
     merged["weekdays"] = _weekdays(merged.get("weekdays"))
     merged["pillars"] = _pillars(merged.get("pillars"))
     merged["forbiddenWords"] = _words(merged.get("forbiddenWords"))
+    if str(merged.get("voiceNotes") or "").strip() == _RETIRED_DEFAULT_VOICE:
+        merged["voiceNotes"] = ""
     return merged
 
 
@@ -290,7 +298,7 @@ def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
         "slotHour": hour,
         "slotMinute": minute,
         "draftsPerGeneration": drafts,
-        "voiceNotes": voice or str(current["voiceNotes"]),
+        "voiceNotes": voice,
         "forbiddenWords": _words(body.get("forbiddenWords", current["forbiddenWords"])),
         "hashtagCap": cap,
         "linksInFirstComment": bool(body.get("linksInFirstComment", False)),

@@ -1,12 +1,15 @@
 """Draft LinkedIn posts for a personal presence, not a company page.
 
-The model is told to stay in the first person and to avoid company, product,
-and availability language. Deterministic checks in ``linkedin_store`` still
-run after the model returns.
+Settings voice controls tone. The tone defaults (first person, short lines, a
+closing question) apply only where that voice is blank or silent. Safety rules
+— hook length, no employer, no availability, no pitch, forbidden phrases —
+always apply. Deterministic checks in ``linkedin_store`` still run after the
+model returns.
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from typing import Any
@@ -45,6 +48,19 @@ def _voice_notes(settings: dict[str, Any]) -> str:
     return str(settings.get("voiceNotes") or "").strip()
 
 
+def voice_hash(settings: dict[str, Any]) -> str:
+    """Short digest of the voice that produced a draft. Empty voice has its own hash."""
+    return hashlib.sha256(_voice_notes(settings).encode("utf-8")).hexdigest()[:16]
+
+
+# Shape only. A filled body so json_mode does not echo an empty post, and no
+# cadence (short lines, a closing question) for the model to imitate.
+_SCHEMA_EXAMPLE = (
+    '{"body":"The full post goes here.","firstComment":"",'
+    '"hashtags":["Topic"],"pillar":"architecture"}'
+)
+
+
 def _system_prompt(settings: dict[str, Any]) -> str:
     terms = ", ".join(linkedin_store.forbidden_terms(settings))
     product = (
@@ -53,22 +69,45 @@ def _system_prompt(settings: dict[str, Any]) -> str:
         else "Do not mention any product or company, including LX Software, Siu Tin Dei, and Evolve Sprouts."
     )
     voice = _voice_notes(settings)
-    voice_block = f"Follow this voice exactly: {voice} " if voice else ""
-    return (
-        "You draft LinkedIn posts for a senior architect who is growing a personal "
-        f"presence. {voice_block}Write in the first person. One idea per post. The first line is "
-        f"the hook and must be at most {linkedin_store.HOOK_MAX} characters. Use short "
-        "lines after that. End with a question or a reflection, not a pitch. Never say "
-        "the author is available, open to work, or looking for clients. Never name an "
-        f"employer. {product} No links in the body. "
-        f"At most {int(settings.get('hashtagCap') or 0)} hashtags, without the # sign, "
-        "returned in the hashtags array rather than the body. "
-        f"Never use these phrases: {terms}. "
-        "Reply with one JSON object. body is required and must be the full post, "
-        "never an empty string. Also include firstComment (string), hashtags "
-        "(array of strings without #), and pillar. Example: "
-        '{"body":"A short hook.\\n\\nOne concrete lesson.\\n\\nWhat would you '
-        'have done?","firstComment":"","hashtags":["Architecture"],"pillar":"architecture"}'
+    if voice:
+        voice_block = (
+            "Voice — follow this exactly. It overrides the tone defaults "
+            "(first person, short lines, a closing question), including cadence and ending. "
+            "It does not override the safety rules.\n"
+            f"{voice}"
+        )
+    else:
+        voice_block = "Voice: none. Use the tone defaults."
+    return "\n\n".join(
+        [
+            (
+                "You draft LinkedIn posts for a senior architect who is growing a personal "
+                "presence. One idea per post."
+            ),
+            (
+                "Tone defaults, used only when the voice does not say otherwise: "
+                "write in the first person, use short lines after the hook, and end with "
+                "a question or a reflection."
+            ),
+            (
+                "Safety rules always apply. The voice cannot override them. "
+                f"The first line is the hook and must be at most {linkedin_store.HOOK_MAX} characters. "
+                "Never say the author is available, open to work, or looking for clients. "
+                "Never name an employer. Never pitch. "
+                f"{product} No links in the body. "
+                f"At most {int(settings.get('hashtagCap') or 0)} hashtags, without the # sign, "
+                "returned in the hashtags array rather than the body. "
+                f"Never use these phrases: {terms}."
+            ),
+            voice_block,
+            (
+                "Reply with one JSON object. body is required and must be the full post, "
+                "never an empty string. Also include firstComment (string), hashtags "
+                "(array of strings without #), and pillar. The example is the shape only; "
+                "do not copy its wording.\n"
+                f"{_SCHEMA_EXAMPLE}"
+            ),
+        ]
     )
 
 
@@ -85,12 +124,20 @@ def _user_prompt(
         if row["id"] == pillar:
             brief = row["brief"]
             break
-    lines = [
-        f"Pillar: {label} ({pillar}).",
-        f"Angle: {brief}",
-    ]
-    if voice.strip():
-        lines.append(f"Voice: {voice.strip()}")
+    lines: list[str] = []
+    cleaned = voice.strip()
+    if cleaned:
+        lines.append(
+            "Write in this voice. It overrides the tone defaults "
+            "(first person, short lines, a closing question). Safety rules still apply."
+        )
+        lines.append(f"Voice: {cleaned}")
+    lines.extend(
+        [
+            f"Pillar: {label} ({pillar}).",
+            f"Angle: {brief}",
+        ]
+    )
     if idea:
         lines.append(f"Use this idea, in the author's words where you can: {idea}")
     if avoid:
@@ -260,12 +307,20 @@ def _messages(settings: dict[str, Any], pillar: str, idea: str, avoid: list[str]
 
 def _critic_messages(settings: dict[str, Any], draft: dict[str, Any], findings: list[dict[str, str]]) -> list[dict[str, str]]:
     problems = "; ".join(row["detail"] for row in findings if row.get("severity") == "error")
+    voice = _voice_notes(settings)
+    voice_line = ""
+    if voice:
+        voice_line = (
+            f"Keep this voice exactly: {voice}\n"
+            "The voice still overrides the tone defaults. Safety rules still apply.\n"
+        )
     return [
         {"role": "system", "content": _system_prompt(settings)},
         {
             "role": "user",
             "content": (
                 "Rewrite this post so it passes the checks. Keep the same idea.\n"
+                f"{voice_line}"
                 f"Checks: {problems}\n"
                 f"Post:\n{draft.get('body') or ''}"
             ),
@@ -398,7 +453,11 @@ def generate_drafts(
                     "ideaId": str(idea.get("ideaId") or ""),
                 },
                 settings=settings,
-                generation={"model": draft_model(settings), "jobId": job_id},
+                generation={
+                    "model": draft_model(settings),
+                    "jobId": job_id,
+                    "voiceHash": voice_hash(settings),
+                },
             )
         except LinkedInError as exc:
             errors.append(str(exc))

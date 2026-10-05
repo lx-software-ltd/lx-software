@@ -64,6 +64,10 @@ describe("linkedin guardrails", () => {
     expect(DEFAULT_LINKEDIN_SETTINGS.model).toBe("");
   });
 
+  it("leaves voice blank so the tone defaults apply until Settings sets one", () => {
+    expect(DEFAULT_LINKEDIN_SETTINGS.voiceNotes).toBe("");
+  });
+
   it("matches a blocked phrase only on a word boundary", () => {
     const allowed = guardrails("I hire mentors, and interimistic is not a status.", "", [], settings);
     expect(allowed.some((row) => row.code === "forbidden_word")).toBe(false);
