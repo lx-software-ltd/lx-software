@@ -491,7 +491,7 @@ LX Software → **LinkedIn** stores a personal posting queue. Drafts are
 written as a senior architect. The company name stays blocked in every draft.
 Generation uses the `linkedin` OpenRouter key above and books each call on the OpenRouter usage ledger.
 Settings → Drafts can pin an OpenRouter model slug next to Notify; an empty field uses `OpenRouterModel`.
-Voice is the tone the model must follow on new drafts and on guardrail rewrites. It overrides the default tone (first person, short lines, a closing question). Hook length, employer, availability, pitch, and blocked phrases stay in force. Leave Voice blank to use that default tone. Each draft stores `generation.voiceHash` for the voice that produced it.
+Voice is the tone the model must follow on new drafts and on guardrail rewrites. It overrides the default tone (first person, short lines, a closing question). Substance rules (one real situation with its system, constraint and figures; no buzzwords or emoji) and safety rules (hook length, employer, availability, pitch, blocked phrases) stay in force. **Use recommended voice** fills the field with `RECOMMENDED_VOICE` from `linkedin_store.py`, which is also the default; leave Voice blank to use the default tone only. A draft that contains an emoji or a phrase from `SLOP_PHRASES` (`linkedin_draft.py`) gets the one rewrite pass. When Ideas has no `new` rows, each draft is written from a seed in `backend/lambda/admin/linkedin_seeds.py` — concrete problems this codebase solved, with no company or product names — and the post stores `seedId` so a seed is not reused while others remain. Each draft also stores `generation.voiceHash` for the voice that produced it.
 
 | Parameter | Default | Production |
 |-----------|---------|------------|

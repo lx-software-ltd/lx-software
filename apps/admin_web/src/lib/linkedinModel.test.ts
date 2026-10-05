@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LINKEDIN_SETTINGS,
+  RECOMMENDED_LINKEDIN_VOICE,
   escapeCommentary,
   guardrails,
   isLinkedInPostUrl,
@@ -64,8 +65,10 @@ describe("linkedin guardrails", () => {
     expect(DEFAULT_LINKEDIN_SETTINGS.model).toBe("");
   });
 
-  it("leaves voice blank so the tone defaults apply until Settings sets one", () => {
-    expect(DEFAULT_LINKEDIN_SETTINGS.voiceNotes).toBe("");
+  it("starts with the recommended voice and keeps it under the 1000-character limit", () => {
+    expect(DEFAULT_LINKEDIN_SETTINGS.voiceNotes).toBe(RECOMMENDED_LINKEDIN_VOICE);
+    expect(RECOMMENDED_LINKEDIN_VOICE.length).toBeLessThanOrEqual(1000);
+    expect(RECOMMENDED_LINKEDIN_VOICE).toContain("one real situation");
   });
 
   it("matches a blocked phrase only on a word boundary", () => {

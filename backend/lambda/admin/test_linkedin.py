@@ -15,6 +15,7 @@ install_aws_stubs()
 import linkedin  # noqa: E402
 import linkedin_api  # noqa: E402
 import linkedin_draft  # noqa: E402
+import linkedin_seeds  # noqa: E402
 import linkedin_store  # noqa: E402
 import runtime  # noqa: E402
 from dispatch import lambda_handler  # noqa: E402
@@ -235,7 +236,7 @@ class LinkedInStoreTests(unittest.TestCase):
         self.assertEqual(saved["voiceNotes"], "")
         self.assertEqual(linkedin_store.load_settings(self.table)["voiceNotes"], "")
 
-    def test_retired_default_voice_loads_as_blank(self) -> None:
+    def test_retired_default_voice_loads_as_the_recommended_voice(self) -> None:
         linkedin_store.save_settings(
             self.table,
             {
@@ -246,7 +247,14 @@ class LinkedInStoreTests(unittest.TestCase):
                 ),
             },
         )
-        self.assertEqual(linkedin_store.load_settings(self.table)["voiceNotes"], "")
+        self.assertEqual(
+            linkedin_store.load_settings(self.table)["voiceNotes"],
+            linkedin_store.RECOMMENDED_VOICE,
+        )
+        self.assertLessEqual(len(linkedin_store.RECOMMENDED_VOICE), 1000)
+        self.assertEqual(linkedin_store.default_settings()["voiceNotes"], linkedin_store.RECOMMENDED_VOICE)
+        overview = linkedin_store.overview(self.table)
+        self.assertEqual(overview["recommendedVoice"], linkedin_store.RECOMMENDED_VOICE)
         linkedin_store.save_settings(
             self.table,
             {**linkedin_store.default_settings(), "voiceNotes": "Short sentences. Dry. No emoji."},
@@ -279,7 +287,103 @@ class LinkedInStoreTests(unittest.TestCase):
         )
         self.assertEqual(chosen[0]["idea"]["text"], "A used lesson about reviews.")
         fresh = linkedin_draft.choose_topics(self.table, linkedin_store.default_settings(), count=1)
-        self.assertIsNone(fresh[0]["idea"])
+        self.assertIn(fresh[0]["idea"]["seedId"], linkedin_seeds.seed_ids())
+        self.assertNotIn("ideaId", fresh[0]["idea"])
+
+    def test_seeds_fill_in_when_ideas_run_out_and_rotate(self) -> None:
+        settings = linkedin_store.default_settings()
+        topics = linkedin_draft.choose_topics(self.table, settings, count=4)
+        seed_ids = [row["idea"]["seedId"] for row in topics]
+        self.assertEqual(len(set(seed_ids)), 4)
+        for row in topics:
+            self.assertEqual(row["pillar"], next(s["pillar"] for s in linkedin_seeds.SEEDS if s["id"] == row["idea"]["seedId"]))
+        pinned = linkedin_draft.choose_topics(self.table, settings, count=2, pillar="platforms")
+        self.assertTrue(all(row["pillar"] == "platforms" for row in pinned))
+        self.assertTrue(
+            all(next(s["pillar"] for s in linkedin_seeds.SEEDS if s["id"] == row["idea"]["seedId"]) == "platforms" for row in pinned)
+        )
+
+    def test_a_used_seed_is_not_picked_again_while_others_remain(self) -> None:
+        first = linkedin_draft.choose_topics(self.table, linkedin_store.default_settings(), count=1)[0]
+        linkedin_store.create_post(
+            self.table,
+            {"body": "A short hook.\n\nOne lesson.", "seedId": first["idea"]["seedId"]},
+        )
+        stored = linkedin_store.list_posts(self.table)[0]
+        self.assertEqual(stored["seedId"], first["idea"]["seedId"])
+        self.assertEqual(linkedin_store.public_post(stored)["seedId"], first["idea"]["seedId"])
+        again = linkedin_draft.choose_topics(self.table, linkedin_store.default_settings(), count=1)[0]
+        self.assertNotEqual(again["idea"]["seedId"], first["idea"]["seedId"])
+
+    def test_seed_text_passes_the_stored_guardrails(self) -> None:
+        settings = linkedin_store.default_settings()
+        for seed in linkedin_seeds.SEEDS:
+            self.assertIn(seed["pillar"], linkedin_store.pillar_ids(), seed["id"])
+            findings = linkedin_store.guardrails(seed["text"], "", [], settings)
+            codes = {row["code"] for row in findings if row["severity"] == "error"}
+            self.assertFalse(codes - {"hook"}, f"{seed['id']}: {codes}")
+            self.assertEqual(linkedin_draft.slop_findings(seed["text"]), [], seed["id"])
+
+    def test_generation_stamps_the_seed_and_puts_it_in_the_prompt(self) -> None:
+        captured: list[list[dict[str, str]]] = []
+
+        def complete(messages: list[dict[str, str]]):
+            captured.append(messages)
+            return (
+                {"body": "A short hook.\n\nOne lesson.", "firstComment": "", "hashtags": [], "pillar": ""},
+                0.01,
+            )
+
+        result = linkedin_draft.generate_drafts(self.table, count=1, complete=complete)
+        post = result["posts"][0]
+        self.assertIn(post["seedId"], linkedin_seeds.seed_ids())
+        self.assertEqual(post["ideaId"], "")
+        seed_text = next(s["text"] for s in linkedin_seeds.SEEDS if s["id"] == post["seedId"])
+        user = captured[0][1]["content"]
+        self.assertIn(f"Situation: {seed_text}", user)
+        self.assertIn("Keep its specifics", user)
+
+    def test_slop_phrases_and_emoji_force_a_rewrite(self) -> None:
+        findings = linkedin_draft.slop_findings("Here's the thing 🚀\n\nWe leverage synergy. Agree?")
+        details = " ".join(row["detail"] for row in findings)
+        self.assertIn("emoji", details)
+        self.assertIn("here's the thing", details)
+        self.assertIn("leverage", details)
+        self.assertIn("agree?", details)
+        self.assertEqual(linkedin_draft.slop_findings("The 20 KB cap on a Lambda policy broke our deploy."), [])
+        self.assertEqual(linkedin_draft.slop_findings("A journeyman's unlocked door."), [])
+        seen: list[list[dict[str, str]]] = []
+
+        def complete(messages: list[dict[str, str]]):
+            seen.append(messages)
+            if len(seen) == 1:
+                return (
+                    {"body": "Here's the thing about cloud.\n\nIt is a journey.", "firstComment": "", "hashtags": [], "pillar": ""},
+                    0.01,
+                )
+            return (
+                {"body": "A 20 KB policy cap.\n\nOne lesson.", "firstComment": "", "hashtags": [], "pillar": ""},
+                0.01,
+            )
+
+        parsed, _cost = linkedin_draft.draft_one(
+            settings=linkedin_store.default_settings(),
+            pillar="platforms",
+            idea="",
+            avoid=[],
+            complete=complete,
+        )
+        self.assertEqual(len(seen), 2)
+        self.assertIn("here's the thing", seen[1][1]["content"])
+        self.assertIn("20 KB", parsed["body"])
+
+    def test_system_prompt_carries_substance_rules(self) -> None:
+        prompt = linkedin_draft._system_prompt(linkedin_store.default_settings())  # noqa: SLF001
+        self.assertIn("Substance rules always apply.", prompt)
+        self.assertIn("one real situation", prompt)
+        self.assertIn("game-changer", prompt)
+        self.assertIn("No emojis, arrows, or symbols", prompt)
+        self.assertLess(prompt.index("Substance rules"), prompt.index("Voice"))
 
     def test_openrouter_error_becomes_a_failed_generation(self) -> None:
         from openrouter_client import OpenRouterError
@@ -574,7 +678,7 @@ class LinkedInStoreTests(unittest.TestCase):
         self.assertIn(f"Keep this voice exactly: {voice}", rewrite)
         self.assertIn("overrides the tone defaults", rewrite)
         quiet = linkedin_draft._critic_messages(  # noqa: SLF001
-            linkedin_store.default_settings(),
+            {**linkedin_store.default_settings(), "voiceNotes": ""},
             {"body": "A short hook."},
             [{"severity": "error", "detail": "The first line is too long."}],
         )

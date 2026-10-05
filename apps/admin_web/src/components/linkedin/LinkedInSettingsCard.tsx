@@ -162,10 +162,20 @@ export function LinkedInSettingsCard({
                 onChange={(event) => setSettings({ ...settings, voiceNotes: event.target.value })}
               />
               <p className="form-text mb-0">
-                How the posts should sound. This overrides the default tone. Safety rules still apply: no employer, no
-                availability, and the blocked phrases. Leave blank for the default tone: first person, short lines, and a
-                closing question.
+                How the posts should sound. This overrides the default tone. Substance and safety rules still apply: one
+                real situation with its specifics, no buzzwords or emoji, no employer, no availability, and the blocked
+                phrases. Leave blank for the default tone: first person, short lines, and a closing question. When Ideas is
+                empty, drafts draw on a built-in bank of concrete engineering situations.
               </p>
+              {overview.recommendedVoice && settings.voiceNotes.trim() !== overview.recommendedVoice ? (
+                <button
+                  type="button"
+                  className="btn btn-link btn-sm px-0 mt-1"
+                  onClick={() => setSettings({ ...settings, voiceNotes: overview.recommendedVoice ?? "" })}
+                >
+                  Use recommended voice
+                </button>
+              ) : null}
             </AdminField>
             <AdminField label="Extra phrases to block" htmlFor="linkedin-blocked" span={2}>
               <textarea

@@ -148,6 +148,7 @@ export type LinkedInPost = {
   channel: string;
   pillar: string;
   ideaId: string;
+  seedId?: string;
   body: string;
   firstComment: string;
   hashtags: string[];
@@ -183,6 +184,7 @@ export type LinkedInOverview = {
   nextSlots: string[];
   builtinForbidden: string[];
   defaultModel: string;
+  recommendedVoice?: string;
 };
 
 export const SAMPLE_LINKEDIN_POSTS: LinkedInPost[] = [
@@ -228,13 +230,17 @@ export const SAMPLE_LINKEDIN_IDEAS: LinkedInIdea[] = [
   },
 ];
 
+/** Mirrors `RECOMMENDED_VOICE` in `backend/lambda/admin/linkedin_store.py`. */
+export const RECOMMENDED_LINKEDIN_VOICE =
+  "Plain, specific, first person. I write the way an engineer explains a problem to a colleague, not the way a brand posts. Every post is one real situation: name the technology, the constraint, the number, what I tried, what broke, and what I would do again. Lead with the concrete detail, not the moral. Short declarative sentences. Dry, a little wry, no drama. No emojis, no arrows, no symbols. No buzzwords, no hustle lines, no 'humbled', no 'game-changer', no 'here's the thing', no 'let that sink in'. Do not generalise into advice about mindset or leadership; a reader should learn something they could check. End on the specific trade-off or on an open question I actually have, never a call to action.";
+
 export const DEFAULT_LINKEDIN_SETTINGS: LinkedInDraftSettings = {
   postsPerWeek: 2,
   weekdays: [1, 3],
   slotHour: 8,
   slotMinute: 30,
   draftsPerGeneration: 4,
-  voiceNotes: "",
+  voiceNotes: RECOMMENDED_LINKEDIN_VOICE,
   forbiddenWords: [],
   hashtagCap: 3,
   linksInFirstComment: false,

@@ -1,6 +1,7 @@
 import type { MockCtx } from "./types";
 import { json, parseBody, state } from "./context";
 import {
+  RECOMMENDED_LINKEDIN_VOICE,
   isLinkedInPostUrl,
   nextSlots,
   type LinkedInConnection,
@@ -66,6 +67,7 @@ function overview() {
     nextSlots: nextSlots(state.linkedin.settings, new Date(), 8, taken),
     builtinForbidden: ["lx software"],
     defaultModel: "mistralai/mistral-medium-3",
+    recommendedVoice: RECOMMENDED_LINKEDIN_VOICE,
   };
 }
 
