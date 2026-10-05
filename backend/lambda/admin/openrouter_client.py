@@ -682,14 +682,33 @@ def extract_message_text(payload: dict[str, Any]) -> str:
     message = first_choice.get("message")
     if not isinstance(message, dict):
         raise OpenRouterError("OpenRouter response message is missing")
-    content = message.get("content")
+    text = _content_to_text(message.get("content"))
+    if text.strip():
+        return text
+    # Reasoning models sometimes leave ``content`` empty and put the answer
+    # in ``reasoning`` / ``reasoning_content``.
+    for key in ("reasoning", "reasoning_content"):
+        extra = _content_to_text(message.get(key))
+        if extra.strip():
+            return extra
+    return text
+
+
+def _content_to_text(content: Any) -> str:
     if isinstance(content, list):
-        text_parts = [
-            str(item.get("text"))
-            for item in content
-            if isinstance(item, dict) and item.get("type") == "text"
-        ]
-        return "\n".join(part for part in text_parts if part)
+        text_parts: list[str] = []
+        for item in content:
+            if isinstance(item, str) and item:
+                text_parts.append(item)
+                continue
+            if not isinstance(item, dict):
+                continue
+            typ = str(item.get("type") or "text")
+            if typ in {"text", "output_text", "input_text"}:
+                value = item.get("text")
+                if value:
+                    text_parts.append(str(value))
+        return "\n".join(text_parts)
     return str(content or "")
 
 
@@ -703,27 +722,77 @@ def strip_code_fences(text: str) -> str:
     )
 
 
+def escape_raw_controls_in_json_strings(text: str) -> str:
+    """Escape raw newlines / tabs that models leave inside JSON strings."""
+    out: list[str] = []
+    in_string = False
+    escaped = False
+    for ch in text:
+        if not in_string:
+            if ch == '"':
+                in_string = True
+            out.append(ch)
+            continue
+        if escaped:
+            out.append(ch)
+            escaped = False
+            continue
+        if ch == "\\":
+            out.append(ch)
+            escaped = True
+            continue
+        if ch == '"':
+            in_string = False
+            out.append(ch)
+            continue
+        if ch == "\n":
+            out.append("\\n")
+            continue
+        if ch == "\r":
+            out.append("\\r")
+            continue
+        if ch == "\t":
+            out.append("\\t")
+            continue
+        if ord(ch) < 32:
+            out.append(f"\\u{ord(ch):04x}")
+            continue
+        out.append(ch)
+    return "".join(out)
+
+
 def parse_json_object_text(text: str) -> dict[str, Any]:
     """Parse assistant text that should be a single JSON object.
 
-    Tolerates markdown code fences and leading / trailing prose around the
-    first balanced ``{...}`` block.
+    Tolerates markdown code fences, leading / trailing prose around the
+    first ``{...}`` block, and raw control characters inside strings.
     """
     cleaned = strip_code_fences(text)
-    try:
-        parsed = json.loads(cleaned)
-    except json.JSONDecodeError:
-        start = cleaned.find("{")
-        end = cleaned.rfind("}")
-        if start < 0 or end <= start:
-            raise OpenRouterError("Model response is not a JSON object") from None
-        try:
-            parsed = json.loads(cleaned[start : end + 1])
-        except json.JSONDecodeError as exc:
-            raise OpenRouterError("Model response is not valid JSON") from exc
-    if not isinstance(parsed, dict):
-        raise OpenRouterError("Model response payload is not an object")
-    return parsed
+    candidates = [cleaned]
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start >= 0 and end > start:
+        candidates.append(cleaned[start : end + 1])
+    last_error: json.JSONDecodeError | None = None
+    for candidate in candidates:
+        for blob in (candidate, escape_raw_controls_in_json_strings(candidate)):
+            try:
+                parsed = json.loads(blob)
+            except json.JSONDecodeError as exc:
+                last_error = exc
+                continue
+            if isinstance(parsed, str):
+                try:
+                    parsed = json.loads(parsed)
+                except json.JSONDecodeError as exc:
+                    last_error = exc
+                    continue
+            if isinstance(parsed, dict):
+                return parsed
+            raise OpenRouterError("Model response payload is not an object")
+    if start < 0 or end <= start:
+        raise OpenRouterError("Model response is not a JSON object") from None
+    raise OpenRouterError("Model response is not valid JSON") from last_error
 
 
 def normalize_usage(raw: Any) -> dict[str, Any]:

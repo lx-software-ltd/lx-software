@@ -275,6 +275,22 @@ class LinkedInStoreTests(unittest.TestCase):
         )
         self.assertEqual(parsed["hashtags"], ["Architecture"])
 
+    def test_parse_draft_accepts_fenced_json_and_raw_newlines(self) -> None:
+        parsed = linkedin_draft.parse_draft(
+            "Here is the post:\n```json\n"
+            '{\n  "body": "A short hook.\n\nOne lesson.",\n'
+            '  "firstComment": "",\n  "hashtags": ["Architecture"],\n'
+            '  "pillar": "architecture"\n}\n```\n'
+        )
+        self.assertEqual(parsed["body"], "A short hook.\n\nOne lesson.")
+        self.assertEqual(parsed["hashtags"], ["Architecture"])
+
+    def test_parse_draft_rejects_empty_and_non_json(self) -> None:
+        with self.assertRaises(linkedin_draft.DraftError):
+            linkedin_draft.parse_draft("")
+        with self.assertRaises(linkedin_draft.DraftError):
+            linkedin_draft.parse_draft("I drafted a post but will not use JSON.")
+
     def test_live_generation_books_usage(self) -> None:
         from openrouter_client import ChatCompletion
         from openrouter_usage import usage_day_pk, utc_today
@@ -294,6 +310,24 @@ class LinkedInStoreTests(unittest.TestCase):
         self.assertEqual(item["promptTokens"], 11)
         self.assertEqual(item["costCenter"], "lxSoftware")
         self.assertAlmostEqual(linkedin_store.month_spend(self.table), 0.03)
+
+    def test_complete_json_logs_unparseable_model_text(self) -> None:
+        from openrouter_client import ChatCompletion
+
+        completion = ChatCompletion(
+            text="not json",
+            model="test-model",
+            finish_reason="stop",
+            usage={"promptTokens": 1, "completionTokens": 1, "totalTokens": 2, "cost": 0.01},
+        )
+        with patch.dict("os.environ", {"OPENROUTER_MODEL": "test-model"}):
+            with patch("openrouter_client.chat_completion", return_value=completion):
+                with patch.object(linkedin_draft, "_log_event") as log:
+                    with self.assertRaises(linkedin_draft.DraftError):
+                        linkedin_draft.complete_json([{"role": "user", "content": "x"}])
+        self.assertEqual(log.call_args.kwargs["tag"], "linkedin_draft_parse_failed")
+        self.assertEqual(log.call_args.kwargs["text_len"], 8)
+        self.assertEqual(log.call_args.kwargs["model"], "test-model")
 
     def test_live_generation_uses_settings_model(self) -> None:
         from openrouter_client import ChatCompletion
