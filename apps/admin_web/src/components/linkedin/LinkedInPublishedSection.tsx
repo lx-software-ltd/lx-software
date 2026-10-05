@@ -1,6 +1,6 @@
 import { useLinkedIn } from "../../hooks/useLinkedIn";
 import { formatDateTimeHKT } from "../../lib/formatDisplay";
-import { hookText, postUrl } from "../../lib/linkedinModel";
+import { hookText, postUrl, type LinkedInMetrics } from "../../lib/linkedinModel";
 import {
   AdminCell,
   AdminDataTable,
@@ -12,8 +12,17 @@ import {
 const COLUMNS = [
   { key: "hook", header: "Hook" },
   { key: "posted", header: "Posted", priority: "secondary" as const },
+  { key: "reach", header: "Reach", priority: "secondary" as const },
   { key: "ops", header: <span className="visually-hidden">Operations</span>, className: "text-end" },
 ];
+
+function reachText(metrics: LinkedInMetrics | null | undefined): string {
+  if (!metrics || (metrics.unavailable && metrics.reactions === 0 && metrics.comments === 0 && metrics.impressions == null)) {
+    return "—";
+  }
+  const base = `${metrics.reactions} reactions · ${metrics.comments} comments`;
+  return metrics.impressions == null ? base : `${base} · ${metrics.impressions} impressions`;
+}
 
 export function LinkedInPublishedSection() {
   const linkedIn = useLinkedIn();
@@ -33,6 +42,7 @@ export function LinkedInPublishedSection() {
                   {hookText(row.body) || "Untitled"}
                 </AdminCell>
                 <AdminCell column="posted">{when ? formatDateTimeHKT(when) : "—"}</AdminCell>
+                <AdminCell column="reach">{reachText(row.metrics)}</AdminCell>
                 <AdminCell column="ops" className="text-end">
                   <AdminRowActions
                     actions={[

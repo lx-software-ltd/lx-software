@@ -690,6 +690,16 @@ describe("Siu Tin Dei parameter naming", () => {
     expect(parameters.LxSoftwareLinkedinEnabled?.AllowedValues).toEqual(["true", "false"]);
     expect(parameters.LxSoftwareLinkedinPublishEnabled?.Default).toBe("false");
     expect(parameters.LxSoftwareLinkedinPublishEnabled?.AllowedValues).toEqual(["true", "false"]);
+    const linkedinSecret = Object.values(resourcesOfType("AWS::SecretsManager::Secret")).find(
+      (resource) => resource.Properties?.Name === "lxsoftware-admin-linkedin-app"
+    );
+    expect(linkedinSecret?.DeletionPolicy).toBe("Retain");
+    const adminFn = Object.entries(resourcesOfType("AWS::Lambda::Function")).find(([id]) =>
+      id.startsWith("AdminApiFn")
+    );
+    expect(adminFn?.[1].Properties?.Environment?.Variables?.LINKEDIN_APP_SECRET_ID).toBe(
+      "lxsoftware-admin-linkedin-app"
+    );
   });
 
   test("SiutindeiBoardCatalogImportEnabled defaults off", () => {

@@ -151,11 +151,22 @@ export function defineBoardSecrets(scope: cdk.Stack, encryptionKey: kms.IKey) {
     jsonTemplate: { username: "replace-me" },
     generateKey: "password",
   });
+  const linkedinAppSecret = boardPlaceholderSecret(scope, "LxSoftwareLinkedinApp", {
+    secretName: "lxsoftware-admin-linkedin-app",
+    description:
+      "LinkedIn app client id and client secret for the LX Software LinkedIn tab. Replace clientId and clientSecret in Secrets Manager.",
+    encryptionKey,
+    tenant: "lxsoftware",
+    purpose: "linkedin-app",
+    jsonTemplate: { clientId: "replace-me" },
+    generateKey: "clientSecret",
+  });
   return {
     siutindeiBoardSecrets,
     googlePlacesKeySecret,
     boardLinkSigningSecret,
     boardImporterCredentialsSecret,
+    linkedinAppSecret,
   };
 }
 

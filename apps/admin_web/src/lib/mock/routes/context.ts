@@ -42,6 +42,7 @@ import {
   DEFAULT_LINKEDIN_SETTINGS,
   SAMPLE_LINKEDIN_IDEAS,
   SAMPLE_LINKEDIN_POSTS,
+  type LinkedInConnection,
   type LinkedInIdea,
   type LinkedInPost,
   type LinkedInDraftSettings,
@@ -88,6 +89,8 @@ type MockState = {
     settings: LinkedInDraftSettings;
     posts: LinkedInPost[];
     ideas: LinkedInIdea[];
+    connection: LinkedInConnection;
+    oauthState: string;
   };
 };
 
@@ -127,6 +130,19 @@ function initialMockState(): MockState {
       settings: structuredClone(DEFAULT_LINKEDIN_SETTINGS),
       posts: structuredClone(SAMPLE_LINKEDIN_POSTS),
       ideas: structuredClone(SAMPLE_LINKEDIN_IDEAS),
+      connection: {
+        status: "not_connected",
+        channel: "profile",
+        memberName: "",
+        organizationId: "",
+        organizationName: "",
+        organizations: [],
+        tokenExpiresAt: "",
+        includeOrganizations: false,
+        appConfigured: true,
+        appStatus: "ready",
+      },
+      oauthState: "",
     },
   };
 }

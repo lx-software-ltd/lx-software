@@ -3,6 +3,7 @@
 export const HOOK_MAX = 210;
 export const BODY_MAX = 3000;
 export const COMMENT_MAX = 1250;
+export const COMMENTARY_MAX = 3000;
 
 export const BUILTIN_FORBIDDEN = [
   "lx software",
@@ -63,6 +64,83 @@ export type LinkedInDraftSettings = {
   pillars: string[];
 };
 
+export type LinkedInOrganization = {
+  id: string;
+  name: string;
+};
+
+export type LinkedInConnection = {
+  status: string;
+  channel: string;
+  memberName: string;
+  organizationId: string;
+  organizationName: string;
+  organizations: LinkedInOrganization[];
+  tokenExpiresAt: string;
+  includeOrganizations: boolean;
+  appConfigured: boolean;
+  appStatus: string;
+};
+
+export type LinkedInMetrics = {
+  reactions: number;
+  comments: number;
+  impressions: number | null;
+  pulledAt?: string;
+  unavailable?: boolean;
+};
+
+const COMMENTARY_RESERVED = new Set("\\()[]{}@|~_<>*".split(""));
+
+function escapeCommentarySegment(text: string): string {
+  let out = "";
+  for (const char of text) {
+    if (COMMENTARY_RESERVED.has(char)) out += "\\";
+    out += char;
+  }
+  return out;
+}
+
+/** Little-text escaping that leaves URLs and hashtags untouched. Mirrors linkedin_api.escape_commentary. */
+export function escapeCommentary(text: string): string {
+  const protectedText = /https?:\/\/\S+|#[^\s#]+/g;
+  let out = "";
+  let last = 0;
+  for (const match of text.matchAll(protectedText)) {
+    const index = match.index ?? 0;
+    out += escapeCommentarySegment(text.slice(last, index));
+    out += match[0];
+    last = index + match[0].length;
+  }
+  return out + escapeCommentarySegment(text.slice(last));
+}
+
+/** Post body as LinkedIn will receive it, including hashtags that are not already in the text. */
+export function renderedCommentary(body: string, hashtags: readonly string[]): string {
+  let text = body.trim();
+  const folded = text.toLowerCase();
+  const extras: string[] = [];
+  for (const tag of hashtags) {
+    const cleaned = tag.trim().replace(/^#/, "");
+    if (!cleaned) continue;
+    const token = `#${cleaned}`;
+    if (!folded.includes(token.toLowerCase())) extras.push(token);
+  }
+  if (extras.length > 0) text = `${text}\n\n${extras.join(" ")}`;
+  return escapeCommentary(text);
+}
+
+/** How soon the stored LinkedIn access expires. */
+export function linkedInAccessState(iso: string, now = Date.now()): "ok" | "soon" | "expired" | null {
+  if (!iso) return null;
+  const at = new Date(iso).getTime();
+  if (Number.isNaN(at)) return null;
+  const hours = (at - now) / 3_600_000;
+  if (hours < 0) return "expired";
+  if (hours < 48) return "soon";
+  return "ok";
+}
+
 export type LinkedInPost = {
   postId: string;
   status: string;
@@ -74,8 +152,11 @@ export type LinkedInPost = {
   hashtags: string[];
   slotAt: string;
   guardrails: LinkedInGuardrail[];
-  platform?: { url?: string; publishedAt?: string } | null;
+  platform?: { url?: string; publishedAt?: string; urn?: string } | null;
   manual?: { url?: string; postedAt?: string } | null;
+  image?: { contentType: string } | null;
+  metrics?: LinkedInMetrics | null;
+  publishError?: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -94,7 +175,7 @@ export type LinkedInOverview = {
   publishEnabled: boolean;
   settings: LinkedInDraftSettings;
   pillars: readonly { id: string; label: string }[];
-  connection: { status: string; channel: string };
+  connection: LinkedInConnection;
   counts: { drafted: number; approved: number; published: number; ideas: number };
   spendUsdMonth: number;
   nextSlots: string[];
@@ -128,7 +209,9 @@ export const SAMPLE_LINKEDIN_POSTS: LinkedInPost[] = [
     platform: {
       url: "https://www.linkedin.com/feed/update/urn:li:share:1",
       publishedAt: "2026-09-29T00:30:00.000Z",
+      urn: "urn:li:share:1",
     },
+    metrics: { reactions: 4, comments: 1, impressions: null },
   },
 ];
 
@@ -232,6 +315,15 @@ export function guardrails(
       severity: "error",
       detail: `The post is ${body.length} characters. The limit is ${BODY_MAX}.`,
     });
+  } else if (body.trim()) {
+    const rendered = renderedCommentary(body, hashtags);
+    if (rendered.length > COMMENTARY_MAX) {
+      findings.push({
+        code: "too_long",
+        severity: "error",
+        detail: `The post is ${rendered.length} characters after hashtags and formatting. LinkedIn allows ${COMMENTARY_MAX}.`,
+      });
+    }
   }
   if (comment.length > COMMENT_MAX) {
     findings.push({

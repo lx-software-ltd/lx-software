@@ -9,6 +9,7 @@ import { AuthCallbackPage } from "./pages/AuthCallbackPage";
 import { BankingCallbackPage } from "./pages/BankingCallbackPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { FinancePage } from "./pages/FinancePage";
+import { LinkedInCallbackPage } from "./pages/LinkedInCallbackPage";
 import { LxSoftwarePage } from "./pages/LxSoftwarePage";
 import { EvolveSproutsPage } from "./pages/EvolveSproutsPage";
 
@@ -42,6 +43,7 @@ export function App() {
                 <Route path="siu-tin-dei" element={<LazyPage><SiuTinDeiPage /></LazyPage>} />
                 <Route path="evolve-sprouts" element={<EvolveSproutsPage />} />
                 <Route path="lx-software" element={<LxSoftwarePage />} />
+                <Route path="lx-software/linkedin/callback" element={<LinkedInCallbackPage />} />
               </Route>
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

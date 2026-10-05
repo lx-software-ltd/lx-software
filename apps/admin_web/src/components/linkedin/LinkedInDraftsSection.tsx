@@ -352,6 +352,7 @@ function PostEditor({
   const [marking, setMarking] = useState(false);
   const [postedUrl, setPostedUrl] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
+  const linkedIn = useLinkedIn();
   const tags = hashtags.split(/[\s,]+/).map((tag) => tag.replace(/^#/, "")).filter(Boolean);
   const findings = guardrails(body, firstComment, tags, settings);
   const blocked = hasBlockingGuardrail(findings);
@@ -442,6 +443,50 @@ function PostEditor({
                 onChange={(event) => setHashtags(event.target.value)}
               />
             </AdminField>
+            {post ? (
+              <AdminField label="Image" htmlFor={`${formId}-image`}>
+                {post.image ? <p className="small mb-2">A {post.image.contentType === "image/png" ? "PNG" : "JPEG"} is attached and will publish with the post.</p> : null}
+                <input
+                  id={`${formId}-image`}
+                  className="form-control"
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (!file) return;
+                    if (file.size > 1_500_000) {
+                      setLocalError("The image must be under 1.5 MB.");
+                      return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      const dataBase64 = String(reader.result ?? "").split(",")[1] ?? "";
+                      setLocalError(null);
+                      void linkedIn.uploadImage.mutateAsync({
+                        postId: post.postId,
+                        contentType: file.type,
+                        dataBase64,
+                      }).catch((caught: unknown) => {
+                        setLocalError(caught instanceof Error ? caught.message : "Could not attach the image.");
+                      });
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                />
+                {post.image ? (
+                  <button
+                    type="button"
+                    className="btn btn-link btn-sm px-0"
+                    onClick={() => void linkedIn.deleteImage.mutate(post.postId)}
+                  >
+                    Remove image
+                  </button>
+                ) : null}
+              </AdminField>
+            ) : (
+              <p className="text-muted small mb-0">Save the draft, then attach an image.</p>
+            )}
             {marking ? (
               <AdminField label="LinkedIn URL" htmlFor={`${formId}-url`}>
                 <input
@@ -454,6 +499,9 @@ function PostEditor({
               </AdminField>
             ) : null}
           </AdminFieldGrid>
+          {post?.publishError ? (
+            <p className="text-danger small mt-3 mb-0">{post.publishError}</p>
+          ) : null}
           {findings.length > 0 ? (
             <ul className="small mt-3 mb-0">
               {findings.map((row) => (

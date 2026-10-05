@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LINKEDIN_SETTINGS,
+  escapeCommentary,
   guardrails,
   isLinkedInPostUrl,
+  linkedInAccessState,
   linkedInShareUrl,
   nextSlots,
 } from "./linkedinModel";
@@ -23,6 +25,21 @@ describe("linkedin slots", () => {
 
 describe("linkedin guardrails", () => {
   const settings = DEFAULT_LINKEDIN_SETTINGS;
+
+  it("leaves urls and hashtags unescaped and flags an over-long commentary", () => {
+    expect(escapeCommentary("See https://example.com/my_page_(2) #hong_kong")).toContain("my_page_(2)");
+    expect(escapeCommentary("See https://example.com/my_page_(2) #hong_kong")).not.toContain("\\_");
+    expect(guardrails("(".repeat(2000), "", [], settings).some((row) => row.detail.includes("LinkedIn allows"))).toBe(
+      true,
+    );
+  });
+
+  it("classifies access expiry", () => {
+    const now = Date.parse("2026-10-05T00:00:00.000Z");
+    expect(linkedInAccessState("2026-10-06T00:00:00.000Z", now)).toBe("soon");
+    expect(linkedInAccessState("2026-12-01T00:00:00.000Z", now)).toBe("ok");
+    expect(linkedInAccessState("2026-10-01T00:00:00.000Z", now)).toBe("expired");
+  });
 
   it("blocks the company name and a long first line", () => {
     expect(guardrails("Notes from LX Software.", "", [], settings).some((row) => row.code === "forbidden_word")).toBe(

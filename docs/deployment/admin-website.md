@@ -494,17 +494,50 @@ Generation uses the `linkedin` OpenRouter key above and books each call on the O
 | Parameter | Default | Production |
 |-----------|---------|------------|
 | `LxSoftwareLinkedinEnabled` | `false` | `false` until you want Sunday drafts and writes |
-| `LxSoftwareLinkedinPublishEnabled` | `false` | Leave `false`. Direct LinkedIn posting is not implemented |
+| `LxSoftwareLinkedinPublishEnabled` | `false` | `false` until the app secret is filled and you want automatic posts |
+
+The app credentials live in Secrets Manager `lxsoftware-admin-linkedin-app`
+(`clientId`, `clientSecret`). The stack creates that secret with
+`clientId` set to `replace-me`. Replace both values in the console. The
+redirect URL to register on the LinkedIn app is
+`https://admin.lx-software.com/lx-software/linkedin/callback`.
+That URL is the deployed admin origin (`ADMIN_WEB_ORIGIN`), so a local dev
+server cannot finish the LinkedIn redirect unless its origin is the one
+registered on the app.
+Enable Sign In with LinkedIn using OpenID Connect and Share on LinkedIn, and
+request `openid profile w_member_social`. Company pages are optional: Settings
+→ **Include company pages** also requests
+`w_organization_social r_organization_social rw_organization_admin`, which
+need Community Management approval. An unapproved scope fails the whole
+consent screen, so leave company pages off until that product is approved.
+`rw_organization_admin` lists the pages you administer. **Refresh pages**
+reloads that list without reconnecting. Page impressions use the same
+approval. Member post analytics are not requested. A denied reaction read is
+stored and not retried; page impressions are read only for posts that went
+out as a page.
 
 With the first switch on, Sunday 18:00 HKT
 (`lxsoftware-admin-linkedin-plan`) drafts the configured batch, and a
-15-minute schedule emails `notifyEmail` when an approved 08:30 HKT slot is
-due. Both schedules are created only when `LxSoftwareLinkedinEnabled` is
-`true`, so turn it on and redeploy before expecting drafts. You open the
-share box, post it yourself, and mark it posted.
-`LxSoftwareLinkedinPublishEnabled` does not post and does not stop the
-reminder. Add any employer name under Settings → extra phrases; do not put
-it in source.
+15-minute schedule (`lxsoftware-admin-linkedin-publish`) runs. The rate
+starts from deploy time, so an 08:30 HKT slot is posted on the first tick
+after 08:30, within about 15 minutes. Both schedules are created only when
+`LxSoftwareLinkedinEnabled` is `true`, so turn it on and redeploy before
+expecting drafts. Connect from **LinkedIn → Settings**. The default
+destination is your profile. Choose the company page there when you want
+posts to go out as the page. Settings shows when the access expires; a
+standard app has no refresh token, so connect again before that time.
+When `LxSoftwareLinkedinPublishEnabled` is also `true` and a member is
+connected, one due approved draft is posted per tick through the Posts API,
+and only when the slot is less than three hours old. Older approved slots
+stay for the share box. The first comment is added, and a PNG or JPEG
+attached on the draft is uploaded with it. A comment failure leaves the post
+published. An image or API failure counts as a failed attempt (three tries,
+then a second email that posting has stopped). A missing connection or an
+expired token does not use up those tries. Reactions and comments refresh
+for page and profile posts from the last 30 days, at most every six hours.
+While the publish switch is off, or LinkedIn is not connected, the share
+box and **Mark posted** stay the way to publish.
+Add any employer name under Settings → extra phrases; do not put it in source.
 
 ### AWS bill (shared account)
 
