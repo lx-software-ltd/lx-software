@@ -4,10 +4,12 @@ export type AdminFilterFieldProps = {
   readonly label: string;
   readonly htmlFor: string;
   readonly children: ReactNode;
+  /** Keep the accessible name without a visible label above the control. */
+  readonly hideLabel?: boolean;
 };
 
-export function AdminFilterField({ label, htmlFor, children }: AdminFilterFieldProps) {
-  const showLabel = label !== "Filter";
+export function AdminFilterField({ label, htmlFor, children, hideLabel = false }: AdminFilterFieldProps) {
+  const showLabel = !hideLabel && label !== "Filter";
   return (
     <div className="admin-filter-field">
       <label className={showLabel ? "form-label small mb-1" : "visually-hidden"} htmlFor={htmlFor}>

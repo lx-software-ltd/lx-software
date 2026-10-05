@@ -66,6 +66,7 @@ function overview() {
     spendUsdMonth: 0,
     nextSlots: nextSlots(state.linkedin.settings, new Date(), 8, taken),
     builtinForbidden: ["lx software"],
+    defaultModel: "mistralai/mistral-medium-3",
   };
 }
 

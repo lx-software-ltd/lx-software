@@ -61,6 +61,7 @@ export type LinkedInDraftSettings = {
   allowProductMentions: boolean;
   maxUsdPerMonth: number;
   notifyEmail: string;
+  model: string;
   pillars: string[];
 };
 
@@ -180,6 +181,7 @@ export type LinkedInOverview = {
   spendUsdMonth: number;
   nextSlots: string[];
   builtinForbidden: string[];
+  defaultModel: string;
 };
 
 export const SAMPLE_LINKEDIN_POSTS: LinkedInPost[] = [
@@ -239,6 +241,7 @@ export const DEFAULT_LINKEDIN_SETTINGS: LinkedInDraftSettings = {
   allowProductMentions: false,
   maxUsdPerMonth: 5,
   notifyEmail: "",
+  model: "",
   pillars: LINKEDIN_PILLARS.map((row) => row.id),
 };
 

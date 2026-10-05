@@ -60,6 +60,10 @@ describe("linkedin guardrails", () => {
     );
   });
 
+  it("defaults the OpenRouter model to empty so the stack slug is used", () => {
+    expect(DEFAULT_LINKEDIN_SETTINGS.model).toBe("");
+  });
+
   it("matches a blocked phrase only on a word boundary", () => {
     const allowed = guardrails("I hire mentors, and interimistic is not a status.", "", [], settings);
     expect(allowed.some((row) => row.code === "forbidden_word")).toBe(false);

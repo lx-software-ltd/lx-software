@@ -119,12 +119,23 @@ def record_draft_usage(table: Any, usage: dict[str, Any] | None) -> None:
         _log_event("warning", tag="linkedin_usage_record_failed", error=str(exc)[:200])
 
 
-def complete_json(messages: list[dict[str, str]], *, table: Any | None = None) -> tuple[dict[str, Any], float]:
+def draft_model(settings: dict[str, Any] | None = None) -> str:
+    """Settings slug when set, otherwise the stack OpenRouter model."""
+    override = str((settings or {}).get("model") or "").strip()
+    return override or (os.environ.get("OPENROUTER_MODEL") or "").strip()
+
+
+def complete_json(
+    messages: list[dict[str, str]],
+    *,
+    table: Any | None = None,
+    settings: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], float]:
     """One JSON chat completion. Returns the parsed object and the USD cost."""
     import boto3
     import openrouter_client
 
-    model = (os.environ.get("OPENROUTER_MODEL") or "").strip()
+    model = draft_model(settings)
     if not model:
         raise DraftError("OPENROUTER_MODEL is not set")
     result = openrouter_client.chat_completion(
@@ -255,7 +266,7 @@ def generate_drafts(
         raise LinkedInError("The monthly draft budget is used up.")
 
     def _live(messages: list[dict[str, str]]) -> tuple[dict[str, Any], float]:
-        return complete_json(messages, table=table)
+        return complete_json(messages, table=table, settings=settings)
 
     caller = complete or _live
     topics = choose_topics(table, settings, count=wanted, pillar=pillar, idea_ids=idea_ids)
@@ -296,7 +307,7 @@ def generate_drafts(
                     "ideaId": str(idea.get("ideaId") or ""),
                 },
                 settings=settings,
-                generation={"model": os.environ.get("OPENROUTER_MODEL") or "", "jobId": job_id},
+                generation={"model": draft_model(settings), "jobId": job_id},
             )
         except LinkedInError as exc:
             errors.append(str(exc))
