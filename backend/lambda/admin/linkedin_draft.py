@@ -329,25 +329,40 @@ def _system_prompt(settings: dict[str, Any]) -> str:
             ),
             voice_block,
             example_block,
-            (
-                "Picture. Also return imageScene and imageCaption. imageScene is one sentence, "
-                "third person: the author physically dealing with this post's problem, at a comic "
-                "scale, in a detailed room. No second recognisable person, no logos, no brand names. "
-                "At most one two-word label; screens are unreadable scribbles. imageCaption is the "
-                "spoken line under the picture: first person, dry, 8 to 20 words, the understated "
-                "reading of the situation. Not a description of the picture and not a summary of the "
-                "post. Do not reuse this example or its words: 'The only list I've been on that also "
-                "includes a member of the Executive Council.'"
-            ),
-            (
-                "Reply with one JSON object. body is required and must be the full post, "
-                "never an empty string. Also include firstComment (string), hashtags "
-                "(array of strings without #), pillar, imageScene (string), and imageCaption "
-                "(string). This JSON is the shape only; do not copy its wording.\n"
-                f"{_SCHEMA_EXAMPLE}"
-            ),
+            _picture_block(settings),
+            _reply_block(settings),
         ]
         if block
+    )
+
+
+def _picture_block(settings: dict[str, Any]) -> str:
+    if not settings.get("imagesEnabled"):
+        return ""
+    return (
+        "Picture. Also return imageScene and imageCaption. imageScene is one sentence, "
+        "third person: the author physically dealing with this post's problem, at a comic "
+        "scale, in a detailed room. No second recognisable person, no logos, no brand names. "
+        "At most one two-word label; screens are unreadable scribbles. imageCaption is the "
+        "spoken line under the picture: first person, dry, 8 to 20 words, the understated "
+        "reading of the situation. Not a description of the picture and not a summary of the "
+        "post. Do not reuse this example or its words: 'The only list I've been on that also "
+        "includes a member of the Executive Council.'"
+    )
+
+
+def _reply_block(settings: dict[str, Any]) -> str:
+    fields = "firstComment (string), hashtags (array of strings without #), and pillar"
+    if settings.get("imagesEnabled"):
+        fields = (
+            "firstComment (string), hashtags (array of strings without #), pillar, "
+            "imageScene (string), and imageCaption (string)"
+        )
+    return (
+        "Reply with one JSON object. body is required and must be the full post, "
+        "never an empty string. Also include "
+        f"{fields}. This JSON is the shape only; do not copy its wording.\n"
+        f"{_SCHEMA_EXAMPLE}"
     )
 
 
@@ -618,7 +633,7 @@ def _critic_messages(
     picture = ""
     scene = str(draft.get("imageScene") or "")
     caption = str(draft.get("imageCaption") or "")
-    if scene or caption:
+    if settings.get("imagesEnabled") and (scene or caption):
         picture = (
             f"Picture scene: {scene}\n"
             f"Picture caption: {caption}\n"
@@ -724,7 +739,8 @@ def draft_one(
     )
     findings.extend(slop_findings(parsed["body"]))
     findings.extend(repeat_findings(parsed["body"], siblings))
-    findings.extend(caption_findings(str(parsed.get("imageCaption") or ""), settings, captions or []))
+    if settings.get("imagesEnabled"):
+        findings.extend(caption_findings(str(parsed.get("imageCaption") or ""), settings, captions or []))
     if linkedin_store.errors_block(findings):
         revised, extra = complete(_critic_messages(settings, parsed, findings, shape=shape))
         cost += extra
@@ -835,6 +851,9 @@ def generate_drafts(
                 )
             except LinkedInError as exc:
                 errors.append(str(exc))
+            except Exception as exc:  # noqa: BLE001 — the draft is saved even when the picture cannot be queued
+                _log_event("warning", tag="linkedin_image_enqueue_failed", error=str(exc)[:300])
+                errors.append("The picture could not be queued.")
             else:
                 caption = str((doc.get("image") or {}).get("caption") or "")
                 if caption:

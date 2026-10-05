@@ -278,12 +278,14 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
   }
   if (path.startsWith("/lx-software/linkedin/character/candidates/") && method === "GET") {
     const id = path.split("/").pop() ?? "";
+    if (!/^c[1-4]$/.test(id)) return json({ message: "That candidate is not one of the four drawings." }, 400);
     const row = state.linkedin.character.candidates.find((item) => item.id === id);
     if (!row) return json({ message: "That candidate is gone." }, 404);
     return json({ contentType: row.contentType, dataBase64: row.dataBase64 });
   }
   if (path === "/lx-software/linkedin/character/choose" && method === "POST") {
     const id = String(parseBody(ctx.init).candidateId ?? "");
+    if (!/^c[1-4]$/.test(id)) return json({ message: "That candidate is not one of the four drawings." }, 400);
     const row = state.linkedin.character.candidates.find((item) => item.id === id);
     if (!row) return json({ message: "That candidate is gone. Draw the character again." }, 400);
     state.linkedin.character.sheet = { contentType: row.contentType, dataBase64: row.dataBase64 };

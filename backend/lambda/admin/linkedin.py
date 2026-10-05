@@ -174,9 +174,11 @@ def handle_http(event: dict[str, Any], method: str, path: str, user_sub: str | N
     if parts == ["generate"] and method == "POST":
         return _generate(event, user_sub)
     if len(parts) == 2 and parts[0] == "jobs" and method == "GET":
-        doc = linkedin_store.get_job(_table(), parts[1])
+        table = _table()
+        doc = linkedin_store.get_job(table, parts[1])
         if not doc:
             return _json_response(404, {"message": "Job not found"})
+        doc = linkedin_store.expire_character_job(table, doc)
         return _json_response(200, {"job": _public_job(doc)})
     return _json_response(404, {"message": "Not found"})
 
@@ -333,13 +335,18 @@ def _replace_post(table: Any, post_id: str, generated: dict[str, Any]) -> None:
     updated["generation"] = generation
     linkedin_store.put_post(table, updated)
     if settings.get("imagesEnabled"):
-        linkedin_image.queue_for_post(
-            table,
-            post_id,
-            scene=str(generated.get("imageScene") or ""),
-            caption=str(generated.get("imageCaption") or ""),
-            force=True,
-        )
+        try:
+            linkedin_image.queue_for_post(
+                table,
+                post_id,
+                scene=str(generated.get("imageScene") or ""),
+                caption=str(generated.get("imageCaption") or ""),
+                force=True,
+            )
+        except LinkedInError as exc:
+            _log_event("warning", tag="linkedin_image_enqueue_failed", error=str(exc)[:300])
+        except Exception as exc:  # noqa: BLE001 — the rewritten draft is already saved
+            _log_event("warning", tag="linkedin_image_enqueue_failed", error=str(exc)[:300])
 
 
 def _notify_ready(table: Any, count: int) -> None:
@@ -545,8 +552,13 @@ def handle_character_draw(event: dict[str, Any] | None = None) -> dict[str, Any]
     job = linkedin_store.get_job(table, job_id) if job_id else None
     if job:
         job["status"] = "running"
+        job["startedAt"] = board_store.now_iso()
         linkedin_store.put_job(table, job)
-    result = linkedin_image.draw_character(table)
+    try:
+        result = linkedin_image.draw_character(table)
+    except Exception as exc:  # noqa: BLE001 — a draw that raises must not leave the job running
+        _log_event("error", tag="linkedin_character_failed", error=str(exc)[:300])
+        result = {"ok": False, "error": "The character sheet failed."}
     if job:
         job["status"] = "done" if result.get("ok") else "failed"
         job["error"] = "" if result.get("ok") else str(result.get("error") or "The character sheet failed.")
@@ -594,6 +606,8 @@ def _character(event: dict[str, Any], method: str, parts: list[str], user_sub: s
             _audit(user_sub, "LINKEDIN_CHARACTER_DRAW", job["jobId"], event)
             return _json_response(202, {"job": _public_job(job)})
         if len(parts) == 3 and parts[1] == "candidates" and method == "GET":
+            if not linkedin_store.valid_candidate_id(parts[2]):
+                return _json_response(400, {"message": "That candidate is not one of the four drawings."})
             loaded = linkedin_store.load_character_candidate(parts[2])
             if not loaded:
                 return _json_response(404, {"message": "That candidate is gone."})
@@ -754,12 +768,13 @@ def publish_one(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
         image_meta = doc.get("image") if isinstance(doc.get("image"), dict) else None
         image_urn = ""
         alt_text = ""
-        if linkedin_store.image_publishable(image_meta):
+        chosen = linkedin_store.publishable_image(image_meta)
+        if chosen:
             loaded = linkedin_store.load_post_image(str(doc["postId"]))
             if not loaded:
                 raise LinkedInApiError("The attached image could not be loaded.")
             image_urn = linkedin_api.upload_image(token, author, loaded[1])
-            alt_text = linkedin_store.caption_alt(str(image_meta.get("caption") or ""))
+            alt_text = linkedin_store.caption_alt(str(chosen.get("caption") or ""))
         elif image_meta and str(image_meta.get("status") or "") in ("pending", "failed"):
             skipped_picture = True
         urn = linkedin_api.create_post(token, author, text, image_urn=image_urn, alt_text=alt_text)

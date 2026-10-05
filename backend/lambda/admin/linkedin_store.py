@@ -18,6 +18,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import board_store
+from botocore.exceptions import ClientError
 from ddb_convert import _from_ddb_nested, _to_ddb_nested
 
 HKT = ZoneInfo("Asia/Hong_Kong")
@@ -163,6 +164,11 @@ IMAGE_CHARACTER_MAX = 400
 IMAGE_CAPTION_MAX = 140
 IMAGE_SCENE_MAX = 400
 IMAGE_PENDING_SECONDS = 600
+# A character draw that is still queued or running after this is the Lambda
+# timing out (300s) without writing the job row.
+CHARACTER_JOB_STALE_SECONDS = 360
+CANDIDATE_IDS = frozenset({"c1", "c2", "c3", "c4"})
+IMAGE_BYTE_MAX = 1_500_000
 RECOMMENDED_IMAGE_STYLE = (
     "Single-panel cartoon in the style of a magazine gag cartoon. Black ink line art on "
     "white paper, dense cross-hatching for shadow, no grey wash, no colour. A detailed room, "
@@ -261,8 +267,11 @@ def _put(table: Any, item: dict[str, Any]) -> None:
     table.put_item(Item=_to_ddb_nested(item))
 
 
-def _get(table: Any, pk: str, sk: str = "META") -> dict[str, Any] | None:
-    res = table.get_item(Key={"pk": pk, "sk": sk})
+def _get(table: Any, pk: str, sk: str = "META", *, consistent: bool = False) -> dict[str, Any] | None:
+    kwargs: dict[str, Any] = {"Key": {"pk": pk, "sk": sk}}
+    if consistent:
+        kwargs["ConsistentRead"] = True
+    res = table.get_item(**kwargs)
     item = res.get("Item") if isinstance(res, dict) else None
     if not item:
         return None
@@ -344,8 +353,12 @@ def _words(value: Any) -> list[str]:
     return out
 
 
-def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
-    """Merge a settings write onto defaults. Raises LinkedInError."""
+def validate_settings(body: dict[str, Any], *, stored: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Merge a settings write onto defaults. Raises LinkedInError.
+
+    ``imagesEnabled`` is kept from ``stored`` when the body omits it, so a
+    partial write does not turn pictures back on.
+    """
     current = default_settings()
     if not isinstance(body, dict):
         raise LinkedInError("settings must be an object")
@@ -402,6 +415,12 @@ def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
     if len(image_character) > IMAGE_CHARACTER_MAX:
         raise LinkedInError(f"imageCharacter is over {IMAGE_CHARACTER_MAX} characters")
     pillars = _pillars(body.get("pillars", current["pillars"]))
+    if "imagesEnabled" in body:
+        images_enabled = bool(body.get("imagesEnabled"))
+    elif isinstance(stored, dict) and "imagesEnabled" in stored:
+        images_enabled = bool(stored.get("imagesEnabled"))
+    else:
+        images_enabled = bool(current["imagesEnabled"])
     return {
         "postsPerWeek": posts,
         "weekdays": weekdays,
@@ -418,7 +437,7 @@ def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
         "notifyEmail": notify,
         "model": model,
         "pillars": pillars,
-        "imagesEnabled": bool(body.get("imagesEnabled", current["imagesEnabled"])),
+        "imagesEnabled": images_enabled,
         "imageModel": image_model or DEFAULT_IMAGE_MODEL,
         "imageFormat": image_format,
         "imageStyle": image_style or RECOMMENDED_IMAGE_STYLE,
@@ -427,7 +446,7 @@ def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
 
 
 def save_settings(table: Any, body: dict[str, Any]) -> dict[str, Any]:
-    settings = validate_settings(body)
+    settings = validate_settings(body, stored=load_settings(table))
     _put(
         table,
         {
@@ -454,25 +473,110 @@ def month_spend(table: Any, now: datetime | None = None) -> float:
         return 0.0
 
 
-def add_spend(table: Any, usd: float, now: datetime | None = None) -> float:
-    if usd <= 0:
-        return month_spend(table, now)
+class _SpendConflict(Exception):
+    """Another writer updated the monthly spend row between read and write."""
+
+
+def _spend_conflict(exc: BaseException) -> bool:
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return False
+    return str(response.get("Error", {}).get("Code") or "") == "ConditionalCheckFailedException"
+
+
+def _put_spend_cas(table: Any, previous: dict[str, Any], spend_map: dict[str, Any]) -> None:
+    """Replace the spend row only when ``spendToken`` is unchanged."""
+    item = _to_ddb_nested(
+        {
+            **_state_key("SPEND"),
+            "spend": spend_map,
+            "spendToken": uuid.uuid4().hex,
+            "updatedAt": board_store.now_iso(),
+        }
+    )
+    if not previous:
+        condition = "attribute_not_exists(pk)"
+        values = None
+    elif "spendToken" not in previous:
+        condition = "attribute_not_exists(spendToken)"
+        values = None
+    else:
+        condition = "spendToken = :prev"
+        values = {":prev": previous.get("spendToken")}
+    kwargs: dict[str, Any] = {"Item": item, "ConditionExpression": condition}
+    if values is not None:
+        kwargs["ExpressionAttributeValues"] = values
+    try:
+        table.put_item(**kwargs)
+    except ClientError as exc:
+        if _spend_conflict(exc):
+            raise _SpendConflict from exc
+        raise
+
+
+def _trim_spend(spend: dict[str, Any]) -> dict[str, Any]:
+    keys = sorted(str(key) for key in spend)[-13:]
+    return {key: spend[key] for key in keys}
+
+
+def adjust_spend(table: Any, usd: float, now: datetime | None = None) -> float:
+    """Add ``usd`` to this month. A negative amount releases a reservation and never goes below zero."""
+    key = month_key(now)
+    updated = month_spend(table, now)
+    for _attempt in range(5):
+        doc = _load_sk(table, "SPEND")
+        spend = dict(doc.get("spend") or {})
+        try:
+            current = float(spend.get(key) or 0)
+        except (TypeError, ValueError):
+            current = 0.0
+        updated = round(max(0.0, current + usd), 6)
+        spend[key] = updated
+        try:
+            _put_spend_cas(table, doc, _trim_spend(spend))
+            return updated
+        except _SpendConflict:
+            continue
     doc = _load_sk(table, "SPEND")
     spend = dict(doc.get("spend") or {})
-    key = month_key(now)
     try:
         current = float(spend.get(key) or 0)
     except (TypeError, ValueError):
         current = 0.0
-    spend[key] = round(current + usd, 6)
-    # Keep the trailing thirteen months.
-    keys = sorted(spend)[-13:]
-    trimmed = {k: spend[k] for k in keys}
-    _put(
-        table,
-        {**_state_key("SPEND"), "spend": trimmed, "updatedAt": board_store.now_iso()},
-    )
-    return float(trimmed[key])
+    updated = round(max(0.0, current + usd), 6)
+    spend[key] = updated
+    trimmed = _trim_spend(spend)
+    _put(table, {**_state_key("SPEND"), "spend": trimmed, "updatedAt": board_store.now_iso()})
+    return float(updated)
+
+
+def try_reserve_spend(table: Any, usd: float, cap: float, now: datetime | None = None) -> bool:
+    """Reserve ``usd`` against ``cap``. False when this month would go over, or the write keeps losing."""
+    if usd <= 0:
+        return True
+    key = month_key(now)
+    for _attempt in range(5):
+        doc = _load_sk(table, "SPEND")
+        spend = dict(doc.get("spend") or {})
+        try:
+            current = float(spend.get(key) or 0)
+        except (TypeError, ValueError):
+            current = 0.0
+        if current + usd > cap + 1e-9:
+            return False
+        spend[key] = round(current + usd, 6)
+        try:
+            _put_spend_cas(table, doc, _trim_spend(spend))
+            return True
+        except _SpendConflict:
+            continue
+    return False
+
+
+def add_spend(table: Any, usd: float, now: datetime | None = None) -> float:
+    if usd <= 0:
+        return month_spend(table, now)
+    return adjust_spend(table, usd, now)
 
 
 def load_plan_date(table: Any) -> str:
@@ -757,8 +861,8 @@ def put_post(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     return doc
 
 
-def get_post(table: Any, post_id: str) -> dict[str, Any] | None:
-    return _get(table, f"LINKEDIN#post#{post_id}")
+def get_post(table: Any, post_id: str, *, consistent: bool = False) -> dict[str, Any] | None:
+    return _get(table, f"LINKEDIN#post#{post_id}", consistent=consistent)
 
 
 def list_posts(table: Any, *, status: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
@@ -1086,6 +1190,25 @@ def get_job(table: Any, job_id: str) -> dict[str, Any] | None:
     return _get(table, f"LINKEDIN#job#{job_id}")
 
 
+def expire_character_job(table: Any, job: dict[str, Any] | None, *, now: datetime | None = None) -> dict[str, Any] | None:
+    """Mark a character draw that outlived the Lambda as failed, so the row does not stay running."""
+    if not isinstance(job, dict) or str(job.get("kind") or "") != "character":
+        return job
+    if str(job.get("status") or "") not in ("queued", "running"):
+        return job
+    started = _parse_slot(str(job.get("startedAt") or job.get("createdAt") or ""))
+    if started is None:
+        return job
+    moment = now or datetime.now(ZoneInfo("UTC"))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=ZoneInfo("UTC"))
+    if (moment - started).total_seconds() <= CHARACTER_JOB_STALE_SECONDS:
+        return job
+    job["status"] = "failed"
+    job["error"] = "The character sheet timed out. Draw it again."
+    return put_job(table, job)
+
+
 def new_job(table: Any, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
     doc = {
         "jobId": _new_id("job_"),
@@ -1258,7 +1381,7 @@ def set_connection_target(table: Any, channel: str, organization_id: str) -> dic
 
 _IMAGE_MEMORY: dict[str, tuple[str, bytes]] = {}
 _CHARACTER_MEMORY: dict[str, tuple[str, bytes]] = {}
-_IMAGE_MAX = 1_500_000
+_IMAGE_MAX = IMAGE_BYTE_MAX
 
 
 def public_image(image: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -1283,11 +1406,27 @@ def public_image(image: dict[str, Any] | None) -> dict[str, Any] | None:
     return out
 
 
+def publishable_image(image: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Metadata for the bytes that can go out now.
+
+    A ready picture publishes as itself. A redraw that is still pending or that
+    failed keeps the previous ready picture (``held``) until the new panel is saved.
+    A first picture that is pending or failed publishes as text.
+    """
+    if not isinstance(image, dict):
+        return None
+    status = str(image.get("status") or "")
+    if image.get("contentType") and status in ("", "ready"):
+        return image
+    held = image.get("held")
+    if status in ("pending", "failed") and isinstance(held, dict) and held.get("contentType"):
+        return held
+    return None
+
+
 def image_publishable(image: dict[str, Any] | None) -> bool:
-    """A picture publishes only once it is ready. Pending and failed go out as text."""
-    if not isinstance(image, dict) or not image.get("contentType"):
-        return False
-    return str(image.get("status") or "ready") == "ready"
+    """True when publish should attach the stored PNG."""
+    return publishable_image(image) is not None
 
 
 def image_pending_stale(image: dict[str, Any] | None, *, now: datetime | None = None) -> bool:
@@ -1323,7 +1462,7 @@ def _check_image(content_type: str, data: bytes) -> None:
 
 
 def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) -> dict[str, Any]:
-    doc = get_post(table, post_id)
+    doc = get_post(table, post_id, consistent=True)
     if not doc:
         raise LinkedInError("post not found")
     if str(doc.get("status") or "") in ("published", "archived"):
@@ -1483,7 +1622,13 @@ def load_character_sheet() -> tuple[str, bytes] | None:
     return _load_named_bytes("sheet")
 
 
+def valid_candidate_id(candidate_id: str) -> bool:
+    return str(candidate_id or "") in CANDIDATE_IDS
+
+
 def save_character_candidate(table: Any, candidate_id: str, content_type: str, data: bytes) -> None:
+    if not valid_candidate_id(candidate_id):
+        raise LinkedInError("That candidate is not one of the four drawings.")
     _check_image(content_type, data)
     _put_named_bytes(f"candidates/{candidate_id}", content_type, data)
     doc = load_character(table)
@@ -1497,17 +1642,21 @@ def save_character_candidate(table: Any, candidate_id: str, content_type: str, d
 def clear_character_candidates(table: Any) -> None:
     doc = load_character(table)
     for row in doc.get("candidates") or []:
-        if isinstance(row, dict) and row.get("id"):
+        if isinstance(row, dict) and valid_candidate_id(str(row.get("id") or "")):
             _delete_named_bytes(f"candidates/{row['id']}")
     doc["candidates"] = []
     _save_character(table, doc)
 
 
 def load_character_candidate(candidate_id: str) -> tuple[str, bytes] | None:
+    if not valid_candidate_id(candidate_id):
+        return None
     return _load_named_bytes(f"candidates/{candidate_id}")
 
 
 def choose_character(table: Any, candidate_id: str) -> dict[str, Any]:
+    if not valid_candidate_id(candidate_id):
+        raise LinkedInError("That candidate is not one of the four drawings.")
     loaded = load_character_candidate(candidate_id)
     if not loaded:
         raise LinkedInError("That candidate is gone. Draw the character again.")

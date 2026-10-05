@@ -1557,3 +1557,217 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertEqual(_body(first)["item"]["image"]["status"], "pending")
         self.assertEqual(_body(first)["item"]["image"]["caption"], "It barely fits.")
         self.assertEqual(second["statusCode"], 409)
+
+    def _generated(self, cost: float = 0.04):
+        from openrouter_client import GeneratedImage, ImageGeneration
+
+        def generate(prompt, aspect, seed, references, settings, n=1):
+            del prompt, aspect, seed, references, settings
+            return ImageGeneration(
+                images=[GeneratedImage("image/png", self._png()) for _ in range(n)],
+                model="bytedance-seed/seedream-4.5",
+                usage={"cost": cost},
+            )
+
+        return generate
+
+    def test_a_save_failure_does_not_book_spend_and_keeps_the_previous_picture(self) -> None:
+        doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOne lesson."})
+        linkedin_store.save_post_image(self.table, doc["postId"], "image/png", self._png())
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        stored["image"]["caption"] = "Old line."
+        linkedin_store.put_post(self.table, stored)
+        with patch("board_async.try_invoke_event", return_value=True):
+            queued = linkedin_image.queue_for_post(
+                self.table, doc["postId"], scene="A desk.", caption="New line.", force=True
+            )
+        self.assertEqual(queued["image"]["status"], "pending")
+        self.assertEqual(queued["image"]["held"]["caption"], "Old line.")
+        with patch.object(linkedin_store, "save_post_image", side_effect=LinkedInError("The image must be under 1.5 MB.")):
+            result = linkedin_image.render_post(self.table, doc["postId"], generate=self._generated())
+        self.assertFalse(result["ok"])
+        failed = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertEqual(failed["image"]["status"], "failed")
+        self.assertEqual(failed["image"]["held"]["caption"], "Old line.")
+        self.assertEqual(failed["image"]["contentType"], "image/png")
+        self.assertAlmostEqual(linkedin_store.month_spend(self.table), 0.0)
+        self.assertIn("1.5 MB", failed["image"]["error"])
+
+    def test_parallel_pictures_cannot_each_pass_the_same_budget_check(self) -> None:
+        settings = linkedin_store.default_settings()
+        linkedin_store.save_settings(self.table, {**settings, "maxUsdPerMonth": 0.05})
+        first = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOne lesson."})
+        second = linkedin_store.create_post(self.table, {"body": "Another hook.\n\nAnother lesson."})
+        with patch("board_async.try_invoke_event", return_value=True):
+            linkedin_image.queue_for_post(self.table, first["postId"], scene="A desk.", caption="One.", force=True)
+            linkedin_image.queue_for_post(self.table, second["postId"], scene="A desk.", caption="Two.", force=True)
+        ok = linkedin_image.render_post(self.table, first["postId"], generate=self._generated(0.04))
+        blocked = linkedin_image.render_post(self.table, second["postId"], generate=self._generated(0.04))
+        self.assertTrue(ok["ok"])
+        self.assertEqual(blocked["error"], "budget")
+        self.assertAlmostEqual(linkedin_store.month_spend(self.table), 0.04)
+        self.assertEqual(linkedin_store.get_post(self.table, second["postId"])["image"]["status"], "failed")
+
+    def test_the_worker_reads_the_post_consistently(self) -> None:
+        doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOne lesson."})
+        with patch("board_async.try_invoke_event", return_value=True):
+            linkedin_image.queue_for_post(self.table, doc["postId"], scene="A desk.", caption="Fine.", force=True)
+        reads: list[dict] = []
+        original = self.table.get_item
+
+        def spy(*args, **kwargs):
+            reads.append(kwargs)
+            return original(*args, **kwargs)
+
+        self.table.get_item = spy  # type: ignore[method-assign]
+        linkedin_image.render_post(self.table, doc["postId"], generate=self._generated(0))
+        self.assertTrue(any(call.get("ConsistentRead") for call in reads))
+
+    def test_a_failed_enqueue_does_not_raise_and_marks_the_picture_failed(self) -> None:
+        doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOne lesson."})
+        with patch("board_async.try_invoke_event", side_effect=RuntimeError("invoke down")):
+            stored = linkedin_image.queue_for_post(self.table, doc["postId"], scene="A desk.", caption="Fine.")
+        self.assertEqual(stored["image"]["status"], "failed")
+        self.assertIn("queue", stored["image"]["error"])
+
+    def test_a_redraw_still_publishes_the_previous_picture(self) -> None:
+        doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOne lesson."})
+        linkedin_store.save_post_image(self.table, doc["postId"], "image/png", self._png())
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        stored["image"]["caption"] = "Old line."
+        stored["status"] = "approved"
+        stored["slotAt"] = _recent_slot()
+        linkedin_store.put_post(self.table, stored)
+        with patch("board_async.try_invoke_event", return_value=True):
+            linkedin_image.queue_for_post(self.table, doc["postId"], scene="A desk.", caption="New line.", force=True)
+        linkedin_store.save_connection(
+            self.table,
+            {
+                "accessToken": "token-1",
+                "refreshToken": "refresh-1",
+                "tokenExpiresAt": "2099-01-01T00:00:00.000Z",
+                "memberId": "member1",
+                "channel": "profile",
+            },
+        )
+        bodies: list[bytes] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers
+            if url.endswith("/images?action=initializeUpload"):
+                return 200, {}, b'{"value":{"uploadUrl":"https://upload.example/img","image":"urn:li:image:1"}}'
+            if url == "https://upload.example/img":
+                return 201, {}, b""
+            if url.endswith("/posts"):
+                bodies.append(body or b"")
+                return 201, {"x-restli-id": "urn:li:share:11"}, b""
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true", "LINKEDIN_ENABLED": "true"}):
+            linkedin.publish_one(self.table, linkedin_store.get_post(self.table, doc["postId"]))
+        posted = json.loads(bodies[0])
+        self.assertEqual(posted["content"]["media"]["altText"], "Old line.")
+        published = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertEqual(published["status"], "published")
+        self.assertFalse(published.get("imageNote"))
+
+    def test_pictures_off_omits_the_picture_prompt_and_caption_checks(self) -> None:
+        off = {**linkedin_store.default_settings(), "imagesEnabled": False}
+        prompt = linkedin_draft._system_prompt(off)  # noqa: SLF001
+        self.assertNotIn("Picture.", prompt)
+        self.assertNotIn("imageCaption", prompt)
+        calls: list[int] = []
+
+        def complete(messages):
+            del messages
+            calls.append(1)
+            return {
+                "body": "A short hook.\n\nOne lesson.",
+                "firstComment": "",
+                "hashtags": [],
+                "pillar": "architecture",
+                "imageCaption": "siutindei slipped in.",
+            }, 0.0
+
+        linkedin_draft.draft_one(
+            settings=off,
+            pillar="architecture",
+            idea="",
+            avoid=[],
+            complete=complete,
+        )
+        self.assertEqual(len(calls), 1)
+        calls.clear()
+        linkedin_draft.draft_one(
+            settings=linkedin_store.default_settings(),
+            pillar="architecture",
+            idea="",
+            avoid=[],
+            complete=complete,
+        )
+        self.assertEqual(calls, [1, 1])
+
+    def test_omitting_images_enabled_keeps_the_stored_value(self) -> None:
+        saved = linkedin_store.save_settings(
+            self.table, {**linkedin_store.default_settings(), "imagesEnabled": False}
+        )
+        self.assertFalse(saved["imagesEnabled"])
+        partial = {key: value for key, value in saved.items() if key != "imagesEnabled"}
+        again = linkedin_store.save_settings(self.table, partial)
+        self.assertFalse(again["imagesEnabled"])
+
+    def test_candidate_ids_are_only_the_four_drawings(self) -> None:
+        self.assertIsNone(linkedin_store.load_character_candidate("../sheet"))
+        with self.assertRaises(LinkedInError):
+            linkedin_store.choose_character(self.table, "c9")
+        with patch.dict("os.environ", ENABLED):
+            with patch("board_store.records_table", return_value=self.table):
+                response = lambda_handler(
+                    _event("/lx-software/linkedin/character/candidates/c9", "GET"),
+                    None,
+                )
+        self.assertEqual(response["statusCode"], 400)
+
+    def test_character_draw_stops_before_the_lambda_timeout(self) -> None:
+        from openrouter_client import GeneratedImage, ImageGeneration, OpenRouterError
+
+        linkedin_store.save_character_photo(self.table, "image/png", self._png())
+        now = {"t": 0.0}
+        calls: list[int] = []
+
+        def clock() -> float:
+            return now["t"]
+
+        def generate(prompt, aspect, seed, references, settings, n=1):
+            del prompt, aspect, seed, references, settings
+            calls.append(n)
+            now["t"] += 100
+            if n > 1:
+                raise OpenRouterError("slow")
+            return ImageGeneration(
+                images=[GeneratedImage("image/png", self._png())],
+                model="m",
+                usage={"cost": 0.04},
+            )
+
+        drawn = linkedin_image.draw_character(self.table, generate=generate, clock=clock)
+        self.assertEqual(calls, [4, 1])
+        self.assertEqual(drawn["candidates"], ["c1"])
+        self.assertAlmostEqual(linkedin_store.month_spend(self.table), 0.04)
+
+    def test_a_stuck_character_job_is_failed_on_read(self) -> None:
+        job = linkedin_store.new_job(self.table, "character", {})
+        job["status"] = "running"
+        job["createdAt"] = "2020-01-01T00:00:00.000Z"
+        linkedin_store.put_job(self.table, job)
+        with patch.dict("os.environ", ENABLED):
+            with patch("board_store.records_table", return_value=self.table):
+                response = lambda_handler(
+                    _event(f"/lx-software/linkedin/jobs/{job['jobId']}", "GET"),
+                    None,
+                )
+        self.assertEqual(response["statusCode"], 200)
+        self.assertEqual(_body(response)["job"]["status"], "failed")
+        self.assertIn("timed out", _body(response)["job"]["error"])

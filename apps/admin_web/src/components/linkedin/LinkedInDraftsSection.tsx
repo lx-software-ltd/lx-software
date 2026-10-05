@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { LINKEDIN_KEY, useLinkedIn } from "../../hooks/useLinkedIn";
+import { LINKEDIN_BYTES_KEY, useLinkedIn } from "../../hooks/useLinkedIn";
 import { adminFetchJson, getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { DRAFT_RECORD_ID } from "../../lib/expandedRecord";
 import {
@@ -473,7 +473,11 @@ function PostEditor({
                 ) : null}
                 {post.imageNote ? <p className="small text-warning mb-2">{post.imageNote}</p> : null}
                 {post.image?.contentType ? (
-                  <PostPicture postId={post.postId} alt={post.image.caption || "Draft picture"} />
+                  <PostPicture
+                    postId={post.postId}
+                    alt={post.image.caption || "Draft picture"}
+                    version={`${post.updatedAt ?? ""}:${post.image.status ?? ""}`}
+                  />
                 ) : null}
                 {settings.imagesEnabled ? (
                   <>
@@ -596,12 +600,13 @@ function PostEditor({
   );
 }
 
-function PostPicture({ postId, alt }: { readonly postId: string; readonly alt: string }) {
+function PostPicture({ postId, alt, version }: { readonly postId: string; readonly alt: string; readonly version: string }) {
   const query = useQuery({
-    queryKey: [...LINKEDIN_KEY, "post-image", postId] as const,
+    queryKey: [...LINKEDIN_BYTES_KEY, "post", postId, version] as const,
     queryFn: () =>
       adminFetchJson<{ contentType: string; dataBase64: string }>(`/lx-software/linkedin/posts/${postId}/image`),
     retry: false,
+    staleTime: Infinity,
   });
   if (!query.data) return null;
   return (

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useLinkedIn, LINKEDIN_KEY } from "../../hooks/useLinkedIn";
+import { useLinkedIn, LINKEDIN_BYTES_KEY } from "../../hooks/useLinkedIn";
 import { adminFetchJson, getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { formatDateTimeHKT } from "../../lib/formatDisplay";
 import {
@@ -519,9 +519,10 @@ function LinkedInConnectionPanel({
 
 function StoredImage({ path, alt }: { readonly path: string; readonly alt: string }) {
   const query = useQuery({
-    queryKey: [...LINKEDIN_KEY, "bytes", path] as const,
+    queryKey: [...LINKEDIN_BYTES_KEY, "character", path] as const,
     queryFn: () => adminFetchJson<{ contentType: string; dataBase64: string }>(path),
     retry: false,
+    staleTime: Infinity,
   });
   if (!query.data) return null;
   return (

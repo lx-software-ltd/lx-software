@@ -76,8 +76,36 @@ class FakeTable:
         item = self.items.get(self._key(Key))
         return {"Item": dict(item)} if item else {}
 
-    def put_item(self, Item: dict[str, Any], **_: Any) -> dict[str, Any]:
-        self.items[self._key(Item)] = dict(Item)
+    def put_item(
+        self,
+        Item: dict[str, Any],
+        ConditionExpression: str | None = None,
+        ExpressionAttributeValues: dict[str, Any] | None = None,
+        **_: Any,
+    ) -> dict[str, Any]:
+        key = self._key(Item)
+        current = self.items.get(key)
+        if ConditionExpression:
+            expr = " ".join(ConditionExpression.split())
+            values = ExpressionAttributeValues or {}
+            if expr == "attribute_not_exists(pk)":
+                conflict = current is not None
+            elif expr == "attribute_not_exists(spendToken)":
+                conflict = current is None or "spendToken" in current
+            elif expr == "spendToken = :prev":
+                conflict = current is None or current.get("spendToken") != values.get(":prev")
+            else:
+                raise AssertionError(f"FakeTable condition not supported: {expr}")
+            if conflict:
+                from botocore.exceptions import ClientError
+
+                exc = ClientError(
+                    {"Error": {"Code": "ConditionalCheckFailedException", "Message": "conflict"}},
+                    "PutItem",
+                )
+                exc.response = {"Error": {"Code": "ConditionalCheckFailedException", "Message": "conflict"}}  # type: ignore[attr-defined]
+                raise exc
+        self.items[key] = dict(Item)
         return {}
 
     def delete_item(self, Key: dict[str, Any], **_: Any) -> dict[str, Any]:
