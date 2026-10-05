@@ -33,6 +33,8 @@ export interface AdminApiEnvInput {
   readonly boardDeepDiveModel: string;
   readonly boardToolsEnabled: string;
   readonly boardStaffEnabled: string;
+  readonly linkedinEnabled: string;
+  readonly linkedinPublishEnabled: string;
   readonly boardCatalogImportEnabled: string;
   readonly siutindeiAdminApiBaseUrl: string;
   readonly siutindeiUserPoolId: string;
@@ -103,6 +105,8 @@ export function buildAdminEnv(input: AdminApiEnvInput): Record<string, string> {
     ["BOARD_DEEP_DIVE_MODEL", input.boardDeepDiveModel],
     ["BOARD_TOOLS_ENABLED", input.boardToolsEnabled],
     ["BOARD_STAFF_ENABLED", input.boardStaffEnabled],
+    ["LINKEDIN_ENABLED", input.linkedinEnabled],
+    ["LINKEDIN_PUBLISH_ENABLED", input.linkedinPublishEnabled],
     ["BOARD_CATALOG_IMPORT_ENABLED", input.boardCatalogImportEnabled],
     ["SIUTINDEI_ADMIN_API_BASE_URL", input.siutindeiAdminApiBaseUrl],
     ["SIUTINDEI_USER_POOL_ID", input.siutindeiUserPoolId],

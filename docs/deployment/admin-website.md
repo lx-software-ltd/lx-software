@@ -421,6 +421,7 @@ tagging requests. Catalog:
 |--------|---------|----------------------|
 | `statement-parser` | Statement OCR (this repo) | Metered here |
 | `executive-board` | Executive Board (this repo) | Metered here |
+| `linkedin` | LinkedIn drafts on LX Software (this repo) | Metered here |
 | `evolvesprouts` | [lx-software-ltd/evolvesprouts](https://github.com/lx-software-ltd/evolvesprouts) | Pulled hourly (`ingestUsage`) |
 | `siutindei` | [lx-software-ltd/siutindei](https://github.com/lx-software-ltd/siutindei) | Pulled hourly once `lxsoftware:siutindei` exists |
 
@@ -449,6 +450,7 @@ sibling pull stays at USD 0.00 without `management`:
 {
   "statement-parser": "sk-or-v1-parser",
   "executive-board": "sk-or-v1-board",
+  "linkedin": "sk-or-v1-linkedin",
   "management": "sk-or-v1-management"
 }
 ```
@@ -482,6 +484,27 @@ the dropdown (`?from=YYYY-MM-DD&to=YYYY-MM-DD`). Sibling lines, extra key
 names, and Other are the pulled Activity totals. Parser and board lines
 are still metered here, so a gap between that meter and the key's own
 Activity is not added to Other.
+
+### LinkedIn drafts
+
+LX Software → **LinkedIn** stores a personal posting queue. Drafts are
+written as a senior architect. The company name stays blocked in every draft.
+Generation uses the `linkedin` OpenRouter key above and books each call on the OpenRouter usage ledger.
+
+| Parameter | Default | Production |
+|-----------|---------|------------|
+| `LxSoftwareLinkedinEnabled` | `false` | `false` until you want Sunday drafts and writes |
+| `LxSoftwareLinkedinPublishEnabled` | `false` | Leave `false`. Direct LinkedIn posting is not implemented |
+
+With the first switch on, Sunday 18:00 HKT
+(`lxsoftware-admin-linkedin-plan`) drafts the configured batch, and a
+15-minute schedule emails `notifyEmail` when an approved 08:30 HKT slot is
+due. Both schedules are created only when `LxSoftwareLinkedinEnabled` is
+`true`, so turn it on and redeploy before expecting drafts. You open the
+share box, post it yourself, and mark it posted.
+`LxSoftwareLinkedinPublishEnabled` does not post and does not stop the
+reminder. Add any employer name under Settings → extra phrases; do not put
+it in source.
 
 ### AWS bill (shared account)
 

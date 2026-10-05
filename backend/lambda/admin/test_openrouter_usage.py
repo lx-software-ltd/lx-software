@@ -93,7 +93,7 @@ class TestOpenRouterUsage(unittest.TestCase):
         self.assertEqual(out["total"]["calls"], 0)
         self.assertEqual(
             [app["id"] for app in out["apps"]],
-            ["statement-parser", "executive-board", "evolvesprouts", "siutindei"],
+            ["statement-parser", "executive-board", "linkedin", "evolvesprouts", "siutindei"],
         )
 
     def test_rejects_inverted_range(self) -> None:

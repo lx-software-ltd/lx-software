@@ -76,6 +76,7 @@ class MintOpenRouterAppKeysTest(unittest.TestCase):
                 {
                     "lxsoftware:statement-parser",
                     "lxsoftware:executive-board",
+                    "lxsoftware:linkedin",
                     "lxsoftware:evolvesprouts",
                     "lxsoftware:siutindei",
                 },

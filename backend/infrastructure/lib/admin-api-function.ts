@@ -84,6 +84,8 @@ export function defineAdminApiFunction(
     boardAwsLambdaNames,
     boardToolsEnabled,
     boardStaffEnabled,
+    lxSoftwareLinkedinEnabled,
+    lxSoftwareLinkedinPublishEnabled,
     outreachSendingDomain,
     outreachFromLocalPart,
     publicSiteOrigins,
@@ -206,6 +208,8 @@ export function defineAdminApiFunction(
       boardDeepDiveModel: boardDeepDiveModel.valueAsString,
       boardToolsEnabled: boardToolsEnabled.valueAsString,
       boardStaffEnabled: boardStaffEnabled.valueAsString,
+      linkedinEnabled: lxSoftwareLinkedinEnabled.valueAsString,
+      linkedinPublishEnabled: lxSoftwareLinkedinPublishEnabled.valueAsString,
       boardCatalogImportEnabled: boardCatalogImportEnabled.valueAsString,
       siutindeiAdminApiBaseUrl: siutindeiAdminApiBaseUrl.valueAsString,
       siutindeiUserPoolId: siutindeiUserPoolId.valueAsString,
@@ -260,7 +264,7 @@ export function defineAdminApiFunction(
 
   enableBankingSigningKey.grant(adminFn, "kms:Sign", "kms:GetPublicKey");
 
-  defineBoardSchedules(scope, adminFn, hasEvolvesproutsDataApi);
+  defineBoardSchedules(scope, adminFn, hasEvolvesproutsDataApi, lxSoftwareLinkedinEnabled);
   const outreach = defineOutreachEvents(
     scope,
     adminFn,

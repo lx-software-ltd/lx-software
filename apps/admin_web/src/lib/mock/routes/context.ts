@@ -39,6 +39,14 @@ import {
   siuTinDeiBookFixture,
 } from "../fixtures";
 import {
+  DEFAULT_LINKEDIN_SETTINGS,
+  SAMPLE_LINKEDIN_IDEAS,
+  SAMPLE_LINKEDIN_POSTS,
+  type LinkedInIdea,
+  type LinkedInPost,
+  type LinkedInDraftSettings,
+} from "../../linkedinModel";
+import {
   DEFAULT_BOARD_BOUNDARIES,
   type BoardAction,
   type BoardApproval,
@@ -76,6 +84,11 @@ type MockState = {
   settings: BoardSettings;
   staging: BoardStagingPreview;
   catalogJobs: Record<string, BoardCatalogJob>;
+  linkedin: {
+    settings: LinkedInDraftSettings;
+    posts: LinkedInPost[];
+    ideas: LinkedInIdea[];
+  };
 };
 
 function initialMockState(): MockState {
@@ -110,6 +123,11 @@ function initialMockState(): MockState {
       commits: [{ sha: "a1b2c3d4", message: "board: #42 add booking" }],
     },
     catalogJobs: {},
+    linkedin: {
+      settings: structuredClone(DEFAULT_LINKEDIN_SETTINGS),
+      posts: structuredClone(SAMPLE_LINKEDIN_POSTS),
+      ideas: structuredClone(SAMPLE_LINKEDIN_IDEAS),
+    },
   };
 }
 

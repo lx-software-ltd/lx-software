@@ -70,7 +70,7 @@ parameters to enable it:
 
 - **`lxsoftware:OpenRouterApiKeySecretArn`** — ARN of the AWS Secrets Manager
   secret containing OpenRouter API keys. The secret **must** be a JSON object
-  with named keys `statement-parser`, `executive-board`, and `management`
+  with named keys `statement-parser`, `executive-board`, `linkedin`, and `management`
   (a Management API key, not an inference key; see
   `contracts/openrouter-apps.json`). Mint with
   `python3 scripts/mint-openrouter-app-keys.py`. Leave empty to disable PDF
