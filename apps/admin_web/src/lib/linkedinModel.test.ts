@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LINKEDIN_SETTINGS,
+  DEFAULT_IMAGE_MODEL,
+  RECOMMENDED_IMAGE_STYLE,
   RECOMMENDED_LINKEDIN_VOICE,
   STYLE_EXAMPLE_MAX,
   escapeCommentary,
@@ -74,6 +76,11 @@ describe("linkedin guardrails", () => {
     expect(RECOMMENDED_LINKEDIN_VOICE).toContain("no stock opening line, no stock closing line");
     expect(RECOMMENDED_LINKEDIN_VOICE).not.toContain("done is better than perfect");
     expect(DEFAULT_LINKEDIN_SETTINGS.styleExample.length).toBeLessThanOrEqual(STYLE_EXAMPLE_MAX);
+    expect(DEFAULT_LINKEDIN_SETTINGS.imageModel).toBe(DEFAULT_IMAGE_MODEL);
+    expect(DEFAULT_LINKEDIN_SETTINGS.imagesEnabled).toBe(true);
+    expect(DEFAULT_LINKEDIN_SETTINGS.imageFormat).toBe("square");
+    expect(RECOMMENDED_IMAGE_STYLE.length).toBeLessThanOrEqual(600);
+    expect(RECOMMENDED_IMAGE_STYLE).toContain("cross-hatching");
   });
 
   it("matches a blocked phrase only on a word boundary", () => {

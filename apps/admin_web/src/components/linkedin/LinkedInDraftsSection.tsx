@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { useLinkedIn } from "../../hooks/useLinkedIn";
-import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
+import { LINKEDIN_KEY, useLinkedIn } from "../../hooks/useLinkedIn";
+import { adminFetchJson, getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { DRAFT_RECORD_ID } from "../../lib/expandedRecord";
 import {
   guardrails,
@@ -277,6 +278,22 @@ function DraftRow({
               hidden: !enabled,
               onClick: () => void linkedIn.regenerate.mutate(post.postId),
             },
+            {
+              id: "redraw-picture",
+              label: "Redraw picture",
+              iconClassName: "bi-image",
+              hidden:
+                !enabled ||
+                !settings?.imagesEnabled ||
+                post.status === "published" ||
+                post.status === "archived",
+              onClick: () =>
+                void linkedIn.redrawImage.mutate({
+                  postId: post.postId,
+                  scene: post.image?.scene ?? "",
+                  caption: post.image?.caption ?? "",
+                }),
+            },
             { id: "archive", label: "Archive", iconClassName: "bi-archive", danger: true, onClick: onArchive },
           ]}
         />
@@ -351,8 +368,13 @@ function PostEditor({
   const [hashtags, setHashtags] = useState((post?.hashtags ?? []).join(" "));
   const [marking, setMarking] = useState(false);
   const [postedUrl, setPostedUrl] = useState("");
+  const [pictureDraft, setPictureDraft] = useState<{ id: string; scene: string; caption: string } | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const linkedIn = useLinkedIn();
+  const pictureId = post?.postId ?? "";
+  const picture = pictureDraft?.id === pictureId ? pictureDraft : null;
+  const scene = picture?.scene ?? post?.image?.scene ?? "";
+  const caption = picture?.caption ?? post?.image?.caption ?? "";
   const tags = hashtags.split(/[\s,]+/).map((tag) => tag.replace(/^#/, "")).filter(Boolean);
   const findings = guardrails(body, firstComment, tags, settings);
   const blocked = hasBlockingGuardrail(findings);
@@ -444,8 +466,52 @@ function PostEditor({
               />
             </AdminField>
             {post ? (
-              <AdminField label="Image" htmlFor={`${formId}-image`}>
-                {post.image ? <p className="small mb-2">A {post.image.contentType === "image/png" ? "PNG" : "JPEG"} is attached and will publish with the post.</p> : null}
+              <AdminField label="Picture" htmlFor={`${formId}-image`}>
+                {post.image?.status === "pending" ? <p className="small mb-2">Drawing…</p> : null}
+                {post.image?.status === "failed" ? (
+                  <p className="small text-danger mb-2">{post.image.error || "The picture failed."}</p>
+                ) : null}
+                {post.imageNote ? <p className="small text-warning mb-2">{post.imageNote}</p> : null}
+                {post.image?.contentType ? (
+                  <PostPicture postId={post.postId} alt={post.image.caption || "Draft picture"} />
+                ) : null}
+                {settings.imagesEnabled ? (
+                  <>
+                <AdminField label="Scene" htmlFor={`${formId}-scene`}>
+                  <textarea
+                    id={`${formId}-scene`}
+                    className="form-control"
+                    rows={2}
+                    maxLength={400}
+                    value={scene}
+                    onChange={(event) => setPictureDraft({ id: pictureId, scene: event.target.value, caption })}
+                  />
+                </AdminField>
+                <AdminField label="Caption" htmlFor={`${formId}-caption`}>
+                  <input
+                    id={`${formId}-caption`}
+                    className="form-control"
+                    maxLength={140}
+                    value={caption}
+                    onChange={(event) => setPictureDraft({ id: pictureId, scene, caption: event.target.value })}
+                  />
+                  <p className="form-text mb-0">Spoken line under the panel, in single quotes. Also the picture's alt text.</p>
+                </AdminField>
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary btn-sm mt-2"
+                  disabled={!enabled || post.image?.status === "pending" || linkedIn.redrawImage.isPending}
+                  onClick={() => {
+                    setLocalError(null);
+                    void linkedIn.redrawImage.mutateAsync({ postId: post.postId, scene, caption }).catch((caught: unknown) => {
+                      setLocalError(caught instanceof Error ? caught.message : "Could not redraw the picture.");
+                    });
+                  }}
+                >
+                  {post.image?.status === "pending" || linkedIn.redrawImage.isPending ? "Drawing…" : "Redraw picture"}
+                </button>
+                  </>
+                ) : null}
                 <input
                   id={`${formId}-image`}
                   className="form-control"
@@ -474,7 +540,7 @@ function PostEditor({
                     reader.readAsDataURL(file);
                   }}
                 />
-                {post.image ? (
+                {post.image?.contentType ? (
                   <button
                     type="button"
                     className="btn btn-link btn-sm px-0"
@@ -527,5 +593,22 @@ function PostEditor({
         </div>
       </div>
     </div>
+  );
+}
+
+function PostPicture({ postId, alt }: { readonly postId: string; readonly alt: string }) {
+  const query = useQuery({
+    queryKey: [...LINKEDIN_KEY, "post-image", postId] as const,
+    queryFn: () =>
+      adminFetchJson<{ contentType: string; dataBase64: string }>(`/lx-software/linkedin/posts/${postId}/image`),
+    retry: false,
+  });
+  if (!query.data) return null;
+  return (
+    <img
+      src={`data:${query.data.contentType};base64,${query.data.dataBase64}`}
+      alt={alt}
+      className="img-fluid border mb-2"
+    />
   );
 }

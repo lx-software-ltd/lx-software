@@ -152,6 +152,29 @@ RECOMMENDED_VOICE = (
 
 STYLE_EXAMPLE_MAX = 3000
 
+# Pictures. Seedream is the default; Qwen-Image is the documented alternative.
+# The style describes a magazine gag cartoon and quotes no scene, so the model
+# does not redraw the same panel for every post.
+DEFAULT_IMAGE_MODEL = "bytedance-seed/seedream-4.5"
+IMAGE_MODEL_ALTERNATIVE = "qwen/qwen-image-3"
+IMAGE_FORMATS = ("square", "portrait", "wide")
+IMAGE_STYLE_MAX = 600
+IMAGE_CHARACTER_MAX = 400
+IMAGE_CAPTION_MAX = 140
+IMAGE_SCENE_MAX = 400
+IMAGE_PENDING_SECONDS = 600
+RECOMMENDED_IMAGE_STYLE = (
+    "Single-panel cartoon in the style of a magazine gag cartoon. Black ink line art on "
+    "white paper, dense cross-hatching for shadow, no grey wash, no colour. A detailed room, "
+    "one expressive man mid-action. No lettering and no logos. One two-word label is allowed "
+    "when the scene needs it, such as a door sign or a folder tab; screens are unreadable scribbles."
+)
+DEFAULT_IMAGE_CHARACTER = (
+    "A man in his thirties with short dark hair, side-parted, clean-shaven, a round face, "
+    "wearing a light striped button-down shirt with an open collar."
+)
+FALLBACK_IMAGE_CAPTION = "This took longer than I expected."
+
 # A post the owner wrote, shown to the model for its register only. Its
 # structure, opening, closing and phrases are not to be reused; the draft loop
 # checks new posts against it and against each other.
@@ -214,6 +237,11 @@ def default_settings() -> dict[str, Any]:
         "notifyEmail": "",
         "model": "",
         "pillars": [row["id"] for row in PILLARS],
+        "imagesEnabled": True,
+        "imageModel": DEFAULT_IMAGE_MODEL,
+        "imageFormat": "square",
+        "imageStyle": RECOMMENDED_IMAGE_STYLE,
+        "imageCharacter": DEFAULT_IMAGE_CHARACTER,
     }
 
 
@@ -358,6 +386,21 @@ def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
             raise LinkedInError("model is too long")
         if not _MODEL.fullmatch(model):
             raise LinkedInError("model is invalid")
+    image_model = str(body.get("imageModel", current["imageModel"]) or "").strip()
+    if image_model:
+        if len(image_model) > MODEL_MAX:
+            raise LinkedInError("imageModel is too long")
+        if not _MODEL.fullmatch(image_model):
+            raise LinkedInError("imageModel is invalid")
+    image_format = str(body.get("imageFormat", current["imageFormat"]) or "").strip()
+    if image_format not in IMAGE_FORMATS:
+        raise LinkedInError("imageFormat is invalid")
+    image_style = str(body.get("imageStyle", current["imageStyle"]) or "").strip()
+    if len(image_style) > IMAGE_STYLE_MAX:
+        raise LinkedInError(f"imageStyle is over {IMAGE_STYLE_MAX} characters")
+    image_character = str(body.get("imageCharacter", current["imageCharacter"]) or "").strip()
+    if len(image_character) > IMAGE_CHARACTER_MAX:
+        raise LinkedInError(f"imageCharacter is over {IMAGE_CHARACTER_MAX} characters")
     pillars = _pillars(body.get("pillars", current["pillars"]))
     return {
         "postsPerWeek": posts,
@@ -375,6 +418,11 @@ def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
         "notifyEmail": notify,
         "model": model,
         "pillars": pillars,
+        "imagesEnabled": bool(body.get("imagesEnabled", current["imagesEnabled"])),
+        "imageModel": image_model or DEFAULT_IMAGE_MODEL,
+        "imageFormat": image_format,
+        "imageStyle": image_style or RECOMMENDED_IMAGE_STYLE,
+        "imageCharacter": image_character or DEFAULT_IMAGE_CHARACTER,
     }
 
 
@@ -755,6 +803,21 @@ def recent_hooks(table: Any, *, limit: int = 12) -> list[str]:
     return [hook_text(body)[:180] for body in recent_bodies(table, limit=limit)]
 
 
+def recent_captions(table: Any, *, limit: int = 12) -> list[str]:
+    """Spoken lines under recent pictures, newest first."""
+    rows = [row for row in list_posts(table, limit=80) if str(row.get("status") or "") != "archived"]
+    rows.sort(key=lambda doc: str(doc.get("createdAt") or ""), reverse=True)
+    captions: list[str] = []
+    for row in rows:
+        image = row.get("image") if isinstance(row.get("image"), dict) else {}
+        caption = str(image.get("caption") or "").strip()
+        if caption and caption not in captions:
+            captions.append(caption)
+        if len(captions) >= limit:
+            break
+    return captions
+
+
 def _clean_hashtags(value: Any, cap: int) -> list[str]:
     if value is None:
         return []
@@ -936,7 +999,8 @@ def public_post(doc: dict[str, Any]) -> dict[str, Any]:
         "generation": doc.get("generation") or None,
         "platform": doc.get("platform") or None,
         "manual": doc.get("manual") or None,
-        "image": {"contentType": image.get("contentType")} if image and image.get("contentType") else None,
+        "image": public_image(image),
+        "imageNote": doc.get("imageNote") or "",
         "metrics": doc.get("metrics") or None,
         "publishError": doc.get("publishError") or "",
         "createdAt": doc.get("createdAt"),
@@ -1060,6 +1124,11 @@ def overview(table: Any) -> dict[str, Any]:
         "defaultModel": (os.environ.get("OPENROUTER_MODEL") or "").strip(),
         "recommendedVoice": RECOMMENDED_VOICE,
         "styleExampleMax": STYLE_EXAMPLE_MAX,
+        "defaultImageModel": DEFAULT_IMAGE_MODEL,
+        "imageModelAlternative": IMAGE_MODEL_ALTERNATIVE,
+        "recommendedImageStyle": RECOMMENDED_IMAGE_STYLE,
+        "imageStyleMax": IMAGE_STYLE_MAX,
+        "imageCharacterMax": IMAGE_CHARACTER_MAX,
     }
 
 
@@ -1188,19 +1257,61 @@ def set_connection_target(table: Any, channel: str, organization_id: str) -> dic
 
 
 _IMAGE_MEMORY: dict[str, tuple[str, bytes]] = {}
+_CHARACTER_MEMORY: dict[str, tuple[str, bytes]] = {}
 _IMAGE_MAX = 1_500_000
+
+
+def public_image(image: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Picture state for the SPA. Bytes stay in S3."""
+    if not isinstance(image, dict):
+        return None
+    content = str(image.get("contentType") or "")
+    status = str(image.get("status") or "")
+    if not content and not status:
+        return None
+    if content and not status:
+        status = "ready"
+    out: dict[str, Any] = {
+        "status": status,
+        "scene": str(image.get("scene") or ""),
+        "caption": str(image.get("caption") or ""),
+        "error": str(image.get("error") or ""),
+        "model": str(image.get("model") or ""),
+    }
+    if content:
+        out["contentType"] = content
+    return out
+
+
+def image_publishable(image: dict[str, Any] | None) -> bool:
+    """A picture publishes only once it is ready. Pending and failed go out as text."""
+    if not isinstance(image, dict) or not image.get("contentType"):
+        return False
+    return str(image.get("status") or "ready") == "ready"
+
+
+def image_pending_stale(image: dict[str, Any] | None, *, now: datetime | None = None) -> bool:
+    if not isinstance(image, dict) or str(image.get("status") or "") != "pending":
+        return False
+    requested = _parse_slot(str(image.get("requestedAt") or ""))
+    if requested is None:
+        return True
+    moment = now or datetime.now(ZoneInfo("UTC"))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=ZoneInfo("UTC"))
+    return (moment - requested).total_seconds() > IMAGE_PENDING_SECONDS
+
+
+def caption_alt(caption: str) -> str:
+    """The spoken line without the quotes the picture draws around it."""
+    return str(caption or "").strip().strip("'\"“”‘’")[:300]
 
 
 def _image_key(post_id: str) -> str:
     return f"linkedin/posts/{post_id}/image"
 
 
-def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) -> dict[str, Any]:
-    doc = get_post(table, post_id)
-    if not doc:
-        raise LinkedInError("post not found")
-    if str(doc.get("status") or "") in ("published", "archived"):
-        raise LinkedInError("That post can no longer be edited.")
+def _check_image(content_type: str, data: bytes) -> None:
     if content_type not in ("image/png", "image/jpeg"):
         raise LinkedInError("Use a PNG or JPEG image.")
     if not data or len(data) > _IMAGE_MAX:
@@ -1209,6 +1320,15 @@ def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) ->
         raise LinkedInError("That file is not a PNG.")
     if content_type == "image/jpeg" and not data.startswith(b"\xff\xd8"):
         raise LinkedInError("That file is not a JPEG.")
+
+
+def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) -> dict[str, Any]:
+    doc = get_post(table, post_id)
+    if not doc:
+        raise LinkedInError("post not found")
+    if str(doc.get("status") or "") in ("published", "archived"):
+        raise LinkedInError("That post can no longer be edited.")
+    _check_image(content_type, data)
     bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
     if bucket:
         import boto3
@@ -1221,7 +1341,14 @@ def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) ->
         )
     else:
         _IMAGE_MEMORY[post_id] = (content_type, data)
-    doc["image"] = {"contentType": content_type, "bytes": len(data)}
+    previous = doc.get("image") if isinstance(doc.get("image"), dict) else {}
+    doc["image"] = {
+        **previous,
+        "contentType": content_type,
+        "bytes": len(data),
+        "status": "ready",
+        "error": "",
+    }
     return put_post(table, doc)
 
 
@@ -1259,6 +1386,136 @@ def load_post_image(post_id: str) -> tuple[str, bytes] | None:
         raise
     body = response["Body"].read()
     return str(response.get("ContentType") or "image/png"), body
+
+
+def _character_key(name: str) -> str:
+    return f"linkedin/character/{name}"
+
+
+def _put_named_bytes(name: str, content_type: str, data: bytes) -> None:
+    bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
+    if bucket:
+        import boto3
+
+        boto3.client("s3").put_object(
+            Bucket=bucket,
+            Key=_character_key(name),
+            Body=data,
+            ContentType=content_type,
+        )
+        return
+    _CHARACTER_MEMORY[name] = (content_type, data)
+
+
+def _load_named_bytes(name: str) -> tuple[str, bytes] | None:
+    bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
+    if not bucket:
+        return _CHARACTER_MEMORY.get(name)
+    import boto3
+
+    try:
+        response = boto3.client("s3").get_object(Bucket=bucket, Key=_character_key(name))
+    except Exception as exc:  # noqa: BLE001 — a missing object is an empty slot
+        response_payload = getattr(exc, "response", None)
+        code = ""
+        if isinstance(response_payload, dict):
+            code = str(response_payload.get("Error", {}).get("Code") or "")
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            return None
+        raise
+    return str(response.get("ContentType") or "image/png"), response["Body"].read()
+
+
+def _delete_named_bytes(name: str) -> None:
+    bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
+    if bucket:
+        import boto3
+
+        boto3.client("s3").delete_object(Bucket=bucket, Key=_character_key(name))
+    _CHARACTER_MEMORY.pop(name, None)
+
+
+def load_character(table: Any) -> dict[str, Any]:
+    return _load_sk(table, "CHARACTER")
+
+
+def _save_character(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
+    _put(table, {**_state_key("CHARACTER"), **doc, "updatedAt": board_store.now_iso()})
+    return doc
+
+
+def public_character(doc: dict[str, Any] | None) -> dict[str, Any]:
+    stored = doc or {}
+    photo = stored.get("photo") if isinstance(stored.get("photo"), dict) else None
+    sheet = stored.get("sheet") if isinstance(stored.get("sheet"), dict) else None
+    candidates = []
+    for row in stored.get("candidates") or []:
+        if isinstance(row, dict) and row.get("id"):
+            candidates.append({"id": str(row["id"]), "contentType": str(row.get("contentType") or "image/png")})
+    return {
+        "photo": {"contentType": photo.get("contentType")} if photo and photo.get("contentType") else None,
+        "sheet": {"contentType": sheet.get("contentType")} if sheet and sheet.get("contentType") else None,
+        "candidates": candidates,
+    }
+
+
+def save_character_photo(table: Any, content_type: str, data: bytes) -> dict[str, Any]:
+    _check_image(content_type, data)
+    _put_named_bytes("photo", content_type, data)
+    doc = load_character(table)
+    doc["photo"] = {"contentType": content_type, "bytes": len(data)}
+    return public_character(_save_character(table, doc))
+
+
+def delete_character_photo(table: Any) -> dict[str, Any]:
+    _delete_named_bytes("photo")
+    doc = load_character(table)
+    doc["photo"] = None
+    return public_character(_save_character(table, doc))
+
+
+def load_character_photo(table: Any) -> tuple[str, bytes] | None:
+    del table
+    return _load_named_bytes("photo")
+
+
+def load_character_sheet() -> tuple[str, bytes] | None:
+    return _load_named_bytes("sheet")
+
+
+def save_character_candidate(table: Any, candidate_id: str, content_type: str, data: bytes) -> None:
+    _check_image(content_type, data)
+    _put_named_bytes(f"candidates/{candidate_id}", content_type, data)
+    doc = load_character(table)
+    rows = [row for row in (doc.get("candidates") or []) if isinstance(row, dict)]
+    rows = [row for row in rows if str(row.get("id") or "") != candidate_id]
+    rows.append({"id": candidate_id, "contentType": content_type, "bytes": len(data)})
+    doc["candidates"] = rows
+    _save_character(table, doc)
+
+
+def clear_character_candidates(table: Any) -> None:
+    doc = load_character(table)
+    for row in doc.get("candidates") or []:
+        if isinstance(row, dict) and row.get("id"):
+            _delete_named_bytes(f"candidates/{row['id']}")
+    doc["candidates"] = []
+    _save_character(table, doc)
+
+
+def load_character_candidate(candidate_id: str) -> tuple[str, bytes] | None:
+    return _load_named_bytes(f"candidates/{candidate_id}")
+
+
+def choose_character(table: Any, candidate_id: str) -> dict[str, Any]:
+    loaded = load_character_candidate(candidate_id)
+    if not loaded:
+        raise LinkedInError("That candidate is gone. Draw the character again.")
+    content_type, data = loaded
+    _put_named_bytes("sheet", content_type, data)
+    doc = load_character(table)
+    doc["sheet"] = {"contentType": content_type, "bytes": len(data), "candidateId": candidate_id}
+    return public_character(_save_character(table, doc))
 
 
 def posts_ready_to_publish(table: Any, *, now_iso: str | None = None) -> list[dict[str, Any]]:

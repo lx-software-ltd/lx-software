@@ -9,6 +9,7 @@ can be tagged across this admin and sibling products.
 
 from __future__ import annotations
 
+import base64
 import http.client
 import json
 import logging
@@ -25,6 +26,7 @@ from urllib import request as urlrequest
 from contract_constants import OPENROUTER_APPS as OPENROUTER_APP_CATALOG
 
 DEFAULT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
+IMAGES_ENDPOINT = "https://openrouter.ai/api/v1/images"
 CREDITS_URL = "https://openrouter.ai/api/v1/credits"
 DEFAULT_TIMEOUT_SECONDS = 60
 _RETRYABLE_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
@@ -176,6 +178,10 @@ def attribution_user(*, service: str, owner: str | None) -> str | None:
 
 def endpoint_url() -> str:
     return os.getenv("OPENROUTER_CHAT_COMPLETIONS_URL", "").strip() or DEFAULT_ENDPOINT
+
+
+def images_endpoint_url() -> str:
+    return os.getenv("OPENROUTER_IMAGES_URL", "").strip() or IMAGES_ENDPOINT
 
 
 def remaining_credits(secrets_client: Any, *, service: str = SERVICE_EXECUTIVE_BOARD) -> float | None:
@@ -386,6 +392,107 @@ def chat_completion(
         tool_calls=extract_tool_calls(raw),
         finish_reason=str((raw.get("choices") or [{}])[0].get("finish_reason") or ""),
     )
+
+
+@dataclass
+class GeneratedImage:
+    media_type: str
+    data: bytes
+
+
+@dataclass
+class ImageGeneration:
+    """One Image API response. ``cost_usd`` is the ``usage.cost`` OpenRouter reports."""
+
+    images: list[GeneratedImage]
+    model: str
+    usage: dict[str, Any] = field(default_factory=dict)
+    raw: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def cost_usd(self) -> float:
+        value = self.usage.get("cost")
+        return float(value) if isinstance(value, (int, float)) else 0.0
+
+
+def generate_image(
+    *,
+    model: str,
+    prompt: str,
+    secrets_client: Any,
+    timeout: int = 90,
+    aspect_ratio: str = "",
+    resolution: str = "1K",
+    n: int = 1,
+    output_format: str = "png",
+    seed: int | None = None,
+    input_references: list[dict[str, Any]] | None = None,
+    service: str = SERVICE_STATEMENT_PARSER,
+    owner: str | None = None,
+) -> ImageGeneration:
+    """POST ``/api/v1/images`` and return the decoded images plus usage.
+
+    The Image API has no ``data_collection: deny`` routing, so a reference
+    image is sent only when the caller passes one. A failed generation comes
+    back as an ``OpenRouterError`` (typically 502) and is not billed.
+    """
+    payload: dict[str, Any] = {
+        "model": model,
+        "prompt": prompt,
+        "n": max(1, min(int(n), 10)),
+    }
+    if aspect_ratio:
+        payload["aspect_ratio"] = aspect_ratio
+    if resolution:
+        payload["resolution"] = resolution
+    if output_format:
+        payload["output_format"] = output_format
+    if seed is not None:
+        payload["seed"] = int(seed)
+    if input_references:
+        payload["input_references"] = input_references
+    user_id = attribution_user(service=service, owner=owner)
+    if user_id:
+        payload["user"] = user_id
+    api_key = resolve_api_key(secrets_client, service=service)
+    body_text = post_json(
+        url=images_endpoint_url(),
+        api_key=api_key,
+        payload=payload,
+        timeout=max(1, int(timeout)),
+        service=service,
+    )
+    raw = _load_json_object(body_text, what="OpenRouter image response")
+    images = _images_from_response(raw)
+    if not images:
+        raise OpenRouterError("OpenRouter returned no image.")
+    return ImageGeneration(
+        images=images,
+        model=str(raw.get("model") or model),
+        usage=normalize_usage(raw.get("usage")),
+        raw=raw,
+    )
+
+
+def _images_from_response(payload: dict[str, Any]) -> list[GeneratedImage]:
+    rows = payload.get("data")
+    if not isinstance(rows, list):
+        return []
+    out: list[GeneratedImage] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        encoded = str(row.get("b64_json") or "")
+        if not encoded:
+            continue
+        try:
+            data = base64.b64decode(encoded)
+        except (ValueError, TypeError):
+            continue
+        if not data:
+            continue
+        out.append(GeneratedImage(media_type=str(row.get("media_type") or "image/png"), data=data))
+    return out
 
 
 def extract_tool_calls(payload: dict[str, Any]) -> list[ToolCall]:
