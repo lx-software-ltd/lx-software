@@ -1,6 +1,6 @@
 import type { MockCtx } from "./types";
 import { json, parseBody, state } from "./context";
-import { isLinkedInPostUrl, nextSlots, type LinkedInPost } from "../../linkedinModel";
+import { DEFAULT_LINKEDIN_SETTINGS, isLinkedInPostUrl, nextSlots, type LinkedInPost } from "../../linkedinModel";
 
 function overview() {
   const posts = state.linkedin.posts;
@@ -42,7 +42,13 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
   if (path !== "/lx-software/linkedin" && !path.startsWith("/lx-software/linkedin/")) return null;
   if (path === "/lx-software/linkedin" && method === "GET") return json(overview());
   if (path === "/lx-software/linkedin/settings" && method === "PUT") {
-    state.linkedin.settings = { ...state.linkedin.settings, ...parseBody(ctx.init) } as typeof state.linkedin.settings;
+    const body = parseBody(ctx.init);
+    const voice = String(body.voiceNotes ?? state.linkedin.settings.voiceNotes).trim();
+    state.linkedin.settings = {
+      ...state.linkedin.settings,
+      ...body,
+      voiceNotes: voice || DEFAULT_LINKEDIN_SETTINGS.voiceNotes,
+    } as typeof state.linkedin.settings;
     return json({ settings: state.linkedin.settings });
   }
   if (path === "/lx-software/linkedin/posts" && method === "GET") {
