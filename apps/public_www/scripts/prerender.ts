@@ -36,16 +36,27 @@ export function injectAppHtml(template: string, appHtml: string): string {
 
 function replaceTag(html: string, pattern: RegExp, replacement: string, what: string): string {
   if (!pattern.test(html)) throw new Error(`index.html is missing ${what}`)
-  // A function keeps `$&` / `$1` in the replacement (JSON-LD text) literal.
+  // A function keeps `$&` / `$1` in the replacement literal.
   return html.replace(pattern, () => replacement)
+}
+
+const JSON_LD_SCRIPT = /<script type="application\/ld\+json">[\s\S]*?<\/script>/
+
+/**
+ * JSON-LD is placed inside a script element. `\u003c` keeps a `<` in the
+ * document from closing that element, and `JSON.parse` restores it.
+ */
+export function embedJsonLd(jsonld: string): string {
+  return `<script type="application/ld+json">\n${jsonld.replace(/</g, '\\u003c')}\n    </script>`
 }
 
 /** Rewrites title, description, canonical, Open Graph, Twitter, noscript and JSON-LD for one route. */
 export function applyRouteHead(template: string, head: SeoHead, jsonld: string): string {
+  if (!JSON_LD_SCRIPT.test(template)) throw new Error('index.html is missing JSON-LD script')
+  let html = template.replace(JSON_LD_SCRIPT, () => embedJsonLd(jsonld))
   const title = escapeAttr(head.title)
   const description = escapeAttr(head.description)
   const url = escapeAttr(head.url)
-  let html = template
   html = replaceTag(html, /<title>[^<]*<\/title>/, `<title>${title}</title>`, '<title>')
   html = replaceTag(
     html,
@@ -88,12 +99,6 @@ export function applyRouteHead(template: string, head: SeoHead, jsonld: string):
   html = html.replace(
     noscript,
     (_match, open: string, close: string) => `${open}\n        ${escapeAttr(head.noscript)}\n      ${close}`,
-  )
-  html = replaceTag(
-    html,
-    /<script type="application\/ld\+json">[\s\S]*?<\/script>/,
-    `<script type="application/ld+json">\n${jsonld}\n    </script>`,
-    'JSON-LD script',
   )
   return html
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyRouteHead,
   assertInlineSafe,
+  embedJsonLd,
   injectAppHtml,
   inlineStylesheets,
   routeOutputPaths,
@@ -94,6 +95,20 @@ describe('applyRouteHead', () => {
   it('keeps `$` sequences in JSON-LD literal', () => {
     const html = applyRouteHead(template, head, '{ "price": "$1 and $& and $`" }')
     expect(html).toContain('{ "price": "$1 and $& and $`" }')
+  })
+
+  it('escapes a script closer inside JSON-LD', () => {
+    const payload = '{ "name": "</script><script>alert(1)</script>" }'
+    const html = applyRouteHead(template, head, payload)
+    expect(html).toContain(embedJsonLd(payload))
+    expect(html).not.toContain('</script><script>')
+    const embedded = html.match(/<script type="application\/ld\+json">\n([\s\S]*?)\n {4}<\/script>/)
+    expect(JSON.parse(embedded?.[1] ?? '')).toEqual({ name: '</script><script>alert(1)</script>' })
+  })
+
+  it('fails when the JSON-LD script tag is gone', () => {
+    const broken = template.replace(/<script type="application\/ld\+json">[\s\S]*?<\/script>/, '')
+    expect(() => applyRouteHead(broken, head, '{}')).toThrow(/JSON-LD/)
   })
 })
 
