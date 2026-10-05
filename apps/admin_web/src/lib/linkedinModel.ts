@@ -55,6 +55,7 @@ export type LinkedInDraftSettings = {
   slotMinute: number;
   draftsPerGeneration: number;
   voiceNotes: string;
+  styleExample: string;
   forbiddenWords: string[];
   hashtagCap: number;
   linksInFirstComment: boolean;
@@ -185,6 +186,7 @@ export type LinkedInOverview = {
   builtinForbidden: string[];
   defaultModel: string;
   recommendedVoice?: string;
+  styleExampleMax?: number;
 };
 
 export const SAMPLE_LINKEDIN_POSTS: LinkedInPost[] = [
@@ -232,7 +234,14 @@ export const SAMPLE_LINKEDIN_IDEAS: LinkedInIdea[] = [
 
 /** Mirrors `RECOMMENDED_VOICE` in `backend/lambda/admin/linkedin_store.py`. */
 export const RECOMMENDED_LINKEDIN_VOICE =
-  "Plain, specific, first person. I write the way an engineer explains a problem to a colleague, not the way a brand posts. Every post is one real situation: name the technology, the constraint, the number, what I tried, what broke, and what I would do again. Lead with the concrete detail, not the moral. Short declarative sentences. Dry, a little wry, no drama. No emojis, no arrows, no symbols. No buzzwords, no hustle lines, no 'humbled', no 'game-changer', no 'here's the thing', no 'let that sink in'. Do not generalise into advice about mindset or leadership; a reader should learn something they could check. End on the specific trade-off or on an open question I actually have, never a call to action.";
+  "First person singular, always I, never we. Conversational, as if I were telling a former colleague over lunch what I have been building. Open with one plain line that says what the post is about: no hook, no question, no claim. Then tell it in order: what I noticed, what I decided, what I built, where it broke, where it stands now. Name the real constraint (a full-time job, nights and weekends, a month of development) and real figures when I have them. Plain dashes for a short list. One-line paragraphs are fine: 'So I built it.' Dry, understated, a little self-deprecating; an aside or an ellipsis now and then. Admit what is unfinished and what might fail. No sensationalism, no wow, no lesson headline, no moral, no call to action. Finish by naming the obvious objection and answering it honestly, or with a shrug such as 'done is better than perfect'. Usually 250 to 450 words.";
+
+/** Mirrors `STYLE_EXAMPLE_MAX` in `linkedin_store.py`. The default example itself comes from the API. */
+export const STYLE_EXAMPLE_MAX = 3000;
+
+/** Fixture only. The server default is the owner's own post (`STYLE_EXAMPLE` in `linkedin_store.py`). */
+const SAMPLE_STYLE_EXAMPLE =
+  "Here is about the week I spent on a 20 KB limit.\n\nI had added one more route to the admin API and the deploy failed. Not the code, the permissions.\n\nSo I read the error properly...\n\nI know what you're thinking - this is in the docs. Yes. I had not read that page.";
 
 export const DEFAULT_LINKEDIN_SETTINGS: LinkedInDraftSettings = {
   postsPerWeek: 2,
@@ -241,6 +250,7 @@ export const DEFAULT_LINKEDIN_SETTINGS: LinkedInDraftSettings = {
   slotMinute: 30,
   draftsPerGeneration: 4,
   voiceNotes: RECOMMENDED_LINKEDIN_VOICE,
+  styleExample: SAMPLE_STYLE_EXAMPLE,
   forbiddenWords: [],
   hashtagCap: 3,
   linksInFirstComment: false,

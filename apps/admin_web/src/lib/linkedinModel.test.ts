@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LINKEDIN_SETTINGS,
   RECOMMENDED_LINKEDIN_VOICE,
+  STYLE_EXAMPLE_MAX,
   escapeCommentary,
   guardrails,
   isLinkedInPostUrl,
@@ -68,7 +69,9 @@ describe("linkedin guardrails", () => {
   it("starts with the recommended voice and keeps it under the 1000-character limit", () => {
     expect(DEFAULT_LINKEDIN_SETTINGS.voiceNotes).toBe(RECOMMENDED_LINKEDIN_VOICE);
     expect(RECOMMENDED_LINKEDIN_VOICE.length).toBeLessThanOrEqual(1000);
-    expect(RECOMMENDED_LINKEDIN_VOICE).toContain("one real situation");
+    expect(RECOMMENDED_LINKEDIN_VOICE).toContain("always I, never we");
+    expect(RECOMMENDED_LINKEDIN_VOICE).toContain("No sensationalism, no wow");
+    expect(DEFAULT_LINKEDIN_SETTINGS.styleExample.length).toBeLessThanOrEqual(STYLE_EXAMPLE_MAX);
   });
 
   it("matches a blocked phrase only on a word boundary", () => {

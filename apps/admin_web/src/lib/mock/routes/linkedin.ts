@@ -2,6 +2,7 @@ import type { MockCtx } from "./types";
 import { json, parseBody, state } from "./context";
 import {
   RECOMMENDED_LINKEDIN_VOICE,
+  STYLE_EXAMPLE_MAX,
   isLinkedInPostUrl,
   nextSlots,
   type LinkedInConnection,
@@ -68,6 +69,7 @@ function overview() {
     builtinForbidden: ["lx software"],
     defaultModel: "mistralai/mistral-medium-3",
     recommendedVoice: RECOMMENDED_LINKEDIN_VOICE,
+    styleExampleMax: STYLE_EXAMPLE_MAX,
   };
 }
 
@@ -83,10 +85,12 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
   if (path === "/lx-software/linkedin/settings" && method === "PUT") {
     const body = parseBody(ctx.init);
     const voice = String(body.voiceNotes ?? state.linkedin.settings.voiceNotes).trim();
+    const example = String(body.styleExample ?? state.linkedin.settings.styleExample).trim();
     state.linkedin.settings = {
       ...state.linkedin.settings,
       ...body,
       voiceNotes: voice,
+      styleExample: example,
     } as typeof state.linkedin.settings;
     return json({ settings: state.linkedin.settings });
   }

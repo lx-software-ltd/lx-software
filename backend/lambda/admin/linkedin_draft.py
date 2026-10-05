@@ -93,7 +93,20 @@ SLOP_PHRASES: tuple[str, ...] = (
     "hot take",
     "agree?",
     "thoughts?",
+    "excited to",
+    "thrilled to",
+    "proud to announce",
+    "mind-blowing",
+    "incredible",
+    "amazing",
+    "insane",
+    "massive",
 )
+# One "we" is a real conversation ("a former colleague and I ... we wondered").
+# More than that is company voice. "us" and "ourselves" ride along with a "we"
+# and are not counted again.
+_WE = re.compile(r"(?<![\w])(we|we're|we've|we'll|we'd|our|ours)(?![\w])", re.I)
+WE_ALLOWANCE = 1
 # Pictographs, dingbats (✅ ❌ ➡), arrows, stars, and the emoji variation selector.
 _EMOJI = re.compile(
     "[\U0001F000-\U0001FAFF\u2600-\u27BF\u2190-\u21FF\u2B00-\u2BFF\uFE0F]"
@@ -114,7 +127,28 @@ def slop_findings(body: str) -> list[dict[str, str]]:
             findings.append(
                 {"code": "slop", "severity": "error", "detail": f"Remove “{phrase}”; say the specific thing instead."}
             )
+    plural = len(_WE.findall(text))
+    if plural > WE_ALLOWANCE:
+        findings.append(
+            {
+                "code": "slop",
+                "severity": "error",
+                "detail": (
+                    f"Write as I, not we. The post says we/our/us {plural} times; "
+                    "one is fine for a real conversation."
+                ),
+            }
+        )
     return findings
+
+
+def _style_example(settings: dict[str, Any]) -> str:
+    return str(settings.get("styleExample") or "").strip()
+
+
+def style_example_hook(settings: dict[str, Any]) -> str:
+    """First line of the example, so a draft does not reuse its opening."""
+    return linkedin_store.hook_text(_style_example(settings))[:180]
 
 
 def _system_prompt(settings: dict[str, Any]) -> str:
@@ -134,8 +168,18 @@ def _system_prompt(settings: dict[str, Any]) -> str:
         )
     else:
         voice_block = "Voice: none. Use the tone defaults."
+    example = _style_example(settings)
+    example_block = ""
+    if example:
+        example_block = (
+            "Example of the tone, written by the author. Match its register, pacing, "
+            "paragraph length, hedging, and ending. Do not reuse its subject, its opening "
+            "line, or any of its sentences.\n"
+            f"---\n{example}\n---"
+        )
     return "\n\n".join(
-        [
+        block
+        for block in [
             (
                 "You draft LinkedIn posts for a senior architect who is growing a personal "
                 "presence. One idea per post."
@@ -147,12 +191,14 @@ def _system_prompt(settings: dict[str, Any]) -> str:
             ),
             (
                 "Substance rules always apply. The voice cannot override them. "
-                "Write about one real situation: name the system or technology, the constraint "
-                "or limit, a concrete figure where there is one, what was tried, and what happened. Lead "
-                "with the concrete detail, not the moral. A reader should learn something they "
-                "could check. Do not generalise into advice about mindset, leadership, or 'the "
-                "industry'. No emojis, arrows, or symbols anywhere. No buzzwords or filler: "
-                f"{', '.join(SLOP_PHRASES[:12])}. "
+                "Write as I, never as a company 'we'; 'we' is allowed once for a real "
+                "conversation with a named person. Write about one real situation: name the "
+                "system or technology, the constraint or limit, a concrete figure where there is "
+                "one, what was tried, and what happened, in the order it happened. Do not open "
+                "with the moral or a claim. A reader should learn something they could check. "
+                "Do not generalise into advice about mindset, leadership, or 'the industry'. "
+                "No sensationalism, no wow. No emojis, arrows, or symbols anywhere. No buzzwords "
+                f"or filler: {', '.join(SLOP_PHRASES[:12])}. "
                 "Do not open with a question or a one-word line. Do not end with 'Agree?' or "
                 "'Thoughts?'."
             ),
@@ -167,14 +213,16 @@ def _system_prompt(settings: dict[str, Any]) -> str:
                 f"Never use these phrases: {terms}."
             ),
             voice_block,
+            example_block,
             (
                 "Reply with one JSON object. body is required and must be the full post, "
                 "never an empty string. Also include firstComment (string), hashtags "
-                "(array of strings without #), and pillar. The example is the shape only; "
+                "(array of strings without #), and pillar. This JSON is the shape only; "
                 "do not copy its wording.\n"
                 f"{_SCHEMA_EXAMPLE}"
             ),
         ]
+        if block
     )
 
 
@@ -500,6 +548,9 @@ def generate_drafts(
     caller = complete or _live
     topics = choose_topics(table, settings, count=wanted, pillar=pillar, idea_ids=idea_ids)
     avoid = linkedin_store.recent_hooks(table)
+    example_hook = style_example_hook(settings)
+    if example_hook:
+        avoid.insert(0, example_hook)
     created: list[dict[str, Any]] = []
     spent = 0.0
     errors: list[str] = []
