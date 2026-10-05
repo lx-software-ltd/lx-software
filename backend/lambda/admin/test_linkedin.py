@@ -12,6 +12,7 @@ from test_support import FakeTable, install_aws_stubs
 install_aws_stubs()
 
 import linkedin  # noqa: E402
+import linkedin_api  # noqa: E402
 import linkedin_draft  # noqa: E402
 import linkedin_store  # noqa: E402
 import runtime  # noqa: E402
@@ -350,7 +351,8 @@ class LinkedInHttpTests(unittest.TestCase):
             with patch.object(linkedin, "send_notice", return_value=True) as send:
                 result = linkedin.handle_publish_due({})
         self.assertEqual(result["reminded"], 1)
-        self.assertEqual(result["publish"], "publish_not_implemented")
+        self.assertEqual(result["published"], 0)
+        self.assertEqual(result["publish"], "not_connected")
         self.assertNotIn("skipped", result)
         send.assert_called_once()
         stored = linkedin_store.get_post(self.table, doc["postId"])
@@ -410,6 +412,100 @@ class LinkedInHttpTests(unittest.TestCase):
         actions = [str(item["sk"]) for item in self.table.items.values() if str(item.get("pk")) == "USER#admin-sub"]
         self.assertTrue(any(action.endswith("#LINKEDIN_IDEA_CREATE") for action in actions))
         self.assertTrue(any(action.endswith("#LINKEDIN_IDEA_DELETE") for action in actions))
+
+    def test_due_post_publishes_comment_and_image(self) -> None:
+        doc = linkedin_store.create_post(
+            self.table,
+            {
+                "body": "A short hook.\n\nOne lesson (keep it).",
+                "firstComment": "The longer note lives here.",
+                "hashtags": ["Architecture"],
+            },
+        )
+        doc["status"] = "approved"
+        doc["slotAt"] = "2020-01-01T00:30:00.000Z"
+        linkedin_store.put_post(self.table, doc)
+        linkedin_store.save_post_image(self.table, doc["postId"], "image/png", b"\x89PNG\r\n\x1a\nrest")
+        linkedin_store.save_connection(
+            self.table,
+            {
+                "accessToken": "token-1",
+                "refreshToken": "refresh-1",
+                "tokenExpiresAt": "2099-01-01T00:00:00.000Z",
+                "memberId": "member1",
+                "memberName": "Example Member",
+                "channel": "profile",
+                "organizations": [{"id": "99", "name": "Example Page"}],
+            },
+        )
+        calls: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del headers, body
+            calls.append(f"{method} {url}")
+            if url.endswith("/images?action=initializeUpload"):
+                return 200, {}, b'{"value":{"uploadUrl":"https://upload.example/img","image":"urn:li:image:1"}}'
+            if url == "https://upload.example/img":
+                return 201, {}, b""
+            if url.endswith("/posts"):
+                return 201, {"x-restli-id": "urn:li:share:1"}, b""
+            if url.endswith("/comments"):
+                return 201, {}, b""
+            if "/socialActions/" in url:
+                return 200, {}, b'{"likesSummary":{"totalLikes":4},"commentsSummary":{"aggregatedTotalComments":2}}'
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
+            result = linkedin.handle_publish_due({})
+        self.assertEqual(result["published"], 1)
+        self.assertEqual(result["reminded"], 0)
+        self.assertEqual(result["publish"], "posted")
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertEqual(stored["status"], "published")
+        self.assertEqual(stored["platform"]["urn"], "urn:li:share:1")
+        self.assertEqual(stored["metrics"]["reactions"], 4)
+        self.assertEqual(stored["metrics"]["comments"], 2)
+        self.assertTrue(any("/comments" in call for call in calls))
+        self.assertTrue(any("initializeUpload" in call for call in calls))
+
+    def test_publish_failure_reminds_once_and_keeps_the_draft_approved(self) -> None:
+        doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nStill waiting."})
+        doc["status"] = "approved"
+        doc["slotAt"] = "2020-01-01T00:30:00.000Z"
+        linkedin_store.put_post(self.table, doc)
+        linkedin_store.save_connection(
+            self.table,
+            {
+                "accessToken": "token-1",
+                "refreshToken": "refresh-1",
+                "tokenExpiresAt": "2099-01-01T00:00:00.000Z",
+                "memberId": "member1",
+                "channel": "profile",
+            },
+        )
+        linkedin_store.save_settings(
+            self.table,
+            {**linkedin_store.default_settings(), "notifyEmail": "owner@example.com"},
+        )
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, url, headers, body
+            return 422, {}, b'{"message":"commentary rejected"}'
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
+            with patch.object(linkedin, "send_notice", return_value=True) as send:
+                result = linkedin.handle_publish_due({})
+        self.assertEqual(result["published"], 0)
+        self.assertEqual(result["reminded"], 1)
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertEqual(stored["status"], "approved")
+        self.assertEqual(stored["publishAttempts"], 1)
+        self.assertIn("commentary rejected", stored["publishError"])
+        self.assertIn("Automatic posting failed", send.call_args.args[2])
 
     def test_generate_queues_a_job(self) -> None:
         with patch("board_async.try_invoke_event", return_value=True) as invoke:

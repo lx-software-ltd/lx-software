@@ -1,6 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { adminFetchJson } from "../lib/apiAdminClient";
-import type { LinkedInIdea, LinkedInOverview, LinkedInPost, LinkedInDraftSettings } from "../lib/linkedinModel";
+import type {
+  LinkedInConnection,
+  LinkedInDraftSettings,
+  LinkedInIdea,
+  LinkedInOverview,
+  LinkedInPost,
+} from "../lib/linkedinModel";
 
 export const LINKEDIN_KEY = ["linkedin"] as const;
 
@@ -98,6 +104,42 @@ export function useLinkedIn() {
     },
     onSettled: refresh,
   });
+  const connect = useMutation({
+    mutationFn: () => adminFetchJson<{ url: string }>("/lx-software/linkedin/connect", { method: "POST", body: "{}" }),
+  });
+  const completeAuth = useMutation({
+    mutationFn: (body: { code: string; state: string }) =>
+      adminFetchJson<{ connection: LinkedInConnection }>("/lx-software/linkedin/oauth/exchange", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: refresh,
+  });
+  const disconnect = useMutation({
+    mutationFn: () => adminFetchJson("/lx-software/linkedin/disconnect", { method: "POST", body: "{}" }),
+    onSuccess: refresh,
+  });
+  const saveConnection = useMutation({
+    mutationFn: (body: { channel: string; organizationId: string }) =>
+      adminFetchJson<{ connection: LinkedInConnection }>("/lx-software/linkedin/connection", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: refresh,
+  });
+  const uploadImage = useMutation({
+    mutationFn: ({ postId, contentType, dataBase64 }: { postId: string; contentType: string; dataBase64: string }) =>
+      adminFetchJson<{ item: LinkedInPost }>(`/lx-software/linkedin/posts/${postId}/image`, {
+        method: "POST",
+        body: JSON.stringify({ contentType, dataBase64 }),
+      }),
+    onSuccess: refresh,
+  });
+  const deleteImage = useMutation({
+    mutationFn: (postId: string) =>
+      adminFetchJson<{ item: LinkedInPost }>(`/lx-software/linkedin/posts/${postId}/image`, { method: "DELETE" }),
+    onSuccess: refresh,
+  });
   const generate = useMutation({
     mutationFn: async (body: { count?: number; pillar?: string }) => {
       const queued = await adminFetchJson<{ job: Job }>("/lx-software/linkedin/generate", {
@@ -120,5 +162,11 @@ export function useLinkedIn() {
     deleteIdea,
     generate,
     regenerate,
+    connect,
+    completeAuth,
+    disconnect,
+    saveConnection,
+    uploadImage,
+    deleteImage,
   };
 }

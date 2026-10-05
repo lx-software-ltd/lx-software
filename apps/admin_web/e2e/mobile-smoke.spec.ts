@@ -112,7 +112,8 @@ test.describe("admin viewport smoke", () => {
     await page.getByRole("tab", { name: "Ideas" }).click();
     await expect(page.getByText("A rollback that took longer than the change.")).toBeVisible();
     await page.getByRole("tab", { name: "Settings" }).click();
-    await expect(page.getByText("Profile posting is not connected.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Connect" })).toBeEnabled();
+    await expect(page.getByText("Connect LinkedIn to post approved drafts")).toBeVisible();
     await expect(page.getByLabel("Slot hour (HKT)")).toHaveValue("8");
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });

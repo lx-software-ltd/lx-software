@@ -137,6 +137,7 @@ export function defineAdminApiFunction(
     googlePlacesKeySecret,
     boardLinkSigningSecret,
     boardImporterCredentialsSecret,
+    linkedinAppSecret,
   } = defineBoardSecrets(scope, sharedEncryptionKey);
 
   /**
@@ -210,6 +211,7 @@ export function defineAdminApiFunction(
       boardStaffEnabled: boardStaffEnabled.valueAsString,
       linkedinEnabled: lxSoftwareLinkedinEnabled.valueAsString,
       linkedinPublishEnabled: lxSoftwareLinkedinPublishEnabled.valueAsString,
+      linkedinAppSecretId: "lxsoftware-admin-linkedin-app",
       boardCatalogImportEnabled: boardCatalogImportEnabled.valueAsString,
       siutindeiAdminApiBaseUrl: siutindeiAdminApiBaseUrl.valueAsString,
       siutindeiUserPoolId: siutindeiUserPoolId.valueAsString,
@@ -340,6 +342,7 @@ export function defineAdminApiFunction(
     googlePlacesKeySecret,
     boardLinkSigningSecret,
     boardImporterCredentialsSecret,
+    linkedinAppSecret,
     siutindeiUserPoolId,
     auth,
     siutindeiClusterArn,

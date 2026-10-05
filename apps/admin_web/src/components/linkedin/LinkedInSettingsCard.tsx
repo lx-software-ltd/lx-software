@@ -26,11 +26,7 @@ export function LinkedInSettingsCard({
   return (
     <div className="d-flex flex-column gap-3">
       <AdminEditorSection title="Connection">
-        <p className="mb-1">Profile posting is not connected.</p>
-        <p className="text-muted small mb-0">
-          Approved posts open in the LinkedIn share box. You post them yourself, then mark them posted.
-          {overview.publishEnabled ? " Direct publishing is switched on, and still waits for the LinkedIn API step." : ""}
-        </p>
+        <LinkedInConnectionPanel overview={overview} enabled={enabled} />
       </AdminEditorSection>
       <AdminEditorSection
         title="Drafts"
@@ -216,6 +212,114 @@ export function LinkedInSettingsCard({
           <p className="text-muted small mt-3 mb-0">Draft spend this month: US$ {spend}. New drafts are generated Sunday at 18:00 HKT.</p>
         </form>
       </AdminEditorSection>
+    </div>
+  );
+}
+
+function LinkedInConnectionPanel({
+  overview,
+  enabled,
+}: {
+  readonly overview: LinkedInOverview;
+  readonly enabled: boolean;
+}) {
+  const linkedIn = useLinkedIn();
+  const connection = overview.connection;
+  const connected = connection.status === "connected";
+  const error =
+    getAdminApiErrorMessage(linkedIn.connect.error) ??
+    getAdminApiErrorMessage(linkedIn.disconnect.error) ??
+    getAdminApiErrorMessage(linkedIn.saveConnection.error);
+
+  function choose(channel: string, organizationId: string) {
+    void linkedIn.saveConnection.mutate({ channel, organizationId });
+  }
+
+  return (
+    <div>
+      {error ? (
+        <div className="alert alert-danger py-2 small" role="alert">
+          {error}
+        </div>
+      ) : null}
+      {connected ? (
+        <p className="mb-2">
+          Connected{connection.memberName ? ` as ${connection.memberName}` : ""}.
+          {overview.publishEnabled
+            ? " Approved posts go out at the slot."
+            : " Automatic posting is off, so approved posts still use the share box."}
+        </p>
+      ) : (
+        <p className="mb-2">
+          {connection.appConfigured
+            ? "Connect LinkedIn to post approved drafts at the slot. Until then, use the share box."
+            : "The LinkedIn app secret is not filled in yet. Until then, use the share box."}
+        </p>
+      )}
+      {connected ? (
+        <div className="d-flex flex-column gap-2 mb-3">
+          <label className="form-check mb-0">
+            <input
+              className="form-check-input"
+              type="radio"
+              name="linkedin-channel"
+              checked={connection.channel !== "page"}
+              onChange={() => choose("profile", connection.organizationId)}
+            />
+            Profile
+          </label>
+          <label className="form-check mb-0">
+            <input
+              className="form-check-input"
+              type="radio"
+              name="linkedin-channel"
+              checked={connection.channel === "page"}
+              disabled={connection.organizations.length === 0}
+              onChange={() => choose("page", connection.organizations[0]?.id ?? "")}
+            />
+            Company page
+          </label>
+          {connection.channel === "page" && connection.organizations.length > 0 ? (
+            <select
+              className="form-select"
+              aria-label="Company page"
+              value={connection.organizationId}
+              onChange={(event) => choose("page", event.target.value)}
+            >
+              {connection.organizations.map((row) => (
+                <option key={row.id} value={row.id}>
+                  {row.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="d-flex gap-2">
+        {connected ? (
+          <button
+            type="button"
+            className="btn btn-outline-secondary btn-sm"
+            disabled={!enabled || linkedIn.disconnect.isPending}
+            onClick={() => void linkedIn.disconnect.mutate()}
+          >
+            Disconnect
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={!enabled || !connection.appConfigured || linkedIn.connect.isPending}
+            onClick={() => {
+              void linkedIn.connect.mutateAsync().then((result) => {
+                window.location.assign(result.url);
+              });
+            }}
+          >
+            Connect
+          </button>
+        )}
+      </div>
     </div>
   );
 }

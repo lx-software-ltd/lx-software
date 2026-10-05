@@ -25,6 +25,7 @@ export function grantAdminApiPolicies(
     readonly googlePlacesKeySecret: secretsmanager.ISecret;
     readonly boardLinkSigningSecret: secretsmanager.ISecret;
     readonly boardImporterCredentialsSecret: secretsmanager.ISecret;
+    readonly linkedinAppSecret: secretsmanager.ISecret;
     readonly siutindeiUserPoolId: cdk.CfnParameter;
     readonly auth: AuthConstruct;
     readonly siutindeiClusterArn: cdk.CfnParameter;
@@ -43,6 +44,7 @@ export function grantAdminApiPolicies(
     googlePlacesKeySecret,
     boardLinkSigningSecret,
     boardImporterCredentialsSecret,
+    linkedinAppSecret,
     siutindeiUserPoolId,
     auth,
     siutindeiClusterArn,
@@ -90,6 +92,7 @@ export function grantAdminApiPolicies(
   googlePlacesKeySecret.grantRead(adminFn);
   boardLinkSigningSecret.grantRead(adminFn);
   boardImporterCredentialsSecret.grantRead(adminFn);
+  linkedinAppSecret.grantRead(adminFn);
   // AdminInitiateAuth is scoped to SiutindeiUserPoolId. The parameter
   // defaults to "" (ARN …:userpool/), so skip the policy until a pool id
   // is set — same pattern as HasOpenRouterSecret.
