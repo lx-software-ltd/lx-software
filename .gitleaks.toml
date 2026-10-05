@@ -16,6 +16,12 @@ paths = [
   # Removed in the CDK-owned-secrets change; gitleaks still scans the old commit.
   '''scripts/test_verify_board_secrets\.py''',
 ]
+# TypeScript names that match the default LinkedIn client-id (14) and
+# client-secret (16) rules. These are identifiers, not credentials.
+regexes = [
+  '''^LinkedInSettings$''',
+  '''^forbiddenWords$''',
+]
 
 # Public read-only API keys minted by scripts/manage-public-api-keys.py use
 # the ``lxpk_`` prefix precisely so any accidental commit is caught here.
