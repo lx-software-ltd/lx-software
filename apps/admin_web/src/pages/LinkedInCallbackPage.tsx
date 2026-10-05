@@ -4,15 +4,19 @@ import { useLinkedIn } from "../hooks/useLinkedIn";
 import { useRunOncePerPageLoad } from "../hooks/useRunOncePerPageLoad";
 import { getAdminApiErrorMessage } from "../lib/apiAdminClient";
 
-function linkedInOauthMessage(oauthError: string): string {
-  if (oauthError === "user_cancelled_login" || oauthError === "user_cancelled_authorize") {
-    return "The LinkedIn connection was cancelled.";
-  }
-  if (oauthError === "unauthorized_scope_error") {
-    return "LinkedIn refused a requested permission. Connect again without company pages, or approve Community Management on the LinkedIn app.";
-  }
-  return `LinkedIn did not authorize the connection (${oauthError}).`;
-}
+/**
+ * Known LinkedIn redirect `error` codes. An empty code means the redirect
+ * carried no error. Anything else uses a fixed sentence.
+ */
+const REDIRECT_NOTICES: Record<string, string> = {
+  "": "",
+  user_cancelled_login: "The LinkedIn connection was cancelled.",
+  user_cancelled_authorize: "The LinkedIn connection was cancelled.",
+  unauthorized_scope_error:
+    "LinkedIn refused a requested permission. Connect again without company pages, or approve Community Management on the LinkedIn app.",
+};
+
+const UNKNOWN_REDIRECT_NOTICE = "LinkedIn did not authorize the connection.";
 
 /**
  * Landing page for the LinkedIn redirect (`/lx-software/linkedin/callback?code=…&state=…`).
@@ -25,7 +29,7 @@ export function LinkedInCallbackPage() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const code = params.get("code");
   const state = params.get("state");
-  const oauthError = params.get("error");
+  const redirectError = params.get("error");
 
   useRunOncePerPageLoad("linkedin-callback", () => {
     if (!code || !state) return;
@@ -35,9 +39,9 @@ export function LinkedInCallbackPage() {
     );
   });
 
-  const oauthMessage = oauthError ? linkedInOauthMessage(oauthError) : "";
+  const redirectNotice = REDIRECT_NOTICES[redirectError ?? ""] ?? UNKNOWN_REDIRECT_NOTICE;
   const errorMessage = !code || !state
-    ? oauthMessage || "Missing authorization code. Connect again from LinkedIn settings."
+    ? redirectNotice || "Missing authorization code. Connect again from LinkedIn settings."
     : completeAuth.isError
       ? (getAdminApiErrorMessage(completeAuth.error) ?? "Could not complete the LinkedIn connection.")
       : null;
