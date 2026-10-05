@@ -239,6 +239,7 @@ def chat_completion(
     owner: str | None = None,
     fallback_models: list[str] | tuple[str, ...] | None = None,
     wall_clock_seconds: float | None = None,
+    reasoning: dict[str, Any] | None = None,
 ) -> ChatCompletion:
     """POST one chat completion and return the assistant text plus usage.
 
@@ -285,6 +286,11 @@ def chat_completion(
         payload["max_tokens"] = int(max_tokens)
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
+    if reasoning is not None:
+        # OpenRouter's unified reasoning knob. ``{"enabled": False}`` turns
+        # thinking off on hybrid models so ``max_tokens`` is spent on the
+        # answer; providers without the parameter ignore it.
+        payload["reasoning"] = dict(reasoning)
     if plugins:
         payload["plugins"] = plugins
     if include_usage:
@@ -712,9 +718,24 @@ def _content_to_text(content: Any) -> str:
     return str(content or "")
 
 
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+_THINK_OPEN_RE = re.compile(r"<think>.*\Z", re.DOTALL | re.IGNORECASE)
+
+
+def strip_reasoning_blocks(text: str) -> str:
+    """Drop ``<think>…</think>`` blocks some hybrid models put in ``content``.
+
+    An unterminated ``<think>`` (the answer was cut off mid-thought) is
+    dropped to the end so the remainder cannot pass as the answer.
+    """
+    cleaned = _THINK_BLOCK_RE.sub("", text or "")
+    cleaned = _THINK_OPEN_RE.sub("", cleaned)
+    return cleaned.strip()
+
+
 def strip_code_fences(text: str) -> str:
     return (
-        text.strip()
+        strip_reasoning_blocks(text)
         .removeprefix("```json")
         .removeprefix("```")
         .removesuffix("```")

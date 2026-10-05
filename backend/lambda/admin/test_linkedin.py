@@ -349,6 +349,73 @@ class LinkedInStoreTests(unittest.TestCase):
         self.assertEqual(log.call_args.kwargs["text_len"], 8)
         self.assertEqual(log.call_args.kwargs["model"], "test-model")
         self.assertEqual(chat.call_count, 2)
+        self.assertEqual(chat.call_args.kwargs["reasoning"], {"enabled": False, "exclude": True})
+
+    def test_a_cut_off_reply_retries_with_more_room_then_names_the_model(self) -> None:
+        from openrouter_client import ChatCompletion
+
+        thinking = ChatCompletion(
+            text="The user wants a LinkedIn post about " + "x" * 5000,
+            model="qwen/qwen3.7-plus",
+            finish_reason="length",
+            usage={"promptTokens": 1, "completionTokens": 1200, "totalTokens": 1201, "cost": 0.02},
+        )
+        with patch.dict("os.environ", {"OPENROUTER_MODEL": "qwen/qwen3.7-plus"}):
+            with patch("openrouter_client.chat_completion", return_value=thinking) as chat:
+                with self.assertRaises(linkedin_draft.DraftError) as caught:
+                    linkedin_draft.complete_json([{"role": "user", "content": "x"}])
+        self.assertEqual(chat.call_count, 2)
+        first, second = chat.call_args_list
+        self.assertEqual(first.kwargs["max_tokens"], linkedin_draft.DRAFT_MAX_TOKENS)
+        self.assertEqual(second.kwargs["max_tokens"], linkedin_draft.DRAFT_RETRY_MAX_TOKENS)
+        self.assertIn("cut off", second.kwargs["messages"][-1]["content"])
+        self.assertTrue(caught.exception.stop)
+        self.assertIn("qwen/qwen3.7-plus", str(caught.exception))
+        self.assertIn("non-reasoning model", str(caught.exception))
+
+    def test_a_cut_off_reply_that_still_contains_the_json_is_used(self) -> None:
+        from openrouter_client import ChatCompletion
+
+        fixed = ChatCompletion(
+            text='<think>short</think>{"body":"A short hook.\\n\\nOne lesson.","hashtags":[]}',
+            model="qwen/qwen3.7-plus",
+            finish_reason="stop",
+            usage={"cost": 0.01},
+        )
+        with patch.dict("os.environ", {"OPENROUTER_MODEL": "qwen/qwen3.7-plus"}):
+            with patch("openrouter_client.chat_completion", return_value=fixed):
+                parsed, cost = linkedin_draft.complete_json([{"role": "user", "content": "x"}])
+        self.assertEqual(parsed["body"], "A short hook.\n\nOne lesson.")
+        self.assertAlmostEqual(cost, 0.01)
+
+    def test_a_stop_error_ends_the_batch_after_one_topic(self) -> None:
+        calls: list[int] = []
+
+        def complete(_messages):
+            calls.append(1)
+            raise linkedin_draft.DraftError("model kept thinking", stop=True)
+
+        with self.assertRaises(LinkedInError) as caught:
+            linkedin_draft.generate_drafts(self.table, count=3, complete=complete)
+        self.assertEqual(len(calls), 1)
+        self.assertIn("model kept thinking", str(caught.exception))
+
+    def test_a_plain_draft_error_moves_to_the_next_topic(self) -> None:
+        calls: list[int] = []
+
+        def complete(_messages):
+            calls.append(1)
+            if len(calls) == 1:
+                raise linkedin_draft.DraftError("The model returned an empty post.")
+            return (
+                {"body": "A short hook.\n\nOne lesson.", "firstComment": "", "hashtags": [], "pillar": ""},
+                0.01,
+            )
+
+        result = linkedin_draft.generate_drafts(self.table, count=2, complete=complete)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(result["posts"]), 1)
+        self.assertEqual(result["errors"], ["The model returned an empty post."])
 
     def test_live_generation_uses_settings_model(self) -> None:
         from openrouter_client import ChatCompletion
