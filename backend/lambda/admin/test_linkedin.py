@@ -404,19 +404,103 @@ class LinkedInStoreTests(unittest.TestCase):
         self.assertLessEqual(len(linkedin_store.STYLE_EXAMPLE), linkedin_store.STYLE_EXAMPLE_MAX)
         self.assertEqual(linkedin_store.overview(self.table)["styleExampleMax"], linkedin_store.STYLE_EXAMPLE_MAX)
         prompt = linkedin_draft._system_prompt(settings)  # noqa: SLF001
-        self.assertIn("Example of the tone, written by the author.", prompt)
-        self.assertIn("Do not reuse its subject, its opening line, or any of its sentences.", prompt)
+        self.assertIn("Example of the register, written by the author.", prompt)
+        self.assertIn("Do not copy its structure, its opening formula, its closing move", prompt)
+        self.assertIn("A post that reads like a rewrite of this example is wrong.", prompt)
         self.assertIn(f"---\n{linkedin_store.STYLE_EXAMPLE}\n---", prompt)
-        self.assertLess(prompt.index("Voice"), prompt.index("Example of the tone"))
-        self.assertLess(prompt.index("Example of the tone"), prompt.index("Reply with one JSON object"))
+        self.assertLess(prompt.index("Voice"), prompt.index("Example of the register"))
+        self.assertLess(prompt.index("Example of the register"), prompt.index("Reply with one JSON object"))
         self.assertEqual(
             linkedin_draft.style_example_hook(settings),
             "Here is about building my AI exec board and its AI staff.",
         )
         blank = linkedin_draft._system_prompt({**settings, "styleExample": "  "})  # noqa: SLF001
-        self.assertNotIn("Example of the tone", blank)
+        self.assertNotIn("Example of the register", blank)
         self.assertNotIn("---", blank)
         self.assertEqual(linkedin_draft.style_example_hook({**settings, "styleExample": ""}), "")
+
+    def test_recommended_voice_quotes_no_catchphrase(self) -> None:
+        voice = linkedin_store.RECOMMENDED_VOICE
+        self.assertNotIn("So I built it", voice)
+        self.assertNotIn("done is better than perfect", voice)
+        self.assertNotIn("Here is about", voice)
+        self.assertIn("no stock opening line, no stock closing line", voice)
+        prompt = linkedin_draft._system_prompt(linkedin_store.default_settings())  # noqa: SLF001
+        self.assertIn("Each post has its own opening and its own ending", prompt)
+
+    def test_repeat_findings_catch_a_template_and_pass_a_distinct_post(self) -> None:
+        example = linkedin_store.STYLE_EXAMPLE
+        template = (
+            "Here is about the week I lost to a 20 KB limit.\n\nIt broke on Tuesday.\n\n"
+            "I know what you're thinking - this is in the docs. Yes. Eventually done is better than perfect."
+        )
+        details = [row["detail"] for row in linkedin_draft.repeat_findings(template, [example])]
+        self.assertEqual(len(details), 2)
+        self.assertIn("Opens the same way as another post (“here is about…”)", details[0])
+        self.assertIn("Ends the same way as another post (“i know what you're…”)", details[1])
+        self.assertTrue(all(row["code"] == "repeat" for row in linkedin_draft.repeat_findings(template, [example])))
+        distinct = (
+            "The deploy failed at 20 KB.\n\nI had added one route too many.\n\n"
+            "The policy is now one statement. The limit has not moved."
+        )
+        self.assertEqual(linkedin_draft.repeat_findings(distinct, [example, template]), [])
+        phrase = "A different first line.\n\nOn a good day, it runs without supervision for 15-20 hours, which I did not expect.\n\nThat is where it is."
+        shared = linkedin_draft.repeat_findings(phrase, [example])
+        self.assertEqual(len(shared), 1)
+        self.assertIn("Shares the phrase “", shared[0]["detail"])
+        self.assertIn("runs without supervision", shared[0]["detail"])
+        self.assertEqual(linkedin_draft.repeat_findings("Short.\n\nDone.", ["Short.\n\nDone."]), [])
+        self.assertEqual(linkedin_draft.repeat_findings(template, ["", "   "]), [])
+
+    def test_each_draft_in_a_batch_gets_its_own_shape(self) -> None:
+        shapes = [linkedin_draft.shape_for(i, 0) for i in range(6)]
+        self.assertEqual(len({row["open"] for row in shapes}), 6)
+        self.assertEqual(len({row["close"] for row in shapes}), 6)
+        self.assertEqual(len({(row["open"], row["close"]) for row in shapes}), 6)
+        self.assertNotEqual(linkedin_draft.shape_for(0, 0), linkedin_draft.shape_for(0, 4))
+        self.assertEqual(linkedin_draft.shape_for(2, 3), linkedin_draft.shape_for(5, 0))
+        self.assertEqual(linkedin_draft.DRAFT_TEMPERATURE, 0.9)
+
+    def test_batch_drafts_see_each_other_and_a_copy_is_rewritten(self) -> None:
+        captured: list[list[dict[str, str]]] = []
+        first = (
+            "The alarm fired at 03:10.\n\nI had let one function call itself.\n\n"
+            "The cap is 250 invocations in five minutes, and I have not needed to raise it."
+        )
+        copy = (
+            "The alarm fired at 03:10 again.\n\nA different function this time.\n\n"
+            "The cap is 250 invocations in five minutes, and I have not touched it."
+        )
+        fixed = "A 20 KB policy cap.\n\nOne route too many.\n\nThe policy is one statement now."
+        later = "Pillow needs an arm64 wheel.\n\nThe x86 runner built the wrong one.\n\nQEMU is registered first now."
+        drafts = iter([first, copy, later])
+
+        def complete(messages: list[dict[str, str]]):
+            captured.append(messages)
+            user = messages[1]["content"]
+            if user.startswith("Rewrite this post"):
+                return ({"body": fixed, "firstComment": "", "hashtags": [], "pillar": ""}, 0.01)
+            return ({"body": next(drafts), "firstComment": "", "hashtags": [], "pillar": ""}, 0.01)
+
+        result = linkedin_draft.generate_drafts(self.table, count=2, complete=complete)
+        bodies = [row["body"] for row in result["posts"]]
+        self.assertEqual(bodies, [first, fixed])
+        self.assertEqual(len(captured), 3)
+        one, two, critic = (row[1]["content"] for row in captured)
+        self.assertIn("Shape for this post", one)
+        self.assertIn(f"open with {linkedin_draft.OPENINGS[0]}", one)
+        self.assertIn(f"open with {linkedin_draft.OPENINGS[1]}", two)
+        self.assertIn("Do not reuse these closing lines:", one)
+        self.assertIn("- I know what you're thinking - AI is going to mess up", one)
+        self.assertIn("- The alarm fired at 03:10.", two)
+        self.assertIn(f"- {linkedin_store.closing_text(first)}", two)
+        self.assertIn("Opens the same way as another post", critic)
+        self.assertIn("Shares the phrase", critic)
+        self.assertIn(f"open with {linkedin_draft.OPENINGS[1]}", critic)
+        again = linkedin_draft.generate_drafts(self.table, count=1, complete=complete)
+        self.assertIn(f"open with {linkedin_draft.OPENINGS[2]}", captured[-1][1]["content"])
+        self.assertIn(f"- {linkedin_store.hook_text(fixed)}", captured[-1][1]["content"])
+        self.assertEqual(len(again["posts"]), 1)
 
     def test_style_example_saves_blank_and_rejects_over_length(self) -> None:
         saved = linkedin_store.save_settings(
@@ -445,8 +529,9 @@ class LinkedInStoreTests(unittest.TestCase):
         linkedin_draft.generate_drafts(self.table, count=1, complete=complete)
         user = captured[0][1]["content"]
         self.assertIn("Do not reuse these openings:", user)
-        self.assertIn("Here is about building my AI exec board and its AI staff.", user)
-        self.assertIn("Example of the tone", captured[0][0]["content"])
+        self.assertIn("- Here is about building my AI exec board and its AI staff.", user)
+        self.assertIn("Do not reuse these closing lines:", user)
+        self.assertIn("Example of the register", captured[0][0]["content"])
 
     def test_openrouter_error_becomes_a_failed_generation(self) -> None:
         from openrouter_client import OpenRouterError

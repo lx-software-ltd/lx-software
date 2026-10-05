@@ -138,22 +138,23 @@ _RETIRED_DEFAULT_VOICE = (
 # answered objection at the end.
 RECOMMENDED_VOICE = (
     "First person singular, always I, never we. Conversational, as if I were telling a "
-    "former colleague over lunch what I have been building. Open with one plain line that "
-    "says what the post is about: no hook, no question, no claim. Then tell it in order: "
-    "what I noticed, what I decided, what I built, where it broke, where it stands now. "
-    "Name the real constraint (a full-time job, nights and weekends, a month of "
-    "development) and real figures when I have them. Plain dashes for a short list. "
-    "One-line paragraphs are fine: 'So I built it.' Dry, understated, a little "
-    "self-deprecating; an aside or an ellipsis now and then. Admit what is unfinished and "
-    "what might fail. No sensationalism, no wow, no lesson headline, no moral, no call to "
-    "action. Finish by naming the obvious objection and answering it honestly, or with a "
-    "shrug such as 'done is better than perfect'. Usually 250 to 450 words."
+    "former colleague over lunch what I have been building. No hook: the first line is "
+    "plain and specific to this story, not a question, not a claim. Tell it in the order it "
+    "happened: what I noticed, what I decided, what I built, where it broke, where it "
+    "stands now. Name the real constraint (a full-time job, nights and weekends, a month of "
+    "evenings) and real figures when I have them. Plain dashes for a short list. One-line "
+    "paragraphs are fine. Dry, understated, a little self-deprecating; an aside now and "
+    "then. Admit what is unfinished and what might fail. No sensationalism, no wow, no "
+    "lesson headline, no moral, no call to action. Each post has its own shape: a "
+    "different way in and a different way out from the last one, no stock opening line, no "
+    "stock closing line, no catchphrase carried from post to post. Usually 200 to 450 words."
 )
 
 STYLE_EXAMPLE_MAX = 3000
 
-# A post the owner wrote, shown to the model as the tone to match. Subject and
-# sentences are not to be reused; its first line goes on the avoid list.
+# A post the owner wrote, shown to the model for its register only. Its
+# structure, opening, closing and phrases are not to be reused; the draft loop
+# checks new posts against it and against each other.
 STYLE_EXAMPLE = """Here is about building my AI exec board and its AI staff.
 
 Some time ago, I had lunch with a former colleague, and we found ourselves wondering why there wasn't a single place to find activities for children in Hong Kong, sorted by location, price, and other useful criteria. In reality, these lists already exist, but they're rarely curated and often out of date.
@@ -445,6 +446,14 @@ def hook_text(body: str) -> str:
     return body.strip().split("\n", 1)[0].strip()
 
 
+def closing_text(body: str) -> str:
+    """Last non-empty line, so a draft can be told not to end the same way twice."""
+    for line in reversed(body.strip().split("\n")):
+        if line.strip():
+            return line.strip()
+    return ""
+
+
 def body_hash(body: str) -> str:
     folded = " ".join(body.lower().split())
     return hashlib.sha256(folded.encode("utf-8")).hexdigest()[:16]
@@ -728,17 +737,22 @@ def recent_hashes(table: Any) -> set[str]:
     return found
 
 
-def recent_hooks(table: Any, *, limit: int = 12) -> list[str]:
+def recent_bodies(table: Any, *, limit: int = 12) -> list[str]:
+    """Newest post bodies first, archived rows excluded."""
     rows = [row for row in list_posts(table, limit=80) if str(row.get("status") or "") != "archived"]
     rows.sort(key=lambda doc: str(doc.get("createdAt") or ""), reverse=True)
-    hooks: list[str] = []
+    bodies: list[str] = []
     for row in rows:
-        hook = hook_text(str(row.get("body") or ""))
-        if hook:
-            hooks.append(hook[:180])
-        if len(hooks) >= limit:
+        body = str(row.get("body") or "").strip()
+        if body:
+            bodies.append(body)
+        if len(bodies) >= limit:
             break
-    return hooks
+    return bodies
+
+
+def recent_hooks(table: Any, *, limit: int = 12) -> list[str]:
+    return [hook_text(body)[:180] for body in recent_bodies(table, limit=limit)]
 
 
 def _clean_hashtags(value: Any, cap: int) -> list[str]:

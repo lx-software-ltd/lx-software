@@ -190,9 +190,11 @@ export function LinkedInSettingsCard({
                 onChange={(event) => setSettings({ ...settings, styleExample: event.target.value })}
               />
               <p className="form-text mb-0">
-                A post in your own words, shown to the model as the tone to match: its pacing, paragraph length,
-                hedging, and ending. The subject, opening line, and sentences are not reused. Replace it with a newer
-                post when your writing moves on, or leave blank to send no example.
+                A post in your own words, shown to the model for its register only: how plain the sentences are, how
+                much is admitted, how little is sold. Its structure, opening, closing, and phrases are not reused. Each
+                draft in a batch gets its own opening, closing, and length, and is checked against this post, recent
+                posts, and the other drafts so they do not share a template. Replace it with a newer post when your
+                writing moves on, or leave blank to send no example.
               </p>
             </AdminField>
             <AdminField label="Extra phrases to block" htmlFor="linkedin-blocked" span={2}>
