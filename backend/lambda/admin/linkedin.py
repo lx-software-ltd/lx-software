@@ -291,6 +291,7 @@ def handle_generate(event: dict[str, Any] | None = None) -> dict[str, Any]:
             updated = linkedin_store.get_post(table, replacing) or {}
             result = {**result, "posts": [linkedin_store.public_post(updated)]}
     except (LinkedInError, linkedin_draft.DraftError, OpenRouterError) as exc:
+        _log_event("warning", tag="linkedin_generate_failed", error=str(exc)[:300])
         _fail_job(table, job, str(exc))
         return {"ok": False, "error": str(exc)}
     except Exception as exc:  # noqa: BLE001 — a worker error must not leave the job running

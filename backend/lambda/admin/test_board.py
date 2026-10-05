@@ -1051,6 +1051,44 @@ class TestNormalizers(unittest.TestCase):
         with self.assertRaises(openrouter_client.OpenRouterError):
             openrouter_client.parse_json_object_text("no json here")
 
+    def test_parse_json_object_text_repairs_raw_newlines_in_strings(self) -> None:
+        parsed = openrouter_client.parse_json_object_text(
+            '{\n  "body": "line one\nline two",\n  "ok": true\n}'
+        )
+        self.assertEqual(parsed["body"], "line one\nline two")
+        self.assertTrue(parsed["ok"])
+
+    def test_extract_message_text_reads_output_text_and_reasoning(self) -> None:
+        self.assertEqual(
+            openrouter_client.extract_message_text(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": [{"type": "output_text", "text": '{"a":1}'}],
+                            }
+                        }
+                    ]
+                }
+            ),
+            '{"a":1}',
+        )
+        self.assertEqual(
+            openrouter_client.extract_message_text(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "",
+                                "reasoning": '{"a":1}',
+                            }
+                        }
+                    ]
+                }
+            ),
+            '{"a":1}',
+        )
+
 
 class TestBoardModelFallbacks(unittest.TestCase):
     def test_fallback_models_skip_primary_and_include_stack_defaults(self) -> None:

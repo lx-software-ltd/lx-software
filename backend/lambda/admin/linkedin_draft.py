@@ -7,7 +7,6 @@ run after the model returns.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 from typing import Any
@@ -16,7 +15,7 @@ import linkedin_store
 import openrouter_usage
 from http_common import _log_event
 from linkedin_store import LinkedInError
-from openrouter_client import OpenRouterError
+from openrouter_client import OpenRouterError, parse_json_object_text
 
 SERVICE = "linkedin"
 
@@ -74,15 +73,13 @@ def _user_prompt(
 
 
 def parse_draft(text: str) -> dict[str, Any]:
-    from openrouter_client import strip_code_fences
-
-    raw = strip_code_fences(text or "").strip()
+    raw = (text or "").strip()
+    if not raw:
+        raise DraftError("The model did not return JSON.")
     try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
+        parsed = parse_json_object_text(raw)
+    except OpenRouterError as exc:
         raise DraftError("The model did not return JSON.") from exc
-    if not isinstance(parsed, dict):
-        raise DraftError("The model did not return a post.")
     body = str(parsed.get("body") or "").strip()
     if not body:
         raise DraftError("The model returned an empty post.")
@@ -151,7 +148,19 @@ def complete_json(
     )
     if table is not None:
         record_draft_usage(table, result.usage)
-    return parse_draft(result.text), float(result.cost_usd or 0)
+    try:
+        return parse_draft(result.text), float(result.cost_usd or 0)
+    except DraftError:
+        preview = (result.text or "").lstrip()[:1]
+        _log_event(
+            "warning",
+            tag="linkedin_draft_parse_failed",
+            model=result.model,
+            finish_reason=result.finish_reason,
+            text_len=len(result.text or ""),
+            starts_with=preview,
+        )
+        raise
 
 
 def _messages(settings: dict[str, Any], pillar: str, idea: str, avoid: list[str]) -> list[dict[str, str]]:
