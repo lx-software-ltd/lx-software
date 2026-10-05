@@ -493,8 +493,8 @@ Generation uses the `linkedin` OpenRouter key above and books each call on the O
 
 | Parameter | Default | Production |
 |-----------|---------|------------|
-| `LxSoftwareLinkedinEnabled` | `false` | `false` until you want Sunday drafts and writes |
-| `LxSoftwareLinkedinPublishEnabled` | `false` | `false` until the app secret is filled and you want automatic posts |
+| `LxSoftwareLinkedinEnabled` | `false` | `true` |
+| `LxSoftwareLinkedinPublishEnabled` | `false` | `true` |
 
 The app credentials live in Secrets Manager `lxsoftware-admin-linkedin-app`
 (`clientId`, `clientSecret`). The stack creates that secret with
@@ -521,8 +521,8 @@ With the first switch on, Sunday 18:00 HKT
 15-minute schedule (`lxsoftware-admin-linkedin-publish`) runs. The rate
 starts from deploy time, so an 08:30 HKT slot is posted on the first tick
 after 08:30, within about 15 minutes. Both schedules are created only when
-`LxSoftwareLinkedinEnabled` is `true`, so turn it on and redeploy before
-expecting drafts. Connect from **LinkedIn → Settings**. The default
+`LxSoftwareLinkedinEnabled` is `true`. Production sets that, so a deploy
+creates the Sunday plan and the 15-minute worker. Connect from **LinkedIn → Settings**. The default
 destination is your profile. Choose the company page there when you want
 posts to go out as the page. Settings shows when the access expires; a
 standard app has no refresh token, so connect again before that time.
