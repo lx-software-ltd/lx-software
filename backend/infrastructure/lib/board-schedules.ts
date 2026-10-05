@@ -259,7 +259,7 @@ export function defineBoardSchedules(
   const linkedinPublish = new scheduler.Schedule(scope, "LxSoftwareLinkedinPublishSchedule", {
     scheduleName: "lxsoftware-admin-linkedin-publish",
     description:
-      "Every 15 minutes, remind the owner when an approved LinkedIn slot is due. Created only when LxSoftwareLinkedinEnabled is true.",
+      "Every 15 minutes, post one due LinkedIn draft when publishing is on, and remind the owner about the rest. Created only when LxSoftwareLinkedinEnabled is true.",
     schedule: scheduler.ScheduleExpression.rate(cdk.Duration.minutes(15)),
     target: new schedulerTargets.LambdaInvoke(adminFn, {
       input: scheduler.ScheduleTargetInput.fromObject({

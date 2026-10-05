@@ -1,6 +1,6 @@
 import { useLinkedIn } from "../../hooks/useLinkedIn";
 import { formatDateTimeHKT } from "../../lib/formatDisplay";
-import { hookText, postUrl } from "../../lib/linkedinModel";
+import { hookText, postUrl, type LinkedInMetrics } from "../../lib/linkedinModel";
 import {
   AdminCell,
   AdminDataTable,
@@ -16,8 +16,10 @@ const COLUMNS = [
   { key: "ops", header: <span className="visually-hidden">Operations</span>, className: "text-end" },
 ];
 
-function reachText(metrics: { reactions: number; comments: number; impressions: number | null } | null | undefined): string {
-  if (!metrics) return "—";
+function reachText(metrics: LinkedInMetrics | null | undefined): string {
+  if (!metrics || (metrics.unavailable && metrics.reactions === 0 && metrics.comments === 0 && metrics.impressions == null)) {
+    return "—";
+  }
   const base = `${metrics.reactions} reactions · ${metrics.comments} comments`;
   return metrics.impressions == null ? base : `${base} · ${metrics.impressions} impressions`;
 }

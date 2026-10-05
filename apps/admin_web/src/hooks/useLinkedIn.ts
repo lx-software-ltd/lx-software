@@ -105,7 +105,11 @@ export function useLinkedIn() {
     onSettled: refresh,
   });
   const connect = useMutation({
-    mutationFn: () => adminFetchJson<{ url: string }>("/lx-software/linkedin/connect", { method: "POST", body: "{}" }),
+    mutationFn: (includeOrganizations: boolean) =>
+      adminFetchJson<{ url: string }>("/lx-software/linkedin/connect", {
+        method: "POST",
+        body: JSON.stringify({ includeOrganizations }),
+      }),
   });
   const completeAuth = useMutation({
     mutationFn: (body: { code: string; state: string }) =>
@@ -117,6 +121,14 @@ export function useLinkedIn() {
   });
   const disconnect = useMutation({
     mutationFn: () => adminFetchJson("/lx-software/linkedin/disconnect", { method: "POST", body: "{}" }),
+    onSuccess: refresh,
+  });
+  const refreshOrganizations = useMutation({
+    mutationFn: () =>
+      adminFetchJson<{ connection: LinkedInConnection }>("/lx-software/linkedin/connection/refresh", {
+        method: "POST",
+        body: "{}",
+      }),
     onSuccess: refresh,
   });
   const saveConnection = useMutation({
@@ -166,6 +178,7 @@ export function useLinkedIn() {
     completeAuth,
     disconnect,
     saveConnection,
+    refreshOrganizations,
     uploadImage,
     deleteImage,
   };

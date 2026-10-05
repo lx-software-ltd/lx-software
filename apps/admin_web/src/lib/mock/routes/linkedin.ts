@@ -16,19 +16,27 @@ const DISCONNECTED: LinkedInConnection = {
   organizationName: "",
   organizations: [],
   tokenExpiresAt: "",
+  includeOrganizations: false,
   appConfigured: true,
+  appStatus: "ready",
 };
 
 const EXAMPLE_PAGE = { id: "99", name: "Example Page" };
 const OAUTH_KEY = "lx-mock-linkedin-oauth";
+const OAUTH_PAGES_KEY = "lx-mock-linkedin-oauth-pages";
 
-function rememberOauth(token: string) {
+function rememberOauth(token: string, includeOrganizations: boolean) {
   state.linkedin.oauthState = token;
   sessionStorage.setItem(OAUTH_KEY, token);
+  sessionStorage.setItem(OAUTH_PAGES_KEY, includeOrganizations ? "1" : "0");
 }
 
 function readOauth(): string {
   return state.linkedin.oauthState || sessionStorage.getItem(OAUTH_KEY) || "";
+}
+
+function readOauthPages(): boolean {
+  return sessionStorage.getItem(OAUTH_PAGES_KEY) === "1";
 }
 
 function overview() {
@@ -121,8 +129,10 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
     return json({ deleted: ideaId });
   }
   if (path === "/lx-software/linkedin/connect" && method === "POST") {
+    const body = parseBody(ctx.init);
+    const includeOrganizations = Boolean(body.includeOrganizations);
     const token = `oauth_${state.linkedin.posts.length}`;
-    rememberOauth(token);
+    rememberOauth(token, includeOrganizations);
     return json({ url: `/lx-software/linkedin/callback?code=mock&state=${encodeURIComponent(token)}` });
   }
   if (path === "/lx-software/linkedin/oauth/exchange" && method === "POST") {
@@ -130,22 +140,42 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
     if (!readOauth() || body.state !== readOauth()) {
       return json({ message: "That LinkedIn sign-in expired. Connect again." }, 400);
     }
+    const includeOrganizations = readOauthPages();
     state.linkedin.oauthState = "";
     sessionStorage.removeItem(OAUTH_KEY);
+    sessionStorage.removeItem(OAUTH_PAGES_KEY);
     state.linkedin.connection = {
       status: "connected",
       channel: "profile",
       memberName: "Example Member",
       organizationId: "",
       organizationName: "",
-      organizations: [EXAMPLE_PAGE],
+      organizations: includeOrganizations ? [EXAMPLE_PAGE] : [],
       tokenExpiresAt: "2099-01-01T00:00:00.000Z",
+      includeOrganizations,
       appConfigured: true,
+      appStatus: "ready",
     };
     return json({ connection: state.linkedin.connection });
   }
   if (path === "/lx-software/linkedin/disconnect" && method === "POST") {
     state.linkedin.connection = { ...DISCONNECTED, organizations: [] };
+    return json({ connection: state.linkedin.connection });
+  }
+  if (path === "/lx-software/linkedin/connection/refresh" && method === "POST") {
+    if (state.linkedin.connection.status !== "connected") {
+      return json({ message: "LinkedIn is not connected." }, 400);
+    }
+    if (!state.linkedin.connection.includeOrganizations) {
+      return json(
+        { message: "This connection is profile only. Disconnect and connect again with company pages included." },
+        400,
+      );
+    }
+    state.linkedin.connection = {
+      ...state.linkedin.connection,
+      organizations: [EXAMPLE_PAGE],
+    };
     return json({ connection: state.linkedin.connection });
   }
   if (path === "/lx-software/linkedin/connection" && method === "PUT") {

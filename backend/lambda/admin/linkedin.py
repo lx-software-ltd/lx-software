@@ -162,6 +162,8 @@ def handle_http(event: dict[str, Any], method: str, path: str, user_sub: str | N
         return _exchange(event, user_sub)
     if parts == ["disconnect"] and method == "POST":
         return _disconnect(event, user_sub)
+    if parts == ["connection", "refresh"] and method == "POST":
+        return _refresh_organizations(event, user_sub)
     if parts == ["connection"] and method == "PUT":
         return _connection(event, user_sub)
     if parts == ["generate"] and method == "POST":
@@ -364,14 +366,22 @@ def _connect(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
         client_id, _secret = linkedin_api.load_credentials()
     except LinkedInApiError as exc:
         return _json_response(503, {"message": str(exc)})
+    body = _parse_json_body(event)
+    include_organizations = bool(body.get("includeOrganizations"))
     state = secrets.token_urlsafe(18)
-    linkedin_store.save_oauth_state(_table(), state, user_sub or "")
+    linkedin_store.save_oauth_state(
+        _table(),
+        state,
+        user_sub or "",
+        include_organizations=include_organizations,
+    )
     url = linkedin_api.authorize_url(
         client_id=client_id,
         redirect=linkedin_api.redirect_uri(_admin_origin()),
         state=state,
+        include_organizations=include_organizations,
     )
-    _audit(user_sub, "LINKEDIN_CONNECT", "state", event)
+    _audit(user_sub, "LINKEDIN_CONNECT", "pages" if include_organizations else "profile", event)
     return _json_response(200, {"url": url})
 
 
@@ -386,7 +396,7 @@ def _exchange(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
         return _json_response(400, {"message": "code and state are required"})
     table = _table()
     try:
-        owner = linkedin_store.consume_oauth_state(table, state)
+        owner, include_organizations = linkedin_store.consume_oauth_state(table, state)
         if owner and user_sub and owner != user_sub:
             raise LinkedInError("That LinkedIn sign-in belongs to another session.")
         client_id, client_secret = linkedin_api.load_credentials()
@@ -400,15 +410,16 @@ def _exchange(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
         if not access:
             raise LinkedInApiError("LinkedIn did not return an access token.")
         profile = linkedin_api.userinfo(access)
-        try:
-            organizations = linkedin_api.list_organizations(access)
-        except LinkedInApiError as exc:
-            _log_event("warning", tag="linkedin_organizations_failed", error=str(exc)[:200])
-            organizations = []
+        organizations: list[dict[str, str]] = []
+        if include_organizations:
+            try:
+                organizations = linkedin_api.list_organizations(access)
+            except LinkedInApiError as exc:
+                _log_event("warning", tag="linkedin_organizations_failed", error=str(exc)[:200])
         previous = linkedin_store.load_connection(table)
-        channel = "page" if previous.get("channel") == "page" else "profile"
-        organization_id = str(previous.get("organizationId") or "")
-        organization_name = str(previous.get("organizationName") or "")
+        channel = "page" if include_organizations and previous.get("channel") == "page" else "profile"
+        organization_id = str(previous.get("organizationId") or "") if channel == "page" else ""
+        organization_name = str(previous.get("organizationName") or "") if channel == "page" else ""
         if channel == "page" and not any(row["id"] == organization_id for row in organizations):
             channel = "profile"
             organization_id = ""
@@ -425,6 +436,7 @@ def _exchange(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
                 "organizationId": organization_id,
                 "organizationName": organization_name,
                 "organizations": organizations,
+                "includeOrganizations": include_organizations,
                 "connectedAt": board_store.now_iso(),
             },
         )
@@ -456,8 +468,42 @@ def _connection(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
         )
     except LinkedInError as exc:
         return _json_response(400, {"message": str(exc)})
-    _audit(user_sub, "LINKEDIN_CONNECTION", str(body.get("channel") or ""), event)
+    channel = str(body.get("channel") or "")
+    organization_id = str(body.get("organizationId") or "")
+    target = f"page:{organization_id}" if channel == "page" else "profile"
+    _audit(user_sub, "LINKEDIN_CONNECTION", target, event)
     return _json_response(200, {"connection": connection})
+
+
+def _refresh_organizations(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
+    blocked = _require_enabled()
+    if blocked:
+        return blocked
+    table = _table()
+    connection = linkedin_store.load_connection(table)
+    if not connection:
+        return _json_response(400, {"message": "LinkedIn is not connected."})
+    if not connection.get("includeOrganizations"):
+        return _json_response(
+            400,
+            {"message": "This connection is profile only. Disconnect and connect again with company pages included."},
+        )
+    try:
+        token = _access_token(table, connection)
+        organizations = linkedin_api.list_organizations(token)
+    except (LinkedInError, LinkedInApiError) as exc:
+        return _json_response(400, {"message": str(exc)})
+    connection = linkedin_store.load_connection(table)
+    connection["organizations"] = organizations
+    if connection.get("channel") == "page" and not any(
+        str(row.get("id") or "") == str(connection.get("organizationId") or "") for row in organizations
+    ):
+        connection["channel"] = "profile"
+        connection["organizationId"] = ""
+        connection["organizationName"] = ""
+    linkedin_store.save_connection(table, connection)
+    _audit(user_sub, "LINKEDIN_CONNECTION", "refresh", event)
+    return _json_response(200, {"connection": linkedin_store.public_connection(connection)})
 
 
 def _image(event: dict[str, Any], method: str, post_id: str, user_sub: str | None) -> dict[str, Any]:
@@ -507,16 +553,24 @@ def _access_token(table: Any, connection: dict[str, Any]) -> str:
         return str(connection["accessToken"])
     refresh = str(connection.get("refreshToken") or "")
     if not refresh:
-        raise LinkedInApiError("Reconnect LinkedIn. The access token expired.")
-    client_id, client_secret = linkedin_api.load_credentials()
-    token = linkedin_api.refresh_access_token(
-        client_id=client_id,
-        client_secret=client_secret,
-        refresh_token=refresh,
-    )
+        raise LinkedInApiError("Reconnect LinkedIn. The access token expired.", counts_attempt=False)
+    try:
+        client_id, client_secret = linkedin_api.load_credentials()
+    except LinkedInApiError:
+        raise
+    except Exception as exc:
+        raise LinkedInApiError("LinkedIn app credentials could not be read.", counts_attempt=False) from exc
+    try:
+        token = linkedin_api.refresh_access_token(
+            client_id=client_id,
+            client_secret=client_secret,
+            refresh_token=refresh,
+        )
+    except LinkedInApiError as exc:
+        raise LinkedInApiError("Reconnect LinkedIn. The access token expired.", counts_attempt=False) from exc
     access = str(token.get("access_token") or "")
     if not access:
-        raise LinkedInApiError("Reconnect LinkedIn. The access token expired.")
+        raise LinkedInApiError("Reconnect LinkedIn. The access token expired.", counts_attempt=False)
     connection["accessToken"] = access
     if token.get("refresh_token"):
         connection["refreshToken"] = str(token["refresh_token"])
@@ -525,23 +579,49 @@ def _access_token(table: Any, connection: dict[str, Any]) -> str:
     return access
 
 
+def _counts_attempt(exc: BaseException) -> bool:
+    if isinstance(exc, LinkedInApiError):
+        return exc.counts_attempt
+    return True
+
+
+def _reconnect_error(message: str) -> bool:
+    text = message.lower()
+    return any(
+        phrase in text
+        for phrase in (
+            "reconnect linkedin",
+            "not connected",
+            "credentials are not configured",
+            "credentials could not be read",
+            "choose a company page",
+        )
+    )
+
+
 def publish_one(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     """Post one approved draft. A comment failure still leaves the post published."""
     connection = linkedin_store.load_connection(table)
     if not connection:
-        raise LinkedInApiError("LinkedIn is not connected.")
+        raise LinkedInApiError("LinkedIn is not connected.", counts_attempt=False)
     token = _access_token(table, connection)
     author = linkedin_api.author_urn(connection)
-    image = linkedin_store.load_post_image(str(doc["postId"]))
-    image_urn = linkedin_api.upload_image(token, author, image[1]) if image else ""
-    urn = linkedin_api.create_post(
-        token,
-        author,
-        linkedin_api.commentary(str(doc.get("body") or ""), list(doc.get("hashtags") or [])),
-        image_urn=image_urn,
-    )
+    text = linkedin_api.commentary(str(doc.get("body") or ""), list(doc.get("hashtags") or []))
+    platform = doc.get("platform") if isinstance(doc.get("platform"), dict) else {}
+    urn = str(platform.get("urn") or "")
+    if not urn:
+        image_meta = doc.get("image") if isinstance(doc.get("image"), dict) else None
+        image_urn = ""
+        if image_meta and image_meta.get("contentType"):
+            loaded = linkedin_store.load_post_image(str(doc["postId"]))
+            if not loaded:
+                raise LinkedInApiError("The attached image could not be loaded.")
+            image_urn = linkedin_api.upload_image(token, author, loaded[1])
+        urn = linkedin_api.create_post(token, author, text, image_urn=image_urn)
+        doc = linkedin_store.remember_publish_urn(table, str(doc["postId"]), urn)
     channel = "page" if connection.get("channel") == "page" else "profile"
-    updated = linkedin_store.mark_api_published(table, str(doc["postId"]), urn, channel)
+    organization_id = str(connection.get("organizationId") or "") if channel == "page" else ""
+    updated = linkedin_store.mark_api_published(table, str(doc["postId"]), urn, channel, organization_id)
     comment = str(doc.get("firstComment") or "").strip()
     if comment:
         try:
@@ -554,36 +634,50 @@ def publish_one(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
 
 def _refresh_metrics(table: Any, connection: dict[str, Any]) -> int:
     token = _access_token(table, connection)
-    cutoff = datetime.now(HKT) - timedelta(hours=6)
+    now = datetime.now(HKT)
+    cutoff = now - timedelta(hours=6)
+    oldest = now - timedelta(days=30)
     refreshed = 0
     for row in linkedin_store.list_posts(table, status="published", limit=80):
-        if refreshed >= 10:
+        if refreshed >= 5:
             break
         platform = row.get("platform") if isinstance(row.get("platform"), dict) else {}
         urn = str(platform.get("urn") or "")
         if not urn:
             continue
-        pulled = linkedin_store._parse_slot(str((row.get("metrics") or {}).get("pulledAt") or ""))
+        published_at = linkedin_store._parse_slot(str(platform.get("publishedAt") or ""))
+        if published_at is not None and published_at < oldest:
+            continue
+        previous = row.get("metrics") if isinstance(row.get("metrics"), dict) else {}
+        if previous.get("unavailable"):
+            continue
+        pulled = linkedin_store._parse_slot(str(previous.get("pulledAt") or ""))
         if pulled is not None and pulled > cutoff:
             continue
         try:
             counts = linkedin_api.social_counts(token, urn)
             impressions = None
-            if connection.get("channel") == "page" and connection.get("organizationId"):
-                impressions = linkedin_api.page_impressions(token, str(connection["organizationId"]), urn)
-        except LinkedInApiError as exc:
-            _log_event("warning", tag="linkedin_metrics_failed", error=str(exc)[:200])
-            continue
-        linkedin_store.save_post_metrics(
-            table,
-            str(row["postId"]),
-            {
+            organization_id = str(platform.get("organizationId") or "")
+            if row.get("channel") == "page" and organization_id:
+                impressions = linkedin_api.page_impressions(token, organization_id, urn)
+            metrics = {
                 "reactions": counts["reactions"],
                 "comments": counts["comments"],
                 "impressions": impressions,
                 "pulledAt": board_store.now_iso(),
-            },
-        )
+                "unavailable": False,
+            }
+        except LinkedInApiError as exc:
+            _log_event("warning", tag="linkedin_metrics_failed", error=str(exc)[:200])
+            metrics = {
+                "reactions": int(previous.get("reactions") or 0),
+                "comments": int(previous.get("comments") or 0),
+                "impressions": previous.get("impressions") if "impressions" in previous else None,
+                "pulledAt": board_store.now_iso(),
+                "unavailable": exc.status == 403,
+                "error": str(exc)[:200],
+            }
+        linkedin_store.save_post_metrics(table, str(row["postId"]), metrics)
         refreshed += 1
     return refreshed
 
@@ -603,25 +697,56 @@ def handle_publish_due(event: dict[str, Any] | None = None) -> dict[str, Any]:
         else:
             publish = "posted"
             for row in linkedin_store.posts_ready_to_publish(table):
+                post_id = str(row.get("postId") or "")
                 try:
                     publish_one(table, row)
                     published += 1
-                except (LinkedInApiError, LinkedInError) as exc:
+                except Exception as exc:  # noqa: BLE001 — one failure must not skip the rest of the tick
                     _log_event("warning", tag="linkedin_publish_failed", error=str(exc)[:240])
-                    linkedin_store.record_publish_failure(table, str(row.get("postId") or ""), str(exc))
+                    try:
+                        linkedin_store.record_publish_failure(
+                            table,
+                            post_id,
+                            str(exc),
+                            count_attempt=_counts_attempt(exc),
+                        )
+                    except LinkedInError:
+                        _log_event("warning", tag="linkedin_publish_failed", error="post not found")
             try:
-                _refresh_metrics(table, linkedin_store.load_connection(table))
-            except (LinkedInApiError, LinkedInError) as exc:
+                fresh = linkedin_store.load_connection(table)
+                if fresh:
+                    _refresh_metrics(table, fresh)
+            except Exception as exc:  # noqa: BLE001 — metrics must not fail the reminder
                 _log_event("warning", tag="linkedin_metrics_failed", error=str(exc)[:240])
     settings = linkedin_store.load_settings(table)
     address = str(settings.get("notifyEmail") or "")
     reminded = 0
+    now = datetime.now(HKT)
     for row in linkedin_store.due_approved(table):
         post_id = str(row.get("postId") or "")
+        attempts = int(row.get("publishAttempts") or 0)
+        if attempts >= linkedin_store.PUBLISH_ATTEMPTS:
+            continue
+        failure = str(row.get("publishError") or "")
+        slot = linkedin_store._parse_slot(str(row.get("slotAt") or ""))
+        stale = slot is not None and now - slot > linkedin_store.PUBLISH_GRACE
+        if (
+            linkedin_store.publish_enabled()
+            and publish != "not_connected"
+            and not failure
+            and not stale
+            and attempts < linkedin_store.PUBLISH_ATTEMPTS
+        ):
+            continue
         if address:
             hook = linkedin_store.hook_text(str(row.get("body") or ""))[:120]
-            failure = str(row.get("publishError") or "")
-            if failure:
+            if failure and _reconnect_error(failure):
+                notice = (
+                    f"Automatic posting failed: {failure}\n\n"
+                    "Reconnect LinkedIn in Settings. This post stays approved.\n\n"
+                )
+                subject = "A LinkedIn post did not publish"
+            elif failure:
                 notice = (
                     f"Automatic posting failed: {failure}\n\n"
                     "It will be tried again. You can also use the share box and mark it posted.\n\n"
@@ -629,6 +754,12 @@ def handle_publish_due(event: dict[str, Any] | None = None) -> dict[str, Any]:
                 subject = "A LinkedIn post did not publish"
             elif publish == "not_connected":
                 notice = "LinkedIn is not connected, so this post was not published. Connect it, or use the share box.\n\n"
+                subject = "A LinkedIn post is due"
+            elif linkedin_store.publish_enabled() and stale:
+                notice = (
+                    "This slot is more than three hours old, so it was not posted automatically. "
+                    "Open it, use the share box, then mark it posted.\n\n"
+                )
                 subject = "A LinkedIn post is due"
             else:
                 notice = "This post is due. Open it, use the share box, then mark it posted.\n\n"
@@ -640,7 +771,26 @@ def handle_publish_due(event: dict[str, Any] | None = None) -> dict[str, Any]:
             )
         linkedin_store.stamp_due_notified(table, post_id)
         reminded += 1
-    result: dict[str, Any] = {"ok": True, "reminded": reminded, "published": published}
+    gave_up = 0
+    if linkedin_store.publish_enabled():
+        for row in linkedin_store.posts_given_up(table):
+            post_id = str(row.get("postId") or "")
+            if address:
+                hook = linkedin_store.hook_text(str(row.get("body") or ""))[:120]
+                failure = str(row.get("publishError") or "")
+                send_notice(
+                    address,
+                    "A LinkedIn post stopped retrying",
+                    (
+                        "Automatic posting failed three times and will not be tried again. "
+                        "Use the share box and mark it posted.\n\n"
+                        f"{failure}\n\n{hook}\n\n"
+                        f"{_admin_origin()}/lx-software?tab=linkedin&linkedin-post={post_id}\n"
+                    ),
+                )
+            linkedin_store.stamp_gave_up(table, post_id)
+            gave_up += 1
+    result: dict[str, Any] = {"ok": True, "reminded": reminded, "published": published, "gaveUp": gave_up}
     if publish:
         result["publish"] = publish
     return result

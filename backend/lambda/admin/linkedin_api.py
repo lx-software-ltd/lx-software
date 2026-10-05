@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -18,21 +20,28 @@ AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization"
 TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
 USERINFO_URL = "https://api.linkedin.com/v2/userinfo"
 REST = "https://api.linkedin.com/rest"
-SCOPES = (
+PROFILE_SCOPES = "openid profile w_member_social"
+ORGANIZATION_SCOPES = (
     "openid profile w_member_social w_organization_social "
     "r_organization_social rw_organization_admin"
 )
+COMMENTARY_MAX = 3000
 SECRET_ID_ENV = "LINKEDIN_APP_SECRET_ID"
+METRICS_TIMEOUT_SECONDS = 8
 
 _transport = None
+_credentials_cache: dict[str, Any] = {"at": 0.0, "status": ""}
+_PROTECTED = re.compile(r"https?://\S+|#[^\s#]+")
+_RESERVED = set("\\()[]{}@|~_<>*")
 
 
 class LinkedInApiError(RuntimeError):
     """LinkedIn rejected a call, or the app credentials are missing."""
 
-    def __init__(self, message: str, *, status: int | None = None) -> None:
+    def __init__(self, message: str, *, status: int | None = None, counts_attempt: bool = True) -> None:
         super().__init__(message)
         self.status = status
+        self.counts_attempt = counts_attempt
 
 
 def set_transport_for_tests(fn) -> None:
@@ -40,13 +49,20 @@ def set_transport_for_tests(fn) -> None:
     _transport = fn
 
 
-def _call(method: str, url: str, headers: dict[str, str], body: bytes | None) -> tuple[int, dict[str, str], bytes]:
+def _call(
+    method: str,
+    url: str,
+    headers: dict[str, str],
+    body: bytes | None,
+    *,
+    timeout: float = 20,
+) -> tuple[int, dict[str, str], bytes]:
     if _transport is not None:
         status, response_headers, payload = _transport(method, url, headers, body)
         return int(status), {str(k).lower(): str(v) for k, v in dict(response_headers).items()}, payload or b""
     request = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             raw_headers = {key.lower(): value for key, value in response.headers.items()}
             return int(response.status), raw_headers, response.read()
     except urllib.error.HTTPError as exc:
@@ -84,7 +100,7 @@ def load_credentials() -> tuple[str, str]:
     """Return ``(client_id, client_secret)`` from the LinkedIn app secret."""
     secret_id = (os.environ.get(SECRET_ID_ENV) or "").strip()
     if not secret_id:
-        raise LinkedInApiError("LinkedIn app credentials are not configured.")
+        raise LinkedInApiError("LinkedIn app credentials are not configured.", counts_attempt=False)
     from admin_runtime import _get_secretsmanager_client
     from secret_store import read_secret_raw
 
@@ -92,36 +108,54 @@ def load_credentials() -> tuple[str, str]:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise LinkedInApiError("LinkedIn app secret is not JSON.") from exc
+        raise LinkedInApiError("LinkedIn app secret is not JSON.", counts_attempt=False) from exc
     if not isinstance(parsed, dict):
-        raise LinkedInApiError("LinkedIn app secret is not JSON.")
+        raise LinkedInApiError("LinkedIn app secret is not JSON.", counts_attempt=False)
     client_id = str(parsed.get("clientId") or "").strip()
     client_secret = str(parsed.get("clientSecret") or "").strip()
     if not client_id or client_id == "replace-me" or not client_secret:
-        raise LinkedInApiError("LinkedIn app credentials are not configured.")
+        raise LinkedInApiError("LinkedIn app credentials are not configured.", counts_attempt=False)
     return client_id, client_secret
 
 
-def app_configured() -> bool:
+def reset_credentials_cache_for_tests() -> None:
+    _credentials_cache["at"] = 0.0
+    _credentials_cache["status"] = ""
+
+
+def credentials_status() -> str:
+    """``ready``, ``missing``, or ``unreadable``. Cached for a minute."""
+    now = time.monotonic()
+    if _credentials_cache["status"] and now - float(_credentials_cache["at"]) < 60:
+        return str(_credentials_cache["status"])
+    status = "ready"
     try:
         load_credentials()
-    except Exception:  # noqa: BLE001 — overview must load when the secret is empty
-        return False
-    return True
+    except LinkedInApiError as exc:
+        status = "missing" if "not configured" in str(exc) else "unreadable"
+    except Exception:  # noqa: BLE001 — overview must load when Secrets Manager fails
+        status = "unreadable"
+    _credentials_cache["at"] = now
+    _credentials_cache["status"] = status
+    return status
+
+
+def app_configured() -> bool:
+    return credentials_status() == "ready"
 
 
 def redirect_uri(origin: str) -> str:
     return origin.rstrip("/") + "/lx-software/linkedin/callback"
 
 
-def authorize_url(*, client_id: str, redirect: str, state: str) -> str:
+def authorize_url(*, client_id: str, redirect: str, state: str, include_organizations: bool = False) -> str:
     query = urllib.parse.urlencode(
         {
             "response_type": "code",
             "client_id": client_id,
             "redirect_uri": redirect,
             "state": state,
-            "scope": SCOPES,
+            "scope": ORGANIZATION_SCOPES if include_organizations else PROFILE_SCOPES,
         }
     )
     return f"{AUTH_URL}?{query}"
@@ -227,14 +261,25 @@ def _organization_name(token: str, org_id: str) -> str:
     return name or f"Page {org_id}"
 
 
-def escape_commentary(text: str) -> str:
-    """Escape little-text reserved characters so the Posts API accepts the body."""
+def _escape_segment(text: str) -> str:
     out: list[str] = []
     for char in text:
-        if char in "\\()[]{}@|~_<>*":
+        if char in _RESERVED:
             out.append("\\")
         out.append(char)
     return "".join(out)
+
+
+def escape_commentary(text: str) -> str:
+    """Escape little text outside URLs and hashtags so links stay clickable."""
+    parts: list[str] = []
+    last = 0
+    for match in _PROTECTED.finditer(text):
+        parts.append(_escape_segment(text[last : match.start()]))
+        parts.append(match.group(0))
+        last = match.end()
+    parts.append(_escape_segment(text[last:]))
+    return "".join(parts)
 
 
 def commentary(body: str, hashtags: list[str]) -> str:
@@ -250,18 +295,24 @@ def commentary(body: str, hashtags: list[str]) -> str:
             extras.append(token)
     if extras:
         text = f"{text}\n\n{' '.join(extras)}"
-    return escape_commentary(text)
+    escaped = escape_commentary(text)
+    if len(escaped) > COMMENTARY_MAX:
+        raise LinkedInApiError(
+            f"The post is {len(escaped)} characters after hashtags and formatting. "
+            f"LinkedIn allows {COMMENTARY_MAX}."
+        )
+    return escaped
 
 
 def author_urn(connection: dict[str, Any]) -> str:
     if str(connection.get("channel") or "") == "page":
         org_id = str(connection.get("organizationId") or "").strip()
         if not org_id:
-            raise LinkedInApiError("Choose a company page before posting.")
+            raise LinkedInApiError("Choose a company page before posting.", counts_attempt=False)
         return f"urn:li:organization:{org_id}"
     member_id = str(connection.get("memberId") or "").strip()
     if not member_id:
-        raise LinkedInApiError("LinkedIn is not connected.")
+        raise LinkedInApiError("LinkedIn is not connected.", counts_attempt=False)
     return f"urn:li:person:{member_id}"
 
 
@@ -336,6 +387,7 @@ def social_counts(token: str, post_urn: str) -> dict[str, int]:
         f"{REST}/socialActions/{encoded}",
         _api_headers(token),
         None,
+        timeout=METRICS_TIMEOUT_SECONDS,
     )
     parsed = _expect(status, payload, ok={200})
     likes = parsed.get("likesSummary") if isinstance(parsed.get("likesSummary"), dict) else {}
@@ -357,6 +409,7 @@ def page_impressions(token: str, organization_id: str, post_urn: str) -> int | N
         f"&organizationalEntity={org}&{key}=List({encoded})",
         _api_headers(token),
         None,
+        timeout=METRICS_TIMEOUT_SECONDS,
     )
     if status != 200:
         return None

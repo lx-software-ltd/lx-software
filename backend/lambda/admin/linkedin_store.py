@@ -2,8 +2,8 @@
 
 Rows live in the records table under ``LINKEDIN#`` and stay out of ``/records``.
 Posts are a personal presence queue: the default voice does not mention LX
-Software or sibling products. Publishing to LinkedIn is a later step; this
-module only stores drafts, assigns 08:30 HKT slots, and records a hand post.
+Software or sibling products. This module stores drafts, assigns 08:30 HKT
+slots, records a hand post, and keeps the LinkedIn connection.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import time
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
@@ -24,6 +25,8 @@ HKT = ZoneInfo("Asia/Hong_Kong")
 PK_PREFIX = "LINKEDIN#"
 BODY_MAX = 3000
 COMMENT_MAX = 1250
+PUBLISH_GRACE = timedelta(hours=3)
+PUBLISH_ATTEMPTS = 3
 HOOK_MAX = 210
 HASHTAG_CAP_DEFAULT = 3
 POSTS_PER_WEEK_DEFAULT = 2
@@ -416,6 +419,13 @@ def guardrails(body: str, comment: str, hashtags: list[str], settings: dict[str,
                 "detail": f"The post is {len(text)} characters. The limit is {BODY_MAX}.",
             }
         )
+    elif text.strip():
+        import linkedin_api
+
+        try:
+            linkedin_api.commentary(text, [str(tag) for tag in hashtags])
+        except linkedin_api.LinkedInApiError as exc:
+            findings.append({"code": "too_long", "severity": "error", "detail": str(exc)})
     if len(comment or "") > COMMENT_MAX:
         findings.append(
             {
@@ -996,6 +1006,7 @@ def public_connection(doc: dict[str, Any]) -> dict[str, Any]:
         if isinstance(row, dict) and row.get("id")
     ]
     if not doc.get("accessToken"):
+        status = linkedin_api.credentials_status()
         return {
             "status": "not_connected",
             "channel": "profile",
@@ -1004,7 +1015,9 @@ def public_connection(doc: dict[str, Any]) -> dict[str, Any]:
             "organizationName": "",
             "organizations": [],
             "tokenExpiresAt": "",
-            "appConfigured": linkedin_api.app_configured(),
+            "includeOrganizations": False,
+            "appConfigured": status == "ready",
+            "appStatus": status,
         }
     return {
         "status": "connected",
@@ -1014,23 +1027,27 @@ def public_connection(doc: dict[str, Any]) -> dict[str, Any]:
         "organizationName": str(doc.get("organizationName") or ""),
         "organizations": organizations,
         "tokenExpiresAt": str(doc.get("tokenExpiresAt") or ""),
+        "includeOrganizations": bool(doc.get("includeOrganizations")),
         "appConfigured": True,
+        "appStatus": "ready",
     }
 
 
-def save_oauth_state(table: Any, state: str, user_sub: str) -> None:
+def save_oauth_state(table: Any, state: str, user_sub: str, *, include_organizations: bool = False) -> None:
     _put(
         table,
         {
             "pk": f"LINKEDIN#oauth#{state}",
             "sk": "META",
             "userSub": user_sub,
+            "includeOrganizations": bool(include_organizations),
             "createdAt": board_store.now_iso(),
+            "expiresAt": int(time.time()) + 15 * 60,
         },
     )
 
 
-def consume_oauth_state(table: Any, state: str) -> str:
+def consume_oauth_state(table: Any, state: str) -> tuple[str, bool]:
     pk = f"LINKEDIN#oauth#{state}"
     row = _get(table, pk)
     table.delete_item(Key={"pk": pk, "sk": "META"})
@@ -1039,7 +1056,7 @@ def consume_oauth_state(table: Any, state: str) -> str:
     created = _parse_slot(str(row.get("createdAt") or ""))
     if created is None or created < datetime.now(HKT) - timedelta(minutes=15):
         raise LinkedInError("That LinkedIn sign-in expired. Connect again.")
-    return str(row.get("userSub") or "")
+    return str(row.get("userSub") or ""), bool(row.get("includeOrganizations"))
 
 
 def set_connection_target(table: Any, channel: str, organization_id: str) -> dict[str, Any]:
@@ -1141,26 +1158,63 @@ def load_post_image(post_id: str) -> tuple[str, bytes] | None:
 
 
 def posts_ready_to_publish(table: Any, *, now_iso: str | None = None) -> list[dict[str, Any]]:
-    now = now_iso or board_store.now_iso()
+    """The oldest approved slot still inside the grace window. One post per tick."""
+    now = _parse_slot(now_iso or board_store.now_iso()) or _as_hkt()
     ready: list[dict[str, Any]] = []
     for row in list_posts(table, status="approved"):
-        slot = str(row.get("slotAt") or "")
+        slot = _parse_slot(str(row.get("slotAt") or ""))
         attempts = int(row.get("publishAttempts") or 0)
-        if slot and slot <= now and attempts < 3:
-            ready.append(row)
-    return ready
+        if slot is None or slot > now or now - slot > PUBLISH_GRACE or attempts >= PUBLISH_ATTEMPTS:
+            continue
+        ready.append(row)
+    ready.sort(key=lambda doc: str(doc.get("slotAt") or ""))
+    return ready[:1]
 
 
-def record_publish_failure(table: Any, post_id: str, message: str) -> dict[str, Any]:
+def posts_given_up(table: Any) -> list[dict[str, Any]]:
+    given_up: list[dict[str, Any]] = []
+    for row in list_posts(table, status="approved"):
+        if int(row.get("publishAttempts") or 0) >= PUBLISH_ATTEMPTS and not row.get("gaveUpNotifiedAt"):
+            given_up.append(row)
+    return given_up
+
+
+def stamp_gave_up(table: Any, post_id: str) -> None:
+    doc = get_post(table, post_id)
+    if not doc:
+        return
+    doc["gaveUpNotifiedAt"] = board_store.now_iso()
+    put_post(table, doc)
+
+
+def record_publish_failure(table: Any, post_id: str, message: str, *, count_attempt: bool = True) -> dict[str, Any]:
     doc = get_post(table, post_id)
     if not doc:
         raise LinkedInError("post not found")
-    doc["publishAttempts"] = int(doc.get("publishAttempts") or 0) + 1
+    if count_attempt:
+        doc["publishAttempts"] = int(doc.get("publishAttempts") or 0) + 1
     doc["publishError"] = message[:300]
     return put_post(table, doc)
 
 
-def mark_api_published(table: Any, post_id: str, urn: str, channel: str) -> dict[str, Any]:
+def remember_publish_urn(table: Any, post_id: str, urn: str) -> dict[str, Any]:
+    """Store the LinkedIn id before the status flip so a later failure does not post twice."""
+    doc = get_post(table, post_id)
+    if not doc:
+        raise LinkedInError("post not found")
+    platform = dict(doc.get("platform") or {}) if isinstance(doc.get("platform"), dict) else {}
+    platform["urn"] = urn
+    doc["platform"] = platform
+    return put_post(table, doc)
+
+
+def mark_api_published(
+    table: Any,
+    post_id: str,
+    urn: str,
+    channel: str,
+    organization_id: str = "",
+) -> dict[str, Any]:
     doc = get_post(table, post_id)
     if not doc:
         raise LinkedInError("post not found")
@@ -1169,11 +1223,14 @@ def mark_api_published(table: Any, post_id: str, urn: str, channel: str) -> dict
     doc["channel"] = "page" if channel == "page" else "profile"
     doc["publishError"] = ""
     doc["publishAttempts"] = int(doc.get("publishAttempts") or 0)
-    doc["platform"] = {
+    platform = {
         "url": f"https://www.linkedin.com/feed/update/{urn}",
         "publishedAt": now,
         "urn": urn,
     }
+    if channel == "page" and organization_id:
+        platform["organizationId"] = organization_id
+    doc["platform"] = platform
     return put_post(table, doc)
 
 

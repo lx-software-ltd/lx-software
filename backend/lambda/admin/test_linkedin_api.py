@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from unittest.mock import patch
 
 from test_support import FakeTable, install_aws_stubs
 
@@ -12,6 +13,10 @@ install_aws_stubs()
 import linkedin_api  # noqa: E402
 import linkedin_store  # noqa: E402
 from linkedin_api import LinkedInApiError  # noqa: E402
+
+
+def patch_load():
+    return patch.object(linkedin_api, "load_credentials", side_effect=AssertionError("credentials were read again"))
 
 
 def _ok(status: int, payload: dict | None = None, headers: dict | None = None):
@@ -27,14 +32,45 @@ class LinkedInApiTests(unittest.TestCase):
         url = linkedin_api.authorize_url(client_id="client", redirect="https://admin.example/callback", state="abc")
         self.assertIn("client_id=client", url)
         self.assertIn("w_member_social", url)
-        self.assertIn("w_organization_social", url)
-        self.assertIn("rw_organization_admin", url)
+        self.assertNotIn("w_organization_social", url)
         self.assertIn("state=abc", url)
+        pages = linkedin_api.authorize_url(
+            client_id="client",
+            redirect="https://admin.example/callback",
+            state="abc",
+            include_organizations=True,
+        )
+        self.assertIn("w_organization_social", pages)
+        self.assertIn("rw_organization_admin", pages)
 
     def test_commentary_appends_a_missing_hashtag_and_escapes_parentheses(self) -> None:
         text = linkedin_api.commentary("A lesson (short).", ["Architecture"])
         self.assertIn("\\(short\\)", text)
         self.assertIn("#Architecture", text)
+
+    def test_commentary_leaves_urls_and_hashtags_alone(self) -> None:
+        text = linkedin_api.commentary("See https://example.com/my_page_(2) and #hong_kong.", [])
+        self.assertIn("https://example.com/my_page_(2)", text)
+        self.assertIn("#hong_kong", text)
+        self.assertNotIn("\\_", text)
+
+    def test_commentary_rejects_text_over_the_linkedin_limit(self) -> None:
+        with self.assertRaises(LinkedInApiError):
+            linkedin_api.commentary("(" * 2000, [])
+
+    def test_oauth_state_expires_and_remembers_page_scope(self) -> None:
+        table = FakeTable()
+        linkedin_store.save_oauth_state(table, "abc", "sub", include_organizations=True)
+        item = table.items[("LINKEDIN#oauth#abc", "META")]
+        self.assertGreater(item["expiresAt"], 0)
+        owner, pages = linkedin_store.consume_oauth_state(table, "abc")
+        self.assertEqual((owner, pages), ("sub", True))
+
+    def test_missing_credentials_are_cached(self) -> None:
+        linkedin_api.reset_credentials_cache_for_tests()
+        self.assertEqual(linkedin_api.credentials_status(), "missing")
+        with patch_load():
+            self.assertEqual(linkedin_api.credentials_status(), "missing")
 
     def test_page_author_requires_an_organization(self) -> None:
         with self.assertRaises(LinkedInApiError):

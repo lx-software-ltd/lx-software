@@ -1,10 +1,13 @@
 import { useState } from "react";
 import { useLinkedIn } from "../../hooks/useLinkedIn";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
+import { formatDateTimeHKT } from "../../lib/formatDisplay";
 import {
   BUILTIN_FORBIDDEN,
   WEEKDAY_OPTIONS,
+  linkedInAccessState,
   pillarLabel,
+  type LinkedInConnection,
   type LinkedInOverview,
   type LinkedInDraftSettings,
 } from "../../lib/linkedinModel";
@@ -216,6 +219,25 @@ export function LinkedInSettingsCard({
   );
 }
 
+function connectionCopy(connection: LinkedInConnection): string {
+  if (connection.appStatus === "unreadable") {
+    return "The LinkedIn app secret could not be read. Until then, use the share box.";
+  }
+  if (!connection.appConfigured) {
+    return "The LinkedIn app secret is not filled in yet. Until then, use the share box.";
+  }
+  return "Connect LinkedIn to post approved drafts at the slot. Until then, use the share box.";
+}
+
+function accessCopy(iso: string): { tone: "muted" | "warning"; text: string } | null {
+  const state = linkedInAccessState(iso);
+  if (!state) return null;
+  const when = formatDateTimeHKT(iso);
+  if (state === "expired") return { tone: "warning", text: `LinkedIn access expired ${when}. Connect again before the next slot.` };
+  if (state === "soon") return { tone: "warning", text: `LinkedIn access expires ${when}. Connect again before the next slot.` };
+  return { tone: "muted", text: `Access until ${when}.` };
+}
+
 function LinkedInConnectionPanel({
   overview,
   enabled,
@@ -224,12 +246,15 @@ function LinkedInConnectionPanel({
   readonly enabled: boolean;
 }) {
   const linkedIn = useLinkedIn();
+  const [includePages, setIncludePages] = useState(false);
   const connection = overview.connection;
   const connected = connection.status === "connected";
+  const access = connected ? accessCopy(connection.tokenExpiresAt) : null;
   const error =
     getAdminApiErrorMessage(linkedIn.connect.error) ??
     getAdminApiErrorMessage(linkedIn.disconnect.error) ??
-    getAdminApiErrorMessage(linkedIn.saveConnection.error);
+    getAdminApiErrorMessage(linkedIn.saveConnection.error) ??
+    getAdminApiErrorMessage(linkedIn.refreshOrganizations.error);
 
   function choose(channel: string, organizationId: string) {
     void linkedIn.saveConnection.mutate({ channel, organizationId });
@@ -250,12 +275,13 @@ function LinkedInConnectionPanel({
             : " Automatic posting is off, so approved posts still use the share box."}
         </p>
       ) : (
-        <p className="mb-2">
-          {connection.appConfigured
-            ? "Connect LinkedIn to post approved drafts at the slot. Until then, use the share box."
-            : "The LinkedIn app secret is not filled in yet. Until then, use the share box."}
-        </p>
+        <p className="mb-2">{connectionCopy(connection)}</p>
       )}
+      {access ? (
+        <p className={access.tone === "warning" ? "text-warning small mb-2" : "text-muted small mb-2"} role="status">
+          {access.text}
+        </p>
+      ) : null}
       {connected ? (
         <div className="d-flex flex-column gap-2 mb-3">
           <label className="form-check mb-0">
@@ -279,6 +305,17 @@ function LinkedInConnectionPanel({
             />
             Company page
           </label>
+          {connection.includeOrganizations ? (
+            connection.organizations.length === 0 ? (
+              <p className="text-muted small mb-0">
+                No company pages were returned. Refresh after Community Management is approved, or if this member administers a page.
+              </p>
+            ) : null
+          ) : (
+            <p className="text-muted small mb-0">
+              This connection is profile only. Disconnect and connect again with company pages included.
+            </p>
+          )}
           {connection.channel === "page" && connection.organizations.length > 0 ? (
             <select
               className="form-select"
@@ -294,24 +331,52 @@ function LinkedInConnectionPanel({
             </select>
           ) : null}
         </div>
-      ) : null}
+      ) : (
+        <div className="mb-3">
+          <label className="form-check mb-0">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              checked={includePages}
+              aria-describedby="linkedin-pages-help"
+              onChange={(event) => setIncludePages(event.target.checked)}
+            />
+            Include company pages
+          </label>
+          <p id="linkedin-pages-help" className="form-text mb-0">
+            Posts can then go out as a page you administer. The LinkedIn app needs Community Management approval; without it, leave this off.
+          </p>
+        </div>
+      )}
       <div className="d-flex gap-2">
         {connected ? (
-          <button
-            type="button"
-            className="btn btn-outline-secondary btn-sm"
-            disabled={!enabled || linkedIn.disconnect.isPending}
-            onClick={() => void linkedIn.disconnect.mutate()}
-          >
-            Disconnect
-          </button>
+          <>
+            {connection.includeOrganizations ? (
+              <button
+                type="button"
+                className="btn btn-outline-secondary btn-sm"
+                disabled={!enabled || linkedIn.refreshOrganizations.isPending}
+                onClick={() => void linkedIn.refreshOrganizations.mutate()}
+              >
+                {linkedIn.refreshOrganizations.isPending ? "Refreshing…" : "Refresh pages"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm"
+              disabled={!enabled || linkedIn.disconnect.isPending}
+              onClick={() => void linkedIn.disconnect.mutate()}
+            >
+              Disconnect
+            </button>
+          </>
         ) : (
           <button
             type="button"
             className="btn btn-primary btn-sm"
             disabled={!enabled || !connection.appConfigured || linkedIn.connect.isPending}
             onClick={() => {
-              void linkedIn.connect.mutateAsync().then((result) => {
+              void linkedIn.connect.mutateAsync(includePages).then((result) => {
                 window.location.assign(result.url);
               });
             }}

@@ -4,6 +4,16 @@ import { useLinkedIn } from "../hooks/useLinkedIn";
 import { useRunOncePerPageLoad } from "../hooks/useRunOncePerPageLoad";
 import { getAdminApiErrorMessage } from "../lib/apiAdminClient";
 
+function linkedInOauthMessage(oauthError: string): string {
+  if (oauthError === "user_cancelled_login" || oauthError === "user_cancelled_authorize") {
+    return "The LinkedIn connection was cancelled.";
+  }
+  if (oauthError === "unauthorized_scope_error") {
+    return "LinkedIn refused a requested permission. Connect again without company pages, or approve Community Management on the LinkedIn app.";
+  }
+  return `LinkedIn did not authorize the connection (${oauthError}).`;
+}
+
 /**
  * Landing page for the LinkedIn redirect (`/lx-software/linkedin/callback?code=…&state=…`).
  * Exchanges the one-time code, then returns to the LinkedIn settings section.
@@ -25,10 +35,9 @@ export function LinkedInCallbackPage() {
     );
   });
 
+  const oauthMessage = oauthError ? linkedInOauthMessage(oauthError) : "";
   const errorMessage = !code || !state
-    ? oauthError
-      ? `LinkedIn did not authorize the connection (${oauthError}).`
-      : "Missing authorization code. Connect again from LinkedIn settings."
+    ? oauthMessage || "Missing authorization code. Connect again from LinkedIn settings."
     : completeAuth.isError
       ? (getAdminApiErrorMessage(completeAuth.error) ?? "Could not complete the LinkedIn connection.")
       : null;
