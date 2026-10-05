@@ -1376,8 +1376,9 @@ class LinkedInImageTests(unittest.TestCase):
             linkedin_store.save_settings(self.table, {**settings, "imageModel": "not a slug"})
 
     def test_compose_is_grayscale_with_a_caption_strip(self) -> None:
-        from PIL import Image
         from io import BytesIO
+
+        from PIL import Image
 
         png = linkedin_image.compose(self._png(), "This took longer than I expected.", "square")
         image = Image.open(BytesIO(png))

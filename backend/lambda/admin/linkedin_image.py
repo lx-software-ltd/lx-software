@@ -248,7 +248,7 @@ def compose(data: bytes, caption: str, fmt: str) -> bytes:
     spec = FORMATS.get(fmt) or FORMATS["square"]
     panel = _to_ink(data, tuple(spec["panel"]))
     canvas_size = tuple(spec["canvas"])
-    from PIL import Image, ImageDraw, ImageFont
+    from PIL import Image, ImageDraw
 
     canvas = Image.new("L", canvas_size, 255)
     canvas.paste(panel, (0, 0))
