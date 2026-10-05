@@ -372,6 +372,8 @@ describe("EventBridge Scheduler wiring", () => {
       "lxsoftware-admin-evolvesprouts-data-api-ensure": "data_api_ensure",
       "lxsoftware-admin-evolvesprouts-finance-mirror": "evolvesprouts_finance_mirror",
       "lxsoftware-admin-bank-sync": "bank_sync",
+      "lxsoftware-admin-linkedin-plan": "linkedin_weekly_plan",
+      "lxsoftware-admin-linkedin-publish": "linkedin_publish_due",
     };
     const schedules = Object.values(resourcesOfType("AWS::Scheduler::Schedule"));
     const byName = Object.fromEntries(
@@ -674,6 +676,17 @@ describe("Siu Tin Dei parameter naming", () => {
     for (const name of retiredUnprefixed) {
       expect(parameters[name]).toBeUndefined();
     }
+  });
+
+  test("LxSoftwareLinkedin switches default off", () => {
+    const parameters = template.toJSON().Parameters as Record<
+      string,
+      { Default?: string; AllowedValues?: string[] }
+    >;
+    expect(parameters.LxSoftwareLinkedinEnabled?.Default).toBe("false");
+    expect(parameters.LxSoftwareLinkedinEnabled?.AllowedValues).toEqual(["true", "false"]);
+    expect(parameters.LxSoftwareLinkedinPublishEnabled?.Default).toBe("false");
+    expect(parameters.LxSoftwareLinkedinPublishEnabled?.AllowedValues).toEqual(["true", "false"]);
   });
 
   test("SiutindeiBoardCatalogImportEnabled defaults off", () => {

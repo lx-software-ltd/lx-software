@@ -77,6 +77,7 @@ export type AdminEditorPanelProps = {
   readonly isSaving?: boolean;
   readonly savingLabel?: string;
   readonly error?: string | null;
+  readonly disabled?: boolean;
 };
 
 /** Field labels and fields, then one primary action. No title and no Cancel. */
@@ -88,6 +89,7 @@ export function AdminEditorPanel({
   isSaving,
   savingLabel,
   error,
+  disabled = false,
 }: AdminEditorPanelProps) {
   return (
     <div className="admin-editor-panel">
@@ -104,6 +106,7 @@ export function AdminEditorPanel({
         submitLabel={submitLabel}
         isSaving={isSaving}
         savingLabel={savingLabel}
+        disabled={disabled}
       />
     </div>
   );

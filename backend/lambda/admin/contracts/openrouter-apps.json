@@ -22,6 +22,16 @@
       "ingestUsage": false
     },
     {
+      "id": "linkedin",
+      "label": "LinkedIn drafts",
+      "title": "LX Admin - LinkedIn",
+      "referer": "https://admin.lx-software.com/lx-software?tab=linkedin",
+      "repo": "lx-software-ltd/lx-software",
+      "keyName": "lxsoftware:linkedin",
+      "meteredHere": true,
+      "ingestUsage": false
+    },
+    {
       "id": "evolvesprouts",
       "label": "Evolve Sprouts",
       "title": "Evolve Sprouts",

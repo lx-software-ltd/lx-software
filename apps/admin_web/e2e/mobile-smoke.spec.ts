@@ -104,6 +104,19 @@ test.describe("admin viewport smoke", () => {
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 
+  test("LX Software LinkedIn tab lists a personal draft", async ({ page }) => {
+    await page.goto("/lx-software?tab=linkedin");
+    await expect(page.getByRole("tab", { name: "LinkedIn" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByText("A rollback is a design decision.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "New post" })).toBeVisible();
+    await page.getByRole("tab", { name: "Ideas" }).click();
+    await expect(page.getByText("A rollback that took longer than the change.")).toBeVisible();
+    await page.getByRole("tab", { name: "Settings" }).click();
+    await expect(page.getByText("Profile posting is not connected.")).toBeVisible();
+    await expect(page.getByLabel("Slot hour (HKT)")).toHaveValue("8");
+    expect(await pageHasHorizontalOverflow(page)).toBe(false);
+  });
+
   test("finance accounts keep name, balance, and stale warning on phones", async ({
     page,
   }, testInfo) => {

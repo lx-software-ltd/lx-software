@@ -175,12 +175,13 @@ def _records_get_response(event: dict[str, Any]) -> dict[str, Any]:
         "Limit": 50,
         "FilterExpression": (
             "NOT begins_with(pk, :board) AND NOT begins_with(pk, :openrouter) "
-            "AND NOT begins_with(pk, :parsejob)"
+            "AND NOT begins_with(pk, :parsejob) AND NOT begins_with(pk, :linkedin)"
         ),
         "ExpressionAttributeValues": {
             ":board": BOARD_PK_PREFIX,
             ":openrouter": USAGE_PK_PREFIX,
             ":parsejob": PARSE_JOB_PK_PREFIX,
+            ":linkedin": "LINKEDIN#",
         },
     }
     if start_key:
@@ -1218,6 +1219,36 @@ def _http_finance_parse_post(event, method, path, user_sub, admin_claims):
     )
     return _json_response(202, {"jobId": job_id, "status": "pending"})
 
+def _http_linkedin(event, method, path, user_sub, admin_claims):
+    del admin_claims
+    import linkedin
+
+    return linkedin.handle_http(event, method, path, user_sub)
+
+
+def _internal_linkedin_generate(event):
+    import linkedin
+
+    return linkedin.handle_generate(event)
+
+
+def _internal_linkedin_weekly_plan(event):
+    import linkedin
+
+    return linkedin.handle_weekly_plan(event)
+
+
+def _internal_linkedin_publish_due(event):
+    import linkedin
+
+    return linkedin.handle_publish_due(event)
+
+
+def _match_linkedin(method: str, path: str) -> bool:
+    del method
+    return path == "/lx-software/linkedin" or path.startswith("/lx-software/linkedin/")
+
+
 EARLY_INTERNAL = {
     'parse_statement_async': _internal_parse_statement_async,
     'bank_sync': _internal_bank_sync,
@@ -1237,6 +1268,9 @@ EARLY_INTERNAL = {
     'board_targets': _internal_board_targets,
     'board_content_plan': _internal_board_content_plan,
     'board_content_readout': _internal_board_content_readout,
+    'linkedin_generate': _internal_linkedin_generate,
+    'linkedin_weekly_plan': _internal_linkedin_weekly_plan,
+    'linkedin_publish_due': _internal_linkedin_publish_due,
 }
 
 LATE_INTERNAL = {
@@ -1262,6 +1296,7 @@ HTTP_ROUTES = [
     Route('GET', '/aws/usage.pdf', _http_aws_usage_pdf, 'admin', kind='exact', match=None),
     Route('GET', '/fx/v2/rates', _http_fx_rates, 'admin', kind='exact', match=None),
     Route('GET', '/finance/quotes', _http_finance_quotes, 'admin', kind='exact', match=None),
+    Route('*', '/lx-software/linkedin', _http_linkedin, 'admin', kind='custom', match=_match_linkedin),
     Route('GET', '/banking', _http_banking, 'admin', kind='exact', match=None),
     Route('GET', '/banking/banks', _http_banking_banks, 'admin', kind='exact', match=None),
     Route('POST', '/banking/auth', _http_banking_auth, 'admin', kind='exact', match=None),

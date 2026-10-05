@@ -239,6 +239,34 @@ export function defineBoardSchedules(
   // Daily unattended balance refresh (05:30 HKT). The handler no-ops when
   // ENABLE_BANKING_APP_ID is blank. Scheduler invokes through an IAM role so
   // AdminApiFn does not gain an events.amazonaws.com resource policy.
+  new scheduler.Schedule(scope, "LxSoftwareLinkedinPlanSchedule", {
+    scheduleName: "lxsoftware-admin-linkedin-plan",
+    description: "Sunday 18:00 HKT LinkedIn draft generation when LxSoftwareLinkedinEnabled is true.",
+    schedule: scheduler.ScheduleExpression.cron({
+      minute: "0",
+      hour: "18",
+      weekDay: "SUN",
+      timeZone: cdk.TimeZone.ASIA_HONG_KONG,
+    }),
+    target: new schedulerTargets.LambdaInvoke(adminFn, {
+      input: scheduler.ScheduleTargetInput.fromObject({
+        internal: "linkedin_weekly_plan",
+      }),
+      retryAttempts: 0,
+    }),
+  });
+  new scheduler.Schedule(scope, "LxSoftwareLinkedinPublishSchedule", {
+    scheduleName: "lxsoftware-admin-linkedin-publish",
+    description:
+      "Every 15 minutes, remind the owner when an approved LinkedIn slot is due. Direct publishing stays off.",
+    schedule: scheduler.ScheduleExpression.rate(cdk.Duration.minutes(15)),
+    target: new schedulerTargets.LambdaInvoke(adminFn, {
+      input: scheduler.ScheduleTargetInput.fromObject({
+        internal: "linkedin_publish_due",
+      }),
+      retryAttempts: 0,
+    }),
+  });
   new scheduler.Schedule(scope, "BankSyncDailySchedule", {
     scheduleName: "lxsoftware-admin-bank-sync",
     description:

@@ -3,10 +3,15 @@ import * as admin from "./admin";
 import * as finance from "./finance";
 import * as banking from "./banking";
 import * as board from "./board";
+import * as linkedin from "./linkedin";
 
-const modules = { admin, finance, banking, board };
+const modules = { admin, finance, banking, board, linkedin };
 
 export const mockRoutes: readonly MockRoute[] = [
+  {
+    pattern: /^\/lx-software\/linkedin/,
+    handler: modules.linkedin.handleLinkedIn,
+  },
   {
     pattern: /.*/,
     handler: modules.admin.handleA0,

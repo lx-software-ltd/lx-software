@@ -221,6 +221,26 @@ export function defineProductParameters(scope: cdk.Stack) {
     description:
       "Kill switch for Executive Board tool calls (GitHub, board, mail, research, AWS, security). Set to false to stop every tool call without touching the admin settings.",
   });
+  const lxSoftwareLinkedinEnabled = new cdk.CfnParameter(scope, "LxSoftwareLinkedinEnabled", {
+    type: "String",
+    default: "false",
+    allowedValues: ["true", "false"],
+    description:
+      "LX Software LinkedIn tab: drafts, ideas, and the Sunday generation job. " +
+      "false disables writes and workers. Default false.",
+  });
+  const lxSoftwareLinkedinPublishEnabled = new cdk.CfnParameter(
+    scope,
+    "LxSoftwareLinkedinPublishEnabled",
+    {
+      type: "String",
+      default: "false",
+      allowedValues: ["true", "false"],
+      description:
+        "Reserved for posting approved LinkedIn drafts through the LinkedIn API. " +
+        "false keeps the assisted share box. Default false.",
+    }
+  );
   const boardStaffEnabled = new cdk.CfnParameter(scope, "SiutindeiBoardStaffEnabled", {
     type: "String",
     default: "false",
@@ -361,6 +381,8 @@ export function defineProductParameters(scope: cdk.Stack) {
     boardAwsLambdaNames,
     boardToolsEnabled,
     boardStaffEnabled,
+    lxSoftwareLinkedinEnabled,
+    lxSoftwareLinkedinPublishEnabled,
     outreachSendingDomain,
     outreachFromLocalPart,
     publicSiteOrigins,
