@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as cdk from "aws-cdk-lib";
 import { Match, Template } from "aws-cdk-lib/assertions";
+import { CheckovSuppressionAspect } from "../lib/constructs/checkov-suppressions";
 import { LxsoftwareAdminWebStack } from "../lib/lxsoftware-admin-web-stack";
 import { LxsoftwareStack } from "../lib/lxsoftware-stack";
 import { PublicWebsiteStack } from "../lib/public-website-stack";
@@ -14,6 +15,7 @@ type CfnResource = {
   DependsOn?: string | string[];
   UpdateReplacePolicy?: string;
   DeletionPolicy?: string;
+  Metadata?: { checkov?: { skip?: { id: string }[] } };
 };
 
 /**
@@ -30,6 +32,7 @@ function synthStack(): Template {
   const stack = new LxsoftwareStack(app, "lxsoftware", {
     env: { account: "123456789012", region: "ap-southeast-1" },
   });
+  cdk.Aspects.of(app).add(new CheckovSuppressionAspect());
   return Template.fromStack(stack);
 }
 
@@ -1160,6 +1163,8 @@ describe("Evolve Sprouts finance mirror", () => {
     expect(httpFns).toHaveLength(1);
     expect(httpFns[0]?.[1].Condition).toBe("HasEvolvesproutsDataApi");
     expect(httpFns[0]?.[1].Properties?.Environment?.Variables?.DATA_API_APPLY_SQL).toBe("false");
+    const skipped = (httpFns[0]?.[1].Metadata?.checkov?.skip ?? []).map((item) => item.id);
+    expect(skipped).toEqual(expect.arrayContaining(["CKV_AWS_115", "CKV_AWS_117"]));
   });
 
   test("AdminApiFn can run statements and read only the resolved secret", () => {

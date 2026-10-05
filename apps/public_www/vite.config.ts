@@ -8,6 +8,7 @@ import { deferStylesheetLinks, fontPreloadTags } from './scripts/index-html.ts'
 import {
   applyRouteHead,
   assertInlineSafe,
+  embedJsonLd,
   injectAppHtml,
   inlineStylesheets,
   routeOutputPaths,
@@ -106,8 +107,8 @@ function siteSeo(load: () => SeoFiles): Plugin {
       const seo = load()
       const filled = applyHead(html, seo.head)
       if (filled.includes('application/ld+json')) return filled
-      const block = `    <script type="application/ld+json">\n${seo.jsonld}\n    </script>\n`
-      return filled.replace('</head>', `${block}  </head>`)
+      const block = embedJsonLd(seo.jsonld)
+      return filled.replace('</head>', `    ${block}\n  </head>`)
     },
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
