@@ -491,7 +491,7 @@ LX Software → **LinkedIn** stores a personal posting queue. Drafts are
 written as a senior architect. The company name stays blocked in every draft.
 Generation uses the `linkedin` OpenRouter key above and books each call on the OpenRouter usage ledger.
 Settings → Drafts can pin an OpenRouter model slug next to Notify; an empty field uses `OpenRouterModel`.
-Voice is the tone note sent to that model for new drafts.
+Voice is the tone the model must follow on new drafts and on guardrail rewrites. It overrides the default tone (first person, short lines, a closing question). Hook length, employer, availability, pitch, and blocked phrases stay in force. Leave Voice blank to use that default tone. Each draft stores `generation.voiceHash` for the voice that produced it.
 
 | Parameter | Default | Production |
 |-----------|---------|------------|

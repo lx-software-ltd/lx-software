@@ -157,9 +157,15 @@ export function LinkedInSettingsCard({
                 className="form-control"
                 rows={3}
                 maxLength={1000}
+                placeholder="Short sentences. Concrete. No slogans."
                 value={settings.voiceNotes}
                 onChange={(event) => setSettings({ ...settings, voiceNotes: event.target.value })}
               />
+              <p className="form-text mb-0">
+                How the posts should sound. This overrides the default tone. Safety rules still apply: no employer, no
+                availability, and the blocked phrases. Leave blank for the default tone: first person, short lines, and a
+                closing question.
+              </p>
             </AdminField>
             <AdminField label="Extra phrases to block" htmlFor="linkedin-blocked" span={2}>
               <textarea

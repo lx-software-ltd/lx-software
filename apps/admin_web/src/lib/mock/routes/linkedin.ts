@@ -1,7 +1,6 @@
 import type { MockCtx } from "./types";
 import { json, parseBody, state } from "./context";
 import {
-  DEFAULT_LINKEDIN_SETTINGS,
   isLinkedInPostUrl,
   nextSlots,
   type LinkedInConnection,
@@ -85,7 +84,7 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
     state.linkedin.settings = {
       ...state.linkedin.settings,
       ...body,
-      voiceNotes: voice || DEFAULT_LINKEDIN_SETTINGS.voiceNotes,
+      voiceNotes: voice,
     } as typeof state.linkedin.settings;
     return json({ settings: state.linkedin.settings });
   }

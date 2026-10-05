@@ -311,7 +311,7 @@ def _replace_post(table: Any, post_id: str, generated: dict[str, Any]) -> None:
     current = linkedin_store.get_post(table, post_id)
     if not current:
         return
-    linkedin_store.update_post(
+    updated = linkedin_store.update_post(
         table,
         post_id,
         {
@@ -321,6 +321,12 @@ def _replace_post(table: Any, post_id: str, generated: dict[str, Any]) -> None:
             "pillar": generated.get("pillar") or current.get("pillar"),
         },
     )
+    settings = linkedin_store.load_settings(table)
+    generation = dict(updated.get("generation") or {})
+    generation["model"] = linkedin_draft.draft_model(settings)
+    generation["voiceHash"] = linkedin_draft.voice_hash(settings)
+    updated["generation"] = generation
+    linkedin_store.put_post(table, updated)
 
 
 def _notify_ready(table: Any, count: int) -> None:

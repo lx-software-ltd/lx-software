@@ -153,6 +153,7 @@ export type LinkedInPost = {
   hashtags: string[];
   slotAt: string;
   guardrails: LinkedInGuardrail[];
+  generation?: { model?: string; jobId?: string; voiceHash?: string } | null;
   platform?: { url?: string; publishedAt?: string; urn?: string } | null;
   manual?: { url?: string; postedAt?: string } | null;
   image?: { contentType: string } | null;
@@ -233,8 +234,7 @@ export const DEFAULT_LINKEDIN_SETTINGS: LinkedInDraftSettings = {
   slotHour: 8,
   slotMinute: 30,
   draftsPerGeneration: 4,
-  voiceNotes:
-    "Senior architect writing in the first person. One lesson per post. No company name, no employer, no offer of availability.",
+  voiceNotes: "",
   forbiddenWords: [],
   hashtagCap: 3,
   linksInFirstComment: false,

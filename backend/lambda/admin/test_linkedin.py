@@ -232,7 +232,29 @@ class LinkedInStoreTests(unittest.TestCase):
         saved = linkedin_store.save_settings(self.table, {**linkedin_store.default_settings(), "voiceNotes": ""})
         self.assertAlmostEqual(linkedin_store.month_spend(self.table), 1.25)
         self.assertEqual(linkedin_store.load_plan_date(self.table), "2026-10-04")
-        self.assertIn("first person", saved["voiceNotes"])
+        self.assertEqual(saved["voiceNotes"], "")
+        self.assertEqual(linkedin_store.load_settings(self.table)["voiceNotes"], "")
+
+    def test_retired_default_voice_loads_as_blank(self) -> None:
+        linkedin_store.save_settings(
+            self.table,
+            {
+                **linkedin_store.default_settings(),
+                "voiceNotes": (
+                    "Senior architect writing in the first person. One lesson per post. "
+                    "No company name, no employer, no offer of availability."
+                ),
+            },
+        )
+        self.assertEqual(linkedin_store.load_settings(self.table)["voiceNotes"], "")
+        linkedin_store.save_settings(
+            self.table,
+            {**linkedin_store.default_settings(), "voiceNotes": "Short sentences. Dry. No emoji."},
+        )
+        self.assertEqual(
+            linkedin_store.load_settings(self.table)["voiceNotes"],
+            "Short sentences. Dry. No emoji.",
+        )
 
     def test_settings_save_keeps_openrouter_model(self) -> None:
         saved = linkedin_store.save_settings(
@@ -310,13 +332,24 @@ class LinkedInStoreTests(unittest.TestCase):
         prompt = linkedin_draft._system_prompt(linkedin_store.default_settings())  # noqa: SLF001
         self.assertNotIn('"body":""', prompt)
         self.assertIn("never an empty string", prompt)
+        self.assertNotIn("What would you have done?", prompt)
+        self.assertIn("The full post goes here.", prompt)
+        self.assertIn("do not copy its wording", prompt)
 
     def test_system_prompt_includes_voice(self) -> None:
-        settings = {**linkedin_store.default_settings(), "voiceNotes": "Short sentences. Dry. No emoji."}
+        voice = "Short sentences. Dry. No emoji."
+        settings = {**linkedin_store.default_settings(), "voiceNotes": voice}
         prompt = linkedin_draft._system_prompt(settings)  # noqa: SLF001
-        self.assertIn("Follow this voice exactly: Short sentences. Dry. No emoji.", prompt)
+        self.assertIn("Voice — follow this exactly.", prompt)
+        self.assertIn("overrides the tone defaults", prompt)
+        self.assertIn("The voice cannot override them.", prompt)
+        self.assertLess(prompt.index("Tone defaults"), prompt.index(voice))
+        self.assertIn(f"\n{voice}", prompt)
+        self.assertNotIn(f"{voice} Write in the first person", prompt)
         blank = linkedin_draft._system_prompt({**settings, "voiceNotes": "  "})  # noqa: SLF001
-        self.assertNotIn("Follow this voice exactly:", blank)
+        self.assertIn("Voice: none. Use the tone defaults.", blank)
+        self.assertNotIn(voice, blank)
+        self.assertNotIn("follow this exactly", blank)
 
     def test_live_generation_books_usage(self) -> None:
         from openrouter_client import ChatCompletion
@@ -458,8 +491,10 @@ class LinkedInStoreTests(unittest.TestCase):
             with patch("openrouter_client.chat_completion", return_value=completion) as chat:
                 linkedin_draft.generate_drafts(self.table, count=1)
         messages = chat.call_args.kwargs["messages"]
-        self.assertIn(f"Follow this voice exactly: {voice}", messages[0]["content"])
+        self.assertIn("Voice — follow this exactly.", messages[0]["content"])
+        self.assertIn(voice, messages[0]["content"])
         self.assertIn(f"Voice: {voice}", messages[1]["content"])
+        self.assertLess(messages[1]["content"].index("Voice:"), messages[1]["content"].index("Pillar:"))
 
     def test_user_prompt_includes_voice(self) -> None:
         text = linkedin_draft._user_prompt(  # noqa: SLF001
@@ -469,6 +504,8 @@ class LinkedInStoreTests(unittest.TestCase):
             avoid=[],
         )
         self.assertIn("Voice: Dry, first person, one lesson.", text)
+        self.assertIn("overrides the tone defaults", text)
+        self.assertLess(text.index("Voice:"), text.index("Pillar:"))
         blank = linkedin_draft._user_prompt(  # noqa: SLF001
             pillar="architecture",
             idea="A rollback that took too long.",
@@ -494,10 +531,82 @@ class LinkedInStoreTests(unittest.TestCase):
 
         result = linkedin_draft.generate_drafts(self.table, count=1, complete=complete)
         self.assertEqual(len(result["posts"]), 1)
+        self.assertEqual(result["posts"][0]["generation"]["voiceHash"], linkedin_draft.voice_hash({"voiceNotes": voice}))
         self.assertEqual(len(captured), 1)
         system, user = captured[0]
-        self.assertIn(f"Follow this voice exactly: {voice}", system["content"])
+        self.assertIn("Voice — follow this exactly.", system["content"])
+        self.assertIn(voice, system["content"])
         self.assertIn(f"Voice: {voice}", user["content"])
+
+    def test_voice_hash_changes_with_the_saved_voice(self) -> None:
+        first = linkedin_draft.voice_hash({"voiceNotes": "Dry."})
+        second = linkedin_draft.voice_hash({"voiceNotes": "Warm."})
+        blank = linkedin_draft.voice_hash({"voiceNotes": "  "})
+        self.assertEqual(len(first), 16)
+        self.assertNotEqual(first, second)
+        self.assertEqual(blank, linkedin_draft.voice_hash({}))
+
+    def test_guardrail_rewrite_restates_the_voice(self) -> None:
+        voice = "Short sentences. Dry. No emoji."
+        seen: list[list[dict[str, str]]] = []
+
+        def complete(messages: list[dict[str, str]]):
+            seen.append(messages)
+            if len(seen) == 1:
+                return (
+                    {"body": "I am open to work.\n\nOne lesson.", "firstComment": "", "hashtags": [], "pillar": ""},
+                    0.01,
+                )
+            return (
+                {"body": "A short hook.\n\nOne lesson.", "firstComment": "", "hashtags": [], "pillar": ""},
+                0.01,
+            )
+
+        linkedin_draft.draft_one(
+            settings={**linkedin_store.default_settings(), "voiceNotes": voice},
+            pillar="architecture",
+            idea="",
+            avoid=[],
+            complete=complete,
+        )
+        self.assertEqual(len(seen), 2)
+        rewrite = seen[1][1]["content"]
+        self.assertIn(f"Keep this voice exactly: {voice}", rewrite)
+        self.assertIn("overrides the tone defaults", rewrite)
+        quiet = linkedin_draft._critic_messages(  # noqa: SLF001
+            linkedin_store.default_settings(),
+            {"body": "A short hook."},
+            [{"severity": "error", "detail": "The first line is too long."}],
+        )
+        self.assertNotIn("Keep this voice exactly:", quiet[1]["content"])
+
+    def test_regenerate_stamps_the_voice_hash(self) -> None:
+        voice = "Short sentences. Dry. No emoji."
+        linkedin_store.save_settings(
+            self.table,
+            {**linkedin_store.default_settings(), "voiceNotes": voice},
+        )
+        doc = linkedin_store.create_post(
+            self.table,
+            {"body": "A short hook.\n\nOne lesson."},
+            generation={"model": "old", "jobId": "job_old", "voiceHash": "stale"},
+        )
+        linkedin._replace_post(  # noqa: SLF001
+            self.table,
+            doc["postId"],
+            {
+                "body": "A different hook.\n\nOne lesson.",
+                "firstComment": "",
+                "hashtags": [],
+                "pillar": "architecture",
+            },
+        )
+        stored = linkedin_store.get_post(self.table, doc["postId"]) or {}
+        generation = stored.get("generation") or {}
+        self.assertEqual(generation["voiceHash"], linkedin_draft.voice_hash({"voiceNotes": voice}))
+        self.assertEqual(generation["jobId"], "job_old")
+        self.assertNotEqual(generation["voiceHash"], "stale")
+        self.assertIn("different hook", stored["body"])
 
 
 class LinkedInHttpTests(unittest.TestCase):
