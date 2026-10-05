@@ -1526,11 +1526,34 @@ class LinkedInImageTests(unittest.TestCase):
             "data": [{"b64_json": base64.b64encode(b"\x89PNG").decode("ascii"), "media_type": "image/png"}],
             "usage": {"prompt_tokens": 0, "completion_tokens": 1, "total_tokens": 1, "cost": 0.04},
         }
-        with patch("openrouter_client.post_json", return_value=json.dumps(payload)):
+        seen: dict[str, object] = {}
+
+        def post_json(**kwargs):
+            seen["payload"] = kwargs["payload"]
+            return json.dumps(payload)
+
+        with patch("openrouter_client.post_json", side_effect=post_json):
             with patch("openrouter_client.resolve_api_key", return_value="key"):
                 result = generate_image(model="bytedance-seed/seedream-4.5", prompt="a desk", secrets_client=None)
         self.assertEqual(result.images[0].data, b"\x89PNG")
         self.assertEqual(result.cost_usd, 0.04)
+        self.assertEqual(seen["payload"]["resolution"], "2K")
+
+    def test_live_generate_requests_2k(self) -> None:
+        captured: dict[str, object] = {}
+
+        def generate_image(**kwargs):
+            captured.update(kwargs)
+            from openrouter_client import GeneratedImage, ImageGeneration
+
+            return ImageGeneration(images=[GeneratedImage("image/png", b"x")], model="m", usage={})
+
+        with patch("openrouter_client.generate_image", side_effect=generate_image):
+            with patch("boto3.client", return_value=object()):
+                linkedin_image._live_generate("a desk", "4:3", 7, None, {}, n=1)
+        self.assertEqual(captured["resolution"], "2K")
+        self.assertEqual(captured["aspect_ratio"], "4:3")
+        self.assertEqual(linkedin_image.IMAGE_RESOLUTION, "2K")
 
     def test_image_routes_redraw_and_reject_a_second_one(self) -> None:
         with patch.dict("os.environ", ENABLED):

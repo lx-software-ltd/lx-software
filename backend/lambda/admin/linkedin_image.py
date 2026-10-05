@@ -42,6 +42,10 @@ HEAD_SIZE = (768, 768)
 IMAGE_HOLD_USD = 0.05
 # Stop starting another 90s call once this much of the 300s Lambda is gone.
 DRAW_BUDGET_SECONDS = 240
+# Seedream 4.5 rejects 1K. OpenRouter turns that tier into 1024×768 (4:3,
+# 786,432 px) or 1024×1024 (1:1, 1,048,576 px); the model floor is 3,686,400.
+# 2K is 2304×1728, 2048×2048, or 2560×1440 for the aspects we send.
+IMAGE_RESOLUTION = "2K"
 Generate = Callable[..., ImageGeneration]
 
 
@@ -298,7 +302,8 @@ def draw_character(
                 images = list(result.images)[:holds]
                 model = result.model
                 _book(table, result)
-            except OpenRouterError:
+            except OpenRouterError as exc:
+                _log_event("warning", tag="linkedin_character_failed", error=str(exc)[:300])
                 images = []
         offset = 0
         while len(images) < holds and room():
@@ -468,7 +473,7 @@ def _live_generate(
         secrets_client=boto3.client("secretsmanager"),
         timeout=int(os.environ.get("LINKEDIN_IMAGE_TIMEOUT_SECONDS") or "90"),
         aspect_ratio=aspect,
-        resolution="1K",
+        resolution=IMAGE_RESOLUTION,
         n=n,
         output_format="png",
         seed=seed,
