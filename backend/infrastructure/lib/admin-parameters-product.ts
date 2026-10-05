@@ -237,7 +237,7 @@ export function defineProductParameters(scope: cdk.Stack) {
       default: "false",
       allowedValues: ["true", "false"],
       description:
-        "Reserved for posting approved LinkedIn drafts through the LinkedIn API. " +
+        "When true, the due worker posts approved LinkedIn drafts through the LinkedIn API. " +
         "false keeps the assisted share box. Default false.",
     }
   );

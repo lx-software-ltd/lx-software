@@ -809,6 +809,7 @@ def mark_posted(table: Any, post_id: str, url: str) -> dict[str, Any]:
 
 
 def public_post(doc: dict[str, Any]) -> dict[str, Any]:
+    image = doc.get("image") if isinstance(doc.get("image"), dict) else None
     return {
         "postId": doc.get("postId"),
         "status": doc.get("status"),
@@ -824,6 +825,9 @@ def public_post(doc: dict[str, Any]) -> dict[str, Any]:
         "generation": doc.get("generation") or None,
         "platform": doc.get("platform") or None,
         "manual": doc.get("manual") or None,
+        "image": {"contentType": image.get("contentType")} if image and image.get("contentType") else None,
+        "metrics": doc.get("metrics") or None,
+        "publishError": doc.get("publishError") or "",
         "createdAt": doc.get("createdAt"),
         "updatedAt": doc.get("updatedAt"),
         "approvedAt": doc.get("approvedAt") or "",
@@ -937,7 +941,7 @@ def overview(table: Any) -> dict[str, Any]:
         "publishEnabled": publish_enabled(),
         "settings": settings,
         "pillars": [{"id": row["id"], "label": row["label"]} for row in PILLARS],
-        "connection": {"status": "not_connected", "channel": "profile"},
+        "connection": public_connection(load_connection(table)),
         "counts": counts(table),
         "spendUsdMonth": round(month_spend(table), 4),
         "nextSlots": next_slots(settings, count=8, taken=taken_slots(table)),
@@ -960,4 +964,222 @@ def stamp_due_notified(table: Any, post_id: str) -> None:
     if not doc:
         return
     doc["dueNotifiedAt"] = board_store.now_iso()
+    put_post(table, doc)
+
+
+def load_connection(table: Any) -> dict[str, Any]:
+    stored = _load_sk(table, "CONNECTION")
+    return stored if stored.get("accessToken") else {}
+
+
+def save_connection(table: Any, doc: dict[str, Any]) -> None:
+    _put(
+        table,
+        {
+            **_state_key("CONNECTION"),
+            **doc,
+            "updatedAt": board_store.now_iso(),
+        },
+    )
+
+
+def clear_connection(table: Any) -> None:
+    _put(table, {**_state_key("CONNECTION"), "updatedAt": board_store.now_iso()})
+
+
+def public_connection(doc: dict[str, Any]) -> dict[str, Any]:
+    import linkedin_api
+
+    organizations = [
+        {"id": str(row.get("id") or ""), "name": str(row.get("name") or "")}
+        for row in (doc.get("organizations") or [])
+        if isinstance(row, dict) and row.get("id")
+    ]
+    if not doc.get("accessToken"):
+        return {
+            "status": "not_connected",
+            "channel": "profile",
+            "memberName": "",
+            "organizationId": "",
+            "organizationName": "",
+            "organizations": [],
+            "tokenExpiresAt": "",
+            "appConfigured": linkedin_api.app_configured(),
+        }
+    return {
+        "status": "connected",
+        "channel": "page" if doc.get("channel") == "page" else "profile",
+        "memberName": str(doc.get("memberName") or ""),
+        "organizationId": str(doc.get("organizationId") or ""),
+        "organizationName": str(doc.get("organizationName") or ""),
+        "organizations": organizations,
+        "tokenExpiresAt": str(doc.get("tokenExpiresAt") or ""),
+        "appConfigured": True,
+    }
+
+
+def save_oauth_state(table: Any, state: str, user_sub: str) -> None:
+    _put(
+        table,
+        {
+            "pk": f"LINKEDIN#oauth#{state}",
+            "sk": "META",
+            "userSub": user_sub,
+            "createdAt": board_store.now_iso(),
+        },
+    )
+
+
+def consume_oauth_state(table: Any, state: str) -> str:
+    pk = f"LINKEDIN#oauth#{state}"
+    row = _get(table, pk)
+    table.delete_item(Key={"pk": pk, "sk": "META"})
+    if not row:
+        raise LinkedInError("That LinkedIn sign-in expired. Connect again.")
+    created = _parse_slot(str(row.get("createdAt") or ""))
+    if created is None or created < datetime.now(HKT) - timedelta(minutes=15):
+        raise LinkedInError("That LinkedIn sign-in expired. Connect again.")
+    return str(row.get("userSub") or "")
+
+
+def set_connection_target(table: Any, channel: str, organization_id: str) -> dict[str, Any]:
+    doc = load_connection(table)
+    if not doc:
+        raise LinkedInError("LinkedIn is not connected.")
+    if channel not in ("profile", "page"):
+        raise LinkedInError("channel is invalid")
+    if channel == "page":
+        match = next(
+            (
+                row
+                for row in (doc.get("organizations") or [])
+                if isinstance(row, dict) and str(row.get("id") or "") == organization_id
+            ),
+            None,
+        )
+        if not match:
+            raise LinkedInError("Choose a company page you administer.")
+        doc["organizationId"] = str(match.get("id") or "")
+        doc["organizationName"] = str(match.get("name") or "")
+    doc["channel"] = channel
+    save_connection(table, doc)
+    return public_connection(doc)
+
+
+_IMAGE_MEMORY: dict[str, tuple[str, bytes]] = {}
+_IMAGE_MAX = 1_500_000
+
+
+def _image_key(post_id: str) -> str:
+    return f"linkedin/posts/{post_id}/image"
+
+
+def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) -> dict[str, Any]:
+    doc = get_post(table, post_id)
+    if not doc:
+        raise LinkedInError("post not found")
+    if str(doc.get("status") or "") in ("published", "archived"):
+        raise LinkedInError("That post can no longer be edited.")
+    if content_type not in ("image/png", "image/jpeg"):
+        raise LinkedInError("Use a PNG or JPEG image.")
+    if not data or len(data) > _IMAGE_MAX:
+        raise LinkedInError("The image must be under 1.5 MB.")
+    if content_type == "image/png" and not data.startswith(b"\x89PNG"):
+        raise LinkedInError("That file is not a PNG.")
+    if content_type == "image/jpeg" and not data.startswith(b"\xff\xd8"):
+        raise LinkedInError("That file is not a JPEG.")
+    bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
+    if bucket:
+        import boto3
+
+        boto3.client("s3").put_object(
+            Bucket=bucket,
+            Key=_image_key(post_id),
+            Body=data,
+            ContentType=content_type,
+        )
+    else:
+        _IMAGE_MEMORY[post_id] = (content_type, data)
+    doc["image"] = {"contentType": content_type, "bytes": len(data)}
+    return put_post(table, doc)
+
+
+def delete_post_image(table: Any, post_id: str) -> dict[str, Any]:
+    doc = get_post(table, post_id)
+    if not doc:
+        raise LinkedInError("post not found")
+    if str(doc.get("status") or "") in ("published", "archived"):
+        raise LinkedInError("That post can no longer be edited.")
+    bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
+    if bucket:
+        import boto3
+
+        boto3.client("s3").delete_object(Bucket=bucket, Key=_image_key(post_id))
+    _IMAGE_MEMORY.pop(post_id, None)
+    doc["image"] = None
+    return put_post(table, doc)
+
+
+def load_post_image(post_id: str) -> tuple[str, bytes] | None:
+    bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
+    if not bucket:
+        return _IMAGE_MEMORY.get(post_id)
+    import boto3
+
+    try:
+        response = boto3.client("s3").get_object(Bucket=bucket, Key=_image_key(post_id))
+    except Exception as exc:  # noqa: BLE001 — NoSuchKey is a missing image, anything else propagates
+        response_payload = getattr(exc, "response", None)
+        code = ""
+        if isinstance(response_payload, dict):
+            code = str(response_payload.get("Error", {}).get("Code") or "")
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            return None
+        raise
+    body = response["Body"].read()
+    return str(response.get("ContentType") or "image/png"), body
+
+
+def posts_ready_to_publish(table: Any, *, now_iso: str | None = None) -> list[dict[str, Any]]:
+    now = now_iso or board_store.now_iso()
+    ready: list[dict[str, Any]] = []
+    for row in list_posts(table, status="approved"):
+        slot = str(row.get("slotAt") or "")
+        attempts = int(row.get("publishAttempts") or 0)
+        if slot and slot <= now and attempts < 3:
+            ready.append(row)
+    return ready
+
+
+def record_publish_failure(table: Any, post_id: str, message: str) -> dict[str, Any]:
+    doc = get_post(table, post_id)
+    if not doc:
+        raise LinkedInError("post not found")
+    doc["publishAttempts"] = int(doc.get("publishAttempts") or 0) + 1
+    doc["publishError"] = message[:300]
+    return put_post(table, doc)
+
+
+def mark_api_published(table: Any, post_id: str, urn: str, channel: str) -> dict[str, Any]:
+    doc = get_post(table, post_id)
+    if not doc:
+        raise LinkedInError("post not found")
+    now = board_store.now_iso()
+    doc["status"] = "published"
+    doc["channel"] = "page" if channel == "page" else "profile"
+    doc["publishError"] = ""
+    doc["publishAttempts"] = int(doc.get("publishAttempts") or 0)
+    doc["platform"] = {
+        "url": f"https://www.linkedin.com/feed/update/{urn}",
+        "publishedAt": now,
+        "urn": urn,
+    }
+    return put_post(table, doc)
+
+
+def save_post_metrics(table: Any, post_id: str, metrics: dict[str, Any]) -> None:
+    doc = get_post(table, post_id)
+    if not doc:
+        return
+    doc["metrics"] = metrics
     put_post(table, doc)

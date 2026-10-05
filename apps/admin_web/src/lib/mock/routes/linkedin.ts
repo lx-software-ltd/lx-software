@@ -1,6 +1,35 @@
 import type { MockCtx } from "./types";
 import { json, parseBody, state } from "./context";
-import { DEFAULT_LINKEDIN_SETTINGS, isLinkedInPostUrl, nextSlots, type LinkedInPost } from "../../linkedinModel";
+import {
+  DEFAULT_LINKEDIN_SETTINGS,
+  isLinkedInPostUrl,
+  nextSlots,
+  type LinkedInConnection,
+  type LinkedInPost,
+} from "../../linkedinModel";
+
+const DISCONNECTED: LinkedInConnection = {
+  status: "not_connected",
+  channel: "profile",
+  memberName: "",
+  organizationId: "",
+  organizationName: "",
+  organizations: [],
+  tokenExpiresAt: "",
+  appConfigured: true,
+};
+
+const EXAMPLE_PAGE = { id: "99", name: "Example Page" };
+const OAUTH_KEY = "lx-mock-linkedin-oauth";
+
+function rememberOauth(token: string) {
+  state.linkedin.oauthState = token;
+  sessionStorage.setItem(OAUTH_KEY, token);
+}
+
+function readOauth(): string {
+  return state.linkedin.oauthState || sessionStorage.getItem(OAUTH_KEY) || "";
+}
 
 function overview() {
   const posts = state.linkedin.posts;
@@ -19,7 +48,7 @@ function overview() {
       { id: "delivery", label: "Lessons from delivery" },
       { id: "questions", label: "Questions I get asked" },
     ],
-    connection: { status: "not_connected", channel: "profile" },
+    connection: state.linkedin.connection,
     counts: {
       drafted: posts.filter((row) => row.status === "drafted").length,
       approved: posts.filter((row) => row.status === "approved").length,
@@ -91,6 +120,55 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
     state.linkedin.ideas = state.linkedin.ideas.filter((row) => row.ideaId !== ideaId);
     return json({ deleted: ideaId });
   }
+  if (path === "/lx-software/linkedin/connect" && method === "POST") {
+    const token = `oauth_${state.linkedin.posts.length}`;
+    rememberOauth(token);
+    return json({ url: `/lx-software/linkedin/callback?code=mock&state=${encodeURIComponent(token)}` });
+  }
+  if (path === "/lx-software/linkedin/oauth/exchange" && method === "POST") {
+    const body = parseBody(ctx.init);
+    if (!readOauth() || body.state !== readOauth()) {
+      return json({ message: "That LinkedIn sign-in expired. Connect again." }, 400);
+    }
+    state.linkedin.oauthState = "";
+    sessionStorage.removeItem(OAUTH_KEY);
+    state.linkedin.connection = {
+      status: "connected",
+      channel: "profile",
+      memberName: "Example Member",
+      organizationId: "",
+      organizationName: "",
+      organizations: [EXAMPLE_PAGE],
+      tokenExpiresAt: "2099-01-01T00:00:00.000Z",
+      appConfigured: true,
+    };
+    return json({ connection: state.linkedin.connection });
+  }
+  if (path === "/lx-software/linkedin/disconnect" && method === "POST") {
+    state.linkedin.connection = { ...DISCONNECTED, organizations: [] };
+    return json({ connection: state.linkedin.connection });
+  }
+  if (path === "/lx-software/linkedin/connection" && method === "PUT") {
+    if (state.linkedin.connection.status !== "connected") {
+      return json({ message: "LinkedIn is not connected." }, 400);
+    }
+    const body = parseBody(ctx.init);
+    const channel = String(body.channel ?? "profile");
+    if (channel === "page") {
+      const organizationId = String(body.organizationId ?? "");
+      const page = state.linkedin.connection.organizations.find((row) => row.id === organizationId);
+      if (!page) return json({ message: "Choose a company page you administer." }, 400);
+      state.linkedin.connection = {
+        ...state.linkedin.connection,
+        channel: "page",
+        organizationId: page.id,
+        organizationName: page.name,
+      };
+    } else {
+      state.linkedin.connection = { ...state.linkedin.connection, channel: "profile" };
+    }
+    return json({ connection: state.linkedin.connection });
+  }
   if (path === "/lx-software/linkedin/generate" && method === "POST") {
     const post: LinkedInPost = {
       postId: `li_gen_${state.linkedin.posts.length + 1}`,
@@ -109,6 +187,19 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
   }
   const id = postIdFrom(path);
   const index = state.linkedin.posts.findIndex((row) => row.postId === id);
+  if (path.endsWith("/image") && method === "POST" && index >= 0) {
+    const body = parseBody(ctx.init);
+    const contentType = String(body.contentType ?? "");
+    if (contentType !== "image/png" && contentType !== "image/jpeg") {
+      return json({ message: "Use a PNG or JPEG image." }, 400);
+    }
+    state.linkedin.posts[index] = { ...state.linkedin.posts[index], image: { contentType } };
+    return json({ item: state.linkedin.posts[index] });
+  }
+  if (path.endsWith("/image") && method === "DELETE" && index >= 0) {
+    state.linkedin.posts[index] = { ...state.linkedin.posts[index], image: null };
+    return json({ item: state.linkedin.posts[index] });
+  }
   if (index < 0 && path.includes("/posts/")) return json({ message: "post not found" }, 404);
   if (path.endsWith("/approve") && method === "POST" && index >= 0) {
     const slot = nextSlots(state.linkedin.settings, new Date(), 1)[0] ?? "";
