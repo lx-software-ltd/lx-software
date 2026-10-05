@@ -316,7 +316,7 @@ def author_urn(connection: dict[str, Any]) -> str:
     return f"urn:li:person:{member_id}"
 
 
-def create_post(token: str, author: str, text: str, *, image_urn: str = "") -> str:
+def create_post(token: str, author: str, text: str, *, image_urn: str = "", alt_text: str = "") -> str:
     document: dict[str, Any] = {
         "author": author,
         "commentary": text,
@@ -330,7 +330,11 @@ def create_post(token: str, author: str, text: str, *, image_urn: str = "") -> s
         "isReshareDisabledByAuthor": False,
     }
     if image_urn:
-        document["content"] = {"media": {"id": image_urn}}
+        media: dict[str, Any] = {"id": image_urn}
+        alt = str(alt_text or "").strip()
+        if alt:
+            media["altText"] = alt[:300]
+        document["content"] = {"media": media}
     status, headers, payload = _call(
         "POST",
         f"{REST}/posts",

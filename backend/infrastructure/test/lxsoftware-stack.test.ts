@@ -206,6 +206,28 @@ describe("HTTP API routes", () => {
     }
   });
 
+  test("LinkedIn picture and character routes are JWT-protected", () => {
+    const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
+    const keys = [
+      "GET /lx-software/linkedin/posts/{id}/image",
+      "POST /lx-software/linkedin/posts/{id}/image",
+      "DELETE /lx-software/linkedin/posts/{id}/image",
+      "POST /lx-software/linkedin/posts/{id}/image/regenerate",
+      "GET /lx-software/linkedin/character",
+      "GET /lx-software/linkedin/character/photo",
+      "POST /lx-software/linkedin/character/photo",
+      "DELETE /lx-software/linkedin/character/photo",
+      "GET /lx-software/linkedin/character/sheet",
+      "POST /lx-software/linkedin/character/draw",
+      "GET /lx-software/linkedin/character/candidates/{id}",
+      "POST /lx-software/linkedin/character/choose",
+    ];
+    for (const key of keys) {
+      const route = routes.find((row) => row.Properties?.RouteKey === key);
+      expect(route?.Properties?.AuthorizationType).toBe("JWT");
+    }
+  });
+
   test("AWS usage JSON and PDF routes are JWT-protected", () => {
     const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
     const keys = routes.map((r) => r.Properties?.RouteKey as string);

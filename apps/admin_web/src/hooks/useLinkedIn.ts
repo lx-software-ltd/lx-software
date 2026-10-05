@@ -1,6 +1,8 @@
+import { useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { adminFetchJson } from "../lib/apiAdminClient";
 import type {
+  LinkedInCharacter,
   LinkedInConnection,
   LinkedInDraftSettings,
   LinkedInIdea,
@@ -9,6 +11,8 @@ import type {
 } from "../lib/linkedinModel";
 
 export const LINKEDIN_KEY = ["linkedin"] as const;
+/** Picture bytes. Kept off `LINKEDIN_KEY` so a draft save does not refetch them. */
+export const LINKEDIN_BYTES_KEY = ["linkedin-bytes"] as const;
 
 type Job = { jobId: string; status: string; postIds: string[]; error: string };
 
@@ -32,10 +36,24 @@ function assertJobDone(job: Job): Job {
   return job;
 }
 
+function pendingPollDelay(pendingSince: number): number {
+  const age = Date.now() - pendingSince;
+  if (age < 20_000) return 3_000;
+  if (age < 60_000) return 8_000;
+  return 15_000;
+}
+
 export function useLinkedIn() {
   const qc = useQueryClient();
+  const pendingSince = useRef<number | null>(null);
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: LINKEDIN_KEY });
+  };
+  const refreshCharacterBytes = () => {
+    void qc.invalidateQueries({ queryKey: [...LINKEDIN_BYTES_KEY, "character"] });
+  };
+  const refreshPostBytes = (postId: string) => {
+    void qc.invalidateQueries({ queryKey: [...LINKEDIN_BYTES_KEY, "post", postId] });
   };
   const overview = useQuery({
     queryKey: [...LINKEDIN_KEY, "overview"] as const,
@@ -44,10 +62,23 @@ export function useLinkedIn() {
   const posts = useQuery({
     queryKey: [...LINKEDIN_KEY, "posts"] as const,
     queryFn: () => adminFetchJson<{ items: LinkedInPost[] }>("/lx-software/linkedin/posts"),
+    refetchInterval: (query) => {
+      const pending = query.state.data?.items.some((row) => row.image?.status === "pending") ?? false;
+      if (!pending) {
+        pendingSince.current = null;
+        return false;
+      }
+      if (pendingSince.current === null) pendingSince.current = Date.now();
+      return pendingPollDelay(pendingSince.current);
+    },
   });
   const ideas = useQuery({
     queryKey: [...LINKEDIN_KEY, "ideas"] as const,
     queryFn: () => adminFetchJson<{ items: LinkedInIdea[] }>("/lx-software/linkedin/ideas"),
+  });
+  const character = useQuery({
+    queryKey: [...LINKEDIN_KEY, "character"] as const,
+    queryFn: () => adminFetchJson<LinkedInCharacter>("/lx-software/linkedin/character"),
   });
   const saveSettings = useMutation({
     mutationFn: (body: LinkedInDraftSettings) =>
@@ -145,12 +176,71 @@ export function useLinkedIn() {
         method: "POST",
         body: JSON.stringify({ contentType, dataBase64 }),
       }),
-    onSuccess: refresh,
+    onSuccess: (_data, { postId }) => {
+      refresh();
+      refreshPostBytes(postId);
+    },
   });
   const deleteImage = useMutation({
     mutationFn: (postId: string) =>
       adminFetchJson<{ item: LinkedInPost }>(`/lx-software/linkedin/posts/${postId}/image`, { method: "DELETE" }),
-    onSuccess: refresh,
+    onSuccess: (_data, postId) => {
+      refresh();
+      refreshPostBytes(postId);
+    },
+  });
+  const redrawImage = useMutation({
+    mutationFn: ({ postId, scene, caption }: { postId: string; scene: string; caption: string }) =>
+      adminFetchJson<{ item: LinkedInPost }>(`/lx-software/linkedin/posts/${postId}/image/regenerate`, {
+        method: "POST",
+        body: JSON.stringify({ scene, caption }),
+      }),
+    onSuccess: (_data, { postId }) => {
+      refresh();
+      refreshPostBytes(postId);
+    },
+  });
+  const uploadCharacterPhoto = useMutation({
+    mutationFn: ({ contentType, dataBase64 }: { contentType: string; dataBase64: string }) =>
+      adminFetchJson<LinkedInCharacter>("/lx-software/linkedin/character/photo", {
+        method: "POST",
+        body: JSON.stringify({ contentType, dataBase64 }),
+      }),
+    onSuccess: () => {
+      refresh();
+      refreshCharacterBytes();
+    },
+  });
+  const deleteCharacterPhoto = useMutation({
+    mutationFn: () => adminFetchJson<LinkedInCharacter>("/lx-software/linkedin/character/photo", { method: "DELETE" }),
+    onSuccess: () => {
+      refresh();
+      refreshCharacterBytes();
+    },
+  });
+  const drawCharacter = useMutation({
+    mutationFn: async () => {
+      const queued = await adminFetchJson<{ job: Job }>("/lx-software/linkedin/character/draw", {
+        method: "POST",
+        body: "{}",
+      });
+      return assertJobDone(await pollJob(queued.job));
+    },
+    onSettled: () => {
+      refresh();
+      refreshCharacterBytes();
+    },
+  });
+  const chooseCharacter = useMutation({
+    mutationFn: (candidateId: string) =>
+      adminFetchJson<LinkedInCharacter>("/lx-software/linkedin/character/choose", {
+        method: "POST",
+        body: JSON.stringify({ candidateId }),
+      }),
+    onSuccess: () => {
+      refresh();
+      refreshCharacterBytes();
+    },
   });
   const generate = useMutation({
     mutationFn: async (body: { count?: number; pillar?: string }) => {
@@ -181,5 +271,11 @@ export function useLinkedIn() {
     refreshOrganizations,
     uploadImage,
     deleteImage,
+    redrawImage,
+    character,
+    uploadCharacterPhoto,
+    deleteCharacterPhoto,
+    drawCharacter,
+    chooseCharacter,
   };
 }

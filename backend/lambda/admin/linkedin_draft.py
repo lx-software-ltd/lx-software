@@ -19,6 +19,7 @@ import os
 import re
 from typing import Any
 
+import linkedin_image
 import linkedin_seeds
 import linkedin_store
 import openrouter_usage
@@ -328,15 +329,40 @@ def _system_prompt(settings: dict[str, Any]) -> str:
             ),
             voice_block,
             example_block,
-            (
-                "Reply with one JSON object. body is required and must be the full post, "
-                "never an empty string. Also include firstComment (string), hashtags "
-                "(array of strings without #), and pillar. This JSON is the shape only; "
-                "do not copy its wording.\n"
-                f"{_SCHEMA_EXAMPLE}"
-            ),
+            _picture_block(settings),
+            _reply_block(settings),
         ]
         if block
+    )
+
+
+def _picture_block(settings: dict[str, Any]) -> str:
+    if not settings.get("imagesEnabled"):
+        return ""
+    return (
+        "Picture. Also return imageScene and imageCaption. imageScene is one sentence, "
+        "third person: the author physically dealing with this post's problem, at a comic "
+        "scale, in a detailed room. No second recognisable person, no logos, no brand names. "
+        "At most one two-word label; screens are unreadable scribbles. imageCaption is the "
+        "spoken line under the picture: first person, dry, 8 to 20 words, the understated "
+        "reading of the situation. Not a description of the picture and not a summary of the "
+        "post. Do not reuse this example or its words: 'The only list I've been on that also "
+        "includes a member of the Executive Council.'"
+    )
+
+
+def _reply_block(settings: dict[str, Any]) -> str:
+    fields = "firstComment (string), hashtags (array of strings without #), and pillar"
+    if settings.get("imagesEnabled"):
+        fields = (
+            "firstComment (string), hashtags (array of strings without #), pillar, "
+            "imageScene (string), and imageCaption (string)"
+        )
+    return (
+        "Reply with one JSON object. body is required and must be the full post, "
+        "never an empty string. Also include "
+        f"{fields}. This JSON is the shape only; do not copy its wording.\n"
+        f"{_SCHEMA_EXAMPLE}"
     )
 
 
@@ -422,12 +448,36 @@ def parse_draft(text: str) -> dict[str, Any]:
         keys = ",".join(sorted(str(key) for key in parsed.keys())[:12])
         _log_event("warning", tag="linkedin_draft_empty_body", keys=keys)
         raise DraftError("The model returned an empty post.")
+    scene = _field_text(parsed.get("imageScene"))[: linkedin_store.IMAGE_SCENE_MAX]
+    caption = _field_text(parsed.get("imageCaption")).strip("'\"“”‘’")
+    caption = caption[: linkedin_store.IMAGE_CAPTION_MAX]
     return {
         "body": body,
         "firstComment": _field_text(parsed.get("firstComment")),
         "hashtags": _usable_hashtags(parsed.get("hashtags")),
         "pillar": _field_text(parsed.get("pillar")),
+        "imageScene": scene,
+        "imageCaption": caption,
     }
+
+
+def caption_findings(
+    caption: str,
+    settings: dict[str, Any],
+    others: list[str],
+) -> list[dict[str, str]]:
+    """The spoken line under the picture, checked like a post and against recent captions."""
+    text = str(caption or "").strip()
+    if not text:
+        return []
+    findings = [
+        row
+        for row in linkedin_store.guardrails(text, "", [], settings)
+        if row.get("code") != "hook"
+    ]
+    findings.extend(slop_findings(text))
+    findings.extend(repeat_findings(text, others))
+    return findings
 
 
 def _usable_hashtags(value: Any) -> list[str]:
@@ -580,6 +630,15 @@ def _critic_messages(
             "The voice still overrides the tone defaults. Safety rules still apply.\n"
         )
     shape_line = "".join(f"{line}\n" for line in _shape_lines(shape))
+    picture = ""
+    scene = str(draft.get("imageScene") or "")
+    caption = str(draft.get("imageCaption") or "")
+    if settings.get("imagesEnabled") and (scene or caption):
+        picture = (
+            f"Picture scene: {scene}\n"
+            f"Picture caption: {caption}\n"
+            "Return imageScene and imageCaption with the post. Change the caption when a check names it.\n"
+        )
     return [
         {"role": "system", "content": _system_prompt(settings)},
         {
@@ -588,6 +647,7 @@ def _critic_messages(
                 "Rewrite this post so it passes the checks. Keep the same idea.\n"
                 f"{voice_line}"
                 f"{shape_line}"
+                f"{picture}"
                 f"Checks: {problems}\n"
                 f"Post:\n{draft.get('body') or ''}"
             ),
@@ -656,6 +716,7 @@ def draft_one(
     complete,
     others: list[str] | None = None,
     shape: dict[str, str] | None = None,
+    captions: list[str] | None = None,
 ) -> tuple[dict[str, Any], float]:
     """One draft, with the single rewrite pass when a check fails.
 
@@ -678,11 +739,17 @@ def draft_one(
     )
     findings.extend(slop_findings(parsed["body"]))
     findings.extend(repeat_findings(parsed["body"], siblings))
+    if settings.get("imagesEnabled"):
+        findings.extend(caption_findings(str(parsed.get("imageCaption") or ""), settings, captions or []))
     if linkedin_store.errors_block(findings):
         revised, extra = complete(_critic_messages(settings, parsed, findings, shape=shape))
         cost += extra
         if pillar in linkedin_store.pillar_ids():
             revised["pillar"] = pillar
+        if not revised.get("imageScene"):
+            revised["imageScene"] = parsed.get("imageScene") or ""
+        if not revised.get("imageCaption"):
+            revised["imageCaption"] = parsed.get("imageCaption") or ""
         parsed = revised
     return parsed, cost
 
@@ -717,6 +784,7 @@ def generate_drafts(
         others.append(example)
     recent = linkedin_store.recent_bodies(table)
     others.extend(recent)
+    captions = linkedin_store.recent_captions(table)
     # Shapes rotate from where the last batch left off, so week two does not
     # open and close its four posts the way week one did.
     shape_offset = len(linkedin_store.list_posts(table, limit=400))
@@ -738,6 +806,7 @@ def generate_drafts(
                 complete=caller,
                 others=others,
                 shape=shape_for(index, shape_offset),
+                captions=captions,
             )
         except (DraftError, LinkedInError, OpenRouterError) as exc:
             errors.append(str(exc))
@@ -771,6 +840,24 @@ def generate_drafts(
         except LinkedInError as exc:
             errors.append(str(exc))
             continue
+        if settings.get("imagesEnabled"):
+            try:
+                doc = linkedin_image.queue_for_post(
+                    table,
+                    str(doc["postId"]),
+                    scene=str(parsed.get("imageScene") or ""),
+                    caption=str(parsed.get("imageCaption") or ""),
+                    force=True,
+                )
+            except LinkedInError as exc:
+                errors.append(str(exc))
+            except Exception as exc:  # noqa: BLE001 — the draft is saved even when the picture cannot be queued
+                _log_event("warning", tag="linkedin_image_enqueue_failed", error=str(exc)[:300])
+                errors.append("The picture could not be queued.")
+            else:
+                caption = str((doc.get("image") or {}).get("caption") or "")
+                if caption:
+                    captions.append(caption)
         created.append(linkedin_store.public_post(doc))
         others.append(str(doc["body"]))
     if not created and errors:

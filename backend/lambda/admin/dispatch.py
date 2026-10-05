@@ -1244,6 +1244,18 @@ def _internal_linkedin_publish_due(event):
     return linkedin.handle_publish_due(event)
 
 
+def _internal_linkedin_image(event):
+    import linkedin
+
+    return linkedin.handle_post_image(event)
+
+
+def _internal_linkedin_character(event):
+    import linkedin
+
+    return linkedin.handle_character_draw(event)
+
+
 def _match_linkedin(method: str, path: str) -> bool:
     del method
     return path == "/lx-software/linkedin" or path.startswith("/lx-software/linkedin/")
@@ -1271,6 +1283,8 @@ EARLY_INTERNAL = {
     'linkedin_generate': _internal_linkedin_generate,
     'linkedin_weekly_plan': _internal_linkedin_weekly_plan,
     'linkedin_publish_due': _internal_linkedin_publish_due,
+    'linkedin_image': _internal_linkedin_image,
+    'linkedin_character': _internal_linkedin_character,
 }
 
 LATE_INTERNAL = {

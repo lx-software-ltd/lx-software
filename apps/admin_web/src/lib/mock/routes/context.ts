@@ -91,6 +91,12 @@ type MockState = {
     ideas: LinkedInIdea[];
     connection: LinkedInConnection;
     oauthState: string;
+    character: {
+      photo: { contentType: string; dataBase64: string } | null;
+      sheet: { contentType: string; dataBase64: string } | null;
+      candidates: { id: string; contentType: string; dataBase64: string }[];
+    };
+    images: Record<string, { contentType: string; dataBase64: string }>;
   };
 };
 
@@ -143,6 +149,8 @@ function initialMockState(): MockState {
         appStatus: "ready",
       },
       oauthState: "",
+      character: { photo: null, sheet: null, candidates: [] },
+      images: {},
     },
   };
 }

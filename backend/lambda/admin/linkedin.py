@@ -18,6 +18,7 @@ import board_async
 import board_store
 import linkedin_api
 import linkedin_draft
+import linkedin_image
 import linkedin_store
 from http_common import _audit, _json_response, _log_event, _parse_json_body
 from linkedin_api import LinkedInApiError
@@ -128,6 +129,10 @@ def handle_http(event: dict[str, Any], method: str, path: str, user_sub: str | N
             return _json_response(status, {"message": str(exc)})
         _audit(user_sub, "LINKEDIN_POST_UPDATE", parts[1], event)
         return _json_response(200, {"item": linkedin_store.public_post(doc)})
+    if parts and parts[0] == "character":
+        return _character(event, method, parts, user_sub)
+    if len(parts) == 4 and parts[0] == "posts" and parts[2] == "image" and parts[3] == "regenerate":
+        return _image_regenerate(event, method, parts[1], user_sub)
     if len(parts) == 3 and parts[0] == "posts" and parts[2] == "image":
         return _image(event, method, parts[1], user_sub)
     if len(parts) == 3 and parts[0] == "posts" and method == "POST":
@@ -169,9 +174,11 @@ def handle_http(event: dict[str, Any], method: str, path: str, user_sub: str | N
     if parts == ["generate"] and method == "POST":
         return _generate(event, user_sub)
     if len(parts) == 2 and parts[0] == "jobs" and method == "GET":
-        doc = linkedin_store.get_job(_table(), parts[1])
+        table = _table()
+        doc = linkedin_store.get_job(table, parts[1])
         if not doc:
             return _json_response(404, {"message": "Job not found"})
+        doc = linkedin_store.expire_character_job(table, doc)
         return _json_response(200, {"job": _public_job(doc)})
     return _json_response(404, {"message": "Not found"})
 
@@ -327,6 +334,19 @@ def _replace_post(table: Any, post_id: str, generated: dict[str, Any]) -> None:
     generation["voiceHash"] = linkedin_draft.voice_hash(settings)
     updated["generation"] = generation
     linkedin_store.put_post(table, updated)
+    if settings.get("imagesEnabled"):
+        try:
+            linkedin_image.queue_for_post(
+                table,
+                post_id,
+                scene=str(generated.get("imageScene") or ""),
+                caption=str(generated.get("imageCaption") or ""),
+                force=True,
+            )
+        except LinkedInError as exc:
+            _log_event("warning", tag="linkedin_image_enqueue_failed", error=str(exc)[:300])
+        except Exception as exc:  # noqa: BLE001 — the rewritten draft is already saved
+            _log_event("warning", tag="linkedin_image_enqueue_failed", error=str(exc)[:300])
 
 
 def _notify_ready(table: Any, count: int) -> None:
@@ -513,7 +533,134 @@ def _refresh_organizations(event: dict[str, Any], user_sub: str | None) -> dict[
     return _json_response(200, {"connection": linkedin_store.public_connection(connection)})
 
 
+def handle_post_image(event: dict[str, Any] | None = None) -> dict[str, Any]:
+    event = event or {}
+    if not linkedin_store.feature_enabled():
+        return {"skipped": "disabled"}
+    post_id = str(event.get("postId") or "")
+    if not post_id:
+        return {"skipped": "missing_post"}
+    return linkedin_image.render_post(_table(), post_id)
+
+
+def handle_character_draw(event: dict[str, Any] | None = None) -> dict[str, Any]:
+    event = event or {}
+    if not linkedin_store.feature_enabled():
+        return {"skipped": "disabled"}
+    job_id = str(event.get("jobId") or "")
+    table = _table()
+    job = linkedin_store.get_job(table, job_id) if job_id else None
+    if job:
+        job["status"] = "running"
+        job["startedAt"] = board_store.now_iso()
+        linkedin_store.put_job(table, job)
+    try:
+        result = linkedin_image.draw_character(table)
+    except Exception as exc:  # noqa: BLE001 — a draw that raises must not leave the job running
+        _log_event("error", tag="linkedin_character_failed", error=str(exc)[:300])
+        result = {"ok": False, "error": "The character sheet failed."}
+    if job:
+        job["status"] = "done" if result.get("ok") else "failed"
+        job["error"] = "" if result.get("ok") else str(result.get("error") or "The character sheet failed.")
+        linkedin_store.put_job(table, job)
+    return result
+
+
+def _character(event: dict[str, Any], method: str, parts: list[str], user_sub: str | None) -> dict[str, Any]:
+    blocked = _require_enabled()
+    if blocked and method != "GET":
+        return blocked
+    table = _table()
+    try:
+        if parts == ["character"] and method == "GET":
+            return _json_response(200, linkedin_store.public_character(linkedin_store.load_character(table)))
+        if parts == ["character", "photo"] and method == "GET":
+            loaded = linkedin_store.load_character_photo(table)
+            if not loaded:
+                return _json_response(404, {"message": "No photo stored."})
+            return _json_response(200, {"contentType": loaded[0], "dataBase64": base64.b64encode(loaded[1]).decode("ascii")})
+        if parts == ["character", "photo"] and method == "POST":
+            content_type, data = _image_body(event)
+            stored = linkedin_store.save_character_photo(table, content_type, data)
+            _audit(user_sub, "LINKEDIN_CHARACTER_PHOTO", "state", event)
+            return _json_response(200, stored)
+        if parts == ["character", "photo"] and method == "DELETE":
+            stored = linkedin_store.delete_character_photo(table)
+            _audit(user_sub, "LINKEDIN_CHARACTER_PHOTO", "state", event)
+            return _json_response(200, stored)
+        if parts == ["character", "sheet"] and method == "GET":
+            loaded = linkedin_store.load_character_sheet()
+            if not loaded:
+                return _json_response(404, {"message": "No character sheet yet."})
+            return _json_response(200, {"contentType": loaded[0], "dataBase64": base64.b64encode(loaded[1]).decode("ascii")})
+        if parts == ["character", "draw"] and method == "POST":
+            if not linkedin_store.load_character_photo(table):
+                return _json_response(400, {"message": "Upload a photo first."})
+            job = linkedin_store.new_job(table, "character", {})
+            accepted = board_async.try_invoke_event({"internal": "linkedin_character", "jobId": job["jobId"]})
+            if not accepted:
+                job["status"] = "failed"
+                job["error"] = "Could not queue the character sheet."
+                linkedin_store.put_job(table, job)
+                return _json_response(503, {"message": job["error"], "job": _public_job(job)})
+            _audit(user_sub, "LINKEDIN_CHARACTER_DRAW", job["jobId"], event)
+            return _json_response(202, {"job": _public_job(job)})
+        if len(parts) == 3 and parts[1] == "candidates" and method == "GET":
+            if not linkedin_store.valid_candidate_id(parts[2]):
+                return _json_response(400, {"message": "That candidate is not one of the four drawings."})
+            loaded = linkedin_store.load_character_candidate(parts[2])
+            if not loaded:
+                return _json_response(404, {"message": "That candidate is gone."})
+            return _json_response(200, {"contentType": loaded[0], "dataBase64": base64.b64encode(loaded[1]).decode("ascii")})
+        if parts == ["character", "choose"] and method == "POST":
+            body = _parse_json_body(event)
+            stored = linkedin_store.choose_character(table, str(body.get("candidateId") or ""))
+            _audit(user_sub, "LINKEDIN_CHARACTER_CHOOSE", "state", event)
+            return _json_response(200, stored)
+    except LinkedInError as exc:
+        return _json_response(400, {"message": str(exc)})
+    return _json_response(404, {"message": "Not found"})
+
+
+def _image_body(event: dict[str, Any]) -> tuple[str, bytes]:
+    body = _parse_json_body(event)
+    try:
+        data = base64.b64decode(str(body.get("dataBase64") or ""), validate=True)
+    except (ValueError, TypeError) as exc:
+        raise LinkedInError("The image is not valid base64.") from exc
+    return str(body.get("contentType") or ""), data
+
+
+def _image_regenerate(event: dict[str, Any], method: str, post_id: str, user_sub: str | None) -> dict[str, Any]:
+    if method != "POST":
+        return _json_response(404, {"message": "Not found"})
+    blocked = _require_enabled()
+    if blocked:
+        return blocked
+    body = _parse_json_body(event)
+    try:
+        doc = linkedin_image.queue_for_post(
+            _table(),
+            post_id,
+            scene=str(body.get("scene") or ""),
+            caption=str(body.get("caption") or ""),
+        )
+    except LinkedInError as exc:
+        status = 409 if "already being drawn" in str(exc) else 404 if str(exc) == "post not found" else 400
+        return _json_response(status, {"message": str(exc)})
+    _audit(user_sub, "LINKEDIN_IMAGE_REGENERATE", post_id, event)
+    return _json_response(202, {"item": linkedin_store.public_post(doc)})
+
+
 def _image(event: dict[str, Any], method: str, post_id: str, user_sub: str | None) -> dict[str, Any]:
+    if method == "GET":
+        loaded = linkedin_store.load_post_image(post_id)
+        if not loaded:
+            return _json_response(404, {"message": "No picture stored."})
+        return _json_response(
+            200,
+            {"contentType": loaded[0], "dataBase64": base64.b64encode(loaded[1]).decode("ascii")},
+        )
     blocked = _require_enabled()
     if blocked:
         return blocked
@@ -616,19 +763,28 @@ def publish_one(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     text = linkedin_api.commentary(str(doc.get("body") or ""), list(doc.get("hashtags") or []))
     platform = doc.get("platform") if isinstance(doc.get("platform"), dict) else {}
     urn = str(platform.get("urn") or "")
+    skipped_picture = False
     if not urn:
         image_meta = doc.get("image") if isinstance(doc.get("image"), dict) else None
         image_urn = ""
-        if image_meta and image_meta.get("contentType"):
+        alt_text = ""
+        chosen = linkedin_store.publishable_image(image_meta)
+        if chosen:
             loaded = linkedin_store.load_post_image(str(doc["postId"]))
             if not loaded:
                 raise LinkedInApiError("The attached image could not be loaded.")
             image_urn = linkedin_api.upload_image(token, author, loaded[1])
-        urn = linkedin_api.create_post(token, author, text, image_urn=image_urn)
+            alt_text = linkedin_store.caption_alt(str(chosen.get("caption") or ""))
+        elif image_meta and str(image_meta.get("status") or "") in ("pending", "failed"):
+            skipped_picture = True
+        urn = linkedin_api.create_post(token, author, text, image_urn=image_urn, alt_text=alt_text)
         doc = linkedin_store.remember_publish_urn(table, str(doc["postId"]), urn)
     channel = "page" if connection.get("channel") == "page" else "profile"
     organization_id = str(connection.get("organizationId") or "") if channel == "page" else ""
     updated = linkedin_store.mark_api_published(table, str(doc["postId"]), urn, channel, organization_id)
+    if skipped_picture:
+        updated["imageNote"] = "Posted without the picture; it was not ready."
+        updated = linkedin_store.put_post(table, updated)
     comment = str(doc.get("firstComment") or "").strip()
     if comment:
         try:

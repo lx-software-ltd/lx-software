@@ -64,6 +64,11 @@ export type LinkedInDraftSettings = {
   notifyEmail: string;
   model: string;
   pillars: string[];
+  imagesEnabled: boolean;
+  imageModel: string;
+  imageFormat: string;
+  imageStyle: string;
+  imageCharacter: string;
 };
 
 export type LinkedInOrganization = {
@@ -143,6 +148,21 @@ export function linkedInAccessState(iso: string, now = Date.now()): "ok" | "soon
   return "ok";
 }
 
+export type LinkedInImage = {
+  contentType?: string;
+  status?: string;
+  scene?: string;
+  caption?: string;
+  error?: string;
+  model?: string;
+};
+
+export type LinkedInCharacter = {
+  photo: { contentType: string } | null;
+  sheet: { contentType: string } | null;
+  candidates: { id: string; contentType: string }[];
+};
+
 export type LinkedInPost = {
   postId: string;
   status: string;
@@ -158,7 +178,8 @@ export type LinkedInPost = {
   generation?: { model?: string; jobId?: string; voiceHash?: string } | null;
   platform?: { url?: string; publishedAt?: string; urn?: string } | null;
   manual?: { url?: string; postedAt?: string } | null;
-  image?: { contentType: string } | null;
+  image?: LinkedInImage | null;
+  imageNote?: string;
   metrics?: LinkedInMetrics | null;
   publishError?: string;
   createdAt?: string;
@@ -187,6 +208,11 @@ export type LinkedInOverview = {
   defaultModel: string;
   recommendedVoice?: string;
   styleExampleMax?: number;
+  defaultImageModel?: string;
+  imageModelAlternative?: string;
+  recommendedImageStyle?: string;
+  imageStyleMax?: number;
+  imageCharacterMax?: number;
 };
 
 export const SAMPLE_LINKEDIN_POSTS: LinkedInPost[] = [
@@ -201,6 +227,14 @@ export const SAMPLE_LINKEDIN_POSTS: LinkedInPost[] = [
     hashtags: ["Architecture"],
     slotAt: "",
     guardrails: [],
+    image: {
+      contentType: "image/png",
+      status: "ready",
+      scene: "The author at a desk, tearing up a one-way plan.",
+      caption: "I wrote the way back first.",
+      error: "",
+      model: "bytedance-seed/seedream-4.5",
+    },
   },
   {
     postId: "li_posted",
@@ -239,6 +273,19 @@ export const RECOMMENDED_LINKEDIN_VOICE =
 /** Mirrors `STYLE_EXAMPLE_MAX` in `linkedin_store.py`. The default example itself comes from the API. */
 export const STYLE_EXAMPLE_MAX = 3000;
 
+/** Mirrors `DEFAULT_IMAGE_MODEL` and `RECOMMENDED_IMAGE_STYLE` in `linkedin_store.py`. */
+export const DEFAULT_IMAGE_MODEL = "bytedance-seed/seedream-4.5";
+export const IMAGE_MODEL_ALTERNATIVE = "qwen/qwen-image-3";
+export const IMAGE_FORMATS = [
+  { id: "square", label: "Square, 1200 × 1200" },
+  { id: "portrait", label: "Portrait, 1080 × 1350" },
+  { id: "wide", label: "Wide, 1200 × 875" },
+] as const;
+export const RECOMMENDED_IMAGE_STYLE =
+  "Single-panel cartoon in the style of a magazine gag cartoon. Black ink line art on white paper, dense cross-hatching for shadow, no grey wash, no colour. A detailed room, one expressive man mid-action. No lettering and no logos. One two-word label is allowed when the scene needs it, such as a door sign or a folder tab; screens are unreadable scribbles.";
+export const DEFAULT_IMAGE_CHARACTER =
+  "A man in his thirties with short dark hair, side-parted, clean-shaven, a round face, wearing a light striped button-down shirt with an open collar.";
+
 /** Fixture only. The server default is the owner's own post (`STYLE_EXAMPLE` in `linkedin_store.py`). */
 const SAMPLE_STYLE_EXAMPLE =
   "Here is about the week I spent on a 20 KB limit.\n\nI had added one more route to the admin API and the deploy failed. Not the code, the permissions.\n\nSo I read the error properly...\n\nI know what you're thinking - this is in the docs. Yes. I had not read that page.";
@@ -259,6 +306,11 @@ export const DEFAULT_LINKEDIN_SETTINGS: LinkedInDraftSettings = {
   notifyEmail: "",
   model: "",
   pillars: LINKEDIN_PILLARS.map((row) => row.id),
+  imagesEnabled: true,
+  imageModel: DEFAULT_IMAGE_MODEL,
+  imageFormat: "square",
+  imageStyle: RECOMMENDED_IMAGE_STYLE,
+  imageCharacter: DEFAULT_IMAGE_CHARACTER,
 };
 
 export function pillarLabel(id: string): string {

@@ -18,6 +18,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import board_store
+from botocore.exceptions import ClientError
 from ddb_convert import _from_ddb_nested, _to_ddb_nested
 
 HKT = ZoneInfo("Asia/Hong_Kong")
@@ -152,6 +153,34 @@ RECOMMENDED_VOICE = (
 
 STYLE_EXAMPLE_MAX = 3000
 
+# Pictures. Seedream is the default; Qwen-Image is the documented alternative.
+# The style describes a magazine gag cartoon and quotes no scene, so the model
+# does not redraw the same panel for every post.
+DEFAULT_IMAGE_MODEL = "bytedance-seed/seedream-4.5"
+IMAGE_MODEL_ALTERNATIVE = "qwen/qwen-image-3"
+IMAGE_FORMATS = ("square", "portrait", "wide")
+IMAGE_STYLE_MAX = 600
+IMAGE_CHARACTER_MAX = 400
+IMAGE_CAPTION_MAX = 140
+IMAGE_SCENE_MAX = 400
+IMAGE_PENDING_SECONDS = 600
+# A character draw that is still queued or running after this is the Lambda
+# timing out (300s) without writing the job row.
+CHARACTER_JOB_STALE_SECONDS = 360
+CANDIDATE_IDS = frozenset({"c1", "c2", "c3", "c4"})
+IMAGE_BYTE_MAX = 1_500_000
+RECOMMENDED_IMAGE_STYLE = (
+    "Single-panel cartoon in the style of a magazine gag cartoon. Black ink line art on "
+    "white paper, dense cross-hatching for shadow, no grey wash, no colour. A detailed room, "
+    "one expressive man mid-action. No lettering and no logos. One two-word label is allowed "
+    "when the scene needs it, such as a door sign or a folder tab; screens are unreadable scribbles."
+)
+DEFAULT_IMAGE_CHARACTER = (
+    "A man in his thirties with short dark hair, side-parted, clean-shaven, a round face, "
+    "wearing a light striped button-down shirt with an open collar."
+)
+FALLBACK_IMAGE_CAPTION = "This took longer than I expected."
+
 # A post the owner wrote, shown to the model for its register only. Its
 # structure, opening, closing and phrases are not to be reused; the draft loop
 # checks new posts against it and against each other.
@@ -214,6 +243,11 @@ def default_settings() -> dict[str, Any]:
         "notifyEmail": "",
         "model": "",
         "pillars": [row["id"] for row in PILLARS],
+        "imagesEnabled": True,
+        "imageModel": DEFAULT_IMAGE_MODEL,
+        "imageFormat": "square",
+        "imageStyle": RECOMMENDED_IMAGE_STYLE,
+        "imageCharacter": DEFAULT_IMAGE_CHARACTER,
     }
 
 
@@ -233,8 +267,11 @@ def _put(table: Any, item: dict[str, Any]) -> None:
     table.put_item(Item=_to_ddb_nested(item))
 
 
-def _get(table: Any, pk: str, sk: str = "META") -> dict[str, Any] | None:
-    res = table.get_item(Key={"pk": pk, "sk": sk})
+def _get(table: Any, pk: str, sk: str = "META", *, consistent: bool = False) -> dict[str, Any] | None:
+    kwargs: dict[str, Any] = {"Key": {"pk": pk, "sk": sk}}
+    if consistent:
+        kwargs["ConsistentRead"] = True
+    res = table.get_item(**kwargs)
     item = res.get("Item") if isinstance(res, dict) else None
     if not item:
         return None
@@ -316,8 +353,12 @@ def _words(value: Any) -> list[str]:
     return out
 
 
-def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
-    """Merge a settings write onto defaults. Raises LinkedInError."""
+def validate_settings(body: dict[str, Any], *, stored: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Merge a settings write onto defaults. Raises LinkedInError.
+
+    ``imagesEnabled`` is kept from ``stored`` when the body omits it, so a
+    partial write does not turn pictures back on.
+    """
     current = default_settings()
     if not isinstance(body, dict):
         raise LinkedInError("settings must be an object")
@@ -358,7 +399,28 @@ def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
             raise LinkedInError("model is too long")
         if not _MODEL.fullmatch(model):
             raise LinkedInError("model is invalid")
+    image_model = str(body.get("imageModel", current["imageModel"]) or "").strip()
+    if image_model:
+        if len(image_model) > MODEL_MAX:
+            raise LinkedInError("imageModel is too long")
+        if not _MODEL.fullmatch(image_model):
+            raise LinkedInError("imageModel is invalid")
+    image_format = str(body.get("imageFormat", current["imageFormat"]) or "").strip()
+    if image_format not in IMAGE_FORMATS:
+        raise LinkedInError("imageFormat is invalid")
+    image_style = str(body.get("imageStyle", current["imageStyle"]) or "").strip()
+    if len(image_style) > IMAGE_STYLE_MAX:
+        raise LinkedInError(f"imageStyle is over {IMAGE_STYLE_MAX} characters")
+    image_character = str(body.get("imageCharacter", current["imageCharacter"]) or "").strip()
+    if len(image_character) > IMAGE_CHARACTER_MAX:
+        raise LinkedInError(f"imageCharacter is over {IMAGE_CHARACTER_MAX} characters")
     pillars = _pillars(body.get("pillars", current["pillars"]))
+    if "imagesEnabled" in body:
+        images_enabled = bool(body.get("imagesEnabled"))
+    elif isinstance(stored, dict) and "imagesEnabled" in stored:
+        images_enabled = bool(stored.get("imagesEnabled"))
+    else:
+        images_enabled = bool(current["imagesEnabled"])
     return {
         "postsPerWeek": posts,
         "weekdays": weekdays,
@@ -375,11 +437,16 @@ def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
         "notifyEmail": notify,
         "model": model,
         "pillars": pillars,
+        "imagesEnabled": images_enabled,
+        "imageModel": image_model or DEFAULT_IMAGE_MODEL,
+        "imageFormat": image_format,
+        "imageStyle": image_style or RECOMMENDED_IMAGE_STYLE,
+        "imageCharacter": image_character or DEFAULT_IMAGE_CHARACTER,
     }
 
 
 def save_settings(table: Any, body: dict[str, Any]) -> dict[str, Any]:
-    settings = validate_settings(body)
+    settings = validate_settings(body, stored=load_settings(table))
     _put(
         table,
         {
@@ -406,25 +473,110 @@ def month_spend(table: Any, now: datetime | None = None) -> float:
         return 0.0
 
 
-def add_spend(table: Any, usd: float, now: datetime | None = None) -> float:
-    if usd <= 0:
-        return month_spend(table, now)
+class _SpendConflict(Exception):
+    """Another writer updated the monthly spend row between read and write."""
+
+
+def _spend_conflict(exc: BaseException) -> bool:
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return False
+    return str(response.get("Error", {}).get("Code") or "") == "ConditionalCheckFailedException"
+
+
+def _put_spend_cas(table: Any, previous: dict[str, Any], spend_map: dict[str, Any]) -> None:
+    """Replace the spend row only when ``spendToken`` is unchanged."""
+    item = _to_ddb_nested(
+        {
+            **_state_key("SPEND"),
+            "spend": spend_map,
+            "spendToken": uuid.uuid4().hex,
+            "updatedAt": board_store.now_iso(),
+        }
+    )
+    if not previous:
+        condition = "attribute_not_exists(pk)"
+        values = None
+    elif "spendToken" not in previous:
+        condition = "attribute_not_exists(spendToken)"
+        values = None
+    else:
+        condition = "spendToken = :prev"
+        values = {":prev": previous.get("spendToken")}
+    kwargs: dict[str, Any] = {"Item": item, "ConditionExpression": condition}
+    if values is not None:
+        kwargs["ExpressionAttributeValues"] = values
+    try:
+        table.put_item(**kwargs)
+    except ClientError as exc:
+        if _spend_conflict(exc):
+            raise _SpendConflict from exc
+        raise
+
+
+def _trim_spend(spend: dict[str, Any]) -> dict[str, Any]:
+    keys = sorted(str(key) for key in spend)[-13:]
+    return {key: spend[key] for key in keys}
+
+
+def adjust_spend(table: Any, usd: float, now: datetime | None = None) -> float:
+    """Add ``usd`` to this month. A negative amount releases a reservation and never goes below zero."""
+    key = month_key(now)
+    updated = month_spend(table, now)
+    for _attempt in range(5):
+        doc = _load_sk(table, "SPEND")
+        spend = dict(doc.get("spend") or {})
+        try:
+            current = float(spend.get(key) or 0)
+        except (TypeError, ValueError):
+            current = 0.0
+        updated = round(max(0.0, current + usd), 6)
+        spend[key] = updated
+        try:
+            _put_spend_cas(table, doc, _trim_spend(spend))
+            return updated
+        except _SpendConflict:
+            continue
     doc = _load_sk(table, "SPEND")
     spend = dict(doc.get("spend") or {})
-    key = month_key(now)
     try:
         current = float(spend.get(key) or 0)
     except (TypeError, ValueError):
         current = 0.0
-    spend[key] = round(current + usd, 6)
-    # Keep the trailing thirteen months.
-    keys = sorted(spend)[-13:]
-    trimmed = {k: spend[k] for k in keys}
-    _put(
-        table,
-        {**_state_key("SPEND"), "spend": trimmed, "updatedAt": board_store.now_iso()},
-    )
-    return float(trimmed[key])
+    updated = round(max(0.0, current + usd), 6)
+    spend[key] = updated
+    trimmed = _trim_spend(spend)
+    _put(table, {**_state_key("SPEND"), "spend": trimmed, "updatedAt": board_store.now_iso()})
+    return float(updated)
+
+
+def try_reserve_spend(table: Any, usd: float, cap: float, now: datetime | None = None) -> bool:
+    """Reserve ``usd`` against ``cap``. False when this month would go over, or the write keeps losing."""
+    if usd <= 0:
+        return True
+    key = month_key(now)
+    for _attempt in range(5):
+        doc = _load_sk(table, "SPEND")
+        spend = dict(doc.get("spend") or {})
+        try:
+            current = float(spend.get(key) or 0)
+        except (TypeError, ValueError):
+            current = 0.0
+        if current + usd > cap + 1e-9:
+            return False
+        spend[key] = round(current + usd, 6)
+        try:
+            _put_spend_cas(table, doc, _trim_spend(spend))
+            return True
+        except _SpendConflict:
+            continue
+    return False
+
+
+def add_spend(table: Any, usd: float, now: datetime | None = None) -> float:
+    if usd <= 0:
+        return month_spend(table, now)
+    return adjust_spend(table, usd, now)
 
 
 def load_plan_date(table: Any) -> str:
@@ -709,8 +861,8 @@ def put_post(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     return doc
 
 
-def get_post(table: Any, post_id: str) -> dict[str, Any] | None:
-    return _get(table, f"LINKEDIN#post#{post_id}")
+def get_post(table: Any, post_id: str, *, consistent: bool = False) -> dict[str, Any] | None:
+    return _get(table, f"LINKEDIN#post#{post_id}", consistent=consistent)
 
 
 def list_posts(table: Any, *, status: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
@@ -753,6 +905,21 @@ def recent_bodies(table: Any, *, limit: int = 12) -> list[str]:
 
 def recent_hooks(table: Any, *, limit: int = 12) -> list[str]:
     return [hook_text(body)[:180] for body in recent_bodies(table, limit=limit)]
+
+
+def recent_captions(table: Any, *, limit: int = 12) -> list[str]:
+    """Spoken lines under recent pictures, newest first."""
+    rows = [row for row in list_posts(table, limit=80) if str(row.get("status") or "") != "archived"]
+    rows.sort(key=lambda doc: str(doc.get("createdAt") or ""), reverse=True)
+    captions: list[str] = []
+    for row in rows:
+        image = row.get("image") if isinstance(row.get("image"), dict) else {}
+        caption = str(image.get("caption") or "").strip()
+        if caption and caption not in captions:
+            captions.append(caption)
+        if len(captions) >= limit:
+            break
+    return captions
 
 
 def _clean_hashtags(value: Any, cap: int) -> list[str]:
@@ -936,7 +1103,8 @@ def public_post(doc: dict[str, Any]) -> dict[str, Any]:
         "generation": doc.get("generation") or None,
         "platform": doc.get("platform") or None,
         "manual": doc.get("manual") or None,
-        "image": {"contentType": image.get("contentType")} if image and image.get("contentType") else None,
+        "image": public_image(image),
+        "imageNote": doc.get("imageNote") or "",
         "metrics": doc.get("metrics") or None,
         "publishError": doc.get("publishError") or "",
         "createdAt": doc.get("createdAt"),
@@ -1022,6 +1190,25 @@ def get_job(table: Any, job_id: str) -> dict[str, Any] | None:
     return _get(table, f"LINKEDIN#job#{job_id}")
 
 
+def expire_character_job(table: Any, job: dict[str, Any] | None, *, now: datetime | None = None) -> dict[str, Any] | None:
+    """Mark a character draw that outlived the Lambda as failed, so the row does not stay running."""
+    if not isinstance(job, dict) or str(job.get("kind") or "") != "character":
+        return job
+    if str(job.get("status") or "") not in ("queued", "running"):
+        return job
+    started = _parse_slot(str(job.get("startedAt") or job.get("createdAt") or ""))
+    if started is None:
+        return job
+    moment = now or datetime.now(ZoneInfo("UTC"))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=ZoneInfo("UTC"))
+    if (moment - started).total_seconds() <= CHARACTER_JOB_STALE_SECONDS:
+        return job
+    job["status"] = "failed"
+    job["error"] = "The character sheet timed out. Draw it again."
+    return put_job(table, job)
+
+
 def new_job(table: Any, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
     doc = {
         "jobId": _new_id("job_"),
@@ -1060,6 +1247,11 @@ def overview(table: Any) -> dict[str, Any]:
         "defaultModel": (os.environ.get("OPENROUTER_MODEL") or "").strip(),
         "recommendedVoice": RECOMMENDED_VOICE,
         "styleExampleMax": STYLE_EXAMPLE_MAX,
+        "defaultImageModel": DEFAULT_IMAGE_MODEL,
+        "imageModelAlternative": IMAGE_MODEL_ALTERNATIVE,
+        "recommendedImageStyle": RECOMMENDED_IMAGE_STYLE,
+        "imageStyleMax": IMAGE_STYLE_MAX,
+        "imageCharacterMax": IMAGE_CHARACTER_MAX,
     }
 
 
@@ -1188,19 +1380,77 @@ def set_connection_target(table: Any, channel: str, organization_id: str) -> dic
 
 
 _IMAGE_MEMORY: dict[str, tuple[str, bytes]] = {}
-_IMAGE_MAX = 1_500_000
+_CHARACTER_MEMORY: dict[str, tuple[str, bytes]] = {}
+_IMAGE_MAX = IMAGE_BYTE_MAX
+
+
+def public_image(image: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Picture state for the SPA. Bytes stay in S3."""
+    if not isinstance(image, dict):
+        return None
+    content = str(image.get("contentType") or "")
+    status = str(image.get("status") or "")
+    if not content and not status:
+        return None
+    if content and not status:
+        status = "ready"
+    out: dict[str, Any] = {
+        "status": status,
+        "scene": str(image.get("scene") or ""),
+        "caption": str(image.get("caption") or ""),
+        "error": str(image.get("error") or ""),
+        "model": str(image.get("model") or ""),
+    }
+    if content:
+        out["contentType"] = content
+    return out
+
+
+def publishable_image(image: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Metadata for the bytes that can go out now.
+
+    A ready picture publishes as itself. A redraw that is still pending or that
+    failed keeps the previous ready picture (``held``) until the new panel is saved.
+    A first picture that is pending or failed publishes as text.
+    """
+    if not isinstance(image, dict):
+        return None
+    status = str(image.get("status") or "")
+    if image.get("contentType") and status in ("", "ready"):
+        return image
+    held = image.get("held")
+    if status in ("pending", "failed") and isinstance(held, dict) and held.get("contentType"):
+        return held
+    return None
+
+
+def image_publishable(image: dict[str, Any] | None) -> bool:
+    """True when publish should attach the stored PNG."""
+    return publishable_image(image) is not None
+
+
+def image_pending_stale(image: dict[str, Any] | None, *, now: datetime | None = None) -> bool:
+    if not isinstance(image, dict) or str(image.get("status") or "") != "pending":
+        return False
+    requested = _parse_slot(str(image.get("requestedAt") or ""))
+    if requested is None:
+        return True
+    moment = now or datetime.now(ZoneInfo("UTC"))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=ZoneInfo("UTC"))
+    return (moment - requested).total_seconds() > IMAGE_PENDING_SECONDS
+
+
+def caption_alt(caption: str) -> str:
+    """The spoken line without the quotes the picture draws around it."""
+    return str(caption or "").strip().strip("'\"“”‘’")[:300]
 
 
 def _image_key(post_id: str) -> str:
     return f"linkedin/posts/{post_id}/image"
 
 
-def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) -> dict[str, Any]:
-    doc = get_post(table, post_id)
-    if not doc:
-        raise LinkedInError("post not found")
-    if str(doc.get("status") or "") in ("published", "archived"):
-        raise LinkedInError("That post can no longer be edited.")
+def _check_image(content_type: str, data: bytes) -> None:
     if content_type not in ("image/png", "image/jpeg"):
         raise LinkedInError("Use a PNG or JPEG image.")
     if not data or len(data) > _IMAGE_MAX:
@@ -1209,6 +1459,15 @@ def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) ->
         raise LinkedInError("That file is not a PNG.")
     if content_type == "image/jpeg" and not data.startswith(b"\xff\xd8"):
         raise LinkedInError("That file is not a JPEG.")
+
+
+def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) -> dict[str, Any]:
+    doc = get_post(table, post_id, consistent=True)
+    if not doc:
+        raise LinkedInError("post not found")
+    if str(doc.get("status") or "") in ("published", "archived"):
+        raise LinkedInError("That post can no longer be edited.")
+    _check_image(content_type, data)
     bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
     if bucket:
         import boto3
@@ -1221,7 +1480,14 @@ def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) ->
         )
     else:
         _IMAGE_MEMORY[post_id] = (content_type, data)
-    doc["image"] = {"contentType": content_type, "bytes": len(data)}
+    previous = doc.get("image") if isinstance(doc.get("image"), dict) else {}
+    doc["image"] = {
+        **previous,
+        "contentType": content_type,
+        "bytes": len(data),
+        "status": "ready",
+        "error": "",
+    }
     return put_post(table, doc)
 
 
@@ -1259,6 +1525,146 @@ def load_post_image(post_id: str) -> tuple[str, bytes] | None:
         raise
     body = response["Body"].read()
     return str(response.get("ContentType") or "image/png"), body
+
+
+def _character_key(name: str) -> str:
+    return f"linkedin/character/{name}"
+
+
+def _put_named_bytes(name: str, content_type: str, data: bytes) -> None:
+    bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
+    if bucket:
+        import boto3
+
+        boto3.client("s3").put_object(
+            Bucket=bucket,
+            Key=_character_key(name),
+            Body=data,
+            ContentType=content_type,
+        )
+        return
+    _CHARACTER_MEMORY[name] = (content_type, data)
+
+
+def _load_named_bytes(name: str) -> tuple[str, bytes] | None:
+    bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
+    if not bucket:
+        return _CHARACTER_MEMORY.get(name)
+    import boto3
+
+    try:
+        response = boto3.client("s3").get_object(Bucket=bucket, Key=_character_key(name))
+    except Exception as exc:  # noqa: BLE001 — a missing object is an empty slot
+        response_payload = getattr(exc, "response", None)
+        code = ""
+        if isinstance(response_payload, dict):
+            code = str(response_payload.get("Error", {}).get("Code") or "")
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            return None
+        raise
+    return str(response.get("ContentType") or "image/png"), response["Body"].read()
+
+
+def _delete_named_bytes(name: str) -> None:
+    bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
+    if bucket:
+        import boto3
+
+        boto3.client("s3").delete_object(Bucket=bucket, Key=_character_key(name))
+    _CHARACTER_MEMORY.pop(name, None)
+
+
+def load_character(table: Any) -> dict[str, Any]:
+    return _load_sk(table, "CHARACTER")
+
+
+def _save_character(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
+    _put(table, {**_state_key("CHARACTER"), **doc, "updatedAt": board_store.now_iso()})
+    return doc
+
+
+def public_character(doc: dict[str, Any] | None) -> dict[str, Any]:
+    stored = doc or {}
+    photo = stored.get("photo") if isinstance(stored.get("photo"), dict) else None
+    sheet = stored.get("sheet") if isinstance(stored.get("sheet"), dict) else None
+    candidates = []
+    for row in stored.get("candidates") or []:
+        if isinstance(row, dict) and row.get("id"):
+            candidates.append({"id": str(row["id"]), "contentType": str(row.get("contentType") or "image/png")})
+    return {
+        "photo": {"contentType": photo.get("contentType")} if photo and photo.get("contentType") else None,
+        "sheet": {"contentType": sheet.get("contentType")} if sheet and sheet.get("contentType") else None,
+        "candidates": candidates,
+    }
+
+
+def save_character_photo(table: Any, content_type: str, data: bytes) -> dict[str, Any]:
+    _check_image(content_type, data)
+    _put_named_bytes("photo", content_type, data)
+    doc = load_character(table)
+    doc["photo"] = {"contentType": content_type, "bytes": len(data)}
+    return public_character(_save_character(table, doc))
+
+
+def delete_character_photo(table: Any) -> dict[str, Any]:
+    _delete_named_bytes("photo")
+    doc = load_character(table)
+    doc["photo"] = None
+    return public_character(_save_character(table, doc))
+
+
+def load_character_photo(table: Any) -> tuple[str, bytes] | None:
+    del table
+    return _load_named_bytes("photo")
+
+
+def load_character_sheet() -> tuple[str, bytes] | None:
+    return _load_named_bytes("sheet")
+
+
+def valid_candidate_id(candidate_id: str) -> bool:
+    return str(candidate_id or "") in CANDIDATE_IDS
+
+
+def save_character_candidate(table: Any, candidate_id: str, content_type: str, data: bytes) -> None:
+    if not valid_candidate_id(candidate_id):
+        raise LinkedInError("That candidate is not one of the four drawings.")
+    _check_image(content_type, data)
+    _put_named_bytes(f"candidates/{candidate_id}", content_type, data)
+    doc = load_character(table)
+    rows = [row for row in (doc.get("candidates") or []) if isinstance(row, dict)]
+    rows = [row for row in rows if str(row.get("id") or "") != candidate_id]
+    rows.append({"id": candidate_id, "contentType": content_type, "bytes": len(data)})
+    doc["candidates"] = rows
+    _save_character(table, doc)
+
+
+def clear_character_candidates(table: Any) -> None:
+    doc = load_character(table)
+    for row in doc.get("candidates") or []:
+        if isinstance(row, dict) and valid_candidate_id(str(row.get("id") or "")):
+            _delete_named_bytes(f"candidates/{row['id']}")
+    doc["candidates"] = []
+    _save_character(table, doc)
+
+
+def load_character_candidate(candidate_id: str) -> tuple[str, bytes] | None:
+    if not valid_candidate_id(candidate_id):
+        return None
+    return _load_named_bytes(f"candidates/{candidate_id}")
+
+
+def choose_character(table: Any, candidate_id: str) -> dict[str, Any]:
+    if not valid_candidate_id(candidate_id):
+        raise LinkedInError("That candidate is not one of the four drawings.")
+    loaded = load_character_candidate(candidate_id)
+    if not loaded:
+        raise LinkedInError("That candidate is gone. Draw the character again.")
+    content_type, data = loaded
+    _put_named_bytes("sheet", content_type, data)
+    doc = load_character(table)
+    doc["sheet"] = {"contentType": content_type, "bytes": len(data), "candidateId": candidate_id}
+    return public_character(_save_character(table, doc))
 
 
 def posts_ready_to_publish(table: Any, *, now_iso: str | None = None) -> list[dict[str, Any]]:

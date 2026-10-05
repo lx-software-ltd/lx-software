@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { useLinkedIn } from "../../hooks/useLinkedIn";
-import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
+import { useQuery } from "@tanstack/react-query";
+import { useLinkedIn, LINKEDIN_BYTES_KEY } from "../../hooks/useLinkedIn";
+import { adminFetchJson, getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { formatDateTimeHKT } from "../../lib/formatDisplay";
 import {
   BUILTIN_FORBIDDEN,
+  IMAGE_FORMATS,
   STYLE_EXAMPLE_MAX,
   WEEKDAY_OPTIONS,
   linkedInAccessState,
@@ -197,6 +199,84 @@ export function LinkedInSettingsCard({
                 writing moves on, or leave blank to send no example.
               </p>
             </AdminField>
+            <AdminField label="Pictures" htmlFor="linkedin-images" span={2}>
+              <label className="form-check mb-2">
+                <input
+                  id="linkedin-images"
+                  className="form-check-input"
+                  type="checkbox"
+                  checked={settings.imagesEnabled}
+                  onChange={(event) => setSettings({ ...settings, imagesEnabled: event.target.checked })}
+                />
+                Draw a black-and-white comic for each draft
+              </label>
+              <p className="form-text">
+                OpenRouter draws one panel when a draft is generated. You can redraw it from the draft. Picture spend
+                shares the monthly draft budget. Suggested model: {overview.defaultImageModel || "bytedance-seed/seedream-4.5"}.
+                Alternative: {overview.imageModelAlternative || "qwen/qwen-image-3"}.
+              </p>
+            </AdminField>
+            <AdminField label="Picture model" htmlFor="linkedin-image-model">
+              <input
+                id="linkedin-image-model"
+                className="form-control"
+                value={settings.imageModel}
+                spellCheck={false}
+                autoComplete="off"
+                disabled={!settings.imagesEnabled}
+                onChange={(event) => setSettings({ ...settings, imageModel: event.target.value })}
+              />
+            </AdminField>
+            <AdminField label="Picture shape" htmlFor="linkedin-image-format">
+              <select
+                id="linkedin-image-format"
+                className="form-select"
+                value={settings.imageFormat}
+                disabled={!settings.imagesEnabled}
+                onChange={(event) => setSettings({ ...settings, imageFormat: event.target.value })}
+              >
+                {IMAGE_FORMATS.map((row) => (
+                  <option key={row.id} value={row.id}>
+                    {row.label}
+                  </option>
+                ))}
+              </select>
+            </AdminField>
+            <AdminField label="Picture style" htmlFor="linkedin-image-style" span={2}>
+              <textarea
+                id="linkedin-image-style"
+                className="form-control"
+                rows={3}
+                maxLength={overview.imageStyleMax ?? 600}
+                value={settings.imageStyle}
+                disabled={!settings.imagesEnabled}
+                onChange={(event) => setSettings({ ...settings, imageStyle: event.target.value })}
+              />
+              {overview.recommendedImageStyle && settings.imageStyle.trim() !== overview.recommendedImageStyle ? (
+                <button
+                  type="button"
+                  className="btn btn-link btn-sm px-0 mt-1"
+                  onClick={() => setSettings({ ...settings, imageStyle: overview.recommendedImageStyle ?? "" })}
+                >
+                  Use recommended style
+                </button>
+              ) : null}
+            </AdminField>
+            <AdminField label="How to draw me" htmlFor="linkedin-image-character" span={2}>
+              <textarea
+                id="linkedin-image-character"
+                className="form-control"
+                rows={2}
+                maxLength={overview.imageCharacterMax ?? 400}
+                value={settings.imageCharacter}
+                disabled={!settings.imagesEnabled}
+                onChange={(event) => setSettings({ ...settings, imageCharacter: event.target.value })}
+              />
+              <p className="form-text mb-0">
+                No name. Correct this after you look at the character sheet. The photo is used once to draw that sheet;
+                later pictures send the sheet, not the photo.
+              </p>
+            </AdminField>
             <AdminField label="Extra phrases to block" htmlFor="linkedin-blocked" span={2}>
               <textarea
                 id="linkedin-blocked"
@@ -208,6 +288,7 @@ export function LinkedInSettingsCard({
               <p className="form-text mb-0">One phrase per line. Always blocked: {BUILTIN_FORBIDDEN.join(", ")}.</p>
             </AdminField>
           </AdminFieldGrid>
+          <CharacterSitting enabled={enabled && settings.imagesEnabled} />
           <fieldset className="mt-3">
             <legend className="form-label small">Weekdays</legend>
             <div className="d-flex flex-wrap gap-3">
@@ -432,6 +513,109 @@ function LinkedInConnectionPanel({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function StoredImage({ path, alt }: { readonly path: string; readonly alt: string }) {
+  const query = useQuery({
+    queryKey: [...LINKEDIN_BYTES_KEY, "character", path] as const,
+    queryFn: () => adminFetchJson<{ contentType: string; dataBase64: string }>(path),
+    retry: false,
+    staleTime: Infinity,
+  });
+  if (!query.data) return null;
+  return (
+    <img
+      src={`data:${query.data.contentType};base64,${query.data.dataBase64}`}
+      alt={alt}
+      className="border"
+      style={{ width: 96, height: 96, objectFit: "cover" }}
+    />
+  );
+}
+
+function CharacterSitting({ enabled }: { readonly enabled: boolean }) {
+  const linkedIn = useLinkedIn();
+  const character = linkedIn.character.data;
+  const [localError, setLocalError] = useState<string | null>(null);
+  const error =
+    localError ??
+    getAdminApiErrorMessage(linkedIn.uploadCharacterPhoto.error) ??
+    getAdminApiErrorMessage(linkedIn.drawCharacter.error) ??
+    getAdminApiErrorMessage(linkedIn.chooseCharacter.error);
+
+  return (
+    <div className="mt-3">
+      <p className="form-label small mb-1">Character</p>
+      {error ? (
+        <div className="alert alert-danger py-2 small" role="alert">
+          {error}
+        </div>
+      ) : null}
+      <div className="d-flex flex-wrap gap-3 align-items-start">
+        {character?.photo ? <StoredImage path="/lx-software/linkedin/character/photo" alt="Reference photo" /> : null}
+        {character?.sheet ? <StoredImage path="/lx-software/linkedin/character/sheet" alt="Chosen character sheet" /> : null}
+        {character?.candidates.map((row) => (
+          <button
+            key={row.id}
+            type="button"
+            className="btn btn-link p-0"
+            disabled={!enabled || linkedIn.chooseCharacter.isPending}
+            onClick={() => void linkedIn.chooseCharacter.mutate(row.id)}
+          >
+            <StoredImage path={`/lx-software/linkedin/character/candidates/${row.id}`} alt={`Candidate ${row.id}`} />
+          </button>
+        ))}
+      </div>
+      <div className="d-flex flex-wrap gap-2 mt-2">
+        <label className="btn btn-outline-secondary btn-sm mb-0">
+          {character?.photo ? "Replace photo" : "Upload photo"}
+          <input
+            className="d-none"
+            type="file"
+            accept="image/png,image/jpeg"
+            disabled={!enabled}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (!file) return;
+              if (file.size > 1_500_000) {
+                setLocalError("The image must be under 1.5 MB.");
+                return;
+              }
+              const reader = new FileReader();
+              reader.onload = () => {
+                const dataBase64 = String(reader.result ?? "").split(",")[1] ?? "";
+                setLocalError(null);
+                void linkedIn.uploadCharacterPhoto.mutate({ contentType: file.type, dataBase64 });
+              };
+              reader.readAsDataURL(file);
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          className="btn btn-outline-secondary btn-sm"
+          disabled={!enabled || !character?.photo || linkedIn.drawCharacter.isPending}
+          onClick={() => void linkedIn.drawCharacter.mutate()}
+        >
+          {linkedIn.drawCharacter.isPending ? "Drawing…" : "Draw my character"}
+        </button>
+        {character?.photo ? (
+          <button
+            type="button"
+            className="btn btn-link btn-sm"
+            disabled={!enabled || linkedIn.deleteCharacterPhoto.isPending}
+            onClick={() => void linkedIn.deleteCharacterPhoto.mutate()}
+          >
+            Delete photo
+          </button>
+        ) : null}
+      </div>
+      <p className="form-text mb-0">
+        Upload a photo, draw four cartoons, and pick one. Delete the photo once the sheet looks right. Click a candidate to use it.
+      </p>
     </div>
   );
 }
