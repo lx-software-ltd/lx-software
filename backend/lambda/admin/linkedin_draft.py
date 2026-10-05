@@ -19,10 +19,26 @@ from openrouter_client import OpenRouterError, parse_json_object_text
 
 SERVICE = "linkedin"
 _BODY_KEYS = ("body", "post", "text", "content", "commentary")
+# A post is a few hundred tokens. The first call leaves room for a verbose
+# model; the retry after a cut-off answer doubles it.
+DRAFT_MAX_TOKENS = 2000
+DRAFT_RETRY_MAX_TOKENS = 4000
+# Drafts never need chain-of-thought. Hybrid reasoning models otherwise spend
+# the whole token budget thinking and the reply is cut before the JSON.
+DRAFT_REASONING = {"enabled": False, "exclude": True}
 
 
 class DraftError(RuntimeError):
-    """The model call failed or returned nothing usable."""
+    """The model call failed or returned nothing usable.
+
+    ``stop`` marks a failure that will repeat for every topic in this run
+    (the model never reaches the JSON), so the batch gives up at once instead
+    of spending the same budget on each draft.
+    """
+
+    def __init__(self, message: str, *, stop: bool = False) -> None:
+        super().__init__(message)
+        self.stop = stop
 
 
 def _system_prompt(settings: dict[str, Any]) -> str:
@@ -154,9 +170,10 @@ def complete_json(
 
     model = draft_model(settings)
     if not model:
-        raise DraftError("OPENROUTER_MODEL is not set")
+        raise DraftError("OPENROUTER_MODEL is not set", stop=True)
     pending = list(messages)
     spent = 0.0
+    max_tokens = DRAFT_MAX_TOKENS
     last_error: DraftError | None = None
     for attempt in range(2):
         result = openrouter_client.chat_completion(
@@ -165,14 +182,16 @@ def complete_json(
             secrets_client=boto3.client("secretsmanager"),
             timeout=int(os.environ.get("LINKEDIN_DRAFT_TIMEOUT_SECONDS") or "60"),
             json_mode=True,
-            max_tokens=1200,
+            max_tokens=max_tokens,
             temperature=0.7,
             service=SERVICE,
             owner="draft",
+            reasoning=DRAFT_REASONING,
         )
         spent += float(result.cost_usd or 0)
         if table is not None:
             record_draft_usage(table, result.usage)
+        cut_off = result.finish_reason == "length"
         try:
             return parse_draft(result.text), spent
         except DraftError as exc:
@@ -184,23 +203,37 @@ def complete_json(
                 finish_reason=result.finish_reason,
                 text_len=len(result.text or ""),
                 starts_with=preview,
+                max_tokens=max_tokens,
                 attempt=attempt,
             )
-            last_error = exc
+            last_error = _describe_failure(exc, model=model, cut_off=cut_off)
             if attempt == 0:
-                pending = [
-                    *pending,
-                    {
-                        "role": "user",
-                        "content": (
-                            "body must be the full post text. Do not return empty strings. "
-                            "Reply with the JSON object again."
-                        ),
-                    },
-                ]
+                if cut_off:
+                    max_tokens = DRAFT_RETRY_MAX_TOKENS
+                    nudge = (
+                        "Your previous reply was cut off before the JSON. Do not think out "
+                        "loud or explain. Reply with only the JSON object."
+                    )
+                else:
+                    nudge = (
+                        "body must be the full post text. Do not return empty strings. "
+                        "Reply with the JSON object again."
+                    )
+                pending = [*pending, {"role": "user", "content": nudge}]
                 continue
-            raise
+            raise last_error from exc
     raise last_error or DraftError("The model did not return a post.")
+
+
+def _describe_failure(exc: DraftError, *, model: str, cut_off: bool) -> DraftError:
+    """Name the model and the reason so the owner can act from the UI."""
+    if cut_off:
+        return DraftError(
+            f"{model} ran out of room before returning the post (it was still thinking). "
+            "Pick a non-reasoning model in Settings, or leave Model blank for the stack default.",
+            stop=True,
+        )
+    return DraftError(f"{exc} ({model})", stop=exc.stop)
 
 
 def _messages(settings: dict[str, Any], pillar: str, idea: str, avoid: list[str]) -> list[dict[str, str]]:
@@ -338,6 +371,8 @@ def generate_drafts(
             )
         except (DraftError, LinkedInError, OpenRouterError) as exc:
             errors.append(str(exc))
+            if isinstance(exc, DraftError) and exc.stop:
+                break
             continue
         spent += cost
         linkedin_store.add_spend(table, cost)

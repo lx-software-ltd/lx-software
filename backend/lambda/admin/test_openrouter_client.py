@@ -109,7 +109,38 @@ class TestOpenRouterAttribution(unittest.TestCase):
         body = captured["body"]
         self.assertEqual(body["user"], "executive-board:siuTinDei")
         self.assertEqual(body["usage"], {"include": True})
+        self.assertNotIn("reasoning", body)
         self.assertAlmostEqual(completion.cost_usd, 0.002)
+
+    def test_reasoning_knob_is_sent_only_when_asked(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake_urlopen(req, timeout=None):  # noqa: ARG001
+            captured["body"] = json.loads(req.data.decode("utf-8"))
+            return _FakeResp(
+                json.dumps(
+                    {
+                        "model": "m",
+                        "choices": [{"message": {"role": "assistant", "content": "{}"}, "finish_reason": "stop"}],
+                    }
+                ).encode("utf-8")
+            )
+
+        with patch("openrouter_client.urlrequest.urlopen", fake_urlopen), patch.dict(
+            "os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False
+        ):
+            completion = openrouter_client.chat_completion(
+                messages=[{"role": "user", "content": "hi"}],
+                model="m",
+                secrets_client=None,
+                timeout=5,
+                json_mode=True,
+                reasoning={"enabled": False, "exclude": True},
+            )
+        body = captured["body"]
+        self.assertEqual(body["reasoning"], {"enabled": False, "exclude": True})
+        self.assertEqual(body["response_format"], {"type": "json_object"})
+        self.assertEqual(completion.finish_reason, "stop")
 
     def test_json_secret_picks_per_service_key(self) -> None:
         secrets = MagicMock()

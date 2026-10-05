@@ -1051,6 +1051,15 @@ class TestNormalizers(unittest.TestCase):
         with self.assertRaises(openrouter_client.OpenRouterError):
             openrouter_client.parse_json_object_text("no json here")
 
+    def test_parse_json_object_text_drops_think_blocks(self) -> None:
+        parsed = openrouter_client.parse_json_object_text(
+            "<think>\nLet me plan this.\n</think>\n```json\n{\"a\": 1}\n```"
+        )
+        self.assertEqual(parsed, {"a": 1})
+        self.assertEqual(openrouter_client.strip_reasoning_blocks("<think>never closed {\"a\": 1}"), "")
+        with self.assertRaises(openrouter_client.OpenRouterError):
+            openrouter_client.parse_json_object_text("<think>still thinking about {\"a\": 1}")
+
     def test_parse_json_object_text_repairs_raw_newlines_in_strings(self) -> None:
         parsed = openrouter_client.parse_json_object_text(
             '{\n  "body": "line one\nline two",\n  "ok": true\n}'
