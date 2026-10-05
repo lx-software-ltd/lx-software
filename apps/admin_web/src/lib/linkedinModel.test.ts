@@ -71,6 +71,8 @@ describe("linkedin guardrails", () => {
     expect(RECOMMENDED_LINKEDIN_VOICE.length).toBeLessThanOrEqual(1000);
     expect(RECOMMENDED_LINKEDIN_VOICE).toContain("always I, never we");
     expect(RECOMMENDED_LINKEDIN_VOICE).toContain("No sensationalism, no wow");
+    expect(RECOMMENDED_LINKEDIN_VOICE).toContain("no stock opening line, no stock closing line");
+    expect(RECOMMENDED_LINKEDIN_VOICE).not.toContain("done is better than perfect");
     expect(DEFAULT_LINKEDIN_SETTINGS.styleExample.length).toBeLessThanOrEqual(STYLE_EXAMPLE_MAX);
   });
 
