@@ -1,10 +1,12 @@
 """Draft LinkedIn posts for a personal presence, not a company page.
 
 Settings voice controls tone. The tone defaults (first person, short lines, a
-closing question) apply only where that voice is blank or silent. Safety rules
-— hook length, no employer, no availability, no pitch, forbidden phrases —
-always apply. Deterministic checks in ``linkedin_store`` still run after the
-model returns.
+closing question) apply only where that voice is blank or silent. Substance
+rules (one real situation, named system, concrete figures, no buzzwords) and
+safety rules (hook length, no employer, no availability, no pitch, forbidden
+phrases) always apply. With no owner idea, ``linkedin_seeds`` supplies a real
+situation. A draft that uses a slop phrase or an emoji gets the rewrite pass.
+Deterministic checks in ``linkedin_store`` still run after the model returns.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import os
 import re
 from typing import Any
 
+import linkedin_seeds
 import linkedin_store
 import openrouter_usage
 from http_common import _log_event
@@ -60,6 +63,59 @@ _SCHEMA_EXAMPLE = (
     '"hashtags":["Topic"],"pillar":"architecture"}'
 )
 
+# Words and phrases that mark a generic post. A draft that uses one gets the
+# rewrite pass; the stored guardrails are unchanged.
+SLOP_PHRASES: tuple[str, ...] = (
+    # The first twelve are quoted in the system prompt.
+    "game-changer",
+    "humbled",
+    "here's the thing",
+    "let that sink in",
+    "in today's fast-paced",
+    "thought leader",
+    "unlock",
+    "delve",
+    "synergy",
+    "leverage",
+    "journey",
+    "mindset",
+    "game changer",
+    "honored to",
+    "honoured to",
+    "in today's world",
+    "thought leadership",
+    "stakeholders",
+    "move the needle",
+    "double down",
+    "at the end of the day",
+    "it's not about",
+    "the truth is",
+    "hot take",
+    "agree?",
+    "thoughts?",
+)
+# Pictographs, dingbats (✅ ❌ ➡), arrows, stars, and the emoji variation selector.
+_EMOJI = re.compile(
+    "[\U0001F000-\U0001FAFF\u2600-\u27BF\u2190-\u21FF\u2B00-\u2BFF\uFE0F]"
+)
+
+
+def slop_findings(body: str) -> list[dict[str, str]]:
+    """Draft-time checks for generic writing. Same shape as ``guardrails`` findings."""
+    findings: list[dict[str, str]] = []
+    text = body or ""
+    if _EMOJI.search(text):
+        findings.append(
+            {"code": "slop", "severity": "error", "detail": "Remove every emoji, arrow, and symbol."}
+        )
+    lowered = text.lower()
+    for phrase in SLOP_PHRASES:
+        if linkedin_store.contains_term(lowered, phrase):
+            findings.append(
+                {"code": "slop", "severity": "error", "detail": f"Remove “{phrase}”; say the specific thing instead."}
+            )
+    return findings
+
 
 def _system_prompt(settings: dict[str, Any]) -> str:
     terms = ", ".join(linkedin_store.forbidden_terms(settings))
@@ -73,7 +129,7 @@ def _system_prompt(settings: dict[str, Any]) -> str:
         voice_block = (
             "Voice — follow this exactly. It overrides the tone defaults "
             "(first person, short lines, a closing question), including cadence and ending. "
-            "It does not override the safety rules.\n"
+            "It does not override the substance or safety rules.\n"
             f"{voice}"
         )
     else:
@@ -88,6 +144,17 @@ def _system_prompt(settings: dict[str, Any]) -> str:
                 "Tone defaults, used only when the voice does not say otherwise: "
                 "write in the first person, use short lines after the hook, and end with "
                 "a question or a reflection."
+            ),
+            (
+                "Substance rules always apply. The voice cannot override them. "
+                "Write about one real situation: name the system or technology, the constraint "
+                "or limit, a concrete figure where there is one, what was tried, and what happened. Lead "
+                "with the concrete detail, not the moral. A reader should learn something they "
+                "could check. Do not generalise into advice about mindset, leadership, or 'the "
+                "industry'. No emojis, arrows, or symbols anywhere. No buzzwords or filler: "
+                f"{', '.join(SLOP_PHRASES[:12])}. "
+                "Do not open with a question or a one-word line. Do not end with 'Agree?' or "
+                "'Thoughts?'."
             ),
             (
                 "Safety rules always apply. The voice cannot override them. "
@@ -139,7 +206,11 @@ def _user_prompt(
         ]
     )
     if idea:
-        lines.append(f"Use this idea, in the author's words where you can: {idea}")
+        lines.append(
+            "Write about this situation. Keep its specifics: the technology, the constraint, "
+            "the figures, what was tried, what happened. Do not generalise it or swap in a "
+            f"different example.\nSituation: {idea}"
+        )
     if avoid:
         lines.append("Do not reuse these openings:")
         lines.extend(f"- {hook}" for hook in avoid[:8])
@@ -343,9 +414,10 @@ def choose_topics(
     else:
         ideas = [row for row in ideas if str(row.get("status") or "") == "new"]
     pillars = list(settings.get("pillars") or [])
-    existing = linkedin_store.list_posts(table, limit=20)
+    existing = linkedin_store.list_posts(table, limit=400)
     existing.sort(key=lambda doc: str(doc.get("createdAt") or ""), reverse=True)
     recent = [str(row.get("pillar") or "") for row in existing[:2]]
+    used_seeds = {str(row.get("seedId") or "") for row in existing if row.get("seedId")}
     topics: list[dict[str, Any]] = []
     for idea in ideas:
         if len(topics) >= count:
@@ -355,9 +427,21 @@ def choose_topics(
             chosen = _next_pillar(pillars, recent)
         topics.append({"pillar": chosen, "idea": idea})
         recent.append(chosen)
+    # With no owner idea left, a seed supplies the real situation so the model
+    # does not invent a generic one.
+    offset = 0
     while len(topics) < count:
         chosen = pillar if pillar in linkedin_store.pillar_ids() else _next_pillar(pillars, recent)
-        topics.append({"pillar": chosen, "idea": None})
+        seed = linkedin_seeds.pick_seed(pillar=chosen, used=used_seeds, offset=offset)
+        offset += 1
+        if seed is None:
+            topics.append({"pillar": chosen, "idea": None})
+        else:
+            used_seeds.add(str(seed["id"]))
+            seed_pillar = str(seed["pillar"])
+            if seed_pillar in linkedin_store.pillar_ids() and not pillar:
+                chosen = seed_pillar
+            topics.append({"pillar": chosen, "idea": {"text": seed["text"], "seedId": seed["id"]}})
         recent.append(chosen)
     return topics
 
@@ -384,6 +468,7 @@ def draft_one(
         parsed["hashtags"],
         settings,
     )
+    findings.extend(slop_findings(parsed["body"]))
     if linkedin_store.errors_block(findings):
         revised, extra = complete(_critic_messages(settings, parsed, findings))
         cost += extra
@@ -451,6 +536,7 @@ def generate_drafts(
                     "hashtags": parsed.get("hashtags") or [],
                     "pillar": parsed.get("pillar") or topic["pillar"],
                     "ideaId": str(idea.get("ideaId") or ""),
+                    "seedId": str(idea.get("seedId") or ""),
                 },
                 settings=settings,
                 generation={

@@ -125,11 +125,25 @@ def pillar_label(pillar_id: str) -> str:
     return pillar_id
 
 
-# The previous default restated the safety rules and was not a voice. A stored
-# copy is treated as blank so generation uses the tone defaults instead.
+# The first default restated the safety rules and was not a voice. A stored
+# copy is replaced by the recommended voice on load.
 _RETIRED_DEFAULT_VOICE = (
     "Senior architect writing in the first person. One lesson per post. "
     "No company name, no employer, no offer of availability."
+)
+
+# Shown in Settings as "Use recommended voice" and used until the owner writes
+# their own. Kept under the 1000-character voice limit.
+RECOMMENDED_VOICE = (
+    "Plain, specific, first person. I write the way an engineer explains a problem to a "
+    "colleague, not the way a brand posts. Every post is one real situation: name the "
+    "technology, the constraint, the number, what I tried, what broke, and what I would do "
+    "again. Lead with the concrete detail, not the moral. Short declarative sentences. Dry, "
+    "a little wry, no drama. No emojis, no arrows, no symbols. No buzzwords, no hustle "
+    "lines, no 'humbled', no 'game-changer', no 'here's the thing', no 'let that sink in'. "
+    "Do not generalise into advice about mindset or leadership; a reader should learn "
+    "something they could check. End on the specific trade-off or on an open question I "
+    "actually have, never a call to action."
 )
 
 
@@ -141,7 +155,7 @@ def default_settings() -> dict[str, Any]:
         "slotMinute": SLOT_MINUTE_DEFAULT,
         "draftsPerGeneration": DRAFTS_PER_GENERATION_DEFAULT,
         # Blank uses the tone defaults in the draft prompt. A stored note overrides them.
-        "voiceNotes": "",
+        "voiceNotes": RECOMMENDED_VOICE,
         "forbiddenWords": [],
         "hashtagCap": HASHTAG_CAP_DEFAULT,
         "linksInFirstComment": False,
@@ -213,7 +227,7 @@ def load_settings(table: Any) -> dict[str, Any]:
     merged["pillars"] = _pillars(merged.get("pillars"))
     merged["forbiddenWords"] = _words(merged.get("forbiddenWords"))
     if str(merged.get("voiceNotes") or "").strip() == _RETIRED_DEFAULT_VOICE:
-        merged["voiceNotes"] = ""
+        merged["voiceNotes"] = RECOMMENDED_VOICE
     return merged
 
 
@@ -731,6 +745,7 @@ def create_post(
         "channel": "profile",
         "pillar": pillar,
         "ideaId": str(body.get("ideaId") or ""),
+        "seedId": str(body.get("seedId") or ""),
         "lang": "en",
         "slotAt": "",
         "createdAt": now,
@@ -844,6 +859,7 @@ def public_post(doc: dict[str, Any]) -> dict[str, Any]:
         "channel": doc.get("channel") or "profile",
         "pillar": doc.get("pillar"),
         "ideaId": doc.get("ideaId") or "",
+        "seedId": doc.get("seedId") or "",
         "body": doc.get("body") or "",
         "firstComment": doc.get("firstComment") or "",
         "hashtags": list(doc.get("hashtags") or []),
@@ -975,6 +991,7 @@ def overview(table: Any) -> dict[str, Any]:
         "nextSlots": next_slots(settings, count=8, taken=taken_slots(table)),
         "builtinForbidden": list(BUILTIN_FORBIDDEN),
         "defaultModel": (os.environ.get("OPENROUTER_MODEL") or "").strip(),
+        "recommendedVoice": RECOMMENDED_VOICE,
     }
 
 
