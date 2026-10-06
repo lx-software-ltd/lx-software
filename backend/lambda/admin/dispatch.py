@@ -1250,6 +1250,12 @@ def _internal_linkedin_image(event):
     return linkedin.handle_post_image(event)
 
 
+def _internal_linkedin_image_brief(event):
+    import linkedin
+
+    return linkedin.handle_post_brief(event)
+
+
 def _internal_linkedin_character(event):
     import linkedin
 
@@ -1284,6 +1290,7 @@ EARLY_INTERNAL = {
     'linkedin_weekly_plan': _internal_linkedin_weekly_plan,
     'linkedin_publish_due': _internal_linkedin_publish_due,
     'linkedin_image': _internal_linkedin_image,
+    'linkedin_image_brief': _internal_linkedin_image_brief,
     'linkedin_character': _internal_linkedin_character,
 }
 

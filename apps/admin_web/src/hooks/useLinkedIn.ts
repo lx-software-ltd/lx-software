@@ -63,7 +63,10 @@ export function useLinkedIn() {
     queryKey: [...LINKEDIN_KEY, "posts"] as const,
     queryFn: () => adminFetchJson<{ items: LinkedInPost[] }>("/lx-software/linkedin/posts"),
     refetchInterval: (query) => {
-      const pending = query.state.data?.items.some((row) => row.image?.status === "pending") ?? false;
+      const pending =
+        query.state.data?.items.some(
+          (row) => row.image?.status === "pending" || row.image?.brief?.status === "pending",
+        ) ?? false;
       if (!pending) {
         pendingSince.current = null;
         return false;
