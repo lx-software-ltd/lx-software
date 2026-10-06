@@ -503,7 +503,7 @@ function PostEditor({
                 </AdminField>
                 <button
                   type="button"
-                  className="btn btn-outline-secondary btn-sm mt-2"
+                  className="btn btn-outline-secondary btn-sm mt-2 mb-2"
                   disabled={!enabled || post.image?.status === "pending" || linkedIn.redrawImage.isPending}
                   onClick={() => {
                     setLocalError(null);
