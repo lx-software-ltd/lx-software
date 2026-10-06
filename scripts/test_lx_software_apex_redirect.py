@@ -44,6 +44,32 @@ class ApexRedirectTests(unittest.TestCase):
         self.assertIn("301", source)
         self.assertNotIn("www.lx-software.com/*", source)
 
+    def test_single_redirect_keeps_path_and_rejects_a_literal_star(self) -> None:
+        payload = self.mod.apex_redirect_payload()
+        self.assertTrue(self.mod.apex_redirect_is_correct(payload))
+        self.assertNotIn("*", self.mod.APEX_TARGET_EXPRESSION)
+        broken = {
+            "enabled": True,
+            "expression": '(http.request.full_uri wildcard r"https://lx-software.com/*")',
+            "action": "redirect",
+            "action_parameters": {
+                "from_value": {
+                    "preserve_query_string": True,
+                    "status_code": 301,
+                    "target_url": {
+                        "expression": (
+                            'wildcard_replace(http.request.full_uri, '
+                            r'r"https://lx-software.com/*", '
+                            r'r"https://www.lx-software.com/*")'
+                        )
+                    },
+                }
+            },
+        }
+        self.assertTrue(self.mod.is_apex_redirect_rule(broken))
+        self.assertTrue(self.mod.is_literal_star_www_redirect(broken))
+        self.assertFalse(self.mod.apex_redirect_is_correct(broken))
+
 
 if __name__ == "__main__":
     unittest.main()
