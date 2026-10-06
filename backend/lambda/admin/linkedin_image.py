@@ -155,6 +155,8 @@ def queue_for_post(
         and not linkedin_store.image_pending_stale(current)
     ):
         raise LinkedInError("A picture is already being drawn.")
+    if not force and linkedin_store.brief_pending(current):
+        raise LinkedInError("The scene is still being written.")
     # Blank fields stay blank here; the worker writes them from the post.
     scene_text = (scene or str(current.get("scene") or "")).strip()
     caption_text = linkedin_store.finish_caption(caption or str(current.get("caption") or ""))
@@ -261,18 +263,14 @@ def picture_text(
     )
 
 
-def write_brief(
-    table: Any,
-    post_id: str,
-    *,
-    brief: Callable[..., dict[str, str]] | None = None,
-) -> dict[str, Any]:
-    """Write a new scene, expression, and caption for the post without drawing.
+def queue_brief(table: Any, post_id: str) -> dict[str, Any]:
+    """Ask the worker for a new scene, expression, and caption. Nothing is drawn.
 
-    All three are replaced from the post. A ready picture stays as it is until
-    the owner redraws. Raises LinkedInError when the brief cannot be written.
+    The model call runs in the worker, never inside the HTTP request: API
+    Gateway cuts an integration at 30 s, and the browser reports that cut as a
+    network error. The SPA polls while `image.brief.status` is pending.
     """
-    doc = linkedin_store.get_post(table, post_id, consistent=True)
+    doc = linkedin_store.get_post(table, post_id)
     if not doc:
         raise LinkedInError("post not found")
     if str(doc.get("status") or "") in ("published", "archived"):
@@ -280,9 +278,46 @@ def write_brief(
     settings = linkedin_store.load_settings(table)
     if not settings.get("imagesEnabled"):
         raise LinkedInError("Pictures are turned off.")
+    if not str(doc.get("body") or "").strip():
+        raise LinkedInError("Write the post first.")
+    current = doc.get("image") if isinstance(doc.get("image"), dict) else {}
+    if str(current.get("status") or "") == "pending" and not linkedin_store.image_pending_stale(current):
+        raise LinkedInError("A picture is already being drawn.")
+    if linkedin_store.brief_pending(current):
+        raise LinkedInError("The scene is still being written.")
+    _mark(table, post_id, brief={"status": "pending", "requestedAt": board_store.now_iso(), "error": ""})
+    accepted = False
+    try:
+        accepted = board_async.try_invoke_event({"internal": "linkedin_image_brief", "postId": post_id})
+    except Exception as exc:  # noqa: BLE001 — a failed enqueue is shown on the post, not raised
+        _log_event("warning", tag="linkedin_image_enqueue_failed", error=str(exc)[:300])
+    if not accepted:
+        _mark(table, post_id, brief={"status": "failed", "error": "Could not queue the scene."})
+    return linkedin_store.get_post(table, post_id, consistent=True) or doc
+
+
+def write_brief(
+    table: Any,
+    post_id: str,
+    *,
+    brief: Callable[..., dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Worker: write a new scene, expression, and caption for the post without drawing.
+
+    All three are replaced from the post. A ready picture stays as it is until
+    the owner redraws. The outcome is recorded on `image.brief`.
+    """
+    doc = linkedin_store.get_post(table, post_id, consistent=True)
+    if not doc:
+        return {"ok": False, "error": "post not found"}
+    settings = linkedin_store.load_settings(table)
+    if not settings.get("imagesEnabled"):
+        _mark(table, post_id, brief={"status": "failed", "error": "Pictures are turned off."})
+        return {"ok": False, "error": "disabled"}
     body = str(doc.get("body") or "").strip()
     if not body:
-        raise LinkedInError("Write the post first.")
+        _mark(table, post_id, brief={"status": "failed", "error": "Write the post first."})
+        return {"ok": False, "error": "empty"}
     import linkedin_draft
 
     writer = brief or linkedin_draft.picture_brief
@@ -290,7 +325,8 @@ def write_brief(
         written, cost = writer(table=table, settings=settings, body=body)
     except Exception as exc:  # noqa: BLE001 — the owner sees the reason and can try again
         _log_event("warning", tag="linkedin_picture_brief_failed", error=str(exc)[:300])
-        raise LinkedInError(f"Could not write the scene: {str(exc)[:200]}") from exc
+        _mark(table, post_id, brief={"status": "failed", "error": f"Could not write the scene: {str(exc)[:200]}"})
+        return {"ok": False, "error": str(exc)[:300]}
     if cost:
         try:
             linkedin_store.add_spend(table, cost)
@@ -300,15 +336,17 @@ def write_brief(
     expression = str(written.get("imageExpression") or "").strip()
     caption = linkedin_store.finish_caption(str(written.get("imageCaption") or ""))
     if not (scene and caption):
-        raise LinkedInError("The model did not return a scene and a caption. Try again.")
+        _mark(table, post_id, brief={"status": "failed", "error": "The model did not return a scene and a caption. Try again."})
+        return {"ok": False, "error": "incomplete"}
     _mark(
         table,
         post_id,
         scene=scene[: linkedin_store.IMAGE_SCENE_MAX],
         expression=(expression or linkedin_store.FALLBACK_IMAGE_EXPRESSION)[: linkedin_store.IMAGE_EXPRESSION_MAX],
         caption=caption[: linkedin_store.IMAGE_CAPTION_MAX],
+        brief={"status": "done", "error": ""},
     )
-    return linkedin_store.get_post(table, post_id, consistent=True) or doc
+    return {"ok": True, "postId": post_id}
 
 
 def render_post(

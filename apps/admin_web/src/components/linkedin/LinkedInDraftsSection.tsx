@@ -382,6 +382,7 @@ function PostEditor({
   const scene = picture?.scene ?? post?.image?.scene ?? "";
   const caption = picture?.caption ?? post?.image?.caption ?? "";
   const expression = picture?.expression ?? post?.image?.expression ?? "";
+  const briefPending = post?.image?.brief?.status === "pending" || linkedIn.rewriteBrief.isPending;
   const tags = hashtags.split(/[\s,]+/).map((tag) => tag.replace(/^#/, "")).filter(Boolean);
   const findings = guardrails(body, firstComment, tags, settings);
   const blocked = hasBlockingGuardrail(findings);
@@ -531,11 +532,14 @@ function PostEditor({
                     unless it ends with ? or !.
                   </p>
                 </AdminField>
+                {post.image?.brief?.status === "failed" ? (
+                  <p className="small text-danger mb-2">{post.image.brief.error || "The scene could not be written."}</p>
+                ) : null}
                 <div className="d-flex flex-wrap gap-2 mt-2">
                   <button
                     type="button"
                     className="btn btn-outline-secondary btn-sm"
-                    disabled={!enabled || post.image?.status === "pending" || linkedIn.rewriteBrief.isPending || linkedIn.redrawImage.isPending}
+                    disabled={!enabled || post.image?.status === "pending" || briefPending || linkedIn.redrawImage.isPending}
                     onClick={() => {
                       setLocalError(null);
                       void linkedIn.rewriteBrief
@@ -546,12 +550,12 @@ function PostEditor({
                         });
                     }}
                   >
-                    {linkedIn.rewriteBrief.isPending ? "Writing…" : "New scene, expression and caption"}
+                    {briefPending ? "Writing…" : "New scene, expression and caption"}
                   </button>
                   <button
                     type="button"
                     className="btn btn-outline-secondary btn-sm"
-                    disabled={!enabled || post.image?.status === "pending" || linkedIn.rewriteBrief.isPending || linkedIn.redrawImage.isPending}
+                    disabled={!enabled || post.image?.status === "pending" || briefPending || linkedIn.redrawImage.isPending}
                     onClick={() => {
                       setLocalError(null);
                       void linkedIn.redrawImage.mutateAsync({ postId: post.postId, scene, caption, expression }).catch((caught: unknown) => {

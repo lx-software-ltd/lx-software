@@ -304,9 +304,10 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
         caption: "Fourteen percent of these people do not exist, and the model wants to give them deadlines.",
         error: "",
         model: current?.model ?? "",
+        brief: { status: "done", error: "" },
       },
     };
-    return json({ item: state.linkedin.posts[index] });
+    return json({ item: state.linkedin.posts[index] }, 202);
   }
   if (path.endsWith("/image/regenerate") && method === "POST" && index >= 0) {
     const body = parseBody(ctx.init);

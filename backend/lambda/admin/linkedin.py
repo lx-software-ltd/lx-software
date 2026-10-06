@@ -565,6 +565,16 @@ def handle_post_image(event: dict[str, Any] | None = None) -> dict[str, Any]:
     return linkedin_image.render_post(_table(), post_id)
 
 
+def handle_post_brief(event: dict[str, Any] | None = None) -> dict[str, Any]:
+    event = event or {}
+    if not linkedin_store.feature_enabled():
+        return {"skipped": "disabled"}
+    post_id = str(event.get("postId") or "")
+    if not post_id:
+        return {"skipped": "missing_post"}
+    return linkedin_image.write_brief(_table(), post_id)
+
+
 def handle_character_draw(event: dict[str, Any] | None = None) -> dict[str, Any]:
     event = event or {}
     if not linkedin_store.feature_enabled():
@@ -676,20 +686,20 @@ def _image_regenerate(event: dict[str, Any], method: str, post_id: str, user_sub
 
 
 def _image_brief(event: dict[str, Any], method: str, post_id: str, user_sub: str | None) -> dict[str, Any]:
-    """Write a new scene, expression, and caption from the post. The picture is not redrawn."""
+    """Queue a new scene, expression, and caption from the post. The picture is not redrawn."""
     if method != "POST":
         return _json_response(404, {"message": "Not found"})
     blocked = _require_enabled()
     if blocked:
         return blocked
     try:
-        doc = linkedin_image.write_brief(_table(), post_id)
+        doc = linkedin_image.queue_brief(_table(), post_id)
     except LinkedInError as exc:
         text = str(exc)
-        status = 404 if text == "post not found" else 502 if text.startswith("Could not write") else 400
+        status = 404 if text == "post not found" else 409 if text.endswith(("being drawn.", "being written.")) else 400
         return _json_response(status, {"message": text})
     _audit(user_sub, "LINKEDIN_IMAGE_BRIEF", post_id, event)
-    return _json_response(200, {"item": linkedin_store.public_post(doc)})
+    return _json_response(202, {"item": linkedin_store.public_post(doc)})
 
 
 def _image(event: dict[str, Any], method: str, post_id: str, user_sub: str | None) -> dict[str, Any]:

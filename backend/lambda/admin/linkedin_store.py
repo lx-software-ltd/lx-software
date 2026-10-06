@@ -165,6 +165,8 @@ IMAGE_CAPTION_MAX = 140
 IMAGE_SCENE_MAX = 400
 IMAGE_EXPRESSION_MAX = 80
 IMAGE_PENDING_SECONDS = 600
+# Two 25 s model attempts plus the Event invoke; past this the worker is gone.
+BRIEF_PENDING_SECONDS = 120
 # A character draw that is still queued or running after this is the Lambda
 # timing out (300s) without writing the job row.
 CHARACTER_JOB_STALE_SECONDS = 360
@@ -1418,6 +1420,9 @@ def public_image(image: dict[str, Any] | None) -> dict[str, Any] | None:
     }
     if content:
         out["contentType"] = content
+    brief = public_brief(image)
+    if brief:
+        out["brief"] = brief
     return out
 
 
@@ -1442,6 +1447,34 @@ def publishable_image(image: dict[str, Any] | None) -> dict[str, Any] | None:
 def image_publishable(image: dict[str, Any] | None) -> bool:
     """True when publish should attach the stored PNG."""
     return publishable_image(image) is not None
+
+
+def brief_pending(image: dict[str, Any] | None, *, now: datetime | None = None) -> bool:
+    """A scene rewrite is queued or running and not older than the worker could still be."""
+    brief = image.get("brief") if isinstance(image, dict) else None
+    if not isinstance(brief, dict) or str(brief.get("status") or "") != "pending":
+        return False
+    requested = _parse_slot(str(brief.get("requestedAt") or ""))
+    if requested is None:
+        return False
+    moment = now or datetime.now(ZoneInfo("UTC"))
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=ZoneInfo("UTC"))
+    return (moment - requested).total_seconds() <= BRIEF_PENDING_SECONDS
+
+
+def public_brief(image: dict[str, Any] | None) -> dict[str, str] | None:
+    """Scene-rewrite state for the SPA. A pending rewrite that is too old is shown as failed."""
+    brief = image.get("brief") if isinstance(image, dict) else None
+    if not isinstance(brief, dict):
+        return None
+    status = str(brief.get("status") or "")
+    if not status:
+        return None
+    error = str(brief.get("error") or "")
+    if status == "pending" and not brief_pending(image):
+        status, error = "failed", "The scene took too long to write. Try again."
+    return {"status": status, "error": error}
 
 
 def image_pending_stale(image: dict[str, Any] | None, *, now: datetime | None = None) -> bool:

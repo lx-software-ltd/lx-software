@@ -7,6 +7,7 @@ import time
 import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 from test_support import FakeTable, install_aws_stubs
 
@@ -1404,11 +1405,26 @@ class LinkedInImageTests(unittest.TestCase):
                 0.001,
             )
 
-        stored = linkedin_image.write_brief(self.table, doc["postId"], brief=brief)
+        with patch("board_async.try_invoke_event", return_value=True) as invoke:
+            queued = linkedin_image.queue_brief(self.table, doc["postId"])
+        self.assertEqual(invoke.call_args.args[0]["internal"], "linkedin_image_brief")
+        self.assertEqual(linkedin_store.public_post(queued)["image"]["brief"], {"status": "pending", "error": ""})
+        # The old fields and the ready picture stay while the worker writes.
+        self.assertEqual(queued["image"]["caption"], "Old line.")
+        with self.assertRaises(LinkedInError) as twice:
+            linkedin_image.queue_brief(self.table, doc["postId"])
+        self.assertIn("still being written", str(twice.exception))
+        with self.assertRaises(LinkedInError):
+            linkedin_image.queue_for_post(self.table, doc["postId"], scene="A desk.", caption="Fine.")
+
+        result = linkedin_image.write_brief(self.table, doc["postId"], brief=brief)
+        self.assertTrue(result["ok"])
+        stored = linkedin_store.get_post(self.table, doc["postId"])
         self.assertIn("Fourteen percent failed validation.", calls[0])
         self.assertEqual(stored["image"]["caption"], "Fourteen percent of these people do not exist.")
         self.assertEqual(stored["image"]["expression"], "baffled, one eyebrow up")
         self.assertTrue(stored["image"]["scene"].startswith("At a desk"))
+        self.assertEqual(stored["image"]["brief"]["status"], "done")
         # The ready picture is kept until the owner redraws.
         self.assertEqual(stored["image"]["status"], "ready")
         self.assertEqual(stored["image"]["contentType"], "image/png")
@@ -1417,11 +1433,14 @@ class LinkedInImageTests(unittest.TestCase):
         def broken(**_kwargs):
             raise RuntimeError("OpenRouter down")
 
-        with self.assertRaises(LinkedInError) as caught:
-            linkedin_image.write_brief(self.table, doc["postId"], brief=broken)
-        self.assertIn("Could not write the scene", str(caught.exception))
-        with self.assertRaises(LinkedInError):
-            linkedin_image.write_brief(self.table, "missing", brief=brief)
+        failed = linkedin_image.write_brief(self.table, doc["postId"], brief=broken)
+        self.assertFalse(failed["ok"])
+        public = linkedin_store.public_post(linkedin_store.get_post(self.table, doc["postId"]))
+        self.assertEqual(public["image"]["brief"]["status"], "failed")
+        self.assertIn("Could not write the scene", public["image"]["brief"]["error"])
+        # The last good fields are still there.
+        self.assertEqual(public["image"]["caption"], "Fourteen percent of these people do not exist.")
+        self.assertFalse(linkedin_image.write_brief(self.table, "missing", brief=brief)["ok"])
 
     def test_a_post_with_no_picture_yet_shows_the_written_fields(self) -> None:
         doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOne lesson."})
@@ -1429,12 +1448,31 @@ class LinkedInImageTests(unittest.TestCase):
         def brief(**_kwargs):
             return ({"imageScene": "A desk.", "imageExpression": "weary", "imageCaption": "Fine"}, 0.0)
 
-        stored = linkedin_image.write_brief(self.table, doc["postId"], brief=brief)
-        public = linkedin_store.public_post(stored)
+        self.assertTrue(linkedin_image.write_brief(self.table, doc["postId"], brief=brief)["ok"])
+        public = linkedin_store.public_post(linkedin_store.get_post(self.table, doc["postId"]))
         self.assertIsNotNone(public["image"])
         self.assertEqual(public["image"]["caption"], "Fine.")
         self.assertNotIn("contentType", public["image"])
         self.assertNotEqual(public["image"]["status"], "ready")
+
+    def test_a_scene_rewrite_the_worker_never_finished_is_shown_as_failed(self) -> None:
+        image = {"status": "ready", "contentType": "image/png", "brief": {"status": "pending", "requestedAt": "2026-10-06T03:00:00.000Z"}}
+        fresh = datetime(2026, 10, 6, 3, 1, tzinfo=ZoneInfo("UTC"))
+        self.assertTrue(linkedin_store.brief_pending(image, now=fresh))
+        late = datetime(2026, 10, 6, 3, 5, tzinfo=ZoneInfo("UTC"))
+        self.assertFalse(linkedin_store.brief_pending(image, now=late))
+        with patch.object(linkedin_store, "brief_pending", return_value=False):
+            shown = linkedin_store.public_brief(image)
+        self.assertEqual(shown["status"], "failed")
+        self.assertIn("took too long", shown["error"])
+        # A stale rewrite does not block a new one or a redraw.
+        doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOne lesson."})
+        linkedin_store.put_post(self.table, {**doc, "image": image})
+        with patch.object(linkedin_store, "brief_pending", return_value=False), patch(
+            "board_async.try_invoke_event", return_value=True
+        ):
+            queued = linkedin_image.queue_brief(self.table, doc["postId"])
+        self.assertEqual(queued["image"]["brief"]["status"], "pending")
 
     def test_the_brief_route_and_an_owner_written_post(self) -> None:
         patcher = patch.object(runtime, "_ddb")
@@ -1456,18 +1494,32 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertEqual(item["image"]["status"], "pending")
         self.assertEqual(invoke.call_args.args[0]["internal"], "linkedin_image")
         linkedin_store.put_post(self.table, {**linkedin_store.get_post(self.table, item["postId"]), "image": {"status": "failed"}})
+        # The rewrite is queued, never run inside the request: API Gateway cuts at 30 s.
+        with patch("board_async.try_invoke_event", return_value=True) as queued, patch(
+            "linkedin_draft.picture_brief", side_effect=AssertionError("must not run in the request")
+        ):
+            response = lambda_handler(_event(f"/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None)
+        self.assertEqual(response["statusCode"], 202)
+        self.assertEqual(queued.call_args.args[0], {"internal": "linkedin_image_brief", "postId": item["postId"]})
+        self.assertEqual(_body(response)["item"]["image"]["brief"]["status"], "pending")
+        again = lambda_handler(_event(f"/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None)
+        self.assertEqual(again["statusCode"], 409)
         written = (
             {"imageScene": "At a desk, head scratched.", "imageExpression": "baffled", "imageCaption": "Why is it Tuesday"},
             0.002,
         )
         with patch("linkedin_draft.picture_brief", return_value=written):
-            response = lambda_handler(_event(f"/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None)
-        self.assertEqual(response["statusCode"], 200)
-        self.assertEqual(_body(response)["item"]["image"]["caption"], "Why is it Tuesday.")
-        self.assertEqual(_body(response)["item"]["image"]["expression"], "baffled")
-        with patch("linkedin_draft.picture_brief", side_effect=RuntimeError("down")):
-            failed = lambda_handler(_event(f"/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None)
-        self.assertEqual(failed["statusCode"], 502)
+            worked = linkedin.handle_post_brief({"postId": item["postId"]})
+        self.assertTrue(worked["ok"])
+        listed = lambda_handler(_event("/lx-software/linkedin/posts"), None)
+        row = next(r for r in _body(listed)["items"] if r["postId"] == item["postId"])
+        self.assertEqual(row["image"]["caption"], "Why is it Tuesday.")
+        self.assertEqual(row["image"]["expression"], "baffled")
+        self.assertEqual(row["image"]["brief"]["status"], "done")
+        with patch("board_async.try_invoke_event", return_value=False):
+            dropped = lambda_handler(_event(f"/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None)
+        self.assertEqual(dropped["statusCode"], 202)
+        self.assertEqual(_body(dropped)["item"]["image"]["brief"]["status"], "failed")
         missing = lambda_handler(_event("/lx-software/linkedin/posts/nope/image/brief", "POST", {}), None)
         self.assertEqual(missing["statusCode"], 404)
 

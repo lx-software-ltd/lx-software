@@ -156,6 +156,8 @@ export type LinkedInImage = {
   expression?: string;
   error?: string;
   model?: string;
+  /** A scene / expression / caption rewrite in the worker. */
+  brief?: { status?: string; error?: string };
 };
 
 export type LinkedInCharacter = {
