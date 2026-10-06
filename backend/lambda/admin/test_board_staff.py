@@ -326,6 +326,43 @@ class StaffEngineTests(BoardTestCase):
         scratch = board_staff._blob_get(board_staff._scratchpad_key(task["taskId"])).decode()  # noqa: SLF001
         self.assertIn("cut off at the length limit", scratch)
 
+    def test_yielded_step_is_not_idle_and_reinvokes(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        settings = board_store.load_settings(self.table)
+        settings["staff"] = board_store.normalize_staff_config({**(settings.get("staff") or {}), "enabled": True})
+        board_store.save_settings(self.table, settings)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        task = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="content-marketer",
+            origin="duty",
+            brief="content plan",
+            deliverable_type="json",
+            event_ref={"kind": "duty", "id": "content-plan:2026-10-06"},
+            created_by="test",
+        )
+        task["status"] = "running"
+        task["idleSteps"] = 2
+        board_store.put_task(self.table, task)
+        result = board_tools.ToolLoopResult(
+            text="",
+            usage={"completionTokens": 300},
+            model="test",
+            calls=[{"callId": "c1", "op": "research_fetch_page", "status": "ok", "summary": "fetched"}],
+            rounds=1,
+            yielded=True,
+        )
+        queued: list[dict[str, Any]] = []
+        with patch.object(board_async, "invoke_async", side_effect=lambda payload, *, fallback=None: queued.append(payload)):
+            board_staff._complete_step(self.table, task["taskId"], task, result, 1)  # noqa: SLF001
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved["status"], "running")
+        self.assertEqual(int(saved.get("idleSteps") or 0), 0)
+        self.assertEqual(int(saved.get("yieldedSteps") or 0), 1)
+        self.assertTrue(any(p.get("internal") == "board_staff_step" and p.get("step") == 2 for p in queued))
+
     def setUp(self) -> None:
         super().setUp()
         os.environ["BOARD_STAFF_ENABLED"] = "true"

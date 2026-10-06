@@ -208,6 +208,7 @@ def write_python(finance: dict, timeouts: dict, domains: dict, scopes: dict) -> 
         "BOARD_STAFF_NEWSLETTER_LISTS = tuple(BOARD_STAFF_CONTRACT[\"newsletterLists\"])",
         "_BOARD_STAFF_LIMITS = BOARD_STAFF_CONTRACT[\"limits\"]",
         "BOARD_STAFF_STEP_MAX_SECONDS = int(_BOARD_STAFF_LIMITS[\"staffStepMaxSeconds\"])",
+        "BOARD_STAFF_STEP_YIELD_SECONDS = int(_BOARD_STAFF_LIMITS.get(\"staffStepYieldSeconds\") or 0)",
         "BOARD_STAFF_MAX_STEPS_PER_TASK = int(_BOARD_STAFF_LIMITS[\"maxStepsPerTask\"])",
         "BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK = int(_BOARD_STAFF_LIMITS[\"maxIdleStepsPerTask\"])",
         "BOARD_STAFF_MAX_REVISIONS = int(_BOARD_STAFF_LIMITS[\"maxRevisions\"])",

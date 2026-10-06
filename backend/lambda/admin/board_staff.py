@@ -35,6 +35,7 @@ from contract_constants import (
     BOARD_STAFF_SEATS,
     BOARD_STAFF_STEP_MAX_SECONDS,
     BOARD_STAFF_STEP_MODEL_LIST,
+    BOARD_STAFF_STEP_YIELD_SECONDS,
     BOARD_STAFF_STEP_MODELS,
     BOARD_STAFF_TASK_BUDGET_DESK_USD,
     BOARD_STAFF_TASK_BUDGET_MAX_USD,
@@ -753,6 +754,7 @@ def run_step(payload: dict[str, Any]) -> None:
             max_seconds=loop_seconds,
             on_progress=_on_progress,
             require_op="task_finish" if require_finish else None,
+            yield_below_seconds=BOARD_STAFF_STEP_YIELD_SECONDS,
         )
     except Exception as exc:
         _on_step_exception(table, task, payload, wanted, exc)
@@ -1844,6 +1846,7 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
         _mark_delivered(table, latest, board_store.now_iso())
         return
     truncated = board_tools._completion_hit_length_limit(getattr(result, "completion", None))  # noqa: SLF001
+    yielded = bool(getattr(result, "yielded", False)) and bool(_productive_calls(calls))
     similar_to_last = False
     if seq > 1:
         prior = board_store.list_task_steps(table, task_id)
@@ -1852,7 +1855,12 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
     repeated_calls = _same_as_previous_step(table, task_id, calls)
     intra_poll = _repeats_within_step(calls)
     poll_loop = (repeated_calls or intra_poll) and _counts_as_poll_loop(latest, calls)
-    if truncated:
+    if yielded:
+        # The loop stopped before a call that would not fit the step budget;
+        # the seat has not answered yet, so this is not an idle step.
+        latest["idleSteps"] = 0
+        latest["yieldedSteps"] = int(latest.get("yieldedSteps") or 0) + 1
+    elif truncated:
         latest["idleSteps"] = 0
         nudge = _CONTENT_PLAN_LENGTH_NUDGE if _is_content_plan(latest) else _LENGTH_CUTOFF_NUDGE
         combined = _append_scratchpad(latest, nudge)

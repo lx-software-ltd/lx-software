@@ -570,6 +570,74 @@ class TestChatToolLoop(ToolsTestCase):
         self.assertEqual(scripted.requests[-1]["tool_choice"], "none")
         self.assertEqual(len(scripted.requests), board_tools.BOARD_MAX_TOOL_ROUNDS_PER_TURN + 1)
 
+    def test_loop_yields_before_a_final_call_that_would_not_fit(self) -> None:
+        """Staff steps: once a tool round leaves less than ``yield_below_seconds``
+        of the budget, the loop stops without the final model call and reports
+        ``yielded`` so the next step starts fresh instead of being cut."""
+        scripted = self.use_script([[("github_search_issues", {"query": "booking", "state": "open"})]], "never sent")
+        settings = board_store.load_settings(self.table)
+        ctx = board_tools.ToolContext(table=self.table, settings=settings, persona_id="cto", kind="chat")
+        clock = [1000.0]
+        real_execute = board_tools.execute_call
+
+        def slow_execute(*args: Any, **kwargs: Any) -> Any:
+            # The first tool round "takes" 100 s of a 150 s budget.
+            clock[0] += 100.0
+            return real_execute(*args, **kwargs)
+
+        with (
+            patch.object(board_tools.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(board_tools, "execute_call", side_effect=slow_execute),
+        ):
+            result = board_tools.run_tool_loop(
+                ctx=ctx,
+                messages=[{"role": "system", "content": "You are the CTO."}, {"role": "user", "content": "Check GitHub."}],
+                model="test-model",
+                timeout=30,
+                max_tokens=400,
+                temperature=0.2,
+                json_mode=False,
+                tag="test_loop",
+                max_seconds=150,
+                yield_below_seconds=60,
+            )
+        self.assertTrue(result.yielded)
+        self.assertEqual(result.text, "")
+        self.assertEqual(len(result.calls), 1)
+        self.assertEqual(result.calls[0]["op"], "github_search_issues")
+        # Only the round that requested the tool reached the model.
+        self.assertEqual(len(scripted.requests), 1)
+
+    def test_loop_without_yield_budget_still_makes_the_final_call(self) -> None:
+        scripted = self.use_script([[("github_search_issues", {"query": "booking", "state": "open"})]], "Final answer.")
+        settings = board_store.load_settings(self.table)
+        ctx = board_tools.ToolContext(table=self.table, settings=settings, persona_id="cto", kind="chat")
+        clock = [1000.0]
+        real_execute = board_tools.execute_call
+
+        def slow_execute(*args: Any, **kwargs: Any) -> Any:
+            clock[0] += 100.0
+            return real_execute(*args, **kwargs)
+
+        with (
+            patch.object(board_tools.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(board_tools, "execute_call", side_effect=slow_execute),
+        ):
+            result = board_tools.run_tool_loop(
+                ctx=ctx,
+                messages=[{"role": "system", "content": "You are the CTO."}, {"role": "user", "content": "Check GitHub."}],
+                model="test-model",
+                timeout=30,
+                max_tokens=400,
+                temperature=0.2,
+                json_mode=False,
+                tag="test_loop",
+                max_seconds=150,
+            )
+        self.assertFalse(result.yielded)
+        self.assertEqual(result.text, "Final answer.")
+        self.assertEqual(len(scripted.requests), 2)
+
     def test_call_cap_per_reply(self) -> None:
         many = [("github_get_issue", {"number": n}) for n in range(1, 12)]
         scripted = self.use_script([many], "ok")

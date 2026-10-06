@@ -1340,6 +1340,7 @@ def run_tool_loop(
     max_seconds: int,
     on_progress: Callable[[list[dict[str, Any]]], None] | None = None,
     require_op: str | None = None,
+    yield_below_seconds: int = 0,
 ) -> ToolLoopResult:
     """Call the model, execute any requested tools, repeat, then return the final text.
 
@@ -1348,6 +1349,10 @@ def run_tool_loop(
     allowed to request more tools, so the loop terminates deterministically.
     ``require_op`` sets OpenAI ``tool_choice`` to that function (staff last
     step: force ``task_finish`` so the seat cannot stall in prose).
+    ``yield_below_seconds`` (staff steps) stops after a tool round when less
+    than that much of ``max_seconds`` is left, returning ``yielded=True`` with
+    no final call: the next step starts with a full budget instead of a
+    deliverable-sized completion being cut by the wall clock and lost.
     """
     seats = None
     if ctx.seat_id:
@@ -1401,10 +1406,22 @@ def run_tool_loop(
     synthetic_rounds = 0
     final: ChatCompletion | None = None
     stop_reason = ""
+    yielded = False
     while rounds < BOARD_MAX_TOOL_ROUNDS_PER_TURN:
         left = max_seconds - (time.monotonic() - started)
         calls_left = BOARD_MAX_TOOL_CALLS_PER_TURN - len(calls)
         if left <= 0 or calls_left <= 0:
+            break
+        if rounds and yield_below_seconds > 0 and left < yield_below_seconds and calls:
+            yielded = True
+            _log_event(
+                "info",
+                tag="board_tool_loop_yield",
+                persona=ctx.persona_id,
+                rounds=rounds,
+                left=int(left),
+                taskId=ctx.task_id,
+            )
             break
         timeout_s = completion_timeout(timeout, left, MODEL_CALL_TIMEOUT_FLOOR_SECONDS)
         if timeout_s <= 0:
@@ -1464,6 +1481,8 @@ def run_tool_loop(
             except Exception:  # pragma: no cover - progress is best effort
                 logging.getLogger(__name__).debug("suppressed", exc_info=True)
 
+    if final is None and yielded:
+        return ToolLoopResult(text="", usage=usage, model=model, calls=calls, rounds=rounds, yielded=True)
     if final is None:
         if stop_reason:
             convo.append({"role": "system", "content": f"No more tool calls are possible: {stop_reason} Answer with what you have."})

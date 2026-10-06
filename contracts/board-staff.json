@@ -397,6 +397,7 @@
   ],
   "limits": {
     "staffStepMaxSeconds": 150,
+    "staffStepYieldSeconds": 60,
     "maxStepsPerTask": 18,
     "maxIdleStepsPerTask": 3,
     "maxRevisions": 2,

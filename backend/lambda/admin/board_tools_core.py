@@ -175,6 +175,9 @@ class ToolLoopResult:
     calls: list[dict[str, Any]] = field(default_factory=list)
     rounds: int = 0
     completion: ChatCompletion | None = None
+    # The loop stopped early because a further model call would not fit the
+    # remaining budget; the caller continues in a fresh step instead.
+    yielded: bool = False
 
 def env_disabled() -> bool:
     """Deploy-time kill switch: ``BOARD_TOOLS_ENABLED=false`` on the Lambda."""
