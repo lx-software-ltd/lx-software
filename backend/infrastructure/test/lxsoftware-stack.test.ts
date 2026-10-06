@@ -748,6 +748,23 @@ describe("Siu Tin Dei parameter naming", () => {
     expect(parameters.SiutindeiBoardPublicApiWritesEnabled).toBeUndefined();
   });
 
+  test("AdminApiFn can PutItem on the audit log table", () => {
+    const audit = Object.entries(resourcesOfType("AWS::DynamoDB::Table")).find(
+      ([, resource]) => resource.Properties?.TableName === "lxsoftware-admin-audit-log",
+    );
+    expect(audit).toBeDefined();
+    const [auditId] = audit!;
+    const writes = Object.entries(resourcesOfType("AWS::IAM::Policy"))
+      .filter(([id]) => id.startsWith("AdminApiFn"))
+      .flatMap(([, policy]) => policyStatements(policy))
+      .filter(
+        (statement) =>
+          asArray<string>(statement.Action).includes("dynamodb:PutItem") &&
+          JSON.stringify(statement.Resource).includes(auditId),
+      );
+    expect(writes.length).toBeGreaterThan(0);
+  });
+
   test("PublicApiWritesEnabled is on AdminApiFn only, not the authorizer", () => {
     const fns = Object.entries(resourcesOfType("AWS::Lambda::Function"));
     const authorizer = fns.find(([id]) =>
