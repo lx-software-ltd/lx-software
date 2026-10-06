@@ -92,9 +92,23 @@ def row_to_candidate(row: dict[str, Any], *, source: str) -> dict[str, Any]:
     }
 
 
+def _importer_district(value: Any) -> str:
+    """The 18-district name the importer matches exactly (``TUEN MUN`` → ``Tuen Mun``).
+
+    ``lookup_district_area_id`` on siutindei compares ``GeographicArea.name``
+    verbatim, so an upper-cased open-data district fails every import with
+    ``unknown area_name``.
+    """
+    raw = " ".join(str(value or "").split())
+    if not raw:
+        return "unknown"
+    canonical = board_hk.canonical_district(raw)
+    return canonical if canonical != "unknown" else raw
+
+
 def candidate_to_org(row: dict[str, Any], *, manager_id: str) -> dict[str, Any]:
     name = str(row.get("nameEn") or row.get("name") or "").strip()
-    district = str(row.get("district") or "unknown")
+    district = _importer_district(row.get("district") or "unknown")
     category = str(row.get("category") or BOARD_CATALOG_SOURCE_CATEGORY.get(str(row.get("facilityKind") or ""), "Class"))
     desc_en = str(row.get("descriptionEn") or "")
     desc_zh = str(row.get("descriptionZh") or "")
@@ -330,9 +344,15 @@ def _org_name_key(name: Any) -> str:
 
 
 def _succeeded_org_names(imported: dict[str, Any], batch: list[dict[str, Any]]) -> set[str]:
-    created = set(board_catalog_import._org_result_names(imported.get("results") or [], "created"))  # noqa: SLF001
-    updated = set(board_catalog_import._org_result_names(imported.get("results") or [], "updated"))  # noqa: SLF001
-    named = {_org_name_key(n) for n in (created | updated) if n}
+    results = imported.get("results") or []
+    created = set(board_catalog_import._org_result_names(results, "created"))  # noqa: SLF001
+    updated = set(board_catalog_import._org_result_names(results, "updated"))  # noqa: SLF001
+    # ``skipped`` is the importer finding the organisation already in the
+    # catalog (a second open-data row with the same name). The listing
+    # exists, so the candidate is imported; left ``approved`` it was re-sent
+    # on every bulk hold.
+    skipped = set(board_catalog_import._org_result_names(results, "skipped"))  # noqa: SLF001
+    named = {_org_name_key(n) for n in (created | updated | skipped) if n}
     failed = int((imported.get("summary") or {}).get("failed") or 0)
     batch_names = {_org_name_key(org.get("name")) for org in batch if org.get("name")}
     if failed == 0:
@@ -677,18 +697,26 @@ def _mark_imported(table: Any, rows: list[dict[str, Any]], batch: list[dict[str,
 
 
 def _failed_org_messages(imported: dict[str, Any]) -> dict[str, str]:
-    """``{name key: first importer error}`` for organisations the importer rejected."""
+    """``{name key: first importer error}`` for rows the importer rejected.
+
+    Location and activity results carry the organisation name as ``key``;
+    a venue that fails on ``unknown area_name`` is the organisation's
+    problem too (the listing has no venue), so those count, with an
+    organisation-level error taking precedence.
+    """
     out: dict[str, str] = {}
+    org_level: set[str] = set()
     for row in imported.get("results") or []:
         if not isinstance(row, dict):
-            continue
-        row_type = str(row.get("type") or "").lower()
-        if row_type and row_type not in ("organizations", "organization", "organisations"):
             continue
         if str(row.get("status") or "").lower() != "failed":
             continue
         key = _org_name_key(row.get("key") or row.get("name"))
-        if not key or key in out:
+        if not key:
+            continue
+        row_type = str(row.get("type") or "").lower()
+        is_org = not row_type or row_type in ("organizations", "organization", "organisations")
+        if key in out and (key in org_level or not is_org):
             continue
         errors = row.get("errors") or []
         first = errors[0] if errors else None
@@ -696,6 +724,10 @@ def _failed_org_messages(imported: dict[str, Any]) -> dict[str, str]:
             message = str(first.get("message") or first)[:200]
         else:
             message = str(first or "importer rejected the row")[:200]
+        if not is_org:
+            message = f"{row_type}: {message}"[:200]
+        else:
+            org_level.add(key)
         out[key] = message
     return out
 
