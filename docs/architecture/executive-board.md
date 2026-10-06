@@ -228,7 +228,13 @@ The loop (`run_tool_loop`) allows `maxToolRoundsPerTurn` 4 rounds and
 `maxToolCallsPerTurn` 8 calls per turn, truncates results to
 `toolResultMaxChars` 6 000, times out external calls at 10 s (25 s for
 slow GitHub / Meta ops) and bounds a turn by `chatToolLoopMaxSeconds` 120
-or `meetingToolLoopMaxSeconds` 60; the final answer keeps at least 45 s.
+or `meetingToolLoopMaxSeconds` 100 (equal to the 100 s phase OpenRouter
+timeout: with the hard wall clock the loop budget is a kill, not an
+inactivity timeout, and 60 s cut eight parallel `deepseek-chat` position
+calls at ~55–60 s); the final answer keeps at least 45 s. A member whose
+position call still fails (`board_meeting_position_skipped`) gets a
+"no position recorded" turn and the chair synthesises from the rest;
+the phase fails only when every member failed.
 The daily budget is re-checked before every round.
 
 ### 5.3 Approvals, audit, PII
@@ -470,7 +476,17 @@ state lookup stays paused. A later both-halves 500 while that issue is
 still open re-arms the pause instead of proposing again, so the 2 h
 re-hold does not POST a known 500 until the fix ships. A bulk import that imports nothing records
 `error` on the result (the first batch error, or `imported 0 with no
-batch error`). Places and competitor candidates keep the query district when the
+batch error`). The importer matches `area_name` to the 18 districts
+exactly, so `candidate_to_org` sends `board_hk.canonical_district` of
+the candidate district (`TUEN MUN` → `Tuen Mun`; an unknown spelling is
+sent as written). An organisation the importer reports as `skipped`
+(already exists) counts as imported and its candidate is marked
+`imported` instead of being re-sent every day. A `failed` `locations` /
+`activities` result keyed by the organisation name stamps
+`importRejects` / `importError` as `<type>: <message>` on that candidate
+(an organisation-level error takes precedence), so a venue the importer
+cannot place is visible on the row rather than silent. Places and
+competitor candidates keep the query district when the
 address also names it. They move only when the address names exactly
 one other district (`North Point` is Eastern; `Central Plaza, Wan Chai`
 stays Wan Chai), or when lat/lng sits in exactly one district circle.
@@ -645,7 +661,13 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
   the socket busy cannot outlive the step. Meeting phases, owner chat,
   reviews, triage and intel calls set no wall clock and keep
   socket-inactivity semantics (a 100 s phase may run longer while bytes keep
-  coming, as before 23 Sep). Each tool round is written to the scratchpad
+  coming, as before 23 Sep). After a tool round, a staff step with less
+  than `staffStepYieldSeconds` (60) of its budget left yields instead of
+  making the final model call (`ToolLoopResult.yielded`,
+  `board_tool_loop_yield`): the next step starts with a fresh 150 s rather
+  than a deliverable-sized completion being cut by the wall clock and
+  lost. A yielded step with productive calls resets `idleSteps` and
+  increments `yieldedSteps`. Each tool round is written to the scratchpad
   before the next model call. A content-plan brief that names
   `web_sessions` / `web_conversions` / `web_gtm_status` has those reads run
   before the model starts, and `task_finish` cites the latest same-attempt
@@ -665,6 +687,15 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
   task (no evidence + high confidence → medium + `no_evidence` flag),
   writes the deliverable, records the step before review so a late write
   cannot overwrite the verdict, and invokes `board_staff_review`.
+  `status: blocked` parks the task `needs_owner` only with block evidence
+  (a refused tool call or a tripped tool breaker on this task). Without
+  that evidence a `blocked` finish that carries a deliverable is
+  downgraded to a normal review (`board_task_blocked_downgraded`, the
+  result carries a `note`) instead of being refused — a refused finish
+  made seats repeat the same call 20–30 times a task. A `blocked` finish
+  with no deliverable is still an error that tells the seat to finish
+  without a status and say what it found. `summary` strips a leaked
+  `!function_call:` prefix.
 - **Manager review**: the manager persona (`seat.reportsTo`; the chair for
   persona tasks; CFO when the CEO is the assignee) returns `accept` or
   `return`. Accept → `delivered`; a linked action is closed with

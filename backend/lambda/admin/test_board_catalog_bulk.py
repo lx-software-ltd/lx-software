@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import unittest
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from unittest.mock import patch
 
 import board_async
@@ -443,6 +444,53 @@ class BulkTransformTests(BoardTestCase):
         with patches[0], patches[1], patches[2], patches[3]:
             out = board_catalog_bulk.import_source(self.table, "edb")
         self.assertEqual(out["batches"], [])
+
+    def test_skipped_existing_org_is_imported_and_venue_error_is_stamped(self) -> None:
+        """A duplicate open-data row: the importer skips the org (exists) and
+        rejects its venue on ``unknown area_name``. The candidate is imported,
+        the venue error is recorded, and the payload carries the 18-district
+        spelling."""
+        os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"
+        os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_IMPORT_ENABLED", None))
+        self.addCleanup(lambda: os.environ.pop("BOARD_CATALOG_MANAGER_ID", None))
+        dup = board_catalog_candidates.upsert_candidate(
+            self.table,
+            {"source": "edb", "sourceId": "dup", "nameEn": "Hoh Fuk Tong Kindergarten", "district": "TUEN MUN"},
+        )
+        board_catalog_candidates.set_status(self.table, dup["candidateId"], "approved")
+        sent: list[dict[str, Any]] = []
+
+        def fake_import(payload, token, **_kwargs):
+            sent.append(payload)
+            return {
+                "ok": False,
+                "summary": {"failed": 1, "created": 0, "updated": 0, "skipped": 1},
+                "results": [
+                    {"type": "organizations", "key": "Hoh Fuk Tong Kindergarten", "status": "skipped", "errors": []},
+                    {
+                        "type": "locations",
+                        "key": "Hoh Fuk Tong Kindergarten",
+                        "status": "failed",
+                        "errors": [{"field": "area_name", "message": "unknown area_name"}],
+                    },
+                ],
+            }
+
+        with (
+            patch.object(board_catalog_bulk, "load_source_rows", return_value=[]),
+            patch.object(board_catalog_import, "configured", return_value=True),
+            patch.object(board_catalog_import, "_id_token", return_value="tok"),
+            patch.object(board_catalog_import, "_run_remote_import", side_effect=fake_import),
+        ):
+            out = board_catalog_bulk.import_source(self.table, "edb")
+        self.assertEqual(sent[0]["organizations"][0]["area_name"], "Tuen Mun")
+        self.assertEqual(out["imported"], 1)
+        self.assertIn("Hoh Fuk Tong Kindergarten: unknown area_name", out["batches"][0]["error"])
+        row = board_store.get_candidate(self.table, dup["candidateId"])
+        self.assertEqual(row["status"], "imported")
+        self.assertEqual(row["importRejects"], 1)
+        self.assertEqual(row["importError"], "locations: unknown area_name")
 
     def test_import_marks_long_org_name(self) -> None:
         os.environ["BOARD_CATALOG_IMPORT_ENABLED"] = "true"

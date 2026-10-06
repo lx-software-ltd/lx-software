@@ -591,10 +591,14 @@ def _agenda_text(doc: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+POSITION_SKIPPED_TEXT = "(No position recorded: this member's model call did not finish within the phase time budget.)"
+
+
 def _phase_positions(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     profiles, charter = _profiles(table)
     agenda_text = _agenda_text(doc)
     pack_text = str(doc.get("contextPackText") or "")
+    failures: list[tuple[str, OpenRouterError]] = []
 
     def _one(persona_id: str) -> list[dict[str, Any]]:
         profile = profiles[persona_id]
@@ -614,9 +618,33 @@ def _phase_positions(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
             {"role": "system", "content": pack_text},
             {"role": "user", "content": prompt},
         ]
-        result = _member_call(
-            table, doc, profile=profile, phase="positions", messages=messages, json_mode=True, max_tokens=1400, tag="board_meeting_position"
-        )
+        try:
+            result = _member_call(
+                table, doc, profile=profile, phase="positions", messages=messages, json_mode=True, max_tokens=1400, tag="board_meeting_position"
+            )
+        except OpenRouterError as exc:
+            # One slow member (eight run in parallel) must not fail the meeting;
+            # the chair synthesises from the positions that did arrive.
+            _log_event(
+                "warning",
+                tag="board_meeting_position_skipped",
+                meeting_id=str(doc["meetingId"]),
+                persona=persona_id,
+                error=str(exc)[:200],
+            )
+            failures.append((persona_id, exc))
+            return [
+                {
+                    "phase": "positions",
+                    "personaId": persona_id,
+                    "displayName": profile["displayName"],
+                    "title": profile["title"],
+                    "text": POSITION_SKIPPED_TEXT,
+                    "data": {"items": [], "skipped": str(exc)[:200]},
+                    "usage": add_usage(None, None),
+                    "model": _meeting_model(doc),
+                }
+            ]
         try:
             data = normalize_positions(parse_json_object_text(result.text), agenda_len=len(doc.get("agenda") or []))
         except OpenRouterError:
@@ -642,6 +670,8 @@ def _phase_positions(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     order = [str(p["id"]) for p in doc.get("roster") or []] or list(profiles)
     with ThreadPoolExecutor(max_workers=max(1, BOARD_MAX_PARALLEL_PERSONA_CALLS)) as pool:
         results = list(pool.map(_one, order))
+    if failures and len(failures) >= len(order):
+        raise failures[0][1]
     out = doc
     for turns in results:
         for turn in turns:

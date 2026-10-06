@@ -36,6 +36,7 @@ from contract_constants import (
     BOARD_STAFF_STEP_MAX_SECONDS,
     BOARD_STAFF_STEP_MODEL_LIST,
     BOARD_STAFF_STEP_MODELS,
+    BOARD_STAFF_STEP_YIELD_SECONDS,
     BOARD_STAFF_TASK_BUDGET_DESK_USD,
     BOARD_STAFF_TASK_BUDGET_MAX_USD,
     BOARD_STAFF_TASK_BUDGET_SENIOR_USD,
@@ -753,6 +754,7 @@ def run_step(payload: dict[str, Any]) -> None:
             max_seconds=loop_seconds,
             on_progress=_on_progress,
             require_op="task_finish" if require_finish else None,
+            yield_below_seconds=BOARD_STAFF_STEP_YIELD_SECONDS,
         )
     except Exception as exc:
         _on_step_exception(table, task, payload, wanted, exc)
@@ -1844,6 +1846,7 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
         _mark_delivered(table, latest, board_store.now_iso())
         return
     truncated = board_tools._completion_hit_length_limit(getattr(result, "completion", None))  # noqa: SLF001
+    yielded = bool(getattr(result, "yielded", False)) and bool(_productive_calls(calls))
     similar_to_last = False
     if seq > 1:
         prior = board_store.list_task_steps(table, task_id)
@@ -1852,7 +1855,12 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
     repeated_calls = _same_as_previous_step(table, task_id, calls)
     intra_poll = _repeats_within_step(calls)
     poll_loop = (repeated_calls or intra_poll) and _counts_as_poll_loop(latest, calls)
-    if truncated:
+    if yielded:
+        # The loop stopped before a call that would not fit the step budget;
+        # the seat has not answered yet, so this is not an idle step.
+        latest["idleSteps"] = 0
+        latest["yieldedSteps"] = int(latest.get("yieldedSteps") or 0) + 1
+    elif truncated:
         latest["idleSteps"] = 0
         nudge = _CONTENT_PLAN_LENGTH_NUDGE if _is_content_plan(latest) else _LENGTH_CUTOFF_NUDGE
         combined = _append_scratchpad(latest, nudge)
@@ -2124,15 +2132,33 @@ def op_task_finish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
         raise StaffError(
             f"deliverable is larger than {BOARD_STAFF_DELIVERABLE_MAX_BYTES} bytes; split it"
         )
-    if status_arg != "blocked" and _deliverable_has_placeholders(deliverable):
+    blocked_note = ""
+    if status_arg == "blocked":
+        if _block_evidence(ctx.table, task):
+            return _finish_blocked(ctx, task, args, deliverable)
+        # "blocked" is for a refused tool or a tripped breaker. A seat that
+        # simply found nothing to act on (no published email, no data) used to
+        # get an error here and call task_finish again with the same status
+        # until the step limit; the work it has is sent to review instead.
+        if not deliverable.strip():
+            raise StaffError(
+                "status=blocked needs a recent refused tool call or a tripped tool breaker on this task. "
+                "If the work itself cannot be done (nothing to contact, no data), finish without a "
+                "status and say so in the deliverable, citing the calls you made as evidence."
+            )
+        status_arg = ""
+        blocked_note = (
+            "status=blocked needs a refused tool call or a tripped breaker; "
+            "the deliverable was sent to review instead"
+        )
+        _log_event("info", tag="board_task_blocked_downgraded", taskId=ctx.task_id)
+    if _deliverable_has_placeholders(deliverable):
         raise StaffError(
             "Deliverable still has placeholder text such as [Insert …]. "
             "Call finance_cash_snapshot, finance_aging_report, aws_monthly_cost and "
             "meta_ad_spend (or finance_unit_economics), then write the verified figures. "
             "If a tool cannot verify a number, write 'unavailable' and why."
         )
-    if status_arg == "blocked":
-        return _finish_blocked(ctx, task, args, deliverable)
     evidence = [str(x) for x in (args.get("evidence") or []) if isinstance(x, (str, int))]
     known, alias_to_id, id_to_op, idle = _evidence_catalog(ctx.table, task)
     attempt = _task_attempt(task)
@@ -2210,7 +2236,7 @@ def op_task_finish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
         "step": seq,
         "stepsUsed": seq,
         "idleSteps": 0,
-        "summary": str(args.get("summary") or "")[:800],
+        "summary": _strip_function_call_leak(str(args.get("summary") or ""))[:800],
         "evidence": evidence,
         "openQuestions": [str(x) for x in (args.get("openQuestions") or []) if x][:10],
         "confidence": confidence,
@@ -2246,7 +2272,12 @@ def op_task_finish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
             {"internal": "board_staff_review", "boardKey": BOARD_KEY, "taskId": ctx.task_id},
             fallback=run_review,
         )
-    return {"ok": True, "status": "review", "deliverableKey": key}
+    return {
+        "ok": True,
+        "status": "review",
+        "deliverableKey": key,
+        **({"note": blocked_note} if blocked_note else {}),
+    }
 
 
 

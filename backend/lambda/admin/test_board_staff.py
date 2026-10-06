@@ -326,6 +326,43 @@ class StaffEngineTests(BoardTestCase):
         scratch = board_staff._blob_get(board_staff._scratchpad_key(task["taskId"])).decode()  # noqa: SLF001
         self.assertIn("cut off at the length limit", scratch)
 
+    def test_yielded_step_is_not_idle_and_reinvokes(self) -> None:
+        os.environ["BOARD_STAFF_ENABLED"] = "true"
+        self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        settings = board_store.load_settings(self.table)
+        settings["staff"] = board_store.normalize_staff_config({**(settings.get("staff") or {}), "enabled": True})
+        board_store.save_settings(self.table, settings)
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        task = board_staff.create_task(
+            self.table,
+            settings,
+            assignee="content-marketer",
+            origin="duty",
+            brief="content plan",
+            deliverable_type="json",
+            event_ref={"kind": "duty", "id": "content-plan:2026-10-06"},
+            created_by="test",
+        )
+        task["status"] = "running"
+        task["idleSteps"] = 2
+        board_store.put_task(self.table, task)
+        result = board_tools.ToolLoopResult(
+            text="",
+            usage={"completionTokens": 300},
+            model="test",
+            calls=[{"callId": "c1", "op": "research_fetch_page", "status": "ok", "summary": "fetched"}],
+            rounds=1,
+            yielded=True,
+        )
+        queued: list[dict[str, Any]] = []
+        with patch.object(board_async, "invoke_async", side_effect=lambda payload, *, fallback=None: queued.append(payload)):
+            board_staff._complete_step(self.table, task["taskId"], task, result, 1)  # noqa: SLF001
+        saved = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(saved["status"], "running")
+        self.assertEqual(int(saved.get("idleSteps") or 0), 0)
+        self.assertEqual(int(saved.get("yieldedSteps") or 0), 1)
+        self.assertTrue(any(p.get("internal") == "board_staff_step" and p.get("step") == 2 for p in queued))
+
     def setUp(self) -> None:
         super().setUp()
         os.environ["BOARD_STAFF_ENABLED"] = "true"
@@ -2053,7 +2090,38 @@ class StaffStepTests(ToolsTestCase):
         self.assertEqual(parked["parkedReason"], "blocked:tool:code")
         self.assertEqual(parked.get("reviews") or 0, 0)
 
-    def test_blocked_finish_without_refused_call_is_rejected(self) -> None:
+    def test_blocked_finish_without_refused_call_goes_to_review(self) -> None:
+        """No refusal or breaker: the work is reviewed instead of the seat
+        re-calling task_finish with status=blocked until the step limit."""
+        task = self._queued_task()
+        tid = task["taskId"]
+        board_store.claim_task_step(self.table, tid, 0)
+        latest = board_store.get_task(self.table, tid)
+        latest["status"] = "running"
+        board_store.put_task(self.table, latest)
+        ctx = board_tools.ToolContext(
+            self.table, board_store.load_settings(self.table), "cto", kind="task", task_id=tid, seat_id="engineer-1"
+        )
+        with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
+            out = board_staff.op_task_finish(
+                ctx,
+                {
+                    "summary": "No published email",
+                    "deliverableType": "markdown",
+                    "deliverable": "The official page lists a contact form and no email.",
+                    "confidence": "low",
+                    "status": "blocked",
+                    "blockedReason": "no email",
+                },
+            )
+        self.assertEqual(out["status"], "review")
+        self.assertIn("refused tool call", out["note"])
+        self.assertFalse(out.get("blocked"))
+        reviewed = board_store.get_task(self.table, tid)
+        self.assertEqual(reviewed["status"], "review")
+        self.assertIsNone(reviewed.get("parkedReason") or None)
+
+    def test_blocked_finish_with_no_deliverable_is_rejected(self) -> None:
         task = self._queued_task()
         tid = task["taskId"]
         board_store.claim_task_step(self.table, tid, 0)
@@ -2066,16 +2134,9 @@ class StaffStepTests(ToolsTestCase):
         with self.assertRaises(board_staff.StaffError) as raised:
             board_staff.op_task_finish(
                 ctx,
-                {
-                    "summary": "This is hard",
-                    "deliverableType": "markdown",
-                    "deliverable": "Giving up.",
-                    "confidence": "low",
-                    "status": "blocked",
-                    "blockedReason": "too hard",
-                },
+                {"summary": "This is hard", "deliverable": "", "status": "blocked", "blockedReason": "too hard"},
             )
-        self.assertIn("refused tool call", str(raised.exception))
+        self.assertIn("finish without a status", str(raised.exception))
 
     def test_repeated_identical_reads_fail_with_no_progress(self) -> None:
         task = self._queued_task()

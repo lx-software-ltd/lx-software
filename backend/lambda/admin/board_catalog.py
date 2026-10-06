@@ -639,8 +639,9 @@ def handoff_brief(name: str, district: str, official_url: str) -> str:
         f"with research_fetch_page and use a contact email printed on it as a full address "
         f"in mail_send (it goes to the founder for approval). Do not use a contact#N alias "
         f"unless it came from a mail thread you read on this task, and do not call "
-        f"task_request_help for this. If the page shows no email, finish with status "
-        f"blocked and note the phone number or contact form you found instead."
+        f"task_request_help for this. If the page shows no email, call task_finish once "
+        f"(no status field) with a short deliverable: no published email, plus the phone "
+        f"number or contact form URL you found, citing the research_fetch_page call as evidence."
     )[:4000]
 
 
