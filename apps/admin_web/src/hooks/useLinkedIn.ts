@@ -190,10 +190,20 @@ export function useLinkedIn() {
     },
   });
   const redrawImage = useMutation({
-    mutationFn: ({ postId, scene, caption }: { postId: string; scene: string; caption: string }) =>
+    mutationFn: ({
+      postId,
+      scene,
+      caption,
+      expression,
+    }: {
+      postId: string;
+      scene: string;
+      caption: string;
+      expression: string;
+    }) =>
       adminFetchJson<{ item: LinkedInPost }>(`/lx-software/linkedin/posts/${postId}/image/regenerate`, {
         method: "POST",
-        body: JSON.stringify({ scene, caption }),
+        body: JSON.stringify({ scene, caption, expression }),
       }),
     onSuccess: (_data, { postId }) => {
       refresh();

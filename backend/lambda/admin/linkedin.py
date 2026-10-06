@@ -341,6 +341,7 @@ def _replace_post(table: Any, post_id: str, generated: dict[str, Any]) -> None:
                 post_id,
                 scene=str(generated.get("imageScene") or ""),
                 caption=str(generated.get("imageCaption") or ""),
+                expression=str(generated.get("imageExpression") or ""),
                 force=True,
             )
         except LinkedInError as exc:
@@ -644,6 +645,7 @@ def _image_regenerate(event: dict[str, Any], method: str, post_id: str, user_sub
             post_id,
             scene=str(body.get("scene") or ""),
             caption=str(body.get("caption") or ""),
+            expression=str(body.get("expression") or ""),
         )
     except LinkedInError as exc:
         status = 409 if "already being drawn" in str(exc) else 404 if str(exc) == "post not found" else 400

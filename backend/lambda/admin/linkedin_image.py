@@ -1,7 +1,7 @@
 """Black-and-white comic panels for LinkedIn drafts.
 
-One OpenRouter Image API call per post, then Pillow: grayscale, a square (or
-the saved format) canvas, and the caption in italic serif under the panel.
+One OpenRouter Image API call per post, then Pillow: grayscale, the saved
+format, and the caption in italic serif inside the bottom of that picture.
 The owner's photo is used once, to draw a character sheet; later pictures
 send that sheet, not the photo. A first picture that is still pending or that
 failed does not block publishing. A redraw keeps the previous ready picture
@@ -28,13 +28,18 @@ from openrouter_client import ImageGeneration, OpenRouterError
 
 SERVICE = "linkedin"
 _FONT = Path(__file__).resolve().parent / "fonts" / "NotoSerif-Italic.ttf"
-# Panel plus a 200px caption strip. Square is the feed default.
+# The caption is drawn inside the canvas, so the aspect sent to the model is
+# the finished picture. Square is the feed default.
 FORMATS: dict[str, dict[str, Any]] = {
-    "square": {"aspect": "4:3", "panel": (1200, 1000), "canvas": (1200, 1200)},
-    "portrait": {"aspect": "1:1", "panel": (1080, 1150), "canvas": (1080, 1350)},
-    "wide": {"aspect": "16:9", "panel": (1200, 675), "canvas": (1200, 875)},
+    "square": {"aspect": "1:1", "canvas": (1200, 1200)},
+    "portrait": {"aspect": "4:5", "canvas": (1080, 1350)},
+    "wide": {"aspect": "16:9", "canvas": (1200, 675)},
 }
-_STRIP = 200
+_CAPTION_INSET = 40
+_CAPTION_PAD = 24
+_CAPTION_SIZE = 44
+_LINE_HEIGHT = 52
+_FRAME = 2
 HEAD_SIZE = (768, 768)
 # Held against maxUsdPerMonth before the Image API call, then replaced by the
 # real cost. Above the usual Seedream charge so parallel workers cannot all
@@ -42,9 +47,8 @@ HEAD_SIZE = (768, 768)
 IMAGE_HOLD_USD = 0.05
 # Stop starting another 90s call once this much of the 300s Lambda is gone.
 DRAW_BUDGET_SECONDS = 240
-# Seedream 4.5 rejects 1K. OpenRouter turns that tier into 1024×768 (4:3,
-# 786,432 px) or 1024×1024 (1:1, 1,048,576 px); the model floor is 3,686,400.
-# 2K is 2304×1728, 2048×2048, or 2560×1440 for the aspects we send.
+# Seedream 4.5 rejects 1K: those sizes are under its 3,686,400 pixel minimum.
+# 2K is the tier that clears the floor for 1:1, 4:5, and 16:9.
 IMAGE_RESOLUTION = "2K"
 Generate = Callable[..., ImageGeneration]
 
@@ -70,15 +74,18 @@ def fallback_scene(body: str) -> str:
     hook = linkedin_store.hook_text(body)[:160]
     if not hook:
         hook = "the problem in the post"
-    return f"The author at a desk, physically wrestling with this problem: {hook}"
+    return f"In a lift, the author is stuck holding one oversized object that stands for this: {hook}"
 
 
-def build_prompt(settings: dict[str, Any], scene: str) -> str:
+def build_prompt(settings: dict[str, Any], scene: str, expression: str = "") -> str:
     style = str(settings.get("imageStyle") or "").strip() or linkedin_store.RECOMMENDED_IMAGE_STYLE
     character = str(settings.get("imageCharacter") or "").strip() or linkedin_store.DEFAULT_IMAGE_CHARACTER
+    face = (expression or "").strip() or linkedin_store.FALLBACK_IMAGE_EXPRESSION
     return (
         f"{style} The person, drawn the same way each time: {character} "
-        f"Scene: {scene} No second recognisable person. No logos, no brand names."
+        f"Expression: {face}. Do not default to a smile. "
+        f"Scene: {scene} Keep the lower edge of the picture quiet: floor, shadow, or paper, "
+        "nothing that matters there. No second recognisable person. No logos, no brand names."
     )
 
 
@@ -86,8 +93,13 @@ def character_prompt(settings: dict[str, Any]) -> str:
     style = str(settings.get("imageStyle") or "").strip() or linkedin_store.RECOMMENDED_IMAGE_STYLE
     character = str(settings.get("imageCharacter") or "").strip() or linkedin_store.DEFAULT_IMAGE_CHARACTER
     return (
-        f"{style} Head-and-shoulders portrait of this person, facing the viewer, a slight smile, "
-        f"plain background. No text, no lettering. The person: {character}"
+        f"{style} Convert this photo into a caricature for a gag cartoon. Simplified features, "
+        "a slightly oversized head, small simple eyes, a few confident ink lines for hair, bold "
+        "outlines, flat white skin with hatching only in shadow. Keep only what makes the person "
+        "recognisable: hair shape, face shape, glasses if present. Not a portrait and not "
+        "photographic shading. Ignore the expression in the photo. Head and shoulders, facing "
+        "the viewer, neutral expression, mouth closed, plain background. No text, no lettering. "
+        f"The person: {character}"
     )
 
 
@@ -119,6 +131,7 @@ def queue_for_post(
     *,
     scene: str = "",
     caption: str = "",
+    expression: str = "",
     force: bool = False,
 ) -> dict[str, Any]:
     """Mark the picture pending and enqueue the worker. Raises when one is already running."""
@@ -136,11 +149,15 @@ def queue_for_post(
         raise LinkedInError("A picture is already being drawn.")
     scene_text = (scene or str(current.get("scene") or "") or fallback_scene(str(doc.get("body") or ""))).strip()
     caption_text = (caption or str(current.get("caption") or "") or linkedin_store.FALLBACK_IMAGE_CAPTION).strip()
+    expression_text = (
+        expression or str(current.get("expression") or "") or linkedin_store.FALLBACK_IMAGE_EXPRESSION
+    ).strip()
     held = _held_picture(current)
     doc["image"] = {
         "status": "pending",
         "scene": scene_text[: linkedin_store.IMAGE_SCENE_MAX],
         "caption": caption_text[: linkedin_store.IMAGE_CAPTION_MAX],
+        "expression": expression_text[: linkedin_store.IMAGE_EXPRESSION_MAX],
         "requestedAt": board_store.now_iso(),
         "contentType": str(held.get("contentType") or "") if held else "",
         "bytes": int(held.get("bytes") or 0) if held else 0,
@@ -169,6 +186,7 @@ def _held_picture(current: dict[str, Any]) -> dict[str, Any] | None:
             "status": "ready",
             "scene": str(current.get("scene") or ""),
             "caption": str(current.get("caption") or ""),
+            "expression": str(current.get("expression") or ""),
             "contentType": str(current.get("contentType") or ""),
             "bytes": int(current.get("bytes") or 0),
             "model": str(current.get("model") or ""),
@@ -179,6 +197,7 @@ def _held_picture(current: dict[str, Any]) -> dict[str, Any] | None:
             "status": "ready",
             "scene": str(previous.get("scene") or ""),
             "caption": str(previous.get("caption") or ""),
+            "expression": str(previous.get("expression") or ""),
             "contentType": str(previous.get("contentType") or ""),
             "bytes": int(previous.get("bytes") or 0),
             "model": str(previous.get("model") or ""),
@@ -200,7 +219,8 @@ def render_post(table: Any, post_id: str, *, generate: Generate | None = None) -
         return {"ok": True, "skipped": "ready"}
     scene = str(image.get("scene") or "") or fallback_scene(str(doc.get("body") or ""))
     caption = str(image.get("caption") or "") or linkedin_store.FALLBACK_IMAGE_CAPTION
-    prompt = build_prompt(settings, scene)
+    expression = str(image.get("expression") or "") or linkedin_store.FALLBACK_IMAGE_EXPRESSION
+    prompt = build_prompt(settings, scene, expression)
     term = blocked_term(prompt, settings)
     if term:
         _fail_picture(table, post_id, f"Remove “{term}” from the picture.")
@@ -241,6 +261,7 @@ def render_post(table: Any, post_id: str, *, generate: Generate | None = None) -
             status="ready",
             scene=scene[: linkedin_store.IMAGE_SCENE_MAX],
             caption=caption[: linkedin_store.IMAGE_CAPTION_MAX],
+            expression=expression[: linkedin_store.IMAGE_EXPRESSION_MAX],
             model=result.model or image_model(settings),
             seed=seed,
             cost=round(result.cost_usd, 6),
@@ -336,26 +357,46 @@ def draw_character(
             _release(table, IMAGE_HOLD_USD * holds)
 
 
-def compose(data: bytes, caption: str, fmt: str) -> bytes:
-    """Grayscale panel, white caption strip, italic serif, single quotes."""
-    spec = FORMATS.get(fmt) or FORMATS["square"]
-    panel = _to_ink(data, tuple(spec["panel"]))
-    canvas_size = tuple(spec["canvas"])
+def caption_lines(caption: str, *, width: int, font) -> list[str]:
+    """The spoken line as drawn: wrapping quotes removed, at most two lines."""
+    text = linkedin_store.caption_alt(caption)
+    if not text:
+        return []
     from PIL import Image, ImageDraw
 
-    canvas = Image.new("L", canvas_size, 255)
-    canvas.paste(panel, (0, 0))
-    quoted = "'" + linkedin_store.caption_alt(caption) + "'"
+    scratch = Image.new("L", (max(width, 1), 8), 255)
+    return _wrap(ImageDraw.Draw(scratch), text, font, max(width, 1))
+
+
+def compose(data: bytes, caption: str, fmt: str) -> bytes:
+    """Grayscale picture with the caption in a box at the bottom of the same frame."""
+    spec = FORMATS.get(fmt) or FORMATS["square"]
+    canvas_size = tuple(spec["canvas"])
+    from PIL import ImageDraw
+
+    canvas = _to_ink(data, canvas_size)
     draw = ImageDraw.Draw(canvas)
-    font = _font(44)
-    lines = _wrap(draw, quoted, font, canvas_size[0] - 80)[:2]
-    line_height = 52
-    block = line_height * len(lines)
-    top = spec["panel"][1] + max(8, (_STRIP - block) // 2)
-    for line in lines:
-        width = draw.textlength(line, font=font)
-        draw.text(((canvas_size[0] - width) / 2, top), line, fill=0, font=font)
-        top += line_height
+    for offset in range(_FRAME):
+        draw.rectangle(
+            (offset, offset, canvas_size[0] - 1 - offset, canvas_size[1] - 1 - offset),
+            outline=0,
+        )
+    font = _font(_CAPTION_SIZE)
+    inner = canvas_size[0] - 2 * _CAPTION_INSET - 2 * _CAPTION_PAD
+    lines = caption_lines(caption, width=inner, font=font)
+    if lines:
+        block = _LINE_HEIGHT * len(lines)
+        box_h = block + 2 * _CAPTION_PAD
+        left = _CAPTION_INSET
+        right = canvas_size[0] - _CAPTION_INSET
+        bottom = canvas_size[1] - _CAPTION_INSET
+        top = max(_CAPTION_INSET, bottom - box_h)
+        draw.rectangle((left, top, right - 1, bottom - 1), fill=255, outline=0, width=2)
+        text_top = top + _CAPTION_PAD
+        for line in lines:
+            width = draw.textlength(line, font=font)
+            draw.text(((canvas_size[0] - width) / 2, text_top), line, fill=0, font=font)
+            text_top += _LINE_HEIGHT
     return _png_under_limit(canvas, linkedin_store.IMAGE_BYTE_MAX)
 
 

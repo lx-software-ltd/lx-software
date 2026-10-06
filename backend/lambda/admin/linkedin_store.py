@@ -163,6 +163,7 @@ IMAGE_STYLE_MAX = 600
 IMAGE_CHARACTER_MAX = 400
 IMAGE_CAPTION_MAX = 140
 IMAGE_SCENE_MAX = 400
+IMAGE_EXPRESSION_MAX = 80
 IMAGE_PENDING_SECONDS = 600
 # A character draw that is still queued or running after this is the Lambda
 # timing out (300s) without writing the job row.
@@ -170,16 +171,19 @@ CHARACTER_JOB_STALE_SECONDS = 360
 CANDIDATE_IDS = frozenset({"c1", "c2", "c3", "c4"})
 IMAGE_BYTE_MAX = 1_500_000
 RECOMMENDED_IMAGE_STYLE = (
-    "Single-panel cartoon in the style of a magazine gag cartoon. Black ink line art on "
-    "white paper, dense cross-hatching for shadow, no grey wash, no colour. A detailed room, "
-    "one expressive man mid-action. No lettering and no logos. One two-word label is allowed "
-    "when the scene needs it, such as a door sign or a folder tab; screens are unreadable scribbles."
+    "Single-panel magazine gag cartoon. Black ink line art on white paper, dense "
+    "cross-hatching for shadow, no grey wash, no colour. Faces are caricatures, not "
+    "portraits: simplified features, bold outlines, flat white skin with hatching only "
+    "in shadow. A detailed room, one man mid-action. No lettering and no logos. One "
+    "two-word label is allowed when the scene needs it, such as a door sign or a folder "
+    "tab; screens are unreadable scribbles."
 )
 DEFAULT_IMAGE_CHARACTER = (
     "A man in his thirties with short dark hair, side-parted, clean-shaven, a round face, "
     "wearing a light striped button-down shirt with an open collar."
 )
 FALLBACK_IMAGE_CAPTION = "This took longer than I expected."
+FALLBACK_IMAGE_EXPRESSION = "concentrating, not smiling"
 
 # A post the owner wrote, shown to the model for its register only. Its
 # structure, opening, closing and phrases are not to be reused; the draft loop
@@ -909,17 +913,26 @@ def recent_hooks(table: Any, *, limit: int = 12) -> list[str]:
 
 def recent_captions(table: Any, *, limit: int = 12) -> list[str]:
     """Spoken lines under recent pictures, newest first."""
+    return _recent_image_text(table, "caption", limit=limit)
+
+
+def recent_scenes(table: Any, *, limit: int = 12) -> list[str]:
+    """Picture scenes on recent posts, newest first."""
+    return _recent_image_text(table, "scene", limit=limit)
+
+
+def _recent_image_text(table: Any, field: str, *, limit: int) -> list[str]:
     rows = [row for row in list_posts(table, limit=80) if str(row.get("status") or "") != "archived"]
     rows.sort(key=lambda doc: str(doc.get("createdAt") or ""), reverse=True)
-    captions: list[str] = []
+    found: list[str] = []
     for row in rows:
         image = row.get("image") if isinstance(row.get("image"), dict) else {}
-        caption = str(image.get("caption") or "").strip()
-        if caption and caption not in captions:
-            captions.append(caption)
-        if len(captions) >= limit:
+        text = str(image.get(field) or "").strip()
+        if text and text not in found:
+            found.append(text)
+        if len(found) >= limit:
             break
-    return captions
+    return found
 
 
 def _clean_hashtags(value: Any, cap: int) -> list[str]:
@@ -1398,6 +1411,7 @@ def public_image(image: dict[str, Any] | None) -> dict[str, Any] | None:
         "status": status,
         "scene": str(image.get("scene") or ""),
         "caption": str(image.get("caption") or ""),
+        "expression": str(image.get("expression") or ""),
         "error": str(image.get("error") or ""),
         "model": str(image.get("model") or ""),
     }
@@ -1442,7 +1456,7 @@ def image_pending_stale(image: dict[str, Any] | None, *, now: datetime | None = 
 
 
 def caption_alt(caption: str) -> str:
-    """The spoken line without the quotes the picture draws around it."""
+    """The spoken line with wrapping quotes removed. An apostrophe inside the line stays."""
     return str(caption or "").strip().strip("'\"“”‘’")[:300]
 
 

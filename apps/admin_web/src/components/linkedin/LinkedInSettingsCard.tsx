@@ -274,7 +274,8 @@ export function LinkedInSettingsCard({
               />
               <p className="form-text mb-0">
                 No name. Correct this after you look at the character sheet. The photo is used once to draw that sheet;
-                later pictures send the sheet, not the photo.
+                later pictures send the sheet, not the photo. Redraw the sheet after you change how you are drawn. A
+                new face does not appear on posts until you pick a new sheet.
               </p>
             </AdminField>
             <AdminField label="Extra phrases to block" htmlFor="linkedin-blocked" span={2}>

@@ -153,6 +153,7 @@ export type LinkedInImage = {
   status?: string;
   scene?: string;
   caption?: string;
+  expression?: string;
   error?: string;
   model?: string;
 };
@@ -230,8 +231,9 @@ export const SAMPLE_LINKEDIN_POSTS: LinkedInPost[] = [
     image: {
       contentType: "image/png",
       status: "ready",
-      scene: "The author at a desk, tearing up a one-way plan.",
+      scene: "In a lift, the author holds a plan that only points one way.",
       caption: "I wrote the way back first.",
+      expression: "deadpan",
       error: "",
       model: "bytedance-seed/seedream-4.5",
     },
@@ -279,10 +281,10 @@ export const IMAGE_MODEL_ALTERNATIVE = "qwen/qwen-image-3";
 export const IMAGE_FORMATS = [
   { id: "square", label: "Square, 1200 × 1200" },
   { id: "portrait", label: "Portrait, 1080 × 1350" },
-  { id: "wide", label: "Wide, 1200 × 875" },
+  { id: "wide", label: "Wide, 1200 × 675" },
 ] as const;
 export const RECOMMENDED_IMAGE_STYLE =
-  "Single-panel cartoon in the style of a magazine gag cartoon. Black ink line art on white paper, dense cross-hatching for shadow, no grey wash, no colour. A detailed room, one expressive man mid-action. No lettering and no logos. One two-word label is allowed when the scene needs it, such as a door sign or a folder tab; screens are unreadable scribbles.";
+  "Single-panel magazine gag cartoon. Black ink line art on white paper, dense cross-hatching for shadow, no grey wash, no colour. Faces are caricatures, not portraits: simplified features, bold outlines, flat white skin with hatching only in shadow. A detailed room, one man mid-action. No lettering and no logos. One two-word label is allowed when the scene needs it, such as a door sign or a folder tab; screens are unreadable scribbles.";
 export const DEFAULT_IMAGE_CHARACTER =
   "A man in his thirties with short dark hair, side-parted, clean-shaven, a round face, wearing a light striped button-down shirt with an open collar.";
 
