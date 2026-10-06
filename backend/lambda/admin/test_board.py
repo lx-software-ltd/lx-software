@@ -862,6 +862,42 @@ class TestMeetings(BoardTestCase):
         self.assertEqual(len(position_requests), 8)
         self.assertTrue(all("CONTEXT DATA" in r["messages"][1]["content"] for r in position_requests))
 
+    def test_one_member_timeout_does_not_fail_the_standup(self) -> None:
+        from openrouter_client import OpenRouterError
+
+        real = board_meeting._member_call  # noqa: SLF001
+
+        def flaky(table, doc, *, profile, **kwargs):
+            if profile["id"] == "cfo" and kwargs.get("phase") == "positions":
+                raise OpenRouterError("OpenRouter request timed out: wall-clock budget exhausted")
+            return real(table, doc, profile=profile, **kwargs)
+
+        with patch.object(board_meeting, "_member_call", side_effect=flaky):
+            status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
+        self.assertEqual(status, 202)
+        _, body = self.call(f"/siu-tin-dei/board/meetings/{body['meetingId']}")
+        meeting = body["meeting"]
+        self.assertEqual(meeting["status"], "succeeded")
+        positions = [t for t in body["turns"] if t["phase"] == "positions"]
+        self.assertEqual(len(positions), 8)
+        cfo = next(t for t in positions if t["personaId"] == "cfo")
+        self.assertEqual(cfo["text"], board_meeting.POSITION_SKIPPED_TEXT)
+        self.assertIn("wall-clock", cfo["data"]["skipped"])
+        self.assertTrue(all(t["personaId"] == "cfo" or "closed beta" in t["text"] for t in positions))
+
+    def test_every_member_timing_out_fails_the_standup(self) -> None:
+        from openrouter_client import OpenRouterError
+
+        def dead(table, doc, *, profile, **kwargs):  # noqa: ARG001
+            raise OpenRouterError("OpenRouter request timed out: wall-clock budget exhausted")
+
+        with patch.object(board_meeting, "_member_call", side_effect=dead):
+            status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
+        self.assertEqual(status, 202)
+        _, body = self.call(f"/siu-tin-dei/board/meetings/{body['meetingId']}")
+        self.assertEqual(body["meeting"]["status"], "failed")
+        self.assertIn("wall-clock", body["meeting"]["errorMessage"])
+
     def test_deep_dive_requires_topic_and_runs_challenge(self) -> None:
         status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "deepDive"})
         self.assertEqual(status, 400)

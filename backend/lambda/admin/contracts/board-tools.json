@@ -299,7 +299,7 @@
     "toolCallTimeoutSeconds": 10,
     "toolCallTimeoutSlowSeconds": 25,
     "chatToolLoopMaxSeconds": 120,
-    "meetingToolLoopMaxSeconds": 60,
+    "meetingToolLoopMaxSeconds": 100,
     "maxPendingApprovals": 200,
     "approvalTtlDays": 60,
     "toolCallLogTtlDays": 90,

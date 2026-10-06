@@ -115,7 +115,10 @@ MAX_RESULT_PREVIEW = 400
 #   final answer call   ≤ min(openrouter timeout, seconds left), at least the final floor
 # so a turn ends within about max(max_seconds + final floor, openrouter timeout):
 # chat 120 + 45 = 165 s (< chatPollDeadlineMs 270 s, < the 300 s Lambda),
-# meeting 60 + 45 = 105 s per member (members run in parallel per phase).
+# meeting 100 + 45 = 145 s per member (members run in parallel per phase; each
+# phase is its own 300 s invocation). The meeting budget equals the phase
+# OpenRouter timeout so the hard wall clock does not cut a slow first call
+# that the socket timeout would have allowed.
 MODEL_CALL_TIMEOUT_FLOOR_SECONDS = 15
 FINAL_CALL_TIMEOUT_FLOOR_SECONDS = 45
 OP_TIMEOUT_FLOOR_SECONDS = 2

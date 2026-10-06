@@ -228,7 +228,13 @@ The loop (`run_tool_loop`) allows `maxToolRoundsPerTurn` 4 rounds and
 `maxToolCallsPerTurn` 8 calls per turn, truncates results to
 `toolResultMaxChars` 6 000, times out external calls at 10 s (25 s for
 slow GitHub / Meta ops) and bounds a turn by `chatToolLoopMaxSeconds` 120
-or `meetingToolLoopMaxSeconds` 60; the final answer keeps at least 45 s.
+or `meetingToolLoopMaxSeconds` 100 (equal to the 100 s phase OpenRouter
+timeout: with the hard wall clock the loop budget is a kill, not an
+inactivity timeout, and 60 s cut eight parallel `deepseek-chat` position
+calls at ~55–60 s); the final answer keeps at least 45 s. A member whose
+position call still fails (`board_meeting_position_skipped`) gets a
+"no position recorded" turn and the chair synthesises from the rest;
+the phase fails only when every member failed.
 The daily budget is re-checked before every round.
 
 ### 5.3 Approvals, audit, PII
