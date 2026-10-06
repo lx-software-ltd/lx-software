@@ -71,10 +71,14 @@ def blocked_term(text: str, settings: dict[str, Any]) -> str:
 
 
 def fallback_scene(body: str) -> str:
+    """Used only when the draft model cannot write a scene for this post."""
     hook = linkedin_store.hook_text(body)[:160]
     if not hook:
         hook = "the problem in the post"
-    return f"In a lift, the author is stuck holding one oversized object that stands for this: {hook}"
+    return (
+        "In a lift, the author is wedged in by one absurdly oversized object that stands for "
+        f"this: {hook} The doors are trying to close on it."
+    )
 
 
 def build_prompt(settings: dict[str, Any], scene: str, expression: str = "") -> str:
@@ -147,11 +151,10 @@ def queue_for_post(
         and not linkedin_store.image_pending_stale(current)
     ):
         raise LinkedInError("A picture is already being drawn.")
-    scene_text = (scene or str(current.get("scene") or "") or fallback_scene(str(doc.get("body") or ""))).strip()
-    caption_text = (caption or str(current.get("caption") or "") or linkedin_store.FALLBACK_IMAGE_CAPTION).strip()
-    expression_text = (
-        expression or str(current.get("expression") or "") or linkedin_store.FALLBACK_IMAGE_EXPRESSION
-    ).strip()
+    # Blank fields stay blank here; the worker writes them from the post.
+    scene_text = (scene or str(current.get("scene") or "")).strip()
+    caption_text = linkedin_store.finish_caption(caption or str(current.get("caption") or ""))
+    expression_text = (expression or str(current.get("expression") or "")).strip()
     held = _held_picture(current)
     doc["image"] = {
         "status": "pending",
@@ -205,7 +208,62 @@ def _held_picture(current: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
-def render_post(table: Any, post_id: str, *, generate: Generate | None = None) -> dict[str, Any]:
+def picture_text(
+    table: Any,
+    settings: dict[str, Any],
+    *,
+    body: str,
+    scene: str = "",
+    expression: str = "",
+    caption: str = "",
+    brief: Callable[..., dict[str, str]] | None = None,
+) -> tuple[str, str, str]:
+    """Scene, expression, and caption for a post.
+
+    Fields the owner or the draft already set are kept. Blank ones are written
+    from the post by the draft model, so an owner-written post gets a picture
+    about its own problem. When that call fails, a plain fallback stands in.
+    """
+    scene = scene.strip()
+    expression = expression.strip()
+    caption = linkedin_store.finish_caption(caption)
+    if not (scene and expression and caption):
+        import linkedin_draft
+
+        writer = brief or linkedin_draft.picture_brief
+        try:
+            written, cost = writer(table=table, settings=settings, body=body)
+        except Exception as exc:  # noqa: BLE001 — a missing brief falls back; the picture still draws
+            _log_event("warning", tag="linkedin_picture_brief_failed", error=str(exc)[:300])
+            written, cost = {}, 0.0
+        if cost:
+            try:
+                linkedin_store.add_spend(table, cost)
+            except Exception as exc:  # noqa: BLE001 — accounting must not drop the picture
+                _log_event("warning", tag="linkedin_image_usage_failed", error=str(exc)[:200])
+        scene = scene or str(written.get("imageScene") or "").strip() or fallback_scene(body)
+        expression = (
+            expression
+            or str(written.get("imageExpression") or "").strip()
+            or linkedin_store.FALLBACK_IMAGE_EXPRESSION
+        )
+        caption = caption or linkedin_store.finish_caption(
+            str(written.get("imageCaption") or "") or linkedin_store.FALLBACK_IMAGE_CAPTION
+        )
+    return (
+        scene[: linkedin_store.IMAGE_SCENE_MAX],
+        expression[: linkedin_store.IMAGE_EXPRESSION_MAX],
+        caption[: linkedin_store.IMAGE_CAPTION_MAX],
+    )
+
+
+def render_post(
+    table: Any,
+    post_id: str,
+    *,
+    generate: Generate | None = None,
+    brief: Callable[..., dict[str, str]] | None = None,
+) -> dict[str, Any]:
     """Draw one panel for a pending post. A failure leaves the draft and marks the picture failed."""
     doc = linkedin_store.get_post(table, post_id, consistent=True)
     if not doc:
@@ -217,9 +275,21 @@ def render_post(table: Any, post_id: str, *, generate: Generate | None = None) -
         return {"ok": False, "error": "disabled"}
     if str(image.get("status") or "") == "ready" and image.get("contentType"):
         return {"ok": True, "skipped": "ready"}
-    scene = str(image.get("scene") or "") or fallback_scene(str(doc.get("body") or ""))
-    caption = str(image.get("caption") or "") or linkedin_store.FALLBACK_IMAGE_CAPTION
-    expression = str(image.get("expression") or "") or linkedin_store.FALLBACK_IMAGE_EXPRESSION
+    scene, expression, caption = picture_text(
+        table,
+        settings,
+        body=str(doc.get("body") or ""),
+        scene=str(image.get("scene") or ""),
+        expression=str(image.get("expression") or ""),
+        caption=str(image.get("caption") or ""),
+        brief=brief,
+    )
+    if (scene, expression, caption) != (
+        str(image.get("scene") or ""),
+        str(image.get("expression") or ""),
+        str(image.get("caption") or ""),
+    ):
+        _mark(table, post_id, scene=scene, expression=expression, caption=caption)
     prompt = build_prompt(settings, scene, expression)
     term = blocked_term(prompt, settings)
     if term:

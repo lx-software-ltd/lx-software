@@ -1455,9 +1455,31 @@ def image_pending_stale(image: dict[str, Any] | None, *, now: datetime | None = 
     return (moment - requested).total_seconds() > IMAGE_PENDING_SECONDS
 
 
+_CAPTION_ENDINGS = (".", "?", "!", "…")
+
+
+def finish_caption(caption: str) -> str:
+    """The spoken line as it is drawn and read: no wrapping quotes, and it ends with a mark.
+
+    A question mark or an exclamation mark is kept; anything else gets a full stop.
+    An apostrophe inside the line stays.
+    """
+    text = str(caption or "").strip().strip("'\"“”‘’").strip()
+    if not text:
+        return ""
+    text = text[:IMAGE_CAPTION_MAX].rstrip()
+    while text and text[-1] in ",;:-—–":
+        text = text[:-1].rstrip()
+    if not text:
+        return ""
+    if text.endswith(_CAPTION_ENDINGS):
+        return text
+    return text + "."
+
+
 def caption_alt(caption: str) -> str:
-    """The spoken line with wrapping quotes removed. An apostrophe inside the line stays."""
-    return str(caption or "").strip().strip("'\"“”‘’")[:300]
+    """The caption as alt text: the same line that is drawn in the picture."""
+    return finish_caption(caption)[:300]
 
 
 def _image_key(post_id: str) -> str:
