@@ -340,14 +340,21 @@ def _picture_block(settings: dict[str, Any]) -> str:
     if not settings.get("imagesEnabled"):
         return ""
     return (
-        "Picture. Also return imageScene and imageCaption. imageScene is one sentence, "
-        "third person: the author physically dealing with this post's problem, at a comic "
-        "scale, in a detailed room. No second recognisable person, no logos, no brand names. "
-        "At most one two-word label; screens are unreadable scribbles. imageCaption is the "
-        "spoken line under the picture: first person, dry, 8 to 20 words, the understated "
-        "reading of the situation. Not a description of the picture and not a summary of the "
-        "post. Do not reuse this example or its words: 'The only list I've been on that also "
-        "includes a member of the Executive Council.'"
+        "Picture. Also return imageScene, imageExpression, and imageCaption. "
+        "imageScene is two short sentences, third person. Pick one concrete object or detail "
+        "from the post and make it physical and wrong in size, place, or quantity. Name the "
+        "setting, the object, and what the author is doing with it. The joke should be readable "
+        "without the caption, and the caption is the second beat. Draw the room in detail. "
+        "Do not default to a man at a desk with a laptop, or a stack of papers, unless the post "
+        "is about that. Vary the setting across the week: kitchen, lift, corridor, street, "
+        "meeting room, car park, shop counter. No second recognisable person, no logos, no brand "
+        "names. At most one two-word label; screens are unreadable scribbles. "
+        "imageExpression is two to five words for the face in this moment: the honest reaction, "
+        "such as weary, alarmed, deadpan, or quietly pleased. A smile only when the moment earns it. "
+        "imageCaption is the spoken line drawn inside the bottom of the picture, with no quotation "
+        "marks: first person, dry, 8 to 20 words. Not a description of the picture and not a summary "
+        "of the post. Do not reuse this example or its words: The only list I've been on that also "
+        "includes a member of the Executive Council."
     )
 
 
@@ -356,7 +363,7 @@ def _reply_block(settings: dict[str, Any]) -> str:
     if settings.get("imagesEnabled"):
         fields = (
             "firstComment (string), hashtags (array of strings without #), pillar, "
-            "imageScene (string), and imageCaption (string)"
+            "imageScene (string), imageExpression (string), and imageCaption (string)"
         )
     return (
         "Reply with one JSON object. body is required and must be the full post, "
@@ -451,6 +458,8 @@ def parse_draft(text: str) -> dict[str, Any]:
     scene = _field_text(parsed.get("imageScene"))[: linkedin_store.IMAGE_SCENE_MAX]
     caption = _field_text(parsed.get("imageCaption")).strip("'\"“”‘’")
     caption = caption[: linkedin_store.IMAGE_CAPTION_MAX]
+    expression = _field_text(parsed.get("imageExpression")).strip("'\"“”‘’")
+    expression = expression[: linkedin_store.IMAGE_EXPRESSION_MAX]
     return {
         "body": body,
         "firstComment": _field_text(parsed.get("firstComment")),
@@ -458,6 +467,7 @@ def parse_draft(text: str) -> dict[str, Any]:
         "pillar": _field_text(parsed.get("pillar")),
         "imageScene": scene,
         "imageCaption": caption,
+        "imageExpression": expression,
     }
 
 
@@ -478,6 +488,61 @@ def caption_findings(
     findings.extend(slop_findings(text))
     findings.extend(repeat_findings(text, others))
     return findings
+
+
+_SCENE_PLACES = (
+    "kitchen",
+    "lift",
+    "elevator",
+    "corridor",
+    "hallway",
+    "street",
+    "meeting room",
+    "car park",
+    "shop",
+    "desk",
+    "office",
+    "train",
+    "platform",
+    "supermarket",
+    "bedroom",
+    "stair",
+)
+
+
+def scene_findings(scene: str, others: list[str]) -> list[dict[str, str]]:
+    """Send the draft back when this picture repeats a recent setting or the same sentence."""
+    text = str(scene or "").strip()
+    if not text:
+        return []
+    lowered = text.lower()
+    places = [place for place in _SCENE_PLACES if linkedin_store.contains_term(lowered, place)]
+    grams = _ngrams(_words(text), 5)
+    for other in others:
+        if not other or not other.strip():
+            continue
+        other_l = other.lower()
+        shared_place = next((place for place in places if linkedin_store.contains_term(other_l, place)), "")
+        if shared_place:
+            return [
+                {
+                    "code": "scene",
+                    "severity": "error",
+                    "detail": (
+                        f"This picture uses the same setting (“{shared_place}”) as a recent one. "
+                        "Move it, and change the object."
+                    ),
+                }
+            ]
+        if grams and grams & _ngrams(_words(other), 5):
+            return [
+                {
+                    "code": "scene",
+                    "severity": "error",
+                    "detail": "This picture repeats a recent scene. Change the setting and the object.",
+                }
+            ]
+    return []
 
 
 def _usable_hashtags(value: Any) -> list[str]:
@@ -633,11 +698,14 @@ def _critic_messages(
     picture = ""
     scene = str(draft.get("imageScene") or "")
     caption = str(draft.get("imageCaption") or "")
-    if settings.get("imagesEnabled") and (scene or caption):
+    expression = str(draft.get("imageExpression") or "")
+    if settings.get("imagesEnabled") and (scene or caption or expression):
         picture = (
             f"Picture scene: {scene}\n"
+            f"Picture expression: {expression}\n"
             f"Picture caption: {caption}\n"
-            "Return imageScene and imageCaption with the post. Change the caption when a check names it.\n"
+            "Return imageScene, imageExpression, and imageCaption with the post. "
+            "Change the scene when a check names it. Change the caption when a check names it.\n"
         )
     return [
         {"role": "system", "content": _system_prompt(settings)},
@@ -717,6 +785,7 @@ def draft_one(
     others: list[str] | None = None,
     shape: dict[str, str] | None = None,
     captions: list[str] | None = None,
+    scenes: list[str] | None = None,
 ) -> tuple[dict[str, Any], float]:
     """One draft, with the single rewrite pass when a check fails.
 
@@ -741,6 +810,7 @@ def draft_one(
     findings.extend(repeat_findings(parsed["body"], siblings))
     if settings.get("imagesEnabled"):
         findings.extend(caption_findings(str(parsed.get("imageCaption") or ""), settings, captions or []))
+        findings.extend(scene_findings(str(parsed.get("imageScene") or ""), scenes or []))
     if linkedin_store.errors_block(findings):
         revised, extra = complete(_critic_messages(settings, parsed, findings, shape=shape))
         cost += extra
@@ -750,6 +820,8 @@ def draft_one(
             revised["imageScene"] = parsed.get("imageScene") or ""
         if not revised.get("imageCaption"):
             revised["imageCaption"] = parsed.get("imageCaption") or ""
+        if not revised.get("imageExpression"):
+            revised["imageExpression"] = parsed.get("imageExpression") or ""
         parsed = revised
     return parsed, cost
 
@@ -785,6 +857,7 @@ def generate_drafts(
     recent = linkedin_store.recent_bodies(table)
     others.extend(recent)
     captions = linkedin_store.recent_captions(table)
+    scenes = linkedin_store.recent_scenes(table)
     # Shapes rotate from where the last batch left off, so week two does not
     # open and close its four posts the way week one did.
     shape_offset = len(linkedin_store.list_posts(table, limit=400))
@@ -807,6 +880,7 @@ def generate_drafts(
                 others=others,
                 shape=shape_for(index, shape_offset),
                 captions=captions,
+                scenes=scenes,
             )
         except (DraftError, LinkedInError, OpenRouterError) as exc:
             errors.append(str(exc))
@@ -818,6 +892,11 @@ def generate_drafts(
         if not persist:
             created.append(parsed)
             others.append(str(parsed.get("body") or ""))
+            if settings.get("imagesEnabled"):
+                if parsed.get("imageCaption"):
+                    captions.append(str(parsed["imageCaption"]))
+                if parsed.get("imageScene"):
+                    scenes.append(str(parsed["imageScene"]))
             continue
         try:
             doc = linkedin_store.create_post(
@@ -847,6 +926,7 @@ def generate_drafts(
                     str(doc["postId"]),
                     scene=str(parsed.get("imageScene") or ""),
                     caption=str(parsed.get("imageCaption") or ""),
+                    expression=str(parsed.get("imageExpression") or ""),
                     force=True,
                 )
             except LinkedInError as exc:
@@ -858,6 +938,9 @@ def generate_drafts(
                 caption = str((doc.get("image") or {}).get("caption") or "")
                 if caption:
                     captions.append(caption)
+                scene = str((doc.get("image") or {}).get("scene") or "")
+                if scene:
+                    scenes.append(scene)
         created.append(linkedin_store.public_post(doc))
         others.append(str(doc["body"]))
     if not created and errors:

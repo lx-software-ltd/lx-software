@@ -81,6 +81,7 @@ describe("linkedin guardrails", () => {
     expect(DEFAULT_LINKEDIN_SETTINGS.imageFormat).toBe("square");
     expect(RECOMMENDED_IMAGE_STYLE.length).toBeLessThanOrEqual(600);
     expect(RECOMMENDED_IMAGE_STYLE).toContain("cross-hatching");
+    expect(RECOMMENDED_IMAGE_STYLE).toContain("caricatures");
   });
 
   it("matches a blocked phrase only on a word boundary", () => {

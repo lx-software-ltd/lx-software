@@ -292,6 +292,7 @@ function DraftRow({
                   postId: post.postId,
                   scene: post.image?.scene ?? "",
                   caption: post.image?.caption ?? "",
+                  expression: post.image?.expression ?? "",
                 }),
             },
             { id: "archive", label: "Archive", iconClassName: "bi-archive", danger: true, onClick: onArchive },
@@ -368,13 +369,19 @@ function PostEditor({
   const [hashtags, setHashtags] = useState((post?.hashtags ?? []).join(" "));
   const [marking, setMarking] = useState(false);
   const [postedUrl, setPostedUrl] = useState("");
-  const [pictureDraft, setPictureDraft] = useState<{ id: string; scene: string; caption: string } | null>(null);
+  const [pictureDraft, setPictureDraft] = useState<{
+    id: string;
+    scene: string;
+    caption: string;
+    expression: string;
+  } | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const linkedIn = useLinkedIn();
   const pictureId = post?.postId ?? "";
   const picture = pictureDraft?.id === pictureId ? pictureDraft : null;
   const scene = picture?.scene ?? post?.image?.scene ?? "";
   const caption = picture?.caption ?? post?.image?.caption ?? "";
+  const expression = picture?.expression ?? post?.image?.expression ?? "";
   const tags = hashtags.split(/[\s,]+/).map((tag) => tag.replace(/^#/, "")).filter(Boolean);
   const findings = guardrails(body, firstComment, tags, settings);
   const blocked = hasBlockingGuardrail(findings);
@@ -488,8 +495,22 @@ function PostEditor({
                     rows={2}
                     maxLength={400}
                     value={scene}
-                    onChange={(event) => setPictureDraft({ id: pictureId, scene: event.target.value, caption })}
+                    onChange={(event) =>
+                      setPictureDraft({ id: pictureId, scene: event.target.value, caption, expression })
+                    }
                   />
+                </AdminField>
+                <AdminField label="Expression" htmlFor={`${formId}-expression`}>
+                  <input
+                    id={`${formId}-expression`}
+                    className="form-control"
+                    maxLength={80}
+                    value={expression}
+                    onChange={(event) =>
+                      setPictureDraft({ id: pictureId, scene, caption, expression: event.target.value })
+                    }
+                  />
+                  <p className="form-text mb-0">Two to five words for the face in this moment. A smile only when the moment earns it.</p>
                 </AdminField>
                 <AdminField label="Caption" htmlFor={`${formId}-caption`}>
                   <input
@@ -497,9 +518,11 @@ function PostEditor({
                     className="form-control"
                     maxLength={140}
                     value={caption}
-                    onChange={(event) => setPictureDraft({ id: pictureId, scene, caption: event.target.value })}
+                    onChange={(event) =>
+                      setPictureDraft({ id: pictureId, scene, caption: event.target.value, expression })
+                    }
                   />
-                  <p className="form-text mb-0">Spoken line under the panel, in single quotes. Also the picture's alt text.</p>
+                  <p className="form-text mb-0">Spoken line, drawn inside the bottom of the picture. Also the alt text.</p>
                 </AdminField>
                 <button
                   type="button"
@@ -507,7 +530,7 @@ function PostEditor({
                   disabled={!enabled || post.image?.status === "pending" || linkedIn.redrawImage.isPending}
                   onClick={() => {
                     setLocalError(null);
-                    void linkedIn.redrawImage.mutateAsync({ postId: post.postId, scene, caption }).catch((caught: unknown) => {
+                    void linkedIn.redrawImage.mutateAsync({ postId: post.postId, scene, caption, expression }).catch((caught: unknown) => {
                       setLocalError(caught instanceof Error ? caught.message : "Could not redraw the picture.");
                     });
                   }}

@@ -1375,19 +1375,54 @@ class LinkedInImageTests(unittest.TestCase):
         with self.assertRaises(LinkedInError):
             linkedin_store.save_settings(self.table, {**settings, "imageModel": "not a slug"})
 
-    def test_compose_is_grayscale_with_a_caption_strip(self) -> None:
+    def test_compose_draws_the_caption_inside_the_picture(self) -> None:
         from io import BytesIO
 
         from PIL import Image
 
-        png = linkedin_image.compose(self._png(), "This took longer than I expected.", "square")
-        image = Image.open(BytesIO(png))
-        self.assertEqual(image.size, (1200, 1200))
-        self.assertEqual(image.mode, "L")
-        self.assertNotEqual(image.getpixel((10, 10)), 255)
-        self.assertEqual(image.getpixel((10, 1100)), 255)
-        self.assertIn("Picture.", linkedin_draft._system_prompt(linkedin_store.default_settings()))  # noqa: SLF001
-        self.assertIn("imageCaption", linkedin_draft._system_prompt(linkedin_store.default_settings()))  # noqa: SLF001
+        sizes = {"square": (1200, 1200), "portrait": (1080, 1350), "wide": (1200, 675)}
+        for fmt, size in sizes.items():
+            png = linkedin_image.compose(self._png(), "'This took longer than I expected.'", fmt)
+            image = Image.open(BytesIO(png))
+            self.assertEqual(image.size, size)
+            self.assertEqual(image.mode, "L")
+            self.assertEqual(image.getpixel((0, 0)), 0)
+            self.assertNotEqual(image.getpixel((80, 80)), 255)
+            self.assertEqual(image.getpixel((48, size[1] - 50)), 255)
+        lines = linkedin_image.caption_lines(  # noqa: SLF001
+            "'This took longer than I expected.'",
+            width=900,
+            font=linkedin_image._font(44),  # noqa: SLF001
+        )
+        self.assertEqual(lines, ["This took longer than I expected."])
+        self.assertNotIn("'", "".join(lines))
+        prompt = linkedin_draft._system_prompt(linkedin_store.default_settings())  # noqa: SLF001
+        self.assertIn("Picture.", prompt)
+        self.assertIn("imageExpression", prompt)
+        self.assertNotIn("single quotes", prompt.lower())
+
+    def test_character_prompt_is_a_caricature_and_the_expression_is_sent(self) -> None:
+        settings = linkedin_store.default_settings()
+        character = linkedin_image.character_prompt(settings)
+        self.assertIn("caricature", character)
+        self.assertNotIn("smile", character.lower())
+        prompt = linkedin_image.build_prompt(settings, "In a lift, a giant ticket blocks the door.", "alarmed")
+        self.assertIn("Expression: alarmed", prompt)
+        self.assertIn("Do not default to a smile", prompt)
+        self.assertIn("lower edge", prompt)
+        self.assertLessEqual(len(settings["imageStyle"]), linkedin_store.IMAGE_STYLE_MAX)
+        parsed = linkedin_draft.parse_draft(
+            '{"body":"A short hook.\\n\\nOne lesson.","imageScene":"In a lift, a giant ticket blocks the door.",'
+            '"imageExpression":"deadpan","imageCaption":"\'Fine.\'"}'
+        )
+        self.assertEqual(parsed["imageExpression"], "deadpan")
+        self.assertEqual(parsed["imageCaption"], "Fine.")
+        repeated = linkedin_draft.scene_findings(
+            "In the kitchen the author balances a kettle the size of a fridge.",
+            ["The kitchen at night, with the same kettle still on the floor."],
+        )
+        self.assertEqual(repeated[0]["code"], "scene")
+        self.assertIn("kitchen", repeated[0]["detail"])
 
     def test_a_product_name_in_the_scene_is_not_sent(self) -> None:
         doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOne lesson."})
@@ -1416,6 +1451,7 @@ class LinkedInImageTests(unittest.TestCase):
         seen: dict[str, object] = {}
 
         def generate(prompt, aspect, seed, references, settings, n=1):
+            seen["prompt"] = prompt
             seen["aspect"] = aspect
             seen["n"] = n
             seen["references"] = references
@@ -1427,7 +1463,8 @@ class LinkedInImageTests(unittest.TestCase):
 
         result = linkedin_image.render_post(self.table, doc["postId"], generate=generate)
         self.assertTrue(result["ok"])
-        self.assertEqual(seen["aspect"], "4:3")
+        self.assertEqual(seen["aspect"], "1:1")
+        self.assertIn("concentrating, not smiling", str(seen["prompt"]))
         self.assertIsNone(seen["references"])
         stored = linkedin_store.get_post(self.table, doc["postId"])
         self.assertEqual(stored["image"]["status"], "ready")
@@ -1550,9 +1587,9 @@ class LinkedInImageTests(unittest.TestCase):
 
         with patch("openrouter_client.generate_image", side_effect=generate_image):
             with patch("boto3.client", return_value=object()):
-                linkedin_image._live_generate("a desk", "4:3", 7, None, {}, n=1)
+                linkedin_image._live_generate("a desk", "1:1", 7, None, {}, n=1)
         self.assertEqual(captured["resolution"], "2K")
-        self.assertEqual(captured["aspect_ratio"], "4:3")
+        self.assertEqual(captured["aspect_ratio"], "1:1")
         self.assertEqual(linkedin_image.IMAGE_RESOLUTION, "2K")
 
     def test_image_routes_redraw_and_reject_a_second_one(self) -> None:
@@ -1701,6 +1738,7 @@ class LinkedInImageTests(unittest.TestCase):
         prompt = linkedin_draft._system_prompt(off)  # noqa: SLF001
         self.assertNotIn("Picture.", prompt)
         self.assertNotIn("imageCaption", prompt)
+        self.assertNotIn("imageExpression", prompt)
         calls: list[int] = []
 
         def complete(messages):
