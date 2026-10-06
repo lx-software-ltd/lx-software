@@ -1350,6 +1350,124 @@ class LinkedInImageTests(unittest.TestCase):
         self.table = FakeTable()
         linkedin_store._IMAGE_MEMORY.clear()
         linkedin_store._CHARACTER_MEMORY.clear()
+        # No live picture brief in these tests; one that wants the brief passes its own.
+        self._brief = patch("linkedin_draft.picture_brief", return_value=({}, 0.0))
+        self._brief.start()
+        self.addCleanup(self._brief.stop)
+
+    def test_the_caption_always_ends_with_a_mark(self) -> None:
+        finish = linkedin_store.finish_caption
+        self.assertEqual(finish("'This took longer than I expected'"), "This took longer than I expected.")
+        self.assertEqual(finish("“Is this the queue?”"), "Is this the queue?")
+        self.assertEqual(finish("Not again!"), "Not again!")
+        self.assertEqual(finish("It's fine."), "It's fine.")
+        self.assertEqual(finish("Well, "), "Well.")
+        self.assertEqual(finish("   "), "")
+        self.assertEqual(finish("'"), "")
+        self.assertEqual(linkedin_store.caption_alt("Quite a pile"), "Quite a pile.")
+        parsed = linkedin_draft.parse_draft(
+            '{"body":"A short hook.\\n\\nOne lesson.","imageScene":"In a lift.",'
+            '"imageExpression":"weary.","imageCaption":"Still waiting for the doors"}'
+        )
+        self.assertEqual(parsed["imageCaption"], "Still waiting for the doors.")
+        self.assertEqual(parsed["imageExpression"], "weary")
+        prompt = linkedin_draft._system_prompt(linkedin_store.default_settings())  # noqa: SLF001
+        self.assertIn("ends with a full stop", prompt)
+        self.assertIn("funny cartoon of that problem", prompt)
+        self.assertIn("written from this post", prompt)
+
+    def test_a_post_without_a_brief_has_one_written_from_the_post(self) -> None:
+        from openrouter_client import GeneratedImage, ImageGeneration
+
+        doc = linkedin_store.create_post(
+            self.table, {"body": "The migration took eleven hours.\n\nThe estimate was forty minutes."}
+        )
+        with patch("board_async.try_invoke_event", return_value=True):
+            queued = linkedin_image.queue_for_post(self.table, doc["postId"])
+        self.assertEqual(queued["image"]["scene"], "")
+        self.assertEqual(queued["image"]["caption"], "")
+        asked: dict[str, object] = {}
+
+        def brief(*, table, settings, body):
+            asked["body"] = body
+            asked["settings"] = settings
+            return (
+                {
+                    "imageScene": "In a car park, the author pushes a progress bar the length of a bus.",
+                    "imageExpression": "weary, jaw set",
+                    "imageCaption": "'Forty minutes, the estimate said'",
+                },
+                0.002,
+            )
+
+        seen: dict[str, object] = {}
+
+        def generate(prompt, aspect, seed, references, settings, n=1):
+            seen["prompt"] = prompt
+            return ImageGeneration(
+                images=[GeneratedImage("image/png", self._png())],
+                model="bytedance-seed/seedream-4.5",
+                usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3, "cost": 0.04},
+            )
+
+        result = linkedin_image.render_post(self.table, doc["postId"], generate=generate, brief=brief)
+        self.assertTrue(result["ok"])
+        self.assertIn("eleven hours", str(asked["body"]))
+        self.assertIn("progress bar the length of a bus", str(seen["prompt"]))
+        self.assertIn("Expression: weary, jaw set", str(seen["prompt"]))
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertEqual(stored["image"]["status"], "ready")
+        self.assertEqual(stored["image"]["caption"], "Forty minutes, the estimate said.")
+        self.assertEqual(stored["image"]["expression"], "weary, jaw set")
+        self.assertTrue(stored["image"]["scene"].startswith("In a car park"))
+        self.assertAlmostEqual(linkedin_store.month_spend(self.table), 0.042)
+
+    def test_a_failed_brief_still_draws_a_picture_about_the_post(self) -> None:
+        from openrouter_client import GeneratedImage, ImageGeneration
+
+        doc = linkedin_store.create_post(self.table, {"body": "The lift queue was the real bottleneck.\n\nOne lesson."})
+        with patch("board_async.try_invoke_event", return_value=True):
+            linkedin_image.queue_for_post(self.table, doc["postId"], caption="Still queueing")
+
+        def brief(**_kwargs):
+            raise RuntimeError("OpenRouter down")
+
+        def generate(prompt, aspect, seed, references, settings, n=1):
+            return ImageGeneration(
+                images=[GeneratedImage("image/png", self._png())],
+                model="bytedance-seed/seedream-4.5",
+                usage={"cost": 0.01},
+            )
+
+        result = linkedin_image.render_post(self.table, doc["postId"], generate=generate, brief=brief)
+        self.assertTrue(result["ok"])
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertIn("The lift queue was the real bottleneck.", stored["image"]["scene"])
+        self.assertEqual(stored["image"]["caption"], "Still queueing.")
+        self.assertEqual(stored["image"]["expression"], linkedin_store.FALLBACK_IMAGE_EXPRESSION)
+
+    def test_the_picture_brief_is_asked_from_the_post_alone(self) -> None:
+        captured: dict[str, object] = {}
+
+        def fake(messages, *, table=None, settings=None):
+            captured["messages"] = messages
+            return (
+                {"imageScene": "Scene.", "imageExpression": "deadpan", "imageCaption": "Is that it"},
+                0.001,
+            )
+
+        self._brief.stop()
+        with patch("linkedin_draft.complete_json_object", side_effect=fake):
+            fields, cost = linkedin_draft.picture_brief(
+                table=None, settings=linkedin_store.default_settings(), body="A short hook.\n\nOne lesson."
+            )
+        self.assertEqual(fields["imageCaption"], "Is that it.")
+        self.assertEqual(cost, 0.001)
+        messages = captured["messages"]
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertIn("funny cartoon of that problem", messages[0]["content"])
+        self.assertIn("A short hook.", messages[1]["content"])
+        self.assertEqual(linkedin_draft.picture_brief(table=None, settings={}, body="  "), ({}, 0.0))
 
     def _png(self, color=(180, 30, 30), size=(90, 60)) -> bytes:
         from io import BytesIO
