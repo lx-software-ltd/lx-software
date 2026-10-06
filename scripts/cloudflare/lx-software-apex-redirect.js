@@ -1,9 +1,9 @@
 /**
  * Send every request on the proxied apex to the www CloudFront hostname.
  *
- * A Cloudflare Page Rule used to forward to a literal star path, so
- * `/about` on the apex became a star path on www. This Worker wins over
- * that rule on the apex wildcard route.
+ * Single Redirects run before Workers. Keep that rule's destination as
+ * concat(www host, request path), never a literal star path. This Worker
+ * is the HTTP / fallback 301 on the apex wildcard route.
  *
  * Publish: python3 scripts/cloudflare/publish-apex-redirect.py apply
  */

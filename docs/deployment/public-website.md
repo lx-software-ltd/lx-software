@@ -307,19 +307,21 @@ origin. Do not rewrite history with Git LFS. Re-running
 custom domain as success.
 
 `www.lx-software.com` stays a grey-cloud CNAME to CloudFront. Do not proxy
-it. The apex A record stays proxied to the dummy `192.0.2.1`. Worker
-`lx-software-apex-redirect` on `lx-software.com/*` 301s to
-`https://www.lx-software.com` and keeps the path and query. Publish with
+it. The apex is a Worker custom domain (`AAAA 100::`, proxied) for
+`lx-software-apex-redirect`. A Single Redirect
+(`http.host eq "lx-software.com"`) 301s to
+`concat("https://www.lx-software.com", http.request.uri.path)` and keeps
+the query; that rule runs before Workers, so HTTPS never reaches a
+literal `https://www.lx-software.com/*` destination. The Worker on
+`lx-software.com/*` is the HTTP / fallback path. Publish with
 `python3 scripts/cloudflare/publish-apex-redirect.py apply`
-(`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`). HTTP on the apex uses
-that Worker. HTTPS still hits an earlier Redirect / Page Rule whose
-destination is the literal star path; this token cannot edit rulesets, so
-open the `lx-software.com` zone → **Rules** → Redirect Rules or Page Rules
-and either delete that rule or set the destination to
-`https://www.lx-software.com${http.request.uri.path}` (keep the query).
-After that, `publish-apex-redirect.py check` should report 301s for both
-schemes. Tiered Cache is off. The media hostname is already caching from
-the object `Cache-Control`, so an extra cache rule is optional.
+(`CLOUDFLARE_API_TOKEN` needs Workers edit, zone Workers Routes, and
+Zone Redirect Rules Edit, plus `CLOUDFLARE_ACCOUNT_ID`).
+`publish-apex-redirect.py check` should report 301s for HTTP and HTTPS
+and refuse a star destination. Do not restore the dummy `192.0.2.1` A
+record unless you are removing the custom domain. Tiered Cache is off.
+The media hostname is already caching from the object `Cache-Control`,
+so an extra cache rule is optional.
 
 ## Troubleshooting
 
