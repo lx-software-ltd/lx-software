@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-from typing import Any
+from typing import Any, Callable
 
 import linkedin_image
 import linkedin_seeds
@@ -339,23 +339,63 @@ def _system_prompt(settings: dict[str, Any]) -> str:
 def _picture_block(settings: dict[str, Any]) -> str:
     if not settings.get("imagesEnabled"):
         return ""
+    return "Picture. Also return imageScene, imageExpression, and imageCaption. " + _picture_rules()
+
+
+def _picture_rules() -> str:
+    """What the three picture fields are. Shared by the draft prompt and the picture brief."""
     return (
-        "Picture. Also return imageScene, imageExpression, and imageCaption. "
-        "imageScene is two short sentences, third person. Pick one concrete object or detail "
-        "from the post and make it physical and wrong in size, place, or quantity. Name the "
-        "setting, the object, and what the author is doing with it. The joke should be readable "
-        "without the caption, and the caption is the second beat. Draw the room in detail. "
+        "All three are written from this post and nothing else: the problem the post is about "
+        "is what the picture is about. "
+        "imageScene is a funny cartoon of that problem, two short sentences, third person. "
+        "Take one concrete object or detail from the post and make it physical and wrong in "
+        "size, place, or quantity, so the obstacle itself is the gag. Name the setting, the object, "
+        "and what the author is doing with it. The joke should be readable without the caption, "
+        "and the caption is the second beat. Draw the room in detail. "
         "Do not default to a man at a desk with a laptop, or a stack of papers, unless the post "
         "is about that. Vary the setting across the week: kitchen, lift, corridor, street, "
         "meeting room, car park, shop counter. No second recognisable person, no logos, no brand "
         "names. At most one two-word label; screens are unreadable scribbles. "
-        "imageExpression is two to five words for the face in this moment: the honest reaction, "
-        "such as weary, alarmed, deadpan, or quietly pleased. A smile only when the moment earns it. "
+        "imageExpression is two to five words for the face in this exact moment of the problem: "
+        "the honest reaction, such as weary, alarmed, deadpan, or quietly pleased. "
+        "A smile only when the moment earns it. "
         "imageCaption is the spoken line drawn inside the bottom of the picture, with no quotation "
-        "marks: first person, dry, 8 to 20 words. Not a description of the picture and not a summary "
-        "of the post. Do not reuse this example or its words: The only list I've been on that also "
-        "includes a member of the Executive Council."
+        "marks: first person, dry, 8 to 20 words, about the same problem. It ends with a full stop, "
+        "or with a question mark or an exclamation mark when the line is a question or an outburst. "
+        "Not a description of the picture and not a summary of the post. Do not reuse this example "
+        "or its words: The only list I've been on that also includes a member of the Executive Council."
     )
+
+
+def picture_brief(
+    *,
+    table: Any | None,
+    settings: dict[str, Any],
+    body: str,
+) -> tuple[dict[str, str], float]:
+    """Scene, expression, and caption for a post that already has its body.
+
+    Used when the owner wrote the post, or when a draft came back without one of
+    the three. Returns the fields and the USD cost of the call.
+    """
+    text = str(body or "").strip()
+    if not text:
+        return {}, 0.0
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You write the picture brief for a LinkedIn post by a senior architect. "
+                + _picture_rules()
+                + " Reply with one JSON object with exactly these keys: "
+                'imageScene (string), imageExpression (string), imageCaption (string). '
+                "The JSON is the shape only; do not copy any example wording."
+            ),
+        },
+        {"role": "user", "content": f"The post:\n---\n{text[:4000]}\n---"},
+    ]
+    parsed, cost = complete_json_object(messages, table=table, settings=settings)
+    return picture_fields(parsed), cost
 
 
 def _reply_block(settings: dict[str, Any]) -> str:
@@ -455,20 +495,22 @@ def parse_draft(text: str) -> dict[str, Any]:
         keys = ",".join(sorted(str(key) for key in parsed.keys())[:12])
         _log_event("warning", tag="linkedin_draft_empty_body", keys=keys)
         raise DraftError("The model returned an empty post.")
-    scene = _field_text(parsed.get("imageScene"))[: linkedin_store.IMAGE_SCENE_MAX]
-    caption = _field_text(parsed.get("imageCaption")).strip("'\"“”‘’")
-    caption = caption[: linkedin_store.IMAGE_CAPTION_MAX]
-    expression = _field_text(parsed.get("imageExpression")).strip("'\"“”‘’")
-    expression = expression[: linkedin_store.IMAGE_EXPRESSION_MAX]
     return {
         "body": body,
         "firstComment": _field_text(parsed.get("firstComment")),
         "hashtags": _usable_hashtags(parsed.get("hashtags")),
         "pillar": _field_text(parsed.get("pillar")),
-        "imageScene": scene,
-        "imageCaption": caption,
-        "imageExpression": expression,
+        **picture_fields(parsed),
     }
+
+
+def picture_fields(parsed: dict[str, Any]) -> dict[str, str]:
+    """imageScene / imageExpression / imageCaption from a model object, trimmed and finished."""
+    scene = _field_text(parsed.get("imageScene"))[: linkedin_store.IMAGE_SCENE_MAX]
+    caption = linkedin_store.finish_caption(_field_text(parsed.get("imageCaption")))
+    expression = _field_text(parsed.get("imageExpression")).strip("'\"“”‘’").rstrip(".")
+    expression = expression[: linkedin_store.IMAGE_EXPRESSION_MAX]
+    return {"imageScene": scene, "imageCaption": caption, "imageExpression": expression}
 
 
 def caption_findings(
@@ -576,13 +618,46 @@ def draft_model(settings: dict[str, Any] | None = None) -> str:
     return override or (os.environ.get("OPENROUTER_MODEL") or "").strip()
 
 
+def _parse_object(text: str) -> dict[str, Any]:
+    raw = (text or "").strip()
+    if not raw:
+        raise DraftError("The model did not return JSON.")
+    try:
+        parsed = parse_json_object_text(raw)
+    except OpenRouterError as exc:
+        raise DraftError("The model did not return JSON.") from exc
+    if not isinstance(parsed, dict):
+        raise DraftError("The model did not return JSON.")
+    return parsed
+
+
 def complete_json(
     messages: list[dict[str, str]],
     *,
     table: Any | None = None,
     settings: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], float]:
-    """One JSON chat completion. Returns the parsed object and the USD cost."""
+    """One JSON chat completion that must contain a post. Returns the draft and the USD cost."""
+    return _complete(messages, parse_draft, table=table, settings=settings)
+
+
+def complete_json_object(
+    messages: list[dict[str, str]],
+    *,
+    table: Any | None = None,
+    settings: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], float]:
+    """One JSON chat completion for any object (the picture brief). Returns it and the USD cost."""
+    return _complete(messages, _parse_object, table=table, settings=settings)
+
+
+def _complete(
+    messages: list[dict[str, str]],
+    parse: Callable[[str], dict[str, Any]],
+    *,
+    table: Any | None,
+    settings: dict[str, Any] | None,
+) -> tuple[dict[str, Any], float]:
     import boto3
     import openrouter_client
 
@@ -611,7 +686,7 @@ def complete_json(
             record_draft_usage(table, result.usage)
         cut_off = result.finish_reason == "length"
         try:
-            return parse_draft(result.text), spent
+            return parse(result.text), spent
         except DraftError as exc:
             preview = (result.text or "").lstrip()[:1]
             _log_event(

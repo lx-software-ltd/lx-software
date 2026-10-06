@@ -499,6 +499,10 @@ function PostEditor({
                       setPictureDraft({ id: pictureId, scene: event.target.value, caption, expression })
                     }
                   />
+                  <p className="form-text mb-0">
+                    A funny cartoon of the problem in the post. Clear any of these three fields and Redraw to have them
+                    written from the post.
+                  </p>
                 </AdminField>
                 <AdminField label="Expression" htmlFor={`${formId}-expression`}>
                   <input
@@ -522,7 +526,10 @@ function PostEditor({
                       setPictureDraft({ id: pictureId, scene, caption: event.target.value, expression })
                     }
                   />
-                  <p className="form-text mb-0">Spoken line, drawn inside the bottom of the picture. Also the alt text.</p>
+                  <p className="form-text mb-0">
+                    Spoken line, drawn inside the bottom of the picture. Also the alt text. It ends with a full stop
+                    unless it ends with ? or !.
+                  </p>
                 </AdminField>
                 <button
                   type="button"
