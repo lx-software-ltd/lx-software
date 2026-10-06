@@ -150,6 +150,7 @@ export const ROUTES: readonly AdminApiRoute[] = [
   { path: "/lx-software/linkedin/character/candidates/{id}", methods: [GET], auth: "jwt" },
   { path: "/lx-software/linkedin/character/choose", methods: [POST], auth: "jwt" },
   { path: "/lx-software/linkedin/posts/{id}/image/regenerate", methods: [POST], auth: "jwt" },
+  { path: "/lx-software/linkedin/posts/{id}/image/brief", methods: [POST], auth: "jwt" },
   { path: "/lx-software/linkedin/posts/{id}/image", methods: [GET, POST, DELETE], auth: "jwt" },
   { path: "/lx-software/linkedin/posts", methods: [GET, POST], auth: "jwt" },
   { path: "/lx-software/linkedin/posts/{id}", methods: [PUT], auth: "jwt" },

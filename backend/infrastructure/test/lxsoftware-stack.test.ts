@@ -213,6 +213,7 @@ describe("HTTP API routes", () => {
       "POST /lx-software/linkedin/posts/{id}/image",
       "DELETE /lx-software/linkedin/posts/{id}/image",
       "POST /lx-software/linkedin/posts/{id}/image/regenerate",
+      "POST /lx-software/linkedin/posts/{id}/image/brief",
       "GET /lx-software/linkedin/character",
       "GET /lx-software/linkedin/character/photo",
       "POST /lx-software/linkedin/character/photo",
