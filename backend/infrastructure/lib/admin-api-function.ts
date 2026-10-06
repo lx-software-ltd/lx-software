@@ -333,6 +333,7 @@ export function defineAdminApiFunction(
   lambdaDeadLetterQueue.grantSendMessages(adminFn);
 
   recordsTable.grantReadWriteData(adminFn);
+  auditLogTable.grantWriteData(adminFn);
   assetsBucket.grantReadWrite(adminFn);
 
   const openRouterSecretPolicy = grantAdminApiPolicies(scope, {
