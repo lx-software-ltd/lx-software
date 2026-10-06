@@ -27,6 +27,13 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+LIVE_PROBES = (
+    "http://lx-software.com/",
+    "http://lx-software.com/privacy",
+    "https://lx-software.com/",
+    "https://lx-software.com/about",
+)
+
 ZONE_NAME = "lx-software.com"
 CANONICAL_HOST = "www.lx-software.com"
 SCRIPT_NAME = "lx-software-apex-redirect"
@@ -145,13 +152,44 @@ def ensure_route(token: str, zone_id: str) -> str:
 
 
 def worker_state(token: str, account_id: str, zone_id: str) -> dict[str, Any]:
-    script = _cf_request("GET", f"/accounts/{account_id}/workers/scripts/{SCRIPT_NAME}", token)
+    scripts = _cf_request("GET", f"/accounts/{account_id}/workers/scripts", token).get("result") or []
+    script = next((row for row in scripts if str(row.get("id")) == SCRIPT_NAME), {})
     routes = _cf_request("GET", f"/zones/{zone_id}/workers/routes", token).get("result") or []
     matching = [row for row in routes if str(row.get("pattern")) == ROUTE_PATTERN]
     return {
-        "script": script.get("result") or {},
+        "script": script,
         "routes": matching,
     }
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        return None
+
+
+def probe_live() -> list[str]:
+    opener = urllib.request.build_opener(_NoRedirect)
+    problems: list[str] = []
+    for href in LIVE_PROBES:
+        req = urllib.request.Request(
+            href,
+            method="GET",
+            headers={"User-Agent": "lx-software-apex-redirect-check/1"},
+        )
+        try:
+            with opener.open(req, timeout=15) as resp:
+                location = resp.headers.get("Location", "")
+                status = resp.status
+        except urllib.error.HTTPError as exc:
+            location = exc.headers.get("Location", "") if exc.headers else ""
+            status = exc.code
+        except urllib.error.URLError as exc:
+            problems.append(f"{href} failed: {exc.reason}")
+            continue
+        expected = canonical_www_url(href)
+        if status != 301 or location != expected:
+            problems.append(f"{href} -> {status} {location or '(no Location)'} (want 301 {expected})")
+    return problems
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -173,7 +211,18 @@ def main(argv: list[str] | None = None) -> int:
     routes = state["routes"]
     ok = bool(routes) and all(str(row.get("script")) == SCRIPT_NAME for row in routes)
     print(f"worker {script_id}; routes {len(routes)}; expected {ROUTE_PATTERN} -> {SCRIPT_NAME}")
-    return 0 if ok else 1
+    live = probe_live()
+    for line in live:
+        print(f"live {line}")
+    if live:
+        print(
+            "HTTPS still hits an earlier Cloudflare Redirect / Page Rule that "
+            "this token cannot edit. In the lx-software.com zone, change that "
+            "rule's destination from a literal star path to "
+            f"https://{CANONICAL_HOST}${{http.request.uri.path}} or delete it.",
+            file=sys.stderr,
+        )
+    return 0 if ok and not live else 1
 
 
 if __name__ == "__main__":
