@@ -2,6 +2,18 @@ import { useMemo } from "react";
 import { useLinkedIn } from "../../hooks/useLinkedIn";
 import { formatDateTimeHKT } from "../../lib/formatDisplay";
 import { hookText, nextSlots, type LinkedInDraftSettings } from "../../lib/linkedinModel";
+import {
+  AdminCell,
+  AdminDataTable,
+  AdminDataTableCellMeta,
+  AdminDataTableEmptyRow,
+  AdminRecordTable,
+} from "../ui";
+
+const COLUMNS = [
+  { key: "slot", header: "Slot" },
+  { key: "post", header: "Post", priority: "secondary" as const },
+];
 
 export function LinkedInCalendarSection({ settings }: { readonly settings: LinkedInDraftSettings | undefined }) {
   const linkedIn = useLinkedIn();
@@ -17,36 +29,27 @@ export function LinkedInCalendarSection({ settings }: { readonly settings: Linke
   }, [linkedIn.overview.data?.nextSlots, posts, settings]);
 
   return (
-    <div className="card">
-      <div className="card-body p-0">
-        <table className="table table-sm admin-table-compact mb-0">
-          <caption className="visually-hidden">LinkedIn slots</caption>
-          <thead>
-            <tr>
-              <th scope="col">Slot</th>
-              <th scope="col">Post</th>
-            </tr>
-          </thead>
-          <tbody>
-            {slots.length === 0 ? (
-              <tr>
-                <td colSpan={2} className="text-center py-4">No slots yet.</td>
+    <AdminRecordTable label="LinkedIn slots">
+      <AdminDataTable columns={COLUMNS} bare>
+        {slots.length === 0 ? (
+          <AdminDataTableEmptyRow colSpan={COLUMNS.length} message="No slots yet." />
+        ) : (
+          slots.map((slot) => {
+            const match = (posts ?? []).find((row) => row.slotAt === slot && row.status !== "archived");
+            const postText = match ? hookText(match.body) || statusLabel(match.status) : "Empty";
+            return (
+              <tr key={slot}>
+                <AdminCell column="slot">
+                  {formatDateTimeHKT(slot)}
+                  <AdminDataTableCellMeta>{postText}</AdminDataTableCellMeta>
+                </AdminCell>
+                <AdminCell column="post">{postText}</AdminCell>
               </tr>
-            ) : (
-              slots.map((slot) => {
-                const match = (posts ?? []).find((row) => row.slotAt === slot && row.status !== "archived");
-                return (
-                  <tr key={slot}>
-                    <td>{formatDateTimeHKT(slot)}</td>
-                    <td>{match ? hookText(match.body) || statusLabel(match.status) : "Empty"}</td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+            );
+          })
+        )}
+      </AdminDataTable>
+    </AdminRecordTable>
   );
 }
 

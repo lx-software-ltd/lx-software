@@ -109,6 +109,9 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByRole("tab", { name: "LinkedIn" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByText("A rollback is a design decision.")).toBeVisible();
     await expect(page.getByRole("button", { name: "New post" })).toBeVisible();
+    await page.getByRole("tab", { name: "Calendar" }).click();
+    await expect(page.getByRole("columnheader", { name: "Slot" })).toBeVisible();
+    await expect(page.locator(".admin-data-table")).toBeVisible();
     await page.getByRole("tab", { name: "Ideas" }).click();
     await expect(page.getByText("A rollback that took longer than the change.")).toBeVisible();
     await page.getByRole("tab", { name: "Settings" }).click();
