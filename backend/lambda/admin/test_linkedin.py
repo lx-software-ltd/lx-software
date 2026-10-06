@@ -1373,8 +1373,103 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertEqual(parsed["imageExpression"], "weary")
         prompt = linkedin_draft._system_prompt(linkedin_store.default_settings())  # noqa: SLF001
         self.assertIn("ends with a full stop", prompt)
-        self.assertIn("funny cartoon of that problem", prompt)
-        self.assertIn("written from this post", prompt)
+        self.assertIn("living the problem in the post", prompt)
+        self.assertIn("scratching his head", prompt)
+        self.assertIn("screen full of gibberish", prompt)
+        self.assertIn("never serious", prompt)
+        self.assertNotIn("Do not default to a man at a desk", prompt)
+        self.assertIn("never serious", linkedin_store.RECOMMENDED_IMAGE_STYLE)
+        drawn = linkedin_image.build_prompt(linkedin_store.default_settings(), "A desk.", "baffled")
+        self.assertIn("Play it for a laugh", drawn)
+
+    def test_the_owner_can_have_the_three_fields_written_again(self) -> None:
+        doc = linkedin_store.create_post(self.table, {"body": "Fourteen percent failed validation.\n\nOne lesson."})
+        linkedin_store.put_post(
+            self.table,
+            {
+                **doc,
+                "image": {"status": "ready", "contentType": "image/png", "scene": "Old.", "caption": "Old line.", "expression": "deadpan"},
+            },
+        )
+        calls: list[str] = []
+
+        def brief(*, table, settings, body):
+            calls.append(body)
+            return (
+                {
+                    "imageScene": "At a desk, the author scratches his head at a screen of scribbles.",
+                    "imageExpression": "baffled, one eyebrow up",
+                    "imageCaption": "Fourteen percent of these people do not exist",
+                },
+                0.001,
+            )
+
+        stored = linkedin_image.write_brief(self.table, doc["postId"], brief=brief)
+        self.assertIn("Fourteen percent failed validation.", calls[0])
+        self.assertEqual(stored["image"]["caption"], "Fourteen percent of these people do not exist.")
+        self.assertEqual(stored["image"]["expression"], "baffled, one eyebrow up")
+        self.assertTrue(stored["image"]["scene"].startswith("At a desk"))
+        # The ready picture is kept until the owner redraws.
+        self.assertEqual(stored["image"]["status"], "ready")
+        self.assertEqual(stored["image"]["contentType"], "image/png")
+        self.assertAlmostEqual(linkedin_store.month_spend(self.table), 0.001)
+
+        def broken(**_kwargs):
+            raise RuntimeError("OpenRouter down")
+
+        with self.assertRaises(LinkedInError) as caught:
+            linkedin_image.write_brief(self.table, doc["postId"], brief=broken)
+        self.assertIn("Could not write the scene", str(caught.exception))
+        with self.assertRaises(LinkedInError):
+            linkedin_image.write_brief(self.table, "missing", brief=brief)
+
+    def test_a_post_with_no_picture_yet_shows_the_written_fields(self) -> None:
+        doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOne lesson."})
+
+        def brief(**_kwargs):
+            return ({"imageScene": "A desk.", "imageExpression": "weary", "imageCaption": "Fine"}, 0.0)
+
+        stored = linkedin_image.write_brief(self.table, doc["postId"], brief=brief)
+        public = linkedin_store.public_post(stored)
+        self.assertIsNotNone(public["image"])
+        self.assertEqual(public["image"]["caption"], "Fine.")
+        self.assertNotIn("contentType", public["image"])
+        self.assertNotEqual(public["image"]["status"], "ready")
+
+    def test_the_brief_route_and_an_owner_written_post(self) -> None:
+        patcher = patch.object(runtime, "_ddb")
+        mock_ddb = patcher.start()
+        self.addCleanup(patcher.stop)
+        mock_ddb.Table.return_value = self.table
+        env = patch.dict("os.environ", ENABLED, clear=False)
+        env.start()
+        self.addCleanup(env.stop)
+        self._brief.stop()
+        with patch("board_async.try_invoke_event", return_value=True) as invoke:
+            created = lambda_handler(
+                _event("/lx-software/linkedin/posts", "POST", {"body": "The lift queue was the bottleneck.\n\nOne lesson."}),
+                None,
+            )
+        self.assertEqual(created["statusCode"], 201)
+        item = _body(created)["item"]
+        # The owner's post gets a picture; the worker writes the three fields from the post.
+        self.assertEqual(item["image"]["status"], "pending")
+        self.assertEqual(invoke.call_args.args[0]["internal"], "linkedin_image")
+        linkedin_store.put_post(self.table, {**linkedin_store.get_post(self.table, item["postId"]), "image": {"status": "failed"}})
+        written = (
+            {"imageScene": "At a desk, head scratched.", "imageExpression": "baffled", "imageCaption": "Why is it Tuesday"},
+            0.002,
+        )
+        with patch("linkedin_draft.picture_brief", return_value=written):
+            response = lambda_handler(_event(f"/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None)
+        self.assertEqual(response["statusCode"], 200)
+        self.assertEqual(_body(response)["item"]["image"]["caption"], "Why is it Tuesday.")
+        self.assertEqual(_body(response)["item"]["image"]["expression"], "baffled")
+        with patch("linkedin_draft.picture_brief", side_effect=RuntimeError("down")):
+            failed = lambda_handler(_event(f"/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None)
+        self.assertEqual(failed["statusCode"], 502)
+        missing = lambda_handler(_event("/lx-software/linkedin/posts/nope/image/brief", "POST", {}), None)
+        self.assertEqual(missing["statusCode"], 404)
 
     def test_a_post_without_a_brief_has_one_written_from_the_post(self) -> None:
         from openrouter_client import GeneratedImage, ImageGeneration
@@ -1465,7 +1560,7 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertEqual(cost, 0.001)
         messages = captured["messages"]
         self.assertEqual(messages[0]["role"], "system")
-        self.assertIn("funny cartoon of that problem", messages[0]["content"])
+        self.assertIn("living the problem in the post", messages[0]["content"])
         self.assertIn("A short hook.", messages[1]["content"])
         self.assertEqual(linkedin_draft.picture_brief(table=None, settings={}, body="  "), ({}, 0.0))
 
@@ -1536,11 +1631,16 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertEqual(parsed["imageExpression"], "deadpan")
         self.assertEqual(parsed["imageCaption"], "Fine.")
         repeated = linkedin_draft.scene_findings(
-            "In the kitchen the author balances a kettle the size of a fridge.",
-            ["The kitchen at night, with the same kettle still on the floor."],
+            "At a cluttered desk the author scratches his head at a screen of scribbles.",
+            ["At a cluttered desk the author scratches his head at a wall of sticky notes."],
         )
         self.assertEqual(repeated[0]["code"], "scene")
-        self.assertIn("kitchen", repeated[0]["detail"])
+        # A desk and a screen may come back; only the same wording is sent back.
+        same_room = linkedin_draft.scene_findings(
+            "At his desk, the author squints at a monitor showing a column of nonsense.",
+            ["At a desk by the window, the author holds two cables and looks at a blank monitor."],
+        )
+        self.assertEqual(same_room, [])
 
     def test_a_product_name_in_the_scene_is_not_sent(self) -> None:
         doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOne lesson."})
@@ -1582,7 +1682,7 @@ class LinkedInImageTests(unittest.TestCase):
         result = linkedin_image.render_post(self.table, doc["postId"], generate=generate)
         self.assertTrue(result["ok"])
         self.assertEqual(seen["aspect"], "1:1")
-        self.assertIn("concentrating, not smiling", str(seen["prompt"]))
+        self.assertIn(linkedin_store.FALLBACK_IMAGE_EXPRESSION, str(seen["prompt"]))
         self.assertIsNone(seen["references"])
         stored = linkedin_store.get_post(self.table, doc["postId"])
         self.assertEqual(stored["image"]["status"], "ready")
@@ -1719,6 +1819,11 @@ class LinkedInImageTests(unittest.TestCase):
                         None,
                     )
                     post_id = _body(created)["item"]["postId"]
+                    # Creating the post already queued its picture; let that one finish first.
+                    self.assertEqual(_body(created)["item"]["image"]["status"], "pending")
+                    linkedin_store.put_post(
+                        self.table, {**linkedin_store.get_post(self.table, post_id), "image": {"status": "failed"}}
+                    )
                     first = lambda_handler(
                         _event(
                             f"/lx-software/linkedin/posts/{post_id}/image/regenerate",

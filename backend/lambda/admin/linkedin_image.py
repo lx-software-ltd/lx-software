@@ -76,8 +76,9 @@ def fallback_scene(body: str) -> str:
     if not hook:
         hook = "the problem in the post"
     return (
-        "In a lift, the author is wedged in by one absurdly oversized object that stands for "
-        f"this: {hook} The doors are trying to close on it."
+        "At a cluttered desk, the author scratches his head and squints at a monitor full of "
+        f"scribbled nonsense, trying to make sense of this: {hook} A cold mug and a heap of "
+        "printouts sit beside the keyboard."
     )
 
 
@@ -88,7 +89,8 @@ def build_prompt(settings: dict[str, Any], scene: str, expression: str = "") -> 
     return (
         f"{style} The person, drawn the same way each time: {character} "
         f"Expression: {face}. Do not default to a smile. "
-        f"Scene: {scene} Keep the lower edge of the picture quiet: floor, shadow, or paper, "
+        f"Scene: {scene} Play it for a laugh: exaggerated pose, cartoon physics, nothing grim. "
+        "Keep the lower edge of the picture quiet: floor, shadow, or paper, "
         "nothing that matters there. No second recognisable person. No logos, no brand names."
     )
 
@@ -118,6 +120,8 @@ def _mark(table: Any, post_id: str, *, clear_held: bool = False, **fields: Any) 
         return
     image = dict(doc.get("image") or {}) if isinstance(doc.get("image"), dict) else {}
     image.update(fields)
+    # A brief written before any drawing is a picture that is not drawn yet.
+    image.setdefault("status", "none")
     if clear_held:
         image.pop("held", None)
     doc["image"] = image
@@ -255,6 +259,56 @@ def picture_text(
         expression[: linkedin_store.IMAGE_EXPRESSION_MAX],
         caption[: linkedin_store.IMAGE_CAPTION_MAX],
     )
+
+
+def write_brief(
+    table: Any,
+    post_id: str,
+    *,
+    brief: Callable[..., dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Write a new scene, expression, and caption for the post without drawing.
+
+    All three are replaced from the post. A ready picture stays as it is until
+    the owner redraws. Raises LinkedInError when the brief cannot be written.
+    """
+    doc = linkedin_store.get_post(table, post_id, consistent=True)
+    if not doc:
+        raise LinkedInError("post not found")
+    if str(doc.get("status") or "") in ("published", "archived"):
+        raise LinkedInError("That post can no longer be edited.")
+    settings = linkedin_store.load_settings(table)
+    if not settings.get("imagesEnabled"):
+        raise LinkedInError("Pictures are turned off.")
+    body = str(doc.get("body") or "").strip()
+    if not body:
+        raise LinkedInError("Write the post first.")
+    import linkedin_draft
+
+    writer = brief or linkedin_draft.picture_brief
+    try:
+        written, cost = writer(table=table, settings=settings, body=body)
+    except Exception as exc:  # noqa: BLE001 — the owner sees the reason and can try again
+        _log_event("warning", tag="linkedin_picture_brief_failed", error=str(exc)[:300])
+        raise LinkedInError(f"Could not write the scene: {str(exc)[:200]}") from exc
+    if cost:
+        try:
+            linkedin_store.add_spend(table, cost)
+        except Exception as exc:  # noqa: BLE001 — accounting must not drop the brief
+            _log_event("warning", tag="linkedin_image_usage_failed", error=str(exc)[:200])
+    scene = str(written.get("imageScene") or "").strip()
+    expression = str(written.get("imageExpression") or "").strip()
+    caption = linkedin_store.finish_caption(str(written.get("imageCaption") or ""))
+    if not (scene and caption):
+        raise LinkedInError("The model did not return a scene and a caption. Try again.")
+    _mark(
+        table,
+        post_id,
+        scene=scene[: linkedin_store.IMAGE_SCENE_MAX],
+        expression=(expression or linkedin_store.FALLBACK_IMAGE_EXPRESSION)[: linkedin_store.IMAGE_EXPRESSION_MAX],
+        caption=caption[: linkedin_store.IMAGE_CAPTION_MAX],
+    )
+    return linkedin_store.get_post(table, post_id, consistent=True) or doc
 
 
 def render_post(
