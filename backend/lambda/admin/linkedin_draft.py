@@ -345,25 +345,33 @@ def _picture_block(settings: dict[str, Any]) -> str:
 def _picture_rules() -> str:
     """What the three picture fields are. Shared by the draft prompt and the picture brief."""
     return (
-        "All three are written from this post and nothing else: the problem the post is about "
-        "is what the picture is about. "
-        "imageScene is a funny cartoon of that problem, two short sentences, third person. "
-        "Take one concrete object or detail from the post and make it physical and wrong in "
-        "size, place, or quantity, so the obstacle itself is the gag. Name the setting, the object, "
-        "and what the author is doing with it. The joke should be readable without the caption, "
-        "and the caption is the second beat. Draw the room in detail. "
-        "Do not default to a man at a desk with a laptop, or a stack of papers, unless the post "
-        "is about that. Vary the setting across the week: kitchen, lift, corridor, street, "
-        "meeting room, car park, shop counter. No second recognisable person, no logos, no brand "
-        "names. At most one two-word label; screens are unreadable scribbles. "
-        "imageExpression is two to five words for the face in this exact moment of the problem: "
-        "the honest reaction, such as weary, alarmed, deadpan, or quietly pleased. "
+        "All three are written from this post and nothing else. "
+        "imageScene is a cartoon of the author living the problem in the post, at the moment "
+        "it goes wrong: two short sentences, third person, light and a little silly, never "
+        "serious or dramatic. Show the actual activity from the post with the actual things in "
+        "it, exaggerated the way a gag cartoon would: a screen full of gibberish, a wall of "
+        "sticky notes, a kettle that has been boiled six times, a phone with forty missed calls. "
+        "Say what the author is doing with his body and hands (scratching his head, squinting "
+        "at a screen, holding two cables, buried in printouts) and what the thing in front of "
+        "him is showing. A computer, a laptop, or a whiteboard is fine when the post is about "
+        "work at one; most of these posts are. The scene should make sense without the caption. "
+        "Screens show scribbled nonsense symbols, never real words. At most one two-word label. "
+        "No second recognisable person, no logos, no brand names. "
+        "imageExpression is two to five words for the face in that exact moment: the honest "
+        "reaction, such as baffled, head-scratching, weary, alarmed, deadpan, or quietly pleased. "
         "A smile only when the moment earns it. "
         "imageCaption is the spoken line drawn inside the bottom of the picture, with no quotation "
-        "marks: first person, dry, 8 to 20 words, about the same problem. It ends with a full stop, "
+        "marks: first person, dry, 8 to 20 words, about the same moment. It ends with a full stop, "
         "or with a question mark or an exclamation mark when the line is a question or an outburst. "
         "Not a description of the picture and not a summary of the post. Do not reuse this example "
-        "or its words: The only list I've been on that also includes a member of the Executive Council."
+        "or its words: The only list I've been on that also includes a member of the Executive Council. "
+        "An example of the shape, for a post about a model inventing names in parsed meeting notes: "
+        "imageScene — At a cluttered desk at night, the author scratches his head with a pencil "
+        "while leaning into a monitor that shows a long column of scribbled nonsense with one "
+        "name tag stuck to it. A mug of cold tea and a tagged printout sit beside the keyboard. "
+        "imageExpression — baffled, one eyebrow up. imageCaption — Fourteen percent of these "
+        "people do not exist, and the model wants to give them deadlines. Do not reuse that "
+        "scene, that face, or that line."
     )
 
 
@@ -532,56 +540,28 @@ def caption_findings(
     return findings
 
 
-_SCENE_PLACES = (
-    "kitchen",
-    "lift",
-    "elevator",
-    "corridor",
-    "hallway",
-    "street",
-    "meeting room",
-    "car park",
-    "shop",
-    "desk",
-    "office",
-    "train",
-    "platform",
-    "supermarket",
-    "bedroom",
-    "stair",
-)
-
-
 def scene_findings(scene: str, others: list[str]) -> list[dict[str, str]]:
-    """Send the draft back when this picture repeats a recent setting or the same sentence."""
+    """Send the draft back when this picture repeats a recent scene's wording.
+
+    Only the sentence is checked. A desk and a screen are allowed to come back,
+    because most of these posts are about work at one; the gag has to change,
+    not the room.
+    """
     text = str(scene or "").strip()
     if not text:
         return []
-    lowered = text.lower()
-    places = [place for place in _SCENE_PLACES if linkedin_store.contains_term(lowered, place)]
     grams = _ngrams(_words(text), 5)
+    if not grams:
+        return []
     for other in others:
         if not other or not other.strip():
             continue
-        other_l = other.lower()
-        shared_place = next((place for place in places if linkedin_store.contains_term(other_l, place)), "")
-        if shared_place:
+        if grams & _ngrams(_words(other), 5):
             return [
                 {
                     "code": "scene",
                     "severity": "error",
-                    "detail": (
-                        f"This picture uses the same setting (“{shared_place}”) as a recent one. "
-                        "Move it, and change the object."
-                    ),
-                }
-            ]
-        if grams and grams & _ngrams(_words(other), 5):
-            return [
-                {
-                    "code": "scene",
-                    "severity": "error",
-                    "detail": "This picture repeats a recent scene. Change the setting and the object.",
+                    "detail": "This picture repeats a recent scene. Change what the author is doing and what he is looking at.",
                 }
             ]
     return []
@@ -647,8 +627,13 @@ def complete_json_object(
     table: Any | None = None,
     settings: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], float]:
-    """One JSON chat completion for any object (the picture brief). Returns it and the USD cost."""
-    return _complete(messages, _parse_object, table=table, settings=settings)
+    """One JSON chat completion for any object (the picture brief). Returns it and the USD cost.
+
+    The brief is also written from the owner's Rewrite button inside one HTTP
+    request, so this call has its own, shorter timeout.
+    """
+    timeout = int(os.environ.get("LINKEDIN_BRIEF_TIMEOUT_SECONDS") or "25")
+    return _complete(messages, _parse_object, table=table, settings=settings, timeout=timeout)
 
 
 def _complete(
@@ -657,6 +642,7 @@ def _complete(
     *,
     table: Any | None,
     settings: dict[str, Any] | None,
+    timeout: int | None = None,
 ) -> tuple[dict[str, Any], float]:
     import boto3
     import openrouter_client
@@ -673,7 +659,7 @@ def _complete(
             messages=pending,
             model=model,
             secrets_client=boto3.client("secretsmanager"),
-            timeout=int(os.environ.get("LINKEDIN_DRAFT_TIMEOUT_SECONDS") or "60"),
+            timeout=timeout or int(os.environ.get("LINKEDIN_DRAFT_TIMEOUT_SECONDS") or "60"),
             json_mode=True,
             max_tokens=max_tokens,
             temperature=DRAFT_TEMPERATURE,

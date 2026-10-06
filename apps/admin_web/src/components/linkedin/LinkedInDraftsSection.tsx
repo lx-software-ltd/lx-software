@@ -500,8 +500,8 @@ function PostEditor({
                     }
                   />
                   <p className="form-text mb-0">
-                    A funny cartoon of the problem in the post. Clear any of these three fields and Redraw to have them
-                    written from the post.
+                    A light cartoon of you living the moment in the post, written from the post with the expression and
+                    caption. Edit any of the three, or have all three written again.
                   </p>
                 </AdminField>
                 <AdminField label="Expression" htmlFor={`${formId}-expression`}>
@@ -531,19 +531,40 @@ function PostEditor({
                     unless it ends with ? or !.
                   </p>
                 </AdminField>
-                <button
-                  type="button"
-                  className="btn btn-outline-secondary btn-sm mt-2 mb-2"
-                  disabled={!enabled || post.image?.status === "pending" || linkedIn.redrawImage.isPending}
-                  onClick={() => {
-                    setLocalError(null);
-                    void linkedIn.redrawImage.mutateAsync({ postId: post.postId, scene, caption, expression }).catch((caught: unknown) => {
-                      setLocalError(caught instanceof Error ? caught.message : "Could not redraw the picture.");
-                    });
-                  }}
-                >
-                  {post.image?.status === "pending" || linkedIn.redrawImage.isPending ? "Drawing…" : "Redraw picture"}
-                </button>
+                <div className="d-flex flex-wrap gap-2 mt-2">
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary btn-sm"
+                    disabled={!enabled || post.image?.status === "pending" || linkedIn.rewriteBrief.isPending || linkedIn.redrawImage.isPending}
+                    onClick={() => {
+                      setLocalError(null);
+                      void linkedIn.rewriteBrief
+                        .mutateAsync(post.postId)
+                        .then(() => setPictureDraft(null))
+                        .catch((caught: unknown) => {
+                          setLocalError(caught instanceof Error ? caught.message : "Could not write a new scene.");
+                        });
+                    }}
+                  >
+                    {linkedIn.rewriteBrief.isPending ? "Writing…" : "New scene, expression and caption"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary btn-sm"
+                    disabled={!enabled || post.image?.status === "pending" || linkedIn.rewriteBrief.isPending || linkedIn.redrawImage.isPending}
+                    onClick={() => {
+                      setLocalError(null);
+                      void linkedIn.redrawImage.mutateAsync({ postId: post.postId, scene, caption, expression }).catch((caught: unknown) => {
+                        setLocalError(caught instanceof Error ? caught.message : "Could not redraw the picture.");
+                      });
+                    }}
+                  >
+                    {post.image?.status === "pending" || linkedIn.redrawImage.isPending ? "Drawing…" : "Redraw picture"}
+                  </button>
+                </div>
+                <p className="form-text mb-2">
+                  The first button writes all three from the post and does not draw. Redraw draws with the fields as shown.
+                </p>
                   </>
                 ) : null}
                 <input

@@ -116,6 +116,7 @@ def handle_http(event: dict[str, Any], method: str, path: str, user_sub: str | N
             doc = linkedin_store.create_post(_table(), _parse_json_body(event))
         except LinkedInError as exc:
             return _json_response(400, {"message": str(exc)})
+        doc = _picture_for_new_post(doc)
         _audit(user_sub, "LINKEDIN_POST_CREATE", str(doc["postId"]), event)
         return _json_response(201, {"item": linkedin_store.public_post(doc)})
     if len(parts) == 2 and parts[0] == "posts" and method == "PUT":
@@ -133,6 +134,8 @@ def handle_http(event: dict[str, Any], method: str, path: str, user_sub: str | N
         return _character(event, method, parts, user_sub)
     if len(parts) == 4 and parts[0] == "posts" and parts[2] == "image" and parts[3] == "regenerate":
         return _image_regenerate(event, method, parts[1], user_sub)
+    if len(parts) == 4 and parts[0] == "posts" and parts[2] == "image" and parts[3] == "brief":
+        return _image_brief(event, method, parts[1], user_sub)
     if len(parts) == 3 and parts[0] == "posts" and parts[2] == "image":
         return _image(event, method, parts[1], user_sub)
     if len(parts) == 3 and parts[0] == "posts" and method == "POST":
@@ -207,6 +210,24 @@ def _post_action(event: dict[str, Any], post_id: str, action: str, user_sub: str
         return _json_response(status, {"message": str(exc)})
     _audit(user_sub, f"LINKEDIN_POST_{action.upper()}", post_id, event)
     return _json_response(200, {"item": linkedin_store.public_post(doc)})
+
+
+def _picture_for_new_post(doc: dict[str, Any]) -> dict[str, Any]:
+    """An owner-written post gets its scene, expression, caption, and picture from the worker.
+
+    The worker writes the three fields from the post before it draws. A failure
+    here never fails the save.
+    """
+    table = _table()
+    try:
+        if not linkedin_store.load_settings(table).get("imagesEnabled"):
+            return doc
+        if not str(doc.get("body") or "").strip():
+            return doc
+        return linkedin_image.queue_for_post(table, str(doc["postId"]))
+    except Exception as exc:  # noqa: BLE001 — the post is already saved
+        _log_event("warning", tag="linkedin_image_enqueue_failed", error=str(exc)[:300])
+        return linkedin_store.get_post(table, str(doc["postId"])) or doc
 
 
 def _generate(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
@@ -652,6 +673,23 @@ def _image_regenerate(event: dict[str, Any], method: str, post_id: str, user_sub
         return _json_response(status, {"message": str(exc)})
     _audit(user_sub, "LINKEDIN_IMAGE_REGENERATE", post_id, event)
     return _json_response(202, {"item": linkedin_store.public_post(doc)})
+
+
+def _image_brief(event: dict[str, Any], method: str, post_id: str, user_sub: str | None) -> dict[str, Any]:
+    """Write a new scene, expression, and caption from the post. The picture is not redrawn."""
+    if method != "POST":
+        return _json_response(404, {"message": "Not found"})
+    blocked = _require_enabled()
+    if blocked:
+        return blocked
+    try:
+        doc = linkedin_image.write_brief(_table(), post_id)
+    except LinkedInError as exc:
+        text = str(exc)
+        status = 404 if text == "post not found" else 502 if text.startswith("Could not write") else 400
+        return _json_response(status, {"message": text})
+    _audit(user_sub, "LINKEDIN_IMAGE_BRIEF", post_id, event)
+    return _json_response(200, {"item": linkedin_store.public_post(doc)})
 
 
 def _image(event: dict[str, Any], method: str, post_id: str, user_sub: str | None) -> dict[str, Any]:

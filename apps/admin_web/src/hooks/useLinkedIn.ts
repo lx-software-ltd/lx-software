@@ -210,6 +210,14 @@ export function useLinkedIn() {
       refreshPostBytes(postId);
     },
   });
+  const rewriteBrief = useMutation({
+    mutationFn: (postId: string) =>
+      adminFetchJson<{ item: LinkedInPost }>(`/lx-software/linkedin/posts/${postId}/image/brief`, {
+        method: "POST",
+        body: "{}",
+      }),
+    onSuccess: refresh,
+  });
   const uploadCharacterPhoto = useMutation({
     mutationFn: ({ contentType, dataBase64 }: { contentType: string; dataBase64: string }) =>
       adminFetchJson<LinkedInCharacter>("/lx-software/linkedin/character/photo", {
@@ -282,6 +290,7 @@ export function useLinkedIn() {
     uploadImage,
     deleteImage,
     redrawImage,
+    rewriteBrief,
     character,
     uploadCharacterPhoto,
     deleteCharacterPhoto,

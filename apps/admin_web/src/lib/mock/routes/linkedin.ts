@@ -291,6 +291,23 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
     state.linkedin.character.sheet = { contentType: row.contentType, dataBase64: row.dataBase64 };
     return json(publicCharacter());
   }
+  if (path.endsWith("/image/brief") && method === "POST" && index >= 0) {
+    const current = state.linkedin.posts[index].image;
+    const hook = (state.linkedin.posts[index].body ?? "").split("\n")[0].slice(0, 60);
+    state.linkedin.posts[index] = {
+      ...state.linkedin.posts[index],
+      image: {
+        status: current?.status ?? "none",
+        contentType: current?.contentType,
+        scene: `At a cluttered desk at night, the author scratches his head with a pencil while a monitor shows a column of scribbled nonsense about: ${hook}`,
+        expression: "baffled, one eyebrow up",
+        caption: "Fourteen percent of these people do not exist, and the model wants to give them deadlines.",
+        error: "",
+        model: current?.model ?? "",
+      },
+    };
+    return json({ item: state.linkedin.posts[index] });
+  }
   if (path.endsWith("/image/regenerate") && method === "POST" && index >= 0) {
     const body = parseBody(ctx.init);
     const current = state.linkedin.posts[index].image;
