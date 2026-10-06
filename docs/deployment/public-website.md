@@ -307,9 +307,14 @@ origin. Do not rewrite history with Git LFS. Re-running
 custom domain as success.
 
 `www.lx-software.com` stays a grey-cloud CNAME to CloudFront. Do not proxy
-it. The apex is already proxied; leave that record alone. Tiered Cache is
-off. The media hostname is already caching from the object `Cache-Control`,
-so an extra cache rule is optional.
+it. The apex A record stays proxied to the dummy `192.0.2.1`. Worker
+`lx-software-apex-redirect` on `lx-software.com/*` 301s to
+`https://www.lx-software.com` and keeps the path and query. Publish with
+`python3 scripts/cloudflare/publish-apex-redirect.py apply`
+(`CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`). A Page Rule that
+forwards to the literal path `/*` must not win; the Worker overrides it.
+Tiered Cache is off. The media hostname is already caching from the object
+`Cache-Control`, so an extra cache rule is optional.
 
 ## Troubleshooting
 
