@@ -171,19 +171,20 @@ CHARACTER_JOB_STALE_SECONDS = 360
 CANDIDATE_IDS = frozenset({"c1", "c2", "c3", "c4"})
 IMAGE_BYTE_MAX = 1_500_000
 RECOMMENDED_IMAGE_STYLE = (
-    "Single-panel magazine gag cartoon. Black ink line art on white paper, dense "
-    "cross-hatching for shadow, no grey wash, no colour. Faces are caricatures, not "
-    "portraits: simplified features, bold outlines, flat white skin with hatching only "
-    "in shadow. A detailed room, one man mid-action. No lettering and no logos. One "
+    "Single-panel magazine gag cartoon, light and a little silly, never serious. Black ink "
+    "line art on white paper, dense cross-hatching for shadow, no grey wash, no colour. "
+    "Faces are caricatures, not portraits: simplified features, bold outlines, flat white "
+    "skin with hatching only in shadow, a slightly oversized head. Exaggerated body "
+    "language, one man mid-action in a detailed room. No lettering and no logos. One "
     "two-word label is allowed when the scene needs it, such as a door sign or a folder "
-    "tab; screens are unreadable scribbles."
+    "tab; screens show scribbled nonsense symbols, never real words."
 )
 DEFAULT_IMAGE_CHARACTER = (
     "A man in his thirties with short dark hair, side-parted, clean-shaven, a round face, "
     "wearing a light striped button-down shirt with an open collar."
 )
 FALLBACK_IMAGE_CAPTION = "This took longer than I expected."
-FALLBACK_IMAGE_EXPRESSION = "concentrating, not smiling"
+FALLBACK_IMAGE_EXPRESSION = "baffled, scratching his head"
 
 # A post the owner wrote, shown to the model for its register only. Its
 # structure, opening, closing and phrases are not to be reused; the draft loop
