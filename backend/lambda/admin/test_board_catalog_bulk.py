@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import os
-from typing import Any
 import unittest
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from unittest.mock import patch
 
 import board_async
