@@ -43,8 +43,21 @@ WORKER_FILE = Path(__file__).resolve().parent / "lx-software-apex-redirect.js"
 COMPATIBILITY_DATE = "2026-10-06"
 APEX_REDIRECT_DESCRIPTION = "Redirect apex to www and keep path"
 APEX_REDIRECT_EXPRESSION = '(http.host eq "lx-software.com")'
+LEGACY_APEX_REDIRECT_EXPRESSION = (
+    '(http.request.full_uri wildcard r"https://lx-software.com/*")'
+)
 APEX_TARGET_EXPRESSION = 'concat("https://www.lx-software.com", http.request.uri.path)'
-LITERAL_STAR_DESTINATION = "www.lx-software.com/*"
+LITERAL_STAR_TARGET_EXPRESSION = (
+    "wildcard_replace(http.request.full_uri, "
+    r'r"https://lx-software.com/*", '
+    r'r"https://www.lx-software.com/*")'
+)
+APEX_REDIRECT_EXPRESSIONS = frozenset(
+    {APEX_REDIRECT_EXPRESSION, LEGACY_APEX_REDIRECT_EXPRESSION}
+)
+APEX_TARGET_EXPRESSIONS = frozenset(
+    {APEX_TARGET_EXPRESSION, LITERAL_STAR_TARGET_EXPRESSION}
+)
 
 
 def canonical_www_url(href: str) -> str:
@@ -160,12 +173,13 @@ def redirect_target_expression(rule: dict[str, Any]) -> str:
 
 
 def is_literal_star_www_redirect(rule: dict[str, Any]) -> bool:
-    return LITERAL_STAR_DESTINATION in redirect_target_expression(rule)
+    return redirect_target_expression(rule) == LITERAL_STAR_TARGET_EXPRESSION
 
 
 def is_apex_redirect_rule(rule: dict[str, Any]) -> bool:
-    blob = json.dumps(rule)
-    return "lx-software.com" in blob and CANONICAL_HOST in blob
+    expression = str(rule.get("expression") or "")
+    target = redirect_target_expression(rule)
+    return expression in APEX_REDIRECT_EXPRESSIONS or target in APEX_TARGET_EXPRESSIONS
 
 
 def apex_redirect_is_correct(rule: dict[str, Any]) -> bool:

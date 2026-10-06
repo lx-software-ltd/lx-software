@@ -50,25 +50,32 @@ class ApexRedirectTests(unittest.TestCase):
         self.assertNotIn("*", self.mod.APEX_TARGET_EXPRESSION)
         broken = {
             "enabled": True,
-            "expression": '(http.request.full_uri wildcard r"https://lx-software.com/*")',
+            "expression": self.mod.LEGACY_APEX_REDIRECT_EXPRESSION,
             "action": "redirect",
             "action_parameters": {
                 "from_value": {
                     "preserve_query_string": True,
                     "status_code": 301,
-                    "target_url": {
-                        "expression": (
-                            'wildcard_replace(http.request.full_uri, '
-                            r'r"https://lx-software.com/*", '
-                            r'r"https://www.lx-software.com/*")'
-                        )
-                    },
+                    "target_url": {"expression": self.mod.LITERAL_STAR_TARGET_EXPRESSION},
                 }
             },
         }
         self.assertTrue(self.mod.is_apex_redirect_rule(broken))
         self.assertTrue(self.mod.is_literal_star_www_redirect(broken))
         self.assertFalse(self.mod.apex_redirect_is_correct(broken))
+        lookalike = {
+            "enabled": True,
+            "expression": '(http.host eq "evil-lx-software.com")',
+            "action": "redirect",
+            "action_parameters": {
+                "from_value": {
+                    "target_url": {
+                        "expression": 'concat("https://evil.example", http.request.uri.path)'
+                    }
+                }
+            },
+        }
+        self.assertFalse(self.mod.is_apex_redirect_rule(lookalike))
 
 
 if __name__ == "__main__":
