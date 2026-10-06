@@ -482,6 +482,8 @@ class CatalogDutyTests(BoardTestCase):
         self.assertIn("https://kidzclub.example/wan-chai", created[0]["brief"])
         self.assertIn("research_fetch_page", created[0]["brief"])
         self.assertIn("do not call task_request_help", created[0]["brief"])
+        self.assertNotIn("status blocked", created[0]["brief"])
+        self.assertIn("no status field", created[0]["brief"])
         self.assertFalse(board_catalog.is_commercial_org(sheet["organisations"][0]))
         self.assertTrue(board_catalog.is_commercial_org(sheet["organisations"][1]))
         self.assertFalse(
