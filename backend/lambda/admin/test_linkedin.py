@@ -2088,10 +2088,21 @@ class LinkedInImageTests(unittest.TestCase):
                 usage={"cost": 0.04},
             )
 
-        drawn = linkedin_image.draw_character(self.table, generate=generate, clock=clock)
+        # A 90 s call leaves room for one backfill; the 200 s default leaves none.
+        with patch.dict("os.environ", {"LINKEDIN_IMAGE_TIMEOUT_SECONDS": "90"}):
+            drawn = linkedin_image.draw_character(self.table, generate=generate, clock=clock)
         self.assertEqual(calls, [4, 1])
         self.assertEqual(drawn["candidates"], ["c1"])
         self.assertAlmostEqual(linkedin_store.month_spend(self.table), 0.04)
+
+    def test_the_image_call_may_outlast_a_slow_seedream_but_fits_the_lambda(self) -> None:
+        with patch.dict("os.environ", {"LINKEDIN_IMAGE_TIMEOUT_SECONDS": ""}):
+            self.assertEqual(linkedin_image._image_timeout(), 200)  # noqa: SLF001
+        brief_budget = 2 * 25
+        self.assertLess(brief_budget + linkedin_image._image_timeout() + 30, 300)  # noqa: SLF001
+        self.assertLessEqual(linkedin_image._image_timeout(), linkedin_image.DRAW_BUDGET_SECONDS)  # noqa: SLF001
+        with patch.dict("os.environ", {"LINKEDIN_IMAGE_TIMEOUT_SECONDS": "nope"}):
+            self.assertEqual(linkedin_image._image_timeout(), 200)  # noqa: SLF001
 
     def test_a_stuck_character_job_is_failed_on_read(self) -> None:
         job = linkedin_store.new_job(self.table, "character", {})

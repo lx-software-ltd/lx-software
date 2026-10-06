@@ -45,7 +45,8 @@ HEAD_SIZE = (768, 768)
 # real cost. Above the usual Seedream charge so parallel workers cannot all
 # pass a check that has not moved yet.
 IMAGE_HOLD_USD = 0.05
-# Stop starting another 90s call once this much of the 300s Lambda is gone.
+# Stop starting another image call once this much of the 300s Lambda is gone.
+# With the 200 s default the character draw gets one call for all four heads.
 DRAW_BUDGET_SECONDS = 240
 # Seedream 4.5 rejects 1K: those sizes are under its 3,686,400 pixel minimum.
 # 2K is the tier that clears the floor for 1:1, 4:5, and 16:9.
@@ -649,13 +650,19 @@ def _release(table: Any, usd: float) -> None:
         _log_event("warning", tag="linkedin_image_usage_failed", error=str(exc)[:200])
 
 
+# Seedream 4.5 at 2K with a reference sheet answers in 70–120 s; a 90 s read
+# timeout killed most draws. The Lambda is 300 s: brief (two 25 s attempts) plus
+# this plus compose and S3 still fits.
+IMAGE_TIMEOUT_DEFAULT_SECONDS = 200
+
+
 def _image_timeout() -> int:
     import os
 
     try:
-        return max(1, int(os.environ.get("LINKEDIN_IMAGE_TIMEOUT_SECONDS") or "90"))
+        return max(1, int(os.environ.get("LINKEDIN_IMAGE_TIMEOUT_SECONDS") or IMAGE_TIMEOUT_DEFAULT_SECONDS))
     except (TypeError, ValueError):
-        return 90
+        return IMAGE_TIMEOUT_DEFAULT_SECONDS
 
 
 def _live_generate(
@@ -666,15 +673,13 @@ def _live_generate(
     settings: dict[str, Any],
     n: int = 1,
 ) -> ImageGeneration:
-    import os
-
     import boto3
 
     return openrouter_client.generate_image(
         model=image_model(settings),
         prompt=prompt,
         secrets_client=boto3.client("secretsmanager"),
-        timeout=int(os.environ.get("LINKEDIN_IMAGE_TIMEOUT_SECONDS") or "90"),
+        timeout=_image_timeout(),
         aspect_ratio=aspect,
         resolution=IMAGE_RESOLUTION,
         n=n,
