@@ -911,7 +911,15 @@ normalises text before hashing so counters and dates do not create false
 changes; each change writes a `changes#` note with a one-line summary.
 Monday 04:00 HKT (`…-board-intel-weekly`) runs discovery (fixed EN / ZH
 target queries through `research`; a domain seen in two weekly runs is
-promoted from candidate to competitor) and a `senior` brief task for
+promoted from candidate to competitor; results whose title reads as an
+editorial round-up — `looks_like_media`, EN "N best / things to do /
+this weekend" and ZH 好去處 / 推介 / 攻略 / N個 — are skipped, as are
+parenting and travel media hosts in `IGNORED_DOMAINS`). `DELETE
+…/watchlist/{id}` also records the watch's hosts in the `watch:suppressed`
+state row so discovery does not re-add them; `GET …/watchlist` returns
+`suppressedHosts`, `POST` / `DELETE …/watchlist/suppressed` `{hosts}`
+edit the set, and an explicit `POST …/watchlist` for a suppressed host
+clears it. The run also starts a `senior` brief task for
 `market-analyst`; the brief's JSON block writes `cache intel:gaps`
 (consumed by outreach), CPO `later` actions and intel prospects. Open
 data: FEHD licensed premises and EDB schools (`edb_schools(..., keep_all=True)`)
