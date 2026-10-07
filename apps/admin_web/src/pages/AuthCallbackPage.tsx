@@ -4,6 +4,8 @@ import { useRunOncePerPageLoad } from "../hooks/useRunOncePerPageLoad";
 import {
   clearStoredSession,
   LOGIN_DENIED_FLASH_KEY,
+  loginDeniedMessage,
+  NOT_AUTHORIZED_MESSAGE,
   saveTokensFromOAuthResponse,
 } from "../lib/auth";
 import { getAdminConfig } from "../lib/config";
@@ -20,6 +22,16 @@ export function AuthCallbackPage() {
       const code = params.get("code");
       const state = params.get("state");
       const expectedState = sessionStorage.getItem("lx_admin_oauth_state");
+      const oauthError = params.get("error");
+      if (oauthError) {
+        clearStoredSession();
+        sessionStorage.setItem(
+          LOGIN_DENIED_FLASH_KEY,
+          loginDeniedMessage(params.get("error_description")),
+        );
+        navigate("/", { replace: true });
+        return;
+      }
       if (
         !code ||
         !state ||
@@ -63,10 +75,7 @@ export function AuthCallbackPage() {
       };
       if (!idTokenHasAdminAccess(json.id_token)) {
         clearStoredSession();
-        sessionStorage.setItem(
-          LOGIN_DENIED_FLASH_KEY,
-          "This account is not authorized."
-        );
+        sessionStorage.setItem(LOGIN_DENIED_FLASH_KEY, NOT_AUTHORIZED_MESSAGE);
         sessionStorage.removeItem("lx_admin_pkce_verifier");
         sessionStorage.removeItem("lx_admin_oauth_state");
         navigate("/", { replace: true });
