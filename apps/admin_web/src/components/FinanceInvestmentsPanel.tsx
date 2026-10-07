@@ -648,6 +648,10 @@ export function FinanceInvestmentsPanel({
     editor.close();
   }
 
+  const editorCurrent =
+    editingId === null ? undefined : currentValueInRowCurrencyByRowId.get(editingId);
+  const editorCurrentValueDisplay = editorCurrent === undefined ? "" : String(editorCurrent);
+
   const investmentEditor = formOpen ? (
     <AdminEditorPanel
       formId={formId}
@@ -770,15 +774,8 @@ export function FinanceInvestmentsPanel({
                 onChange={(ev) => setForm((f) => ({ ...f, principal: ev.target.value }))}
               />
             </AdminField>
-            <AdminField label="Currency" htmlFor={`${sheetId}-ccy`}>
-              <CurrencySelect
-                id={`${sheetId}-ccy`}
-                value={form.currency}
-                onChange={(code) => setForm((f) => ({ ...f, currency: code }))}
-              />
-            </AdminField>
-            {form.category === "Real Estate" ? (
-              <AdminField label="Current value" htmlFor={`${sheetId}-curval`}>
+            <AdminField label="Current value" htmlFor={`${sheetId}-curval`}>
+              {form.category === "Real Estate" ? (
                 <input
                   id={`${sheetId}-curval`}
                   type="number"
@@ -788,8 +785,25 @@ export function FinanceInvestmentsPanel({
                   value={form.currentValue}
                   onChange={(ev) => setForm((f) => ({ ...f, currentValue: ev.target.value }))}
                 />
-              </AdminField>
-            ) : null}
+              ) : (
+                <input
+                  id={`${sheetId}-curval`}
+                  type="text"
+                  className="form-control form-control-sm"
+                  readOnly
+                  disabled
+                  value={editorCurrentValueDisplay}
+                  placeholder="—"
+                />
+              )}
+            </AdminField>
+            <AdminField label="Currency" htmlFor={`${sheetId}-ccy`}>
+              <CurrencySelect
+                id={`${sheetId}-ccy`}
+                value={form.currency}
+                onChange={(code) => setForm((f) => ({ ...f, currency: code }))}
+              />
+            </AdminField>
             {form.category !== "Real Estate" ? (
               <AdminField label="Units" htmlFor={`${sheetId}-unit`}>
                 <input
@@ -831,6 +845,7 @@ export function FinanceInvestmentsPanel({
         <AdminDataTable
           bare
           columns={tableColumns}
+          tableClassName="admin-table-keep-cols"
         >
           {expandedId === DRAFT_RECORD_ID ? (
             <AdminExpandableRow colSpan={colSpan} expanded onToggle={editor.openCreate} editor={investmentEditor}>
