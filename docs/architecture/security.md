@@ -30,10 +30,22 @@ parameters use `noEcho: true`; S3 remains private behind CloudFront.
 
 - **Hosted UI** with **Google** federation, plus native sign-in for the
   break-glass **bootstrap** administrator.
-- The **Pre Token Generation** Lambda adds the `admin` group override to
-  issued tokens when the user's `email` matches the comma-separated
-  `AdminFederatedEmailAllowlist` parameter. Federated users are never
-  added to Cognito groups in the data plane.
+- One Lambda (`backend/lambda/pre_token_generation`) is the sign-in gate
+  on two user-pool triggers and **fails closed**. **Pre Sign-up** raises
+  for a first Google sign-in whose `email` is not on the comma-separated
+  `AdminFederatedEmailAllowlist` parameter, so the account never becomes a
+  Cognito user. **Pre Token Generation** raises unless the `email` is on
+  that list or the user already holds the `admin` group in the pool (the
+  bootstrap administrator); a refused account gets no ID, access or
+  refresh token at all. Matching users get the `admin` group override.
+  Cognito surfaces the refusal to the SPA as
+  `error_description=PreTokenGeneration failed with error This account is
+  not authorized.`, which the callback shows on the login screen. Federated
+  users are never added to Cognito groups in the data plane; the allow-list
+  is the only way a Google account gains `admin`, so every entry in the
+  GitHub variable `ADMIN_FEDERATED_EMAIL_ALLOWLIST` is an administrator.
+  Every decision is logged as JSON (`tag: admin_auth_gate`, `email`,
+  `decision`) in the `PreTokenGenerationFn` log group.
 - Native accounts require **TOTP** MFA (no SMS) and a 14+ character mixed
   password. Cognito `mfa: REQUIRED` does not apply to federated sign-in, so
   enforce 2-Step Verification org-wide in Google Admin.

@@ -9,6 +9,21 @@ const STORAGE_EXPIRES_AT = "lx_admin_expires_at";
 /** SessionStorage key for a one-shot login error shown on `LoginPage`. */
 export const LOGIN_DENIED_FLASH_KEY = "lx_admin_login_denied_message";
 
+export const NOT_AUTHORIZED_MESSAGE = "This account is not authorized.";
+
+/**
+ * Message for an OAuth error redirect from Cognito. The user-pool gate
+ * (`backend/lambda/pre_token_generation`) refuses unlisted accounts with
+ * `error_description=PreTokenGeneration failed with error This account is
+ * not authorized.` (or `PreSignUp failed …`); any other error is neutral.
+ */
+export function loginDeniedMessage(description: string | null): string {
+  if (description && /not authorized/i.test(description)) {
+    return NOT_AUTHORIZED_MESSAGE;
+  }
+  return "Sign-in failed. Try again or contact the administrator.";
+}
+
 export interface StoredOAuthTokens {
   readonly id_token: string;
   readonly access_token: string;
