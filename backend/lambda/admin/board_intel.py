@@ -369,7 +369,7 @@ def latest_brief(table: Any) -> dict[str, Any] | None:
     prefix = "market-brief:"
     newest: dict[str, Any] | None = None
     for status in ("delivered", "review", "running", "queued"):
-        for row in board_store.list_tasks(table, status, limit=80):
+        for row in board_store.list_tasks(table, status, limit=80, newest_first=True):
             ref = row.get("eventRef") or {}
             if ref.get("kind") != "duty" or not str(ref.get("id") or "").startswith(prefix):
                 continue

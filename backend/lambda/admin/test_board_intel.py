@@ -357,6 +357,39 @@ class BriefTests(BoardTestCase):
         titles = [a.get("title") for a in board_store.list_actions(self.table)]
         self.assertIn("Weekend camp pack", titles)
 
+    def test_latest_brief_survives_a_long_delivered_backlog(self) -> None:
+        """The Market tile pointed at a 3-week-old brief because ``list_tasks``
+        reads oldest-first and 80 delivered rows sat in front of the new one."""
+        for index in range(90):
+            board_store.put_task(
+                self.table,
+                {
+                    "taskId": f"old-{index:03d}",
+                    "status": "delivered",
+                    "assignee": "support",
+                    "createdAt": f"2026-08-{(index % 28) + 1:02d}T00:00:00Z",
+                    "slaAt": f"2026-08-{(index % 28) + 1:02d}T12:00:00Z",
+                    "eventRef": {"kind": "triage", "id": f"mail-{index}"},
+                },
+            )
+        for day, task_id in (("13", "brief-sep"), ("05", "brief-oct")):
+            month = "09" if task_id == "brief-sep" else "10"
+            board_store.put_task(
+                self.table,
+                {
+                    "taskId": task_id,
+                    "status": "delivered",
+                    "assignee": "market-analyst",
+                    "createdAt": f"2026-{month}-{day}T04:00:00Z",
+                    "slaAt": f"2026-{month}-{day}T16:00:00Z",
+                    "summary": f"brief {month}",
+                    "eventRef": {"kind": "duty", "id": f"market-brief:2026-{month}-{day}"},
+                },
+            )
+        brief = board_intel.latest_brief(self.table)
+        self.assertIsNotNone(brief)
+        self.assertEqual(brief["taskId"], "brief-oct")
+
 
 class OpendataTests(unittest.TestCase):
     def test_fehd_csv_fixture_maps_districts(self) -> None:
