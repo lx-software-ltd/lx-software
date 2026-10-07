@@ -22,22 +22,19 @@ export function AuthCallbackPage() {
       const code = params.get("code");
       const state = params.get("state");
       const expectedState = sessionStorage.getItem("lx_admin_oauth_state");
-      const oauthError = params.get("error");
-      if (oauthError) {
-        clearStoredSession();
-        sessionStorage.setItem(
-          LOGIN_DENIED_FLASH_KEY,
-          loginDeniedMessage(params.get("error_description")),
-        );
-        navigate("/", { replace: true });
-        return;
-      }
-      if (
-        !code ||
-        !state ||
-        !expectedState ||
-        state !== expectedState
-      ) {
+      const isOurFlow = Boolean(
+        state && expectedState && state === expectedState,
+      );
+      if (!code || !isOurFlow) {
+        // A redirect that carries our `state` but no code is Cognito
+        // reporting a refused sign-in (the user-pool gate raised); the
+        // error text only selects the message shown on the login screen.
+        if (isOurFlow) {
+          sessionStorage.setItem(
+            LOGIN_DENIED_FLASH_KEY,
+            loginDeniedMessage(params.get("error_description")),
+          );
+        }
         sessionStorage.removeItem("lx_admin_pkce_verifier");
         sessionStorage.removeItem("lx_admin_oauth_state");
         navigate("/", { replace: true });
