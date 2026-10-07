@@ -37,8 +37,10 @@ Executive Board design is in
    `CDK_SKIP_PYTHON_PIP=1`.
 
 After the first deploy, verify `AdminFederatedEmailAllowlist` includes
-every Google operator; otherwise they authenticate but the API returns
-**403**.
+every Google operator and nobody else: an unlisted Google account is
+refused at sign-in (**This account is not authorized.**), and every listed
+address is a full administrator. The variable is the complete admin list;
+the Cognito **Users** page only shows accounts that have already signed in.
 
 ## 1. CDK Bootstrap and ACM
 
@@ -127,6 +129,38 @@ with `ADMIN_WEB_STACK_NAME`).
 5. Presigned **POST** upload and confirm; a DynamoDB row exists under
    `ASSET#…` / `META`.
 6. Sign out, reload, and land on the login screen again.
+7. **Sign in with Google** using an address that is **not** on
+   `ADMIN_FEDERATED_EMAIL_ALLOWLIST`: Cognito bounces back to the login
+   screen with **This account is not authorized.**, `sessionStorage` holds
+   no tokens, and the Cognito **Users** page shows no new user.
+
+## Auditing admin sign-ins
+
+Every sign-in, token refresh and first federated sign-up passes through the
+`PreTokenGenerationFn` Lambda, which logs one JSON line per decision. To see
+who signed in and why they were allowed, run this CloudWatch Logs Insights
+query against that function's log group (named
+`lxsoftware-AuthPreTokenGenerationFnLogGroup…`; it is the
+`AuthPreTokenGenerationFnLogGroup` resource of the `lxsoftware` stack):
+
+```
+fields @timestamp, email, username, trigger_source, decision, matched_admin,
+       in_admin_group, allowlist_size
+| filter tag = "admin_auth_gate" or tag = "pre_token_generation"
+| sort @timestamp desc
+```
+
+`decision` is `grant_admin` (email on the allow-list), `keep_admin_group`
+(native bootstrap administrator), `deny_token`, `deny_sign_up`,
+`allow_sign_up` or `allow_admin_create_user`. Lines tagged
+`pre_token_generation` are from before the fail-closed gate; there
+`matched_admin: true` is the only way the token carried `admin`. A
+`matched_admin: true` line for an address you did not expect means that
+address is in `ADMIN_FEDERATED_EMAIL_ALLOWLIST` — remove it from the GitHub
+environment variable and run **Deploy Backend**; the next token refresh for
+that account is refused. The HTTP API access log (`claimEmail`,
+`claimGroups`) and `admin_auth_denied` lines on `AdminApiFn` show the same
+identity on the API side.
 
 ## Local UI without a stack
 
