@@ -154,6 +154,7 @@ test.describe("admin viewport smoke", () => {
       await page.locator("#finance-tab-investments").click();
     }
     await expect(page.getByRole("cell", { name: /Real Estate/ }).first()).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: /Current Value/i })).toBeVisible();
     await expect(
       page.getByText(/512,000/).filter({ visible: true }).first(),
     ).toBeVisible();
