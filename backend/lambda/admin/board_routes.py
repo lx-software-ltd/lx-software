@@ -1011,7 +1011,14 @@ def _watchlist_route(event: dict[str, Any], method: str, rest: list[str], user_s
     if len(rest) == 1:
         if method == "GET":
             watches = [board_intel.public_watch(table, w) for w in board_store.list_watches(table)]
-            return _json_response(200, {"watches": watches, "latestBrief": board_intel.latest_brief(table)})
+            return _json_response(
+                200,
+                {
+                    "watches": watches,
+                    "latestBrief": board_intel.latest_brief(table),
+                    "suppressedHosts": board_watch.suppressed_hosts(table),
+                },
+            )
         if method == "POST":
             body = _parse_json_body(event)
             if not isinstance(body, dict):
@@ -1022,6 +1029,21 @@ def _watchlist_route(event: dict[str, Any], method: str, rest: list[str], user_s
                 return _json_response(400, {"message": str(exc)})
             _audit(user_sub, "BOARD_WATCH_ADD", watch.get("watchId") or "", event)
             return _json_response(201, {"watch": board_intel.public_watch(table, watch)})
+        return method_not_allowed()
+    if len(rest) == 2 and rest[1] == "suppressed":
+        body = _parse_json_body(event) if method in ("POST", "DELETE") else None
+        hosts = [str(h) for h in ((body or {}).get("hosts") or []) if str(h).strip()] if isinstance(body, dict) else []
+        if method == "GET":
+            return _json_response(200, {"suppressedHosts": board_watch.suppressed_hosts(table)})
+        if method in ("POST", "DELETE"):
+            if not hosts:
+                return _json_response(400, {"message": "hosts must be a non-empty list"})
+            if method == "POST":
+                current = board_watch.suppress_hosts(table, hosts, name="owner")
+            else:
+                current = board_watch.unsuppress_hosts(table, hosts)
+            _audit(user_sub, "BOARD_WATCH_SUPPRESS" if method == "POST" else "BOARD_WATCH_UNSUPPRESS", ",".join(hosts)[:200], event)
+            return _json_response(200, {"suppressedHosts": current})
         return method_not_allowed()
     if len(rest) == 2:
         watch_id = rest[1]

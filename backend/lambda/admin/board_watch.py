@@ -73,6 +73,32 @@ IGNORED_DOMAINS = frozenset(
         "openrice.com",
         "info.gov.hk",
         "news.gov.hk",
+        # Parenting / lifestyle / travel media. Their round-ups rank for the
+        # discovery queries but they list providers; they are not competitors.
+        "hk01.com",
+        "ulifestyle.com.hk",
+        "bowtie.com.hk",
+        "kkday.com",
+        "sassymamahk.com",
+        "sassymamasg.com",
+        "littlestepsasia.com",
+        "hongkongliving.com",
+        "thehoneycombers.com",
+        "thehkhub.com",
+        "localiiz.com",
+        "sundaykiss.com",
+        "discoverhongkong.com",
+        "traveloka.com",
+        "thrillophilia.com",
+        "18hall.com",
+        "reubird.hk",
+        "notesity.hk",
+        "champimom.com",
+        "yohohongkong.com",
+        "travelababies.com",
+        "kamadelivery.com",
+        "daynightcatering.com",
+        "mumonthemove.com",
     }
 )
 REJECTED_TLDS = (".tw", ".cn", ".sg")
@@ -80,6 +106,56 @@ HK_HOST_HINTS = (".hk",)
 HK_TEXT_HINTS = ("hong kong", "hongkong", "香港", "kowloon", "new territories", "九龍", "新界")
 MAX_ADDS_PER_WEEK = 10
 _LISTICLE_RE = re.compile(r"^\s*\d+\s+(best|top)|^\s*(best|top)\s+\d+", re.I)
+# Search-result titles that are editorial round-ups rather than a business.
+_MEDIA_TITLE_RE = re.compile(
+    r"\b\d+\+?\s+(best|top|fun|free|unforgettable|unmissable|exciting|coolest|great|rainy|most)\b"
+    r"|\b(best|top)\s+\d+\b"
+    r"|^\s*(the\s+)?(best|top)\b"
+    r"|\bthings\s+to\s+do\b"
+    r"|\bthis\s+weekend\b"
+    r"|\bguide\s+to\b"
+    r"|好去處|推介|推薦|攻略|懶人包|必去|必試|必看"
+    r"|\d+\s*[個大款間項]",
+    re.I,
+)
+SUPPRESSED_STATE = "watch:suppressed"
+SUPPRESSED_MAX = 500
+
+
+def looks_like_media(title: str) -> bool:
+    return bool(_MEDIA_TITLE_RE.search(str(title or "")))
+
+
+def suppressed_hosts(table: Any) -> dict[str, dict[str, Any]]:
+    doc = board_store._get_state(table, SUPPRESSED_STATE) or {}
+    hosts = doc.get("hosts")
+    return dict(hosts) if isinstance(hosts, dict) else {}
+
+
+def suppress_hosts(table: Any, hosts: list[str], *, name: str = "") -> dict[str, dict[str, Any]]:
+    """Remember hosts the owner removed so weekly discovery does not re-add them."""
+    current = suppressed_hosts(table)
+    now = board_store.now_iso()
+    for host in hosts:
+        host = str(host or "").strip().lower()
+        if host:
+            current[host] = {"name": str(name or "")[:200], "at": now}
+    if len(current) > SUPPRESSED_MAX:
+        oldest = sorted(current.items(), key=lambda kv: str(kv[1].get("at") or ""))
+        current = dict(oldest[-SUPPRESSED_MAX:])
+    board_store._put_state(table, SUPPRESSED_STATE, {"hosts": current, "updatedAt": now})
+    return current
+
+
+def unsuppress_hosts(table: Any, hosts: list[str]) -> dict[str, dict[str, Any]]:
+    current = suppressed_hosts(table)
+    changed = False
+    for host in hosts:
+        if current.pop(str(host or "").strip().lower(), None) is not None:
+            changed = True
+    if changed:
+        board_store._put_state(table, SUPPRESSED_STATE, {"hosts": current, "updatedAt": board_store.now_iso()})
+    return current
 
 
 class WatchError(ValueError):
@@ -177,6 +253,8 @@ def add_watch(table: Any, body: dict[str, Any]) -> dict[str, Any]:
     if not doc["district"]:
         doc.pop("district")
     board_store.put_watch(table, doc)
+    # An explicit add wins over an earlier removal.
+    unsuppress_hosts(table, [_domain(u) for u in doc["urls"]])
     return public_watch(doc)
 
 
@@ -210,10 +288,15 @@ def update_watch(table: Any, watch_id: str, body: dict[str, Any]) -> dict[str, A
     return public_watch(existing)
 
 
-def remove_watch(table: Any, watch_id: str) -> None:
-    if not board_store.get_watch(table, watch_id):
+def remove_watch(table: Any, watch_id: str, *, suppress: bool = True) -> None:
+    """Delete a watch; by default also keep discovery from re-adding its hosts."""
+    existing = board_store.get_watch(table, watch_id)
+    if not existing:
         raise KeyError(watch_id)
     board_store.delete_watch(table, watch_id)
+    if suppress:
+        hosts = [_domain(u) for u in (existing.get("urls") or [])]
+        suppress_hosts(table, [h for h in hosts if h], name=str(existing.get("name") or ""))
 
 
 def discover(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
@@ -222,9 +305,12 @@ def discover(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
     week = _utc_now().strftime("%G-W%V")
     existing = list_watchlist(table)
     known_hosts = {_domain(u) for w in existing for u in (w.get("urls") or [])}
+    suppressed = set(suppressed_hosts(table))
     already_this_week = _adds_this_week(existing, week)
     added = 0
     promoted = 0
+    skipped_media = 0
+    skipped_suppressed = 0
     ctx = type("Ctx", (), {"table": table, "settings": settings})()
     for query in TARGET_QUERIES:
         try:
@@ -237,7 +323,13 @@ def discover(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
             host = _domain(url)
             if not host or _ignored(host) or _rejected_tld(host):
                 continue
+            if host in suppressed or any(host.endswith("." + s) for s in suppressed):
+                skipped_suppressed += 1
+                continue
             if not _has_hk_signal(item if isinstance(item, dict) else {}, host):
+                continue
+            if host not in known_hosts and looks_like_media(str((item or {}).get("title") or "")):
+                skipped_media += 1
                 continue
             if added >= max(0, MAX_ADDS_PER_WEEK - already_this_week):
                 continue
@@ -277,4 +369,12 @@ def discover(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
         if updated and updated[:10] < cutoff:
             board_store.delete_watch(table, str(watch["watchId"]))
             expired += 1
-    return {"ok": True, "added": added, "promoted": promoted, "expired": expired, "week": week}
+    return {
+        "ok": True,
+        "added": added,
+        "promoted": promoted,
+        "expired": expired,
+        "skippedMedia": skipped_media,
+        "skippedSuppressed": skipped_suppressed,
+        "week": week,
+    }
