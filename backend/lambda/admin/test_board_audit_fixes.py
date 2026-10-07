@@ -58,6 +58,9 @@ class PauseAndDedupeTests(BoardTestCase):
     def setUp(self) -> None:
         super().setUp()
         os.environ["BOARD_STAFF_ENABLED"] = "true"
+        # Scratchpads go to the in-memory store so these tests do not depend
+        # on an earlier module leaving a boto3 mock behind.
+        os.environ.pop("ASSETS_BUCKET_NAME", None)
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
         patcher = patch.object(board_async, "invoke_async", side_effect=lambda payload, *, fallback=None: None)
         patcher.start()
@@ -97,6 +100,97 @@ class PauseAndDedupeTests(BoardTestCase):
         board_staff.resume_after_approval(self.table, self.settings, first)
         resumed = board_store.get_task(self.table, task["taskId"])
         self.assertEqual(resumed["status"], "running")
+
+    def _park_on(self, task: dict[str, Any], op: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=self.settings,
+            persona_id="cto",
+            display_name="Ravi",
+            kind="task",
+            task_id=task["taskId"],
+            seat_id="security-analyst",
+        )
+        approval = board_tools.create_approval(
+            ctx,
+            board_tools.REGISTRY[op],
+            arguments,
+            summary=f"{op} proposed",
+        )
+        board_staff._park_waiting_approval(self.table, task, [approval["approvalId"]])
+        approval["context"] = {**(approval.get("context") or {}), "taskId": task["taskId"]}
+        return approval
+
+    def _scratchpad(self, task_id: str) -> str:
+        return board_staff._blob_get(board_staff._scratchpad_key(task_id)).decode("utf-8")
+
+    def test_rejected_proposal_leaves_a_do_not_repropose_note(self) -> None:
+        task = _running_task(self.table, self.settings)
+        approval = self._park_on(
+            task,
+            "github_create_issue",
+            {"title": "Rotate the leaked key", "body": "details", "reason": "sec"},
+        )
+        approval.update({"status": "rejected", "note": "already rotated"})
+        board_store.put_approval(self.table, approval)
+        board_staff.resume_after_approval(self.table, self.settings, approval)
+        resumed = board_store.get_task(self.table, task["taskId"])
+        self.assertEqual(resumed["status"], "running")
+        self.assertTrue(resumed.get("scratchpadKey"))
+        scratch = self._scratchpad(task["taskId"])
+        self.assertIn("APPROVAL: founder rejected `github_create_issue`", scratch)
+        self.assertIn("already rotated", scratch)
+        self.assertIn("Do not propose it again", scratch)
+        self.assertEqual(int(resumed.get("helpRequests") or 0), 0)
+
+    def test_executed_proposal_records_result_and_call_id(self) -> None:
+        task = _running_task(self.table, self.settings)
+        approval = self._park_on(
+            task,
+            "github_create_issue",
+            {"title": "Rotate the leaked key", "body": "details", "reason": "sec"},
+        )
+        approval.update(
+            {
+                "status": "executed",
+                "executedCallId": "call-77",
+                "result": {"number": 512, "url": "https://github.com/example/repo/issues/512"},
+            }
+        )
+        board_store.put_approval(self.table, approval)
+        board_staff.resume_after_approval(self.table, self.settings, approval)
+        scratch = self._scratchpad(task["taskId"])
+        self.assertIn("APPROVAL: founder approved `github_create_issue`", scratch)
+        self.assertIn("issues/512", scratch)
+        self.assertIn("Cite callId call-77", scratch)
+        self.assertIn("Do not propose it again", scratch)
+
+    def test_failed_proposal_reports_error_without_a_retry(self) -> None:
+        task = _running_task(self.table, self.settings)
+        approval = self._park_on(
+            task,
+            "github_create_issue",
+            {"title": "Rotate the leaked key", "body": "details", "reason": "sec"},
+        )
+        approval.update({"status": "failed", "errorMessage": "GitHub 422: validation failed"})
+        board_store.put_approval(self.table, approval)
+        board_staff.resume_after_approval(self.table, self.settings, approval)
+        scratch = self._scratchpad(task["taskId"])
+        self.assertIn("execution failed (GitHub 422: validation failed)", scratch)
+        self.assertIn("Do not propose it again", scratch)
+
+    def test_help_request_executed_leaves_no_approval_note(self) -> None:
+        task = _running_task(self.table, self.settings)
+        approval = {
+            "approvalId": "ap-help",
+            "op": "task_request_help",
+            "status": "executed",
+            "context": {"taskId": task["taskId"]},
+        }
+        board_staff._park_waiting_approval(self.table, task, ["ap-help"])
+        board_store.put_approval(self.table, approval)
+        board_staff.resume_after_approval(self.table, self.settings, approval)
+        self.assertNotIn("APPROVAL:", self._scratchpad(task["taskId"]))
 
     def test_parking_keeps_completed_step_progress(self) -> None:
         from types import SimpleNamespace

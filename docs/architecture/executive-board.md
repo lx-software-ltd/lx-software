@@ -252,6 +252,11 @@ The daily budget is re-checked before every round.
   across pending Approvals of that same op, so a second merge call with a
   different `kind` or `reason` refreshes the same row and a pending
   `code_close_pr` or `code_review_pr` for that number is left alone.
+  When the decision unparks a staff task, `resume_after_approval` appends an
+  `APPROVAL:` line to the scratchpad naming the op, the outcome (executed
+  with its result and `callId`, rejected with the owner's note, or failed
+  with the error) and "do not propose it again", so the seat finishes
+  instead of re-proposing the same write on the next step.
   Proposals are only created by the loop, never by a
   `POST …/approvals` route, except the catalog bulk importer, which opens one
   `github_create_issue` proposal when a scheduled row imports only after its

@@ -1773,7 +1773,18 @@ def list_all_tasks(table: Any, status: str) -> list[dict[str, Any]]:
     return [_strip_keys(i) for i in rows]
 
 
-def list_tasks(table: Any, status: str | None = None, *, limit: int = 200) -> list[dict[str, Any]]:
+def list_tasks(
+    table: Any,
+    status: str | None = None,
+    *,
+    limit: int = 200,
+    newest_first: bool = False,
+) -> list[dict[str, Any]]:
+    """Tasks by status, oldest ``slaAt`` first.
+
+    ``newest_first`` walks the index backwards so a capped read of a busy
+    status (``delivered`` grows past any limit) still returns the latest rows.
+    """
     statuses = [status] if status else list(BOARD_STAFF_TASK_STATUSES)
     items: list[dict[str, Any]] = []
     for st in statuses:
@@ -1782,11 +1793,11 @@ def list_tasks(table: Any, status: str | None = None, *, limit: int = 200) -> li
             IndexName="gsi1",
             KeyConditionExpression="gsi1pk = :pk",
             ExpressionAttributeValues={":pk": board_pk(f"tasks#{st}")},
-            ScanIndexForward=True,
+            ScanIndexForward=not newest_first,
             Limit=limit,
         )
         items.extend(_strip_keys(i) for i in rows)
-    items.sort(key=lambda t: str(t.get("slaAt") or t.get("createdAt") or ""))
+    items.sort(key=lambda t: str(t.get("slaAt") or t.get("createdAt") or ""), reverse=newest_first)
     return items[:limit]
 
 
