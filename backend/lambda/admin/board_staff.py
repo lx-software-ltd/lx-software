@@ -1193,6 +1193,50 @@ def _park_waiting_approval(table: Any, task: dict[str, Any], approval_ids: list[
     _log_event("info", tag="board_staff_waiting_approval", taskId=task.get("taskId"), approvals=approval_ids)
 
 
+_APPROVAL_RESULT_CHARS = 400
+
+
+def _approval_outcome_note(approval: dict[str, Any]) -> str:
+    """Scratchpad line that tells the resumed seat how the founder decided.
+
+    Without it the seat only sees its own ``pending_approval`` call and
+    proposes the same write again on the next step (a rejected GitHub issue
+    was re-proposed twice in production). The note names the outcome and the
+    executed callId so ``task_finish`` can cite it.
+    """
+    op = str(approval.get("op") or "the proposal")
+    summary = str(approval.get("summary") or "").strip()
+    label = f"`{op}`" + (f" ({summary[:160]})" if summary else "")
+    status = str(approval.get("status") or "")
+    owner_note = str(approval.get("note") or "").strip()
+    reason = f' Founder note: "{owner_note[:300]}".' if owner_note else ""
+    if status == "executed":
+        result = approval.get("result")
+        try:
+            rendered = json.dumps(result, ensure_ascii=False, default=str) if result not in (None, {}) else ""
+        except (TypeError, ValueError):
+            rendered = str(result)
+        if len(rendered) > _APPROVAL_RESULT_CHARS:
+            rendered = rendered[: _APPROVAL_RESULT_CHARS - 1] + "…"
+        call_id = str(approval.get("executedCallId") or "")
+        evidence = f" Cite callId {call_id} as evidence." if call_id else ""
+        detail = f" Result: {rendered}" if rendered else ""
+        return (
+            f"APPROVAL: founder approved {label}; it has been executed.{detail}{evidence} "
+            "Do not propose it again. Continue with the remaining work or finish."
+        )
+    if status == "rejected":
+        return (
+            f"APPROVAL: founder rejected {label}.{reason} "
+            "Do not propose it again or any variant of it. Finish with what you have and say the proposal was declined."
+        )
+    err = str(approval.get("errorMessage") or "execution failed")[:300]
+    return (
+        f"APPROVAL: founder approved {label} but execution failed ({err}). "
+        "Do not propose it again. Finish with what you have and report the failure."
+    )
+
+
 def resume_after_approval(table: Any, settings: dict[str, Any], approval: dict[str, Any]) -> None:
     """Continue a task parked on a proposal once the founder decides it."""
     task_id = str((approval.get("context") or {}).get("taskId") or "")
@@ -1239,6 +1283,9 @@ def resume_after_approval(table: Any, settings: dict[str, Any], approval: dict[s
         _append_scratchpad(task, note)
         task["scratchpadKey"] = _scratchpad_key(str(task.get("taskId") or ""))
         task["helpRequests"] = int(task.get("helpRequests") or 0) + 1
+    elif str(approval.get("op") or "") != "task_request_help":
+        _append_scratchpad(task, _approval_outcome_note(approval))
+        task["scratchpadKey"] = _scratchpad_key(str(task.get("taskId") or ""))
     task["status"] = "running"
     _clear_parked(task)
     task["updatedAt"] = board_store.now_iso()
