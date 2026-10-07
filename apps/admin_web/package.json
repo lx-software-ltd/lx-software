@@ -12,7 +12,7 @@
     "preview:mock": "vite preview --mode mock --port 4173",
     "lint": "eslint . --max-warnings=0",
     "test:unit": "vitest run",
-    "test:backend": "cd ../../backend/lambda/admin && python3 -m pip install -q -r requirements.txt && python3 -m unittest discover -p 'test_*.py' -v && cd ../public_api_authorizer && python3 -m unittest discover -p 'test_*.py' -v && cd ../siutindei_schema && python3 -m unittest discover -p 'test_*.py' -v",
+    "test:backend": "cd ../../backend/lambda/admin && python3 -m pip install -q -r requirements.txt && python3 -m unittest discover -p 'test_*.py' -v && cd ../public_api_authorizer && python3 -m unittest discover -p 'test_*.py' -v && cd ../pre_token_generation && python3 -m unittest discover -p 'test_*.py' -v && cd ../siutindei_schema && python3 -m unittest discover -p 'test_*.py' -v",
     "test": "npm run test:unit && npm run test:backend",
     "test:e2e": "playwright test"
   },

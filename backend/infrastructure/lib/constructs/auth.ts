@@ -34,8 +34,9 @@ export interface AuthConstructProps {
 
 /**
  * Cognito user pool with Google federation, TOTP-only MFA, hosted UI OAuth,
- * admin group, Pre Token Generation allow-list for federated admins, and
- * chained custom resources that bootstrap the first native admin user.
+ * admin group, a fail-closed allow-list gate on Pre Sign-up and Pre Token
+ * Generation, and chained custom resources that bootstrap the first native
+ * admin user.
  */
 export class AuthConstruct extends Construct {
   public readonly userPool: cognito.UserPool;
@@ -105,6 +106,16 @@ export class AuthConstruct extends Construct {
     });
     props.sharedDeadLetterQueue.grantSendMessages(preTokenFn);
 
+    // One admin gate on two triggers (construct id kept so the function is
+    // not replaced). Pre Sign-up refuses to create a Cognito user for a
+    // Google account that is not on the allow-list; Pre Token Generation
+    // refuses to issue any token unless the email is allow-listed or the
+    // user already holds the `admin` group (bootstrap administrator). A
+    // token that reaches the API therefore always carries `admin`.
+    this.userPool.addTrigger(
+      cognito.UserPoolOperation.PRE_SIGN_UP,
+      preTokenFn
+    );
     this.userPool.addTrigger(
       cognito.UserPoolOperation.PRE_TOKEN_GENERATION,
       preTokenFn

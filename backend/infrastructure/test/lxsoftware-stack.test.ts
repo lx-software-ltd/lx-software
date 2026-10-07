@@ -1057,6 +1057,44 @@ describe("Siu Tin Dei Data API setup", () => {
   });
 });
 
+describe("Admin user pool sign-in gate", () => {
+  test("Pre Sign-up and Pre Token Generation both run the allow-list Lambda", () => {
+    const pools = Object.values(resourcesOfType("AWS::Cognito::UserPool"));
+    expect(pools).toHaveLength(1);
+    const lambdaConfig = pools[0].Properties?.LambdaConfig ?? {};
+    const preSignUp = lambdaConfig.PreSignUp;
+    const preToken = lambdaConfig.PreTokenGeneration;
+    expect(preSignUp).toBeTruthy();
+    expect(preToken).toBeTruthy();
+    expect(preSignUp).toEqual(preToken);
+    const fnLogicalId = preToken?.["Fn::GetAtt"]?.[0];
+    expect(fnLogicalId).toMatch(/PreTokenGenerationFn/);
+    expect(resources[fnLogicalId]?.Properties?.Environment?.Variables).toMatchObject({
+      ADMIN_EMAIL_ALLOWLIST: { Ref: "AdminFederatedEmailAllowlist" },
+    });
+  });
+
+  test("Cognito may invoke the gate for both triggers", () => {
+    const permissions = Object.values(resourcesOfType("AWS::Lambda::Permission")).filter(
+      (p) =>
+        p.Properties?.Principal === "cognito-idp.amazonaws.com" &&
+        JSON.stringify(p.Properties?.FunctionName).includes("PreTokenGenerationFn"),
+    );
+    expect(permissions.length).toBeGreaterThanOrEqual(1);
+    for (const permission of permissions) {
+      expect(JSON.stringify(permission.Properties?.SourceArn)).toMatch(/UserPool/);
+    }
+  });
+
+  test("the pool has no self sign-up and the SPA client has no secret", () => {
+    const pool = Object.values(resourcesOfType("AWS::Cognito::UserPool"))[0];
+    expect(pool.Properties?.AdminCreateUserConfig?.AllowAdminCreateUserOnly).toBe(true);
+    const clients = Object.values(resourcesOfType("AWS::Cognito::UserPoolClient"));
+    expect(clients).toHaveLength(1);
+    expect(clients[0].Properties?.GenerateSecret).toBe(false);
+  });
+});
+
 describe("Lambda service-principal permissions", () => {
   test("every AWS service invoke grant sets SourceArn or SourceAccount", () => {
     const permissions = Object.values(resourcesOfType("AWS::Lambda::Permission"));
