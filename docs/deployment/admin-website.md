@@ -278,7 +278,8 @@ Writes need **`allowWrite`** on the key (`create --allow-write` or
 `{"message": "Forbidden", "reason": "writes_disabled"|"key_read_only"|"owner_only"|"scope"}`;
 GET denials stay 404; unknown keys get API Gateway 401/403. Owner-only
 even for a write key: `PUT settings` / `boundaries` / `tools`,
-`POST approvals/{id}/approve|reject`, `code/promote`, `code/sync-staging`,
+`POST approvals/{id}/approve|reject`, `code/promote`, `code/sync-staging`, `catalog/preview`, `catalog/import`,
+`catalog/skip`, `catalog/requeue`, `catalog/reimport`,
 `ramp/{classKey}/promote|pause`, `mail/selftest`, `DELETE chat/{persona}`,
 `POST meetings/{id}/cancel`, `POST tasks/{id}/cancel`, `POST staff/tick`.
 
@@ -345,6 +346,14 @@ curl -X POST -H "x-api-key: lxpk_..." -H "Content-Type: application/json" \
   "$ADMIN_API_BASE_URL/public/siu-tin-dei/board/tasks"
 ```
 
+## Statement PDF import
+
+The admin SPA polls parse jobs for up to eight minutes
+(`apps/admin_web/src/hooks/useParseStatement.ts`). That window matches the
+`lxsoftware` stack Lambda timeout (300s), `OPENROUTER_TIMEOUT_SECONDS`
+(210s), and `PARSE_JOB_STUCK_SECONDS` (420s) on `AdminApiFn`. Change those
+together when extending OCR-heavy parsing.
+
 ## Enable Banking account sync
 
 The **Banking** page links PSD2 bank accounts via
@@ -352,8 +361,9 @@ The **Banking** page links PSD2 bank accounts via
 on the finance **Accounts** sheet from live balances ("Sync now" plus a
 daily EventBridge Scheduler schedule `lxsoftware-admin-bank-sync` at 05:30 HKT). Only balances are read.
 Authentication is an RS256 JWT signed by the stack's asymmetric KMS key
-(`alias/lxsoftware-admin/enable-banking`); no private key material leaves
-KMS.
+(`alias/lxsoftware-admin/enable-banking`, `backend/lambda/admin/bank_sync.py`);
+no private key material leaves KMS. The feature stays off until
+`EnableBankingAppId` is set.
 
 One-time setup:
 
@@ -501,8 +511,8 @@ Chat lands. A completed day OpenRouter has not aggregated yet is stored
 as USD 0.00 and replaced on the next pull that includes it.
 The current UTC day uses the key's `usage_daily` and has no call count until
 Activity includes that day. A failed request leaves the previously saved
-days in place. Days older than 30 stay as last saved, so history builds
-from the first successful pull.
+days in place and marks the bill `partial` or `http_error`. Days older
+than 30 stay as last saved, so history builds from the first successful pull.
 
 Evolve Sprouts stores `lxsoftware:evolvesprouts` in its own secret (plain
 string) and tags requests with `https://evolvesprouts.com` / `Evolve
@@ -521,8 +531,16 @@ Activity is not added to Other.
 
 ### LinkedIn drafts
 
-LX Software → **LinkedIn** stores a personal posting queue. Drafts are
-written as a senior architect. The company name stays blocked in every draft.
+LX Software → **LinkedIn** (`/lx-software?tab=linkedin`) stores a personal
+posting queue. Rows use the `LINKEDIN#` prefix and stay out of `/records`.
+Drafts are written as a senior architect with the `lxsoftware:linkedin`
+key. The company name stays blocked in every draft. Draft calls send
+`reasoning: {enabled: false}`. A model that still thinks fails the batch
+(`linkedin_draft_parse_failed` carries `finish_reason`). `RECOMMENDED_VOICE`
+is mirrored as `RECOMMENDED_LINKEDIN_VOICE` in `linkedinModel.ts`; keep
+both texts identical and under 1000 characters. The Image API has no
+`data_collection: deny`. Character headshots are the `linkedin_character`
+job.
 Generation uses the `linkedin` OpenRouter key above and books each call on the OpenRouter usage ledger.
 Settings → Drafts can pin an OpenRouter model slug next to Notify; an empty field uses `OpenRouterModel`.
 Voice is the tone the model must follow on new drafts and on guardrail rewrites. It overrides the default tone (first person, short lines, a closing question). Substance rules (written as I, never a company we — one `we` is allowed for a real conversation; one real situation told in the order it happened, with its system, constraint and figures; no sensationalism, buzzwords or emoji; no opening question, no moral first, no `Agree?`) and safety rules (hook length, employer, availability, pitch, blocked phrases) stay in force. **Use recommended voice** fills the field with `RECOMMENDED_VOICE` from `linkedin_store.py`, which is also the default: a plain first line specific to the story, the story in order, named constraints and figures, plain dashes, dry self-deprecation, an admitted gap, and a different way in and out for every post. The voice quotes no catchphrase, because the model copies any phrase it is given. Leave Voice blank to use the default tone only. **Example post** (`styleExample`, up to 3000 characters) is a post in the owner's own words that the system prompt shows for its register only (how plain, how much admitted, how little sold); its structure, opening formula, closing move and phrases are not to be reused. The default is `STYLE_EXAMPLE` in `linkedin_store.py`; replace it with a newer post or clear it to send no example. Within a batch each draft gets its own shape from `linkedin_draft.OPENINGS` × `CLOSINGS` × `LENGTHS` (rotating from the number of existing posts, so successive weeks differ), and the user message lists the openings and closing lines of the example, the last 12 posts, and the drafts already written. A draft that contains an emoji, a phrase from `SLOP_PHRASES` (`linkedin_draft.py`), more than one `we` / `our`, or that opens with the same three words, closes with the same four words, or shares any seven-word phrase with one of those posts (`repeat_findings`) gets the one rewrite pass, which repeats the shape. Draft temperature is 0.9. When Ideas has no `new` rows, each draft is written from a seed in `backend/lambda/admin/linkedin_seeds.py` — first-person situations from problems this codebase solved, with no company or product names — and the post stores `seedId` so a seed is not reused while others remain. Each draft also stores `generation.voiceHash` for the voice that produced it.
@@ -740,9 +758,10 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
    set `enableDataApi: true`.
 4. Scheduler `lxsoftware-admin-evolvesprouts-finance-mirror` runs at 00:45
    HKT when the Data API is configured. **Sync now** queues the same
-   mirror (`POST /evolve-sprouts/sync` returns `{queued}` and the page
-   polls `GET /evolve-sprouts/summary`). The page load reads the last
-   snapshot and does not query Aurora.
+   mirror (`POST /evolve-sprouts/sync` returns `{queued}`, internal event
+   `evolvesprouts_finance_mirror`; the page polls
+   `GET /evolve-sprouts/summary`). The page load reads the last snapshot
+   and does not query Aurora.
 5. Mirrored lines replace the previous mirror and leave any other lines
    alone. Issued `customer_invoices` become income `es-inv-*` (Gains).
    Succeeded refunds become expenditure `es-ref-*`, and expenses
@@ -758,6 +777,8 @@ on that book returns 403. LX Software and Siu Tin Dei stay editable.
    of `issued_at`. A backdated invoice therefore sits in its own fiscal
    year even when the record was created later; the statement table orders
    by that date, not by `created_at` (the Client Invoices list order).
+   Lines do not carry `sortUtc`; a stored line that still has it is
+   rewritten once.
    Refunds use `succeeded_at`. Calendar days are Asia/Hong_Kong,
    stored as that day at 00:00 UTC. Codes outside GBP, HKD, USD, EUR, CNY,
    SGD, AED are skipped and counted separately from rows missing an
@@ -1019,32 +1040,3 @@ current CNAME names.
 Replies go out from the mailbox the thread was addressed to. Every outbound
 message is indexed as `direction=out` so it appears in **Mail**. Bodies and
 threads expire after 90 days (`BOARD_MAIL_MESSAGE_TTL_DAYS`).
-
-
-## Operational constraints
-
-These notes moved out of `AGENTS.md` so the always-on rulebook stays short. They are constraints from production incidents. The short form for agents lives in `.cursor/rules/`.
-
-### OpenRouter bill
-
-LX Software pays one OpenRouter invoice. Each catalog app in `contracts/openrouter-apps.json` has its own named key (`lxsoftware:{app-id}`). This admin’s secret JSON must include `statement-parser`, `executive-board`, `linkedin`, and `management` (a Management API key, not an inference key). Sibling products store their named key in their own secret and tag requests with the catalog `referer` / `title` / `user {id}:{workload}`. Mint with `python3 scripts/mint-openrouter-app-keys.py`. Apps with `ingestUsage` (Evolve Sprouts, Siu Tin Dei) are pulled hourly (`lxsoftware-admin-openrouter-usage-pull`, account-level, no board key) with one `GET /api/v1/activity` for the account and one `GET /api/v1/activity?api_key_hash=` per key that has usage. Catalog keys stay on their app line. Any other key name is its own line. `Other` is the account total minus every key (OpenRouter Chat and spend that is not on an API key). A completed day missing from that response is stored as USD 0.00 and replaced on the next pull. The current UTC day uses `usage_daily` and omits the call count until Activity includes the day; Chat for the current day waits for Activity. A failed request keeps the previous days and marks the bill `partial` or `http_error`. Book UTC spend from **LX Software → Dashboard → OpenRouter** (current month-to-date plus the previous 12 months; pulled history starts at the first successful pull, then the last 30 days stay). See [`docs/deployment/admin-website.md`](docs/deployment/admin-website.md).
-
-### LinkedIn (admin)
-
-LX Software → LinkedIn (`/lx-software?tab=linkedin`) is a personal presence queue: drafts, a Tue/Thu 08:30 HKT calendar, ideas, and settings. Posts must not name LX Software or sibling products unless Settings allows product names. Rows use `LINKEDIN#` and stay out of `/records`. `LxSoftwareLinkedinEnabled` and `LxSoftwareLinkedinPublishEnabled` default false (fail closed). Production params set both to true. The Sunday 18:00 HKT plan schedule and the 15-minute due reminder are created only when `LxSoftwareLinkedinEnabled` is true. Drafts use the `lxsoftware:linkedin` OpenRouter key and are booked on the OpenRouter usage ledger. Picture `imageScene` / `imageExpression` / `imageCaption` are written from the post (a light gag cartoon of the author living the post's moment; the caption ends with `.` unless it ends with `?` / `!`, `finish_caption`); blank fields are written by the image worker (`picture_brief`), an owner-written post is queued for a picture on save, and `POST /posts/{id}/image/brief` queues `linkedin_image_brief` to rewrite all three without drawing (never a model call inside the HTTP request: API Gateway's 30 s cut shows as “Load failed”; `image.brief.status` is polled). Settings `voiceNotes` is a separate block in the draft system prompt and a `Voice:` line in the user message; it overrides the tone defaults (first person, short lines, a closing question), and the guardrail rewrite restates it. Substance rules (written as I, never a company we — one `we` is allowed for a real conversation; one real situation told in order: system, constraint, figures, what was tried, what happened; no sensationalism, buzzwords or emoji; no opening question, no moral first, no `Agree?`) and safety rules (hook length, no employer, no availability, no pitch, forbidden phrases) stay absolute. The default and the Settings **Use recommended voice** button are `linkedin_store.RECOMMENDED_VOICE` (mirrored as `RECOMMENDED_LINKEDIN_VOICE` in `linkedinModel.ts`; keep both under 1000 characters): plain first line specific to the story, story in order, named constraints and figures, plain dashes, dry self-deprecation, a different way in and out each post. The voice must not quote a catchphrase (the model copies it into every draft). An empty voice uses the tone defaults. Settings **Example post** (`styleExample`, ≤ `STYLE_EXAMPLE_MAX` 3000; default `linkedin_store.STYLE_EXAMPLE`, a post the owner wrote) is shown in the system prompt for register only, never as structure or material; blank sends no example. Each draft in a batch gets `shape_for(index, existing_post_count)` from `OPENINGS` × `CLOSINGS` × `LENGTHS` (coprime lengths), and the user message lists the openings and closing lines of the example, `recent_bodies` (12), and the batch so far. A draft containing an emoji, a `linkedin_draft.SLOP_PHRASES` entry, more than `WE_ALLOWANCE` (1) `we`/`our`, or a `repeat_findings` hit (same first 3 words, same last-line 4 words, or a shared 7-gram with any of those posts) gets the one rewrite pass with the same shape. `DRAFT_TEMPERATURE` is 0.9. With no `new` idea, `choose_topics` writes from `linkedin_seeds.SEEDS` (28 first-person situations from problems this repo solved, no company or product names; every seed must pass `guardrails` except `hook` and `slop_findings`), rotating by `seedId` stored on the post. Each generated post stores `generation.voiceHash`. When pictures are on (Settings default), the draft also returns `imageScene`, `imageExpression`, and `imageCaption` and queues `linkedin_image` after the text is saved. OpenRouter Image API (`POST /api/v1/images`; there is no `data_collection: deny` on that API) draws one panel. The default model is `bytedance-seed/seedream-4.5`; `qwen/qwen-image-3` is the documented alternative; the owner can change the slug. Image calls set resolution `2K`. Seedream 4.5 rejects `1K` because those sizes are under its 3,686,400 pixel minimum, so a post drawing and the four character headshots never start at that tier. Pillow (`fonts/NotoSerif-Italic.ttf`) makes the picture grayscale and fits the Settings format (square 1200×1200, portrait 1080×1350, wide 1200×675). The caption is drawn inside the bottom of that picture, with no quotation marks, and the same line is the LinkedIn alt text. The face is a caricature; `imageExpression` is the expression for that scene, and the character sheet is a neutral caricature of the photo. Redraw the sheet after changing how the person is drawn, because later pictures copy the chosen sheet. The photo is uploaded once, used to draw four headshots (`linkedin_character`), and can be deleted after the owner picks a sheet; later pictures send that sheet from the private assets bucket `linkedin/character/`, never the photo, and never a copy in the repo, DynamoDB, or fixtures. With pictures off, the draft prompt does not ask for a scene or caption. A picture that has never been ready publishes as text and sets `imageNote`. A redraw keeps the previous ready picture and its alt text until the new panel is saved, so a pending or failed redraw still publishes that picture. Image spend shares `maxUsdPerMonth`: each call reserves $0.05 before the request and the actual cost is booked as `linkedin` / `image` only after the panel is saved. `LINKEDIN_IMAGE_TIMEOUT_SECONDS` defaults to 90. Character headshots stop within 240s so they finish inside the 300s Lambda, and a character job still running after six minutes is marked failed on the next read. Candidate ids are only `c1`–`c4`. Redraw is `POST …/posts/{id}/image/regenerate`. Draft calls send `reasoning: {enabled: false}` and 2000 tokens (4000 on the one retry after a `length` cut-off); a Settings model that keeps thinking anyway fails the whole batch at once with an error that names the model (`linkedin_draft_parse_failed` in CloudWatch carries `finish_reason`), so pick a non-reasoning slug or leave Model blank. The publish switch posts one due approved draft per 15-minute tick through the Posts API only when it is true, a member is connected, and the slot is less than three hours old (profile by default; company pages are an optional connect checkbox and a Settings choice). Older slots stay on the share box. A missing connection or an expired token does not use up the three attempts; the Settings panel shows the expiry. Credentials are the `lxsoftware-admin-linkedin-app` secret (`clientId`, `clientSecret`); the redirect is `https://admin.lx-software.com/lx-software/linkedin/callback` (`ADMIN_WEB_ORIGIN`). Default scopes are `openid profile w_member_social`; company pages add `w_organization_social r_organization_social rw_organization_admin`. A first-comment failure leaves the post published. A ready picture is uploaded with the caption, quotes stripped, as alt text; a picture that is still pending or failed does not hold the slot. An image upload or API failure counts toward three attempts, then a second email says posting stopped. The post URN is stored before the status flip so a later failure does not post twice. Reaction reads that return 403 are not retried; page impressions apply only to page posts from the last 30 days. An employer name belongs in Settings → extra phrases, not in source.
-
-### AWS bill
-
-LX Software pays one AWS invoice for this account (Siu Tin Dei and Evolve Sprouts share it). Cost Explorer splits UnblendedCost by activated cost-allocation tags `Organization` and `Project` (`contracts/aws-billing.json`). AWS's own invoice PDF is one account total; **LX Software → Dashboard → AWS** (`GET /aws/usage` and `GET /aws/usage.pdf`) is the tagged split, defaulting to the last complete UTC month with the same 12-month dropdown. See [`docs/deployment/admin-website.md`](docs/deployment/admin-website.md).
-
-### Enable Banking sync
-
-the admin Banking page (`/banking`) links PSD2 bank accounts through Enable Banking and refreshes accounts-sheet balances (manual "Sync now" + a daily EventBridge Scheduler schedule at 05:30 HKT). JWTs are signed by the `lxsoftware-admin/enable-banking` KMS key (`backend/lambda/admin/bank_sync.py`); the feature is off until the `EnableBankingAppId` stack parameter is set. Setup steps in `docs/deployment/admin-website.md`.
-
-### Statement PDF import
-
-the admin SPA polls parse jobs for up to eight minutes (`useParseStatement.ts`), aligned with the `lxsoftware` stack Lambda timeout (300s), `OPENROUTER_TIMEOUT_SECONDS` (210s), and `PARSE_JOB_STUCK_SECONDS` (420s) on `AdminApiFn`. Change those together if you extend OCR-heavy parsing.
-
-### Evolve Sprouts finance
-
-statement book `evolveSprouts` (`/evolve-sprouts`) is read-only in the admin. Issued customer invoices become income `es-inv-*` (Gains). Dates follow the Evolve Sprouts Finance **Tax** panel, not the Client Invoices list: document `invoice_date`, falling back to the HKT day of `issued_at` when the column is null; the statement table orders by that date, so a backdated invoice sits in its fiscal year even if the record was created in May 2026. Lines do not carry `sortUtc`; a stored line that still has it is rewritten once. Refunds `es-ref-*` (expenditure) and expenses with status `submitted` or `paid` as `es-exp-*` (net=`subtotal`, VAT=`tax`, gross=`total`; expenses dated by issued `invoice_date`; HKT calendar day). Issued invoices with a balance stay on `GET /evolve-sprouts/summary`. Previous `es-pay-*` payment income is removed on sync. `POST /evolve-sprouts/sync` queues `internal: evolvesprouts_finance_mirror` (same as nightly `lxsoftware-admin-evolvesprouts-finance-mirror` at 00:45 HKT). Data API needs `EvolvesproutsClusterArn` **and** a read-only secret (`EvolvesproutsDbSecretArn` or `EvolvesproutsDbSecretName`; both default blank — never the cluster master). This stack does not write that database and does not apply SQL there; `lxsoftware-admin-evolvesprouts-data-api-ensure` only re-enables the HTTP endpoint when those params are set. The product stack must set `enableDataApi: true`. The secret's CMK must allow `AdminApiFn` via Secrets Manager. Unsupported currencies and incomplete rows are counted separately. Setup in [`docs/deployment/admin-website.md`](docs/deployment/admin-website.md).

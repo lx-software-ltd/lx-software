@@ -19,7 +19,8 @@
   public and is not on the denylist. `scripts/check-pii.sh` compares
   normalized text to SHA-256 digests in `scripts/pii-denylist.sha256`
   (digests only; a hit is a path and line). Product mailboxes (`hello@`,
-  `board@`, `billing@`, inbound SES recipients) remain. Pre-commit and
+  `board@`, `billing@`, inbound SES recipients) remain. Git author and
+  `Co-authored-by` trailers are outside the check. Pre-commit and
   **Security Scanning** both run the check.
 - A `.gitleaks.toml` rule flags any committed `lxpk_…` public API key.
 
@@ -69,13 +70,14 @@ parameters use `noEcho: true`; S3 remains private behind CloudFront.
   client id, matching `aud` on **ID tokens**).
 - **The JWT authorizer is not sufficient.** Every handler reads
   `requestContext.authorizer.jwt.claims["cognito:groups"]` and returns
-  **403** without `admin`. The group check stays in the handlers; there is
-  no separate Lambda authorizer for it.
+  **403** without `admin` (`_require_admin`). The group check stays in the
+  handlers; there is no separate Lambda authorizer for it.
 - `/public/*` GET mirrors and the Executive Board `/public/siu-tin-dei/board`
   routes use the `PublicApiKeyAuthorizerFn` Lambda authorizer (`x-api-key`,
   scrypt digest lookup `pk=APIKEY#<digest>`, scopes, optional CIDR
   allow-list, 90-day default expiry, 60 s cache keyed on key + source IP).
-  Writes additionally need `allowWrite` on the key and the
+  The HTTP method is not part of that cache key, so handlers enforce
+  writes. Writes additionally need `allowWrite` on the key and the
   `PublicApiWritesEnabled` stack parameter; owner-only routes stay JWT-only.
   Key management: [`../deployment/admin-website.md`](../deployment/admin-website.md)
   → "Public API keys".
@@ -176,28 +178,3 @@ checks are the merge gate until then.
 - The Google OAuth client secret is a GitHub Actions secret passed to CDK
   with `noEcho`. It can appear briefly in the runner process environment;
   rotate it in Google Cloud if it is ever exposed.
-
-
-## Operational constraints
-
-These notes moved out of `AGENTS.md` so the always-on rulebook stays short. They are constraints from production incidents. The short form for agents lives in `.cursor/rules/`.
-
-### PII denylist
-
-`scripts/check-pii.sh` (pre-commit and Security Scanning) fails when tracked source matches SHA-256 digests in `scripts/pii-denylist.sha256`. The file stores digests only. Product mailboxes stay in source; personal names, phones, street addresses, and personal inboxes do not. The public website owner name in `apps/public_www/src/content/site.json` (`site.owner`) is intentionally public and is not on the denylist. Git author trailers are outside the check.
-
-### Public API keys
-
-`/public/{finance,finance/quotes,records,fx/v2/rates}` (GET) and `/public/siu-tin-dei/board` plus `{proxy+}` accept an `x-api-key` header validated by `backend/lambda/public_api_authorizer/` (scrypt digest lookup, `pk=APIKEY#<digest>`). Scopes: `finance`, `siutindei-board-ops`, `siutindei-board-full`, `siutindei-pii`, `siutindei-assets`. Legacy `scope=read` is finance-only. New keys default to 90-day expiry; optional CIDR allow-list. Board PUT/POST/DELETE need `allowWrite` on the key **and** `PublicApiWritesEnabled` (CDK default `false`; production is `true`). Authenticated write denials return 403 with `reason` (`writes_disabled`, `key_read_only`, `owner_only`, `scope`). Owner-only even then: `PUT settings`/`boundaries`/`tools`, approvals decide, `code/promote`, `code/sync-staging`, `catalog/preview`, `catalog/import`, `catalog/skip`, `catalog/requeue`, `ramp/*/promote|pause`, `mail/selftest`, `DELETE chat/{persona}`, `POST meetings/{id}/cancel`, `POST tasks/{id}/cancel`, `POST staff/tick`. Successful reads (and denied known keys) email `settings.review.digestTo` from `hello@`, coalesced 60s; writes mail every time. Authorizer cache 60s (key + source IP) — method is not part of the cache key, so the handler enforces writes. Mint/list/revoke/`set-write` with `scripts/manage-public-api-keys.py`; docs in `docs/deployment/admin-website.md`. `/public/records` still excludes `BOARD#` rows. Overview `digestTo` and `GET /tools` `config.allowList` are blank without `siutindei-pii` even when the setting is populated — do not report them as empty from that GET.
-
-### Admin sign-in gate
-
-`backend/lambda/pre_token_generation` runs on the admin pool's **Pre Sign-up** and **Pre Token Generation** triggers and fails closed: an email not on `AdminFederatedEmailAllowlist` (GitHub variable `ADMIN_FEDERATED_EMAIL_ALLOWLIST`) cannot create a Cognito user and gets no token at all, unless the user already holds the `admin` group (bootstrap administrator). Every address on that list is a full administrator — the list is the admin roster, not the Cognito Users page. Decisions are logged as `tag: admin_auth_gate` with `email` and `decision`; the SPA shows Cognito's `… not authorized.` error on the login screen. Handlers still require `cognito:groups` to include `admin` (`_require_admin`).
-
-### Executive Board mail
-
-every `siutindei.com` mailbox is copied by `scripts/cloudflare/siutindei-mail-fanout.js` to `siutindei-board@<InboundMailDomain>`; SES stores MIME under `inbound-raw/siutindei/` and `inbound_email_handler` branches that prefix to `board_mail.ingest_raw_object`. Personas see `contact#N` / `phone#N` aliases (`board_pii.py`); the owner always sees real addresses in **Executive Board → Mail**. Outbound send is off until `SiutindeiBoardMailSendingEnabled=true` plus DKIM/SPF/DMARC; recipients outside the allow-list always require approval. **SES IAM:** every send grant is `Resource: *` + `ses:FromAddress *@<domain>` (`sesSendFromDomainStatement` in the stack) — SES authorizes `SendRawEmail` against the *mailbox* identity, so identity-ARN resource lists pass CDK tests and deny in production. Verify sending with **Mail → Send test email** (`POST /siu-tin-dei/board/mail/selftest`, SES health badges from `GetEmailIdentity`/`GetAccount`) before debugging via persona approvals. Setup in `docs/deployment/admin-website.md` → “Board mail”.
-
-### Shared inbound SES
-
-one active receipt rule set per region. `lxsoftware-inbound-mail` hosts hillmarton, morrison, LX Software `billing@inbound.lx-software.com` (iCloud-forward `billing@lx-software.com` here; parses as `lxSoftware` expenses), `siutindei-board`, and Evolve Sprouts `invoices@inbound.evolvesprouts.com`. The `lxsoftware` stack activates that set on deploy. The evolvesprouts stack must allow the shared-set SourceArn and must not call `SetActiveReceiptRuleSet` on its own set.
