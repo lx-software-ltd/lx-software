@@ -118,7 +118,9 @@ jobs:
       - name: Run harness checks
         run: |
           python3 scripts/validate_agent_rules.py
-          python3 -m unittest scripts/test_agent_hooks.py -v
+          python3 scripts/check_file_length.py
+          python3 scripts/check_test_focus.py
+          python3 -m unittest scripts/test_agent_hooks.py scripts/test_harness_ratchets.py -v
 
   lint:
     name: lint

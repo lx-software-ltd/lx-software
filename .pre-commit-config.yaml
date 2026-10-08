@@ -35,6 +35,20 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: check-file-length
+        name: Check file length
+        entry: python3 scripts/check_file_length.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: check-test-focus
+        name: Check focused or skipped tests
+        entry: python3 scripts/check_test_focus.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: ruff
         name: Ruff
         entry: python3 -m ruff check backend/lambda scripts .cursor/hooks

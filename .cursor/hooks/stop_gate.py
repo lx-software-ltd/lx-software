@@ -14,6 +14,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 CHECKS = (
     [sys.executable, str(ROOT / "scripts" / "validate_agent_rules.py")],
+    [sys.executable, str(ROOT / "scripts" / "check_file_length.py")],
+    [sys.executable, str(ROOT / "scripts" / "check_test_focus.py")],
     [sys.executable, str(ROOT / "scripts" / "check-contracts.py")],
     [sys.executable, str(ROOT / "scripts" / "check_pii.py")],
 )

@@ -1,0 +1,49 @@
+# Files already over the ceiling in scripts/check_file_length.py.
+# A listed file may not grow. Lower the number when it shrinks.
+# Remove the line when the file is at or under its ceiling
+# (500 for backend/lambda Python, 800 for app and CDK TypeScript).
+apps/admin_web/src/components/FinanceAllocationsPanel.tsx 849
+apps/admin_web/src/components/FinanceInvestmentsPanel.tsx 1082
+apps/admin_web/src/components/FinanceLedgerSheetPanel.tsx 951
+apps/admin_web/src/components/FinanceSavingsAndPensionPanels.tsx 987
+apps/admin_web/src/components/HouseStatementPanel.tsx 1090
+apps/admin_web/src/lib/board/types.ts 1358
+apps/admin_web/src/lib/mock/fixtures.ts 1284
+apps/admin_web/src/lib/mock/routes/board.ts 1125
+backend/lambda/admin/bank_sync.py 812
+backend/lambda/admin/board_catalog.py 649
+backend/lambda/admin/board_catalog_bulk.py 1806
+backend/lambda/admin/board_catalog_candidates.py 727
+backend/lambda/admin/board_catalog_import.py 2114
+backend/lambda/admin/board_code.py 2812
+backend/lambda/admin/board_content.py 875
+backend/lambda/admin/board_dmarc.py 1210
+backend/lambda/admin/board_duties.py 729
+backend/lambda/admin/board_github.py 983
+backend/lambda/admin/board_holds.py 644
+backend/lambda/admin/board_mail.py 1431
+backend/lambda/admin/board_meeting.py 1243
+backend/lambda/admin/board_meta.py 1302
+backend/lambda/admin/board_newsletter.py 538
+backend/lambda/admin/board_opendata.py 625
+backend/lambda/admin/board_outreach.py 733
+backend/lambda/admin/board_progress.py 549
+backend/lambda/admin/board_prospects.py 620
+backend/lambda/admin/board_receivables.py 965
+backend/lambda/admin/board_research.py 526
+backend/lambda/admin/board_review.py 839
+backend/lambda/admin/board_routes.py 1518
+backend/lambda/admin/board_staff.py 2621
+backend/lambda/admin/board_staff_help.py 571
+backend/lambda/admin/board_store.py 2624
+backend/lambda/admin/board_stores.py 986
+backend/lambda/admin/board_tools.py 1810
+backend/lambda/admin/board_triage.py 507
+backend/lambda/admin/dispatch.py 1399
+backend/lambda/admin/finance_store.py 2575
+backend/lambda/admin/linkedin.py 1009
+backend/lambda/admin/linkedin_draft.py 1009
+backend/lambda/admin/linkedin_image.py 691
+backend/lambda/admin/linkedin_store.py 1822
+backend/lambda/admin/openrouter_client.py 1065
+backend/lambda/admin/openrouter_usage_pull.py 586
