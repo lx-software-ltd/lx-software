@@ -28,19 +28,47 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: validate-agent-rules
+        name: Validate agent rules
+        entry: python3 scripts/validate_agent_rules.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: check-file-length
+        name: Check file length
+        entry: python3 scripts/check_file_length.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: check-test-focus
+        name: Check focused or skipped tests
+        entry: python3 scripts/check_test_focus.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ruff
+        name: Ruff
+        entry: python3 -m ruff check backend/lambda scripts .cursor/hooks
+        language: system
+        pass_filenames: false
+        files: \.py$
+
   # TypeScript/JavaScript linting
   - repo: local
     hooks:
       - id: eslint-public-website
         name: ESLint Public Website
-        entry: bash -c 'test -x apps/public_www/node_modules/.bin/eslint || { echo "apps/public_www: run npm ci before committing"; exit 1; }; cd apps/public_www && npm run lint'
+        entry: "bash -c 'test -x apps/public_www/node_modules/.bin/eslint || { echo \"apps/public_www: run npm ci before committing\"; exit 1; }; cd apps/public_www && npm run lint'"
         language: system
         files: ^apps/public_www/.*\.(ts|tsx|js|jsx)$
         pass_filenames: false
 
       - id: eslint-admin-web
         name: ESLint Admin Web
-        entry: bash -c 'test -x apps/admin_web/node_modules/.bin/eslint || { echo "apps/admin_web: run npm ci before committing"; exit 1; }; cd apps/admin_web && npm run lint'
+        entry: "bash -c 'test -x apps/admin_web/node_modules/.bin/eslint || { echo \"apps/admin_web: run npm ci before committing\"; exit 1; }; cd apps/admin_web && npm run lint'"
         language: system
         files: ^apps/admin_web/.*\.(ts|tsx|js|jsx)$
         pass_filenames: false

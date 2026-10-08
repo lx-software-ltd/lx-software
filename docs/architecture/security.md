@@ -19,7 +19,8 @@
   public and is not on the denylist. `scripts/check-pii.sh` compares
   normalized text to SHA-256 digests in `scripts/pii-denylist.sha256`
   (digests only; a hit is a path and line). Product mailboxes (`hello@`,
-  `board@`, `billing@`, inbound SES recipients) remain. Pre-commit and
+  `board@`, `billing@`, inbound SES recipients) remain. Git author and
+  `Co-authored-by` trailers are outside the check. Pre-commit and
   **Security Scanning** both run the check.
 - A `.gitleaks.toml` rule flags any committed `lxpk_…` public API key.
 
@@ -69,13 +70,14 @@ parameters use `noEcho: true`; S3 remains private behind CloudFront.
   client id, matching `aud` on **ID tokens**).
 - **The JWT authorizer is not sufficient.** Every handler reads
   `requestContext.authorizer.jwt.claims["cognito:groups"]` and returns
-  **403** without `admin`. The group check stays in the handlers; there is
-  no separate Lambda authorizer for it.
+  **403** without `admin` (`_require_admin`). The group check stays in the
+  handlers; there is no separate Lambda authorizer for it.
 - `/public/*` GET mirrors and the Executive Board `/public/siu-tin-dei/board`
   routes use the `PublicApiKeyAuthorizerFn` Lambda authorizer (`x-api-key`,
   scrypt digest lookup `pk=APIKEY#<digest>`, scopes, optional CIDR
   allow-list, 90-day default expiry, 60 s cache keyed on key + source IP).
-  Writes additionally need `allowWrite` on the key and the
+  The HTTP method is not part of that cache key, so handlers enforce
+  writes. Writes additionally need `allowWrite` on the key and the
   `PublicApiWritesEnabled` stack parameter; owner-only routes stay JWT-only.
   Key management: [`../deployment/admin-website.md`](../deployment/admin-website.md)
   → "Public API keys".
@@ -148,6 +150,26 @@ Chrome as `Failed to fetch`). When any of those URLs changes, redeploy
 
 Only **404** responses are rewritten to `/index.html` for SPA routing.
 **403** passes through so bucket-policy mistakes stay visible.
+
+## Branch protection
+
+`main` is gated by the `main-protection` ruleset. The ruleset must be
+`active`, include `refs/heads/main`, block deletion and force-push, and
+require status checks whose contexts exactly match a job `name` in
+`.github/workflows` (the aggregator jobs are `test` and `lint`).
+`scripts/verify_github_rulesets.py` is the weekly **Verify GitHub
+Rulesets** job. A ruleset that targets `main` while its enforcement is
+`disabled` fails that job. A required context with no matching job name
+fails it too, which is why the aggregators are named `test` and `lint`
+rather than the longer per-app job names.
+
+Approving reviews are reported and do not fail the script. Pull requests
+in this repository are opened by the maintainer account, and GitHub does
+not let an author approve their own pull request, so a required review
+count of 1 blocks every merge until a second reviewer exists. Status
+checks are the merge gate until then.
+
+`release-tags` stays `active` for `refs/tags/v*`.
 
 ## Operational notes
 

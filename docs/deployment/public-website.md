@@ -47,7 +47,10 @@ graph, and the site CSS inlined into a `<style>` tag. `main.tsx` hydrates
 the server markup when it is present and falls back to `createRoot` for
 the dev server. Set `PUBLIC_WWW_PRERENDER=0` to skip pre-rendering during a
 build. The build fails if a route renders without an `<h1>` or without
-inline CSS.
+inline CSS. Components must render the same on the server and the client.
+Read `window`, `matchMedia`, and `navigator` through `useSyncExternalStore`
+with a server snapshot (`MotionProvider.tsx`, `ContactIcons.tsx`), never
+during render.
 
 Service and about pages come from `pages[]` in
 `apps/public_www/src/content/site.json`. Each entry has a `slug` (the
@@ -211,8 +214,9 @@ that forwards every parameter through `DL - <param>` Data Layer variables.
 GA4 has one event-scoped custom dimension per parameter so they show up in
 reports, and `contact_click` / `project_open` are key events. Adding an
 event means editing `SiteEvent` in `analytics.ts`, the two tuples at the top
-of `scripts/configure-public-analytics.py` (a unit test fails when they
-differ), and running `apply` below.
+of `scripts/configure-public-analytics.py`
+(`scripts/test_configure_public_analytics.py` fails when they differ),
+and running `apply` below.
 
 ### Managing GA4 and GTM from a service account
 
@@ -319,7 +323,8 @@ literal `https://www.lx-software.com/*` destination. The Worker on
 Zone Redirect Rules Edit, plus `CLOUDFLARE_ACCOUNT_ID`).
 `publish-apex-redirect.py check` should report 301s for HTTP and HTTPS
 and refuse a star destination. Do not restore the dummy `192.0.2.1` A
-record unless you are removing the custom domain. Tiered Cache is off.
+record unless you are removing the custom domain. Account-owned tokens
+cannot call Page Rules (error `1011`). Tiered Cache is off.
 The media hostname is already caching from the object `Cache-Control`,
 so an extra cache rule is optional.
 

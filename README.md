@@ -32,6 +32,7 @@ Infra deploy expects GitHub variable **`ADMIN_GOOGLE_CLIENT_ID`**, secret **`ADM
 ## Documentation
 
 - Architecture: `docs/architecture/overview.md`, `docs/architecture/security.md`
+- Agent rules: `AGENTS.md`, `.cursor/rules/`, `docs/architecture/zones.md`
 - Executive Board design: `docs/architecture/executive-board.md`
 - AWS / GitHub OIDC setup and CDK Bootstrap: `docs/deployment/setup.md`
 - Deploying the public site: `docs/deployment/public-website.md`

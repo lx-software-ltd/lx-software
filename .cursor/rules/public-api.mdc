@@ -1,0 +1,14 @@
+---
+description: Public API authorizer and admin sign-in gate. Read before editing the authorizer, pre-token hook, or public board routes.
+globs: backend/lambda/public_api_authorizer/**,backend/lambda/pre_token_generation/**
+alwaysApply: false
+---
+
+# Public API and sign-in
+
+- Both Lambdas fail closed. An email that is not on `AdminFederatedEmailAllowlist` gets no Cognito user and no token, unless that user already holds the `admin` group. [why: 23bdd88 fail closed on admin sign-in]
+- Decisions log `tag: admin_auth_gate` with `email` and `decision`. Handlers still require `cognito:groups` to include `admin`. [why: 23bdd88 fail closed on admin sign-in]
+- Public keys are stored as `pk=APIKEY#<digest>` (scrypt). New keys default to a 90-day expiry. Legacy `scope=read` is finance-only. [why: 89c2a44 scoped keys]
+- The authorizer cache key is the API key plus source IP, not the HTTP method. Handlers enforce writes. [why: 89c2a44 authorizer cache]
+- PUT, POST, and DELETE need `allowWrite` on the key and `PublicApiWritesEnabled`. Owner-only routes stay owner-only even then. The list lives in `board_public_api.py`. [why: e76ae5e public writes]
+- A denied write returns 403 with `reason` (`writes_disabled`, `key_read_only`, `owner_only`, `scope`). [why: e76ae5e write denial reasons]

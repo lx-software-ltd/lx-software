@@ -169,7 +169,9 @@ listings; `expiresAt` drives TTL where noted.
 | `dutymark#…` | `STATE` | Last run per seat duty | — |
 
 Assets bucket prefixes: `board/siuTinDei/meetings/{id}/` (oversized
-transcripts), `staff/{taskId}/` (scratchpad and deliverable),
+transcripts), `board/{BOARD_KEY}/staff/{taskId}/` (scratchpad and
+deliverable; unit tests fall back to memory when `ASSETS_BUCKET_NAME` is
+unset),
 `intel/{watchId}/`, `content/{contentId}/{n}.png`, `invoices/`.
 
 ## 5. Tools
@@ -194,10 +196,10 @@ Rules that hold for every tool:
 - Allow-lists for outbound messaging: email / WhatsApp `act` only for
   recipients on `settings.tools.allowList` (email, `@domain`, E.164
   phone); everyone else is `propose`, even at `act`.
-- Spend is a cap, not a level: Meta ads `act` only while recorded
-  commitment plus Graph month-to-date spend fits the owner's daily /
-  monthly caps (`settings.tools.spendCaps`, defaults USD 10 / 50, clamped
-  to 500 / 2 000).
+- Spend is a cap, not a level: Meta ads `act` (`create_ad_set`,
+  `boost_post`) only while recorded commitment plus Graph month-to-date
+  spend fits the owner's daily / monthly caps
+  (`settings.tools.spendCaps`, defaults USD 10 / 50, clamped to 500 / 2 000).
 - Never available to any role at any level: pushing code, merging to
   `main`, changing IAM / DNS / Cognito, bank payments, deleting data,
   altering the board's own permissions or budgets.
@@ -797,7 +799,8 @@ would **execute** (`act`, no guard reason) and the hours are non-zero, it
 is stored as a `holds#` row (`scheduled`, `executeAt`) and the model is
 told it is scheduled unless the founder vetoes. Quiet hours
 (`boundaries.reply.quietHoursHkt`, default 22:00–08:00) push `executeAt`
-to the next 08:00 HKT. `execute_due` claims each due hold and re-checks
+to the next 08:00 HKT. The staff tick evaluates breakers, then
+`expire_stale`, then `execute_due`. `execute_due` claims each due hold and re-checks
 level, `act_guard`, breakers and the tools kill switch before running it;
 failures are recorded, not retried. `mail_reply` holds fail with "thread
 changed" if a newer inbound message arrived.
@@ -805,9 +808,9 @@ changed" if a newer inbound message arrived.
 `ToolOp.validate` ("would this succeed if executed?") runs **before** the
 hold is created. The three mail write ops validate through
 `board_mail.validate_outgoing` (the same `outgoing_plan` the executor
-uses), so a `mail_send` to an invented alias such as `contact#12345`, a
-`mail_reply` on a thread with no inbound message, or a `content_publish`
-slot in the past is returned to the model as an `error` it can correct,
+uses), so a `mail_send`, `mail_reply`, or `mail_forward` to an unknown
+alias or a thread with no inbound message, or a `content_publish` slot in
+the past, are returned to the model as an `error` it can correct,
 instead of becoming a scheduled hold that fails hours later and shows up
 on the owner's **Scheduled** list.
 
@@ -985,7 +988,9 @@ posted**. Monday 09:00 HKT (`…-board-content-readout`) a
 `growth-specialist` task pulls post insights and `web_sessions` by
 campaign, writes `performance` per item and may `meta_boost_post` within
 caps. **Content** section. `AdminApiFn` memory is 1536 MB and
-`requirements.txt` pins Pillow (Docker arm64 bundling).
+`requirements.txt` pins Pillow (Docker arm64 bundling). An x86-64
+`cdk deploy` or `cdk diff` needs QEMU (`docker/setup-qemu-action`), or
+`CDK_SKIP_PYTHON_PIP=1` for a template-only synth.
 
 ### 10.4 Newsletter (`board_newsletter.py`)
 
@@ -1019,8 +1024,8 @@ this repository never pushes code.
 - `code_get_run(taskId)` polls runs and the `board/{taskId}` PR, caching
   pytest `FAILED` lines and an excerpt per head SHA. `poll_runs` opens an
   architect "review PR #n" task on a green run, an engineer `ci-fix` task
-  on a red `board/*` PR (`codeCiFixMaxRounds` 2, incremented on successful
-  dispatch), skips merged / closed PRs and drops merged ones from the
+  on a red `board/*` PR (`codeCiFixMaxRounds` 2; `ciFixRounds` increments
+  on successful revision dispatch, not when the task is created), skips merged / closed PRs and drops merged ones from the
   runner index.
 - `code_review_pr(prNumber)` returns diff stats, changed paths (old and
   new names), CI status and the diff (≤ 30 000 chars) for the architect,
@@ -1035,7 +1040,7 @@ this repository never pushes code.
   until the owner takes it off. Merging a gone PR is refused; a due hold
   for it fails instead of executing.
 - `code_close_pr(prNumber, reason)` (class `code_close`, always an
-  Approval) closes an open unmerged `board/*` PR, drops pending merge
+  Approval, including when `holds.internal` is set) closes an open unmerged `board/*` PR, drops pending merge
   proposals, resumes the parked merge task and relabels the issue
   (`board-ready` off, `board-closed` on); the branch is left for the sweep.
 - `code_promote` (class `code_production`, always an Approval) dispatches
@@ -1044,10 +1049,10 @@ this repository never pushes code.
   in GitHub. Owner-only `POST …/code/sync-staging` fast-forwards
   `staging` to `main` when staging has no commits of its own (PATCH the
   ref; force when the only commits ahead are `board: sync staging with
-  main`), and merge-commits otherwise (409 on conflict). Compare treats
-  a sync-only ahead list as current, so `canPromote` stays false. Daily
-  Review shows **Sync from main** in that state as well as when staging
-  is behind, with the line "Only sync merges are ahead of main." Either
+  main`, the `syncOnly` case), and merge-commits otherwise (409 on conflict).
+  Compare treats a sync-only ahead list as current, so `canPromote` stays
+  false. Daily Review shows **Sync from main** in that state as well as
+  when staging is behind, with the line "Only sync merges are ahead of main." Either
   path cancels an open `ops/rebase-staging` task.
 - Daily staff tick from 07:00 HKT (`maybe_daily_staging_sync`) compares
   `main...staging`. When `behindBy > 0` it opens a CTO `ops/rebase-staging`

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": ".cursor/hooks/guard_shell.sh",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": ".cursor/hooks/post_edit.py",
+        "timeout": 60
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": ".cursor/hooks/post_edit.py",
+        "matcher": "Write",
+        "timeout": 60
+      }
+    ],
+    "stop": [
+      {
+        "command": ".cursor/hooks/stop_gate.py",
+        "timeout": 120,
+        "loop_limit": 2
+      }
+    ]
+  }
+}

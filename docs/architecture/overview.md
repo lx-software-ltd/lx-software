@@ -9,7 +9,7 @@ hosts them:
 | Admin console | `apps/admin_web` | Private SPA for finance books, statement import, banking sync and the Siu Tin Dei Executive Board (Vite, React Router, TanStack Query, Bootstrap 5). |
 | Infrastructure | `backend/infrastructure` | AWS CDK (TypeScript) defining the three stacks below. |
 | Lambda code | `backend/lambda` | Python: admin API (`admin/`), public API key authorizer, Cognito pre-token hook, inbound-mail handlers, siutindei schema custom resource. |
-| Shared contracts | `contracts/*.json` | Constants synced into Python, TypeScript and CDK by `scripts/sync-contracts.py`. |
+| Shared contracts | `contracts/*.json` | Constants synced into Python, TypeScript and CDK by `scripts/sync-contracts.py`. After an edit, run that script and `python3 scripts/check-contracts.py`. |
 
 ## Stacks
 
@@ -63,15 +63,35 @@ The function sits behind 60+ routes. API Gateway gets **one** API-wide
 `AWS::Lambda::Permission` (`AdminApiInvoke`, source ARN
 `…/*/*/*`) through `SharedPermissionLambdaIntegration`; per-route
 permissions and `events.Rule` targets exceeded the 20 KB resource-policy
-limit. All schedules are EventBridge **Scheduler** schedules with an IAM
-role target, and SQS uses an event source mapping.
+limit. Do not switch back to `HttpLambdaIntegration` per route. All
+schedules are EventBridge **Scheduler** schedules with an IAM role target,
+and SQS uses an event source mapping.
 
 `AdminApiFn` Event-invokes itself for staff steps, meeting phases,
 chat/parse workers and crawl pages, so CDK sets `recursiveLoop: Allow` on
-that function only. Application caps (`maxStepsPerTask`, meeting phase
-lists, crawl page budget, daily OpenRouter budgets) bound the chain, and
-the alarm `lxsoftware-admin-siutindei-admin-api-invocations` fires above
-250 invocations per 5 minutes.
+that function only. Leave Terminate on the other functions. Application
+caps (`maxStepsPerTask`, meeting phase lists, crawl page budget, daily
+OpenRouter budgets) bound the chain. The alarm
+`lxsoftware-admin-siutindei-admin-api-invocations` (above 250 invocations
+per 5 minutes) replaces `RecursiveInvocationsDropped` after Allow. Its
+name contains `siutindei` so the hourly cache refresh can open an
+architect or CTO task. A Health event
+`AWS_LAMBDA_RUNAWAY_TERMINATION_NOTIFICATION` after deploy means a
+different function is looping.
+
+## Parameter names
+
+Board-only `CfnParameter`s are `SiutindeiBoard*` (kill switches, models,
+outreach, mail, Meta / stores / web ids). Product resources the stack
+integrates with are `Siutindei*` (`SiutindeiClusterArn`,
+`SiutindeiDbSecretArn`, `SiutindeiDbSecretName`) or `Evolvesprouts*`.
+Stack-wide knobs stay unprefixed (`PublicSiteOrigins`, `PublicApiBaseUrl`,
+Cognito, OpenRouter, inbound mail, Enable Banking). Lambda env vars stay
+short (`BOARD_*`, `OUTREACH_*`). A Jest guard in
+`backend/infrastructure/test/lxsoftware-stack.test.ts` fails synth if a
+new `Board*` / `Outreach*` / `Meta*` parameter is added without the
+prefix. Keys in `backend/infrastructure/params/*.json` must match; an
+unknown `lxsoftware:*` key fails `cdk deploy`.
 
 ## CDK deploy order
 
@@ -103,10 +123,14 @@ flowchart TD
   `dist/` to S3 and invalidate CloudFront (`scripts/deploy/*.sh`).
 - **Deploy Backend** runs `cdk deploy` when `backend/infrastructure/**`,
   `backend/lambda/**` or `contracts/**` change.
-- **Test** runs Vitest, the Python unit tests, the CDK Jest assertion tests
+- **Test** and **Lint** run on every pull request with no path filter.
+  The required check contexts are the aggregator jobs `test` and `lint`.
+  A skipped required check would leave the pull request blocked. **Test**
+  runs Vitest, the Python unit tests, the CDK Jest assertion tests
   (`backend/infrastructure`, `npm test`), `scripts/check-contracts.py`,
-  `scripts/check_pii.py`, and the Playwright viewport smoke. **Security
-  Scanning** runs the same PII check on every pull request.
+  `scripts/check_pii.py`, and the Playwright viewport smoke. **Lint**
+  includes the agent-harness checks. **Security Scanning** runs the same
+  PII check on every pull request.
 - Dependabot watches the workflows, the three npm projects, and the admin
   Lambda pip requirements.
 

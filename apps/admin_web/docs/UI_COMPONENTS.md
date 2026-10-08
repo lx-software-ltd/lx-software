@@ -17,7 +17,7 @@ This document defines **reusable patterns** for the LX Software admin SPA (`apps
 | Component | Purpose |
 |-----------|---------|
 | `MoneyAmount` | Displays a numeric amount as `HK$ 3,300.23` (symbol, space, then the grouped value). Negative amounts are `--admin-danger`; non-negative stay `--admin-text`. Props: `amount`, `currency`, optional `className`, `amountOnly`, and `fractionDigits`. |
-| `CurrencySelect` | Bootstrap `form-select` for admin-supported currency codes only (`src/lib/currencies.ts`). Props: `id`, `value`, `onChange`, optional `className`, `disabled`, `ariaLabel`. |
+| `CurrencySelect` | Bootstrap `form-select` for admin-supported currency codes only (`src/lib/currencies.ts`: GBP, HKD, USD, EUR, CNY, SGD, AED). The global default is HKD. A house may set `defaultCurrency` on its finance record; the admin Lambda validates the same set. Props: `id`, `value`, `onChange`, optional `className`, `disabled`, `ariaLabel`. |
 | `DateTimeDisplay` | Formats an ISO instant for **Hong Kong** wall time, e.g. `May 26, 2026 at 10:12pm HKT`. Uses `formatDateTimeHKT` in `src/lib/formatDisplay.ts`. |
 | `AdminRecordTable` | Untitled card: `AdminFilterBar`, optional `beforeTable` (disclosures), then the table. `label` is the accessible name. |
 | `AdminFilterBar` / `AdminFilterField` / `AdminCreateButton` | Filter row. `beforeCreate` sits immediately left of create (statement import). Both are full width on a phone, import above create. Named filters such as Stage keep a visible label. A label of `Filter` stays available to assistive tech and is not shown above the input. Pass `hideLabel` for other named filters that should match that treatment. |

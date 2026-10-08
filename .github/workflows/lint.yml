@@ -2,14 +2,9 @@ name: Lint
 
 on:
   workflow_dispatch:
+  # No path filter. The `lint` job is a required check, and a skipped
+  # required check leaves the pull request blocked.
   pull_request:
-    paths:
-      - "apps/public_www/**"
-      - "apps/admin_web/**"
-      - "backend/infrastructure/**"
-      - "backend/lambda/**"
-      - "scripts/**"
-      - "pyproject.toml"
   push:
     branches:
       - main
@@ -104,4 +99,62 @@ jobs:
         run: python3 -m pip install ruff
 
       - name: Ruff
-        run: python3 -m ruff check backend/lambda scripts
+        run: python3 -m ruff check backend/lambda scripts .cursor/hooks
+
+  validate-agent-harness:
+    name: Validate agent harness
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Run harness checks
+        run: |
+          python3 scripts/validate_agent_rules.py
+          python3 scripts/check_file_length.py
+          python3 scripts/check_test_focus.py
+          python3 -m unittest scripts/test_agent_hooks.py scripts/test_harness_ratchets.py -v
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    needs:
+      - lint-web
+      - lint-admin-web
+      - build-cdk
+      - lint-python
+      - validate-agent-harness
+    if: always()
+    steps:
+      - name: Require every lint job
+        env:
+          LINT_WEB: ${{ needs.lint-web.result }}
+          LINT_ADMIN_WEB: ${{ needs.lint-admin-web.result }}
+          BUILD_CDK: ${{ needs.build-cdk.result }}
+          LINT_PYTHON: ${{ needs.lint-python.result }}
+          VALIDATE_AGENT_HARNESS: ${{ needs.validate-agent-harness.result }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import sys
+
+          jobs = {
+              "lint-web": os.environ["LINT_WEB"],
+              "lint-admin-web": os.environ["LINT_ADMIN_WEB"],
+              "build-cdk": os.environ["BUILD_CDK"],
+              "lint-python": os.environ["LINT_PYTHON"],
+              "validate-agent-harness": os.environ["VALIDATE_AGENT_HARNESS"],
+          }
+          failed = [f"{name}={result}" for name, result in jobs.items() if result != "success"]
+          if failed:
+              print("Lint jobs did not all succeed: " + ", ".join(failed))
+              sys.exit(1)
+          print("All lint jobs succeeded.")
+          PY

@@ -1,0 +1,14 @@
+---
+description: Admin Lambda constraints for model calls, money, and tests. Read before editing backend/lambda/admin.
+globs: backend/lambda/admin/**
+alwaysApply: false
+---
+
+# Admin Lambda
+
+- All model calls go through `openrouter_client.py`. Never call a model inside an HTTP request. API Gateway cuts at 30 seconds and the SPA shows that as "Load failed". Long work uses `board_async`. [why: ebdd1b4 board model calls]
+- Personas see `contact#N` and `phone#N` aliases from `board_pii.py`. The owner sees real addresses. [why: 6016fd5 board mail aliases]
+- Finance writes accept only GBP, HKD, USD, EUR, CNY, SGD, AED, the same set as `apps/admin_web/src/lib/currencies.ts`. [why: f333adf currency allow-list]
+- Tests are `unittest` modules named `test_*.py`. Fixtures use fictional people and `example.com`. [why: 5da3336 hashed PII denylist]
+- Do not use `print()` in production Python. [why: convention]
+- `BOARD#` rows stay out of the generic `/records` scan. [why: ebdd1b4 board rows]

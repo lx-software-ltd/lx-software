@@ -19,7 +19,7 @@ echo "==> Installing CDK infrastructure dependencies (backend/infrastructure)"
 echo "==> Installing Python packages for Lambda unit tests"
 # boto3/botocore ship in the Lambda Python 3.12 runtime but must be installed
 # locally so `npm test` (which runs the admin + authorizer unittest suites) works.
-python3 -m pip install --user boto3
+python3 -m pip install --user boto3 'ruff>=0.3.0'
 
 # Provide non-secret placeholder VITE_* values so the admin dev server and
 # `npm run build`/`npm test` resolve config. Real Cognito/API values belong in
