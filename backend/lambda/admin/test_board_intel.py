@@ -288,6 +288,51 @@ class DiscoverTests(BoardTestCase):
         self.assertEqual(watches[0]["kind"], "competitor")
         self.assertEqual(len(watches[0]["seenWeeks"]), 2)
 
+    def test_removed_watch_is_not_rediscovered(self) -> None:
+        payload = {"results": [{"url": "https://noisykids.example/blog", "title": "Noisy Kids Hong Kong"}]}
+        with patch("board_research.op_search", side_effect=lambda _c, _a: payload):
+            first = board_watch.discover(self.table, self.settings)
+        self.assertEqual(first["added"], 1)
+        watch_id = board_watch.list_watchlist(self.table)[0]["watchId"]
+        board_watch.remove_watch(self.table, watch_id)
+        self.assertIn("noisykids.example", board_watch.suppressed_hosts(self.table))
+        with patch("board_research.op_search", side_effect=lambda _c, _a: payload):
+            second = board_watch.discover(self.table, self.settings)
+        self.assertEqual(second["added"], 0)
+        self.assertEqual(second["skippedSuppressed"], len(board_watch.TARGET_QUERIES))
+        self.assertEqual(board_watch.list_watchlist(self.table), [])
+        # An explicit owner add clears the suppression.
+        board_watch.add_watch(self.table, {"name": "Noisy Kids", "urls": ["https://noisykids.example/"]})
+        self.assertNotIn("noisykids.example", board_watch.suppressed_hosts(self.table))
+
+    def test_discovery_skips_media_round_ups(self) -> None:
+        payload = {
+            "results": [
+                {"url": "https://roundup.example/kids", "title": "23 Rainy Day Indoor Activities for Kids in Hong Kong"},
+                {"url": "https://guide.example/hk", "title": "【親子好去處2026】30大香港週末放電推介"},
+                {"url": "https://weekend.example/", "title": "Things to Do With Kids in Hong Kong This Weekend"},
+                {"url": "https://realbiz.example/classes", "title": "Classbee — Find activities your child will love in Hong Kong"},
+            ]
+        }
+        with patch("board_research.op_search", side_effect=lambda _c, _a: payload):
+            out = board_watch.discover(self.table, self.settings)
+        self.assertEqual(out["added"], 1)
+        self.assertEqual(out["skippedMedia"], 3 * len(board_watch.TARGET_QUERIES))
+        hosts = [w["urls"][0] for w in board_watch.list_watchlist(self.table)]
+        self.assertEqual(hosts, ["https://realbiz.example/"])
+
+    def test_looks_like_media(self) -> None:
+        for title in (
+            "7 coolest outdoor playgrounds in Hong Kong",
+            "Best summer camps in Hong Kong for kids and teens",
+            "Our Guide to the Top Things to do in Hong Kong with Kids",
+            "親子好去處 2026推薦38個必看!",
+            "2026兒童興趣班推薦｜16大熱門小朋友興趣班",
+        ):
+            self.assertTrue(board_watch.looks_like_media(title), title)
+        for title in ("Classbee", "Acorn Playhouse, Wong Chuk Hang", "STEM WORK - 主頁 Home", "Tinytots Coaching HK"):
+            self.assertFalse(board_watch.looks_like_media(title), title)
+
 
 class BriefTests(BoardTestCase):
     def setUp(self) -> None:
@@ -468,6 +513,19 @@ class RouteTests(BoardTestCase):
         self.assertEqual(body["changes"], [])
         status, _ = self.call(f"/siu-tin-dei/board/watchlist/{watch_id}", "DELETE")
         self.assertEqual(status, 200)
+        status, body = self.call("/siu-tin-dei/board/watchlist")
+        self.assertEqual(status, 200)
+        self.assertIn("kiztopia.example", body["suppressedHosts"])
+        status, body = self.call(
+            "/siu-tin-dei/board/watchlist/suppressed", "DELETE", {"hosts": ["kiztopia.example"]}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(body["suppressedHosts"], {})
+        status, body = self.call("/siu-tin-dei/board/watchlist/suppressed", "POST", {"hosts": ["hk01.com"]})
+        self.assertEqual(status, 200)
+        self.assertIn("hk01.com", body["suppressedHosts"])
+        status, _ = self.call("/siu-tin-dei/board/watchlist/suppressed", "POST", {"hosts": []})
+        self.assertEqual(status, 400)
 
     def test_watchlist_409_when_env_off(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "false"
