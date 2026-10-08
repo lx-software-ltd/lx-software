@@ -2,14 +2,12 @@
 
 ## Cursor Cloud specific instructions
 
-Applies to Cursor agents working in this repository.
+Applies to Cursor agents working in this repository. Path-scoped rules in `.cursor/rules/` attach for the area you edit. Procedures live in `.cursor/skills/*/SKILL.md`. `.cursorrules` is a pointer. Do not add rules there.
 
 ## Bootstrap
 
-1. Always-applied constraints are in `.cursor/rules/00-repository-core.mdc`. Path-scoped rules in `.cursor/rules/` attach for the area you edit.
-2. Procedures live in `.cursor/skills/*/SKILL.md`.
-3. `.cursorrules` is a pointer. Do not add rules there.
-4. Operational detail lives in `docs/architecture/` and `docs/deployment/`. The Executive Board is `docs/architecture/executive-board.md`. Admin operations are `docs/deployment/admin-website.md`. The public site is `docs/deployment/public-website.md`.
+1. Always-applied constraints are in `.cursor/rules/00-repository-core.mdc`.
+2. Operational detail lives in `docs/architecture/` and `docs/deployment/`. The Executive Board is `docs/architecture/executive-board.md`. Admin operations are `docs/deployment/admin-website.md`. The public site is `docs/deployment/public-website.md`.
 
 ## Zones
 
@@ -19,7 +17,7 @@ Autonomy follows blast radius. The map is `docs/architecture/zones.md`. The stri
 - **Yellow.** Write a short plan under `docs/plans/` from `docs/plans/_template.md`, add or update tests first, then implement.
 - **Green.** Implement and verify. Summarise intent in the pull request.
 
-## Cursor Cloud
+## Services
 
 | Service | Path | Dev command | Port |
 | --- | --- | --- | --- |
@@ -37,4 +35,4 @@ A change is done when the `verify-change` skill's checks pass and the pull reque
 
 ## Hooks
 
-`.cursor/hooks.json` denies force-push, pushes to `main`, `git reset --hard`, deleting `main`, `rm -rf` outside the repository and `/tmp`, `cdk deploy` and `cdk destroy`, `aws delete-*`, and the live-mutation scripts named in `.cursor/rules/scripts.mdc`. It asks before `git commit --amend`.
+`.cursor/hooks.json` denies force-push, pushes to `main`, `git reset --hard`, deleting `main`, `rm -rf` outside the repository and `/tmp`, `cdk deploy` and `cdk destroy`, `aws delete-*`, and the live-mutation scripts named in `.cursor/rules/scripts.mdc`. It asks before `git commit --amend`. A protected command is denied when it is the program being run, including inside `bash -c` or `$(...)`. Mentioning the same path in `git`, `rg`, or another reader is allowed.

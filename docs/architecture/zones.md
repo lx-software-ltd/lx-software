@@ -13,7 +13,8 @@ pairs on the change.
 - `backend/lambda/public_api_authorizer/**`
 - `backend/lambda/pre_token_generation/**`
 - `backend/lambda/admin/board_code.py`
-- `backend/lambda/admin/dispatch.py`
+- `_require_admin` in `backend/lambda/admin/http_common.py`
+- The owner-only route list in `backend/lambda/admin/board_public_api.py` (`write_blocked`)
 - `contracts/**`
 - `scripts/deploy/**`
 - `scripts/cloudflare/**`
@@ -31,7 +32,8 @@ pairs on the change.
 - `.pre-commit-config.yaml`
 
 `board_code.py` dispatches workflows in the siutindei repository.
-`dispatch.py` is where `_require_admin` and the owner-only route list live.
+Changing `_require_admin` or `write_blocked` is red. Adding a route in
+`dispatch.py` that calls those helpers is yellow.
 
 ## Yellow
 

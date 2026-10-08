@@ -11,24 +11,107 @@ from pathlib import Path
 FORCE_PUSH = re.compile(r"(?:^|\s)(?:--force(?:\s|=|$)|--force-with-lease(?:\s|=|$))")
 GIT_PUSH = re.compile(r"\bgit\s+push\b", re.IGNORECASE)
 SEGMENT_SPLIT = re.compile(r"\s*(?:&&|\|\||[;|\n])\s*")
+SUBSTITUTION = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
+ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 GIT_RESET_HARD = re.compile(r"\bgit\s+reset\b[^\n]*--hard\b", re.IGNORECASE)
 GIT_DELETE = re.compile(r"\bgit\s+(push\b[^\n]*--delete|branch\s+-D)\b", re.IGNORECASE)
 RM_RF = re.compile(r"\brm\s+(-[a-zA-Z]*[rR][a-zA-Z]*[fF]|-[a-zA-Z]*[fF][a-zA-Z]*[rR])\b")
-CDK_DEPLOY = re.compile(r"\bcdk\s+(deploy|destroy)\b")
-AWS_DELETE = re.compile(r"\baws\b[^\n]*\s(delete|terminate)-[a-z0-9-]+")
-AWS_SES_ACTIVATE = re.compile(r"\baws\s+ses\s+set-active-receipt-rule-set\b", re.IGNORECASE)
+AWS_DELETE_TOKEN = re.compile(r"^(delete|terminate)-[a-z0-9-]+$", re.IGNORECASE)
 AMEND = re.compile(r"\bgit\s+commit\b[^\n]*(--amend\b|(^|\s)-[^ \n]*amend)")
-DEPLOY_SCRIPT = re.compile(r"scripts/deploy/")
-API_KEY_MUTATION = re.compile(r"manage-public-api-keys\.py\b[^\n]*\b(create|revoke|set-write)\b", re.IGNORECASE)
-MINT_KEYS = re.compile(r"mint-openrouter-app-keys\.py\b", re.IGNORECASE)
-ANALYTICS_APPLY = re.compile(r"configure-public-analytics\.py\b[^\n]*\bapply\b", re.IGNORECASE)
-APEX_APPLY = re.compile(r"publish-apex-redirect\.py\b[^\n]*\bapply\b", re.IGNORECASE)
-MEDIA_PUBLISH = re.compile(r"publish-public-media\.sh\b")
+API_KEY_VERBS = {"create", "revoke", "set-write"}
+SHELLS = {"bash", "sh", "zsh", "dash"}
+WRAPPERS = {"sudo", "command", "time", "nice", "nohup", "env"}
+PYTHONS = {"python", "python3"}
 PROTECTED_REFS = {"main", "refs/heads/main"}
 
 
 def _segments(command: str) -> list[str]:
     return [part.strip() for part in SEGMENT_SPLIT.split(command) if part.strip()]
+
+
+def _tokens(segment: str) -> list[str]:
+    """Split a segment on whitespace, keeping quoted text as one token."""
+    tokens: list[str] = []
+    buf: list[str] = []
+    quote: str | None = None
+    for char in segment:
+        if quote:
+            if char == quote:
+                quote = None
+            else:
+                buf.append(char)
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            continue
+        if char.isspace():
+            if buf:
+                tokens.append("".join(buf))
+                buf = []
+            continue
+        buf.append(char)
+    if buf:
+        tokens.append("".join(buf))
+    return tokens
+
+
+def _name(token: str) -> str:
+    return Path(token).name
+
+
+def _command_indexes(tokens: list[str]) -> list[int]:
+    """Indexes of tokens that are programs, including a script after an interpreter."""
+    indexes: list[int] = []
+
+    def walk(start: int) -> None:
+        i = start
+        while i < len(tokens) and ENV_ASSIGNMENT.match(tokens[i]):
+            i += 1
+        if i >= len(tokens):
+            return
+        indexes.append(i)
+        name = _name(tokens[i])
+        if name in WRAPPERS or tokens[i] in {".", "source"}:
+            j = i + 1
+            while j < len(tokens) and (tokens[j].startswith("-") or (name == "env" and "=" in tokens[j])):
+                j += 1
+            walk(j)
+            return
+        if name in SHELLS:
+            j = i + 1
+            while j < len(tokens) and tokens[j].startswith("-"):
+                if tokens[j] == "-c":
+                    return
+                j += 1
+            if j < len(tokens):
+                indexes.append(j)
+            return
+        if name in PYTHONS or name.startswith("python3."):
+            j = i + 1
+            if j < len(tokens) and tokens[j] == "-m":
+                return
+            while j < len(tokens) and tokens[j].startswith("-"):
+                j += 1
+            if j < len(tokens) and tokens[j].endswith(".py"):
+                indexes.append(j)
+            return
+        if name == "npx":
+            j = i + 1
+            while j < len(tokens) and tokens[j].startswith("-"):
+                j += 1
+            if j < len(tokens):
+                indexes.append(j)
+
+    walk(0)
+    return indexes
+
+
+def _runs(tokens: list[str], indexes: list[int], names: set[str]) -> list[int]:
+    return [i for i in indexes if _name(tokens[i]) in names or tokens[i] in names]
+
+
+def _script_indexes(tokens: list[str], indexes: list[int], suffix: str) -> list[int]:
+    return [i for i in indexes if tokens[i].endswith(suffix) or _name(tokens[i]) == suffix]
 
 
 def _is_force_push(segment: str) -> bool:
@@ -106,47 +189,60 @@ def _rm_blocked(segment: str) -> bool:
     return any(_rm_path_blocked(part, root) for part in paths)
 
 
-def _live_mutation(segment: str) -> str | None:
-    if DEPLOY_SCRIPT.search(segment):
+def _later(tokens: list[str], index: int) -> list[str]:
+    return tokens[index + 1 :]
+
+
+def _live_mutation(tokens: list[str], indexes: list[int]) -> str | None:
+    if any("scripts/deploy/" in tokens[i] for i in indexes):
         return "Deploy scripts are blocked. Use the GitHub Actions deploy workflow."
-    if API_KEY_MUTATION.search(segment):
+    if _script_indexes(tokens, indexes, "manage-public-api-keys.py") and any(
+        token.lower() in API_KEY_VERBS for token in tokens
+    ):
         return "Creating, revoking, or changing a public API key is blocked in the agent shell."
-    if MINT_KEYS.search(segment) and "--dry-run" not in segment:
+    if _script_indexes(tokens, indexes, "mint-openrouter-app-keys.py") and "--dry-run" not in tokens:
         return "Minting OpenRouter keys is blocked. Re-run with --dry-run to preview."
-    if ANALYTICS_APPLY.search(segment):
+    if _script_indexes(tokens, indexes, "configure-public-analytics.py") and "apply" in tokens:
         return "configure-public-analytics.py apply is blocked. Use check."
-    if APEX_APPLY.search(segment):
+    if _script_indexes(tokens, indexes, "publish-apex-redirect.py") and "apply" in tokens:
         return "publish-apex-redirect.py apply is blocked. Use check."
-    if MEDIA_PUBLISH.search(segment):
+    if _script_indexes(tokens, indexes, "publish-public-media.sh"):
         return "publish-public-media.sh is blocked in the agent shell."
-    if AWS_SES_ACTIVATE.search(segment):
-        return "Activating an SES receipt rule set is blocked in the agent shell."
+    for index in _runs(tokens, indexes, {"aws"}):
+        if "set-active-receipt-rule-set" in _later(tokens, index):
+            return "Activating an SES receipt rule set is blocked in the agent shell."
     return None
 
 
 def _denied(segment: str) -> tuple[str, str] | None:
-    if _is_force_push(segment):
+    tokens = _tokens(segment)
+    indexes = _command_indexes(tokens)
+    git_running = bool(_runs(tokens, indexes, {"git"}))
+    if git_running and _is_force_push(segment):
         return "deny", "Force-push is blocked. Push a normal fast-forward or open a pull request."
-    if _push_targets_protected(segment):
+    if git_running and _push_targets_protected(segment):
         return "deny", "Pushing to main is blocked. Open a pull request instead."
-    if _deletes_protected_ref(segment):
+    if git_running and _deletes_protected_ref(segment):
         return "deny", "Deleting main is blocked."
-    if GIT_RESET_HARD.search(segment):
+    if git_running and GIT_RESET_HARD.search(segment):
         return "deny", "git reset --hard is blocked."
-    if _rm_blocked(segment):
+    if _runs(tokens, indexes, {"rm"}) and _rm_blocked(segment):
         return "deny", "rm -rf outside the repository or /tmp is blocked."
-    if CDK_DEPLOY.search(segment):
-        return "deny", "cdk deploy and cdk destroy are blocked. Use the deployment workflow."
-    if AWS_DELETE.search(segment):
-        return "deny", "aws delete-* and terminate-* commands are blocked."
-    message = _live_mutation(segment)
+    for index in _runs(tokens, indexes, {"cdk"}):
+        if any(token in {"deploy", "destroy"} for token in _later(tokens, index)):
+            return "deny", "cdk deploy and cdk destroy are blocked. Use the deployment workflow."
+    for index in _runs(tokens, indexes, {"aws"}):
+        if any(AWS_DELETE_TOKEN.match(token) for token in _later(tokens, index)):
+            return "deny", "aws delete-* and terminate-* commands are blocked."
+    message = _live_mutation(tokens, indexes)
     if message:
         return "deny", message
     return None
 
 
 def _prompted(segment: str) -> tuple[str, str] | None:
-    if AMEND.search(segment):
+    tokens = _tokens(segment)
+    if _runs(tokens, _command_indexes(tokens), {"git"}) and AMEND.search(segment):
         return (
             "ask",
             "git commit --amend rewrites history. Confirm this is the commit you just created and have not pushed.",
@@ -154,8 +250,32 @@ def _prompted(segment: str) -> tuple[str, str] | None:
     return None
 
 
+def _nested_commands(segment: str) -> list[str]:
+    tokens = _tokens(segment)
+    indexes = _command_indexes(tokens)
+    nested: list[str] = []
+    for index in indexes:
+        if _name(tokens[index]) not in SHELLS:
+            continue
+        for follow in range(index + 1, len(tokens)):
+            if tokens[follow] == "-c" and follow + 1 < len(tokens):
+                nested.append(tokens[follow + 1])
+                break
+            if not tokens[follow].startswith("-"):
+                break
+    for match in SUBSTITUTION.finditer(segment):
+        inner = match.group(1) if match.group(1) is not None else match.group(2)
+        if inner and inner.strip():
+            nested.append(inner)
+    return nested
+
+
 def decide(command: str) -> tuple[str, str]:
     """Return (permission, agent_message). permission is allow, deny, or ask."""
+    return _decide(command, 0)
+
+
+def _decide(command: str, depth: int) -> tuple[str, str]:
     ask: tuple[str, str] | None = None
     for segment in _segments(command):
         denied = _denied(segment)
@@ -164,6 +284,13 @@ def decide(command: str) -> tuple[str, str]:
         prompted = _prompted(segment)
         if prompted is not None and ask is None:
             ask = prompted
+        if depth < 2:
+            for nested in _nested_commands(segment):
+                inner = _decide(nested, depth + 1)
+                if inner[0] == "deny":
+                    return inner
+                if inner[0] == "ask" and ask is None:
+                    ask = inner
     if ask is not None:
         return ask
     return "allow", ""

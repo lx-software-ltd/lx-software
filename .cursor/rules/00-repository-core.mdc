@@ -1,5 +1,5 @@
 ---
-description: Repository-wide constraints for every Cursor session
+description: Repository-wide constraints for every Cursor session. Secrets, PII, contracts, and zone pointers.
 alwaysApply: true
 ---
 
@@ -10,7 +10,7 @@ Path-scoped rules and `.cursor/skills/` add procedures. The stricter zone in `do
 - Never hardcode secrets, API keys, passwords, or tokens. CDK secret parameters use `noEcho: true`. [why: convention]
 - Do not put real personal names, phones, emails, street addresses, bank numbers, or business-registration numbers in source or docs. The public website owner name in `apps/public_www/src/content/site.json` (`site.owner`) is public. Product mailboxes (`hello@`, `board@`, `billing@`, `news@`, `partnerships@`, `dmarc@`, and the inbound SES recipients) stay. Tests use fictional people and `example.com`. [why: 5da3336 hashed PII denylist]
 - Do not add plaintext denylist entries. `scripts/check-pii.sh` enforces `scripts/pii-denylist.sha256`. [why: 5da3336 hashed PII denylist]
-- Edit shared constants only in `contracts/*.json`, then run `python3 scripts/sync-contracts.py` and `python3 scripts/check-contracts.py`. [why: convention]
+- Edit shared constants only in `contracts/*.json`, then run `python3 scripts/sync-contracts.py` and `python3 scripts/check-contracts.py`. [why: a06df98 shared contracts]
 - Use npm and the committed `package-lock.json` in `apps/public_www`, `apps/admin_web`, and `backend/infrastructure`. [why: convention]
 - Use TypeScript, functional components, and named exports. Keep components in `src/components`, pages in `src/pages`, helpers in `src/lib`. [why: convention]
 - Do not add Tailwind. The admin console uses Bootstrap 5. The public site uses its own CSS. [why: convention]

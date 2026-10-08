@@ -64,6 +64,27 @@ class GuardShellTest(unittest.TestCase):
         self.assert_denied("bash scripts/cloudflare/publish-public-media.sh")
         self.assert_denied("aws ses set-active-receipt-rule-set --rule-set-name example")
 
+    def test_mentioning_a_protected_command_is_allowed(self) -> None:
+        for command in (
+            "cat scripts/deploy/cdk-params.sh",
+            "git diff main -- scripts/deploy/deploy-public-website.sh",
+            "git add scripts/deploy/deploy-admin-www.sh",
+            "shellcheck scripts/deploy/deploy-public-website.sh",
+            "python3 -m ruff check scripts/mint-openrouter-app-keys.py",
+            "rg -n 'cdk deploy' docs",
+            "sed -n 1,20p scripts/cloudflare/publish-public-media.sh",
+            "grep -rn 'aws delete-' .cursor/hooks",
+            "rg 'git push --force' .cursor/hooks",
+            "rg 'git commit --amend' docs",
+        ):
+            permission, message = guard.decide(command)
+            self.assertEqual(permission, "allow", f"{command}: {message}")
+
+    def test_nested_invocations_are_denied(self) -> None:
+        self.assert_denied("scripts/deploy/deploy-public-website.sh")
+        self.assert_denied("bash -c 'cdk deploy lxsoftware'")
+        self.assert_denied("echo $(aws s3api delete-bucket --bucket example)")
+
     def test_read_only_script_modes_are_allowed(self) -> None:
         for command in (
             "python3 scripts/manage-public-api-keys.py list",
@@ -95,6 +116,37 @@ class PostEditPathTest(unittest.TestCase):
 
     def test_missing_path_is_none(self) -> None:
         self.assertIsNone(post_edit._edited_path({}))
+
+
+class HarnessConfigTest(unittest.TestCase):
+    def test_pre_commit_config_parses(self) -> None:
+        import yaml
+
+        loaded = yaml.safe_load((ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
+        entries = [
+            hook["entry"]
+            for repo in loaded["repos"]
+            for hook in repo["hooks"]
+            if str(hook["id"]).startswith("eslint")
+        ]
+        self.assertEqual(len(entries), 2)
+        self.assertTrue(all(entry.startswith("bash -c ") for entry in entries))
+
+    def test_linkedin_rule_globs_match_the_spa_files(self) -> None:
+        import glob
+
+        text = (ROOT / ".cursor" / "rules" / "linkedin.mdc").read_text(encoding="utf-8")
+        globs = text.split("globs:", 1)[1].splitlines()[0].strip().split(",")
+        matched: set[str] = set()
+        for pattern in globs:
+            matched.update(glob.glob(pattern, root_dir=ROOT, recursive=True))
+        for expected in (
+            "apps/admin_web/src/components/linkedin/LinkedInTab.tsx",
+            "apps/admin_web/src/hooks/useLinkedIn.ts",
+            "apps/admin_web/src/lib/linkedinModel.ts",
+            "backend/lambda/admin/linkedin_draft.py",
+        ):
+            self.assertIn(expected, matched)
 
 
 class AgentRulesTest(unittest.TestCase):

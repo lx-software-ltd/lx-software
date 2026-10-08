@@ -1,14 +1,14 @@
 ---
-description: Public website content, pre-render, and analytics rules
+description: Public website content, pre-render, and analytics rules. Read before editing apps/public_www.
 globs: apps/public_www/**
 alwaysApply: false
 ---
 
 # Public website
 
-- Copy is bundled from `src/content/site.json`. Do not fetch it at runtime. Service and about pages are `pages[]`. [why: convention]
-- Components must render the same on the server and the client. Read `window`, `matchMedia`, and `navigator` through `useSyncExternalStore` with a server snapshot. See `MotionProvider.tsx` and `ContactIcons.tsx`. [why: convention]
-- `npm run build` pre-renders every route from `scripts/site-seo.ts` and fails a route without an `<h1>` or inline CSS. `PUBLIC_WWW_PRERENDER=0` skips it. [why: convention]
-- Site events are pushed from `src/lib/analytics.ts` only after the GTM container loads. The event list must match `scripts/test_configure_public_analytics.py`. [why: convention]
-- The apex redirect is the Cloudflare Worker `lx-software-apex-redirect`. Do not restore the dummy `192.0.2.1` A record. The HTTPS Single Redirect keeps the path; do not use a star destination. [why: convention]
+- Copy is bundled from `src/content/site.json`. Do not fetch it at runtime. Service and about pages are `pages[]`. [why: c0223fb bundled site copy]
+- Components must render the same on the server and the client. Read `window`, `matchMedia`, and `navigator` through `useSyncExternalStore` with a server snapshot. See `MotionProvider.tsx` and `ContactIcons.tsx`. [why: 8b7a63a server and client render]
+- `npm run build` pre-renders every route from `scripts/site-seo.ts` and fails a route without an `<h1>` or inline CSS. `PUBLIC_WWW_PRERENDER=0` skips it. [why: 8b7a63a pre-render]
+- Site events are pushed from `src/lib/analytics.ts` only after the GTM container loads. The event list must match `scripts/test_configure_public_analytics.py`. [why: 4bb0aa9 site events]
+- The apex redirect is the Cloudflare Worker `lx-software-apex-redirect`. Do not restore the dummy `192.0.2.1` A record. The HTTPS Single Redirect keeps the path; do not use a star destination. [why: 41e6037 apex redirect path]
 - Phone numbers, personal inboxes, and street addresses stay out of source. The owner name in `site.owner` is the published exception. [why: 5da3336 hashed PII denylist]

@@ -1,15 +1,15 @@
 ---
-description: CDK parameter, permission, and deploy constraints
+description: CDK parameter, permission, and deploy constraints. Read before editing backend/infrastructure.
 globs: backend/infrastructure/**
 alwaysApply: false
 ---
 
 # Infrastructure
 
-- Board-only parameters are `SiutindeiBoard*`. Product resources are `Siutindei*` or `Evolvesprouts*`. Stack-wide knobs stay unprefixed. Lambda env vars stay short (`BOARD_*`, `OUTREACH_*`). The Jest guard in `test/lxsoftware-stack.test.ts` fails a new unprefixed parameter. Keys in `params/*.json` must match. [why: convention]
-- The HTTP API uses `SharedPermissionLambdaIntegration` plus one `AdminApiInvoke` permission. Do not switch back to `HttpLambdaIntegration` per route or add `events.Rule` targets on `AdminApiFn`. New schedules use EventBridge Scheduler. [why: convention]
-- `recursiveLoop` is `Allow` on `AdminApiFn` only. Leave Terminate on the other functions. [why: convention]
-- SES send grants are `Resource: *` plus `ses:FromAddress` (`sesSendFromDomainStatement`). Identity-ARN resource lists pass tests and deny in production. [why: convention]
-- Secret parameters set `noEcho: true`. [why: convention]
-- Pillow bundling needs QEMU on x86-64 (`docker/setup-qemu-action`) or `CDK_SKIP_PYTHON_PIP=1` for a template-only synth. [why: convention]
-- Statement parsing timeouts move together: Lambda 300s, `OPENROUTER_TIMEOUT_SECONDS` 210s, `PARSE_JOB_STUCK_SECONDS` 420s, SPA poll eight minutes. [why: convention]
+- Board-only parameters are `SiutindeiBoard*`. Product resources are `Siutindei*` or `Evolvesprouts*`. Stack-wide knobs stay unprefixed. Lambda env vars stay short (`BOARD_*`, `OUTREACH_*`). The Jest guard in `test/lxsoftware-stack.test.ts` fails a new unprefixed parameter. Keys in `params/*.json` must match. [why: 943d412 Siu Tin Dei parameter prefix]
+- The HTTP API uses `SharedPermissionLambdaIntegration` plus one `AdminApiInvoke` permission. Do not switch back to `HttpLambdaIntegration` per route or add `events.Rule` targets on `AdminApiFn`. New schedules use EventBridge Scheduler. [why: 4ae09c6 20 KB resource policy]
+- `recursiveLoop` is `Allow` on `AdminApiFn` only. Leave Terminate on the other functions. [why: c38eb7f recursive self-invoke]
+- SES send grants are `Resource: *` plus `ses:FromAddress` (`sesSendFromDomainStatement`). Identity-ARN resource lists pass tests and deny in production. [why: 3c683b1 SES authorizes the mailbox]
+- Secret parameters set `noEcho: true`. [why: b41d62c CDK secret parameters]
+- Pillow bundling needs QEMU on x86-64 (`docker/setup-qemu-action`) or `CDK_SKIP_PYTHON_PIP=1` for a template-only synth. [why: fc8dc58 arm64 bundling]
+- Statement parsing timeouts move together: Lambda 300s, `OPENROUTER_TIMEOUT_SECONDS` 210s, `PARSE_JOB_STUCK_SECONDS` 420s, SPA poll eight minutes. [why: 2f041d8 statement PDF import]

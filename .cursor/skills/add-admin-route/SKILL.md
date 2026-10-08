@@ -5,7 +5,7 @@ description: Add an admin HTTP route across the Lambda, the CDK integration, the
 
 # Add an admin route
 
-1. Handle the route in `backend/lambda/admin/dispatch.py`. Keep `_require_admin`. If the route is owner-only, follow the existing `owner_only` list in that file rather than inventing a second list.
+1. Handle the route in `backend/lambda/admin/dispatch.py` and call the existing `_require_admin` (`http_common.py`). Adding that route is yellow. Changing `_require_admin`, or `write_blocked` in `board_public_api.py`, is red (`docs/architecture/zones.md`). Follow that owner-only list rather than inventing a second one.
 2. Register the path with `SharedPermissionLambdaIntegration`. Do not add a per-route Lambda permission.
 3. Call it from `apps/admin_web` through `adminFetch`.
 4. Add the fixture response in `src/lib/mock/routes/` and `src/lib/mock/fixtures.ts` so `npm run dev:mock` serves it.
