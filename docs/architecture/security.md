@@ -149,6 +149,26 @@ Chrome as `Failed to fetch`). When any of those URLs changes, redeploy
 Only **404** responses are rewritten to `/index.html` for SPA routing.
 **403** passes through so bucket-policy mistakes stay visible.
 
+## Branch protection
+
+`main` is gated by the `main-protection` ruleset. The ruleset must be
+`active`, include `refs/heads/main`, block deletion and force-push, and
+require status checks whose contexts exactly match a job `name` in
+`.github/workflows` (the aggregator jobs are `test` and `lint`).
+`scripts/verify_github_rulesets.py` is the weekly **Verify GitHub
+Rulesets** job. A ruleset that targets `main` while its enforcement is
+`disabled` fails that job. A required context with no matching job name
+fails it too, which is why the aggregators are named `test` and `lint`
+rather than the longer per-app job names.
+
+Approving reviews are reported and do not fail the script. Pull requests
+in this repository are opened by the maintainer account, and GitHub does
+not let an author approve their own pull request, so a required review
+count of 1 blocks every merge until a second reviewer exists. Status
+checks are the merge gate until then.
+
+`release-tags` stays `active` for `refs/tags/v*`.
+
 ## Operational notes
 
 - Cloudflare records for ACM validation and the `admin` CNAME must be

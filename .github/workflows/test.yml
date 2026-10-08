@@ -2,18 +2,9 @@ name: Test
 
 on:
   workflow_dispatch:
+  # No path filter. The `test` job is a required check, and a skipped
+  # required check leaves the pull request blocked.
   pull_request:
-    paths:
-      - "apps/public_www/**"
-      - "apps/admin_web/**"
-      - "backend/**"
-      - "contracts/**"
-      - "scripts/sync-contracts.py"
-      - "scripts/check-contracts.py"
-      - "scripts/check_pii.py"
-      - "scripts/check-pii.sh"
-      - "scripts/pii-denylist.sha256"
-      - "scripts/test_check_pii.py"
   push:
     branches:
       - main
@@ -159,3 +150,40 @@ jobs:
         working-directory: backend/infrastructure
         env:
           CI: "true"
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    needs:
+      - check-contracts
+      - test-web
+      - build-admin-web
+      - e2e-admin-web
+      - test-infrastructure
+    if: always()
+    steps:
+      - name: Require every test job
+        env:
+          CHECK_CONTRACTS: ${{ needs.check-contracts.result }}
+          TEST_WEB: ${{ needs.test-web.result }}
+          BUILD_ADMIN_WEB: ${{ needs.build-admin-web.result }}
+          E2E_ADMIN_WEB: ${{ needs.e2e-admin-web.result }}
+          TEST_INFRASTRUCTURE: ${{ needs.test-infrastructure.result }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import sys
+
+          jobs = {
+              "check-contracts": os.environ["CHECK_CONTRACTS"],
+              "test-web": os.environ["TEST_WEB"],
+              "build-admin-web": os.environ["BUILD_ADMIN_WEB"],
+              "e2e-admin-web": os.environ["E2E_ADMIN_WEB"],
+              "test-infrastructure": os.environ["TEST_INFRASTRUCTURE"],
+          }
+          failed = [f"{name}={result}" for name, result in jobs.items() if result != "success"]
+          if failed:
+              print("Test jobs did not all succeed: " + ", ".join(failed))
+              sys.exit(1)
+          print("All test jobs succeeded.")
+          PY
