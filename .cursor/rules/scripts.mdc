@@ -1,0 +1,14 @@
+---
+description: Repository scripts that check or mutate live systems
+globs: scripts/**
+alwaysApply: false
+---
+
+# Scripts
+
+- Tests live in `scripts/test_*.py` and run under `python3 -m unittest discover -s scripts -p 'test_*.py'`. [why: convention]
+- `manage-public-api-keys.py` create, revoke, and set-write mutate live keys. `mint-openrouter-app-keys.py` mints live keys unless `--dry-run` is set. Do not run those from an agent shell. [why: convention]
+- `configure-public-analytics.py apply`, `scripts/cloudflare/publish-apex-redirect.py apply`, and `publish-public-media.sh` change production DNS or analytics. `check` is the read-only path. [why: convention]
+- `scripts/deploy/*.sh` publish the live site. Deploys go through the GitHub Actions workflows. [why: convention]
+- After editing `contracts/*.json`, run `sync-contracts.py` and `check-contracts.py`. [why: convention]
+- Do not add plaintext entries to `scripts/pii-denylist.sha256`. [why: 5da3336 hashed PII denylist]

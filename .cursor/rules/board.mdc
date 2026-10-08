@@ -1,0 +1,16 @@
+---
+description: Executive Board tool, staff, and runner constraints
+globs: backend/lambda/admin/board_*.py,apps/admin_web/src/**/board/**,contracts/board-*.json
+alwaysApply: false
+---
+
+# Executive Board
+
+Behaviour lives in `docs/architecture/executive-board.md`. This file is the constraint list. [why: convention]
+
+- Kill switches fail closed. An unset staff or tools flag is off. [why: convention]
+- Add a tool by the `add-board-tool` skill. Register `ToolOp`s, update `contracts/board-tools.json`, sync contracts, and cover the op in the `test_board_t*.py` file for that host. [why: convention]
+- `code_run_task` kind is `feature`, `fix`, or `content`. The siutindei runner refuses anything else. [why: convention]
+- Do not tell a seat to finish with status `blocked`. `task_finish` parks `needs_owner` only with a refused tool call or a tripped tool breaker. [why: convention]
+- `ToolOp.validate` runs before a hold is created. A call that cannot succeed is an error to the model, not a scheduled hold. [why: convention]
+- Holds and Approvals stay separate lists. `code_production` stays an Approval. [why: convention]

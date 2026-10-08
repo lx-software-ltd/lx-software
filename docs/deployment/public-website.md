@@ -328,3 +328,20 @@ so an extra cache rule is optional.
 Bootstrap and IAM errors (`SSM parameter /cdk-bootstrap/... not found`,
 `could not be used to assume ... deploy-role`) are covered in
 [`setup.md`](./setup.md#troubleshooting).
+
+
+## Operational constraints
+
+These notes moved out of `AGENTS.md` so the always-on rulebook stays short. They are constraints from production incidents. The short form for agents lives in `.cursor/rules/`.
+
+### Public site pre-rendering
+
+`npm run build` in `apps/public_www` runs a second SSR build (`src/entry-server.tsx`, `react-dom/static`) and writes every route from `scripts/site-seo.ts` to `dist/<route>.html` and `dist/<route>/index.html` with per-route head, JSON-LD, and inline CSS; `main.tsx` hydrates when server markup exists. Components must render the same on the server and client: read `window` / `matchMedia` / `navigator` through `useSyncExternalStore` with a server snapshot (see `MotionProvider.tsx`, `ContactIcons.tsx`), never during render. The build fails on a route without an `<h1>` or inline CSS; `PUBLIC_WWW_PRERENDER=0` skips it. Service and about pages are `pages[]` in `site.json` (`src/lib/content.test.ts` checks slugs and lengths). The deploy script uploads each page under its extensionless S3 key (`about`) because CloudFront maps `/about` to that key; `.html` / `.txt` / `.xml` / extensionless keys are `no-cache`. It then pings IndexNow (key `public/indexnow.txt`, public by design, non-fatal). Lighthouse CI blocks the GTM / GA4 hosts so audits do not count as GA4 sessions. `scripts/report-public-analytics.py` is the read-only GA4 + Search Console report (same service account; needs the Analytics Data and Search Console APIs).
+
+### Public site analytics
+
+`VITE_GTM_ID` loads one GTM container; GA4 lives inside it. Site events (`contact_click`, `faq_toggle`, `project_open`, `project_navigate`, `nav_click`, `page_not_found`, `media_error`) are pushed from `apps/public_www/src/lib/analytics.ts` only after the container loaded (GPC / DNT visitors send nothing). `scripts/configure-public-analytics.py check|apply` reconciles the GA4 property (14-month retention, enhanced measurement, custom dimensions, key events) and the GTM live version (Google tag, `Site events` trigger, `GA4 event - site events` tag, `DL - <param>` variables) using `LXSOFTWARE_GOOGLE_SERVICE_ACCOUNT_JSON` / `LXSOFTWARE_GA4_PROPERTY_ID` / `LXSOFTWARE_GTM_ACCOUNT_ID` / `LXSOFTWARE_CONTAINER_ID`; it needs the Analytics Admin and Tag Manager APIs enabled in the service account's Cloud project. `scripts/test_configure_public_analytics.py` fails when the Python and TypeScript event lists drift. Runbook in `docs/deployment/public-website.md`.
+
+### Public apex
+
+`lx-software.com` 301s to `www.lx-software.com` and keeps path/query. HTTPS is a Single Redirect (`concat("https://www.lx-software.com", http.request.uri.path)`); do not use a destination of `https://www.lx-software.com/*`. The Worker `lx-software-apex-redirect` is the HTTP / fallback path. Account-owned tokens cannot call Page Rules (`1011`). Publish/check with `python3 scripts/cloudflare/publish-apex-redirect.py`. Do not restore the dummy `192.0.2.1` A record unless removing the Worker custom domain (`AAAA 100::`).

@@ -28,6 +28,20 @@ repos:
         pass_filenames: false
         always_run: true
 
+      - id: validate-agent-rules
+        name: Validate agent rules
+        entry: python3 scripts/validate_agent_rules.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ruff
+        name: Ruff
+        entry: python3 -m ruff check backend/lambda scripts .cursor/hooks
+        language: system
+        pass_filenames: false
+        files: \.py$
+
   # TypeScript/JavaScript linting
   - repo: local
     hooks:

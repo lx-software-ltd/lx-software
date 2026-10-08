@@ -1,0 +1,16 @@
+---
+description: LinkedIn draft, voice, and picture constraints
+globs: backend/lambda/admin/linkedin_*.py,apps/admin_web/src/**/*inkedin*
+alwaysApply: false
+---
+
+# LinkedIn
+
+Operations are in `docs/deployment/admin-website.md`. [why: convention]
+
+- Posts must not name LX Software or sibling products unless Settings allows product names. An employer name belongs in Settings, not in source. [why: convention]
+- `linkedin_store.RECOMMENDED_VOICE` and `RECOMMENDED_LINKEDIN_VOICE` in `linkedinModel.ts` stay the same text and under 1000 characters. The voice must not quote a catchphrase. [why: convention]
+- Image calls use resolution `2K`. Seedream 4.5 rejects `1K`. [why: convention]
+- The reference photo and the chosen character sheet stay in the private assets bucket under `linkedin/character/`. Do not copy either into the repo, DynamoDB, or fixtures. [why: convention]
+- Rows use the `LINKEDIN#` prefix and stay out of `/records`. [why: convention]
+- `LxSoftwareLinkedinEnabled` and `LxSoftwareLinkedinPublishEnabled` default false. [why: convention]

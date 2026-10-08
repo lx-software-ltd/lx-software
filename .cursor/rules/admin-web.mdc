@@ -1,0 +1,18 @@
+---
+description: Admin console layout, data, and currency rules
+globs: apps/admin_web/**
+alwaysApply: false
+---
+
+# Admin web
+
+Patterns are specified in `apps/admin_web/docs/UI_COMPONENTS.md`. [why: convention]
+
+- The left rail lists pages only and has no LX Admin brand. Section tabs sit in the page (a phone `<select>` when there are more than six). Dashboard, House Finance, LX Software, Siu Tin Dei, Evolve Sprouts, Banking, and Assets have no page title and no help popover. [why: convention]
+- A record list is one untitled card: toolbar, then the table. The create control spells the noun. The editor opens under the clicked row. One row is open; its id is a query parameter (`new` is the draft). An unknown id is removed. Only the active table's row parameter stays in the URL. [why: convention]
+- The row editor has no title and no Cancel. One primary button, labeled with the verb, shows `Saving…` while the save is in flight. Deletes and dirty-row switches use `ConfirmDialog`. Every row action sits in the kebab menu. [why: convention]
+- Summary figures use one `.admin-kpi-row` of `AdminKpi` tiles. House-level forms stay a separate card. Chat, tasks, and member editors stay in `BoardOffcanvas`. Statement import and Connect a bank open in a dialog. [why: convention]
+- Evolve Sprouts statement lines are read-only. [why: convention]
+- Use TanStack Query for server data. Do not add Tailwind. [why: convention]
+- Currency choices use `CurrencySelect`. Supported codes are GBP, HKD, USD, EUR, CNY, SGD, AED in `src/lib/currencies.ts`. The global default is HKD. A house may set `defaultCurrency`. [why: convention]
+- Verify UI changes with `npm run dev:mock` (fixtures, no AWS). A behavior change is exercised in the browser, not judged from one screenshot. [why: convention]

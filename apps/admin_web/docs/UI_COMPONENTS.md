@@ -88,3 +88,16 @@ Async work (chat replies, meetings) always goes through a job row + polling hook
 ## Reference implementation
 
 `HouseStatementPanel` (`src/components/HouseStatementPanel.tsx`) is the reference: house details stay their own card, statement import opens in a dialog, and each line expands under its row. `FinanceAccountsPanel` is the same pattern for a single record list. Finance lists save one sheet at a time (`PUT /finance/{sheet}`); a house form PUTs `/finance/{house}`. Statement books still save the whole document. Confirmations use `ConfirmDialog`, including catalog bulk import.
+
+
+## Operational constraints
+
+These notes moved out of `AGENTS.md` so the always-on rulebook stays short. They are constraints from production incidents. The short form for agents lives in `.cursor/rules/`.
+
+### Admin UI patterns
+
+(rail, tables, money/date formatting): the left rail lists pages only and has no LX Admin brand. Section tabs sit in the page (a phone `<select>` when there are more than six). A record list is a toolbar then the table. The New button matches the search field height, and statement import sits immediately left of New. The editor expands under the row. A row query param hydrates that record; an unknown id is dropped; only the active table’s param stays. The primary button shows `Saving…` while the save is in flight. Every row operation sits in the kebab menu. Dashboard, House Finance, LX Software, Siu Tin Dei, Evolve Sprouts, Banking, and Assets have no page title and no help popover. Evolve Sprouts expenses and gains are read-only. Executive Board sections do not repeat the tab name as a heading and do not show a help sentence under the tabs. Summary figures use one `.admin-kpi-row` of `AdminKpi` tiles on Dashboard, Progress, and the Executive Board status row. House-level forms stay a separate card. Chat, tasks, and member editors stay in an offcanvas. See [`apps/admin_web/docs/UI_COMPONENTS.md`](apps/admin_web/docs/UI_COMPONENTS.md).
+
+### Currencies (admin)
+
+supported codes are GBP, HKD, USD, EUR, CNY, SGD, AED. Global default is HKD; each house can set `defaultCurrency` on its finance record. Use `CurrencySelect` and `src/lib/currencies.ts`; the admin Lambda validates the same set on finance writes.

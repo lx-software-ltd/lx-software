@@ -117,3 +117,24 @@ daily review, outreach, content, engineering runner) runs entirely on
 `AdminApiFn` and the records table. Its design is in
 [`executive-board.md`](./executive-board.md); setup and operating steps
 are in [`../deployment/admin-website.md`](../deployment/admin-website.md).
+
+
+## Operational constraints
+
+These notes moved out of `AGENTS.md` so the always-on rulebook stays short. They are constraints from production incidents. The short form for agents lives in `.cursor/rules/`.
+
+### CDK parameter naming (Siu Tin Dei)
+
+Board-only `CfnParameter`s are `SiutindeiBoard*` (kill switches, models, outreach, mail, Meta / stores / web ids). Product resources the stack integrates with are `Siutindei*` (`SiutindeiClusterArn`, `SiutindeiDbSecretArn`, `SiutindeiDbSecretName`). Stack-wide knobs stay unprefixed (`PublicSiteOrigins`, `PublicApiBaseUrl`, Cognito, OpenRouter, inbound mail, Enable Banking). Lambda env vars stay short (`BOARD_*`, `OUTREACH_*`). A Jest guard in `backend/infrastructure/test/lxsoftware-stack.test.ts` fails synth if a new `Board*` / `Outreach*` / `Meta*` / … parameter is added without the prefix. Keys in `backend/infrastructure/params/*.json` must match; an unknown `lxsoftware:*` key fails `cdk deploy`.
+
+### Shared contracts
+
+cross-app constants live in `contracts/*.json`. After editing, run `python3 scripts/sync-contracts.py` and `python3 scripts/check-contracts.py` (also enforced in CI).
+
+### AdminApiFn invoke permissions (CDK)
+
+the HTTP API uses `SharedPermissionLambdaIntegration` plus a single API-wide `AdminApiInvoke` permission; do not switch back to `HttpLambdaIntegration` per-route permissions or add `events.Rule` Lambda targets to `AdminApiFn` — the function's resource-based policy is capped at 20 KB and per-route/per-rule statements exceeded it. Use EventBridge Scheduler (IAM-role target) for new schedules.
+
+### AdminApiFn recursive loop
+
+the function Event-invokes itself (staff steps, meeting phases, chat/parse workers, intel crawl). CDK sets `recursiveLoop: Allow` on that function only; leave Terminate on the other Lambdas. Application caps (`maxStepsPerTask`, meeting phases, crawl page budget) still bound the chain. CloudWatch alarm `lxsoftware-admin-siutindei-admin-api-invocations` (Invocations > 250 / 5 min) replaces `RecursiveInvocationsDropped` after Allow; the name contains `siutindei` so the hourly cache refresh can open an architect/CTO task. A Health event `AWS_LAMBDA_RUNAWAY_TERMINATION_NOTIFICATION` after deploy means a different function is looping.
