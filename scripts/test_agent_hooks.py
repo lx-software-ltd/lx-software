@@ -118,19 +118,44 @@ class PostEditPathTest(unittest.TestCase):
         self.assertIsNone(post_edit._edited_path({}))
 
 
+def _unquote_yaml(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        inner = value[1:-1]
+        if value[0] == '"':
+            return inner.replace('\\"', '"').replace("\\\\", "\\")
+        return inner.replace("''", "'")
+    return value
+
+
+def _plain_yaml_values(text: str) -> list[tuple[str, str]]:
+    """Key/value pairs from a simple YAML document, without PyYAML.
+
+    An unquoted value that contains ': ' is the scanner error that made
+    `.pre-commit-config.yaml` fail `yaml.safe_load`.
+    """
+    pairs: list[tuple[str, str]] = []
+    for line in text.splitlines():
+        content = line.split("#", 1)[0].strip()
+        if ": " not in content:
+            continue
+        key, value = content.split(": ", 1)
+        if not value.startswith(("'", '"', "|", ">")) and ": " in value:
+            raise ValueError(f"unquoted YAML value contains ': ': {content}")
+        pairs.append((key.strip(), _unquote_yaml(value)))
+    return pairs
+
+
 class HarnessConfigTest(unittest.TestCase):
     def test_pre_commit_config_parses(self) -> None:
-        import yaml
+        text = (ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+        entries = [value for key, value in _plain_yaml_values(text) if key == "entry"]
+        eslint = [entry for entry in entries if entry.startswith("bash -c ")]
+        self.assertEqual(len(eslint), 2)
+        self.assertTrue(all('echo "' in entry and ": run npm ci" in entry for entry in eslint))
 
-        loaded = yaml.safe_load((ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
-        entries = [
-            hook["entry"]
-            for repo in loaded["repos"]
-            for hook in repo["hooks"]
-            if str(hook["id"]).startswith("eslint")
-        ]
-        self.assertEqual(len(entries), 2)
-        self.assertTrue(all(entry.startswith("bash -c ") for entry in entries))
+    def test_unquoted_colon_in_a_yaml_value_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            _plain_yaml_values('entry: echo "app: run"')
 
     def test_linkedin_rule_globs_match_the_spa_files(self) -> None:
         import glob

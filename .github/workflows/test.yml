@@ -19,6 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Script tests resolve [why:] commit ids. A shallow clone cannot see them.
+          fetch-depth: 0
       - name: Verify contract artifacts
         run: python3 scripts/check-contracts.py
 
