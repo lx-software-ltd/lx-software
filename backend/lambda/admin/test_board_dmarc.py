@@ -281,6 +281,7 @@ class DmarcEvaluateTests(BoardTestCase):
                 report_id="ses",
                 dkim="fail",
                 spf="fail",
+                disposition="quarantine",
                 dkim_domain="amazonses.com",
                 spf_domain="siutindei.com",
                 source_ip="1.2.3.4",
@@ -292,8 +293,46 @@ class DmarcEvaluateTests(BoardTestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["severity"], "high")
         self.assertIn("amazonses.com", rows[0]["summary"])
+        self.assertIn("4 quarantined", rows[0]["summary"])
+        self.assertIn("of 4 from this IP", rows[0]["summary"])
+        self.assertEqual(rows[0]["evidence"]["quarantine"], 4)
         gaps = board_duties.list_config_gaps(self.table)
         self.assertTrue(any(row.get("gapId") == "dmarc:amazonses.com" for row in gaps))
+
+    def test_own_sender_summary_names_quarantine_not_healthy_ses_rows(self) -> None:
+        """SES without MAIL FROM reports SPF fail on every row; only the quarantined subset is the incident."""
+        self._ingest(
+            _xml(
+                report_id="ses-ok",
+                dkim="pass",
+                spf="fail",
+                disposition="none",
+                dkim_domain="siutindei.com",
+                spf_domain="ap-southeast-1.amazonses.com",
+                source_ip="23.251.232.12",
+                count=16,
+            )
+        )
+        self._ingest(
+            _xml(
+                report_id="ses-bad",
+                dkim="fail",
+                spf="fail",
+                disposition="quarantine",
+                dkim_domain="siutindei.com",
+                spf_domain="ap-southeast-1.amazonses.com",
+                source_ip="23.251.232.12",
+                count=1,
+            )
+        )
+        summary = board_dmarc.evaluate(self.table, self.settings)
+        rows = self._findings(summary, "own_sender_failing")
+        self.assertEqual(len(rows), 1)
+        self.assertIn("1 quarantined", rows[0]["summary"])
+        self.assertIn("of 17 from this IP", rows[0]["summary"])
+        self.assertNotIn("17 msgs", rows[0]["summary"])
+        self.assertEqual(rows[0]["evidence"]["quarantine"], 1)
+        self.assertEqual(rows[0]["evidence"]["count"], 17)
 
     def test_unknown_source_severity_follows_the_daily_count(self) -> None:
         self._ingest(_xml(report_id="spoof-low", count=14, source_ip="203.0.113.9"))

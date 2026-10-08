@@ -138,7 +138,13 @@ export function defineBoardMailSending(
   const boardMailIdentity = new ses.CfnEmailIdentity(scope, "SiutindeiBoardMailSendingIdentity", {
     emailIdentity: boardMailDomain.valueAsString,
     dkimAttributes: { signingEnabled: true },
-    mailFromAttributes: { behaviorOnMxFailure: "USE_DEFAULT_VALUE" },
+    // Custom MAIL FROM so SPF aligns with header_from. Without it, SES uses
+    // *.amazonses.com as the envelope and DMARC SPF always fails; a single
+    // domain-DKIM miss then quarantines under p=quarantine.
+    mailFromAttributes: {
+      mailFromDomain: cdk.Fn.join(".", ["mail", boardMailDomain.valueAsString]),
+      behaviorOnMxFailure: "USE_DEFAULT_VALUE",
+    },
   });
   boardMailIdentity.cfnOptions.condition = hasBoardMailSending;
   const boardMailSendPolicy = new iam.Policy(scope, "SiutindeiBoardMailSendPolicy", {

@@ -954,8 +954,20 @@ its bucket / role / KMS policies must allow the shared-set SourceArn
 
 1. Set `lxsoftware:SiutindeiBoardMailSendingEnabled=true` and redeploy.
 2. Add the three `SiutindeiBoardMailDkimCnameN` outputs as CNAMEs
-   (Cloudflare proxy off).
-3. SPF: `v=spf1 include:_spf.mx.cloudflare.net include:amazonses.com ~all`.
+   (Cloudflare proxy off), plus the custom MAIL FROM subdomain
+   `mail.<SiutindeiBoardMailDomain>` (MX →
+   `feedback-smtp.ap-southeast-1.amazonses.com`, TXT
+   `v=spf1 include:amazonses.com ~all`). Or sync both in one shot:
+
+   ```bash
+   CLOUDFLARE_API_TOKEN=... python3 scripts/sync-ses-sending-dns.py \
+     --domain siutindei.com --retry
+   ```
+
+   Without the MAIL FROM host, SES keeps `*.amazonses.com` as the envelope
+   sender: DMARC SPF stays fail (unaligned) and only Easy DKIM saves the
+   message. A single domain-DKIM miss then quarantines under `p=quarantine`.
+3. Apex SPF: `v=spf1 include:_spf.mx.cloudflare.net include:amazonses.com ~all`.
 4. `_dmarc` TXT: `v=DMARC1; p=quarantine; rua=mailto:dmarc@siutindei.com`
    (dedicated `dmarc@` mailbox, not `hello@`). Google / Yahoo aggregate
    reports to `dmarc@` (or a `Report domain:` subject on `hello@`) are

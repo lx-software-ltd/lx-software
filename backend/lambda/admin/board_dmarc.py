@@ -956,7 +956,15 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
                 "headerFrom": list(source.get("headerFrom") or []),
             }
             if sender and (both or bad_disp):
+                quarantine = int(source.get("quarantine") or 0)
+                reject = int(source.get("reject") or 0)
                 evidence["sender"] = sender
+                evidence["bothFail"] = both
+                evidence["quarantine"] = quarantine
+                evidence["reject"] = reject
+                # Total count mixes healthy SES rows (DKIM pass, SPF unaligned) with
+                # the failing subset; name the quarantined/rejected/both-fail totals
+                # so a 1-of-N quarantine is not reported as N broken messages.
                 findings.append(
                     {
                         "id": "own_sender_failing",
@@ -965,8 +973,9 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
                         "fingerprint": f"own_sender_failing:{sender}:{ip}",
                         "summary": (
                             f"own sender {sender} at {ip} "
-                            f"({evidence['count']} msgs, dkim {evidence['dkim']}, spf {evidence['spf']}, "
-                            f"disposition {evidence['disposition']})"
+                            f"({quarantine} quarantined, {reject} rejected, {both} both-fail "
+                            f"of {evidence['count']} from this IP; "
+                            f"dkim {evidence['dkim']}, spf {evidence['spf']})"
                         ),
                         "evidence": evidence,
                     }

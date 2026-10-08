@@ -1168,6 +1168,21 @@ describe("Board SES configuration-set IAM and public CORS", () => {
     }
   });
 
+  test("board mail sending identity uses a custom MAIL FROM subdomain", () => {
+    const identities = Object.entries(resourcesOfType("AWS::SES::EmailIdentity")).map(
+      ([id, resource]) => ({ id, ...(resource as { Properties?: Record<string, unknown>; Condition?: string }) })
+    );
+    const boardMail = identities.find((row) => row.id.startsWith("SiutindeiBoardMailSendingIdentity"));
+    expect(boardMail).toBeDefined();
+    const mailFrom = (boardMail?.Properties?.MailFromAttributes || {}) as {
+      MailFromDomain?: unknown;
+      BehaviorOnMxFailure?: string;
+    };
+    expect(JSON.stringify(mailFrom.MailFromDomain)).toContain("SiutindeiBoardMailDomain");
+    expect(JSON.stringify(mailFrom.MailFromDomain)).toContain('"mail"');
+    expect(mailFrom.BehaviorOnMxFailure).toBe("USE_DEFAULT_VALUE");
+  });
+
   test("outreach and newsletter configuration sets exist and templates stay prefixed", () => {
     const configSets = Object.values(resourcesOfType("AWS::SES::ConfigurationSet")).map(
       (r) => r.Properties?.Name
