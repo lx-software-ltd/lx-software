@@ -28,6 +28,7 @@ from timeutil import format_iso_millis  # noqa: E402
 def _recent_slot(minutes: int = 20) -> str:
     return format_iso_millis(datetime.now(HKT) - timedelta(minutes=minutes))
 
+
 ENABLED = {
     "RECORDS_TABLE_NAME": "records-test",
     "AUDIT_LOG_TABLE_NAME": "audit-test",
@@ -59,6 +60,11 @@ def _body(response: dict) -> dict:
 class LinkedInStoreTests(unittest.TestCase):
     def setUp(self) -> None:
         self.table = FakeTable()
+
+    def test_pillars_include_personal(self) -> None:
+        self.assertIn("personal", linkedin_store.pillar_ids())
+        self.assertEqual(linkedin_store.pillar_label("personal"), "Personal")
+        self.assertIn("personal", linkedin_store.default_settings()["pillars"])
 
     def test_default_slot_is_eight_thirty_hkt_on_tuesday_and_thursday(self) -> None:
         now = datetime(2026, 10, 5, 10, 0, tzinfo=HKT)
@@ -148,7 +154,12 @@ class LinkedInStoreTests(unittest.TestCase):
         linkedin_store.save_settings(self.table, settings)
 
         def complete(_messages):
-            return {"body": "A short hook.\n\nLesson.", "firstComment": "", "hashtags": [], "pillar": "architecture"}, 0.2
+            return {
+                "body": "A short hook.\n\nLesson.",
+                "firstComment": "",
+                "hashtags": [],
+                "pillar": "architecture",
+            }, 0.2
 
         with self.assertRaises(LinkedInError):
             linkedin_draft.generate_drafts(self.table, count=1, complete=complete)
@@ -177,8 +188,18 @@ class LinkedInStoreTests(unittest.TestCase):
         def complete(_messages):
             calls["n"] += 1
             if calls["n"] == 1:
-                return {"body": "LX Software taught me this.", "firstComment": "", "hashtags": [], "pillar": "delivery"}, 0.01
-            return {"body": "A rewrite hook.\n\nThe lesson stands alone.", "firstComment": "", "hashtags": [], "pillar": "delivery"}, 0.01
+                return {
+                    "body": "LX Software taught me this.",
+                    "firstComment": "",
+                    "hashtags": [],
+                    "pillar": "delivery",
+                }, 0.01
+            return {
+                "body": "A rewrite hook.\n\nThe lesson stands alone.",
+                "firstComment": "",
+                "hashtags": [],
+                "pillar": "delivery",
+            }, 0.01
 
         result = linkedin_draft.generate_drafts(self.table, count=1, complete=complete)
         self.assertEqual(calls["n"], 2)
@@ -298,11 +319,16 @@ class LinkedInStoreTests(unittest.TestCase):
         seed_ids = [row["idea"]["seedId"] for row in topics]
         self.assertEqual(len(set(seed_ids)), 4)
         for row in topics:
-            self.assertEqual(row["pillar"], next(s["pillar"] for s in linkedin_seeds.SEEDS if s["id"] == row["idea"]["seedId"]))
+            self.assertEqual(
+                row["pillar"], next(s["pillar"] for s in linkedin_seeds.SEEDS if s["id"] == row["idea"]["seedId"])
+            )
         pinned = linkedin_draft.choose_topics(self.table, settings, count=2, pillar="platforms")
         self.assertTrue(all(row["pillar"] == "platforms" for row in pinned))
         self.assertTrue(
-            all(next(s["pillar"] for s in linkedin_seeds.SEEDS if s["id"] == row["idea"]["seedId"]) == "platforms" for row in pinned)
+            all(
+                next(s["pillar"] for s in linkedin_seeds.SEEDS if s["id"] == row["idea"]["seedId"]) == "platforms"
+                for row in pinned
+            )
         )
 
     def test_a_used_seed_is_not_picked_again_while_others_remain(self) -> None:
@@ -360,7 +386,12 @@ class LinkedInStoreTests(unittest.TestCase):
             seen.append(messages)
             if len(seen) == 1:
                 return (
-                    {"body": "Here's the thing about cloud.\n\nIt is a journey.", "firstComment": "", "hashtags": [], "pillar": ""},
+                    {
+                        "body": "Here's the thing about cloud.\n\nIt is a journey.",
+                        "firstComment": "",
+                        "hashtags": [],
+                        "pillar": "",
+                    },
                     0.01,
                 )
             return (
@@ -567,19 +598,13 @@ class LinkedInStoreTests(unittest.TestCase):
         with self.assertRaises(linkedin_draft.DraftError):
             linkedin_draft.parse_draft("I drafted a post but will not use JSON.")
         with self.assertRaises(linkedin_draft.DraftError) as caught:
-            linkedin_draft.parse_draft(
-                '{"body":"","firstComment":"","hashtags":[],"pillar":"architecture"}'
-            )
+            linkedin_draft.parse_draft('{"body":"","firstComment":"","hashtags":[],"pillar":"architecture"}')
         self.assertIn("empty post", str(caught.exception))
 
     def test_parse_draft_reads_alternate_body_fields(self) -> None:
-        from_text = linkedin_draft.parse_draft(
-            '{"text":"A short hook.\\n\\nOne lesson.","hashtags":["Architecture"]}'
-        )
+        from_text = linkedin_draft.parse_draft('{"text":"A short hook.\\n\\nOne lesson.","hashtags":["Architecture"]}')
         self.assertEqual(from_text["body"], "A short hook.\n\nOne lesson.")
-        from_lines = linkedin_draft.parse_draft(
-            '{"body":["A short hook.","One lesson."],"hashtags":["Architecture"]}'
-        )
+        from_lines = linkedin_draft.parse_draft('{"body":["A short hook.","One lesson."],"hashtags":["Architecture"]}')
         self.assertEqual(from_lines["body"], "A short hook.\nOne lesson.")
 
     def test_system_prompt_does_not_show_an_empty_body(self) -> None:
@@ -785,7 +810,9 @@ class LinkedInStoreTests(unittest.TestCase):
 
         result = linkedin_draft.generate_drafts(self.table, count=1, complete=complete)
         self.assertEqual(len(result["posts"]), 1)
-        self.assertEqual(result["posts"][0]["generation"]["voiceHash"], linkedin_draft.voice_hash({"voiceNotes": voice}))
+        self.assertEqual(
+            result["posts"][0]["generation"]["voiceHash"], linkedin_draft.voice_hash({"voiceNotes": voice})
+        )
         self.assertEqual(len(captured), 1)
         system, user = captured[0]
         self.assertIn("Voice — follow this exactly.", system["content"])
@@ -933,7 +960,9 @@ class LinkedInHttpTests(unittest.TestCase):
         doc["status"] = "approved"
         doc["slotAt"] = "2020-01-01T00:30:00.000Z"
         linkedin_store.put_post(self.table, doc)
-        linkedin_store.save_settings(self.table, {**linkedin_store.default_settings(), "notifyEmail": "owner@example.com"})
+        linkedin_store.save_settings(
+            self.table, {**linkedin_store.default_settings(), "notifyEmail": "owner@example.com"}
+        )
         with patch.object(linkedin, "send_notice", return_value=True) as send:
             first = linkedin.handle_publish_due({})
             second = linkedin.handle_publish_due({})
@@ -1389,7 +1418,13 @@ class LinkedInImageTests(unittest.TestCase):
             self.table,
             {
                 **doc,
-                "image": {"status": "ready", "contentType": "image/png", "scene": "Old.", "caption": "Old line.", "expression": "deadpan"},
+                "image": {
+                    "status": "ready",
+                    "contentType": "image/png",
+                    "scene": "Old.",
+                    "caption": "Old line.",
+                    "expression": "deadpan",
+                },
             },
         )
         calls: list[str] = []
@@ -1456,7 +1491,11 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertNotEqual(public["image"]["status"], "ready")
 
     def test_a_scene_rewrite_the_worker_never_finished_is_shown_as_failed(self) -> None:
-        image = {"status": "ready", "contentType": "image/png", "brief": {"status": "pending", "requestedAt": "2026-10-06T03:00:00.000Z"}}
+        image = {
+            "status": "ready",
+            "contentType": "image/png",
+            "brief": {"status": "pending", "requestedAt": "2026-10-06T03:00:00.000Z"},
+        }
         fresh = datetime(2026, 10, 6, 3, 1, tzinfo=ZoneInfo("UTC"))
         self.assertTrue(linkedin_store.brief_pending(image, now=fresh))
         late = datetime(2026, 10, 6, 3, 5, tzinfo=ZoneInfo("UTC"))
@@ -1468,8 +1507,9 @@ class LinkedInImageTests(unittest.TestCase):
         # A stale rewrite does not block a new one or a redraw.
         doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOne lesson."})
         linkedin_store.put_post(self.table, {**doc, "image": image})
-        with patch.object(linkedin_store, "brief_pending", return_value=False), patch(
-            "board_async.try_invoke_event", return_value=True
+        with (
+            patch.object(linkedin_store, "brief_pending", return_value=False),
+            patch("board_async.try_invoke_event", return_value=True),
         ):
             queued = linkedin_image.queue_brief(self.table, doc["postId"])
         self.assertEqual(queued["image"]["brief"]["status"], "pending")
@@ -1485,7 +1525,9 @@ class LinkedInImageTests(unittest.TestCase):
         self._brief.stop()
         with patch("board_async.try_invoke_event", return_value=True) as invoke:
             created = lambda_handler(
-                _event("/lx-software/linkedin/posts", "POST", {"body": "The lift queue was the bottleneck.\n\nOne lesson."}),
+                _event(
+                    "/lx-software/linkedin/posts", "POST", {"body": "The lift queue was the bottleneck.\n\nOne lesson."}
+                ),
                 None,
             )
         self.assertEqual(created["statusCode"], 201)
@@ -1493,19 +1535,28 @@ class LinkedInImageTests(unittest.TestCase):
         # The owner's post gets a picture; the worker writes the three fields from the post.
         self.assertEqual(item["image"]["status"], "pending")
         self.assertEqual(invoke.call_args.args[0]["internal"], "linkedin_image")
-        linkedin_store.put_post(self.table, {**linkedin_store.get_post(self.table, item["postId"]), "image": {"status": "failed"}})
+        linkedin_store.put_post(
+            self.table, {**linkedin_store.get_post(self.table, item["postId"]), "image": {"status": "failed"}}
+        )
         # The rewrite is queued, never run inside the request: API Gateway cuts at 30 s.
-        with patch("board_async.try_invoke_event", return_value=True) as queued, patch(
-            "linkedin_draft.picture_brief", side_effect=AssertionError("must not run in the request")
+        with (
+            patch("board_async.try_invoke_event", return_value=True) as queued,
+            patch("linkedin_draft.picture_brief", side_effect=AssertionError("must not run in the request")),
         ):
-            response = lambda_handler(_event(f"/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None)
+            response = lambda_handler(
+                _event(f"/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None
+            )
         self.assertEqual(response["statusCode"], 202)
         self.assertEqual(queued.call_args.args[0], {"internal": "linkedin_image_brief", "postId": item["postId"]})
         self.assertEqual(_body(response)["item"]["image"]["brief"]["status"], "pending")
         again = lambda_handler(_event(f"/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None)
         self.assertEqual(again["statusCode"], 409)
         written = (
-            {"imageScene": "At a desk, head scratched.", "imageExpression": "baffled", "imageCaption": "Why is it Tuesday"},
+            {
+                "imageScene": "At a desk, head scratched.",
+                "imageExpression": "baffled",
+                "imageCaption": "Why is it Tuesday",
+            },
             0.002,
         )
         with patch("linkedin_draft.picture_brief", return_value=written):
@@ -1517,7 +1568,9 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertEqual(row["image"]["expression"], "baffled")
         self.assertEqual(row["image"]["brief"]["status"], "done")
         with patch("board_async.try_invoke_event", return_value=False):
-            dropped = lambda_handler(_event(f"/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None)
+            dropped = lambda_handler(
+                _event(f"/lx-software/linkedin/posts/{item['postId']}/image/brief", "POST", {}), None
+            )
         self.assertEqual(dropped["statusCode"], 202)
         self.assertEqual(_body(dropped)["item"]["image"]["brief"]["status"], "failed")
         missing = lambda_handler(_event("/lx-software/linkedin/posts/nope/image/brief", "POST", {}), None)
@@ -1700,7 +1753,11 @@ class LinkedInImageTests(unittest.TestCase):
             self.table,
             {
                 **doc,
-                "image": {"status": "pending", "scene": "The author holding a siutindei invoice.", "caption": "Quite a pile."},
+                "image": {
+                    "status": "pending",
+                    "scene": "The author holding a siutindei invoice.",
+                    "caption": "Quite a pile.",
+                },
             },
         )
 
@@ -1717,7 +1774,9 @@ class LinkedInImageTests(unittest.TestCase):
         from openrouter_client import GeneratedImage, ImageGeneration
 
         doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOne lesson."})
-        linkedin_image.queue_for_post(self.table, doc["postId"], scene="The author under a tower of paper.", caption="Quite a pile.", force=True)
+        linkedin_image.queue_for_post(
+            self.table, doc["postId"], scene="The author under a tower of paper.", caption="Quite a pile.", force=True
+        )
         seen: dict[str, object] = {}
 
         def generate(prompt, aspect, seed, references, settings, n=1):
@@ -1776,7 +1835,9 @@ class LinkedInImageTests(unittest.TestCase):
         linkedin_store.choose_character(self.table, "c2")
         self.assertIsNotNone(linkedin_store.load_character_sheet())
         doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOne lesson."})
-        linkedin_image.queue_for_post(self.table, doc["postId"], scene="The author and a huge envelope.", caption="It barely fits.", force=True)
+        linkedin_image.queue_for_post(
+            self.table, doc["postId"], scene="The author and a huge envelope.", caption="It barely fits.", force=True
+        )
         seen: dict[str, object] = {}
 
         def one(prompt, aspect, seed, references, settings, n=1):
@@ -1918,7 +1979,9 @@ class LinkedInImageTests(unittest.TestCase):
             )
         self.assertEqual(queued["image"]["status"], "pending")
         self.assertEqual(queued["image"]["held"]["caption"], "Old line.")
-        with patch.object(linkedin_store, "save_post_image", side_effect=LinkedInError("The image must be under 1.5 MB.")):
+        with patch.object(
+            linkedin_store, "save_post_image", side_effect=LinkedInError("The image must be under 1.5 MB.")
+        ):
             result = linkedin_image.render_post(self.table, doc["postId"], generate=self._generated())
         self.assertFalse(result["ok"])
         failed = linkedin_store.get_post(self.table, doc["postId"])
@@ -2046,9 +2109,7 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertEqual(calls, [1, 1])
 
     def test_omitting_images_enabled_keeps_the_stored_value(self) -> None:
-        saved = linkedin_store.save_settings(
-            self.table, {**linkedin_store.default_settings(), "imagesEnabled": False}
-        )
+        saved = linkedin_store.save_settings(self.table, {**linkedin_store.default_settings(), "imagesEnabled": False})
         self.assertFalse(saved["imagesEnabled"])
         partial = {key: value for key, value in saved.items() if key != "imagesEnabled"}
         again = linkedin_store.save_settings(self.table, partial)
