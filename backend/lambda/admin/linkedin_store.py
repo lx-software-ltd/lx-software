@@ -91,6 +91,11 @@ PILLARS: tuple[dict[str, str], ...] = (
         "label": "Questions I get asked",
         "brief": "A question a colleague or founder asked, and the answer you give.",
     },
+    {
+        "id": "personal",
+        "label": "Personal",
+        "brief": "A personal story or reflection that still leaves a useful takeaway.",
+    },
 )
 
 _EMAIL = re.compile(r"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}", re.I)
@@ -263,11 +268,7 @@ def _new_id(prefix: str) -> str:
 
 
 def _strip(item: dict[str, Any]) -> dict[str, Any]:
-    return {
-        k: v
-        for k, v in item.items()
-        if k not in ("pk", "sk", "gsi1pk", "gsi1sk", "expiresAt")
-    }
+    return {k: v for k, v in item.items() if k not in ("pk", "sk", "gsi1pk", "gsi1sk", "expiresAt")}
 
 
 def _put(table: Any, item: dict[str, Any]) -> None:
@@ -1206,7 +1207,9 @@ def get_job(table: Any, job_id: str) -> dict[str, Any] | None:
     return _get(table, f"LINKEDIN#job#{job_id}")
 
 
-def expire_character_job(table: Any, job: dict[str, Any] | None, *, now: datetime | None = None) -> dict[str, Any] | None:
+def expire_character_job(
+    table: Any, job: dict[str, Any] | None, *, now: datetime | None = None
+) -> dict[str, Any] | None:
     """Mark a character draw that outlived the Lambda as failed, so the row does not stay running."""
     if not isinstance(job, dict) or str(job.get("kind") or "") != "character":
         return job

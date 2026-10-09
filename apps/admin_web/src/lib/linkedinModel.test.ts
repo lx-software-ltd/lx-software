@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_LINKEDIN_SETTINGS,
   DEFAULT_IMAGE_MODEL,
+  LINKEDIN_PILLARS,
   RECOMMENDED_IMAGE_STYLE,
   RECOMMENDED_LINKEDIN_VOICE,
   STYLE_EXAMPLE_MAX,
@@ -11,7 +12,16 @@ import {
   linkedInAccessState,
   linkedInShareUrl,
   nextSlots,
+  pillarLabel,
 } from "./linkedinModel";
+
+describe("linkedin pillars", () => {
+  it("includes Personal", () => {
+    expect(LINKEDIN_PILLARS.some((row) => row.id === "personal")).toBe(true);
+    expect(pillarLabel("personal")).toBe("Personal");
+    expect(DEFAULT_LINKEDIN_SETTINGS.pillars).toContain("personal");
+  });
+});
 
 describe("linkedin slots", () => {
   it("uses 08:30 HKT on Tuesday and Thursday", () => {

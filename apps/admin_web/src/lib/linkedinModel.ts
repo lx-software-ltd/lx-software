@@ -30,6 +30,7 @@ export const LINKEDIN_PILLARS = [
   { id: "ai-practice", label: "AI in practice" },
   { id: "delivery", label: "Lessons from delivery" },
   { id: "questions", label: "Questions I get asked" },
+  { id: "personal", label: "Personal" },
 ] as const;
 
 export const WEEKDAY_OPTIONS = [

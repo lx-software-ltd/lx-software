@@ -3,6 +3,7 @@ import { json, parseBody, state } from "./context";
 import {
   DEFAULT_IMAGE_MODEL,
   IMAGE_MODEL_ALTERNATIVE,
+  LINKEDIN_PILLARS,
   RECOMMENDED_IMAGE_STYLE,
   RECOMMENDED_LINKEDIN_VOICE,
   STYLE_EXAMPLE_MAX,
@@ -52,14 +53,7 @@ function overview() {
     enabled: true,
     publishEnabled: false,
     settings: state.linkedin.settings,
-    pillars: [
-      { id: "architecture", label: "Architecture decisions" },
-      { id: "leadership", label: "Engineering leadership" },
-      { id: "platforms", label: "Cloud and platforms" },
-      { id: "ai-practice", label: "AI in practice" },
-      { id: "delivery", label: "Lessons from delivery" },
-      { id: "questions", label: "Questions I get asked" },
-    ],
+    pillars: LINKEDIN_PILLARS.map((row) => ({ id: row.id, label: row.label })),
     connection: state.linkedin.connection,
     counts: {
       drafted: posts.filter((row) => row.status === "drafted").length,
