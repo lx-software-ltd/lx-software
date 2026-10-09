@@ -1,6 +1,6 @@
 # Plan: show custom MAIL FROM on the board mail health strip
 
-**Status**: Draft
+**Status**: Done
 **Zone**: yellow
 
 ## Goal
