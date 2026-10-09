@@ -932,20 +932,22 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
     week = [row for row in reports if _in_window(row, moment, 7)]
     month = [row for row in reports if _in_window(row, moment, 30)]
     sources = _merge_sources(week)
-    # IP findings use last-24h intake (same window as the digest line).
-    day_sources = _merge_sources(day)
+    # Own-sender findings need a failure in the last-24h intake; unknown sources accumulate over the week.
+    day_by_ip = {str(row.get("sourceIp") or ""): row for row in _merge_sources(day)}
     findings: list[dict[str, Any]] = []
     try:
         spoof_at = int(cfg.get("spoofAlertCount") or 20)
     except (TypeError, ValueError):
         spoof_at = 20
     if enabled:
-        for source in day_sources:
-            domains = _auth_domains(source)
+        for source in sources:
             sender = _own_sender(source, known)
+            ip = str(source.get("sourceIp") or "")
+            if sender:
+                source = day_by_ip.get(ip) or _empty_source(ip)
+            domains = _auth_domains(source)
             both = int(source.get("bothFail") or 0)
             bad_disp = int(source.get("quarantine") or 0) + int(source.get("reject") or 0)
-            ip = str(source.get("sourceIp") or "")
             evidence = {
                 "sourceIp": ip,
                 "count": int(source.get("count") or 0),
@@ -960,10 +962,7 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
             if sender and (both or bad_disp):
                 quarantine = int(source.get("quarantine") or 0)
                 reject = int(source.get("reject") or 0)
-                evidence["sender"] = sender
-                evidence["bothFail"] = both
-                evidence["quarantine"] = quarantine
-                evidence["reject"] = reject
+                evidence.update({"sender": sender, "bothFail": both, "quarantine": quarantine, "reject": reject})
                 findings.append(
                     {
                         "id": "own_sender_failing",
