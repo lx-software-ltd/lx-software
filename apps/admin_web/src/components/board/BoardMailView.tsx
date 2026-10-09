@@ -127,12 +127,23 @@ function SendHealthStrip({
   const selfTest = useBoardMailSelfTest();
   if (!status.sendEnabled) return null;
   const dkim = health?.dkimStatus ?? null;
+  const mailFrom = health?.mailFromStatus ?? null;
+  const mailFromDetail = health
+    ? health.mailFromDomain
+      ? `${health.mailFromDomain}${mailFrom ? ` ${mailFrom}` : ""}`
+      : mailFrom || "not set"
+    : null;
   return (
     <div className="border rounded p-2 mb-3 small">
       <div className="d-flex flex-wrap align-items-center gap-2">
         <span className="text-muted">SES:</span>
         {healthBadge("domain verified", health ? health.identityVerified : null)}
         {healthBadge("DKIM", health ? (dkim === "SUCCESS" ? true : dkim ? false : null) : null, dkim)}
+        {healthBadge(
+          "MAIL FROM",
+          health ? (mailFrom === "SUCCESS" ? true : mailFrom === "FAILED" ? false : null) : null,
+          mailFromDetail,
+        )}
         {healthBadge(
           "production access",
           health ? health.productionAccess : null,
@@ -214,7 +225,11 @@ export function BoardMailView({ status, focusThreadId, onFocusConsumed, errorTex
   const totalIndexed = payload?.status.threadCount ?? status.threadCount;
   const health = payload?.status.sendHealth;
   const sendHealthy =
-    !!health && health.identityVerified === true && health.productionAccess !== false && health.errors.length === 0;
+    !!health &&
+    health.identityVerified === true &&
+    health.productionAccess !== false &&
+    health.mailFromStatus !== "FAILED" &&
+    health.errors.length === 0;
 
   return (
     <div className="card shadow-sm mb-4">

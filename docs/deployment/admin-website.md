@@ -1014,10 +1014,12 @@ its bucket / role / KMS policies must allow the shared-set SourceArn
 5. **Settings → Tools & permissions → Recipient allow-list**
    (`@siutindei.com`, vendors, WhatsApp numbers).
 6. **Mail → Send test email**: the header shows SES `GetEmailIdentity` /
-   `GetAccount` status (cached 10 min); one message goes from `hello@` to
+   `GetAccount` status (cached 10 min), including the custom MAIL FROM
+   domain and `MailFromDomainStatus`. One message goes from `hello@` to
    your sign-in address. A refusal shows the full SES error inline and as
    `board_mail_send_failed` in CloudWatch. Do this before asking a persona
-   to reply.
+   to reply. `SUCCESS` means SPF can align with the header From; `FAILED`
+   or a missing domain leaves the envelope on `*.amazonses.com`.
 
 **Outreach sending domain (`partners.siutindei.com`):**
 

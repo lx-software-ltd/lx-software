@@ -477,6 +477,8 @@ export const boardOverviewFixture: BoardOverview = {
       checkedAt: "2026-09-11T08:00:00.000Z",
       identityVerified: true,
       dkimStatus: "SUCCESS",
+      mailFromDomain: "mail.siutindei.com",
+      mailFromStatus: "SUCCESS",
       productionAccess: true,
       dailyQuota: 50000,
       sentLast24h: 12,
