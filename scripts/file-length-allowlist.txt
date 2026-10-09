@@ -44,6 +44,6 @@ backend/lambda/admin/finance_store.py 2575
 backend/lambda/admin/linkedin.py 1009
 backend/lambda/admin/linkedin_draft.py 1009
 backend/lambda/admin/linkedin_image.py 691
-backend/lambda/admin/linkedin_store.py 1822
+backend/lambda/admin/linkedin_store.py 1825
 backend/lambda/admin/openrouter_client.py 1065
 backend/lambda/admin/openrouter_usage_pull.py 586
