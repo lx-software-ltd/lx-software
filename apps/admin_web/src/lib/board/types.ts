@@ -640,6 +640,8 @@ export type BoardMailSendHealth = {
   readonly checkedAt: string;
   readonly identityVerified: boolean | null;
   readonly dkimStatus: string | null;
+  readonly mailFromDomain: string | null;
+  readonly mailFromStatus: string | null;
   readonly productionAccess: boolean | null;
   readonly dailyQuota?: number;
   readonly sentLast24h?: number;

@@ -7,8 +7,8 @@ apps/admin_web/src/components/FinanceInvestmentsPanel.tsx 1082
 apps/admin_web/src/components/FinanceLedgerSheetPanel.tsx 951
 apps/admin_web/src/components/FinanceSavingsAndPensionPanels.tsx 987
 apps/admin_web/src/components/HouseStatementPanel.tsx 1090
-apps/admin_web/src/lib/board/types.ts 1358
-apps/admin_web/src/lib/mock/fixtures.ts 1284
+apps/admin_web/src/lib/board/types.ts 1360
+apps/admin_web/src/lib/mock/fixtures.ts 1286
 apps/admin_web/src/lib/mock/routes/board.ts 1125
 backend/lambda/admin/bank_sync.py 812
 backend/lambda/admin/board_catalog.py 649
@@ -21,7 +21,7 @@ backend/lambda/admin/board_dmarc.py 1210
 backend/lambda/admin/board_duties.py 729
 backend/lambda/admin/board_github.py 983
 backend/lambda/admin/board_holds.py 644
-backend/lambda/admin/board_mail.py 1431
+backend/lambda/admin/board_mail.py 1436
 backend/lambda/admin/board_meeting.py 1243
 backend/lambda/admin/board_meta.py 1302
 backend/lambda/admin/board_newsletter.py 538

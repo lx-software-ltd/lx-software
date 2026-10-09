@@ -1214,6 +1214,8 @@ def sending_health(*, force: bool = False) -> dict[str, Any]:
         "checkedAt": checked_at,
         "identityVerified": None,
         "dkimStatus": None,
+        "mailFromDomain": None,
+        "mailFromStatus": None,
         "productionAccess": None,
         "errors": [],
     }
@@ -1227,6 +1229,9 @@ def sending_health(*, force: bool = False) -> dict[str, Any]:
         out["identityVerified"] = bool(ident.get("VerifiedForSendingStatus"))
         dkim = ident.get("DkimAttributes") or {}
         out["dkimStatus"] = str(dkim.get("Status") or "") or None
+        mail_from = ident.get("MailFromAttributes") if isinstance(ident.get("MailFromAttributes"), dict) else {}
+        out["mailFromDomain"] = str(mail_from.get("MailFromDomain") or "") or None
+        out["mailFromStatus"] = str(mail_from.get("MailFromDomainStatus") or "") or None
     except Exception as exc:
         code, detail, _ = describe_ses_error(exc)
         out["errors"].append(f"GetEmailIdentity: {code}: {detail[:200]}")

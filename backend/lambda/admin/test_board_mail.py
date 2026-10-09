@@ -88,6 +88,10 @@ class FakeSES:
         self.identity: dict[str, Any] | Exception = {
             "VerifiedForSendingStatus": True,
             "DkimAttributes": {"Status": "SUCCESS"},
+            "MailFromAttributes": {
+                "MailFromDomain": "mail.siutindei.com",
+                "MailFromDomainStatus": "SUCCESS",
+            },
         }
         self.account: dict[str, Any] | Exception = {
             "ProductionAccessEnabled": True,
@@ -337,6 +341,8 @@ class TestMailRoutes(MailTestCase):
         health = body["status"]["sendHealth"]
         self.assertTrue(health["identityVerified"])
         self.assertEqual(health["dkimStatus"], "SUCCESS")
+        self.assertEqual(health["mailFromDomain"], "mail.siutindei.com")
+        self.assertEqual(health["mailFromStatus"], "SUCCESS")
         self.assertTrue(health["productionAccess"])
         self.assertEqual(health["dailyQuota"], 50000)
         self.assertEqual(health["errors"], [])
@@ -361,6 +367,8 @@ class TestMailRoutes(MailTestCase):
         health = board_mail.sending_health(force=True)
         self.assertFalse(health["identityVerified"])
         self.assertEqual(health["dkimStatus"], "PENDING")
+        self.assertIsNone(health["mailFromDomain"])
+        self.assertIsNone(health["mailFromStatus"])
         self.assertIsNone(health["productionAccess"])
         self.assertEqual(len(health["errors"]), 1)
         self.assertIn("GetAccount: AccessDeniedException", health["errors"][0])
