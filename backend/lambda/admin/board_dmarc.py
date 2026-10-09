@@ -932,6 +932,8 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
     week = [row for row in reports if _in_window(row, moment, 7)]
     month = [row for row in reports if _in_window(row, moment, 30)]
     sources = _merge_sources(week)
+    # Own-sender findings need a failure in the last-24h intake; unknown sources accumulate over the week.
+    day_by_ip = {str(row.get("sourceIp") or ""): row for row in _merge_sources(day)}
     findings: list[dict[str, Any]] = []
     try:
         spoof_at = int(cfg.get("spoofAlertCount") or 20)
@@ -939,11 +941,13 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
         spoof_at = 20
     if enabled:
         for source in sources:
-            domains = _auth_domains(source)
             sender = _own_sender(source, known)
+            ip = str(source.get("sourceIp") or "")
+            if sender:
+                source = day_by_ip.get(ip) or _empty_source(ip)
+            domains = _auth_domains(source)
             both = int(source.get("bothFail") or 0)
             bad_disp = int(source.get("quarantine") or 0) + int(source.get("reject") or 0)
-            ip = str(source.get("sourceIp") or "")
             evidence = {
                 "sourceIp": ip,
                 "count": int(source.get("count") or 0),
@@ -958,13 +962,7 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
             if sender and (both or bad_disp):
                 quarantine = int(source.get("quarantine") or 0)
                 reject = int(source.get("reject") or 0)
-                evidence["sender"] = sender
-                evidence["bothFail"] = both
-                evidence["quarantine"] = quarantine
-                evidence["reject"] = reject
-                # Total count mixes healthy SES rows (DKIM pass, SPF unaligned) with
-                # the failing subset; name the quarantined/rejected/both-fail totals
-                # so a 1-of-N quarantine is not reported as N broken messages.
+                evidence.update({"sender": sender, "bothFail": both, "quarantine": quarantine, "reject": reject})
                 findings.append(
                     {
                         "id": "own_sender_failing",

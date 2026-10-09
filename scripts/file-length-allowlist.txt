@@ -17,7 +17,7 @@ backend/lambda/admin/board_catalog_candidates.py 727
 backend/lambda/admin/board_catalog_import.py 2114
 backend/lambda/admin/board_code.py 2812
 backend/lambda/admin/board_content.py 875
-backend/lambda/admin/board_dmarc.py 1210
+backend/lambda/admin/board_dmarc.py 1208
 backend/lambda/admin/board_duties.py 729
 backend/lambda/admin/board_github.py 983
 backend/lambda/admin/board_holds.py 644
