@@ -334,6 +334,32 @@ class DmarcEvaluateTests(BoardTestCase):
         self.assertEqual(rows[0]["evidence"]["quarantine"], 1)
         self.assertEqual(rows[0]["evidence"]["count"], 17)
 
+    def test_own_sender_finding_uses_last_24h_not_week(self) -> None:
+        """A quarantine from an older report must not keep the daily digest red all week."""
+        old_end = int((datetime.now(timezone.utc) - timedelta(days=2)).timestamp())
+        stale = board_dmarc.parse_aggregate_xml(
+            _xml(
+                report_id="old-bad",
+                dkim="fail",
+                spf="fail",
+                disposition="quarantine",
+                dkim_domain="siutindei.com",
+                spf_domain="ap-southeast-1.amazonses.com",
+                source_ip="23.251.232.12",
+                count=1,
+                begin=old_end - 86400,
+                end=old_end,
+            )
+        )
+        assert stale is not None
+        stale["receivedAt"] = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with patch.object(board_dmarc, "list_reports", return_value=[stale]):
+            summary = board_dmarc.evaluate(self.table, self.settings)
+        self.assertEqual(self._findings(summary, "own_sender_failing"), [])
+        self.assertIn("No problems.", summary["line"])
+        # Week sources still retain the IP for the summary tool.
+        self.assertTrue(any(row.get("sourceIp") == "23.251.232.12" for row in summary.get("sources") or []))
+
     def test_unknown_source_severity_follows_the_daily_count(self) -> None:
         self._ingest(_xml(report_id="spoof-low", count=14, source_ip="203.0.113.9"))
         low = board_dmarc.evaluate(self.table, self.settings)

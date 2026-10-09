@@ -932,13 +932,15 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
     week = [row for row in reports if _in_window(row, moment, 7)]
     month = [row for row in reports if _in_window(row, moment, 30)]
     sources = _merge_sources(week)
+    # IP findings use last-24h intake (same window as the digest line).
+    day_sources = _merge_sources(day)
     findings: list[dict[str, Any]] = []
     try:
         spoof_at = int(cfg.get("spoofAlertCount") or 20)
     except (TypeError, ValueError):
         spoof_at = 20
     if enabled:
-        for source in sources:
+        for source in day_sources:
             domains = _auth_domains(source)
             sender = _own_sender(source, known)
             both = int(source.get("bothFail") or 0)
@@ -962,9 +964,6 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
                 evidence["bothFail"] = both
                 evidence["quarantine"] = quarantine
                 evidence["reject"] = reject
-                # Total count mixes healthy SES rows (DKIM pass, SPF unaligned) with
-                # the failing subset; name the quarantined/rejected/both-fail totals
-                # so a 1-of-N quarantine is not reported as N broken messages.
                 findings.append(
                     {
                         "id": "own_sender_failing",
