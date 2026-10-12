@@ -624,6 +624,72 @@ still needs `place_id` / status / closure handling (out of this stack).
 The product side still needs the `importer` group, the #502 fields and
 `dry_run` on `POST /admin/imports` (deployment doc).
 
+#### 6.4.1 Neighbourhood-first go-live (focus areas)
+
+The owner launches one neighbourhood at a time — Stanley, then the rest
+of Southern, then Hong Kong Island, then everywhere. `board_catalog_focus.py`
+is the one place that knows the plan, and today it holds the data as Python
+constants (the contract is unchanged): `AREAS` lists neighbourhoods (`id`,
+`name`, `nameZh`, `district`, centre `lat` / `lng`, `radius` in metres,
+`aliases` such as Chung Hom Kok / Tai Tam for Stanley) for the HK Island
+districts; `FOCUS_AREAS_DEFAULT` is `("stanley",)`; `DEFAULT_FOCUS_DISTRICTS`
+is the go-live order (Southern, Central and Western, Wan Chai, Eastern —
+the contract `catalog.districts` rotation follows after it);
+`FOCUS_QUERIES` are the Places searches; `FOCUS_KIND_CATEGORY` maps the
+`places_class` / `places_sport` kinds those searches produce; `MANUAL_SOURCE`
+names the owner-added bulk source. Moving these into
+`contracts/board-staff.json` is a separate (red-zone) decision.
+`settings.catalog.focusAreas` (area ids) and `focusDistricts` (18-district
+names) move the focus: an absent key means the default, `[]` means no focus
+(`focusDistricts: []` keeps the contract rotation order), `null` on
+`PUT /settings` removes the key. Unknown ids are a 400 on PUT and dropped on
+load. Membership (auto-approve, launch-gate bypass, discovery sweep) comes
+from the focus areas plus an explicit `focusDistricts`; the default district
+order only changes rotation order. Effects when a focus is set:
+
+- **Sheets** — `create_next` issues one neighbourhood sheet per focus area
+  first (`eventRef.areaId`, id `catalog:southern:stanley`, brief prefixed
+  `CATALOG MICRO-BATCH Stanley (Southern)` plus a `FOCUS —` paragraph
+  naming the aliases), then the district sheets in focus order. Enrich
+  walks districts in the same order. `catalog_coverage.nextDistrict` reads
+  `Stanley (Southern)` and the daily review Catalog line carries
+  `go-live focus …`.
+- **Discovery** — `discover_places` runs `discover_focus_areas` before
+  the 3-district rotation: `board_places.discover_area` sends each
+  `FOCUS_QUERIES` text query (kids classes, art, music, dance,
+  drama, STEM, language, playgroup, swimming, sports club, martial arts,
+  gymnastics, tennis, indoor playground, playground, library) with a
+  `locationBias` circle at the area centre and no `includedType`, cached
+  for the Places TTL (≈ 17 × USD 0.035 per area per month). Places now
+  return `location`, so every candidate carries `lat` / `lng`. A result
+  whose address or point is outside the area (a Causeway Bay studio for
+  "kids dance class Stanley") is dropped (`outside` in the log).
+- **Candidates** — `upsert_candidate` stamps `area` (stored id, then
+  address / name text incl. Chinese and aliases, then the lat/lng circle;
+  `Stanley Street` in Central is not Stanley, and an area whose district
+  disagrees with the row's district is ignored). Inside a focus area a
+  Places / competitor / manual row auto-approves with a non-social website
+  plus an address — hours are optional there (`focus_auto_approvable`).
+  `GET …/catalog/candidates?area=stanley` filters by area.
+- **Manual source** — `POST …/catalog/candidates` (key-allowed with
+  `allowWrite`, not owner-only) queues one hand-sourced organisation:
+  `nameEn` plus a `district`, an `area` id, or an address that names one;
+  optional `nameZh`, `addressEn`, `lat` / `lng`, `phone`, `openingHours`,
+  `officialUrl` (http/https), `category` (a product category or a sheet
+  `type`), `descriptionEn` / `descriptionZh`, `sourceUrl`, `note`, and
+  `status: approved` to skip the owner queue. `sourceId` is
+  `manual:<hash of name|district>` so a repeat POST updates the row; a
+  name already live in the product returns `200 {skipped}`. `manual` is a
+  bulk source like `places` (Preview / Import on Progress).
+- **Bulk import** — `_approved_for_source` orders focus-area rows, then
+  focus-district rows, then the rest, so a capped import spends its room
+  on the neighbourhood. `maybe_queue_auto_imports` schedules a
+  `catalog_import` hold for the source with the most focus-area approved
+  rows (limit = that count) even when the launch-target room is 0 and
+  below the 50-row / 24 h gate. `GET …/catalog/sources` returns
+  `focus {label, areas, districts, new, approved, imported, bySource}`;
+  Progress shows it under the bulk sources heading.
+
 ## 7. Staff (background tasks)
 
 `contracts/board-staff.json` defines fifteen seats, each with
