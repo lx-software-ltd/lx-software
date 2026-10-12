@@ -884,6 +884,24 @@ def _build_line(
     return text
 
 
+def _as_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _gap_rank(finding: dict[str, Any]) -> tuple[int, int]:
+    """Prefer the last-24h source with the most DMARC failures, then the most messages."""
+    evidence = finding.get("evidence") if isinstance(finding.get("evidence"), dict) else {}
+    incident = (
+        _as_int(evidence.get("quarantine"))
+        + _as_int(evidence.get("reject"))
+        + _as_int(evidence.get("bothFail"))
+    )
+    return (incident, _as_int(evidence.get("count")))
+
+
 def _dmarc_gaps(finding: dict[str, Any]) -> list[tuple[str, str]]:
     """Config-gap id and reason for one finding. Empty when the finding is not a gap."""
     kind = finding.get("kind")
@@ -894,10 +912,10 @@ def _dmarc_gaps(finding: dict[str, Any]) -> list[tuple[str, str]]:
         reason = (
             f"DMARC failure for known sender {sender} at {ip}: "
             f"dkim {evidence.get('dkim') or 'none'}, spf {evidence.get('spf') or 'none'}, "
-            f"{int(evidence.get('quarantine') or 0)} quarantined, "
-            f"{int(evidence.get('reject') or 0)} rejected, "
-            f"{int(evidence.get('bothFail') or 0)} both-fail "
-            f"of {int(evidence.get('count') or 0)} from this IP."
+            f"{_as_int(evidence.get('quarantine'))} quarantined, "
+            f"{_as_int(evidence.get('reject'))} rejected, "
+            f"{_as_int(evidence.get('bothFail'))} both-fail "
+            f"of {_as_int(evidence.get('count'))} from this IP."
         )
         return [(f"dmarc:{sender}", reason)]
     if kind == "unknown_source_failing" and finding.get("severity") != "info":
@@ -924,11 +942,14 @@ def _dmarc_gaps(finding: dict[str, Any]) -> list[tuple[str, str]]:
 def _note_gaps(table: Any, findings: list[dict[str, Any]]) -> None:
     import board_duties
 
-    active: dict[str, str] = {}
+    active: dict[str, tuple[tuple[int, int], str]] = {}
     for finding in findings:
+        rank = _gap_rank(finding)
         for gap_id, reason in _dmarc_gaps(finding):
-            active.setdefault(gap_id, reason)
-    for gap_id, reason in active.items():
+            current = active.get(gap_id)
+            if current is None or rank > current[0]:
+                active[gap_id] = (rank, reason)
+    for gap_id, (_rank, reason) in active.items():
         board_duties.note_config_gap(table, gap_id=gap_id, reason=reason)
     stale: set[str] = set()
     for row in board_duties.list_config_gaps(table):
@@ -1172,6 +1193,27 @@ def read_summary(table: Any) -> dict[str, Any] | None:
     hit = board_store.get_cache(table, SUMMARY_CACHE)
     payload = hit.get("payload") if isinstance(hit, dict) else None
     return payload if isinstance(payload, dict) else None
+
+
+def summary_gap_ids(table: Any) -> set[str] | None:
+    """Gap ids a fresh enabled summary still reports.
+
+    None means the caller must not hide cached ``dmarc:`` rows: the summary is
+    missing, stale, disabled, or long enough that a real finding may have been capped.
+    """
+    payload = read_summary(table)
+    if not isinstance(payload, dict) or not payload.get("generatedAt"):
+        return None
+    if payload.get("enabled") is False or summary_is_stale(payload):
+        return None
+    findings = [row for row in (payload.get("findings") or []) if isinstance(row, dict)]
+    if len(findings) >= SUMMARY_FINDING_CAP:
+        return None
+    active: set[str] = set()
+    for finding in findings:
+        for gap_id, _reason in _dmarc_gaps(finding):
+            active.add(gap_id)
+    return active
 
 
 def summary_is_stale(payload: dict[str, Any], *, now: datetime | None = None) -> bool:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import unittest
-from datetime import timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import patch
 
@@ -92,7 +92,88 @@ class ReviewCompileTests(BoardTestCase):
         self.assertFalse(any(str(row.get("gapId") or "") == "dmarc:siutindei.com" for row in live))
         kept = board_store.get_review_snapshot(self.table, date)
         self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in kept["configGaps"]))
+        self.assertIn("dmarc:siutindei.com", kept["digestHtml"])
+        self.assertNotIn("dmarc:siutindei.com", body["review"]["digestHtml"])
+
+    def test_review_get_keeps_a_past_day(self) -> None:
+        yesterday = (date.fromisoformat(board_hk.today_hkt()) - timedelta(days=1)).isoformat()
+        board_store.put_review_snapshot(
+            self.table,
+            yesterday,
+            {
+                "date": yesterday,
+                "configGaps": [{"gapId": "dmarc:siutindei.com", "week": "2026-W40", "reason": "old", "at": "2026-10-01T00:00:00Z"}],
+                "digestHtml": "dmarc:siutindei.com",
+            },
+        )
+        status, body = self.call("/siu-tin-dei/board/review", query=f"date={yesterday}")
+        self.assertEqual(status, 200)
+        self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
         self.assertIn("dmarc:siutindei.com", body["review"]["digestHtml"])
+
+    def test_review_get_keeps_compiled_gaps_when_the_cache_read_fails(self) -> None:
+        date = board_hk.today_hkt()
+        board_duties.note_config_gap(self.table, gap_id="dmarc:siutindei.com", reason="stored")
+        with patch.object(board_github, "_request", side_effect=AssertionError("compile must not call GitHub")):
+            board_review.compile(self.table, self.settings, date)
+        with patch.object(board_duties, "list_config_gaps", side_effect=RuntimeError("ddb")):
+            status, body = self.call("/siu-tin-dei/board/review")
+        self.assertEqual(status, 200)
+        self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
+        self.assertIn("dmarc:siutindei.com", body["review"]["digestHtml"])
+
+    def _summary(self, *, generated_at: str, findings: list[dict[str, Any]], enabled: bool = True) -> None:
+        board_store.put_cache(
+            self.table,
+            "dmarc:summary",
+            {"generatedAt": generated_at, "enabled": enabled, "findings": findings, "line": "DMARC summary."},
+        )
+
+    def test_fresh_summary_hides_a_resolved_dmarc_gap_without_deleting_it(self) -> None:
+        date = board_hk.today_hkt()
+        board_duties.note_config_gap(self.table, gap_id="dmarc:siutindei.com", reason="stored")
+        with patch.object(board_github, "_request", side_effect=AssertionError("compile must not call GitHub")):
+            board_review.compile(self.table, self.settings, date)
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self._summary(generated_at=now, findings=[])
+        status, body = self.call("/siu-tin-dei/board/review")
+        self.assertEqual(status, 200)
+        self.assertFalse(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
+        self.assertNotIn("dmarc:siutindei.com", body["review"]["digestHtml"])
+        self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in board_duties.list_config_gaps(self.table)))
+        kept = board_store.get_review_snapshot(self.table, date)
+        self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in kept["configGaps"]))
+
+    def test_stale_or_disabled_summary_does_not_hide_a_dmarc_gap(self) -> None:
+        date = board_hk.today_hkt()
+        board_duties.note_config_gap(self.table, gap_id="dmarc:siutindei.com", reason="stored")
+        with patch.object(board_github, "_request", side_effect=AssertionError("compile must not call GitHub")):
+            board_review.compile(self.table, self.settings, date)
+        old = (datetime.now(timezone.utc) - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self._summary(generated_at=old, findings=[])
+        status, body = self.call("/siu-tin-dei/board/review")
+        self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self._summary(generated_at=now, findings=[], enabled=False)
+        status, body = self.call("/siu-tin-dei/board/review")
+        self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
+        self._summary(
+            generated_at=now,
+            findings=[
+                {
+                    "kind": "own_sender_failing",
+                    "evidence": {"sender": "siutindei.com", "sourceIp": "23.251.232.12", "dkim": "fail", "spf": "fail", "count": 1, "quarantine": 1, "reject": 0, "bothFail": 1},
+                }
+            ],
+        )
+        status, body = self.call("/siu-tin-dei/board/review")
+        self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
+        self._summary(
+            generated_at=now,
+            findings=[{"kind": "policy_drift", "evidence": {"domain": f"d{i}.example"}} for i in range(30)],
+        )
+        status, body = self.call("/siu-tin-dei/board/review")
+        self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
 
     def test_compile_uses_cached_staging_preview(self) -> None:
         board_store.put_cache(

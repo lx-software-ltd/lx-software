@@ -574,25 +574,39 @@ def note_config_gap(table: Any, *, gap_id: str, reason: str) -> dict[str, Any] |
     """Record an unconfigured integration on the daily review — no staff task.
 
     The same gap in the same ISO week refreshes ``reason`` and does not write another owner update.
+    Older weeks of that same gap id are dropped, so the review shows one row.
     """
     week = _iso_week_id()
     text = str(reason or "")[:400]
     items = list_config_gaps(table)
+    current: dict[str, Any] | None = None
+    others: list[dict[str, Any]] = []
+    dropped = False
     for row in items:
-        if str(row.get("gapId") or "") == gap_id and str(row.get("week") or "") == week:
-            if str(row.get("reason") or "") != text:
-                row["reason"] = text
-                row["at"] = board_store.now_iso()
-                board_store.put_cache(table, _CONFIG_GAPS_CACHE, {"items": items[-20:]}, ttl_seconds=40 * 86400)
-            return None
+        if str(row.get("gapId") or "") != gap_id:
+            others.append(row)
+            continue
+        if current is None and str(row.get("week") or "") == week:
+            current = row
+        else:
+            dropped = True
+    if current is not None:
+        changed = str(current.get("reason") or "") != text
+        if changed:
+            current["reason"] = text
+            current["at"] = board_store.now_iso()
+        if changed or dropped:
+            kept = others + [current]
+            board_store.put_cache(table, _CONFIG_GAPS_CACHE, {"items": kept[-20:]}, ttl_seconds=40 * 86400)
+        return None
     row = {
         "gapId": gap_id,
         "week": week,
         "reason": text,
         "at": board_store.now_iso(),
     }
-    items.append(row)
-    board_store.put_cache(table, _CONFIG_GAPS_CACHE, {"items": items[-20:]}, ttl_seconds=40 * 86400)
+    others.append(row)
+    board_store.put_cache(table, _CONFIG_GAPS_CACHE, {"items": others[-20:]}, ttl_seconds=40 * 86400)
     try:
         board_store.add_update(table, text=f"CONFIG {gap_id} — {reason}"[:400], owner_sub=None)
     except Exception as exc:

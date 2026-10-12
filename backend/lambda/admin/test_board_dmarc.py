@@ -255,14 +255,20 @@ class DmarcEvaluateTests(BoardTestCase):
         return [row for row in summary["findings"] if row["kind"] == kind]
 
     def _age_reports(self, *, days: int) -> None:
+        self._age_report_ids(None, days=days)
+
+    def _age_report_ids(self, report_ids: set[str] | None, *, days: int) -> None:
         old_at = datetime.now(timezone.utc) - timedelta(days=days)
         old = old_at.strftime("%Y-%m-%dT%H:%M:%SZ")
         old_end = int(old_at.timestamp())
         for item in self.table.items.values():
-            if str(item.get("sk", "")).startswith("REPORT#"):
-                item["receivedAt"] = old
-                item["dateEnd"] = old
-                item["dateEndUnix"] = old_end
+            if not str(item.get("sk", "")).startswith("REPORT#"):
+                continue
+            if report_ids is not None and str(item.get("reportId") or "") not in report_ids:
+                continue
+            item["receivedAt"] = old
+            item["dateEnd"] = old
+            item["dateEndUnix"] = old_end
 
     def _gap(self, gap_id: str) -> dict[str, Any] | None:
         for row in board_duties.list_config_gaps(self.table):
@@ -362,6 +368,55 @@ class DmarcEvaluateTests(BoardTestCase):
             if str(row.get("text") or "").startswith("CONFIG dmarc:siutindei.com")
         ]
         self.assertEqual(len(updates), 1)
+
+    def test_gap_reason_uses_the_last_24h_failure_not_the_week_volume(self) -> None:
+        self._ingest(
+            _xml(
+                report_id="week-heavy",
+                dkim="fail",
+                spf="fail",
+                disposition="quarantine",
+                dkim_domain="siutindei.com",
+                spf_domain="siutindei.com",
+                header_from="siutindei.com",
+                source_ip="23.251.232.12",
+                count=20,
+            )
+        )
+        self._age_report_ids({"week-heavy"}, days=2)
+        self._ingest(
+            _xml(
+                report_id="today-small",
+                dkim="fail",
+                spf="fail",
+                disposition="quarantine",
+                dkim_domain="siutindei.com",
+                spf_domain="siutindei.com",
+                header_from="siutindei.com",
+                source_ip="23.251.232.12",
+                count=1,
+            )
+        )
+        self._ingest(
+            _xml(
+                report_id="today-busy",
+                dkim="fail",
+                spf="fail",
+                disposition="reject",
+                dkim_domain="siutindei.com",
+                spf_domain="siutindei.com",
+                header_from="siutindei.com",
+                source_ip="23.251.232.13",
+                count=4,
+            )
+        )
+        board_dmarc.evaluate(self.table, self.settings)
+        gap = self._gap("dmarc:siutindei.com")
+        self.assertIsNotNone(gap)
+        assert gap is not None
+        self.assertIn("23.251.232.13", gap["reason"])
+        self.assertIn("4 rejected", gap["reason"])
+        self.assertNotIn("23.251.232.12", gap["reason"])
 
     def test_disabled_check_keeps_a_stale_dmarc_gap(self) -> None:
         self._ingest(

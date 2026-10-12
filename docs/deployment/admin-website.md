@@ -1016,8 +1016,11 @@ its bucket / role / KMS policies must allow the shared-set SourceArn
    is on. `own_sender_failing` needs a quarantine / reject / both-fail in
    that same last-24h intake, so a one-off quarantine on an SES IP does not
    stay on the digest for the rest of the week. The same pass removes the
-   `dmarc:{sender}` row from Unconfigured integrations; the review screen
-   reads that live list, and the 07:15 digest keeps the compile-time list.
+   `dmarc:{sender}` row and keeps one row per gap id. Today's review screen
+   reads that live list, hides a row a fresh summary no longer reports, and
+   keeps the compiled list when the gap read fails or the date is in the
+   past. The stored 07:15 digest is unchanged; its on-screen preview follows
+   the live list.
    Unknown sources still accumulate over 7 days, and one under 5 messages
    stays informational.
    A summary older than 26 hours opens one stale-summary task instead of

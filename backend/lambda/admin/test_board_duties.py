@@ -202,6 +202,19 @@ class DutyRunTests(BoardTestCase):
         self.assertEqual(len(updates), 1)
         self.assertIn("first", updates[0]["text"])
 
+    def test_note_config_gap_collapses_older_weeks(self) -> None:
+        board_duties.note_config_gap(self.table, gap_id="dmarc:example.com", reason="this week")
+        board_duties.note_config_gap(self.table, gap_id="opendata-edb", reason="empty fetch")
+        items = board_duties.list_config_gaps(self.table)
+        items.append({"gapId": "dmarc:example.com", "week": "2020-W01", "reason": "old", "at": "2020-01-01T00:00:00Z"})
+        board_store.put_cache(self.table, "config:gaps", {"items": items}, ttl_seconds=40 * 86400)
+        board_duties.note_config_gap(self.table, gap_id="dmarc:example.com", reason="still this week")
+        rows = [row for row in board_duties.list_config_gaps(self.table) if row.get("gapId") == "dmarc:example.com"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["reason"], "still this week")
+        self.assertNotEqual(rows[0]["week"], "2020-W01")
+        self.assertTrue(any(row.get("gapId") == "opendata-edb" for row in board_duties.list_config_gaps(self.table)))
+
     def test_enrich_pause_is_recorded_on_the_duty(self) -> None:
         now = datetime(2026, 9, 7, 8, 40, tzinfo=MONDAY_HKT)
         _seed_duties_current(self.table, now)
