@@ -90,7 +90,10 @@ describe("BoardCatalogSourcesSection", () => {
     expect(screen.getByLabelText("Source")).toBeInTheDocument();
     expect(screen.getByLabelText("District")).toBeInTheDocument();
     expect(screen.getByText("Example Playhouse")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "More actions" })).toBeInTheDocument();
+    const kebab = screen.getByRole("button", { name: "More actions" });
+    expect(kebab).toBeInTheDocument();
+    expect(kebab).toBeVisible();
+    expect(kebab.closest(".admin-data-table")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Approve Example Playhouse", hidden: true })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Close leftover competitors" })).toBeInTheDocument();
   });

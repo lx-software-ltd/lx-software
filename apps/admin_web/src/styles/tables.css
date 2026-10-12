@@ -286,6 +286,12 @@
   .admin-expand-summary:focus-within .admin-row-actions {
     opacity: 1;
   }
+
+  /* Plain AdminDataTable rows (Progress candidates) are not .admin-expand-summary,
+     so the hover rule above would leave the kebab invisible on a desktop pointer. */
+  .admin-data-table .admin-row-actions {
+    opacity: 1;
+  }
 }
 
 .admin-expand {
