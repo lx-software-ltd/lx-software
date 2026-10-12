@@ -618,7 +618,9 @@ def validate_settings(body: Any, current: dict[str, Any]) -> dict[str, Any]:
     if "catalog" in body:
         if not isinstance(body.get("catalog"), dict):
             raise ValueError("catalog must be an object")
-        out["catalog"] = board_store.normalize_catalog_config({**(current.get("catalog") or {}), **body["catalog"]})
+        out["catalog"] = board_store.normalize_catalog_config(
+            {**(current.get("catalog") or {}), **body["catalog"]}, strict=True
+        )
     if "dmarc" in body:
         if not isinstance(body.get("dmarc"), dict):
             raise ValueError("dmarc must be an object")
@@ -1392,8 +1394,23 @@ def _catalog_route(event: dict[str, Any], method: str, rest: list[str], user_sub
                 missing_place_id=board_catalog_candidates.as_bool((qs.get("missingPlaceId") or [""])[0]),
                 limit=limit,
                 cursor=cursor,
+                area=(qs.get("area") or [""])[0] or None,
             ),
         )
+    if len(rest) == 2 and rest[1] == "candidates" and method == "POST":
+        import board_catalog_candidates
+
+        settings = board_store.load_settings(table)
+        try:
+            out = board_catalog_candidates.add_manual(
+                table, _parse_json_body(event), settings=settings, added_by=user_sub or "api-key"
+            )
+        except ValueError as exc:
+            return _json_response(400, {"message": str(exc)})
+        _audit(user_sub, "BOARD_CATALOG_CANDIDATE_ADD", str(out.get("candidateId") or ""), event)
+        if out.get("skipped"):
+            return _json_response(200, {"candidate": None, "skipped": True, "reason": out.get("reason"), "candidateId": out.get("candidateId")})
+        return _json_response(201, {"candidate": out})
     if len(rest) == 3 and rest[1] == "candidates" and rest[2] == "bulk" and method == "POST":
         import board_catalog_candidates
 
