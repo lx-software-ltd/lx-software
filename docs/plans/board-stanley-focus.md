@@ -41,7 +41,7 @@ listings) without a sheet.
   paragraph.
 - `board_places.py`: `location` in the field mask (lat / lng on every
   place), `discover_area` (text query + `locationBias` circle, cached).
-- `board_catalog_discovery.py`: `discover_focus_areas` before the
+- `board_catalog_focus_discovery.py`: `discover_focus_areas` before the
   3-district rotation; results outside the area are dropped.
 - `board_catalog_candidates.py`: `area` stamp, `focus_auto_approvable`,
   `add_manual`, `area=` filter, focus kinds in `category_for`.

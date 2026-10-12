@@ -654,7 +654,7 @@ order only changes rotation order. Effects when a focus is set:
   walks districts in the same order. `catalog_coverage.nextDistrict` reads
   `Stanley (Southern)` and the daily review Catalog line carries
   `go-live focus …`.
-- **Discovery** — `discover_places` runs `discover_focus_areas` before
+- **Discovery** — `discover_places` runs `board_catalog_focus_discovery.discover_focus_areas` before
   the 3-district rotation: `board_places.discover_area` sends each
   `FOCUS_QUERIES` text query (kids classes, art, music, dance,
   drama, STEM, language, playgroup, swimming, sports club, martial arts,
