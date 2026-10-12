@@ -21,9 +21,9 @@ def _with_catalog_gap(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def listed_config_gaps(table: Any) -> list[dict[str, Any]] | None:
     """None when the gap cache cannot be read. An empty list is a real empty cache."""
     try:
-        import board_duties
+        import board_config_gaps
 
-        items = board_duties.list_config_gaps(table)
+        items = board_config_gaps.list_config_gaps(table)
     except Exception:
         return None
     if not isinstance(items, list):
@@ -62,17 +62,3 @@ def config_gaps_section(table: Any) -> list[dict[str, Any]]:
     if listed is None:
         return _with_catalog_gap([])
     return listed
-
-
-def for_get(table: Any, settings: dict[str, Any], date_hkt: str) -> dict[str, Any]:
-    """Stored snapshot, or a compile, then today's live gap list."""
-    import board_hk
-    import board_review
-    import board_store
-
-    review = board_store.get_review_snapshot(table, date_hkt)
-    if not review:
-        review = board_review.compile(table, settings, date_hkt)
-    if date_hkt == board_hk.today_hkt():
-        review = attach_live_config_gaps(table, review)
-    return review

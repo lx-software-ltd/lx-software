@@ -41,7 +41,7 @@ def _dmarc_gaps(finding: dict[str, Any]) -> list[tuple[str, str]]:
         rows: list[tuple[str, str]] = []
         seen: set[str] = set()
         for domain in evidence.get("failedAuthDomains") or []:
-            matched = board_dmarc._match_known(str(domain), set(board_dmarc.CONSUMER_MAIL_DOMAINS))
+            matched = board_dmarc.match_known(str(domain), set(board_dmarc.CONSUMER_MAIL_DOMAINS))
             if not matched or matched in seen:
                 continue
             seen.add(matched)
@@ -59,7 +59,7 @@ def _dmarc_gaps(finding: dict[str, Any]) -> list[tuple[str, str]]:
 
 
 def note(table: Any, findings: list[dict[str, Any]]) -> None:
-    import board_duties
+    import board_config_gaps
 
     active: dict[str, tuple[tuple[int, int], str]] = {}
     for finding in findings:
@@ -69,14 +69,14 @@ def note(table: Any, findings: list[dict[str, Any]]) -> None:
             if current is None or rank > current[0]:
                 active[gap_id] = (rank, reason)
     for gap_id, (_rank, reason) in active.items():
-        board_duties.note_config_gap(table, gap_id=gap_id, reason=reason)
+        board_config_gaps.note_config_gap(table, gap_id=gap_id, reason=reason)
     stale: set[str] = set()
-    for row in board_duties.list_config_gaps(table):
+    for row in board_config_gaps.list_config_gaps(table):
         gap_id = str(row.get("gapId") or "")
         if gap_id.startswith("dmarc:") and gap_id not in active:
             stale.add(gap_id)
     for gap_id in stale:
-        board_duties.clear_config_gap(table, gap_id)
+        board_config_gaps.clear_config_gap(table, gap_id)
 
 
 def summary_gap_ids(table: Any) -> set[str] | None:

@@ -630,7 +630,7 @@ def known_sender_domains(settings: dict[str, Any]) -> set[str]:
     return {d for d in out if d}
 
 
-def _match_known(domain: str, known: set[str]) -> str:
+def match_known(domain: str, known: set[str]) -> str:
     candidate = str(domain or "").strip().lower().rstrip(".")
     if not candidate:
         return ""
@@ -754,7 +754,7 @@ def _auth_match(source: dict[str, Any], known: set[str], result: str) -> str:
     for row in _auth_rows(source):
         if str(row.get("result") or "") != result:
             continue
-        sender = _match_known(str(row.get("domain") or ""), known)
+        sender = match_known(str(row.get("domain") or ""), known)
         if sender:
             return sender
     return ""
@@ -762,7 +762,7 @@ def _auth_match(source: dict[str, Any], known: set[str], result: str) -> str:
 
 def _header_is_ours(source: dict[str, Any], known: set[str]) -> bool:
     for header in source.get("headerFrom") or []:
-        if _match_known(str(header), known):
+        if match_known(str(header), known):
             return True
     return False
 

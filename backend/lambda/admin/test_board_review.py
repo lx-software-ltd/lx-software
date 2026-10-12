@@ -9,6 +9,7 @@ from typing import Any
 from unittest.mock import patch
 
 import board_code
+import board_config_gaps
 import board_duties
 import board_github
 import board_hk
@@ -102,7 +103,9 @@ class ReviewCompileTests(BoardTestCase):
             yesterday,
             {
                 "date": yesterday,
-                "configGaps": [{"gapId": "dmarc:siutindei.com", "week": "2026-W40", "reason": "old", "at": "2026-10-01T00:00:00Z"}],
+                "configGaps": [
+                    {"gapId": "dmarc:siutindei.com", "week": "2026-W40", "reason": "old", "at": "2026-10-01T00:00:00Z"}
+                ],
                 "digestHtml": "dmarc:siutindei.com",
             },
         )
@@ -116,11 +119,34 @@ class ReviewCompileTests(BoardTestCase):
         board_duties.note_config_gap(self.table, gap_id="dmarc:siutindei.com", reason="stored")
         with patch.object(board_github, "_request", side_effect=AssertionError("compile must not call GitHub")):
             board_review.compile(self.table, self.settings, date)
-        with patch.object(board_duties, "list_config_gaps", side_effect=RuntimeError("ddb")):
+        board_duties.clear_config_gap(self.table, "dmarc:siutindei.com")
+        with patch.object(board_config_gaps, "list_config_gaps", side_effect=RuntimeError("ddb")):
             status, body = self.call("/siu-tin-dei/board/review")
         self.assertEqual(status, 200)
         self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
         self.assertIn("dmarc:siutindei.com", body["review"]["digestHtml"])
+
+    def test_review_overlay_uses_the_same_clock_as_the_default_date(self) -> None:
+        fixed = "2020-06-15"
+        other = "2020-06-14"
+        gap = {"gapId": "dmarc:siutindei.com", "week": "2020-W25", "reason": "stored", "at": "2020-06-15T00:00:00Z"}
+        for day in (fixed, other):
+            board_store.put_review_snapshot(
+                self.table,
+                day,
+                {"date": day, "configGaps": [gap], "digestHtml": "dmarc:siutindei.com"},
+            )
+        with patch.object(board_hk, "today_hkt", return_value=fixed):
+            status, body = self.call("/siu-tin-dei/board/review")
+            self.assertEqual(status, 200)
+            self.assertFalse(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
+            self.assertNotIn("dmarc:siutindei.com", body["review"]["digestHtml"])
+            status, past = self.call("/siu-tin-dei/board/review", query=f"date={other}")
+        self.assertEqual(status, 200)
+        self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in past["review"]["configGaps"]))
+        self.assertIn("dmarc:siutindei.com", past["review"]["digestHtml"])
+        kept = board_store.get_review_snapshot(self.table, fixed)
+        self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in kept["configGaps"]))
 
     def _summary(self, *, generated_at: str, findings: list[dict[str, Any]], enabled: bool = True) -> None:
         board_store.put_cache(
@@ -140,7 +166,9 @@ class ReviewCompileTests(BoardTestCase):
         self.assertEqual(status, 200)
         self.assertFalse(any(row.get("gapId") == "dmarc:siutindei.com" for row in body["review"]["configGaps"]))
         self.assertNotIn("dmarc:siutindei.com", body["review"]["digestHtml"])
-        self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in board_duties.list_config_gaps(self.table)))
+        self.assertTrue(
+            any(row.get("gapId") == "dmarc:siutindei.com" for row in board_duties.list_config_gaps(self.table))
+        )
         kept = board_store.get_review_snapshot(self.table, date)
         self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in kept["configGaps"]))
 
@@ -162,7 +190,16 @@ class ReviewCompileTests(BoardTestCase):
             findings=[
                 {
                     "kind": "own_sender_failing",
-                    "evidence": {"sender": "siutindei.com", "sourceIp": "23.251.232.12", "dkim": "fail", "spf": "fail", "count": 1, "quarantine": 1, "reject": 0, "bothFail": 1},
+                    "evidence": {
+                        "sender": "siutindei.com",
+                        "sourceIp": "23.251.232.12",
+                        "dkim": "fail",
+                        "spf": "fail",
+                        "count": 1,
+                        "quarantine": 1,
+                        "reject": 0,
+                        "bothFail": 1,
+                    },
                 }
             ],
         )
@@ -307,9 +344,11 @@ class ReviewCompileTests(BoardTestCase):
             return {"ok": True}
 
         staging = {"behindBy": 0, "aheadBy": 1, "commits": [{"sha": "abcdef12", "message": "fix booking copy"}]}
-        with patch.object(board_mail, "sending_enabled", return_value=True), patch.object(
-            board_mail, "send_plan", side_effect=fake_send
-        ), patch.object(board_code, "staging_preview", return_value=staging) as preview:
+        with (
+            patch.object(board_mail, "sending_enabled", return_value=True),
+            patch.object(board_mail, "send_plan", side_effect=fake_send),
+            patch.object(board_code, "staging_preview", return_value=staging) as preview,
+        ):
             result = board_review.send_digest(self.table, self.settings, review)
         self.assertTrue(result.get("ok"))
         self.assertEqual(preview.call_count, 1)
@@ -330,9 +369,11 @@ class ReviewCompileTests(BoardTestCase):
             captured["plan"] = plan
             return {"ok": True}
 
-        with patch.object(board_mail, "sending_enabled", return_value=True), patch.object(
-            board_mail, "send_plan", side_effect=fake_send
-        ), patch.object(board_code, "staging_preview", side_effect=RuntimeError("boom")):
+        with (
+            patch.object(board_mail, "sending_enabled", return_value=True),
+            patch.object(board_mail, "send_plan", side_effect=fake_send),
+            patch.object(board_code, "staging_preview", side_effect=RuntimeError("boom")),
+        ):
             board_review.send_digest(self.table, self.settings, review)
         self.assertIn("staging check failed", captured["plan"]["text"])
 
