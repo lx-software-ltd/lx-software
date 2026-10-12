@@ -4,6 +4,7 @@ import {
   DEFAULT_IMAGE_MODEL,
   LINKEDIN_PILLARS,
   RECOMMENDED_IMAGE_STYLE,
+  LINKEDIN_STORY_VOICES,
   RECOMMENDED_LINKEDIN_VOICE,
   STYLE_EXAMPLE_MAX,
   escapeCommentary,
@@ -92,6 +93,33 @@ describe("linkedin guardrails", () => {
     expect(RECOMMENDED_IMAGE_STYLE.length).toBeLessThanOrEqual(600);
     expect(RECOMMENDED_IMAGE_STYLE).toContain("cross-hatching");
     expect(RECOMMENDED_IMAGE_STYLE).toContain("caricatures");
+  });
+
+  it("offers four story tones, with Over lunch as the recommended voice", () => {
+    expect(LINKEDIN_STORY_VOICES.map((row) => row.id)).toEqual([
+      "over-lunch",
+      "at-the-break",
+      "they-asked",
+      "where-it-stands",
+    ]);
+    expect(LINKEDIN_STORY_VOICES.map((row) => row.label)).toEqual([
+      "Over lunch",
+      "At the break",
+      "They asked",
+      "Where it stands",
+    ]);
+    expect(LINKEDIN_STORY_VOICES[0]?.notes).toBe(RECOMMENDED_LINKEDIN_VOICE);
+    const notes = LINKEDIN_STORY_VOICES.map((row) => row.notes);
+    expect(new Set(notes).size).toBe(4);
+    for (const note of notes) {
+      expect(note.length).toBeLessThanOrEqual(1000);
+      expect(note).toContain("always I, never we");
+      expect(note).not.toContain("done is better than perfect");
+      expect(note).not.toContain("Reliability is not a feature");
+    }
+    expect(notes[1]).toContain("Stand at the moment it broke");
+    expect(notes[2]).toContain("a question a colleague actually asked");
+    expect(notes[3]).toContain("what the system does today");
   });
 
   it("matches a blocked phrase only on a word boundary", () => {

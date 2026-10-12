@@ -18,8 +18,12 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import board_store
+import linkedin_voices
 from botocore.exceptions import ClientError
 from ddb_convert import _from_ddb_nested, _to_ddb_nested
+
+RECOMMENDED_VOICE = linkedin_voices.RECOMMENDED_VOICE
+STORY_VOICES = linkedin_voices.STORY_VOICES
 
 HKT = ZoneInfo("Asia/Hong_Kong")
 
@@ -136,24 +140,6 @@ def pillar_label(pillar_id: str) -> str:
 _RETIRED_DEFAULT_VOICE = (
     "Senior architect writing in the first person. One lesson per post. "
     "No company name, no employer, no offer of availability."
-)
-
-# Shown in Settings as "Use recommended voice" and used until the owner writes
-# their own. Kept under the 1000-character voice limit. Derived from a post the
-# owner wrote: a plain opening line, a story told in order, honest hedging, an
-# answered objection at the end.
-RECOMMENDED_VOICE = (
-    "First person singular, always I, never we. Conversational, as if I were telling a "
-    "former colleague over lunch what I have been building. No hook: the first line is "
-    "plain and specific to this story, not a question, not a claim. Tell it in the order it "
-    "happened: what I noticed, what I decided, what I built, where it broke, where it "
-    "stands now. Name the real constraint (a full-time job, nights and weekends, a month of "
-    "evenings) and real figures when I have them. Plain dashes for a short list. One-line "
-    "paragraphs are fine. Dry, understated, a little self-deprecating; an aside now and "
-    "then. Admit what is unfinished and what might fail. No sensationalism, no wow, no "
-    "lesson headline, no moral, no call to action. Each post has its own shape: a "
-    "different way in and a different way out from the last one, no stock opening line, no "
-    "stock closing line, no catchphrase carried from post to post. Usually 200 to 450 words."
 )
 
 STYLE_EXAMPLE_MAX = 3000
@@ -1265,6 +1251,7 @@ def overview(table: Any) -> dict[str, Any]:
         "builtinForbidden": list(BUILTIN_FORBIDDEN),
         "defaultModel": (os.environ.get("OPENROUTER_MODEL") or "").strip(),
         "recommendedVoice": RECOMMENDED_VOICE,
+        "storyVoices": [{"id": row["id"], "label": row["label"], "notes": row["notes"]} for row in STORY_VOICES],
         "styleExampleMax": STYLE_EXAMPLE_MAX,
         "defaultImageModel": DEFAULT_IMAGE_MODEL,
         "imageModelAlternative": IMAGE_MODEL_ALTERNATIVE,
