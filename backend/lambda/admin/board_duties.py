@@ -571,15 +571,24 @@ _CONFIG_GAPS_CACHE = "config:gaps"
 
 
 def note_config_gap(table: Any, *, gap_id: str, reason: str) -> dict[str, Any] | None:
-    """Record an unconfigured integration on the daily review — no staff task."""
+    """Record an unconfigured integration on the daily review — no staff task.
+
+    The same gap in the same ISO week refreshes ``reason`` and does not write another owner update.
+    """
     week = _iso_week_id()
+    text = str(reason or "")[:400]
     items = list_config_gaps(table)
-    if any(str(row.get("gapId") or "") == gap_id and str(row.get("week") or "") == week for row in items):
-        return None
+    for row in items:
+        if str(row.get("gapId") or "") == gap_id and str(row.get("week") or "") == week:
+            if str(row.get("reason") or "") != text:
+                row["reason"] = text
+                row["at"] = board_store.now_iso()
+                board_store.put_cache(table, _CONFIG_GAPS_CACHE, {"items": items[-20:]}, ttl_seconds=40 * 86400)
+            return None
     row = {
         "gapId": gap_id,
         "week": week,
-        "reason": str(reason or "")[:400],
+        "reason": text,
         "at": board_store.now_iso(),
     }
     items.append(row)

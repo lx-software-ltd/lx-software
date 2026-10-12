@@ -960,6 +960,7 @@ def _review_route(event: dict[str, Any], method: str, rest: list[str], user_sub:
         review = board_store.get_review_snapshot(table, date_hkt)
         if not review:
             review = board_review.compile(table, settings, date_hkt)
+        review = board_review.attach_live_config_gaps(table, review)
         return _json_response(200, {"review": review})
     if len(rest) == 4 and rest[1] == "sample" and rest[3] == "wrong" and method == "POST":
         import board_lessons

@@ -319,6 +319,13 @@ def _cached_promotion(table: Any) -> dict[str, Any] | list[Any]:
     return preview if isinstance(preview, dict) and preview else []
 
 
+def attach_live_config_gaps(table: Any, review: dict[str, Any]) -> dict[str, Any]:
+    """The on-screen list follows the cache. The stored digest stays the compile-time copy."""
+    if not isinstance(review, dict):
+        return review
+    return {**review, "configGaps": _config_gaps_section(table)}
+
+
 def _config_gaps_section(table: Any) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     try:

@@ -9,6 +9,7 @@ from typing import Any
 from unittest.mock import patch
 
 import board_code
+import board_duties
 import board_github
 import board_hk
 import board_mail
@@ -72,6 +73,26 @@ class ReviewCompileTests(BoardTestCase):
         self.assertIn("Unconfigured integrations", review["digestHtml"])
         self.assertIn("Engineering", review["digestHtml"])
         self.assertNotIn("section=review#", review["digestHtml"])
+
+    def test_review_get_shows_live_config_gaps(self) -> None:
+        date = board_hk.today_hkt()
+        board_duties.note_config_gap(
+            self.table,
+            gap_id="dmarc:siutindei.com",
+            reason="DMARC failure for known sender siutindei.com at 23.251.232.12.",
+        )
+        with patch.object(board_github, "_request", side_effect=AssertionError("compile must not call GitHub")):
+            board_review.compile(self.table, self.settings, date)
+        stored = board_store.get_review_snapshot(self.table, date)
+        self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in stored["configGaps"]))
+        board_duties.clear_config_gap(self.table, "dmarc:siutindei.com")
+        status, body = self.call("/siu-tin-dei/board/review")
+        self.assertEqual(status, 200)
+        live = body["review"]["configGaps"]
+        self.assertFalse(any(str(row.get("gapId") or "") == "dmarc:siutindei.com" for row in live))
+        kept = board_store.get_review_snapshot(self.table, date)
+        self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in kept["configGaps"]))
+        self.assertIn("dmarc:siutindei.com", body["review"]["digestHtml"])
 
     def test_compile_uses_cached_staging_preview(self) -> None:
         board_store.put_cache(

@@ -884,35 +884,59 @@ def _build_line(
     return text
 
 
-def _note_gaps(table: Any, findings: list[dict[str, Any]]) -> None:
-    import board_duties
-
-    for finding in findings:
-        kind = finding.get("kind")
-        evidence = finding.get("evidence") if isinstance(finding.get("evidence"), dict) else {}
-        if kind == "own_sender_failing":
-            sender = str(evidence.get("sender") or "sender")
-            board_duties.note_config_gap(
-                table,
-                gap_id=f"dmarc:{sender}",
-                reason=(
-                    f"DMARC failure for known sender {sender} at {evidence.get('sourceIp') or 'unknown ip'}. "
-                    "Check SES Easy DKIM, SPF and the published DMARC record."
-                ),
-            )
-        elif kind == "unknown_source_failing" and finding.get("severity") != "info":
-            for domain in evidence.get("failedAuthDomains") or []:
-                matched = _match_known(str(domain), set(CONSUMER_MAIL_DOMAINS))
-                if not matched:
-                    continue
-                board_duties.note_config_gap(
-                    table,
-                    gap_id=f"dmarc:{matched}",
-                    reason=(
+def _dmarc_gaps(finding: dict[str, Any]) -> list[tuple[str, str]]:
+    """Config-gap id and reason for one finding. Empty when the finding is not a gap."""
+    kind = finding.get("kind")
+    evidence = finding.get("evidence") if isinstance(finding.get("evidence"), dict) else {}
+    if kind == "own_sender_failing":
+        sender = str(evidence.get("sender") or "sender")
+        ip = str(evidence.get("sourceIp") or "unknown ip")
+        reason = (
+            f"DMARC failure for known sender {sender} at {ip}: "
+            f"dkim {evidence.get('dkim') or 'none'}, spf {evidence.get('spf') or 'none'}, "
+            f"{int(evidence.get('quarantine') or 0)} quarantined, "
+            f"{int(evidence.get('reject') or 0)} rejected, "
+            f"{int(evidence.get('bothFail') or 0)} both-fail "
+            f"of {int(evidence.get('count') or 0)} from this IP."
+        )
+        return [(f"dmarc:{sender}", reason)]
+    if kind == "unknown_source_failing" and finding.get("severity") != "info":
+        rows: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for domain in evidence.get("failedAuthDomains") or []:
+            matched = _match_known(str(domain), set(CONSUMER_MAIL_DOMAINS))
+            if not matched or matched in seen:
+                continue
+            seen.add(matched)
+            rows.append(
+                (
+                    f"dmarc:{matched}",
+                    (
                         f"Auth domain {matched} failed DMARC and is not in settings.dmarc.knownSenderDomains. "
                         "Add it if this is mail you send from Gmail or iCloud; otherwise treat the source as spoofing."
                     ),
                 )
+            )
+        return rows
+    return []
+
+
+def _note_gaps(table: Any, findings: list[dict[str, Any]]) -> None:
+    import board_duties
+
+    active: dict[str, str] = {}
+    for finding in findings:
+        for gap_id, reason in _dmarc_gaps(finding):
+            active.setdefault(gap_id, reason)
+    for gap_id, reason in active.items():
+        board_duties.note_config_gap(table, gap_id=gap_id, reason=reason)
+    stale: set[str] = set()
+    for row in board_duties.list_config_gaps(table):
+        gap_id = str(row.get("gapId") or "")
+        if gap_id.startswith("dmarc:") and gap_id not in active:
+            stale.add(gap_id)
+    for gap_id in stale:
+        board_duties.clear_config_gap(table, gap_id)
 
 
 def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:

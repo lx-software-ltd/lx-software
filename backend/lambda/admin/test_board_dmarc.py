@@ -254,6 +254,22 @@ class DmarcEvaluateTests(BoardTestCase):
     def _findings(self, summary: dict[str, Any], kind: str) -> list[dict[str, Any]]:
         return [row for row in summary["findings"] if row["kind"] == kind]
 
+    def _age_reports(self, *, days: int) -> None:
+        old_at = datetime.now(timezone.utc) - timedelta(days=days)
+        old = old_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+        old_end = int(old_at.timestamp())
+        for item in self.table.items.values():
+            if str(item.get("sk", "")).startswith("REPORT#"):
+                item["receivedAt"] = old
+                item["dateEnd"] = old
+                item["dateEndUnix"] = old_end
+
+    def _gap(self, gap_id: str) -> dict[str, Any] | None:
+        for row in board_duties.list_config_gaps(self.table):
+            if str(row.get("gapId") or "") == gap_id:
+                return row
+        return None
+
     def test_aligned_mail_has_no_problem(self) -> None:
         self._ingest(
             _xml(
@@ -298,6 +314,90 @@ class DmarcEvaluateTests(BoardTestCase):
         self.assertEqual(rows[0]["evidence"]["quarantine"], 4)
         gaps = board_duties.list_config_gaps(self.table)
         self.assertTrue(any(row.get("gapId") == "dmarc:amazonses.com" for row in gaps))
+
+    def test_siutindei_gap_names_the_failure_and_clears_after_24h(self) -> None:
+        self._ingest(
+            _xml(
+                report_id="ses-own",
+                dkim="fail",
+                spf="fail",
+                disposition="quarantine",
+                dkim_domain="siutindei.com",
+                spf_domain="mail.siutindei.com",
+                header_from="siutindei.com",
+                source_ip="23.251.232.12",
+                count=1,
+            )
+        )
+        self._ingest(
+            _xml(
+                report_id="ses-other-ip",
+                dkim="fail",
+                spf="fail",
+                disposition="reject",
+                dkim_domain="siutindei.com",
+                spf_domain="siutindei.com",
+                header_from="siutindei.com",
+                source_ip="23.251.232.13",
+                count=4,
+            )
+        )
+        board_dmarc.evaluate(self.table, self.settings)
+        gap = self._gap("dmarc:siutindei.com")
+        self.assertIsNotNone(gap)
+        assert gap is not None
+        self.assertIn("23.251.232.13", gap["reason"])
+        self.assertIn("dkim fail", gap["reason"])
+        self.assertIn("spf fail", gap["reason"])
+        self.assertIn("4 rejected", gap["reason"])
+        self.assertNotIn("23.251.232.12", gap["reason"])
+        board_duties.note_config_gap(self.table, gap_id="opendata-edb", reason="empty fetch")
+        self._age_reports(days=2)
+        board_dmarc.evaluate(self.table, self.settings)
+        self.assertIsNone(self._gap("dmarc:siutindei.com"))
+        self.assertIsNotNone(self._gap("opendata-edb"))
+        updates = [
+            row
+            for row in board_store.list_updates(self.table)
+            if str(row.get("text") or "").startswith("CONFIG dmarc:siutindei.com")
+        ]
+        self.assertEqual(len(updates), 1)
+
+    def test_disabled_check_keeps_a_stale_dmarc_gap(self) -> None:
+        self._ingest(
+            _xml(
+                report_id="ses-own-off",
+                dkim="fail",
+                spf="fail",
+                disposition="quarantine",
+                dkim_domain="siutindei.com",
+                spf_domain="siutindei.com",
+                header_from="siutindei.com",
+                source_ip="23.251.232.12",
+                count=1,
+            )
+        )
+        board_dmarc.evaluate(self.table, self.settings)
+        self.assertIsNotNone(self._gap("dmarc:siutindei.com"))
+        self._age_reports(days=2)
+        board_dmarc.evaluate(self.table, {**self.settings, "dmarc": {"enabled": False}})
+        self.assertIsNotNone(self._gap("dmarc:siutindei.com"))
+
+    def test_consumer_gap_clears_when_the_source_leaves_the_week(self) -> None:
+        self._ingest(
+            _xml(
+                report_id="gmail",
+                dkim_domain="google.com",
+                spf_domain="gmail.com",
+                source_ip="203.0.113.50",
+                count=6,
+            )
+        )
+        board_dmarc.evaluate(self.table, self.settings)
+        self.assertIsNotNone(self._gap("dmarc:google.com"))
+        self._age_reports(days=8)
+        board_dmarc.evaluate(self.table, self.settings)
+        self.assertIsNone(self._gap("dmarc:google.com"))
 
     def test_own_sender_summary_names_quarantine_not_healthy_ses_rows(self) -> None:
         """SES without MAIL FROM reports SPF fail on every row; only the quarantined subset is the incident."""

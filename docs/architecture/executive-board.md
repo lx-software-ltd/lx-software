@@ -353,10 +353,14 @@ only. The hourly cache refresh runs `board_dmarc.evaluate` (no DNS, no
 LLM) into `dmarc:summary`: 24 h / 7 day / 30 day totals, and findings
 `own_sender_failing`, `unknown_source_failing`, `forwarding_noise` (info,
 never a task), `policy_drift`, `new_header_from_domain`, `reports_silent`.
-`own_sender_failing` also lands on Config gaps. A known auth domain counts
-as our mail when that check passed, or when it failed and `header_from` is
-one of our sender domains; a failed `amazonses.com` envelope with a foreign
-From is an unknown source. Unknown sources under 5 messages in 7 days are
+`own_sender_failing` also lands on Config gaps (`dmarc:{sender}`), with the
+dkim, spf, and disposition counts in the reason. The next enabled
+evaluation drops that row when the finding is gone and leaves other gaps
+alone. Turning the check off does not clear it. The daily review screen
+reads the live gap list; the morning digest keeps the compile-time list.
+A known auth domain counts as our mail when that check passed, or when it
+failed and `header_from` is one of our sender domains; a failed
+`amazonses.com` envelope with a foreign From is an unknown source. Unknown sources under 5 messages in 7 days are
 info. With staff on, medium and high findings open one `security-analyst`
 task (or `ciso` when that seat is inactive), deduped in `seen:dmarc`. A
 summary older than 26 hours opens `summary_stale` instead. The daily review
