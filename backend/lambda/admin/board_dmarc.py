@@ -630,7 +630,7 @@ def known_sender_domains(settings: dict[str, Any]) -> set[str]:
     return {d for d in out if d}
 
 
-def _match_known(domain: str, known: set[str]) -> str:
+def match_known(domain: str, known: set[str]) -> str:
     candidate = str(domain or "").strip().lower().rstrip(".")
     if not candidate:
         return ""
@@ -754,7 +754,7 @@ def _auth_match(source: dict[str, Any], known: set[str], result: str) -> str:
     for row in _auth_rows(source):
         if str(row.get("result") or "") != result:
             continue
-        sender = _match_known(str(row.get("domain") or ""), known)
+        sender = match_known(str(row.get("domain") or ""), known)
         if sender:
             return sender
     return ""
@@ -762,7 +762,7 @@ def _auth_match(source: dict[str, Any], known: set[str], result: str) -> str:
 
 def _header_is_ours(source: dict[str, Any], known: set[str]) -> bool:
     for header in source.get("headerFrom") or []:
-        if _match_known(str(header), known):
+        if match_known(str(header), known):
             return True
     return False
 
@@ -882,37 +882,6 @@ def _build_line(
     else:
         text += " No problems."
     return text
-
-
-def _note_gaps(table: Any, findings: list[dict[str, Any]]) -> None:
-    import board_duties
-
-    for finding in findings:
-        kind = finding.get("kind")
-        evidence = finding.get("evidence") if isinstance(finding.get("evidence"), dict) else {}
-        if kind == "own_sender_failing":
-            sender = str(evidence.get("sender") or "sender")
-            board_duties.note_config_gap(
-                table,
-                gap_id=f"dmarc:{sender}",
-                reason=(
-                    f"DMARC failure for known sender {sender} at {evidence.get('sourceIp') or 'unknown ip'}. "
-                    "Check SES Easy DKIM, SPF and the published DMARC record."
-                ),
-            )
-        elif kind == "unknown_source_failing" and finding.get("severity") != "info":
-            for domain in evidence.get("failedAuthDomains") or []:
-                matched = _match_known(str(domain), set(CONSUMER_MAIL_DOMAINS))
-                if not matched:
-                    continue
-                board_duties.note_config_gap(
-                    table,
-                    gap_id=f"dmarc:{matched}",
-                    reason=(
-                        f"Auth domain {matched} failed DMARC and is not in settings.dmarc.knownSenderDomains. "
-                        "Add it if this is mail you send from Gmail or iCloud; otherwise treat the source as spoofing."
-                    ),
-                )
 
 
 def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
@@ -1110,7 +1079,9 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
                         "evidence": {"lastGoogleReceivedAt": last_google, "silenceDays": silence_days},
                     }
                 )
-        _note_gaps(table, findings)
+        import board_dmarc_gaps
+
+        board_dmarc_gaps.note(table, findings)
     else:
         last_google = str(_load_meta(table).get("lastGoogleReceivedAt") or "")
         findings = []

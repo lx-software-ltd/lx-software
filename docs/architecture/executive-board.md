@@ -353,11 +353,19 @@ only. The hourly cache refresh runs `board_dmarc.evaluate` (no DNS, no
 LLM) into `dmarc:summary`: 24 h / 7 day / 30 day totals, and findings
 `own_sender_failing`, `unknown_source_failing`, `forwarding_noise` (info,
 never a task), `policy_drift`, `new_header_from_domain`, `reports_silent`.
-`own_sender_failing` also lands on Config gaps. A known auth domain counts
-as our mail when that check passed, or when it failed and `header_from` is
-one of our sender domains; a failed `amazonses.com` envelope with a foreign
-From is an unknown source. Unknown sources under 5 messages in 7 days are
-info. With staff on, medium and high findings open one `security-analyst`
+`own_sender_failing` also lands on Config gaps (`dmarc:{sender}`). The reason
+names dkim, spf, and the disposition counts for the last-24h source IP with
+the most failures. The next enabled evaluation drops that row when the
+finding is gone, keeps one row per gap id, and leaves other gaps alone.
+Turning the check off does not clear it. Today's review screen reads the
+live list and leaves off a `dmarc:` row a fresh summary no longer reports;
+a failed gap read keeps the compiled list, and a past date stays compiled.
+The stored morning digest is unchanged. The on-screen preview follows the
+live list.
+A known auth domain counts as our mail when that check passed, or when it
+failed and `header_from` is one of our sender domains; a failed
+`amazonses.com` envelope with a foreign From is an unknown source. Unknown
+sources under 5 messages in 7 days are info. With staff on, medium and high findings open one `security-analyst`
 task (or `ciso` when that seat is inactive), deduped in `seen:dmarc`. A
 summary older than 26 hours opens `summary_stale` instead. The daily review
 stores the line and findings only. `security_dmarc_summary` reads the cache
@@ -1251,7 +1259,9 @@ DynamoDB access, settings normalisation), `board_personas.py`,
 `board_tools.py` plus the modules in §6. Autonomy: `board_staff.py`,
 `board_holds.py`, `board_breakers.py`, `board_triage.py`,
 `board_policy.py`, `board_templates.py`, `board_review.py`,
-`board_lessons.py`, `board_duties.py`, `board_progress.py` (listing /
+`board_review_gaps.py` (today's live config-gap list),
+`board_lessons.py`, `board_duties.py`, `board_config_gaps.py`,
+`board_dmarc_gaps.py`, `board_progress.py` (listing /
 partnership progress snapshot), `board_catalog.py`,
 `board_catalog_import.py`. Tests are
 `test_board*.py` with `FakeTable` and fakes for every external API.

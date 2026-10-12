@@ -320,22 +320,9 @@ def _cached_promotion(table: Any) -> dict[str, Any] | list[Any]:
 
 
 def _config_gaps_section(table: Any) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    try:
-        import board_duties
+    import board_review_gaps
 
-        items = board_duties.list_config_gaps(table)
-    except Exception:
-        items = []
-    try:
-        import board_catalog_import
-
-        gap = board_catalog_import.config_gap()
-        if gap:
-            items = [*items, gap]
-    except Exception:
-        logging.getLogger(__name__).debug("suppressed", exc_info=True)
-    return items
+    return board_review_gaps.config_gaps_section(table)
 
 
 def _promotion_section() -> dict[str, Any]:
