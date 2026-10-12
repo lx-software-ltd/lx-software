@@ -17,8 +17,8 @@ backend/lambda/admin/board_catalog_candidates.py 871
 backend/lambda/admin/board_catalog_import.py 2127
 backend/lambda/admin/board_code.py 2812
 backend/lambda/admin/board_content.py 875
-backend/lambda/admin/board_dmarc.py 1208
-backend/lambda/admin/board_duties.py 729
+backend/lambda/admin/board_dmarc.py 1179
+backend/lambda/admin/board_duties.py 698
 backend/lambda/admin/board_github.py 983
 backend/lambda/admin/board_holds.py 644
 backend/lambda/admin/board_mail.py 1436
@@ -31,8 +31,8 @@ backend/lambda/admin/board_progress.py 549
 backend/lambda/admin/board_prospects.py 620
 backend/lambda/admin/board_receivables.py 965
 backend/lambda/admin/board_research.py 526
-backend/lambda/admin/board_review.py 841
-backend/lambda/admin/board_routes.py 1535
+backend/lambda/admin/board_review.py 828
+backend/lambda/admin/board_routes.py 1533
 backend/lambda/admin/board_staff.py 2621
 backend/lambda/admin/board_staff_help.py 571
 backend/lambda/admin/board_store.py 2627

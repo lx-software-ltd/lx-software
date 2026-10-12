@@ -950,18 +950,14 @@ def _progress_get() -> dict[str, Any]:
 def _review_route(event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
     if not board_staff.env_enabled():
         return _staff_disabled()
-    import board_review
+    import board_review_gaps
 
     table = board_store.records_table()
     settings = board_store.load_settings(table)
     if len(rest) == 1 and method == "GET":
         qs = parse_qs(event.get("rawQueryString") or "")
         date_hkt = (qs.get("date") or [""])[0].strip() or board_hk_today()
-        review = board_store.get_review_snapshot(table, date_hkt)
-        if not review:
-            review = board_review.compile(table, settings, date_hkt)
-        if date_hkt == board_hk_today():
-            review = board_review.attach_live_config_gaps(table, review)
+        review = board_review_gaps.for_get(table, settings, date_hkt)
         return _json_response(200, {"review": review})
     if len(rest) == 4 and rest[1] == "sample" and rest[3] == "wrong" and method == "POST":
         import board_lessons

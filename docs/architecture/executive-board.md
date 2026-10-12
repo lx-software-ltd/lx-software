@@ -1259,7 +1259,9 @@ DynamoDB access, settings normalisation), `board_personas.py`,
 `board_tools.py` plus the modules in §6. Autonomy: `board_staff.py`,
 `board_holds.py`, `board_breakers.py`, `board_triage.py`,
 `board_policy.py`, `board_templates.py`, `board_review.py`,
-`board_lessons.py`, `board_duties.py`, `board_progress.py` (listing /
+`board_review_gaps.py` (today's live config-gap list),
+`board_lessons.py`, `board_duties.py`, `board_config_gaps.py`,
+`board_dmarc_gaps.py`, `board_progress.py` (listing /
 partnership progress snapshot), `board_catalog.py`,
 `board_catalog_import.py`. Tests are
 `test_board*.py` with `FakeTable` and fakes for every external API.
