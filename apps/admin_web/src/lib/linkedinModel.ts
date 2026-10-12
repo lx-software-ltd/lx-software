@@ -272,7 +272,7 @@ export const SAMPLE_LINKEDIN_IDEAS: LinkedInIdea[] = [
   },
 ];
 
-/** Mirrors `RECOMMENDED_VOICE` in `backend/lambda/admin/linkedin_store.py`. */
+/** Mirrors `RECOMMENDED_VOICE` in `backend/lambda/admin/linkedin_voices.py`. */
 export const RECOMMENDED_LINKEDIN_VOICE =
   "First person singular, always I, never we. Conversational, as if I were telling a former colleague over lunch what I have been building. No hook: the first line is plain and specific to this story, not a question, not a claim. Tell it in the order it happened: what I noticed, what I decided, what I built, where it broke, where it stands now. Name the real constraint (a full-time job, nights and weekends, a month of evenings) and real figures when I have them. Plain dashes for a short list. One-line paragraphs are fine. Dry, understated, a little self-deprecating; an aside now and then. Admit what is unfinished and what might fail. No sensationalism, no wow, no lesson headline, no moral, no call to action. Each post has its own shape: a different way in and a different way out from the last one, no stock opening line, no stock closing line, no catchphrase carried from post to post. Usually 200 to 450 words.";
 
@@ -282,7 +282,7 @@ export type LinkedInStoryVoice = {
   notes: string;
 };
 
-/** Mirrors `STORY_VOICES` in `linkedin_store.py`. Over lunch is the recommended voice. */
+/** Mirrors `STORY_VOICES` in `linkedin_voices.py`. Over lunch is the recommended voice. */
 export const LINKEDIN_STORY_VOICES: readonly LinkedInStoryVoice[] = [
   { id: "over-lunch", label: "Over lunch", notes: RECOMMENDED_LINKEDIN_VOICE },
   {

@@ -17,7 +17,8 @@ Add four story-tone buttons under LinkedIn Settings → Voice. Each button fills
 ## Files
 
 - `docs/plans/linkedin-story-tones.md` (this plan)
-- `backend/lambda/admin/linkedin_store.py` — `STORY_VOICES`, overview
+- `backend/lambda/admin/linkedin_voices.py` — `RECOMMENDED_VOICE`, `STORY_VOICES`
+- `backend/lambda/admin/linkedin_store.py` — re-exports those notes and returns them from overview
 - `backend/lambda/admin/test_linkedin.py`
 - `apps/admin_web/src/lib/linkedinModel.ts` — `LINKEDIN_STORY_VOICES`
 - `apps/admin_web/src/lib/linkedinModel.test.ts`
@@ -25,6 +26,7 @@ Add four story-tone buttons under LinkedIn Settings → Voice. Each button fills
 - `apps/admin_web/src/components/linkedin/LinkedInSettingsCard.tsx`
 - `apps/admin_web/src/components/linkedin/LinkedInSettingsCard.test.tsx`
 - `docs/deployment/admin-website.md`
+- `scripts/file-length-allowlist.txt` — `linkedin_store.py` allowance lowered after the move
 
 ## Invariants this change preserves
 
