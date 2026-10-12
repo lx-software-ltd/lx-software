@@ -9,6 +9,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import board_catalog_focus
 import board_hk
 import board_store
 from contract_constants import (
@@ -16,6 +17,7 @@ from contract_constants import (
     BOARD_CATALOG_NAME_DENY_TOKENS,
     BOARD_CATALOG_PLACES_TTL_DAYS,
     BOARD_CATALOG_SOURCE_CATEGORY,
+    BOARD_CATALOG_TYPE_TO_CATEGORY,
 )
 from http_common import _log_event
 
@@ -67,6 +69,8 @@ def category_for(row: dict[str, Any]) -> str:
     kind = str(row.get("facilityKind") or row.get("sourceKind") or "")
     if kind and BOARD_CATALOG_SOURCE_CATEGORY.get(kind):
         return BOARD_CATALOG_SOURCE_CATEGORY[kind]
+    if kind and board_catalog_focus.category_for_kind(kind):
+        return board_catalog_focus.category_for_kind(kind)
     if row.get("category"):
         return str(row.get("category"))
     source = str(row.get("source") or "")
@@ -151,12 +155,35 @@ def places_commercial_auto_approvable(row: dict[str, Any]) -> bool:
     return bool(address and hours)
 
 
-def _maybe_auto_approve(row: dict[str, Any], *, source: str, district: str) -> bool:
+def focus_auto_approvable(row: dict[str, Any], settings: dict[str, Any] | None) -> bool:
+    """Inside the go-live neighbourhood a real site plus an address is enough.
+
+    Hours are optional there: the neighbourhood sweep is meant to surface
+    classes and clubs whose Places entries rarely carry opening hours, and the
+    owner reviews the imported listing on the Progress tab anyway.
+    """
+    if not board_catalog_focus.is_focus_row(row, settings):
+        return False
+    url = _http_url(row.get("officialUrl") or row.get("website"))
+    if not url or _is_social_url(url):
+        return False
+    return bool(str(row.get("addressEn") or row.get("address") or "").strip())
+
+
+def _maybe_auto_approve(
+    row: dict[str, Any],
+    *,
+    source: str,
+    district: str,
+    settings: dict[str, Any] | None = None,
+) -> bool:
     if auto_approve_source(source):
         return True
     if source == "places" and (places_quality_ok(row) or places_commercial_auto_approvable(row)):
         return True
     if source == "competitor" and competitor_auto_approvable(row, district):
+        return True
+    if source in ("places", "competitor", board_catalog_focus.MANUAL_SOURCE) and focus_auto_approvable(row, settings):
         return True
     return False
 
@@ -276,8 +303,17 @@ def maybe_redistrict_mismatched(table: Any) -> dict[str, Any]:
     return {"updated": updated, "scanned": scanned, "skipped": False}
 
 
-def upsert_candidate(table: Any, row: dict[str, Any]) -> dict[str, Any]:
-    """Insert or refresh a candidate. Official / quality Places rows auto-approve."""
+def upsert_candidate(
+    table: Any,
+    row: dict[str, Any],
+    *,
+    settings: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Insert or refresh a candidate. Official / quality Places rows auto-approve.
+
+    ``settings`` only matters for the focus-area rule; ``None`` applies the
+    contract default focus.
+    """
     source = str(row.get("source") or "unknown")
     name = str(row.get("nameEn") or row.get("name") or "").strip()
     if not name:
@@ -307,17 +343,23 @@ def upsert_candidate(table: Any, row: dict[str, Any]) -> dict[str, Any]:
                 incoming.pop(key, None)
         merged = {**current, **incoming}
         merged["district"] = resolved_district({**merged, "source": source})
+        merged["area"] = board_catalog_focus.area_for(merged)
         merged["candidateId"] = existing_id
         merged["updatedAt"] = now
         if str(merged.get("status") or "") == "new" and _maybe_auto_approve(
-            merged, source=source, district=str(merged.get("district") or district)
+            merged, source=source, district=str(merged.get("district") or district), settings=settings
         ):
             merged["status"] = "approved"
             merged["approvedAt"] = now
         board_store.put_candidate(table, merged)
         return merged
     status = "new"
-    if _maybe_auto_approve({**row, "district": district}, source=source, district=district):
+    placed = {**row, "nameEn": name, "district": district}
+    area = board_catalog_focus.area_for(placed)
+    placed["area"] = area
+    if str(row.get("status") or "") == "approved" and source == board_catalog_focus.MANUAL_SOURCE:
+        status = "approved"
+    elif _maybe_auto_approve(placed, source=source, district=district, settings=settings):
         status = "approved"
     doc = {
         "candidateId": board_store.new_id(),
@@ -327,6 +369,7 @@ def upsert_candidate(table: Any, row: dict[str, Any]) -> dict[str, Any]:
         "nameEn": name[:200],
         "nameZh": str(row.get("nameZh") or "")[:200],
         "district": district[:80],
+        "area": area,
         "addressEn": str(row.get("addressEn") or row.get("address") or "")[:300],
         "addressZh": str(row.get("addressZh") or "")[:300],
         "lat": row.get("lat"),
@@ -344,9 +387,101 @@ def upsert_candidate(table: Any, row: dict[str, Any]) -> dict[str, Any]:
         "createdAt": now,
         "updatedAt": now,
     }
+    if status == "approved":
+        doc["approvedAt"] = now
+    for key in ("sourceUrl", "note", "addedBy"):
+        if row.get(key):
+            doc[key] = str(row.get(key))[:400]
     board_store.put_candidate(table, doc)
     board_store.put_candidate_dedupe(table, dedupe, str(doc["candidateId"]))
     return doc
+
+
+_MANUAL_CATEGORIES = (
+    frozenset(BOARD_CATALOG_TYPE_TO_CATEGORY.values())
+    | frozenset(BOARD_CATALOG_SOURCE_CATEGORY.values())
+    | frozenset(board_catalog_focus.FOCUS_KIND_CATEGORY.values())
+)
+
+
+def _manual_category(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "Class"
+    if text in _MANUAL_CATEGORIES:
+        return text
+    mapped = BOARD_CATALOG_TYPE_TO_CATEGORY.get(text.lower())
+    if mapped:
+        return mapped
+    raise ValueError(f"unknown category {text}; use one of {sorted(_MANUAL_CATEGORIES)}")
+
+
+def add_manual(
+    table: Any,
+    body: dict[str, Any],
+    *,
+    settings: dict[str, Any] | None = None,
+    added_by: str = "",
+) -> dict[str, Any]:
+    """Queue one hand-sourced organisation (web research, a competitor listing, a flyer).
+
+    ``sourceId`` is derived from the name and district so the same organisation
+    posted twice updates one row. A name already live in the product (listing
+    mirror) is reported as ``skipped`` instead of creating a duplicate.
+    """
+    if not isinstance(body, dict):
+        raise ValueError("body must be an object")
+    name = " ".join(str(body.get("nameEn") or body.get("name") or "").split())
+    if not name:
+        raise ValueError("nameEn is required")
+    address = " ".join(str(body.get("addressEn") or body.get("address") or "").split())
+    district_raw = str(body.get("district") or "").strip()
+    area_hint = str(body.get("area") or "").strip().lower()
+    if area_hint and not board_catalog_focus.area_by_id(area_hint):
+        raise ValueError(f"unknown area {area_hint}")
+    if not district_raw and area_hint:
+        district_raw = str((board_catalog_focus.area_by_id(area_hint) or {}).get("district") or "")
+    if not district_raw and address:
+        district_raw = board_hk.district_from_address(address)
+    district = board_hk.canonical_district(district_raw) if district_raw else "unknown"
+    if district == "unknown":
+        raise ValueError("district is required (an 18-district name, an area id, or an address that names one)")
+    url = str(body.get("officialUrl") or body.get("website") or "").strip()
+    if url and not (url.startswith("http://") or url.startswith("https://")):
+        raise ValueError("officialUrl must start with http:// or https://")
+    category = _manual_category(body.get("category") or body.get("type"))
+    requested_status = str(body.get("status") or "").strip().lower()
+    if requested_status and requested_status not in ("new", "approved"):
+        raise ValueError("status must be new or approved")
+    row: dict[str, Any] = {
+        "source": board_catalog_focus.MANUAL_SOURCE,
+        "sourceId": "manual:" + hashlib.sha256(listing_key(name, district).encode("utf-8")).hexdigest()[:20],
+        "nameEn": name,
+        "nameZh": str(body.get("nameZh") or "").strip(),
+        "district": district,
+        "addressEn": address,
+        "addressZh": str(body.get("addressZh") or "").strip(),
+        "lat": body.get("lat"),
+        "lng": body.get("lng"),
+        "phone": str(body.get("phone") or "").strip(),
+        "openingHours": str(body.get("openingHours") or "").strip(),
+        "officialUrl": url,
+        "category": category,
+        "descriptionEn": str(body.get("descriptionEn") or "").strip(),
+        "descriptionZh": str(body.get("descriptionZh") or "").strip(),
+        "descriptionSource": "manual" if body.get("descriptionEn") else "template",
+        "sourceUrl": str(body.get("sourceUrl") or "").strip(),
+        "note": str(body.get("note") or "").strip(),
+        "addedBy": added_by,
+    }
+    if requested_status == "approved":
+        row["status"] = "approved"
+    if area_hint:
+        row["area"] = area_hint
+    if is_duplicate(table, row):
+        existing = board_store.get_candidate_by_dedupe(table, candidate_dedupe_key(row))
+        return {"skipped": True, "reason": "already listed or imported", "candidateId": existing or ""}
+    return upsert_candidate(table, row, settings=settings)
 
 
 def remember_listing(table: Any, org: dict[str, Any]) -> None:
@@ -508,15 +643,19 @@ def filter_candidates(
     district: str | None = None,
     q: str | None = None,
     missing_place_id: bool = False,
+    area: str | None = None,
 ) -> list[dict[str, Any]]:
     wanted_source = str(source or "").strip().lower()
     wanted_district = str(district or "").strip()
+    wanted_area = str(area or "").strip().lower()
     query = str(q or "").strip()
     out: list[dict[str, Any]] = []
     for row in rows:
         if wanted_source and str(row.get("source") or "").lower() != wanted_source:
             continue
         if wanted_district and str(row.get("district") or "") != wanted_district:
+            continue
+        if wanted_area and board_catalog_focus.area_for(row) != wanted_area:
             continue
         if query and not _match_text(row, query):
             continue
@@ -549,16 +688,18 @@ def list_filtered(
     missing_place_id: bool = False,
     limit: int = CANDIDATE_PAGE,
     cursor: int = 0,
+    area: str | None = None,
 ) -> dict[str, Any]:
     page_size = max(1, min(CANDIDATE_PAGE_MAX, _as_int(limit, CANDIDATE_PAGE)))
     start = max(0, _as_int(cursor, 0))
-    fetch_cap = CANDIDATE_SCAN_ONE if status else CANDIDATE_SCAN_ALL
+    fetch_cap = CANDIDATE_SCAN_ONE if status or area else CANDIDATE_SCAN_ALL
     rows = filter_candidates(
         board_store.list_candidates(table, status, per_status_limit=fetch_cap),
         source=source,
         district=district,
         q=q,
         missing_place_id=missing_place_id,
+        area=area,
     )
     page = rows[start : start + page_size]
     nxt = start + page_size if start + page_size < len(rows) else None
