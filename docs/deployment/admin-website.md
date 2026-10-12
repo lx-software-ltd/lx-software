@@ -823,7 +823,7 @@ first and ahead of the launch gate, and the first micro-batch sheet is a
 neighbourhood sheet. Hand-sourced organisations go in with
 `POST …/catalog/candidates` (`nameEn` + `district` / `area` / address,
 optional `officialUrl`, `category`, `sourceUrl`, `note`,
-`status: approved`); the board API key may call it. Progress shows the
+`status: approved` / `status: new`); the board API key may call it. Progress shows the
 focus counts above the bulk sources table; move the focus from
 **Settings** (`catalog.focusAreas`) when the neighbourhood is live.
 Discovery refreshes LCSD / EDB / SWD on Monday **or** when a cache is

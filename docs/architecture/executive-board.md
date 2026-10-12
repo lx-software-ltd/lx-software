@@ -677,7 +677,8 @@ order only changes rotation order. Effects when a focus is set:
   optional `nameZh`, `addressEn`, `lat` / `lng`, `phone`, `openingHours`,
   `officialUrl` (http/https), `category` (a product category or a sheet
   `type`), `descriptionEn` / `descriptionZh`, `sourceUrl`, `note`, and
-  `status: approved` to skip the owner queue. `sourceId` is
+  `status: approved` to skip the owner queue or `status: new` to stay on
+  it even when the focus rule would auto-approve. `sourceId` is
   `manual:<hash of name|district>` so a repeat POST updates the row; a
   name already live in the product returns `200 {skipped}`. `manual` is a
   bulk source like `places` (Preview / Import on Progress).

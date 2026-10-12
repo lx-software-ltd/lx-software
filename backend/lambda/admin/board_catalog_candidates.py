@@ -357,8 +357,11 @@ def upsert_candidate(
     placed = {**row, "nameEn": name, "district": district}
     area = board_catalog_focus.area_for(placed)
     placed["area"] = area
-    if str(row.get("status") or "") == "approved" and source == board_catalog_focus.MANUAL_SOURCE:
+    requested = str(row.get("status") or "") if source == board_catalog_focus.MANUAL_SOURCE else ""
+    if requested == "approved":
         status = "approved"
+    elif requested == "new":
+        status = "new"  # the poster asked for a review; skip the focus auto-approve
     elif _maybe_auto_approve(placed, source=source, district=district, settings=settings):
         status = "approved"
     doc = {
@@ -474,8 +477,8 @@ def add_manual(
         "note": str(body.get("note") or "").strip(),
         "addedBy": added_by,
     }
-    if requested_status == "approved":
-        row["status"] = "approved"
+    if requested_status:
+        row["status"] = requested_status
     if area_hint:
         row["area"] = area_hint
     if is_duplicate(table, row):

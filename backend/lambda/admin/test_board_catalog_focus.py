@@ -282,6 +282,18 @@ class FocusCandidateTests(BoardTestCase):
             self.table, {"nameEn": "Stanley Library Storytime", "area": "stanley", "status": "approved"}
         )
         self.assertEqual(forced["status"], "approved")
+        # Website plus address would auto-approve; an explicit "new" keeps it on the queue.
+        held = board_catalog_candidates.add_manual(
+            self.table,
+            {
+                "nameEn": "Stanley Hoops Juniors",
+                "addressEn": STANLEY_ADDRESS,
+                "officialUrl": "https://hoops.example/stanley",
+                "status": "new",
+            },
+        )
+        self.assertEqual(held["status"], "new")
+        self.assertEqual(held["area"], "stanley")
 
     def test_add_manual_skips_names_already_live(self) -> None:
         board_catalog_candidates.remember_listing(self.table, {"name": "Stanley Art Kids", "area_name": "Southern"})
