@@ -443,6 +443,8 @@ def _headline_lines(review: dict[str, Any]) -> list[str]:
             f"{catalog.get('importedDistricts') or 0} districts imported",
             f"{catalog.get('completeDistricts') or 0} ≥ 50%",
         ]
+        if catalog.get("focus"):
+            bits.append(f"go-live focus {catalog.get('focus')}")
         if catalog.get("nextDistrict"):
             bits.append(f"next {catalog.get('nextDistrict')}")
         if catalog.get("failedActivityRows"):
