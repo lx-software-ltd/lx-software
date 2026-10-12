@@ -7,6 +7,7 @@ from datetime import timedelta
 from typing import Any
 from urllib.parse import urlparse
 
+import board_catalog_focus
 import board_hk
 import board_staff
 import board_store
@@ -85,9 +86,17 @@ def compose_brief(district: dict[str, Any]) -> str:
     name = str(district.get("name") or "")
     hint = str(district.get("hint") or "")
     contract = BOARD_CATALOG_OUTPUT_CONTRACT.strip()
+    area = board_catalog_focus.area_by_id(str(district.get("areaId") or "")) if district.get("areaId") else None
+    if area:
+        label = f"{area.get('name')} ({name})"
+        focus = board_catalog_focus.brief_paragraph(area)
+    else:
+        label = name
+        focus = ""
     return (
-        f"Founder directive — CATALOG MICRO-BATCH {name}: curate exactly 3 vetted "
+        f"Founder directive — CATALOG MICRO-BATCH {label}: curate exactly 3 vetted "
         f"child/family organisations in Hong Kong's {name} district ({hint}). "
+        f"{focus}"
         f"Use research_search to find candidates, then research_fetch_page on the official "
         f"LCSD or provider page (one page often has address, hours, phone and free entry). "
         f"{contract}"
@@ -133,6 +142,13 @@ def micro_batch_enabled(settings: dict[str, Any] | None) -> bool:
     return bool(BOARD_CATALOG_MICRO_BATCH_ENABLED_DEFAULT)
 
 
+def claim_id(district_id: str, area_id: str = "") -> str:
+    """``southern`` for a district sheet, ``southern:stanley`` for a neighbourhood sheet."""
+    did = str(district_id or "").strip().lower()
+    aid = str(area_id or "").strip().lower()
+    return f"{did}:{aid}" if did and aid else did
+
+
 def claimed_district_ids(table: Any) -> set[str]:
     found: set[str] = set()
     for status in _OPEN_STATUSES:
@@ -140,10 +156,24 @@ def claimed_district_ids(table: Any) -> set[str]:
             ref = task.get("eventRef") or {}
             if str(ref.get("kind") or "") != CATALOG_EVENT_KIND:
                 continue
-            did = str(ref.get("districtId") or "").strip().lower()
-            if did:
-                found.add(did)
+            key = claim_id(str(ref.get("districtId") or ""), str(ref.get("areaId") or ""))
+            if key:
+                found.add(key)
     return found
+
+
+def focus_targets(settings: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Neighbourhood sheets ahead of the district rotation: one per focus area."""
+    by_name = {
+        str(row.get("name") or ""): row for row in BOARD_CATALOG_DISTRICTS if isinstance(row, dict)
+    }
+    out: list[dict[str, Any]] = []
+    for area in board_catalog_focus.focus_areas(settings):
+        row = by_name.get(str(area.get("district") or ""))
+        if not row:
+            continue
+        out.append({**row, "areaId": str(area.get("id") or ""), "areaName": str(area.get("name") or "")})
+    return out
 
 
 def open_enrich_district_ids(table: Any) -> set[str]:
@@ -203,15 +233,22 @@ def low_completeness_imported_count(table: Any) -> int:
     return count
 
 
-def next_district(table: Any, *, enforce_completeness_gate: bool = True) -> dict[str, Any] | None:
+def next_district(
+    table: Any,
+    settings: dict[str, Any] | None = None,
+    *,
+    enforce_completeness_gate: bool = True,
+) -> dict[str, Any] | None:
+    """Next sheet: focus neighbourhoods first, then districts in focus order."""
     if enforce_completeness_gate:
         low = low_completeness_imported_count(table)
         if low > BOARD_CATALOG_MAX_LOW_COMPLETENESS:
             return None
     claimed = claimed_district_ids(table)
-    for row in BOARD_CATALOG_DISTRICTS:
-        if not isinstance(row, dict):
-            continue
+    for row in focus_targets(settings):
+        if claim_id(str(row.get("id") or ""), str(row.get("areaId") or "")) not in claimed:
+            return row
+    for row in board_catalog_focus.order_districts(BOARD_CATALOG_DISTRICTS, settings):
         did = str(row.get("id") or "").strip().lower()
         if did and did not in claimed:
             return row
@@ -415,6 +452,7 @@ def enrich_failed_count(table: Any, district_id: str) -> int:
 
 def next_enrich_district(
     table: Any,
+    settings: dict[str, Any] | None = None,
     *,
     imported_index: dict[str, list[dict[str, str]]] | None = None,
 ) -> dict[str, Any] | None:
@@ -422,9 +460,7 @@ def next_enrich_district(
     cooling = enrich_recently_blocked_ids(table)
     scores = district_completeness(table)
     index = imported_index if imported_index is not None else _index_imported_candidates(table)
-    for row in BOARD_CATALOG_DISTRICTS:
-        if not isinstance(row, dict):
-            continue
+    for row in board_catalog_focus.order_districts(BOARD_CATALOG_DISTRICTS, settings):
         did = str(row.get("id") or "").strip().lower()
         name = str(row.get("name") or "")
         if not did or did in busy or did in cooling:
@@ -464,11 +500,21 @@ def create_next(table: Any, settings: dict[str, Any], *, created_by: str = "boar
         raise board_staff.StaffError(
             f"pause new districts: {low} imported districts below 50% completeness"
         )
-    district = next_district(table, enforce_completeness_gate=False)
+    district = next_district(table, settings, enforce_completeness_gate=False)
     if not district:
         raise board_staff.StaffError("all catalog districts already have a sheet")
     did = str(district.get("id") or "")
     name = str(district.get("name") or did)
+    aid = str(district.get("areaId") or "")
+    event_ref: dict[str, Any] = {
+        "kind": CATALOG_EVENT_KIND,
+        "id": f"catalog:{claim_id(did, aid)}",
+        "districtId": did,
+        "district": name,
+    }
+    if aid:
+        event_ref["areaId"] = aid
+        event_ref["area"] = str(district.get("areaName") or aid)
     return board_staff.create_task(
         table,
         settings,
@@ -478,7 +524,7 @@ def create_next(table: Any, settings: dict[str, Any], *, created_by: str = "boar
         deliverable_type="json",
         budget_usd=BOARD_CATALOG_BUDGET_USD,
         sla_hours=24,
-        event_ref={"kind": CATALOG_EVENT_KIND, "id": f"catalog:{did}", "districtId": did, "district": name},
+        event_ref=event_ref,
         created_by=created_by,
     )
 
@@ -497,7 +543,7 @@ def create_enrich(table: Any, settings: dict[str, Any], *, created_by: str = "bo
             f"(cap {BOARD_CATALOG_MAX_AWAITING_IMPORT})"
         )
     index = _index_imported_candidates(table)
-    district = next_enrich_district(table, imported_index=index)
+    district = next_enrich_district(table, settings, imported_index=index)
     if not district:
         raise board_staff.StaffError("no district needs enrich")
     did = str(district.get("id") or "")

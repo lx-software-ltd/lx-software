@@ -448,7 +448,7 @@ def default_catalog_config() -> dict[str, Any]:
     }
 
 
-def normalize_catalog_config(raw: Any) -> dict[str, Any]:
+def normalize_catalog_config(raw: Any, *, strict: bool = False) -> dict[str, Any]:
     out = default_catalog_config()
     if not isinstance(raw, dict):
         return out
@@ -463,6 +463,9 @@ def normalize_catalog_config(raw: Any) -> dict[str, Any]:
             target = -1
         if 0 <= target <= 100_000:
             out["launchListingTarget"] = target
+    import board_catalog_focus
+
+    board_catalog_focus.normalize_focus_settings(raw, out, strict=strict)
     return out
 
 

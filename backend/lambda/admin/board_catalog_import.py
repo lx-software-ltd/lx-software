@@ -1802,6 +1802,7 @@ def catalog_headline(table: Any) -> dict[str, Any]:
         "importedDistricts": coverage.get("importedDistricts") or 0,
         "completeDistricts": coverage.get("completeDistricts") or 0,
         "nextDistrict": coverage.get("nextDistrict") or "",
+        "focus": coverage.get("focus") or "",
         "failedActivityRows": coverage.get("failedActivityRows") or 0,
         "launchTarget": coverage.get("launchTarget") or 0,
         "candidates": coverage.get("candidates") or {},
@@ -1813,6 +1814,8 @@ def catalog_headline(table: Any) -> dict[str, Any]:
 def catalog_coverage(table: Any) -> dict[str, Any]:
     """Owner-facing district coverage for the daily review Catalog line."""
     import board_catalog
+    import board_catalog_focus
+    import board_store
     from contract_constants import BOARD_CATALOG_DISTRICTS
 
     imported = board_catalog.claimed_district_ids(table)
@@ -1828,7 +1831,8 @@ def catalog_coverage(table: Any) -> dict[str, Any]:
         score = scores.get(name)
         if score is not None and score >= 0.5:
             complete += 1
-    nxt = board_catalog.next_district(table, enforce_completeness_gate=False)
+    settings = board_store.load_settings(table)
+    nxt = board_catalog.next_district(table, settings, enforce_completeness_gate=False)
     failed = 0
     for status in ("delivered", "awaiting_import", "needs_owner"):
         for task in _catalog_tasks(table, status):
@@ -1844,11 +1848,20 @@ def catalog_coverage(table: Any) -> dict[str, Any]:
     return {
         "importedDistricts": len(imported),
         "completeDistricts": complete,
-        "nextDistrict": str((nxt or {}).get("name") or ""),
+        "nextDistrict": _next_label(nxt),
         "failedActivityRows": failed,
         "launchTarget": BOARD_CATALOG_LAUNCH_LISTING_TARGET,
         "candidates": board_catalog_candidates.counts_by_source(table),
+        "focus": board_catalog_focus.focus_label(settings),
     }
+
+
+def _next_label(row: dict[str, Any] | None) -> str:
+    if not row:
+        return ""
+    name = str(row.get("name") or "")
+    area = str(row.get("areaName") or "")
+    return f"{area} ({name})" if area else name
 
 
 def auto_import_enabled(settings: dict[str, Any] | None) -> bool:

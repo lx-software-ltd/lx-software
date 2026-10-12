@@ -6,6 +6,11 @@ import { useBoardCatalogCandidates, useBoardCatalogMutations, useBoardCatalogSou
 import { useDebouncedValue } from "../../hooks/useDebouncedValue";
 import { AdminCell, AdminDataTable, AdminDataTableEmptyRow, AdminRowActions, ConfirmDialog } from "../ui";
 
+// Owner-added rows (POST /catalog/candidates) are their own source until the contract lists it.
+const CANDIDATE_SOURCES: readonly string[] = BOARD_CATALOG_BULK_SOURCES.includes("manual" as never)
+  ? BOARD_CATALOG_BULK_SOURCES
+  : [...BOARD_CATALOG_BULK_SOURCES, "manual"];
+
 function errorText(err: unknown): string | null {
   if (!err) return null;
   return getAdminApiErrorMessage(err) ?? (err instanceof Error ? err.message : "Request failed.");
@@ -60,6 +65,7 @@ export function BoardCatalogSourcesSection() {
   const [closeLeftoverConfirm, setCloseLeftoverConfirm] = useState(false);
   const rows = sources.data?.sources ?? [];
   const target = sources.data?.launchTarget ?? BOARD_CATALOG_LAUNCH_LISTING_TARGET;
+  const focus = sources.data?.focus;
   const queuedPreview = Boolean(mutations.preview.isSuccess && mutations.preview.data?.queued);
   const queuedImport = Boolean(mutations.importSource.isSuccess && mutations.importSource.data?.queued);
   const queuedScan = Boolean(mutations.runDiscovery.isSuccess && mutations.runDiscovery.data?.queued);
@@ -73,6 +79,12 @@ export function BoardCatalogSourcesSection() {
             <p className="small text-muted mb-0">
               Preview then import official open data and Places. Launch gate is {target} live listings.
             </p>
+            {focus?.label ? (
+              <p className="small mb-0" data-testid="catalog-focus">
+                Go-live focus: <strong>{focus.label}</strong> — {focus.approved} approved, {focus.new} new,{" "}
+                {focus.imported} imported. Focus rows import ahead of the launch gate.
+              </p>
+            ) : null}
           </div>
           <button
             type="button"
@@ -197,7 +209,7 @@ export function BoardCatalogSourcesSection() {
               onChange={(e) => setSourceFilter(e.target.value)}
             >
               <option value="">All</option>
-              {BOARD_CATALOG_BULK_SOURCES.map((id) => (
+              {CANDIDATE_SOURCES.map((id) => (
                 <option key={id} value={id}>
                   {id}
                 </option>

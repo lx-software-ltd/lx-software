@@ -9,6 +9,7 @@ from typing import Any
 
 import board_async
 import board_catalog_candidates
+import board_catalog_focus
 import board_catalog_import
 import board_hk
 import board_opendata
@@ -35,6 +36,12 @@ SCHEDULES_DROPPED_NOTE = "schedules dropped after HTTP 500"
 _BULK_ROW_MAX_REJECTS = 3
 _REQUEST_ID_RE = re.compile(r"requestId=([0-9a-fA-F-]{8,})")
 OPEN_DATA_SOURCES = tuple(sorted(board_catalog_candidates.OFFICIAL_SOURCES))
+# Contract bulk sources plus the owner-added ``manual`` queue (POST /catalog/candidates).
+BULK_SOURCES: tuple[str, ...] = tuple(BOARD_CATALOG_BULK_SOURCES) + (
+    (board_catalog_focus.MANUAL_SOURCE,) if board_catalog_focus.MANUAL_SOURCE not in BOARD_CATALOG_BULK_SOURCES else ()
+)
+# Sources whose rows already live on the candidate queue (no upstream fetch).
+QUEUE_SOURCES = frozenset({"places", "competitor", board_catalog_focus.MANUAL_SOURCE})
 _TERMINAL_CANDIDATE = frozenset({"imported", "rejected", "closed"})
 
 TEMPLATE_EN = "{name} is a {kind} in {district} for children and families."
@@ -109,7 +116,13 @@ def _importer_district(value: Any) -> str:
 def candidate_to_org(row: dict[str, Any], *, manager_id: str) -> dict[str, Any]:
     name = str(row.get("nameEn") or row.get("name") or "").strip()
     district = _importer_district(row.get("district") or "unknown")
-    category = str(row.get("category") or BOARD_CATALOG_SOURCE_CATEGORY.get(str(row.get("facilityKind") or ""), "Class"))
+    kind = str(row.get("facilityKind") or "")
+    category = str(
+        row.get("category")
+        or BOARD_CATALOG_SOURCE_CATEGORY.get(kind)
+        or board_catalog_focus.category_for_kind(kind)
+        or "Class"
+    )
     desc_en = str(row.get("descriptionEn") or "")
     desc_zh = str(row.get("descriptionZh") or "")
     if not desc_en:
@@ -173,7 +186,7 @@ def load_source_payload(table: Any, source: str, *, force: bool = False) -> dict
         return board_opendata.edb_kindergartens(table, force=force)
     if source == "swd":
         return board_opendata.swd_child_care_centres(table, force=force)
-    if source in ("places", "competitor"):
+    if source in QUEUE_SOURCES:
         rows = [
             row
             for row in board_store.list_candidates(table, per_status_limit=10_000)
@@ -204,7 +217,7 @@ def ingest_source(
     official = source in board_catalog_candidates.OFFICIAL_SOURCES
     for raw in batch:
         cand = row_to_candidate(raw, source=source)
-        if source not in ("places", "competitor") and board_catalog_candidates.is_duplicate(table, cand):
+        if source not in QUEUE_SOURCES and board_catalog_candidates.is_duplicate(table, cand):
             skipped += 1
             continue
         doc = board_catalog_candidates.upsert_candidate(table, cand)
@@ -234,12 +247,57 @@ def _batches(orgs: list[dict[str, Any]], size: int) -> list[list[dict[str, Any]]
     return [orgs[i : i + size] for i in range(0, len(orgs), size)]
 
 
-def _approved_for_source(table: Any, source: str) -> list[dict[str, Any]]:
-    return [
+def _approved_for_source(
+    table: Any, source: str, settings: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    """Approved rows for one source, go-live focus first.
+
+    Rows in a focus neighbourhood come first, then rows in a focus district,
+    then the rest in queue order — so a capped import (``limit``) spends its
+    room on the neighbourhood the owner is launching.
+    """
+    rows = [
         row
         for row in board_store.list_candidates(table, "approved", limit=10_000)
         if str(row.get("source") or "") == source
     ]
+    if settings is None:
+        settings = board_store.load_settings(table)
+    if not board_catalog_focus.has_focus(settings):
+        return rows
+    focus_districts = board_catalog_focus.focus_district_names(settings)
+
+    def rank(row: dict[str, Any]) -> int:
+        if board_catalog_focus.is_focus_row(row, settings):
+            return 0
+        if board_hk.canonical_district(str(row.get("district") or "")) in focus_districts:
+            return 1
+        return 2
+
+    return sorted(rows, key=rank)
+
+
+def focus_counts(table: Any, settings: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Candidate counts inside the go-live focus, overall and per source."""
+    if settings is None:
+        settings = board_store.load_settings(table)
+    totals = {status: 0 for status in ("new", "approved", "imported")}
+    by_source: dict[str, dict[str, int]] = {}
+    if board_catalog_focus.has_focus(settings):
+        for row in board_store.list_candidates(table, per_status_limit=10_000):
+            status = str(row.get("status") or "")
+            if status not in totals or not board_catalog_focus.is_focus_row(row, settings):
+                continue
+            totals[status] += 1
+            bucket = by_source.setdefault(str(row.get("source") or "unknown"), {k: 0 for k in totals})
+            bucket[status] += 1
+    return {
+        "label": board_catalog_focus.focus_label(settings),
+        "areas": board_catalog_focus.focus_area_ids(settings),
+        "districts": board_catalog_focus.focus_district_names(settings),
+        **totals,
+        "bySource": by_source,
+    }
 
 
 def _put_job(table: Any, source: str, doc: dict[str, Any]) -> None:
@@ -293,7 +351,7 @@ def preview_source(
     limit: int | None = None,
     skip_ingest: bool = False,
 ) -> dict[str, Any]:
-    if source not in BOARD_CATALOG_BULK_SOURCES:
+    if source not in BULK_SOURCES:
         raise BulkImportError(f"unknown catalog source {source}")
     if not board_catalog_import.import_enabled():
         raise BulkImportError("catalog import is switched off (SiutindeiBoardCatalogImportEnabled)")
@@ -392,7 +450,7 @@ def _source_pause_key(source: str) -> str:
 def _other_source_imported_recently(table: Any, source: str, *, hours: int = 24) -> bool:
     """True when another bulk source imported successfully in the last ``hours``."""
     cut = datetime.now(timezone.utc).timestamp() - max(1, int(hours)) * 3600
-    for other in BOARD_CATALOG_BULK_SOURCES:
+    for other in BULK_SOURCES:
         if other == source:
             continue
         last = board_store.get_cache(table, f"catalog:bulk:{other}:last")
@@ -1145,7 +1203,7 @@ def import_source(
 def sources_status(table: Any) -> dict[str, Any]:
     counts = board_catalog_candidates.counts_by_source(table)
     sources = []
-    for source in BOARD_CATALOG_BULK_SOURCES:
+    for source in BULK_SOURCES:
         last = board_store.get_cache(table, f"catalog:bulk:{source}:last")
         preview = board_store.get_cache(table, f"catalog:bulk:{source}:preview")
         bucket = counts.get(source) or {}
@@ -1167,6 +1225,7 @@ def sources_status(table: Any) -> dict[str, Any]:
         "sources": sources,
         "launchTarget": launch_listing_target(settings),
         "candidateCounts": counts,
+        "focus": focus_counts(table, settings),
     }
 
 
@@ -1230,12 +1289,28 @@ def maybe_queue_auto_imports(table: Any, settings: dict[str, Any]) -> dict[str, 
     if not board_catalog_import.import_enabled() or not board_catalog_import.configured():
         return {"queued": []}
     room = auto_import_row_limit(table, settings)
+    counts = board_catalog_candidates.counts_by_source(table)
+    focus = focus_counts(table, settings)
+    held_sources = _held_bulk_sources(table)
+    # Go-live neighbourhood rows bypass the launch-target room and the
+    # 50-row / 24 h gate: the owner wants that neighbourhood live now.
+    focus_ready: list[tuple[int, str]] = []
+    for source in BULK_SOURCES:
+        approved = int(((focus.get("bySource") or {}).get(source) or {}).get("approved") or 0)
+        if approved <= 0:
+            continue
+        if source in held_sources or _job_is_active(_job(table, source)) or source_is_paused(table, source):
+            continue
+        focus_ready.append((approved, source))
+    if focus_ready:
+        focus_ready.sort(reverse=True)
+        approved, source = focus_ready[0]
+        out = _schedule_or_run_bulk(table, settings, source, approved=approved, limit=approved)
+        return {"queued": [source], "limit": approved, "focus": True, **out}
     if room <= 0:
         return {"queued": [], "reason": "launch target reached"}
-    counts = board_catalog_candidates.counts_by_source(table)
-    held_sources = _held_bulk_sources(table)
     ready: list[tuple[int, str]] = []
-    for source in BOARD_CATALOG_BULK_SOURCES:
+    for source in BULK_SOURCES:
         approved = int((counts.get(source) or {}).get("approved") or 0)
         if approved <= 0:
             continue
@@ -1533,7 +1608,7 @@ def queue_action(
 ) -> dict[str, Any]:
     if action not in ("preview", "import", "ingest"):
         raise BulkImportError(f"unknown catalog bulk action {action}")
-    if source not in BOARD_CATALOG_BULK_SOURCES:
+    if source not in BULK_SOURCES:
         raise BulkImportError(f"unknown catalog source {source}")
     if action in ("preview", "import") and not board_catalog_import.import_enabled():
         raise BulkImportError("catalog import is switched off (SiutindeiBoardCatalogImportEnabled)")

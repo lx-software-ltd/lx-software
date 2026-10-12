@@ -23,10 +23,19 @@ from contract_constants import (
 from test_board import BoardTestCase
 
 
-def _enable(table, **staff):
+def _enable(table, focus_areas: list[str] | None = None, **staff):
     settings = board_store.load_settings(table)
     settings["staff"] = board_store.normalize_staff_config(
         {**(settings.get("staff") or {}), "enabled": True, "dutiesEnabled": True, **staff}
+    )
+    # District-rotation tests opt out of the default go-live focus (Stanley, then
+    # the Hong Kong Island district order) so the contract rotation is exercised.
+    settings["catalog"] = board_store.normalize_catalog_config(
+        {
+            **(settings.get("catalog") or {}),
+            "focusAreas": focus_areas if focus_areas is not None else [],
+            "focusDistricts": [],
+        }
     )
     return board_store.save_settings(table, settings)
 

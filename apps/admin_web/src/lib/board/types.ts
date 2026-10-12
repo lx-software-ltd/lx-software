@@ -1341,10 +1341,22 @@ export type BoardCatalogSourceRow = {
 };
 
 
+export type BoardCatalogFocus = {
+  readonly label: string;
+  readonly areas: readonly string[];
+  readonly districts: readonly string[];
+  readonly new: number;
+  readonly approved: number;
+  readonly imported: number;
+  readonly bySource: Readonly<Record<string, Readonly<Record<string, number>>>>;
+};
+
+
 export type BoardCatalogSourcesPayload = {
   readonly sources: readonly BoardCatalogSourceRow[];
   readonly launchTarget: number;
   readonly candidateCounts: Readonly<Record<string, Readonly<Record<string, number>>>>;
+  readonly focus?: BoardCatalogFocus;
 };
 
 
@@ -1354,6 +1366,7 @@ export type BoardCatalogCandidate = {
   readonly nameEn: string;
   readonly nameZh?: string;
   readonly district: string;
+  readonly area?: string;
   readonly status: string;
   readonly officialUrl?: string;
   readonly updatedAt?: string;

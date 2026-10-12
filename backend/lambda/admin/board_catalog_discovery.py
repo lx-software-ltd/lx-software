@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 import board_catalog_bulk
 import board_catalog_candidates
+import board_catalog_focus_discovery
 import board_hk
 import board_opendata
 import board_places
@@ -168,57 +169,31 @@ def rotate_districts(table: Any, n: int | None = None) -> list[str]:
 
 
 def discover_places(table: Any, settings: dict[str, Any], districts: list[str] | None = None) -> dict[str, Any]:
+    focus = (
+        board_catalog_focus_discovery.discover_focus_areas(table, settings)
+        if districts is None
+        else {"areas": [], "upserted": 0, "errors": []}
+    )
     chosen = districts or rotate_districts(table)
     upserted = 0
-    errors: list[str] = []
+    errors: list[str] = list(focus.get("errors") or [])
     for name in chosen:
         try:
             places = board_places.discover(table, name, settings=settings, pages=1, limit=10)
         except board_places.PlacesError as exc:
             errors.append(f"{name}:{exc}"[:160])
             continue
-        now = board_store.now_iso()
-        for place in places:
-            if str(place.get("businessStatus") or "") == "CLOSED_PERMANENTLY":
-                cand = {
-                    "source": "places",
-                    "placeId": place.get("placeId"),
-                    "sourceId": place.get("placeId"),
-                    "nameEn": place.get("name"),
-                    "addressEn": place.get("address"),
-                    "district": name,
-                }
-                if not board_catalog_candidates.is_duplicate(table, cand):
-                    doc = board_catalog_candidates.upsert_candidate(table, cand)
-                    cid = str(doc.get("candidateId") or "")
-                    if cid:
-                        board_catalog_candidates.set_status(table, cid, "closed")
-                continue
-            row = {
-                "source": "places",
-                "placeId": place.get("placeId"),
-                "sourceId": place.get("placeId"),
-                "nameEn": place.get("name"),
-                "addressEn": place.get("address"),
-                "district": name or board_hk.district_from_address(str(place.get("address") or "")),
-                "phone": place.get("phone") or "",
-                "officialUrl": place.get("website") or "",
-                "facilityKind": place.get("facilityKind") or "places_park",
-                "types": place.get("types") or [],
-                "rating": place.get("rating"),
-                "userRatingCount": place.get("userRatingCount"),
-                "placesFetchedAt": now,
-            }
-            hours = place.get("regularOpeningHours") or {}
-            if isinstance(hours, dict) and hours.get("weekdayDescriptions"):
-                row["openingHours"] = "; ".join(str(x) for x in hours.get("weekdayDescriptions") or [])[:200]
-            doc = board_catalog_candidates.upsert_candidate(table, row)
-            if not doc.get("skipped"):
-                upserted += 1
+        upserted += board_catalog_focus_discovery.upsert_places(table, places, name, settings=settings)
     cur = _cursor(table)
     cur["lastPlacesAt"] = board_store.now_iso()
     _save_cursor(table, cur)
-    return {"districts": chosen, "upserted": upserted, "errors": errors}
+    return {
+        "districts": chosen,
+        "upserted": upserted + int(focus.get("upserted") or 0),
+        "errors": errors,
+        "focusAreas": list(focus.get("areas") or []),
+        "focusUpserted": int(focus.get("upserted") or 0),
+    }
 
 
 def _record_opendata_gap(table: Any, source: str, fetched_at: str, *, row_count: int = 0, reason: str = "") -> None:

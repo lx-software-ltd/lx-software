@@ -811,6 +811,21 @@ approves, rejects, or closes the matching `new` rows (Progress **Close
 leftover competitors** uses `decision=close`, `source=competitor`,
 `missingPlaceId=true`, and `before` = 7 days ago — the same filter as
 the discovery tick).
+Go-live runs neighbourhood by neighbourhood (Stanley first, then the
+rest of Southern, then Hong Kong Island, then all). The focus is
+`settings.catalog.focusAreas` (area ids from `board_catalog_focus.AREAS`;
+default `["stanley"]`; `[]` turns it off) plus optional `focusDistricts`
+(absent = the go-live district order for rotation only; `[]` = contract order).
+Daily discovery sweeps each focus area with the kids-class text queries
+(cached 30 days), focus-area Places / competitor / manual rows
+auto-approve with a website plus an address, approved focus rows import
+first and ahead of the launch gate, and the first micro-batch sheet is a
+neighbourhood sheet. Hand-sourced organisations go in with
+`POST …/catalog/candidates` (`nameEn` + `district` / `area` / address,
+optional `officialUrl`, `category`, `sourceUrl`, `note`,
+`status: approved` / `status: new`); the board API key may call it. Progress shows the
+focus counts above the bulk sources table; move the focus from
+**Settings** (`catalog.focusAreas`) when the neighbourhood is live.
 Discovery refreshes LCSD / EDB / SWD on Monday **or** when a cache is
 missing/empty, ingests a source in-process
 when it has ≤ 500 rows, and queues 500-row `ingest` jobs when it is

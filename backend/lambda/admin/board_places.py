@@ -29,7 +29,7 @@ from secret_store import read_secret_string
 
 # Spec field mask (no ``places.`` prefix). Search requests prefix each path.
 FIELD_MASK = (
-    "id,displayName,formattedAddress,websiteUri,nationalPhoneNumber,"
+    "id,displayName,formattedAddress,location,websiteUri,nationalPhoneNumber,"
     "rating,userRatingCount,regularOpeningHours,businessStatus,types"
 )
 SEARCH_FIELD_MASK = ",".join(f"places.{part}" for part in FIELD_MASK.split(","))
@@ -141,10 +141,13 @@ def _normalise_place(raw: dict[str, Any]) -> dict[str, Any]:
     name = raw.get("displayName")
     if isinstance(name, dict):
         name = name.get("text") or ""
+    location = raw.get("location") if isinstance(raw.get("location"), dict) else {}
     return {
         "placeId": str(raw.get("id") or raw.get("placeId") or ""),
         "name": str(name or raw.get("name") or ""),
         "address": str(raw.get("formattedAddress") or ""),
+        "lat": location.get("latitude", raw.get("lat")),
+        "lng": location.get("longitude", raw.get("lng")),
         "website": str(raw.get("websiteUri") or ""),
         "phone": str(raw.get("nationalPhoneNumber") or ""),
         "rating": raw.get("rating"),
@@ -324,4 +327,92 @@ def discover(
                 continue
             seen.add(pid)
             found.append({**place, "facilityKind": kind, "district": name})
+    return found
+
+
+def _search_pages(
+    table: Any,
+    settings: dict[str, Any] | None,
+    body: dict[str, Any],
+    *,
+    pages: int,
+) -> list[dict[str, Any]]:
+    """Run one Text Search (with ``pages`` follow-ups) and keep Hong Kong addresses."""
+    out: list[dict[str, Any]] = []
+    page_token = ""
+    for _page in range(pages):
+        payload = dict(body)
+        if page_token:
+            payload["pageToken"] = page_token
+        _ensure_cap(table, settings, TEXT_SEARCH_USD)
+        data = _http(
+            "POST",
+            TEXT_SEARCH_URL,
+            headers={
+                "Content-Type": "application/json",
+                "X-Goog-Api-Key": _api_key(),
+                "X-Goog-FieldMask": SEARCH_FIELD_MASK,
+            },
+            body=json.dumps(payload).encode("utf-8"),
+        )
+        _charge(table, settings, TEXT_SEARCH_USD, kind="search")
+        chunk = [_normalise_place(p) for p in (data.get("places") or []) if isinstance(p, dict)]
+        out.extend(p for p in chunk if board_hk.is_hk_address(str(p.get("address") or "")))
+        page_token = str(data.get("nextPageToken") or "")
+        if not page_token:
+            break
+    return out
+
+
+def discover_area(
+    table: Any,
+    area: dict[str, Any],
+    queries: list[tuple[str, str]],
+    *,
+    settings: dict[str, Any] | None = None,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """Search one neighbourhood for children's classes, clubs and venues.
+
+    Free-text queries biased to the area circle (no ``includedType``, so
+    studios, clubs and playgroups that Places files under generic types still
+    come back). Each query is cached for the Places TTL, so a focus area costs
+    ``len(queries) × TEXT_SEARCH_USD`` once a month. Charges against the cap.
+    """
+    name = str(area.get("name") or "").strip()
+    if not name:
+        raise PlacesError("area name is required")
+    try:
+        lat = float(area.get("lat"))
+        lng = float(area.get("lng"))
+        radius = float(area.get("radius") or 1500)
+    except (TypeError, ValueError) as exc:
+        raise PlacesError("area centre is required") from exc
+    limit = max(1, min(20, int(limit)))
+    district = str(area.get("district") or "")
+    found: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for query, kind in queries:
+        q = f"{query} {name} Hong Kong"
+        cache_name = "places:a:" + hashlib.sha256(f"{q}|{lat}|{lng}|{radius}|{limit}".encode("utf-8")).hexdigest()[:24]
+        hit = board_store.get_cache(table, cache_name)
+        if hit and isinstance(hit.get("payload"), dict) and isinstance(hit["payload"].get("places"), list):
+            page_places = list(hit["payload"]["places"])
+        else:
+            body: dict[str, Any] = {
+                "textQuery": q,
+                "regionCode": "HK",
+                "maxResultCount": limit,
+                "locationBias": {
+                    "circle": {"center": {"latitude": lat, "longitude": lng}, "radius": radius}
+                },
+            }
+            page_places = _search_pages(table, settings, body, pages=1)
+            board_store.put_cache(table, cache_name, {"places": page_places}, ttl_seconds=CACHE_TTL_SECONDS)
+        for place in page_places:
+            pid = str(place.get("placeId") or "")
+            if not pid or pid in seen:
+                continue
+            seen.add(pid)
+            found.append({**place, "facilityKind": kind, "district": district, "area": str(area.get("id") or "")})
     return found
