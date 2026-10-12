@@ -9,6 +9,15 @@ vi.mock("../../hooks/useBoardCatalog", () => ({
     data: {
       launchTarget: 1000,
       candidateCounts: {},
+      focus: {
+        label: "Stanley (Southern)",
+        areas: ["stanley"],
+        districts: ["Southern"],
+        new: 3,
+        approved: 2,
+        imported: 1,
+        bySource: { places: { new: 3, approved: 2, imported: 1 } },
+      },
       sources: [
         {
           id: "lcsd",
@@ -67,6 +76,13 @@ describe("BoardCatalogSourcesSection", () => {
     expect(screen.getByText("Ingest running 500 done, 200 left…")).toBeInTheDocument();
     expect(previewButtons[2]).toBeDisabled();
     expect(importButtons[2]).toBeDisabled();
+  });
+
+  it("shows the go-live focus line", () => {
+    render(<BoardCatalogSourcesSection />);
+    const line = screen.getByTestId("catalog-focus");
+    expect(line).toHaveTextContent("Go-live focus: Stanley (Southern)");
+    expect(line).toHaveTextContent("2 approved, 3 new, 1 imported");
   });
 
   it("lists filtered candidates and a leftover-competitor close action", () => {

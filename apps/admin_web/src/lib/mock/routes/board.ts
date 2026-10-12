@@ -625,6 +625,15 @@ export function handleB31(ctx: MockCtx): Response | null {
       return json({
         launchTarget: 1000,
         candidateCounts: { lcsd: { new: 0, approved: 2, imported: 0, rejected: 0, closed: 0 } },
+        focus: {
+          label: "Stanley (Southern)",
+          areas: ["stanley"],
+          districts: ["Southern"],
+          new: 1,
+          approved: 2,
+          imported: 0,
+          bySource: { places: { new: 1, approved: 2, imported: 0 } },
+        },
         sources: [
           {
             id: "lcsd",
