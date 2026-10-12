@@ -287,6 +287,33 @@ class LinkedInStoreTests(unittest.TestCase):
             "Short sentences. Dry. No emoji.",
         )
 
+    def test_story_voices(self) -> None:
+        voices = linkedin_store.STORY_VOICES
+        self.assertEqual(
+            [row["id"] for row in voices],
+            ["over-lunch", "at-the-break", "they-asked", "where-it-stands"],
+        )
+        self.assertEqual(
+            [row["label"] for row in voices],
+            ["Over lunch", "At the break", "They asked", "Where it stands"],
+        )
+        self.assertEqual(voices[0]["notes"], linkedin_store.RECOMMENDED_VOICE)
+        notes = [row["notes"] for row in voices]
+        self.assertEqual(len(set(notes)), 4)
+        for note in notes:
+            self.assertLessEqual(len(note), 1000)
+            self.assertIn("always I, never we", note)
+            self.assertNotIn("done is better than perfect", note)
+            self.assertNotIn("Reliability is not a feature", note)
+        self.assertIn("Stand at the moment it broke", notes[1])
+        self.assertIn("a question a colleague actually asked", notes[2])
+        self.assertIn("what the system does today", notes[3])
+        overview = linkedin_store.overview(self.table)
+        self.assertEqual(
+            overview["storyVoices"],
+            [{"id": row["id"], "label": row["label"], "notes": row["notes"]} for row in voices],
+        )
+
     def test_settings_save_keeps_openrouter_model(self) -> None:
         saved = linkedin_store.save_settings(
             self.table,

@@ -6,6 +6,7 @@ import { formatDateTimeHKT } from "../../lib/formatDisplay";
 import {
   BUILTIN_FORBIDDEN,
   IMAGE_FORMATS,
+  LINKEDIN_STORY_VOICES,
   STYLE_EXAMPLE_MAX,
   WEEKDAY_OPTIONS,
   linkedInAccessState,
@@ -169,8 +170,25 @@ export function LinkedInSettingsCard({
                 written as I, not we; one real situation told in order with its specifics; no sensationalism, buzzwords
                 or emoji; no employer, no availability, and the blocked phrases. Leave blank for the default tone: first
                 person, short lines, and a closing question. When Ideas is empty, drafts draw on a built-in bank of
-                concrete engineering situations.
+                concrete engineering situations. A story tone fills this field. Save stores the one you pick. Each draft
+                in a batch still gets its own way in and way out.
               </p>
+              <div className="d-flex flex-wrap gap-2 mt-2" role="group" aria-label="Story tones">
+                {(overview.storyVoices?.length ? overview.storyVoices : LINKEDIN_STORY_VOICES).map((tone) => {
+                  const selected = settings.voiceNotes.trim() === tone.notes;
+                  return (
+                    <button
+                      key={tone.id}
+                      type="button"
+                      className={`btn btn-sm ${selected ? "btn-secondary" : "btn-outline-secondary"}`}
+                      aria-pressed={selected}
+                      onClick={() => setSettings({ ...settings, voiceNotes: tone.notes })}
+                    >
+                      {tone.label}
+                    </button>
+                  );
+                })}
+              </div>
               {overview.recommendedVoice && settings.voiceNotes.trim() !== overview.recommendedVoice ? (
                 <button
                   type="button"

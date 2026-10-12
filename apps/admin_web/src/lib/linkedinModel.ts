@@ -211,6 +211,7 @@ export type LinkedInOverview = {
   builtinForbidden: string[];
   defaultModel: string;
   recommendedVoice?: string;
+  storyVoices?: readonly LinkedInStoryVoice[];
   styleExampleMax?: number;
   defaultImageModel?: string;
   imageModelAlternative?: string;
@@ -274,6 +275,35 @@ export const SAMPLE_LINKEDIN_IDEAS: LinkedInIdea[] = [
 /** Mirrors `RECOMMENDED_VOICE` in `backend/lambda/admin/linkedin_store.py`. */
 export const RECOMMENDED_LINKEDIN_VOICE =
   "First person singular, always I, never we. Conversational, as if I were telling a former colleague over lunch what I have been building. No hook: the first line is plain and specific to this story, not a question, not a claim. Tell it in the order it happened: what I noticed, what I decided, what I built, where it broke, where it stands now. Name the real constraint (a full-time job, nights and weekends, a month of evenings) and real figures when I have them. Plain dashes for a short list. One-line paragraphs are fine. Dry, understated, a little self-deprecating; an aside now and then. Admit what is unfinished and what might fail. No sensationalism, no wow, no lesson headline, no moral, no call to action. Each post has its own shape: a different way in and a different way out from the last one, no stock opening line, no stock closing line, no catchphrase carried from post to post. Usually 200 to 450 words.";
+
+export type LinkedInStoryVoice = {
+  id: string;
+  label: string;
+  notes: string;
+};
+
+/** Mirrors `STORY_VOICES` in `linkedin_store.py`. Over lunch is the recommended voice. */
+export const LINKEDIN_STORY_VOICES: readonly LinkedInStoryVoice[] = [
+  { id: "over-lunch", label: "Over lunch", notes: RECOMMENDED_LINKEDIN_VOICE },
+  {
+    id: "at-the-break",
+    label: "At the break",
+    notes:
+      "First person singular, always I, never we. Stand at the moment it broke. The first concrete thing is the figure or the limit, in words specific to this story; background comes after that, only as much as the reader needs. Short sentences. One-line paragraphs are fine. Name the real constraint and real figures when I have them. Dry and understated. Admit what is unfinished. No sensationalism, no wow, no lesson headline, no moral, no call to action. End on the current state or figure, with no comment on it. The shape for this draft still chooses the way in and the way out. Each post has its own shape: a different way in and a different way out from the last one, no stock opening line, no stock closing line, no catchphrase carried from post to post. Usually 200 to 350 words.",
+  },
+  {
+    id: "they-asked",
+    label: "They asked",
+    notes:
+      "First person singular, always I, never we. This post answers a question a colleague actually asked. The first line is plain and names the situation, not a claim and not a lesson. Their question appears in their words. Then how I found the answer: what I looked at, what I tried, where it broke. Name the real constraint and real figures when I have them. Plain dashes for a short list. One-line paragraphs are fine. Dry and understated. No sensationalism, no wow, no lesson headline, no moral, no call to action. End with the answer in one line, including the trade-off I accepted, without defending it. The shape for this draft still chooses the way in and the way out. Each post has its own shape: a different way in and a different way out from the last one, no stock opening line, no stock closing line, no catchphrase carried from post to post. Usually 200 to 400 words.",
+  },
+  {
+    id: "where-it-stands",
+    label: "Where it stands",
+    notes:
+      "First person singular, always I, never we. Start from what the system does today, in one plain line specific to this story, not a claim and not a lesson. Then how it got there: what I noticed, what I decided, what I built, where it broke. Name the real constraint and real figures when I have them. One-line paragraphs are fine. Dry and understated, a little self-deprecating. No sensationalism, no wow, no lesson headline, no moral, no call to action. End by naming what is still unfinished, and stop. The shape for this draft still chooses the way in and the way out. Each post has its own shape: a different way in and a different way out from the last one, no stock opening line, no stock closing line, no catchphrase carried from post to post. Usually 200 to 400 words.",
+  },
+];
 
 /** Mirrors `STYLE_EXAMPLE_MAX` in `linkedin_store.py`. The default example itself comes from the API. */
 export const STYLE_EXAMPLE_MAX = 3000;

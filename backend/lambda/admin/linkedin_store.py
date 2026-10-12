@@ -156,6 +156,50 @@ RECOMMENDED_VOICE = (
     "stock closing line, no catchphrase carried from post to post. Usually 200 to 450 words."
 )
 
+# Four story stances for the Voice field. Over lunch is the recommended voice.
+# Each note stays under the 1000-character voice limit and quotes no catchphrase.
+# Mirrored as LINKEDIN_STORY_VOICES in linkedinModel.ts.
+_AT_THE_BREAK_VOICE = (
+    "First person singular, always I, never we. Stand at the moment it broke. The first concrete "
+    "thing is the figure or the limit, in words specific to this story; background comes after that, "
+    "only as much as the reader needs. Short sentences. One-line paragraphs are fine. Name the real "
+    "constraint and real figures when I have them. Dry and understated. Admit what is unfinished. "
+    "No sensationalism, no wow, no lesson headline, no moral, no call to action. End on the current "
+    "state or figure, with no comment on it. The shape for this draft still chooses the way in and "
+    "the way out. Each post has its own shape: a different way in and a different way out from the "
+    "last one, no stock opening line, no stock closing line, no catchphrase carried from post to "
+    "post. Usually 200 to 350 words."
+)
+_THEY_ASKED_VOICE = (
+    "First person singular, always I, never we. This post answers a question a colleague actually "
+    "asked. The first line is plain and names the situation, not a claim and not a lesson. Their "
+    "question appears in their words. Then how I found the answer: what I looked at, what I tried, "
+    "where it broke. Name the real constraint and real figures when I have them. Plain dashes for a "
+    "short list. One-line paragraphs are fine. Dry and understated. No sensationalism, no wow, no "
+    "lesson headline, no moral, no call to action. End with the answer in one line, including the "
+    "trade-off I accepted, without defending it. The shape for this draft still chooses the way in "
+    "and the way out. Each post has its own shape: a different way in and a different way out from "
+    "the last one, no stock opening line, no stock closing line, no catchphrase carried from post "
+    "to post. Usually 200 to 400 words."
+)
+_WHERE_IT_STANDS_VOICE = (
+    "First person singular, always I, never we. Start from what the system does today, in one plain "
+    "line specific to this story, not a claim and not a lesson. Then how it got there: what I "
+    "noticed, what I decided, what I built, where it broke. Name the real constraint and real "
+    "figures when I have them. One-line paragraphs are fine. Dry and understated, a little "
+    "self-deprecating. No sensationalism, no wow, no lesson headline, no moral, no call to action. "
+    "End by naming what is still unfinished, and stop. The shape for this draft still chooses the "
+    "way in and the way out. Each post has its own shape: a different way in and a different way "
+    "out from the last one, no stock opening line, no stock closing line, no catchphrase carried "
+    "from post to post. Usually 200 to 400 words."
+)
+STORY_VOICES: tuple[dict[str, str], ...] = (
+    {"id": "over-lunch", "label": "Over lunch", "notes": RECOMMENDED_VOICE},
+    {"id": "at-the-break", "label": "At the break", "notes": _AT_THE_BREAK_VOICE},
+    {"id": "they-asked", "label": "They asked", "notes": _THEY_ASKED_VOICE},
+    {"id": "where-it-stands", "label": "Where it stands", "notes": _WHERE_IT_STANDS_VOICE},
+)
+
 STYLE_EXAMPLE_MAX = 3000
 
 # Pictures. Seedream is the default; Qwen-Image is the documented alternative.
@@ -1265,6 +1309,7 @@ def overview(table: Any) -> dict[str, Any]:
         "builtinForbidden": list(BUILTIN_FORBIDDEN),
         "defaultModel": (os.environ.get("OPENROUTER_MODEL") or "").strip(),
         "recommendedVoice": RECOMMENDED_VOICE,
+        "storyVoices": [{"id": row["id"], "label": row["label"], "notes": row["notes"]} for row in STORY_VOICES],
         "styleExampleMax": STYLE_EXAMPLE_MAX,
         "defaultImageModel": DEFAULT_IMAGE_MODEL,
         "imageModelAlternative": IMAGE_MODEL_ALTERNATIVE,
