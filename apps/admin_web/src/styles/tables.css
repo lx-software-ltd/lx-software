@@ -260,40 +260,17 @@
   border-bottom: 1px solid var(--admin-line);
 }
 
-.linkedin-draft-hook {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  column-gap: 0.35rem;
-  align-items: end;
-}
-
-.linkedin-draft-hook .admin-star {
-  grid-column: 1;
-  grid-row: 1;
-}
-
-.linkedin-draft-hook-text {
-  grid-column: 2;
-  grid-row: 1;
-  line-height: 1;
-}
-
-.linkedin-draft-hook .admin-table-cell-meta {
-  grid-column: 2;
-  grid-row: 2;
-}
-
 .admin-star {
-  display: inline-flex;
-  align-items: flex-end;
-  justify-content: center;
-  width: 1em;
-  height: 1em;
+  appearance: none;
+  display: inline-block;
   padding: 0;
   border: 0;
+  margin: 0 0.3em 0 0;
   background: transparent;
   color: var(--admin-text-2);
+  font: inherit;
   line-height: 1;
+  vertical-align: baseline;
 }
 
 .admin-star:hover {
@@ -305,11 +282,17 @@
 }
 
 .admin-star i {
-  display: block;
   font-size: 1em;
   line-height: 1;
-  /* Icon fonts leave empty space under the glyph; sit the points on the hook baseline. */
-  transform: translateY(0.15em);
+}
+
+/*
+ * Bootstrap Icons fill the em square. Latin letters sit on the alphabetic
+ * baseline, about a descender above that floor — so an unshifted star hangs
+ * under the hook. Raise the glyph onto the letter bottoms.
+ */
+.admin-star i::before {
+  vertical-align: 0.32em;
 }
 
 .admin-kebab {

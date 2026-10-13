@@ -251,11 +251,13 @@ function DraftRow({
     >
       <AdminCell column="hook">
         <div className="linkedin-draft-hook">
-          <DraftStarButton
-            starred={Boolean(post.starred)}
-            onToggle={() => void linkedIn.starPost.mutate({ postId: post.postId, starred: !post.starred })}
-          />
-          <span className="linkedin-draft-hook-text">{hook || "Untitled"}</span>
+          <span className="linkedin-draft-hook-text">
+            <DraftStarButton
+              starred={Boolean(post.starred)}
+              onToggle={() => void linkedIn.starPost.mutate({ postId: post.postId, starred: !post.starred })}
+            />
+            {hook || "Untitled"}
+          </span>
           <AdminDataTableCellMeta>
             {statusLabel(post.status)}
             {post.slotAt ? ` · ${post.slotAt.slice(0, 10)}` : ""}
