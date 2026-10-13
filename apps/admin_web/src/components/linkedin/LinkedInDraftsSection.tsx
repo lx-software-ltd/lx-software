@@ -250,18 +250,16 @@ function DraftRow({
       }
     >
       <AdminCell column="hook">
-        <div className="d-flex align-items-start gap-2">
+        <div className="linkedin-draft-hook">
           <DraftStarButton
             starred={Boolean(post.starred)}
             onToggle={() => void linkedIn.starPost.mutate({ postId: post.postId, starred: !post.starred })}
           />
-          <div>
-            {hook || "Untitled"}
-            <AdminDataTableCellMeta>
-              {statusLabel(post.status)}
-              {post.slotAt ? ` · ${post.slotAt.slice(0, 10)}` : ""}
-            </AdminDataTableCellMeta>
-          </div>
+          <span className="linkedin-draft-hook-text">{hook || "Untitled"}</span>
+          <AdminDataTableCellMeta>
+            {statusLabel(post.status)}
+            {post.slotAt ? ` · ${post.slotAt.slice(0, 10)}` : ""}
+          </AdminDataTableCellMeta>
         </div>
       </AdminCell>
       <AdminCell column="pillar">{pillarLabel(post.pillar)}</AdminCell>
