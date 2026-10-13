@@ -532,7 +532,8 @@ Activity is not added to Other.
 ### LinkedIn drafts
 
 LX Software → **LinkedIn** (`/lx-software?tab=linkedin`) stores a personal
-posting queue. Rows use the `LINKEDIN#` prefix and stay out of `/records`.
+posting queue. A star on each draft row marks a favourite (`starred` on the
+post); it does not change approval or copy. Rows use the `LINKEDIN#` prefix and stay out of `/records`.
 Drafts are written as a senior architect with the `lxsoftware:linkedin`
 key. The company name stays blocked in every draft. Draft calls send
 `reasoning: {enabled: false}`. A model that still thinks fails the batch

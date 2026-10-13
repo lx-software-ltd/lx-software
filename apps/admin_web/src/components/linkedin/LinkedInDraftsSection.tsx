@@ -250,11 +250,19 @@ function DraftRow({
       }
     >
       <AdminCell column="hook">
-        {hook || "Untitled"}
-        <AdminDataTableCellMeta>
-          {statusLabel(post.status)}
-          {post.slotAt ? ` · ${post.slotAt.slice(0, 10)}` : ""}
-        </AdminDataTableCellMeta>
+        <div className="d-flex align-items-start gap-2">
+          <DraftStarButton
+            starred={Boolean(post.starred)}
+            onToggle={() => void linkedIn.starPost.mutate({ postId: post.postId, starred: !post.starred })}
+          />
+          <div>
+            {hook || "Untitled"}
+            <AdminDataTableCellMeta>
+              {statusLabel(post.status)}
+              {post.slotAt ? ` · ${post.slotAt.slice(0, 10)}` : ""}
+            </AdminDataTableCellMeta>
+          </div>
+        </div>
       </AdminCell>
       <AdminCell column="pillar">{pillarLabel(post.pillar)}</AdminCell>
       <AdminCell column="slot">{post.slotAt ? post.slotAt.slice(0, 16).replace("T", " ") : "—"}</AdminCell>
@@ -304,6 +312,30 @@ function DraftRow({
 }
 
 (DraftRow as { recordGroup?: boolean }).recordGroup = true;
+
+function DraftStarButton({
+  starred,
+  onToggle,
+}: {
+  readonly starred: boolean;
+  readonly onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={starred ? "admin-star is-on" : "admin-star"}
+      aria-pressed={starred}
+      aria-label={starred ? "Unstar draft" : "Star draft"}
+      title={starred ? "Unstar" : "Star"}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+    >
+      <i className={starred ? "bi bi-star-fill" : "bi bi-star"} aria-hidden="true" />
+    </button>
+  );
+}
 
 function DraftEditorRow({
   settings,

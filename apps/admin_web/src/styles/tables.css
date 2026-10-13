@@ -260,6 +260,29 @@
   border-bottom: 1px solid var(--admin-line);
 }
 
+.admin-star {
+  flex: 0 0 2rem;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--admin-text-2);
+  line-height: 1;
+}
+
+.admin-star:hover {
+  color: #e6b800;
+}
+
+.admin-star.is-on {
+  color: #f5c518;
+}
+
+.admin-star i {
+  font-size: 1.1rem;
+}
+
 .admin-kebab {
   width: 2rem;
   height: 2rem;

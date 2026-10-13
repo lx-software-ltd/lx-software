@@ -126,6 +126,7 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
       hashtags: Array.isArray(body.hashtags) ? body.hashtags.map(String) : [],
       slotAt: "",
       guardrails: [],
+      starred: false,
     };
     state.linkedin.posts = [post, ...state.linkedin.posts];
     return json({ item: post }, 201);
@@ -233,6 +234,7 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
       hashtags: [],
       slotAt: "",
       guardrails: [],
+      starred: false,
     };
     state.linkedin.posts = [post, ...state.linkedin.posts];
     return json({ job: { jobId: "job_mock", status: "done", postIds: [post.postId], error: "" } }, 202);
@@ -390,6 +392,7 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
       firstComment: String(body.firstComment ?? state.linkedin.posts[index].firstComment),
       pillar: String(body.pillar ?? state.linkedin.posts[index].pillar),
       hashtags: Array.isArray(body.hashtags) ? body.hashtags.map(String) : state.linkedin.posts[index].hashtags,
+      starred: "starred" in body ? Boolean(body.starred) : Boolean(state.linkedin.posts[index].starred),
     };
     return json({ item: state.linkedin.posts[index] });
   }
