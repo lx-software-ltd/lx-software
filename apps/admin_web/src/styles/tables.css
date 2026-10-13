@@ -286,13 +286,9 @@
   line-height: 1;
 }
 
-/*
- * Bootstrap Icons fill the em square. Latin letters sit on the alphabetic
- * baseline, about a descender above that floor — so an unshifted star hangs
- * under the hook. Raise the glyph onto the letter bottoms.
- */
+/* Bootstrap Icons drop glyphs 0.125em for centring; on the baseline the star points meet the letter bottoms. */
 .admin-star i::before {
-  vertical-align: 0.32em;
+  vertical-align: 0;
 }
 
 .admin-kebab {
