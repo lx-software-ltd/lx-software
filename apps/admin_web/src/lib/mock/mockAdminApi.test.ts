@@ -357,4 +357,24 @@ describe("mockAdminFetch", () => {
     expect(saved.settings.model).toBe("openai/gpt-4.1-mini");
     expect(saved.settings.notifyEmail).toBe("owner@example.com");
   });
+
+  it("persists a starred LinkedIn draft", async () => {
+    const listed = (await (await mockAdminFetch("/lx-software/linkedin/posts")).json()) as {
+      items: { postId: string; starred?: boolean }[];
+    };
+    const draft = listed.items.find((row) => row.postId === "li_hook");
+    expect(draft?.starred).toBeFalsy();
+    const put = await mockAdminFetch("/lx-software/linkedin/posts/li_hook", {
+      method: "PUT",
+      body: JSON.stringify({ starred: true }),
+    });
+    expect(put.ok).toBe(true);
+    const saved = (await put.json()) as { item: { starred: boolean; status: string } };
+    expect(saved.item.starred).toBe(true);
+    expect(saved.item.status).toBe("drafted");
+    const again = (await (await mockAdminFetch("/lx-software/linkedin/posts")).json()) as {
+      items: { postId: string; starred?: boolean }[];
+    };
+    expect(again.items.find((row) => row.postId === "li_hook")?.starred).toBe(true);
+  });
 });

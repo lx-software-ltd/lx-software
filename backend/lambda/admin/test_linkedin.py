@@ -124,6 +124,31 @@ class LinkedInStoreTests(unittest.TestCase):
         self.assertEqual(edited["status"], "drafted")
         self.assertEqual(edited["slotAt"], "")
 
+    def test_star_toggles_without_unapproving(self) -> None:
+        settings = linkedin_store.default_settings()
+        doc = linkedin_store.create_post(
+            self.table,
+            {"body": "A short hook.\n\nOne lesson.", "pillar": "architecture"},
+            settings=settings,
+        )
+        self.assertFalse(linkedin_store.public_post(doc)["starred"])
+        approved = linkedin_store.approve_post(
+            self.table,
+            doc["postId"],
+            "admin-sub",
+            now=datetime(2026, 10, 5, 10, 0, tzinfo=HKT),
+        )
+        starred = linkedin_store.update_post(self.table, doc["postId"], {"starred": True})
+        self.assertTrue(starred["starred"])
+        self.assertEqual(starred["status"], "approved")
+        self.assertEqual(starred["slotAt"], approved["slotAt"])
+        self.assertEqual(starred["body"], doc["body"])
+        public = linkedin_store.public_post(starred)
+        self.assertTrue(public["starred"])
+        cleared = linkedin_store.update_post(self.table, doc["postId"], {"starred": False})
+        self.assertFalse(cleared["starred"])
+        self.assertEqual(cleared["status"], "approved")
+
     def test_approve_refuses_a_failing_post(self) -> None:
         doc = linkedin_store.create_post(
             self.table,

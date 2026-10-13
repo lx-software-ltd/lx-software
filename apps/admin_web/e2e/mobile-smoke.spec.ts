@@ -108,6 +108,12 @@ test.describe("admin viewport smoke", () => {
     await page.goto("/lx-software?tab=linkedin");
     await expect(page.getByRole("tab", { name: "LinkedIn" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByText("A rollback is a design decision.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Star draft" })).toHaveAttribute("aria-pressed", "false");
+    await page.getByRole("button", { name: "Star draft" }).click();
+    await expect(page.getByRole("button", { name: "Unstar draft" })).toHaveAttribute("aria-pressed", "true");
+    await page.getByRole("button", { name: "Unstar draft" }).click();
+    await expect(page.getByRole("button", { name: "Star draft" })).toHaveAttribute("aria-pressed", "false");
+    await expect(page.getByLabel("Post")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "New post" })).toBeVisible();
     await page.getByRole("tab", { name: "Calendar" }).click();
     await expect(page.getByRole("region", { name: "LinkedIn slots" })).toBeVisible();

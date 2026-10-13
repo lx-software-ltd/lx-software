@@ -107,6 +107,27 @@ export function useLinkedIn() {
       }),
     onSuccess: refresh,
   });
+  const starPost = useMutation({
+    mutationFn: ({ postId, starred }: { postId: string; starred: boolean }) =>
+      adminFetchJson<{ item: LinkedInPost }>(`/lx-software/linkedin/posts/${postId}`, {
+        method: "PUT",
+        body: JSON.stringify({ starred }),
+      }),
+    onMutate: async ({ postId, starred }) => {
+      await qc.cancelQueries({ queryKey: [...LINKEDIN_KEY, "posts"] });
+      const previous = qc.getQueryData<{ items: LinkedInPost[] }>([...LINKEDIN_KEY, "posts"]);
+      if (previous) {
+        qc.setQueryData([...LINKEDIN_KEY, "posts"], {
+          items: previous.items.map((row) => (row.postId === postId ? { ...row, starred } : row)),
+        });
+      }
+      return { previous };
+    },
+    onError: (_error, _vars, ctx) => {
+      if (ctx?.previous) qc.setQueryData([...LINKEDIN_KEY, "posts"], ctx.previous);
+    },
+    onSettled: refresh,
+  });
   const act = useMutation({
     mutationFn: ({ postId, action, body }: { postId: string; action: string; body?: Record<string, unknown> }) =>
       adminFetchJson<{ item: LinkedInPost }>(`/lx-software/linkedin/posts/${postId}/${action}`, {
@@ -280,6 +301,7 @@ export function useLinkedIn() {
     saveSettings,
     createPost,
     updatePost,
+    starPost,
     act,
     createIdea,
     deleteIdea,

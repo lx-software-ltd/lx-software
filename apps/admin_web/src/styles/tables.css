@@ -260,6 +260,37 @@
   border-bottom: 1px solid var(--admin-line);
 }
 
+.admin-star {
+  appearance: none;
+  display: inline-block;
+  padding: 0;
+  border: 0;
+  margin: 0 0.3em 0 0;
+  background: transparent;
+  color: var(--admin-text-2);
+  font: inherit;
+  line-height: 1;
+  vertical-align: baseline;
+}
+
+.admin-star:hover {
+  color: #e6b800;
+}
+
+.admin-star.is-on {
+  color: #f5c518;
+}
+
+.admin-star i {
+  font-size: 1em;
+  line-height: 1;
+}
+
+/* Bootstrap Icons drop glyphs 0.125em for centring; on the baseline the star points meet the letter bottoms. */
+.admin-star i::before {
+  vertical-align: 0;
+}
+
 .admin-kebab {
   width: 2rem;
   height: 2rem;

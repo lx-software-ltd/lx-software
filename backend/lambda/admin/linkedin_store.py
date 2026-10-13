@@ -986,6 +986,7 @@ def create_post(
         "lang": "en",
         "slotAt": "",
         "createdAt": now,
+        "starred": bool(body.get("starred")),
     }
     _apply_copy(doc, text, comment, tags, settings)
     if generation:
@@ -1024,6 +1025,8 @@ def update_post(table: Any, post_id: str, body: dict[str, Any]) -> dict[str, Any
         doc["slotAt"] = ""
     if "slotAt" in body and str(doc.get("status") or "") == "approved":
         doc["slotAt"] = normalize_slot(str(body.get("slotAt") or ""))
+    if "starred" in body:
+        doc["starred"] = bool(body.get("starred"))
     return put_post(table, doc)
 
 
@@ -1110,6 +1113,7 @@ def public_post(doc: dict[str, Any]) -> dict[str, Any]:
         "imageNote": doc.get("imageNote") or "",
         "metrics": doc.get("metrics") or None,
         "publishError": doc.get("publishError") or "",
+        "starred": bool(doc.get("starred")),
         "createdAt": doc.get("createdAt"),
         "updatedAt": doc.get("updatedAt"),
         "approvedAt": doc.get("approvedAt") or "",

@@ -186,6 +186,7 @@ export type LinkedInPost = {
   imageNote?: string;
   metrics?: LinkedInMetrics | null;
   publishError?: string;
+  starred?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -232,6 +233,7 @@ export const SAMPLE_LINKEDIN_POSTS: LinkedInPost[] = [
     hashtags: ["Architecture"],
     slotAt: "",
     guardrails: [],
+    starred: false,
     image: {
       contentType: "image/png",
       status: "ready",
