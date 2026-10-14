@@ -11,11 +11,7 @@ export type JpegFrame = {
   encode: (width: number, height: number, quality: number) => Promise<Blob>;
 };
 
-type CanvasPainter = {
-  fillStyle: string;
-  fillRect: (x: number, y: number, width: number, height: number) => void;
-  drawImage: (image: CanvasImageSource, dx: number, dy: number, dw: number, dh: number) => void;
-};
+type CanvasPainter = Pick<CanvasRenderingContext2D, "fillStyle" | "fillRect" | "drawImage">;
 
 const MAX_EDGE = 1600;
 const MIN_EDGE = 320;

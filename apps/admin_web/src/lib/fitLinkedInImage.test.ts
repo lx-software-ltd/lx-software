@@ -86,7 +86,7 @@ describe("paintLinkedInFrame", () => {
         order.push("draw");
       },
     };
-    paintLinkedInFrame(context, {} as CanvasImageSource, 10, 8);
+    paintLinkedInFrame(context as unknown as CanvasRenderingContext2D, {} as CanvasImageSource, 10, 8);
     expect(order).toEqual(["fill:#ffffff:10x8", "draw"]);
   });
 });

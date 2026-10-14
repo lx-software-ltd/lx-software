@@ -1,4 +1,4 @@
-import { unlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
@@ -129,7 +129,8 @@ test("the draft file input stores that fitted JPEG", async ({ page }, testInfo) 
   });
   expect(source.size).toBeGreaterThan(1_500_000);
 
-  const path = join(tmpdir(), "linkedin-transparent.png");
+  const dir = mkdtempSync(join(tmpdir(), "linkedin-image-"));
+  const path = join(dir, "edge.png");
   writeFileSync(path, Buffer.from(source.base64, "base64"));
   try {
     await page.goto("/lx-software?tab=linkedin&section=drafts&linkedin-post=li_hook");
@@ -160,6 +161,6 @@ test("the draft file input stores that fitted JPEG", async ({ page }, testInfo) 
     await img.scrollIntoViewIfNeeded();
     await page.screenshot({ path: "/opt/cursor/artifacts/draft-transparent-upload.png" });
   } finally {
-    unlinkSync(path);
+    rmSync(dir, { recursive: true, force: true });
   }
 });
