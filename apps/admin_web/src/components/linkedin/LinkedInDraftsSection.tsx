@@ -410,6 +410,7 @@ function PostEditor({
     expression: string;
   } | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [fittingImage, setFittingImage] = useState(false);
   const linkedIn = useLinkedIn();
   const pictureId = post?.postId ?? "";
   const picture = pictureDraft?.id === pictureId ? pictureDraft : null;
@@ -417,6 +418,8 @@ function PostEditor({
   const caption = picture?.caption ?? post?.image?.caption ?? "";
   const expression = picture?.expression ?? post?.image?.expression ?? "";
   const briefPending = post?.image?.brief?.status === "pending" || linkedIn.rewriteBrief.isPending;
+  const uploadingImage = linkedIn.uploadImage.isPending;
+  const pictureBusy = fittingImage || uploadingImage;
   const tags = hashtags.split(/[\s,]+/).map((tag) => tag.replace(/^#/, "")).filter(Boolean);
   const findings = guardrails(body, firstComment, tags, settings);
   const blocked = hasBlockingGuardrail(findings);
@@ -610,11 +613,13 @@ function PostEditor({
                   className="form-control"
                   type="file"
                   accept="image/png,image/jpeg"
+                  disabled={pictureBusy}
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     event.target.value = "";
-                    if (!file) return;
+                    if (!file || pictureBusy) return;
                     setLocalError(null);
+                    setFittingImage(true);
                     void fitLinkedInImage(file)
                       .then((fitted) =>
                         linkedIn.uploadImage.mutateAsync({
@@ -625,9 +630,13 @@ function PostEditor({
                       )
                       .catch((caught: unknown) => {
                         setLocalError(caught instanceof Error ? caught.message : "Could not attach the image.");
-                      });
+                      })
+                      .finally(() => setFittingImage(false));
                   }}
                 />
+                {pictureBusy ? (
+                  <p className="small mb-1">{fittingImage ? "Resizing…" : "Uploading…"}</p>
+                ) : null}
                 <p className="form-text mb-0">
                   PNG or JPEG. A larger photo is resized to stay under 1.5 MB.
                 </p>

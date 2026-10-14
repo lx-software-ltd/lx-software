@@ -559,6 +559,10 @@ function CharacterSitting({ enabled }: { readonly enabled: boolean }) {
   const linkedIn = useLinkedIn();
   const character = linkedIn.character.data;
   const [localError, setLocalError] = useState<string | null>(null);
+  const [fitting, setFitting] = useState(false);
+  const uploading = linkedIn.uploadCharacterPhoto.isPending;
+  const pictureBusy = !enabled || fitting || uploading;
+  const photoLabel = fitting ? "Resizing…" : uploading ? "Uploading…" : character?.photo ? "Replace photo" : "Upload photo";
   const error =
     localError ??
     getAdminApiErrorMessage(linkedIn.uploadCharacterPhoto.error) ??
@@ -590,22 +594,24 @@ function CharacterSitting({ enabled }: { readonly enabled: boolean }) {
       </div>
       <div className="d-flex flex-wrap gap-2 mt-2">
         <label className="btn btn-outline-secondary btn-sm mb-0">
-          {character?.photo ? "Replace photo" : "Upload photo"}
+          {photoLabel}
           <input
             className="d-none"
             type="file"
             accept="image/png,image/jpeg"
-            disabled={!enabled}
+            disabled={pictureBusy}
             onChange={(event) => {
               const file = event.target.files?.[0];
               event.target.value = "";
-              if (!file) return;
+              if (!file || pictureBusy) return;
               setLocalError(null);
+              setFitting(true);
               void fitLinkedInImage(file)
                 .then((fitted) => linkedIn.uploadCharacterPhoto.mutate(fitted))
                 .catch((caught: unknown) => {
                   setLocalError(caught instanceof Error ? caught.message : "Could not attach the image.");
-                });
+                })
+                .finally(() => setFitting(false));
             }}
           />
         </label>

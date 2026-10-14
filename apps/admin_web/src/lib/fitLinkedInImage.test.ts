@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { IMAGE_BYTE_MAX, IMAGE_SOURCE_BYTE_MAX } from "./linkedinModel";
 import {
   fitLinkedInImage,
   nextEncodeStep,
+  paintLinkedInFrame,
   scaleToMaxEdge,
   shrinkLinkedInImage,
 } from "./fitLinkedInImage";
@@ -35,7 +36,16 @@ describe("fitLinkedInImage", () => {
 
   it("rejects an empty file", async () => {
     const file = new File([], "empty.jpg", { type: "image/jpeg" });
-    await expect(fitLinkedInImage(file)).rejects.toThrow("The image must be under 1.5 MB.");
+    await expect(fitLinkedInImage(file)).rejects.toThrow("The image is empty.");
+  });
+
+  it("sends a PNG over the cap through the shrink path", async () => {
+    const file = new File([new Uint8Array(IMAGE_BYTE_MAX + 1)], "wide.png", { type: "image/png" });
+    const result = await fitLinkedInImage(file, async () => ({
+      contentType: "image/jpeg",
+      dataBase64: "cG5n",
+    }));
+    expect(result).toEqual({ contentType: "image/jpeg", dataBase64: "cG5n" });
   });
 
   it("rejects a source file over the browser decode cap", async () => {
@@ -54,13 +64,30 @@ describe("fitLinkedInImage", () => {
 });
 
 describe("nextEncodeStep", () => {
-  it("drops JPEG quality before shrinking the frame", () => {
-    expect(nextEncodeStep(1600, 1200, 0.88)).toEqual({ width: 1600, height: 1200, quality: 0.73 });
-    expect(nextEncodeStep(1600, 1200, 0.52)).toEqual({ width: 1360, height: 1020, quality: 0.85 });
+  it("shrinks the frame before JPEG quality falls below 0.7", () => {
+    expect(nextEncodeStep(1600, 1200, 0.85)).toEqual({ width: 1360, height: 1020, quality: 0.85 });
+    expect(nextEncodeStep(360, 360, 0.85)).toEqual({ width: 360, height: 360, quality: 0.8 });
   });
 
-  it("stops before the short edge drops under 320", () => {
-    expect(nextEncodeStep(360, 360, 0.5)).toBeNull();
+  it("stops before the short edge drops under 320 or quality under 0.7", () => {
+    expect(nextEncodeStep(360, 360, 0.7)).toBeNull();
+  });
+});
+
+describe("paintLinkedInFrame", () => {
+  it("fills the canvas white before drawing so a transparent PNG does not turn black", () => {
+    const order: string[] = [];
+    const context = {
+      fillStyle: "",
+      fillRect(this: { fillStyle: string }, _x: number, _y: number, width: number, height: number) {
+        order.push(`fill:${this.fillStyle}:${width}x${height}`);
+      },
+      drawImage() {
+        order.push("draw");
+      },
+    };
+    paintLinkedInFrame(context, {} as CanvasImageSource, 10, 8);
+    expect(order).toEqual(["fill:#ffffff:10x8", "draw"]);
   });
 });
 
@@ -75,17 +102,61 @@ describe("shrinkLinkedInImage", () => {
   it("retries encode until the JPEG is under the stored cap", async () => {
     const file = jpegFile(IMAGE_BYTE_MAX + 50_000);
     let calls = 0;
+    const seen: { width: number; height: number; quality: number }[] = [];
     const result = await shrinkLinkedInImage(file, {
       width: 4000,
       height: 3000,
-      encode: async () => {
+      encode: async (width, height, quality) => {
         calls += 1;
+        seen.push({ width, height, quality });
         const size = calls === 1 ? 2_000_000 : 400_000;
         return new Blob([new Uint8Array(size)], { type: "image/jpeg" });
       },
     });
-    expect(calls).toBe(2);
+    expect(seen).toEqual([
+      { width: 1600, height: 1200, quality: 0.85 },
+      { width: 1360, height: 1020, quality: 0.85 },
+    ]);
     expect(result.contentType).toBe("image/jpeg");
     expect(atob(result.dataBase64).length).toBe(400_000);
+  });
+
+  it("keeps the object URL until encoding has finished", async () => {
+    const events: string[] = [];
+    const create = vi.spyOn(URL, "createObjectURL").mockImplementation(() => {
+      events.push("create");
+      return "blob:photo";
+    });
+    const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {
+      events.push("revoke");
+    });
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => {
+      events.push("encode");
+      return null;
+    });
+    class FakeImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      naturalWidth = 800;
+      naturalHeight = 600;
+      width = 800;
+      height = 600;
+      set src(_value: string) {
+        events.push("src");
+        this.onload?.();
+      }
+    }
+    vi.stubGlobal("Image", FakeImage);
+    try {
+      await expect(shrinkLinkedInImage(jpegFile(IMAGE_BYTE_MAX + 1))).rejects.toThrow(
+        "The picture could not be read.",
+      );
+      expect(events).toEqual(["create", "src", "encode", "revoke"]);
+    } finally {
+      create.mockRestore();
+      revoke.mockRestore();
+      getContext.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
 });

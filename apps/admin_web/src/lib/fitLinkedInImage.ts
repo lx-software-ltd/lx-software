@@ -11,8 +11,16 @@ export type JpegFrame = {
   encode: (width: number, height: number, quality: number) => Promise<Blob>;
 };
 
+type CanvasPainter = {
+  fillStyle: string;
+  fillRect: (x: number, y: number, width: number, height: number) => void;
+  drawImage: (image: CanvasImageSource, dx: number, dy: number, dw: number, dh: number) => void;
+};
+
 const MAX_EDGE = 1600;
 const MIN_EDGE = 320;
+const START_QUALITY = 0.85;
+const MIN_QUALITY = 0.7;
 
 export async function fitLinkedInImage(
   file: File,
@@ -22,7 +30,7 @@ export async function fitLinkedInImage(
     throw new Error("Use a PNG or JPEG image.");
   }
   if (!file.size) {
-    throw new Error("The image must be under 1.5 MB.");
+    throw new Error("The image is empty.");
   }
   if (file.size > IMAGE_SOURCE_BYTE_MAX) {
     throw new Error("That photo is too large to resize here. Use a file under 25 MB.");
@@ -54,33 +62,53 @@ export function nextEncodeStep(
   height: number,
   quality: number,
 ): { width: number; height: number; quality: number } | null {
-  if (quality > 0.52) {
-    return { width, height, quality: Math.round((quality - 0.15) * 100) / 100 };
-  }
   const widthNext = Math.floor(width * 0.85);
   const heightNext = Math.floor(height * 0.85);
-  if (widthNext < MIN_EDGE || heightNext < MIN_EDGE) {
-    return null;
+  if (widthNext >= MIN_EDGE && heightNext >= MIN_EDGE) {
+    return { width: widthNext, height: heightNext, quality };
   }
-  return { width: widthNext, height: heightNext, quality: 0.85 };
+  const qualityNext = Math.round((quality - 0.05) * 100) / 100;
+  if (qualityNext < MIN_QUALITY) return null;
+  return { width, height, quality: qualityNext };
+}
+
+/** JPEG has no alpha. White is the matte so a transparent PNG does not turn black. */
+export function paintLinkedInFrame(
+  context: CanvasPainter,
+  image: CanvasImageSource,
+  width: number,
+  height: number,
+): void {
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
 }
 
 export async function shrinkLinkedInImage(file: File, frame?: JpegFrame): Promise<LinkedInImageUpload> {
-  const source = frame ?? (await decodeJpegFrame(file));
-  let { width, height } = scaleToMaxEdge(source.width, source.height);
-  let quality = 0.88;
-  for (;;) {
-    const blob = await source.encode(width, height, quality);
-    if (blob.size <= IMAGE_BYTE_MAX) {
-      return { contentType: "image/jpeg", dataBase64: await blobToBase64(blob) };
+  const opened = frame ? null : await openImage(file);
+  const source: JpegFrame = frame ?? {
+    width: opened!.image.naturalWidth || opened!.image.width,
+    height: opened!.image.naturalHeight || opened!.image.height,
+    encode: (width, height, quality) => encodeJpeg(opened!.image, width, height, quality),
+  };
+  try {
+    let { width, height } = scaleToMaxEdge(source.width, source.height);
+    let quality = START_QUALITY;
+    for (;;) {
+      const blob = await source.encode(width, height, quality);
+      if (blob.size <= IMAGE_BYTE_MAX) {
+        return { contentType: "image/jpeg", dataBase64: await blobToBase64(blob) };
+      }
+      const next = nextEncodeStep(width, height, quality);
+      if (!next) {
+        throw new Error("The image must be under 1.5 MB.");
+      }
+      width = next.width;
+      height = next.height;
+      quality = next.quality;
     }
-    const next = nextEncodeStep(width, height, quality);
-    if (!next) {
-      throw new Error("The image must be under 1.5 MB.");
-    }
-    width = next.width;
-    height = next.height;
-    quality = next.quality;
+  } finally {
+    opened?.release();
   }
 }
 
@@ -100,8 +128,14 @@ function readFileAsBase64(file: File): Promise<string> {
   });
 }
 
-async function decodeJpegFrame(file: File): Promise<JpegFrame> {
+async function openImage(file: File): Promise<{ image: HTMLImageElement; release: () => void }> {
   const url = URL.createObjectURL(file);
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    URL.revokeObjectURL(url);
+  };
   try {
     const image = await new Promise<HTMLImageElement>((resolve, reject) => {
       const img = new Image();
@@ -109,13 +143,10 @@ async function decodeJpegFrame(file: File): Promise<JpegFrame> {
       img.onerror = () => reject(new Error("The picture could not be read."));
       img.src = url;
     });
-    return {
-      width: image.naturalWidth || image.width,
-      height: image.naturalHeight || image.height,
-      encode: (width, height, quality) => encodeJpeg(image, width, height, quality),
-    };
-  } finally {
-    URL.revokeObjectURL(url);
+    return { image, release };
+  } catch (error) {
+    release();
+    throw error;
   }
 }
 
@@ -132,7 +163,7 @@ function encodeJpeg(
   if (!context) {
     return Promise.reject(new Error("The picture could not be read."));
   }
-  context.drawImage(image, 0, 0, width, height);
+  paintLinkedInFrame(context, image, width, height);
   return new Promise((resolve, reject) => {
     canvas.toBlob(
       (blob) => (blob ? resolve(blob) : reject(new Error("The picture could not be read."))),
