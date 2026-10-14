@@ -26,6 +26,7 @@ sent to the image model.
 - `apps/admin_web/src/components/linkedin/LinkedInDraftsSection.tsx` — Scene field
 - `apps/admin_web/src/components/linkedin/LinkedInDraftsSection.test.tsx`
 - `docs/deployment/admin-website.md` — scene cap
+- `scripts/file-length-allowlist.txt` — `linkedin_store.py` after the added overview field
 
 ## Invariants this change preserves
 
