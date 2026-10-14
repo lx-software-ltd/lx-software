@@ -57,6 +57,19 @@ describe("LinkedIn draft stars", () => {
   });
 });
 
+describe("LinkedIn new post", () => {
+  it("opens the new post editor at the top of the table", async () => {
+    const user = userEvent.setup();
+    renderDrafts();
+
+    await user.click(screen.getByRole("button", { name: "New post" }));
+
+    const editor = screen.getByLabelText("Post");
+    const firstDraft = screen.getByText("A rollback is a design decision.");
+    expect(editor.compareDocumentPosition(firstDraft) & Node.DOCUMENT_POSITION_FOLLOWING).toBeGreaterThan(0);
+  });
+});
+
 describe("LinkedIn draft scene", () => {
   it("allows a scene three times the old 400-character cap", () => {
     renderDrafts("/?linkedin-post=li_hook");

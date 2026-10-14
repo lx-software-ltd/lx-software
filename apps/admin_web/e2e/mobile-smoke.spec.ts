@@ -115,6 +115,14 @@ test.describe("admin viewport smoke", () => {
     await expect(page.getByRole("button", { name: "Star draft" })).toHaveAttribute("aria-pressed", "false");
     await expect(page.getByLabel("Post")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "New post" })).toBeVisible();
+    await page.getByRole("button", { name: "New post" }).click();
+    const newPost = page.getByRole("textbox", { name: "Post" });
+    await expect(newPost).toBeVisible();
+    const newPostBox = await newPost.boundingBox();
+    const firstDraftBox = await page.getByText("A rollback is a design decision.").boundingBox();
+    expect(newPostBox).not.toBeNull();
+    expect(firstDraftBox).not.toBeNull();
+    expect(newPostBox!.y).toBeLessThan(firstDraftBox!.y);
     await page.getByRole("tab", { name: "Calendar" }).click();
     await expect(page.getByRole("region", { name: "LinkedIn slots" })).toBeVisible();
     await expect(page.getByRole("columnheader", { name: "Slot" })).toBeVisible();

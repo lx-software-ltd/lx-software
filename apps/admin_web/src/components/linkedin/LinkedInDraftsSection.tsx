@@ -165,6 +165,14 @@ export function LinkedInDraftsSection({
           <p className="text-danger small mb-2">{errorText(linkedIn.generate.error)}</p>
         ) : null}
         <AdminDataTable columns={COLUMNS} bare tableClassName="admin-table-compact">
+          {openId === DRAFT_RECORD_ID && activeSettings ? (
+            <DraftEditorRow
+              settings={activeSettings}
+              defaultModel={defaultModel}
+              enabled={enabled}
+              onClose={() => setOpen(null)}
+            />
+          ) : null}
           {visible.length === 0 && openId !== DRAFT_RECORD_ID ? (
             <AdminDataTableEmptyRow colSpan={COLUMNS.length} message="No drafts yet." />
           ) : (
@@ -183,14 +191,6 @@ export function LinkedInDraftsSection({
               />
             ))
           )}
-          {openId === DRAFT_RECORD_ID && activeSettings ? (
-            <DraftEditorRow
-              settings={activeSettings}
-              defaultModel={defaultModel}
-              enabled={enabled}
-              onClose={() => setOpen(null)}
-            />
-          ) : null}
         </AdminDataTable>
       </AdminRecordTable>
       <ConfirmDialog
