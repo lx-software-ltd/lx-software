@@ -154,6 +154,12 @@ export function LinkedInSettingsCard({
                 autoComplete="off"
                 onChange={(event) => setSettings({ ...settings, model: event.target.value })}
               />
+              <p className="form-text mb-0">
+                Writes each post and, when pictures are on, the scene, expression, and caption.
+                {overview.defaultModel
+                  ? ` Leave blank for ${overview.defaultModel}.`
+                  : " Leave blank for the stack default."}
+              </p>
             </AdminField>
             <AdminField label="Voice" htmlFor="linkedin-voice" span={2}>
               <textarea
@@ -244,6 +250,9 @@ export function LinkedInSettingsCard({
                 disabled={!settings.imagesEnabled}
                 onChange={(event) => setSettings({ ...settings, imageModel: event.target.value })}
               />
+              <p className="form-text mb-0">
+                Draws the panel. Scene, expression, and caption use the Model field above.
+              </p>
             </AdminField>
             <AdminField label="Picture shape" htmlFor="linkedin-image-format">
               <select

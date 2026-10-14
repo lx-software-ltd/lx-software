@@ -13,6 +13,7 @@ import {
   isLinkedInPostUrl,
   linkedInAccessState,
   linkedInShareUrl,
+  linkedinDraftModel,
   nextSlots,
   pillarLabel,
 } from "./linkedinModel";
@@ -78,6 +79,12 @@ describe("linkedin guardrails", () => {
 
   it("defaults the OpenRouter model to empty so the stack slug is used", () => {
     expect(DEFAULT_LINKEDIN_SETTINGS.model).toBe("");
+    expect(linkedinDraftModel(DEFAULT_LINKEDIN_SETTINGS, "mistralai/mistral-medium-3")).toBe(
+      "mistralai/mistral-medium-3",
+    );
+    expect(linkedinDraftModel({ model: " openai/gpt-4.1-mini " }, "mistralai/mistral-medium-3")).toBe(
+      "openai/gpt-4.1-mini",
+    );
   });
 
   it("starts with the recommended voice and keeps it under the 1000-character limit", () => {

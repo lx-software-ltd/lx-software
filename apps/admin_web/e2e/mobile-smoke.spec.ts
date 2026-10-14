@@ -123,7 +123,13 @@ test.describe("admin viewport smoke", () => {
     await page.getByRole("tab", { name: "Settings" }).click();
     await expect(page.getByRole("button", { name: "Connect" })).toBeEnabled();
     await expect(page.getByText("Connect LinkedIn to post approved drafts")).toBeVisible();
+    await expect(
+      page.getByText(/Writes each post and, when pictures are on, the scene, expression, and caption/),
+    ).toBeVisible();
     await expect(page.getByLabel("Slot hour (HKT)")).toHaveValue("8");
+    await page.goto("/lx-software?tab=linkedin&section=drafts&linkedin-post=li_hook");
+    await expect(page.getByLabel("Scene")).toBeVisible();
+    await expect(page.getByText(/by mistralai\/mistral-medium-3/)).toBeVisible();
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 

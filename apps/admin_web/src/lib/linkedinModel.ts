@@ -356,6 +356,14 @@ export function pillarLabel(id: string): string {
   return LINKEDIN_PILLARS.find((row) => row.id === id)?.label ?? id;
 }
 
+/** Settings slug when set, otherwise the stack OpenRouter model. Mirrors `draft_model`. */
+export function linkedinDraftModel(
+  settings?: Pick<LinkedInDraftSettings, "model"> | null,
+  defaultModel = "",
+): string {
+  return (settings?.model || "").trim() || defaultModel.trim();
+}
+
 export function hookText(body: string): string {
   return body.trim().split("\n", 1)[0]?.trim() ?? "";
 }

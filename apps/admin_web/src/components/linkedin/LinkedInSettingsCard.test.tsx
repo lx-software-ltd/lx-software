@@ -48,11 +48,22 @@ function overview(voiceNotes: string): LinkedInOverview {
     spendUsdMonth: 0,
     nextSlots: [],
     builtinForbidden: [],
-    defaultModel: "",
+    defaultModel: "mistralai/mistral-medium-3",
     recommendedVoice: RECOMMENDED_LINKEDIN_VOICE,
     storyVoices: LINKEDIN_STORY_VOICES,
   };
 }
+
+describe("LinkedIn draft model hint", () => {
+  it("says the Model field writes the scene, expression, and caption", () => {
+    render(<LinkedInSettingsCard overview={overview("")} enabled />);
+    expect(
+      screen.getByText(/Writes each post and, when pictures are on, the scene, expression, and caption/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Leave blank for mistralai\/mistral-medium-3/)).toBeInTheDocument();
+    expect(screen.getByText(/Draws the panel. Scene, expression, and caption use the Model field above/)).toBeInTheDocument();
+  });
+});
 
 describe("LinkedIn story tones", () => {
   it("fills the Voice field from the tone button", async () => {

@@ -11,6 +11,7 @@ import {
   IMAGE_SCENE_MAX,
   isLinkedInPostUrl,
   linkedInShareUrl,
+  linkedinDraftModel,
   pillarLabel,
   type LinkedInPost,
   type LinkedInDraftSettings,
@@ -55,9 +56,11 @@ function statusLabel(status: string): string {
 export function LinkedInDraftsSection({
   settings,
   enabled,
+  defaultModel = "",
 }: {
   readonly settings: LinkedInDraftSettings | undefined;
   readonly enabled: boolean;
+  readonly defaultModel?: string;
 }) {
   const linkedIn = useLinkedIn();
   const posts = (linkedIn.posts.data?.items ?? []).filter((row) => row.status === "drafted" || row.status === "approved");
@@ -170,6 +173,7 @@ export function LinkedInDraftsSection({
                 key={row.postId}
                 post={row}
                 settings={activeSettings}
+                defaultModel={defaultModel}
                 expanded={openId === row.postId}
                 enabled={enabled}
                 onToggle={() => setOpen(openId === row.postId ? null : row.postId)}
@@ -182,6 +186,7 @@ export function LinkedInDraftsSection({
           {openId === DRAFT_RECORD_ID && activeSettings ? (
             <DraftEditorRow
               settings={activeSettings}
+              defaultModel={defaultModel}
               enabled={enabled}
               onClose={() => setOpen(null)}
             />
@@ -208,6 +213,7 @@ export function LinkedInDraftsSection({
 function DraftRow({
   post,
   settings,
+  defaultModel,
   expanded,
   enabled,
   onToggle,
@@ -217,6 +223,7 @@ function DraftRow({
 }: {
   readonly post: LinkedInPost;
   readonly settings: LinkedInDraftSettings | undefined;
+  readonly defaultModel: string;
   readonly expanded: boolean;
   readonly enabled: boolean;
   readonly onToggle: () => void;
@@ -236,6 +243,7 @@ function DraftRow({
           <PostEditor
             post={post}
             settings={settings}
+            defaultModel={defaultModel}
             enabled={enabled}
             saving={linkedIn.updatePost.isPending || linkedIn.act.isPending}
             error={errorText(linkedIn.updatePost.error) ?? errorText(linkedIn.act.error)}
@@ -340,10 +348,12 @@ function DraftStarButton({
 
 function DraftEditorRow({
   settings,
+  defaultModel,
   enabled,
   onClose,
 }: {
   readonly settings: LinkedInDraftSettings;
+  readonly defaultModel: string;
   readonly enabled: boolean;
   readonly onClose: () => void;
 }) {
@@ -357,6 +367,7 @@ function DraftEditorRow({
         <PostEditor
           post={null}
           settings={settings}
+          defaultModel={defaultModel}
           enabled={enabled}
           saving={linkedIn.createPost.isPending}
           error={errorText(linkedIn.createPost.error)}
@@ -382,6 +393,7 @@ function DraftEditorRow({
 function PostEditor({
   post,
   settings,
+  defaultModel,
   enabled,
   saving,
   error,
@@ -390,6 +402,7 @@ function PostEditor({
 }: {
   readonly post: LinkedInPost | null;
   readonly settings: LinkedInDraftSettings;
+  readonly defaultModel: string;
   readonly enabled: boolean;
   readonly saving: boolean;
   readonly error: string | null;
@@ -425,6 +438,7 @@ function PostEditor({
     pillar !== (post?.pillar ?? settings.pillars[0] ?? "architecture") ||
     tags.join(" ") !== (post?.hashtags ?? []).join(" ");
   const formId = `linkedin-post-${post?.postId ?? "new"}`;
+  const writerModel = linkedinDraftModel(settings, defaultModel);
   const hook = hookText(body);
   const rest = body.trim().slice(hook.length).trim();
   const submitLabel = !post
@@ -535,7 +549,8 @@ function PostEditor({
                   />
                   <p className="form-text mb-0">
                     A light cartoon of you living the moment in the post, written from the post with the expression and
-                    caption. Edit any of the three, or have all three written again.
+                    caption{writerModel ? ` by ${writerModel}` : ""}. Edit any of the three, or have all three written
+                    again.
                   </p>
                 </AdminField>
                 <AdminField label="Expression" htmlFor={`${formId}-expression`}>

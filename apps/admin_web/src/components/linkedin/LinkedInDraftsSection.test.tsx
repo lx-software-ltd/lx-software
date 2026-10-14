@@ -31,7 +31,11 @@ function renderDrafts(path = "/") {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <QueryClientProvider client={client}>
-        <LinkedInDraftsSection settings={DEFAULT_LINKEDIN_SETTINGS} enabled />
+        <LinkedInDraftsSection
+          settings={DEFAULT_LINKEDIN_SETTINGS}
+          enabled
+          defaultModel="mistralai/mistral-medium-3"
+        />
       </QueryClientProvider>
     </MemoryRouter>,
   );
@@ -58,5 +62,10 @@ describe("LinkedIn draft scene", () => {
     renderDrafts("/?linkedin-post=li_hook");
     expect(screen.getByLabelText("Scene")).toHaveAttribute("maxLength", String(IMAGE_SCENE_MAX));
     expect(IMAGE_SCENE_MAX).toBe(1200);
+  });
+
+  it("names the draft model that writes the scene, expression, and caption", () => {
+    renderDrafts("/?linkedin-post=li_hook");
+    expect(screen.getByText(/by mistralai\/mistral-medium-3/)).toBeInTheDocument();
   });
 });

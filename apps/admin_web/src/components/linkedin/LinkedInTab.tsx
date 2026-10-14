@@ -61,7 +61,11 @@ export function LinkedInTab() {
       />
       <div className="tab-content" id="linkedin-panel" role="tabpanel">
         {section === "drafts" ? (
-          <LinkedInDraftsSection settings={overview?.settings} enabled={enabled} />
+          <LinkedInDraftsSection
+            settings={overview?.settings}
+            enabled={enabled}
+            defaultModel={overview?.defaultModel ?? ""}
+          />
         ) : null}
         {section === "calendar" ? <LinkedInCalendarSection settings={overview?.settings} /> : null}
         {section === "published" ? <LinkedInPublishedSection /> : null}
