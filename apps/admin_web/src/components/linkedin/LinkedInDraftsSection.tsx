@@ -10,6 +10,7 @@ import {
   hasBlockingGuardrail,
   hookText,
   IMAGE_SCENE_MAX,
+  LINKEDIN_IMAGE_ACCEPT,
   isLinkedInPostUrl,
   linkedInShareUrl,
   linkedinDraftModel,
@@ -627,7 +628,7 @@ function PostEditor({
                   id={`${formId}-image`}
                   className="form-control"
                   type="file"
-                  accept="image/png,image/jpeg"
+                  accept={LINKEDIN_IMAGE_ACCEPT}
                   disabled={pictureBusy}
                   onChange={(event) => {
                     const file = event.target.files?.[0];

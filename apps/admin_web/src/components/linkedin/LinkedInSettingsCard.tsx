@@ -7,6 +7,7 @@ import { fitLinkedInImage } from "../../lib/fitLinkedInImage";
 import {
   BUILTIN_FORBIDDEN,
   IMAGE_FORMATS,
+  LINKEDIN_IMAGE_ACCEPT,
   LINKEDIN_STORY_VOICES,
   STYLE_EXAMPLE_MAX,
   WEEKDAY_OPTIONS,
@@ -607,7 +608,7 @@ function CharacterSitting({ enabled }: { readonly enabled: boolean }) {
           <input
             className="d-none"
             type="file"
-            accept="image/png,image/jpeg"
+            accept={LINKEDIN_IMAGE_ACCEPT}
             disabled={pictureBusy}
             onChange={(event) => {
               const file = event.target.files?.[0];

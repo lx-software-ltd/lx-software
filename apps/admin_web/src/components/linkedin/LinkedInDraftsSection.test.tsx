@@ -135,6 +135,7 @@ describe("LinkedIn draft image upload", () => {
     renderDrafts("/?linkedin-post=li_hook");
 
     const input = screen.getByLabelText("Picture");
+    expect(input).toHaveAttribute("accept", "image/png,image/jpeg,image/heic,image/heif");
     await user.upload(input, new File([new Uint8Array([1])], "large.jpg", { type: "image/jpeg" }));
 
     expect(await screen.findByText("Resizing…")).toBeInTheDocument();

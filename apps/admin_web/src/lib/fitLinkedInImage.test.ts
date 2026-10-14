@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { IMAGE_BYTE_MAX, IMAGE_SOURCE_BYTE_MAX } from "./linkedinModel";
 import {
+  downsampleSteps,
   fitLinkedInImage,
+  jpegBlobFromCanvas,
   nextEncodeStep,
   paintLinkedInFrame,
   scaleToMaxEdge,
@@ -20,6 +22,29 @@ describe("fitLinkedInImage", () => {
   it("mirrors the stored LinkedIn image cap", () => {
     expect(IMAGE_BYTE_MAX).toBe(1_500_000);
     expect(IMAGE_SOURCE_BYTE_MAX).toBe(25_000_000);
+  });
+
+  it("treats a photo with no type and a .jpeg name as a JPEG", async () => {
+    const file = new File([new Uint8Array([0xff, 0xd8, 1])], "photo.jpeg", { type: "" });
+    const result = await fitLinkedInImage(file);
+    expect(result.contentType).toBe("image/jpeg");
+    expect(atob(result.dataBase64).length).toBe(3);
+  });
+
+  it("treats an iPad image/jpg as a JPEG", async () => {
+    const file = new File([new Uint8Array([0xff, 0xd8, 1])], "photo.jpg", { type: "image/jpg" });
+    const result = await fitLinkedInImage(file);
+    expect(result.contentType).toBe("image/jpeg");
+    expect(atob(result.dataBase64).length).toBe(3);
+  });
+
+  it("re-encodes a HEIC photo instead of storing it", async () => {
+    const file = new File([new Uint8Array(100)], "photo.heic", { type: "image/heic" });
+    const result = await fitLinkedInImage(file, async () => ({
+      contentType: "image/jpeg",
+      dataBase64: "aGVpYw",
+    }));
+    expect(result).toEqual({ contentType: "image/jpeg", dataBase64: "aGVpYw" });
   });
 
   it("passes through a JPEG already under the cap", async () => {
@@ -88,6 +113,35 @@ describe("paintLinkedInFrame", () => {
     };
     paintLinkedInFrame(context as unknown as CanvasRenderingContext2D, {} as CanvasImageSource, 10, 8);
     expect(order).toEqual(["fill:#ffffff:10x8", "draw"]);
+  });
+});
+
+describe("downsampleSteps", () => {
+  it("halves an iPad original before the final frame, and stays under the canvas edge", () => {
+    expect(downsampleSteps(4032, 3024, 1600, 1200)).toEqual([{ width: 2016, height: 1512 }]);
+    const steps = downsampleSteps(12000, 9000, 1600, 1200);
+    expect(steps[0]).toEqual({ width: 4096, height: 3072 });
+    for (const step of steps) {
+      expect(step.width).toBeLessThanOrEqual(4096);
+      expect(step.height).toBeLessThanOrEqual(4096);
+    }
+    expect(steps.at(-1)?.width).toBeLessThanOrEqual(3200);
+  });
+});
+
+describe("jpegBlobFromCanvas", () => {
+  it("reads the canvas another way when toBlob returns null, as Safari does on iPad", async () => {
+    const canvas = document.createElement("canvas");
+    const toBlob = vi.spyOn(canvas, "toBlob").mockImplementation((callback) => {
+      callback(null);
+    });
+    const toDataURL = vi.spyOn(canvas, "toDataURL").mockReturnValue(`data:image/jpeg;base64,${btoa("ipad")}`);
+    const blob = await jpegBlobFromCanvas(canvas, 0.85);
+    expect(toBlob).toHaveBeenCalled();
+    expect(toDataURL).toHaveBeenCalledWith("image/jpeg", 0.85);
+    expect(await blob.text()).toBe("ipad");
+    toBlob.mockRestore();
+    toDataURL.mockRestore();
   });
 });
 

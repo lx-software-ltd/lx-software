@@ -315,6 +315,8 @@ export const IMAGE_SCENE_MAX = 1200;
 export const IMAGE_BYTE_MAX = 1_500_000;
 /** Largest source photo the browser will decode before shrinking to `IMAGE_BYTE_MAX`. */
 export const IMAGE_SOURCE_BYTE_MAX = 25_000_000;
+/** Picker filter. `image/jpg` and HEIC still go through `fitLinkedInImage`, which stores PNG or JPEG. */
+export const LINKEDIN_IMAGE_ACCEPT = "image/png,image/jpeg,image/heic,image/heif";
 
 /** Mirrors `DEFAULT_IMAGE_MODEL` and `RECOMMENDED_IMAGE_STYLE` in `linkedin_store.py`. */
 export const DEFAULT_IMAGE_MODEL = "bytedance-seed/seedream-4.5";
