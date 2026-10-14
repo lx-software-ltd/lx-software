@@ -1,8 +1,9 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
-import { DEFAULT_LINKEDIN_SETTINGS, SAMPLE_LINKEDIN_POSTS } from "../../lib/linkedinModel";
+import { DEFAULT_LINKEDIN_SETTINGS, IMAGE_SCENE_MAX, SAMPLE_LINKEDIN_POSTS } from "../../lib/linkedinModel";
 import { LinkedInDraftsSection } from "./LinkedInDraftsSection";
 
 const updatePost = { isPending: false, error: null, mutate: vi.fn(), mutateAsync: vi.fn() };
@@ -25,10 +26,13 @@ vi.mock("../../hooks/useLinkedIn", () => ({
   }),
 }));
 
-function renderDrafts() {
+function renderDrafts(path = "/") {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter>
-      <LinkedInDraftsSection settings={DEFAULT_LINKEDIN_SETTINGS} enabled />
+    <MemoryRouter initialEntries={[path]}>
+      <QueryClientProvider client={client}>
+        <LinkedInDraftsSection settings={DEFAULT_LINKEDIN_SETTINGS} enabled />
+      </QueryClientProvider>
     </MemoryRouter>,
   );
 }
@@ -46,5 +50,13 @@ describe("LinkedIn draft stars", () => {
 
     expect(starPost.mutate).toHaveBeenCalledWith({ postId: "li_hook", starred: true });
     expect(screen.queryByLabelText("Post")).toBeNull();
+  });
+});
+
+describe("LinkedIn draft scene", () => {
+  it("allows a scene three times the old 400-character cap", () => {
+    renderDrafts("/?linkedin-post=li_hook");
+    expect(screen.getByLabelText("Scene")).toHaveAttribute("maxLength", String(IMAGE_SCENE_MAX));
+    expect(IMAGE_SCENE_MAX).toBe(1200);
   });
 });

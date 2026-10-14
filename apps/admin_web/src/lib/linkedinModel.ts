@@ -219,6 +219,7 @@ export type LinkedInOverview = {
   recommendedImageStyle?: string;
   imageStyleMax?: number;
   imageCharacterMax?: number;
+  imageSceneMax?: number;
 };
 
 export const SAMPLE_LINKEDIN_POSTS: LinkedInPost[] = [
@@ -307,8 +308,9 @@ export const LINKEDIN_STORY_VOICES: readonly LinkedInStoryVoice[] = [
   },
 ];
 
-/** Mirrors `STYLE_EXAMPLE_MAX` in `linkedin_store.py`. The default example itself comes from the API. */
+/** Mirrors `STYLE_EXAMPLE_MAX` and `IMAGE_SCENE_MAX` in `linkedin_store.py`. The default example itself comes from the API. */
 export const STYLE_EXAMPLE_MAX = 3000;
+export const IMAGE_SCENE_MAX = 1200;
 
 /** Mirrors `DEFAULT_IMAGE_MODEL` and `RECOMMENDED_IMAGE_STYLE` in `linkedin_store.py`. */
 export const DEFAULT_IMAGE_MODEL = "bytedance-seed/seedream-4.5";

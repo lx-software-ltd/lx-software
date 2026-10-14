@@ -153,7 +153,7 @@ IMAGE_FORMATS = ("square", "portrait", "wide")
 IMAGE_STYLE_MAX = 600
 IMAGE_CHARACTER_MAX = 400
 IMAGE_CAPTION_MAX = 140
-IMAGE_SCENE_MAX = 400
+IMAGE_SCENE_MAX = 1200
 IMAGE_EXPRESSION_MAX = 80
 IMAGE_PENDING_SECONDS = 600
 # Two 25 s model attempts plus the Event invoke; past this the worker is gone.
@@ -1262,6 +1262,7 @@ def overview(table: Any) -> dict[str, Any]:
         "recommendedImageStyle": RECOMMENDED_IMAGE_STYLE,
         "imageStyleMax": IMAGE_STYLE_MAX,
         "imageCharacterMax": IMAGE_CHARACTER_MAX,
+        "imageSceneMax": IMAGE_SCENE_MAX,
     }
 
 

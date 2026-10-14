@@ -1437,6 +1437,20 @@ class LinkedInImageTests(unittest.TestCase):
         self._brief.start()
         self.addCleanup(self._brief.stop)
 
+    def test_scene_keeps_three_times_the_old_cap(self) -> None:
+        kept = "x" * 1200
+        trimmed = linkedin_draft.picture_fields(
+            {"imageScene": kept + "y", "imageCaption": "Fine", "imageExpression": "weary"}
+        )
+        self.assertEqual(trimmed["imageScene"], kept)
+        self.assertEqual(len(trimmed["imageScene"]), linkedin_store.IMAGE_SCENE_MAX)
+        self.assertEqual(
+            linkedin_draft.picture_fields({"imageScene": kept, "imageCaption": "Fine", "imageExpression": "weary"})[
+                "imageScene"
+            ],
+            kept,
+        )
+
     def test_the_caption_always_ends_with_a_mark(self) -> None:
         finish = linkedin_store.finish_caption
         self.assertEqual(finish("'This took longer than I expected'"), "This took longer than I expected.")
@@ -1740,6 +1754,8 @@ class LinkedInImageTests(unittest.TestCase):
         overview = linkedin_store.overview(self.table)
         self.assertEqual(overview["imageModelAlternative"], "qwen/qwen-image-3")
         self.assertEqual(overview["recommendedImageStyle"], linkedin_store.RECOMMENDED_IMAGE_STYLE)
+        self.assertEqual(overview["imageSceneMax"], linkedin_store.IMAGE_SCENE_MAX)
+        self.assertEqual(linkedin_store.IMAGE_SCENE_MAX, 1200)
         with self.assertRaises(LinkedInError):
             linkedin_store.save_settings(self.table, {**settings, "imageFormat": "banner"})
         with self.assertRaises(LinkedInError):
