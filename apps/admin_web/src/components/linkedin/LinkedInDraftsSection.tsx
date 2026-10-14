@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { LINKEDIN_BYTES_KEY, useLinkedIn } from "../../hooks/useLinkedIn";
 import { adminFetchJson, getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { DRAFT_RECORD_ID } from "../../lib/expandedRecord";
+import { fitLinkedInImage } from "../../lib/fitLinkedInImage";
 import {
   guardrails,
   hasBlockingGuardrail,
@@ -613,25 +614,23 @@ function PostEditor({
                     const file = event.target.files?.[0];
                     event.target.value = "";
                     if (!file) return;
-                    if (file.size > 1_500_000) {
-                      setLocalError("The image must be under 1.5 MB.");
-                      return;
-                    }
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                      const dataBase64 = String(reader.result ?? "").split(",")[1] ?? "";
-                      setLocalError(null);
-                      void linkedIn.uploadImage.mutateAsync({
-                        postId: post.postId,
-                        contentType: file.type,
-                        dataBase64,
-                      }).catch((caught: unknown) => {
+                    setLocalError(null);
+                    void fitLinkedInImage(file)
+                      .then((fitted) =>
+                        linkedIn.uploadImage.mutateAsync({
+                          postId: post.postId,
+                          contentType: fitted.contentType,
+                          dataBase64: fitted.dataBase64,
+                        }),
+                      )
+                      .catch((caught: unknown) => {
                         setLocalError(caught instanceof Error ? caught.message : "Could not attach the image.");
                       });
-                    };
-                    reader.readAsDataURL(file);
                   }}
                 />
+                <p className="form-text mb-0">
+                  PNG or JPEG. A larger photo is resized to stay under 1.5 MB.
+                </p>
                 {post.image?.contentType ? (
                   <button
                     type="button"

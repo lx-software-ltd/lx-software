@@ -588,7 +588,10 @@ connected, one due approved draft is posted per tick through the Posts API,
 and only when the slot is less than three hours old. Older approved slots
 stay for the share box. The first comment is added, and a ready PNG or JPEG
 attached on the draft is uploaded with it (the caption, without quotes, is
-the alt text). A picture that has never been ready does not hold
+the alt text). Stored pictures stay under 1.5 MB (`IMAGE_BYTE_MAX`): the
+admin upload is base64 JSON through API Gateway to Lambda (6 MB sync
+payload), and generated comics already compress to that budget. The
+console resizes a larger PNG or JPEG before upload. A picture that has never been ready does not hold
 the slot: the post goes out as text. A redraw that is still pending or that
 failed publishes the previous ready picture instead. A comment failure leaves the post
 published. An image upload or API failure counts as a failed attempt (three tries,

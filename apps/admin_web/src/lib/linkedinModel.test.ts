@@ -6,6 +6,7 @@ import {
   RECOMMENDED_IMAGE_STYLE,
   LINKEDIN_STORY_VOICES,
   RECOMMENDED_LINKEDIN_VOICE,
+  IMAGE_BYTE_MAX,
   IMAGE_SCENE_MAX,
   STYLE_EXAMPLE_MAX,
   escapeCommentary,
@@ -95,6 +96,7 @@ describe("linkedin guardrails", () => {
     expect(RECOMMENDED_IMAGE_STYLE).toContain("cross-hatching");
     expect(RECOMMENDED_IMAGE_STYLE).toContain("caricatures");
     expect(IMAGE_SCENE_MAX).toBe(1200);
+    expect(IMAGE_BYTE_MAX).toBe(1_500_000);
   });
 
   it("offers four story tones, with Over lunch as the recommended voice", () => {

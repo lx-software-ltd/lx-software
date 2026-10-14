@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLinkedIn, LINKEDIN_BYTES_KEY } from "../../hooks/useLinkedIn";
 import { adminFetchJson, getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { formatDateTimeHKT } from "../../lib/formatDisplay";
+import { fitLinkedInImage } from "../../lib/fitLinkedInImage";
 import {
   BUILTIN_FORBIDDEN,
   IMAGE_FORMATS,
@@ -599,17 +600,12 @@ function CharacterSitting({ enabled }: { readonly enabled: boolean }) {
               const file = event.target.files?.[0];
               event.target.value = "";
               if (!file) return;
-              if (file.size > 1_500_000) {
-                setLocalError("The image must be under 1.5 MB.");
-                return;
-              }
-              const reader = new FileReader();
-              reader.onload = () => {
-                const dataBase64 = String(reader.result ?? "").split(",")[1] ?? "";
-                setLocalError(null);
-                void linkedIn.uploadCharacterPhoto.mutate({ contentType: file.type, dataBase64 });
-              };
-              reader.readAsDataURL(file);
+              setLocalError(null);
+              void fitLinkedInImage(file)
+                .then((fitted) => linkedIn.uploadCharacterPhoto.mutate(fitted))
+                .catch((caught: unknown) => {
+                  setLocalError(caught instanceof Error ? caught.message : "Could not attach the image.");
+                });
             }}
           />
         </label>
@@ -633,7 +629,8 @@ function CharacterSitting({ enabled }: { readonly enabled: boolean }) {
         ) : null}
       </div>
       <p className="form-text mb-0">
-        Upload a photo, draw four cartoons, and pick one. Delete the photo once the sheet looks right. Click a candidate to use it.
+        Upload a PNG or JPEG, draw four cartoons, and pick one. A larger photo is resized to stay under 1.5 MB. Delete the
+        photo once the sheet looks right. Click a candidate to use it.
       </p>
     </div>
   );
