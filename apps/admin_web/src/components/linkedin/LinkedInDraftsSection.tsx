@@ -8,6 +8,7 @@ import {
   guardrails,
   hasBlockingGuardrail,
   hookText,
+  IMAGE_SCENE_MAX,
   isLinkedInPostUrl,
   linkedInShareUrl,
   pillarLabel,
@@ -525,8 +526,8 @@ function PostEditor({
                   <textarea
                     id={`${formId}-scene`}
                     className="form-control"
-                    rows={2}
-                    maxLength={400}
+                    rows={4}
+                    maxLength={IMAGE_SCENE_MAX}
                     value={scene}
                     onChange={(event) =>
                       setPictureDraft({ id: pictureId, scene: event.target.value, caption, expression })

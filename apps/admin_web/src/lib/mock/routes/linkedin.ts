@@ -3,6 +3,7 @@ import { json, parseBody, state } from "./context";
 import {
   DEFAULT_IMAGE_MODEL,
   IMAGE_MODEL_ALTERNATIVE,
+  IMAGE_SCENE_MAX,
   LINKEDIN_PILLARS,
   RECOMMENDED_IMAGE_STYLE,
   LINKEDIN_STORY_VOICES,
@@ -74,6 +75,7 @@ function overview() {
     recommendedImageStyle: RECOMMENDED_IMAGE_STYLE,
     imageStyleMax: 600,
     imageCharacterMax: 400,
+    imageSceneMax: IMAGE_SCENE_MAX,
   };
 }
 
