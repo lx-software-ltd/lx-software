@@ -118,6 +118,7 @@ describe("LinkedIn character photo", () => {
     render(<LinkedInSettingsCard overview={overview("")} enabled />);
 
     const input = screen.getByLabelText("Upload photo");
+    expect(input).toHaveAttribute("accept", "image/png,image/jpeg,image/heic,image/heif");
     await user.upload(input, new File([new Uint8Array(1_600_000)], "large.png", { type: "image/png" }));
 
     expect(await screen.findByText("Resizing…")).toBeInTheDocument();
