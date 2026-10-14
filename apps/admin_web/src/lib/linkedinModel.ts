@@ -311,6 +311,10 @@ export const LINKEDIN_STORY_VOICES: readonly LinkedInStoryVoice[] = [
 /** Mirrors `STYLE_EXAMPLE_MAX` and `IMAGE_SCENE_MAX` in `linkedin_store.py`. The default example itself comes from the API. */
 export const STYLE_EXAMPLE_MAX = 3000;
 export const IMAGE_SCENE_MAX = 1200;
+/** Mirrors `IMAGE_BYTE_MAX` in `linkedin_store.py`. Stored upload after any resize. */
+export const IMAGE_BYTE_MAX = 1_500_000;
+/** Largest source photo the browser will decode before shrinking to `IMAGE_BYTE_MAX`. */
+export const IMAGE_SOURCE_BYTE_MAX = 25_000_000;
 
 /** Mirrors `DEFAULT_IMAGE_MODEL` and `RECOMMENDED_IMAGE_STYLE` in `linkedin_store.py`. */
 export const DEFAULT_IMAGE_MODEL = "bytedance-seed/seedream-4.5";

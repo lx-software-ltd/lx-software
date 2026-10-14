@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_LINKEDIN_SETTINGS,
   LINKEDIN_PILLARS,
@@ -9,6 +9,15 @@ import {
   type LinkedInOverview,
 } from "../../lib/linkedinModel";
 import { LinkedInSettingsCard } from "./LinkedInSettingsCard";
+
+const { fitLinkedInImage, uploadCharacterPhoto } = vi.hoisted(() => ({
+  fitLinkedInImage: vi.fn(async () => ({ contentType: "image/jpeg" as const, dataBase64: "c2hydW5r" })),
+  uploadCharacterPhoto: { isPending: false, error: null as Error | null, mutate: vi.fn() },
+}));
+
+vi.mock("../../lib/fitLinkedInImage", () => ({
+  fitLinkedInImage,
+}));
 
 vi.mock("../../hooks/useLinkedIn", () => ({
   LINKEDIN_BYTES_KEY: ["linkedin-bytes"],
@@ -19,7 +28,7 @@ vi.mock("../../hooks/useLinkedIn", () => ({
     saveConnection: { error: null, mutate: vi.fn() },
     refreshOrganizations: { isPending: false, error: null, mutate: vi.fn() },
     character: { data: undefined },
-    uploadCharacterPhoto: { error: null, mutate: vi.fn() },
+    uploadCharacterPhoto,
     drawCharacter: { isPending: false, error: null, mutate: vi.fn() },
     chooseCharacter: { isPending: false, error: null, mutate: vi.fn() },
     deleteCharacterPhoto: { isPending: false, mutate: vi.fn() },
@@ -85,5 +94,48 @@ describe("LinkedIn story tones", () => {
     render(<LinkedInSettingsCard overview={overview(RECOMMENDED_LINKEDIN_VOICE)} enabled />);
     expect(screen.getByRole("button", { name: "Over lunch" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("button", { name: "Use recommended voice" })).toBeNull();
+  });
+});
+
+describe("LinkedIn character photo", () => {
+  beforeEach(() => {
+    fitLinkedInImage.mockReset();
+    fitLinkedInImage.mockResolvedValue({ contentType: "image/jpeg", dataBase64: "c2hydW5r" });
+    uploadCharacterPhoto.mutate.mockReset();
+    uploadCharacterPhoto.isPending = false;
+    uploadCharacterPhoto.error = null;
+  });
+
+  it("resizes a photo over 1.5 MB and uploads the fitted JPEG", async () => {
+    const user = userEvent.setup();
+    let resolveFit: (value: { contentType: "image/jpeg"; dataBase64: string }) => void = () => {};
+    fitLinkedInImage.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFit = resolve;
+        }),
+    );
+    render(<LinkedInSettingsCard overview={overview("")} enabled />);
+
+    const input = screen.getByLabelText("Upload photo");
+    await user.upload(input, new File([new Uint8Array(1_600_000)], "large.png", { type: "image/png" }));
+
+    expect(await screen.findByText("Resizing…")).toBeInTheDocument();
+    expect(input).toBeDisabled();
+    expect(uploadCharacterPhoto.mutate).not.toHaveBeenCalled();
+
+    resolveFit({ contentType: "image/jpeg", dataBase64: "c2hydW5r" });
+    await waitFor(() =>
+      expect(uploadCharacterPhoto.mutate).toHaveBeenCalledWith({
+        contentType: "image/jpeg",
+        dataBase64: "c2hydW5r",
+      }),
+    );
+  });
+
+  it("labels the control Uploading… while the photo is saving", () => {
+    uploadCharacterPhoto.isPending = true;
+    render(<LinkedInSettingsCard overview={overview("")} enabled />);
+    expect(screen.getByLabelText("Uploading…")).toBeDisabled();
   });
 });
