@@ -36,7 +36,7 @@ This document defines **reusable patterns** for the LX Software admin SPA (`apps
 | `StaleValuationBadge` | Marks a valuation that is past its freshness window. |
 | `FrankfurterRatesFooterNote` | FX attribution under a converted total. |
 | `TableSortHeaderButton` | Desktop column sort control. |
-| `AdminField` / `AdminFieldGrid` / `AdminEditorActions` | Labelled field grid inside an editor. |
+| `AdminField` / `AdminFieldGrid` / `AdminEditorActions` | Labelled field grid inside an editor. Hint text (`.form-text`) immediately after a textbox or textarea gets an extra `0.5rem` below it so the next field sits on a double `g-2` gap. |
 | `AdminDataTableCellMeta` / `AdminDataTableEmptyRow` | Phone meta line under a cell, and the empty-table row. |
 
 Import from the barrel: `import { MoneyAmount, … } from "../components/ui"` (adjust path).

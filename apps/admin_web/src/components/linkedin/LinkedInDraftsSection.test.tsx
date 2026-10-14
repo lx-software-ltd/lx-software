@@ -31,7 +31,11 @@ function renderDrafts(path = "/") {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <QueryClientProvider client={client}>
-        <LinkedInDraftsSection settings={DEFAULT_LINKEDIN_SETTINGS} enabled />
+        <LinkedInDraftsSection
+          settings={DEFAULT_LINKEDIN_SETTINGS}
+          enabled
+          defaultModel="mistralai/mistral-medium-3"
+        />
       </QueryClientProvider>
     </MemoryRouter>,
   );
@@ -53,10 +57,28 @@ describe("LinkedIn draft stars", () => {
   });
 });
 
+describe("LinkedIn new post", () => {
+  it("opens the new post editor at the top of the table", async () => {
+    const user = userEvent.setup();
+    renderDrafts();
+
+    await user.click(screen.getByRole("button", { name: "New post" }));
+
+    const editor = screen.getByLabelText("Post");
+    const firstDraft = screen.getByText("A rollback is a design decision.");
+    expect(editor.compareDocumentPosition(firstDraft) & Node.DOCUMENT_POSITION_FOLLOWING).toBeGreaterThan(0);
+  });
+});
+
 describe("LinkedIn draft scene", () => {
   it("allows a scene three times the old 400-character cap", () => {
     renderDrafts("/?linkedin-post=li_hook");
     expect(screen.getByLabelText("Scene")).toHaveAttribute("maxLength", String(IMAGE_SCENE_MAX));
     expect(IMAGE_SCENE_MAX).toBe(1200);
+  });
+
+  it("names the draft model that writes the scene, expression, and caption", () => {
+    renderDrafts("/?linkedin-post=li_hook");
+    expect(screen.getByText(/by mistralai\/mistral-medium-3/)).toBeInTheDocument();
   });
 });

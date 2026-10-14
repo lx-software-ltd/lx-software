@@ -150,6 +150,13 @@
   max-width: 100%;
 }
 
+/* A hint after a text control keeps mb-0 (no paragraph gap). The field grid
+   already supplies g-2 (0.5rem); padding doubles that space before the next field. */
+input.form-control:not([type="checkbox"]):not([type="radio"]):not([type="file"]) + .form-text,
+textarea.form-control + .form-text {
+  padding-bottom: 0.5rem;
+}
+
 @media (min-width: 768px) {
   .admin-field-grid-2 .admin-field-span-1 {
     flex: 0 0 50%;
