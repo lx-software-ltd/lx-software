@@ -1,0 +1,29 @@
+diff --git a/.github/workflows/board-agent.yml b/.github/workflows/board-agent.yml
+--- a/.github/workflows/board-agent.yml
++++ b/.github/workflows/board-agent.yml
+@@ -218,16 +218,20 @@
+           git add -A
+           title="board: #${ISSUE} $(head -n 1 "${RUNNER_TEMP}/brief.txt")"
+           git commit -m "${title}" || true
+-          git -c "http.extraheader=AUTHORIZATION: bearer ${GH_TOKEN}" \
+-            fetch origin staging
++          # git smart HTTP on github.com rejects "Authorization: bearer" for
++          # receive-pack (401, then git asks for a username and dies with
++          # "could not read Username"). Use the basic header actions/checkout
++          # itself writes: base64("x-access-token:<token>").
++          auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)"
++          git_auth() {
++            git -c "http.extraheader=${auth_header}" "$@"
++          }
++          git_auth fetch origin staging
+           ahead="$(git rev-list --count "origin/staging..HEAD")"
+           if [ "${ahead}" = "0" ]; then
+             echo "No unique commits vs staging; skip draft PR (dry-run / no-op)"
+             exit 0
+           fi
+-          git_auth() {
+-            git -c "http.extraheader=AUTHORIZATION: bearer ${GH_TOKEN}" "$@"
+-          }
+           if [ -n "${PR_NUMBER:-}" ]; then
+             git_auth push -u origin HEAD
+             echo "Updated existing PR #${PR_NUMBER}"
