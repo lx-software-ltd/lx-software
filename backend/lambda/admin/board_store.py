@@ -1783,25 +1783,22 @@ def list_tasks(
     limit: int = 200,
     newest_first: bool = False,
 ) -> list[dict[str, Any]]:
-    """Tasks by status, oldest ``slaAt`` first.
+    """Tasks by status, oldest ``slaAt`` first unless ``newest_first``.
 
-    ``newest_first`` walks the index backwards so a capped read of a busy
-    status (``delivered`` grows past any limit) still returns the latest rows.
+    A capped read walks the index backwards so a busy status (``delivered``
+    grows past any limit) returns its latest rows; ``newest_first`` only
+    sets the output order.
     """
     statuses = [status] if status else list(BOARD_STAFF_TASK_STATUSES)
     items: list[dict[str, Any]] = []
     for st in statuses:
+        key = {":pk": board_pk(f"tasks#{st}")}
         rows = _query_all(
-            table,
-            IndexName="gsi1",
-            KeyConditionExpression="gsi1pk = :pk",
-            ExpressionAttributeValues={":pk": board_pk(f"tasks#{st}")},
-            ScanIndexForward=not newest_first,
-            Limit=limit,
+            table, IndexName="gsi1", KeyConditionExpression="gsi1pk = :pk", ExpressionAttributeValues=key, ScanIndexForward=False, Limit=limit
         )
         items.extend(_strip_keys(i) for i in rows)
-    items.sort(key=lambda t: str(t.get("slaAt") or t.get("createdAt") or ""), reverse=newest_first)
-    return items[:limit]
+    items.sort(key=lambda t: str(t.get("slaAt") or t.get("createdAt") or ""), reverse=True)
+    return items[:limit] if newest_first else items[:limit][::-1]
 
 
 def claim_task_step(table: Any, task_id: str, expected_step: int) -> bool:
