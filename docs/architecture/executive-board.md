@@ -725,7 +725,13 @@ inbound-mail Lambda) **and** `settings.staff.enabled`. With either off,
   scratchpad and deliverable keys in S3, `evidence[]`, `lastReview`,
   `failureReason`.
 - Statuses: `queued`, `running`, `waiting_approval`, `waiting_subtask`,
-  `review`, `delivered`, `needs_owner`, `failed`, `cancelled`.
+  `review`, `delivered`, `needs_owner`, `failed`, `cancelled`. A status
+  is read through the `tasks#{status}` index with a cap (`limit`, 200 by
+  default). A capped read walks the index newest first so a busy status
+  (`delivered` passed 200 rows on 30 Sep 2026) returns its latest rows;
+  output is still oldest `slaAt` first unless `newest_first`. The
+  `eventRef` dedupes (`code-implement`, `code-review`, catalog
+  micro-batches, duties) depend on this.
 - `drain_queue` starts queued tasks while `running + review <
   settings.staff.maxRunningTasks` (default 3). Each step is a self-invoke
   (`internal: board_staff_step`) claimed with a conditional update so a
@@ -1169,7 +1175,14 @@ cannot create them. Present on `staging` today:
   `--model` flag lives in the workflow), runs the repo tests, pushes
   `board/<task_id>` and opens a draft PR against `staging` as
   `BOARD_PR_TOKEN` (PRs opened with `GITHUB_TOKEN` often never start CI).
-  Lockfile diffs are excluded from the 400-line cap.
+  Lockfile diffs are excluded from the 400-line cap. With
+  `persist-credentials: false` the push must send
+  `AUTHORIZATION: basic base64("x-access-token:<token>")`; github.com
+  answers 401 to `AUTHORIZATION: bearer` on `git-receive-pack`, git then
+  prompts for a username and the step dies with "could not read Username"
+  after the agent has already spent its run (every run since siutindei
+  #610, 8 Oct 2026). `siutindei-board-agent-push-auth.patch` in this
+  directory is the fix; apply it on `staging` with `git apply`.
 - `.github/workflows/board-merge-staging.yml` — re-checks CI, base,
   prefix, protected paths and size (`scripts/ci/board_policy.py` mirrors
   `board_code.py`), then `gh pr merge --squash`.

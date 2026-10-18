@@ -2897,6 +2897,42 @@ class StaffRouteTests(BoardTestCase):
         for tid in failed_ids:
             self.assertIn(tid, listed_ids)
 
+    def _seed_delivered(self, count: int) -> list[str]:
+        ids: list[str] = []
+        for i in range(count):
+            tid = f"t{i:03d}"
+            board_store.put_task(
+                self.table,
+                {
+                    "taskId": tid,
+                    "status": "delivered",
+                    "assignee": "cfo",
+                    "slaAt": f"2026-09-{1 + i // 10:02d}T{i % 10:02d}:00:00.000Z",
+                    "createdAt": f"2026-09-{1 + i // 10:02d}T{i % 10:02d}:00:00.000Z",
+                    "eventRef": {"kind": "code-implement", "id": f"issue:{i}"},
+                },
+            )
+            ids.append(tid)
+        return ids
+
+    def test_capped_list_keeps_newest_rows_oldest_first(self) -> None:
+        ids = self._seed_delivered(30)
+        listed = board_store.list_tasks(self.table, "delivered", limit=10)
+        self.assertEqual([t["taskId"] for t in listed], ids[-10:])
+        newest = board_store.list_tasks(self.table, "delivered", limit=10, newest_first=True)
+        self.assertEqual([t["taskId"] for t in newest], list(reversed(ids[-10:])))
+
+    def test_capped_list_under_limit_is_unchanged(self) -> None:
+        ids = self._seed_delivered(5)
+        listed = board_store.list_tasks(self.table, "delivered", limit=10)
+        self.assertEqual([t["taskId"] for t in listed], ids)
+
+    def test_find_task_sees_recent_code_implement_past_200_delivered(self) -> None:
+        self._seed_delivered(210)
+        found = board_code._find_task(self.table, "code-implement", "issue:209")  # noqa: SLF001
+        self.assertIsNotNone(found)
+        self.assertEqual(found["taskId"], "t209")
+
 
 class StaffKillSwitchTests(BoardTestCase):
     def test_env_enabled_false_when_unset(self) -> None:

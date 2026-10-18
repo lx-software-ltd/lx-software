@@ -35,7 +35,7 @@ backend/lambda/admin/board_review.py 828
 backend/lambda/admin/board_routes.py 1532
 backend/lambda/admin/board_staff.py 2621
 backend/lambda/admin/board_staff_help.py 571
-backend/lambda/admin/board_store.py 2627
+backend/lambda/admin/board_store.py 2624
 backend/lambda/admin/board_stores.py 986
 backend/lambda/admin/board_tools.py 1810
 backend/lambda/admin/board_triage.py 507
