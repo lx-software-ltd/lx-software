@@ -23,6 +23,10 @@ paths = [
 regexes = [
   '''^LinkedInSettings$''',
   '''^forbiddenWords$''',
+  # test_board.py assigns an S3 fixture to ``key``. generic-api-key matches
+  # ``inbound/hillmarton/``. Secret scanning fetches every branch, so this
+  # commit is visible from other pull requests.
+  '''^inbound/hillmarton/$''',
 ]
 
 # Public read-only API keys minted by scripts/manage-public-api-keys.py use
