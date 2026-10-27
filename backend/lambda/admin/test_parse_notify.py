@@ -53,9 +53,7 @@ class TestNotifyFromAddress(unittest.TestCase):
 
 class TestBuildMessage(unittest.TestCase):
     def test_skips_non_terminal(self) -> None:
-        self.assertIsNone(
-            parse_notify.build_parse_notify_message({"status": "processing"})
-        )
+        self.assertIsNone(parse_notify.build_parse_notify_message({"status": "processing"}))
 
     def test_success_includes_lines_and_original_filename(self) -> None:
         with patch.dict(
@@ -70,11 +68,7 @@ class TestBuildMessage(unittest.TestCase):
                     "jobId": "abc123",
                     "source": "inbound_mail",
                     "addedLines": 4,
-                    "s3Keys": [
-                        "inbound/hillmarton/"
-                        + ("a" * 32)
-                        + "/00_KDQ170167_-_Landlord_Statement.pdf"
-                    ],
+                    "s3Keys": ["inbound/hillmarton/" + ("a" * 32) + "/00_KDQ170167_-_Landlord_Statement.pdf"],
                 }
             )
         self.assertEqual(subject, "[32 Hillmarton] Statement parse succeeded")
@@ -100,6 +94,54 @@ class TestBuildMessage(unittest.TestCase):
         self.assertIn("admin upload", body)
         self.assertIn("invoice.pdf", body)
 
+    def test_success_mentions_a_repeated_filename(self) -> None:
+        subject, body = parse_notify.build_parse_notify_message(
+            {
+                "status": "succeeded",
+                "house": "morrison",
+                "jobId": "job-repeat",
+                "source": "inbound_mail",
+                "addedLines": 2,
+                "s3Keys": ["inbound/morrison/" + ("d" * 32) + "/00_advice-note.pdf"],
+                "duplicateBasenames": ["00_advice-note.pdf"],
+                "duplicateBasenameContent": "same",
+            }
+        )
+        self.assertIn("(repeated filename)", subject)
+        self.assertIn("Repeated filename: 00_advice-note.pdf", body)
+        self.assertIn("same size and S3 etag", body)
+        self.assertIn("Lines added: 2", body)
+
+    def test_success_says_when_the_exact_file_was_skipped(self) -> None:
+        _subject, body = parse_notify.build_parse_notify_message(
+            {
+                "status": "succeeded",
+                "house": "morrison",
+                "jobId": "job-skip",
+                "source": "inbound_mail",
+                "addedLines": 0,
+                "duplicateBasenames": ["00_advice-note.pdf"],
+                "duplicateBasenameContent": "same",
+                "skippedExistingAssetKeys": ["inbound/morrison/batch/00_advice-note.pdf"],
+            }
+        )
+        self.assertIn("Lines added: 0", body)
+        self.assertIn("already linked to a statement line", body)
+
+    def test_success_says_when_the_file_differs(self) -> None:
+        _subject, body = parse_notify.build_parse_notify_message(
+            {
+                "status": "succeeded",
+                "house": "morrison",
+                "jobId": "job-diff",
+                "source": "api",
+                "addedLines": 1,
+                "duplicateBasenames": ["advice-note.pdf"],
+                "duplicateBasenameContent": "different",
+            }
+        )
+        self.assertIn("differs from the earlier import", body)
+
 
 class TestSend(unittest.TestCase):
     def tearDown(self) -> None:
@@ -110,9 +152,7 @@ class TestSend(unittest.TestCase):
         parse_notify._sesv2 = ses
         with patch.dict("os.environ", {"STATEMENT_PARSE_NOTIFY_EMAIL": ""}, clear=False):
             self.assertFalse(
-                parse_notify.notify_parse_job_outcome(
-                    {"status": "succeeded", "jobId": "j", "house": "hillmarton"}
-                )
+                parse_notify.notify_parse_job_outcome({"status": "succeeded", "jobId": "j", "house": "hillmarton"})
             )
         ses.send_email.assert_not_called()
 
@@ -138,9 +178,7 @@ class TestSend(unittest.TestCase):
             )
         ses.send_email.assert_called_once()
         kwargs = ses.send_email.call_args.kwargs
-        self.assertEqual(
-            kwargs["FromEmailAddress"], "statements@inbound.lx-software.com"
-        )
+        self.assertEqual(kwargs["FromEmailAddress"], "statements@inbound.lx-software.com")
         self.assertEqual(kwargs["Destination"]["ToAddresses"], ["ops@example.com"])
         self.assertIn(
             "failed",
@@ -157,9 +195,7 @@ class TestSend(unittest.TestCase):
             clear=False,
         ):
             self.assertFalse(
-                parse_notify.notify_parse_job_outcome(
-                    {"status": "succeeded", "jobId": "j", "house": "morrison"}
-                )
+                parse_notify.notify_parse_job_outcome({"status": "succeeded", "jobId": "j", "house": "morrison"})
             )
 
 
@@ -167,12 +203,8 @@ class TestWorkerNotifyHook(unittest.TestCase):
     def test_quiet_wrapper_swallows_errors(self) -> None:
         import parse_jobs
 
-        with patch(
-            "parse_notify.notify_parse_job_outcome", side_effect=RuntimeError("boom")
-        ):
-            parse_jobs._notify_parse_job_quietly(
-                {"status": "failed", "jobId": "x", "house": "hillmarton"}
-            )
+        with patch("parse_notify.notify_parse_job_outcome", side_effect=RuntimeError("boom")):
+            parse_jobs._notify_parse_job_quietly({"status": "failed", "jobId": "x", "house": "hillmarton"})
 
 
 if __name__ == "__main__":

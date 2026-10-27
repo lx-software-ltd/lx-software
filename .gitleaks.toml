@@ -23,9 +23,9 @@ paths = [
 regexes = [
   '''^LinkedInSettings$''',
   '''^forbiddenWords$''',
-  # Fixture S3 path assigned to a variable named key in test_board.py.
-  # generic-api-key matches inbound/hillmarton/ (entropy just over 3.5).
-  # The assignment remains in the commit that added the assets-list tests.
+  # test_board.py assigns an S3 fixture to ``key``. generic-api-key matches
+  # ``inbound/hillmarton/`` (entropy just over 3.5). Secret scanning fetches
+  # every branch, so the assets-list commit stays visible from other pull requests.
   '''^inbound/hillmarton/$''',
 ]
 

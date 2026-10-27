@@ -4,20 +4,15 @@ import { log } from "../lib/log";
 import {
   statementLineAssetKeys,
   type FinanceLineType,
-  type FinancePersistedState,
   type HouseFinanceData,
   type StatementOwnerKey,
 } from "../lib/financeModel";
 import {
-  isHouseKey,
   parseStatementJobPath,
   parseStatementStartPath,
   statementOwnerQueryKey,
 } from "../lib/statementOwners";
 import { uploadFinanceAsset } from "../lib/uploadFinanceAsset";
-
-const DUPLICATE_STATEMENT_BASE_MSG =
-  "Remove its imported lines or rename the file, then try again.";
 
 import {
   PARSE_POLL_BACKOFF_CAP_MS,
@@ -51,6 +46,8 @@ type ParseJobStartResponse = {
   readonly status?: string;
 };
 
+type DuplicateBasenameContent = "same" | "different" | "unknown";
+
 type ParseJobPollResponse =
   | { readonly status: "pending" | "processing" }
   | {
@@ -58,13 +55,58 @@ type ParseJobPollResponse =
       readonly addedLines: number;
       readonly sourceAssetKeys?: readonly string[];
       readonly sourceAssetKey?: string;
+      readonly skippedExistingAssetKeys?: readonly string[];
+      readonly duplicateBasenames?: readonly string[];
+      readonly duplicateBasenameContent?: DuplicateBasenameContent;
     }
   | { readonly status: "failed"; readonly message?: string };
 
 export type ParseStatementResult = {
   readonly addedLines: number;
   readonly sourceAssetKeys: readonly string[];
+  readonly skippedExistingAssetKeys?: readonly string[];
+  readonly duplicateBasenames?: readonly string[];
+  readonly duplicateBasenameContent?: DuplicateBasenameContent;
 };
+
+export type StatementImportNotice = {
+  readonly tone: "success" | "warning";
+  readonly text: string;
+};
+
+function copiedStrings(value: readonly string[] | undefined): string[] | undefined {
+  if (!value?.length) return undefined;
+  const out = value.filter((item) => item.trim().length > 0);
+  return out.length ? [...out] : undefined;
+}
+
+/** What the statement panel shows after a parse job finishes. */
+export function statementImportResultMessage(result: ParseStatementResult): StatementImportNotice {
+  const skipped = result.skippedExistingAssetKeys ?? [];
+  if (skipped.length > 0 && result.addedLines === 0) {
+    return {
+      tone: "warning",
+      text: "This exact file is already linked to a statement line. No new lines were added.",
+    };
+  }
+  const base =
+    result.addedLines === 0
+      ? "No transactions were extracted from this document."
+      : `Imported ${result.addedLines} statement line${result.addedLines === 1 ? "" : "s"}.`;
+  if (result.duplicateBasenameContent === "same") {
+    return {
+      tone: "warning",
+      text: `${base} This file matches an earlier import, so these amounts may already be on the statement.`,
+    };
+  }
+  if ((result.duplicateBasenames ?? []).length > 0) {
+    return {
+      tone: "warning",
+      text: `${base} A file with this name was already imported.`,
+    };
+  }
+  return { tone: "success", text: base };
+}
 
 export type ParseStatementVariables = {
   readonly file: File;
@@ -77,16 +119,6 @@ export type ParseStatementVariables = {
  * and call sites that imported it from this module.
  */
 export { extractS3ErrorCode } from "../lib/uploadFinanceAsset";
-
-function bookDataForOwner(
-  owner: StatementOwnerKey,
-  qc: ReturnType<typeof useQueryClient>,
-): HouseFinanceData | undefined {
-  if (isHouseKey(owner)) {
-    return qc.getQueryData<FinancePersistedState>(["finance"])?.[owner];
-  }
-  return qc.getQueryData<HouseFinanceData>(statementOwnerQueryKey(owner));
-}
 
 async function pollParseJob(
   owner: StatementOwnerKey,
@@ -105,9 +137,14 @@ async function pollParseJob(
           : j.sourceAssetKey
             ? [j.sourceAssetKey]
             : [];
+      const content = j.duplicateBasenameContent;
       return {
         addedLines: j.addedLines,
         sourceAssetKeys: keys,
+        skippedExistingAssetKeys: copiedStrings(j.skippedExistingAssetKeys),
+        duplicateBasenames: copiedStrings(j.duplicateBasenames),
+        duplicateBasenameContent:
+          content === "same" || content === "different" || content === "unknown" ? content : undefined,
       };
     }
     if (j.status === "failed") {
@@ -150,16 +187,6 @@ export function useParseStatement(owner: StatementOwnerKey) {
               : "");
       if (!contentType.startsWith("image/") && contentType !== "application/pdf") {
         throw new Error("Only PDF or image statements are supported.");
-      }
-
-      const book = bookDataForOwner(owner, qc);
-      if (book) {
-        const basenames = existingImportedStatementBasenames(book);
-        if (basenames.has(file.name)) {
-          throw new Error(
-            `A statement file named "${file.name}" was already imported. ${DUPLICATE_STATEMENT_BASE_MSG}`,
-          );
-        }
       }
 
       log.info("[useParseStatement] start", {

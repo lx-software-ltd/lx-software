@@ -105,7 +105,6 @@ from parse_jobs import (
 )
 from parse_statement import (
     _path_finance_house_for_parse,
-    _statement_basename_already_imported,
 )
 from proxies import _proxy_finance_quotes, _proxy_fx_v2_rates
 from router import Route, route_matches
@@ -1065,20 +1064,6 @@ def _http_statement_book(event, method, path, user_sub, admin_claims):
                     400,
                     {"message": "lineTypeOnly must be income or expenditure"},
                 )
-            table = board_store.records_table()
-            book_data = _load_finance_owner(table, book_key)
-            file_name = os.path.basename(key)
-            if _statement_basename_already_imported(book_data, file_name):
-                return _json_response(
-                    409,
-                    {
-                        "message": (
-                            f"A statement file named {file_name!r} was already imported "
-                            f"for {book_label}. Remove its imported lines or rename the "
-                            "file, then try again."
-                        )
-                    },
-                )
             try:
                 job_id = enqueue_parse_statement_async_job(
                     house=book_key,
@@ -1163,19 +1148,6 @@ def _http_finance_parse_post(event, method, path, user_sub, admin_claims):
     prefix = f"uploads/{user_sub}/"
     if not key.startswith(prefix):
         return _json_response(400, {"message": "Invalid key for this user"})
-    table = board_store.records_table()
-    house_data = _load_finance_house(table, house)
-    file_name = os.path.basename(key)
-    if _statement_basename_already_imported(house_data, file_name):
-        return _json_response(
-            409,
-            {
-                "message": (
-                    f"A statement file named {file_name!r} was already imported for this house. "
-                    "Remove its imported lines or rename the file, then try again."
-                )
-            },
-        )
     mortgage_only = body.get("mortgageOnly") is True
     try:
         job_id = enqueue_parse_statement_async_job(
