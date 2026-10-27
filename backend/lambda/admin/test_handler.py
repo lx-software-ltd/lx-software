@@ -2144,16 +2144,19 @@ class TestParseRepeatsImportedBasename(unittest.TestCase):
         self.assertEqual(result["duplicateBasenameContent"], "different")
 
     def test_execute_appends_when_earlier_copy_cannot_be_compared(self) -> None:
-        from botocore.exceptions import ClientError
+        import parse_statement as parse_statement_mod
 
         s3_key = "inbound/morrison/new-batch/00_advice-note.pdf"
 
         def head(Bucket, Key):
             del Bucket
             if "prior-batch" in Key:
-                err = ClientError("missing")
-                err.response = {"Error": {"Code": "404", "Message": "no"}}
-                raise err
+                # The class execute_parse_statement catches. Another test
+                # module may replace botocore.exceptions.ClientError later.
+                raise parse_statement_mod.ClientError(
+                    {"Error": {"Code": "404", "Message": "no"}},
+                    "HeadObject",
+                )
             return {
                 "ContentType": "application/pdf",
                 "ContentLength": 9,
