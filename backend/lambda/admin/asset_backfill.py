@@ -12,10 +12,22 @@ from assets import (
     asset_index_attributes,
     owner_from_inbound_key,
 )
-from botocore.exceptions import ClientError
 
 ASSET_BACKFILL_SCAN_LIMIT = 200
 _MISSING_OBJECT_CODES = frozenset({"404", "NoSuchKey", "NotFound"})
+
+
+def _client_error_code(exc: BaseException) -> str:
+    """Read a DynamoDB or S3 error code. Tests stub a second ``ClientError`` class."""
+    if type(exc).__name__ != "ClientError":
+        return ""
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return ""
+    error = response.get("Error")
+    if not isinstance(error, dict):
+        return ""
+    return str(error.get("Code", ""))
 
 
 def backfill_asset_index(
@@ -119,8 +131,8 @@ def _uploaded_at_for_index(item: dict[str, Any], s3_key: str, s3_client: Any, bu
         return None
     try:
         head = s3_client.head_object(Bucket=bucket, Key=s3_key)
-    except ClientError as exc:
-        code = exc.response.get("Error", {}).get("Code", "")
+    except Exception as exc:
+        code = _client_error_code(exc)
         if code in _MISSING_OBJECT_CODES:
             return None
         raise
@@ -165,9 +177,8 @@ def _stamp_asset_index(
             ExpressionAttributeValues=values,
             ConditionExpression="attribute_exists(pk)",
         )
-    except ClientError as exc:
-        code = exc.response.get("Error", {}).get("Code", "")
-        if code == "ConditionalCheckFailedException":
+    except Exception as exc:
+        if _client_error_code(exc) == "ConditionalCheckFailedException":
             return "skipped"
         raise
     return "updated"
