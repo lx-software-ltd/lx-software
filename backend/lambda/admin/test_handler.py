@@ -1929,6 +1929,158 @@ class TestStatementBasenameDuplicate(unittest.TestCase):
         )
 
 
+def _advice_note_house_item() -> dict:
+    """A house that already imported a file named 00_advice-note.pdf."""
+    return {
+        "pk": "FINANCE#morrison",
+        "sk": "STATE",
+        "defaultCurrency": "HKD",
+        "float": {"amount": 0, "currency": "HKD"},
+        "lines": [
+            {
+                "id": "prior",
+                "dateUtc": "2026-09-28T04:54:00.000Z",
+                "type": "income",
+                "description": "Advice note",
+                "netAmount": 10,
+                "vat": 0,
+                "grossAmount": 10,
+                "currency": "HKD",
+                "sourceAssetKeys": ["inbound/morrison/prior-batch/00_advice-note.pdf"],
+            }
+        ],
+    }
+
+
+class TestParseRepeatsImportedBasename(unittest.TestCase):
+    """A repeated statement filename is parsed and its lines are appended."""
+
+    def _admin_event(self, path: str, body: dict) -> dict:
+        return {
+            "requestContext": {
+                "http": {"method": "POST", "path": path},
+                "requestId": "req-repeat-1",
+                "authorizer": {
+                    "jwt": {
+                        "claims": {
+                            "sub": "admin-sub",
+                            "cognito:groups": "[admin]",
+                        }
+                    }
+                },
+            },
+            "rawQueryString": "",
+            "body": json.dumps(body),
+        }
+
+    def setUp(self) -> None:
+        import runtime
+
+        self.table = MagicMock()
+        self.table.get_item.return_value = {"Item": _advice_note_house_item()}
+        self.table.scan.return_value = {"Items": []}
+        patcher_ddb = patch.object(runtime, "_ddb")
+        mock_ddb = patcher_ddb.start()
+        self.addCleanup(patcher_ddb.stop)
+        mock_ddb.Table.return_value = self.table
+        patcher_env = patch.dict(
+            "os.environ",
+            {
+                "RECORDS_TABLE_NAME": "records-test",
+                "AUDIT_LOG_TABLE_NAME": "audit-test",
+                "ASSETS_BUCKET_NAME": "assets-test",
+            },
+        )
+        patcher_env.start()
+        self.addCleanup(patcher_env.stop)
+
+    def test_house_parse_enqueues_when_basename_already_imported(self) -> None:
+        event = self._admin_event(
+            "/finance/morrison/parse-statement",
+            {"key": "uploads/admin-sub/batch/00_advice-note.pdf"},
+        )
+        with patch("dispatch.enqueue_parse_statement_async_job", return_value="job-repeat") as enqueued:
+            out = lambda_handler(event, None)
+        self.assertEqual(out["statusCode"], 202, out.get("body"))
+        self.assertEqual(json.loads(out["body"])["jobId"], "job-repeat")
+        enqueued.assert_called_once()
+        self.assertEqual(enqueued.call_args.kwargs["house"], "morrison")
+        self.assertEqual(
+            enqueued.call_args.kwargs["s3_keys"],
+            ["uploads/admin-sub/batch/00_advice-note.pdf"],
+        )
+
+    def test_book_parse_enqueues_when_basename_already_imported(self) -> None:
+        event = self._admin_event(
+            "/lx-software/parse-statement",
+            {
+                "key": "uploads/admin-sub/batch/00_advice-note.pdf",
+                "lineTypeOnly": "expenditure",
+            },
+        )
+        with patch("dispatch.enqueue_parse_statement_async_job", return_value="job-book") as enqueued:
+            out = lambda_handler(event, None)
+        self.assertEqual(out["statusCode"], 202, out.get("body"))
+        self.assertEqual(enqueued.call_args.kwargs["house"], "lxSoftware")
+        self.assertEqual(enqueued.call_args.kwargs["line_type_only"], "expenditure")
+
+    def test_execute_appends_lines_when_basename_already_imported(self) -> None:
+        import parse_statement as parse_statement_mod
+
+        s3_key = "inbound/morrison/new-batch/00_advice-note.pdf"
+        parsed_line = {
+            "dateUtc": "2026-10-27T06:00:00.000Z",
+            "type": "income",
+            "description": "Advice note",
+            "netAmount": 12,
+            "vat": 0,
+            "grossAmount": 12,
+            "currency": "HKD",
+        }
+        self.table.update_item.return_value = {}
+        with (
+            patch.object(
+                parse_statement_mod.board_store,
+                "records_table",
+                return_value=self.table,
+            ),
+            patch.object(
+                parse_statement_mod.runtime._s3,
+                "head_object",
+                return_value={
+                    "ContentType": "application/pdf",
+                    "ContentLength": 4,
+                    "ETag": '"abc"',
+                    "LastModified": datetime.now(timezone.utc),
+                },
+            ),
+            patch(
+                "openrouter_statement_parser.parse_statement_from_asset",
+                return_value={"lines": [parsed_line], "usage": None},
+            ) as parser,
+            patch.object(parse_statement_mod.openrouter_usage, "add_usage_day"),
+            patch.object(parse_statement_mod, "_audit"),
+        ):
+            result = parse_statement_mod.execute_parse_statement(
+                house="morrison",
+                s3_keys=[s3_key],
+                user_sub="inbound-email",
+                request_id="req-repeat-exec",
+                event={"requestContext": {"requestId": "req-repeat-exec"}},
+            )
+        parser.assert_called_once()
+        self.assertEqual(result["addedLines"], 1)
+        self.assertEqual(result["sourceAssetKeys"], [s3_key])
+        finance_puts = [
+            call.kwargs["Item"]
+            for call in self.table.put_item.call_args_list
+            if isinstance(call.kwargs.get("Item"), dict) and "lines" in call.kwargs["Item"]
+        ]
+        self.assertEqual(len(finance_puts), 1)
+        self.assertEqual(len(finance_puts[0]["lines"]), 2)
+        self.assertEqual(finance_puts[0]["lines"][1]["sourceAssetKeys"], [s3_key])
+
+
 class TestParseStatementHousePath(unittest.TestCase):
     def test_path_param(self) -> None:
         ev = {"pathParameters": {"house": "Hillmarton"}}

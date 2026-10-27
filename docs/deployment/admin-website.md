@@ -963,9 +963,10 @@ SES allows one active receipt rule set per region. `lxsoftware` owns
 `billing@lx-software.com` to `billing@inbound.lx-software.com` (output
 `lxsoftware-InboundMailbox-lxSoftware`). Inbound PDFs are written under
 `inbound/{owner}/{batch}/` with an `ASSET#` row so they show on **Assets**
-even if parsing fails. Set `lxsoftware:StatementParseNotifyEmail` to get a
-mail from `statements@inbound.lx-software.com` when a parse job succeeds or
-fails.
+even if parsing fails. A PDF whose filename was already imported is still
+parsed, and its lines are appended. Set `lxsoftware:StatementParseNotifyEmail`
+to get a mail from `statements@inbound.lx-software.com` when a parse job
+succeeds or fails.
 
 The Evolve Sprouts stack still owns its bucket, topic, queue, role and
 processor and must **not** call `SetActiveReceiptRuleSet` on its own set;

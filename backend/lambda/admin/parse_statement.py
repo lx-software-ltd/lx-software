@@ -96,6 +96,10 @@ def execute_parse_statement(
     are appended; all other extracted rows are discarded. ``line_type_only``
     does the same for any finance line type (used by Siu Tin Dei tabs).
 
+    A file whose basename is already on an imported line is still parsed.
+    Extracted lines are appended, including when they repeat an earlier import.
+    Inbound mail uses this path, so a re-sent statement must not fail the job.
+
     Raises ``_ParseStatementError`` on user-facing failures.
 
     Returns a dict with ``data``, ``addedLines``, ``sourceAssetKeys``, and
@@ -160,11 +164,6 @@ def execute_parse_statement(
                 house=house,
                 basename=file_name[:256],
                 request_id=request_id,
-            )
-            raise _ParseStatementError(
-                409,
-                f"A statement file named {file_name!r} was already imported for this house. "
-                "Remove its imported lines or rename the file, then try again.",
             )
         file_meta.append((s3_key, file_name, head))
 

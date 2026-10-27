@@ -4,20 +4,15 @@ import { log } from "../lib/log";
 import {
   statementLineAssetKeys,
   type FinanceLineType,
-  type FinancePersistedState,
   type HouseFinanceData,
   type StatementOwnerKey,
 } from "../lib/financeModel";
 import {
-  isHouseKey,
   parseStatementJobPath,
   parseStatementStartPath,
   statementOwnerQueryKey,
 } from "../lib/statementOwners";
 import { uploadFinanceAsset } from "../lib/uploadFinanceAsset";
-
-const DUPLICATE_STATEMENT_BASE_MSG =
-  "Remove its imported lines or rename the file, then try again.";
 
 import {
   PARSE_POLL_BACKOFF_CAP_MS,
@@ -77,16 +72,6 @@ export type ParseStatementVariables = {
  * and call sites that imported it from this module.
  */
 export { extractS3ErrorCode } from "../lib/uploadFinanceAsset";
-
-function bookDataForOwner(
-  owner: StatementOwnerKey,
-  qc: ReturnType<typeof useQueryClient>,
-): HouseFinanceData | undefined {
-  if (isHouseKey(owner)) {
-    return qc.getQueryData<FinancePersistedState>(["finance"])?.[owner];
-  }
-  return qc.getQueryData<HouseFinanceData>(statementOwnerQueryKey(owner));
-}
 
 async function pollParseJob(
   owner: StatementOwnerKey,
@@ -150,16 +135,6 @@ export function useParseStatement(owner: StatementOwnerKey) {
               : "");
       if (!contentType.startsWith("image/") && contentType !== "application/pdf") {
         throw new Error("Only PDF or image statements are supported.");
-      }
-
-      const book = bookDataForOwner(owner, qc);
-      if (book) {
-        const basenames = existingImportedStatementBasenames(book);
-        if (basenames.has(file.name)) {
-          throw new Error(
-            `A statement file named "${file.name}" was already imported. ${DUPLICATE_STATEMENT_BASE_MSG}`,
-          );
-        }
       }
 
       log.info("[useParseStatement] start", {
