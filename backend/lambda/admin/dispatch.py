@@ -27,6 +27,8 @@ from assets import (
     _asset_download_presigned_response,
     _assets_list_response,
     _is_allowed_upload_content_type,
+    confirmed_asset_item,
+    present_asset_item,
 )
 from board_routes import handle_board_route
 from board_store import BOARD_PK_PREFIX
@@ -723,42 +725,28 @@ def _http_asset_confirm(event, method, path, user_sub, admin_claims):
             )
             return _json_response(400, {"message": "Object not found in bucket"})
         raise
-    size = int(head["ContentLength"])
-    etag = head.get("ETag", "").strip('"')
     last_mod = head.get("LastModified")
     if isinstance(last_mod, datetime):
         uploaded_at = _utc_iso_z(last_mod)
     else:
         uploaded_at = _utc_iso_z(datetime.now(timezone.utc))
-    file_name = os.path.basename(str(key))
     table = board_store.records_table()
-    ddb_key = {"pk": f"ASSET#{key}", "sk": "META"}
-    item: dict[str, Any] = {
-        **ddb_key,
-        "size": size,
-        "s3Etag": etag,
-        "ownerSub": user_sub,
-        "clientSha256": body.get("sha256"),
-        "clientReportedSize": body.get("size"),
-        "note": "size and s3Etag are from S3 head_object; client fields are informational only",
-        "uploadedAt": uploaded_at,
-        "fileName": file_name,
-    }
-    if house_val is not None:
-        item["house"] = house_val
+    item = confirmed_asset_item(
+        key=str(key), user_sub=user_sub, head=head, body=body, house=house_val, uploaded_at=uploaded_at,
+    )
     table.put_item(Item=_to_ddb(item))
     _log_event(
         "info",
         tag="asset_confirm_ok",
         sub=user_sub,
         key=str(key)[:512],
-        size_bytes=size,
+        size_bytes=item["size"],
         client_reported_size=body.get("size"),
         has_client_sha256=bool(body.get("sha256")),
         request_id=_request_id(event),
     )
     _audit(user_sub, "ASSET_CONFIRM", str(key), event)
-    return _json_response(201, {"item": _from_ddb(item)})
+    return _json_response(201, {"item": present_asset_item(item)})
 
 def _http_assets_list(event, method, path, user_sub, admin_claims):
     return _assets_list_response(event)

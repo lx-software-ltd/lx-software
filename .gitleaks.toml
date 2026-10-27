@@ -24,8 +24,8 @@ regexes = [
   '''^LinkedInSettings$''',
   '''^forbiddenWords$''',
   # test_board.py assigns an S3 fixture to ``key``. generic-api-key matches
-  # ``inbound/hillmarton/``. Secret scanning fetches every branch, so this
-  # commit is visible from other pull requests.
+  # ``inbound/hillmarton/`` (entropy just over 3.5). Secret scanning fetches
+  # every branch, so the assets-list commit stays visible from other pull requests.
   '''^inbound/hillmarton/$''',
 ]
 

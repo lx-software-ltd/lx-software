@@ -1,29 +1,6 @@
-import { useInfiniteQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { objectKeyFromAssetPk } from "../lib/adminAssets";
-import { adminFetchJson, deleteAdminAsset } from "../lib/apiAdminClient";
+import { keepPreviousData, useInfiniteQuery, useQuery, type QueryClient } from "@tanstack/react-query";
+import { AdminApiError, adminFetchJson, deleteAdminAsset } from "../lib/apiAdminClient";
 import { keys } from "../lib/queryKeys";
-import {
-  FINANCE_STATEMENT_BOOK_KEYS,
-  statementLineAssetKeys,
-  type FinancePersistedState,
-  type HouseFinanceData,
-  type HouseKey,
-} from "../lib/financeModel";
-
-const HOUSE_KEYS: readonly HouseKey[] = ["hillmarton", "morrison"];
-
-function inferHouseFromFinanceLines(
-  objectKey: string,
-  finance: FinancePersistedState | undefined,
-): HouseKey | undefined {
-  if (!finance) return undefined;
-  for (const hk of HOUSE_KEYS) {
-    for (const line of finance[hk].lines) {
-      if (statementLineAssetKeys(line).some((k) => k === objectKey)) return hk;
-    }
-  }
-  return undefined;
-}
 
 export interface AdminAssetMeta {
   readonly pk: string;
@@ -47,55 +24,51 @@ export function deleteAssetMutationOptions(
     mutationFn: (objectKey: string) => deleteAdminAsset(objectKey),
     onSuccess: (_data: void, objectKey: string) => {
       void qc.invalidateQueries({ queryKey: [...keys.admin, "asset-records"] });
+      void qc.invalidateQueries({ queryKey: [...keys.admin, "asset-record"] });
       onDeleted?.(objectKey);
     },
   };
 }
 
-export function useAdminAssets() {
-  const qc = useQueryClient();
-  const financeUpdatedAt = qc.getQueryState(keys.finance)?.dataUpdatedAt ?? 0;
-  const bookUpdatedAt = FINANCE_STATEMENT_BOOK_KEYS.map(
-    (key) => qc.getQueryState(keys.book(key))?.dataUpdatedAt ?? 0,
-  );
+export function useAdminAssets(filter = "") {
+  const q = filter.trim();
   return useInfiniteQuery({
-    queryKey: [...keys.admin, "asset-records", financeUpdatedAt, ...bookUpdatedAt],
+    queryKey: [...keys.admin, "asset-records", q],
+    placeholderData: keepPreviousData,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
-      const qs = pageParam
-        ? `?cursor=${encodeURIComponent(pageParam)}`
-        : "";
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (pageParam) params.set("cursor", pageParam);
+      const qs = params.toString();
       const data = await adminFetchJson<{
         items: AdminAssetMeta[];
         nextCursor?: string | null;
-      }>(`/assets${qs}`);
-      const finance = qc.getQueryData<FinancePersistedState>(keys.finance);
-      const books = FINANCE_STATEMENT_BOOK_KEYS.map((key) => ({
-        key,
-        data: qc.getQueryData<HouseFinanceData>(keys.book(key)),
-      }));
-      const items = data.items
-        .filter(
-          (row) => row.pk.startsWith("ASSET#") && row.sk === "META",
-        )
-        .map((row) => {
-          if (row.house?.trim()) return row;
-          const objectKey = objectKeyFromAssetPk(row.pk);
-          const inferred = inferHouseFromFinanceLines(objectKey, finance);
-          if (inferred) return { ...row, house: inferred };
-          for (const book of books) {
-            if (
-              book.data?.lines.some((line) =>
-                statementLineAssetKeys(line).some((k) => k === objectKey),
-              )
-            ) {
-              return { ...row, house: book.key };
-            }
-          }
-          return row;
-        });
+      }>(`/assets${qs ? `?${qs}` : ""}`);
+      const items = data.items.filter((row) => row.pk.startsWith("ASSET#") && row.sk === "META");
       return { items, nextCursor: data.nextCursor ?? null };
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  });
+}
+
+/** One confirmed asset for a deep link that is not on the loaded page. A 404 is a missing row. */
+export function useAdminAsset(objectKey: string | null) {
+  return useQuery({
+    queryKey: [...keys.admin, "asset-record", objectKey],
+    enabled: Boolean(objectKey),
+    queryFn: async () => {
+      try {
+        const data = await adminFetchJson<{ item: AdminAssetMeta }>(
+          `/assets?key=${encodeURIComponent(objectKey ?? "")}`,
+        );
+        const row = data.item;
+        if (!row?.pk.startsWith("ASSET#") || row.sk !== "META") return null;
+        return row;
+      } catch (err) {
+        if (err instanceof AdminApiError && err.status === 404) return null;
+        throw err;
+      }
+    },
   });
 }

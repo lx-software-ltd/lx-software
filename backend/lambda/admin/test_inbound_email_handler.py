@@ -240,9 +240,7 @@ class TestInboundParseEnqueue(unittest.TestCase):
 
         s3 = _FakeS3()
         key = "inbound-raw/hillmarton/msg1"
-        s3.objects[("inbound-bucket", key)] = _pdf_mail(
-            to="32-hillmarton@inbound.lx-software.com"
-        )
+        s3.objects[("inbound-bucket", key)] = _pdf_mail(to="32-hillmarton@inbound.lx-software.com")
         event = {
             "Records": [
                 {
@@ -294,9 +292,7 @@ class TestRecordInboundAssetMeta(unittest.TestCase):
                     {"Error": {"Code": "ConditionalCheckFailedException"}},
                     "UpdateItem",
                 )
-                self.response = {
-                    "Error": {"Code": "ConditionalCheckFailedException"}
-                }
+                self.response = {"Error": {"Code": "ConditionalCheckFailedException"}}
 
         table.update_item.side_effect = _MissingMeta()
         stored: list[dict] = []
@@ -323,10 +319,14 @@ class TestRecordInboundAssetMeta(unittest.TestCase):
                 request_id="req-1",
             )
         self.assertEqual(len(stored), 1)
+        update_expr = table.update_item.call_args.kwargs["UpdateExpression"]
+        self.assertIn("gsi1pk = if_not_exists(gsi1pk, :gpk)", update_expr)
         self.assertEqual(stored[0]["pk"], f"ASSET#{key}")
         self.assertEqual(stored[0]["fileName"], "January.pdf")
         self.assertEqual(stored[0]["house"], "hillmarton")
         self.assertEqual(stored[0]["size"], 99)
+        self.assertEqual(stored[0]["gsi1pk"], "ASSET")
+        self.assertTrue(str(stored[0]["gsi1sk"]).endswith(f"#{key}"))
 
 
 if __name__ == "__main__":
