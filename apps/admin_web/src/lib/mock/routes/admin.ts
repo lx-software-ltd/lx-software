@@ -57,6 +57,13 @@ export function handleA5(ctx: MockCtx): Response | null {
 export function handleA6(ctx: MockCtx): Response | null {
   const p = ctx.path;
   if (!(p === "/assets")) return null;
+  const key = ctx.url.searchParams.get("key");
+  if (key) {
+    const pk = key.startsWith("ASSET#") ? key : `ASSET#${key}`;
+    const item = assetsFixture.find((row) => row.pk === pk);
+    if (!item) return json({ message: "Asset not found" }, 404);
+    return json({ item });
+  }
   return json({ items: assetsFixture, nextCursor: null });
 }
 

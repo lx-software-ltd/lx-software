@@ -2439,12 +2439,11 @@ def _persist_asset_meta_after_parse(
     request_id: str,
     owner_sub: str | None = None,
 ) -> None:
-    """Ensure ASSET META reflects the house and timestamps after a successful import.
+    """Write house, timestamps, and the asset index after a successful import.
 
-    Browser uploads call ``/assets/confirm`` first, so META usually exists and
-    we merge. Inbound-email imports write PDFs directly under ``inbound/…``;
-    when no META row exists yet, we create one (same visibility as confirm).
+    Confirmed uploads already have META. Inbound PDFs with no row get one.
     """
+    from assets import asset_index_attributes
     asset_pk = f"ASSET#{s3_key}"
     last_mod = head.get("LastModified")
     if isinstance(last_mod, datetime):
@@ -2453,18 +2452,19 @@ def _persist_asset_meta_after_parse(
         uploaded_at = _utc_iso_z(datetime.now(timezone.utc))
     size = int(head.get("ContentLength") or 0)
     etag = str(head.get("ETag") or "").strip().strip('"')
+    index = asset_index_attributes(s3_key, uploaded_at)
     try:
         table.update_item(
             Key={"pk": asset_pk, "sk": "META"},
             UpdateExpression=(
-                "SET house = :house, "
-                "uploadedAt = if_not_exists(uploadedAt, :ua), "
-                "fileName = if_not_exists(fileName, :fn)"
+                "SET house = :house, uploadedAt = if_not_exists(uploadedAt, :ua), "
+                "fileName = if_not_exists(fileName, :fn), "
+                "gsi1pk = if_not_exists(gsi1pk, :gpk), gsi1sk = if_not_exists(gsi1sk, :gsk)"
             ),
             ExpressionAttributeValues={
                 ":house": house,
                 ":ua": uploaded_at,
-                ":fn": file_name,
+                ":fn": file_name, ":gpk": index["gsi1pk"], ":gsk": index["gsi1sk"],
             },
             ConditionExpression="attribute_exists(pk)",
         )
@@ -2478,7 +2478,7 @@ def _persist_asset_meta_after_parse(
                 "uploadedAt": uploaded_at,
                 "fileName": file_name,
                 "size": size,
-                "s3Etag": etag,
+                "s3Etag": etag, **index,
                 "note": (
                     "metadata from statement import (no prior /assets/confirm; "
                     "e.g. inbound email)"

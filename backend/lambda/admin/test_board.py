@@ -52,6 +52,7 @@ def _install_stubs() -> None:
         sys.modules["botocore"] = botocore
         sys.modules["botocore.exceptions"] = exceptions
     elif not hasattr(sys.modules["botocore.exceptions"], "BotoCoreError"):
+
         class BotoCoreError(Exception):
             pass
 
@@ -81,6 +82,7 @@ def freeze_board_daytime(test_case: unittest.TestCase, *module_names: str) -> No
         patcher.start()
         test_case.addCleanup(patcher.stop)
 
+
 import board_actions  # noqa: E402
 import board_budget  # noqa: E402
 import board_chat  # noqa: E402
@@ -95,6 +97,7 @@ from dispatch import lambda_handler  # noqa: E402
 # ---------------------------------------------------------------------------
 # In-memory DynamoDB table
 # ---------------------------------------------------------------------------
+
 
 class FakeTable:
     def __init__(self) -> None:
@@ -119,7 +122,10 @@ class FakeTable:
     ) -> dict:
         key = self._key(Item)
         if ConditionExpression and not self._evaluate(
-            ConditionExpression, self.items.get(key) or {}, ExpressionAttributeNames or {}, ExpressionAttributeValues or {}
+            ConditionExpression,
+            self.items.get(key) or {},
+            ExpressionAttributeNames or {},
+            ExpressionAttributeValues or {},
         ):
             raise self._conditional_error()
         self.items[key] = dict(Item)
@@ -182,8 +188,12 @@ class FakeTable:
             rest: list[dict[str, Any]] = []
             for row in rows:
                 if not skipped:
-                    same_index = row.get(pk_attr) == ExclusiveStartKey.get(pk_attr) and row.get(sk_attr) == ExclusiveStartKey.get(sk_attr)
-                    same_item = row.get("pk") == ExclusiveStartKey.get("pk") and row.get("sk") == ExclusiveStartKey.get("sk")
+                    same_index = row.get(pk_attr) == ExclusiveStartKey.get(pk_attr) and row.get(
+                        sk_attr
+                    ) == ExclusiveStartKey.get(sk_attr)
+                    same_item = row.get("pk") == ExclusiveStartKey.get("pk") and row.get("sk") == ExclusiveStartKey.get(
+                        "sk"
+                    )
                     if same_index and (ExclusiveStartKey.get("pk") is None or same_item):
                         skipped = True
                     continue
@@ -209,11 +219,7 @@ class FakeTable:
         values = kwargs.get("ExpressionAttributeValues") or {}
         if isinstance(filt, str) and "NOT begins_with" in filt:
             prefixes = [str(v) for v in values.values()]
-            rows = [
-                r
-                for r in rows
-                if not any(str(r["pk"]).startswith(p) for p in prefixes)
-            ]
+            rows = [r for r in rows if not any(str(r["pk"]).startswith(p) for p in prefixes)]
         elif isinstance(filt, str) and "begins_with(pk," in filt.replace(" ", ""):
             prefix = str(values.get(":asset") or next(iter(values.values()), ""))
             rows = [r for r in rows if str(r["pk"]).startswith(prefix)]
@@ -359,6 +365,7 @@ class FakeTable:
 # OpenRouter fake
 # ---------------------------------------------------------------------------
 
+
 class _FakeResp:
     def __init__(self, body: bytes) -> None:
         self._body = body
@@ -458,11 +465,53 @@ class FakeOpenRouter:
                         "decisions": [{"text": "Closed beta in six weeks", "proposedBy": "ceo", "rationale": "Runway"}],
                         "risks": [{"text": "Provider supply too thin", "owner": "coo", "severity": "high"}],
                         "actions": [
-                            {"title": "Pick the beta launch date", "detail": "Calendar it.", "persona": "ceo", "assignee": "founder", "priority": "now", "effort": "S", "dueInDays": 3, "metric": "Date set"},
-                            {"title": "Call 10 activity providers", "detail": "Book calls.", "persona": "coo", "assignee": "prospector", "priority": "now", "effort": "M", "dueInDays": 7, "metric": "10 calls"},
-                            {"title": "Draft privacy notice", "detail": "PDPO.", "persona": "ciso", "priority": "now", "effort": "M", "dueInDays": 14, "metric": "Published"},
-                            {"title": "Set pricing experiment", "detail": "Two tiers.", "persona": "cfo", "priority": "now", "effort": "S", "dueInDays": 10, "metric": "Live"},
-                            {"title": "Publish the launch waitlist page", "detail": "Landing page.", "persona": "cmo", "priority": "next", "effort": "S", "dueInDays": 14, "metric": "50 sign-ups"},
+                            {
+                                "title": "Pick the beta launch date",
+                                "detail": "Calendar it.",
+                                "persona": "ceo",
+                                "assignee": "founder",
+                                "priority": "now",
+                                "effort": "S",
+                                "dueInDays": 3,
+                                "metric": "Date set",
+                            },
+                            {
+                                "title": "Call 10 activity providers",
+                                "detail": "Book calls.",
+                                "persona": "coo",
+                                "assignee": "prospector",
+                                "priority": "now",
+                                "effort": "M",
+                                "dueInDays": 7,
+                                "metric": "10 calls",
+                            },
+                            {
+                                "title": "Draft privacy notice",
+                                "detail": "PDPO.",
+                                "persona": "ciso",
+                                "priority": "now",
+                                "effort": "M",
+                                "dueInDays": 14,
+                                "metric": "Published",
+                            },
+                            {
+                                "title": "Set pricing experiment",
+                                "detail": "Two tiers.",
+                                "persona": "cfo",
+                                "priority": "now",
+                                "effort": "S",
+                                "dueInDays": 10,
+                                "metric": "Live",
+                            },
+                            {
+                                "title": "Publish the launch waitlist page",
+                                "detail": "Landing page.",
+                                "persona": "cmo",
+                                "priority": "next",
+                                "effort": "S",
+                                "dueInDays": 14,
+                                "metric": "50 sign-ups",
+                            },
                         ],
                         "questionsForOwner": ["How much can you spend on ads?"],
                     }
@@ -470,7 +519,7 @@ class FakeOpenRouter:
             )
         return _FakeResp(
             _completion(
-                "Focus on providers first.\nSUGGEST_MEETING: {\"mode\": \"deepDive\", \"topic\": \"Provider onboarding\"}"
+                'Focus on providers first.\nSUGGEST_MEETING: {"mode": "deepDive", "topic": "Provider onboarding"}'
             )
         )
 
@@ -478,6 +527,7 @@ class FakeOpenRouter:
 # ---------------------------------------------------------------------------
 # Base fixture
 # ---------------------------------------------------------------------------
+
 
 class BoardTestCase(unittest.TestCase):
     def setUp(self) -> None:
@@ -541,6 +591,7 @@ class BoardTestCase(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Personas and charter
 # ---------------------------------------------------------------------------
+
 
 class TestPersonas(unittest.TestCase):
     def test_roster_has_eight_fixed_roles(self) -> None:
@@ -619,6 +670,7 @@ class TestSettingsValidation(unittest.TestCase):
 # Routes: overview, charter, members, brief, settings
 # ---------------------------------------------------------------------------
 
+
 class TestBoardRoutes(BoardTestCase):
     def test_overview_lists_members_and_defaults(self) -> None:
         status, body = self.call("/siu-tin-dei/board")
@@ -688,36 +740,37 @@ class TestBoardRoutes(BoardTestCase):
         self.assertFalse(any(pk.startswith("PARSE_JOB#") for pk in pks))
         self.assertIn("NOT begins_with(pk, :board)", self.table.scan_calls[-1]["FilterExpression"])
         self.assertEqual(self.table.scan_calls[-1]["ExpressionAttributeValues"][":board"], "BOARD#")
-        self.assertEqual(
-            self.table.scan_calls[-1]["ExpressionAttributeValues"][":openrouter"], "OPENROUTER#"
-        )
-        self.assertEqual(
-            self.table.scan_calls[-1]["ExpressionAttributeValues"][":parsejob"], "PARSE_JOB#"
-        )
-        self.assertEqual(
-            self.table.scan_calls[-1]["ExpressionAttributeValues"][":linkedin"], "LINKEDIN#"
-        )
+        self.assertEqual(self.table.scan_calls[-1]["ExpressionAttributeValues"][":openrouter"], "OPENROUTER#")
+        self.assertEqual(self.table.scan_calls[-1]["ExpressionAttributeValues"][":parsejob"], "PARSE_JOB#")
+        self.assertEqual(self.table.scan_calls[-1]["ExpressionAttributeValues"][":linkedin"], "LINKEDIN#")
         self.assertIn("NOT begins_with(pk, :parsejob)", self.table.scan_calls[-1]["FilterExpression"])
         self.assertIn("NOT begins_with(pk, :linkedin)", self.table.scan_calls[-1]["FilterExpression"])
 
-    def test_assets_list_returns_only_asset_rows(self) -> None:
+    def test_assets_list_returns_indexed_asset_rows(self) -> None:
+        from assets import asset_index_attributes
+
         self.table.put_item(Item={"pk": "RECORD#1", "sk": "A"})
         self.table.put_item(Item={"pk": "PARSE_JOB#j1", "sk": "META", "status": "failed"})
+        key = "inbound/hillmarton/" + ("a" * 32) + "/00_stmt.pdf"
+        uploaded = "2026-03-01T00:00:00.000Z"
         self.table.put_item(
             Item={
-                "pk": "ASSET#inbound/hillmarton/" + ("a" * 32) + "/00_stmt.pdf",
+                "pk": f"ASSET#{key}",
                 "sk": "META",
                 "fileName": "stmt.pdf",
                 "house": "hillmarton",
                 "size": 12,
+                "uploadedAt": uploaded,
+                **asset_index_attributes(key, uploaded),
             }
         )
+        self.table.put_item(Item={"pk": "ASSET#uploads/admin-sub/unindexed.pdf", "sk": "META", "size": 1})
         status, body = self.call("/assets")
         self.assertEqual(status, 200)
         pks = [i["pk"] for i in body["items"]]
-        self.assertTrue(all(pk.startswith("ASSET#") for pk in pks))
-        self.assertEqual(len(pks), 1)
-        self.assertIn("begins_with(pk, :asset)", self.table.scan_calls[-1]["FilterExpression"])
+        self.assertEqual(pks, [f"ASSET#{key}"])
+        self.assertNotIn("gsi1pk", body["items"][0])
+        self.assertEqual(self.table.scan_calls, [])
 
     def test_openrouter_usage_endpoint_groups_by_app(self) -> None:
         import openrouter_usage
@@ -760,6 +813,7 @@ class TestBoardRoutes(BoardTestCase):
 # ---------------------------------------------------------------------------
 # Chat
 # ---------------------------------------------------------------------------
+
 
 class TestChat(BoardTestCase):
     def test_message_roundtrip_with_inline_worker(self) -> None:
@@ -818,6 +872,7 @@ class TestChat(BoardTestCase):
 # Meetings and actions
 # ---------------------------------------------------------------------------
 
+
 class TestMeetings(BoardTestCase):
     def test_standup_runs_all_phases_inline(self) -> None:
         status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
@@ -847,7 +902,9 @@ class TestMeetings(BoardTestCase):
         # Staff is off, so "prospector" is not an active seat: every action stays with the founder.
         self.assertEqual([a["assignee"] for a in actions["actions"]], [""] * 5)
         self.assertEqual(len(board_store.load_decision_log(self.table)), 1)
-        minutes_request = next(r for r in self.openrouter.requests if "Write the minutes" in r["messages"][-1]["content"])
+        minutes_request = next(
+            r for r in self.openrouter.requests if "Write the minutes" in r["messages"][-1]["content"]
+        )
         self.assertEqual(minutes_request["model"], "openai/gpt-4.1-mini")
         self.assertEqual(minutes_request["models"], ["anthropic/claude-sonnet-4"])
         spoken = [t for t in body["turns"] if t.get("kind") != "tool"]
@@ -858,7 +915,9 @@ class TestMeetings(BoardTestCase):
         self.assertIn("No staff seats are active", prompt)
         self.assertIn('"assignee": "active seat id | persona id | founder"', prompt)
         # Every persona was briefed with its own system prompt and the context pack.
-        position_requests = [r for r in self.openrouter.requests if "For EACH agenda item" in r["messages"][-1]["content"]]
+        position_requests = [
+            r for r in self.openrouter.requests if "For EACH agenda item" in r["messages"][-1]["content"]
+        ]
         self.assertEqual(len(position_requests), 8)
         self.assertTrue(all("CONTEXT DATA" in r["messages"][1]["content"] for r in position_requests))
 
@@ -901,7 +960,9 @@ class TestMeetings(BoardTestCase):
     def test_deep_dive_requires_topic_and_runs_challenge(self) -> None:
         status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "deepDive"})
         self.assertEqual(status, 400)
-        status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "deepDive", "topic": "Provider onboarding"})
+        status, body = self.call(
+            "/siu-tin-dei/board/meetings", "POST", {"mode": "deepDive", "topic": "Provider onboarding"}
+        )
         self.assertEqual(status, 202)
         _, body = self.call(f"/siu-tin-dei/board/meetings/{body['meetingId']}")
         phases = [t["phase"] for t in body["turns"]]
@@ -926,7 +987,9 @@ class TestMeetings(BoardTestCase):
         self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
         _, body = self.call("/siu-tin-dei/board/actions")
         action_id = body["actions"][0]["actionId"]
-        status, body = self.call(f"/siu-tin-dei/board/actions/{action_id}", "PUT", {"status": "done", "note": "Done Monday"})
+        status, body = self.call(
+            f"/siu-tin-dei/board/actions/{action_id}", "PUT", {"status": "done", "note": "Done Monday"}
+        )
         self.assertEqual(status, 200)
         self.assertEqual(body["action"]["status"], "done")
         self.assertEqual(body["action"]["note"], "Done Monday")
@@ -955,7 +1018,14 @@ class TestMeetings(BoardTestCase):
     def test_running_meeting_blocks_second_start(self) -> None:
         board_store.put_meeting(
             self.table,
-            {"meetingId": "m2", "status": "running", "mode": "standup", "phase": "agenda", "createdAt": board_store.now_iso(), "updatedAt": board_store.now_iso()},
+            {
+                "meetingId": "m2",
+                "status": "running",
+                "mode": "standup",
+                "phase": "agenda",
+                "createdAt": board_store.now_iso(),
+                "updatedAt": board_store.now_iso(),
+            },
         )
         status, body = self.call("/siu-tin-dei/board/meetings", "POST", {"mode": "standup"})
         self.assertEqual(status, 409)
@@ -964,7 +1034,14 @@ class TestMeetings(BoardTestCase):
     def test_stale_running_meeting_is_marked_failed(self) -> None:
         board_store.put_meeting(
             self.table,
-            {"meetingId": "old", "status": "running", "mode": "standup", "phase": "positions", "createdAt": "2020-01-01T00:00:00.000Z", "updatedAt": "2020-01-01T00:00:00.000Z"},
+            {
+                "meetingId": "old",
+                "status": "running",
+                "mode": "standup",
+                "phase": "positions",
+                "createdAt": "2020-01-01T00:00:00.000Z",
+                "updatedAt": "2020-01-01T00:00:00.000Z",
+            },
         )
         _, body = self.call("/siu-tin-dei/board/meetings/old")
         self.assertEqual(body["meeting"]["status"], "failed")
@@ -973,11 +1050,31 @@ class TestMeetings(BoardTestCase):
     def test_phase_claim_is_idempotent(self) -> None:
         board_store.put_meeting(
             self.table,
-            {"meetingId": "m3", "status": "running", "mode": "standup", "phase": "agenda", "phaseState": "pending", "createdAt": board_store.now_iso(), "updatedAt": board_store.now_iso()},
+            {
+                "meetingId": "m3",
+                "status": "running",
+                "mode": "standup",
+                "phase": "agenda",
+                "phaseState": "pending",
+                "createdAt": board_store.now_iso(),
+                "updatedAt": board_store.now_iso(),
+            },
         )
-        self.assertTrue(board_store.claim_meeting_phase(self.table, "m3", expected_phase="agenda", stale_before_iso="2000-01-01T00:00:00.000Z"))
-        self.assertFalse(board_store.claim_meeting_phase(self.table, "m3", expected_phase="agenda", stale_before_iso="2000-01-01T00:00:00.000Z"))
-        self.assertFalse(board_store.claim_meeting_phase(self.table, "m3", expected_phase="positions", stale_before_iso="2000-01-01T00:00:00.000Z"))
+        self.assertTrue(
+            board_store.claim_meeting_phase(
+                self.table, "m3", expected_phase="agenda", stale_before_iso="2000-01-01T00:00:00.000Z"
+            )
+        )
+        self.assertFalse(
+            board_store.claim_meeting_phase(
+                self.table, "m3", expected_phase="agenda", stale_before_iso="2000-01-01T00:00:00.000Z"
+            )
+        )
+        self.assertFalse(
+            board_store.claim_meeting_phase(
+                self.table, "m3", expected_phase="positions", stale_before_iso="2000-01-01T00:00:00.000Z"
+            )
+        )
 
     def test_schedule_trigger_respects_settings(self) -> None:
         lambda_handler({"internal": "board_meeting", "slot": "morning"}, None)
@@ -1019,7 +1116,9 @@ class TestNormalizers(unittest.TestCase):
         minutes = board_meeting.normalize_minutes(
             {
                 "headline": "H",
-                "actions": [{"title": "Do X", "persona": "intern", "priority": "urgent", "effort": "XL", "dueInDays": "soon"}],
+                "actions": [
+                    {"title": "Do X", "persona": "intern", "priority": "urgent", "effort": "XL", "dueInDays": "soon"}
+                ],
                 "risks": [{"text": "R", "owner": "nobody", "severity": "extreme"}],
             },
             agenda=[{"title": "A", "question": "Q"}],
@@ -1064,7 +1163,9 @@ class TestNormalizers(unittest.TestCase):
 
     def test_similarity(self) -> None:
         self.assertEqual(board_actions.similarity("Pick the beta launch date", "pick the beta launch date!"), 1.0)
-        self.assertGreaterEqual(board_actions.similarity("Pick the beta launch date", "Pick the beta launch date now"), 0.8)
+        self.assertGreaterEqual(
+            board_actions.similarity("Pick the beta launch date", "Pick the beta launch date now"), 0.8
+        )
         self.assertLess(board_actions.similarity("Pick the beta launch date", "Call ten providers"), 0.3)
 
     def test_normalize_agenda_inserts_topic_first(self) -> None:
@@ -1082,24 +1183,22 @@ class TestNormalizers(unittest.TestCase):
         self.assertAlmostEqual(total["cost"], 0.002)
 
     def test_parse_json_object_text_tolerates_prose(self) -> None:
-        parsed = openrouter_client.parse_json_object_text("Sure! ```json\n{\"a\": 1}\n``` done")
+        parsed = openrouter_client.parse_json_object_text('Sure! ```json\n{"a": 1}\n``` done')
         self.assertEqual(parsed, {"a": 1})
         with self.assertRaises(openrouter_client.OpenRouterError):
             openrouter_client.parse_json_object_text("no json here")
 
     def test_parse_json_object_text_drops_think_blocks(self) -> None:
         parsed = openrouter_client.parse_json_object_text(
-            "<think>\nLet me plan this.\n</think>\n```json\n{\"a\": 1}\n```"
+            '<think>\nLet me plan this.\n</think>\n```json\n{"a": 1}\n```'
         )
         self.assertEqual(parsed, {"a": 1})
-        self.assertEqual(openrouter_client.strip_reasoning_blocks("<think>never closed {\"a\": 1}"), "")
+        self.assertEqual(openrouter_client.strip_reasoning_blocks('<think>never closed {"a": 1}'), "")
         with self.assertRaises(openrouter_client.OpenRouterError):
-            openrouter_client.parse_json_object_text("<think>still thinking about {\"a\": 1}")
+            openrouter_client.parse_json_object_text('<think>still thinking about {"a": 1}')
 
     def test_parse_json_object_text_repairs_raw_newlines_in_strings(self) -> None:
-        parsed = openrouter_client.parse_json_object_text(
-            '{\n  "body": "line one\nline two",\n  "ok": true\n}'
-        )
+        parsed = openrouter_client.parse_json_object_text('{\n  "body": "line one\nline two",\n  "ok": true\n}')
         self.assertEqual(parsed["body"], "line one\nline two")
         self.assertTrue(parsed["ok"])
 
@@ -1157,6 +1256,127 @@ class TestBoardModelFallbacks(unittest.TestCase):
                 ),
                 ["google/gemini-2.5-flash", "anthropic/claude-sonnet-4", "openai/gpt-4.1-mini"],
             )
+
+
+class TestAssets(BoardTestCase):
+    def _put_asset(self, key: str, uploaded_at: str, **extra: Any) -> None:
+        from assets import asset_index_attributes
+
+        item = {
+            "pk": f"ASSET#{key}",
+            "sk": "META",
+            "fileName": key.rsplit("/", 1)[-1],
+            "uploadedAt": uploaded_at,
+            "size": 8,
+            **asset_index_attributes(key, uploaded_at),
+        }
+        item.update(extra)
+        self.table.put_item(Item=item)
+
+    def test_assets_list_pages_newest_first(self) -> None:
+        self.table.put_item(Item={"pk": "RECORD#1", "sk": "A"})
+        for i in range(51):
+            self._put_asset(
+                f"uploads/admin-sub/file-{i:02d}.pdf",
+                f"2024-01-01T00:00:00.{i:03d}Z",
+            )
+        status, body = self.call("/assets")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(body["items"]), 50)
+        self.assertEqual(body["items"][0]["fileName"], "file-50.pdf")
+        self.assertEqual(body["items"][-1]["fileName"], "file-01.pdf")
+        self.assertTrue(body["nextCursor"])
+        status, page2 = self.call("/assets", query=f"cursor={body['nextCursor']}")
+        self.assertEqual(status, 200)
+        self.assertEqual([row["fileName"] for row in page2["items"]], ["file-00.pdf"])
+        self.assertIsNone(page2["nextCursor"])
+        self.assertEqual(self.table.scan_calls, [])
+
+    def test_assets_list_fills_house_from_inbound_key(self) -> None:
+        key = "inbound/siuTinDei/" + ("b" * 32) + "/00_stmt.pdf"
+        self._put_asset(key, "2026-04-01T00:00:00.000Z", house="")
+        # house="" is stored; presentation treats a blank house as missing.
+        status, body = self.call("/assets")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["items"][0]["house"], "siuTinDei")
+        self.assertEqual(body["items"][0]["fileName"], "00_stmt.pdf")
+
+    def test_asset_meta_by_key_reads_unindexed_row(self) -> None:
+        key = "uploads/admin-sub/old.pdf"
+        self.table.put_item(Item={"pk": f"ASSET#{key}", "sk": "META", "fileName": "old.pdf", "size": 3})
+        status, body = self.call("/assets", query=f"key={key}")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["item"]["fileName"], "old.pdf")
+        self.assertNotIn("gsi1pk", body["item"])
+        missing, missing_body = self.call("/assets", query="key=uploads/admin-sub/missing.pdf")
+        self.assertEqual(missing, 404)
+        self.assertEqual(missing_body["message"], "Asset not found")
+        bad, bad_body = self.call("/assets", query="key=../secret")
+        self.assertEqual(bad, 400)
+        self.assertEqual(bad_body["message"], "key is required")
+
+    def test_asset_confirm_stamps_index(self) -> None:
+        import runtime
+
+        key = "uploads/admin-sub/stmt.pdf"
+        head = {
+            "ContentLength": 12,
+            "ETag": '"abc"',
+            "LastModified": datetime(2026, 3, 1, tzinfo=timezone.utc),
+        }
+        with patch.object(runtime._s3, "head_object", return_value=head):
+            status, body = self.call(
+                "/assets/confirm",
+                "POST",
+                {"key": key, "house": "hillmarton", "sha256": "aa", "size": 12},
+            )
+        self.assertEqual(status, 201)
+        stored = self.table.items[(f"ASSET#{key}", "META")]
+        self.assertEqual(stored["gsi1pk"], "ASSET")
+        self.assertEqual(stored["gsi1sk"], f"2026-03-01T00:00:00.000Z#{key}")
+        self.assertNotIn("gsi1pk", body["item"])
+        self.assertEqual(body["item"]["house"], "hillmarton")
+        listed, page = self.call("/assets")
+        self.assertEqual(listed, 200)
+        self.assertEqual(page["items"][0]["pk"], f"ASSET#{key}")
+
+    def test_backfill_asset_index_stamps_missing_rows(self) -> None:
+        from assets import backfill_asset_index
+
+        inbound = "inbound/hillmarton/" + ("c" * 32) + "/00_stmt.pdf"
+        upload = "uploads/admin-sub/boiler.pdf"
+        self.table.put_item(Item={"pk": f"ASSET#{inbound}", "sk": "META", "size": 4})
+        self.table.put_item(
+            Item={
+                "pk": f"ASSET#{upload}",
+                "sk": "META",
+                "uploadedAt": "2020-05-01T00:00:00.000Z",
+                "fileName": "boiler.pdf",
+            }
+        )
+        self.table.put_item(Item={"pk": "ASSET#uploads/admin-sub/skip.pdf", "sk": "OTHER"})
+        self.table.put_item(Item={"pk": "RECORD#1", "sk": "A"})
+        dry = backfill_asset_index(self.table, dry_run=True, house_by_key={upload: "morrison"})
+        self.assertEqual(dry["updated"], 2)
+        self.assertTrue(dry["dryRun"])
+        self.assertNotIn("gsi1pk", self.table.items[(f"ASSET#{inbound}", "META")])
+        applied = backfill_asset_index(self.table, dry_run=False, house_by_key={upload: "morrison"})
+        self.assertEqual(applied["updated"], 2)
+        inbound_row = self.table.items[(f"ASSET#{inbound}", "META")]
+        self.assertEqual(inbound_row["gsi1pk"], "ASSET")
+        self.assertEqual(inbound_row["house"], "hillmarton")
+        self.assertEqual(inbound_row["fileName"], "00_stmt.pdf")
+        self.assertTrue(str(inbound_row["gsi1sk"]).startswith("1970-01-01T00:00:00.000Z#"))
+        upload_row = self.table.items[(f"ASSET#{upload}", "META")]
+        self.assertEqual(upload_row["house"], "morrison")
+        self.assertTrue(str(upload_row["gsi1sk"]).startswith("2020-05-01T00:00:00.000Z#"))
+        self.assertNotIn("gsi1pk", self.table.items[("ASSET#uploads/admin-sub/skip.pdf", "OTHER")])
+        again = backfill_asset_index(self.table, dry_run=False, house_by_key={})
+        self.assertEqual(again["updated"], 0)
+        status, body = self.call("/assets")
+        self.assertEqual(status, 200)
+        names = {row["fileName"] for row in body["items"]}
+        self.assertEqual(names, {"00_stmt.pdf", "boiler.pdf"})
 
 
 if __name__ == "__main__":

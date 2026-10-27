@@ -19,6 +19,7 @@ import { useHydrateExpandedRecord } from "../hooks/useHydrateExpandedRecord";
 import { clearExpandedParamsExcept } from "../lib/expandedRecord";
 import {
   deleteAssetMutationOptions,
+  useAdminAsset,
   useAdminAssets,
   type AdminAssetMeta,
 } from "../hooks/useAdminAssets";
@@ -77,6 +78,12 @@ const ASSET_TABLE_COLUMNS = [
 
 function assetFieldId(pk: string, field: string): string {
   return `asset-${field}-${pk.replace(/[^A-Za-z0-9_-]/g, "_")}`;
+}
+
+/** Row parameter is the object key. Older links may still carry the `ASSET#` pk. */
+function sameAsset(expandedId: string | null, pk: string): boolean {
+  if (!expandedId) return false;
+  return expandedId === pk || expandedId === objectKeyFromAssetPk(pk);
 }
 
 function AssetDetails({ row }: { readonly row: AdminAssetMeta }) {
@@ -175,31 +182,35 @@ export function AssetsPage() {
   useEffect(() => {
     clearExpandedParamsExcept("asset");
   }, []);
+  const expandedKey = expanded.expandedId
+    ? objectKeyFromAssetPk(expanded.expandedId)
+    : null;
+  const expandedOnPage = expanded.expandedId
+    ? rows.some((row) => sameAsset(expanded.expandedId, row.pk))
+    : false;
+  const needLinkedAsset = Boolean(expandedKey) && !q.isLoading && !expandedOnPage;
+  const linked = useAdminAsset(needLinkedAsset ? expandedKey : null);
   const openAssetRow = expanded.expandedId
-    ? (rows.find((row) => row.pk === expanded.expandedId) ?? null)
+    ? (rows.find((row) => sameAsset(expanded.expandedId, row.pk)) ??
+      (linked.data && sameAsset(expanded.expandedId, linked.data.pk) ? linked.data : null))
     : null;
   useHydrateExpandedRecord({
     expandedId: expanded.expandedId,
-    recordsReady: !q.isLoading && !q.hasNextPage && !q.isFetchingNextPage,
+    recordsReady: !q.isLoading && (!needLinkedAsset || (!linked.isLoading && !linked.isFetching)),
     record: openAssetRow,
     apply: () => undefined,
     onMissing: () => expanded.request(null, false),
   });
 
   const displayRows = useMemo(() => {
-    const sorted = [...rows].sort(
+    const linkedRow =
+      linked.data && !rows.some((row) => row.pk === linked.data?.pk) ? linked.data : null;
+    const sorted = [...rows, ...(linkedRow ? [linkedRow] : [])].sort(
       (a, b) =>
         uploadedAtSortMs(b.uploadedAt) - uploadedAtSortMs(a.uploadedAt),
     );
     return sorted.filter((row) => rowMatchesFilter(row, tableFilter));
-  }, [rows, tableFilter]);
-
-  const { hasNextPage, isFetchingNextPage, isError, fetchNextPage } = q;
-  useEffect(() => {
-    if (hasNextPage && !isFetchingNextPage && !isError) {
-      void fetchNextPage();
-    }
-  }, [hasNextPage, isFetchingNextPage, isError, fetchNextPage]);
+  }, [rows, linked.data, tableFilter]);
 
   return (
     <div>
@@ -254,8 +265,8 @@ export function AssetsPage() {
                   <AdminExpandableRow
                     key={row.pk}
                     colSpan={ASSET_TABLE_COLUMNS.length}
-                    expanded={expanded.expandedId === row.pk}
-                    onToggle={() => expanded.toggle(row.pk, false, () => undefined, () => undefined)}
+                    expanded={sameAsset(expanded.expandedId, row.pk)}
+                    onToggle={() => expanded.toggle(objectKey, false, () => undefined, () => undefined)}
                     editor={<AssetDetails row={row} />}
                   >
                     <AdminCell column="uploaded" className="small">
@@ -303,7 +314,9 @@ export function AssetsPage() {
                 colSpan={ASSET_TABLE_COLUMNS.length}
                 message={
                   rows.length
-                    ? "No assets match the filter."
+                    ? q.hasNextPage
+                      ? "No loaded assets match the filter."
+                      : "No assets match the filter."
                     : "No confirmed assets yet."
                 }
               />
@@ -339,8 +352,15 @@ export function AssetsPage() {
             }}
           />
           </AdminRecordTable>
-          {isFetchingNextPage ? (
-            <p className="text-muted small mt-2 mb-0">Loading more…</p>
+          {q.hasNextPage ? (
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm mt-2"
+              disabled={q.isFetchingNextPage}
+              onClick={() => void q.fetchNextPage()}
+            >
+              {q.isFetchingNextPage ? "Loading…" : "Load more"}
+            </button>
           ) : null}
         </>
       )}
