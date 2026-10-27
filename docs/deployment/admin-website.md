@@ -134,6 +134,39 @@ with `ADMIN_WEB_STACK_NAME`).
    screen with **This account is not authorized.**, `sessionStorage` holds
    no tokens, and the Cognito **Users** page shows no new user.
 
+## Asset list index
+
+The Assets page lists `gsi1pk = ASSET`, newest first. A row written before
+that index was stamped does not appear until this backfill runs. Download by
+object key still works. The filter searches the index, so it is not limited
+to the rows already on screen.
+
+Run the dry run first. It writes nothing. `pending` is how many rows would
+change. `--apply` writes `gsi1pk`, `gsi1sk`, and a missing file name or owner.
+`updated` is how many rows were written. A second apply skips rows that
+already have the index.
+
+```bash
+AWS_REGION=ap-southeast-1 \
+ASSETS_BUCKET_NAME=<AdminApiFn ASSETS_BUCKET_NAME> \
+python3 scripts/backfill-asset-index.py
+
+AWS_REGION=ap-southeast-1 \
+ASSETS_BUCKET_NAME=<same bucket> \
+python3 scripts/backfill-asset-index.py --apply
+```
+
+`ASSETS_BUCKET_NAME` is the value on `AdminApiFn`. With it set, a row that
+has no `uploadedAt` takes S3 `LastModified`. Without it, that row stays on
+the list with a blank upload time and sorts last. A missing object does not
+stop the run. A row deleted between the scan and the update is not recreated.
+
+Apply before the deploy that ships this list, then once more after deploy so
+uploads made in between are included. The previous list scan ignores the new
+attributes, so applying first does not change the old page. A console left
+open across the deploy shows "The asset list was refreshed" the next time
+Load more runs, and then loads the first page again.
+
 ## Auditing admin sign-ins
 
 Every sign-in, token refresh and first federated sign-up passes through the

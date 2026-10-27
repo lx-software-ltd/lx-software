@@ -208,6 +208,11 @@ def _live_mutation(tokens: list[str], indexes: list[int]) -> str | None:
         return "publish-apex-redirect.py apply is blocked. Use check."
     if _script_indexes(tokens, indexes, "publish-public-media.sh"):
         return "publish-public-media.sh is blocked in the agent shell."
+    if _script_indexes(tokens, indexes, "backfill-asset-index.py") and "--apply" in tokens:
+        return (
+            "backfill-asset-index.py --apply writes the records table and is blocked. "
+            "Run it without --apply to count rows."
+        )
     for index in _runs(tokens, indexes, {"aws"}):
         if "set-active-receipt-rule-set" in _later(tokens, index):
             return "Activating an SES receipt rule set is blocked in the agent shell."
