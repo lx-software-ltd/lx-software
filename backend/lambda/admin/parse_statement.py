@@ -63,17 +63,91 @@ def _resolve_parse_line_type_filter(
     return None
 
 
-def _statement_basename_already_imported(
-    house_data: dict[str, Any], basename: str
-) -> bool:
+def _statement_basename_already_imported(house_data: dict[str, Any], basename: str) -> bool:
     """True if any finance line references an asset with this exact filename."""
+    return bool(_prior_keys_with_basename(house_data, basename, exclude=set()))
+
+
+def _imported_asset_keys(house_data: dict[str, Any]) -> set[str]:
+    """S3 keys already stored on a finance line."""
+    found: set[str] = set()
+    for ln in house_data.get("lines") or []:
+        if isinstance(ln, dict):
+            found.update(_line_source_asset_keys_raw(ln))
+    return found
+
+
+def _prior_keys_with_basename(house_data: dict[str, Any], basename: str, *, exclude: set[str]) -> list[str]:
+    """Imported asset keys whose filename matches, skipping ``exclude``."""
+    found: list[str] = []
+    seen: set[str] = set()
     for ln in house_data.get("lines") or []:
         if not isinstance(ln, dict):
             continue
         for key in _line_source_asset_keys_raw(ln):
-            if os.path.basename(key) == basename:
-                return True
-    return False
+            if key in exclude or key in seen or os.path.basename(key) != basename:
+                continue
+            seen.add(key)
+            found.append(key)
+    return found
+
+
+def _object_fingerprint(head: dict[str, Any]) -> tuple[int, str] | None:
+    """Size plus S3 etag, or None when the head response cannot be compared."""
+    try:
+        size = int(head.get("ContentLength") or 0)
+    except (TypeError, ValueError):
+        return None
+    etag = str(head.get("ETag") or "").strip().strip('"')
+    if size <= 0 or not etag:
+        return None
+    return size, etag
+
+
+def _merge_duplicate_content(current: str | None, nxt: str) -> str:
+    """Prefer ``same``, then ``different``, then ``unknown``."""
+    if current == "same" or nxt == "same":
+        return "same"
+    if current == "different" or nxt == "different":
+        return "different"
+    return "unknown"
+
+
+def _duplicate_basename_content(*, bucket: str, head: dict[str, Any], prior_keys: list[str]) -> str:
+    """``same`` when size and etag match an earlier object, else ``different`` or ``unknown``."""
+    current = _object_fingerprint(head)
+    if current is None or not prior_keys:
+        return "unknown"
+    saw_different = False
+    for key in prior_keys:
+        try:
+            prior_head = runtime._s3.head_object(Bucket=bucket, Key=key)
+        except ClientError:
+            continue
+        prior = _object_fingerprint(prior_head if isinstance(prior_head, dict) else {})
+        if prior is None:
+            continue
+        if prior == current:
+            return "same"
+        saw_different = True
+    return "different" if saw_different else "unknown"
+
+
+def _repeat_import_fields(basenames: list[str], content: str | None, skipped_keys: list[str]) -> dict[str, Any]:
+    """Notes for the job record and the operator mail. Empty when nothing repeated."""
+    names: list[str] = []
+    seen: set[str] = set()
+    for name in basenames:
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+    out: dict[str, Any] = {}
+    if names:
+        out["duplicateBasenames"] = names
+        out["duplicateBasenameContent"] = content or "unknown"
+    if skipped_keys:
+        out["skippedExistingAssetKeys"] = list(skipped_keys)
+    return out
 
 
 def execute_parse_statement(
@@ -96,9 +170,10 @@ def execute_parse_statement(
     are appended; all other extracted rows are discarded. ``line_type_only``
     does the same for any finance line type (used by Siu Tin Dei tabs).
 
-    A file whose basename is already on an imported line is still parsed.
-    Extracted lines are appended, including when they repeat an earlier import.
-    Inbound mail uses this path, so a re-sent statement must not fail the job.
+    A new S3 key whose basename is already on an imported line is still parsed.
+    Extracted lines are appended. Inbound mail uses a fresh key per message,
+    so a re-sent statement must not fail the job. A key that is already on a
+    line is skipped: a retried job must not append those lines again.
 
     Raises ``_ParseStatementError`` on user-facing failures.
 
@@ -137,8 +212,26 @@ def execute_parse_statement(
     table = board_store.records_table()
     house_data = _load_finance_owner(table, house)
 
+    imported_keys = _imported_asset_keys(house_data)
     file_meta: list[tuple[str, str, dict[str, Any]]] = []
+    skipped_keys: list[str] = []
+    duplicate_basenames: list[str] = []
+    duplicate_content: str | None = None
     for s3_key in keys_ordered:
+        file_name = os.path.basename(s3_key)
+        if s3_key in imported_keys:
+            skipped_keys.append(s3_key)
+            duplicate_basenames.append(file_name)
+            duplicate_content = _merge_duplicate_content(duplicate_content, "same")
+            _log_event(
+                "info",
+                tag="parse_statement_skip_existing_asset_key",
+                sub=user_sub,
+                house=house,
+                key=s3_key[:512],
+                request_id=request_id,
+            )
+            continue
         try:
             head = runtime._s3.head_object(Bucket=bucket, Key=s3_key)
         except ClientError as exc:
@@ -155,8 +248,16 @@ def execute_parse_statement(
                 )
                 raise _ParseStatementError(400, "Object not found in bucket") from exc
             raise
-        file_name = os.path.basename(s3_key)
         if _statement_basename_already_imported(house_data, file_name):
+            duplicate_basenames.append(file_name)
+            duplicate_content = _merge_duplicate_content(
+                duplicate_content,
+                _duplicate_basename_content(
+                    bucket=bucket,
+                    head=head,
+                    prior_keys=_prior_keys_with_basename(house_data, file_name, exclude={s3_key}),
+                ),
+            )
             _log_event(
                 "info",
                 tag="parse_statement_duplicate_basename",
@@ -166,6 +267,25 @@ def execute_parse_statement(
                 request_id=request_id,
             )
         file_meta.append((s3_key, file_name, head))
+
+    repeat = _repeat_import_fields(duplicate_basenames, duplicate_content, skipped_keys)
+    if not file_meta:
+        _log_event(
+            "info",
+            tag="parse_statement_skipped_existing_assets",
+            sub=user_sub,
+            house=house,
+            key=",".join(skipped_keys)[:512],
+            request_id=request_id,
+        )
+        return {
+            "data": house_data,
+            "addedLines": 0,
+            "sourceAssetKeys": list(keys_ordered),
+            "sourceAssetKey": keys_ordered[0],
+            "usage": {**add_usage(None, None), "calls": 0},
+            **repeat,
+        }
 
     default_currency = house_data.get("defaultCurrency", DEFAULT_FINANCE_CURRENCY)
 
@@ -226,16 +346,16 @@ def execute_parse_statement(
         all_parsed_raw_lines = [
             ln
             for ln in all_parsed_raw_lines
-            if isinstance(ln, dict)
-            and str(ln.get("type", "")).strip().lower() == type_filter
+            if isinstance(ln, dict) and str(ln.get("type", "")).strip().lower() == type_filter
         ]
 
+    fresh_keys = [s3_key for s3_key, _, _ in file_meta]
     new_lines: list[dict[str, Any]] = []
     for raw_line in all_parsed_raw_lines:
         nl = {
             **raw_line,
             "id": uuid.uuid4().hex,
-            "sourceAssetKeys": list(keys_ordered),
+            "sourceAssetKeys": list(fresh_keys),
         }
         nl.pop("sourceAssetKey", None)
         new_lines.append(nl)
@@ -280,9 +400,7 @@ def execute_parse_statement(
     try:
         normalized = _normalize_finance_payload(merged_payload)
     except ValueError as exc:
-        raise _ParseStatementError(
-            500, f"Parsed lines failed validation: {exc}"
-        ) from exc
+        raise _ParseStatementError(500, f"Parsed lines failed validation: {exc}") from exc
 
     ddb_item = {**_finance_owner_ddb_key(house), **_to_ddb_nested(normalized)}
     table.put_item(Item=ddb_item)
@@ -313,7 +431,8 @@ def execute_parse_statement(
     return {
         "data": normalized,
         "addedLines": len(new_lines),
-        "sourceAssetKeys": list(keys_ordered),
-        "sourceAssetKey": keys_ordered[0],
+        "sourceAssetKeys": list(fresh_keys),
+        "sourceAssetKey": fresh_keys[0],
         "usage": {**parse_usage, "calls": parse_calls},
+        **repeat,
     }

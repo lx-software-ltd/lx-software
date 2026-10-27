@@ -3,6 +3,7 @@ import type { HouseFinanceData } from "../lib/financeModel";
 import {
   existingImportedStatementBasenames,
   extractS3ErrorCode,
+  statementImportResultMessage,
 } from "./useParseStatement";
 
 function minimalHouse(overrides: Partial<HouseFinanceData> = {}): HouseFinanceData {
@@ -154,5 +155,50 @@ describe("existingImportedStatementBasenames", () => {
     expect([...existingImportedStatementBasenames(data, "exclude-me")]).toEqual([
       "Dup.pdf",
     ]);
+  });
+});
+
+describe("statementImportResultMessage", () => {
+  it("reports a normal import", () => {
+    expect(statementImportResultMessage({ addedLines: 2, sourceAssetKeys: ["a.pdf"] })).toEqual({
+      tone: "success",
+      text: "Imported 2 statement lines.",
+    });
+  });
+
+  it("warns when the exact file was already linked", () => {
+    expect(
+      statementImportResultMessage({
+        addedLines: 0,
+        sourceAssetKeys: ["inbound/owner/batch/note.pdf"],
+        skippedExistingAssetKeys: ["inbound/owner/batch/note.pdf"],
+        duplicateBasenameContent: "same",
+      }),
+    ).toEqual({
+      tone: "warning",
+      text: "This exact file is already linked to a statement line. No new lines were added.",
+    });
+  });
+
+  it("warns when a repeated filename matches an earlier file", () => {
+    expect(
+      statementImportResultMessage({
+        addedLines: 1,
+        sourceAssetKeys: ["inbound/owner/new/note.pdf"],
+        duplicateBasenames: ["note.pdf"],
+        duplicateBasenameContent: "same",
+      }).text,
+    ).toContain("may already be on the statement");
+  });
+
+  it("warns when only the filename was repeated", () => {
+    expect(
+      statementImportResultMessage({
+        addedLines: 1,
+        sourceAssetKeys: ["uploads/new/note.pdf"],
+        duplicateBasenames: ["note.pdf"],
+        duplicateBasenameContent: "different",
+      }).text,
+    ).toContain("already imported");
   });
 });

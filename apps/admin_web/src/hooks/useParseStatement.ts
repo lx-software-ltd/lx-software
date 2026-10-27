@@ -46,6 +46,8 @@ type ParseJobStartResponse = {
   readonly status?: string;
 };
 
+type DuplicateBasenameContent = "same" | "different" | "unknown";
+
 type ParseJobPollResponse =
   | { readonly status: "pending" | "processing" }
   | {
@@ -53,13 +55,58 @@ type ParseJobPollResponse =
       readonly addedLines: number;
       readonly sourceAssetKeys?: readonly string[];
       readonly sourceAssetKey?: string;
+      readonly skippedExistingAssetKeys?: readonly string[];
+      readonly duplicateBasenames?: readonly string[];
+      readonly duplicateBasenameContent?: DuplicateBasenameContent;
     }
   | { readonly status: "failed"; readonly message?: string };
 
 export type ParseStatementResult = {
   readonly addedLines: number;
   readonly sourceAssetKeys: readonly string[];
+  readonly skippedExistingAssetKeys?: readonly string[];
+  readonly duplicateBasenames?: readonly string[];
+  readonly duplicateBasenameContent?: DuplicateBasenameContent;
 };
+
+export type StatementImportNotice = {
+  readonly tone: "success" | "warning";
+  readonly text: string;
+};
+
+function copiedStrings(value: readonly string[] | undefined): string[] | undefined {
+  if (!value?.length) return undefined;
+  const out = value.filter((item) => item.trim().length > 0);
+  return out.length ? [...out] : undefined;
+}
+
+/** What the statement panel shows after a parse job finishes. */
+export function statementImportResultMessage(result: ParseStatementResult): StatementImportNotice {
+  const skipped = result.skippedExistingAssetKeys ?? [];
+  if (skipped.length > 0 && result.addedLines === 0) {
+    return {
+      tone: "warning",
+      text: "This exact file is already linked to a statement line. No new lines were added.",
+    };
+  }
+  const base =
+    result.addedLines === 0
+      ? "No transactions were extracted from this document."
+      : `Imported ${result.addedLines} statement line${result.addedLines === 1 ? "" : "s"}.`;
+  if (result.duplicateBasenameContent === "same") {
+    return {
+      tone: "warning",
+      text: `${base} This file matches an earlier import, so these amounts may already be on the statement.`,
+    };
+  }
+  if ((result.duplicateBasenames ?? []).length > 0) {
+    return {
+      tone: "warning",
+      text: `${base} A file with this name was already imported.`,
+    };
+  }
+  return { tone: "success", text: base };
+}
 
 export type ParseStatementVariables = {
   readonly file: File;
@@ -90,9 +137,14 @@ async function pollParseJob(
           : j.sourceAssetKey
             ? [j.sourceAssetKey]
             : [];
+      const content = j.duplicateBasenameContent;
       return {
         addedLines: j.addedLines,
         sourceAssetKeys: keys,
+        skippedExistingAssetKeys: copiedStrings(j.skippedExistingAssetKeys),
+        duplicateBasenames: copiedStrings(j.duplicateBasenames),
+        duplicateBasenameContent:
+          content === "same" || content === "different" || content === "unknown" ? content : undefined,
       };
     }
     if (j.status === "failed") {

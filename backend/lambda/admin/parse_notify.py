@@ -61,9 +61,7 @@ def notify_from_address() -> str:
     explicit = (os.environ.get("STATEMENT_PARSE_NOTIFY_FROM") or "").strip()
     if explicit and "@" in explicit:
         return explicit
-    domain = (
-        os.environ.get("INBOUND_MAIL_DOMAIN") or "inbound.lx-software.com"
-    ).strip()
+    domain = (os.environ.get("INBOUND_MAIL_DOMAIN") or "inbound.lx-software.com").strip()
     return f"statements@{domain}"
 
 
@@ -89,13 +87,41 @@ def _file_names(doc: dict[str, Any]) -> list[str]:
     names: list[str] = []
     for key in keys:
         base = key.rsplit("/", 1)[-1]
-        if base.startswith("00_") or (
-            len(base) > 3 and base[2] == "_" and base[:2].isdigit()
-        ):
+        if base.startswith("00_") or (len(base) > 3 and base[2] == "_" and base[:2].isdigit()):
             names.append(base[3:])
         else:
             names.append(base)
     return names
+
+
+def _repeated_filename_lines(doc: dict[str, Any]) -> list[str]:
+    """Operator notes when a parsed file reused a filename or an exact S3 key."""
+    raw_names = doc.get("duplicateBasenames")
+    names = (
+        [name for name in raw_names if isinstance(name, str) and name.strip()] if isinstance(raw_names, list) else []
+    )
+    raw_skipped = doc.get("skippedExistingAssetKeys")
+    skipped = (
+        [key for key in raw_skipped if isinstance(key, str) and key.strip()] if isinstance(raw_skipped, list) else []
+    )
+    if not names and not skipped:
+        return []
+    lines: list[str] = []
+    if names:
+        lines.append("Repeated filename: " + ", ".join(names))
+        content = str(doc.get("duplicateBasenameContent") or "")
+        if content == "same":
+            lines.append(
+                "The file matches an earlier import (same size and S3 etag). "
+                "New lines may repeat amounts already recorded."
+            )
+        elif content == "different":
+            lines.append("The file size or S3 etag differs from the earlier import.")
+        else:
+            lines.append("The earlier copy could not be compared.")
+    if skipped:
+        lines.append("This exact file is already linked to a statement line, so no new lines were added.")
+    return lines
 
 
 def build_parse_notify_message(doc: dict[str, Any]) -> tuple[str, str] | None:
@@ -108,11 +134,12 @@ def build_parse_notify_message(doc: dict[str, Any]) -> tuple[str, str] | None:
     job_id = str(doc.get("jobId") or "").strip() or "unknown"
     source = source_display_label(str(doc.get("source") or ""))
     files = _file_names(doc)
-    origin = (os.environ.get("ADMIN_WEB_ORIGIN") or "https://admin.lx-software.com").rstrip(
-        "/"
-    )
+    origin = (os.environ.get("ADMIN_WEB_ORIGIN") or "https://admin.lx-software.com").rstrip("/")
     outcome = "succeeded" if status == "succeeded" else "failed"
     subject = f"[{label}] Statement parse {outcome}"
+    repeated = _repeated_filename_lines(doc) if status == "succeeded" else []
+    if repeated:
+        subject = f"{subject} (repeated filename)"
     lines = [
         f"A statement parse job {outcome}.",
         "",
@@ -132,6 +159,7 @@ def build_parse_notify_message(doc: dict[str, Any]) -> tuple[str, str] | None:
         except (TypeError, ValueError):
             added = 0
         lines.append(f"Lines added: {added}")
+        lines.extend(repeated)
     else:
         err = str(doc.get("errorMessage") or "Statement parse failed").strip()
         lines.append(f"Error: {err}")

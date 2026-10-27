@@ -18,10 +18,8 @@ import { compareStatementLinesNewestFirst } from "../lib/statementLineSort";
 import { parseAmount } from "../lib/formParse";
 import { DRAFT_RECORD_ID } from "../lib/expandedRecord";
 import { useRecordEditor } from "../hooks/useRecordEditor";
-import {
-  existingImportedStatementBasenames,
-  useParseStatement,
-} from "../hooks/useParseStatement";
+import { existingImportedStatementBasenames } from "../hooks/useParseStatement";
+import { StatementImportControl } from "./StatementImportControl";
 import { uploadFinanceAsset } from "../lib/uploadFinanceAsset";
 import {
   AdminCell,
@@ -30,7 +28,6 @@ import {
   AdminDataTableEmptyRow,
   type AdminDataTableColumn,
   AdminCreateButton,
-  AdminDisclosure,
   AdminEditorPanel,
   AdminEditorSection,
   AdminExpandableRow,
@@ -315,14 +312,9 @@ export function HouseStatementPanel({
 
   const [tableFilter, setTableFilter] = useState("");
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const linePdfInputRef = useRef<HTMLInputElement | null>(null);
   const lineDescriptionRef = useRef<HTMLInputElement | null>(null);
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
-  const [importMortgageOnly, setImportMortgageOnly] = useState(false);
-  const [parseSuccess, setParseSuccess] = useState<string | null>(null);
   const [openingPdfKey, setOpeningPdfKey] = useState<string | null>(null);
-  const parseStatement = useParseStatement(houseKey);
   const queryClient = useQueryClient();
 
   const [pendingLineFiles, setPendingLineFiles] = useState<File[]>([]);
@@ -486,6 +478,9 @@ export function HouseStatementPanel({
     const currency = coerceSupportedCurrency(lineForm.currency, data.defaultCurrency);
     const dateUtc = isoFromUtcParts(lineForm.datePart, lineForm.timePart);
 
+    // The line editor attaches one file to one typed line, so a repeated
+    // filename is refused. Statement import asks, then parses, so a re-sent
+    // mail can still be added.
     const basenames = existingImportedStatementBasenames(data, editingId ?? undefined);
     const pendingNames = new Set<string>();
     for (const f of pendingLineFiles) {
@@ -843,120 +838,15 @@ export function HouseStatementPanel({
           <AdminFilterBar
             beforeCreate={
               readOnly ? undefined : (
-              <AdminDisclosure title={importTitle} presentation="dialog">
-                <p className="small text-muted">{importDescription}</p>
-                <AdminEditorSection
-                  embedded
-                  footer={
-                    <>
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        disabled={!pdfFile || parseStatement.isPending}
-                        onClick={() => {
-                          if (!pdfFile) return;
-                          setParseSuccess(null);
-                          parseStatement.mutate(
-                            {
-                              file: pdfFile,
-                              mortgageOnly: showMortgageImport && importMortgageOnly,
-                              ...(lockedLineType ? { lineTypeOnly: lockedLineType } : {}),
-                            },
-                            {
-                              onSuccess: (res) => {
-                                setParseSuccess(
-                                  res.addedLines === 0
-                                    ? "No transactions were extracted from this document."
-                                    : `Imported ${res.addedLines} statement line${res.addedLines === 1 ? "" : "s"}.`,
-                                );
-                                setPdfFile(null);
-                                if (fileInputRef.current) {
-                                  fileInputRef.current.value = "";
-                                }
-                              },
-                            },
-                          );
-                        }}
-                      >
-                        {parseStatement.isPending ? "Parsing…" : "Upload & parse"}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-outline-secondary btn-sm"
-                        disabled={parseStatement.isPending}
-                        onClick={() => {
-                          setPdfFile(null);
-                          setParseSuccess(null);
-                          setImportMortgageOnly(false);
-                          if (fileInputRef.current) {
-                            fileInputRef.current.value = "";
-                          }
-                        }}
-                      >
-                        Clear
-                      </button>
-                    </>
-                  }
-                >
-                  <div className="row g-2 align-items-end">
-                    <div className="col-md-8">
-                      <label className="form-label small mb-0" htmlFor={`${houseKey}-statement-pdf`}>
-                        {importFileLabel}
-                      </label>
-                      <input
-                        id={`${houseKey}-statement-pdf`}
-                        ref={fileInputRef}
-                        type="file"
-                        accept="application/pdf,image/*"
-                        className="form-control form-control-sm"
-                        disabled={parseStatement.isPending}
-                        onChange={(ev) => {
-                          const next = ev.target.files?.[0] ?? null;
-                          setPdfFile(next);
-                          setParseSuccess(null);
-                        }}
-                      />
-                    </div>
-                  </div>
-                  {showMortgageImport ? (
-                    <div className="form-check mt-2">
-                      <input
-                        id={`${houseKey}-statement-import-mortgage-only`}
-                        className="form-check-input"
-                        type="checkbox"
-                        checked={importMortgageOnly}
-                        disabled={parseStatement.isPending}
-                        onChange={(ev) => setImportMortgageOnly(ev.target.checked)}
-                      />
-                      <label
-                        className="form-check-label small"
-                        htmlFor={`${houseKey}-statement-import-mortgage-only`}
-                      >
-                        Mortgage
-                      </label>
-                      <p className="form-text small mb-0 mt-1">
-                        When checked, only lines classified as Mortgage are imported; all other
-                        extracted transactions are discarded.
-                      </p>
-                    </div>
-                  ) : null}
-                  {parseStatement.isPending ? (
-                    <p className="small text-muted mt-2 mb-0">
-                      Uploading and parsing — often under a minute; large or scanned PDFs can take several minutes.
-                    </p>
-                  ) : null}
-                  {parseStatement.isError ? (
-                    <div className="alert alert-danger py-2 small mt-3 mb-0" role="alert">
-                      {parseStatement.error?.message ?? "Statement import failed."}
-                    </div>
-                  ) : null}
-                  {parseSuccess && !parseStatement.isPending ? (
-                    <div className="alert alert-success py-2 small mt-3 mb-0" role="status">
-                      {parseSuccess}
-                    </div>
-                  ) : null}
-                </AdminEditorSection>
-              </AdminDisclosure>
+                <StatementImportControl
+                  owner={houseKey}
+                  data={data}
+                  lockedLineType={lockedLineType}
+                  showMortgageImport={showMortgageImport}
+                  title={importTitle}
+                  description={importDescription}
+                  fileLabel={importFileLabel}
+                />
               )
             }
             create={

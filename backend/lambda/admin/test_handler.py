@@ -2071,6 +2071,9 @@ class TestParseRepeatsImportedBasename(unittest.TestCase):
         parser.assert_called_once()
         self.assertEqual(result["addedLines"], 1)
         self.assertEqual(result["sourceAssetKeys"], [s3_key])
+        self.assertEqual(result["duplicateBasenames"], ["00_advice-note.pdf"])
+        self.assertEqual(result["duplicateBasenameContent"], "same")
+        self.assertNotIn("skippedExistingAssetKeys", result)
         finance_puts = [
             call.kwargs["Item"]
             for call in self.table.put_item.call_args_list
@@ -2079,6 +2082,130 @@ class TestParseRepeatsImportedBasename(unittest.TestCase):
         self.assertEqual(len(finance_puts), 1)
         self.assertEqual(len(finance_puts[0]["lines"]), 2)
         self.assertEqual(finance_puts[0]["lines"][1]["sourceAssetKeys"], [s3_key])
+
+
+    def _run_execute(self, s3_keys: list[str], head):
+        import parse_statement as parse_statement_mod
+
+        parsed_line = {
+            "dateUtc": "2026-10-27T06:00:00.000Z",
+            "type": "income",
+            "description": "Advice note",
+            "netAmount": 12,
+            "vat": 0,
+            "grossAmount": 12,
+            "currency": "HKD",
+        }
+        with (
+            patch.object(
+                parse_statement_mod.board_store,
+                "records_table",
+                return_value=self.table,
+            ),
+            patch.object(parse_statement_mod.runtime._s3, "head_object", side_effect=head),
+            patch(
+                "openrouter_statement_parser.parse_statement_from_asset",
+                return_value={"lines": [parsed_line], "usage": None},
+            ) as parser,
+            patch.object(parse_statement_mod.openrouter_usage, "add_usage_day"),
+            patch.object(parse_statement_mod, "_audit"),
+        ):
+            result = parse_statement_mod.execute_parse_statement(
+                house="morrison",
+                s3_keys=s3_keys,
+                user_sub="inbound-email",
+                request_id="req-repeat-exec",
+                event={"requestContext": {"requestId": "req-repeat-exec"}},
+            )
+        return parser, result
+
+    def test_execute_appends_when_repeated_name_has_different_content(self) -> None:
+        s3_key = "inbound/morrison/new-batch/00_advice-note.pdf"
+
+        def head(Bucket, Key):
+            del Bucket
+            if "prior-batch" in Key:
+                return {
+                    "ContentType": "application/pdf",
+                    "ContentLength": 4,
+                    "ETag": '"old"',
+                    "LastModified": datetime.now(timezone.utc),
+                }
+            return {
+                "ContentType": "application/pdf",
+                "ContentLength": 9,
+                "ETag": '"new"',
+                "LastModified": datetime.now(timezone.utc),
+            }
+
+        parser, result = self._run_execute([s3_key], head)
+        parser.assert_called_once()
+        self.assertEqual(result["addedLines"], 1)
+        self.assertEqual(result["duplicateBasenameContent"], "different")
+
+    def test_execute_appends_when_earlier_copy_cannot_be_compared(self) -> None:
+        from botocore.exceptions import ClientError
+
+        s3_key = "inbound/morrison/new-batch/00_advice-note.pdf"
+
+        def head(Bucket, Key):
+            del Bucket
+            if "prior-batch" in Key:
+                err = ClientError("missing")
+                err.response = {"Error": {"Code": "404", "Message": "no"}}
+                raise err
+            return {
+                "ContentType": "application/pdf",
+                "ContentLength": 9,
+                "ETag": '"new"',
+                "LastModified": datetime.now(timezone.utc),
+            }
+
+        parser, result = self._run_execute([s3_key], head)
+        parser.assert_called_once()
+        self.assertEqual(result["addedLines"], 1)
+        self.assertEqual(result["duplicateBasenameContent"], "unknown")
+
+    def test_execute_skips_when_exact_asset_key_already_imported(self) -> None:
+        s3_key = "inbound/morrison/prior-batch/00_advice-note.pdf"
+
+        def head(Bucket, Key):
+            del Bucket, Key
+            raise AssertionError("exact-key retry must not read S3 or call the parser")
+
+        parser, result = self._run_execute([s3_key], head)
+        parser.assert_not_called()
+        self.table.put_item.assert_not_called()
+        self.assertEqual(result["addedLines"], 0)
+        self.assertEqual(result["skippedExistingAssetKeys"], [s3_key])
+        self.assertEqual(result["duplicateBasenameContent"], "same")
+
+    def test_execute_parses_only_the_new_key_in_a_mixed_batch(self) -> None:
+        existing = "inbound/morrison/prior-batch/00_advice-note.pdf"
+        fresh = "inbound/morrison/new-batch/00_other.pdf"
+
+        def head(Bucket, Key):
+            del Bucket
+            self.assertEqual(Key, fresh)
+            return {
+                "ContentType": "application/pdf",
+                "ContentLength": 9,
+                "ETag": '"new"',
+                "LastModified": datetime.now(timezone.utc),
+            }
+
+        parser, result = self._run_execute([existing, fresh], head)
+        parser.assert_called_once()
+        self.assertEqual(parser.call_args.kwargs["s3_key"], fresh)
+        self.assertEqual(result["addedLines"], 1)
+        self.assertEqual(result["sourceAssetKeys"], [fresh])
+        self.assertEqual(result["skippedExistingAssetKeys"], [existing])
+        finance_puts = [
+            call.kwargs["Item"]
+            for call in self.table.put_item.call_args_list
+            if isinstance(call.kwargs.get("Item"), dict) and "lines" in call.kwargs["Item"]
+        ]
+        self.assertEqual(finance_puts[0]["lines"][1]["sourceAssetKeys"], [fresh])
 
 
 class TestParseStatementHousePath(unittest.TestCase):
@@ -2139,6 +2266,67 @@ class TestParseJobPublicDoc(unittest.TestCase):
             ],
             "bad",
         )
+
+
+    def test_succeeded_doc_includes_repeat_notes(self) -> None:
+        from handler import _parse_job_public_doc
+
+        out = _parse_job_public_doc(
+            {
+                "status": "succeeded",
+                "addedLines": 0,
+                "sourceAssetKeys": ["inbound/morrison/batch/00_advice-note.pdf"],
+                "skippedExistingAssetKeys": ["inbound/morrison/batch/00_advice-note.pdf"],
+                "duplicateBasenames": ["00_advice-note.pdf"],
+                "duplicateBasenameContent": "same",
+            }
+        )
+        self.assertEqual(out["addedLines"], 0)
+        self.assertEqual(
+            out["skippedExistingAssetKeys"],
+            ["inbound/morrison/batch/00_advice-note.pdf"],
+        )
+        self.assertEqual(out["duplicateBasenameContent"], "same")
+
+    def test_worker_stores_repeat_notes_on_the_succeeded_job(self) -> None:
+        import parse_jobs as parse_jobs_mod
+
+        table = MagicMock()
+        table.get_item.return_value = {
+            "Item": {
+                "pk": "PARSE_JOB#job",
+                "sk": "META",
+                "status": "processing",
+                "house": "morrison",
+                "s3Keys": ["inbound/morrison/new/00_advice-note.pdf"],
+            }
+        }
+        result = {
+            "addedLines": 1,
+            "sourceAssetKeys": ["inbound/morrison/new/00_advice-note.pdf"],
+            "sourceAssetKey": "inbound/morrison/new/00_advice-note.pdf",
+            "duplicateBasenames": ["00_advice-note.pdf"],
+            "duplicateBasenameContent": "different",
+            "usage": {"calls": 1, "cost": 0},
+        }
+        with (
+            patch.object(parse_jobs_mod.board_store, "records_table", return_value=table),
+            patch("parse_statement.execute_parse_statement", return_value=result),
+            patch.object(parse_jobs_mod, "_notify_parse_job_quietly") as notify,
+        ):
+            parse_jobs_mod._handle_parse_statement_async_worker(
+                {
+                    "jobId": "job",
+                    "house": "morrison",
+                    "ownerSub": "inbound-email",
+                    "s3Keys": ["inbound/morrison/new/00_advice-note.pdf"],
+                }
+            )
+        note = notify.call_args.args[0]
+        self.assertEqual(note["status"], "succeeded")
+        self.assertEqual(note["duplicateBasenames"], ["00_advice-note.pdf"])
+        self.assertEqual(note["duplicateBasenameContent"], "different")
+        self.assertEqual(note["addedLines"], 1)
 
 
 class TestFinalizeStuckProcessing(unittest.TestCase):

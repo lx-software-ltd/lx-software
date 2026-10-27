@@ -218,6 +218,24 @@ def _invoke_parse_statement_worker(payload: dict[str, Any]) -> None:
     )
 
 
+
+_REPEAT_LIST_FIELDS = ("skippedExistingAssetKeys", "duplicateBasenames")
+_REPEAT_CONTENT = frozenset({"same", "different", "unknown"})
+
+
+def repeat_import_notes(source: dict[str, Any]) -> dict[str, Any]:
+    """Copy repeat-import notes when a parse result or job doc recorded them."""
+    out: dict[str, Any] = {}
+    for field in _REPEAT_LIST_FIELDS:
+        value = source.get(field)
+        if isinstance(value, list) and any(isinstance(item, str) and item for item in value):
+            out[field] = [item for item in value if isinstance(item, str) and item]
+    content = source.get("duplicateBasenameContent")
+    if content in _REPEAT_CONTENT:
+        out["duplicateBasenameContent"] = content
+    return out
+
+
 def _parse_job_public_doc(doc: dict[str, Any]) -> dict[str, Any]:
     st = doc.get("status")
     if st in ("pending", "processing"):
@@ -237,6 +255,7 @@ def _parse_job_public_doc(doc: dict[str, Any]) -> dict[str, Any]:
         usage = doc.get("usage")
         if isinstance(usage, dict):
             out["usage"] = usage
+        out.update(repeat_import_notes(doc))
         return out
     if st == "failed":
         return {
@@ -373,6 +392,7 @@ def _handle_parse_statement_async_worker(payload: dict[str, Any]) -> None:
         "addedLines": result.get("addedLines", 0),
         "sourceAssetKeys": result.get("sourceAssetKeys") or [],
         "updatedAt": _utc_iso_z(datetime.now(timezone.utc)),
+        **repeat_import_notes(result),
     }
     sk = result.get("sourceAssetKey")
     if sk:
