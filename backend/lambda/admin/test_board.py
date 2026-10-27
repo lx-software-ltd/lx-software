@@ -751,24 +751,24 @@ class TestBoardRoutes(BoardTestCase):
 
         self.table.put_item(Item={"pk": "RECORD#1", "sk": "A"})
         self.table.put_item(Item={"pk": "PARSE_JOB#j1", "sk": "META", "status": "failed"})
-        key = "inbound/hillmarton/" + ("a" * 32) + "/00_stmt.pdf"
+        asset_path = "inbound/hillmarton/" + ("a" * 32) + "/00_stmt.pdf"
         uploaded = "2026-03-01T00:00:00.000Z"
         self.table.put_item(
             Item={
-                "pk": f"ASSET#{key}",
+                "pk": f"ASSET#{asset_path}",
                 "sk": "META",
                 "fileName": "stmt.pdf",
                 "house": "hillmarton",
                 "size": 12,
                 "uploadedAt": uploaded,
-                **asset_index_attributes(key, uploaded),
+                **asset_index_attributes(asset_path, uploaded),
             }
         )
         self.table.put_item(Item={"pk": "ASSET#uploads/admin-sub/unindexed.pdf", "sk": "META", "size": 1})
         status, body = self.call("/assets")
         self.assertEqual(status, 200)
         pks = [i["pk"] for i in body["items"]]
-        self.assertEqual(pks, [f"ASSET#{key}"])
+        self.assertEqual(pks, [f"ASSET#{asset_path}"])
         self.assertNotIn("gsi1pk", body["items"][0])
         self.assertEqual(self.table.scan_calls, [])
 
