@@ -8,7 +8,7 @@ from typing import Any
 import board_store
 import runtime
 from botocore.exceptions import ClientError
-from contract_constants import FINANCE_STATEMENT_OWNER_KEYS
+from contract_constants import FINANCE_STATEMENT_OWNER_KEYS, STATEMENT_BOOK_LABELS
 from http_common import (
     _audit,
     _decode_cursor,
@@ -22,15 +22,36 @@ from runtime import ALLOWED_UPLOAD_CONTENT_TYPES
 ASSET_PK_PREFIX = "ASSET#"
 ASSET_INDEX_PK = "ASSET"
 ASSET_INDEX_UNKNOWN_TIME = "1970-01-01T00:00:00.000Z"
-ASSET_BACKFILL_SCAN_LIMIT = 200
+ASSET_PAGE_SIZE = 50
+ASSET_FILTER_READ_CAP = 1000
+_STALE_CURSOR_MESSAGE = "cursor expired"
 _PUBLIC_HIDDEN = frozenset({"gsi1pk", "gsi1sk"})
 _INBOUND_OWNER_SEGMENTS = frozenset(key.lower() for key in FINANCE_STATEMENT_OWNER_KEYS)
+_OWNER_DISPLAY_LABELS = {
+    "hillmarton": "32 Hillmarton",
+    "morrison": "The Morrison",
+    **STATEMENT_BOOK_LABELS,
+}
+
+
+class _StaleAssetCursor(Exception):
+    """The list cursor was not produced by the asset index query."""
 
 
 def asset_index_attributes(s3_key: str, uploaded_at: str) -> dict[str, str]:
     """Index attributes for one confirmed asset, newest-last in ascending order."""
     stamp = uploaded_at.strip() or ASSET_INDEX_UNKNOWN_TIME
     return {"gsi1pk": ASSET_INDEX_PK, "gsi1sk": f"{stamp}#{s3_key}"}
+
+
+def asset_index_for_persist(table: Any, asset_pk: str, s3_key: str, fallback_uploaded_at: str) -> dict[str, str]:
+    """Sort by the row's stored ``uploadedAt`` when it already has one."""
+    loaded = table.get_item(Key={"pk": asset_pk, "sk": "META"})
+    prior = loaded.get("Item") if isinstance(loaded, dict) else None
+    stored = str(prior.get("uploadedAt") or "").strip() if isinstance(prior, dict) else ""
+    if stored == ASSET_INDEX_UNKNOWN_TIME:
+        stored = ""
+    return asset_index_attributes(s3_key, stored or fallback_uploaded_at)
 
 
 def owner_from_inbound_key(s3_key: str) -> str | None:
@@ -131,11 +152,108 @@ def _normalize_public_asset_key(raw: Any) -> str | None:
     return None
 
 
+def _asset_object_key(row: dict[str, Any]) -> str:
+    pk = row.get("pk")
+    if isinstance(pk, str) and pk.startswith(ASSET_PK_PREFIX):
+        return pk[len(ASSET_PK_PREFIX) :]
+    return ""
+
+
+def _asset_matches(row: dict[str, Any], needle: str) -> bool:
+    """Case-insensitive match on file name, object key, owner key, and owner label."""
+    query = needle.strip().lower()
+    if not query:
+        return True
+    s3_key = _asset_object_key(row)
+    file_name = str(row.get("fileName") or "").strip() or (os.path.basename(s3_key) if s3_key else "")
+    house = str(row.get("house") or "").strip() or (owner_from_inbound_key(s3_key) or "")
+    haystack = "\n".join((file_name, s3_key, house, _OWNER_DISPLAY_LABELS.get(house, ""))).lower()
+    return query in haystack
+
+
+def _asset_index_key(row: dict[str, Any]) -> dict[str, str]:
+    return {
+        "gsi1pk": ASSET_INDEX_PK,
+        "gsi1sk": str(row["gsi1sk"]),
+        "pk": str(row["pk"]),
+        "sk": "META",
+    }
+
+
+def _asset_query_start(raw: Any) -> dict[str, str] | None:
+    """Accept only a cursor from this index. An old table-scan cursor is stale."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise _StaleAssetCursor
+    gsk = raw.get("gsi1sk")
+    pk = raw.get("pk")
+    if (
+        raw.get("gsi1pk") != ASSET_INDEX_PK
+        or raw.get("sk") != "META"
+        or not isinstance(gsk, str)
+        or not gsk
+        or not isinstance(pk, str)
+        or not pk.startswith(ASSET_PK_PREFIX)
+    ):
+        raise _StaleAssetCursor
+    return _asset_index_key({"gsi1sk": gsk, "pk": pk})
+
+
+def _query_asset_page(table: Any, start: dict[str, str] | None, limit: int) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "IndexName": "gsi1",
+        "KeyConditionExpression": "gsi1pk = :pk",
+        "ExpressionAttributeValues": {":pk": ASSET_INDEX_PK},
+        "ScanIndexForward": False,
+        "Limit": limit,
+    }
+    if start:
+        kwargs["ExclusiveStartKey"] = start
+    try:
+        return table.query(**kwargs)
+    except ClientError as exc:
+        code = exc.response.get("Error", {}).get("Code", "")
+        if code == "ValidationException":
+            raise _StaleAssetCursor from exc
+        raise
+
+
+def _assets_page(table: Any, start: dict[str, str] | None, needle: str) -> tuple[list[dict[str, Any]], Any]:
+    """One page of assets. A filter keeps reading the index until the page fills or the cap is hit."""
+    from ddb_convert import _from_ddb
+
+    if not needle:
+        result = _query_asset_page(table, start, ASSET_PAGE_SIZE)
+        decoded = [_from_ddb(raw) for raw in result.get("Items", [])]
+        items = [present_asset_item(row) for row in decoded if row.get("sk") == "META"]
+        return items, result.get("LastEvaluatedKey")
+
+    matches: list[dict[str, Any]] = []
+    examined = 0
+    exclusive = start
+    resume: Any = None
+    while len(matches) < ASSET_PAGE_SIZE and examined < ASSET_FILTER_READ_CAP:
+        result = _query_asset_page(table, exclusive, min(100, ASSET_FILTER_READ_CAP - examined))
+        decoded = [_from_ddb(raw) for raw in result.get("Items", [])]
+        examined += len(decoded)
+        resume = result.get("LastEvaluatedKey")
+        for index, row in enumerate(decoded):
+            if row.get("sk") != "META" or not _asset_matches(row, needle):
+                continue
+            matches.append(present_asset_item(row))
+            if len(matches) == ASSET_PAGE_SIZE:
+                more = index < len(decoded) - 1 or resume
+                return matches, _asset_index_key(row) if more else None
+        if not resume:
+            return matches, None
+        exclusive = _asset_query_start(resume)
+    return matches, resume
+
+
 def _assets_list_response(event: dict[str, Any]) -> dict[str, Any]:
     """Return one page of confirmed assets, newest first, or one asset by key."""
     from urllib.parse import parse_qs
-
-    from ddb_convert import _from_ddb
 
     qs = event.get("rawQueryString") or ""
     params = parse_qs(qs)
@@ -143,21 +261,12 @@ def _assets_list_response(event: dict[str, Any]) -> dict[str, Any]:
     if key_raw:
         return _asset_meta_response(key_raw)
     cursor_raw = params.get("cursor", [""])[0]
-    start_key = _decode_cursor(cursor_raw)
-    table = board_store.records_table()
-    kwargs: dict[str, Any] = {
-        "IndexName": "gsi1",
-        "KeyConditionExpression": "gsi1pk = :pk",
-        "ExpressionAttributeValues": {":pk": ASSET_INDEX_PK},
-        "ScanIndexForward": False,
-        "Limit": 50,
-    }
-    if start_key:
-        kwargs["ExclusiveStartKey"] = start_key
-    result = table.query(**kwargs)
-    decoded = [_from_ddb(raw) for raw in result.get("Items", [])]
-    items = [present_asset_item(row) for row in decoded if row.get("sk") == "META"]
-    last = result.get("LastEvaluatedKey")
+    try:
+        start_key = _asset_query_start(_decode_cursor(cursor_raw) if cursor_raw else None)
+        table = board_store.records_table()
+        items, last = _assets_page(table, start_key, params.get("q", [""])[0].strip()[:200])
+    except _StaleAssetCursor:
+        return _json_response(400, {"message": _STALE_CURSOR_MESSAGE})
     next_cursor = _encode_cursor(last) if last else None
     return _json_response(200, {"items": items, "nextCursor": next_cursor})
 
@@ -174,110 +283,6 @@ def _asset_meta_response(raw_key: Any) -> dict[str, Any]:
     if "Item" not in meta:
         return _json_response(404, {"message": "Asset not found"})
     return _json_response(200, {"item": present_asset_item(_from_ddb(meta["Item"]))})
-
-
-def backfill_asset_index(
-    table: Any,
-    *,
-    dry_run: bool = True,
-    house_by_key: dict[str, str] | None = None,
-) -> dict[str, Any]:
-    """Stamp ``gsi1`` on ``ASSET#`` META rows so the Assets list can query them.
-
-    ``dry_run`` counts rows that would change and writes nothing. House values
-    missing on the row come from the inbound key, then from ``house_by_key``.
-    When ``house_by_key`` is omitted, statement lines are read once.
-    """
-    if house_by_key is None:
-        from finance_store import _source_key_to_house_map
-
-        house_by_key = _source_key_to_house_map(table)
-    updated = 0
-    skipped = 0
-    start_key: dict[str, Any] | None = None
-    while True:
-        page = _backfill_asset_index_page(
-            table,
-            start_key,
-            dry_run=dry_run,
-            house_by_key=house_by_key,
-        )
-        updated += page["updated"]
-        skipped += page["skipped"]
-        start_key = page["nextKey"]
-        if not start_key:
-            break
-    return {"updated": updated, "skipped": skipped, "dryRun": dry_run}
-
-
-def _backfill_asset_index_page(
-    table: Any,
-    start_key: dict[str, Any] | None,
-    *,
-    dry_run: bool,
-    house_by_key: dict[str, str],
-) -> dict[str, Any]:
-    from ddb_convert import _from_ddb
-
-    kwargs: dict[str, Any] = {
-        "Limit": ASSET_BACKFILL_SCAN_LIMIT,
-        "FilterExpression": "begins_with(pk, :asset)",
-        "ExpressionAttributeValues": {":asset": ASSET_PK_PREFIX},
-    }
-    if start_key:
-        kwargs["ExclusiveStartKey"] = start_key
-    result = table.scan(**kwargs)
-    updated = 0
-    skipped = 0
-    for raw in result.get("Items", []):
-        item = _from_ddb(raw)
-        if item.get("sk") != "META" or (item.get("gsi1pk") and item.get("gsi1sk")):
-            skipped += 1
-            continue
-        _stamp_asset_index(table, item, dry_run=dry_run, house_by_key=house_by_key)
-        updated += 1
-    return {
-        "updated": updated,
-        "skipped": skipped,
-        "nextKey": result.get("LastEvaluatedKey"),
-    }
-
-
-def _stamp_asset_index(
-    table: Any,
-    item: dict[str, Any],
-    *,
-    dry_run: bool,
-    house_by_key: dict[str, str],
-) -> None:
-    pk = str(item.get("pk") or "")
-    s3_key = pk[len(ASSET_PK_PREFIX) :] if pk.startswith(ASSET_PK_PREFIX) else pk
-    uploaded = str(item.get("uploadedAt") or "").strip() or ASSET_INDEX_UNKNOWN_TIME
-    file_name = str(item.get("fileName") or "").strip() or os.path.basename(s3_key)
-    house = str(item.get("house") or "").strip() or owner_from_inbound_key(s3_key) or house_by_key.get(s3_key) or ""
-    index = asset_index_attributes(s3_key, uploaded)
-    assignments = [
-        "gsi1pk = :gpk",
-        "gsi1sk = :gsk",
-        "uploadedAt = :ua",
-        "fileName = :fn",
-    ]
-    values: dict[str, Any] = {
-        ":gpk": index["gsi1pk"],
-        ":gsk": index["gsi1sk"],
-        ":ua": uploaded,
-        ":fn": file_name,
-    }
-    if house:
-        assignments.append("house = :house")
-        values[":house"] = house
-    if dry_run:
-        return
-    table.update_item(
-        Key={"pk": pk, "sk": "META"},
-        UpdateExpression="SET " + ", ".join(assignments),
-        ExpressionAttributeValues=values,
-    )
 
 
 def _asset_download_presigned_response(

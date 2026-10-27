@@ -234,14 +234,16 @@ class FakeTable:
         ExpressionAttributeNames: dict[str, str] | None = None,
     ) -> dict:
         key = self._key(Key)
-        item = dict(self.items.get(key) or {"pk": Key["pk"], "sk": Key["sk"]})
+        stored = self.items.get(key)
+        subject = dict(stored) if stored is not None else {}
         names = ExpressionAttributeNames or {}
         for value in ExpressionAttributeValues.values():
             # boto3 resource + DynamoDB reject Python float; Decimal/int are ok.
             if type(value) is float:
                 raise TypeError("Float types are not supported. Use Decimal types instead.")
-        if ConditionExpression and not self._evaluate(ConditionExpression, item, names, ExpressionAttributeValues):
+        if ConditionExpression and not self._evaluate(ConditionExpression, subject, names, ExpressionAttributeValues):
             raise self._conditional_error()
+        item = dict(stored) if stored is not None else {"pk": Key["pk"], "sk": Key["sk"]}
         for section in re.split(r"\b(?=SET\b|ADD\b)", UpdateExpression):
             section = section.strip()
             if section.startswith("SET"):
@@ -1341,7 +1343,7 @@ class TestAssets(BoardTestCase):
         self.assertEqual(page["items"][0]["pk"], f"ASSET#{key}")
 
     def test_backfill_asset_index_stamps_missing_rows(self) -> None:
-        from assets import backfill_asset_index
+        from asset_backfill import backfill_asset_index
 
         inbound = "inbound/hillmarton/" + ("c" * 32) + "/00_stmt.pdf"
         upload = "uploads/admin-sub/boiler.pdf"
@@ -1357,26 +1359,136 @@ class TestAssets(BoardTestCase):
         self.table.put_item(Item={"pk": "ASSET#uploads/admin-sub/skip.pdf", "sk": "OTHER"})
         self.table.put_item(Item={"pk": "RECORD#1", "sk": "A"})
         dry = backfill_asset_index(self.table, dry_run=True, house_by_key={upload: "morrison"})
-        self.assertEqual(dry["updated"], 2)
+        self.assertEqual(dry["pending"], 2)
+        self.assertEqual(dry["updated"], 0)
         self.assertTrue(dry["dryRun"])
         self.assertNotIn("gsi1pk", self.table.items[(f"ASSET#{inbound}", "META")])
         applied = backfill_asset_index(self.table, dry_run=False, house_by_key={upload: "morrison"})
         self.assertEqual(applied["updated"], 2)
+        self.assertEqual(applied["pending"], 0)
         inbound_row = self.table.items[(f"ASSET#{inbound}", "META")]
         self.assertEqual(inbound_row["gsi1pk"], "ASSET")
         self.assertEqual(inbound_row["house"], "hillmarton")
         self.assertEqual(inbound_row["fileName"], "00_stmt.pdf")
+        self.assertNotIn("uploadedAt", inbound_row)
         self.assertTrue(str(inbound_row["gsi1sk"]).startswith("1970-01-01T00:00:00.000Z#"))
         upload_row = self.table.items[(f"ASSET#{upload}", "META")]
         self.assertEqual(upload_row["house"], "morrison")
+        self.assertEqual(upload_row["uploadedAt"], "2020-05-01T00:00:00.000Z")
         self.assertTrue(str(upload_row["gsi1sk"]).startswith("2020-05-01T00:00:00.000Z#"))
         self.assertNotIn("gsi1pk", self.table.items[("ASSET#uploads/admin-sub/skip.pdf", "OTHER")])
         again = backfill_asset_index(self.table, dry_run=False, house_by_key={})
         self.assertEqual(again["updated"], 0)
+        self.assertEqual(again["pending"], 0)
         status, body = self.call("/assets")
         self.assertEqual(status, 200)
         names = {row["fileName"] for row in body["items"]}
         self.assertEqual(names, {"00_stmt.pdf", "boiler.pdf"})
+
+    def test_backfill_reads_s3_last_modified_and_skips_a_deleted_row(self) -> None:
+        from asset_backfill import backfill_asset_index
+
+        present = "uploads/admin-sub/kept.pdf"
+        missing = "uploads/admin-sub/gone-object.pdf"
+        deleted = "uploads/admin-sub/deleted-row.pdf"
+        when = datetime(2019, 6, 1, tzinfo=timezone.utc)
+
+        class _Heads:
+            def head_object(self, **kwargs: Any) -> dict[str, Any]:
+                if kwargs["Key"] == missing:
+                    err = ClientError({"Error": {"Code": "404"}}, "HeadObject")
+                    err.response = {"Error": {"Code": "404"}}  # type: ignore[attr-defined]
+                    raise err
+                return {"LastModified": when}
+
+        class _DropBeforeUpdate(FakeTable):
+            def update_item(self, **kwargs: Any) -> dict:
+                if kwargs["Key"]["pk"].endswith("deleted-row.pdf"):
+                    self.items.pop((kwargs["Key"]["pk"], kwargs["Key"]["sk"]), None)
+                return super().update_item(**kwargs)
+
+        table = _DropBeforeUpdate()
+        table.put_item(Item={"pk": f"ASSET#{present}", "sk": "META", "size": 1})
+        table.put_item(Item={"pk": f"ASSET#{missing}", "sk": "META", "size": 1})
+        table.put_item(Item={"pk": f"ASSET#{deleted}", "sk": "META", "size": 1})
+        result = backfill_asset_index(table, dry_run=False, house_by_key={}, s3_client=_Heads(), bucket="assets-test")
+        self.assertEqual(result["updated"], 2)
+        self.assertEqual(result["skipped"], 1)
+        kept = table.items[(f"ASSET#{present}", "META")]
+        self.assertEqual(kept["uploadedAt"], "2019-06-01T00:00:00.000Z")
+        self.assertTrue(str(kept["gsi1sk"]).startswith("2019-06-01T00:00:00.000Z#"))
+        gone = table.items[(f"ASSET#{missing}", "META")]
+        self.assertNotIn("uploadedAt", gone)
+        self.assertTrue(str(gone["gsi1sk"]).startswith("1970-01-01T00:00:00.000Z#"))
+        self.assertNotIn((f"ASSET#{deleted}", "META"), table.items)
+
+    def test_assets_list_filters_past_the_first_page(self) -> None:
+        for i in range(60):
+            self._put_asset(
+                f"uploads/admin-sub/file-{i:02d}.pdf",
+                f"2024-01-01T00:00:{i:02d}.000Z",
+                house="morrison",
+            )
+        self._put_asset("uploads/admin-sub/needle.pdf", "2020-01-01T00:00:00.000Z", house="hillmarton")
+        status, body = self.call("/assets", query="q=needle")
+        self.assertEqual(status, 200)
+        self.assertEqual([row["fileName"] for row in body["items"]], ["needle.pdf"])
+        status, labelled = self.call("/assets", query="q=32%20Hill")
+        self.assertEqual(status, 200)
+        self.assertEqual([row["fileName"] for row in labelled["items"]], ["needle.pdf"])
+
+    def test_assets_list_rejects_a_table_scan_cursor(self) -> None:
+        from http_common import _encode_cursor
+
+        stale = _encode_cursor({"pk": "ASSET#uploads/admin-sub/old.pdf", "sk": "META"})
+        status, body = self.call("/assets", query=f"cursor={stale}")
+        self.assertEqual(status, 400)
+        self.assertEqual(body["message"], "cursor expired")
+
+    def test_records_omits_asset_index_attributes(self) -> None:
+        self._put_asset("uploads/admin-sub/visible.pdf", "2024-02-02T00:00:00.000Z", house="hillmarton")
+        status, body = self.call("/records")
+        self.assertEqual(status, 200)
+        asset = next(row for row in body["items"] if row["pk"].endswith("visible.pdf"))
+        self.assertNotIn("gsi1pk", asset)
+        self.assertNotIn("gsi1sk", asset)
+        self.assertEqual(asset["fileName"], "visible.pdf")
+
+    def test_parse_index_keeps_the_stored_upload_time(self) -> None:
+        from finance_store import _persist_asset_meta_after_parse
+
+        key = "uploads/admin-sub/old.pdf"
+
+        class _Table:
+            def __init__(self, item: dict[str, Any] | None) -> None:
+                self.item = item
+                self.values: dict[str, Any] | None = None
+
+            def get_item(self, Key: dict[str, Any]) -> dict[str, Any]:
+                del Key
+                return {"Item": dict(self.item)} if self.item else {}
+
+            def update_item(self, **kwargs: Any) -> dict[str, Any]:
+                self.values = kwargs["ExpressionAttributeValues"]
+                return {}
+
+        head = {
+            "LastModified": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "ContentLength": 4,
+            "ETag": '"e"',
+        }
+        stored = _Table({"uploadedAt": "2018-04-01T00:00:00.000Z", "fileName": "old.pdf"})
+        _persist_asset_meta_after_parse(
+            table=stored, s3_key=key, house="hillmarton", head=head, file_name="old.pdf", request_id="r"
+        )
+        assert stored.values is not None
+        self.assertTrue(stored.values[":gsk"].startswith("2018-04-01T00:00:00.000Z#"))
+        fresh = _Table(None)
+        _persist_asset_meta_after_parse(
+            table=fresh, s3_key=key, house="hillmarton", head=head, file_name="old.pdf", request_id="r"
+        )
+        assert fresh.values is not None
+        self.assertTrue(fresh.values[":gsk"].startswith("2026-01-01T00:00:00.000Z#"))
 
 
 if __name__ == "__main__":
