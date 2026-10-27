@@ -54,6 +54,24 @@ export function handleA5(ctx: MockCtx): Response | null {
   return json({ items: assetsFixture, nextCursor: null });
 }
 
+const ASSET_LABELS: Readonly<Record<string, string>> = {
+  hillmarton: "32 hillmarton",
+  morrison: "the morrison",
+  siutindei: "siu tin dei",
+  lxsoftware: "lx software",
+  evolvesprouts: "evolve sprouts",
+};
+
+function assetMatchesQuery(row: (typeof assetsFixture)[number], query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  const file = (row.fileName ?? "").toLowerCase();
+  const house = (row.house ?? "").toLowerCase();
+  const objectKey = row.pk.replace(/^ASSET#/, "").toLowerCase();
+  const label = ASSET_LABELS[house] ?? "";
+  return file.includes(needle) || house.includes(needle) || objectKey.includes(needle) || label.includes(needle);
+}
+
 export function handleA6(ctx: MockCtx): Response | null {
   const p = ctx.path;
   if (!(p === "/assets")) return null;
@@ -64,7 +82,9 @@ export function handleA6(ctx: MockCtx): Response | null {
     if (!item) return json({ message: "Asset not found" }, 404);
     return json({ item });
   }
-  return json({ items: assetsFixture, nextCursor: null });
+  const query = ctx.url.searchParams.get("q") ?? "";
+  const items = assetsFixture.filter((row) => assetMatchesQuery(row, query));
+  return json({ items, nextCursor: null });
 }
 
 export function handleA7(ctx: MockCtx): Response | null {

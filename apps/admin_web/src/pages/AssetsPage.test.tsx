@@ -122,4 +122,103 @@ describe("AssetsPage", () => {
       expect(new URLSearchParams(window.location.search).get("asset")).toBeNull();
     });
   });
+
+  it("searches the server instead of only the loaded page", async () => {
+    fetchJson.mockImplementation(async (path: string) => {
+      if (path === "/assets") return { items: [firstPageRow], nextCursor: "cursor-2" };
+      if (path.startsWith("/assets?q=")) {
+        return {
+          items: [
+            {
+              ...firstPageRow,
+              pk: "ASSET#uploads/admin-sub/needle.pdf",
+              fileName: "needle.pdf",
+            },
+          ],
+          nextCursor: null,
+        };
+      }
+      throw new Error(path);
+    });
+    renderPage();
+    expect(await screen.findByText("one.pdf")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Filter"), { target: { value: "needle" } });
+    expect(await screen.findByText("needle.pdf")).toBeTruthy();
+    expect(screen.queryByText("one.pdf")).toBeNull();
+  });
+
+  it("keeps a deep-linked asset on the page after it is closed", async () => {
+    const objectKey = "uploads/admin-sub/linked.pdf";
+    window.history.replaceState(null, "", `/assets?asset=${encodeURIComponent(objectKey)}`);
+    fetchJson.mockImplementation(async (path: string) => {
+      if (path === "/assets") return { items: [firstPageRow], nextCursor: null };
+      if (path.startsWith("/assets?key=")) {
+        return {
+          item: { ...firstPageRow, pk: `ASSET#${objectKey}`, fileName: "linked.pdf" },
+        };
+      }
+      throw new Error(path);
+    });
+    renderPage(window.location.pathname + window.location.search);
+    expect(await screen.findByLabelText("Object key")).toHaveProperty("value", objectKey);
+    fireEvent.click(screen.getByText("linked.pdf"));
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Object key")).toBeNull();
+    });
+    expect(screen.getByText("linked.pdf")).toBeTruthy();
+  });
+
+  it("closes an ASSET# link on the first click", async () => {
+    const pk = "ASSET#uploads/admin-sub/one.pdf";
+    window.history.replaceState(null, "", `/assets?asset=${encodeURIComponent(pk)}`);
+    fetchJson.mockResolvedValue({ items: [firstPageRow], nextCursor: null });
+    renderPage(window.location.pathname + window.location.search);
+    expect(await screen.findByLabelText("Object key")).toHaveProperty(
+      "value",
+      "uploads/admin-sub/one.pdf",
+    );
+    fireEvent.click(screen.getByText("one.pdf"));
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Object key")).toBeNull();
+    });
+    expect(new URLSearchParams(window.location.search).get("asset")).toBeNull();
+  });
+
+  it("leaves the link in place when the lookup fails", async () => {
+    const objectKey = "uploads/admin-sub/linked.pdf";
+    window.history.replaceState(null, "", `/assets?asset=${encodeURIComponent(objectKey)}`);
+    fetchJson.mockImplementation(async (path: string) => {
+      if (path === "/assets") return { items: [firstPageRow], nextCursor: null };
+      if (path.startsWith("/assets?key=")) {
+        throw new AdminApiError(500, JSON.stringify({ message: "unavailable" }));
+      }
+      throw new Error(path);
+    });
+    renderPage(window.location.pathname + window.location.search);
+    expect(await screen.findByText("Could not open that asset. The link stays in the address bar.")).toBeTruthy();
+    expect(new URLSearchParams(window.location.search).get("asset")).toBe(objectKey);
+  });
+
+  it("reloads the first page when Load more sends a stale cursor", async () => {
+    let calls = 0;
+    fetchJson.mockImplementation(async (path: string) => {
+      calls += 1;
+      if (path.includes("cursor=")) {
+        throw new AdminApiError(400, JSON.stringify({ message: "cursor expired" }));
+      }
+      if (path === "/assets") {
+        return {
+          items: [firstPageRow],
+          nextCursor: calls > 2 ? null : "old-cursor",
+        };
+      }
+      throw new Error(path);
+    });
+    renderPage();
+    expect(await screen.findByText("one.pdf")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(await screen.findByText("The asset list was refreshed. Load more again for older files.")).toBeTruthy();
+    expect(screen.getByText("one.pdf")).toBeTruthy();
+    expect(fetchJson.mock.calls.filter((call) => String(call[0]) === "/assets").length).toBeGreaterThan(1);
+  });
 });

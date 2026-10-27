@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import {
   AdminCell,
   AdminDataTable,
@@ -29,6 +30,7 @@ import {
   getAdminApiErrorMessage,
 } from "../lib/apiAdminClient";
 import { formatFileSizeBytes, objectKeyFromAssetPk } from "../lib/adminAssets";
+import { keys } from "../lib/queryKeys";
 import { formatDateTimeHKT } from "../lib/formatDisplay";
 import { houseDisplayLabel } from "../lib/houses";
 
@@ -58,10 +60,14 @@ function rowMatchesFilter(
   const q = filterText.trim().toLowerCase();
   if (!q) return true;
   const file = displayFileName(row).toLowerCase();
+  const objectKey = objectKeyFromAssetPk(row.pk).toLowerCase();
   const entityKey = (row.house ?? "").toLowerCase();
   const entityDisplay = houseDisplayLabel(row.house).toLowerCase();
   return (
-    file.includes(q) || entityKey.includes(q) || entityDisplay.includes(q)
+    file.includes(q) ||
+    objectKey.includes(q) ||
+    entityKey.includes(q) ||
+    entityDisplay.includes(q)
   );
 }
 
@@ -143,16 +149,21 @@ function AssetDetails({ row }: { readonly row: AdminAssetMeta }) {
 }
 
 export function AssetsPage() {
-  const q = useAdminAssets();
   const qc = useQueryClient();
   const expanded = useExpandedRecord("asset");
   const [tableFilter, setTableFilter] = useState("");
+  const debouncedFilter = useDebouncedValue(tableFilter.trim(), 300);
+  const q = useAdminAssets(debouncedFilter);
   const [pageError, setPageError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<AdminAssetMeta | null>(null);
   const [openingKey, setOpeningKey] = useState<string | null>(null);
+  const [pinned, setPinned] = useState<AdminAssetMeta | null>(null);
   const del = useMutation(
     deleteAssetMutationOptions(qc, (objectKey) => {
       setPendingDelete(null);
+      setPinned((current) =>
+        current && objectKeyFromAssetPk(current.pk) === objectKey ? null : current,
+      );
       if (expanded.expandedId && objectKeyFromAssetPk(expanded.expandedId) === objectKey) {
         expanded.request(null, false);
       }
@@ -194,35 +205,44 @@ export function AssetsPage() {
     ? (rows.find((row) => sameAsset(expanded.expandedId, row.pk)) ??
       (linked.data && sameAsset(expanded.expandedId, linked.data.pk) ? linked.data : null))
     : null;
+  const linkedSettled = !needLinkedAsset || (linked.isFetched && !linked.isError);
   useHydrateExpandedRecord({
     expandedId: expanded.expandedId,
-    recordsReady: !q.isLoading && (!needLinkedAsset || (!linked.isLoading && !linked.isFetching)),
+    recordsReady: !q.isLoading && linkedSettled,
     record: openAssetRow,
     apply: () => undefined,
     onMissing: () => expanded.request(null, false),
   });
 
   const displayRows = useMemo(() => {
-    const linkedRow =
-      linked.data && !rows.some((row) => row.pk === linked.data?.pk) ? linked.data : null;
-    const sorted = [...rows, ...(linkedRow ? [linkedRow] : [])].sort(
-      (a, b) =>
-        uploadedAtSortMs(b.uploadedAt) - uploadedAtSortMs(a.uploadedAt),
+    const offPage = [linked.data, pinned].find(
+      (row): row is AdminAssetMeta => Boolean(row) && !rows.some((loaded) => loaded.pk === row?.pk),
+    );
+    const sorted = [...rows, ...(offPage ? [offPage] : [])].sort(
+      (a, b) => uploadedAtSortMs(b.uploadedAt) - uploadedAtSortMs(a.uploadedAt),
     );
     return sorted.filter((row) => rowMatchesFilter(row, tableFilter));
-  }, [rows, linked.data, tableFilter]);
+  }, [rows, linked.data, pinned, tableFilter]);
+
+  const loadMore = () => {
+    void q.fetchNextPage().then((result) => {
+      if (!(result.error instanceof AdminApiError) || result.error.status !== 400) return;
+      setPageError("The asset list was refreshed. Load more again for older files.");
+      void qc.resetQueries({ queryKey: [...keys.admin, "asset-records"] });
+    });
+  };
+
+  const emptyMessage = !rows.length && !pinned && !tableFilter.trim()
+    ? "No confirmed assets yet."
+    : q.isFetching && !displayRows.length
+      ? "Searching…"
+      : q.hasNextPage
+        ? "No matches yet. Load more to keep searching."
+        : "No assets match the filter.";
 
   return (
     <div>
-      {q.isLoading ? (
-        <p className="text-muted">Loading…</p>
-      ) : q.isError ? (
-        <div className="alert alert-danger" role="alert">
-          Failed to load assets.
-        </div>
-      ) : (
-        <>
-          {pageError ? (
+      {pageError ? (
             <div
               className="alert alert-danger alert-dismissible py-2 small mb-3"
               role="alert"
@@ -236,6 +256,11 @@ export function AssetsPage() {
               {pageError}
             </div>
           ) : null}
+      {linked.isError ? (
+        <div className="alert alert-danger py-2 small mb-3" role="alert">
+          Could not open that asset. The link stays in the address bar.
+        </div>
+      ) : null}
           <AdminRecordTable
             label="Assets"
             filters={
@@ -257,6 +282,13 @@ export function AssetsPage() {
               </AdminFilterBar>
             }
           >
+          {q.isLoading ? (
+            <p className="text-muted">Loading…</p>
+          ) : q.isError && rows.length === 0 ? (
+            <div className="alert alert-danger" role="alert">
+              Failed to load assets.
+            </div>
+          ) : (
           <AdminDataTable bare columns={ASSET_TABLE_COLUMNS}>
             {displayRows.length ? (
               displayRows.map((row) => {
@@ -266,7 +298,12 @@ export function AssetsPage() {
                     key={row.pk}
                     colSpan={ASSET_TABLE_COLUMNS.length}
                     expanded={sameAsset(expanded.expandedId, row.pk)}
-                    onToggle={() => expanded.toggle(objectKey, false, () => undefined, () => undefined)}
+                    onToggle={() => {
+                      const current = expanded.expandedId;
+                      const open = Boolean(current && sameAsset(current, row.pk));
+                      if (open && !rows.some((loaded) => loaded.pk === row.pk)) setPinned(row);
+                      expanded.toggle(open && current ? current : objectKey, false, () => undefined, () => undefined);
+                    }}
                     editor={<AssetDetails row={row} />}
                   >
                     <AdminCell column="uploaded" className="small">
@@ -312,16 +349,11 @@ export function AssetsPage() {
             ) : (
               <AdminDataTableEmptyRow
                 colSpan={ASSET_TABLE_COLUMNS.length}
-                message={
-                  rows.length
-                    ? q.hasNextPage
-                      ? "No loaded assets match the filter."
-                      : "No assets match the filter."
-                    : "No confirmed assets yet."
-                }
+                message={emptyMessage}
               />
             )}
           </AdminDataTable>
+          )}
           <ConfirmDialog
             open={pendingDelete !== null}
             title="Delete file"
@@ -357,13 +389,11 @@ export function AssetsPage() {
               type="button"
               className="btn btn-outline-secondary btn-sm mt-2"
               disabled={q.isFetchingNextPage}
-              onClick={() => void q.fetchNextPage()}
+              onClick={loadMore}
             >
               {q.isFetchingNextPage ? "Loading…" : "Load more"}
             </button>
           ) : null}
-        </>
-      )}
     </div>
   );
 }

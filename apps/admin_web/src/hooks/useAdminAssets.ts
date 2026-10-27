@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useQuery, type QueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQuery, type QueryClient } from "@tanstack/react-query";
 import { AdminApiError, adminFetchJson, deleteAdminAsset } from "../lib/apiAdminClient";
 import { keys } from "../lib/queryKeys";
 
@@ -30,16 +30,21 @@ export function deleteAssetMutationOptions(
   };
 }
 
-export function useAdminAssets() {
+export function useAdminAssets(filter = "") {
+  const q = filter.trim();
   return useInfiniteQuery({
-    queryKey: [...keys.admin, "asset-records"],
+    queryKey: [...keys.admin, "asset-records", q],
+    placeholderData: keepPreviousData,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam }) => {
-      const qs = pageParam ? `?cursor=${encodeURIComponent(pageParam)}` : "";
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (pageParam) params.set("cursor", pageParam);
+      const qs = params.toString();
       const data = await adminFetchJson<{
         items: AdminAssetMeta[];
         nextCursor?: string | null;
-      }>(`/assets${qs}`);
+      }>(`/assets${qs ? `?${qs}` : ""}`);
       const items = data.items.filter((row) => row.pk.startsWith("ASSET#") && row.sk === "META");
       return { items, nextCursor: data.nextCursor ?? null };
     },
