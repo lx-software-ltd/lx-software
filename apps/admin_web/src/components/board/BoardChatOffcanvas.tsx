@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { DateTimeDisplay } from "../ui";
+import { AdminBao, DateTimeDisplay } from "../ui";
 import { BoardMarkdown } from "./BoardMarkdown";
 import { BoardOffcanvas } from "./BoardOffcanvas";
 import { BoardToolCallList } from "./BoardToolCallList";
@@ -121,7 +121,7 @@ export function BoardChatOffcanvas({ member, isChair, toolLabels = [], onClose, 
                     <BoardToolCallList calls={m.toolCalls} isLive className="small" />
                   ) : (
                     <span className="d-inline-flex align-items-center gap-2 text-muted small">
-                      <span className="spinner-border spinner-border-sm" aria-hidden="true" />
+                      <AdminBao size="sm" />
                       {member.displayName} is thinking…
                     </span>
                   )

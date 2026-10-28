@@ -1,8 +1,9 @@
+import { AdminBao } from "../ui";
 import { TOOL_CALL_STATUS_ICON, type BoardToolCallRef } from "../../lib/boardModel";
 
 export type BoardToolCallListProps = {
   readonly calls: readonly BoardToolCallRef[];
-  /** Adds a spinner row while the reply is still being generated. */
+  /** Adds a bao row while the reply is still being generated. */
   readonly isLive?: boolean;
   readonly onOpenApproval?: (approvalId: string) => void;
   readonly className?: string;
@@ -38,7 +39,7 @@ export function BoardToolCallList({ calls, isLive, onOpenApproval, className }: 
       })}
       {isLive ? (
         <li className="d-flex align-items-center gap-2 text-muted">
-          <span className="spinner-border spinner-border-sm" aria-hidden="true" />
+          <AdminBao size="sm" />
           <span>{calls.length > 0 ? "Thinking about what it found…" : "Thinking…"}</span>
         </li>
       ) : null}

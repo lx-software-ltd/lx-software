@@ -22,6 +22,7 @@ import { existingImportedStatementBasenames } from "../hooks/useParseStatement";
 import { StatementImportControl } from "./StatementImportControl";
 import { uploadFinanceAsset } from "../lib/uploadFinanceAsset";
 import {
+  AdminBao,
   AdminCell,
   AdminDataTable,
   AdminDataTableCellMeta,
@@ -112,17 +113,14 @@ function StatementAssetLaunchButton({
       title={`Open attachment (${base})`}
       aria-label={`Open attachment ${base}`}
       disabled={busy}
+      aria-busy={busy}
       onClick={(event) => {
         event.stopPropagation();
         onOpen(assetKey);
       }}
     >
       {busy ? (
-        <span
-          className="spinner-border spinner-border-sm"
-          role="status"
-          aria-hidden="true"
-        />
+        <AdminBao size="sm" />
       ) : (
         <>
           <i

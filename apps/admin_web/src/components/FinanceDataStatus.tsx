@@ -1,3 +1,5 @@
+import { AdminWaitRow } from "./ui";
+
 type FinanceDataLoadOrErrorProps = {
   readonly isLoading: boolean;
   readonly isError: boolean;
@@ -18,7 +20,7 @@ export function FinanceDataLoadOrError({
   isRetrying = false,
 }: FinanceDataLoadOrErrorProps) {
   if (isLoading) {
-    return <p className="text-muted small mb-3">{loadingMessage}</p>;
+    return <AdminWaitRow>{loadingMessage}</AdminWaitRow>;
   }
   if (isError) {
     return (
