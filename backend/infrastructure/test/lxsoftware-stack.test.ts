@@ -55,6 +55,111 @@ function policyStatements(policy: CfnResource): Record<string, any>[] {
   return Array.isArray(statements) ? statements : [];
 }
 
+// Log-stream APIs authorize on `...:log-group:<name>:*` (or `:log-stream:`).
+// Every other logs: action authorizes on the log-group ARN. From April 26,
+// 2027 a stream ARN no longer grants those actions (AWS Health planned
+// lifecycle event; same rule as evolvesprouts #2175).
+const LOG_STREAM_SCOPED_ACTIONS = new Set([
+  "logs:PutLogEvents",
+  "logs:GetLogEvents",
+  "logs:CreateLogStream",
+  "logs:DeleteLogStream",
+]);
+
+function flattenArn(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value && typeof value === "object" && "Fn::Join" in value) {
+    const [, parts] = (value as { "Fn::Join": [string, unknown[]] })["Fn::Join"];
+    return parts.map((part) => (typeof part === "string" ? part : "<token>")).join("");
+  }
+  return JSON.stringify(value);
+}
+
+function isLogStreamArn(arn: string): boolean {
+  return arn.endsWith(":*") || arn.includes(":log-stream:");
+}
+
+/** Error text when an Allow grants log-group actions only on stream ARNs. */
+function logGroupActionOnStreamArnOnly(statement: Record<string, unknown>): string | undefined {
+  if (statement.Effect !== "Allow") {
+    return undefined;
+  }
+  const actions = ([] as unknown[]).concat(statement.Action ?? []);
+  const groupActions = actions.filter(
+    (action): action is string =>
+      typeof action === "string" &&
+      action.startsWith("logs:") &&
+      !LOG_STREAM_SCOPED_ACTIONS.has(action),
+  );
+  if (groupActions.length === 0) {
+    return undefined;
+  }
+  const arns = ([] as unknown[])
+    .concat(statement.Resource ?? [])
+    .map(flattenArn)
+    .filter((arn) => arn.includes(":logs:"));
+  if (arns.some(isLogStreamArn) && !arns.some((arn) => !isLogStreamArn(arn))) {
+    return `${groupActions.join(", ")} only on log-stream ARNs (${arns.join(", ")})`;
+  }
+  return undefined;
+}
+
+function joinedPolicyDocument(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (value && typeof value === "object" && "Fn::Join" in value) {
+    const [, parts] = (value as { "Fn::Join": [string, unknown[]] })["Fn::Join"];
+    // A GetAtt log-group ARN is not a string in the template. Substitute a
+    // log-group ARN so the stream suffix (`:*`) still classifies the resource.
+    return parts
+      .map((part) =>
+        typeof part === "string" ? part : "arn:aws:logs:region:account:log-group:token",
+      )
+      .join("");
+  }
+  return undefined;
+}
+
+function statementsFromDocument(value: unknown): Record<string, unknown>[] {
+  if (value && typeof value === "object" && "Statement" in value) {
+    const statements = (value as { Statement?: unknown }).Statement;
+    return Array.isArray(statements) ? (statements as Record<string, unknown>[]) : [];
+  }
+  const text = joinedPolicyDocument(value);
+  if (!text) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(text) as { Statement?: unknown };
+    return Array.isArray(parsed.Statement) ? (parsed.Statement as Record<string, unknown>[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function logGroupArnViolations(template: Template): string[] {
+  const violations: string[] = [];
+  const policies = {
+    ...template.findResources("AWS::IAM::Policy"),
+    ...template.findResources("AWS::Logs::ResourcePolicy"),
+  };
+  for (const [logicalId, resource] of Object.entries(policies)) {
+    const statements = statementsFromDocument(
+      (resource as CfnResource).Properties?.PolicyDocument,
+    );
+    for (const statement of statements) {
+      const detail = logGroupActionOnStreamArnOnly(statement);
+      if (detail) {
+        violations.push(`${logicalId} grants ${detail}; add the log-group ARN`);
+      }
+    }
+  }
+  return violations;
+}
+
 /** Production parameter values, keyed by CloudFormation parameter id. */
 function productionParamValues(): Record<string, string> {
   const raw = JSON.parse(
@@ -1107,6 +1212,76 @@ describe("Lambda service-principal permissions", () => {
       expect(
         permission.Properties?.SourceArn || permission.Properties?.SourceAccount,
       ).toBeTruthy();
+    }
+  });
+});
+
+describe("CloudWatch Logs IAM resource ARNs", () => {
+  const logGroupArn =
+    "arn:aws:logs:ap-southeast-1:123456789012:log-group:lxsoftware-admin-api-access-logs";
+
+  test("flags log-group actions granted only on a log-stream ARN", () => {
+    const detail = logGroupActionOnStreamArnOnly({
+      Effect: "Allow",
+      Action: ["logs:AssociateKmsKey", "logs:PutRetentionPolicy"],
+      Resource: `${logGroupArn}:*`,
+    });
+    expect(detail).toContain("logs:AssociateKmsKey");
+    expect(detail).toContain("logs:PutRetentionPolicy");
+    expect(detail).toContain(`${logGroupArn}:*`);
+  });
+
+  test("passes when the log-group ARN is granted beside the stream ARN", () => {
+    expect(
+      logGroupActionOnStreamArnOnly({
+        Effect: "Allow",
+        Action: ["logs:AssociateKmsKey", "logs:PutRetentionPolicy"],
+        Resource: [logGroupArn, `${logGroupArn}:*`],
+      }),
+    ).toBeUndefined();
+  });
+
+  test("leaves stream actions on the stream ARN", () => {
+    expect(
+      logGroupActionOnStreamArnOnly({
+        Effect: "Allow",
+        Action: ["logs:CreateLogStream", "logs:PutLogEvents"],
+        Resource: `${logGroupArn}:*`,
+      }),
+    ).toBeUndefined();
+  });
+
+  test("does not flag a star resource", () => {
+    expect(
+      logGroupActionOnStreamArnOnly({
+        Effect: "Allow",
+        Action: ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"],
+        Resource: "*",
+      }),
+    ).toBeUndefined();
+  });
+
+  test("no stack grants a log-group action only on a stream ARN", () => {
+    const accessLogs = template.findResources("AWS::Logs::ResourcePolicy");
+    const accessStatements = Object.values(accessLogs).flatMap((resource) =>
+      statementsFromDocument((resource as CfnResource).Properties?.PolicyDocument),
+    );
+    expect(JSON.stringify(accessStatements)).toContain("logs:CreateLogStream");
+    expect(logGroupArnViolations(template)).toEqual([]);
+
+    const app = new cdk.App({ context: { "aws:cdk:bundling-stacks": [] } });
+    new PublicWebsiteStack(app, "lxsoftware-public-www", {
+      env: { account: "123456789012", region: "us-east-1" },
+    });
+    new LxsoftwareAdminWebStack(app, "lxsoftware-admin-web", {
+      env: { account: "123456789012", region: "ap-southeast-1" },
+      cspApiConnectOrigin: "https://example.execute-api.ap-southeast-1.amazonaws.com",
+      cspAssetsConnectOrigins: "https://bucket.s3.amazonaws.com",
+    });
+    for (const child of app.node.children) {
+      if (cdk.Stack.isStack(child)) {
+        expect(logGroupArnViolations(Template.fromStack(child))).toEqual([]);
+      }
     }
   });
 });
