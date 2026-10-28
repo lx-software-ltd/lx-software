@@ -12,16 +12,21 @@ export function AdminBao({ size = "md" }: AdminBaoProps) {
       <svg className="admin-bao-glyph" viewBox="0 0 32 32">
         <path
           fill="currentColor"
-          d="M16 5c-1.4 2.6-3.6 3.8-6.2 4.6C6 11 3.5 14.6 3.5 19.2 3.5 25 8.8 28.5 16 28.5S28.5 25 28.5 19.2C28.5 14.6 26 11 22.2 9.6 19.6 8.8 17.4 7.6 16 5z"
+          d="M16 2.4c-.9 3.6-3.2 5.4-5.6 6.3C6.4 10 3.4 13.8 3.4 18.6 3.4 25.2 8.8 29.2 16 29.2s12.6-4 12.6-10.6c0-4.8-3-8.6-7-9.9-2.4-.9-4.7-2.7-5.6-6.3z"
         />
-        <path
+        <g
           fill="none"
-          stroke="currentColor"
-          strokeWidth="1.75"
+          stroke="#042f2e"
+          strokeOpacity="0.55"
+          strokeWidth="1.45"
           strokeLinecap="round"
-          opacity="0.45"
-          d="M16 7.5v7.5M16 11c-3 1.6-6 1.8-9 .6M16 11c3 1.6 6 1.8 9 .6M16 15c-4.2 2-8 2.2-11.2.8M16 15c4.2 2 8 2.2 11.2.8"
-        />
+        >
+          <path d="M16 6.2v7.6" />
+          <path d="M16 9.4c-2.7 1.6-5.6 2.1-8.4 1.6" />
+          <path d="M16 9.4c2.7 1.6 5.6 2.1 8.4 1.6" />
+          <path d="M16 13.4c-3.7 2.1-7.2 2.5-10.4 1.6" />
+          <path d="M16 13.4c3.7 2.1 7.2 2.5 10.4 1.6" />
+        </g>
       </svg>
     </span>
   );
