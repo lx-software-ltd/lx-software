@@ -194,14 +194,14 @@ export function DashboardPage() {
       ) : null}
 
       <div className="row g-3">
-        <div className="col-md-6">
+        <div className={healthQuery.isLoading ? "col-12" : "col-md-6"}>
           <DashboardApiHealthCard
             isLoading={healthQuery.isLoading}
             isError={healthQuery.isError}
             status={healthQuery.data?.status}
           />
         </div>
-        <div className="col-md-6">
+        <div className={meQuery.isLoading ? "col-12" : "col-md-6"}>
           <DashboardSessionCard
             isLoading={meQuery.isLoading}
             isError={meQuery.isError}

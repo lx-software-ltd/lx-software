@@ -6,7 +6,7 @@ apps/admin_web/src/components/FinanceAllocationsPanel.tsx 849
 apps/admin_web/src/components/FinanceInvestmentsPanel.tsx 1082
 apps/admin_web/src/components/FinanceLedgerSheetPanel.tsx 951
 apps/admin_web/src/components/FinanceSavingsAndPensionPanels.tsx 987
-apps/admin_web/src/components/HouseStatementPanel.tsx 980
+apps/admin_web/src/components/HouseStatementPanel.tsx 978
 apps/admin_web/src/lib/board/types.ts 1373
 apps/admin_web/src/lib/mock/fixtures.ts 1286
 apps/admin_web/src/lib/mock/routes/board.ts 1134

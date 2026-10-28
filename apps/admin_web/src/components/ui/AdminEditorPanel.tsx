@@ -1,4 +1,5 @@
 import type { FormEvent, ReactNode } from "react";
+import { AdminBao } from "./AdminWait";
 
 export type AdminFieldGridProps = {
   readonly columns: 1 | 2 | 4;
@@ -58,7 +59,7 @@ export function AdminEditorActions({
       >
         {isSaving ? (
           <>
-            <span className="spinner-border spinner-border-sm me-2" aria-hidden="true" />
+            <AdminBao size="sm" />
             {savingLabel}
           </>
         ) : (

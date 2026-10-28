@@ -1,3 +1,5 @@
+import { AdminWaitRow } from "../ui";
+
 export function DashboardSessionCard({
   isLoading,
   isError,
@@ -9,15 +11,16 @@ export function DashboardSessionCard({
   readonly sub: string | undefined;
   readonly email: string | undefined;
 }) {
+  if (isLoading) {
+    return <AdminWaitRow>Loading profile…</AdminWaitRow>;
+  }
   return (
     <div className="card h-100 shadow-sm">
       <div className="card-body d-flex flex-column">
         <h2 className="h6 mb-3">
           <strong>Session</strong>
         </h2>
-        {isLoading ? (
-          <p className="mb-0 small text-muted">Loading profile…</p>
-        ) : isError ? (
+        {isError ? (
           <p className="mb-0 small text-danger">
             Could not load profile. Check API configuration and sign-in.
           </p>
