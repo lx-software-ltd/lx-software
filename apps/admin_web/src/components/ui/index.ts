@@ -12,8 +12,6 @@ export type {
 export type { AdminTableColumnPriority } from "../../lib/adminTablePriority";
 export { AdminDialog } from "./AdminDialog";
 export { AdminKpi, AdminKpiAmounts } from "./AdminKpi";
-export { AdminBao, AdminWaitRow } from "./AdminWait";
-export type { AdminBaoProps } from "./AdminWait";
 export { AdminTableTotalCurrency, AdminTableTotalLabel } from "./AdminTableTotalCurrency";
 export type {
   AdminTableTotalCurrencyProps,

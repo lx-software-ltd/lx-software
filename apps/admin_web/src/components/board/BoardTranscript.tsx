@@ -1,4 +1,3 @@
-import { AdminBao } from "../ui";
 import { BoardMarkdown } from "./BoardMarkdown";
 import { BoardToolCallList } from "./BoardToolCallList";
 import { formatUsageCost, memberInitials, PHASE_LABELS, type BoardTurn } from "../../lib/boardModel";
@@ -56,7 +55,7 @@ export function BoardTranscript({ turns, isRunning, currentPhaseLabel, onOpenApp
       })}
       {isRunning ? (
         <div className="d-flex align-items-center gap-2 text-muted small mt-2" aria-live="polite">
-          <AdminBao size="sm" />
+          <span className="spinner-border spinner-border-sm" aria-hidden="true" />
           {currentPhaseLabel}…
         </div>
       ) : turns.length === 0 ? (
