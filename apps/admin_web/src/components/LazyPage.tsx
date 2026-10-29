@@ -1,19 +1,10 @@
 import { Suspense, type ReactNode } from "react";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
-import { AdminWaitRow } from "./ui";
 
 export function LazyPage({ children }: { readonly children: ReactNode }) {
   return (
     <RouteErrorBoundary>
-      <Suspense
-        fallback={
-          <div className="p-3">
-            <AdminWaitRow>Loading…</AdminWaitRow>
-          </div>
-        }
-      >
-        {children}
-      </Suspense>
+      <Suspense fallback={<p className="text-muted small p-3 mb-0">Loading…</p>}>{children}</Suspense>
     </RouteErrorBoundary>
   );
 }

@@ -1,6 +1,5 @@
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../components/AuthProvider";
-import { AdminWaitRow } from "../components/ui";
 import { useRunOncePerPageLoad } from "../hooks/useRunOncePerPageLoad";
 import {
   clearStoredSession,
@@ -97,8 +96,8 @@ export function AuthCallbackPage() {
   });
 
   return (
-    <div className="admin-login">
-      <AdminWaitRow>Completing sign-in…</AdminWaitRow>
+    <div className="container py-5 text-center">
+      <p className="text-muted">Completing sign-in…</p>
     </div>
   );
 }

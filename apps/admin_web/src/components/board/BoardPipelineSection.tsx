@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState } from "react";
 import {
-  AdminBao,
   AdminCell,
   AdminDataTable,
   AdminDataTableCellMeta,
@@ -431,7 +430,7 @@ function ProspectEditor({
         <button type="button" className="btn btn-primary" disabled={saving} aria-busy={saving} onClick={() => onSave({ contact, note })}>
           {saving ? (
             <>
-              <AdminBao size="sm" />
+              <span className="spinner-border spinner-border-sm me-2" aria-hidden="true" />
               Saving…
             </>
           ) : (
