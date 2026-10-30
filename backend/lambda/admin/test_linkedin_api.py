@@ -33,6 +33,7 @@ class LinkedInApiTests(unittest.TestCase):
         self.assertIn("client_id=client", url)
         self.assertIn("w_member_social", url)
         self.assertNotIn("w_organization_social", url)
+        self.assertNotIn("r_member_postAnalytics", url)
         self.assertIn("state=abc", url)
         pages = linkedin_api.authorize_url(
             client_id="client",
@@ -42,6 +43,24 @@ class LinkedInApiTests(unittest.TestCase):
         )
         self.assertIn("w_organization_social", pages)
         self.assertIn("rw_organization_admin", pages)
+        self.assertNotIn("r_member_postAnalytics", pages)
+        analytics = linkedin_api.authorize_url(
+            client_id="client",
+            redirect="https://admin.example/callback",
+            state="abc",
+            include_member_analytics=True,
+        )
+        self.assertIn("r_member_postAnalytics", analytics)
+        self.assertNotIn("w_organization_social", analytics)
+        both = linkedin_api.authorize_url(
+            client_id="client",
+            redirect="https://admin.example/callback",
+            state="abc",
+            include_organizations=True,
+            include_member_analytics=True,
+        )
+        self.assertIn("r_member_postAnalytics", both)
+        self.assertIn("w_organization_social", both)
 
     def test_commentary_appends_a_missing_hashtag_and_escapes_parentheses(self) -> None:
         text = linkedin_api.commentary("A lesson (short).", ["Architecture"])
@@ -63,8 +82,8 @@ class LinkedInApiTests(unittest.TestCase):
         linkedin_store.save_oauth_state(table, "abc", "sub", include_organizations=True)
         item = table.items[("LINKEDIN#oauth#abc", "META")]
         self.assertGreater(item["expiresAt"], 0)
-        owner, pages = linkedin_store.consume_oauth_state(table, "abc")
-        self.assertEqual((owner, pages), ("sub", True))
+        owner, pages, analytics = linkedin_store.consume_oauth_state(table, "abc")
+        self.assertEqual((owner, pages, analytics), ("sub", True, False))
 
     def test_missing_credentials_are_cached(self) -> None:
         linkedin_api.reset_credentials_cache_for_tests()
@@ -124,7 +143,9 @@ class LinkedInApiTests(unittest.TestCase):
         counts = linkedin_api.social_counts("token", urn)
         self.assertEqual(urn, "urn:li:share:9")
         self.assertEqual(counts, {"reactions": 3, "comments": 1})
-        self.assertIn(b"First comment", seen["POST https://api.linkedin.com/rest/socialActions/urn%3Ali%3Ashare%3A9/comments"])
+        self.assertIn(
+            b"First comment", seen["POST https://api.linkedin.com/rest/socialActions/urn%3Ali%3Ashare%3A9/comments"]
+        )
 
     def test_page_impressions_read_the_share_statistics(self) -> None:
         def transport(method: str, url: str, headers: dict, body: bytes | None):
@@ -144,6 +165,37 @@ class LinkedInApiTests(unittest.TestCase):
 
         linkedin_api.set_transport_for_tests(transport)
         self.assertEqual(linkedin_api.page_impressions("token", "99", "urn:li:ugcPost:9"), 2)
+
+    def test_member_impressions_read_the_lifetime_total(self) -> None:
+        seen: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            seen.append(url)
+            return _ok(200, {"elements": [{"count": 12, "metricType": "IMPRESSION"}]})
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.assertEqual(linkedin_api.member_impressions("token", "urn:li:share:9"), 12)
+        self.assertIn("entity=(share:urn%3Ali%3Ashare%3A9)", seen[0])
+        self.assertIn("queryType=IMPRESSION", seen[0])
+        self.assertIn("aggregation=TOTAL", seen[0])
+
+    def test_member_impressions_use_the_ugc_entity(self) -> None:
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            self.assertIn("entity=(ugc:urn%3Ali%3AugcPost%3A9)", url)
+            return _ok(200, {"elements": [{"count": 2, "metricType": "IMPRESSION"}]})
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.assertEqual(linkedin_api.member_impressions("token", "urn:li:ugcPost:9"), 2)
+
+    def test_member_impressions_leave_the_count_empty_when_denied(self) -> None:
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, url, headers, body
+            return _ok(403, {"message": "forbidden"})
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.assertIsNone(linkedin_api.member_impressions("token", "urn:li:share:9"))
 
     def test_connection_target_selects_a_page(self) -> None:
         table = FakeTable()

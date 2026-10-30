@@ -405,6 +405,7 @@ function LinkedInConnectionPanel({
 }) {
   const linkedIn = useLinkedIn();
   const [includePages, setIncludePages] = useState(false);
+  const [includeAnalytics, setIncludeAnalytics] = useState(false);
   const connection = overview.connection;
   const connected = connection.status === "connected";
   const access = connected ? accessCopy(connection.tokenExpiresAt) : null;
@@ -474,6 +475,11 @@ function LinkedInConnectionPanel({
               This connection is profile only. Disconnect and connect again with company pages included.
             </p>
           )}
+          <p className="text-muted small mb-0">
+            {connection.includeMemberAnalytics
+              ? "Personal post impressions are included on this connection."
+              : "Profile impressions are off. Disconnect and connect again with personal post analytics included."}
+          </p>
           {connection.channel === "page" && connection.organizations.length > 0 ? (
             <select
               className="form-select"
@@ -503,6 +509,19 @@ function LinkedInConnectionPanel({
           </label>
           <p id="linkedin-pages-help" className="form-text mb-0">
             Posts can then go out as a page you administer. The LinkedIn app needs Community Management approval; without it, leave this off.
+          </p>
+          <label className="form-check mt-3 mb-0">
+            <input
+              className="form-check-input"
+              type="checkbox"
+              checked={includeAnalytics}
+              aria-describedby="linkedin-analytics-help"
+              onChange={(event) => setIncludeAnalytics(event.target.checked)}
+            />
+            Include personal post analytics
+          </label>
+          <p id="linkedin-analytics-help" className="form-text mb-0">
+            Profile posts can then show impressions. The LinkedIn app needs member post analytics approval; without it, leave this off.
           </p>
         </div>
       )}
@@ -534,7 +553,10 @@ function LinkedInConnectionPanel({
             className="btn btn-primary btn-sm"
             disabled={!enabled || !connection.appConfigured || linkedIn.connect.isPending}
             onClick={() => {
-              void linkedIn.connect.mutateAsync(includePages).then((result) => {
+              void linkedIn.connect.mutateAsync({
+                includeOrganizations: includePages,
+                includeMemberAnalytics: includeAnalytics,
+              }).then((result) => {
                 window.location.assign(result.url);
               });
             }}

@@ -86,6 +86,7 @@ export type LinkedInConnection = {
   organizations: LinkedInOrganization[];
   tokenExpiresAt: string;
   includeOrganizations: boolean;
+  includeMemberAnalytics: boolean;
   appConfigured: boolean;
   appStatus: string;
 };
@@ -261,7 +262,7 @@ export const SAMPLE_LINKEDIN_POSTS: LinkedInPost[] = [
       publishedAt: "2026-09-29T00:30:00.000Z",
       urn: "urn:li:share:1",
     },
-    metrics: { reactions: 4, comments: 1, impressions: null },
+    metrics: { reactions: 4, comments: 1, impressions: 128 },
   },
 ];
 

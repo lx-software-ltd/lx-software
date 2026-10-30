@@ -1413,11 +1413,160 @@ class LinkedInHttpTests(unittest.TestCase):
             )
         self.assertEqual(plain["statusCode"], 200)
         self.assertNotIn("w_organization_social", _body(plain)["url"])
+        self.assertNotIn("r_member_postAnalytics", _body(plain)["url"])
         self.assertIn("w_member_social", _body(plain)["url"])
         self.assertIn("w_organization_social", _body(pages)["url"])
+        self.assertNotIn("r_member_postAnalytics", _body(pages)["url"])
         oauth = [item for item in self.table.items.values() if str(item.get("pk", "")).startswith("LINKEDIN#oauth#")]
         self.assertEqual(len(oauth), 2)
         self.assertTrue(all(int(item["expiresAt"]) > int(time.time()) for item in oauth))
+        self.assertTrue(all(item.get("includeMemberAnalytics") is False for item in oauth))
+
+    def test_connect_requests_personal_post_analytics_when_asked(self) -> None:
+        with patch.object(linkedin_api, "load_credentials", return_value=("client", "secret")):
+            response = lambda_handler(
+                _event("/lx-software/linkedin/connect", "POST", {"includeMemberAnalytics": True}),
+                None,
+            )
+        self.assertEqual(response["statusCode"], 200)
+        self.assertIn("r_member_postAnalytics", _body(response)["url"])
+        self.assertNotIn("w_organization_social", _body(response)["url"])
+        oauth = [item for item in self.table.items.values() if str(item.get("pk", "")).startswith("LINKEDIN#oauth#")]
+        self.assertEqual(len(oauth), 1)
+        self.assertTrue(oauth[0]["includeMemberAnalytics"])
+
+    def _published_profile(self, *, urn: str = "urn:li:share:9", channel: str = "profile") -> dict:
+        doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nAlready out."})
+        doc["status"] = "published"
+        doc["channel"] = channel
+        platform = {"urn": urn, "publishedAt": _recent_slot()}
+        if channel == "page":
+            platform["organizationId"] = "99"
+        doc["platform"] = platform
+        return linkedin_store.put_post(self.table, doc)
+
+    def test_profile_impressions_use_member_post_analytics(self) -> None:
+        doc = self._published_profile()
+        linkedin_store.save_connection(
+            self.table,
+            {
+                "accessToken": "token-1",
+                "tokenExpiresAt": "2099-01-01T00:00:00.000Z",
+                "memberId": "member1",
+                "channel": "profile",
+                "includeMemberAnalytics": True,
+            },
+        )
+        seen: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            seen.append(url)
+            if "memberCreatorPostAnalytics" in url:
+                return 200, {}, b'{"elements":[{"count":12,"metricType":"IMPRESSION"}]}'
+            if "/socialActions/" in url:
+                return 200, {}, b'{"likesSummary":{"totalLikes":3},"commentsSummary":{"aggregatedTotalComments":1}}'
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
+            linkedin.handle_publish_due({})
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertEqual(stored["metrics"]["impressions"], 12)
+        self.assertEqual(stored["metrics"]["reactions"], 3)
+        self.assertFalse(stored["metrics"]["unavailable"])
+        self.assertTrue(any("queryType=IMPRESSION" in url for url in seen))
+
+    def test_profile_impressions_stay_empty_without_the_scope(self) -> None:
+        doc = self._published_profile()
+        linkedin_store.save_connection(
+            self.table,
+            {
+                "accessToken": "token-1",
+                "tokenExpiresAt": "2099-01-01T00:00:00.000Z",
+                "memberId": "member1",
+                "channel": "profile",
+            },
+        )
+        seen: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            seen.append(url)
+            if "/socialActions/" in url:
+                return 200, {}, b'{"likesSummary":{"totalLikes":1},"commentsSummary":{"aggregatedTotalComments":0}}'
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
+            linkedin.handle_publish_due({})
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertIsNone(stored["metrics"]["impressions"])
+        self.assertFalse(any("memberCreatorPostAnalytics" in url for url in seen))
+
+    def test_a_denied_profile_impression_keeps_reactions(self) -> None:
+        doc = self._published_profile()
+        linkedin_store.save_connection(
+            self.table,
+            {
+                "accessToken": "token-1",
+                "tokenExpiresAt": "2099-01-01T00:00:00.000Z",
+                "memberId": "member1",
+                "channel": "profile",
+                "includeMemberAnalytics": True,
+            },
+        )
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            if "memberCreatorPostAnalytics" in url:
+                return 403, {}, b'{"message":"forbidden"}'
+            if "/socialActions/" in url:
+                return 200, {}, b'{"likesSummary":{"totalLikes":4},"commentsSummary":{"aggregatedTotalComments":2}}'
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
+            linkedin.handle_publish_due({})
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertEqual(stored["metrics"]["reactions"], 4)
+        self.assertIsNone(stored["metrics"]["impressions"])
+        self.assertFalse(stored["metrics"]["unavailable"])
+
+    def test_page_impressions_do_not_call_member_analytics(self) -> None:
+        doc = self._published_profile(urn="urn:li:share:8", channel="page")
+        linkedin_store.save_connection(
+            self.table,
+            {
+                "accessToken": "token-1",
+                "tokenExpiresAt": "2099-01-01T00:00:00.000Z",
+                "memberId": "member1",
+                "channel": "page",
+                "organizationId": "99",
+                "includeMemberAnalytics": True,
+            },
+        )
+        seen: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            seen.append(url)
+            if "organizationalEntityShareStatistics" in url:
+                return 200, {}, b'{"elements":[{"totalShareStatistics":{"impressionCount":7}}]}'
+            if "/socialActions/" in url:
+                return 200, {}, b'{"likesSummary":{"totalLikes":1},"commentsSummary":{"aggregatedTotalComments":0}}'
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
+            linkedin.handle_publish_due({})
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertEqual(stored["metrics"]["impressions"], 7)
+        self.assertFalse(any("memberCreatorPostAnalytics" in url for url in seen))
 
     def test_generate_queues_a_job(self) -> None:
         with patch("board_async.try_invoke_event", return_value=True) as invoke:

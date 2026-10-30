@@ -50,6 +50,7 @@ function overview(voiceNotes: string): LinkedInOverview {
       organizations: [],
       tokenExpiresAt: "",
       includeOrganizations: false,
+      includeMemberAnalytics: false,
       appConfigured: true,
       appStatus: "ready",
     },
@@ -62,6 +63,13 @@ function overview(voiceNotes: string): LinkedInOverview {
     storyVoices: LINKEDIN_STORY_VOICES,
   };
 }
+
+describe("LinkedIn connection", () => {
+  it("offers personal post analytics before connect", () => {
+    render(<LinkedInSettingsCard overview={overview("")} enabled />);
+    expect(screen.getByRole("checkbox", { name: "Include personal post analytics" })).not.toBeChecked();
+  });
+});
 
 describe("LinkedIn draft model hint", () => {
   it("says the Model field writes the scene, expression, and caption", () => {

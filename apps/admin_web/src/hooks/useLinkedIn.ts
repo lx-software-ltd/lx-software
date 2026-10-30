@@ -160,10 +160,10 @@ export function useLinkedIn() {
     onSettled: refresh,
   });
   const connect = useMutation({
-    mutationFn: (includeOrganizations: boolean) =>
+    mutationFn: (body: { includeOrganizations: boolean; includeMemberAnalytics: boolean }) =>
       adminFetchJson<{ url: string }>("/lx-software/linkedin/connect", {
         method: "POST",
-        body: JSON.stringify({ includeOrganizations }),
+        body: JSON.stringify(body),
       }),
   });
   const completeAuth = useMutation({

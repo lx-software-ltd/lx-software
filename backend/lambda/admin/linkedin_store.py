@@ -1312,35 +1312,31 @@ def public_connection(doc: dict[str, Any]) -> dict[str, Any]:
         for row in (doc.get("organizations") or [])
         if isinstance(row, dict) and row.get("id")
     ]
-    if not doc.get("accessToken"):
-        status = linkedin_api.credentials_status()
-        return {
-            "status": "not_connected",
-            "channel": "profile",
-            "memberName": "",
-            "organizationId": "",
-            "organizationName": "",
-            "organizations": [],
-            "tokenExpiresAt": "",
-            "includeOrganizations": False,
-            "appConfigured": status == "ready",
-            "appStatus": status,
-        }
+    connected = bool(doc.get("accessToken"))
+    status = "ready" if connected else linkedin_api.credentials_status()
     return {
-        "status": "connected",
-        "channel": "page" if doc.get("channel") == "page" else "profile",
-        "memberName": str(doc.get("memberName") or ""),
-        "organizationId": str(doc.get("organizationId") or ""),
-        "organizationName": str(doc.get("organizationName") or ""),
-        "organizations": organizations,
-        "tokenExpiresAt": str(doc.get("tokenExpiresAt") or ""),
-        "includeOrganizations": bool(doc.get("includeOrganizations")),
-        "appConfigured": True,
-        "appStatus": "ready",
+        "status": "connected" if connected else "not_connected",
+        "channel": "page" if connected and doc.get("channel") == "page" else "profile",
+        "memberName": str(doc.get("memberName") or "") if connected else "",
+        "organizationId": str(doc.get("organizationId") or "") if connected else "",
+        "organizationName": str(doc.get("organizationName") or "") if connected else "",
+        "organizations": organizations if connected else [],
+        "tokenExpiresAt": str(doc.get("tokenExpiresAt") or "") if connected else "",
+        "includeOrganizations": bool(connected and doc.get("includeOrganizations")),
+        "includeMemberAnalytics": bool(connected and doc.get("includeMemberAnalytics")),
+        "appConfigured": status == "ready",
+        "appStatus": status,
     }
 
 
-def save_oauth_state(table: Any, state: str, user_sub: str, *, include_organizations: bool = False) -> None:
+def save_oauth_state(
+    table: Any,
+    state: str,
+    user_sub: str,
+    *,
+    include_organizations: bool = False,
+    include_member_analytics: bool = False,
+) -> None:
     _put(
         table,
         {
@@ -1348,13 +1344,14 @@ def save_oauth_state(table: Any, state: str, user_sub: str, *, include_organizat
             "sk": "META",
             "userSub": user_sub,
             "includeOrganizations": bool(include_organizations),
+            "includeMemberAnalytics": bool(include_member_analytics),
             "createdAt": board_store.now_iso(),
             "expiresAt": int(time.time()) + 15 * 60,
         },
     )
 
 
-def consume_oauth_state(table: Any, state: str) -> tuple[str, bool]:
+def consume_oauth_state(table: Any, state: str) -> tuple[str, bool, bool]:
     pk = f"LINKEDIN#oauth#{state}"
     row = _get(table, pk)
     table.delete_item(Key={"pk": pk, "sk": "META"})
@@ -1363,7 +1360,9 @@ def consume_oauth_state(table: Any, state: str) -> tuple[str, bool]:
     created = _parse_slot(str(row.get("createdAt") or ""))
     if created is None or created < datetime.now(HKT) - timedelta(minutes=15):
         raise LinkedInError("That LinkedIn sign-in expired. Connect again.")
-    return str(row.get("userSub") or ""), bool(row.get("includeOrganizations"))
+    owner = str(row.get("userSub") or "")
+    pages = bool(row.get("includeOrganizations"))
+    return owner, pages, bool(row.get("includeMemberAnalytics"))
 
 
 def set_connection_target(table: Any, channel: str, organization_id: str) -> dict[str, Any]:
