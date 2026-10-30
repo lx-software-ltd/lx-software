@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mockAdminFetch, resetAdminMockState, setMockStaging } from "./mockAdminApi";
 
 describe("mockAdminFetch", () => {
@@ -376,5 +376,51 @@ describe("mockAdminFetch", () => {
       items: { postId: string; starred?: boolean }[];
     };
     expect(again.items.find((row) => row.postId === "li_hook")?.starred).toBe(true);
+  });
+
+  it("serves Resume and finishes a tailor job without replacing the template", async () => {
+    const overview = (await (await mockAdminFetch("/lx-software/resume/overview")).json()) as {
+      enabled: boolean;
+      templateResumeId: string;
+    };
+    expect(overview.enabled).toBe(true);
+    expect(overview.templateResumeId).toBe("res_alex");
+    const listed = (await (await mockAdminFetch("/lx-software/resume/resumes")).json()) as {
+      items: { title: string; paragraphs?: unknown }[];
+    };
+    expect(listed.items[0]?.title).toBe("Alex Example");
+    expect(listed.items[0]?.paragraphs).toBeUndefined();
+    const detail = (await (await mockAdminFetch("/lx-software/resume/resumes/res_alex")).json()) as {
+      item: { paragraphs: { text: string }[] };
+    };
+    expect(detail.item.paragraphs[0]?.text).toBe("Alex Example");
+
+    vi.useFakeTimers();
+    try {
+      const queued = await mockAdminFetch("/lx-software/resume/tailor", {
+        method: "POST",
+        body: JSON.stringify({
+          templateId: "res_alex",
+          posting: { title: "Engineer", company: "Northwind", adText: "Billing export for Northwind." },
+          addToTracker: true,
+        }),
+      });
+      expect(queued.status).toBe(202);
+      const queuedBody = (await queued.json()) as { job: { jobId: string; status: string } };
+      expect(queuedBody.job.status).toBe("queued");
+      await vi.advanceTimersByTimeAsync(2000);
+      const done = (await (await mockAdminFetch(`/lx-software/resume/jobs/${queuedBody.job.jobId}`)).json()) as {
+        job: { status: string; findings: string[]; resumeIds: string[] };
+      };
+      expect(done.job.status).toBe("done");
+      expect(done.job.resumeIds).toHaveLength(1);
+      expect(done.job.findings[0]).toContain("summary");
+      const after = (await (await mockAdminFetch("/lx-software/resume/overview")).json()) as {
+        templateResumeId: string;
+      };
+      expect(after.templateResumeId).toBe("res_alex");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

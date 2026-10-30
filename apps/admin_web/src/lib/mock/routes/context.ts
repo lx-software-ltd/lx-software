@@ -48,6 +48,14 @@ import {
   type LinkedInDraftSettings,
 } from "../../linkedinModel";
 import {
+  DEFAULT_RESUME_SETTINGS,
+  DOCX_TYPE,
+  type JobApplication,
+  type JobPosting,
+  type ResumeDetail,
+  type ResumeSettings,
+} from "../../resumeModel";
+import {
   DEFAULT_BOARD_BOUNDARIES,
   type BoardAction,
   type BoardApproval,
@@ -65,6 +73,67 @@ import {
   type BoardSettings,
   type BoardStagingPreview,
 } from "../../boardModel";
+
+export type StoredResume = ResumeDetail & { makeTemplate?: boolean; dataBase64?: string };
+
+export type ResumeMockJob = {
+  jobId: string;
+  status: string;
+  resumeIds: string[];
+  error: string;
+  findings: string[];
+  runningAt: number;
+  doneAt: number;
+  settled: boolean;
+  finish: () => void;
+};
+
+const RESUME_NOW = "2026-10-30T02:00:00Z";
+
+function resumeParagraph(id: string, text: string, style: string, numbered = false) {
+  return {
+    id,
+    text,
+    style,
+    numbered,
+    inTable: false,
+    inTextBox: false,
+    runs: 1,
+    chars: text.length,
+  };
+}
+
+function sampleResume(): StoredResume {
+  return {
+    id: "res_alex",
+    title: "Alex Example",
+    kind: "template",
+    format: "docx",
+    source: "upload",
+    file: { contentType: DOCX_TYPE, size: 12000 },
+    extract: { status: "ready", error: "" },
+    derivedFrom: null,
+    createdAt: RESUME_NOW,
+    updatedAt: RESUME_NOW,
+    paragraphs: [
+      resumeParagraph("p0", "Alex Example", "Title"),
+      resumeParagraph("p1", "Engineer", "Heading1"),
+      resumeParagraph("p2", "Builds billing exports.", "Normal"),
+      resumeParagraph("p3", "Shipped the monthly export.", "ListBullet", true),
+    ],
+    layout: {
+      paragraphs: [
+        { id: "p0", role: "name" },
+        { id: "p1", role: "headline" },
+        { id: "p2", role: "summary" },
+        { id: "p3", role: "bullet" },
+      ],
+      roles: [{ headerId: "p1", bulletIds: ["p3"] }],
+      overrides: {},
+    },
+    generation: null,
+  };
+}
 
 type MockState = {
   finance: FinancePersistedState;
@@ -97,6 +166,19 @@ type MockState = {
       candidates: { id: string; contentType: string; dataBase64: string }[];
     };
     images: Record<string, { contentType: string; dataBase64: string }>;
+  };
+  resume: {
+    enabled: boolean;
+    settings: ResumeSettings;
+    templateResumeId: string;
+    defaultModel: string;
+    spendUsdMonth: number;
+    pdfCjk: boolean;
+    resumes: StoredResume[];
+    postings: JobPosting[];
+    applications: JobApplication[];
+    jobs: ResumeMockJob[];
+    seq: number;
   };
 };
 
@@ -152,6 +234,48 @@ function initialMockState(): MockState {
       oauthState: "",
       character: { photo: null, sheet: null, candidates: [] },
       images: {},
+    },
+    resume: {
+      enabled: true,
+      settings: structuredClone(DEFAULT_RESUME_SETTINGS),
+      templateResumeId: "res_alex",
+      defaultModel: "mistralai/mistral-medium-3",
+      spendUsdMonth: 0.02,
+      pdfCjk: false,
+      resumes: [sampleResume()],
+      postings: [
+        {
+          id: "post_northwind",
+          title: "Engineer",
+          company: "Northwind",
+          url: "",
+          location: "",
+          adText: "Northwind needs an engineer who already built a billing export.",
+          createdAt: RESUME_NOW,
+        },
+      ],
+      applications: [
+        {
+          id: "app_northwind",
+          resumeId: "res_alex",
+          postingId: "post_northwind",
+          company: "Northwind",
+          position: "Engineer",
+          recruiter: {
+            name: "Morgan Example",
+            email: "morgan.example@example.com",
+            phone: "+1-555-0100",
+          },
+          status: "saved",
+          appliedAt: "",
+          nextStepAt: "",
+          notes: "",
+          createdAt: RESUME_NOW,
+          updatedAt: RESUME_NOW,
+        },
+      ],
+      jobs: [],
+      seq: 1,
     },
   };
 }

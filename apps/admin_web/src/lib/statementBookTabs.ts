@@ -1,4 +1,4 @@
-export type StatementBookTab = "dashboard" | "expenses" | "gains" | "board" | "linkedin";
+export type StatementBookTab = "dashboard" | "expenses" | "gains" | "board" | "linkedin" | "resume";
 
 const EXPLICIT_BOOK_TABS = new Set<StatementBookTab>(["dashboard", "expenses", "gains"]);
 
@@ -6,11 +6,12 @@ const EXPLICIT_BOOK_TABS = new Set<StatementBookTab>(["dashboard", "expenses", "
 export function defaultStatementBookTab(
   hasExecutiveBoard: boolean,
   search: string,
-  options?: { readonly linkedIn?: boolean },
+  options?: { readonly linkedIn?: boolean; readonly resume?: boolean },
 ): StatementBookTab {
   const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
   const requested = params.get("tab");
   if (requested === "linkedin" && options?.linkedIn) return "linkedin";
+  if (requested === "resume" && options?.resume) return "resume";
   if (requested && EXPLICIT_BOOK_TABS.has(requested as StatementBookTab)) {
     return requested as StatementBookTab;
   }

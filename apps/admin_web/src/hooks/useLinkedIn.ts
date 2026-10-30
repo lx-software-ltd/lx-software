@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { adminFetchJson } from "../lib/apiAdminClient";
+import { assertJobDone, pollJob } from "../lib/pollJob";
 import type {
   LinkedInCharacter,
   LinkedInConnection,
@@ -16,24 +17,9 @@ export const LINKEDIN_BYTES_KEY = ["linkedin-bytes"] as const;
 
 type Job = { jobId: string; status: string; postIds: string[]; error: string };
 
-const POLL_ATTEMPTS = 200;
-const POLL_MS = 1500;
-
-async function pollJob(job: Job): Promise<Job> {
-  let current = job;
-  for (let attempt = 0; attempt < POLL_ATTEMPTS && (current.status === "queued" || current.status === "running"); attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-    const next = await adminFetchJson<{ job: Job }>(`/lx-software/linkedin/jobs/${current.jobId}`);
-    current = next.job;
-  }
-  return current;
-}
-
-function assertJobDone(job: Job): Job {
-  if (job.status === "failed") throw new Error(job.error || "Generation failed.");
-  if (job.status !== "done") throw new Error("Generation is still queued.");
-  if (job.error) throw new Error(job.error);
-  return job;
+async function loadJob(jobId: string): Promise<Job> {
+  const next = await adminFetchJson<{ job: Job }>(`/lx-software/linkedin/jobs/${jobId}`);
+  return next.job;
 }
 
 function pendingPollDelay(pendingSince: number): number {
@@ -155,7 +141,7 @@ export function useLinkedIn() {
         method: "POST",
         body: JSON.stringify({}),
       });
-      return assertJobDone(await pollJob(queued.job));
+      return assertJobDone(await pollJob(queued.job, loadJob));
     },
     onSettled: refresh,
   });
@@ -266,7 +252,7 @@ export function useLinkedIn() {
         method: "POST",
         body: "{}",
       });
-      return assertJobDone(await pollJob(queued.job));
+      return assertJobDone(await pollJob(queued.job, loadJob));
     },
     onSettled: () => {
       refresh();
@@ -290,7 +276,7 @@ export function useLinkedIn() {
         method: "POST",
         body: JSON.stringify(body),
       });
-      return assertJobDone(await pollJob(queued.job));
+      return assertJobDone(await pollJob(queued.job, loadJob));
     },
     onSettled: refresh,
   });

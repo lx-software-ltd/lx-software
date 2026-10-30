@@ -25,4 +25,10 @@ describe("defaultStatementBookTab", () => {
     expect(defaultStatementBookTab(false, "?tab=linkedin", { linkedIn: true })).toBe("linkedin");
     expect(defaultStatementBookTab(false, "", { linkedIn: true })).toBe("dashboard");
   });
+
+  it("opens Resume on LX Software when that tab is requested", () => {
+    expect(defaultStatementBookTab(false, "?tab=resume", { resume: true })).toBe("resume");
+    expect(defaultStatementBookTab(false, "?tab=resume")).toBe("dashboard");
+    expect(defaultStatementBookTab(false, "?tab=resume", { linkedIn: true })).toBe("dashboard");
+  });
 });

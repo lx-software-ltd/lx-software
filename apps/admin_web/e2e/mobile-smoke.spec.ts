@@ -141,6 +141,19 @@ test.describe("admin viewport smoke", () => {
     expect(await pageHasHorizontalOverflow(page)).toBe(false);
   });
 
+  test("LX Software Resume tab lists the template and the tracker", async ({ page }) => {
+    await page.goto("/lx-software?tab=resume");
+    await expect(page.getByRole("tab", { name: "Resume", exact: true })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByText("Alex Example")).toBeVisible();
+    await expect(page.locator(".badge", { hasText: "Template" })).toBeVisible();
+    await page.getByRole("tab", { name: "Job tracker" }).click();
+    await expect(page.getByText("Northwind")).toBeVisible();
+    await page.getByRole("tab", { name: "Settings" }).click();
+    await expect(page.getByLabel("Model")).toBeVisible();
+    await expect(page.getByText(/Contact, education, certifications/)).toBeVisible();
+    expect(await pageHasHorizontalOverflow(page)).toBe(false);
+  });
+
   test("finance accounts keep name, balance, and stale warning on phones", async ({
     page,
   }, testInfo) => {
