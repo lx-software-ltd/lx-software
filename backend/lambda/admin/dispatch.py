@@ -176,13 +176,15 @@ def _records_get_response(event: dict[str, Any]) -> dict[str, Any]:
         "Limit": 50,
         "FilterExpression": (
             "NOT begins_with(pk, :board) AND NOT begins_with(pk, :openrouter) "
-            "AND NOT begins_with(pk, :parsejob) AND NOT begins_with(pk, :linkedin)"
+            "AND NOT begins_with(pk, :parsejob) AND NOT begins_with(pk, :linkedin) "
+            "AND NOT begins_with(pk, :resume)"
         ),
         "ExpressionAttributeValues": {
             ":board": BOARD_PK_PREFIX,
             ":openrouter": USAGE_PK_PREFIX,
             ":parsejob": PARSE_JOB_PK_PREFIX,
             ":linkedin": "LINKEDIN#",
+            ":resume": "RESUME#",
         },
     }
     if start_key:
@@ -1186,45 +1188,27 @@ def _http_linkedin(event, method, path, user_sub, admin_claims):
     return linkedin.handle_http(event, method, path, user_sub)
 
 
-def _internal_linkedin_generate(event):
-    import linkedin
+def _http_resume(event, method, path, user_sub, admin_claims):
+    del admin_claims
+    import resume
 
-    return linkedin.handle_generate(event)
-
-
-def _internal_linkedin_weekly_plan(event):
-    import linkedin
-
-    return linkedin.handle_weekly_plan(event)
+    return resume.handle_http(event, method, path, user_sub)
 
 
-def _internal_linkedin_publish_due(event):
-    import linkedin
+def _bind_internal(module_name: str, handler_name: str):
+    def run(event):
+        module = __import__(module_name)
+        return getattr(module, handler_name)(event)
 
-    return linkedin.handle_publish_due(event)
-
-
-def _internal_linkedin_image(event):
-    import linkedin
-
-    return linkedin.handle_post_image(event)
+    return run
 
 
-def _internal_linkedin_image_brief(event):
-    import linkedin
+def _match_prefix(prefix: str):
+    def match(method: str, path: str) -> bool:
+        del method
+        return path == prefix or path.startswith(f"{prefix}/")
 
-    return linkedin.handle_post_brief(event)
-
-
-def _internal_linkedin_character(event):
-    import linkedin
-
-    return linkedin.handle_character_draw(event)
-
-
-def _match_linkedin(method: str, path: str) -> bool:
-    del method
-    return path == "/lx-software/linkedin" or path.startswith("/lx-software/linkedin/")
+    return match
 
 
 EARLY_INTERNAL = {
@@ -1246,12 +1230,14 @@ EARLY_INTERNAL = {
     'board_targets': _internal_board_targets,
     'board_content_plan': _internal_board_content_plan,
     'board_content_readout': _internal_board_content_readout,
-    'linkedin_generate': _internal_linkedin_generate,
-    'linkedin_weekly_plan': _internal_linkedin_weekly_plan,
-    'linkedin_publish_due': _internal_linkedin_publish_due,
-    'linkedin_image': _internal_linkedin_image,
-    'linkedin_image_brief': _internal_linkedin_image_brief,
-    'linkedin_character': _internal_linkedin_character,
+    'linkedin_generate': _bind_internal('linkedin', 'handle_generate'),
+    'linkedin_weekly_plan': _bind_internal('linkedin', 'handle_weekly_plan'),
+    'linkedin_publish_due': _bind_internal('linkedin', 'handle_publish_due'),
+    'linkedin_image': _bind_internal('linkedin', 'handle_post_image'),
+    'linkedin_image_brief': _bind_internal('linkedin', 'handle_post_brief'),
+    'linkedin_character': _bind_internal('linkedin', 'handle_character_draw'),
+    'resume_extract': _bind_internal('resume', 'handle_extract'),
+    'resume_tailor': _bind_internal('resume', 'handle_tailor'),
 }
 
 LATE_INTERNAL = {
@@ -1277,7 +1263,8 @@ HTTP_ROUTES = [
     Route('GET', '/aws/usage.pdf', _http_aws_usage_pdf, 'admin', kind='exact', match=None),
     Route('GET', '/fx/v2/rates', _http_fx_rates, 'admin', kind='exact', match=None),
     Route('GET', '/finance/quotes', _http_finance_quotes, 'admin', kind='exact', match=None),
-    Route('*', '/lx-software/linkedin', _http_linkedin, 'admin', kind='custom', match=_match_linkedin),
+    Route('*', '/lx-software/linkedin', _http_linkedin, 'admin', kind='custom', match=_match_prefix('/lx-software/linkedin')),
+    Route('*', '/lx-software/resume', _http_resume, 'admin', kind='custom', match=_match_prefix('/lx-software/resume')),
     Route('GET', '/banking', _http_banking, 'admin', kind='exact', match=None),
     Route('GET', '/banking/banks', _http_banking_banks, 'admin', kind='exact', match=None),
     Route('POST', '/banking/auth', _http_banking_auth, 'admin', kind='exact', match=None),

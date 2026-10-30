@@ -745,8 +745,10 @@ class TestBoardRoutes(BoardTestCase):
         self.assertEqual(self.table.scan_calls[-1]["ExpressionAttributeValues"][":openrouter"], "OPENROUTER#")
         self.assertEqual(self.table.scan_calls[-1]["ExpressionAttributeValues"][":parsejob"], "PARSE_JOB#")
         self.assertEqual(self.table.scan_calls[-1]["ExpressionAttributeValues"][":linkedin"], "LINKEDIN#")
+        self.assertEqual(self.table.scan_calls[-1]["ExpressionAttributeValues"][":resume"], "RESUME#")
         self.assertIn("NOT begins_with(pk, :parsejob)", self.table.scan_calls[-1]["FilterExpression"])
         self.assertIn("NOT begins_with(pk, :linkedin)", self.table.scan_calls[-1]["FilterExpression"])
+        self.assertIn("NOT begins_with(pk, :resume)", self.table.scan_calls[-1]["FilterExpression"])
 
     def test_assets_list_returns_indexed_asset_rows(self) -> None:
         from assets import asset_index_attributes
