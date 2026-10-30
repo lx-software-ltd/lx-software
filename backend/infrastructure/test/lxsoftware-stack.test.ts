@@ -939,7 +939,7 @@ describe("Siu Tin Dei parameter naming", () => {
     expect(file["lxsoftware:PublicApiWritesEnabled"]).toBe("true");
     expect(file["lxsoftware:LxSoftwareLinkedinEnabled"]).toBe("true");
     expect(file["lxsoftware:LxSoftwareLinkedinPublishEnabled"]).toBe("true");
-    expect(file["lxsoftware:LxSoftwareResumeEnabled"]).toBe("false");
+    expect(file["lxsoftware:LxSoftwareResumeEnabled"]).toBe("true");
 
     const env = { account: "123456789012", region: "ap-southeast-1" };
     const publicApp = new cdk.App({
