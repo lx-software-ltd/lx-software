@@ -159,12 +159,29 @@ class FakeTable:
             for item in self.items.values()
             if item.get(pk_attr) == pk_value and (prefix is None or str(item.get(sk_attr, "")).startswith(str(prefix)))
         ]
-        if kwargs.get("ScanIndexForward") is False:
+        rows.sort(key=lambda item: str(item.get(sk_attr) or ""))
+        if kwargs.get("ScanIndexForward", True) is False:
             rows.reverse()
+        start = kwargs.get("ExclusiveStartKey")
+        if isinstance(start, dict) and start.get(sk_attr):
+            passed = False
+            kept: list[dict[str, Any]] = []
+            for row in rows:
+                if passed:
+                    kept.append(row)
+                elif str(row.get(sk_attr) or "") == str(start.get(sk_attr)):
+                    passed = True
+            rows = kept
+        last_key = None
         limit = kwargs.get("Limit")
-        if isinstance(limit, int):
+        if isinstance(limit, int) and len(rows) > limit:
+            last = rows[limit - 1]
+            last_key = {key: last[key] for key in (pk_attr, sk_attr, "pk", "sk") if key in last}
             rows = rows[:limit]
-        return {"Items": rows}
+        result: dict[str, Any] = {"Items": rows}
+        if last_key:
+            result["LastEvaluatedKey"] = last_key
+        return result
 
     def scan(self, **kwargs: Any) -> dict[str, Any]:
         self.scan_calls.append(kwargs)

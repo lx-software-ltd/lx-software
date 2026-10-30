@@ -607,8 +607,9 @@ personal post analytics** also requests `r_member_postAnalytics`. Leave that
 off until the LinkedIn app is approved for member post statistics, because an
 unapproved scope fails the whole consent screen. Profile posts then read
 lifetime impressions from `memberCreatorPostAnalytics` (`IMPRESSION`,
-`TOTAL`). A failed impression read leaves the count empty and is tried again
-on the next metrics pass. A denied reaction read is stored and not retried;
+`TOTAL`), including posts already published. A failed impression read keeps a
+count already stored; a post that has never had one stays empty for six hours.
+A denied reaction read is stored and not retried;
 page impressions are read only for posts that went out as a page.
 
 With the first switch on, Sunday 18:00 HKT
@@ -631,10 +632,18 @@ the slot: the post goes out as text. A redraw that is still pending or that
 failed publishes the previous ready picture instead. A comment failure leaves the post
 published. An image upload or API failure counts as a failed attempt (three tries,
 then a second email that posting has stopped). A missing connection or an
-expired token does not use up those tries. Reactions, comments, and impressions refresh
-for page and profile posts from the last 30 days, at most every six hours.
-Profile impressions are read only when the connection included personal post
-analytics.
+expired token does not use up those tries. The same 15-minute worker refreshes
+reactions and comments for page and profile posts from the last 30 days, at most
+every six hours, including while automatic posting is off. Profile impressions
+are read only when the connection included personal post analytics. That pass
+also fills impressions for older profile posts and for posts marked posted from
+a LinkedIn URL that contains a share or ugcPost URN. **Mark posted** records the
+current destination, so a company page selected in Settings is read as a page.
+The pass runs after the due-post mail. Each tick updates at most five reaction
+counts and eight missing impression counts, and stops after about 75 seconds.
+Connecting with personal post analytics queues one pass immediately. An expired
+access token is skipped quietly until the owner connects again. A failed
+impression read waits six hours when the post has no count yet.
 While the publish switch is off, or LinkedIn is not connected, the share
 box and **Mark posted** stay the way to publish.
 Add any employer name under Settings → extra phrases; do not put it in source.

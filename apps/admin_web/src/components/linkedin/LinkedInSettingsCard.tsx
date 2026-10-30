@@ -477,8 +477,8 @@ function LinkedInConnectionPanel({
           )}
           <p className="text-muted small mb-0">
             {connection.includeMemberAnalytics
-              ? "Personal post impressions are included on this connection."
-              : "Profile impressions are off. Disconnect and connect again with personal post analytics included."}
+              ? "Personal post impressions are included, including posts already published."
+              : "Profile impressions are off until the LinkedIn app is approved for member post analytics."}
           </p>
           {connection.channel === "page" && connection.organizations.length > 0 ? (
             <select
@@ -521,7 +521,7 @@ function LinkedInConnectionPanel({
             Include personal post analytics
           </label>
           <p id="linkedin-analytics-help" className="form-text mb-0">
-            Profile posts can then show impressions. The LinkedIn app needs member post analytics approval; without it, leave this off.
+            Profile posts, including ones already published, can then show impressions. The LinkedIn app needs member post analytics approval; without it, leave this off.
           </p>
         </div>
       )}

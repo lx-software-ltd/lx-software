@@ -5,7 +5,7 @@
 
 ## Goal
 
-When the owner connects with personal post analytics, profile posts store lifetime impressions from LinkedIn member post statistics and the Posted table shows that count.
+When the owner connects with personal post analytics, profile posts store lifetime impressions from LinkedIn member post statistics and the Posted table shows that count. Posts already published are filled in too: any age, a recent reaction refresh does not delay the first impression read, and a pasted LinkedIn URL that contains a share or ugcPost URN is enough. A failed read keeps a count already stored. The metrics pass runs after reminder mail and stops on a short time budget. Hand-marked posts use the connection's page when that is the current destination.
 
 ## Non-goals
 
@@ -38,12 +38,15 @@ When the owner connects with personal post analytics, profile posts store lifeti
 - A connect that does not ask for personal post analytics still requests only `openid profile w_member_social` (plus organization scopes when company pages are included)
 - Page impressions still come from organizational share statistics
 - A denied reaction read is stored and not retried
-- A failed impression read leaves the count empty and does not stop reaction refresh
+- A failed impression read keeps a count already stored, leaves a first miss empty for six hours, and does not stop reaction refresh
+- Page posts stay on the 30-day reaction refresh
+- Connecting without personal post analytics does not queue an impression pass
+- A metrics-only pass does not publish a due draft
 - Tokens stay out of the SPA
 
 ## Done when
 
-- `python3 -m unittest test_linkedin_api test_linkedin.LinkedInHttpTests.test_connect_keeps_company_pages_off_unless_asked test_linkedin.LinkedInHttpTests.test_connect_requests_personal_post_analytics_when_asked test_linkedin.LinkedInHttpTests.test_profile_impressions_use_member_post_analytics test_linkedin.LinkedInHttpTests.test_profile_impressions_stay_empty_without_the_scope test_linkedin.LinkedInHttpTests.test_a_denied_profile_impression_keeps_reactions -v` in `backend/lambda/admin` passes
+- `python3 -m unittest discover -p 'test_*.py'` in `backend/lambda/admin` passes
 - `npm run test:unit` in `apps/admin_web` passes
 - `python3 scripts/check_file_length.py` passes
 - Under `npm run dev:mock`, Settings shows the checkbox, connecting with it on records the flag, and a posted profile row shows its impression count

@@ -41,7 +41,7 @@ backend/lambda/admin/board_tools.py 1810
 backend/lambda/admin/board_triage.py 507
 backend/lambda/admin/dispatch.py 1359
 backend/lambda/admin/finance_store.py 2422
-backend/lambda/admin/linkedin.py 970
+backend/lambda/admin/linkedin.py 967
 backend/lambda/admin/linkedin_draft.py 1009
 backend/lambda/admin/linkedin_image.py 691
 backend/lambda/admin/linkedin_store.py 1816
