@@ -144,6 +144,17 @@ export function ResumeListSection({
         }
       >
         <AdminDataTable columns={COLUMNS} bare>
+          {openId === DRAFT_RECORD_ID ? (
+            <ResumeDraftRow
+              enabled={enabled}
+              onClose={() => setOpen(null)}
+              onDirty={setDirty}
+              onReadFailed={(message) => {
+                setActionError(message);
+                setOpen(null);
+              }}
+            />
+          ) : null}
           {visible.length === 0 && openId !== DRAFT_RECORD_ID ? (
             <AdminDataTableEmptyRow colSpan={COLUMNS.length} message="No resumes yet." />
           ) : (
@@ -161,9 +172,6 @@ export function ResumeListSection({
               />
             ))
           )}
-          {openId === DRAFT_RECORD_ID ? (
-            <ResumeDraftRow enabled={enabled} onClose={() => setOpen(null)} onDirty={setDirty} />
-          ) : null}
         </AdminDataTable>
       </AdminRecordTable>
       <ConfirmDialog
@@ -365,14 +373,18 @@ function ResumeRow({
   );
 }
 
+(ResumeRow as { recordGroup?: boolean }).recordGroup = true;
+
 function ResumeDraftRow({
   enabled,
   onClose,
   onDirty,
+  onReadFailed,
 }: {
   readonly enabled: boolean;
   readonly onClose: () => void;
   readonly onDirty: (dirty: boolean) => void;
+  readonly onReadFailed: (message: string) => void;
 }) {
   const resume = useResume();
   const [title, setTitle] = useState("");
@@ -416,9 +428,15 @@ function ResumeDraftRow({
             setLocalError(null);
             void readFileBase64(file)
               .then((dataBase64) => resume.upload.mutateAsync({ title, contentType, dataBase64, makeTemplate }))
-              .then(onClose)
+              .then(({ job }) => {
+                if (job.status === "done") onClose();
+                else onReadFailed(`${title} was saved but could not be read. ${job.error || "Reading is still queued."}`);
+              })
               .catch((error: unknown) => {
-                setLocalError(getAdminApiErrorMessage(error) ?? "Could not upload the resume.");
+                setLocalError(
+                  getAdminApiErrorMessage(error) ??
+                    (error instanceof Error && error.message ? error.message : "Could not upload the resume."),
+                );
               });
           }}
         >
@@ -459,11 +477,13 @@ function ResumeDraftRow({
         </AdminEditorPanel>
       }
     >
-      <AdminCell column="title">New resume</AdminCell>
-      <AdminCell column="kind">—</AdminCell>
-      <AdminCell column="format">—</AdminCell>
-      <AdminCell column="status">New</AdminCell>
+      <AdminCell column="title">Upload a resume</AdminCell>
+      <AdminCell column="kind" />
+      <AdminCell column="format" />
+      <AdminCell column="status" />
       <AdminCell column="ops" />
     </AdminExpandableRow>
   );
 }
+
+(ResumeDraftRow as { recordGroup?: boolean }).recordGroup = true;

@@ -6,6 +6,7 @@ import base64
 import io
 import json
 import unittest
+import zipfile
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
@@ -176,6 +177,33 @@ class ResumeHttpTests(unittest.TestCase):
         self.assertEqual(queued.call_args.args[0]["internal"], "resume_extract")
         listed = lambda_handler(_event("/lx-software/resume/resumes"), None)
         self.assertEqual(_body(listed)["items"][0]["id"], body["resume"]["id"])
+
+    def test_a_rejected_word_file_writes_no_row(self) -> None:
+        source = _docx("Alex Example")
+        with zipfile.ZipFile(io.BytesIO(source)) as archive:
+            xml = archive.read("word/document.xml").replace(b"</w:body>", b"<w:delText>old</w:delText></w:body>", 1)
+            packed = io.BytesIO()
+            with zipfile.ZipFile(packed, "w") as out:
+                for name in archive.namelist():
+                    out.writestr(name, xml if name == "word/document.xml" else archive.read(name))
+        with patch("board_async.try_invoke_event", return_value=True) as queued:
+            uploaded = lambda_handler(
+                _event(
+                    "/lx-software/resume/resumes",
+                    "POST",
+                    {
+                        "title": "Alex Example",
+                        "contentType": DOCX,
+                        "dataBase64": base64.b64encode(packed.getvalue()).decode(),
+                    },
+                ),
+                None,
+            )
+        self.assertEqual(uploaded["statusCode"], 400)
+        self.assertIn("Accept all changes", _body(uploaded)["message"])
+        queued.assert_not_called()
+        listed = lambda_handler(_event("/lx-software/resume/resumes"), None)
+        self.assertEqual(_body(listed)["items"], [])
 
     def test_settings_reject_an_unknown_page_size(self) -> None:
         saved = lambda_handler(

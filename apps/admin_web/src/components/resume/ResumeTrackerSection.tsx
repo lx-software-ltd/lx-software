@@ -128,6 +128,20 @@ export function ResumeTrackerSection({
         }
       >
         <AdminDataTable columns={COLUMNS} bare>
+          {openId === DRAFT_RECORD_ID ? (
+            <ApplicationRow
+              row={null}
+              enabled={enabled}
+              expanded
+              resumeTitle=""
+              resumes={resumes.map((item) => ({ id: item.id, title: item.title }))}
+              postings={postings.map((item) => ({ id: item.id, title: item.title, company: item.company }))}
+              onToggle={() => requestOpen(null)}
+              onSaved={() => setOpen(null)}
+              onDirty={setDirty}
+              onDelete={() => undefined}
+            />
+          ) : null}
           {items.length === 0 && openId !== DRAFT_RECORD_ID ? (
             <AdminDataTableEmptyRow colSpan={COLUMNS.length} message="No applications yet." />
           ) : (
@@ -146,20 +160,6 @@ export function ResumeTrackerSection({
               />
             ))
           )}
-          {openId === DRAFT_RECORD_ID ? (
-            <ApplicationRow
-              row={null}
-              enabled={enabled}
-              expanded
-              resumeTitle="—"
-              resumes={resumes.map((item) => ({ id: item.id, title: item.title }))}
-              postings={postings.map((item) => ({ id: item.id, title: item.title, company: item.company }))}
-              onToggle={() => requestOpen(null)}
-              onSaved={() => setOpen(null)}
-              onDirty={setDirty}
-              onDelete={() => undefined}
-            />
-          ) : null}
         </AdminDataTable>
       </AdminRecordTable>
       <ConfirmDialog
@@ -346,8 +346,8 @@ function ApplicationRow({
       }
     >
       <AdminCell column="company">{row?.company ?? "New application"}</AdminCell>
-      <AdminCell column="position">{row?.position ?? "—"}</AdminCell>
-      <AdminCell column="status">{row ? statusLabel(row.status) : "New"}</AdminCell>
+      <AdminCell column="position">{row?.position ?? ""}</AdminCell>
+      <AdminCell column="status">{row ? statusLabel(row.status) : ""}</AdminCell>
       <AdminCell column="resume">{resumeTitle}</AdminCell>
       <AdminCell column="ops" className="text-end">
         {row ? (
@@ -368,3 +368,5 @@ function ApplicationRow({
     </AdminExpandableRow>
   );
 }
+
+(ApplicationRow as { recordGroup?: boolean }).recordGroup = true;

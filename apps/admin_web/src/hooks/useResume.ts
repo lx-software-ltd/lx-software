@@ -61,9 +61,7 @@ export function useResume() {
         method: "POST",
         body: JSON.stringify(payload),
       });
-      const job = assertJobDone(
-        await pollJob(queued.job, loadJob, undefined, (next) => onStatus?.(next.status)),
-      );
+      const job = await pollJob(queued.job, loadJob, undefined, (next) => onStatus?.(next.status));
       return { resume: queued.resume, job };
     },
     onSettled: refresh,

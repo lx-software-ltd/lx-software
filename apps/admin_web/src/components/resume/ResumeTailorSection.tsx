@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useResume } from "../../hooks/useResume";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
+import { assertJobDone } from "../../lib/pollJob";
 import {
   DOCX_TYPE,
   contentTypeForFile,
@@ -72,6 +73,7 @@ export function ResumeTailorSection({
           dataBase64,
           makeTemplate: true,
         });
+        assertJobDone(uploaded.job);
         chosen = uploaded.resume.id;
       }
       if (!chosen) throw new Error("Choose a template resume.");
