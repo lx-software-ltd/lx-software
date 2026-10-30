@@ -495,6 +495,7 @@ def _exchange(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
     except (LinkedInError, LinkedInApiError) as exc:
         return _json_response(400, {"message": str(exc)})
     _audit(user_sub, "LINKEDIN_CONNECT", "exchange", event)
+    linkedin_metrics.queue_backfill(include_member_analytics)
     return _json_response(200, {"connection": linkedin_store.public_connection(linkedin_store.load_connection(table))})
 
 
@@ -856,10 +857,11 @@ def publish_one(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
 
 def handle_publish_due(event: dict[str, Any] | None = None) -> dict[str, Any]:
     """Post due drafts when publishing is on, then remind the owner about the rest."""
-    del event
     if not linkedin_store.feature_enabled():
         return {"skipped": "disabled"}
     table = _table()
+    if (event or {}).get("metricsOnly"):
+        return linkedin_metrics.refresh_connected(table)
     published = 0
     publish = ""
     if linkedin_store.publish_enabled():
@@ -884,12 +886,7 @@ def handle_publish_due(event: dict[str, Any] | None = None) -> dict[str, Any]:
                         )
                     except LinkedInError:
                         _log_event("warning", tag="linkedin_publish_failed", error="post not found")
-            try:
-                fresh = linkedin_store.load_connection(table)
-                if fresh:
-                    linkedin_metrics.refresh(table, fresh, _access_token(table, fresh))
-            except Exception as exc:  # noqa: BLE001 — metrics must not fail the reminder
-                _log_event("warning", tag="linkedin_metrics_failed", error=str(exc)[:240])
+    linkedin_metrics.refresh_connected(table)
     settings = linkedin_store.load_settings(table)
     address = str(settings.get("notifyEmail") or "")
     reminded = 0

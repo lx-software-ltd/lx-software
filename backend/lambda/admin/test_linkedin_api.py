@@ -197,6 +197,23 @@ class LinkedInApiTests(unittest.TestCase):
         linkedin_api.set_transport_for_tests(transport)
         self.assertIsNone(linkedin_api.member_impressions("token", "urn:li:share:9"))
 
+    def test_an_activity_urn_resolves_to_the_share_id(self) -> None:
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            self.assertIn("/posts/urn%3Ali%3Aactivity%3A55", url)
+            return _ok(200, {"id": "urn:li:share:55"})
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.assertEqual(linkedin_api.resolve_share_urn("token", "urn:li:activity:55"), "urn:li:share:55")
+
+    def test_a_failed_activity_lookup_returns_no_urn(self) -> None:
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, url, headers, body
+            return _ok(404, {"message": "not found"})
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.assertEqual(linkedin_api.resolve_share_urn("token", "urn:li:activity:55"), "")
+
     def test_connection_target_selects_a_page(self) -> None:
         table = FakeTable()
         linkedin_store.save_connection(
