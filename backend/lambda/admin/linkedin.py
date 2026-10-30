@@ -2,7 +2,7 @@
 
 Drafts, the share box, and — when ``LINKEDIN_PUBLISH_ENABLED`` is true — the
 LinkedIn Posts API. A due slot posts as the connected member or company page,
-then adds the first comment and refreshes reaction counts.
+then adds the first comment and refreshes reactions and impressions.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ import board_store
 import linkedin_api
 import linkedin_draft
 import linkedin_image
+import linkedin_metrics
 import linkedin_store
 from http_common import _audit, _json_response, _log_event, _parse_json_body
 from linkedin_api import LinkedInApiError
@@ -260,9 +261,7 @@ def _regenerate(event: dict[str, Any], table: Any, post_id: str, user_sub: str |
 def _queue(event: dict[str, Any], payload: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
     table = _table()
     job = linkedin_store.new_job(table, "generate", payload)
-    accepted = board_async.try_invoke_event(
-        {"internal": "linkedin_generate", "jobId": job["jobId"]}
-    )
+    accepted = board_async.try_invoke_event({"internal": "linkedin_generate", "jobId": job["jobId"]})
     if not accepted:
         job["status"] = "failed"
         job["error"] = "Could not queue generation."
@@ -417,18 +416,21 @@ def _connect(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
         return _json_response(503, {"message": str(exc)})
     body = _parse_json_body(event)
     include_organizations = bool(body.get("includeOrganizations"))
+    include_member_analytics = bool(body.get("includeMemberAnalytics"))
     state = secrets.token_urlsafe(18)
     linkedin_store.save_oauth_state(
         _table(),
         state,
         user_sub or "",
         include_organizations=include_organizations,
+        include_member_analytics=include_member_analytics,
     )
     url = linkedin_api.authorize_url(
         client_id=client_id,
         redirect=linkedin_api.redirect_uri(_admin_origin()),
         state=state,
         include_organizations=include_organizations,
+        include_member_analytics=include_member_analytics,
     )
     _audit(user_sub, "LINKEDIN_CONNECT", "pages" if include_organizations else "profile", event)
     return _json_response(200, {"url": url})
@@ -445,7 +447,7 @@ def _exchange(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
         return _json_response(400, {"message": "code and state are required"})
     table = _table()
     try:
-        owner, include_organizations = linkedin_store.consume_oauth_state(table, state)
+        owner, include_organizations, include_member_analytics = linkedin_store.consume_oauth_state(table, state)
         if owner and user_sub and owner != user_sub:
             raise LinkedInError("That LinkedIn sign-in belongs to another session.")
         client_id, client_secret = linkedin_api.load_credentials()
@@ -486,6 +488,7 @@ def _exchange(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
                 "organizationName": organization_name,
                 "organizations": organizations,
                 "includeOrganizations": include_organizations,
+                "includeMemberAnalytics": include_member_analytics,
                 "connectedAt": board_store.now_iso(),
             },
         )
@@ -610,7 +613,9 @@ def _character(event: dict[str, Any], method: str, parts: list[str], user_sub: s
             loaded = linkedin_store.load_character_photo(table)
             if not loaded:
                 return _json_response(404, {"message": "No photo stored."})
-            return _json_response(200, {"contentType": loaded[0], "dataBase64": base64.b64encode(loaded[1]).decode("ascii")})
+            return _json_response(
+                200, {"contentType": loaded[0], "dataBase64": base64.b64encode(loaded[1]).decode("ascii")}
+            )
         if parts == ["character", "photo"] and method == "POST":
             content_type, data = _image_body(event)
             stored = linkedin_store.save_character_photo(table, content_type, data)
@@ -624,7 +629,9 @@ def _character(event: dict[str, Any], method: str, parts: list[str], user_sub: s
             loaded = linkedin_store.load_character_sheet()
             if not loaded:
                 return _json_response(404, {"message": "No character sheet yet."})
-            return _json_response(200, {"contentType": loaded[0], "dataBase64": base64.b64encode(loaded[1]).decode("ascii")})
+            return _json_response(
+                200, {"contentType": loaded[0], "dataBase64": base64.b64encode(loaded[1]).decode("ascii")}
+            )
         if parts == ["character", "draw"] and method == "POST":
             if not linkedin_store.load_character_photo(table):
                 return _json_response(400, {"message": "Upload a photo first."})
@@ -643,7 +650,9 @@ def _character(event: dict[str, Any], method: str, parts: list[str], user_sub: s
             loaded = linkedin_store.load_character_candidate(parts[2])
             if not loaded:
                 return _json_response(404, {"message": "That candidate is gone."})
-            return _json_response(200, {"contentType": loaded[0], "dataBase64": base64.b64encode(loaded[1]).decode("ascii")})
+            return _json_response(
+                200, {"contentType": loaded[0], "dataBase64": base64.b64encode(loaded[1]).decode("ascii")}
+            )
         if parts == ["character", "choose"] and method == "POST":
             body = _parse_json_body(event)
             stored = linkedin_store.choose_character(table, str(body.get("candidateId") or ""))
@@ -845,56 +854,6 @@ def publish_one(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     return updated
 
 
-def _refresh_metrics(table: Any, connection: dict[str, Any]) -> int:
-    token = _access_token(table, connection)
-    now = datetime.now(HKT)
-    cutoff = now - timedelta(hours=6)
-    oldest = now - timedelta(days=30)
-    refreshed = 0
-    for row in linkedin_store.list_posts(table, status="published", limit=80):
-        if refreshed >= 5:
-            break
-        platform = row.get("platform") if isinstance(row.get("platform"), dict) else {}
-        urn = str(platform.get("urn") or "")
-        if not urn:
-            continue
-        published_at = linkedin_store._parse_slot(str(platform.get("publishedAt") or ""))
-        if published_at is not None and published_at < oldest:
-            continue
-        previous = row.get("metrics") if isinstance(row.get("metrics"), dict) else {}
-        if previous.get("unavailable"):
-            continue
-        pulled = linkedin_store._parse_slot(str(previous.get("pulledAt") or ""))
-        if pulled is not None and pulled > cutoff:
-            continue
-        try:
-            counts = linkedin_api.social_counts(token, urn)
-            impressions = None
-            organization_id = str(platform.get("organizationId") or "")
-            if row.get("channel") == "page" and organization_id:
-                impressions = linkedin_api.page_impressions(token, organization_id, urn)
-            metrics = {
-                "reactions": counts["reactions"],
-                "comments": counts["comments"],
-                "impressions": impressions,
-                "pulledAt": board_store.now_iso(),
-                "unavailable": False,
-            }
-        except LinkedInApiError as exc:
-            _log_event("warning", tag="linkedin_metrics_failed", error=str(exc)[:200])
-            metrics = {
-                "reactions": int(previous.get("reactions") or 0),
-                "comments": int(previous.get("comments") or 0),
-                "impressions": previous.get("impressions") if "impressions" in previous else None,
-                "pulledAt": board_store.now_iso(),
-                "unavailable": exc.status == 403,
-                "error": str(exc)[:200],
-            }
-        linkedin_store.save_post_metrics(table, str(row["postId"]), metrics)
-        refreshed += 1
-    return refreshed
-
-
 def handle_publish_due(event: dict[str, Any] | None = None) -> dict[str, Any]:
     """Post due drafts when publishing is on, then remind the owner about the rest."""
     del event
@@ -928,7 +887,7 @@ def handle_publish_due(event: dict[str, Any] | None = None) -> dict[str, Any]:
             try:
                 fresh = linkedin_store.load_connection(table)
                 if fresh:
-                    _refresh_metrics(table, fresh)
+                    linkedin_metrics.refresh(table, fresh, _access_token(table, fresh))
             except Exception as exc:  # noqa: BLE001 — metrics must not fail the reminder
                 _log_event("warning", tag="linkedin_metrics_failed", error=str(exc)[:240])
     settings = linkedin_store.load_settings(table)
@@ -966,7 +925,9 @@ def handle_publish_due(event: dict[str, Any] | None = None) -> dict[str, Any]:
                 )
                 subject = "A LinkedIn post did not publish"
             elif publish == "not_connected":
-                notice = "LinkedIn is not connected, so this post was not published. Connect it, or use the share box.\n\n"
+                notice = (
+                    "LinkedIn is not connected, so this post was not published. Connect it, or use the share box.\n\n"
+                )
                 subject = "A LinkedIn post is due"
             elif linkedin_store.publish_enabled() and stale:
                 notice = (

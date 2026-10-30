@@ -602,9 +602,14 @@ need Community Management approval. An unapproved scope fails the whole
 consent screen, so leave company pages off until that product is approved.
 `rw_organization_admin` lists the pages you administer. **Refresh pages**
 reloads that list without reconnecting. Page impressions use the same
-approval. Member post analytics are not requested. A denied reaction read is
-stored and not retried; page impressions are read only for posts that went
-out as a page.
+approval. Personal post impressions are optional: Settings → **Include
+personal post analytics** also requests `r_member_postAnalytics`. Leave that
+off until the LinkedIn app is approved for member post statistics, because an
+unapproved scope fails the whole consent screen. Profile posts then read
+lifetime impressions from `memberCreatorPostAnalytics` (`IMPRESSION`,
+`TOTAL`). A failed impression read leaves the count empty and is tried again
+on the next metrics pass. A denied reaction read is stored and not retried;
+page impressions are read only for posts that went out as a page.
 
 With the first switch on, Sunday 18:00 HKT
 (`lxsoftware-admin-linkedin-plan`) drafts the configured batch, and a
@@ -626,8 +631,10 @@ the slot: the post goes out as text. A redraw that is still pending or that
 failed publishes the previous ready picture instead. A comment failure leaves the post
 published. An image upload or API failure counts as a failed attempt (three tries,
 then a second email that posting has stopped). A missing connection or an
-expired token does not use up those tries. Reactions and comments refresh
+expired token does not use up those tries. Reactions, comments, and impressions refresh
 for page and profile posts from the last 30 days, at most every six hours.
+Profile impressions are read only when the connection included personal post
+analytics.
 While the publish switch is off, or LinkedIn is not connected, the share
 box and **Mark posted** stay the way to publish.
 Add any employer name under Settings → extra phrases; do not put it in source.

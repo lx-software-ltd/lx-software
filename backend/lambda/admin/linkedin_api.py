@@ -21,10 +21,8 @@ TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
 USERINFO_URL = "https://api.linkedin.com/v2/userinfo"
 REST = "https://api.linkedin.com/rest"
 PROFILE_SCOPES = "openid profile w_member_social"
-ORGANIZATION_SCOPES = (
-    "openid profile w_member_social w_organization_social "
-    "r_organization_social rw_organization_admin"
-)
+ORGANIZATION_SCOPES = "openid profile w_member_social w_organization_social r_organization_social rw_organization_admin"
+MEMBER_ANALYTICS_SCOPE = "r_member_postAnalytics"
 COMMENTARY_MAX = 3000
 SECRET_ID_ENV = "LINKEDIN_APP_SECRET_ID"
 METRICS_TIMEOUT_SECONDS = 8
@@ -148,14 +146,31 @@ def redirect_uri(origin: str) -> str:
     return origin.rstrip("/") + "/lx-software/linkedin/callback"
 
 
-def authorize_url(*, client_id: str, redirect: str, state: str, include_organizations: bool = False) -> str:
+def _scopes(*, include_organizations: bool, include_member_analytics: bool) -> str:
+    base = ORGANIZATION_SCOPES if include_organizations else PROFILE_SCOPES
+    if not include_member_analytics:
+        return base
+    return f"{base} {MEMBER_ANALYTICS_SCOPE}"
+
+
+def authorize_url(
+    *,
+    client_id: str,
+    redirect: str,
+    state: str,
+    include_organizations: bool = False,
+    include_member_analytics: bool = False,
+) -> str:
     query = urllib.parse.urlencode(
         {
             "response_type": "code",
             "client_id": client_id,
             "redirect_uri": redirect,
             "state": state,
-            "scope": ORGANIZATION_SCOPES if include_organizations else PROFILE_SCOPES,
+            "scope": _scopes(
+                include_organizations=include_organizations,
+                include_member_analytics=include_member_analytics,
+            ),
         }
     )
     return f"{AUTH_URL}?{query}"
@@ -220,9 +235,7 @@ def userinfo(token: str) -> dict[str, str]:
 
 def list_organizations(token: str) -> list[dict[str, str]]:
     """Pages the member administers. A 403 leaves the profile connection usable."""
-    query = urllib.parse.urlencode(
-        {"q": "roleAssignee", "role": "ADMINISTRATOR", "state": "APPROVED"}
-    )
+    query = urllib.parse.urlencode({"q": "roleAssignee", "role": "ADMINISTRATOR", "state": "APPROVED"})
     status, _headers, payload = _call(
         "GET",
         f"{REST}/organizationAcls?{query}",
@@ -298,8 +311,7 @@ def commentary(body: str, hashtags: list[str]) -> str:
     escaped = escape_commentary(text)
     if len(escaped) > COMMENTARY_MAX:
         raise LinkedInApiError(
-            f"The post is {len(escaped)} characters after hashtags and formatting. "
-            f"LinkedIn allows {COMMENTARY_MAX}."
+            f"The post is {len(escaped)} characters after hashtags and formatting. LinkedIn allows {COMMENTARY_MAX}."
         )
     return escaped
 
@@ -426,4 +438,26 @@ def page_impressions(token: str, organization_id: str, post_urn: str) -> int | N
     try:
         return int(stats["impressionCount"])
     except (TypeError, ValueError):
+        return None
+
+
+def member_impressions(token: str, post_urn: str) -> int | None:
+    """Lifetime impressions for a profile post. A non-200 leaves the count empty."""
+    encoded = urllib.parse.quote(post_urn, safe="")
+    kind = "ugc" if ":ugcPost:" in post_urn else "share"
+    status, _headers, payload = _call(
+        "GET",
+        f"{REST}/memberCreatorPostAnalytics?q=entity&entity=({kind}:{encoded})&queryType=IMPRESSION&aggregation=TOTAL",
+        _api_headers(token),
+        None,
+        timeout=METRICS_TIMEOUT_SECONDS,
+    )
+    if status != 200:
+        return None
+    elements = _json_body(payload).get("elements")
+    if not isinstance(elements, list) or not elements or not isinstance(elements[0], dict):
+        return None
+    try:
+        return int(elements[0]["count"])
+    except (KeyError, TypeError, ValueError):
         return None

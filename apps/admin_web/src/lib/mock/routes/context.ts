@@ -145,6 +145,7 @@ function initialMockState(): MockState {
         organizations: [],
         tokenExpiresAt: "",
         includeOrganizations: false,
+        includeMemberAnalytics: false,
         appConfigured: true,
         appStatus: "ready",
       },
