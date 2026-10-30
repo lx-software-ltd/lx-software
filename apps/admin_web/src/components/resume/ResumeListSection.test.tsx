@@ -22,8 +22,8 @@ const sample: ResumeSummary = {
 vi.mock("../../hooks/useResume", () => ({
   useResume: () => ({
     resumes: { data: { items: [sample] }, isLoading: false },
-    deleteResume: { mutate: vi.fn() },
-    setTemplate: { mutate: vi.fn(), isPending: false },
+    deleteResume: { isError: false, error: null, mutateAsync: vi.fn() },
+    setTemplate: { isError: false, error: null, mutate: vi.fn(), isPending: false },
     patchResume: { isPending: false, isError: false, error: null, mutateAsync: vi.fn() },
     upload: { isPending: false, mutateAsync: vi.fn() },
   }),
@@ -49,7 +49,7 @@ describe("Resume list", () => {
     expect(screen.getByText("Alex Example")).toBeVisible();
     expect(screen.getAllByText("Template").length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "Add resume" }));
-    expect(screen.getByLabelText("Title")).toHaveValue("Alex Example");
+    expect(screen.getByLabelText("Title")).toHaveValue("");
     expect(screen.getByLabelText("Make this the template after it is read")).toBeChecked();
   });
 });

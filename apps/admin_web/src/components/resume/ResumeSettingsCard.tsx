@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useResume } from "../../hooks/useResume";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import {
@@ -16,14 +16,23 @@ import { AdminEditorSection, AdminField, AdminFieldGrid } from "../ui";
 export function ResumeSettingsCard({
   overview,
   enabled,
+  onSectionDirty,
 }: {
   readonly overview: ResumeOverview;
   readonly enabled: boolean;
+  readonly onSectionDirty?: (dirty: boolean) => void;
 }) {
   const resume = useResume();
   const [settings, setSettings] = useState<ResumeSettings>(overview.settings);
   const formId = "resume-settings";
   const spend = overview.spendUsdMonth.toFixed(2);
+  const scopeMissing = settings.rewriteScope.length === 0;
+  const dirty = JSON.stringify(settings) !== JSON.stringify(overview.settings);
+
+  useEffect(() => {
+    onSectionDirty?.(dirty);
+    return () => onSectionDirty?.(false);
+  }, [dirty, onSectionDirty]);
 
   function toggleScope(scope: RewriteScope) {
     const has = settings.rewriteScope.includes(scope);
@@ -38,7 +47,12 @@ export function ResumeSettingsCard({
       title="Generation"
       description={LOCKED_FACTS}
       footer={
-        <button type="submit" form={formId} className="btn btn-primary" disabled={!enabled || resume.saveSettings.isPending}>
+        <button
+          type="submit"
+          form={formId}
+          className="btn btn-primary"
+          disabled={!enabled || scopeMissing || resume.saveSettings.isPending}
+        >
           {resume.saveSettings.isPending ? "Saving…" : "Save"}
         </button>
       }
@@ -47,10 +61,15 @@ export function ResumeSettingsCard({
         id={formId}
         onSubmit={(event) => {
           event.preventDefault();
-          if (!enabled) return;
+          if (!enabled || scopeMissing) return;
           void resume.saveSettings.mutateAsync(settings).then((saved) => setSettings(saved.settings));
         }}
       >
+        {scopeMissing ? (
+          <div className="alert alert-danger py-2 small" role="alert">
+            Choose at least one part of the resume to rewrite.
+          </div>
+        ) : null}
         {resume.saveSettings.isError ? (
           <div className="alert alert-danger py-2 small" role="alert">
             {getAdminApiErrorMessage(resume.saveSettings.error) ?? "Could not save settings."}
@@ -141,8 +160,8 @@ export function ResumeSettingsCard({
               ))}
             </select>
           </AdminField>
-          <AdminField label="Rewrite scope" htmlFor="resume-scope-headline" span={2}>
-            <div className="d-flex flex-wrap gap-3" id="resume-scope-headline">
+          <AdminField label="Rewrite scope" span={2}>
+            <div className="d-flex flex-wrap gap-3">
               {REWRITE_SCOPE.map((scope) => (
                 <div className="form-check" key={scope}>
                   <input

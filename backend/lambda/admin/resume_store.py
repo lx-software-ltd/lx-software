@@ -176,6 +176,9 @@ def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
     scope_raw = body.get("rewriteScope", current["rewriteScope"])
     if not isinstance(scope_raw, list) or any(item not in REWRITE_SCOPE for item in scope_raw):
         raise ResumeError("Rewrite scope is not valid.")
+    scope = [item for item in REWRITE_SCOPE if item in scope_raw]
+    if not scope:
+        raise ResumeError("Choose at least one part of the resume to rewrite.")
     policy = str(body.get("bulletPolicy") or current["bulletPolicy"])
     if policy not in BULLET_POLICIES:
         raise ResumeError("Bullet policy must be keep or flex.")
@@ -193,7 +196,7 @@ def validate_settings(body: dict[str, Any]) -> dict[str, Any]:
         "maxUsdPerMonth": cap,
         "temperature": temperature,
         "outputLength": length,
-        "rewriteScope": [item for item in REWRITE_SCOPE if item in scope_raw],
+        "rewriteScope": scope,
         "bulletPolicy": policy,
         "allowNewSkills": allow,
         "pageSize": page,

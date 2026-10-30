@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { fetchResumeFile, useResume, useResumeDetail } from "../../hooks/useResume";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
-import { downloadBase64, openBase64 } from "../../lib/downloadBase64";
+import { downloadBase64, openPreview, showPreview } from "../../lib/downloadBase64";
 import { DRAFT_RECORD_ID } from "../../lib/expandedRecord";
 import {
   contentTypeForFile,
@@ -40,9 +40,11 @@ const COLUMNS = [
 export function ResumeListSection({
   enabled,
   templateResumeId,
+  onSectionDirty,
 }: {
   readonly enabled: boolean;
   readonly templateResumeId: string;
+  readonly onSectionDirty?: (dirty: boolean) => void;
 }) {
   const resume = useResume();
   const items = resume.resumes.data?.items ?? NO_RESUMES;
@@ -52,6 +54,12 @@ export function ResumeListSection({
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [pendingId, setPendingId] = useState<string | null | undefined>(undefined);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onSectionDirty?.(dirty);
+    return () => onSectionDirty?.(false);
+  }, [dirty, onSectionDirty]);
 
   const visible = useMemo(() => {
     const query = filter.trim().toLowerCase();
@@ -96,6 +104,21 @@ export function ResumeListSection({
 
   return (
     <>
+      {actionError ? (
+        <div className="alert alert-danger py-2 small" role="alert">
+          {actionError}
+        </div>
+      ) : null}
+      {resume.deleteResume.isError ? (
+        <div className="alert alert-danger py-2 small" role="alert">
+          {getAdminApiErrorMessage(resume.deleteResume.error) ?? "Could not delete the resume."}
+        </div>
+      ) : null}
+      {resume.setTemplate.isError ? (
+        <div className="alert alert-danger py-2 small" role="alert">
+          {getAdminApiErrorMessage(resume.setTemplate.error) ?? "Could not make this the template."}
+        </div>
+      ) : null}
       <AdminRecordTable
         label="Resumes"
         filters={
@@ -134,6 +157,7 @@ export function ResumeListSection({
                 onToggle={() => requestOpen(openId === row.id ? null : row.id)}
                 onDirty={setDirty}
                 onDelete={() => setDeleteId(row.id)}
+                onActionError={setActionError}
               />
             ))
           )}
@@ -150,9 +174,15 @@ export function ResumeListSection({
         tone="danger"
         onCancel={() => setDeleteId(null)}
         onConfirm={() => {
-          if (deleteId) void resume.deleteResume.mutate(deleteId);
+          const id = deleteId;
+          if (!id) return;
+          void resume.deleteResume.mutateAsync(id).then(
+            () => {
+              if (id === openId) setOpen(null);
+            },
+            () => undefined,
+          );
           setDeleteId(null);
-          if (deleteId === openId) setOpen(null);
         }}
       />
       <ConfirmDialog
@@ -180,6 +210,7 @@ function ResumeRow({
   onToggle,
   onDirty,
   onDelete,
+  onActionError,
 }: {
   readonly row: ResumeSummary;
   readonly enabled: boolean;
@@ -188,6 +219,7 @@ function ResumeRow({
   readonly onToggle: () => void;
   readonly onDirty: (dirty: boolean) => void;
   readonly onDelete: () => void;
+  readonly onActionError: (message: string | null) => void;
 }) {
   const resume = useResume();
   const detail = useResumeDetail(expanded ? row.id : null);
@@ -203,9 +235,16 @@ function ResumeRow({
   }, [dirty, expanded, onDirty]);
 
   async function download(kind: "file" | "pdf", open: boolean) {
-    const body = await fetchResumeFile(row.id, kind);
-    if (open) openBase64(body.contentType, body.dataBase64);
-    else downloadBase64(body.filename, body.contentType, body.dataBase64);
+    const preview = open ? openPreview() : null;
+    try {
+      const body = await fetchResumeFile(row.id, kind);
+      onActionError(null);
+      if (open) showPreview(preview, body.filename, body.contentType, body.dataBase64);
+      else downloadBase64(body.filename, body.contentType, body.dataBase64);
+    } catch (caught) {
+      preview?.close();
+      onActionError(getAdminApiErrorMessage(caught) ?? "Could not download the resume.");
+    }
   }
 
   return (
@@ -221,6 +260,7 @@ function ResumeRow({
             isSaving={resume.patchResume.isPending}
             savingLabel="Saving…"
             disabled={!enabled || row.kind === "tailored" || !dirty}
+            hideSubmit={row.kind === "tailored"}
             error={
               resume.patchResume.isError
                 ? getAdminApiErrorMessage(resume.patchResume.error) ?? "Could not save the resume."
@@ -237,7 +277,9 @@ function ResumeRow({
             {row.kind === "tailored" ? (
               <p className="small text-muted">This tailored resume is kept as generated. Run New resume again to change it.</p>
             ) : null}
-            <p className="small text-muted">PDF is a rendered copy. Download .docx for the Word file.</p>
+            <p className="small text-muted">
+              PDF is a rendered copy. Download the original file when you need the upload itself.
+            </p>
             {(item.generation?.findings ?? []).map((finding) => (
               <p key={finding} className="small mb-1">
                 {finding}
@@ -283,7 +325,14 @@ function ResumeRow({
               id: "docx",
               label: row.format === "docx" ? "Download .docx" : "Download .docx (Word only)",
               iconClassName: "bi-file-earmark-word",
-              disabled: row.format !== "docx",
+              hidden: row.format !== "docx",
+              onClick: () => void download("file", false),
+            },
+            {
+              id: "original",
+              label: row.format === "pdf" ? "Download original PDF" : "Download original",
+              iconClassName: "bi-download",
+              hidden: row.format === "docx",
               onClick: () => void download("file", false),
             },
             {
@@ -326,14 +375,14 @@ function ResumeDraftRow({
   readonly onDirty: (dirty: boolean) => void;
 }) {
   const resume = useResume();
-  const [title, setTitle] = useState("Alex Example");
+  const [title, setTitle] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [makeTemplate, setMakeTemplate] = useState(true);
   const [localError, setLocalError] = useState<string | null>(null);
   const formId = "resume-new";
 
   useEffect(() => {
-    onDirty(Boolean(file) || title !== "Alex Example");
+    onDirty(Boolean(file) || title.trim() !== "");
   }, [file, onDirty, title]);
 
   return (
@@ -379,6 +428,7 @@ function ResumeDraftRow({
                 id={`${formId}-title`}
                 className="form-control"
                 value={title}
+                required
                 onChange={(event) => setTitle(event.target.value)}
               />
             </AdminField>

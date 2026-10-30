@@ -6,6 +6,7 @@ import base64
 import io
 import json
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from docx import Document
@@ -229,6 +230,111 @@ class ResumeHttpTests(unittest.TestCase):
         recruiter = _body(patched)["item"]["recruiter"]
         self.assertEqual(recruiter["email"], "morgan.example@example.com")
 
+    def test_tailor_while_off_does_not_save_a_pasted_job_post(self) -> None:
+        with patch.dict("os.environ", {"RESUME_ENABLED": "false"}):
+            created = lambda_handler(
+                _event(
+                    "/lx-software/resume/tailor",
+                    "POST",
+                    {"posting": {"title": "Engineer", "company": "Northwind", "adText": "An engineer role."}},
+                ),
+                None,
+            )
+        self.assertEqual(created["statusCode"], 403)
+        self.assertEqual(_body(created)["reason"], "resume_disabled")
+        listed = lambda_handler(_event("/lx-software/resume/postings"), None)
+        self.assertEqual(_body(listed)["items"], [])
+
+    def test_tailor_rejects_a_missing_template_before_saving_the_job_post(self) -> None:
+        with patch("board_async.try_invoke_event", return_value=True) as queued:
+            created = lambda_handler(
+                _event(
+                    "/lx-software/resume/tailor",
+                    "POST",
+                    {"posting": {"title": "Engineer", "company": "Northwind", "adText": "An engineer role."}},
+                ),
+                None,
+            )
+        self.assertEqual(created["statusCode"], 400)
+        self.assertIn("template", _body(created)["message"])
+        queued.assert_not_called()
+        self.assertEqual(resume_tracker.list_postings(self.table), [])
+
+    def test_tailor_rejects_an_unknown_job_post(self) -> None:
+        doc = resume_store.create_resume(
+            self.table, title="Alex Example", content_type=DOCX, data=_docx("Alex Example"), make_template=False
+        )
+        doc["extract"] = {"status": "ready", "error": ""}
+        resume_store.save_resume(self.table, doc)
+        with patch("board_async.try_invoke_event", return_value=True) as queued:
+            created = lambda_handler(
+                _event("/lx-software/resume/tailor", "POST", {"templateId": doc["resumeId"], "postingId": "missing"}),
+                None,
+            )
+        self.assertEqual(created["statusCode"], 404)
+        queued.assert_not_called()
+
+    def test_settings_reject_an_empty_rewrite_scope(self) -> None:
+        saved = lambda_handler(
+            _event("/lx-software/resume/settings", "PUT", {**resume_store.default_settings(), "rewriteScope": []}),
+            None,
+        )
+        self.assertEqual(saved["statusCode"], 400)
+        self.assertIn("at least one", _body(saved)["message"])
+
+    def test_application_dates_must_be_calendar_days(self) -> None:
+        rejected = lambda_handler(
+            _event(
+                "/lx-software/resume/applications",
+                "POST",
+                {"company": "Northwind", "position": "Engineer", "appliedAt": "tomorrow"},
+            ),
+            None,
+        )
+        self.assertEqual(rejected["statusCode"], 400)
+        accepted = lambda_handler(
+            _event(
+                "/lx-software/resume/applications",
+                "POST",
+                {"company": "Northwind", "position": "Engineer", "appliedAt": "2026-10-30", "nextStepAt": ""},
+            ),
+            None,
+        )
+        self.assertEqual(accepted["statusCode"], 201)
+        self.assertEqual(_body(accepted)["item"]["appliedAt"], "2026-10-30")
+        impossible = lambda_handler(
+            _event(
+                "/lx-software/resume/applications",
+                "POST",
+                {"company": "Northwind", "position": "Engineer", "nextStepAt": "2026-02-31"},
+            ),
+            None,
+        )
+        self.assertEqual(impossible["statusCode"], 400)
+
+    def test_a_stale_job_fails_and_keeps_the_cost_already_recorded(self) -> None:
+        self.assertTrue(resume_store.try_reserve_spend(self.table, 0.05, 5))
+        job = resume_store.new_job(self.table, "tailor", {})
+        job.update(
+            {
+                "status": "running",
+                "startedAt": "2000-01-01T00:00:00.000Z",
+                "spendReservedUsd": 0.05,
+                "spendActualUsd": 0.02,
+                "spendSettled": False,
+            }
+        )
+        resume_store.put_job(self.table, job)
+        response = lambda_handler(_event(f"/lx-software/resume/jobs/{job['jobId']}"), None)
+        self.assertEqual(response["statusCode"], 200)
+        body = _body(response)["job"]
+        self.assertEqual(body["status"], "failed")
+        self.assertIn("ran out of time", body["error"])
+        self.assertAlmostEqual(resume_store.month_spend(self.table), 0.02)
+        again = lambda_handler(_event(f"/lx-software/resume/jobs/{job['jobId']}"), None)
+        self.assertEqual(_body(again)["job"]["status"], "failed")
+        self.assertAlmostEqual(resume_store.month_spend(self.table), 0.02)
+
 
 class ResumeWorkerTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -374,7 +480,7 @@ class ResumeWorkerTests(unittest.TestCase):
         self.assertEqual(applications[0]["company"], "Northwind")
         self.assertAlmostEqual(resume_store.month_spend(self.table), 0.02)
 
-    def test_a_failed_tailor_releases_the_reservation_and_saves_nothing(self) -> None:
+    def test_a_failed_tailor_keeps_the_model_cost_and_saves_nothing(self) -> None:
         source = _docx("Alex Example", "Engineer")
         doc = resume_store.create_resume(
             self.table, title="Alex Example", content_type=DOCX, data=source, make_template=False
@@ -406,7 +512,7 @@ class ResumeWorkerTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(resume_store.list_resumes(self.table), [resume_store.get_resume(self.table, doc["resumeId"])])
         self.assertEqual(resume_tracker.list_applications(self.table), [])
-        self.assertAlmostEqual(resume_store.month_spend(self.table), 0.0)
+        self.assertAlmostEqual(resume_store.month_spend(self.table), 0.04)
         self.assertTrue(resume_store.get_job(self.table, job["jobId"])["findings"])
 
     def test_length_finish_retries_once_with_double_the_tokens(self) -> None:
@@ -449,7 +555,65 @@ class ResumeWorkerTests(unittest.TestCase):
             {"templateId": doc["resumeId"], "postingId": posting["postingId"], "addToTracker": False},
         )
         with patch("openrouter_client.chat_completion", side_effect=chat):
-            with patch("openrouter_usage.add_usage_day"):
+            with patch("openrouter_usage.add_usage_day") as usage:
                 result = resume.handle_tailor({"jobId": job["jobId"]})
         self.assertTrue(result["ok"])
         self.assertEqual(calls, [6000, 12000])
+        self.assertEqual(usage.call_count, 2)
+        self.assertAlmostEqual(resume_store.month_spend(self.table), 0.04)
+
+    def test_extract_books_the_model_cost_and_stops_at_the_cap(self) -> None:
+        doc = resume_store.create_resume(
+            self.table,
+            title="Alex Example",
+            content_type=DOCX,
+            data=_docx("Alex Example"),
+            make_template=False,
+        )
+        with patch("openrouter_client.chat_completion", return_value=_completion({"paragraphs": [], "roles": []})):
+            with patch("openrouter_usage.add_usage_day"):
+                resume_extract.run(self.table, doc["resumeId"])
+        self.assertAlmostEqual(resume_store.month_spend(self.table), 0.02)
+        resume_store.save_settings(self.table, {**resume_store.default_settings(), "maxUsdPerMonth": 0})
+        blocked = resume_store.create_resume(
+            self.table, title="Second", content_type=DOCX, data=_docx("Second"), make_template=False
+        )
+        with patch("openrouter_client.chat_completion", side_effect=AssertionError("no model")):
+            with self.assertRaises(ResumeError) as caught:
+                resume_extract.run(self.table, blocked["resumeId"])
+        self.assertIn("cap", str(caught.exception))
+        self.assertAlmostEqual(resume_store.month_spend(self.table), 0.02)
+
+    def test_a_job_past_the_budget_fails_before_the_model_call(self) -> None:
+        source = _docx("Alex Example", "Engineer")
+        doc = resume_store.create_resume(
+            self.table, title="Alex Example", content_type=DOCX, data=source, make_template=False
+        )
+        import resume_docx
+
+        doc["paragraphs"] = resume_docx.paragraph_map(source)
+        doc["layout"] = {
+            "paragraphs": [{"id": "p0", "role": "name"}, {"id": "p1", "role": "headline"}],
+            "roles": [],
+            "overrides": {},
+        }
+        doc["extract"] = {"status": "ready", "error": ""}
+        resume_store.save_resume(self.table, doc)
+        posting = resume_tracker.create_posting(
+            self.table, {"title": "Engineer", "company": "Northwind", "adText": "An engineer role at Northwind."}
+        )
+        posting["analysis"] = {"mustHaves": []}
+        resume_tracker.save_posting(self.table, posting)
+        started = (datetime.now(timezone.utc) - timedelta(seconds=250)).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        job = resume_store.new_job(
+            self.table,
+            "tailor",
+            {"templateId": doc["resumeId"], "postingId": posting["postingId"], "addToTracker": False},
+        )
+        job["startedAt"] = started
+        resume_store.put_job(self.table, job)
+        with patch("openrouter_client.chat_completion", side_effect=AssertionError("no model")):
+            result = resume.handle_tailor({"jobId": job["jobId"]})
+        self.assertFalse(result["ok"])
+        self.assertIn("ran out of time", resume_store.get_job(self.table, job["jobId"])["error"])
+        self.assertAlmostEqual(resume_store.month_spend(self.table), 0.0)

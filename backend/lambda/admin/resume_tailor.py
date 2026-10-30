@@ -11,6 +11,7 @@ import openrouter_usage
 import resume_docx
 import resume_extract
 import resume_guard
+import resume_spend
 import resume_store
 import resume_tracker
 from openrouter_client import parse_json_object_text
@@ -23,8 +24,20 @@ _LENGTH = {
 }
 
 
+def _merge_usage(total: dict[str, Any], usage: dict[str, Any] | None) -> None:
+    for key, value in (usage or {}).items():
+        if isinstance(value, (int, float)):
+            total[key] = float(total.get(key) or 0) + float(value)
+
+
+def _record(table: Any, job: dict[str, Any], result: Any, owner: str) -> None:
+    openrouter_usage.add_usage_day(table, service="resume", owner=owner, usage=result.usage, calls=1)
+    resume_spend.add_usage(table, job, result.usage)
+
+
 def _chat(
     table: Any,
+    job: dict[str, Any],
     settings: dict[str, Any],
     messages: list[dict[str, Any]],
     *,
@@ -35,12 +48,12 @@ def _chat(
     model = resume_store.model_name(settings)
     if not model:
         raise ResumeError("No model is configured.")
-    timeout = resume_store.tailor_timeout()
+    started = str(job.get("startedAt") or "") or None
     result = openrouter_client.chat_completion(
         messages=messages,
         model=model,
         secrets_client=boto3.client("secretsmanager"),
-        timeout=timeout,
+        timeout=resume_spend.bounded_timeout(started, resume_store.tailor_timeout()),
         json_mode=True,
         temperature=temperature,
         max_tokens=max_tokens,
@@ -48,12 +61,14 @@ def _chat(
         owner=owner,
         reasoning={"enabled": False, "exclude": True},
     )
+    _record(table, job, result, owner)
     if result.finish_reason == "length":
+        combined = dict(result.usage or {})
         result = openrouter_client.chat_completion(
             messages=messages,
             model=model,
             secrets_client=boto3.client("secretsmanager"),
-            timeout=timeout,
+            timeout=resume_spend.bounded_timeout(started, resume_store.tailor_timeout()),
             json_mode=True,
             temperature=temperature,
             max_tokens=max_tokens * 2,
@@ -61,7 +76,9 @@ def _chat(
             owner=owner,
             reasoning={"enabled": False, "exclude": True},
         )
-    openrouter_usage.add_usage_day(table, service="resume", owner=owner, usage=result.usage, calls=1)
+        _record(table, job, result, owner)
+        _merge_usage(combined, result.usage)
+        result.usage = combined
     return result
 
 
@@ -72,11 +89,14 @@ def _json(result: Any) -> dict[str, Any]:
     return parsed
 
 
-def analyze(table: Any, settings: dict[str, Any], posting: dict[str, Any]) -> dict[str, Any]:
+def analyze(
+    table: Any, job: dict[str, Any], settings: dict[str, Any], posting: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
     if isinstance(posting.get("analysis"), dict) and posting["analysis"]:
-        return posting["analysis"]
+        return posting["analysis"], {}
     result = _chat(
         table,
+        job,
         settings,
         [
             {
@@ -102,7 +122,7 @@ def analyze(table: Any, settings: dict[str, Any], posting: dict[str, Any]) -> di
         "titleHint": str(analysis.get("titleHint") or ""),
     }
     resume_tracker.save_posting(table, posting)
-    return posting["analysis"]
+    return posting["analysis"], dict(result.usage or {})
 
 
 def _prompt(
@@ -235,43 +255,42 @@ def run(table: Any, job: dict[str, Any]) -> None:
         raise ResumeError("Job post not found.", 404)
     settings = resume_store.load_settings(table)
     cap = float(settings.get("maxUsdPerMonth") or 0)
-    if not resume_store.try_reserve_spend(table, resume_store.ESTIMATE_USD, cap):
-        raise ResumeError("This month's resume spend cap has been reached.")
-    spent = resume_store.ESTIMATE_USD
+    resume_spend.reserve_job(table, job, cap)
     try:
-        analysis = analyze(table, settings, posting)
+        analysis, usage = analyze(table, job, settings, posting)
         paragraphs = list(template.get("paragraphs") or [])
         layout = dict(template.get("layout") or {})
         loaded = resume_store.load_bytes(str((template.get("file") or {}).get("key") or ""))
         if not loaded:
             raise ResumeError("The template file is missing.")
         _content_type, source = loaded
+        temperature = float(settings.get("temperature") or 0.4)
         result = _chat(
             table,
+            job,
             settings,
             _prompt(paragraphs, layout, settings, analysis, findings=[]),
             owner="tailor",
             max_tokens=6000,
-            temperature=float(settings.get("temperature") or 0.4),
+            temperature=temperature,
         )
         output = _json(result)
         blocking, notes = resume_guard.check(paragraphs=paragraphs, layout=layout, settings=settings, output=output)
-        usage = dict(result.usage or {})
+        _merge_usage(usage, result.usage)
         if blocking:
             result = _chat(
                 table,
+                job,
                 settings,
                 _prompt(paragraphs, layout, settings, analysis, findings=blocking),
                 owner="tailor",
                 max_tokens=6000,
-                temperature=float(settings.get("temperature") or 0.4),
+                temperature=temperature,
             )
             output = _json(result)
             blocking, extra = resume_guard.check(paragraphs=paragraphs, layout=layout, settings=settings, output=output)
             notes.extend(extra)
-            for key, value in (result.usage or {}).items():
-                if isinstance(value, (int, float)):
-                    usage[key] = float(usage.get(key) or 0) + float(value)
+            _merge_usage(usage, result.usage)
         if blocking:
             job["findings"] = blocking
             raise ResumeError(" ".join(blocking))
@@ -290,8 +309,5 @@ def run(table: Any, job: dict[str, Any]) -> None:
         )
         job["resumeIds"] = [job_resume]
         job["findings"] = notes
-        actual = float(usage.get("cost") or 0)
-        resume_store.adjust_spend(table, actual - spent)
-    except Exception:
-        resume_store.adjust_spend(table, -spent)
-        raise
+    finally:
+        resume_spend.settle_job(table, job)

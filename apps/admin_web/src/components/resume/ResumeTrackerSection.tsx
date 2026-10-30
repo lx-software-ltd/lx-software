@@ -3,7 +3,13 @@ import { useSearchParams } from "react-router-dom";
 import { useResume } from "../../hooks/useResume";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { DRAFT_RECORD_ID } from "../../lib/expandedRecord";
-import { APPLICATION_STATUSES, statusLabel, type JobApplication, type ResumeSummary } from "../../lib/resumeModel";
+import {
+  APPLICATION_STATUSES,
+  statusLabel,
+  type JobApplication,
+  type JobPosting,
+  type ResumeSummary,
+} from "../../lib/resumeModel";
 import {
   AdminCell,
   AdminCreateButton,
@@ -21,6 +27,7 @@ import {
 
 const NO_APPLICATIONS: JobApplication[] = [];
 const NO_RESUMES: ResumeSummary[] = [];
+const NO_POSTINGS: JobPosting[] = [];
 
 const COLUMNS = [
   { key: "company", header: "Company" },
@@ -44,15 +51,27 @@ const EMPTY = {
   phone: "",
 };
 
-export function ResumeTrackerSection({ enabled }: { readonly enabled: boolean }) {
+export function ResumeTrackerSection({
+  enabled,
+  onSectionDirty,
+}: {
+  readonly enabled: boolean;
+  readonly onSectionDirty?: (dirty: boolean) => void;
+}) {
   const resume = useResume();
   const items = resume.applications.data?.items ?? NO_APPLICATIONS;
   const resumes = resume.resumes.data?.items ?? NO_RESUMES;
+  const postings = resume.postings.data?.items ?? NO_POSTINGS;
   const [params, setParams] = useSearchParams();
   const openId = params.get("application");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [pendingId, setPendingId] = useState<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    onSectionDirty?.(dirty);
+    return () => onSectionDirty?.(false);
+  }, [dirty, onSectionDirty]);
 
   useEffect(() => {
     if (!openId || openId === DRAFT_RECORD_ID || resume.applications.isLoading) return;
@@ -93,6 +112,11 @@ export function ResumeTrackerSection({ enabled }: { readonly enabled: boolean })
 
   return (
     <>
+      {resume.deleteApplication.isError ? (
+        <div className="alert alert-danger py-2 small" role="alert">
+          {getAdminApiErrorMessage(resume.deleteApplication.error) ?? "Could not delete the application."}
+        </div>
+      ) : null}
       <AdminRecordTable
         label="Job tracker"
         filters={
@@ -115,6 +139,7 @@ export function ResumeTrackerSection({ enabled }: { readonly enabled: boolean })
                 expanded={openId === row.id}
                 resumeTitle={names.get(row.resumeId) || "—"}
                 resumes={resumes.map((item) => ({ id: item.id, title: item.title }))}
+                postings={postings.map((item) => ({ id: item.id, title: item.title, company: item.company }))}
                 onToggle={() => requestOpen(openId === row.id ? null : row.id)}
                 onDirty={setDirty}
                 onDelete={() => setDeleteId(row.id)}
@@ -128,7 +153,9 @@ export function ResumeTrackerSection({ enabled }: { readonly enabled: boolean })
               expanded
               resumeTitle="—"
               resumes={resumes.map((item) => ({ id: item.id, title: item.title }))}
-              onToggle={() => setOpen(null)}
+              postings={postings.map((item) => ({ id: item.id, title: item.title, company: item.company }))}
+              onToggle={() => requestOpen(null)}
+              onSaved={() => setOpen(null)}
               onDirty={setDirty}
               onDelete={() => undefined}
             />
@@ -143,9 +170,15 @@ export function ResumeTrackerSection({ enabled }: { readonly enabled: boolean })
         tone="danger"
         onCancel={() => setDeleteId(null)}
         onConfirm={() => {
-          if (deleteId) void resume.deleteApplication.mutate(deleteId);
+          const id = deleteId;
+          if (!id) return;
+          void resume.deleteApplication.mutateAsync(id).then(
+            () => {
+              if (id === openId) setOpen(null);
+            },
+            () => undefined,
+          );
           setDeleteId(null);
-          if (deleteId === openId) setOpen(null);
         }}
       />
       <ConfirmDialog
@@ -171,18 +204,22 @@ function ApplicationRow({
   expanded,
   resumeTitle,
   resumes,
+  postings,
   onToggle,
   onDirty,
   onDelete,
+  onSaved,
 }: {
   readonly row: JobApplication | null;
   readonly enabled: boolean;
   readonly expanded: boolean;
   readonly resumeTitle: string;
   readonly resumes: readonly { id: string; title: string }[];
+  readonly postings: readonly { id: string; title: string; company: string }[];
   readonly onToggle: () => void;
   readonly onDirty: (dirty: boolean) => void;
   readonly onDelete: () => void;
+  readonly onSaved?: () => void;
 }) {
   const resume = useResume();
   const saved = row
@@ -239,7 +276,10 @@ function ApplicationRow({
                 notes: form.notes,
                 recruiter: { name: form.name, email: form.email, phone: form.phone },
               })
-              .then(() => onDirty(false));
+              .then(() => {
+                onDirty(false);
+                if (!row) onSaved?.();
+              });
           }}
         >
           <AdminFieldGrid columns={2}>
@@ -268,11 +308,26 @@ function ApplicationRow({
                 ))}
               </select>
             </AdminField>
+            <AdminField label="Job post" htmlFor={`${formId}-posting`}>
+              <select
+                id={`${formId}-posting`}
+                className="form-select"
+                value={form.postingId}
+                onChange={(event) => setForm({ ...form, postingId: event.target.value })}
+              >
+                <option value="">None</option>
+                {postings.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.company} — {item.title}
+                  </option>
+                ))}
+              </select>
+            </AdminField>
             <AdminField label="Applied" htmlFor={`${formId}-applied`}>
-              <input id={`${formId}-applied`} className="form-control" value={form.appliedAt} onChange={(event) => setForm({ ...form, appliedAt: event.target.value })} />
+              <input id={`${formId}-applied`} className="form-control" type="date" value={form.appliedAt} onChange={(event) => setForm({ ...form, appliedAt: event.target.value })} />
             </AdminField>
             <AdminField label="Next step" htmlFor={`${formId}-next`}>
-              <input id={`${formId}-next`} className="form-control" value={form.nextStepAt} onChange={(event) => setForm({ ...form, nextStepAt: event.target.value })} />
+              <input id={`${formId}-next`} className="form-control" type="date" value={form.nextStepAt} onChange={(event) => setForm({ ...form, nextStepAt: event.target.value })} />
             </AdminField>
             <AdminField label="Recruiter name" htmlFor={`${formId}-name`}>
               <input id={`${formId}-name`} className="form-control" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />

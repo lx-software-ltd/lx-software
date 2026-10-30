@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from datetime import datetime
 from typing import Any
 
 from resume_store import (
@@ -82,6 +84,21 @@ def get_application(table: Any, application_id: str) -> dict[str, Any] | None:
     return _get(table, f"{PK_PREFIX}application#{application_id}", "RESUME")
 
 
+_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _day(value: str, label: str) -> str:
+    if not value:
+        return ""
+    if not _DAY.match(value):
+        raise ResumeError(f"{label} must be a YYYY-MM-DD date.")
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ResumeError(f"{label} must be a YYYY-MM-DD date.") from exc
+    return value
+
+
 def _recruiter(body: dict[str, Any], current: dict[str, Any], *, partial: bool) -> dict[str, str]:
     source = body.get("recruiter") if isinstance(body.get("recruiter"), dict) else None
     if source is None and partial:
@@ -124,8 +141,8 @@ def _fields(table: Any, body: dict[str, Any], *, partial: bool, current: dict[st
         "status": status,
         "resumeId": resume_id,
         "postingId": posting_id,
-        "appliedAt": take("appliedAt"),
-        "nextStepAt": take("nextStepAt"),
+        "appliedAt": _day(take("appliedAt"), "Applied"),
+        "nextStepAt": _day(take("nextStepAt"), "Next step"),
         "notes": take("notes")[:4000],
         "recruiter": _recruiter(body, current, partial=partial),
     }

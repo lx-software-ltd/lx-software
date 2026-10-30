@@ -80,8 +80,8 @@ function queueJob(finish: (job: ResumeMockJob) => void): ResumeMockJob {
     resumeIds: [],
     error: "",
     findings: [],
-    runningAt: stamp + 400,
-    doneAt: stamp + 2000,
+    runningAt: stamp + 1000,
+    doneAt: stamp + 1000,
     settled: false,
     finish: () => undefined,
   };
@@ -128,6 +128,21 @@ function recruiterOf(value: unknown, current: JobApplication["recruiter"]): JobA
     email,
     phone: String(source.phone ?? "").trim(),
   };
+}
+
+function calendarDay(value: unknown, label: string): string | Response {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return json({ message: `${label} must be a YYYY-MM-DD date.` }, 400);
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month - 1 || parsed.getUTCDate() !== day) {
+    return json({ message: `${label} must be a YYYY-MM-DD date.` }, 400);
+  }
+  return text;
 }
 
 function addPosting(raw: Record<string, unknown>): JobPosting | Response {
@@ -189,6 +204,9 @@ export function handleResume(ctx: MockCtx): Response | null {
     if (blocked) return blocked;
     const page = String(body.pageSize ?? resumeState.settings.pageSize);
     if (page !== "A4" && page !== "Letter") return json({ message: "Page size must be A4 or Letter." }, 400);
+    if (Array.isArray(body.rewriteScope) && body.rewriteScope.length === 0) {
+      return json({ message: "Choose at least one part of the resume to rewrite." }, 400);
+    }
     resumeState.settings = { ...resumeState.settings, ...body, pageSize: page } as typeof resumeState.settings;
     return json({ settings: resumeState.settings });
   }
@@ -282,8 +300,10 @@ export function handleResume(ctx: MockCtx): Response | null {
   if (parts[0] === "resumes" && parts.length === 3 && (parts[2] === "file" || parts[2] === "pdf") && method === "GET") {
     const row = findResume(parts[1]);
     if (!row) return json({ message: "Resume not found" }, 404);
-    if (row.extract.status !== "ready") return json({ message: "The resume is not ready yet." }, 409);
-    return fileBody(row, parts[2]);
+    if (parts[2] === "pdf" && row.extract.status !== "ready") {
+      return json({ message: "The resume is not ready yet." }, 409);
+    }
+    return fileBody(row, parts[2] === "pdf" ? "pdf" : "file");
   }
   if (parts[0] === "template" && method === "PUT") {
     const blocked = disabled();
@@ -311,17 +331,23 @@ export function handleResume(ctx: MockCtx): Response | null {
   if (parts[0] === "tailor" && method === "POST") {
     const blocked = disabled();
     if (blocked) return blocked;
+    const templateId = String(body.templateId ?? "") || resumeState.templateResumeId;
+    const template = findResume(templateId);
+    if (!template || template.format !== "docx" || template.extract.status !== "ready") {
+      return json({ message: "Choose a ready Word template." }, 400);
+    }
     let postingId = String(body.postingId ?? "");
-    if (!postingId) {
+    if (postingId) {
+      if (!resumeState.postings.some((row) => row.id === postingId)) {
+        return json({ message: "Job post not found." }, 404);
+      }
+    } else {
       const posting = body.posting;
       if (!posting || typeof posting !== "object") return json({ message: "Choose or paste a job post." }, 400);
       const created = addPosting(posting as Record<string, unknown>);
       if (created instanceof Response) return created;
       postingId = created.id;
     }
-    const templateId = String(body.templateId ?? "") || resumeState.templateResumeId;
-    const template = findResume(templateId);
-    if (!template) return json({ message: "Choose a template resume." }, 400);
     const addToTracker = body.addToTracker !== false;
     const job = queueJob((current) => {
       const source = findResume(templateId);
@@ -383,6 +409,10 @@ export function handleResume(ctx: MockCtx): Response | null {
     if (blocked) return blocked;
     const recruiter = recruiterOf(body.recruiter, { name: "", email: "", phone: "" });
     if (recruiter instanceof Response) return recruiter;
+    const appliedAt = calendarDay(body.appliedAt, "Applied");
+    if (appliedAt instanceof Response) return appliedAt;
+    const nextStepAt = calendarDay(body.nextStepAt, "Next step");
+    if (nextStepAt instanceof Response) return nextStepAt;
     const application: JobApplication = {
       id: nextId("app"),
       resumeId: String(body.resumeId ?? ""),
@@ -391,8 +421,8 @@ export function handleResume(ctx: MockCtx): Response | null {
       position: String(body.position ?? ""),
       recruiter,
       status: String(body.status ?? "saved"),
-      appliedAt: String(body.appliedAt ?? ""),
-      nextStepAt: String(body.nextStepAt ?? ""),
+      appliedAt,
+      nextStepAt,
       notes: String(body.notes ?? ""),
       createdAt: nowIso(),
       updatedAt: nowIso(),
@@ -407,14 +437,18 @@ export function handleResume(ctx: MockCtx): Response | null {
     if (!row) return json({ message: "Application not found" }, 404);
     const recruiter = recruiterOf(body.recruiter, row.recruiter);
     if (recruiter instanceof Response) return recruiter;
+    const appliedAt = calendarDay(body.appliedAt ?? row.appliedAt, "Applied");
+    if (appliedAt instanceof Response) return appliedAt;
+    const nextStepAt = calendarDay(body.nextStepAt ?? row.nextStepAt, "Next step");
+    if (nextStepAt instanceof Response) return nextStepAt;
     Object.assign(row, {
       company: body.company ?? row.company,
       position: body.position ?? row.position,
       status: body.status ?? row.status,
       resumeId: body.resumeId ?? row.resumeId,
       postingId: body.postingId ?? row.postingId,
-      appliedAt: body.appliedAt ?? row.appliedAt,
-      nextStepAt: body.nextStepAt ?? row.nextStepAt,
+      appliedAt,
+      nextStepAt,
       notes: body.notes ?? row.notes,
       recruiter,
       updatedAt: nowIso(),

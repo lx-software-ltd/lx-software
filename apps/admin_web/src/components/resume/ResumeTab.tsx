@@ -1,6 +1,7 @@
+import { useCallback, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useResume } from "../../hooks/useResume";
-import { AdminTabList, type AdminTabItem } from "../ui";
+import { AdminTabList, ConfirmDialog, type AdminTabItem } from "../ui";
 import { ResumeListSection } from "./ResumeListSection";
 import { ResumeSettingsCard } from "./ResumeSettingsCard";
 import { ResumeTailorSection } from "./ResumeTailorSection";
@@ -27,6 +28,9 @@ export function ResumeTab() {
   const section = sectionFrom(params);
   const overview = resume.overview.data;
   const enabled = overview?.enabled ?? false;
+  const [sectionDirty, setSectionDirty] = useState(false);
+  const [pendingSection, setPendingSection] = useState<Section | null>(null);
+  const reportDirty = useCallback((dirty: boolean) => setSectionDirty(dirty), []);
 
   function setSection(id: Section) {
     setParams(
@@ -42,6 +46,15 @@ export function ResumeTab() {
     );
   }
 
+  function requestSection(id: Section) {
+    if (id === section) return;
+    if (sectionDirty) {
+      setPendingSection(id);
+      return;
+    }
+    setSection(id);
+  }
+
   return (
     <div>
       {resume.overview.isError ? (
@@ -53,20 +66,26 @@ export function ResumeTab() {
       <AdminTabList
         tabs={TABS}
         active={section}
-        onChange={setSection}
+        onChange={requestSection}
         label="Resume sections"
         idPrefix="resume"
         panelId="resume-panel"
       />
       <div className="tab-content" id="resume-panel" role="tabpanel">
         {section === "resumes" ? (
-          <ResumeListSection enabled={enabled} templateResumeId={overview?.templateResumeId ?? ""} />
+          <ResumeListSection
+            enabled={enabled}
+            templateResumeId={overview?.templateResumeId ?? ""}
+            onSectionDirty={reportDirty}
+          />
         ) : null}
         {section === "tailor" ? (
           <ResumeTailorSection
             enabled={enabled}
             templateResumeId={overview?.templateResumeId ?? ""}
+            onSectionDirty={reportDirty}
             onOpenResume={(id) => {
+              setSectionDirty(false);
               setParams(
                 (current) => {
                   const next = new URLSearchParams(current);
@@ -81,9 +100,26 @@ export function ResumeTab() {
             }}
           />
         ) : null}
-        {section === "tracker" ? <ResumeTrackerSection enabled={enabled} /> : null}
-        {section === "settings" && overview ? <ResumeSettingsCard overview={overview} enabled={enabled} /> : null}
+        {section === "tracker" ? <ResumeTrackerSection enabled={enabled} onSectionDirty={reportDirty} /> : null}
+        {section === "settings" && overview ? (
+          <ResumeSettingsCard overview={overview} enabled={enabled} onSectionDirty={reportDirty} />
+        ) : null}
       </div>
+      <ConfirmDialog
+        open={pendingSection !== null}
+        title="Discard unsaved edits?"
+        body="This section has unsaved changes."
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        tone="danger"
+        onCancel={() => setPendingSection(null)}
+        onConfirm={() => {
+          const next = pendingSection;
+          setPendingSection(null);
+          setSectionDirty(false);
+          if (next) setSection(next);
+        }}
+      />
     </div>
   );
 }

@@ -1,3 +1,5 @@
+const REVOKE_MS = 60_000;
+
 function decoded(dataBase64: string): Uint8Array {
   const binary = atob(dataBase64);
   const bytes = new Uint8Array(binary.length);
@@ -13,17 +15,29 @@ function blob(contentType: string, dataBase64: string): Blob {
 }
 
 export function downloadBase64(filename: string, contentType: string, dataBase64: string): void {
-  const file = blob(contentType, dataBase64);
-  const url = URL.createObjectURL(file);
+  const url = URL.createObjectURL(blob(contentType, dataBase64));
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), REVOKE_MS);
 }
 
-export function openBase64(contentType: string, dataBase64: string): void {
+/** Open the preview window in the click handler, before any await. */
+export function openPreview(): Window | null {
+  const popup = window.open("about:blank", "_blank");
+  if (popup) popup.opener = null;
+  return popup;
+}
+
+export function showPreview(popup: Window | null, filename: string, contentType: string, dataBase64: string): void {
+  if (!popup || popup.closed) {
+    downloadBase64(filename, contentType, dataBase64);
+    return;
+  }
   const url = URL.createObjectURL(blob(contentType, dataBase64));
-  window.open(url, "_blank", "noopener");
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  popup.location.href = url;
+  window.setTimeout(() => URL.revokeObjectURL(url), REVOKE_MS);
 }

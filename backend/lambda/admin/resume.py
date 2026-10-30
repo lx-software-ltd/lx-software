@@ -11,6 +11,7 @@ import board_async
 import board_store
 import resume_extract
 import resume_pdf
+import resume_spend
 import resume_store
 import resume_tailor
 import resume_tracker
@@ -288,19 +289,31 @@ def _posting(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
     return _json_response(201, {"item": resume_tracker.public_posting(doc)})
 
 
+def _ready_template(table: Any, template_id: str) -> None:
+    template = resume_store.get_resume(table, template_id) if template_id else None
+    ready = (template or {}).get("extract") or {}
+    if not template or template.get("format") != "docx" or ready.get("status") != "ready":
+        raise ResumeError("Choose a ready Word template.")
+
+
 def _tailor(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
+    blocked = _require_enabled()
+    if blocked:
+        return blocked
     body = _body(event)
     table = _table()
+    template_id = str(body.get("templateId") or "") or resume_store.template_id(table)
+    _ready_template(table, template_id)
     posting_id = str(body.get("postingId") or "")
-    if not posting_id:
+    if posting_id:
+        if not resume_tracker.get_posting(table, posting_id):
+            raise ResumeError("Job post not found.", 404)
+    else:
         posting = body.get("posting") if isinstance(body.get("posting"), dict) else None
         if not posting:
             raise ResumeError("Choose or paste a job post.")
         created = resume_tracker.create_posting(table, posting)
         posting_id = str(created["postingId"])
-    template_id = str(body.get("templateId") or "") or resume_store.template_id(table)
-    if not template_id:
-        raise ResumeError("Choose a template resume.")
     return _queue(
         event,
         "tailor",
@@ -338,9 +351,11 @@ def _delete_application(event: dict[str, Any], application_id: str, user_sub: st
 
 
 def _job(job_id: str) -> dict[str, Any]:
-    doc = resume_store.get_job(_table(), job_id)
+    table = _table()
+    doc = resume_store.get_job(table, job_id)
     if not doc:
         return _json_response(404, {"message": "Job not found"})
+    doc = resume_spend.finalize_stale(table, doc)
     return _json_response(200, {"job": resume_store.public_job(doc)})
 
 
@@ -349,17 +364,26 @@ def _run_worker(event: dict[str, Any], runner: Any) -> dict[str, Any]:
     job = resume_store.get_job(table, str(event.get("jobId") or ""))
     if not job or job.get("status") not in {"queued", "running"}:
         return {"ok": True}
+    if resume_spend.is_stale(job):
+        resume_spend.finalize_stale(table, job)
+        return {"ok": False}
     if not resume_store.feature_enabled():
         job["status"] = "failed"
         job["error"] = "Resume is turned off."
         resume_store.put_job(table, job)
         return {"ok": False}
+    if not job.get("startedAt"):
+        job["startedAt"] = resume_store._now()
     job["status"] = "running"
     resume_store.put_job(table, job)
     try:
         runner(table, job)
+        fresh = resume_store.get_job(table, str(job["jobId"]))
+        if fresh and fresh.get("status") == "failed":
+            return {"ok": False}
         job["status"] = "done"
     except Exception as exc:
+        resume_spend.settle_job(table, job)
         job["status"] = "failed"
         job["error"] = str(exc)[:500]
         _log_event("warning", tag="resume_job_failed", kind=job.get("kind"), error=job["error"])
@@ -371,7 +395,7 @@ def handle_extract(event: dict[str, Any]) -> dict[str, Any]:
     def runner(table: Any, job: dict[str, Any]) -> None:
         resume_id = str((job.get("payload") or {}).get("resumeId") or "")
         try:
-            resume_extract.run(table, resume_id)
+            resume_extract.run(table, resume_id, job)
         except Exception as exc:
             doc = resume_store.get_resume(table, resume_id)
             if doc:

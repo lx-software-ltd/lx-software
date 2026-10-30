@@ -10,6 +10,7 @@ import boto3
 import openrouter_client
 import openrouter_usage
 import resume_docx
+import resume_spend
 import resume_store
 from openrouter_client import parse_json_object_text
 from resume_store import ResumeError
@@ -156,8 +157,23 @@ def _merge(layout: dict[str, Any], model: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _book(table: Any, job: dict[str, Any] | None, result: Any) -> None:
+    openrouter_usage.add_usage_day(table, service="resume", owner="extract", usage=result.usage, calls=1)
+    if job is not None:
+        resume_spend.add_usage(table, job, result.usage)
+
+
+def _timeout(job: dict[str, Any] | None, preferred: int) -> int:
+    started = str((job or {}).get("startedAt") or "") or None
+    return resume_spend.bounded_timeout(started, preferred)
+
+
 def classify(
-    table: Any, paragraphs: list[dict[str, Any]], layout: dict[str, Any], settings: dict[str, Any]
+    table: Any,
+    paragraphs: list[dict[str, Any]],
+    layout: dict[str, Any],
+    settings: dict[str, Any],
+    job: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     model = resume_store.model_name(settings)
     if not model:
@@ -183,7 +199,7 @@ def classify(
         messages=messages,
         model=model,
         secrets_client=boto3.client("secretsmanager"),
-        timeout=60,
+        timeout=_timeout(job, 60),
         json_mode=True,
         temperature=0,
         max_tokens=4000,
@@ -191,25 +207,25 @@ def classify(
         owner="extract",
         reasoning={"enabled": False, "exclude": True},
     )
-    openrouter_usage.add_usage_day(table, service="resume", owner="extract", usage=result.usage, calls=1)
+    _book(table, job, result)
     parsed = parse_json_object_text(result.text)
     if not isinstance(parsed, dict):
         raise ResumeError("The model did not return a paragraph map.")
     return _merge(layout, parsed)
 
 
-def pdf_text(table: Any, data: bytes, settings: dict[str, Any]) -> str:
+def pdf_text(table: Any, data: bytes, settings: dict[str, Any], job: dict[str, Any] | None = None) -> str:
     model = resume_store.model_name(settings)
     if not model:
         raise ResumeError("No model is configured.")
     encoded = base64.b64encode(data).decode("ascii")
-    text = _pdf_engine(table, model, encoded, "pdf-text")
+    text = _pdf_engine(table, model, encoded, "pdf-text", job)
     if len(text.strip()) < 200:
-        text = _pdf_engine(table, model, encoded, "mistral-ocr")
+        text = _pdf_engine(table, model, encoded, "mistral-ocr", job)
     return text
 
 
-def _pdf_engine(table: Any, model: str, encoded: str, engine: str) -> str:
+def _pdf_engine(table: Any, model: str, encoded: str, engine: str, job: dict[str, Any] | None) -> str:
     messages = [
         {
             "role": "user",
@@ -229,7 +245,7 @@ def _pdf_engine(table: Any, model: str, encoded: str, engine: str) -> str:
         messages=messages,
         model=model,
         secrets_client=boto3.client("secretsmanager"),
-        timeout=90,
+        timeout=_timeout(job, 90),
         json_mode=True,
         temperature=0,
         max_tokens=6000,
@@ -238,14 +254,19 @@ def _pdf_engine(table: Any, model: str, encoded: str, engine: str) -> str:
         owner="extract",
         reasoning={"enabled": False, "exclude": True},
     )
-    openrouter_usage.add_usage_day(table, service="resume", owner="extract", usage=result.usage, calls=1)
+    _book(table, job, result)
     parsed = parse_json_object_text(result.text)
     if not isinstance(parsed, dict):
         return ""
     return str(parsed.get("text") or "")
 
 
-def run(table: Any, resume_id: str) -> None:
+def _needs_text(paragraphs: list[dict[str, Any]]) -> bool:
+    return any(str(item.get("text") or "").strip() for item in paragraphs)
+
+
+def run(table: Any, resume_id: str, job: dict[str, Any] | None = None) -> None:
+    meter = job if job is not None else {}
     doc = resume_store.get_resume(table, resume_id)
     if not doc:
         raise ResumeError("Resume not found.", 404)
@@ -254,25 +275,35 @@ def run(table: Any, resume_id: str) -> None:
         raise ResumeError("The uploaded file is missing.")
     _content_type, data = loaded
     settings = resume_store.load_settings(table)
+    cap = float(settings.get("maxUsdPerMonth") or 0)
     fmt = str(doc.get("format") or "")
-    if fmt == "docx":
-        paragraphs = resume_docx.paragraph_map(data)
-        layout = heuristic(paragraphs)
-        if any(str(item.get("text") or "").strip() for item in paragraphs):
-            layout = classify(table, paragraphs, layout, settings)
-    else:
-        if fmt == "pdf":
-            text = pdf_text(table, data, settings)
+    reserved = False
+    try:
+        if fmt == "docx":
+            paragraphs = resume_docx.paragraph_map(data)
+            layout = heuristic(paragraphs)
+            if _needs_text(paragraphs):
+                resume_spend.reserve_job(table, meter, cap)
+                reserved = True
+                layout = classify(table, paragraphs, layout, settings, meter)
         else:
-            text = data.decode("utf-8", errors="replace")
-        paragraphs = paragraphs_from_text(text)
-        layout = heuristic(paragraphs)
-        if fmt == "pdf" and any(str(item.get("text") or "").strip() for item in paragraphs):
-            layout = classify(table, paragraphs, layout, settings)
-    doc["paragraphs"] = paragraphs
-    doc["layout"] = layout
-    doc["extract"] = {"status": "ready", "error": ""}
-    make_template = bool(doc.pop("makeTemplate", False))
-    resume_store.save_resume(table, doc)
-    if make_template:
-        resume_store.set_template(table, resume_id)
+            if fmt == "pdf":
+                resume_spend.reserve_job(table, meter, cap)
+                reserved = True
+                text = pdf_text(table, data, settings, meter)
+            else:
+                text = data.decode("utf-8", errors="replace")
+            paragraphs = paragraphs_from_text(text)
+            layout = heuristic(paragraphs)
+            if fmt == "pdf" and _needs_text(paragraphs):
+                layout = classify(table, paragraphs, layout, settings, meter)
+        doc["paragraphs"] = paragraphs
+        doc["layout"] = layout
+        doc["extract"] = {"status": "ready", "error": ""}
+        make_template = bool(doc.pop("makeTemplate", False))
+        resume_store.save_resume(table, doc)
+        if make_template:
+            resume_store.set_template(table, resume_id)
+    finally:
+        if reserved:
+            resume_spend.settle_job(table, meter)

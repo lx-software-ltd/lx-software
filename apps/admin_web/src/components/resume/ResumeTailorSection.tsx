@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useResume } from "../../hooks/useResume";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import {
@@ -13,23 +13,43 @@ export function ResumeTailorSection({
   enabled,
   templateResumeId,
   onOpenResume,
+  onSectionDirty,
 }: {
   readonly enabled: boolean;
   readonly templateResumeId: string;
   readonly onOpenResume: (id: string) => void;
+  readonly onSectionDirty?: (dirty: boolean) => void;
 }) {
   const resume = useResume();
   const resumes = (resume.resumes.data?.items ?? []).filter((row) => row.format === "docx" && row.extract.status === "ready");
   const postings = resume.postings.data?.items ?? [];
-  const [source, setSource] = useState<"template" | "upload">(templateResumeId ? "template" : "upload");
-  const [templateId, setTemplateId] = useState(templateResumeId);
+  const [sourceChoice, setSourceChoice] = useState<"template" | "upload" | null>(null);
+  const [templateChoice, setTemplateChoice] = useState<string | null>(null);
+  const source = sourceChoice ?? (templateResumeId ? "template" : "upload");
+  const templateId = templateChoice ?? templateResumeId;
   const [file, setFile] = useState<File | null>(null);
-  const [uploadTitle, setUploadTitle] = useState("Alex Example");
+  const [uploadTitle, setUploadTitle] = useState("");
   const [postingId, setPostingId] = useState("");
-  const [company, setCompany] = useState("Northwind");
-  const [position, setPosition] = useState("Engineer");
-  const [adText, setAdText] = useState("Northwind needs an engineer who already built a billing export.");
+  const [company, setCompany] = useState("");
+  const [position, setPosition] = useState("");
+  const [adText, setAdText] = useState("");
   const [addToTracker, setAddToTracker] = useState(true);
+  const dirty = Boolean(
+    sourceChoice ||
+      templateChoice ||
+      file ||
+      uploadTitle.trim() ||
+      company.trim() ||
+      position.trim() ||
+      adText.trim() ||
+      postingId ||
+      !addToTracker,
+  );
+
+  useEffect(() => {
+    onSectionDirty?.(dirty);
+    return () => onSectionDirty?.(false);
+  }, [dirty, onSectionDirty]);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState<string | null>(null);
   const busy = resume.upload.isPending || resume.tailor.isPending;
@@ -65,6 +85,7 @@ export function ResumeTailorSection({
       });
       const resumeId = job.resumeIds[0];
       if (!resumeId) throw new Error("The tailored resume was not saved.");
+      onSectionDirty?.(false);
       onOpenResume(resumeId);
     } catch (caught) {
       setProgress("");
@@ -95,7 +116,7 @@ export function ResumeTailorSection({
               id="resume-tailor-source"
               className="form-select"
               value={source}
-              onChange={(event) => setSource(event.target.value as "template" | "upload")}
+              onChange={(event) => setSourceChoice(event.target.value as "template" | "upload")}
             >
               <option value="template">Current template</option>
               <option value="upload">Upload a new Word document</option>
@@ -107,7 +128,7 @@ export function ResumeTailorSection({
                 id="resume-tailor-template"
                 className="form-select"
                 value={templateId || templateResumeId}
-                onChange={(event) => setTemplateId(event.target.value)}
+                onChange={(event) => setTemplateChoice(event.target.value)}
               >
                 <option value="">Choose a template</option>
                 {resumes.map((row) => (

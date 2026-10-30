@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_RESUME_SETTINGS, LOCKED_FACTS, type ResumeOverview } from "../../lib/resumeModel";
 import { ResumeSettingsCard } from "./ResumeSettingsCard";
@@ -32,5 +33,20 @@ describe("Resume settings", () => {
     expect(screen.getByLabelText("Model")).toHaveValue("");
     expect(screen.getByText(/Spent US\$ 0.02 of 5.00 this month/)).toBeVisible();
     expect(screen.getByText(/PDF export is Latin-only for now/)).toBeVisible();
+  });
+
+  it("asks for a rewrite scope before saving", async () => {
+    const user = userEvent.setup();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <ResumeSettingsCard overview={overview} enabled />
+      </QueryClientProvider>,
+    );
+    for (const scope of ["headline", "summary", "bullets", "skills"]) {
+      await user.click(screen.getByRole("checkbox", { name: scope }));
+    }
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent("at least one part of the resume");
   });
 });

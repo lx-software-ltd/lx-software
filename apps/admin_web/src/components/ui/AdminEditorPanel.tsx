@@ -78,6 +78,7 @@ export type AdminEditorPanelProps = {
   readonly savingLabel?: string;
   readonly error?: string | null;
   readonly disabled?: boolean;
+  readonly hideSubmit?: boolean;
 };
 
 /** Field labels and fields, then one primary action. No title and no Cancel. */
@@ -90,6 +91,7 @@ export function AdminEditorPanel({
   savingLabel,
   error,
   disabled = false,
+  hideSubmit = false,
 }: AdminEditorPanelProps) {
   return (
     <div className="admin-editor-panel">
@@ -101,13 +103,15 @@ export function AdminEditorPanel({
       <form id={formId} onSubmit={onSubmit}>
         {children}
       </form>
-      <AdminEditorActions
-        formId={formId}
-        submitLabel={submitLabel}
-        isSaving={isSaving}
-        savingLabel={savingLabel}
-        disabled={disabled}
-      />
+      {hideSubmit ? null : (
+        <AdminEditorActions
+          formId={formId}
+          submitLabel={submitLabel}
+          isSaving={isSaving}
+          savingLabel={savingLabel}
+          disabled={disabled}
+        />
+      )}
     </div>
   );
 }
