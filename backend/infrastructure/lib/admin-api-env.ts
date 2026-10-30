@@ -35,6 +35,7 @@ export interface AdminApiEnvInput {
   readonly boardStaffEnabled: string;
   readonly linkedinEnabled: string;
   readonly linkedinPublishEnabled: string;
+  readonly resumeEnabled: string;
   readonly linkedinAppSecretId: string;
   readonly boardCatalogImportEnabled: string;
   readonly siutindeiAdminApiBaseUrl: string;
@@ -108,6 +109,7 @@ export function buildAdminEnv(input: AdminApiEnvInput): Record<string, string> {
     ["BOARD_STAFF_ENABLED", input.boardStaffEnabled],
     ["LINKEDIN_ENABLED", input.linkedinEnabled],
     ["LINKEDIN_PUBLISH_ENABLED", input.linkedinPublishEnabled],
+    ["RESUME_ENABLED", input.resumeEnabled],
     ["LINKEDIN_APP_SECRET_ID", input.linkedinAppSecretId],
     ["BOARD_CATALOG_IMPORT_ENABLED", input.boardCatalogImportEnabled],
     ["SIUTINDEI_ADMIN_API_BASE_URL", input.siutindeiAdminApiBaseUrl],

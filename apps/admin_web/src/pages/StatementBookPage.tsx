@@ -6,6 +6,7 @@ import { MirroredBookSummaryCard } from "../components/MirroredBookSummaryCard";
 import { StatementBookDashboardCard } from "../components/StatementBookDashboardCard";
 import { ExecutiveBoardTab } from "../components/board/ExecutiveBoardTab";
 import { LinkedInTab } from "../components/linkedin/LinkedInTab";
+import { ResumeTab } from "../components/resume/ResumeTab";
 import { AdminTabList, type AdminTabItem } from "../components/ui";
 import { useStatementBook } from "../hooks/useStatementBook";
 import { adminTabButtonId } from "../lib/adminTabs";
@@ -36,13 +37,25 @@ const LINKEDIN_TAB: AdminTabItem<StatementBookTab> = {
   label: "LinkedIn",
 };
 
+const RESUME_TAB: AdminTabItem<StatementBookTab> = {
+  id: "resume",
+  label: "Resume",
+};
+
 function rowParamForTab(tab: StatementBookTab, bookKey: string, search: string): string | null {
   if (tab === "expenses" || tab === "gains") return `${bookKey}-line`;
-  if (tab !== "linkedin") return null;
   const section = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search).get("section");
-  if (section === "ideas") return "linkedin-idea";
-  if (section === "calendar" || section === "published" || section === "settings") return null;
-  return "linkedin-post";
+  if (tab === "linkedin") {
+    if (section === "ideas") return "linkedin-idea";
+    if (section === "calendar" || section === "published" || section === "settings") return null;
+    return "linkedin-post";
+  }
+  if (tab === "resume") {
+    if (section === "tracker") return "application";
+    if (section === "tailor" || section === "settings") return null;
+    return "resume";
+  }
+  return null;
 }
 
 export function StatementBookPage({
@@ -56,10 +69,12 @@ export function StatementBookPage({
   const readOnly = isMirroredStatementBook(bookKey);
   const hasExecutiveBoard = bookKey === SIU_TIN_DEI_BOOK_KEY;
   const hasLinkedIn = bookKey === LX_SOFTWARE_BOOK_KEY;
+  const hasResume = bookKey === LX_SOFTWARE_BOOK_KEY;
   const tabs = [
     ...STATEMENT_BOOK_TABS,
     ...(hasExecutiveBoard ? [EXECUTIVE_BOARD_TAB] : []),
     ...(hasLinkedIn ? [LINKEDIN_TAB] : []),
+    ...(hasResume ? [RESUME_TAB] : []),
   ];
   const {
     data,
@@ -74,7 +89,10 @@ export function StatementBookPage({
   } = useStatementBook(bookKey);
   const location = useLocation();
   const navigate = useNavigate();
-  const tab = defaultStatementBookTab(hasExecutiveBoard, location.search, { linkedIn: hasLinkedIn });
+  const tab = defaultStatementBookTab(hasExecutiveBoard, location.search, {
+    linkedIn: hasLinkedIn,
+    resume: hasResume,
+  });
   const setTab = (id: StatementBookTab) => {
     const params = new URLSearchParams(location.search);
     params.set("tab", id);
@@ -82,7 +100,7 @@ export function StatementBookPage({
     for (const key of [...params.keys()]) {
       if (key !== keep && isRowExpandedParam(key)) params.delete(key);
     }
-    if (id !== "board" && id !== "linkedin") params.delete("section");
+    if (id !== "board" && id !== "linkedin" && id !== "resume") params.delete("section");
     navigate({ pathname: location.pathname, search: params.toString() }, { replace: true });
   };
   const [fiscalYear, setFiscalYear] = useState<FiscalYearId>(() =>
@@ -106,7 +124,7 @@ export function StatementBookPage({
   const idPrefix = `book-${bookKey}`;
   const panelId = `${idPrefix}-tabpanel`;
   // The board has its own API; it stays usable even when the book failed to load.
-  const canShowTab = !isError || tab === "board" || tab === "linkedin";
+  const canShowTab = !isError || tab === "board" || tab === "linkedin" || tab === "resume";
 
   return (
     <div>
@@ -202,6 +220,7 @@ export function StatementBookPage({
             ) : null}
             {tab === "board" && hasExecutiveBoard ? <ExecutiveBoardTab /> : null}
             {tab === "linkedin" && hasLinkedIn ? <LinkedInTab /> : null}
+            {tab === "resume" && hasResume ? <ResumeTab /> : null}
           </div>
           )}
         </>

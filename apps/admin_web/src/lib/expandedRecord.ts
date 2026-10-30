@@ -17,6 +17,8 @@ const EXPANDED_PARAM_NAMES = new Set([
   "prospect",
   "linkedin-post",
   "linkedin-idea",
+  "resume",
+  "application",
 ]);
 
 export function isRowExpandedParam(name: string): boolean {

@@ -4,6 +4,7 @@ const GET = apigwv2.HttpMethod.GET;
 const POST = apigwv2.HttpMethod.POST;
 const PUT = apigwv2.HttpMethod.PUT;
 const DELETE = apigwv2.HttpMethod.DELETE;
+const PATCH = apigwv2.HttpMethod.PATCH;
 
 /** Per-route throttle copied onto the $default stage RouteSettings. */
 export const WEBHOOK_THROTTLE = { ThrottlingRateLimit: 10, ThrottlingBurstLimit: 20 };
@@ -163,6 +164,18 @@ export const ROUTES: readonly AdminApiRoute[] = [
   { path: "/lx-software/linkedin/ideas/{id}", methods: [DELETE], auth: "jwt" },
   { path: "/lx-software/linkedin/generate", methods: [POST], auth: "jwt" },
   { path: "/lx-software/linkedin/jobs/{jobId}", methods: [GET], auth: "jwt" },
+  { path: "/lx-software/resume/overview", methods: [GET], auth: "jwt" },
+  { path: "/lx-software/resume/settings", methods: [GET, PUT], auth: "jwt" },
+  { path: "/lx-software/resume/resumes/{id}/file", methods: [GET], auth: "jwt" },
+  { path: "/lx-software/resume/resumes/{id}/pdf", methods: [GET], auth: "jwt" },
+  { path: "/lx-software/resume/resumes/{id}", methods: [GET, PATCH, DELETE], auth: "jwt" },
+  { path: "/lx-software/resume/resumes", methods: [GET, POST], auth: "jwt" },
+  { path: "/lx-software/resume/template", methods: [PUT], auth: "jwt" },
+  { path: "/lx-software/resume/postings", methods: [GET, POST], auth: "jwt" },
+  { path: "/lx-software/resume/tailor", methods: [POST], auth: "jwt" },
+  { path: "/lx-software/resume/applications/{id}", methods: [PATCH, DELETE], auth: "jwt" },
+  { path: "/lx-software/resume/applications", methods: [GET, POST], auth: "jwt" },
+  { path: "/lx-software/resume/jobs/{jobId}", methods: [GET], auth: "jwt" },
   { path: "/lx-software", methods: [GET, PUT], auth: "jwt" },
   { path: "/lx-software/parse-statement", methods: [POST], auth: "jwt" },
   { path: "/lx-software/parse-statement/jobs/{jobId}", methods: [GET], auth: "jwt" },
