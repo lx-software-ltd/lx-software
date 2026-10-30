@@ -966,6 +966,16 @@ export const OPENROUTER_APPS: readonly OpenRouterAppDefinition[] = [
     "ingestUsage": false
   },
   {
+    "id": "resume",
+    "label": "Resume",
+    "title": "LX Admin - Resume",
+    "referer": "https://admin.lx-software.com/lx-software?tab=resume",
+    "repo": "lx-software-ltd/lx-software",
+    "keyName": "lxsoftware:resume",
+    "meteredHere": true,
+    "ingestUsage": false
+  },
+  {
     "id": "evolvesprouts",
     "label": "Evolve Sprouts",
     "title": "Evolve Sprouts",

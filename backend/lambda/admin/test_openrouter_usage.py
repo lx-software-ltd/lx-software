@@ -12,27 +12,19 @@ from test_board import FakeTable  # noqa: E402
 class TestOpenRouterUsage(unittest.TestCase):
     def test_cost_centers(self) -> None:
         self.assertEqual(
-            openrouter_usage.cost_center_for(
-                service=SERVICE_EXECUTIVE_BOARD, owner="siuTinDei"
-            ),
+            openrouter_usage.cost_center_for(service=SERVICE_EXECUTIVE_BOARD, owner="siuTinDei"),
             "siuTinDei",
         )
         self.assertEqual(
-            openrouter_usage.cost_center_for(
-                service=SERVICE_STATEMENT_PARSER, owner="siuTinDei"
-            ),
+            openrouter_usage.cost_center_for(service=SERVICE_STATEMENT_PARSER, owner="siuTinDei"),
             "siuTinDei",
         )
         self.assertEqual(
-            openrouter_usage.cost_center_for(
-                service=SERVICE_STATEMENT_PARSER, owner="lxSoftware"
-            ),
+            openrouter_usage.cost_center_for(service=SERVICE_STATEMENT_PARSER, owner="lxSoftware"),
             "lxSoftware",
         )
         self.assertEqual(
-            openrouter_usage.cost_center_for(
-                service=SERVICE_STATEMENT_PARSER, owner="hillmarton"
-            ),
+            openrouter_usage.cost_center_for(service=SERVICE_STATEMENT_PARSER, owner="hillmarton"),
             "hillmarton",
         )
 
@@ -83,9 +75,7 @@ class TestOpenRouterUsage(unittest.TestCase):
         self.assertAlmostEqual(by_id["evolvesprouts"]["cost"], 0.0)
         self.assertIsNone(out["pull"])
         self.assertEqual(by_id["siutindei"]["referer"], "https://siutindei.com")
-        self.assertEqual(
-            by_id["evolvesprouts"]["keyName"], "lxsoftware:evolvesprouts"
-        )
+        self.assertEqual(by_id["evolvesprouts"]["keyName"], "lxsoftware:evolvesprouts")
 
     def test_empty_range_still_lists_catalog_apps(self) -> None:
         table = FakeTable()
@@ -93,7 +83,7 @@ class TestOpenRouterUsage(unittest.TestCase):
         self.assertEqual(out["total"]["calls"], 0)
         self.assertEqual(
             [app["id"] for app in out["apps"]],
-            ["statement-parser", "executive-board", "linkedin", "evolvesprouts", "siutindei"],
+            ["statement-parser", "executive-board", "linkedin", "resume", "evolvesprouts", "siutindei"],
         )
 
     def test_rejects_inverted_range(self) -> None:

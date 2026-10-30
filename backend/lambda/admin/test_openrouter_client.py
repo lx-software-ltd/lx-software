@@ -64,9 +64,7 @@ class TestOpenRouterAttribution(unittest.TestCase):
             openrouter_client._http_header_value("LX Admin — Statement parser"),
             "LX Admin - Statement parser",
         )
-        encoded = openrouter_client._http_header_value(
-            "LX Admin — Statement parser"
-        ).encode("latin-1")
+        encoded = openrouter_client._http_header_value("LX Admin — Statement parser").encode("latin-1")
         self.assertEqual(encoded, b"LX Admin - Statement parser")
 
     def test_board_headers_and_user(self) -> None:
@@ -85,8 +83,9 @@ class TestOpenRouterAttribution(unittest.TestCase):
                 ).encode("utf-8")
             )
 
-        with patch("openrouter_client.urlrequest.urlopen", fake_urlopen), patch.dict(
-            "os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False
+        with (
+            patch("openrouter_client.urlrequest.urlopen", fake_urlopen),
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
         ):
             completion = openrouter_client.chat_completion(
                 messages=[{"role": "user", "content": "hi"}],
@@ -98,9 +97,7 @@ class TestOpenRouterAttribution(unittest.TestCase):
             )
 
         headers = captured["headers"]
-        self.assertEqual(
-            _header(headers, "X-OpenRouter-Title"), "LX Admin - Executive Board"
-        )
+        self.assertEqual(_header(headers, "X-OpenRouter-Title"), "LX Admin - Executive Board")
         self.assertEqual(
             _header(headers, "HTTP-Referer"),
             "https://admin.lx-software.com/siu-tin-dei/board",
@@ -126,8 +123,9 @@ class TestOpenRouterAttribution(unittest.TestCase):
                 ).encode("utf-8")
             )
 
-        with patch("openrouter_client.urlrequest.urlopen", fake_urlopen), patch.dict(
-            "os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False
+        with (
+            patch("openrouter_client.urlrequest.urlopen", fake_urlopen),
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
         ):
             completion = openrouter_client.chat_completion(
                 messages=[{"role": "user", "content": "hi"}],
@@ -161,20 +159,14 @@ class TestOpenRouterAttribution(unittest.TestCase):
             },
             clear=False,
         ):
-            parser_key = openrouter_client.resolve_api_key(
-                secrets, service=openrouter_client.SERVICE_STATEMENT_PARSER
-            )
-            board_key = openrouter_client.resolve_api_key(
-                secrets, service=openrouter_client.SERVICE_EXECUTIVE_BOARD
-            )
+            parser_key = openrouter_client.resolve_api_key(secrets, service=openrouter_client.SERVICE_STATEMENT_PARSER)
+            board_key = openrouter_client.resolve_api_key(secrets, service=openrouter_client.SERVICE_EXECUTIVE_BOARD)
         self.assertEqual(parser_key, "sk-parser")
         self.assertEqual(board_key, "sk-board")
 
     def test_json_secret_requires_named_key_for_catalog_app(self) -> None:
         secrets = MagicMock()
-        secrets.get_secret_value.return_value = {
-            "SecretString": json.dumps({"openrouter_api_key": "sk-shared"})
-        }
+        secrets.get_secret_value.return_value = {"SecretString": json.dumps({"openrouter_api_key": "sk-shared"})}
         with patch.dict(
             "os.environ",
             {
@@ -184,9 +176,7 @@ class TestOpenRouterAttribution(unittest.TestCase):
             clear=False,
         ):
             with self.assertRaises(openrouter_client.OpenRouterError) as ctx:
-                openrouter_client.resolve_api_key(
-                    secrets, service=openrouter_client.SERVICE_EXECUTIVE_BOARD
-                )
+                openrouter_client.resolve_api_key(secrets, service=openrouter_client.SERVICE_EXECUTIVE_BOARD)
         self.assertIn("executive-board", str(ctx.exception))
 
     def test_plain_string_secret_rejected_for_catalog_app(self) -> None:
@@ -201,16 +191,12 @@ class TestOpenRouterAttribution(unittest.TestCase):
             clear=False,
         ):
             with self.assertRaises(openrouter_client.OpenRouterError) as ctx:
-                openrouter_client.resolve_api_key(
-                    secrets, service=openrouter_client.SERVICE_STATEMENT_PARSER
-                )
+                openrouter_client.resolve_api_key(secrets, service=openrouter_client.SERVICE_STATEMENT_PARSER)
         self.assertIn("statement-parser", str(ctx.exception))
 
     def test_unknown_service_falls_back_to_shared_key(self) -> None:
         secrets = MagicMock()
-        secrets.get_secret_value.return_value = {
-            "SecretString": json.dumps({"openrouter_api_key": "sk-shared"})
-        }
+        secrets.get_secret_value.return_value = {"SecretString": json.dumps({"openrouter_api_key": "sk-shared"})}
         with patch.dict(
             "os.environ",
             {
@@ -227,8 +213,38 @@ class TestOpenRouterAttribution(unittest.TestCase):
         self.assertEqual(sprouts.title, "Evolve Sprouts")
         self.assertEqual(sprouts.referer, "https://evolvesprouts.com")
         product = openrouter_client.resolve_app("siutindei")
+        resume = openrouter_client.resolve_app("resume")
+        self.assertEqual(resume.title, "LX Admin - Resume")
+        self.assertEqual(resume.referer, "https://admin.lx-software.com/lx-software?tab=resume")
         self.assertEqual(product.title, "Siu Tin Dei")
         self.assertEqual(product.referer, "https://siutindei.com")
+
+    def test_resume_requires_its_own_named_key(self) -> None:
+        secrets = MagicMock()
+        secrets.get_secret_value.return_value = {
+            "SecretString": json.dumps({"linkedin": "sk-linkedin", "openrouter_api_key": "sk-shared"})
+        }
+        with patch.dict(
+            "os.environ",
+            {
+                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",
+                "OPENROUTER_API_KEY": "",
+            },
+            clear=False,
+        ):
+            openrouter_client._api_key_cache.clear()
+            with self.assertRaises(openrouter_client.OpenRouterError) as ctx:
+                openrouter_client.resolve_api_key(secrets, service="resume")
+            self.assertIn("resume", str(ctx.exception))
+            openrouter_client._api_key_cache.clear()
+            secrets.get_secret_value.return_value = {
+                "SecretString": json.dumps({"resume": "sk-resume", "linkedin": "sk-linkedin"})
+            }
+            self.assertEqual(
+                openrouter_client.resolve_api_key(secrets, service="resume"),
+                "sk-resume",
+            )
+            openrouter_client._api_key_cache.clear()
 
     def test_post_json_aborts_on_wall_clock_when_the_socket_stays_busy(self) -> None:
         class _Slow:
@@ -458,8 +474,9 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
                 ).encode("utf-8")
             )
 
-        with patch("openrouter_client.urlrequest.urlopen", fake_urlopen), patch.dict(
-            "os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False
+        with (
+            patch("openrouter_client.urlrequest.urlopen", fake_urlopen),
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
         ):
             completion = openrouter_client.chat_completion(
                 messages=[{"role": "user", "content": "hi"}],

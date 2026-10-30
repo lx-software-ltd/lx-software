@@ -499,6 +499,7 @@ tagging requests. Catalog:
 | `statement-parser` | Statement OCR (this repo) | Metered here |
 | `executive-board` | Executive Board (this repo) | Metered here |
 | `linkedin` | LinkedIn drafts on LX Software (this repo) | Metered here |
+| `resume` | Resume extract and tailor on LX Software (this repo) | Metered here |
 | `evolvesprouts` | [lx-software-ltd/evolvesprouts](https://github.com/lx-software-ltd/evolvesprouts) | Pulled hourly (`ingestUsage`) |
 | `siutindei` | [lx-software-ltd/siutindei](https://github.com/lx-software-ltd/siutindei) | Pulled hourly once `lxsoftware:siutindei` exists |
 
@@ -528,6 +529,7 @@ sibling pull stays at USD 0.00 without `management`:
   "statement-parser": "sk-or-v1-parser",
   "executive-board": "sk-or-v1-board",
   "linkedin": "sk-or-v1-linkedin",
+  "resume": "sk-or-v1-resume",
   "management": "sk-or-v1-management"
 }
 ```
@@ -656,7 +658,7 @@ LX Software → **Resume** (`/lx-software?tab=resume`) stores Word, PDF, and Mar
 
 Upload accepts `.docx`, PDF, Markdown, and plain text up to 4 MB. Legacy `.doc`, macros, and tracked changes are rejected. Tracked changes need “Accept all changes in Word, then upload again.” Only a ready `.docx` can be the template. PDF and Markdown stay viewable and cannot be the template.
 
-New resume rewrites only the allowed paragraphs of the current template, or of a newly uploaded `.docx` that becomes the template, for a saved or pasted job post. The model call runs in the worker, after the HTTP request has returned. One corrective pass runs. A failed check saves nothing and returns findings. Locked facts (contact, education, certifications, dates, employers, and titles) are not sent to the model and stay byte-identical in the Word XML. Spend reserves US$ 0.05 and books the actual cost as OpenRouter service `resume`. The monthly cap defaults to 5 USD.
+New resume rewrites only the allowed paragraphs of the current template, or of a newly uploaded `.docx` that becomes the template, for a saved or pasted job post. The model call runs in the worker, after the HTTP request has returned. One corrective pass runs. A failed check saves nothing and returns findings. Locked facts (contact, education, certifications, dates, employers, and titles) are not sent to the model and stay byte-identical in the Word XML. Spend reserves US$ 0.05 and books the actual cost as OpenRouter service `resume`, on the `lxsoftware:resume` inference key. The monthly cap defaults to 5 USD.
 
 Download `.docx` is the Word file. View and Download PDF are a rendered copy (`fpdf2`), not a pixel copy of Word. Chinese text needs `fonts/NotoSansTC-Regular.ttf`. Without that font the API says “PDF export is Latin-only for now.”
 
