@@ -652,7 +652,7 @@ Add any employer name under Settings → extra phrases; do not put it in source.
 
 LX Software → **Resume** (`/lx-software?tab=resume`) stores Word, PDF, and Markdown resumes and designates one `.docx` as the template. Sections are Resumes, New resume, Job tracker, and Settings. Rows use the `RESUME#` prefix and stay out of `/records`. Bytes live under `resume/resumes/{id}/`.
 
-`LxSoftwareResumeEnabled` defaults to `false`. Reads still return 200, so the tab can show that writes are off. Writes and the `resume_extract` and `resume_tailor` workers return 403 `resume_disabled` while the flag is off. Production keeps the flag `false` until an operator turns it on. There is no schedule.
+`LxSoftwareResumeEnabled` defaults to `false`. Reads still return 200, so the tab can show that writes are off. Writes and the `resume_extract` and `resume_tailor` workers return 403 `resume_disabled` while the flag is off. Production sets the flag `true`. There is no schedule.
 
 Upload accepts `.docx`, PDF, Markdown, and plain text up to 4 MB. Legacy `.doc`, macros, and tracked changes are rejected. Tracked changes need “Accept all changes in Word, then upload again.” Only a ready `.docx` can be the template. PDF and Markdown stay viewable and cannot be the template.
 
@@ -662,7 +662,7 @@ Download `.docx` is the Word file. View and Download PDF are a rendered copy (`f
 
 | Parameter | Default | Production |
 |-----------|---------|------------|
-| `LxSoftwareResumeEnabled` | `false` | `false` |
+| `LxSoftwareResumeEnabled` | `false` | `true` |
 
 ### AWS bill (shared account)
 
