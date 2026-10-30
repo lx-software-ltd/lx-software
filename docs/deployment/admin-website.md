@@ -648,6 +648,22 @@ While the publish switch is off, or LinkedIn is not connected, the share
 box and **Mark posted** stay the way to publish.
 Add any employer name under Settings → extra phrases; do not put it in source.
 
+### Resume
+
+LX Software → **Resume** (`/lx-software?tab=resume`) stores Word, PDF, and Markdown resumes and designates one `.docx` as the template. Sections are Resumes, New resume, Job tracker, and Settings. Rows use the `RESUME#` prefix and stay out of `/records`. Bytes live under `resume/resumes/{id}/`.
+
+`LxSoftwareResumeEnabled` defaults to `false`. Reads still return 200, so the tab can show that writes are off. Writes and the `resume_extract` and `resume_tailor` workers return 403 `resume_disabled` while the flag is off. Production keeps the flag `false` until an operator turns it on. There is no schedule.
+
+Upload accepts `.docx`, PDF, Markdown, and plain text up to 4 MB. Legacy `.doc`, macros, and tracked changes are rejected. Tracked changes need “Accept all changes in Word, then upload again.” Only a ready `.docx` can be the template. PDF and Markdown stay viewable and cannot be the template.
+
+New resume rewrites only the allowed paragraphs of the current template, or of a newly uploaded `.docx` that becomes the template, for a saved or pasted job post. The model call runs in the worker, after the HTTP request has returned. One corrective pass runs. A failed check saves nothing and returns findings. Locked facts (contact, education, certifications, dates, employers, and titles) are not sent to the model and stay byte-identical in the Word XML. Spend reserves US$ 0.05 and books the actual cost as OpenRouter service `resume`. The monthly cap defaults to 5 USD.
+
+Download `.docx` is the Word file. View and Download PDF are a rendered copy (`fpdf2`), not a pixel copy of Word. Chinese text needs `fonts/NotoSansTC-Regular.ttf`. Without that font the API says “PDF export is Latin-only for now.”
+
+| Parameter | Default | Production |
+|-----------|---------|------------|
+| `LxSoftwareResumeEnabled` | `false` | `false` |
+
 ### AWS bill (shared account)
 
 One AWS invoice for account `588024549699`. Cost allocation tags
