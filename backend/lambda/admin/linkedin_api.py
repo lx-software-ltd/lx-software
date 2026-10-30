@@ -461,3 +461,21 @@ def member_impressions(token: str, post_urn: str) -> int | None:
         return int(elements[0]["count"])
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def resolve_share_urn(token: str, activity_urn: str) -> str:
+    """Map an activity URN to a share or ugcPost URN. Empty when the lookup fails."""
+    encoded = urllib.parse.quote(activity_urn, safe="")
+    status, _headers, payload = _call(
+        "GET",
+        f"{REST}/posts/{encoded}",
+        _api_headers(token),
+        None,
+        timeout=METRICS_TIMEOUT_SECONDS,
+    )
+    if status != 200:
+        return ""
+    post_id = str(_json_body(payload).get("id") or "")
+    if ":share:" in post_id or ":ugcPost:" in post_id:
+        return post_id
+    return ""

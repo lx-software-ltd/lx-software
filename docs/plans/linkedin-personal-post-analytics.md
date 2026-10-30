@@ -5,7 +5,7 @@
 
 ## Goal
 
-When the owner connects with personal post analytics, profile posts store lifetime impressions from LinkedIn member post statistics and the Posted table shows that count.
+When the owner connects with personal post analytics, profile posts store lifetime impressions from LinkedIn member post statistics and the Posted table shows that count. Posts already published are filled in too: any age, a recent reaction refresh does not delay the first impression read, and a pasted LinkedIn URL that contains a share or ugcPost URN is enough. An activity URL is resolved when the Posts API returns a share or ugcPost id.
 
 ## Non-goals
 
@@ -39,11 +39,14 @@ When the owner connects with personal post analytics, profile posts store lifeti
 - Page impressions still come from organizational share statistics
 - A denied reaction read is stored and not retried
 - A failed impression read leaves the count empty and does not stop reaction refresh
+- Page posts stay on the 30-day reaction refresh
+- Connecting without personal post analytics does not queue an impression pass
+- A metrics-only pass does not publish a due draft
 - Tokens stay out of the SPA
 
 ## Done when
 
-- `python3 -m unittest test_linkedin_api test_linkedin.LinkedInHttpTests.test_connect_keeps_company_pages_off_unless_asked test_linkedin.LinkedInHttpTests.test_connect_requests_personal_post_analytics_when_asked test_linkedin.LinkedInHttpTests.test_profile_impressions_use_member_post_analytics test_linkedin.LinkedInHttpTests.test_profile_impressions_stay_empty_without_the_scope test_linkedin.LinkedInHttpTests.test_a_denied_profile_impression_keeps_reactions -v` in `backend/lambda/admin` passes
+- `python3 -m unittest discover -p 'test_*.py'` in `backend/lambda/admin` passes
 - `npm run test:unit` in `apps/admin_web` passes
 - `python3 scripts/check_file_length.py` passes
 - Under `npm run dev:mock`, Settings shows the checkbox, connecting with it on records the flag, and a posted profile row shows its impression count
