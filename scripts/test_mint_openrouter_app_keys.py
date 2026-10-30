@@ -62,11 +62,11 @@ class MintOpenRouterAppKeysTest(unittest.TestCase):
             self.assertEqual(rc, 0)
             payload = out.read_text(encoding="utf-8")
             admin = json.loads(
-                payload.split("# Sibling product secrets", 1)[0]
-                .split("Do not commit these values.\n", 1)[1]
+                payload.split("# Sibling product secrets", 1)[0].split("Do not commit these values.\n", 1)[1]
             )
             self.assertEqual(admin["statement-parser"], "sk-test-lxsoftware-statement-parser")
             self.assertEqual(admin["executive-board"], "sk-test-lxsoftware-executive-board")
+            self.assertEqual(admin["resume"], "sk-test-lxsoftware-resume")
             self.assertIn("sk-test-lxsoftware-evolvesprouts", payload)
             self.assertIn("sk-test-lxsoftware-siutindei", payload)
             self.assertNotIn("sk-test-", stdout.getvalue())
@@ -77,6 +77,7 @@ class MintOpenRouterAppKeysTest(unittest.TestCase):
                     "lxsoftware:statement-parser",
                     "lxsoftware:executive-board",
                     "lxsoftware:linkedin",
+                    "lxsoftware:resume",
                     "lxsoftware:evolvesprouts",
                     "lxsoftware:siutindei",
                 },
@@ -135,17 +136,13 @@ class MintOpenRouterAppKeysTest(unittest.TestCase):
 
     def test_plaintext_from_create_response_falls_back_to_nested_key(self) -> None:
         self.assertEqual(
-            self.mod.plaintext_from_create_response(
-                {"data": {"key": "sk-test-nested"}}
-            ),
+            self.mod.plaintext_from_create_response({"data": {"key": "sk-test-nested"}}),
             "sk-test-nested",
         )
 
     def test_plaintext_from_create_response_empty_when_only_metadata(self) -> None:
         self.assertEqual(
-            self.mod.plaintext_from_create_response(
-                {"data": {"name": "lxsoftware:statement-parser", "hash": "abc"}}
-            ),
+            self.mod.plaintext_from_create_response({"data": {"name": "lxsoftware:statement-parser", "hash": "abc"}}),
             "",
         )
 
