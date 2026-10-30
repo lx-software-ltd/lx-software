@@ -607,8 +607,9 @@ personal post analytics** also requests `r_member_postAnalytics`. Leave that
 off until the LinkedIn app is approved for member post statistics, because an
 unapproved scope fails the whole consent screen. Profile posts then read
 lifetime impressions from `memberCreatorPostAnalytics` (`IMPRESSION`,
-`TOTAL`), including posts already published. A failed impression read leaves
-the count empty for six hours. A denied reaction read is stored and not retried;
+`TOTAL`), including posts already published. A failed impression read keeps a
+count already stored; a post that has never had one stays empty for six hours.
+A denied reaction read is stored and not retried;
 page impressions are read only for posts that went out as a page.
 
 With the first switch on, Sunday 18:00 HKT
@@ -636,11 +637,13 @@ reactions and comments for page and profile posts from the last 30 days, at most
 every six hours, including while automatic posting is off. Profile impressions
 are read only when the connection included personal post analytics. That pass
 also fills impressions for older profile posts and for posts marked posted from
-a LinkedIn URL that contains a share or ugcPost URN. An activity link is used
-when the Posts API returns a share or ugcPost id. Each tick updates at most five
-reaction counts and fifteen missing impression counts. Connecting with personal
-post analytics queues one pass immediately. A failed impression read waits six
-hours.
+a LinkedIn URL that contains a share or ugcPost URN. **Mark posted** records the
+current destination, so a company page selected in Settings is read as a page.
+The pass runs after the due-post mail. Each tick updates at most five reaction
+counts and eight missing impression counts, and stops after about 75 seconds.
+Connecting with personal post analytics queues one pass immediately. An expired
+access token is skipped quietly until the owner connects again. A failed
+impression read waits six hours when the post has no count yet.
 While the publish switch is off, or LinkedIn is not connected, the share
 box and **Mark posted** stay the way to publish.
 Add any employer name under Settings → extra phrases; do not put it in source.

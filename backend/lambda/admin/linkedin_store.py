@@ -884,7 +884,6 @@ def recent_hashes(table: Any) -> set[str]:
 
 
 def recent_bodies(table: Any, *, limit: int = 12) -> list[str]:
-    """Newest post bodies first, archived rows excluded."""
     rows = [row for row in list_posts(table, limit=80) if str(row.get("status") or "") != "archived"]
     rows.sort(key=lambda doc: str(doc.get("createdAt") or ""), reverse=True)
     bodies: list[str] = []
@@ -902,12 +901,10 @@ def recent_hooks(table: Any, *, limit: int = 12) -> list[str]:
 
 
 def recent_captions(table: Any, *, limit: int = 12) -> list[str]:
-    """Spoken lines under recent pictures, newest first."""
     return _recent_image_text(table, "caption", limit=limit)
 
 
 def recent_scenes(table: Any, *, limit: int = 12) -> list[str]:
-    """Picture scenes on recent posts, newest first."""
     return _recent_image_text(table, "scene", limit=limit)
 
 
@@ -1085,9 +1082,14 @@ def mark_posted(table: Any, post_id: str, url: str) -> dict[str, Any]:
     if not link.startswith("https://www.linkedin.com/") and not link.startswith("https://linkedin.com/"):
         raise LinkedInError("Paste the linkedin.com URL of the live post.")
     now = board_store.now_iso()
+    connection = load_connection(table)
+    org = str(connection.get("organizationId") or "") if connection.get("channel") == "page" else ""
     doc["status"] = "published"
     doc["manual"] = {"postedAt": now, "url": link}
-    doc["platform"] = {"url": link, "publishedAt": now}
+    doc["slotAt"] = str(doc.get("slotAt") or "") or now
+    doc["platform"] = {"url": link, "publishedAt": now, **({"organizationId": org} if org else {})}
+    if org:
+        doc["channel"] = "page"
     return put_post(table, doc)
 
 
@@ -1395,7 +1397,6 @@ _IMAGE_MAX = IMAGE_BYTE_MAX
 
 
 def public_image(image: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Picture state for the SPA. Bytes stay in S3."""
     if not isinstance(image, dict):
         return None
     content = str(image.get("contentType") or "")
@@ -1439,7 +1440,6 @@ def publishable_image(image: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 def image_publishable(image: dict[str, Any] | None) -> bool:
-    """True when publish should attach the stored PNG."""
     return publishable_image(image) is not None
 
 

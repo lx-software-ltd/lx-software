@@ -5,7 +5,7 @@
 
 ## Goal
 
-When the owner connects with personal post analytics, profile posts store lifetime impressions from LinkedIn member post statistics and the Posted table shows that count. Posts already published are filled in too: any age, a recent reaction refresh does not delay the first impression read, and a pasted LinkedIn URL that contains a share or ugcPost URN is enough. An activity URL is resolved when the Posts API returns a share or ugcPost id.
+When the owner connects with personal post analytics, profile posts store lifetime impressions from LinkedIn member post statistics and the Posted table shows that count. Posts already published are filled in too: any age, a recent reaction refresh does not delay the first impression read, and a pasted LinkedIn URL that contains a share or ugcPost URN is enough. A failed read keeps a count already stored. The metrics pass runs after reminder mail and stops on a short time budget. Hand-marked posts use the connection's page when that is the current destination.
 
 ## Non-goals
 
@@ -38,7 +38,7 @@ When the owner connects with personal post analytics, profile posts store lifeti
 - A connect that does not ask for personal post analytics still requests only `openid profile w_member_social` (plus organization scopes when company pages are included)
 - Page impressions still come from organizational share statistics
 - A denied reaction read is stored and not retried
-- A failed impression read leaves the count empty and does not stop reaction refresh
+- A failed impression read keeps a count already stored, leaves a first miss empty for six hours, and does not stop reaction refresh
 - Page posts stay on the 30-day reaction refresh
 - Connecting without personal post analytics does not queue an impression pass
 - A metrics-only pass does not publish a due draft

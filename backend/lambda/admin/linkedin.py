@@ -886,7 +886,6 @@ def handle_publish_due(event: dict[str, Any] | None = None) -> dict[str, Any]:
                         )
                     except LinkedInError:
                         _log_event("warning", tag="linkedin_publish_failed", error="post not found")
-    linkedin_metrics.refresh_connected(table)
     settings = linkedin_store.load_settings(table)
     address = str(settings.get("notifyEmail") or "")
     reminded = 0
@@ -961,6 +960,7 @@ def handle_publish_due(event: dict[str, Any] | None = None) -> dict[str, Any]:
                 )
             linkedin_store.stamp_gave_up(table, post_id)
             gave_up += 1
+    linkedin_metrics.refresh_connected(table)
     result: dict[str, Any] = {"ok": True, "reminded": reminded, "published": published, "gaveUp": gave_up}
     if publish:
         result["publish"] = publish

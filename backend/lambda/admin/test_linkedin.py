@@ -17,6 +17,7 @@ import linkedin  # noqa: E402
 import linkedin_api  # noqa: E402
 import linkedin_draft  # noqa: E402
 import linkedin_image  # noqa: E402
+import linkedin_metrics  # noqa: E402
 import linkedin_seeds  # noqa: E402
 import linkedin_store  # noqa: E402
 import runtime  # noqa: E402
@@ -167,6 +168,30 @@ class LinkedInStoreTests(unittest.TestCase):
             "https://www.linkedin.com/feed/update/urn:li:share:1",
         )
         self.assertEqual(posted["status"], "published")
+        self.assertEqual(posted["channel"], "profile")
+        self.assertNotIn("organizationId", posted["platform"])
+
+    def test_mark_posted_records_the_company_page(self) -> None:
+        linkedin_store.save_connection(
+            self.table,
+            {
+                "accessToken": "token-1",
+                "tokenExpiresAt": "2099-01-01T00:00:00.000Z",
+                "memberId": "member1",
+                "channel": "page",
+                "organizationId": "99",
+            },
+        )
+        doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOn the page."})
+        posted = linkedin_store.mark_posted(
+            self.table,
+            doc["postId"],
+            "https://www.linkedin.com/feed/update/urn:li:share:9",
+        )
+        self.assertEqual(posted["channel"], "page")
+        self.assertEqual(posted["platform"]["organizationId"], "99")
+        self.assertTrue(posted["slotAt"])
+        self.assertEqual(posted["platform"]["url"], "https://www.linkedin.com/feed/update/urn:li:share:9")
 
     def test_duplicate_body_is_rejected(self) -> None:
         linkedin_store.create_post(self.table, {"body": "Same hook.\n\nSame lesson."})
@@ -1665,7 +1690,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.assertEqual(stored["metrics"]["impressions"], 6)
         self.assertEqual(stored["platform"]["urn"], "urn:li:share:9")
 
-    def test_an_activity_url_resolves_to_a_share(self) -> None:
+    def test_an_activity_url_is_not_looked_up(self) -> None:
         old = format_iso_millis(datetime.now(HKT) - timedelta(days=40))
         doc = self._published_profile(
             urn="",
@@ -1678,19 +1703,14 @@ class LinkedInHttpTests(unittest.TestCase):
         def transport(method: str, url: str, headers: dict, body: bytes | None):
             del method, headers, body
             seen.append(url)
-            if "/posts/urn%3Ali%3Aactivity%3A7123456789012345678" in url:
-                return 200, {}, b'{"id":"urn:li:share:44"}'
-            if "memberCreatorPostAnalytics" in url and "urn%3Ali%3Ashare%3A44" in url:
-                return 200, {}, b'{"elements":[{"count":9,"metricType":"IMPRESSION"}]}'
-            return 404, {}, b""
+            return 200, {}, b'{"elements":[{"count":9,"metricType":"IMPRESSION"}]}'
 
         linkedin_api.set_transport_for_tests(transport)
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
-        self.assertEqual(stored["metrics"]["impressions"], 9)
-        self.assertEqual(stored["platform"]["urn"], "urn:li:share:44")
-        self.assertTrue(any("/posts/urn%3Ali%3Aactivity%3A" in url for url in seen))
+        self.assertIsNone(stored.get("metrics"))
+        self.assertEqual(seen, [])
 
     def test_a_failed_impression_read_waits_six_hours(self) -> None:
         old = format_iso_millis(datetime.now(HKT) - timedelta(days=40))
@@ -1829,6 +1849,218 @@ class LinkedInHttpTests(unittest.TestCase):
         self.assertEqual(response["statusCode"], 200)
         self.assertTrue(_body(response)["connection"]["includeMemberAnalytics"])
         queued.assert_called_once_with({"internal": "linkedin_publish_due", "metricsOnly": True})
+
+    def test_a_failed_impression_read_keeps_a_stored_count(self) -> None:
+        pulled = format_iso_millis(datetime.now(HKT) - timedelta(hours=7))
+        doc = self._published_profile(
+            metrics={"reactions": 1, "comments": 0, "impressions": 12, "pulledAt": pulled},
+        )
+        self._save_member()
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            if "memberCreatorPostAnalytics" in url:
+                return 403, {}, b'{"message":"forbidden"}'
+            if "/socialActions/" in url:
+                return 200, {}, b'{"likesSummary":{"totalLikes":3},"commentsSummary":{"aggregatedTotalComments":1}}'
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
+            linkedin.handle_publish_due({})
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertEqual(stored["metrics"]["impressions"], 12)
+        self.assertEqual(stored["metrics"]["reactions"], 3)
+
+    def test_the_newest_published_post_is_still_read_past_the_first_page(self) -> None:
+        old = format_iso_millis(datetime.now(HKT) - timedelta(days=40))
+        for index in range(100):
+            filler = self._published_profile(
+                urn="",
+                body=f"A short hook.\n\nOlder note {index}.",
+            )
+            filler["slotAt"] = ""
+            filler["platform"] = {"url": "https://www.linkedin.com/feed/update/activity", "publishedAt": ""}
+            linkedin_store.put_post(self.table, filler)
+        dated = self._published_profile(
+            urn="urn:li:share:101",
+            published_at=old,
+            body="A short hook.\n\nThe dated one.",
+        )
+        dated["slotAt"] = old
+        linkedin_store.put_post(self.table, dated)
+        self._save_member()
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            if "memberCreatorPostAnalytics" in url and "urn%3Ali%3Ashare%3A101" in url:
+                return 200, {}, b'{"elements":[{"count":11,"metricType":"IMPRESSION"}]}'
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        linkedin.handle_publish_due({})
+        stored = linkedin_store.get_post(self.table, dated["postId"])
+        self.assertEqual(stored["metrics"]["impressions"], 11)
+
+    def test_impression_backfill_stops_at_eight(self) -> None:
+        old = format_iso_millis(datetime.now(HKT) - timedelta(days=40))
+        for index in range(9):
+            self._published_profile(
+                urn=f"urn:li:share:{index}",
+                published_at=old,
+                body=f"A short hook.\n\nBackfill note {index}.",
+            )
+        self._save_member()
+        seen: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            if "memberCreatorPostAnalytics" in url:
+                seen.append(url)
+                return 200, {}, b'{"elements":[{"count":1,"metricType":"IMPRESSION"}]}'
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        linkedin.handle_publish_due({})
+        self.assertEqual(len(seen), 8)
+
+    def test_a_time_budget_skips_impression_reads(self) -> None:
+        doc = self._published_profile()
+        self._save_member()
+        seen: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            seen.append(url)
+            return 200, {}, b'{"elements":[{"count":4,"metricType":"IMPRESSION"}]}'
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch.object(linkedin_metrics, "BUDGET_SECONDS", 0):
+            linkedin.handle_publish_due({})
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertIsNone(stored.get("metrics"))
+        self.assertEqual(seen, [])
+
+    def test_reminder_mail_goes_out_before_metrics(self) -> None:
+        due = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nDue before metrics."})
+        due["status"] = "approved"
+        due["slotAt"] = "2020-01-01T00:30:00.000Z"
+        linkedin_store.put_post(self.table, due)
+        linkedin_store.save_settings(
+            self.table, {**linkedin_store.default_settings(), "notifyEmail": "owner@example.com"}
+        )
+        self._published_profile(body="A short hook.\n\nNeeds a count.")
+        self._save_member()
+        order: list[str] = []
+
+        def record_mail(*args: object, **kwargs: object) -> bool:
+            del args, kwargs
+            order.append("mail")
+            return True
+
+        def record_metrics(table: object) -> dict[str, object]:
+            del table
+            order.append("metrics")
+            return {"ok": True, "refreshed": 0}
+
+        with (
+            patch.object(linkedin, "send_notice", side_effect=record_mail),
+            patch.object(linkedin_metrics, "refresh_connected", side_effect=record_metrics),
+        ):
+            result = linkedin.handle_publish_due({})
+        self.assertLess(order.index("mail"), order.index("metrics"))
+        self.assertEqual(result["reminded"], 1)
+        self.assertEqual(result["published"], 0)
+        self.assertEqual(result["gaveUp"], 0)
+
+    def test_an_expired_token_is_skipped_quietly(self) -> None:
+        doc = self._published_profile()
+        linkedin_store.save_connection(
+            self.table,
+            {
+                "accessToken": "token-1",
+                "tokenExpiresAt": "2000-01-01T00:00:00.000Z",
+                "memberId": "member1",
+                "channel": "profile",
+                "includeMemberAnalytics": True,
+            },
+        )
+        with patch("linkedin_metrics._log_event") as log:
+            linkedin.handle_publish_due({})
+        log.assert_not_called()
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertIsNone(stored.get("metrics"))
+
+    def test_a_hand_marked_page_post_uses_page_impressions(self) -> None:
+        doc = self._published_profile(urn="urn:li:share:8")
+        doc["manual"] = {
+            "postedAt": doc["platform"]["publishedAt"],
+            "url": "https://www.linkedin.com/feed/update/urn:li:share:8",
+        }
+        linkedin_store.put_post(self.table, doc)
+        linkedin_store.save_connection(
+            self.table,
+            {
+                "accessToken": "token-1",
+                "tokenExpiresAt": "2099-01-01T00:00:00.000Z",
+                "memberId": "member1",
+                "channel": "page",
+                "organizationId": "99",
+                "includeMemberAnalytics": True,
+            },
+        )
+        seen: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            seen.append(url)
+            if "organizationalEntityShareStatistics" in url:
+                return 200, {}, b'{"elements":[{"totalShareStatistics":{"impressionCount":7}}]}'
+            if "/socialActions/" in url:
+                return 200, {}, b'{"likesSummary":{"totalLikes":1},"commentsSummary":{"aggregatedTotalComments":0}}'
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
+            linkedin.handle_publish_due({})
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertEqual(stored["metrics"]["impressions"], 7)
+        self.assertTrue(any("organizationalEntityShareStatistics" in url for url in seen))
+        self.assertFalse(any("memberCreatorPostAnalytics" in url for url in seen))
+
+    def test_metrics_only_through_the_worker_does_not_publish(self) -> None:
+        approved = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nDue on the worker."})
+        approved["status"] = "approved"
+        approved["slotAt"] = _recent_slot()
+        linkedin_store.put_post(self.table, approved)
+        doc = self._published_profile(body="A short hook.\n\nWorker metrics.")
+        self._save_member()
+        posted: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del headers, body
+            if method == "POST" and url.endswith("/posts"):
+                posted.append(url)
+                return 201, {"x-restli-id": "urn:li:share:1"}, b""
+            if "memberCreatorPostAnalytics" in url:
+                return 200, {}, b'{"elements":[{"count":8,"metricType":"IMPRESSION"}]}'
+            if "/socialActions/" in url:
+                return 200, {}, b'{"likesSummary":{"totalLikes":1},"commentsSummary":{"aggregatedTotalComments":0}}'
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
+            result = lambda_handler({"internal": "linkedin_publish_due", "metricsOnly": True}, None)
+        self.assertEqual(result["refreshed"], 1)
+        self.assertEqual(posted, [])
+        self.assertEqual(linkedin_store.get_post(self.table, approved["postId"])["status"], "approved")
+        self.assertEqual(linkedin_store.get_post(self.table, doc["postId"])["metrics"]["impressions"], 8)
 
     def test_generate_queues_a_job(self) -> None:
         with patch("board_async.try_invoke_event", return_value=True) as invoke:

@@ -82,6 +82,19 @@ describe("LinkedIn connection", () => {
     render(<LinkedInSettingsCard overview={connected} enabled />);
     expect(screen.getByText(/including posts already published/)).toBeInTheDocument();
   });
+
+  it("waits for LinkedIn approval when personal post analytics is off", () => {
+    const connected = overview("");
+    connected.connection = {
+      ...connected.connection,
+      status: "connected",
+      memberName: "Example Member",
+      includeMemberAnalytics: false,
+    };
+    render(<LinkedInSettingsCard overview={connected} enabled />);
+    expect(screen.getByText(/approved for member post analytics/)).toBeInTheDocument();
+    expect(screen.queryByText(/Disconnect and connect again with personal post analytics/)).toBeNull();
+  });
 });
 
 describe("LinkedIn draft model hint", () => {

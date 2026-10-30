@@ -2,13 +2,14 @@
 
 Profile impressions are read when the connection asked for member post
 analytics. Posts already published are included at any age, including a share
-or ugcPost URN taken from the pasted LinkedIn URL. A failed impression read is
-remembered for six hours. A denied reaction read is stored and not retried.
+or ugcPost URN taken from the pasted LinkedIn URL. A failed read keeps a count
+already stored. A denied reaction read is stored and not retried.
 """
 
 from __future__ import annotations
 
 import re
+import time
 import urllib.parse
 from datetime import datetime, timedelta
 from typing import Any
@@ -17,18 +18,19 @@ import board_async
 import board_store
 import linkedin_api
 import linkedin_store
+from ddb_convert import _from_ddb_nested
 from http_common import _log_event
 from linkedin_api import LinkedInApiError
 from linkedin_store import HKT
 
-# Five reaction reads and fifteen impression backfills stay under the Lambda
-# timeout when each LinkedIn call is allowed eight seconds.
+# One post can still make two eight-second calls after the budget check.
+# 75 seconds plus that remainder stays far under the 300-second Lambda limit.
+BUDGET_SECONDS = 75
 REACTION_CAP = 5
-BACKFILL_CAP = 15
+BACKFILL_CAP = 8
 POST_LIMIT = 400
+_PAGE_SIZE = 100
 _SHARE_URN = re.compile(r"urn:li:(?:share|ugcPost):\d+")
-_ACTIVITY_URN = re.compile(r"urn:li:activity:(\d+)")
-_ACTIVITY_SLUG = re.compile(r"activity-(\d+)")
 
 
 def _platform(row: dict[str, Any]) -> dict[str, Any]:
@@ -41,26 +43,29 @@ def _previous(row: dict[str, Any]) -> dict[str, Any]:
     return metrics if isinstance(metrics, dict) else {}
 
 
-def _platform_text(platform: dict[str, Any]) -> str:
-    return urllib.parse.unquote(f"{platform.get('urn') or ''} {platform.get('url') or ''}")
-
-
 def _share_urn(platform: dict[str, Any]) -> str:
     stored = str(platform.get("urn") or "")
     if _SHARE_URN.fullmatch(stored):
         return stored
-    found = _SHARE_URN.search(_platform_text(platform))
+    text = urllib.parse.unquote(f"{stored} {platform.get('url') or ''}")
+    found = _SHARE_URN.search(text)
     return found.group(0) if found else ""
 
 
-def _activity_urn(platform: dict[str, Any]) -> str:
-    text = _platform_text(platform)
-    found = _ACTIVITY_URN.search(text)
-    if found:
-        return f"urn:li:activity:{found.group(1)}"
-    slug = _ACTIVITY_SLUG.search(text)
-    if slug:
-        return f"urn:li:activity:{slug.group(1)}"
+def _is_page(row: dict[str, Any], connection: dict[str, Any]) -> bool:
+    if row.get("channel") == "page":
+        return True
+    manual = row.get("manual")
+    org = str(connection.get("organizationId") or "")
+    return isinstance(manual, dict) and connection.get("channel") == "page" and bool(org)
+
+
+def _organization_id(row: dict[str, Any], platform: dict[str, Any], connection: dict[str, Any]) -> str:
+    stored = str(platform.get("organizationId") or "")
+    if stored:
+        return stored
+    if _is_page(row, connection):
+        return str(connection.get("organizationId") or "")
     return ""
 
 
@@ -69,8 +74,14 @@ def _within(value: str, cutoff: datetime) -> bool:
     return parsed is not None and parsed > cutoff
 
 
-def _needs_impression(row: dict[str, Any], previous: dict[str, Any], include: bool, cutoff: datetime) -> bool:
-    if not include or row.get("channel") == "page":
+def _needs_impression(
+    row: dict[str, Any],
+    previous: dict[str, Any],
+    connection: dict[str, Any],
+    include: bool,
+    cutoff: datetime,
+) -> bool:
+    if not include or _is_page(row, connection):
         return False
     if previous.get("impressions") is not None:
         return False
@@ -105,17 +116,34 @@ def _carry(previous: dict[str, Any]) -> dict[str, Any]:
 def _impressions(
     token: str,
     row: dict[str, Any],
-    platform: dict[str, Any],
     urn: str,
+    organization_id: str,
     *,
+    page: bool,
     include_member_analytics: bool,
 ) -> int | None:
-    organization_id = str(platform.get("organizationId") or "")
-    if row.get("channel") == "page" and organization_id:
+    if page and organization_id:
         return linkedin_api.page_impressions(token, organization_id, urn)
-    if include_member_analytics:
+    if include_member_analytics and not page:
         return linkedin_api.member_impressions(token, urn)
     return None
+
+
+def _apply_impressions(
+    metrics: dict[str, Any],
+    previous: dict[str, Any],
+    read: int | None,
+    *,
+    backfill: bool,
+) -> None:
+    if read is None and previous.get("impressions") is not None:
+        metrics["impressions"] = previous["impressions"]
+        return
+    metrics["impressions"] = read
+    if backfill and read is None:
+        metrics["impressionCheckedAt"] = board_store.now_iso()
+    elif read is not None:
+        metrics.pop("impressionCheckedAt", None)
 
 
 def _save(table: Any, row: dict[str, Any], metrics: dict[str, Any], share_urn: str) -> None:
@@ -130,10 +158,37 @@ def _save(table: Any, row: dict[str, Any], metrics: dict[str, Any], share_urn: s
     linkedin_store.save_post_metrics(table, post_id, metrics)
 
 
-def _stamp_checked(table: Any, row: dict[str, Any], previous: dict[str, Any]) -> None:
-    metrics = _carry(previous)
-    metrics["impressionCheckedAt"] = board_store.now_iso()
-    _save(table, row, metrics, "")
+def _published_rows(table: Any, limit: int) -> list[dict[str, Any]]:
+    """Newest published rows, including ones past the first DynamoDB page."""
+    out: list[dict[str, Any]] = []
+    start: dict[str, Any] | None = None
+    while len(out) < limit:
+        kwargs: dict[str, Any] = {
+            "IndexName": "gsi1",
+            "KeyConditionExpression": "gsi1pk = :pk",
+            "ExpressionAttributeValues": {":pk": "LINKEDIN#posts#published"},
+            "ScanIndexForward": False,
+            "Limit": min(_PAGE_SIZE, limit - len(out)),
+        }
+        if start:
+            kwargs["ExclusiveStartKey"] = start
+        res = table.query(**kwargs)
+        rows = res.get("Items") if isinstance(res, dict) else None
+        for row in rows or []:
+            doc = _from_ddb_nested(linkedin_store._strip(row))
+            if isinstance(doc, dict):
+                out.append(doc)
+        start = res.get("LastEvaluatedKey") if isinstance(res, dict) else None
+        if not start:
+            break
+    return out
+
+
+def _token_needs_reconnect(connection: dict[str, Any]) -> bool:
+    if str(connection.get("refreshToken") or ""):
+        return False
+    expires = linkedin_store._parse_slot(str(connection.get("tokenExpiresAt") or ""))
+    return expires is not None and expires <= datetime.now(HKT) + timedelta(minutes=2)
 
 
 def refresh(table: Any, connection: dict[str, Any], token: str) -> int:
@@ -141,10 +196,11 @@ def refresh(table: Any, connection: dict[str, Any], token: str) -> int:
     cutoff = now - timedelta(hours=6)
     oldest = now - timedelta(days=30)
     include = bool(connection.get("includeMemberAnalytics"))
-    rows = linkedin_store.list_posts(table, status="published", limit=POST_LIMIT)
+    started = time.monotonic()
+    rows = _published_rows(table, POST_LIMIT)
     rows.sort(
         key=lambda row: (
-            0 if _needs_impression(row, _previous(row), include, cutoff) else 1,
+            0 if _needs_impression(row, _previous(row), connection, include, cutoff) else 1,
             str(_platform(row).get("publishedAt") or row.get("slotAt") or ""),
         )
     )
@@ -152,21 +208,15 @@ def refresh(table: Any, connection: dict[str, Any], token: str) -> int:
     backfill_done = 0
     updated = 0
     for row in rows:
+        if time.monotonic() - started >= BUDGET_SECONDS:
+            break
         if reactions_done >= REACTION_CAP and backfill_done >= BACKFILL_CAP:
             break
         platform = _platform(row)
         previous = _previous(row)
-        needs = _needs_impression(row, previous, include, cutoff)
+        page = _is_page(row, connection)
+        needs = _needs_impression(row, previous, connection, include, cutoff)
         urn = _share_urn(platform)
-        if needs and not urn and backfill_done < BACKFILL_CAP:
-            activity = _activity_urn(platform)
-            if activity:
-                urn = linkedin_api.resolve_share_urn(token, activity)
-                if not urn:
-                    _stamp_checked(table, row, previous)
-                    backfill_done += 1
-                    updated += 1
-                    continue
         usable = urn or str(platform.get("urn") or "")
         do_reactions = (
             bool(usable) and _reactions_due(platform, previous, oldest, cutoff) and reactions_done < REACTION_CAP
@@ -191,20 +241,19 @@ def refresh(table: Any, connection: dict[str, Any], token: str) -> int:
                     "pulledAt": board_store.now_iso(),
                     "unavailable": False,
                 }
+        read: int | None = None
         try:
-            metrics["impressions"] = _impressions(
+            read = _impressions(
                 token,
                 row,
-                platform,
                 usable,
+                _organization_id(row, platform, connection),
+                page=page,
                 include_member_analytics=include,
             )
         except LinkedInApiError as exc:
             _log_event("warning", tag="linkedin_metrics_failed", error=str(exc)[:200])
-        if do_backfill and metrics.get("impressions") is None:
-            metrics["impressionCheckedAt"] = board_store.now_iso()
-        elif metrics.get("impressions") is not None:
-            metrics.pop("impressionCheckedAt", None)
+        _apply_impressions(metrics, previous, read, backfill=do_backfill)
         _save(table, row, metrics, urn)
         updated += 1
         if do_reactions:
@@ -222,6 +271,8 @@ def refresh_connected(table: Any) -> dict[str, Any]:
         fresh = linkedin_store.load_connection(table)
         if not fresh:
             return {"ok": True, "refreshed": 0}
+        if _token_needs_reconnect(fresh):
+            return {"ok": True, "refreshed": 0, "skipped": "expired"}
         refreshed = refresh(table, fresh, linkedin._access_token(table, fresh))
     except Exception as exc:  # noqa: BLE001 — metrics must not fail publishing or the reminder
         _log_event("warning", tag="linkedin_metrics_failed", error=str(exc)[:240])
