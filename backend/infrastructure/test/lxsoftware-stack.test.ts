@@ -334,6 +334,35 @@ describe("HTTP API routes", () => {
     }
   });
 
+  test("Resume routes are JWT-protected", () => {
+    const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
+    const keys = [
+      "GET /lx-software/resume/overview",
+      "GET /lx-software/resume/settings",
+      "PUT /lx-software/resume/settings",
+      "GET /lx-software/resume/resumes",
+      "POST /lx-software/resume/resumes",
+      "GET /lx-software/resume/resumes/{id}",
+      "PATCH /lx-software/resume/resumes/{id}",
+      "DELETE /lx-software/resume/resumes/{id}",
+      "GET /lx-software/resume/resumes/{id}/file",
+      "GET /lx-software/resume/resumes/{id}/pdf",
+      "PUT /lx-software/resume/template",
+      "GET /lx-software/resume/postings",
+      "POST /lx-software/resume/postings",
+      "POST /lx-software/resume/tailor",
+      "GET /lx-software/resume/applications",
+      "POST /lx-software/resume/applications",
+      "PATCH /lx-software/resume/applications/{id}",
+      "DELETE /lx-software/resume/applications/{id}",
+      "GET /lx-software/resume/jobs/{jobId}",
+    ];
+    for (const key of keys) {
+      const route = routes.find((row) => row.Properties?.RouteKey === key);
+      expect(route?.Properties?.AuthorizationType).toBe("JWT");
+    }
+  });
+
   test("AWS usage JSON and PDF routes are JWT-protected", () => {
     const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
     const keys = routes.map((r) => r.Properties?.RouteKey as string);
@@ -821,6 +850,8 @@ describe("Siu Tin Dei parameter naming", () => {
     expect(parameters.LxSoftwareLinkedinEnabled?.AllowedValues).toEqual(["true", "false"]);
     expect(parameters.LxSoftwareLinkedinPublishEnabled?.Default).toBe("false");
     expect(parameters.LxSoftwareLinkedinPublishEnabled?.AllowedValues).toEqual(["true", "false"]);
+    expect(parameters.LxSoftwareResumeEnabled?.Default).toBe("false");
+    expect(parameters.LxSoftwareResumeEnabled?.AllowedValues).toEqual(["true", "false"]);
     const linkedinSecret = Object.values(resourcesOfType("AWS::SecretsManager::Secret")).find(
       (resource) => resource.Properties?.Name === "lxsoftware-admin-linkedin-app"
     );
@@ -831,6 +862,9 @@ describe("Siu Tin Dei parameter naming", () => {
     expect(adminFn?.[1].Properties?.Environment?.Variables?.LINKEDIN_APP_SECRET_ID).toBe(
       "lxsoftware-admin-linkedin-app"
     );
+    expect(adminFn?.[1].Properties?.Environment?.Variables?.RESUME_ENABLED).toEqual({
+      Ref: "LxSoftwareResumeEnabled",
+    });
   });
 
   test("SiutindeiBoardCatalogImportEnabled defaults off", () => {
@@ -905,6 +939,7 @@ describe("Siu Tin Dei parameter naming", () => {
     expect(file["lxsoftware:PublicApiWritesEnabled"]).toBe("true");
     expect(file["lxsoftware:LxSoftwareLinkedinEnabled"]).toBe("true");
     expect(file["lxsoftware:LxSoftwareLinkedinPublishEnabled"]).toBe("true");
+    expect(file["lxsoftware:LxSoftwareResumeEnabled"]).toBe("false");
 
     const env = { account: "123456789012", region: "ap-southeast-1" };
     const publicApp = new cdk.App({

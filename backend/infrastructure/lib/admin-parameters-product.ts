@@ -241,6 +241,13 @@ export function defineProductParameters(scope: cdk.Stack) {
         "false keeps the assisted share box. Default false.",
     }
   );
+  const lxSoftwareResumeEnabled = new cdk.CfnParameter(scope, "LxSoftwareResumeEnabled", {
+    type: "String",
+    default: "false",
+    allowedValues: ["true", "false"],
+    description:
+      "LX Software Resume tab. false disables writes and the extract and tailor workers. Reads stay available. Default false.",
+  });
   const boardStaffEnabled = new cdk.CfnParameter(scope, "SiutindeiBoardStaffEnabled", {
     type: "String",
     default: "false",
@@ -383,6 +390,7 @@ export function defineProductParameters(scope: cdk.Stack) {
     boardStaffEnabled,
     lxSoftwareLinkedinEnabled,
     lxSoftwareLinkedinPublishEnabled,
+    lxSoftwareResumeEnabled,
     outreachSendingDomain,
     outreachFromLocalPart,
     publicSiteOrigins,

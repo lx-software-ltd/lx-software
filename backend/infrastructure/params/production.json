@@ -8,6 +8,7 @@
   "lxsoftware:SiutindeiBoardStaffEnabled": "true",
   "lxsoftware:LxSoftwareLinkedinEnabled": "true",
   "lxsoftware:LxSoftwareLinkedinPublishEnabled": "true",
+  "lxsoftware:LxSoftwareResumeEnabled": "false",
   "lxsoftware:PublicApiWritesEnabled": "true",
   "lxsoftware:SiutindeiClusterArn": "arn:aws:rds:ap-southeast-1:588024549699:cluster:lxsoftware-siutindei-db-cluster",
   "lxsoftware:SiutindeiAdminApiBaseUrl": "https://siutindei-api.lx-software.com/v1",
