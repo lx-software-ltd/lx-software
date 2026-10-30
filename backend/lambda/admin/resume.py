@@ -160,6 +160,10 @@ def _upload(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
         data = base64.b64decode(str(body.get("dataBase64") or ""), validate=True)
     except Exception as exc:
         raise ResumeError("The file is not valid base64.") from exc
+    if str(body.get("contentType") or "") == resume_store.DOCX_TYPE:
+        import resume_docx
+
+        resume_docx.validate(data)
     table = _table()
     doc = resume_store.create_resume(
         table,

@@ -26,6 +26,16 @@ def _docx(*paragraphs: str) -> bytes:
     return buffer.getvalue()
 
 
+def _with_body_xml(source: bytes, fragment: bytes) -> bytes:
+    archive = zipfile.ZipFile(io.BytesIO(source))
+    xml = archive.read("word/document.xml").replace(b"</w:body>", fragment + b"</w:body>", 1)
+    packed = io.BytesIO()
+    with zipfile.ZipFile(packed, "w") as out:
+        for name in archive.namelist():
+            out.writestr(name, xml if name == "word/document.xml" else archive.read(name))
+    return packed.getvalue()
+
+
 def _paragraph_xml(data: bytes, index: int) -> bytes:
     document = Document(io.BytesIO(data))
     paragraphs = [node for node in document.element.body.iter(qn("w:p"))]
@@ -51,17 +61,27 @@ class ResumeDocxTests(unittest.TestCase):
         self.assertEqual(notes, [])
 
     def test_tracked_changes_are_rejected(self) -> None:
-        source = _docx("Alex Example")
-        archive = zipfile.ZipFile(io.BytesIO(source))
-        xml = archive.read("word/document.xml").replace(b"</w:document>", b"<w:delText>old</w:delText></w:document>", 1)
-        packed = io.BytesIO()
-        with zipfile.ZipFile(packed, "w") as out:
-            for name in archive.namelist():
-                payload = xml if name == "word/document.xml" else archive.read(name)
-                out.writestr(name, payload)
-        with self.assertRaises(ResumeError) as caught:
-            resume_docx.validate(packed.getvalue())
-        self.assertIn("Accept all changes", str(caught.exception))
+        for fragment in (
+            b"<w:delText>old</w:delText>",
+            b'<w:ins w:id="1" w:author="Alex Example"/>',
+            b'<w:moveFrom w:id="2" w:author="Alex Example"/>',
+        ):
+            with self.subTest(fragment=fragment):
+                with self.assertRaises(ResumeError) as caught:
+                    resume_docx.validate(_with_body_xml(_docx("Alex Example"), fragment))
+                self.assertIn("Accept all changes", str(caught.exception))
+
+    def test_table_borders_are_not_tracked_changes(self) -> None:
+        document = Document()
+        document.add_table(rows=2, cols=2).style = "Table Grid"
+        buffer = io.BytesIO()
+        document.save(buffer)
+        borders = b'<w:tblBorders><w:insideH w:val="single"/><w:insideV w:val="single"/></w:tblBorders>'
+        resume_docx.validate(_with_body_xml(buffer.getvalue(), borders))
+        self.assertIn(
+            b"insideH",
+            zipfile.ZipFile(io.BytesIO(_with_body_xml(buffer.getvalue(), borders))).read("word/document.xml"),
+        )
 
     def test_macros_are_rejected(self) -> None:
         source = _docx("Alex Example")

@@ -23,6 +23,9 @@ from resume_store import ResumeError
 XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
 UNCOMPRESSED_MAX = 30 * 1024 * 1024
 DOCUMENT_XML_MAX = 10 * 1024 * 1024
+REVISION_TAGS = frozenset(
+    qn(f"w:{name}") for name in ("ins", "del", "delText", "delInstrText", "moveFrom", "moveTo", "cellIns", "cellDel")
+)
 
 
 def validate(data: bytes) -> None:
@@ -44,12 +47,12 @@ def validate(data: bytes) -> None:
     if document_info.file_size > DOCUMENT_XML_MAX:
         raise ResumeError("The document is too large to read.")
     xml = archive.read("word/document.xml")
-    if b"<w:ins" in xml or b"<w:del" in xml or b"<w:delText" in xml:
-        raise ResumeError("Accept all changes in Word, then upload again.")
     try:
-        defused_et.fromstring(xml)
+        root = defused_et.fromstring(xml)
     except Exception as exc:
         raise ResumeError("The document XML is not safe to read.") from exc
+    if any(node.tag in REVISION_TAGS for node in root.iter()):
+        raise ResumeError("Accept all changes in Word, then upload again.")
 
 
 def _ancestors(node: BaseOxmlElement, tag: str) -> bool:
