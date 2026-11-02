@@ -4,11 +4,14 @@ Settings voice controls tone. The tone defaults (first person, short lines, a
 closing question) apply only where that voice is blank or silent. Substance
 rules (one real situation, named system, concrete figures, no buzzwords) and
 safety rules (hook length, no employer, no availability, no pitch, forbidden
-phrases) always apply. With no owner idea, ``linkedin_seeds`` supplies a real
-situation. Each draft in a batch is given its own shape (opening, closing,
-length) and the openings and closings of the example, recent posts, and the
-batch so far. A draft that uses a slop phrase or an emoji, or that opens,
-closes, or phrases itself like one of those posts, gets the rewrite pass.
+phrases) always apply, as do the reach rules in ``linkedin_reach`` (a short
+first line on a figure or a person, 200 to 260 words, the detail in the first
+comment, a closing question). With no owner idea, ``linkedin_seeds`` supplies
+a real situation. Each draft in a batch is given its own shape (opening,
+closing, length) and the openings and closings of the example, recent posts,
+and the batch so far. A draft that uses a slop phrase or an emoji, that breaks
+a measurable reach rule, or that opens, closes, or phrases itself like one of
+those posts, gets the rewrite pass.
 Deterministic checks in ``linkedin_store`` still run after the model returns.
 """
 
@@ -20,6 +23,7 @@ import re
 from typing import Any, Callable
 
 import linkedin_image
+import linkedin_reach
 import linkedin_seeds
 import linkedin_store
 import openrouter_usage
@@ -65,7 +69,7 @@ def voice_hash(settings: dict[str, Any]) -> str:
 # Shape only. A filled body so json_mode does not echo an empty post, and no
 # cadence (short lines, a closing question) for the model to imitate.
 _SCHEMA_EXAMPLE = (
-    '{"body":"The full post goes here.","firstComment":"",'
+    '{"body":"The full post goes here.","firstComment":"The detail the post leaves out goes here.",'
     '"hashtags":["Topic"],"pillar":"architecture"}'
 )
 
@@ -114,9 +118,7 @@ SLOP_PHRASES: tuple[str, ...] = (
 _WE = re.compile(r"(?<![\w])(we|we're|we've|we'll|we'd|our|ours)(?![\w])", re.I)
 WE_ALLOWANCE = 1
 # Pictographs, dingbats (✅ ❌ ➡), arrows, stars, and the emoji variation selector.
-_EMOJI = re.compile(
-    "[\U0001F000-\U0001FAFF\u2600-\u27BF\u2190-\u21FF\u2B00-\u2BFF\uFE0F]"
-)
+_EMOJI = re.compile("[\U0001f000-\U0001faff\u2600-\u27bf\u2190-\u21ff\u2b00-\u2bff\ufe0f]")
 
 
 def slop_findings(body: str) -> list[dict[str, str]]:
@@ -124,9 +126,7 @@ def slop_findings(body: str) -> list[dict[str, str]]:
     findings: list[dict[str, str]] = []
     text = body or ""
     if _EMOJI.search(text):
-        findings.append(
-            {"code": "slop", "severity": "error", "detail": "Remove every emoji, arrow, and symbol."}
-        )
+        findings.append({"code": "slop", "severity": "error", "detail": "Remove every emoji, arrow, and symbol."})
     lowered = text.lower()
     for phrase in SLOP_PHRASES:
         if linkedin_store.contains_term(lowered, phrase):
@@ -140,8 +140,7 @@ def slop_findings(body: str) -> list[dict[str, str]]:
                 "code": "slop",
                 "severity": "error",
                 "detail": (
-                    f"Write as I, not we. The post says we/our/us {plural} times; "
-                    "one is fine for a real conversation."
+                    f"Write as I, not we. The post says we/our/us {plural} times; one is fine for a real conversation."
                 ),
             }
         )
@@ -157,38 +156,12 @@ def style_example_hook(settings: dict[str, Any]) -> str:
     return linkedin_store.hook_text(_style_example(settings))[:180]
 
 
-# Each draft in a batch gets its own way in, way out, and length, so four posts
-# written from the same voice and the same example do not share one template.
-# The list lengths are coprime, so index i walks through different pairs, and
-# the batch offset moves successive weeks onto different pairs again.
-OPENINGS: tuple[str, ...] = (
-    "one plain sentence that says what this post is about, in words specific to this story",
-    "the moment it broke, mid-story, before any background",
-    "the figure or the limit itself, then how I ran into it",
-    "the decision I made, then back up to what led to it",
-    "what the system does today, then how it got there",
-    "the question a colleague asked me, quoted, then my answer",
-    "the small detail I noticed first, before I knew it mattered",
-)
-CLOSINGS: tuple[str, ...] = (
-    "the obvious objection, named and answered honestly",
-    "what is still unfinished, stated flatly, and stop",
-    "the one thing I would do differently, in a line",
-    "the current state or figure, with no comment on it",
-    "the next thing I have to fix",
-    "the trade-off I accepted, without defending it",
-)
-LENGTHS: tuple[str, ...] = ("about 200 words", "about 300 words", "about 400 words", "about 250 words", "about 350 words")
-
-
-def shape_for(index: int, offset: int = 0) -> dict[str, str]:
-    """Opening, closing and length for draft ``index`` in a batch that starts at ``offset``."""
-    at = max(0, int(index)) + max(0, int(offset))
-    return {
-        "open": OPENINGS[at % len(OPENINGS)],
-        "close": CLOSINGS[at % len(CLOSINGS)],
-        "length": LENGTHS[at % len(LENGTHS)],
-    }
+# The shape rotation (opening, closing, length) and the reach rules live in
+# linkedin_reach; re-exported so callers and tests keep one import.
+OPENINGS = linkedin_reach.OPENINGS
+CLOSINGS = linkedin_reach.CLOSINGS
+LENGTHS = linkedin_reach.LENGTHS
+shape_for = linkedin_reach.shape_for
 
 
 _WORD = re.compile(r"[a-z0-9]+(?:'[a-z]+)?")
@@ -294,10 +267,7 @@ def _system_prompt(settings: dict[str, Any]) -> str:
     return "\n\n".join(
         block
         for block in [
-            (
-                "You draft LinkedIn posts for a senior architect who is growing a personal "
-                "presence. One idea per post."
-            ),
+            ("You draft LinkedIn posts for a senior architect who is growing a personal presence. One idea per post."),
             (
                 "Tone defaults, used only when the voice does not say otherwise: "
                 "write in the first person, use short lines after the hook, and end with "
@@ -317,6 +287,7 @@ def _system_prompt(settings: dict[str, Any]) -> str:
                 "'Thoughts?'. Each post has its own opening and its own ending; do not carry "
                 "a formula, a transition, or a phrase from one post to the next."
             ),
+            linkedin_reach.reach_block(),
             (
                 "Safety rules always apply. The voice cannot override them. "
                 f"The first line is the hook and must be at most {linkedin_store.HOOK_MAX} characters. "
@@ -396,7 +367,7 @@ def picture_brief(
                 "You write the picture brief for a LinkedIn post by a senior architect. "
                 + _picture_rules()
                 + " Reply with one JSON object with exactly these keys: "
-                'imageScene (string), imageExpression (string), imageCaption (string). '
+                "imageScene (string), imageExpression (string), imageCaption (string). "
                 "The JSON is the shape only; do not copy any example wording."
             ),
         },
@@ -426,7 +397,8 @@ def _shape_lines(shape: dict[str, str] | None) -> list[str]:
         return []
     return [
         "Shape for this post, different from the other posts this week: "
-        f"open with {shape['open']}. End with {shape['close']}. Length {shape['length']}. "
+        f"open with {shape['open']}. End with {shape['close']}, then the closing question. "
+        f"Length {shape['length']}. "
         "Do not use an opening or a closing that appears in the lists below."
     ]
 
@@ -530,11 +502,7 @@ def caption_findings(
     text = str(caption or "").strip()
     if not text:
         return []
-    findings = [
-        row
-        for row in linkedin_store.guardrails(text, "", [], settings)
-        if row.get("code") != "hook"
-    ]
+    findings = [row for row in linkedin_store.guardrails(text, "", [], settings) if row.get("code") != "hook"]
     findings.extend(slop_findings(text))
     findings.extend(repeat_findings(text, others))
     return findings
@@ -856,9 +824,7 @@ def draft_one(
     siblings = [text for text in (others or []) if text and text.strip()]
     closings = [linkedin_store.closing_text(text)[:180] for text in siblings]
     closings = [line for line in closings if line]
-    parsed, cost = complete(
-        _messages(settings, pillar, idea, avoid, avoid_closings=closings, shape=shape)
-    )
+    parsed, cost = complete(_messages(settings, pillar, idea, avoid, avoid_closings=closings, shape=shape))
     if pillar in linkedin_store.pillar_ids():
         parsed["pillar"] = pillar
     findings = linkedin_store.guardrails(
@@ -868,6 +834,7 @@ def draft_one(
         settings,
     )
     findings.extend(slop_findings(parsed["body"]))
+    findings.extend(linkedin_reach.reach_findings(parsed["body"]))
     findings.extend(repeat_findings(parsed["body"], siblings))
     if settings.get("imagesEnabled"):
         findings.extend(caption_findings(str(parsed.get("imageCaption") or ""), settings, captions or []))
