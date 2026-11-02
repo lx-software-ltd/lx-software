@@ -14,6 +14,7 @@ from router import route_matches  # noqa: E402
 # Paths and methods passed to lambda_handler in test_handler.py.
 _HANDLER_CASES = (
     ("GET", "/public/finance", "public"),
+    ("GET", "/public/lx-software/linkedin/posts", "public"),
     ("PUT", "/public/finance", "public"),
     ("GET", "/public/records", "public"),
     ("GET", "/public/finance/hillmarton", "public"),

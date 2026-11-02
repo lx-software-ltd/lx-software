@@ -7,6 +7,7 @@ SCOPE_BOARD_OPS = 'siutindei-board-ops'
 SCOPE_BOARD_FULL = 'siutindei-board-full'
 SCOPE_PII = 'siutindei-pii'
 SCOPE_ASSETS = 'siutindei-assets'
+SCOPE_LINKEDIN = 'lxsoftware-linkedin'
 LEGACY_READ_SCOPE = 'read'
 ALL_SCOPES = frozenset({
     SCOPE_FINANCE,
@@ -14,4 +15,5 @@ ALL_SCOPES = frozenset({
     SCOPE_BOARD_FULL,
     SCOPE_PII,
     SCOPE_ASSETS,
+    SCOPE_LINKEDIN,
 })

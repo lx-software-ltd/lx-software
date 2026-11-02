@@ -2709,6 +2709,29 @@ class TestPublicReadRoutes(unittest.TestCase):
         )
         self.assertEqual(out["statusCode"], 404)
 
+    def test_linkedin_posts_need_their_scope(self) -> None:
+        denied = lambda_handler(
+            self._event(
+                "/public/lx-software/linkedin/posts",
+                key_ctx={"keyId": "k123", "scopes": "finance,siutindei-board-full"},
+            ),
+            None,
+        )
+        self.assertEqual(denied["statusCode"], 404)
+        with patch(
+            "linkedin_public.published_posts",
+            return_value={"items": [{"postId": "post_1", "body": "A published post."}]},
+        ):
+            allowed = lambda_handler(
+                self._event(
+                    "/public/lx-software/linkedin/posts",
+                    key_ctx={"keyId": "k123", "scopes": "lxsoftware-linkedin"},
+                ),
+                None,
+            )
+        self.assertEqual(allowed["statusCode"], 200)
+        self.assertEqual(json.loads(allowed["body"])["items"][0]["postId"], "post_1")
+
     def test_key_context_cannot_reach_admin_routes(self) -> None:
         # An API-key principal hitting a non-/public route has no JWT claims,
         # so the admin gate must reject it.

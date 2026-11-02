@@ -24,6 +24,10 @@ class PathClassTests(unittest.TestCase):
             board_public_api.path_class("/public/siu-tin-dei/board/mail"),
             "siutindei-board-full",
         )
+        self.assertEqual(
+            board_public_api.path_class("/public/lx-software/linkedin/posts"),
+            "lxsoftware-linkedin",
+        )
 
     def test_full_scope_covers_ops(self) -> None:
         self.assertTrue(
@@ -35,6 +39,16 @@ class PathClassTests(unittest.TestCase):
             board_public_api.path_allowed("/public/siu-tin-dei/board/mail", ["siutindei-board-ops"])
         )
         self.assertFalse(board_public_api.path_allowed("/public/siu-tin-dei/board", ["finance"]))
+        self.assertTrue(
+            board_public_api.path_allowed(
+                "/public/lx-software/linkedin/posts", ["lxsoftware-linkedin"]
+            )
+        )
+        self.assertFalse(
+            board_public_api.path_allowed(
+                "/public/lx-software/linkedin/posts", ["finance", "siutindei-board-full"]
+            )
+        )
 
     def test_write_allowed_matrix(self) -> None:
         write_ctx = {"keyId": "k-w", "write": "1"}

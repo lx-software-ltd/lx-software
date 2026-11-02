@@ -284,6 +284,7 @@ describe("HTTP API routes", () => {
     const keys = publicMirrors.map((r) => String(r.Properties?.RouteKey));
     expect(keys).toEqual(
       expect.arrayContaining([
+        "GET /public/lx-software/linkedin/posts",
         "GET /public/siu-tin-dei/board",
         "GET /public/siu-tin-dei/board/{proxy+}",
         "PUT /public/siu-tin-dei/board/{proxy+}",
@@ -415,6 +416,10 @@ describe("HTTP API stage throttling", () => {
       StageName: "$default",
       RouteSettings: Match.objectLike({
         "GET /public/finance": {
+          ThrottlingRateLimit: 2,
+          ThrottlingBurstLimit: 10,
+        },
+        "GET /public/lx-software/linkedin/posts": {
           ThrottlingRateLimit: 2,
           ThrottlingBurstLimit: 10,
         },
