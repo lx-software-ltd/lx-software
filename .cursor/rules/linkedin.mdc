@@ -13,4 +13,5 @@ Operations are in `docs/deployment/admin-website.md`. [why: 4653482 LinkedIn que
 - Image calls use resolution `2K`. Seedream 4.5 rejects `1K`. [why: a97c259 Seedream size floor]
 - The reference photo and the chosen character sheet stay in the private assets bucket under `linkedin/character/`. Do not copy either into the repo, DynamoDB, or fixtures. [why: a97c259 character sheet]
 - Rows use the `LINKEDIN#` prefix and stay out of `/records`. [why: 4653482 LinkedIn rows]
+- Reach rules in `linkedin_reach.py` (first line at most 110 characters on a figure or a person, 200 to 260 words, detail in the first comment, a closing question) come from the measured posts in `docs/architecture/linkedin-reach.md`. Change the numbers and that page together. [why: convention]
 - `LxSoftwareLinkedinEnabled` and `LxSoftwareLinkedinPublishEnabled` default false. [why: 4653482 publish fail closed]
