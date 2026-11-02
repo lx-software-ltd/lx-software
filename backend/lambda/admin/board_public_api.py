@@ -13,11 +13,13 @@ from contract_constants import (
     SCOPE_BOARD_FULL,
     SCOPE_BOARD_OPS,
     SCOPE_FINANCE,
+    SCOPE_LINKEDIN,
     SCOPE_PII,
 )
 from http_common import _log_event, _request_id
 
 PUBLIC_BOARD_PREFIX = "/public/siu-tin-dei/board"
+LINKEDIN_POSTS_PATH = "/public/lx-software/linkedin/posts"
 FINANCE_PATHS = frozenset(
     {
         "/public/finance",
@@ -65,6 +67,8 @@ def _board_rest(path: str) -> list[str]:
 
 
 def path_class(path: str) -> str | None:
+    if path == LINKEDIN_POSTS_PATH:
+        return SCOPE_LINKEDIN
     if path in FINANCE_PATHS:
         return SCOPE_FINANCE
     if path != PUBLIC_BOARD_PREFIX and not path.startswith(PUBLIC_BOARD_PREFIX + "/"):
@@ -89,6 +93,8 @@ def path_allowed(path: str, scopes: list[str]) -> bool:
     have = set(scopes)
     if needed == SCOPE_FINANCE:
         return SCOPE_FINANCE in have
+    if needed == SCOPE_LINKEDIN:
+        return SCOPE_LINKEDIN in have
     if needed == SCOPE_BOARD_OPS:
         return SCOPE_BOARD_OPS in have or SCOPE_BOARD_FULL in have
     if SCOPE_BOARD_FULL not in have:

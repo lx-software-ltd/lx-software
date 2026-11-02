@@ -193,6 +193,7 @@ export const ROUTES: readonly AdminApiRoute[] = [
   { path: "/public/finance/quotes", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
   { path: "/public/records", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
   { path: "/public/fx/v2/rates", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
+  { path: "/public/lx-software/linkedin/posts", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
   { path: "/public/siu-tin-dei/board", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
   { path: "/public/siu-tin-dei/board/{proxy+}", methods: [GET], auth: "apiKey", throttle: PUBLIC_READ_THROTTLE },
   { path: "/public/siu-tin-dei/board/{proxy+}", methods: [PUT, POST, DELETE], auth: "apiKey", throttle: PUBLIC_WRITE_THROTTLE },

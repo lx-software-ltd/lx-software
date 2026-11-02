@@ -110,17 +110,14 @@ from proxies import _proxy_finance_quotes, _proxy_fx_v2_rates
 from router import Route, route_matches
 from runtime import PARSE_JOB_PK_PREFIX, RECORD_PK_PREFIX
 
-# API-key mirrors of the admin endpoints, served under /public/* and
-# authenticated by the Lambda authorizer instead of Cognito. Finance and
-# records stay GET-only. Board GETs and (when the key has allowWrite plus
-# PublicApiWritesEnabled) PUT/POST/DELETE are mirrored under
-# ``PUBLIC_BOARD_PREFIX``. Assets and parse-job endpoints are excluded.
+# API-key mirrors under /public/*. Writes stay on the board prefix.
 PUBLIC_READ_PATHS = frozenset(
     {
         "/public/finance",
         "/public/finance/quotes",
         "/public/records",
         "/public/fx/v2/rates",
+        board_public_api_mod.LINKEDIN_POSTS_PATH,
     }
 )
 PUBLIC_BOARD_PREFIX = "/public/siu-tin-dei/board"
@@ -335,6 +332,9 @@ def _handle_public(
             event.get("queryStringParameters"),
             _request_id(event),
         )
+    elif path == board_public_api_mod.LINKEDIN_POSTS_PATH:
+        import linkedin_public
+        response = _json_response(200, linkedin_public.published_posts(board_store.records_table()))
     else:
         response = _records_get_response(event)
     board_public_api_mod.notify_key_use(

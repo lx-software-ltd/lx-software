@@ -4,7 +4,8 @@
     {"name": "SCOPE_BOARD_OPS", "value": "siutindei-board-ops"},
     {"name": "SCOPE_BOARD_FULL", "value": "siutindei-board-full"},
     {"name": "SCOPE_PII", "value": "siutindei-pii"},
-    {"name": "SCOPE_ASSETS", "value": "siutindei-assets"}
+    {"name": "SCOPE_ASSETS", "value": "siutindei-assets"},
+    {"name": "SCOPE_LINKEDIN", "value": "lxsoftware-linkedin"}
   ],
   "legacyReadScope": "read"
 }
