@@ -2719,9 +2719,9 @@ class TestPublicReadRoutes(unittest.TestCase):
         )
         self.assertEqual(denied["statusCode"], 404)
         with patch(
-            "linkedin_public.published_posts",
-            return_value={"items": [{"postId": "post_1", "body": "A published post."}]},
-        ):
+            "linkedin_public.posts_response",
+            return_value=(200, {"items": [{"postId": "post_1", "body": "A published post."}]}),
+        ) as posts:
             allowed = lambda_handler(
                 self._event(
                     "/public/lx-software/linkedin/posts",
@@ -2731,6 +2731,22 @@ class TestPublicReadRoutes(unittest.TestCase):
             )
         self.assertEqual(allowed["statusCode"], 200)
         self.assertEqual(json.loads(allowed["body"])["items"][0]["postId"], "post_1")
+        self.assertIsNone(posts.call_args.args[1])
+
+    def test_linkedin_status_query_reaches_the_reader(self) -> None:
+        event = self._event(
+            "/public/lx-software/linkedin/posts",
+            key_ctx={"keyId": "k123", "scopes": "lxsoftware-linkedin"},
+        )
+        event["queryStringParameters"] = {"status": "drafted"}
+        with patch(
+            "linkedin_public.posts_response",
+            return_value=(200, {"items": [], "status": ["drafted"]}),
+        ) as posts:
+            out = lambda_handler(event, None)
+        self.assertEqual(out["statusCode"], 200)
+        self.assertEqual(json.loads(out["body"])["status"], ["drafted"])
+        self.assertEqual(posts.call_args.args[1], {"status": "drafted"})
 
     def test_key_context_cannot_reach_admin_routes(self) -> None:
         # An API-key principal hitting a non-/public route has no JWT claims,

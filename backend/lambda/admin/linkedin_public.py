@@ -1,7 +1,10 @@
-"""Published LinkedIn posts for a public API key.
+"""LinkedIn posts for a public API key.
 
 Scope ``lxsoftware-linkedin`` on ``GET /public/lx-software/linkedin/posts``.
-Drafts, the connection, tokens, and image bytes stay on the JWT routes.
+With no query the read is published posts. ``?status=`` selects
+``drafted``, ``approved``, ``published``, ``archived``, ``failed``, a
+comma-separated list of those, or ``all``. The connection, tokens, and
+image bytes stay on the JWT routes.
 """
 
 from __future__ import annotations
@@ -13,7 +16,7 @@ import linkedin_store
 from ddb_convert import _from_ddb_nested
 
 PATH = board_public_api.LINKEDIN_POSTS_PATH
-_PUBLISHED = "LINKEDIN#posts#published"
+_STATUS_ERROR = "status must be drafted, approved, published, archived, failed, or all"
 # DynamoDB pages the index. Fifty pages is far past a personal posting history;
 # hitting it sets truncated instead of dropping the rest quietly.
 _PAGE_CAP = 50
@@ -22,12 +25,58 @@ _HIDDEN = ("pk", "sk", "gsi1pk", "gsi1sk", "expiresAt")
 
 
 def published_posts(table: Any) -> dict[str, Any]:
-    rows, truncated = _all_published(table)
+    """Published posts only. The default read, and what the older tests call."""
+    _code, payload = posts_response(table, None)
+    return payload
+
+
+def posts_response(table: Any, query: Any) -> tuple[int, dict[str, Any]]:
+    """``(status_code, body)`` for the public posts route.
+
+    ``query`` is the API Gateway ``queryStringParameters`` map. Missing or
+    blank ``status`` means published posts, and that body has no top-level
+    ``status`` key. An unknown status is 400.
+    """
+    wanted = _statuses(query)
+    if wanted is None:
+        return 400, {"message": _STATUS_ERROR}
+    rows: list[dict[str, Any]] = []
+    truncated = False
+    for name in wanted:
+        found, cut = _all_with_status(table, name)
+        rows.extend(found)
+        truncated = truncated or cut
     rows.sort(key=lambda doc: (str(doc.get("slotAt") or "9"), str(doc.get("createdAt") or "")))
     payload: dict[str, Any] = {"items": [published_post(row) for row in rows]}
+    if _asked(query):
+        payload["status"] = list(wanted)
     if truncated:
         payload["truncated"] = True
-    return payload
+    return 200, payload
+
+
+def _asked(query: Any) -> bool:
+    return isinstance(query, dict) and bool(str(query.get("status") or "").strip())
+
+
+def _statuses(query: Any) -> tuple[str, ...] | None:
+    """Statuses to read. ``None`` when the caller named one this route does not serve."""
+    raw = ""
+    if isinstance(query, dict):
+        raw = str(query.get("status") or "").strip().lower()
+    if not raw:
+        return ("published",)
+    if raw == "all":
+        return tuple(linkedin_store.STATUSES)
+    chosen: list[str] = []
+    for part in raw.split(","):
+        name = part.strip()
+        if not name or name in chosen:
+            continue
+        if name not in linkedin_store.STATUSES:
+            return None
+        chosen.append(name)
+    return tuple(chosen) if chosen else None
 
 
 def published_post(doc: dict[str, Any]) -> dict[str, Any]:
@@ -41,6 +90,7 @@ def published_post(doc: dict[str, Any]) -> dict[str, Any]:
         }
     return {
         "postId": doc.get("postId") or "",
+        "status": doc.get("status") or "",
         "pillar": doc.get("pillar") or "",
         "seedId": doc.get("seedId") or "",
         "channel": doc.get("channel") or "profile",
@@ -63,7 +113,7 @@ def _counts(metrics: Any) -> dict[str, Any] | None:
     return counts or None
 
 
-def _all_published(table: Any) -> tuple[list[dict[str, Any]], bool]:
+def _all_with_status(table: Any, status: str) -> tuple[list[dict[str, Any]], bool]:
     rows: list[dict[str, Any]] = []
     start: dict[str, Any] | None = None
     seen: set[str] = set()
@@ -71,7 +121,7 @@ def _all_published(table: Any) -> tuple[list[dict[str, Any]], bool]:
         kwargs: dict[str, Any] = {
             "IndexName": "gsi1",
             "KeyConditionExpression": "gsi1pk = :pk",
-            "ExpressionAttributeValues": {":pk": _PUBLISHED},
+            "ExpressionAttributeValues": {":pk": f"LINKEDIN#posts#{status}"},
             "ScanIndexForward": True,
         }
         if start:

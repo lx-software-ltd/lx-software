@@ -334,7 +334,7 @@ def _handle_public(
         )
     elif path == board_public_api_mod.LINKEDIN_POSTS_PATH:
         import linkedin_public
-        response = _json_response(200, linkedin_public.published_posts(board_store.records_table()))
+        response = _json_response(*linkedin_public.posts_response(board_store.records_table(), event.get("queryStringParameters")))
     else:
         response = _records_get_response(event)
     board_public_api_mod.notify_key_use(
