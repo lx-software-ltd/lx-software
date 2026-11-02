@@ -127,6 +127,9 @@ describe("linkedin guardrails", () => {
       expect(note).toContain("always I, never we");
       expect(note).not.toContain("done is better than perfect");
       expect(note).not.toContain("Reliability is not a feature");
+      expect(note).toContain("200 to 260 words");
+      expect(note).toContain("no call to action beyond the one closing question");
+      expect(note).not.toContain("450");
     }
     expect(notes[1]).toContain("Stand at the moment it broke");
     expect(notes[2]).toContain("a question a colleague actually asked");

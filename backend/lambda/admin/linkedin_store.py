@@ -24,6 +24,7 @@ from ddb_convert import _from_ddb_nested, _to_ddb_nested
 
 RECOMMENDED_VOICE = linkedin_voices.RECOMMENDED_VOICE
 STORY_VOICES = linkedin_voices.STORY_VOICES
+RETIRED_VOICES = linkedin_voices.RETIRED_VOICES
 
 HKT = ZoneInfo("Asia/Hong_Kong")
 
@@ -134,13 +135,6 @@ def pillar_label(pillar_id: str) -> str:
             return row["label"]
     return pillar_id
 
-
-# The first default restated the safety rules and was not a voice. A stored
-# copy is replaced by the recommended voice on load.
-_RETIRED_DEFAULT_VOICE = (
-    "Senior architect writing in the first person. One lesson per post. "
-    "No company name, no employer, no offer of availability."
-)
 
 STYLE_EXAMPLE_MAX = 3000
 
@@ -307,8 +301,9 @@ def load_settings(table: Any) -> dict[str, Any]:
     merged["weekdays"] = _weekdays(merged.get("weekdays"))
     merged["pillars"] = _pillars(merged.get("pillars"))
     merged["forbiddenWords"] = _words(merged.get("forbiddenWords"))
-    if str(merged.get("voiceNotes") or "").strip() == _RETIRED_DEFAULT_VOICE:
-        merged["voiceNotes"] = RECOMMENDED_VOICE
+    # An earlier text of a story note loads as the current one.
+    voice = str(merged.get("voiceNotes") or "").strip()
+    merged["voiceNotes"] = RETIRED_VOICES.get(voice, merged.get("voiceNotes"))
     return merged
 
 
