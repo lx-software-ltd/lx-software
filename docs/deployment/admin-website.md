@@ -289,7 +289,7 @@ scoped; existing keys stay GET-only unless minted or updated with
 | Route | Mirrors |
 |-------|---------|
 | `GET /public/finance`, `/public/finance/quotes`, `/public/records`, `/public/fx/v2/rates` | the JWT GETs (finance stays GET-only) |
-| `GET /public/lx-software/linkedin/posts` | published LinkedIn posts only (text, pillar, time, reactions, comments, impressions) |
+| `GET /public/lx-software/linkedin/posts` | LinkedIn posts (text, pillar, time, reactions, comments, impressions). Published only unless `?status=` names `drafted`, `approved`, `archived`, `failed`, a comma-separated list, or `all` |
 | `GET /public/siu-tin-dei/board` and `GET /public/siu-tin-dei/board/{proxy+}` | every JWT GET under `/siu-tin-dei/board` |
 | `PUT` / `POST` / `DELETE /public/siu-tin-dei/board/{proxy+}` | the matching JWT write, when the key has `allowWrite` and `PublicApiWritesEnabled` is `true` |
 
@@ -305,7 +305,7 @@ The handler enforces scopes, the write flag and the kill switch
 | `siutindei-board-full` | every JWT GET under `/siu-tin-dei/board` except the PII heads; matching writes with `allowWrite` |
 | `siutindei-pii` | unmasked mail; `allowList` / `digestTo` on overview and `GET /tools` `config.allowList`; `prospects`, `outreach`, `receivables` (with board-full); prospect import / PUT / merge |
 | `siutindei-assets` | content creative presigned URLs (GET only) |
-| `lxsoftware-linkedin` | `GET /public/lx-software/linkedin/posts`. Published posts only: text, time, and impression, reaction, and comment counts. No drafts, connection, tokens, or image bytes. A successful read sends the same coalesced notification as the other public reads |
+| `lxsoftware-linkedin` | `GET /public/lx-software/linkedin/posts`. Text, time, and impression, reaction, and comment counts. No `status` parameter returns published posts. `?status=drafted` (also `approved`, `archived`, `failed`, a comma-separated list, or `all`) returns those posts on the same key; each item carries `status`. No connection, tokens, or image bytes. A successful read sends the same coalesced notification as the other public reads |
 
 Writes need **`allowWrite`** on the key (`create --allow-write` or
 `set-write`) **and** stack parameter **`PublicApiWritesEnabled=true`**
@@ -347,9 +347,10 @@ succeeds either way. Audit rows for key writes use `USER#apikey:<keyId>`.
 Mint a Cloud Agent key as `finance,siutindei-board-ops`, not
 `siutindei-board-full`, and without `--allow-write` unless it should
 mutate board state. Add `lxsoftware-linkedin` when that agent should read
-published LinkedIn posts. A key minted without that scope does not gain it
-on deploy. The list follows every index page. `truncated` is true only when
-the read stops after 50 pages.
+LinkedIn posts. A key minted without that scope does not gain it
+on deploy. The list follows every index page, once per requested status.
+`truncated` is true only when a status stops after 50 pages. `?status=drafted`
+reads the unpublished queue; the default read stays published posts.
 
 ```bash
 # Mint (prints the key exactly once; keys look like lxpk_…)
@@ -379,6 +380,7 @@ summary directly.
 ```bash
 curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/finance"
 curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/lx-software/linkedin/posts"
+curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/lx-software/linkedin/posts?status=drafted"
 curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/siu-tin-dei/board/breakers"
 curl -X POST -H "x-api-key: lxpk_..." -H "Content-Type: application/json" \
   -d '{"assignee":"support","brief":"Triage inbound"}' \

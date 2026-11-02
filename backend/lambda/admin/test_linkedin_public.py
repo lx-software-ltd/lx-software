@@ -109,6 +109,96 @@ class LinkedInPublicPostsTests(unittest.TestCase):
         self.assertEqual(table.calls[1]["gsi1sk"], "1#post_a")
         self.assertNotIn("truncated", payload)
 
+    def test_status_drafted_returns_drafts_and_keeps_secrets_off(self) -> None:
+        table = FakeTable()
+        linkedin_store.put_post(
+            table,
+            {
+                "postId": "post_pub",
+                "status": "published",
+                "body": "Already out.",
+                "slotAt": "2026-10-30T00:30:00.000Z",
+                "createdAt": "2026-10-29T12:00:00.000Z",
+            },
+        )
+        linkedin_store.put_post(
+            table,
+            {
+                "postId": "post_draft",
+                "status": "drafted",
+                "pillar": "platforms",
+                "seedId": "cloudfront-extensionless",
+                "body": "Unpublished draft about a refresh.",
+                "firstComment": "The three lines of the fix.",
+                "hashtags": ["cloud"],
+                "slotAt": "",
+                "createdAt": "2026-11-01T12:00:00.000Z",
+                "accessToken": "should-not-leak",
+                "generation": {"model": "secret-model", "voiceHash": "abc"},
+                "image": {
+                    "status": "ready",
+                    "caption": "A spoken line.",
+                    "scene": "a desk the prompt must not leave",
+                    "key": "linkedin/posts/secret.png",
+                },
+            },
+        )
+        code, payload = linkedin_public.posts_response(table, {"status": "drafted"})
+        self.assertEqual(code, 200)
+        self.assertEqual(payload["status"], ["drafted"])
+        self.assertEqual([row["postId"] for row in payload["items"]], ["post_draft"])
+        item = payload["items"][0]
+        self.assertEqual(item["status"], "drafted")
+        self.assertEqual(item["body"], "Unpublished draft about a refresh.")
+        self.assertEqual(item["firstComment"], "The three lines of the fix.")
+        self.assertEqual(item["image"], {"status": "ready", "caption": "A spoken line."})
+        encoded = json.dumps(payload)
+        self.assertNotIn("Already out.", encoded)
+        self.assertNotIn("should-not-leak", encoded)
+        self.assertNotIn("secret-model", encoded)
+        self.assertNotIn("secret.png", encoded)
+        self.assertNotIn("a desk the prompt must not leave", encoded)
+        self.assertNotIn("voiceHash", encoded)
+
+    def test_status_all_and_a_list_and_a_bad_value(self) -> None:
+        table = FakeTable()
+        for post_id, status in (
+            ("post_draft", "drafted"),
+            ("post_ok", "approved"),
+            ("post_pub", "published"),
+        ):
+            linkedin_store.put_post(
+                table,
+                {
+                    "postId": post_id,
+                    "status": status,
+                    "body": post_id,
+                    "slotAt": "2026-10-01T00:30:00.000Z",
+                    "createdAt": "2026-10-01T00:30:00.000Z",
+                },
+            )
+        code, payload = linkedin_public.posts_response(table, {"status": "all"})
+        self.assertEqual(code, 200)
+        self.assertEqual(
+            sorted(row["postId"] for row in payload["items"]),
+            ["post_draft", "post_ok", "post_pub"],
+        )
+        code, payload = linkedin_public.posts_response(table, {"status": " Drafted, approved "})
+        self.assertEqual(code, 200)
+        self.assertEqual(payload["status"], ["drafted", "approved"])
+        self.assertEqual(
+            sorted(row["postId"] for row in payload["items"]),
+            ["post_draft", "post_ok"],
+        )
+        code, payload = linkedin_public.posts_response(table, {"status": "ideas"})
+        self.assertEqual(code, 400)
+        self.assertIn("status", payload["message"])
+        code, payload = linkedin_public.posts_response(table, None)
+        self.assertEqual(code, 200)
+        self.assertEqual([row["postId"] for row in payload["items"]], ["post_pub"])
+        self.assertNotIn("status", payload)
+        self.assertEqual(payload["items"][0]["status"], "published")
+
 
 def _stored(post_id: str, slot: str) -> dict:
     return {
