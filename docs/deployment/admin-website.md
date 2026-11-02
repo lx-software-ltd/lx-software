@@ -305,7 +305,7 @@ The handler enforces scopes, the write flag and the kill switch
 | `siutindei-board-full` | every JWT GET under `/siu-tin-dei/board` except the PII heads; matching writes with `allowWrite` |
 | `siutindei-pii` | unmasked mail; `allowList` / `digestTo` on overview and `GET /tools` `config.allowList`; `prospects`, `outreach`, `receivables` (with board-full); prospect import / PUT / merge |
 | `siutindei-assets` | content creative presigned URLs (GET only) |
-| `lxsoftware-linkedin` | `GET /public/lx-software/linkedin/posts`. Published posts only. No drafts, connection, tokens, or image bytes |
+| `lxsoftware-linkedin` | `GET /public/lx-software/linkedin/posts`. Published posts only: text, time, and impression, reaction, and comment counts. No drafts, connection, tokens, or image bytes. A successful read sends the same coalesced notification as the other public reads |
 
 Writes need **`allowWrite`** on the key (`create --allow-write` or
 `set-write`) **and** stack parameter **`PublicApiWritesEnabled=true`**
@@ -348,7 +348,8 @@ Mint a Cloud Agent key as `finance,siutindei-board-ops`, not
 `siutindei-board-full`, and without `--allow-write` unless it should
 mutate board state. Add `lxsoftware-linkedin` when that agent should read
 published LinkedIn posts. A key minted without that scope does not gain it
-on deploy.
+on deploy. The list follows every index page. `truncated` is true only when
+the read stops after 50 pages.
 
 ```bash
 # Mint (prints the key exactly once; keys look like lxpk_…)

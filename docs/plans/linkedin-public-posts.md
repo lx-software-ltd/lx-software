@@ -7,7 +7,7 @@ Contracts and the HTTP API route table are red. The request is to add published 
 
 ## Goal
 
-`GET /public/lx-software/linkedin/posts` returns published posts (text, pillar, time, reactions, comments, impressions) for a key with scope `lxsoftware-linkedin`.
+`GET /public/lx-software/linkedin/posts` returns every published post (text, pillar, time, and impression, reaction, and comment counts) for a key with scope `lxsoftware-linkedin`. Metric timestamps and error text stay off the response. A read past 50 index pages sets `truncated`.
 
 ## Non-goals
 

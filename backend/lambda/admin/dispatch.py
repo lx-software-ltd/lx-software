@@ -110,7 +110,7 @@ from proxies import _proxy_finance_quotes, _proxy_fx_v2_rates
 from router import Route, route_matches
 from runtime import PARSE_JOB_PK_PREFIX, RECORD_PK_PREFIX
 
-# API-key mirrors under /public/*. Writes stay on the board prefix.
+# API-key mirrors under /public/*. Writes stay on the board prefix. Assets and parse jobs are excluded.
 PUBLIC_READ_PATHS = frozenset(
     {
         "/public/finance",

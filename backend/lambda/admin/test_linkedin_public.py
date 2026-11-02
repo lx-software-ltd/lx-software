@@ -38,7 +38,14 @@ class LinkedInPublicPostsTests(unittest.TestCase):
                     "publishedAt": "2026-10-30T00:30:00.000Z",
                     "organizationId": "999",
                 },
-                "metrics": {"impressions": 26200, "reactions": 180, "comments": 20},
+                "metrics": {
+                    "impressions": 26200,
+                    "reactions": 180,
+                    "comments": 20,
+                    "pulledAt": "2026-10-30T01:00:00.000Z",
+                    "error": "member analytics denied",
+                    "unavailable": False,
+                },
                 "image": {
                     "status": "ready",
                     "contentType": "image/png",
@@ -62,7 +69,10 @@ class LinkedInPublicPostsTests(unittest.TestCase):
         self.assertEqual([row["postId"] for row in payload["items"]], ["post_pub"])
         item = payload["items"][0]
         self.assertEqual(item["body"], "A post about Hong Kong.")
-        self.assertEqual(item["metrics"]["impressions"], 26200)
+        self.assertEqual(
+            item["metrics"],
+            {"impressions": 26200, "reactions": 180, "comments": 20},
+        )
         self.assertEqual(item["publishedAt"], "2026-10-30T00:30:00.000Z")
         self.assertEqual(item["url"], "https://www.linkedin.com/feed/update/urn:li:share:1")
         self.assertEqual(item["image"], {"status": "ready", "caption": "A line."})
@@ -72,3 +82,43 @@ class LinkedInPublicPostsTests(unittest.TestCase):
         self.assertNotIn("secret.png", encoded)
         self.assertNotIn("a desk at night", encoded)
         self.assertNotIn("Unpublished draft.", encoded)
+        self.assertNotIn("member analytics denied", encoded)
+        self.assertNotIn("pulledAt", encoded)
+
+    def test_follows_every_index_page(self) -> None:
+        pages = [
+            {
+                "Items": [_stored("post_a", "2026-10-01T00:30:00.000Z")],
+                "LastEvaluatedKey": {"gsi1pk": "LINKEDIN#posts#published", "gsi1sk": "1#post_a"},
+            },
+            {"Items": [_stored("post_b", "2026-10-08T00:30:00.000Z")]},
+        ]
+
+        class Pages:
+            def __init__(self) -> None:
+                self.calls: list[dict | None] = []
+
+            def query(self, **kwargs):
+                self.calls.append(kwargs.get("ExclusiveStartKey"))
+                return pages[len(self.calls) - 1]
+
+        table = Pages()
+        payload = linkedin_public.published_posts(table)
+        self.assertEqual([row["postId"] for row in payload["items"]], ["post_a", "post_b"])
+        self.assertIsNone(table.calls[0])
+        self.assertEqual(table.calls[1]["gsi1sk"], "1#post_a")
+        self.assertNotIn("truncated", payload)
+
+
+def _stored(post_id: str, slot: str) -> dict:
+    return {
+        "pk": f"LINKEDIN#post#{post_id}",
+        "sk": "META",
+        "gsi1pk": "LINKEDIN#posts#published",
+        "gsi1sk": f"{slot}#{post_id}",
+        "postId": post_id,
+        "status": "published",
+        "body": post_id,
+        "slotAt": slot,
+        "createdAt": slot,
+    }
