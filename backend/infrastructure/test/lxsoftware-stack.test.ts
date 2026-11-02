@@ -285,6 +285,10 @@ describe("HTTP API routes", () => {
     expect(keys).toEqual(
       expect.arrayContaining([
         "GET /public/lx-software/linkedin/posts",
+        "POST /public/lx-software/linkedin/posts",
+        "GET /public/lx-software/linkedin/posts/{id}",
+        "PUT /public/lx-software/linkedin/posts/{id}",
+        "DELETE /public/lx-software/linkedin/posts/{id}",
         "GET /public/siu-tin-dei/board",
         "GET /public/siu-tin-dei/board/{proxy+}",
         "PUT /public/siu-tin-dei/board/{proxy+}",
@@ -306,7 +310,11 @@ describe("HTTP API routes", () => {
     for (const route of publicMirrors) {
       const key = String(route.Properties?.RouteKey);
       expect(route.Properties?.AuthorizationType).toBe("CUSTOM");
-      if (!key.includes("/public/siu-tin-dei/board/{proxy+}")) {
+      const linkedinWrite =
+        key === "POST /public/lx-software/linkedin/posts" ||
+        key === "PUT /public/lx-software/linkedin/posts/{id}" ||
+        key === "DELETE /public/lx-software/linkedin/posts/{id}";
+      if (!key.includes("/public/siu-tin-dei/board/{proxy+}") && !linkedinWrite) {
         expect(key).toMatch(/^GET /);
       }
     }
@@ -422,6 +430,22 @@ describe("HTTP API stage throttling", () => {
         "GET /public/lx-software/linkedin/posts": {
           ThrottlingRateLimit: 2,
           ThrottlingBurstLimit: 10,
+        },
+        "POST /public/lx-software/linkedin/posts": {
+          ThrottlingRateLimit: 1,
+          ThrottlingBurstLimit: 5,
+        },
+        "GET /public/lx-software/linkedin/posts/{id}": {
+          ThrottlingRateLimit: 2,
+          ThrottlingBurstLimit: 10,
+        },
+        "PUT /public/lx-software/linkedin/posts/{id}": {
+          ThrottlingRateLimit: 1,
+          ThrottlingBurstLimit: 5,
+        },
+        "DELETE /public/lx-software/linkedin/posts/{id}": {
+          ThrottlingRateLimit: 1,
+          ThrottlingBurstLimit: 5,
         },
         "GET /public/siu-tin-dei/board/{proxy+}": {
           ThrottlingRateLimit: 2,

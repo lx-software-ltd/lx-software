@@ -2748,6 +2748,56 @@ class TestPublicReadRoutes(unittest.TestCase):
         self.assertEqual(json.loads(out["body"])["status"], ["drafted"])
         self.assertEqual(posts.call_args.args[1], {"status": "drafted"})
 
+    def test_linkedin_write_is_forbidden_until_the_key_can_write(self) -> None:
+        ctx = {"keyId": "k123", "scopes": "lxsoftware-linkedin", "write": "1"}
+        event = self._event("/public/lx-software/linkedin/posts", method="POST", key_ctx=ctx)
+        event["body"] = '{"body":"A hook."}'
+        with patch.dict("os.environ", {"PUBLIC_API_WRITES_ENABLED": "false"}):
+            disabled = lambda_handler(event, None)
+        self.assertEqual(disabled["statusCode"], 403)
+        self.assertEqual(json.loads(disabled["body"])["reason"], "writes_disabled")
+        read_only = dict(ctx)
+        read_only["write"] = "0"
+        with patch.dict("os.environ", {"PUBLIC_API_WRITES_ENABLED": "true"}):
+            denied = lambda_handler(
+                self._event("/public/lx-software/linkedin/posts", method="POST", key_ctx=read_only),
+                None,
+            )
+        self.assertEqual(denied["statusCode"], 403)
+        self.assertEqual(json.loads(denied["body"])["reason"], "key_read_only")
+
+    def test_linkedin_write_reaches_the_handler(self) -> None:
+        event = self._event(
+            "/public/lx-software/linkedin/posts/li_abc",
+            method="PUT",
+            key_ctx={"keyId": "k123", "scopes": "lxsoftware-linkedin", "write": "1"},
+        )
+        event["body"] = '{"body":"A hook."}'
+        with patch.dict("os.environ", {"PUBLIC_API_WRITES_ENABLED": "true"}):
+            with patch(
+                "linkedin_public.handle",
+                return_value=(200, {"item": {"postId": "li_abc"}}),
+            ) as handle:
+                out = lambda_handler(event, None)
+        self.assertEqual(out["statusCode"], 200)
+        self.assertEqual(json.loads(out["body"])["item"]["postId"], "li_abc")
+        self.assertEqual(handle.call_args.args[1], "PUT")
+        self.assertEqual(handle.call_args.args[2], "/public/lx-software/linkedin/posts/li_abc")
+        self.assertEqual(handle.call_args.args[3]["body"], '{"body":"A hook."}')
+
+    def test_linkedin_action_paths_stay_unlisted(self) -> None:
+        with patch.dict("os.environ", {"PUBLIC_API_WRITES_ENABLED": "true"}):
+            out = lambda_handler(
+                self._event(
+                    "/public/lx-software/linkedin/posts/li_abc/approve",
+                    method="POST",
+                    key_ctx={"keyId": "k123", "scopes": "lxsoftware-linkedin", "write": "1"},
+                ),
+                None,
+            )
+        self.assertEqual(out["statusCode"], 403)
+        self.assertEqual(json.loads(out["body"])["reason"], "not_allowlisted")
+
     def test_key_context_cannot_reach_admin_routes(self) -> None:
         # An API-key principal hitting a non-/public route has no JWT claims,
         # so the admin gate must reject it.

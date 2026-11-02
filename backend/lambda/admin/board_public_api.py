@@ -20,6 +20,21 @@ from http_common import _log_event, _request_id
 
 PUBLIC_BOARD_PREFIX = "/public/siu-tin-dei/board"
 LINKEDIN_POSTS_PATH = "/public/lx-software/linkedin/posts"
+
+
+def linkedin_post_id(path: str) -> str:
+    """One post id under the public posts route. Empty when the path is not that."""
+    prefix = LINKEDIN_POSTS_PATH + "/"
+    if not path.startswith(prefix):
+        return ""
+    rest = path[len(prefix) :]
+    if not rest or "/" in rest or len(rest) > 80:
+        return ""
+    if not rest.replace("-", "").replace("_", "").isalnum():
+        return ""
+    return rest
+
+
 FINANCE_PATHS = frozenset(
     {
         "/public/finance",
@@ -67,7 +82,7 @@ def _board_rest(path: str) -> list[str]:
 
 
 def path_class(path: str) -> str | None:
-    if path == LINKEDIN_POSTS_PATH:
+    if path == LINKEDIN_POSTS_PATH or linkedin_post_id(path):
         return SCOPE_LINKEDIN
     if path in FINANCE_PATHS:
         return SCOPE_FINANCE
@@ -184,6 +199,10 @@ def write_deny_reason(
         return "not_allowlisted"
     if needed == SCOPE_FINANCE:
         return "finance_read_only"
+    # Post copy is not on the owner-only list. write_blocked fail-closes every
+    # non-board path, so this scope is decided here and that function stays put.
+    if needed == SCOPE_LINKEDIN:
+        return None if path_allowed(path, scopes) else "scope"
     if write_blocked(method, path):
         return "owner_only"
     if not path_allowed(path, scopes):
