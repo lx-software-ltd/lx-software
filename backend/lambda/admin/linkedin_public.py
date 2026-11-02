@@ -1,10 +1,11 @@
 """LinkedIn posts for a public API key.
 
-Scope ``lxsoftware-linkedin`` on ``GET /public/lx-software/linkedin/posts``.
-With no query the read is published posts. ``?status=`` selects
-``drafted``, ``approved``, ``published``, ``archived``, ``failed``, a
-comma-separated list of those, or ``all``. The connection, tokens, and
-image bytes stay on the JWT routes.
+Scope ``lxsoftware-linkedin`` on ``/public/lx-software/linkedin/posts``.
+``GET`` with no query is published posts. ``?status=`` selects ``drafted``,
+``approved``, ``published``, ``archived``, ``failed``, a comma-separated
+list of those, or ``all``. ``POST`` creates a draft, ``PUT`` updates one,
+and ``DELETE`` archives one that is not published. The connection, tokens,
+image bytes, and picture queue stay on the JWT routes.
 """
 
 from __future__ import annotations
@@ -14,6 +15,8 @@ from typing import Any
 import board_public_api
 import linkedin_store
 from ddb_convert import _from_ddb_nested
+from http_common import _parse_json_body
+from linkedin_store import LinkedInError
 
 PATH = board_public_api.LINKEDIN_POSTS_PATH
 _STATUS_ERROR = "status must be drafted, approved, published, archived, failed, or all"
@@ -53,6 +56,73 @@ def posts_response(table: Any, query: Any) -> tuple[int, dict[str, Any]]:
     if truncated:
         payload["truncated"] = True
     return 200, payload
+
+
+_COPY_FIELDS = ("body", "firstComment", "hashtags", "pillar")
+
+
+def handle(table: Any, method: str, path: str, event: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    """Create, read, update, or archive. Nested action paths are not this route."""
+    if path == PATH:
+        if method == "GET":
+            return posts_response(table, event.get("queryStringParameters"))
+        if method == "POST":
+            return _create(table, event)
+        return 405, {"message": "Method not allowed"}
+    post_id = board_public_api.linkedin_post_id(path)
+    if not post_id:
+        return 404, {"message": "Not found"}
+    if method == "GET":
+        return _one(table, post_id)
+    if method == "PUT":
+        return _update(table, post_id, event)
+    if method == "DELETE":
+        return _archive(table, post_id)
+    return 405, {"message": "Method not allowed"}
+
+
+def _copy(event: dict[str, Any]) -> dict[str, Any]:
+    raw = _parse_json_body(event)
+    return {key: raw[key] for key in _COPY_FIELDS if key in raw}
+
+
+def _create(table: Any, event: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    try:
+        doc = linkedin_store.create_post(table, _copy(event))
+    except LinkedInError as exc:
+        return 400, {"message": str(exc)}
+    return 201, {"item": published_post(doc)}
+
+
+def _one(table: Any, post_id: str) -> tuple[int, dict[str, Any]]:
+    doc = linkedin_store.get_post(table, post_id)
+    if not doc:
+        return 404, {"message": "post not found"}
+    return 200, {"item": published_post(doc)}
+
+
+def _update(table: Any, post_id: str, event: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    try:
+        doc = linkedin_store.update_post(table, post_id, _copy(event))
+    except LinkedInError as exc:
+        status = 404 if str(exc) == "post not found" else 400
+        return status, {"message": str(exc)}
+    return 200, {"item": published_post(doc)}
+
+
+def _archive(table: Any, post_id: str) -> tuple[int, dict[str, Any]]:
+    doc = linkedin_store.get_post(table, post_id)
+    if not doc:
+        return 404, {"message": "post not found"}
+    if str(doc.get("status") or "") == "published":
+        return 400, {"message": "A published post stays on the record."}
+    if str(doc.get("status") or "") != "archived":
+        try:
+            doc = linkedin_store.archive_post(table, post_id)
+        except LinkedInError as exc:
+            status = 404 if str(exc) == "post not found" else 400
+            return status, {"message": str(exc)}
+    return 200, {"item": published_post(doc)}
 
 
 def _asked(query: Any) -> bool:

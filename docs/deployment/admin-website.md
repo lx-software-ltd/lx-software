@@ -290,6 +290,8 @@ scoped; existing keys stay GET-only unless minted or updated with
 |-------|---------|
 | `GET /public/finance`, `/public/finance/quotes`, `/public/records`, `/public/fx/v2/rates` | the JWT GETs (finance stays GET-only) |
 | `GET /public/lx-software/linkedin/posts` | LinkedIn posts (text, pillar, time, reactions, comments, impressions). Published only unless `?status=` names `drafted`, `approved`, `archived`, `failed`, a comma-separated list, or `all` |
+| `POST /public/lx-software/linkedin/posts` | Create a drafted post from `body`, `firstComment`, `hashtags`, and `pillar`. Same key, `allowWrite`, and `PublicApiWritesEnabled` |
+| `GET` / `PUT` / `DELETE /public/lx-software/linkedin/posts/{id}` | Read one post, update those four fields, or archive it. A published post cannot be edited or archived here |
 | `GET /public/siu-tin-dei/board` and `GET /public/siu-tin-dei/board/{proxy+}` | every JWT GET under `/siu-tin-dei/board` |
 | `PUT` / `POST` / `DELETE /public/siu-tin-dei/board/{proxy+}` | the matching JWT write, when the key has `allowWrite` and `PublicApiWritesEnabled` is `true` |
 
@@ -305,7 +307,7 @@ The handler enforces scopes, the write flag and the kill switch
 | `siutindei-board-full` | every JWT GET under `/siu-tin-dei/board` except the PII heads; matching writes with `allowWrite` |
 | `siutindei-pii` | unmasked mail; `allowList` / `digestTo` on overview and `GET /tools` `config.allowList`; `prospects`, `outreach`, `receivables` (with board-full); prospect import / PUT / merge |
 | `siutindei-assets` | content creative presigned URLs (GET only) |
-| `lxsoftware-linkedin` | `GET /public/lx-software/linkedin/posts`. Text, time, and impression, reaction, and comment counts. No `status` parameter returns published posts. `?status=drafted` (also `approved`, `archived`, `failed`, a comma-separated list, or `all`) returns those posts on the same key; each item carries `status`. No connection, tokens, or image bytes. A successful read sends the same coalesced notification as the other public reads |
+| `lxsoftware-linkedin` | `GET /public/lx-software/linkedin/posts` and `GET …/posts/{id}`. Text, time, and impression, reaction, and comment counts. No `status` parameter returns published posts. `?status=drafted` (also `approved`, `archived`, `failed`, a comma-separated list, or `all`) returns those posts on the same key; each item carries `status`. With `allowWrite`, `POST` creates a draft, `PUT …/posts/{id}` updates `body`, `firstComment`, `hashtags`, and `pillar`, and `DELETE …/posts/{id}` archives a post that is not published. No approve, mark-posted, regenerate, picture, connection, or tokens. A successful read sends the same coalesced notification as the other public reads; a write mails every time |
 
 Writes need **`allowWrite`** on the key (`create --allow-write` or
 `set-write`) **and** stack parameter **`PublicApiWritesEnabled=true`**
@@ -347,7 +349,7 @@ succeeds either way. Audit rows for key writes use `USER#apikey:<keyId>`.
 Mint a Cloud Agent key as `finance,siutindei-board-ops`, not
 `siutindei-board-full`, and without `--allow-write` unless it should
 mutate board state. Add `lxsoftware-linkedin` when that agent should read
-LinkedIn posts. A key minted without that scope does not gain it
+or, with `--allow-write`, edit LinkedIn drafts. A key minted without that scope does not gain it
 on deploy. The list follows every index page, once per requested status.
 `truncated` is true only when a status stops after 50 pages. `?status=drafted`
 reads the unpublished queue; the default read stays published posts.
@@ -381,6 +383,14 @@ summary directly.
 curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/finance"
 curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/lx-software/linkedin/posts"
 curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/lx-software/linkedin/posts?status=drafted"
+curl -X POST -H "x-api-key: lxpk_..." -H "Content-Type: application/json" \
+  -d '{"body":"A hook.","firstComment":"The detail.","hashtags":["CDK"],"pillar":"platforms"}' \
+  "$ADMIN_API_BASE_URL/public/lx-software/linkedin/posts"
+curl -X PUT -H "x-api-key: lxpk_..." -H "Content-Type: application/json" \
+  -d '{"body":"A shorter hook.","firstComment":"The detail."}' \
+  "$ADMIN_API_BASE_URL/public/lx-software/linkedin/posts/li_abc"
+curl -X DELETE -H "x-api-key: lxpk_..." \
+  "$ADMIN_API_BASE_URL/public/lx-software/linkedin/posts/li_abc"
 curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/siu-tin-dei/board/breakers"
 curl -X POST -H "x-api-key: lxpk_..." -H "Content-Type: application/json" \
   -d '{"assignee":"support","brief":"Triage inbound"}' \

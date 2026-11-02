@@ -110,7 +110,7 @@ from proxies import _proxy_finance_quotes, _proxy_fx_v2_rates
 from router import Route, route_matches
 from runtime import PARSE_JOB_PK_PREFIX, RECORD_PK_PREFIX
 
-# API-key mirrors under /public/*. Writes stay on the board prefix. Assets and parse jobs are excluded.
+# API-key mirrors under /public/*. Writes stay on the board prefix and LinkedIn posts. Assets and parse jobs are excluded.
 PUBLIC_READ_PATHS = frozenset(
     {
         "/public/finance",
@@ -124,13 +124,13 @@ PUBLIC_BOARD_PREFIX = "/public/siu-tin-dei/board"
 
 
 def _is_public_path(path: str) -> bool:
-    if path in PUBLIC_READ_PATHS:
+    if path in PUBLIC_READ_PATHS or board_public_api_mod.path_class(path) == board_public_api_mod.SCOPE_LINKEDIN:
         return True
     return path == PUBLIC_BOARD_PREFIX or path.startswith(PUBLIC_BOARD_PREFIX + "/")
 
 
 def _is_public_board_write_path(path: str) -> bool:
-    return path.startswith(PUBLIC_BOARD_PREFIX + "/")
+    return path.startswith(PUBLIC_BOARD_PREFIX + "/") or board_public_api_mod.path_class(path) == board_public_api_mod.SCOPE_LINKEDIN
 
 STATEMENT_BOOK_DISPLAY_LABEL = STATEMENT_BOOK_LABELS
 
@@ -229,9 +229,9 @@ def _handle_public(
     API Gateway already enforced the key via the Lambda authorizer; the
     context check here is defense in depth against direct Lambda invocation
     or a route being wired to the wrong authorizer. Writes need allowWrite
-    on the key, PublicApiWritesEnabled, and a board path that is not
-    owner-only (settings, boundaries, tools, approvals, promote, selftest,
-    chat delete, meeting/task cancel, staff tick, ramp pause).
+    on the key and PublicApiWritesEnabled. A board path must not be
+    owner-only. LinkedIn create, update, and archive are allowed too.
+    Owner-only: settings, boundaries, tools, approvals, promote, selftest, chat delete, meeting or task cancel, staff tick, ramp pause.
     """
     key_ctx = _public_authorizer_context(event)
     key_id = key_ctx.get("keyId")
@@ -332,13 +332,13 @@ def _handle_public(
             event.get("queryStringParameters"),
             _request_id(event),
         )
-    elif path == board_public_api_mod.LINKEDIN_POSTS_PATH:
+    elif board_public_api_mod.path_class(path) == board_public_api_mod.SCOPE_LINKEDIN:
         import linkedin_public
-        response = _json_response(*linkedin_public.posts_response(board_store.records_table(), event.get("queryStringParameters")))
+        response = _json_response(*linkedin_public.handle(board_store.records_table(), method, path, event))
     else:
         response = _records_get_response(event)
     board_public_api_mod.notify_key_use(
-        event, key_ctx=key_ctx, path=path, method=method, path_cls=path_cls
+        event, key_ctx=key_ctx, path=path, method=method, path_cls=path_cls, kind="write" if is_write else "allowed",
     )
     return response
 

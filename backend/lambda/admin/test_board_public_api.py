@@ -28,6 +28,16 @@ class PathClassTests(unittest.TestCase):
             board_public_api.path_class("/public/lx-software/linkedin/posts"),
             "lxsoftware-linkedin",
         )
+        self.assertEqual(
+            board_public_api.path_class("/public/lx-software/linkedin/posts/li_abc"),
+            "lxsoftware-linkedin",
+        )
+        self.assertIsNone(
+            board_public_api.path_class("/public/lx-software/linkedin/posts/li_abc/approve")
+        )
+        self.assertIsNone(
+            board_public_api.path_class("/public/lx-software/linkedin/posts/li_abc/image")
+        )
 
     def test_full_scope_covers_ops(self) -> None:
         self.assertTrue(
@@ -49,6 +59,11 @@ class PathClassTests(unittest.TestCase):
                 "/public/lx-software/linkedin/posts", ["finance", "siutindei-board-full"]
             )
         )
+        self.assertTrue(
+            board_public_api.path_allowed(
+                "/public/lx-software/linkedin/posts/li_abc", ["lxsoftware-linkedin"]
+            )
+        )
 
     def test_write_allowed_matrix(self) -> None:
         write_ctx = {"keyId": "k-w", "write": "1"}
@@ -61,6 +76,35 @@ class PathClassTests(unittest.TestCase):
                 board_public_api.write_deny_reason(
                     "POST", "/public/siu-tin-dei/board/tasks", write_ctx, ops
                 )
+            )
+            linkedin = ["lxsoftware-linkedin"]
+            posts = "/public/lx-software/linkedin/posts"
+            # write_blocked fail-closes every non-board path. LinkedIn copy is
+            # allowed beside that list, not by editing it.
+            self.assertTrue(board_public_api.write_blocked("POST", posts))
+            self.assertTrue(board_public_api.write_blocked("DELETE", posts + "/li_abc"))
+            self.assertIsNone(
+                board_public_api.write_deny_reason("POST", posts, write_ctx, linkedin)
+            )
+            self.assertIsNone(
+                board_public_api.write_deny_reason("PUT", posts + "/li_abc", write_ctx, linkedin)
+            )
+            self.assertIsNone(
+                board_public_api.write_deny_reason("DELETE", posts + "/li_abc", write_ctx, linkedin)
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason("POST", posts, read_ctx, linkedin),
+                "key_read_only",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason("POST", posts, write_ctx, ops),
+                "scope",
+            )
+            self.assertEqual(
+                board_public_api.write_deny_reason(
+                    "POST", posts + "/li_abc/approve", write_ctx, linkedin
+                ),
+                "not_allowlisted",
             )
             self.assertEqual(
                 board_public_api.write_deny_reason(

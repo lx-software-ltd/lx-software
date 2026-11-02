@@ -200,6 +200,107 @@ class LinkedInPublicPostsTests(unittest.TestCase):
         self.assertEqual(payload["items"][0]["status"], "published")
 
 
+class LinkedInPublicWriteTests(unittest.TestCase):
+    def test_create_update_and_archive_round_trip(self) -> None:
+        table = FakeTable()
+        code, payload = linkedin_public.handle(
+            table,
+            "POST",
+            linkedin_public.PATH,
+            {
+                "body": '{"body":"A hook about a 20 KB limit.","firstComment":"The policy line.","hashtags":["CDK"],"pillar":"platforms"}'
+            },
+        )
+        self.assertEqual(code, 201)
+        item = payload["item"]
+        self.assertEqual(item["status"], "drafted")
+        self.assertEqual(item["pillar"], "platforms")
+        self.assertEqual(item["hashtags"], ["CDK"])
+        self.assertEqual(item["firstComment"], "The policy line.")
+        self.assertIsNone(item["image"])
+        encoded = json.dumps(payload)
+        self.assertNotIn("guardrails", encoded)
+        self.assertNotIn("generation", encoded)
+        post_id = item["postId"]
+
+        code, payload = linkedin_public.handle(table, "GET", f"{linkedin_public.PATH}/{post_id}", {})
+        self.assertEqual(code, 200)
+        self.assertEqual(payload["item"]["body"], "A hook about a 20 KB limit.")
+
+        code, payload = linkedin_public.handle(
+            table,
+            "PUT",
+            f"{linkedin_public.PATH}/{post_id}",
+            {"body": '{"body":"A different hook about the same limit.","firstComment":"Still the policy line."}'},
+        )
+        self.assertEqual(code, 200)
+        self.assertEqual(payload["item"]["body"], "A different hook about the same limit.")
+        self.assertEqual(payload["item"]["hashtags"], ["CDK"])
+        self.assertEqual(payload["item"]["pillar"], "platforms")
+
+        code, payload = linkedin_public.handle(table, "DELETE", f"{linkedin_public.PATH}/{post_id}", {})
+        self.assertEqual(code, 200)
+        self.assertEqual(payload["item"]["status"], "archived")
+        again, again_body = linkedin_public.handle(table, "DELETE", f"{linkedin_public.PATH}/{post_id}", {})
+        self.assertEqual(again, 200)
+        self.assertEqual(again_body["item"]["status"], "archived")
+
+    def test_create_rejects_a_missing_body_and_a_duplicate(self) -> None:
+        table = FakeTable()
+        code, payload = linkedin_public.handle(table, "POST", linkedin_public.PATH, {"body": "{}"})
+        self.assertEqual(code, 400)
+        self.assertIn("body", payload["message"])
+        code, _payload = linkedin_public.handle(
+            table,
+            "POST",
+            linkedin_public.PATH,
+            {"body": '{"body":"Same hook. Same lesson."}'},
+        )
+        self.assertEqual(code, 201)
+        code, payload = linkedin_public.handle(
+            table,
+            "POST",
+            linkedin_public.PATH,
+            {"body": '{"body":"Same hook. Same lesson."}'},
+        )
+        self.assertEqual(code, 400)
+        self.assertIn("similar", payload["message"])
+
+    def test_published_posts_cannot_be_edited_or_archived(self) -> None:
+        table = FakeTable()
+        linkedin_store.put_post(
+            table,
+            {
+                "postId": "post_pub",
+                "status": "published",
+                "body": "Already out.",
+                "pillar": "architecture",
+                "createdAt": "2026-10-01T00:30:00.000Z",
+            },
+        )
+        path = f"{linkedin_public.PATH}/post_pub"
+        code, payload = linkedin_public.handle(table, "PUT", path, {"body": '{"body":"A rewrite."}'})
+        self.assertEqual(code, 400)
+        code, payload = linkedin_public.handle(table, "DELETE", path, {})
+        self.assertEqual(code, 400)
+        self.assertIn("published", payload["message"])
+        stored = linkedin_store.get_post(table, "post_pub")
+        assert stored is not None
+        self.assertEqual(stored["status"], "published")
+        self.assertEqual(stored["body"], "Already out.")
+
+    def test_wrong_method_and_missing_post(self) -> None:
+        table = FakeTable()
+        code, payload = linkedin_public.handle(table, "PUT", linkedin_public.PATH, {"body": "{}"})
+        self.assertEqual(code, 405)
+        code, payload = linkedin_public.handle(table, "DELETE", linkedin_public.PATH, {})
+        self.assertEqual(code, 405)
+        code, payload = linkedin_public.handle(table, "GET", f"{linkedin_public.PATH}/missing", {})
+        self.assertEqual(code, 404)
+        code, payload = linkedin_public.handle(table, "POST", f"{linkedin_public.PATH}/li_abc/approve", {"body": "{}"})
+        self.assertEqual(code, 404)
+
+
 def _stored(post_id: str, slot: str) -> dict:
     return {
         "pk": f"LINKEDIN#post#{post_id}",
