@@ -18,6 +18,7 @@ import linkedin_api  # noqa: E402
 import linkedin_draft  # noqa: E402
 import linkedin_image  # noqa: E402
 import linkedin_metrics  # noqa: E402
+import linkedin_reach  # noqa: E402
 import linkedin_seeds  # noqa: E402
 import linkedin_store  # noqa: E402
 import runtime  # noqa: E402
@@ -570,6 +571,109 @@ class LinkedInStoreTests(unittest.TestCase):
         self.assertNotEqual(linkedin_draft.shape_for(0, 0), linkedin_draft.shape_for(0, 4))
         self.assertEqual(linkedin_draft.shape_for(2, 3), linkedin_draft.shape_for(5, 0))
         self.assertEqual(linkedin_draft.DRAFT_TEMPERATURE, 0.9)
+        self.assertIs(linkedin_draft.shape_for, linkedin_reach.shape_for)
+        self.assertEqual(
+            (len(linkedin_reach.OPENINGS), len(linkedin_reach.CLOSINGS), len(linkedin_reach.LENGTHS)),
+            (7, 6, 5),
+        )
+        for length in linkedin_reach.LENGTHS:
+            words = int(length.split()[1])
+            self.assertTrue(200 <= words <= 260, length)
+        self.assertFalse(any("and stop" in close for close in linkedin_reach.CLOSINGS))
+
+    def test_reach_findings_send_a_long_hook_or_a_long_post_back(self) -> None:
+        self.assertEqual(linkedin_reach.HOOK_PREVIEW_MAX, 110)
+        self.assertEqual(linkedin_reach.BODY_WORDS_MAX, 300)
+        self.assertLess(linkedin_reach.HOOK_PREVIEW_MAX, linkedin_store.HOOK_MAX)
+        long_hook = (
+            "The crawler for the AI staff system just stopped. No error message. No crash log. "
+            "It simply ceased to exist after processing about forty meeting phases."
+        )
+        findings = linkedin_reach.reach_findings(f"{long_hook}\n\nI noticed the gap in the logs first.")
+        self.assertEqual([row["code"] for row in findings], ["reach"])
+        self.assertEqual(findings[0]["severity"], "error")
+        self.assertIn(f"{len(long_hook)} characters", findings[0]["detail"])
+        self.assertIn("110", findings[0]["detail"])
+        self.assertIn("figure or a person", findings[0]["detail"])
+        long_body = "Fourteen percent failed.\n\n" + " ".join(["word"] * 301)
+        findings = linkedin_reach.reach_findings(long_body)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("304 words", findings[0]["detail"])
+        self.assertIn("first comment", findings[0]["detail"])
+        both = linkedin_reach.reach_findings(f"{long_hook}\n\n" + " ".join(["word"] * 301))
+        self.assertEqual(len(both), 2)
+        short = (
+            "Fourteen percent of the generated JSON failed validation on the first run.\n\n"
+            + " ".join(["word"] * 250)
+            + "\n\nHas anyone kept a parser honest on messy notes?"
+        )
+        self.assertEqual(linkedin_reach.reach_findings(short), [])
+        self.assertEqual(linkedin_reach.reach_findings(""), [])
+        self.assertEqual(linkedin_reach.reach_findings("A short hook.\n\nOne lesson."), [])
+
+    def test_reach_rules_are_in_the_prompt_and_the_draft_loop(self) -> None:
+        prompt = linkedin_draft._system_prompt(linkedin_store.default_settings())  # noqa: SLF001
+        self.assertIn("Reach rules always apply.", prompt)
+        self.assertIn(linkedin_reach.reach_block(), prompt)
+        self.assertIn("at most 110 characters", prompt)
+        self.assertIn("never a system or technology name", prompt)
+        self.assertIn("One line of setting", prompt)
+        self.assertIn("200 to 260 words", prompt)
+        self.assertIn("firstComment", prompt)
+        self.assertIn("never empty", prompt)
+        self.assertIn("first third", prompt)
+        self.assertIn("last line of the body is one question", prompt)
+        self.assertLess(prompt.index("Substance rules"), prompt.index("Reach rules"))
+        self.assertLess(prompt.index("Reach rules"), prompt.index("Safety rules"))
+        self.assertLess(prompt.index("Reach rules"), prompt.index("Voice"))
+        self.assertNotIn('"firstComment":""', prompt)
+        self.assertIn('"firstComment":"', prompt)
+        shape = linkedin_draft._shape_lines(linkedin_draft.shape_for(0, 0))  # noqa: SLF001
+        self.assertIn("then the closing question", shape[0])
+        captured: list[list[dict[str, str]]] = []
+        long_hook = "A hook that runs on and on " * 5
+        self.assertGreater(len(long_hook.strip()), linkedin_reach.HOOK_PREVIEW_MAX)
+        self.assertLessEqual(len(long_hook.strip()), linkedin_store.HOOK_MAX)
+
+        def complete(messages: list[dict[str, str]]):
+            captured.append(messages)
+            if messages[1]["content"].startswith("Rewrite this post"):
+                return (
+                    {"body": "A 20 KB cap.\n\nOne route too many.", "firstComment": "", "hashtags": [], "pillar": ""},
+                    0.01,
+                )
+            return (
+                {"body": f"{long_hook.strip()}\n\nOne lesson.", "firstComment": "", "hashtags": [], "pillar": ""},
+                0.01,
+            )
+
+        parsed, _cost = linkedin_draft.draft_one(
+            settings=linkedin_store.default_settings(),
+            pillar="platforms",
+            idea="",
+            avoid=[],
+            complete=complete,
+        )
+        self.assertEqual(parsed["body"], "A 20 KB cap.\n\nOne route too many.")
+        self.assertEqual(len(captured), 2)
+        self.assertIn("figure or a person", captured[1][1]["content"])
+
+    def test_voices_carry_the_reach_length_and_the_closing_question(self) -> None:
+        for row in linkedin_store.STORY_VOICES:
+            note = row["notes"]
+            self.assertLessEqual(len(note), 1000, row["id"])
+            self.assertIn("200 to 260 words", note, row["id"])
+            self.assertIn("no call to action beyond the one closing question", note, row["id"])
+            self.assertNotIn("450", note, row["id"])
+        for retired, current in linkedin_store.RETIRED_VOICES.items():
+            self.assertNotEqual(retired, current)
+            self.assertIn(current, [row["notes"] for row in linkedin_store.STORY_VOICES])
+        self.assertEqual(len(linkedin_store.RETIRED_VOICES), 5)
+        for retired, current in linkedin_store.RETIRED_VOICES.items():
+            linkedin_store.save_settings(
+                self.table, {**linkedin_store.default_settings(), "voiceNotes": f"  {retired}  "}
+            )
+            self.assertEqual(linkedin_store.load_settings(self.table)["voiceNotes"], current)
 
     def test_batch_drafts_see_each_other_and_a_copy_is_rewritten(self) -> None:
         captured: list[list[dict[str, str]]] = []
