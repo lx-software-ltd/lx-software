@@ -1003,7 +1003,13 @@ organisations.
 
 1. Create a Business-type app under the Siu Tin Dei Business Manager and
    a System User token (`pages_*`, `instagram_*`, `whatsapp_business_*`,
-   `ads_read` / `ads_management`); replace the two Meta secrets.
+   `ads_read` / `ads_management`); replace the two Meta secrets. Assign the
+   System User to the Page (Business settings > Users > System users >
+   Assign assets, full control). Page edges on the new Pages experience
+   refuse user tokens, so the board exchanges the System User token for a
+   Page token through `GET /{page-id}?fields=access_token` once per warm
+   Lambda; without the assignment that exchange returns no token and
+   `meta` Page reads fail with code 190 / subcode 2069032.
 2. Turn on **WhatsApp coexistence** so the owner's phone keeps working. If
    unavailable, the number moves fully to the Cloud API and the owner
    replies from **Approvals**.

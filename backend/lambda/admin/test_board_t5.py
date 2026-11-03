@@ -20,6 +20,8 @@ from board_tools import REGISTRY, ToolContext, execute_call
 from test_board import BoardTestCase
 from test_board_tools import ToolsTestCase
 
+PAGE_TOKEN = "page-token-local"
+
 
 class FakeGraph:
     """Stands in for ``board_meta._urlopen``.
@@ -27,17 +29,30 @@ class FakeGraph:
     ``queue`` entries are served first (a dict payload, or an exception to raise);
     otherwise the URL picks a canned payload. ``tokens`` records each
     ``Authorization`` header so tests can prove the token never rides the URL.
+
+    The Page-token exchange (``GET /{page-id}?fields=access_token``) is answered
+    before the queue and recorded in ``exchanges`` rather than ``calls`` so
+    tests that count Page calls keep counting only those. Set
+    ``page_token`` to ``None`` to make the exchange return no token.
     """
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, dict[str, Any] | None]] = []
         self.tokens: list[str] = []
         self.queue: list[Any] = []
+        self.exchanges: list[str] = []
+        self.page_token: str | None = PAGE_TOKEN
 
     def __call__(self, req: urlrequest.Request, timeout=None):  # noqa: ARG002
         method = req.get_method()
         url = req.full_url
         body = json.loads(req.data.decode("utf-8")) if req.data else None
+        if method == "GET" and url.endswith("?fields=access_token"):
+            self.exchanges.append(str(req.get_header("Authorization") or ""))
+            payload: Any = {"id": url.rsplit("/", 1)[1].split("?", 1)[0]}
+            if self.page_token:
+                payload["access_token"] = self.page_token
+            return _Resp(payload)
         self.calls.append((method, url, body))
         self.tokens.append(str(req.get_header("Authorization") or ""))
         if self.queue:
@@ -71,18 +86,21 @@ class FakeGraph:
             payload = {"id": "created-1", "message_id": "mid-1", "messages": [{"id": "wa-1"}]}
         else:
             payload = {"data": []}
+        return _Resp(payload)
 
-        class _Resp:
-            def read(self) -> bytes:
-                return json.dumps(payload).encode()
 
-            def __enter__(self) -> "_Resp":
-                return self
+class _Resp:
+    def __init__(self, payload: Any) -> None:
+        self._payload = payload
 
-            def __exit__(self, *args: Any) -> None:
-                return None
+    def read(self) -> bytes:
+        return json.dumps(self._payload).encode()
 
-        return _Resp()
+    def __enter__(self) -> "_Resp":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        return None
 
 
 class MetaTestCase(ToolsTestCase):
