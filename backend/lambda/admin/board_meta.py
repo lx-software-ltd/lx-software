@@ -53,6 +53,7 @@ _token_cache: str | None = None
 _token_checked = False
 _app_secret_cache: str | None = None
 _app_secret_checked = False
+_page_token_cache: dict[str, str] = {}
 
 
 class MetaError(RuntimeError):
@@ -223,6 +224,7 @@ def _scheduled_spend_holds(table: Any) -> tuple[float, float]:
 def reset_caches_for_tests() -> None:
     global _token_cache, _token_checked, _app_secret_cache, _app_secret_checked
     _waba_resolved.clear()
+    _page_token_cache.clear()
     _token_cache = None
     _token_checked = False
     _app_secret_cache = None
@@ -250,6 +252,49 @@ def board_token() -> str:
     _token_checked = True
     _token_cache = _secret("META_BOARD_TOKEN", "META_BOARD_TOKEN_SECRET_ARN", what="Meta board token")
     return _token_cache or ""
+
+
+def page_token(pid: str) -> str:
+    """Page access token derived from the System User token.
+
+    Pages on the new Pages experience reject user and System User tokens on
+    Page edges (Graph code 190, subcode 2069032), so the token is exchanged
+    through ``GET /{page-id}?fields=access_token`` once per warm container.
+    Returns "" when the exchange yields nothing (System User not assigned to
+    the Page, or a Graph error); nothing is cached in that case so the next
+    call retries, and the caller falls back to the System User token so
+    Meta's own error reaches the persona.
+    """
+    cached = _page_token_cache.get(pid)
+    if cached:
+        return cached
+    try:
+        data = graph("GET", pid, params={"fields": "access_token"}, token=board_token())
+    except MetaError as exc:
+        _log_event("warning", tag="board_meta_page_token_failed", page=pid, error=str(exc)[:200])
+        return ""
+    token = str(data.get("access_token") or "").strip()
+    if not token:
+        _log_event("warning", tag="board_meta_page_token_missing", page=pid)
+        return ""
+    _page_token_cache[pid] = token
+    return token
+
+
+def _page_scoped(path: str) -> bool:
+    """True for ``/{page-id}/…`` and Page-prefixed object ids (``{page-id}_{post}``)."""
+    pid = page_id()
+    if not pid:
+        return False
+    head = path.lstrip("/").split("/", 1)[0].split("?", 1)[0]
+    return head == pid or head.startswith(f"{pid}_")
+
+
+def _token_for(path: str) -> str:
+    token = board_token()
+    if token and _page_scoped(path):
+        return page_token(page_id()) or token
+    return token
 
 
 def app_secret() -> str:
@@ -290,8 +335,9 @@ def graph(
     params: dict[str, Any] | None = None,
     body: dict[str, Any] | None = None,
     timeout: float | None = None,
+    token: str | None = None,
 ) -> dict[str, Any]:
-    token = board_token()
+    token = token or _token_for(path)
     if not token:
         raise MetaError("MetaBoardToken is not configured.")
     # Token travels in the Authorization header so it never lands in access
@@ -593,7 +639,9 @@ def op_page_insights(_ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     pid = str(args.get("pageId") or page_id())
     if not pid:
         raise MetaError("META_PAGE_ID is not set.")
-    metric = str(args.get("metric") or "page_impressions,page_engaged_users")
+    # ``page_engaged_users`` was removed from Page Insights; Meta rejects the whole
+    # request (code 100) when any listed metric is unknown.
+    metric = str(args.get("metric") or "page_impressions,page_post_engagements")
     rows = graph_pages(
         "GET",
         f"{pid}/insights",

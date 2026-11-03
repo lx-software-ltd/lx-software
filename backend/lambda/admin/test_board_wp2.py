@@ -12,7 +12,7 @@ from urllib import error as urlerror
 import board_meta
 import board_store
 from board_tools import REGISTRY, ToolContext, execute_call
-from test_board_t5 import MetaTestCase
+from test_board_t5 import PAGE_TOKEN, MetaTestCase
 
 NUMBER_A = "85291234567"
 NUMBER_B = "85298765432"
@@ -366,6 +366,51 @@ class TestGraphClient(MetaTestCase):
         self.assertNotIn("token-local", url)
         self.assertNotIn("access_token", url)
         self.assertIn("appsecret_proof=abc", url)
+
+    def test_page_edges_use_an_exchanged_page_token_once_per_container(self) -> None:
+        board_meta.graph("GET", "page-1/feed", params={"limit": 1})
+        board_meta.graph("POST", "page-1/feed", body={"message": "hi"})
+        board_meta.graph("GET", "page-1_777/comments")
+        board_meta.graph("POST", "page-1_777_888/comments", body={"message": "reply"})
+        # One exchange, made with the System User token, serves every Page call.
+        self.assertEqual(self.graph.exchanges, ["Bearer token-local"])
+        self.assertEqual(self.graph.tokens, [f"Bearer {PAGE_TOKEN}"] * 4)
+        for _m, url, _b in self.graph.calls:
+            self.assertNotIn(PAGE_TOKEN, url)
+            self.assertNotIn("access_token", url)
+
+    def test_non_page_paths_keep_the_system_user_token(self) -> None:
+        board_meta.graph("GET", "me")
+        board_meta.graph("GET", "ig-1/insights", params={"metric": "reach", "period": "day"})
+        board_meta.graph("GET", "act_99/insights")
+        board_meta.graph("POST", "wa-phone-1/messages", body={"to": "1"})
+        # A bare "page-1x" prefix is not the Page: only "page-1" or "page-1_…" are.
+        board_meta.graph("GET", "page-1x/feed")
+        self.assertEqual(self.graph.exchanges, [])
+        self.assertEqual(self.graph.tokens, ["Bearer token-local"] * 5)
+
+    def test_failed_exchange_falls_back_to_the_system_user_token(self) -> None:
+        self.graph.page_token = None
+        board_meta.graph("GET", "page-1/feed")
+        board_meta.graph("GET", "page-1/feed")
+        # Nothing is cached on failure, so the next call tries the exchange again.
+        self.assertEqual(len(self.graph.exchanges), 2)
+        self.assertEqual(self.graph.tokens, ["Bearer token-local"] * 2)
+        # Meta's own error still surfaces when the fallback call fails too.
+        self.graph.queue.append(_http_error(400, '{"error":{"code":190,"error_subcode":2069032}}'))
+        with self.assertRaises(board_meta.MetaError) as caught:
+            board_meta.graph("GET", "page-1/feed")
+        self.assertIn("2069032", str(caught.exception))
+        self.graph.page_token = PAGE_TOKEN
+        board_meta.graph("GET", "page-1/feed")
+        self.assertEqual(self.graph.tokens[-1], f"Bearer {PAGE_TOKEN}")
+
+    def test_page_insights_default_metric_is_still_served_by_meta(self) -> None:
+        board_meta.op_page_insights(self._ctx(), {})
+        _m, url, _b = self.graph.calls[-1]
+        self.assertIn("metric=page_impressions%2Cpage_post_engagements", url)
+        self.assertNotIn("page_engaged_users", url)
+        self.assertEqual(self.graph.tokens[-1], f"Bearer {PAGE_TOKEN}")
 
     def test_http_error_becomes_meta_error_with_status(self) -> None:
         self.graph.queue.append(_http_error(401))
