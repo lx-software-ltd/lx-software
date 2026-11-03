@@ -74,10 +74,11 @@ demand. It builds `apps/public_www` with the production variables, serves
 the Tag Manager and Analytics hosts (`blockedUrlPatterns`), so the runs do
 not count as sessions on the production GA4 property. Each
 URL is audited 3 times and assertions use the median run. Every category
-must score 0.9 or better. The gate also fails on a distorted image, an
-offscreen image, a render-blocking resource, simulated LCP above 4 s, total
-blocking time above 200 ms, or unused JavaScript whose estimated savings
-exceed 400 ms (`apps/public_www/.lighthouserc.json`). The simulated LCP is the harbour poster, and that number moves by several hundred milliseconds between runs, so the cap sits at 4 s. The HTML reports are uploaded as the
+must score 0.9 or better. The gate also fails on a distorted image, a
+render-blocking resource, simulated LCP above 4 s, total blocking time
+above 200 ms, or unused JavaScript whose estimated savings exceed 400 ms
+(`apps/public_www/.lighthouserc.json`). Lighthouse 13 removed
+`offscreen-images` with no replacement. The simulated LCP is the harbour poster, and that number moves by several hundred milliseconds between runs, so the cap sits at 4 s. The HTML reports are uploaded as the
 `lighthouse-public-www-results` artifact, and the run posts a commit status
 when `GITHUB_TOKEN` can write statuses.
 

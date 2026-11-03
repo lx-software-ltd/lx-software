@@ -16,6 +16,13 @@ describe('lighthouse shell', () => {
     expect(html).not.toContain('<img')
   })
 
+  it('does not assert Lighthouse audits that v13 removed', () => {
+    const config = JSON.parse(readFileSync(new URL('.lighthouserc.json', root), 'utf8')) as {
+      ci: { assert: { assertions: Record<string, unknown> } }
+    }
+    expect(config.ci.assert.assertions['offscreen-images']).toBeUndefined()
+  })
+
   it('covers the junk with a sized div, because the png ratio is not 36 by 20', () => {
     const png = readFileSync(new URL('src/assets/hk-flag.png', root))
     expect(png.readUInt32BE(16)).toBe(40)
