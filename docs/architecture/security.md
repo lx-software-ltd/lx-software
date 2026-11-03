@@ -182,15 +182,18 @@ blocks every merge from the maintainer account.
 Weekly version updates and security jobs read `.github/dependabot.yml`.
 A security job that cannot find a compatible non-vulnerable version
 fails the **Dependabot Updates** workflow (`security_update_not_found`).
-Those packages are ignored until a parent ships a compatible pin:
+A name-only `ignore` for a still-vulnerable copy fails it with
+`all_versions_ignored` instead.
 
+- `minimatch` in `/apps/public_www` and `/apps/admin_web` — GHSA-g3hv-75wg-m249
+  is fixed in 11.0.1. Both SPAs pin that line with `package.json` `overrides`.
+  Do not ignore the name: Dependabot still schedules the job and then fails.
 - `deepmerge` in `/backend/infrastructure` — latest is 4.3.1;
   GHSA-gcqx-w48m-w2h4 has no patched release (CVE-2026-93753 was
   rejected). Transitive via `jest-config`; test-time only.
-- `minimatch` in `/apps/public_www`, `/apps/admin_web`, and
-  `/backend/infrastructure` — GHSA-g3hv-75wg-m249 is fixed in 11.0.1.
-  eslint 9 still requires `^3.1.5`; aws-cdk-lib and jest still require
-  9.x/10.x. Lint, synth, and test-time only.
+- `minimatch` in `/backend/infrastructure` — aws-cdk-lib and jest still
+  require 9.x/10.x. Ignored there because an override cannot replace the
+  copies bundled inside `aws-cdk-lib`.
 - `fast-uri` in `/backend/infrastructure` — bundled inside
   `aws-cdk-lib` (see the ignore comment in `dependabot.yml`).
 
