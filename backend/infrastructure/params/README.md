@@ -61,6 +61,9 @@ Typical committed values include:
 - **`lxsoftware-admin-web:CspCognitoConnectOrigin`** — full HTTPS origin for Cognito OAuth
   in the admin CloudFront CSP `connect-src` (e.g. `https://auth.lx-software.com`), must
   match the effective Cognito Hosted UI URL
+- **`lxsoftware:SiutindeiBoardMetaPageId`** / **`lxsoftware:SiutindeiBoardMetaIgUserId`** —
+  Facebook Page id and Instagram professional-account id for Executive Board `meta`
+  tools. Graph identifiers, not secrets. WhatsApp / ad-account ids stay optional.
 
 ### OpenRouter (PDF statement parsing)
 

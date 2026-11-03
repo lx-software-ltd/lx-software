@@ -1009,8 +1009,9 @@ organisations.
    replies from **Approvals**.
 3. Subscribe the app to `GET/POST https://<admin-api>/webhooks/meta/siutindei`
    (legacy `/webhooks/meta` still works).
-4. Set the `SiutindeiBoardMeta*` ids; until then `meta` tools return "not
-   configured".
+4. Set the `SiutindeiBoardMeta*` ids. Production already sets Page and
+   Instagram in `params/production.json`. Until then `meta` tools return
+   "not configured".
 5. WhatsApp `act` is only inside the 24-hour window and only to
    allow-listed E.164 numbers. Set **Meta ads spend caps** on the Tools
    card (defaults USD 10 / 50; clamped to 500 / 2 000).
