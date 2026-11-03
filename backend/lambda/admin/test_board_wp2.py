@@ -10,6 +10,7 @@ from typing import Any
 from urllib import error as urlerror
 
 import board_meta
+import board_meta_token
 import board_store
 from board_tools import REGISTRY, ToolContext, execute_call
 from test_board_t5 import PAGE_TOKEN, MetaTestCase
@@ -366,6 +367,13 @@ class TestGraphClient(MetaTestCase):
         self.assertNotIn("token-local", url)
         self.assertNotIn("access_token", url)
         self.assertIn("appsecret_proof=abc", url)
+
+    def test_page_scoped_matches_the_page_and_its_object_ids(self) -> None:
+        self.assertTrue(board_meta_token.page_scoped("page-1/feed", "page-1"))
+        self.assertTrue(board_meta_token.page_scoped("page-1_777_888/comments", "page-1"))
+        self.assertFalse(board_meta_token.page_scoped("page-1x/feed", "page-1"))
+        self.assertFalse(board_meta_token.page_scoped("me", "page-1"))
+        self.assertFalse(board_meta_token.page_scoped("page-1/feed", ""))
 
     def test_page_edges_use_an_exchanged_page_token_once_per_container(self) -> None:
         board_meta.graph("GET", "page-1/feed", params={"limit": 1})

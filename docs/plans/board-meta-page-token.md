@@ -27,18 +27,21 @@ reads after the Page and Instagram ids were deployed failed twice:
 
 ## Files
 
-- `backend/lambda/admin/board_meta.py`: `page_token()` exchanges the
-  System User token for a Page token via `GET /{page-id}?fields=access_token`
-  once per warm container; `graph()` uses it for any path whose first
-  segment is the Page id or a Page-prefixed object id (`{page-id}_…` posts
-  and comments). Page Insights default metric becomes
-  `page_impressions,page_post_engagements`.
+- `backend/lambda/admin/board_meta_token.py` (new, under the 500-line
+  ceiling): System User / app-secret caches and the Page-token exchange.
+  `page_token()` calls `GET /{page-id}?fields=access_token` once per warm
+  container. `token_for()` picks the Page token for any path whose first
+  segment is the Page id or a Page-prefixed object id (`{page-id}_…`).
+- `backend/lambda/admin/board_meta.py`: `graph()` uses `token_for`; Page
+  Insights default metric becomes `page_impressions,page_post_engagements`.
+  File-length allowance lowered from 1302 to 1262.
 - `backend/lambda/admin/test_board_t5.py`: `FakeGraph` answers the token
   exchange and records it in `exchanges`.
 - `backend/lambda/admin/test_board_wp2.py`: tests for the exchange, its
   caching, the fallback when the exchange fails, and the new default metric.
 - `docs/deployment/admin-website.md`: note that the System User must be
   assigned to the Page so the exchange succeeds.
+- `scripts/file-length-allowlist.txt`: `board_meta.py` 1302 → 1262.
 
 ## Invariants this change preserves
 
@@ -50,6 +53,7 @@ reads after the Page and Instagram ids were deployed failed twice:
 ## Done when
 
 - `cd backend/lambda/admin && python3 -m unittest test_board_wp2 test_board_t5 test_board_followups test_board_content -v` passes.
+- `python3 scripts/check_file_length.py` exits 0.
 - A CMO chat `meta_page_insights` or `meta_list_comments` call on
   production returns rows instead of code 190 / code 100.
 
