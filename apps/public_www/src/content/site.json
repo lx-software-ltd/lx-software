@@ -42,7 +42,8 @@
     "updated": "Updated",
     "readMore": "[ read more ]",
     "pagesLabel": "Pages",
-    "breadcrumbHome": "Home"
+    "breadcrumbHome": "Home",
+    "copyrightLegalForm": "a sole proprietorship registered in Hong Kong"
   },
   "hero": {
     "kicker": "LX SOFTWARE",
@@ -435,12 +436,12 @@
   "legal": {
     "privacy": {
       "title": "Privacy Policy",
-      "updated": "2026-09-30",
+      "updated": "2026-11-03",
       "sections": [
         {
           "heading": "Who",
           "paragraphs": [
-            "This site is published by Luca Cacchiani / LX Software, an independent software and consulting studio in Hong Kong. The contact mailbox is hello@lx-software.com."
+            "This site is published by LX Software (a sole proprietorship registered in Hong Kong). The proprietor is Luca Cacchiani. The contact mailbox is hello@lx-software.com."
           ]
         },
         {
@@ -474,12 +475,12 @@
     },
     "terms": {
       "title": "Terms & Conditions",
-      "updated": "2026-09-30",
+      "updated": "2026-11-03",
       "sections": [
         {
           "heading": "Using the site",
           "paragraphs": [
-            "The pages are information about LX Software and Luca Cacchiani. They are not an offer to contract. Project descriptions are provided for context and may change."
+            "The pages are information about LX Software (a sole proprietorship registered in Hong Kong) and Luca Cacchiani. They are not an offer to contract. Project descriptions are provided for context and may change."
           ]
         },
         {

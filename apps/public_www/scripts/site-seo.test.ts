@@ -21,6 +21,7 @@ const chrome: SiteContent['chrome'] = {
   readMore: '[ read more ]',
   pagesLabel: 'Pages',
   breadcrumbHome: 'Home',
+  copyrightLegalForm: 'a sole proprietorship registered in Hong Kong',
 }
 
 const content: SiteContent = {
@@ -121,6 +122,8 @@ describe('buildSeo', () => {
     expect(person.knowsAbout).toEqual(['TypeScript', 'AWS'])
     expect(person).not.toHaveProperty('sameAs')
     const organization = graph[1]
+    expect(organization.name).toBe('Example Studio')
+    expect(organization.legalName).toBe('Example Studio')
     expect(organization.founder).toEqual({ '@id': 'https://www.example.com/#person' })
     expect(organization.makesOffer).toEqual([
       expect.objectContaining({
@@ -219,6 +222,7 @@ describe('buildSeo', () => {
       expect.objectContaining({ position: 1, name: 'Home' }),
       expect.objectContaining({ position: 2, name: 'Build', item: 'https://www.example.com/build-hong-kong' }),
     ])
+    expect(serviceGraph[3].legalName).toBe('Example Studio')
     expect(serviceGraph[4].mainEntity).toEqual([
       expect.objectContaining({ name: 'How long?' }),
     ])

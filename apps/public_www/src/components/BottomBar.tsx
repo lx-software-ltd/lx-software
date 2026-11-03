@@ -4,6 +4,7 @@ import { defaultSiteContent } from '../lib/content'
 export function BottomBar() {
   const content = defaultSiteContent
   const { name, owner } = content.site
+  const who = owner ? `${owner} · ${name}` : name
   return (
     <footer className="bottom-bar">
       <div className="container bottom-bar-inner">
@@ -15,7 +16,7 @@ export function BottomBar() {
           ))}
         </nav>
         <p>
-          © {new Date().getFullYear()} {owner ? `${owner} · ${name}` : name}
+          © {new Date().getFullYear()} {who} ({content.chrome.copyrightLegalForm})
         </p>
         <nav aria-label="Legal">
           <Link to="/privacy">{content.legal.privacy.title}</Link>

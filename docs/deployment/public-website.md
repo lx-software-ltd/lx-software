@@ -60,8 +60,9 @@ route), `navLabel`, `title`, `metaTitle` (70 characters or fewer),
 (`heading`, `paragraphs`, `bullets`), and optional `faq[]`. Adding a page is
 a new `pages[]` entry; the route, sitemap, `llms.txt`, JSON-LD (`WebPage`,
 `BreadcrumbList`, `Service`, `FAQPage`) and bottom-bar link follow from it.
-`src/lib/content.test.ts` checks slugs, lengths, and that no page says
-"interim".
+`src/lib/content.test.ts` checks slugs, lengths, that no page says
+"interim", and that the legal copy names LX Software as a Hong Kong sole
+proprietorship. The legal entity facts are in [`docs/legal/README.md`](../legal/README.md).
 
 ## Lighthouse
 

@@ -29,7 +29,8 @@ the JSON-LD block, and the `<title>` / meta / Open Graph tags in `index.html`
 from `src/content/site.json` (`{{token}}` placeholders in `index.html`). The
 file is bundled at build time; editing it needs a rebuild. The
 JSON-LD graph is `WebSite`, `Organization` + `ProfessionalService` (with the
-services as `makesOffer`), `Person` (from `site.owner` / `site.role`),
+services as `makesOffer` and `legalName` set to the registered name
+`LX Software`), `Person` (from `site.owner` / `site.role`),
 `WebPage`, and `FAQPage`. `VITE_CONTACT_LINKEDIN` adds the LinkedIn contact
 icon and the `sameAs` links.
 
