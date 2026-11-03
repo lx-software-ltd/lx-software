@@ -41,6 +41,11 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # GHSA-g3hv-75wg-m249 is fixed in minimatch 11.0.1. eslint 9 and
+      # @eslint/eslintrc still require minimatch ^3.1.5, so Dependabot
+      # security jobs fail with security_update_not_found. Lint-time only.
+      # Re-evaluate when eslint drops the 3.x pin.
+      - dependency-name: "minimatch"
 
   # NPM - Admin SPA
   - package-ecosystem: "npm"
@@ -63,6 +68,10 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # Same GHSA-g3hv-75wg-m249 story as the public site: eslint 9 still
+      # requires minimatch ^3.1.5. Lint-time only. Re-evaluate when eslint
+      # drops the 3.x pin.
+      - dependency-name: "minimatch"
 
   # NPM - CDK infrastructure
   - package-ecosystem: "npm"
@@ -101,6 +110,16 @@ updates:
       # CDK synth time and never receives attacker-controlled URIs. Re-evaluate
       # if aws-cdk-lib unbundles `table` upstream.
       - dependency-name: "fast-uri"
+      # deepmerge 4.3.1 is the latest. GHSA-gcqx-w48m-w2h4 /
+      # CVE-2026-93753 has no patched release (the CVE was later
+      # rejected). Transitive via jest-config; test-time only.
+      # Re-evaluate if jest replaces it or a patched deepmerge ships.
+      - dependency-name: "deepmerge"
+      # GHSA-g3hv-75wg-m249 is fixed in minimatch 11.0.1. aws-cdk-lib and
+      # jest still require 9.x/10.x, so security jobs fail with
+      # security_update_not_found. Synth/test-time only. Re-evaluate when
+      # those parents move to >=11.0.1.
+      - dependency-name: "minimatch"
 
   # Pip - AdminApiFn (Pillow, defusedxml). Without this ecosystem Dependabot
   # security jobs for /backend/lambda/admin fail with dependency_not_found.

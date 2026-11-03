@@ -169,7 +169,30 @@ not let an author approve their own pull request, so a required review
 count of 1 blocks every merge until a second reviewer exists. Status
 checks are the merge gate until then.
 
+If the weekly job fails with `enforcement is not active`, a repo admin
+must set `main-protection` back to **Active** at Settings → Rules →
+Rulesets (`https://github.com/lx-software-ltd/lx-software/rules/12353485`).
+Leave required approving reviews at 0 when turning it on; a count of 1
+blocks every merge from the maintainer account.
+
 `release-tags` stays `active` for `refs/tags/v*`.
+
+## Dependabot
+
+Weekly version updates and security jobs read `.github/dependabot.yml`.
+A security job that cannot find a compatible non-vulnerable version
+fails the **Dependabot Updates** workflow (`security_update_not_found`).
+Those packages are ignored until a parent ships a compatible pin:
+
+- `deepmerge` in `/backend/infrastructure` — latest is 4.3.1;
+  GHSA-gcqx-w48m-w2h4 has no patched release (CVE-2026-93753 was
+  rejected). Transitive via `jest-config`; test-time only.
+- `minimatch` in `/apps/public_www`, `/apps/admin_web`, and
+  `/backend/infrastructure` — GHSA-g3hv-75wg-m249 is fixed in 11.0.1.
+  eslint 9 still requires `^3.1.5`; aws-cdk-lib and jest still require
+  9.x/10.x. Lint, synth, and test-time only.
+- `fast-uri` in `/backend/infrastructure` — bundled inside
+  `aws-cdk-lib` (see the ignore comment in `dependabot.yml`).
 
 ## Operational notes
 
