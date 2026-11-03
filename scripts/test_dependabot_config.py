@@ -40,10 +40,17 @@ class DependabotConfigTest(unittest.TestCase):
         self.assertIn("minimatch", names)
         self.assertIn("fast-uri", names)
 
-    def test_spa_ecosystems_ignore_minimatch(self) -> None:
+    def test_spa_ecosystems_do_not_ignore_minimatch(self) -> None:
+        # A name-only ignore makes security jobs fail with all_versions_ignored.
+        # The SPAs pin GHSA-g3hv-75wg-m249 via package.json overrides instead.
         for directory in ("/apps/public_www", "/apps/admin_web"):
             names = _ignored_names(_directory_block(self.text, directory))
-            self.assertIn("minimatch", names, directory)
+            self.assertNotIn("minimatch", names, directory)
+
+    def test_spas_override_minimatch_to_the_patched_line(self) -> None:
+        for relative in ("apps/public_www/package.json", "apps/admin_web/package.json"):
+            text = (ROOT / relative).read_text(encoding="utf-8")
+            self.assertIn('"minimatch": "^11.0.1"', text, relative)
 
 
 if __name__ == "__main__":

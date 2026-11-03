@@ -41,11 +41,6 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      # GHSA-g3hv-75wg-m249 is fixed in minimatch 11.0.1. eslint 9 and
-      # @eslint/eslintrc still require minimatch ^3.1.5, so Dependabot
-      # security jobs fail with security_update_not_found. Lint-time only.
-      # Re-evaluate when eslint drops the 3.x pin.
-      - dependency-name: "minimatch"
 
   # NPM - Admin SPA
   - package-ecosystem: "npm"
@@ -68,10 +63,6 @@ updates:
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      # Same GHSA-g3hv-75wg-m249 story as the public site: eslint 9 still
-      # requires minimatch ^3.1.5. Lint-time only. Re-evaluate when eslint
-      # drops the 3.x pin.
-      - dependency-name: "minimatch"
 
   # NPM - CDK infrastructure
   - package-ecosystem: "npm"
