@@ -105,6 +105,7 @@ export function buildSeo(content: SiteContent, options: SeoOptions = {}): SeoFil
       '@type': ['Organization', 'ProfessionalService'],
       '@id': organizationId,
       name: content.site.name,
+      legalName: content.site.name,
       url: `${origin}/`,
       email: content.site.email,
       description: content.site.tagline,
@@ -222,7 +223,13 @@ export function buildSeo(content: SiteContent, options: SeoOptions = {}): SeoFil
     ]
     if (service) nodes.push({ ...service, provider: { '@id': organizationId } })
     if (isAbout && personNode) nodes.push(personNode)
-    nodes.push({ '@type': ['Organization', 'ProfessionalService'], '@id': organizationId, name: content.site.name, url: `${origin}/` })
+    nodes.push({
+      '@type': ['Organization', 'ProfessionalService'],
+      '@id': organizationId,
+      name: content.site.name,
+      legalName: content.site.name,
+      url: `${origin}/`,
+    })
     if (page.faq && page.faq.length > 0) {
       nodes.push({
         '@type': 'FAQPage',

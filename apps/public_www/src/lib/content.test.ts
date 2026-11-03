@@ -36,4 +36,18 @@ describe('site.json pages', () => {
     expect(text).not.toContain('interim leadership')
     expect(text).not.toContain('interim cto')
   })
+
+  it('names LX Software as a Hong Kong sole proprietorship', () => {
+    const serialized = JSON.stringify(defaultSiteContent)
+    expect(serialized).not.toContain('LX Software Limited')
+    expect(defaultSiteContent.chrome.copyrightLegalForm).toBe(
+      'a sole proprietorship registered in Hong Kong',
+    )
+    expect(defaultSiteContent.legal.privacy.sections[0]?.paragraphs[0]).toContain(
+      'LX Software (a sole proprietorship registered in Hong Kong)',
+    )
+    expect(defaultSiteContent.legal.terms.sections[0]?.paragraphs[0]).toContain(
+      'LX Software (a sole proprietorship registered in Hong Kong)',
+    )
+  })
 })

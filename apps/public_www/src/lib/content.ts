@@ -78,6 +78,7 @@ export interface SiteChrome {
   readMore: string
   pagesLabel: string
   breadcrumbHome: string
+  copyrightLegalForm: string
 }
 
 export interface SiteContent {
