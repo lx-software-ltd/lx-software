@@ -1017,7 +1017,13 @@ organisations.
    (legacy `/webhooks/meta` still works).
 4. Set the `SiutindeiBoardMeta*` ids. Production already sets Page and
    Instagram in `params/production.json`. Until then `meta` tools return
-   "not configured".
+   "not configured". `MetaIgUserId` must be the Graph
+   `instagram_business_account.id` of the Page (17 digits, usually
+   `17841…`), not the id shown in the Instagram app or Business Suite. When
+   Meta answers "nonexisting field (insights)" for the configured id,
+   `meta_ig_insights` retries with the Page-linked id and reports
+   `resolvedFrom: "page"` plus the id to put in the parameter.
+   `MetaAdAccountId` is the number after `act=` in the Ads Manager URL.
 5. WhatsApp `act` is only inside the 24-hour window and only to
    allow-listed E.164 numbers. Set **Meta ads spend caps** on the Tools
    card (defaults USD 10 / 50; clamped to 500 / 2 000).
