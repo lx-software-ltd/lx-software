@@ -1,12 +1,10 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { lazy, useEffect, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { FinanceDataLoadOrError, FinanceSaveStatus } from "../components/FinanceDataStatus";
 import { HouseStatementPanel } from "../components/HouseStatementPanel";
 import { MirroredBookSummaryCard } from "../components/MirroredBookSummaryCard";
 import { StatementBookDashboardCard } from "../components/StatementBookDashboardCard";
-import { ExecutiveBoardTab } from "../components/board/ExecutiveBoardTab";
-import { LinkedInTab } from "../components/linkedin/LinkedInTab";
-import { ResumeTab } from "../components/resume/ResumeTab";
+import { LazyPage } from "../components/LazyPage";
 import { AdminTabList, type AdminTabItem } from "../components/ui";
 import { useStatementBook } from "../hooks/useStatementBook";
 import { adminTabButtonId } from "../lib/adminTabs";
@@ -57,6 +55,12 @@ function rowParamForTab(tab: StatementBookTab, bookKey: string, search: string):
   }
   return null;
 }
+
+const ExecutiveBoardTab = lazy(() =>
+  import("../components/board/ExecutiveBoardTab").then((m) => ({ default: m.ExecutiveBoardTab })),
+);
+const LinkedInTab = lazy(() => import("../components/linkedin/LinkedInTab").then((m) => ({ default: m.LinkedInTab })));
+const ResumeTab = lazy(() => import("../components/resume/ResumeTab").then((m) => ({ default: m.ResumeTab })));
 
 export function StatementBookPage({
   bookKey,
@@ -218,9 +222,9 @@ export function StatementBookPage({
                 emptyMessage="No gains yet."
               />
             ) : null}
-            {tab === "board" && hasExecutiveBoard ? <ExecutiveBoardTab /> : null}
-            {tab === "linkedin" && hasLinkedIn ? <LinkedInTab /> : null}
-            {tab === "resume" && hasResume ? <ResumeTab /> : null}
+            {tab === "board" && hasExecutiveBoard ? <LazyPage><ExecutiveBoardTab /></LazyPage> : null}
+            {tab === "linkedin" && hasLinkedIn ? <LazyPage><LinkedInTab /></LazyPage> : null}
+            {tab === "resume" && hasResume ? <LazyPage><ResumeTab /></LazyPage> : null}
           </div>
           )}
         </>
