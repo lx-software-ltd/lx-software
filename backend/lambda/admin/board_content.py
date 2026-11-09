@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
@@ -81,25 +82,9 @@ def presigned_url(key: str, expires: int = 3600) -> str:
 
 def public_row(doc: dict[str, Any]) -> dict[str, Any]:
     keys = (
-        "contentId",
-        "status",
-        "channel",
-        "pillar",
-        "slotAt",
-        "copyEn",
-        "copyZh",
-        "hashtags",
-        "template",
-        "fields",
-        "linkPath",
-        "linkWithUtm",
-        "creativeKeys",
-        "holdId",
-        "platformPostId",
-        "captionHash",
-        "performance",
-        "createdAt",
-        "updatedAt",
+        "contentId", "status", "channel", "pillar", "slotAt", "copyEn", "copyZh", "hashtags", "template",
+        "fields", "linkPath", "linkWithUtm", "creativeKeys", "holdId", "platformPostId", "captionHash",
+        "performance", "createdAt", "updatedAt",
     )
     return {k: doc.get(k) for k in keys}
 
@@ -146,7 +131,7 @@ def upsert_item(table: Any, item: dict[str, Any], *, status: str = "drafted") ->
         "slotAt": str(item.get("slotAt") or existing.get("slotAt") or now),
         "copyEn": str(item.get("copyEn") or existing.get("copyEn") or "")[:2000],
         "copyZh": str(item.get("copyZh") or existing.get("copyZh") or "")[:2000],
-        "hashtags": [str(x)[:40] for x in (item.get("hashtags") or existing.get("hashtags") or [])][:20],
+        "hashtags": coerce_hashtags(item.get("hashtags")) or list(existing.get("hashtags") or []),
         "template": template,
         "fields": coerce_fields(item.get("fields")) or (existing.get("fields") or {}),
         "linkPath": str(item.get("linkPath") or existing.get("linkPath") or "")[:400],
@@ -190,7 +175,7 @@ def caption_for(doc: dict[str, Any], settings: dict[str, Any]) -> str:
     channel = str(doc.get("channel") or "")
     en = str(doc.get("copyEn") or "").strip()
     zh = str(doc.get("copyZh") or "").strip()
-    tags = [t if t.startswith("#") else f"#{t}" for t in (doc.get("hashtags") or [])][:20]
+    tags = coerce_hashtags(doc.get("hashtags"))
     if channel in assisted_channels(settings) and "xiaohongshu" in channel:
         parts = [zh, en]
     elif channel == "instagram":
@@ -259,6 +244,12 @@ def load_staged_items(task_id: str) -> list[dict[str, Any]]:
     if not isinstance(items, list):
         return []
     return [item for item in items if isinstance(item, dict)]
+
+
+def coerce_hashtags(value: Any) -> list[str]:
+    """Tags as a list; the tool schema sends one string, which must not be spelled out."""
+    raw = re.split(r"[\s,]+", value) if isinstance(value, str) else (value if isinstance(value, list) else [])
+    return [(t if t.startswith("#") else f"#{t}")[:40] for t in (str(x).strip() for x in raw) if t][:20]
 
 
 def coerce_fields(value: Any) -> dict[str, Any] | None:
@@ -603,8 +594,8 @@ def owner_put(table: Any, content_id: str, body: dict[str, Any]) -> dict[str, An
         doc["copyZh"] = str(body.get("copyZh") or "")[:2000]
     if "slotAt" in body:
         doc["slotAt"] = str(body.get("slotAt") or "")
-    if "hashtags" in body and isinstance(body.get("hashtags"), list):
-        doc["hashtags"] = [str(x)[:40] for x in body["hashtags"]][:20]
+    if "hashtags" in body:
+        doc["hashtags"] = coerce_hashtags(body.get("hashtags"))
     if "status" in body:
         status = str(body.get("status") or "")
         if status not in {"vetoed", "published"}:

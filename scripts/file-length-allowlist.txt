@@ -16,7 +16,7 @@ backend/lambda/admin/board_catalog_bulk.py 1881
 backend/lambda/admin/board_catalog_candidates.py 871
 backend/lambda/admin/board_catalog_import.py 2127
 backend/lambda/admin/board_code.py 2812
-backend/lambda/admin/board_content.py 875
+backend/lambda/admin/board_content.py 866
 backend/lambda/admin/board_dmarc.py 1179
 backend/lambda/admin/board_duties.py 698
 backend/lambda/admin/board_github.py 983

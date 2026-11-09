@@ -243,6 +243,20 @@ class ContentTests(BoardTestCase):
         lessons = board_store.list_lessons(self.table)
         self.assertTrue(lessons)
 
+    def test_hashtags_string_is_split_not_spelled(self) -> None:
+        self.assertEqual(
+            board_content.coerce_hashtags("#小天地 #赤柱, Stanley"),
+            ["#小天地", "#赤柱", "#Stanley"],
+        )
+        self.assertEqual(board_content.coerce_hashtags(["a", "#b"]), ["#a", "#b"])
+        self.assertEqual(board_content.coerce_hashtags(None), [])
+        doc = board_content.upsert_item(
+            self.table,
+            {"slotAt": "2026-11-11T02:00:00Z", "channel": "instagram", "hashtags": "#小天地 #赤柱"},
+            status="drafted",
+        )
+        self.assertEqual(doc["hashtags"], ["#小天地", "#赤柱"])
+
     def test_stage_items_are_merged_into_task_finish(self) -> None:
         task = board_staff.create_task(
             self.table,
