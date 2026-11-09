@@ -15,6 +15,8 @@ import board_github
 import board_hk
 import board_mail
 import board_review
+import board_review_sample
+import board_staff
 import board_store
 from test_board import BoardTestCase
 
@@ -266,6 +268,78 @@ class ReviewCompileTests(BoardTestCase):
         second = board_review.compile(self.table, self.settings, date)["sample"]
         self.assertEqual([row["callId"] for row in first], [row["callId"] for row in second])
         self.assertEqual(len(first), 2)
+
+    def test_sample_rows_carry_actor_and_task_context(self) -> None:
+        board_store.save_staff_override(self.table, "content-marketer", {"isActive": True})
+        task = board_staff.create_task(
+            self.table,
+            self.settings,
+            assignee="content-marketer",
+            origin="owner",
+            brief="Draft the Stanley launch calendar " + "x" * 400,
+            deliverable_type="markdown",
+            created_by="test",
+        )
+        task["status"] = "delivered"
+        task["summary"] = "Drafted 14 days of Stanley posts."
+        board_store.put_task(self.table, task)
+        yesterday = board_hk.now_hkt() - timedelta(days=1)
+        created = board_hk.to_iso(yesterday.replace(hour=9, minute=30, second=0, microsecond=0))
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "call-finish",
+                "op": "task_finish",
+                "toolId": "task",
+                "status": "ok",
+                "summary": "Finished the task",
+                "createdAt": created,
+                "arguments": {"status": "review", "deliverable": "# Stanley calendar"},
+                "resultPreview": '{"ok": true, "status": "review"}',
+                "personaId": "content-marketer",
+                "displayName": "Mei",
+                "seatId": "content-marketer",
+                "taskId": task["taskId"],
+            },
+        )
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "call-orphan",
+                "op": "task_finish",
+                "toolId": "task",
+                "status": "ok",
+                "summary": "Finished the task",
+                "createdAt": created,
+                "arguments": {"status": "review"},
+                "personaId": "prospector",
+                "taskId": "missing-task",
+            },
+        )
+        self.settings["review"] = board_store.normalize_review_config({"sampleSize": 5})
+        review = board_review.compile(self.table, self.settings, board_hk.today_hkt())
+        rows = {row["callId"]: row for row in review["sample"]}
+        linked = rows["call-finish"]
+        self.assertEqual(linked["op"], "task_finish")
+        self.assertEqual(linked["createdAt"], created)
+        self.assertEqual(linked["personaId"], "content-marketer")
+        self.assertEqual(linked["displayName"], "Mei")
+        self.assertEqual(linked["taskId"], task["taskId"])
+        self.assertIn('"deliverable"', linked["arguments"])
+        self.assertEqual(linked["task"]["taskId"], task["taskId"])
+        self.assertEqual(linked["task"]["assignee"], "content-marketer")
+        self.assertEqual(linked["task"]["status"], "delivered")
+        self.assertEqual(linked["task"]["summary"], "Drafted 14 days of Stanley posts.")
+        self.assertTrue(linked["task"]["brief"].startswith("Draft the Stanley launch calendar"))
+        self.assertLessEqual(len(linked["task"]["brief"]), board_review_sample.TEXT_LIMIT)
+        self.assertIsNone(rows["call-orphan"]["task"])
+        line = board_review_sample.digest_line(linked)
+        self.assertIn("Finished the task", line)
+        self.assertIn("Mei", line)
+        self.assertIn(task["taskId"][:8], line)
+        self.assertIn("Draft the Stanley launch calendar", line)
+        self.assertIn("Mei", review["digestHtml"])
+        self.assertIn("Draft the Stanley launch calendar", review["digestHtml"])
 
     def test_digest_html_inlines_section_summaries_not_spa_links(self) -> None:
         date = "2026-09-09"

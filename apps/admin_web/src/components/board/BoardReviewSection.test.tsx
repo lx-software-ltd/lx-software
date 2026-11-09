@@ -1,6 +1,14 @@
-import { render, screen } from "@testing-library/react";
+import { render as rtlRender, screen, type RenderResult } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
+import type { BoardReviewSample } from "../../lib/boardModel";
 import { BoardReviewSection } from "./BoardReviewSection";
+
+function render(ui: React.ReactElement): RenderResult {
+  return rtlRender(<MemoryRouter initialEntries={["/siu-tin-dei?tab=board&section=review"]}>{ui}</MemoryRouter>);
+}
+
+const TASK_ID = "9af74e86da614799864912a3c77d523f";
 
 const reviewState = vi.hoisted(() => ({
   review: {
@@ -15,7 +23,7 @@ const reviewState = vi.hoisted(() => ({
     },
     holdsDue: [],
     escalations: [],
-    sample: [],
+    sample: [] as BoardReviewSample[],
     breakers: [],
     suggestions: [],
     assisted: [],
@@ -96,6 +104,55 @@ describe("BoardReviewSection card lanes", () => {
     expect(container.querySelector("#configGaps")).toHaveAttribute("data-lane", "aside");
     expect(container.querySelector("#dmarc")).toHaveAttribute("data-lane", "aside");
     expect(container.querySelector("#engineering")).toHaveAttribute("data-lane", "aside");
+  });
+});
+
+describe("BoardReviewSection sample of what ran", () => {
+  it("shows who ran it, the task it belonged to, and the raw details", () => {
+    reviewState.review.sample = [
+      {
+        callId: "call-finish",
+        summary: "Finished the task",
+        op: "task_finish",
+        createdAt: "2026-11-08T01:30:00Z",
+        personaId: "content-marketer",
+        displayName: "Mei",
+        taskId: TASK_ID,
+        arguments: JSON.stringify({ status: "review", deliverable: "# Stanley calendar" }),
+        preview: JSON.stringify({ ok: true, status: "review" }),
+        task: {
+          taskId: TASK_ID,
+          assignee: "content-marketer",
+          status: "delivered",
+          brief: "Draft the Stanley launch calendar.",
+          summary: "Drafted 14 days of Stanley posts.",
+        },
+      },
+      {
+        callId: "call-orphan",
+        summary: "Finished the task",
+        op: "task_finish",
+        personaId: "prospector",
+        taskId: "missing-task",
+        task: null,
+      },
+    ];
+    const { container } = render(<BoardReviewSection />);
+    const sample = container.querySelector("#sample");
+    expect(sample).toHaveTextContent("Mei");
+    expect(sample).toHaveTextContent("Draft the Stanley launch calendar.");
+    expect(sample).toHaveTextContent("Result: Drafted 14 days of Stanley posts.");
+    expect(sample).toHaveTextContent("delivered");
+    expect(screen.getByLabelText(`Task ${TASK_ID}`)).toHaveTextContent(`#${TASK_ID.slice(0, 8)}`);
+    const link = screen.getByRole("link", { name: `Open task ${TASK_ID}` });
+    expect(link.getAttribute("href")).toContain(`task=${TASK_ID}`);
+    expect(link.getAttribute("href")).toContain("section=tasks");
+    expect(sample).toHaveTextContent("Task record is no longer available.");
+    const details = sample?.querySelectorAll("details") ?? [];
+    expect(details).toHaveLength(1);
+    expect(details[0]).toHaveTextContent('"deliverable": "# Stanley calendar"');
+    expect(details[0]).toHaveTextContent('"ok": true');
+    reviewState.review.sample = [];
   });
 });
 

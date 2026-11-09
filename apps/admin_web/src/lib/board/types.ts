@@ -11,6 +11,7 @@ import {
   type BoardToolGlobalMode,
   type BoardToolLevel,
 } from "../contracts/generated";
+import type { BoardReviewSample } from "./reviewSample";
 
 export type {
   BoardActionClass,
@@ -1273,12 +1274,7 @@ export type BoardReviewSnapshot = {
     readonly brief?: string;
     readonly suggestedReply?: { readonly summary?: string; readonly preview?: unknown } | null;
   }[];
-  readonly sample: readonly {
-    readonly callId: string;
-    readonly summary?: string;
-    readonly preview?: unknown;
-    readonly op?: string;
-  }[];
+  readonly sample: readonly BoardReviewSample[];
   readonly breakers: readonly BoardBreaker[];
   readonly suggestions: readonly BoardRampRow[];
   readonly assisted?: readonly BoardContentItem[];
