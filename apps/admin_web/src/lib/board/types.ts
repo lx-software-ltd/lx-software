@@ -483,8 +483,8 @@ export type BoardToolCallRef = {
   readonly holdId?: string;
   readonly executeAt?: string;
   readonly error?: string;
+  readonly deliverablePreview?: string;
 };
-
 
 /** Audit-log row (`GET /board/tools/calls`). */
 export type BoardToolCallLogEntry = BoardToolCallRef & {

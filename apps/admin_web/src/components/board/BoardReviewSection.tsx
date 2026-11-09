@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import {
   formatUsageCost,
+  reviewFinishPreview,
   type BoardContentItem,
   type BoardReviewSample,
   type BoardReviewSnapshot,
@@ -90,6 +91,7 @@ function SampleRowContext({ row }: { readonly row: BoardReviewSample }) {
   const taskId = task?.taskId || row.taskId || "";
   const args = previewText(row.arguments);
   const result = previewText(row.preview);
+  const delivered = reviewFinishPreview(row);
   return (
     <>
       <div className="d-flex flex-wrap align-items-center gap-2">
@@ -102,6 +104,9 @@ function SampleRowContext({ row }: { readonly row: BoardReviewSample }) {
         ) : null}
         {row.createdAt ? <DateTimeDisplay iso={row.createdAt} className="text-muted" /> : null}
       </div>
+      {delivered ? (
+        <pre className="small bg-light border rounded p-2 mt-1 mb-0 board-finish-preview">{delivered}</pre>
+      ) : null}
       {taskId ? (
         <div className="small mt-1">
           <div className="d-flex flex-wrap align-items-center gap-2">

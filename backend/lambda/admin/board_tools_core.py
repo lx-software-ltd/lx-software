@@ -167,6 +167,19 @@ class ToolOutcome:
             out["error"] = str(self.result.get("error") or "")[:300]
         return out
 
+    def public_with_preview(self, op: ToolOp, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Chat and transcript shape. A finished JSON task also carries a short preview."""
+        out = self.public(op)
+        if op.name != "task_finish" or self.status != "ok" or not isinstance(arguments, dict):
+            return out
+        import board_review_sample
+
+        preview = board_review_sample._deliverable_preview({"op": op.name, "arguments": arguments})
+        if preview:
+            out["deliverablePreview"] = preview
+        return out
+
+
 @dataclass
 class ToolLoopResult:
     text: str

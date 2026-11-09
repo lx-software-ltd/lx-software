@@ -1660,7 +1660,7 @@ def _run_one(
         outcome = execute_call(bound, op, tc.arguments)
     except ToolPermissionError as exc:
         return _tool_message(tc, {"error": str(exc)})
-    calls.append(outcome.public(op))
+    calls.append(outcome.public_with_preview(op, tc.arguments))
     return _tool_message(tc, outcome.result)
 
 

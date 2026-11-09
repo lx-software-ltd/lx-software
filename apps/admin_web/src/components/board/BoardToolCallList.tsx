@@ -1,7 +1,13 @@
-import { TOOL_CALL_STATUS_ICON, type BoardToolCallRef } from "../../lib/boardModel";
+import { TOOL_CALL_STATUS_ICON, taskFinishJsonPreview, type BoardToolCallRef } from "../../lib/boardModel";
+
+type ShownCall = BoardToolCallRef & { readonly arguments?: unknown };
+
+function finishPreview(call: ShownCall): string {
+  return taskFinishJsonPreview(call.op, call.arguments) || (call.deliverablePreview ?? "").trim();
+}
 
 export type BoardToolCallListProps = {
-  readonly calls: readonly BoardToolCallRef[];
+  readonly calls: readonly ShownCall[];
   /** Adds a spinner row while the reply is still being generated. */
   readonly isLive?: boolean;
   readonly onOpenApproval?: (approvalId: string) => void;
@@ -15,6 +21,7 @@ export function BoardToolCallList({ calls, isLive, onOpenApproval, className }: 
     <ul className={`board-tool-calls list-unstyled mb-0 ${className ?? ""}`}>
       {calls.map((c) => {
         const status = TOOL_CALL_STATUS_ICON[c.status] ?? TOOL_CALL_STATUS_ICON.error;
+        const delivered = finishPreview(c);
         return (
           <li key={c.callId} className="d-flex align-items-start gap-2">
             <i className={`bi ${status.icon} ${status.className} flex-shrink-0`} role="img" aria-label={status.label} />
@@ -24,6 +31,9 @@ export function BoardToolCallList({ calls, isLive, onOpenApproval, className }: 
               </span>
               <span>{c.summary}</span>
               {c.error ? <span className="text-danger"> — {c.error}</span> : null}
+              {delivered ? (
+                <pre className="small bg-light border rounded p-2 mt-1 mb-0 board-finish-preview">{delivered}</pre>
+              ) : null}
               {c.status === "pending_approval" && c.approvalId && onOpenApproval ? (
                 <>
                   {" "}

@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
+import { useBoardToolCalls } from "../../hooks/useBoardTools";
 import { BoardMarkdown } from "./BoardMarkdown";
 import { BoardOffcanvas } from "./BoardOffcanvas";
 import { BoardTaskId } from "./BoardTaskId";
 import { BoardToolCallList } from "./BoardToolCallList";
 import { DateTimeDisplay } from "../ui";
 import {
+  prettyJsonText,
   CATALOG_MAX_REVALIDATE_ATTEMPTS,
   canForceCatalogImport,
   canImportCatalogTask,
@@ -20,6 +22,7 @@ import {
   type BoardCatalogImportResult,
   type BoardTask,
   type BoardTaskDetailPayload,
+  type BoardTaskStep,
   type BoardToolCallLogEntry,
 } from "../../lib/boardModel";
 
@@ -54,6 +57,27 @@ const OPEN_STATUSES = new Set([
   "awaiting_import",
 ]);
 
+function placeholderCall(step: BoardTaskStep, callId: string, assignee: string): BoardToolCallLogEntry {
+  return {
+    callId,
+    op: callId,
+    toolId: "task",
+    toolLabel: "Tool",
+    kind: "read",
+    status: "ok",
+    summary: step.plan.slice(0, 80) || callId,
+    durationMs: 0,
+    personaId: assignee,
+    displayName: assignee,
+    actor: "persona",
+    level: "act",
+    arguments: {},
+    resultPreview: "",
+    context: { kind: "task" },
+    createdAt: step.at,
+  };
+}
+
 function csvRows(text: string): string[][] {
   return text
     .split(/\r?\n/)
@@ -83,31 +107,14 @@ export function BoardTaskDrawer({
   const [notes, setNotes] = useState("");
   const task = detail?.task;
   const preview = importPreview ?? task?.importPreview;
+  const taskId = task?.taskId ?? "";
+  const loggedCalls = useBoardToolCalls(taskId !== "", 100, taskId);
   const calls = useMemo<BoardToolCallLogEntry[]>(() => {
-    const ids = new Set(detail?.steps.flatMap((s) => s.callIds) ?? []);
+    const logged = new Map((loggedCalls.data ?? []).map((call) => [call.callId, call]));
     return (detail?.steps ?? []).flatMap((step) =>
-      step.callIds
-        .filter((id) => ids.has(id))
-        .map((callId) => ({
-          callId,
-          op: callId,
-          toolId: "task",
-          toolLabel: "Tool",
-          kind: "read" as const,
-          status: "ok" as const,
-          summary: step.plan.slice(0, 80) || callId,
-          durationMs: 0,
-          personaId: task?.assignee ?? "",
-          displayName: task?.assignee ?? "",
-          actor: "persona" as const,
-          level: "act" as const,
-          arguments: {},
-          resultPreview: "",
-          context: { kind: "task" },
-          createdAt: step.at,
-        })),
+      step.callIds.map((callId) => logged.get(callId) ?? placeholderCall(step, callId, task?.assignee ?? "")),
     );
-  }, [detail, task?.assignee]);
+  }, [detail, loggedCalls.data, task?.assignee]);
 
   return (
     <BoardOffcanvas
@@ -333,6 +340,8 @@ function TaskBody({
         <div className="small text-muted text-uppercase mb-1">Deliverable</div>
         {task.deliverableType === "messages" && deliverable ? (
           <MessagesDeliverable text={deliverable} />
+        ) : task.deliverableType === "json" && deliverable ? (
+          <pre className="small bg-light border rounded p-2 mb-0 board-json-preview">{prettyJsonText(deliverable, 12000)}</pre>
         ) : deliverable ? (
           isCsv && rows.length ? (
             <div className="table-responsive">

@@ -55,13 +55,15 @@ export function useBoardTools(enabled = true) {
   };
 }
 
-export function useBoardToolCalls(enabled: boolean, limit = 50) {
+export function useBoardToolCalls(enabled: boolean, limit = 50, taskId = "") {
   return useQuery({
-    queryKey: [...BOARD_TOOL_CALLS_KEY, limit],
+    queryKey: [...BOARD_TOOL_CALLS_KEY, taskId, limit],
     enabled,
     queryFn: async () => {
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (taskId) params.set("taskId", taskId);
       const res = await adminFetchJson<{ calls: BoardToolCallLogEntry[] }>(
-        `${BOARD_API_BASE}/tools/calls?limit=${limit}`,
+        `${BOARD_API_BASE}/tools/calls?${params.toString()}`,
       );
       return res.calls;
     },

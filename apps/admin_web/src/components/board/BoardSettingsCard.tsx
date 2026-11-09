@@ -69,7 +69,7 @@ export function BoardSettingsCard({
       }
     >
       <div className="row g-4">
-        <div className="col-12 col-lg-6">
+        <div className="col-12 col-lg-6" data-settings-column="general">
           <h3 className="h6">Scheduled stand-ups</h3>
           <div className="form-check form-switch">
             <input
@@ -172,10 +172,8 @@ export function BoardSettingsCard({
           <div className="form-text">
             The snapshot is a once-a-day summary. Live lookups (issues, CI, files, security alerts) are governed per member under Tools &amp; permissions above.
           </div>
-        </div>
 
-        <div className="col-12 col-lg-6">
-          <h3 className="h6">Models (OpenRouter slugs)</h3>
+          <h3 className="h6 mt-4">Models (OpenRouter slugs)</h3>
           {(["chat", "standup", "deepDive"] as const).map((kind) => (
             <div className="mb-2" key={kind}>
               <label className="form-label small mb-1" htmlFor={`board-model-${kind}`}>
@@ -196,7 +194,35 @@ export function BoardSettingsCard({
             the other board models, then openai/gpt-4.1-mini and anthropic/claude-sonnet-4.
           </div>
 
-          <h3 className="h6 mt-4">Staff and daily review</h3>
+
+          <h3 className="h6 mt-4">Daily budget</h3>
+          <div className="input-group input-group-sm board-budget-input">
+            <span className="input-group-text">US$</span>
+            <input
+              type="number"
+              className="form-control"
+              min={0}
+              max={BOARD_MAX_DAILY_BUDGET_USD}
+              step={0.5}
+              value={draft.dailyBudgetUsd}
+              aria-label="Daily budget in USD"
+              onChange={(ev) => setDraft((d) => ({ ...d, dailyBudgetUsd: Number(ev.target.value) }))}
+            />
+            <span className="input-group-text">/ day</span>
+          </div>
+          <div className="form-text">
+            Spent today: {formatUsageCost(overview.usageToday.cost)} over {overview.usageToday.calls ?? 0} calls. Chats and meetings are refused once the cap is reached (resets at midnight UTC). Set 0 to disable the cap.
+          </div>
+          {overview.usageToday.external ? (
+            <div className="form-text">
+              External APIs: {overview.usageToday.external.searchCalls} web searches today · Meta ads{" "}
+              {formatUsageCost(overview.usageToday.external.metaAdsMonthUsd)} this month
+            </div>
+          ) : null}
+        </div>
+
+        <div className="col-12 col-lg-6" data-settings-column="operations">
+          <h3 className="h6">Staff and daily review</h3>
           <div className="form-check form-switch">
             <input
               className="form-check-input"
@@ -237,6 +263,8 @@ export function BoardSettingsCard({
               Run scheduled seat duties
             </label>
           </div>
+
+          <h3 className="h6 mt-4">Catalog</h3>
           <div className="form-check form-switch">
             <input
               className="form-check-input"
@@ -355,7 +383,7 @@ export function BoardSettingsCard({
                 <span className="input-group-text">/ day</span>
               </div>
               <div className="form-text">
-                Separate from the board chat and meeting cap below. Exhausted staff budget re-queues work instead of failing it.
+                Separate from the board chat and meeting cap. Exhausted staff budget re-queues work instead of failing it.
               </div>
             </div>
           </div>
@@ -517,31 +545,6 @@ export function BoardSettingsCard({
               </select>
             </div>
           </div>
-
-          <h3 className="h6 mt-4">Daily budget</h3>
-          <div className="input-group input-group-sm board-budget-input">
-            <span className="input-group-text">US$</span>
-            <input
-              type="number"
-              className="form-control"
-              min={0}
-              max={BOARD_MAX_DAILY_BUDGET_USD}
-              step={0.5}
-              value={draft.dailyBudgetUsd}
-              aria-label="Daily budget in USD"
-              onChange={(ev) => setDraft((d) => ({ ...d, dailyBudgetUsd: Number(ev.target.value) }))}
-            />
-            <span className="input-group-text">/ day</span>
-          </div>
-          <div className="form-text">
-            Spent today: {formatUsageCost(overview.usageToday.cost)} over {overview.usageToday.calls ?? 0} calls. Chats and meetings are refused once the cap is reached (resets at midnight UTC). Set 0 to disable the cap.
-          </div>
-          {overview.usageToday.external ? (
-            <div className="form-text">
-              External APIs: {overview.usageToday.external.searchCalls} web searches today · Meta ads{" "}
-              {formatUsageCost(overview.usageToday.external.metaAdsMonthUsd)} this month
-            </div>
-          ) : null}
         </div>
       </div>
     </AdminEditorSection>

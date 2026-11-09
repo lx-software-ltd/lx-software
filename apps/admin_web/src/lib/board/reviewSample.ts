@@ -20,5 +20,7 @@ export type BoardReviewSample = {
   readonly seatId?: string;
   readonly taskId?: string;
   readonly arguments?: string;
+  /** Pretty-printed JSON deliverable for a `task_finish` row. Empty when the body is not JSON. */
+  readonly deliverablePreview?: string;
   readonly task?: BoardReviewSampleTask | null;
 };

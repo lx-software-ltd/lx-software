@@ -31,6 +31,13 @@ def listed_config_gaps(table: Any) -> list[dict[str, Any]] | None:
     return _with_catalog_gap(items)
 
 
+def for_read(table: Any, review: dict[str, Any]) -> dict[str, Any]:
+    """Today's page. Finish previews are filled on the stored rows; config gaps follow the cache."""
+    import board_review_sample
+
+    return attach_live_config_gaps(table, board_review_sample.enrich_stored_sample(table, review))
+
+
 def attach_live_config_gaps(table: Any, review: dict[str, Any]) -> dict[str, Any]:
     """On-screen list and digest preview follow the cache. The stored snapshot is not written."""
     import board_review

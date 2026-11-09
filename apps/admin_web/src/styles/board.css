@@ -227,6 +227,14 @@
   overflow-wrap: anywhere;
 }
 
+.board-json-preview,
+.board-finish-preview {
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .board-budget-input {
   max-width: 220px;
 }

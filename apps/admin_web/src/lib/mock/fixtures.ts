@@ -1015,7 +1015,7 @@ export function boardTaskDetailFixture(taskId: string): BoardTaskDetailPayload |
     steps:
       task.status === "queued"
         ? []
-        : [{ seq: 1, plan: "Looked up AWS and finance totals.", callIds: ["call-aws"], usage: { cost: 0.01, calls: 1 }, at: isoDaysAgo(0) }],
+        : [{ seq: 1, plan: task.taskId === "task-review" ? "Wrote the provider summary." : "Looked up AWS and finance totals.", callIds: task.taskId === "task-review" ? ["call-finish-1"] : ["call-aws"], usage: { cost: 0.01, calls: 1 }, at: isoDaysAgo(0) }],
     reviews: task.reviews
       ? [{ seq: 1, verdict: task.lastReview?.verdict ?? "accept", notes: task.lastReview?.notes ?? "Looks good.", at: isoDaysAgo(0), by: "manager" }]
       : [],
