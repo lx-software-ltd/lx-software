@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildQuoteMap, fetchFinanceQuotes } from "./financeQuotes";
 
+vi.mock("./auth", () => ({
+  ensureFreshTokens: async () => "test-id-token",
+  getStoredIdToken: () => "test-id-token",
+  clearStoredSession: () => undefined,
+}));
+
 const ORIGINAL_FETCH = global.fetch;
 
 beforeEach(() => {
@@ -9,14 +15,6 @@ beforeEach(() => {
   vi.stubEnv("VITE_COGNITO_CLIENT_ID", "test-client-id");
   vi.stubEnv("VITE_COGNITO_DOMAIN", "https://example.auth.us-east-1.amazoncognito.com");
   vi.stubEnv("VITE_COGNITO_REDIRECT_URI", "https://app.example/auth/callback");
-  // Bypass the auth header refresh (the real path requires Cognito setup).
-  vi.mock("./auth", async () => {
-    return {
-      ensureFreshTokens: async () => "test-id-token",
-      getStoredIdToken: () => "test-id-token",
-      clearStoredSession: () => undefined,
-    };
-  });
 });
 
 afterEach(() => {

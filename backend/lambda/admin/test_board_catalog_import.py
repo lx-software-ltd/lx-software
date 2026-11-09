@@ -682,6 +682,7 @@ class ImportClientTests(BoardTestCase):
             board_catalog_import._safe_url(signed),
             "https://s3.example.test/put",
         )
+        self.assertTrue(err.fp.closed)
 
     def test_accept_hook_previews_without_import(self) -> None:
         settings = _enable_staff(self.table)
@@ -1466,6 +1467,7 @@ class ImportClientTests(BoardTestCase):
                 board_catalog_import._http("POST", "https://siu.example/v1/admin/imports")
         self.assertEqual(ctx.exception.request_id, "req-abc")
         self.assertIn("requestId=req-abc", str(ctx.exception))
+        self.assertTrue(err.fp.closed)
 
     def test_http_wraps_read_timeout(self) -> None:
         board_catalog_import.set_http_for_tests(None)

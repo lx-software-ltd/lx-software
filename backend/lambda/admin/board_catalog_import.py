@@ -30,7 +30,7 @@ from contract_constants import (
     BOARD_CATALOG_QUALITY_MIN_FACTS,
     BOARD_CATALOG_TYPE_TO_CATEGORY,
 )
-from http_common import _log_event
+from http_common import _log_event, _read_http_error
 from secret_store import read_secret_raw
 
 CATALOG_EVENT_KIND = "catalog-micro-batch"
@@ -865,7 +865,7 @@ def _http(
             status = int(getattr(resp, "status", 200) or 200)
             text = raw.decode("utf-8", errors="replace") if raw else ""
     except urllib.error.HTTPError as exc:
-        err_body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+        err_body = _read_http_error(exc).decode("utf-8", errors="replace")
         headers = getattr(exc, "headers", None)
         request_id = str(headers.get("x-amzn-RequestId") or "") if headers is not None else ""
         detail = f"siutindei admin {method} {_safe_url(url)} failed: {exc.code} {err_body[:240]}"

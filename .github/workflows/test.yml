@@ -16,7 +16,7 @@ on:
 jobs:
   check-contracts:
     name: Check shared contracts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
         with:
@@ -33,7 +33,7 @@ jobs:
 
   test-web:
     name: Test Public Website
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -59,7 +59,7 @@ jobs:
 
   build-admin-web:
     name: Build Admin Web
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -100,7 +100,7 @@ jobs:
 
   e2e-admin-web:
     name: Admin Web viewport smoke
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -126,7 +126,7 @@ jobs:
 
   test-infrastructure:
     name: Test Infrastructure
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -156,7 +156,7 @@ jobs:
 
   test:
     name: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs:
       - check-contracts
       - test-web

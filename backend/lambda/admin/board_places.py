@@ -25,6 +25,7 @@ import board_hk
 import board_store
 from admin_runtime import _get_secretsmanager_client
 from contract_constants import BOARD_STAFF_PLACES_MONTHLY_CAP_USD
+from http_common import _read_http_error
 from secret_store import read_secret_string
 
 # Spec field mask (no ``places.`` prefix). Search requests prefix each path.
@@ -126,7 +127,7 @@ def _http(method: str, url: str, *, headers: dict[str, str], body: bytes | None 
         with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310
             raw = resp.read()
     except urllib.error.HTTPError as exc:
-        raw = exc.read() if exc.fp else b""
+        raw = _read_http_error(exc)
         raise PlacesError(f"Places HTTP {exc.code}: {raw[:200]!r}") from exc
     if not raw:
         return {}

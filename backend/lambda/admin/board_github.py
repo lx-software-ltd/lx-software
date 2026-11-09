@@ -27,7 +27,7 @@ from urllib import request as urlrequest
 
 import board_deadline
 from admin_runtime import _get_secretsmanager_client
-from http_common import _log_event, _utc_iso_z
+from http_common import _close_http_error, _log_event, _read_http_error, _utc_iso_z
 from openrouter_client import OpenRouterError
 from secret_store import read_secret_string
 
@@ -226,17 +226,17 @@ def _request(
         with _urlopen(req, timeout=board_deadline.remaining(timeout)) as resp:  # noqa: S310
             text = _read_body(resp, raw=raw)
     except urlerror.HTTPError as exc:
-        if exc.code == 404 and method == "GET":
+        if exc.code == 404 and method == "GET" and _close_http_error(exc):
             return None
         wait = _rate_limit_wait_seconds(exc)
         if wait is not None:
             _log_event("warning", tag="board_github_rate_limited", status=exc.code, retryAfter=wait, path=path[:120])
             raise GitHubSnapshotError(
                 f"GitHub rate limit; retry after {wait}s", status=exc.code, retry_after=wait
-            ) from exc
+            ) from _close_http_error(exc)
         detail = ""
         try:
-            payload = json.loads(exc.read().decode("utf-8", errors="replace"))
+            payload = json.loads(_read_http_error(exc).decode("utf-8", errors="replace"))
             detail = str(payload.get("message") or "") if isinstance(payload, dict) else ""
         except Exception:  # pragma: no cover - defensive
             detail = ""

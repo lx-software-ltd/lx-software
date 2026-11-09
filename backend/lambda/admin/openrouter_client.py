@@ -24,6 +24,7 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 
 from contract_constants import OPENROUTER_APPS as OPENROUTER_APP_CATALOG
+from http_common import _read_http_error
 
 DEFAULT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 IMAGES_ENDPOINT = "https://openrouter.ai/api/v1/images"
@@ -745,9 +746,8 @@ def post_json(
                 sock_timeout = max(1, min(int(req_timeout), max(1, int(remaining_s))))
             return _read_http_response(req, sock_timeout, hard_deadline)
         except urlerror.HTTPError as exc:
-            body = ""
             try:
-                body = exc.read().decode("utf-8", errors="replace")
+                body = _read_http_error(exc).decode("utf-8", errors="replace")
             except Exception:  # pragma: no cover - defensive
                 body = ""
             if exc.code in _RETRYABLE_STATUSES and attempt < max_retries:

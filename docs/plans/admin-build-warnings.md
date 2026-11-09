@@ -11,7 +11,7 @@ and the Vite warning about a chunk over 500 kB (the entry chunk was 892 kB).
 
 ## Non-goals
 
-- Pinning the runner image. Every workflow uses `ubuntu-latest`.
+- Pinning the runner image. Later pinned in `docs/plans/pin-ci-runners.md`.
 - Raising `chunkSizeWarningLimit`.
 
 ## Files

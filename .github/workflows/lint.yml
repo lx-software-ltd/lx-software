@@ -19,7 +19,7 @@ on:
 jobs:
   lint-web:
     name: Lint Public Website
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -41,7 +41,7 @@ jobs:
 
   lint-admin-web:
     name: Lint Admin Web
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -63,7 +63,7 @@ jobs:
 
   build-cdk:
     name: Build CDK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -85,7 +85,7 @@ jobs:
 
   lint-python:
     name: Lint Python
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -103,7 +103,7 @@ jobs:
 
   validate-agent-harness:
     name: Validate agent harness
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -124,7 +124,7 @@ jobs:
 
   lint:
     name: lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs:
       - lint-web
       - lint-admin-web

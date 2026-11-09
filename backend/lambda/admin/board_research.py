@@ -30,7 +30,7 @@ from contract_constants import (
     BOARD_RESEARCH_MAX_RESULTS,
     BOARD_RESEARCH_QUERY_MAX_LEN,
 )
-from http_common import _log_event
+from http_common import _close_http_error, _log_event
 from openrouter_client import OpenRouterError
 from secret_store import read_secret_string
 
@@ -149,7 +149,7 @@ def _brave_search(query: str, *, count: int) -> list[dict[str, Any]]:
         with urlrequest.urlopen(req, timeout=board_deadline.remaining(HTTP_TIMEOUT_SECONDS)) as resp:  # noqa: S310
             body = json.loads(resp.read().decode("utf-8", errors="replace") or "{}")
     except urlerror.HTTPError as exc:
-        raise ResearchError(f"Brave Search returned status {exc.code}") from exc
+        raise ResearchError(f"Brave Search returned status {exc.code}") from _close_http_error(exc)
     except urlerror.URLError as exc:
         raise ResearchError(f"Brave Search transport error: {exc.reason}") from exc
     except json.JSONDecodeError as exc:

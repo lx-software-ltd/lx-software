@@ -40,7 +40,7 @@ from contract_constants import (
     BOARD_META_ADS_MONTHLY_CAP_USD,
     BOARD_META_LIST_MAX,
 )
-from http_common import _log_event, _utc_iso_z, method_not_allowed
+from http_common import _log_event, _read_http_error, _utc_iso_z, method_not_allowed
 
 GRAPH_ORIGIN = "https://graph.facebook.com/v21.0"
 HTTP_TIMEOUT_SECONDS = 12
@@ -270,7 +270,7 @@ def graph(
             raw = resp.read()
     except urlerror.HTTPError as exc:
         try:
-            detail = exc.read().decode("utf-8", errors="replace")[:300]
+            detail = _read_http_error(exc).decode("utf-8", errors="replace")[:300]
         except (OSError, AttributeError):
             detail = ""
         raise MetaError(f"Meta Graph {exc.code}: {detail or exc.reason}", status=int(exc.code)) from exc
