@@ -7,10 +7,11 @@ assets bucket; lines are parsed once with **all** of those object keys
 attached to each new line (``sourceAssetKeys``), matching multi-file imports
 in the admin UI.
 
-A message that has a PDF is parsed from those PDF parts only. Every
-statement inbox uses the same fallback when it does not: a receipt image,
-a text, CSV, or HTML attachment, or the message body when that text names
-an amount. No inbox is special-cased.
+A PDF, including a file named ``.pdf``, is parsed alone. Otherwise every
+statement inbox uses an itemised text, CSV, or HTML attachment, or a
+receipt image that is not inline or decorative. The body is used only when
+it names an amount and the message has no statement attachment. No inbox
+is special-cased.
 
 ``segment`` is the lower-cased S3 prefix (e.g. ``hillmarton``, ``morrison``,
 ``lx-software``). CDK ``inboundStatementMailboxes`` maps each inbox
@@ -172,7 +173,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     assets_bucket = os.environ.get("ASSETS_BUCKET_NAME", "").strip()
     raw_mail_prefix = os.environ.get("INBOUND_RAW_MAIL_PREFIX", "inbound-raw").strip()
     user_sub = os.environ.get("INBOUND_AUDIT_USER_SUB", "inbound-email").strip()
-    max_pdf = int(os.environ.get("ASSET_MAX_BYTES", str(20 * 1024 * 1024)))
+    max_bytes = int(os.environ.get("ASSET_MAX_BYTES", str(20 * 1024 * 1024)))
 
     if not inbound_bucket or not assets_bucket:
         logger.error(json.dumps({"tag": "inbound_mail_misconfigured", "reason": "missing_bucket_env"}))
@@ -270,7 +271,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             sources = sources[:MAX_SOURCE_ASSET_KEYS_PER_LINE]
 
         oversize_idx = next(
-            (i for i, source in enumerate(sources) if len(source.data) > max_pdf),
+            (i for i, source in enumerate(sources) if len(source.data) > max_bytes),
             None,
         )
         if oversize_idx is not None:
@@ -281,7 +282,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                         "key": raw_key[:512],
                         "index": oversize_idx,
                         "bytes": len(sources[oversize_idx].data),
-                        "max": max_pdf,
+                        "max": max_bytes,
                     }
                 )
             )
@@ -377,7 +378,6 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     "tag": "inbound_mail_parse_enqueued",
                     "houseKey": owner_key,
                     "lineTypeOnly": mailbox.line_type_only,
-                    "pdfCount": sum(1 for source in sources if source.kind == "pdf"),
                     "sourceCount": len(dest_keys),
                     "sourceKinds": sorted({source.kind for source in sources}),
                     "jobId": job_id,

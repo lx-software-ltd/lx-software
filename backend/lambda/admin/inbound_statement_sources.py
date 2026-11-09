@@ -1,15 +1,17 @@
 """Choose the files an inbound statement message should be parsed from.
 
-Every finance inbox uses this module. A PDF attachment stays the only
-source when the message has one. Otherwise a receipt image, or a text,
-CSV, or HTML file, is used when the body does not itself name an amount.
-The body is used when the subject or the text names an amount, and also
-when that text is long enough to be a prose bill and nothing else is
-attached. A date header on its own is not an amount.
+Every finance inbox uses this module. A PDF, including a ``.pdf`` file
+whose content type is not ``application/pdf``, is the only source when
+the message has one. Otherwise an itemised text, CSV, or HTML attachment,
+or a receipt image that is not inline or decorative, is the source. The
+body is used only when the subject or body names an amount and no
+statement attachment was found. A date, a version, or a bare discount is
+not an amount.
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 from email import policy
@@ -19,9 +21,8 @@ from typing import NamedTuple
 
 from board_mail import html_to_text
 
-BODY_FILENAME = "email-body.txt"
+BODY_FILENAME_PREFIX = "email-body-"
 MIN_STATEMENT_IMAGE_BYTES = 8 * 1024
-_PROSE_MIN_CHARS = 40
 _BODY_MAX_CHARS = 100_000
 
 _IMAGE_TYPES = {
@@ -50,14 +51,23 @@ _IMAGE_EXT = {
     "image/webp": ".webp",
     "image/gif": ".gif",
 }
+_PDF_TYPES = frozenset({"application/pdf", "application/x-pdf"})
+_CURRENCIES = "usd|eur|gbp|hkd|cny|sgd|aed"
+# A currency code, an explicit HK$/US$ amount, a symbol with cents, or a
+# total/amount/balance/charged label beside a number. A bare decimal matches
+# dates (09.11.2026) and versions (2.10); a bare "$10" matches discounts.
 _MONEY_RE = re.compile(
-    r"(?i)(?:"
-    r"\b(?:usd|eur|gbp|hkd|cny|sgd|aed)\s*\d"
-    r"|\d[\d.,]*\s*(?:usd|eur|gbp|hkd|cny|sgd|aed)\b"
-    r"|(?:hk\$|us\$|[$£€¥])\s*\d"
-    r"|\d+[.,]\d{2}\b"
-    r"|\b(?:total|amount|balance|charged)\b[^\d\n]{0,24}\d"
-    r")"
+    rf"(?i)(?:"
+    rf"\b(?:{_CURRENCIES})\s*\d"
+    rf"|\d[\d.,]*\s*(?:{_CURRENCIES})\b"
+    rf"|(?:hk\$|us\$)\s*\d"
+    rf"|[$£€¥]\s*\d{{1,3}}(?:,\d{{3}})*(?:\.\d{{2}})\b"
+    rf"|\b(?:total|amount|balance|charged)\b[^\d\n]{{0,24}}\d"
+    rf")"
+)
+_DECORATIVE_IMAGE_NAME = re.compile(
+    r"(?i)(?:^|[^a-z])(?:logo|icon|banner|pixel|spacer|signature|header|footer|"
+    r"facebook|twitter|linkedin|instagram)(?:[^a-z]|$)"
 )
 
 
@@ -78,6 +88,15 @@ def _sanitize_pdf_filename(name: str) -> str:
     return safe or "statement.pdf"
 
 
+def _is_pdf_part(part: EmailMessage, payload: bytes) -> bool:
+    """True for a PDF content type, a ``.pdf`` name, or PDF bytes on an octet-stream."""
+    ctype = part.get_content_type()
+    name = (part.get_filename() or "").lower()
+    if ctype in _PDF_TYPES or name.endswith(".pdf"):
+        return True
+    return payload.startswith(b"%PDF") and ctype in _OCTET_TYPES
+
+
 def extract_pdf_attachments(raw: bytes) -> list[tuple[bytes, str]]:
     """Return ``(pdf_bytes, safe_filename)`` for every PDF part, in walk order."""
     msg = BytesParser(policy=policy.default).parsebytes(raw)
@@ -85,13 +104,13 @@ def extract_pdf_attachments(raw: bytes) -> list[tuple[bytes, str]]:
     for part in msg.walk():
         if part.get_content_maintype() == "multipart":
             continue
-        if part.get_content_type() != "application/pdf":
-            continue
         payload = part.get_payload(decode=True)
         if not isinstance(payload, (bytes, bytearray)) or len(payload) == 0:
             continue
-        fn = part.get_filename() or "statement.pdf"
-        out.append((bytes(payload), _sanitize_pdf_filename(fn)))
+        blob = bytes(payload)
+        if not _is_pdf_part(part, blob):
+            continue
+        out.append((blob, _sanitize_pdf_filename(part.get_filename() or "statement.pdf")))
     return out
 
 
@@ -150,6 +169,15 @@ def _choose_body(plain: str, html: str) -> str:
 def _signal_text(subject: str, body: str) -> str:
     """Subject plus body. The date header is omitted so a timestamp is not an amount."""
     return f"{subject}\n{body}".strip()
+
+
+def _body_filename(msg: EmailMessage, body: str) -> str:
+    """A stable name that differs when the subject or body differs."""
+    subject = _collapse(msg.get("Subject"))
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", subject).strip("-").lower()[:32] or "message"
+    stamp = _collapse(msg.get("Message-ID")) or _collapse(msg.get("Date")) or ""
+    digest = hashlib.sha256(f"{stamp}\n{subject}\n{body}".encode()).hexdigest()[:8]
+    return f"{BODY_FILENAME_PREFIX}{slug}-{digest}.txt"[:180]
 
 
 def _body_document(msg: EmailMessage, body: str) -> bytes:
@@ -212,10 +240,15 @@ def _decode_text(part: EmailMessage, payload: bytes, mapped: str) -> str:
     return text.replace("\r\n", "\n").strip()
 
 
-def _worth_reading(text: str) -> bool:
-    if _has_money(text):
+def _skip_image(part: EmailMessage, filename: str, size: int) -> bool:
+    """Inline, tiny, and decorative images are not receipts."""
+    if size < MIN_STATEMENT_IMAGE_BYTES:
         return True
-    return len(text.strip()) >= _PROSE_MIN_CHARS and re.search(r"\d", text) is not None
+    if _DECORATIVE_IMAGE_NAME.search(filename or ""):
+        return True
+    if (part.get_content_disposition() or "").lower() == "inline":
+        return True
+    return bool(part.get("Content-ID"))
 
 
 def _attachment_sources(msg: EmailMessage, body_ids: set[int]) -> list[StatementSource]:
@@ -223,18 +256,18 @@ def _attachment_sources(msg: EmailMessage, body_ids: set[int]) -> list[Statement
     for part in msg.walk():
         if part.get_content_maintype() == "multipart" or id(part) in body_ids:
             continue
-        if part.get_content_type() == "application/pdf":
-            continue
         payload = part.get_payload(decode=True)
         if not isinstance(payload, (bytes, bytearray)) or len(payload) == 0:
+            continue
+        blob = bytes(payload)
+        if _is_pdf_part(part, blob):
             continue
         filename = part.get_filename() or ""
         mapped = _mapped_type(part.get_content_type(), filename)
         if mapped is None:
             continue
-        blob = bytes(payload)
         if mapped.startswith("image/"):
-            if len(blob) < MIN_STATEMENT_IMAGE_BYTES:
+            if _skip_image(part, filename, len(blob)):
                 continue
             out.append(
                 StatementSource(
@@ -246,7 +279,7 @@ def _attachment_sources(msg: EmailMessage, body_ids: set[int]) -> list[Statement
             )
             continue
         text = _decode_text(part, blob, mapped)
-        if not _worth_reading(text):
+        if not _has_money(text):
             continue
         out.append(
             StatementSource(
@@ -259,8 +292,17 @@ def _attachment_sources(msg: EmailMessage, body_ids: set[int]) -> list[Statement
     return out
 
 
+def _body_source(msg: EmailMessage, body: str) -> StatementSource:
+    return StatementSource(
+        data=_body_document(msg, body),
+        filename=_body_filename(msg, body),
+        content_type="text/plain",
+        kind="body",
+    )
+
+
 def extract_statement_sources(raw: bytes) -> list[StatementSource]:
-    """PDF parts, or a non-PDF attachment, or the body, for any statement inbox."""
+    """PDF parts, else statement attachments, else a body that names an amount."""
     pdfs = extract_pdf_attachments(raw)
     if pdfs:
         return [
@@ -273,25 +315,9 @@ def extract_statement_sources(raw: bytes) -> list[StatementSource]:
     body = _choose_body(_part_text(plain_part), _part_text(html_part))
     signal = _signal_text(_collapse(msg.get("Subject")), body)
     body_ids = {id(part) for part in (plain_part, html_part) if part is not None}
-    if _has_money(signal):
-        return [
-            StatementSource(
-                data=_body_document(msg, body),
-                filename=BODY_FILENAME,
-                content_type="text/plain",
-                kind="body",
-            )
-        ]
     attachments = _attachment_sources(msg, body_ids)
     if attachments:
         return attachments
-    if _worth_reading(signal):
-        return [
-            StatementSource(
-                data=_body_document(msg, body),
-                filename=BODY_FILENAME,
-                content_type="text/plain",
-                kind="body",
-            )
-        ]
+    if _has_money(signal):
+        return [_body_source(msg, body)]
     return []

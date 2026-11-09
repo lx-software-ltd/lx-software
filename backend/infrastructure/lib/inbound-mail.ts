@@ -115,7 +115,7 @@ export function defineInboundMail(
   const parseJobStaleSeconds = String(PARSE_TIMEOUTS.parseJobStaleSeconds);
   const parseJobStuckSeconds = String(PARSE_TIMEOUTS.parseJobStuckSeconds);
   // ------------------------------------------------------------------
-  // Inbound mail: SES → S3 (raw) → Lambda extracts PDF → same parser as UI
+  // Inbound mail: SES → S3 (raw) → Lambda extracts a statement → same parser as UI
   // ------------------------------------------------------------------
 
   /**

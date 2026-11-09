@@ -289,6 +289,7 @@ class TestParseStatementFromAsset(unittest.TestCase):
         self.assertIn("plugins", body, "PDF requests must include the file-parser plugin")
         self.assertEqual(body["plugins"][0]["id"], "file-parser")
         self.assertEqual(body["messages"][1]["content"][1]["type"], "file")
+        self.assertNotIn("provider", body)
         self.assertEqual(body["usage"], {"include": True})
         self.assertEqual(body["user"], "statement-parser:hillmarton")
         self.assertEqual(captured["headers"]["Authorization"], "Bearer sk-test")
@@ -338,6 +339,7 @@ class TestParseStatementFromAsset(unittest.TestCase):
         self.assertEqual(result["lines"], [])
         body = json.loads(captured["body"].decode("utf-8"))
         self.assertNotIn("plugins", body)
+        self.assertEqual(body["provider"], {"data_collection": "deny"})
         self.assertEqual(body["messages"][1]["content"][1]["type"], "image_url")
 
     def test_email_text_is_sent_as_text_and_the_prompt_names_email(self) -> None:
@@ -381,10 +383,13 @@ class TestParseStatementFromAsset(unittest.TestCase):
 
         body = json.loads(captured["body"].decode("utf-8"))
         self.assertNotIn("plugins", body)
+        self.assertEqual(body["provider"], {"data_collection": "deny"})
         content = body["messages"][1]["content"]
         self.assertEqual(content[1]["type"], "text")
         self.assertIn("USD 42.00", content[1]["text"])
-        self.assertIn("email", content[0]["text"].lower())
+        prompt = content[0]["text"].lower()
+        self.assertIn("email", prompt)
+        self.assertIn("itemised", prompt)
 
 
 if __name__ == "__main__":

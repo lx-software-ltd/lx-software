@@ -7,30 +7,34 @@
 
 A message to any statement inbox can be parsed when the bill is not a PDF.
 `billing@inbound.lx-software.com`, `32-hillmarton@`, and `the-morrison@` all
-use `InboundStatementMailFn`. Today that function logs `inbound_mail_no_pdf`
-and skips the message, so amounts written in the body are never read.
+use `InboundStatementMailFn`. A message with nothing to read is logged
+and left in the raw bucket. A body that names an amount is parsed.
 
-When the message has a PDF, those PDF parts stay the only source. Otherwise
-the same function, for every finance owner in `INBOUND_STATEMENT_MAILBOXES`,
-queues one of:
+When the message has a PDF, including a `.pdf` file that is not labelled
+`application/pdf`, those parts stay the only source. Otherwise the same
+function, for every finance owner in `INBOUND_STATEMENT_MAILBOXES`, queues:
 
-- a receipt image, or a text, CSV, or HTML attachment, when the body does
-  not itself name an amount
-- the message body (plain text, or HTML reduced to text) when the subject
-  or body names an amount, or is long enough to be a prose bill
+- an itemised text, CSV, or HTML attachment, or a receipt image that is
+  not inline and not a decorative name such as `logo`
+- otherwise the message body, only when the subject or body names an amount
 
-The stored object uses the content type the statement parser already
-accepts (`application/pdf`, `image/*`, or `text/plain`). The parser prompt
-names an email body as a document it should read. No inbox is special-cased.
+An amount is a currency code or HK$/US$ figure, a currency symbol with
+cents, or a total, amount, balance, or charged label beside a number. A
+date, a version, a discount such as "$10 off", or a long note that merely
+contains a digit is not parsed. Each body file is named from the subject
+and a short digest of the text, so a later body is not the same filename.
+Text and image parses set `data_collection: deny`. The prompt tells the
+model to return itemised charges instead of also returning the total.
+No inbox is special-cased.
 
 ## Non-goals
 
-- No line-level dedupe when a body and a file repeat the same charge. A PDF
-  still suppresses the body. A body that names an amount suppresses other
-  attachments so a signature image is not parsed instead of the bill.
+- No line-level dedupe inside one parsed file. An itemised attachment is
+  parsed instead of the body, so the total in the body is not added beside
+  the lines. A PDF still suppresses everything else.
 - No change to the admin upload control, which still accepts PDF and images.
-- No CDK edit. Infrastructure is red. The receipt-rule outputs still say
-  "PDF inbox"; the deployment doc is the operator description.
+- Receipt-rule output text no longer says "PDF inbox". No receipt rule,
+  bucket, or permission changes.
 - Evolve Sprouts `InboundInvoiceEmailProcessor` is not in this repository.
 - A message already skipped is left under `inbound-raw/` and is not
   replayed. Send it again after deploy. The raw object is deleted only
@@ -45,6 +49,8 @@ names an email body as a document it should read. No inbox is special-cased.
 - `backend/lambda/admin/test_inbound_email_handler.py`
 - `backend/lambda/admin/test_openrouter_statement_parser.py`
 - `docs/deployment/admin-website.md`
+- `backend/infrastructure/lib/admin-outputs.ts` — output description text
+- `backend/infrastructure/lib/inbound-mail.ts` — comment only
 
 ## Invariants this change preserves
 
@@ -71,6 +77,4 @@ are unchanged.
 
 ## Open questions
 
-None. Amount detection is a currency code or symbol next to a number, a
-decimal amount, or a total, amount, balance, or charged label next to a
-number. A date header alone does not count.
+None. A bare decimal and a currency symbol without cents are not amounts.

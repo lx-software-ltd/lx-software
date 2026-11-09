@@ -2084,6 +2084,54 @@ class TestParseRepeatsImportedBasename(unittest.TestCase):
         self.assertEqual(finance_puts[0]["lines"][1]["sourceAssetKeys"], [s3_key])
 
 
+    def test_execute_reads_an_inbound_email_body_as_text(self) -> None:
+        import parse_statement as parse_statement_mod
+
+        s3_key = "inbound/morrison/" + ("ab" * 16) + "/00_email-body-november-abcd1234.txt"
+        self.table.get_item.return_value = {
+            "Item": {
+                "pk": "FINANCE#morrison",
+                "sk": "STATE",
+                "defaultCurrency": "HKD",
+                "float": {"amount": 0, "currency": "HKD"},
+                "lines": [],
+            }
+        }
+        self.table.update_item.return_value = {}
+        with (
+            patch.object(parse_statement_mod.board_store, "records_table", return_value=self.table),
+            patch.object(
+                parse_statement_mod.runtime._s3,
+                "head_object",
+                return_value={
+                    "ContentType": "text/plain",
+                    "ContentLength": 48,
+                    "ETag": '"body"',
+                    "LastModified": datetime.now(timezone.utc),
+                },
+            ),
+            patch(
+                "openrouter_statement_parser.parse_statement_from_asset",
+                return_value={"lines": [], "usage": None},
+            ) as parser,
+            patch.object(parse_statement_mod.openrouter_usage, "add_usage_day"),
+            patch.object(parse_statement_mod, "_audit"),
+        ):
+            result = parse_statement_mod.execute_parse_statement(
+                house="morrison",
+                s3_keys=[s3_key],
+                user_sub="inbound-email",
+                request_id="req-body",
+                event={"requestContext": {"requestId": "req-body"}},
+            )
+        parser.assert_called_once()
+        self.assertEqual(parser.call_args.kwargs["content_type"], "text/plain")
+        self.assertEqual(
+            parser.call_args.kwargs["file_name"],
+            "00_email-body-november-abcd1234.txt",
+        )
+        self.assertEqual(result["addedLines"], 0)
+
     def _run_execute(self, s3_keys: list[str], head):
         import parse_statement as parse_statement_mod
 

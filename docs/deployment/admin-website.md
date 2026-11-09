@@ -1063,10 +1063,17 @@ SES allows one active receipt rule set per region. `lxsoftware` owns
 `billing@lx-software.com` to `billing@inbound.lx-software.com` (output
 `lxsoftware-InboundMailbox-lxSoftware`). The same scanner serves every
 statement inbox (`32-hillmarton@`, `the-morrison@`, and `billing@`). A PDF
-attachment is the source when the message has one. Otherwise the scanner
-reads a receipt image or a text, CSV, or HTML attachment, or the message
-body when that text itself names an amount. A message with neither is left
-in the raw bucket and is not parsed. Scanned files are written under
+attachment is the source when the message has one, including a file named
+`.pdf` that arrived as an octet-stream. Otherwise the scanner reads an
+itemised text, CSV, or HTML attachment, or a receipt image that is not
+inline and not a decorative file such as a logo. The message body is read
+only when it names an amount and the message has no statement attachment.
+A date, a version number, or a discount such as "$10 off" is not an amount.
+Each body is stored under its own name, built from the subject and a short
+digest, so a later body is not reported as a repeated filename. Text and
+image parses ask the provider not to retain the prompt. A message with
+nothing to read is left in the raw bucket and is not parsed. Scanned files
+are written under
 `inbound/{owner}/{batch}/` with an `ASSET#` row so they show on **Assets**
 even if parsing fails. Each message is stored under its own
 `inbound/{owner}/{batch}/` prefix, so a re-sent PDF has a new S3 key and is

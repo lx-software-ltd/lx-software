@@ -92,7 +92,9 @@ def parse_statement_from_asset(
         temperature=0,
         plugins=plugins,
         include_usage=True,
-        deny_data_collection=False,
+        # PDF parsing keeps the file-parser route. Text and images, including
+        # an email body, must not be retained by the provider.
+        deny_data_collection=not asset_payload["is_pdf"],
         max_retries=0,
         service=openrouter_client.SERVICE_STATEMENT_PARSER,
         owner=owner,
@@ -402,9 +404,13 @@ def _schema_prompt(default_currency: str) -> str:
         "grossAmount. Otherwise netAmount + vat must equal grossAmount. "
         f"(4) currency is one of: {allowed}. Use the document's currency "
         f"when shown, otherwise default to {fb}. "
-        "(5) Do not invent transactions. If the document is empty return "
+        "(5) When itemised charges and a total are both shown, return only "
+        "the itemised charges. Do not add the total, balance, or amount due "
+        "as its own line. When the document shows only a total, return that "
+        "one line. "
+        "(6) Do not invent transactions. If the document is empty return "
         '{"lines": []}. '
-        "(6) No markdown, no prose, no comments — JSON only."
+        "(7) No markdown, no prose, no comments — JSON only."
     )
 
 

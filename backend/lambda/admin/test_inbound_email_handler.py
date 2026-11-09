@@ -16,7 +16,7 @@ from inbound_email_handler import (
     inbound_mailbox_from_raw_s3_key,
 )
 from inbound_statement_sources import (
-    BODY_FILENAME,
+    BODY_FILENAME_PREFIX,
     MIN_STATEMENT_IMAGE_BYTES,
     extract_first_pdf_attachment,
     extract_pdf_attachments,
@@ -349,7 +349,8 @@ class TestStatementSourcesWithoutPdf(unittest.TestCase):
         source = sources[0]
         self.assertEqual(source.kind, "body")
         self.assertEqual(source.content_type, "text/plain")
-        self.assertEqual(source.filename, BODY_FILENAME)
+        self.assertTrue(source.filename.startswith(f"{BODY_FILENAME_PREFIX}november-electricity-"))
+        self.assertTrue(source.filename.endswith(".txt"))
         text = source.data.decode("utf-8")
         self.assertIn("Subject: November electricity", text)
         self.assertIn("Date:", text)
@@ -366,14 +367,30 @@ class TestStatementSourcesWithoutPdf(unittest.TestCase):
         self.assertEqual([source.kind for source in sources], ["body"])
         self.assertIn(b"Total: 120", sources[0].data)
 
-    def test_prose_with_a_reference_number_is_kept_when_nothing_else_is_attached(self) -> None:
-        raw = _bill_message(
-            body="Invoice 1042 is due tomorrow. Please record it against the house book.",
-            subject="Note",
-        ).as_bytes()
+    def test_dates_versions_and_discounts_are_not_amounts(self) -> None:
+        notes = (
+            "Please confirm forwarding. Code 482913. This link expires in 24 hours.",
+            "Let's meet on 12 Nov at 3pm in room 4 to talk about the plan.",
+            "See you 09.11.2026",
+            "Release 2.10 is out",
+            "Get $10 off your next order this weekend!",
+            "Invoice 1042 is due tomorrow. Please record it against the house book.",
+        )
+        for note in notes:
+            with self.subTest(note=note):
+                self.assertEqual(extract_statement_sources(_bill_message(body=note).as_bytes()), [])
+
+    def test_a_symbol_amount_with_cents_is_kept(self) -> None:
+        raw = _bill_message(body="Rent £42.50", subject="Bill").as_bytes()
         sources = extract_statement_sources(raw)
         self.assertEqual([source.kind for source in sources], ["body"])
-        self.assertIn(b"1042", sources[0].data)
+
+    def test_two_bodies_get_different_filenames(self) -> None:
+        first = extract_statement_sources(_bill_message(body="Total: 120", subject="November").as_bytes())
+        second = extract_statement_sources(_bill_message(body="Total: 80", subject="December").as_bytes())
+        self.assertNotEqual(first[0].filename, second[0].filename)
+        again = extract_statement_sources(_bill_message(body="Total: 120", subject="November").as_bytes())
+        self.assertEqual(first[0].filename, again[0].filename)
 
     def test_html_amount_wins_over_a_plain_stub(self) -> None:
         raw = _bill_message(
@@ -387,10 +404,10 @@ class TestStatementSourcesWithoutPdf(unittest.TestCase):
         self.assertIn("Hosting", text)
         self.assertNotIn("View this message in a browser.", text)
 
-    def test_amount_in_the_body_is_not_replaced_by_a_signature_image(self) -> None:
+    def test_amount_in_the_body_is_not_replaced_by_a_logo(self) -> None:
         msg = _bill_message(body="Electricity total 88.10 HKD on 2 Nov 2026.")
         msg.add_attachment(
-            b"\x89PNG" + b"y" * 80,
+            b"\x89PNG" + b"y" * (MIN_STATEMENT_IMAGE_BYTES + 8),
             maintype="image",
             subtype="png",
             filename="logo.png",
@@ -398,6 +415,51 @@ class TestStatementSourcesWithoutPdf(unittest.TestCase):
         sources = extract_statement_sources(msg.as_bytes())
         self.assertEqual([source.kind for source in sources], ["body"])
         self.assertNotIn(b"PNG", sources[0].data)
+
+    def test_a_large_logo_without_an_amount_is_skipped(self) -> None:
+        msg = _bill_message(body="Thanks for the note.")
+        msg.add_attachment(
+            b"\x89PNG" + b"y" * (MIN_STATEMENT_IMAGE_BYTES + 8),
+            maintype="image",
+            subtype="png",
+            filename="logo.png",
+        )
+        self.assertEqual(extract_statement_sources(msg.as_bytes()), [])
+
+    def test_an_inline_image_is_not_a_receipt(self) -> None:
+        msg = _bill_message(body="Thanks for the note.")
+        msg.add_related(
+            b"\x89PNG" + b"y" * (MIN_STATEMENT_IMAGE_BYTES + 8),
+            maintype="image",
+            subtype="png",
+            cid="picture",
+            filename="picture.png",
+        )
+        self.assertEqual(extract_statement_sources(msg.as_bytes()), [])
+
+    def test_itemised_csv_wins_over_a_body_total(self) -> None:
+        msg = _bill_message(body="Total USD 42.00. The itemised lines are attached.")
+        msg.add_attachment(
+            b"date,description,amount,currency\n2026-11-01,Hosting,18.00,USD\n",
+            maintype="text",
+            subtype="csv",
+            filename="lines.csv",
+        )
+        sources = extract_statement_sources(msg.as_bytes())
+        self.assertEqual([source.kind for source in sources], ["attachment"])
+        self.assertIn(b"Hosting", sources[0].data)
+        self.assertNotIn(b"Subject:", sources[0].data)
+
+    def test_octet_stream_pdf_is_the_statement(self) -> None:
+        msg = _bill_message(body="See attached.")
+        pdf = b"%PDF-1.4 invoice"
+        msg.add_attachment(pdf, maintype="application", subtype="octet-stream", filename="inv.pdf")
+        sources = extract_statement_sources(msg.as_bytes())
+        self.assertEqual(len(sources), 1)
+        self.assertEqual(sources[0].kind, "pdf")
+        self.assertEqual(sources[0].content_type, "application/pdf")
+        self.assertEqual(sources[0].filename, "inv.pdf")
+        self.assertEqual(sources[0].data, pdf)
 
     def test_receipt_image_is_used_when_the_body_has_no_amount(self) -> None:
         msg = _bill_message(
@@ -486,12 +548,14 @@ class TestInboundBodyEnqueue(unittest.TestCase):
                 self.assertEqual(kwargs["line_type_only"], line_type)
                 self.assertEqual(kwargs["source"], "inbound_mail")
                 self.assertEqual(len(kwargs["s3_keys"]), 1)
-                self.assertTrue(kwargs["s3_keys"][0].endswith(f"_{BODY_FILENAME}"))
+                file_name = meta.call_args.kwargs["file_name"]
+                self.assertTrue(file_name.startswith(BODY_FILENAME_PREFIX))
+                self.assertTrue(file_name.endswith(".txt"))
+                self.assertTrue(kwargs["s3_keys"][0].endswith(f"_{file_name}"))
                 self.assertEqual(len(s3.puts), 1)
                 self.assertEqual(s3.puts[0]["ContentType"], "text/plain")
                 self.assertIn(b"88.10", s3.puts[0]["Body"])
                 self.assertEqual(meta.call_args.kwargs["house"], house)
-                self.assertEqual(meta.call_args.kwargs["file_name"], BODY_FILENAME)
                 self.assertEqual(s3.deleted, [("inbound-bucket", key)])
 
     def test_note_without_an_amount_is_not_parsed(self) -> None:
