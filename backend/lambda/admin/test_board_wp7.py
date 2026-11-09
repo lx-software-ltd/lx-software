@@ -262,18 +262,21 @@ class SalesReportHttp(FakeStoresHttp):
         super().__init__()
         self.report = report if report is not None else gzip.compress(SALES_TSV.encode())
         self.status = status
+        self.http_errors: list[urlerror.HTTPError] = []
 
     def __call__(self, req, timeout=None):  # noqa: ARG002
         if "/v1/salesReports" in req.full_url:
             self.calls.append((req.get_method(), req.full_url, None))
             if self.status:
-                raise urlerror.HTTPError(
+                err = urlerror.HTTPError(
                     req.full_url,
                     self.status,
                     "not found",
                     {},
                     io.BytesIO(b'{"errors":[{"detail":"There were no sales for the date specified."}]}'),
                 )
+                self.http_errors.append(err)
+                raise err
             return _FakeResp(self.report)
         return super().__call__(req, timeout)
 
@@ -327,10 +330,13 @@ class TestStoresSalesReport(StoresTestCase):
         os.environ["ASC_VENDOR_NUMBER"] = "88888888"
         self.addCleanup(lambda: os.environ.pop("ASC_VENDOR_NUMBER", None))
         board_stores.reset_caches_for_tests()
-        self._use(SalesReportHttp(status=404))
+        http = SalesReportHttp(status=404)
+        self._use(http)
         downloads = board_stores.fetch_asc_downloads("app-1")
         self.assertFalse(downloads["available"])
         self.assertIn("404", downloads["reason"])
+        self.assertTrue(http.http_errors)
+        self.assertTrue(all(err.fp.closed for err in http.http_errors))
 
     def test_json_error_body_is_unavailable(self) -> None:
         os.environ["ASC_VENDOR_NUMBER"] = "88888888"
@@ -358,14 +364,20 @@ class TestStoresCrashUnavailable(StoresTestCase):
     def test_play_query_failure_is_structured(self) -> None:
         calls: list[str] = []
 
+        errors: list[urlerror.HTTPError] = []
+
         def failing(req, timeout=None):  # noqa: ARG001
             calls.append(req.full_url)
-            raise urlerror.HTTPError(req.full_url, 403, "forbidden", {}, io.BytesIO(b'{"error":"no reporting access"}'))
+            err = urlerror.HTTPError(req.full_url, 403, "forbidden", {}, io.BytesIO(b'{"error":"no reporting access"}'))
+            errors.append(err)
+            raise err
 
         with patch.object(board_stores, "_urlopen", failing):
             out = board_stores.fetch_play_crash_rate("com.siutindei.app")
         self.assertFalse(out["available"])
         self.assertIn("403", out["reason"])
+        self.assertTrue(errors)
+        self.assertTrue(all(err.fp.closed for err in errors))
         self.assertTrue(any(u.endswith("/crashRateMetricSet") for u in calls))
         self.assertTrue(any("crashRateMetricSet:query" in u for u in calls))
 
@@ -390,8 +402,14 @@ class TestGitHubQualifiers(unittest.TestCase):
 
 class TestGitHubRateLimit(ToolsTestCase):
     def _limit(self, status: int, headers: dict[str, str]) -> None:
+        self.http_errors: list[urlerror.HTTPError] = []
+
         def limited(req, timeout=None):  # noqa: ARG001
-            raise urlerror.HTTPError(req.full_url, status, "limited", headers, io.BytesIO(b'{"message":"API rate limit exceeded"}'))
+            err = urlerror.HTTPError(
+                req.full_url, status, "limited", headers, io.BytesIO(b'{"message":"API rate limit exceeded"}')
+            )
+            self.http_errors.append(err)
+            raise err
 
         self.router.github = limited
 
@@ -406,6 +424,8 @@ class TestGitHubRateLimit(ToolsTestCase):
         self.assertTrue(message.endswith("s"))
         self.assertTrue(100 <= ctx.exception.retry_after <= 121)
         self.assertEqual(ctx.exception.status, 403)
+        self.assertTrue(self.http_errors)
+        self.assertTrue(all(err.fp.closed for err in self.http_errors))
 
     def test_retry_after_header_is_honoured(self) -> None:
         self._limit(429, {"retry-after": "30"})
@@ -413,6 +433,7 @@ class TestGitHubRateLimit(ToolsTestCase):
             board_github.op_get_issue({"number": 42})
         self.assertEqual(str(ctx.exception), "GitHub rate limit; retry after 30s")
         self.assertEqual(ctx.exception.retry_after, 30)
+        self.assertTrue(all(err.fp.closed for err in self.http_errors))
 
     def test_plain_403_is_not_a_rate_limit(self) -> None:
         self._limit(403, {"X-RateLimit-Remaining": "55"})
@@ -420,6 +441,7 @@ class TestGitHubRateLimit(ToolsTestCase):
             board_github.op_get_issue({"number": 42})
         self.assertIn("status 403", str(ctx.exception))
         self.assertIsNone(ctx.exception.retry_after)
+        self.assertTrue(all(err.fp.closed for err in self.http_errors))
 
 
 class TestGitHubReleases(ToolsTestCase):

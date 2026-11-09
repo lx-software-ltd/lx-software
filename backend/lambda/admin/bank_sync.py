@@ -159,23 +159,26 @@ def _eb_request(
         with urllib.request.urlopen(req, timeout=EB_HTTP_TIMEOUT_SECONDS) as resp:
             raw = resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:400]
-        message = f"Enable Banking HTTP {exc.code}"
         try:
-            parsed = json.loads(detail)
-            if isinstance(parsed, dict) and isinstance(parsed.get("message"), str):
-                message = f"{message}: {parsed['message'][:200]}"
-        except json.JSONDecodeError:
-            pass
-        _log_event(
-            "warning",
-            tag="bank_sync_upstream_http_error",
-            method=method,
-            path=path,
-            status=exc.code,
-            detail=detail,
-        )
-        raise BankSyncUpstreamError(message) from exc
+            detail = exc.read().decode("utf-8", errors="replace")[:400]
+            message = f"Enable Banking HTTP {exc.code}"
+            try:
+                parsed = json.loads(detail)
+                if isinstance(parsed, dict) and isinstance(parsed.get("message"), str):
+                    message = f"{message}: {parsed['message'][:200]}"
+            except json.JSONDecodeError:
+                pass
+            _log_event(
+                "warning",
+                tag="bank_sync_upstream_http_error",
+                method=method,
+                path=path,
+                status=exc.code,
+                detail=detail,
+            )
+            raise BankSyncUpstreamError(message) from exc
+        finally:
+            exc.close()
     except urllib.error.URLError as exc:
         _log_event(
             "warning",

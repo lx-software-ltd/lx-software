@@ -149,7 +149,10 @@ def _brave_search(query: str, *, count: int) -> list[dict[str, Any]]:
         with urlrequest.urlopen(req, timeout=board_deadline.remaining(HTTP_TIMEOUT_SECONDS)) as resp:  # noqa: S310
             body = json.loads(resp.read().decode("utf-8", errors="replace") or "{}")
     except urlerror.HTTPError as exc:
-        raise ResearchError(f"Brave Search returned status {exc.code}") from exc
+        try:
+            raise ResearchError(f"Brave Search returned status {exc.code}") from exc
+        finally:
+            exc.close()
     except urlerror.URLError as exc:
         raise ResearchError(f"Brave Search transport error: {exc.reason}") from exc
     except json.JSONDecodeError as exc:

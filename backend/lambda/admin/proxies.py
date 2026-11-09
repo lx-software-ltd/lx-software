@@ -188,16 +188,19 @@ def _fetch_yahoo_quote(
         with urllib.request.urlopen(req, timeout=8) as resp:
             raw = resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")[:200]
-        _log_event(
-            "warning",
-            tag="quote_upstream_http_error",
-            symbol=yahoo_symbol,
-            status=exc.code,
-            body_snip=body,
-            request_id=request_id,
-        )
-        return {"error": f"Quote HTTP {exc.code}"}
+        try:
+            body = exc.read().decode("utf-8", errors="replace")[:200]
+            _log_event(
+                "warning",
+                tag="quote_upstream_http_error",
+                symbol=yahoo_symbol,
+                status=exc.code,
+                body_snip=body,
+                request_id=request_id,
+            )
+            return {"error": f"Quote HTTP {exc.code}"}
+        finally:
+            exc.close()
     except urllib.error.URLError as exc:
         _log_event(
             "warning",
@@ -331,17 +334,20 @@ def _proxy_fx_v2_rates(qs: dict[str, Any] | None, request_id: str) -> dict[str, 
         with urllib.request.urlopen(req, timeout=12) as resp:
             raw = resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")[:500]
-        _log_event(
-            "warning",
-            tag="fx_rates_upstream_http_error",
-            status=exc.code,
-            body_snip=body,
-            request_id=request_id,
-        )
-        return _json_response(
-            502, {"message": f"FX upstream returned HTTP {exc.code}"}
-        )
+        try:
+            body = exc.read().decode("utf-8", errors="replace")[:500]
+            _log_event(
+                "warning",
+                tag="fx_rates_upstream_http_error",
+                status=exc.code,
+                body_snip=body,
+                request_id=request_id,
+            )
+            return _json_response(
+                502, {"message": f"FX upstream returned HTTP {exc.code}"}
+            )
+        finally:
+            exc.close()
     except urllib.error.URLError as exc:
         _log_event(
             "warning",

@@ -64,8 +64,11 @@ def _call(
             raw_headers = {key.lower(): value for key, value in response.headers.items()}
             return int(response.status), raw_headers, response.read()
     except urllib.error.HTTPError as exc:
-        raw_headers = {key.lower(): value for key, value in exc.headers.items()} if exc.headers else {}
-        return int(exc.code), raw_headers, exc.read() or b""
+        try:
+            raw_headers = {key.lower(): value for key, value in exc.headers.items()} if exc.headers else {}
+            return int(exc.code), raw_headers, exc.read() or b""
+        finally:
+            exc.close()
     except urllib.error.URLError as exc:
         raise LinkedInApiError("LinkedIn could not be reached.") from exc
 

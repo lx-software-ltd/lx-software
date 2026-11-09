@@ -344,8 +344,11 @@ def http_bytes(
         with _urlopen(req) as resp:
             return resp.read() or b""
     except urlerror.HTTPError as exc:
-        err = exc.read().decode("utf-8", "replace")[:300]
-        raise StoresError(f"{method} {url.split('?', 1)[0]} failed ({exc.code}): {err}") from exc
+        try:
+            err = exc.read().decode("utf-8", "replace")[:300]
+            raise StoresError(f"{method} {url.split('?', 1)[0]} failed ({exc.code}): {err}") from exc
+        finally:
+            exc.close()
     except urlerror.URLError as exc:
         raise StoresError(f"{method} {url.split('?', 1)[0]} failed: {exc.reason}") from exc
 

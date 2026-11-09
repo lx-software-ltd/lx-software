@@ -226,26 +226,29 @@ def _request(
         with _urlopen(req, timeout=board_deadline.remaining(timeout)) as resp:  # noqa: S310
             text = _read_body(resp, raw=raw)
     except urlerror.HTTPError as exc:
-        if exc.code == 404 and method == "GET":
-            return None
-        wait = _rate_limit_wait_seconds(exc)
-        if wait is not None:
-            _log_event("warning", tag="board_github_rate_limited", status=exc.code, retryAfter=wait, path=path[:120])
-            raise GitHubSnapshotError(
-                f"GitHub rate limit; retry after {wait}s", status=exc.code, retry_after=wait
-            ) from exc
-        detail = ""
         try:
-            payload = json.loads(exc.read().decode("utf-8", errors="replace"))
-            detail = str(payload.get("message") or "") if isinstance(payload, dict) else ""
-        except Exception:  # pragma: no cover - defensive
+            if exc.code == 404 and method == "GET":
+                return None
+            wait = _rate_limit_wait_seconds(exc)
+            if wait is not None:
+                _log_event("warning", tag="board_github_rate_limited", status=exc.code, retryAfter=wait, path=path[:120])
+                raise GitHubSnapshotError(
+                    f"GitHub rate limit; retry after {wait}s", status=exc.code, retry_after=wait
+                ) from exc
             detail = ""
-        suffix = f": {detail[:200]}" if detail else ""
-        if exc.code in (401, 403) and not token:
-            suffix += " (no GitHub token configured; anonymous access is rate-limited and cannot write)"
-        raise GitHubSnapshotError(
-            f"GitHub API returned status {exc.code} for {method} {path}{suffix}", status=exc.code
-        ) from exc
+            try:
+                payload = json.loads(exc.read().decode("utf-8", errors="replace"))
+                detail = str(payload.get("message") or "") if isinstance(payload, dict) else ""
+            except Exception:  # pragma: no cover - defensive
+                detail = ""
+            suffix = f": {detail[:200]}" if detail else ""
+            if exc.code in (401, 403) and not token:
+                suffix += " (no GitHub token configured; anonymous access is rate-limited and cannot write)"
+            raise GitHubSnapshotError(
+                f"GitHub API returned status {exc.code} for {method} {path}{suffix}", status=exc.code
+            ) from exc
+        finally:
+            exc.close()
     except urlerror.URLError as exc:
         raise GitHubSnapshotError(f"GitHub API transport error: {exc.reason}") from exc
     if accept.endswith("raw") or accept == "application/vnd.github.diff":

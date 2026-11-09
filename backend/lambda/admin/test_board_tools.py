@@ -67,13 +67,19 @@ class FakeGitHub:
     def __init__(self) -> None:
         self.requests: list[tuple[str, str, dict[str, str], Any]] = []
         self.fail_with: int | None = None
+        self.http_errors: list[urlerror.HTTPError] = []
+
+    def _raise_http(self, req: Any, code: int, msg: str, body: bytes) -> None:
+        err = urlerror.HTTPError(req.full_url, code, msg, {}, io.BytesIO(body))
+        self.http_errors.append(err)
+        raise err
 
     def __call__(self, req, timeout=None):  # noqa: ARG002
         path = req.full_url.replace(board_github.API_ORIGIN, "")
         body = json.loads(req.data.decode("utf-8")) if req.data else None
         self.requests.append((req.get_method(), path, dict(req.headers), body))
         if self.fail_with:
-            raise urlerror.HTTPError(req.full_url, self.fail_with, "boom", {}, io.BytesIO(b'{"message":"nope"}'))
+            self._raise_http(req, self.fail_with, "boom", b'{"message":"nope"}')
         if path.startswith("/search/issues"):
             payload: Any = {
                 "total_count": 1,
@@ -99,7 +105,7 @@ class FakeGitHub:
         elif "/actions/runs" in path:
             payload = {"workflow_runs": [{"id": 1, "name": "ci", "head_branch": "main", "status": "completed", "conclusion": "success", "head_commit": {"message": "fix: x\n\nmore"}}]}
         elif "/dependabot/alerts" in path:
-            raise urlerror.HTTPError(req.full_url, 403, "forbidden", {}, io.BytesIO(b'{"message":"Dependabot alerts are disabled"}'))
+            self._raise_http(req, 403, "forbidden", b'{"message":"Dependabot alerts are disabled"}')
         elif "/code-scanning/alerts" in path:
             payload = []
         else:
@@ -557,6 +563,8 @@ class TestChatToolLoop(ToolsTestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["status"], "error")
         self.assertIn("500", calls[0]["error"])
+        self.assertTrue(self.github.http_errors)
+        self.assertTrue(all(err.fp.closed for err in self.github.http_errors))
         tool_msgs = [m for m in scripted.requests[1]["messages"] if m["role"] == "tool"]
         self.assertEqual(len(tool_msgs), 2)
         self.assertIn("Unknown tool", tool_msgs[1]["content"])
@@ -874,6 +882,8 @@ class TestGitHubOps(ToolsTestCase):
         self.assertEqual(out["dependabot"], [])
         self.assertTrue(any("403" in n for n in out["notes"]))
         self.assertEqual(out["codeScanning"], [])
+        self.assertTrue(self.github.http_errors)
+        self.assertTrue(all(err.fp.closed for err in self.github.http_errors))
 
     def test_get_security_alert_returns_cve_and_range(self) -> None:
         inner = self.github

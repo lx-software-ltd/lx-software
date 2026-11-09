@@ -270,10 +270,13 @@ def graph(
             raw = resp.read()
     except urlerror.HTTPError as exc:
         try:
-            detail = exc.read().decode("utf-8", errors="replace")[:300]
-        except (OSError, AttributeError):
-            detail = ""
-        raise MetaError(f"Meta Graph {exc.code}: {detail or exc.reason}", status=int(exc.code)) from exc
+            try:
+                detail = exc.read().decode("utf-8", errors="replace")[:300]
+            except (OSError, AttributeError):
+                detail = ""
+            raise MetaError(f"Meta Graph {exc.code}: {detail or exc.reason}", status=int(exc.code)) from exc
+        finally:
+            exc.close()
     except urlerror.URLError as exc:
         raise MetaError(f"Meta Graph unreachable: {exc.reason}") from exc
     except OSError as exc:  # socket.timeout while reading the body is not a URLError

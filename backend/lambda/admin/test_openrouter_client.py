@@ -505,19 +505,22 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
             }
         ).encode("utf-8")
         calls: dict[str, object] = {"n": 0, "bodies": []}
+        errors: list[urlerror.HTTPError] = []
 
         def fake_urlopen(req, timeout=None):  # noqa: ARG001
             calls["n"] = int(calls["n"]) + 1
             bodies: list = calls["bodies"]  # type: ignore[assignment]
             bodies.append(json.loads(req.data.decode("utf-8")))
             if calls["n"] == 1:
-                raise urlerror.HTTPError(
+                err = urlerror.HTTPError(
                     req.full_url,
                     429,
                     "Too Many Requests",
                     {"Retry-After": "1"},
                     io.BytesIO(error_body),
                 )
+                errors.append(err)
+                raise err
             return _FakeResp(json.dumps({"ok": True}).encode("utf-8"))
 
         slept: list[float] = []
@@ -537,6 +540,8 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
         self.assertEqual(bodies[1]["provider"], {"data_collection": "deny"})
         self.assertEqual(slept, [3.0])
         self.assertEqual(json.loads(text), {"ok": True})
+        self.assertTrue(errors)
+        self.assertTrue(all(err.fp.closed for err in errors))
 
     def test_post_json_skips_retry_when_backoff_exceeds_timeout(self) -> None:
         calls = {"n": 0}
@@ -568,14 +573,18 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
         self.assertIn("rate limited", str(ctx.exception))
 
     def test_post_json_gives_up_after_429_retries(self) -> None:
+        errors: list[urlerror.HTTPError] = []
+
         def fake_urlopen(req, timeout=None):  # noqa: ARG001
-            raise urlerror.HTTPError(
+            err = urlerror.HTTPError(
                 req.full_url,
                 429,
                 "Too Many Requests",
                 {},
                 io.BytesIO(b'{"error":{"message":"rate limited","code":429}}'),
             )
+            errors.append(err)
+            raise err
 
         with (
             patch("openrouter_client.urlrequest.urlopen", fake_urlopen),
@@ -591,6 +600,8 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
                 )
         self.assertEqual(ctx.exception.status, 429)
         self.assertIn("rate limited", str(ctx.exception))
+        self.assertTrue(errors)
+        self.assertTrue(all(err.fp.closed for err in errors))
 
     def test_chat_completion_walks_fallback_model_after_429(self) -> None:
         calls: list[dict[str, Any]] = []

@@ -457,17 +457,21 @@ class TestGraphClient(MetaTestCase):
         self.assertFalse(any("fields=instagram_business_account" in u for _m, u, _b in self.graph.calls))
 
     def test_http_error_becomes_meta_error_with_status(self) -> None:
-        self.graph.queue.append(_http_error(401))
+        unauthorized = _http_error(401)
+        self.graph.queue.append(unauthorized)
         with self.assertRaises(board_meta.MetaError) as caught:
             board_meta.graph("GET", "me")
         self.assertEqual(caught.exception.status, 401)
         self.assertIn("401", str(caught.exception))
         self.assertIn("bad token", str(caught.exception))
+        self.assertTrue(unauthorized.fp.closed)
         # Through a tool op the error is a structured tool failure, not a crash.
-        self.graph.queue.append(_http_error(500, "upstream"))
+        upstream = _http_error(500, "upstream")
+        self.graph.queue.append(upstream)
         out = execute_call(self._ctx("cmo"), REGISTRY["meta_page_insights"], {})
         self.assertEqual(out.status, "error")
         self.assertIn("500", out.result["error"])
+        self.assertTrue(upstream.fp.closed)
 
     def test_graph_pages_follows_after_cursor_and_caps(self) -> None:
         self.graph.queue.extend(

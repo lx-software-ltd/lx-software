@@ -126,8 +126,11 @@ def _http(method: str, url: str, *, headers: dict[str, str], body: bytes | None 
         with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310
             raw = resp.read()
     except urllib.error.HTTPError as exc:
-        raw = exc.read() if exc.fp else b""
-        raise PlacesError(f"Places HTTP {exc.code}: {raw[:200]!r}") from exc
+        try:
+            raw = exc.read() if exc.fp else b""
+            raise PlacesError(f"Places HTTP {exc.code}: {raw[:200]!r}") from exc
+        finally:
+            exc.close()
     if not raw:
         return {}
     try:

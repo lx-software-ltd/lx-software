@@ -146,8 +146,11 @@ def http_get_json(url: str, token: str) -> dict[str, Any]:
         with urlrequest.urlopen(req, timeout=_HTTP_TIMEOUT_SECONDS) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except urlerror.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:300]
-        raise PullHttpError(exc.code, detail) from exc
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")[:300]
+            raise PullHttpError(exc.code, detail) from exc
+        finally:
+            exc.close()
     except urlerror.URLError as exc:
         raise PullHttpError(0, str(exc.reason)) from exc
     if not isinstance(payload, dict):

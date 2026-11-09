@@ -194,10 +194,13 @@ def _fetch_once(url: str, *, max_bytes: int, timeout: int) -> FetchResult:
                 ctype = str(resp.headers.get("Content-Type") or "")
             break
         except urllib.error.HTTPError as exc:
-            raw = exc.read(max_bytes) if exc.fp else b""
-            status = int(exc.code)
-            final = url
-            ctype = str(exc.headers.get("Content-Type") or "") if exc.headers else ""
+            try:
+                raw = exc.read(max_bytes) if exc.fp else b""
+                status = int(exc.code)
+                final = url
+                ctype = str(exc.headers.get("Content-Type") or "") if exc.headers else ""
+            finally:
+                exc.close()
             break
         except urllib.error.URLError as exc:
             reason = exc.reason

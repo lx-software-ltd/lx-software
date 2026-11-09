@@ -865,13 +865,16 @@ def _http(
             status = int(getattr(resp, "status", 200) or 200)
             text = raw.decode("utf-8", errors="replace") if raw else ""
     except urllib.error.HTTPError as exc:
-        err_body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-        headers = getattr(exc, "headers", None)
-        request_id = str(headers.get("x-amzn-RequestId") or "") if headers is not None else ""
-        detail = f"siutindei admin {method} {_safe_url(url)} failed: {exc.code} {err_body[:240]}"
-        if request_id:
-            detail = f"{detail} requestId={request_id}"
-        raise CatalogImportError(detail, request_id=request_id) from exc
+        try:
+            err_body = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
+            headers = getattr(exc, "headers", None)
+            request_id = str(headers.get("x-amzn-RequestId") or "") if headers is not None else ""
+            detail = f"siutindei admin {method} {_safe_url(url)} failed: {exc.code} {err_body[:240]}"
+            if request_id:
+                detail = f"{detail} requestId={request_id}"
+            raise CatalogImportError(detail, request_id=request_id) from exc
+        finally:
+            exc.close()
     except TimeoutError as exc:
         # urlopen(timeout=) raises TimeoutError (OSError), not URLError.
         raise CatalogImportError(
