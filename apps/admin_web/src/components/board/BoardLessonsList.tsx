@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { BoardLesson } from "../../lib/boardModel";
+import { BoardCopyableId } from "./BoardCopyableId";
 
 export type BoardLessonsListProps = {
   readonly lessons: readonly BoardLesson[];
@@ -32,8 +33,11 @@ export function BoardLessonsList({
           <p className="small text-muted mb-0">No lessons yet.</p>
         ) : null}
         {pending.map((lesson) => (
-          <div key={lesson.lessonId} className="border rounded p-2 mb-2">
-            <div className="small text-muted">{lesson.kind} · {lesson.subject || "unscoped"} · {lesson.classKey}</div>
+          <div key={lesson.lessonId} id={`board-lesson-${lesson.lessonId}`} className="border rounded p-2 mb-2">
+            <div className="small text-muted d-flex flex-wrap align-items-center gap-2">
+              <BoardCopyableId id={lesson.lessonId} noun="Lesson" full />
+              <span>{lesson.kind} · {lesson.subject || "unscoped"} · {lesson.classKey}</span>
+            </div>
             <div className="small">{lesson.what}</div>
             {editId === lesson.lessonId ? (
               <textarea className="form-control form-control-sm mt-2" rows={2} value={draft} onChange={(ev) => setDraft(ev.target.value)} />
@@ -73,7 +77,9 @@ export function BoardLessonsList({
             <summary className="small">Confirmed ({confirmed.length})</summary>
             <ul className="small mb-0 mt-2">
               {confirmed.map((lesson) => (
-                <li key={lesson.lessonId}>{lesson.instruction}</li>
+                <li key={lesson.lessonId}>
+                  <BoardCopyableId id={lesson.lessonId} noun="Lesson" compact /> {lesson.instruction}
+                </li>
               ))}
             </ul>
           </details>
