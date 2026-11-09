@@ -242,6 +242,12 @@ export class AuroraDataApiSetup extends Construct {
           sqlHash,
         },
       });
+      // CDK renders ServiceTimeout as a string and CloudFormation coerces it;
+      // overriding it to a number would send the schema Lambda an Update.
+      cdk.Validations.of(schema).acknowledge({
+        id: "CloudFormation-Validate::W9003",
+        reason: "aws-cdk-lib CustomResource renders ServiceTimeout as a string.",
+      });
       schema.node.addDependency(enableHttp);
       schema.node.addDependency(describeSecret);
     }
