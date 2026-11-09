@@ -1,7 +1,13 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import type { BoardTask, BoardTaskDetailPayload } from "../../lib/boardModel";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { BoardTask, BoardTaskDetailPayload, BoardToolCallLogEntry } from "../../lib/boardModel";
 import { BoardTaskDrawer } from "./BoardTaskDrawer";
+
+const loggedCalls = vi.hoisted(() => ({ current: [] as BoardToolCallLogEntry[] }));
+
+vi.mock("../../hooks/useBoardTools", () => ({
+  useBoardToolCalls: () => ({ data: loggedCalls.current }),
+}));
 
 const catalogTask: BoardTask = {
   taskId: "task-catalog",
@@ -46,6 +52,10 @@ const detail: BoardTaskDetailPayload = {
 };
 
 describe("BoardTaskDrawer catalog import", () => {
+  beforeEach(() => {
+    loggedCalls.current = [];
+  });
+
   it("shows preview and disables Import while the kill switch is off", () => {
     const onPreview = vi.fn();
     const onImport = vi.fn();
@@ -258,5 +268,46 @@ describe("BoardTaskDrawer catalog import", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Re-import failed rows" }));
     expect(onReimport).toHaveBeenCalledWith("task-catalog");
+  });
+
+  it("shows the finished JSON under the step title", () => {
+    loggedCalls.current = [
+      {
+        callId: "call-finish",
+        op: "task_finish",
+        toolId: "task",
+        toolLabel: "Task",
+        kind: "write",
+        status: "ok",
+        summary: "Finished the task",
+        durationMs: 12,
+        personaId: "content-marketer",
+        displayName: "Mei",
+        actor: "persona",
+        level: "act",
+        arguments: {
+          deliverableType: "json",
+          deliverable: JSON.stringify({ district: "Eastern", organisations: [{ name_en: "Quarry Bay Park" }] }),
+        },
+        resultPreview: JSON.stringify({ ok: true, deliverableKey: "board/executive/staff/t/deliverable.json" }),
+        context: { kind: "task" },
+        createdAt: "2026-11-08T01:30:00Z",
+      },
+    ];
+    render(
+      <BoardTaskDrawer
+        detail={{
+          ...detail,
+          steps: [{ seq: 1, plan: "Write the sheet.", callIds: ["call-finish"], at: "2026-11-08T01:30:00Z" }],
+        }}
+        isLoading={false}
+        isMutating={false}
+        onClose={() => undefined}
+        onCancel={() => undefined}
+        onReview={() => undefined}
+      />,
+    );
+    const step = screen.getByText("Finished the task").closest("li");
+    expect(step?.querySelector(".board-finish-preview")).toHaveTextContent("Quarry Bay Park");
   });
 });

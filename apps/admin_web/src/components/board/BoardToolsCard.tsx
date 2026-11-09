@@ -2,7 +2,6 @@ import { useState } from "react";
 import { AdminEditorSection, DateTimeDisplay } from "../ui";
 import { BoardToolCallList } from "./BoardToolCallList";
 import {
-  taskFinishJsonPreview,
   effectiveToolLevel,
   formatUsageCost,
   levelsUpTo,
@@ -470,7 +469,7 @@ export function BoardToolsCard({
                   <span>{c.context.kind === "meeting" ? "meeting" : c.actor === "owner" ? "approved by you" : "chat"}</span>
                   <span>{c.durationMs} ms</span>
                 </div>
-                <BoardToolCallList calls={[{ ...c, preview: taskFinishJsonPreview(c.op, c.arguments) || undefined }]} />
+                <BoardToolCallList calls={[c]} />
                 {c.resultPreview ? (
                   <details className="mt-1">
                     <summary className="text-muted">result</summary>

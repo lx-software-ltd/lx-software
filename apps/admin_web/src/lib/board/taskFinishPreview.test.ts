@@ -22,6 +22,8 @@ describe("taskFinishJsonPreview", () => {
     );
     expect(preview).toContain("[truncated,");
     expect(preview.length).toBeLessThan(280);
+    const head = preview.split("\n… [truncated,")[0] ?? "";
+    expect(() => JSON.parse(head)).not.toThrow();
   });
 
   it("prefers the server preview on a review row", () => {

@@ -105,7 +105,7 @@ function SampleRowContext({ row }: { readonly row: BoardReviewSample }) {
         {row.createdAt ? <DateTimeDisplay iso={row.createdAt} className="text-muted" /> : null}
       </div>
       {delivered ? (
-        <pre className="small bg-body-tertiary rounded p-2 mt-1 mb-0 board-tool-result board-finish-preview">{delivered}</pre>
+        <pre className="small bg-light border rounded p-2 mt-1 mb-0 board-finish-preview">{delivered}</pre>
       ) : null}
       {taskId ? (
         <div className="small mt-1">

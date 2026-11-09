@@ -85,13 +85,16 @@ class FinishPreviewTests(BoardTestCase):
         self.assertIn("Quarry Bay Park Playground", preview)
         self.assertNotIn("deliverableKey", preview)
         self.assertEqual(rows["call-md"]["deliverablePreview"], "")
-        self.assertIn("[truncated,", rows["call-huge"]["deliverablePreview"])
-        self.assertLess(len(rows["call-huge"]["deliverablePreview"]), 2000)
+        huge_preview = rows["call-huge"]["deliverablePreview"]
+        head, sep, _tail = huge_preview.rpartition("\n… [truncated,")
+        self.assertTrue(sep)
+        json.loads(head)
+        self.assertLess(len(huge_preview), 2000)
         line = board_review_sample.digest_line(rows["call-json"])
         self.assertIn("Finished the task", line)
         self.assertNotIn("Quarry Bay Park Playground", line)
 
-    def test_today_read_overlays_the_preview_without_writing_the_snapshot(self) -> None:
+    def test_today_read_keeps_the_stored_sample_and_adds_the_preview(self) -> None:
         created = self._yesterday()
         board_store.add_tool_call(
             self.table,
@@ -107,12 +110,89 @@ class FinishPreviewTests(BoardTestCase):
                 "displayName": "Mei",
             },
         )
+        board_store.add_tool_call(
+            self.table,
+            {
+                "callId": "call-newer",
+                "op": "task_finish",
+                "toolId": "task",
+                "status": "ok",
+                "summary": "Finished the task",
+                "createdAt": created,
+                "arguments": {"deliverableType": "json", "deliverable": '{"district":"Wan Chai"}'},
+                "personaId": "content-marketer",
+            },
+        )
         today = board_hk.today_hkt()
-        board_store.put_review_snapshot(self.table, today, {"date": today, "sample": [], "digestHtml": "stored"})
+        stored_sample = [
+            {
+                "callId": "call-json",
+                "op": "task_finish",
+                "summary": "Finished the task",
+                "createdAt": created,
+            },
+            {
+                "callId": "call-kept",
+                "op": "mail_reply",
+                "summary": "Sent the note",
+                "createdAt": created,
+            },
+        ]
+        board_store.put_review_snapshot(
+            self.table, today, {"date": today, "sample": stored_sample, "digestHtml": "stored"}
+        )
         status, body = self.call("/siu-tin-dei/board/review")
         self.assertEqual(status, 200)
-        rows = {row["callId"]: row for row in body["review"]["sample"]}
-        self.assertIn('"district": "Eastern"', rows["call-json"]["deliverablePreview"])
+        rows = body["review"]["sample"]
+        self.assertEqual([row["callId"] for row in rows], ["call-json", "call-kept"])
+        self.assertIn('"district": "Eastern"', rows[0]["deliverablePreview"])
+        self.assertNotIn("call-newer", [row["callId"] for row in rows])
+        self.assertNotIn("Eastern", body["review"].get("digestHtml") or "")
         stored = board_store.get_review_snapshot(self.table, today)
-        self.assertEqual(stored["sample"], [])
+        self.assertEqual(stored["sample"], stored_sample)
         self.assertEqual(stored["digestHtml"], "stored")
+
+    def test_enrich_keeps_a_row_when_the_call_is_gone(self) -> None:
+        review = {
+            "date": "2026-11-09",
+            "sample": [
+                {
+                    "callId": "missing",
+                    "op": "task_finish",
+                    "createdAt": "2026-11-08T01:00:00Z",
+                    "summary": "Finished the task",
+                }
+            ],
+        }
+        self.assertEqual(board_review_sample.enrich_stored_sample(self.table, review)["sample"], review["sample"])
+
+    def test_chat_tool_call_carries_the_json_preview(self) -> None:
+        from board_tools_core import ToolOp, ToolOutcome
+
+        op = ToolOp(
+            name="task_finish",
+            tool_id="task",
+            kind="write",
+            description="",
+            parameters={},
+            run=lambda _ctx, _args: {},
+            summarize=lambda _args: "",
+        )
+        outcome = ToolOutcome(status="ok", result={"ok": True, "deliverableKey": "k"}, summary="Finished the task")
+        shown = outcome.public_with_preview(op, {"deliverableType": "json", "deliverable": '{"district":"Eastern"}'})
+        self.assertIn('"district": "Eastern"', shown["deliverablePreview"])
+        self.assertNotIn("deliverableKey", shown["deliverablePreview"])
+        self.assertNotIn("deliverablePreview", outcome.public(op))
+        other = ToolOp(
+            name="mail_reply",
+            tool_id="mail",
+            kind="write",
+            description="",
+            parameters={},
+            run=lambda _ctx, _args: {},
+            summarize=lambda _args: "",
+        )
+        self.assertNotIn(
+            "deliverablePreview",
+            outcome.public_with_preview(other, {"deliverableType": "json", "deliverable": "{}"}),
+        )

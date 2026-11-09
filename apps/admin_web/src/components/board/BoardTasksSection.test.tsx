@@ -112,6 +112,10 @@ vi.mock("../../hooks/useBoardTasks", () => ({
   useBoardTask: () => ({ data: undefined, isLoading: false, error: null }),
 }));
 
+vi.mock("../../hooks/useBoardTools", () => ({
+  useBoardToolCalls: () => ({ data: [] }),
+}));
+
 function renderSection(ui: ReactElement = <BoardTasksSection />) {
   return render(<MemoryRouter>{ui}</MemoryRouter>);
 }

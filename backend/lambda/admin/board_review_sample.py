@@ -31,6 +31,85 @@ def _json_preview(value: Any, limit: int) -> str:
     return text[: limit - 40].rstrip() + f" … [truncated, {len(text)} chars]"
 
 
+def _pretty_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2)
+
+
+def _shrink_json(value: Any, budget: int, depth: int = 0) -> Any:
+    """Drop whole keys and items so the pretty form stays within ``budget``."""
+    if depth > 8:
+        return "…"
+    if len(_pretty_json(value)) <= budget:
+        return value
+    if isinstance(value, dict):
+        kept: dict[str, Any] = {}
+        for key, item in value.items():
+            trial = {**kept, key: item}
+            if len(_pretty_json(trial)) <= budget:
+                kept[key] = item
+                continue
+            if isinstance(item, (dict, list, str)):
+                shrunk = _shrink_json(item, max(20, budget - len(_pretty_json(kept)) - len(str(key)) - 8), depth + 1)
+                trial = {**kept, key: shrunk}
+                if shrunk != item and len(_pretty_json(trial)) <= budget:
+                    kept[key] = shrunk
+            break
+        return kept
+    if isinstance(value, list):
+        kept_items: list[Any] = []
+        for item in value:
+            trial_list = [*kept_items, item]
+            if len(_pretty_json(trial_list)) <= budget:
+                kept_items.append(item)
+                continue
+            if isinstance(item, (dict, list, str)):
+                shrunk = _shrink_json(item, max(20, budget // 2), depth + 1)
+                trial_list = [*kept_items, shrunk]
+                if shrunk != item and len(_pretty_json(trial_list)) <= budget:
+                    kept_items.append(shrunk)
+            break
+        return kept_items
+    if isinstance(value, str):
+        lo, hi, best = 0, len(value), ""
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            candidate = value[:mid] + "…"
+            if len(json.dumps(candidate, ensure_ascii=False)) <= budget:
+                best = candidate
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        return best
+    return value
+
+
+def _bounded_pretty(value: Any, limit: int) -> str:
+    """Pretty JSON that still parses, with a truncation line when the body was shortened."""
+    full = _pretty_json(value)
+    if len(full) <= limit:
+        return full
+    note = f"\n… [truncated, {len(full)} chars]"
+    budget = max(20, limit - len(note))
+    body = _pretty_json(_shrink_json(value, budget))
+    for _ in range(6):
+        if len(body) + len(note) <= limit:
+            break
+        budget = max(20, int(budget * 0.7))
+        body = _pretty_json(_shrink_json(value, budget))
+    return body + note
+
+
+def _clip_text(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    note = f"\n… [truncated, {len(text)} chars]"
+    cut = text[: max(0, limit - len(note))]
+    newline = cut.rfind("\n")
+    if newline >= len(cut) // 2:
+        cut = cut[:newline]
+    return cut.rstrip() + note
+
+
 def _deliverable_preview(call: dict[str, Any]) -> str:
     """Pretty JSON body from a task_finish call. The result key is not the preview."""
     if str(call.get("op") or "") != "task_finish":
@@ -52,27 +131,52 @@ def _deliverable_preview(call: dict[str, Any]) -> str:
     if not looks_json:
         return ""
     try:
-        text = json.dumps(json.loads(text), ensure_ascii=False, indent=2)
+        parsed = json.loads(text)
     except (json.JSONDecodeError, TypeError, ValueError):
         if dtype not in ("json", "messages"):
             return ""
-    return _json_preview(text, DELIVERABLE_PREVIEW_LIMIT)
+        return _clip_text(text, DELIVERABLE_PREVIEW_LIMIT)
+    return _bounded_pretty(parsed, DELIVERABLE_PREVIEW_LIMIT)
 
 
-def overlay(table: Any, review: dict[str, Any]) -> dict[str, Any]:
-    """Fresh sample for today's on-screen review. The stored snapshot is not written."""
+def _stored_call(table: Any, created_at: str, call_id: str) -> dict[str, Any] | None:
+    """One audit row. The sort key is known, so this does not scan the newest calls."""
+    if not created_at or not call_id:
+        return None
+    try:
+        res = table.get_item(Key={"pk": board_store.board_pk("toolcalls"), "sk": f"CALL#{created_at}#{call_id}"})
+    except Exception:
+        return None
+    item = res.get("Item") if isinstance(res, dict) else None
+    if not isinstance(item, dict):
+        return None
+    doc = board_store._from_ddb_nested(board_store._strip_keys(item))
+    return doc if isinstance(doc, dict) else None
+
+
+def enrich_stored_sample(table: Any, review: dict[str, Any]) -> dict[str, Any]:
+    """Fill JSON previews on the rows already stored. Membership and order stay put."""
     if not isinstance(review, dict):
         return review
-    date_hkt = str(review.get("date") or "")
-    if not date_hkt:
+    sample = review.get("sample")
+    if not isinstance(sample, list) or not sample:
         return review
-    try:
-        import board_review
-
-        sample = board_review._sample(table, board_store.load_settings(table), date_hkt)
-    except Exception:
+    rows: list[Any] = []
+    changed = False
+    for row in sample:
+        if not isinstance(row, dict) or str(row.get("op") or "") != "task_finish":
+            rows.append(row)
+            continue
+        call = _stored_call(table, str(row.get("createdAt") or ""), str(row.get("callId") or ""))
+        preview = _deliverable_preview(call) if call else ""
+        if not preview or preview == str(row.get("deliverablePreview") or ""):
+            rows.append(row)
+            continue
+        rows.append({**row, "deliverablePreview": preview})
+        changed = True
+    if not changed:
         return review
-    return {**review, "sample": sample}
+    return {**review, "sample": rows}
 
 
 def _task_context(table: Any, cache: dict[str, dict[str, Any] | None], task_id: str) -> dict[str, Any] | None:

@@ -15,6 +15,7 @@ import {
   boardChangesFixture,
   boardOutreachStatsFixture,
 } from "../fixtures";
+import { boardToolCallsFixture } from "../boardReviewSampleFixture";
 import {
   countsFromTasks,
   json,
@@ -127,10 +128,8 @@ export function handleB6(ctx: MockCtx): Response | null {
 }
 
 export function handleB7(ctx: MockCtx): Response | null {
-  const p = ctx.path;
-  const board = "/siu-tin-dei/board";
-  if (!(p === `${board}/tools/calls`)) return null;
-  return json({ calls: [] });
+  if (ctx.path !== "/siu-tin-dei/board/tools/calls") return null;
+  return json({ calls: boardToolCallsFixture });
 }
 
 export function handleB8(ctx: MockCtx): Response | null {
