@@ -110,8 +110,8 @@ export function defineAdminOutputs(
     const suffix = mailbox.ownerKey.replace(/[^a-zA-Z0-9]/g, "");
     const displayHint =
       mailbox.lineTypeOnly === "expenditure"
-        ? `Expense PDF inbox for "${mailbox.displayLabel}"`
-        : `Statement PDF inbox for "${mailbox.displayLabel}"`;
+        ? `Expense statement inbox for "${mailbox.displayLabel}"`
+        : `Statement inbox for "${mailbox.displayLabel}"`;
     const forwardHint =
       mailbox.localPart === "billing"
         ? " Forward billing@lx-software.com (iCloud) here."

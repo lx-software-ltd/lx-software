@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
@@ -75,6 +75,10 @@ describe("Resume list", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Contoso was saved but could not be read. No model is configured.",
     );
-    expect(screen.queryByLabelText("Title")).toBeNull();
+    // Closing the row updates the URL inside a transition, so it can land
+    // one paint after the alert.
+    await waitFor(() => {
+      expect(screen.queryByLabelText("Title")).toBeNull();
+    });
   });
 });

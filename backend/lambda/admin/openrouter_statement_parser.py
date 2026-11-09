@@ -1,7 +1,8 @@
 """OpenRouter statement parser.
 
 Calls the OpenRouter Chat Completions API to extract finance statement
-transactions from a PDF (or image / text) attachment stored in S3.
+transactions from a PDF, an image, or text stored in S3. Inbound mail
+without a PDF stores the message body as that text.
 
 Mirrors the design used in github.com/lcacchiani/evolvesprouts'
 ``openrouter_expense_parser.py`` but is purpose-built for the LX Software
@@ -69,10 +70,7 @@ def parse_statement_from_asset(
     messages = [
         {
             "role": "system",
-            "content": (
-                "You extract finance statement lines from documents and "
-                "return strict JSON only."
-            ),
+            "content": ("You extract finance statement lines from documents and return strict JSON only."),
         },
         {"role": "user", "content": user_content},
     ]
@@ -94,7 +92,9 @@ def parse_statement_from_asset(
         temperature=0,
         plugins=plugins,
         include_usage=True,
-        deny_data_collection=False,
+        # PDF parsing keeps the file-parser route. Text and images, including
+        # an email body, must not be retained by the provider.
+        deny_data_collection=not asset_payload["is_pdf"],
         max_retries=0,
         service=openrouter_client.SERVICE_STATEMENT_PARSER,
         owner=owner,
@@ -121,9 +121,7 @@ def _download_attachment(
     body = response["Body"].read()
     max_bytes = _max_file_bytes()
     if len(body) > max_bytes:
-        raise RuntimeError(
-            f"Attachment exceeds parser size limit ({len(body)} > {max_bytes} bytes)"
-        )
+        raise RuntimeError(f"Attachment exceeds parser size limit ({len(body)} > {max_bytes} bytes)")
 
     normalized_type = _normalize_content_type(content_type, file_name)
     name = file_name or "statement"
@@ -385,8 +383,10 @@ def _schema_prompt(default_currency: str) -> str:
     fb = _coerce_currency(default_currency, fallback="HKD")
     allowed = ", ".join(_SUPPORTED_CURRENCIES)
     return (
-        "Extract every transaction from the attached finance / bank statement "
-        "and return strict JSON only matching this shape: "
+        "Extract every transaction from the attached finance document. "
+        "The document may be a bank or card statement, an invoice, a receipt "
+        "image, or the plain text of an email that lists charges or payments. "
+        "Return strict JSON only matching this shape: "
         '{"lines": [{"dateUtc":"YYYY-MM-DDTHH:MM:SS.000Z", '
         '"type":"income|expenditure|mortgage", "description":"string", '
         '"netAmount":number, "vat":number, "grossAmount":number, '
@@ -404,9 +404,13 @@ def _schema_prompt(default_currency: str) -> str:
         "grossAmount. Otherwise netAmount + vat must equal grossAmount. "
         f"(4) currency is one of: {allowed}. Use the document's currency "
         f"when shown, otherwise default to {fb}. "
-        "(5) Do not invent transactions. If the document is empty return "
+        "(5) When itemised charges and a total are both shown, return only "
+        "the itemised charges. Do not add the total, balance, or amount due "
+        "as its own line. When the document shows only a total, return that "
+        "one line. "
+        "(6) Do not invent transactions. If the document is empty return "
         '{"lines": []}. '
-        "(6) No markdown, no prose, no comments — JSON only."
+        "(7) No markdown, no prose, no comments — JSON only."
     )
 
 
