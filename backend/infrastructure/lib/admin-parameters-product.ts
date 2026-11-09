@@ -22,6 +22,7 @@ export function defineProductParameters(scope: cdk.Stack) {
     "SiutindeiDbSecretArn",
     {
       type: "String",
+      noEcho: true,
       default: "",
       description:
         "Secrets Manager ARN of the siutindei DB credentials used by the RDS Data API. Leave blank to resolve SiutindeiDbSecretName.",
@@ -32,6 +33,7 @@ export function defineProductParameters(scope: cdk.Stack) {
     "SiutindeiDbSecretName",
     {
       type: "String",
+      noEcho: true,
       default: SIUTINDEI_DB_SECRET_NAME_DEFAULT,
       description:
         "Secrets Manager name of the siutindei DB credentials when SiutindeiDbSecretArn is blank (RDS-owned; do not recreate).",
@@ -52,6 +54,7 @@ export function defineProductParameters(scope: cdk.Stack) {
     "EvolvesproutsDbSecretArn",
     {
       type: "String",
+      noEcho: true,
       default: "",
       description:
         "Secrets Manager ARN of a read-only Evolve Sprouts DB user. Leave blank to resolve EvolvesproutsDbSecretName. Do not point this at the cluster master secret.",
@@ -62,6 +65,7 @@ export function defineProductParameters(scope: cdk.Stack) {
     "EvolvesproutsDbSecretName",
     {
       type: "String",
+      noEcho: true,
       default: "",
       description:
         "Secrets Manager name of a read-only Evolve Sprouts DB user when EvolvesproutsDbSecretArn is blank. Leave blank until that user exists. Do not use the cluster master name (evolvesprouts-database-credentials).",

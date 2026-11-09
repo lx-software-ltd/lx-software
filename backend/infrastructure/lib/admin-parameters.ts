@@ -87,6 +87,7 @@ export function defineAdminParameters(scope: cdk.Stack) {
     "OpenRouterApiKeySecretArn",
     {
       type: "String",
+      noEcho: true,
       default: "",
       description:
         "ARN of the AWS Secrets Manager secret holding OpenRouter API keys. JSON object with named inference keys (statement-parser, executive-board, linkedin, resume) plus management (Management API key) so sibling spend can be pulled. Sibling products keep their own named inference keys. Leave blank to disable those features.",

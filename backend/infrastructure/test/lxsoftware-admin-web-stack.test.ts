@@ -1,6 +1,5 @@
 import * as cdk from "aws-cdk-lib";
 import { Template } from "aws-cdk-lib/assertions";
-import * as s3 from "aws-cdk-lib/aws-s3";
 import { LxsoftwareAdminWebStack } from "../lib/lxsoftware-admin-web-stack";
 
 type Statement = {
@@ -13,15 +12,12 @@ type Statement = {
 
 type BucketPolicyResource = {
   Properties: { Bucket: unknown; PolicyDocument: { Statement: Statement[] } };
-  DeletionPolicy?: string;
-  DependsOn?: string[];
 };
 
 describe("LxsoftwareAdminWebStack bucket policy", () => {
   let policies: Record<string, BucketPolicyResource>;
   let bucketLogicalId: string;
   let ownPolicyId: string;
-  let legacyPolicyId: string;
 
   beforeAll(() => {
     const app = new cdk.App({
@@ -37,13 +33,10 @@ describe("LxsoftwareAdminWebStack bucket policy", () => {
       "AWS::S3::BucketPolicy",
     ) as Record<string, BucketPolicyResource>;
 
-    const logicalId = (construct: cdk.IResource | s3.BucketPolicy) =>
+    const logicalId = (construct: cdk.IResource) =>
       stack.getLogicalId(construct.node.defaultChild as cdk.CfnElement);
     bucketLogicalId = logicalId(stack.bucket);
     ownPolicyId = logicalId(stack.bucket.policy!);
-    legacyPolicyId = logicalId(
-      stack.node.findChild("AdminWebBucketPolicy") as s3.BucketPolicy,
-    );
   });
 
   function policiesForOriginBucket(): string[] {
@@ -70,20 +63,7 @@ describe("LxsoftwareAdminWebStack bucket policy", () => {
     expect(oacRead?.Condition?.StringEquals?.["AWS:SourceArn"]).toBeDefined();
   });
 
-  test("the legacy duplicate is retained so its later removal never calls DeleteBucketPolicy", () => {
-    const legacy = policies[legacyPolicyId];
-    expect(legacy.DeletionPolicy).toBe("Retain");
-    expect(legacy.Properties.PolicyDocument.Statement).toHaveLength(1);
-    expect(legacy.Properties.PolicyDocument.Statement[0].Sid).toBe(
-      "AllowCloudFrontServicePrincipalReadOnly",
-    );
-  });
-
-  test("the complete policy is applied after the legacy one", () => {
-    expect(policies[ownPolicyId].DependsOn).toContain(legacyPolicyId);
-  });
-
   test("no other policy targets the origin bucket", () => {
-    expect(policiesForOriginBucket()).toEqual([ownPolicyId, legacyPolicyId].sort());
+    expect(policiesForOriginBucket()).toEqual([ownPolicyId]);
   });
 });

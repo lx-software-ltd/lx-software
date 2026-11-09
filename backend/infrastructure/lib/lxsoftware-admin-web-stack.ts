@@ -2,7 +2,6 @@ import * as cdk from "aws-cdk-lib";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
-import * as iam from "aws-cdk-lib/aws-iam";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import type { Construct } from "constructs";
 import { ADMIN_WEB_HOSTNAME } from "./shared-contracts";
@@ -226,11 +225,12 @@ export class LxsoftwareAdminWebStack extends cdk.Stack {
     );
 
     // The bucket's own policy (`AdminWebBucket/Policy`, created by
-    // `enforceSSL`) already carries the OAC read grant that
-    // `S3BucketOrigin.withOriginAccessControl` adds for an owned bucket:
-    // statement 0 is the `aws:SecureTransport` deny, statement 1 is the
-    // CloudFront `s3:GetObject` allow. Naming that statement forces one
-    // PutBucketPolicy of the complete document on the next deploy.
+    // `enforceSSL`) is the only policy on the origin bucket and carries the
+    // OAC read grant that `S3BucketOrigin.withOriginAccessControl` adds for
+    // an owned bucket: statement 0 is the `aws:SecureTransport` deny,
+    // statement 1 is the CloudFront `s3:GetObject` allow. S3 keeps one policy
+    // per bucket, so a second AWS::S3::BucketPolicy here would race with it;
+    // see docs/deployment/admin-website.md ("Admin web bucket policy").
     const bucketOwnPolicy = this.bucket.policy;
     if (!bucketOwnPolicy) {
       throw new Error("AdminWebBucket has no bucket policy; enforceSSL must stay on");
@@ -241,48 +241,6 @@ export class LxsoftwareAdminWebStack extends cdk.Stack {
       "PolicyDocument.Statement.1.Sid",
       "AllowCloudFrontServicePrincipalReadOnly"
     );
-
-    // Legacy duplicate of that OAC grant. A bucket holds one policy, so two
-    // AWS::S3::BucketPolicy resources on the same bucket race: whichever
-    // CloudFormation applied last was the live policy, and the other one's
-    // statements (here the HTTPS-only deny) were silently dropped.
-    //
-    // Deleting an AWS::S3::BucketPolicy calls DeleteBucketPolicy, which would
-    // wipe the merged policy applied above in the same deploy. Retain it for
-    // one deploy so a later removal is a template-only change; see
-    // docs/deployment/admin-website.md ("Admin web bucket policy").
-    const legacyBucketPolicy = new s3.BucketPolicy(
-      this,
-      "AdminWebBucketPolicy",
-      {
-        bucket: this.bucket,
-        removalPolicy: cdk.RemovalPolicy.RETAIN,
-      }
-    );
-    legacyBucketPolicy.document.addStatements(
-      new iam.PolicyStatement({
-        sid: "AllowCloudFrontServicePrincipalReadOnly",
-        effect: iam.Effect.ALLOW,
-        actions: ["s3:GetObject"],
-        resources: [this.bucket.arnForObjects("*")],
-        principals: [new iam.ServicePrincipal("cloudfront.amazonaws.com")],
-        conditions: {
-          StringEquals: {
-            "AWS:SourceArn": cdk.Arn.format(
-              {
-                service: "cloudfront",
-                resource: "distribution",
-                resourceName: this.distribution.distributionId,
-                region: "",
-              },
-              this
-            ),
-          },
-        },
-      })
-    );
-    // Deploy order: the complete policy must be the last PutBucketPolicy.
-    bucketOwnPolicy.node.addDependency(legacyBucketPolicy);
 
     new cdk.CfnOutput(this, "AdminWebBucketName", {
       value: this.bucket.bucketName,

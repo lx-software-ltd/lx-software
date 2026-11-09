@@ -93,12 +93,11 @@ run:
    Retain`. After this deploy the live policy is the complete one. Confirm
    with `aws s3api get-bucket-policy --bucket <origin bucket>`: both the
    `aws:SecureTransport` deny and the CloudFront allow must be present.
-2. Follow-up: delete the `legacyBucketPolicy` block (and the `DependsOn`) in
-   `backend/infrastructure/lib/lxsoftware-admin-web-stack.ts`, update
-   `test/lxsoftware-admin-web-stack.test.ts` to assert a single policy, and
-   deploy. Retain means CloudFormation drops the resource from the stack
-   without an API call, so the live policy is untouched and the synth
-   warning disappears.
+2. Done: the `legacyBucketPolicy` block and its `DependsOn` are gone, and
+   `test/lxsoftware-admin-web-stack.test.ts` asserts a single policy.
+   Retain means CloudFormation drops the resource from the stack without an
+   API call, so the live policy is untouched and the synth warning
+   (`CloudFormation-Validate::E3019`) is gone.
 
 ## 3. DNS and Google IdP
 

@@ -1143,6 +1143,19 @@ describe("Siu Tin Dei Data API setup", () => {
     expect(template.toJSON().Parameters.SiutindeiDbSecretName).toBeDefined();
   });
 
+  test("Secrets Manager reference parameters are NoEcho", () => {
+    const params = template.toJSON().Parameters;
+    for (const name of [
+      "OpenRouterApiKeySecretArn",
+      "SiutindeiDbSecretArn",
+      "SiutindeiDbSecretName",
+      "EvolvesproutsDbSecretArn",
+      "EvolvesproutsDbSecretName",
+    ]) {
+      expect(params[name].NoEcho).toBe(true);
+    }
+  });
+
   test("enables the HTTP endpoint and applies receivables.sql when the cluster ARN is set", () => {
     const custom = Object.entries(resources).filter(
       ([, r]) =>
