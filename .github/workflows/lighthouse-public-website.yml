@@ -25,7 +25,7 @@ concurrency:
 jobs:
   lighthouse:
     name: Lighthouse audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # The VITE_* build variables live on the production environment, the same
     # ones Deploy Public Website reads, so the audited bundle matches the live site.
     # .lighthouserc.json blocks the GTM / GA4 hosts during the audit: the bundle

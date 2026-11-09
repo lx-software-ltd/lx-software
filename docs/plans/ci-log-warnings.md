@@ -14,10 +14,9 @@ Today's GitHub Actions logs (74 runs, 9 November 2026 Hong Kong) still print two
 
 ## Non-goals
 
-- Pinning `ubuntu-latest`. The runner image is already Ubuntu 26.04. The migration notice is GitHub's, and several workflows that use the label are red-zone.
+- Pinning `ubuntu-latest` and the CodeQL bundle download. Those are `docs/plans/pin-ci-runners.md`.
 - Re-fixing `glob@10.5.0`, npm `allowScripts`, and the admin Node engine warning. Later runs today no longer print them.
-- Dependabot's `ca-certificates.crt` rehash line. It comes from Dependabot's updater, not this repo.
-- CodeQL's one-off bundle 504. The action already falls back and the job succeeded.
+- Dependabot's `rehash` line. It is printed by GitHub's updater image, not this repo.
 
 ## Files
 

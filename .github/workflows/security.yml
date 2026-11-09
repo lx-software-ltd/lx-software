@@ -17,7 +17,7 @@ permissions:
 jobs:
   checkov:
     name: Checkov IaC Security
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -113,7 +113,11 @@ jobs:
 
   codeql:
     name: CodeQL Analysis (${{ matrix.language }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+    # Streaming the bundle returned HTTP 504 and warned, then fell back.
+    # Download the bundle first so init does not attempt the stream.
+    env:
+      CODEQL_ACTION_ZSTD_BUNDLE_STREAMING_EXTRACTION: "false"
     strategy:
       fail-fast: false
       matrix:
@@ -142,7 +146,7 @@ jobs:
 
   pii-denylist:
     name: PII denylist
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -160,7 +164,7 @@ jobs:
 
   secrets-scan:
     name: Secret Scanning
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -197,7 +201,7 @@ jobs:
 
   semgrep:
     name: Semgrep SAST
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     container:
       image: semgrep/semgrep
     steps:
@@ -261,7 +265,7 @@ jobs:
 
   security-summary:
     name: Security Summary
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: [checkov, codeql, pii-denylist, secrets-scan, semgrep]
     if: always()
     steps:
