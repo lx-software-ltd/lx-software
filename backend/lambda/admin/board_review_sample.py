@@ -12,6 +12,7 @@ from contract_constants import BOARD_STAFF_REVIEW_SAMPLE_SIZE
 TEXT_LIMIT = 280
 ARGUMENTS_LIMIT = 1200
 DIGEST_LINE_LIMIT = 320
+DELIVERABLE_PREVIEW_LIMIT = 1600
 
 
 def _clip(text: Any, limit: int) -> str:
@@ -28,6 +29,50 @@ def _json_preview(value: Any, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 40].rstrip() + f" … [truncated, {len(text)} chars]"
+
+
+def _deliverable_preview(call: dict[str, Any]) -> str:
+    """Pretty JSON body from a task_finish call. The result key is not the preview."""
+    if str(call.get("op") or "") != "task_finish":
+        return ""
+    args = call.get("arguments")
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except json.JSONDecodeError:
+            return ""
+    if not isinstance(args, dict):
+        return ""
+    body = args.get("deliverable")
+    if not isinstance(body, str) or not body.strip():
+        return ""
+    dtype = str(args.get("deliverableType") or "")
+    text = body.strip()
+    looks_json = dtype in ("json", "messages") or text[:1] in "{["
+    if not looks_json:
+        return ""
+    try:
+        text = json.dumps(json.loads(text), ensure_ascii=False, indent=2)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        if dtype not in ("json", "messages"):
+            return ""
+    return _json_preview(text, DELIVERABLE_PREVIEW_LIMIT)
+
+
+def overlay(table: Any, review: dict[str, Any]) -> dict[str, Any]:
+    """Fresh sample for today's on-screen review. The stored snapshot is not written."""
+    if not isinstance(review, dict):
+        return review
+    date_hkt = str(review.get("date") or "")
+    if not date_hkt:
+        return review
+    try:
+        import board_review
+
+        sample = board_review._sample(table, board_store.load_settings(table), date_hkt)
+    except Exception:
+        return review
+    return {**review, "sample": sample}
 
 
 def _task_context(table: Any, cache: dict[str, dict[str, Any] | None], task_id: str) -> dict[str, Any] | None:
@@ -71,6 +116,7 @@ def row_from_call(
         "seatId": str(call.get("seatId") or ""),
         "taskId": task_id,
         "arguments": _json_preview(call.get("arguments"), ARGUMENTS_LIMIT),
+        "deliverablePreview": _deliverable_preview(call),
         "task": _task_context(table, cache, task_id),
     }
 

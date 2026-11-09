@@ -32,6 +32,17 @@ describe("BoardSettingsCard", () => {
     fireEvent.change(concurrent, { target: { value: "8" } });
     expect(concurrent).toHaveValue(8);
 
+    const columns = document.querySelectorAll(".row.g-4 > .col-lg-6");
+    expect(columns).toHaveLength(2);
+    expect(columns[0]).toHaveTextContent("Scheduled stand-ups");
+    expect(columns[0]).toHaveTextContent("DMARC");
+    expect(columns[0]).not.toHaveTextContent("Staff and daily review");
+    expect(columns[1]).toHaveTextContent("Models (OpenRouter slugs)");
+    expect(columns[1]).toHaveTextContent("Staff and daily review");
+    expect(columns[1]?.textContent ?? "").toMatch(/Daily budget/);
+    expect(columns[0]?.textContent ?? "").not.toMatch(/Daily budget/);
+    expect(columns[1]).not.toHaveTextContent("Known sender domains");
+
     fireEvent.click(screen.getByRole("button", { name: "Save settings" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({

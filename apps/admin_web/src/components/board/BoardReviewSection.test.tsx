@@ -118,8 +118,9 @@ describe("BoardReviewSection sample of what ran", () => {
         personaId: "content-marketer",
         displayName: "Mei",
         taskId: TASK_ID,
-        arguments: JSON.stringify({ status: "review", deliverable: "# Stanley calendar" }),
-        preview: JSON.stringify({ ok: true, status: "review" }),
+        arguments: JSON.stringify({ status: "review", deliverableType: "json", deliverable: '{"district":"Other"}' }),
+        deliverablePreview: '{\n  "district": "Eastern",\n  "organisations": [{ "name_en": "Quarry Bay Park" }]\n}',
+        preview: JSON.stringify({ ok: true, status: "review", deliverableKey: "board/executive/staff/t/deliverable.json" }),
         task: {
           taskId: TASK_ID,
           assignee: "content-marketer",
@@ -150,8 +151,14 @@ describe("BoardReviewSection sample of what ran", () => {
     expect(sample).toHaveTextContent("Task record is no longer available.");
     const details = sample?.querySelectorAll("details") ?? [];
     expect(details).toHaveLength(1);
-    expect(details[0]).toHaveTextContent('"deliverable": "# Stanley calendar"');
-    expect(details[0]).toHaveTextContent('"ok": true');
+    expect(details[0]).toHaveTextContent('"deliverable": "{\\"district\\":\\"Other\\"}"');
+    expect(details[0]).toHaveTextContent("deliverableKey");
+    const item = screen.getAllByText("Finished the task")[0]?.closest("li");
+    const shown = item?.querySelector(".board-finish-preview");
+    expect(shown).toHaveTextContent("Quarry Bay Park");
+    expect(details[0]?.contains(shown ?? null)).toBe(false);
+    const text = item?.textContent ?? "";
+    expect(text.indexOf("Quarry Bay Park")).toBeGreaterThan(text.indexOf("Finished the task"));
     reviewState.review.sample = [];
   });
 });

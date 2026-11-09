@@ -5,6 +5,7 @@ import { BoardTaskId } from "./BoardTaskId";
 import { BoardToolCallList } from "./BoardToolCallList";
 import { DateTimeDisplay } from "../ui";
 import {
+  prettyJsonText,
   CATALOG_MAX_REVALIDATE_ATTEMPTS,
   canForceCatalogImport,
   canImportCatalogTask,
@@ -333,6 +334,8 @@ function TaskBody({
         <div className="small text-muted text-uppercase mb-1">Deliverable</div>
         {task.deliverableType === "messages" && deliverable ? (
           <MessagesDeliverable text={deliverable} />
+        ) : task.deliverableType === "json" && deliverable ? (
+          <pre className="small bg-body-tertiary rounded p-2 mb-0 board-prewrap board-json-preview">{prettyJsonText(deliverable, 12000)}</pre>
         ) : deliverable ? (
           isCsv && rows.length ? (
             <div className="table-responsive">

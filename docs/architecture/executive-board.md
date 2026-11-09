@@ -266,8 +266,11 @@ The daily budget is re-checked before every round.
   is not opened again.
 - Every call writes a `toolcalls#` row (persona / seat, level, actor,
   arguments, result preview, duration, `taskId`), visible under **Settings
-  → Tools & permissions → Show the tool call log**; transcripts record a
-  `tool` turn before the member's statement.
+  → Tools & permissions → Show the tool call log**. A `task_finish` row
+  titled "Finished the task" also shows a preview of a JSON deliverable
+  under that title; the result key stays in the result details. The daily
+  review sample does the same. Transcripts record a `tool` turn before the
+  member's statement.
 - `board_pii.Pseudonymizer` masks emails and phones to `contact#N` /
   `phone#N` before text reaches the model and unmasks only in owner-facing
   previews and at execution.

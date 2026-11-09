@@ -62,6 +62,7 @@ describe("BoardTaskDrawer catalog import", () => {
       />,
     );
     expect(screen.getByText("Quarry Bay Park Playground — Outdoor activity / Eastern")).toBeInTheDocument();
+    expect(document.querySelector(".board-json-preview")).toHaveTextContent('"district": "Eastern"');
     expect(screen.getByText(/local dry-run/)).toBeInTheDocument();
     expect(screen.getByText(/import kill switch off/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Preview import" }));

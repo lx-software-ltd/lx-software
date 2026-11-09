@@ -24,6 +24,9 @@ export function BoardToolCallList({ calls, isLive, onOpenApproval, className }: 
               </span>
               <span>{c.summary}</span>
               {c.error ? <span className="text-danger"> — {c.error}</span> : null}
+              {c.preview ? (
+                <pre className="small bg-body-tertiary rounded p-2 mt-1 mb-0 board-tool-result board-finish-preview">{c.preview}</pre>
+              ) : null}
               {c.status === "pending_approval" && c.approvalId && onOpenApproval ? (
                 <>
                   {" "}

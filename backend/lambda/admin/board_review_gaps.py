@@ -34,7 +34,9 @@ def listed_config_gaps(table: Any) -> list[dict[str, Any]] | None:
 def attach_live_config_gaps(table: Any, review: dict[str, Any]) -> dict[str, Any]:
     """On-screen list and digest preview follow the cache. The stored snapshot is not written."""
     import board_review
+    import board_review_sample
 
+    review = board_review_sample.overlay(table, review)
     if not isinstance(review, dict):
         return review
     live = listed_config_gaps(table)

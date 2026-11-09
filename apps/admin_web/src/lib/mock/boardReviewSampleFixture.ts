@@ -24,8 +24,23 @@ export const boardReviewSampleFixture: BoardReviewSample[] = [
     displayName: "Provider success",
     seatId: "provider-success",
     taskId: "task-review",
-    arguments: JSON.stringify({ status: "review", deliverable: "Two warm threads summarised." }),
-    preview: JSON.stringify({ ok: true, status: "review" }),
+    arguments: JSON.stringify({
+      status: "review",
+      deliverableType: "json",
+      deliverable: JSON.stringify({
+        district: "Eastern",
+        organisations: [{ name_en: "Quarry Bay Park Playground", type: "playground" }],
+      }),
+    }),
+    deliverablePreview: JSON.stringify(
+      {
+        district: "Eastern",
+        organisations: [{ name_en: "Quarry Bay Park Playground", type: "playground" }],
+      },
+      null,
+      2,
+    ),
+    preview: JSON.stringify({ ok: true, status: "review", deliverableKey: "board/executive/staff/task-review/deliverable.json" }),
     task: {
       taskId: "task-review",
       assignee: "provider-success",
