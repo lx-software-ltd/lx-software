@@ -416,9 +416,45 @@ class TestGraphClient(MetaTestCase):
     def test_page_insights_default_metric_is_still_served_by_meta(self) -> None:
         board_meta.op_page_insights(self._ctx(), {})
         _m, url, _b = self.graph.calls[-1]
-        self.assertIn("metric=page_impressions%2Cpage_post_engagements", url)
+        # ``page_impressions*`` was retired on 2025-11-15; one retired metric fails the whole request.
+        self.assertIn("metric=page_media_view%2Cpage_total_media_view_unique%2Cpage_post_engagements", url)
+        self.assertNotIn("page_impressions", url)
         self.assertNotIn("page_engaged_users", url)
         self.assertEqual(self.graph.tokens[-1], f"Bearer {PAGE_TOKEN}")
+
+    def test_ig_insights_default_metric_uses_views_and_total_value(self) -> None:
+        out = board_meta.op_ig_insights(self._ctx(), {})
+        _m, url, _b = self.graph.calls[-1]
+        self.assertIn("/ig-1/insights", url)
+        self.assertIn("metric=reach%2Cviews%2Cprofile_views", url)
+        self.assertIn("metric_type=total_value", url)
+        self.assertNotIn("impressions", url)
+        self.assertEqual(out["igUserId"], "ig-1")
+        self.assertNotIn("resolvedFrom", out)
+
+    def test_ig_insights_falls_back_to_the_page_linked_account(self) -> None:
+        rejected = '{"error":{"message":"(#100) Tried accessing nonexisting field (insights)","code":100}}'
+        self.graph.queue.append(_http_error(400, rejected))
+        out = board_meta.op_ig_insights(self._ctx(), {})
+        urls = [url for _m, url, _b in self.graph.calls]
+        self.assertTrue(any("/ig-1/insights" in u for u in urls))
+        self.assertTrue(any("/page-1?fields=instagram_business_account" in u for u in urls))
+        self.assertTrue(any("/17841000000000001/insights" in u for u in urls))
+        self.assertEqual(out["igUserId"], "17841000000000001")
+        self.assertEqual(out["resolvedFrom"], "page")
+        self.assertEqual(out["configuredIgUserId"], "ig-1")
+        # The linked id is cached, so a second rejected read costs one lookup, not two.
+        self.graph.queue.append(_http_error(400, rejected))
+        board_meta.op_ig_insights(self._ctx(), {})
+        lookups = [u for _m, u, _b in self.graph.calls if "fields=instagram_business_account" in u]
+        self.assertEqual(len(lookups), 1)
+
+    def test_ig_insights_reraises_other_errors_without_lookup(self) -> None:
+        self.graph.queue.append(_http_error(400, '{"error":{"message":"(#100) The value must be a valid insights metric","code":100}}'))
+        with self.assertRaises(board_meta.MetaError) as caught:
+            board_meta.op_ig_insights(self._ctx(), {"metric": "impressions"})
+        self.assertIn("valid insights metric", str(caught.exception))
+        self.assertFalse(any("fields=instagram_business_account" in u for _m, u, _b in self.graph.calls))
 
     def test_http_error_becomes_meta_error_with_status(self) -> None:
         self.graph.queue.append(_http_error(401))

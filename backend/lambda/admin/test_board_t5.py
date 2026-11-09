@@ -72,6 +72,8 @@ class FakeGraph:
             }
         elif "fields=whatsapp_business_account" in url or "whatsapp_business_account" in url:
             payload = {"whatsapp_business_account": {"id": "waba-1"}}
+        elif "fields=instagram_business_account" in url:
+            payload = {"id": "page-1", "instagram_business_account": {"id": "17841000000000001"}}
         elif "/feed" in url and method == "GET":
             payload = {
                 "data": [

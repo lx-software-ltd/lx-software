@@ -1,4 +1,4 @@
-"""Meta token caches: System User secret, app secret, and Page-token exchange.
+"""Meta token caches: System User secret, app secret, Page-token exchange, Page-linked IG id.
 
 ``graph()`` lives in ``board_meta`` so existing ``_urlopen`` patches keep
 working. This module is imported by ``board_meta``; ``page_token`` lazy-imports
@@ -19,11 +19,13 @@ _token_checked = False
 _app_secret_cache: str | None = None
 _app_secret_checked = False
 _page_token_cache: dict[str, str] = {}
+_linked_ig_cache: dict[str, str] = {}
 
 
 def reset_caches() -> None:
     global _token_cache, _token_checked, _app_secret_cache, _app_secret_checked
     _page_token_cache.clear()
+    _linked_ig_cache.clear()
     _token_cache = None
     _token_checked = False
     _app_secret_cache = None
@@ -96,6 +98,36 @@ def page_token(pid: str) -> str:
         return ""
     _page_token_cache[pid] = token
     return token
+
+
+def linked_ig_user_id() -> str:
+    """Instagram professional-account id linked to the Page, or "" when none is linked.
+
+    ``META_IG_USER_ID`` is typed by hand; when Meta answers "nonexisting field
+    (insights)" the configured id is not an IG node for this token. The Page
+    knows its own linked account (``instagram_business_account``), so the
+    caller can retry with that id and the owner can correct the parameter later.
+    """
+    import board_meta
+
+    pid = board_meta.page_id()
+    if not pid:
+        return ""
+    cached = _linked_ig_cache.get(pid)
+    if cached:
+        return cached
+    try:
+        data = board_meta.graph("GET", pid, params={"fields": "instagram_business_account"})
+    except board_meta.MetaError as exc:
+        _log_event("warning", tag="board_meta_linked_ig_failed", page=pid, error=str(exc)[:200])
+        return ""
+    linked = data.get("instagram_business_account") if isinstance(data, dict) else None
+    iid = str((linked or {}).get("id") or "").strip() if isinstance(linked, dict) else ""
+    if not iid:
+        _log_event("warning", tag="board_meta_linked_ig_missing", page=pid)
+        return ""
+    _linked_ig_cache[pid] = iid
+    return iid
 
 
 def token_for(path: str) -> str:
