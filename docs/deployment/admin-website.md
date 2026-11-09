@@ -476,7 +476,7 @@ stack-wide knobs are unprefixed. Lambda env vars stay short
 | `SiutindeiBoardMailSendingEnabled` | `false` (default) / `true`. Flip only after DKIM / SPF / DMARC are in the zone; creates the SES identity and send policy. The Lambda reads `BOARD_MAIL_SENDING_ENABLED` with the shared flag parser (`1`, `true`, `yes`, `on`). |
 | `SiutindeiBoardChatModel` / `MeetingModel` / `DeepDiveModel` | Default OpenRouter slugs (`openai/gpt-4.1-mini`, `openai/gpt-4.1-mini`, `anthropic/claude-sonnet-4`); overridable in **Settings**. They are also sent as `models` fallbacks so a 429 on a cheap primary continues on the defaults. |
 | `SiutindeiBoardCatalogImportEnabled` | `false` (CDK default) / `true`. Kill switch for `catalog_import`; preview and local dry-run work while it is off. Production is `true`. |
-| `SiutindeiAdminApiBaseUrl` / `SiutindeiUserPoolId` / `SiutindeiBoardImporterClientId` / `SiutindeiBoardCatalogManagerId` | siutindei admin API base URL, Cognito user pool and importer app client for the catalog importer user, and the default manager id stamped on imported organisations. Blank until the product side exists. |
+| `SiutindeiAdminApiBaseUrl` / `SiutindeiUserPoolId` / `SiutindeiBoardImporterClientId` / `SiutindeiBoardCatalogManagerId` | siutindei admin API base URL, Cognito user pool and importer app client for the catalog importer user, and the default manager id stamped on imported organisations. Blank until the product side exists. Production sets the base URL to `https://api.siutindei.com/v1`. |
 
 ### Secrets
 
@@ -983,10 +983,11 @@ organisations.
    on `main`. Create the service user in `importer` and put
    `{username, password}` in
    `lxsoftware-admin-siutindei-board-importer-credentials`.
-2. Set `SiutindeiAdminApiBaseUrl`, `SiutindeiUserPoolId`,
-   `SiutindeiBoardImporterClientId` and `SiutindeiBoardCatalogManagerId`
-   (the `SiutindeiBoardImporterAuthPolicy` IAM statement is gated on a
-   non-blank pool id). Production params already carry these.
+2. Set `SiutindeiAdminApiBaseUrl` to `https://api.siutindei.com/v1`,
+   plus `SiutindeiUserPoolId`, `SiutindeiBoardImporterClientId` and
+   `SiutindeiBoardCatalogManagerId` (the `SiutindeiBoardImporterAuthPolicy`
+   IAM statement is gated on a non-blank pool id). Production params
+   already carry these.
 3. **Tasks → In progress** → open a **To import** sheet → **Preview import**. That
    button calls siutindei with `dry_run` (the SPA sends `{remote:true}`;
    the API also defaults to remote). The footer shows **Previewing…**
