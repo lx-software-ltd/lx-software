@@ -5,17 +5,16 @@ from __future__ import annotations
 import html
 import json
 import logging
-import random
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import board_hk
 import board_mail
+import board_review_sample
 import board_staff
 import board_store
 from contract_constants import (
     BOARD_CODE_CI_FIX_MAX_ROUNDS,
-    BOARD_STAFF_REVIEW_SAMPLE_SIZE,
     BOARD_STAFF_TASK_STATUSES,
 )
 from http_common import _log_event
@@ -215,47 +214,8 @@ def _escalations(table: Any) -> list[dict[str, Any]]:
 
 
 def _sample(table: Any, settings: dict[str, Any], date_hkt: str) -> list[dict[str, Any]]:
-    yesterday = _yesterday_hkt(date_hkt)
-    start, end = _hkt_day_bounds(yesterday)
-    size = int((settings.get("review") or {}).get("sampleSize") or BOARD_STAFF_REVIEW_SAMPLE_SIZE)
-    pool: list[dict[str, Any]] = []
-    try:
-        import board_holds
-        import board_tools
-    except Exception:
-        return []
-    for call in board_store.list_tool_calls(table, limit=400):
-        created = str(call.get("createdAt") or "")
-        if created < start or created >= end:
-            continue
-        if call.get("status") != "ok":
-            continue
-        op = board_tools.REGISTRY.get(str(call.get("op") or ""))
-        if op is None or not op.is_write:
-            continue
-        ctx = board_tools.ToolContext(
-            table=table,
-            settings=settings,
-            persona_id=str(call.get("personaId") or ""),
-            display_name=str(call.get("displayName") or ""),
-            kind="review",
-        )
-        action_class, class_key = board_holds.classify(op, ctx, dict(call.get("arguments") or {}), settings)
-        hours = board_holds.hold_hours(table, settings, action_class, class_key)
-        if hours > 0:
-            continue
-        pool.append(
-            {
-                "callId": call.get("callId"),
-                "summary": call.get("summary"),
-                "preview": call.get("resultPreview") or call.get("arguments"),
-                "op": call.get("op"),
-                "classKey": class_key,
-            }
-        )
-    rng = random.Random(date_hkt)
-    rng.shuffle(pool)
-    return pool[: max(1, size)]
+    start, end = _hkt_day_bounds(_yesterday_hkt(date_hkt))
+    return board_review_sample.collect(table, settings, date_hkt, start, end)
 
 
 def _narrative(table: Any, date_hkt: str) -> str:
@@ -508,7 +468,7 @@ def _assisted_line(row: dict[str, Any]) -> str:
 
 
 def _sample_line(row: dict[str, Any]) -> str:
-    return _clip(row.get("summary") or row.get("op") or row.get("callId") or "Action", 200)
+    return board_review_sample.digest_line(row)
 
 
 def _market_lines(review: dict[str, Any]) -> list[str]:

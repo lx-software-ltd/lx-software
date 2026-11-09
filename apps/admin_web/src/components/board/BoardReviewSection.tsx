@@ -1,7 +1,16 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { getAdminApiErrorMessage } from "../../lib/apiAdminClient";
-import { formatUsageCost, type BoardContentItem, type BoardReviewSnapshot } from "../../lib/boardModel";
+import {
+  formatUsageCost,
+  type BoardContentItem,
+  type BoardReviewSample,
+  type BoardReviewSnapshot,
+} from "../../lib/boardModel";
+import { boardTaskHref } from "../../lib/board/urlState";
 import { BoardHoldsList } from "./BoardHoldsList";
+import { BoardTaskId } from "./BoardTaskId";
+import { DateTimeDisplay } from "../ui";
 import { useBoardContent } from "../../hooks/useBoardContent";
 import { useBoardHolds } from "../../hooks/useBoardHolds";
 import { BOARD_CODE_CI_FIX_MAX_ROUNDS } from "../../lib/contracts/generated";
@@ -59,6 +68,73 @@ function AssistedPosts({ items }: { readonly items: readonly BoardContentItem[] 
         <p className="text-muted small mb-0">No assisted packs are due.</p>
       )}
     </Section>
+  );
+}
+
+function previewText(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "";
+  if (typeof value === "string") {
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2);
+    } catch {
+      return value;
+    }
+  }
+  return JSON.stringify(value, null, 2);
+}
+
+function SampleRowContext({ row }: { readonly row: BoardReviewSample }) {
+  const location = useLocation();
+  const actor = row.displayName || row.personaId || "";
+  const task = row.task ?? null;
+  const taskId = task?.taskId || row.taskId || "";
+  const args = previewText(row.arguments);
+  const result = previewText(row.preview);
+  return (
+    <>
+      <div className="d-flex flex-wrap align-items-center gap-2">
+        <span className="fw-semibold">{row.summary || row.op}</span>
+        {row.op ? <code className="small text-muted">{row.op}</code> : null}
+        {actor ? (
+          <span className="small text-muted">
+            <i className="bi bi-person" aria-hidden="true" /> {actor}
+          </span>
+        ) : null}
+        {row.createdAt ? <DateTimeDisplay iso={row.createdAt} className="text-muted" /> : null}
+      </div>
+      {taskId ? (
+        <div className="small mt-1">
+          <div className="d-flex flex-wrap align-items-center gap-2">
+            <Link to={{ search: boardTaskHref(taskId, location.search) }} aria-label={`Open task ${taskId}`}>
+              Open task
+            </Link>
+            <BoardTaskId taskId={taskId} compact />
+            {task?.assignee ? <span className="text-muted">{task.assignee}</span> : null}
+            {task?.status ? <span className="badge text-bg-light border">{task.status}</span> : null}
+          </div>
+          {task?.brief ? <div className="mt-1">{task.brief}</div> : null}
+          {task?.summary ? <div className="text-muted mt-1">Result: {task.summary}</div> : null}
+          {!task ? <div className="text-muted mt-1">Task record is no longer available.</div> : null}
+        </div>
+      ) : null}
+      {args || result ? (
+        <details className="small mt-1">
+          <summary className="text-muted">Details</summary>
+          {args ? (
+            <>
+              <div className="text-muted mt-1">Arguments</div>
+              <pre className="small bg-body-tertiary rounded p-2 mb-1 board-prewrap">{args}</pre>
+            </>
+          ) : null}
+          {result ? (
+            <>
+              <div className="text-muted">Result</div>
+              <pre className="small bg-body-tertiary rounded p-2 mb-0 board-prewrap">{result}</pre>
+            </>
+          ) : null}
+        </details>
+      ) : null}
+    </>
   );
 }
 
@@ -270,7 +346,7 @@ export function BoardReviewSection() {
           <ul className="list-unstyled mb-0">
             {review.sample.map((row) => (
               <li key={row.callId} className="border-bottom py-2">
-                <div>{row.summary || row.op}</div>
+                <SampleRowContext row={row} />
                 {wrongId === row.callId ? (
                   <div className="mt-2">
                     <textarea

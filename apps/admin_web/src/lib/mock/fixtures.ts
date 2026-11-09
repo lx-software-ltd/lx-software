@@ -38,6 +38,7 @@ import type {
 } from "../boardModel";
 import { DEFAULT_BOARD_BOUNDARIES } from "../boardModel";
 import type { OpenRouterUsagePayload } from "../openrouterUsage";
+import { boardReviewSampleFixture } from "./boardReviewSampleFixture";
 import type { AwsBillingPayload } from "../awsBilling";
 import type { FinancePersistedState, HouseFinanceData } from "../financeModel";
 import type { MirroredBookSummary } from "../mirroredBook";
@@ -786,9 +787,7 @@ export const boardReviewFixture: BoardReviewSnapshot = {
   escalations: [
     { taskId: "task-owner", assignee: "accountant", brief: "Reconcile last week's unmatched payments." },
   ],
-  sample: [
-    { callId: "call-mail-1", summary: "Replied to a parent about Saturday swimming", op: "mail_reply" },
-  ],
+  sample: boardReviewSampleFixture,
   breakers: [],
   suggestions: [{ classKey: "publish:facebook", actions: 32, vetoes: 0, rate: 0, eligibleForPromotion: true, shouldDemote: false }],
   assisted: [
