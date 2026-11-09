@@ -18,6 +18,7 @@
   "lxsoftware:SiutindeiBoardCatalogImportEnabled": "true",
   "lxsoftware:SiutindeiBoardMetaPageId": "1454148344440398",
   "lxsoftware:SiutindeiBoardMetaIgUserId": "1291672990695789",
+  "lxsoftware:SiutindeiBoardMetaAdAccountId": "1506380401671545",
   "lxsoftware:EvolvesproutsClusterArn": "arn:aws:rds:ap-southeast-1:588024549699:cluster:evolvesprouts-db-cluster",
   "lxsoftware:EvolvesproutsDbSecretName": "evolvesprouts-db-finance-readonly-credentials",
   "lxsoftware-admin-web:CspCognitoConnectOrigin": "https://auth.lx-software.com"
