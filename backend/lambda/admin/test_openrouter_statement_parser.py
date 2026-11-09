@@ -224,9 +224,7 @@ class TestParseStatementFromAsset(unittest.TestCase):
         s3 = MagicMock()
         s3.get_object.return_value = {"Body": io.BytesIO(b"%PDF-1.4 fake")}
         secrets = MagicMock()
-        secrets.get_secret_value.return_value = {
-            "SecretString": json.dumps({"statement-parser": "sk-test"})
-        }
+        secrets.get_secret_value.return_value = {"SecretString": json.dumps({"statement-parser": "sk-test"})}
 
         captured: dict[str, object] = {}
 
@@ -263,14 +261,17 @@ class TestParseStatementFromAsset(unittest.TestCase):
                 )
             )
 
-        with patch.dict(
-            "os.environ",
-            {
-                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:fake",
-                "OPENROUTER_API_KEY": "",
-            },
-            clear=False,
-        ), patch("openrouter_client.urlrequest.urlopen", _fake_urlopen):
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:fake",
+                    "OPENROUTER_API_KEY": "",
+                },
+                clear=False,
+            ),
+            patch("openrouter_client.urlrequest.urlopen", _fake_urlopen),
+        ):
             result = parser.parse_statement_from_asset(
                 s3_client=s3,
                 secrets_client=secrets,
@@ -290,9 +291,7 @@ class TestParseStatementFromAsset(unittest.TestCase):
         self.assertEqual(body["messages"][1]["content"][1]["type"], "file")
         self.assertEqual(body["usage"], {"include": True})
         self.assertEqual(body["user"], "statement-parser:hillmarton")
-        self.assertEqual(
-            captured["headers"]["Authorization"], "Bearer sk-test"
-        )
+        self.assertEqual(captured["headers"]["Authorization"], "Bearer sk-test")
         headers = captured["headers"]
         self.assertEqual(
             next(v for k, v in headers.items() if k.lower() == "x-openrouter-title"),
@@ -322,9 +321,10 @@ class TestParseStatementFromAsset(unittest.TestCase):
             captured["body"] = req.data
             return _FakeResp(_fake_completion_body({"lines": []}))
 
-        with patch.dict(
-            "os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False
-        ), patch("openrouter_client.urlrequest.urlopen", _fake_urlopen):
+        with (
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
+            patch("openrouter_client.urlrequest.urlopen", _fake_urlopen),
+        ):
             result = parser.parse_statement_from_asset(
                 s3_client=s3,
                 secrets_client=secrets,
@@ -339,6 +339,52 @@ class TestParseStatementFromAsset(unittest.TestCase):
         body = json.loads(captured["body"].decode("utf-8"))
         self.assertNotIn("plugins", body)
         self.assertEqual(body["messages"][1]["content"][1]["type"], "image_url")
+
+    def test_email_text_is_sent_as_text_and_the_prompt_names_email(self) -> None:
+        s3 = MagicMock()
+        note = b"Subject: Invoice\n\nHosting total USD 42.00 on 1 Nov 2026.\n"
+        s3.get_object.return_value = {"Body": io.BytesIO(note)}
+        secrets = MagicMock()
+        captured: dict[str, object] = {}
+
+        class _FakeResp:
+            def __init__(self, body: bytes) -> None:
+                self._body = body
+
+            def read(self) -> bytes:
+                return self._body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_a):
+                return False
+
+        def _fake_urlopen(req, timeout=None):  # noqa: ARG001
+            captured["body"] = req.data
+            return _FakeResp(_fake_completion_body({"lines": []}))
+
+        with (
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-env"}, clear=False),
+            patch("openrouter_client.urlrequest.urlopen", _fake_urlopen),
+        ):
+            parser.parse_statement_from_asset(
+                s3_client=s3,
+                secrets_client=secrets,
+                bucket="b",
+                s3_key="inbound/lxSoftware/batch/00_email-body.txt",
+                file_name="email-body.txt",
+                content_type="text/plain",
+                default_currency="USD",
+                owner="lxSoftware",
+            )
+
+        body = json.loads(captured["body"].decode("utf-8"))
+        self.assertNotIn("plugins", body)
+        content = body["messages"][1]["content"]
+        self.assertEqual(content[1]["type"], "text")
+        self.assertIn("USD 42.00", content[1]["text"])
+        self.assertIn("email", content[0]["text"].lower())
 
 
 if __name__ == "__main__":

@@ -1061,7 +1061,12 @@ SES allows one active receipt rule set per region. `lxsoftware` owns
 
 `lx-software.com` MX stays on iCloud; forward the iCloud mailbox
 `billing@lx-software.com` to `billing@inbound.lx-software.com` (output
-`lxsoftware-InboundMailbox-lxSoftware`). Inbound PDFs are written under
+`lxsoftware-InboundMailbox-lxSoftware`). The same scanner serves every
+statement inbox (`32-hillmarton@`, `the-morrison@`, and `billing@`). A PDF
+attachment is the source when the message has one. Otherwise the scanner
+reads a receipt image or a text, CSV, or HTML attachment, or the message
+body when that text itself names an amount. A message with neither is left
+in the raw bucket and is not parsed. Scanned files are written under
 `inbound/{owner}/{batch}/` with an `ASSET#` row so they show on **Assets**
 even if parsing fails. Each message is stored under its own
 `inbound/{owner}/{batch}/` prefix, so a re-sent PDF has a new S3 key and is

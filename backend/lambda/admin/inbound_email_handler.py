@@ -1,11 +1,16 @@
-"""Process raw inbound email stored by SES in S3: extract PDF, parse statement.
+"""Process raw inbound email stored by SES in S3 and parse it as a statement.
 
 SES receipt rules deliver mail for configured addresses into
 ``{INBOUND_RAW_MAIL_PREFIX}/{segment}/…`` in the inbound bucket. S3 invokes
-this Lambda on those prefixes. Every ``application/pdf`` part is copied into
-the admin assets bucket; lines are parsed once with **all** of those object
-keys attached to each new line (``sourceAssetKeys``), matching multi-PDF
-imports in the admin UI.
+this Lambda on those prefixes. Statement sources are copied into the admin
+assets bucket; lines are parsed once with **all** of those object keys
+attached to each new line (``sourceAssetKeys``), matching multi-file imports
+in the admin UI.
+
+A message that has a PDF is parsed from those PDF parts only. Every
+statement inbox uses the same fallback when it does not: a receipt image,
+a text, CSV, or HTML attachment, or the message body when that text names
+an amount. No inbox is special-cased.
 
 ``segment`` is the lower-cased S3 prefix (e.g. ``hillmarton``, ``morrison``,
 ``lx-software``). CDK ``inboundStatementMailboxes`` maps each inbox
@@ -24,13 +29,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import time
 import urllib.parse
 import uuid
 from datetime import datetime, timezone
-from email import policy
-from email.parser import BytesParser
 from typing import Any, NamedTuple
 
 import board_mail
@@ -45,6 +47,7 @@ from handler import (
     MAX_SOURCE_ASSET_KEYS_PER_LINE,
     enqueue_parse_statement_async_job,
 )
+from inbound_statement_sources import extract_statement_sources
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -53,7 +56,7 @@ _s3 = boto3.client("s3")
 
 
 class InboundStatementMailbox(NamedTuple):
-    """Finance owner that should parse PDFs dropped under one S3 prefix."""
+    """Finance owner that should parse statement mail dropped under one S3 prefix."""
 
     owner_key: str
     line_type_only: str | None = None
@@ -73,13 +76,8 @@ def raw_mail_segment(*, ses_drop_path: str, raw_mail_prefix: str) -> str | None:
 
 def _default_inbound_statement_mailboxes() -> dict[str, InboundStatementMailbox]:
     """Keep in sync with CDK ``inboundStatementMailboxes``."""
-    out = {
-        key: InboundStatementMailbox(owner_key=key)
-        for key in sorted(FINANCE_HOUSE_KEYS)
-    }
-    out["lx-software"] = InboundStatementMailbox(
-        owner_key="lxSoftware", line_type_only="expenditure"
-    )
+    out = {key: InboundStatementMailbox(owner_key=key) for key in sorted(FINANCE_HOUSE_KEYS)}
+    out["lx-software"] = InboundStatementMailbox(owner_key="lxSoftware", line_type_only="expenditure")
     return out
 
 
@@ -90,9 +88,7 @@ def _mailboxes_from_env() -> dict[str, InboundStatementMailbox] | None:
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
-        logger.error(
-            json.dumps({"tag": "inbound_mail_mailboxes_invalid", "reason": "json"})
-        )
+        logger.error(json.dumps({"tag": "inbound_mail_mailboxes_invalid", "reason": "json"}))
         return None
     if not isinstance(parsed, list):
         return None
@@ -108,9 +104,7 @@ def _mailboxes_from_env() -> dict[str, InboundStatementMailbox] | None:
         line_type_only: str | None = None
         if isinstance(lt_raw, str) and lt_raw.strip().lower() in FINANCE_LINE_TYPES:
             line_type_only = lt_raw.strip().lower()
-        out[segment] = InboundStatementMailbox(
-            owner_key=owner, line_type_only=line_type_only
-        )
+        out[segment] = InboundStatementMailbox(owner_key=owner, line_type_only=line_type_only)
     return out or None
 
 
@@ -118,9 +112,7 @@ def inbound_statement_mailboxes() -> dict[str, InboundStatementMailbox]:
     return _mailboxes_from_env() or _default_inbound_statement_mailboxes()
 
 
-def inbound_mailbox_from_raw_s3_key(
-    *, ses_drop_path: str, raw_mail_prefix: str
-) -> InboundStatementMailbox | None:
+def inbound_mailbox_from_raw_s3_key(*, ses_drop_path: str, raw_mail_prefix: str) -> InboundStatementMailbox | None:
     """Resolve house/book mailbox from an SES drop key."""
     segment = raw_mail_segment(ses_drop_path=ses_drop_path, raw_mail_prefix=raw_mail_prefix)
     if segment is None:
@@ -135,46 +127,13 @@ def house_key_from_raw_mail_s3_key(*, ses_drop_path: str, raw_mail_prefix: str) 
     key as the segment (``hillmarton``, ``morrison``). The LX Software
     statement book uses ``lx-software`` → ``lxSoftware``.
     """
-    mailbox = inbound_mailbox_from_raw_s3_key(
-        ses_drop_path=ses_drop_path, raw_mail_prefix=raw_mail_prefix
-    )
+    mailbox = inbound_mailbox_from_raw_s3_key(ses_drop_path=ses_drop_path, raw_mail_prefix=raw_mail_prefix)
     return None if mailbox is None else mailbox.owner_key
 
 
 def is_board_mail_s3_key(*, ses_drop_path: str, raw_mail_prefix: str) -> bool:
     segment = raw_mail_segment(ses_drop_path=ses_drop_path, raw_mail_prefix=raw_mail_prefix)
     return segment is not None and segment == board_mail.raw_segment()
-
-
-def _sanitize_filename(name: str) -> str:
-    base = os.path.basename((name or "").strip() or "statement.pdf")
-    if not base.lower().endswith(".pdf"):
-        base = f"{base}.pdf"
-    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", base)[:180]
-    return safe or "statement.pdf"
-
-
-def extract_pdf_attachments(raw: bytes) -> list[tuple[bytes, str]]:
-    """Return ``(pdf_bytes, safe_filename)`` for every PDF part, in walk order."""
-    msg = BytesParser(policy=policy.default).parsebytes(raw)
-    out: list[tuple[bytes, str]] = []
-    for part in msg.walk():
-        if part.get_content_maintype() == "multipart":
-            continue
-        if part.get_content_type() != "application/pdf":
-            continue
-        payload = part.get_payload(decode=True)
-        if not isinstance(payload, (bytes, bytearray)) or len(payload) == 0:
-            continue
-        fn = part.get_filename() or "statement.pdf"
-        out.append((bytes(payload), _sanitize_filename(fn)))
-    return out
-
-
-def extract_first_pdf_attachment(raw: bytes) -> tuple[bytes, str] | None:
-    """Return ``(pdf_bytes, safe_filename)`` for the first PDF part, if any."""
-    parts = extract_pdf_attachments(raw)
-    return parts[0] if parts else None
 
 
 def _record_inbound_asset_meta(
@@ -186,7 +145,7 @@ def _record_inbound_asset_meta(
     owner_sub: str,
     request_id: str,
 ) -> None:
-    """Create ``ASSET#`` META so inbound PDFs appear on the Assets page immediately."""
+    """Create ``ASSET#`` META so inbound statement files appear on the Assets page immediately."""
     from finance_store import _persist_asset_meta_after_parse
 
     table_name = (os.environ.get("RECORDS_TABLE_NAME") or "").strip()
@@ -216,11 +175,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     max_pdf = int(os.environ.get("ASSET_MAX_BYTES", str(20 * 1024 * 1024)))
 
     if not inbound_bucket or not assets_bucket:
-        logger.error(
-            json.dumps(
-                {"tag": "inbound_mail_misconfigured", "reason": "missing_bucket_env"}
-            )
-        )
+        logger.error(json.dumps({"tag": "inbound_mail_misconfigured", "reason": "missing_bucket_env"}))
         return {"ok": False, "reason": "misconfigured"}
 
     request_id = getattr(context, "aws_request_id", None) or "unknown"
@@ -228,9 +183,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     for record in event.get("Records") or []:
         if record.get("eventSource") != "aws:s3":
             continue
-        raw_key = urllib.parse.unquote_plus(
-            record.get("s3", {}).get("object", {}).get("key", "")
-        )
+        raw_key = urllib.parse.unquote_plus(record.get("s3", {}).get("object", {}).get("key", ""))
         src_bucket = record.get("s3", {}).get("bucket", {}).get("name", "")
         if src_bucket == inbound_bucket and is_board_mail_s3_key(
             ses_drop_path=raw_key, raw_mail_prefix=raw_mail_prefix
@@ -262,9 +215,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             )
             continue
 
-        mailbox = inbound_mailbox_from_raw_s3_key(
-            ses_drop_path=raw_key, raw_mail_prefix=raw_mail_prefix
-        )
+        mailbox = inbound_mailbox_from_raw_s3_key(ses_drop_path=raw_key, raw_mail_prefix=raw_mail_prefix)
         if src_bucket != inbound_bucket or mailbox is None:
             logger.info(
                 json.dumps(
@@ -292,12 +243,12 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             )
             continue
 
-        pdf_parts = extract_pdf_attachments(body)
-        if not pdf_parts:
+        sources = extract_statement_sources(body)
+        if not sources:
             logger.warning(
                 json.dumps(
                     {
-                        "tag": "inbound_mail_no_pdf",
+                        "tag": "inbound_mail_no_statement",
                         "key": raw_key[:512],
                         "size": len(body),
                     }
@@ -305,31 +256,31 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             )
             continue
 
-        if len(pdf_parts) > MAX_SOURCE_ASSET_KEYS_PER_LINE:
+        if len(sources) > MAX_SOURCE_ASSET_KEYS_PER_LINE:
             logger.warning(
                 json.dumps(
                     {
-                        "tag": "inbound_mail_pdf_count_capped",
+                        "tag": "inbound_mail_source_count_capped",
                         "key": raw_key[:512],
-                        "count": len(pdf_parts),
+                        "count": len(sources),
                         "max": MAX_SOURCE_ASSET_KEYS_PER_LINE,
                     }
                 )
             )
-            pdf_parts = pdf_parts[:MAX_SOURCE_ASSET_KEYS_PER_LINE]
+            sources = sources[:MAX_SOURCE_ASSET_KEYS_PER_LINE]
 
         oversize_idx = next(
-            (i for i, (blob, _) in enumerate(pdf_parts) if len(blob) > max_pdf),
+            (i for i, source in enumerate(sources) if len(source.data) > max_pdf),
             None,
         )
         if oversize_idx is not None:
             logger.warning(
                 json.dumps(
                     {
-                        "tag": "inbound_mail_pdf_too_large",
+                        "tag": "inbound_mail_source_too_large",
                         "key": raw_key[:512],
                         "index": oversize_idx,
-                        "bytes": len(pdf_parts[oversize_idx][0]),
+                        "bytes": len(sources[oversize_idx].data),
                         "max": max_pdf,
                     }
                 )
@@ -339,14 +290,14 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         batch_id = uuid.uuid4().hex
         dest_keys: list[str] = []
         owner_key = mailbox.owner_key
-        for idx, (pdf_bytes, safe_name) in enumerate(pdf_parts):
-            dest_key = f"inbound/{owner_key}/{batch_id}/{idx:02d}_{safe_name}"
+        for idx, source in enumerate(sources):
+            dest_key = f"inbound/{owner_key}/{batch_id}/{idx:02d}_{source.filename}"
             try:
                 _s3.put_object(
                     Bucket=assets_bucket,
                     Key=dest_key,
-                    Body=pdf_bytes,
-                    ContentType="application/pdf",
+                    Body=source.data,
+                    ContentType=source.content_type,
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.error(
@@ -365,8 +316,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 _record_inbound_asset_meta(
                     s3_key=dest_key,
                     house=owner_key,
-                    file_name=safe_name,
-                    size=len(pdf_bytes),
+                    file_name=source.filename,
+                    size=len(source.data),
                     owner_sub=user_sub,
                     request_id=request_id,
                 )
@@ -426,7 +377,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     "tag": "inbound_mail_parse_enqueued",
                     "houseKey": owner_key,
                     "lineTypeOnly": mailbox.line_type_only,
-                    "pdfCount": len(dest_keys),
+                    "pdfCount": sum(1 for source in sources if source.kind == "pdf"),
+                    "sourceCount": len(dest_keys),
+                    "sourceKinds": sorted({source.kind for source in sources}),
                     "jobId": job_id,
                 }
             )
