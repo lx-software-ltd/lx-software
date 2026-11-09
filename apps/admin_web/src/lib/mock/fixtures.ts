@@ -997,27 +997,14 @@ export const boardChangesFixture: BoardChangeNote[] = [
   },
 ];
 
+function contentItem(contentId: string, channel: string, status: string, slotAt: string, extra: Partial<BoardContentItem> = {}): BoardContentItem {
+  return { contentId, channel, status, slotAt, pillar: "activity spotlight", template: "spotlight", copyEn: "Saturday play in Sha Tin", copyZh: "沙田週末玩樂", ...extra };
+}
+
 export const boardContentFixture: BoardContentItem[] = [
-  {
-    contentId: "cnt-1",
-    status: "scheduled",
-    channel: "facebook",
-    pillar: "activity spotlight",
-    slotAt: isoDaysAgo(-1),
-    copyEn: "Saturday play in Sha Tin",
-    copyZh: "沙田週末玩樂",
-    template: "spotlight",
-  },
-  {
-    contentId: "cnt-xhs",
-    status: "scheduled",
-    channel: "assisted_xiaohongshu",
-    pillar: "activity spotlight",
-    slotAt: isoDaysAgo(0),
-    copyEn: "Saturday play in Sha Tin",
-    copyZh: "沙田週末玩樂",
-    template: "spotlight",
-  },
+  contentItem("cnt-1", "facebook", "scheduled", isoDaysAgo(-1)),
+  contentItem("cnt-fb-live", "facebook", "published", isoDaysAgo(1), { pillar: "neighbourhood", copyEn: "", copyZh: "赤柱週末好去處", platformPostId: "122100000000000001" }),
+  contentItem("cnt-xhs", "assisted_xiaohongshu", "scheduled", isoDaysAgo(0)),
 ];
 
 export function boardTaskDetailFixture(taskId: string): BoardTaskDetailPayload | null {

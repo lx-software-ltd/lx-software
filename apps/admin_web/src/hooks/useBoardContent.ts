@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { adminFetchJson } from "../lib/apiAdminClient";
 import {
+  boardContentDeletePostPath,
   boardContentItemPath,
   boardContentPath,
   boardContentRenderPath,
@@ -54,6 +55,15 @@ export function useBoardContent() {
       void qc.invalidateQueries({ queryKey: BOARD_CONTENT_KEY });
     },
   });
+  const deletePost = useMutation({
+    mutationFn: async (contentId: string) => {
+      const res = await adminFetchJson<{ item: BoardContentItem }>(boardContentDeletePostPath(contentId), { method: "POST" });
+      return res.item;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: BOARD_CONTENT_KEY });
+    },
+  });
   return {
     items: list.data?.items ?? [],
     assisted: list.data?.assisted ?? [],
@@ -62,5 +72,6 @@ export function useBoardContent() {
     create,
     update,
     render,
+    deletePost,
   };
 }

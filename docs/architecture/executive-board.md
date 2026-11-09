@@ -1065,7 +1065,11 @@ message), Instagram (container + `media_publish`) or a story, respecting
 `igPublishesPerDay` 25 and `postsPerChannelPerDay` 2, and stores
 `platformPostId` and UTM parameters. Assisted channels (Xiaohongshu,
 Facebook groups) appear on the daily review as copy packs with **Mark
-posted**. Monday 09:00 HKT (`…-board-content-readout`) a
+posted**. A published Facebook item shows **Delete post** (owner JWT only,
+`POST /content/{id}/delete-post`): it sends `DELETE /{platformPostId}`,
+marks the item `vetoed` and keeps the removed id in `deletedPostId`.
+Instagram media cannot be deleted through the Graph API, so the console
+asks the owner to delete in the app and veto. Monday 09:00 HKT (`…-board-content-readout`) a
 `growth-specialist` task pulls post insights and `web_sessions` by
 campaign, writes `performance` per item and may `meta_boost_post` within
 caps. **Content** section. `AdminApiFn` memory is 1536 MB and

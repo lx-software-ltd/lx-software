@@ -143,7 +143,7 @@ def write_blocked(method: str, path: str) -> bool:
     Cost/safety knobs (settings, boundaries, tools), production promote,
     staging sync, catalog preview/import, approvals, mail selftest, and
     non-reversible live-state mutations (chat wipe, meeting/task cancel,
-    staff tick, ramp pause).
+    staff tick, ramp pause, deleting a published post).
     """
     rest = _board_rest(path)
     if not rest:
@@ -178,6 +178,8 @@ def write_blocked(method: str, path: str) -> bool:
     if method == "POST" and head == "meetings" and len(rest) == 3 and tail == "cancel":
         return True
     if method == "POST" and head == "tasks" and len(rest) == 3 and tail == "cancel":
+        return True
+    if method == "POST" and head == "content" and len(rest) == 3 and tail == "delete-post":
         return True
     if method == "DELETE" and head == "chat" and len(rest) == 2:
         return True

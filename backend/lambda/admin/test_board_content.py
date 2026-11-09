@@ -243,6 +243,44 @@ class ContentTests(BoardTestCase):
         lessons = board_store.list_lessons(self.table)
         self.assertTrue(lessons)
 
+    def test_hashtags_string_is_split_not_spelled(self) -> None:
+        self.assertEqual(
+            board_content.coerce_hashtags("#小天地 #赤柱, Stanley"),
+            ["#小天地", "#赤柱", "#Stanley"],
+        )
+        self.assertEqual(board_content.coerce_hashtags(["a", "#b"]), ["#a", "#b"])
+        self.assertEqual(board_content.coerce_hashtags(None), [])
+        doc = board_content.upsert_item(
+            self.table,
+            {"slotAt": "2026-11-11T02:00:00Z", "channel": "instagram", "hashtags": "#小天地 #赤柱"},
+            status="drafted",
+        )
+        self.assertEqual(doc["hashtags"], ["#小天地", "#赤柱"])
+
+    def test_delete_post_removes_facebook_post_and_refuses_instagram(self) -> None:
+        fb = board_content.upsert_item(
+            self.table,
+            {"channel": "facebook", "slotAt": board_store.now_iso(), "copyZh": "赤柱", "fields": {"title": "赤柱"}},
+        )
+        board_content.publish(self.table, self.settings, fb["contentId"])
+        deleted = board_content.delete_post(self.table, fb["contentId"])
+        self.assertIn(("DELETE", "fb-post-1", {}), self.graph.calls)
+        self.assertEqual(deleted["status"], "vetoed")
+        self.assertEqual(deleted["deletedPostId"], "fb-post-1")
+        self.assertEqual(deleted["platformPostId"], "")
+        self.assertTrue(deleted["deletedAt"])
+        with self.assertRaises(board_content.ContentError):
+            board_content.delete_post(self.table, fb["contentId"])
+        ig = board_content.upsert_item(
+            self.table,
+            {"channel": "instagram", "slotAt": board_store.now_iso(), "copyZh": "IG", "fields": {"title": "IG"}},
+        )
+        board_content.publish(self.table, self.settings, ig["contentId"])
+        with self.assertRaises(board_content.ContentError) as ctx:
+            board_content.delete_post(self.table, ig["contentId"])
+        self.assertIn("Instagram", str(ctx.exception))
+        self.assertEqual(board_store.get_content(self.table, ig["contentId"])["status"], "published")
+
     def test_stage_items_are_merged_into_task_finish(self) -> None:
         task = board_staff.create_task(
             self.table,

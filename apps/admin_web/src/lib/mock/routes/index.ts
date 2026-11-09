@@ -3,10 +3,11 @@ import * as admin from "./admin";
 import * as finance from "./finance";
 import * as banking from "./banking";
 import * as board from "./board";
+import * as content from "./content";
 import * as linkedin from "./linkedin";
 import * as resume from "./resume";
 
-const modules = { admin, finance, banking, board, linkedin, resume };
+const modules = { admin, finance, banking, board, content, linkedin, resume };
 
 export const mockRoutes: readonly MockRoute[] = [
   {
@@ -376,6 +377,11 @@ export const mockRoutes: readonly MockRoute[] = [
     method: "POST",
     pattern: new RegExp('^/siu\\-tin\\-dei/board/content/'),
     handler: modules.board.handleB57,
+  },
+  {
+    method: "POST",
+    pattern: new RegExp('^/siu\\-tin\\-dei/board/content/'),
+    handler: modules.content.handleContentDeletePost,
   },
   {
     pattern: new RegExp('^/siu\\-tin\\-dei/board/content/'),
