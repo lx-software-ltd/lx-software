@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
 
@@ -84,7 +84,7 @@ def public_row(doc: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "contentId", "status", "channel", "pillar", "slotAt", "copyEn", "copyZh", "hashtags", "template",
         "fields", "linkPath", "linkWithUtm", "creativeKeys", "holdId", "platformPostId", "captionHash",
-        "performance", "createdAt", "updatedAt",
+        "performance", "deletedPostId", "deletedAt", "createdAt", "updatedAt",
     )
     return {k: doc.get(k) for k in keys}
 
@@ -509,10 +509,7 @@ def publish(table: Any, settings: dict[str, Any], content_id: str) -> dict[str, 
     digest = _caption_hash(caption)
     existing = _recent_duplicate(table, digest)
     if existing:
-        doc["platformPostId"] = existing
-        doc["status"] = "published"
-        doc["publishedAt"] = board_store.now_iso()
-        board_store.put_content(table, doc)
+        _save(table, doc, platformPostId=existing, status="published", publishedAt=board_store.now_iso())
         return {"ok": True, "platformPostId": existing, "deduped": True}
     keys = list(doc.get("creativeKeys") or [])
     if not keys:
@@ -526,74 +523,104 @@ def publish(table: Any, settings: dict[str, Any], content_id: str) -> dict[str, 
             pid = board_meta.page_id()
             data = board_meta.graph("POST", f"{pid}/photos", body={"url": image_url, "message": caption + "\n\n" + link})
             post_id = str(data.get("id") or data.get("post_id") or "")
-        elif channel == "instagram":
+        elif channel in {"instagram", "instagram_story"}:
             if _ig_count(table) >= BOARD_STAFF_IG_PUBLISHES_PER_DAY:
                 return {"error": "ig daily cap reached"}
-            iid = board_meta.ig_user_id()
-            created = board_meta.graph("POST", f"{iid}/media", body={"image_url": image_url, "caption": caption})
-            creation_id = created.get("id")
-            if not creation_id:
+            post_id = _publish_ig(table, image_url, caption, story=channel == "instagram_story")
+            if not post_id:
                 return {"error": "Instagram did not return a creation id"}
-            published = board_meta.graph("POST", f"{iid}/media_publish", body={"creation_id": creation_id})
-            post_id = str(published.get("id") or "")
-            _bump_ig(table)
-        elif channel == "instagram_story":
-            if _ig_count(table) >= BOARD_STAFF_IG_PUBLISHES_PER_DAY:
-                return {"error": "ig daily cap reached"}
-            iid = board_meta.ig_user_id()
-            created = board_meta.graph(
-                "POST", f"{iid}/media", body={"image_url": image_url, "caption": caption, "media_type": "STORIES"}
-            )
-            creation_id = created.get("id")
-            if not creation_id:
-                return {"error": "Instagram did not return a creation id"}
-            published = board_meta.graph("POST", f"{iid}/media_publish", body={"creation_id": creation_id})
-            post_id = str(published.get("id") or "")
-            _bump_ig(table)
         else:
             return {"error": f"unsupported publish channel {channel}"}
     except board_meta.MetaError as exc:
-        if getattr(exc, "status", None) in {0, None} or "unreachable" in str(exc).lower() or "timeout" in str(exc).lower():
-            found = _recent_duplicate(table, digest)
-            if found:
-                post_id = found
-            else:
-                return {"error": str(exc)}
-        else:
+        transient = getattr(exc, "status", None) in {0, None} or any(w in str(exc).lower() for w in ("unreachable", "timeout"))
+        post_id = (_recent_duplicate(table, digest) or "") if transient else ""
+        if not post_id:
             return {"error": str(exc)}
     if not post_id:
         return {"error": "publish returned no id"}
-    doc["platformPostId"] = post_id
-    doc["captionHash"] = digest
-    doc["status"] = "published"
-    doc["publishedAt"] = board_store.now_iso()
-    doc["updatedAt"] = doc["publishedAt"]
-    board_store.put_content(table, doc)
+    _save(table, doc, platformPostId=post_id, captionHash=digest, status="published", publishedAt=board_store.now_iso())
     return {"ok": True, "platformPostId": post_id, "contentId": doc["contentId"]}
+
+
+def _publish_ig(table: Any, image_url: str, caption: str, *, story: bool) -> str:
+    """Two-step container publish; returns "" when Instagram gives no creation id."""
+    import board_meta
+
+    iid = board_meta.ig_user_id()
+    body: dict[str, Any] = {"image_url": image_url, "caption": caption}
+    if story:
+        body["media_type"] = "STORIES"
+    creation_id = board_meta.graph("POST", f"{iid}/media", body=body).get("id")
+    if not creation_id:
+        return ""
+    published = board_meta.graph("POST", f"{iid}/media_publish", body={"creation_id": creation_id})
+    _bump_ig(table)
+    return str(published.get("id") or "")
+
+
+def _save(table: Any, doc: dict[str, Any], **changes: Any) -> dict[str, Any]:
+    doc.update(changes, updatedAt=board_store.now_iso())
+    board_store.put_content(table, doc)
+    return doc
+
+
+def _published_fields(doc: dict[str, Any]) -> dict[str, Any]:
+    return {"status": "published", "platformPostId": doc.get("platformPostId") or "manual", "publishedAt": board_store.now_iso()}
 
 
 def mark_posted(table: Any, content_id: str) -> dict[str, Any]:
     doc = board_store.get_content(table, content_id)
     if not doc:
         raise ContentError("content not found")
-    doc["status"] = "published"
-    doc["platformPostId"] = doc.get("platformPostId") or "manual"
-    doc["publishedAt"] = board_store.now_iso()
-    doc["updatedAt"] = doc["publishedAt"]
-    board_store.put_content(table, doc)
-    return doc
+    return _save(table, doc, **_published_fields(doc))
+
+
+def delete_post(table: Any, content_id: str) -> dict[str, Any]:
+    """Remove a published Facebook post from the Page. Instagram has no delete API."""
+    import board_meta
+
+    doc = board_store.get_content(table, content_id)
+    if not doc:
+        raise KeyError("content not found")
+    post_id = str(doc.get("platformPostId") or "")
+    if doc.get("status") != "published" or not post_id or post_id == "manual":
+        raise ContentError("only a post the board published can be deleted")
+    if str(doc.get("channel") or "") != "facebook":
+        raise ContentError("Instagram does not allow deleting posts through the API; delete it in the app, then veto this item")
+    try:
+        board_meta.graph("DELETE", post_id)
+    except board_meta.MetaError as exc:
+        raise ContentError(str(exc)) from exc
+    return _save(table, doc, status="vetoed", platformPostId="", deletedPostId=post_id, deletedAt=board_store.now_iso())
+
+
+def _veto_lesson(table: Any, doc: dict[str, Any], reason: str) -> None:
+    try:
+        import board_lessons
+
+        board_lessons.create_from_veto(
+            table,
+            {
+                "summary": f"content {doc.get('contentId')}",
+                "op": "content_publish",
+                "preview": {"channel": doc.get("channel"), "copyEn": doc.get("copyEn")},
+                "vetoReason": reason or "owner veto",
+                "seatId": "content-marketer",
+                "classKey": f"publish:{doc.get('channel') or 'content'}",
+                "holdId": doc.get("holdId") or doc.get("contentId"),
+            },
+        )
+    except Exception as exc:
+        _log_event("warning", tag="board_content_lesson_failed", error=str(exc)[:200])
 
 
 def owner_put(table: Any, content_id: str, body: dict[str, Any]) -> dict[str, Any]:
     doc = board_store.get_content(table, content_id)
     if not doc:
         raise KeyError("content not found")
-    if "copyEn" in body:
-        doc["copyEn"] = str(body.get("copyEn") or "")[:2000]
-    if "copyZh" in body:
-        doc["copyZh"] = str(body.get("copyZh") or "")[:2000]
-    if "slotAt" in body:
-        doc["slotAt"] = str(body.get("slotAt") or "")
+    for key, cap in (("copyEn", 2000), ("copyZh", 2000), ("slotAt", 40)):
+        if key in body:
+            doc[key] = str(body.get(key) or "")[:cap]
     if "hashtags" in body:
         doc["hashtags"] = coerce_hashtags(body.get("hashtags"))
     if "status" in body:
@@ -602,29 +629,10 @@ def owner_put(table: Any, content_id: str, body: dict[str, Any]) -> dict[str, An
             raise ContentError("status may only be set to vetoed or published")
         doc["status"] = status
         if status == "published":
-            doc["platformPostId"] = doc.get("platformPostId") or "manual"
-            doc["publishedAt"] = board_store.now_iso()
-        if status == "vetoed":
-            try:
-                import board_lessons
-
-                board_lessons.create_from_veto(
-                    table,
-                    {
-                        "summary": f"content {doc.get('contentId')}",
-                        "op": "content_publish",
-                        "preview": {"channel": doc.get("channel"), "copyEn": doc.get("copyEn")},
-                        "vetoReason": str(body.get("reason") or "owner veto"),
-                        "seatId": "content-marketer",
-                        "classKey": f"publish:{doc.get('channel') or 'content'}",
-                        "holdId": doc.get("holdId") or doc.get("contentId"),
-                    },
-                )
-            except Exception as exc:
-                _log_event("warning", tag="board_content_lesson_failed", error=str(exc)[:200])
-    doc["updatedAt"] = board_store.now_iso()
-    board_store.put_content(table, doc)
-    return doc
+            doc.update(_published_fields(doc))
+        else:
+            _veto_lesson(table, doc, str(body.get("reason") or ""))
+    return _save(table, doc)
 
 
 def assisted_due(table: Any, settings: dict[str, Any], *, now_iso: str | None = None) -> list[dict[str, Any]]:
@@ -801,26 +809,22 @@ def on_readout_delivered(table: Any, settings: dict[str, Any], task: dict[str, A
     return perf
 
 
-def handle_plan(event: dict[str, Any] | None = None) -> dict[str, Any]:
+def _handle_weekly(event: dict[str, Any] | None, duty: Any) -> dict[str, Any]:
     if not board_store.event_targets_this_board(event):
         return {"ok": True, "skipped": "other board"}
     if not board_staff.env_enabled():
         return {"ok": True, "skipped": "env"}
     table = board_store.records_table()
-    settings = board_store.load_settings(table)
-    task = plan_week(table, settings)
+    task = duty(table, board_store.load_settings(table))
     return {"ok": True, "taskId": (task or {}).get("taskId")}
+
+
+def handle_plan(event: dict[str, Any] | None = None) -> dict[str, Any]:
+    return _handle_weekly(event, plan_week)
 
 
 def handle_readout(event: dict[str, Any] | None = None) -> dict[str, Any]:
-    if not board_store.event_targets_this_board(event):
-        return {"ok": True, "skipped": "other board"}
-    if not board_staff.env_enabled():
-        return {"ok": True, "skipped": "env"}
-    table = board_store.records_table()
-    settings = board_store.load_settings(table)
-    task = weekly_readout(table, settings)
-    return {"ok": True, "taskId": (task or {}).get("taskId")}
+    return _handle_weekly(event, weekly_readout)
 
 
 def op_list(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -848,14 +852,10 @@ def validate_publish(table: Any, args: dict[str, Any]) -> str | None:
     if not slot:
         return None
     try:
-        from datetime import datetime, timezone
-
-        text = slot.replace("Z", "+00:00")
-        when = datetime.fromisoformat(text)
+        when = datetime.fromisoformat(slot.replace("Z", "+00:00"))
         if when.tzinfo is None:
             when = when.replace(tzinfo=timezone.utc)
-        now = datetime.now(timezone.utc)
-        if when < now - __import__("datetime").timedelta(days=1):
+        if when < datetime.now(timezone.utc) - timedelta(days=1):
             return f"slotAt {slot} is in the past"
     except ValueError:
         return f"slotAt {slot} is not a valid ISO timestamp"

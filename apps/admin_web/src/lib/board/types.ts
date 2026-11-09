@@ -1,15 +1,6 @@
-import {
-  type BoardActionPriority,
-  type BoardActionStatus,
-  type BoardActionClass,
-  type BoardDeliverableType,
-  type BoardHoldStatus,
-  type BoardMeetingMode,
-  type BoardStaffModelTier,
-  type BoardTaskOrigin,
-  type BoardTaskStatus,
-  type BoardToolGlobalMode,
-  type BoardToolLevel,
+import type {
+  BoardActionPriority, BoardActionStatus, BoardActionClass, BoardDeliverableType, BoardHoldStatus, BoardMeetingMode,
+  BoardStaffModelTier, BoardTaskOrigin, BoardTaskStatus, BoardToolGlobalMode, BoardToolLevel,
 } from "../contracts/generated";
 import type { BoardReviewSample } from "./reviewSample";
 
@@ -988,6 +979,7 @@ export type BoardContentItem = {
   readonly template?: string;
   readonly holdId?: string;
   readonly platformPostId?: string;
+  readonly deletedPostId?: string;
   readonly creativeKeys?: readonly string[];
   readonly performance?: Readonly<Record<string, unknown>>;
 };

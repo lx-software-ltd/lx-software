@@ -83,6 +83,8 @@ class PathClassTests(unittest.TestCase):
             # allowed beside that list, not by editing it.
             self.assertTrue(board_public_api.write_blocked("POST", posts))
             self.assertTrue(board_public_api.write_blocked("DELETE", posts + "/li_abc"))
+            self.assertTrue(board_public_api.write_blocked("POST", board_public_api.PUBLIC_BOARD_PREFIX + "/content/c1/delete-post"))
+            self.assertFalse(board_public_api.write_blocked("PUT", board_public_api.PUBLIC_BOARD_PREFIX + "/content/c1"))
             self.assertIsNone(
                 board_public_api.write_deny_reason("POST", posts, write_ctx, linkedin)
             )

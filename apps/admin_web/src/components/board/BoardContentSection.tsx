@@ -8,7 +8,7 @@ import {
 } from "../ui";
 import { useBoardContent } from "../../hooks/useBoardContent";
 import { adminFetchJson, getAdminApiErrorMessage } from "../../lib/apiAdminClient";
-import { boardContentCreativePath, type BoardContentItem } from "../../lib/boardModel";
+import { boardContentCreativePath, canDeletePost, type BoardContentItem } from "../../lib/boardModel";
 
 function errorText(err: unknown): string | null {
   if (!err) return null;
@@ -117,10 +117,12 @@ export function BoardContentSection() {
         <ContentDrawer
           key={selected.contentId}
           item={selected}
-          error={errorText(calendar.update.error)}
+          error={errorText(calendar.update.error) ?? errorText(calendar.deletePost.error)}
+          busy={calendar.deletePost.isPending}
           onClose={() => setSelectedId(null)}
           onSave={(body) => calendar.update.mutate({ contentId: selected.contentId, body })}
           onRender={() => calendar.render.mutate(selected.contentId)}
+          onDeletePost={() => calendar.deletePost.mutate(selected.contentId)}
         />
       ) : null}
       <AdminEditorSection title="Assisted packs">
@@ -146,22 +148,27 @@ export function BoardContentSection() {
   );
 }
 
-function ContentDrawer({
+export function ContentDrawer({
   item,
   error,
+  busy = false,
   onClose,
   onSave,
   onRender,
+  onDeletePost,
 }: {
   readonly item: BoardContentItem;
   readonly error: string | null;
+  readonly busy?: boolean;
   readonly onClose: () => void;
   readonly onSave: (body: Record<string, unknown>) => void;
   readonly onRender: () => void;
+  readonly onDeletePost: () => void;
 }) {
   const [copyEn, setCopyEn] = useState(item.copyEn ?? "");
   const [copyZh, setCopyZh] = useState(item.copyZh ?? "");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   useEffect(() => {
     if (!item.creativeKeys?.length) {
       return;
@@ -184,7 +191,12 @@ function ContentDrawer({
         <h3 className="h6 mb-0">{item.channel} · {item.pillar}</h3>
         <button type="button" className="btn-close" aria-label="Close item" onClick={onClose} />
       </div>
-      <p className="small mb-2">Slot {item.slotAt} · {item.status}{item.holdId ? ` · hold ${item.holdId}` : ""}</p>
+      <p className="small mb-2">
+        Slot {item.slotAt} · {item.status}
+        {item.holdId ? ` · hold ${item.holdId}` : ""}
+        {item.platformPostId ? ` · post ${item.platformPostId}` : ""}
+        {item.deletedPostId ? ` · deleted post ${item.deletedPostId}` : ""}
+      </p>
       {previewUrl ? (
         <img src={previewUrl} alt="Creative preview" className="img-fluid rounded mb-2" style={{ maxWidth: 240 }} />
       ) : null}
@@ -196,7 +208,23 @@ function ContentDrawer({
         <button type="button" className="btn btn-sm btn-primary" onClick={() => onSave({ copyEn, copyZh })}>Save copy</button>
         <button type="button" className="btn btn-sm btn-outline-secondary" onClick={onRender}>Re-render</button>
         <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => onSave({ status: "vetoed" })}>Veto</button>
+        {canDeletePost(item) && !confirmDelete ? (
+          <button type="button" className="btn btn-sm btn-danger" onClick={() => setConfirmDelete(true)}>Delete post</button>
+        ) : null}
       </div>
+      {canDeletePost(item) && confirmDelete ? (
+        <div className="alert alert-warning small mt-2 mb-0 d-flex flex-wrap align-items-center gap-2">
+          <span>
+            {item.channel === "facebook"
+              ? "Removes the post from the Facebook Page and marks this item vetoed."
+              : "Instagram does not allow deleting through the API. Delete it in the app, then veto this item."}
+          </span>
+          {item.channel === "facebook" ? (
+            <button type="button" className="btn btn-sm btn-danger" disabled={busy} onClick={onDeletePost}>Confirm delete</button>
+          ) : null}
+          <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setConfirmDelete(false)}>Cancel</button>
+        </div>
+      ) : null}
       {item.performance ? <pre className="small mt-2 mb-0">{JSON.stringify(item.performance, null, 2)}</pre> : null}
       {error ? <p className="small text-danger mt-2 mb-0">{error}</p> : null}
     </div>

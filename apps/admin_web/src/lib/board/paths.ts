@@ -222,6 +222,11 @@ export function boardContentRenderPath(contentId: string): string {
 }
 
 
+export function boardContentDeletePostPath(contentId: string): string {
+  return `${BOARD_API_BASE}/content/${encodeURIComponent(contentId)}/delete-post`;
+}
+
+
 export function boardContentCreativePath(contentId: string, n: number): string {
   return `${BOARD_API_BASE}/content/${encodeURIComponent(contentId)}/creative/${n}`;
 }

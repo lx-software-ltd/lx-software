@@ -1197,59 +1197,46 @@ def _content_route(event: dict[str, Any], method: str, rest: list[str], user_sub
         return _staff_disabled()
     import board_content
 
+    try:
+        return _content_dispatch(board_content, event, method, rest, user_sub)
+    except board_content.ContentError as exc:
+        return _json_response(400, {"message": str(exc)})
+    except KeyError:
+        return _json_response(404, {"message": "Content not found"})
+
+
+def _content_dispatch(content: Any, event: dict[str, Any], method: str, rest: list[str], user_sub: str | None) -> dict[str, Any]:
     table = board_store.records_table()
     settings = board_store.load_settings(table)
     qs = parse_qs(event.get("rawQueryString") or "")
+
+    def saved(doc: dict[str, Any], audit: str) -> dict[str, Any]:
+        _audit(user_sub, audit, str(doc.get("contentId") or ""), event)
+        return _json_response(200, {"item": content.public_row(doc)})
+
+    if len(rest) == 1 and method == "GET":
+        status, start, end = ((qs.get(k) or [""])[0] for k in ("status", "from", "to"))
+        rows = content.list_for_api(table, status=status or None, start=start, end=end)
+        return _json_response(200, {"items": rows, "assisted": content.assisted_due(table, settings)})
+    if len(rest) == 1 and method == "POST":
+        doc = content.render_item(table, content.upsert_item(table, _parse_json_body(event), status="drafted"))
+        return saved(content.schedule_publish(table, settings, doc), "BOARD_CONTENT_CREATE")
     if len(rest) == 1:
-        if method == "GET":
-            try:
-                rows = board_content.list_for_api(
-                    table,
-                    status=(qs.get("status") or [""])[0] or None,
-                    start=(qs.get("from") or [""])[0],
-                    end=(qs.get("to") or [""])[0],
-                )
-            except board_content.ContentError as exc:
-                return _json_response(400, {"message": str(exc)})
-            return _json_response(200, {"items": rows, "assisted": board_content.assisted_due(table, settings)})
-        if method == "POST":
-            try:
-                doc = board_content.upsert_item(table, _parse_json_body(event), status="drafted")
-                doc = board_content.render_item(table, doc)
-                doc = board_content.schedule_publish(table, settings, doc)
-            except board_content.ContentError as exc:
-                return _json_response(400, {"message": str(exc)})
-            _audit(user_sub, "BOARD_CONTENT_CREATE", str(doc.get("contentId") or ""), event)
-            return _json_response(200, {"item": board_content.public_row(doc)})
         return method_not_allowed()
+    row = board_store.get_content(table, rest[1])
+    if not row:
+        raise KeyError(rest[1])
+    if len(rest) == 2 and method == "GET":
+        return _json_response(200, {"item": content.public_row(row)})
+    if len(rest) == 2 and method == "PUT":
+        return saved(content.owner_put(table, rest[1], _parse_json_body(event)), "BOARD_CONTENT_PUT")
     if len(rest) == 2:
-        content_id = rest[1]
-        row = board_store.get_content(table, content_id)
-        if not row:
-            return _json_response(404, {"message": "Content not found"})
-        if method == "GET":
-            return _json_response(200, {"item": board_content.public_row(row)})
-        if method == "PUT":
-            try:
-                saved = board_content.owner_put(table, content_id, _parse_json_body(event))
-            except board_content.ContentError as exc:
-                return _json_response(400, {"message": str(exc)})
-            except KeyError:
-                return _json_response(404, {"message": "Content not found"})
-            _audit(user_sub, "BOARD_CONTENT_PUT", content_id, event)
-            return _json_response(200, {"item": board_content.public_row(saved)})
         return method_not_allowed()
+    if len(rest) == 3 and rest[2] == "delete-post" and method == "POST":
+        return saved(content.delete_post(table, rest[1]), "BOARD_CONTENT_DELETE_POST")
     if len(rest) == 3 and rest[2] == "render" and method == "POST":
-        row = board_store.get_content(table, rest[1])
-        if not row:
-            return _json_response(404, {"message": "Content not found"})
-        saved = board_content.render_item(table, row)
-        _audit(user_sub, "BOARD_CONTENT_RENDER", rest[1], event)
-        return _json_response(200, {"item": board_content.public_row(saved)})
+        return saved(content.render_item(table, row), "BOARD_CONTENT_RENDER")
     if len(rest) == 4 and rest[2] == "creative" and method == "GET":
-        row = board_store.get_content(table, rest[1])
-        if not row:
-            return _json_response(404, {"message": "Content not found"})
         try:
             index = int(rest[3])
         except ValueError:
@@ -1257,7 +1244,7 @@ def _content_route(event: dict[str, Any], method: str, rest: list[str], user_sub
         keys = list(row.get("creativeKeys") or [])
         if index < 0 or index >= len(keys):
             return _json_response(404, {"message": "Creative not found"})
-        return _json_response(200, {"url": board_content.presigned_url(str(keys[index])), "key": keys[index]})
+        return _json_response(200, {"url": content.presigned_url(str(keys[index])), "key": keys[index]})
     return not_found()
 
 
