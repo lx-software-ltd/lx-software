@@ -197,3 +197,32 @@ def _encode_cursor(key: dict[str, Any]) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
+
+
+def _read_http_error(exc: Any, limit: int | None = None) -> bytes:
+    """Read an HTTP error body and close it.
+
+    Python 3.14 warns when an urllib HTTP error is garbage-collected
+    while it is still open. ``limit`` is passed to ``read`` when set.
+    A missing body is ``b""``.
+    """
+    try:
+        if getattr(exc, "fp", None) is None:
+            return b""
+        data = exc.read() if limit is None else exc.read(limit)
+        return data or b""
+    finally:
+        _close_http_error(exc)
+
+
+def _close_http_error(exc: Any) -> Any:
+    """Close an HTTP error and return it.
+
+    ``raise ... from _close_http_error(exc)`` keeps the original cause.
+    The error object is truthy, so ``if cond and _close_http_error(exc)``
+    closes it and still enters the branch.
+    """
+    close = getattr(exc, "close", None)
+    if callable(close):
+        close()
+    return exc

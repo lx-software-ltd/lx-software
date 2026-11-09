@@ -15,6 +15,8 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+from http_common import _read_http_error
+
 API_VERSION = "202609"
 AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization"
 TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
@@ -64,11 +66,8 @@ def _call(
             raw_headers = {key.lower(): value for key, value in response.headers.items()}
             return int(response.status), raw_headers, response.read()
     except urllib.error.HTTPError as exc:
-        try:
-            raw_headers = {key.lower(): value for key, value in exc.headers.items()} if exc.headers else {}
-            return int(exc.code), raw_headers, exc.read() or b""
-        finally:
-            exc.close()
+        raw_headers = {key.lower(): value for key, value in exc.headers.items()} if exc.headers else {}
+        return int(exc.code), raw_headers, _read_http_error(exc)
     except urllib.error.URLError as exc:
         raise LinkedInApiError("LinkedIn could not be reached.") from exc
 

@@ -14,14 +14,14 @@ Today's GitHub Actions logs (74 runs, 9 November 2026 Hong Kong) still print two
 
 ## Non-goals
 
-- Pinning `ubuntu-latest` and the CodeQL bundle download. Those are `docs/plans/pin-ci-runners.md`.
+- Pinning `ubuntu-latest`. That is `docs/plans/pin-ci-runners.md`. CodeQL's streaming download has no switch in `codeql-action` v4.
 - Re-fixing `glob@10.5.0`, npm `allowScripts`, and the admin Node engine warning. Later runs today no longer print them.
 - Dependabot's `rehash` line. It is printed by GitHub's updater image, not this repo.
 
 ## Files
 
-- `backend/lambda/admin/*.py` HTTP error handlers (`board_catalog_import`, `board_crawl`, `board_github`, `board_meta`, `board_places`, `board_research`, `board_stores`, `bank_sync`, `linkedin_api`, `openrouter_client`, `openrouter_usage_pull`, `proxies`)
-- Tests that already raise `HTTPError`: `test_board_catalog_import.py`, `test_board_tools.py`, `test_board_wp2.py`, `test_board_wp7.py`, `test_openrouter_client.py`
+- `backend/lambda/admin/http_common.py` reads and closes the `HTTPError`. The handlers call it. The eight files already over the length ceiling stay at the recorded length.
+- Tests that already raise `HTTPError`: `test_board_catalog_import.py`, `test_board_tools.py`, `test_board_wp2.py`, `test_board_wp7.py`, `test_openrouter_client.py`, `test_http_common.py`
 - `apps/admin_web/src/lib/financeQuotes.test.ts`
 - `.github/workflows/security.yml` — retry the gitleaks download. One run today failed with curl exit 22 on a GitHub 504. This file is not a red-zone workflow.
 

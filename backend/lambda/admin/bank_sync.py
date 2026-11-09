@@ -39,7 +39,7 @@ from finance_store import (
     _merge_accounts_last_updated,
     put_finance_sheet,
 )
-from http_common import _audit, _json_response, _log_event, _parse_json_body
+from http_common import _audit, _json_response, _log_event, _parse_json_body, _read_http_error
 
 EB_DEFAULT_API_ORIGIN = "https://api.enablebanking.com"
 EB_JWT_TTL_SECONDS = 3600
@@ -159,26 +159,23 @@ def _eb_request(
         with urllib.request.urlopen(req, timeout=EB_HTTP_TIMEOUT_SECONDS) as resp:
             raw = resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
+        detail = _read_http_error(exc).decode("utf-8", errors="replace")[:400]
+        message = f"Enable Banking HTTP {exc.code}"
         try:
-            detail = exc.read().decode("utf-8", errors="replace")[:400]
-            message = f"Enable Banking HTTP {exc.code}"
-            try:
-                parsed = json.loads(detail)
-                if isinstance(parsed, dict) and isinstance(parsed.get("message"), str):
-                    message = f"{message}: {parsed['message'][:200]}"
-            except json.JSONDecodeError:
-                pass
-            _log_event(
-                "warning",
-                tag="bank_sync_upstream_http_error",
-                method=method,
-                path=path,
-                status=exc.code,
-                detail=detail,
-            )
-            raise BankSyncUpstreamError(message) from exc
-        finally:
-            exc.close()
+            parsed = json.loads(detail)
+            if isinstance(parsed, dict) and isinstance(parsed.get("message"), str):
+                message = f"{message}: {parsed['message'][:200]}"
+        except json.JSONDecodeError:
+            pass
+        _log_event(
+            "warning",
+            tag="bank_sync_upstream_http_error",
+            method=method,
+            path=path,
+            status=exc.code,
+            detail=detail,
+        )
+        raise BankSyncUpstreamError(message) from exc
     except urllib.error.URLError as exc:
         _log_event(
             "warning",

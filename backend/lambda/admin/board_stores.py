@@ -44,7 +44,7 @@ import board_pii
 import board_store
 from admin_runtime import _get_secretsmanager_client
 from contract_constants import BOARD_STORES_CACHE_TTL_HOURS, BOARD_STORES_LIST_MAX
-from http_common import _log_event, _utc_iso_z
+from http_common import _log_event, _read_http_error, _utc_iso_z
 from openrouter_client import OpenRouterError
 from secret_store import read_secret_raw
 
@@ -344,11 +344,8 @@ def http_bytes(
         with _urlopen(req) as resp:
             return resp.read() or b""
     except urlerror.HTTPError as exc:
-        try:
-            err = exc.read().decode("utf-8", "replace")[:300]
-            raise StoresError(f"{method} {url.split('?', 1)[0]} failed ({exc.code}): {err}") from exc
-        finally:
-            exc.close()
+        err = _read_http_error(exc).decode("utf-8", "replace")[:300]
+        raise StoresError(f"{method} {url.split('?', 1)[0]} failed ({exc.code}): {err}") from exc
     except urlerror.URLError as exc:
         raise StoresError(f"{method} {url.split('?', 1)[0]} failed: {exc.reason}") from exc
 

@@ -24,6 +24,7 @@ from urllib import error as urlerror
 from urllib import request as urlrequest
 
 from contract_constants import OPENROUTER_APPS as OPENROUTER_APP_CATALOG
+from http_common import _read_http_error
 
 DEFAULT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 IMAGES_ENDPOINT = "https://openrouter.ai/api/v1/images"
@@ -746,30 +747,26 @@ def post_json(
             return _read_http_response(req, sock_timeout, hard_deadline)
         except urlerror.HTTPError as exc:
             try:
+                body = _read_http_error(exc).decode("utf-8", errors="replace")
+            except Exception:  # pragma: no cover - defensive
                 body = ""
-                try:
-                    body = exc.read().decode("utf-8", errors="replace")
-                except Exception:  # pragma: no cover - defensive
-                    body = ""
-                if exc.code in _RETRYABLE_STATUSES and attempt < max_retries:
-                    sleep_s = _retry_sleep_seconds(
-                        attempt + 1, status=exc.code, retry_after=_retry_after_seconds(exc)
-                    )
-                    if _can_retry(deadline=deadline, sleep_s=sleep_s):
-                        attempt += 1
-                        time.sleep(sleep_s)
-                        continue
-                preview = body.replace("\n", " ").strip()
-                if len(preview) > 500:
-                    preview = f"{preview[:500]}..."
-                detail = f": {preview}" if preview else ""
-                raise OpenRouterError(
-                    f"OpenRouter request failed with status {exc.code}{detail}",
-                    status=exc.code,
-                    body=body,
-                ) from exc
-            finally:
-                exc.close()
+            if exc.code in _RETRYABLE_STATUSES and attempt < max_retries:
+                sleep_s = _retry_sleep_seconds(
+                    attempt + 1, status=exc.code, retry_after=_retry_after_seconds(exc)
+                )
+                if _can_retry(deadline=deadline, sleep_s=sleep_s):
+                    attempt += 1
+                    time.sleep(sleep_s)
+                    continue
+            preview = body.replace("\n", " ").strip()
+            if len(preview) > 500:
+                preview = f"{preview[:500]}..."
+            detail = f": {preview}" if preview else ""
+            raise OpenRouterError(
+                f"OpenRouter request failed with status {exc.code}{detail}",
+                status=exc.code,
+                body=body,
+            ) from exc
         except urlerror.URLError as exc:
             sleep_s = _retry_sleep_seconds(attempt + 1, status=None, retry_after=None)
             if attempt < max_retries and _can_retry(deadline=deadline, sleep_s=sleep_s):

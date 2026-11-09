@@ -27,7 +27,7 @@ from urllib import request as urlrequest
 
 import board_deadline
 from admin_runtime import _get_secretsmanager_client
-from http_common import _log_event, _utc_iso_z
+from http_common import _close_http_error, _log_event, _read_http_error, _utc_iso_z
 from openrouter_client import OpenRouterError
 from secret_store import read_secret_string
 
@@ -226,29 +226,26 @@ def _request(
         with _urlopen(req, timeout=board_deadline.remaining(timeout)) as resp:  # noqa: S310
             text = _read_body(resp, raw=raw)
     except urlerror.HTTPError as exc:
-        try:
-            if exc.code == 404 and method == "GET":
-                return None
-            wait = _rate_limit_wait_seconds(exc)
-            if wait is not None:
-                _log_event("warning", tag="board_github_rate_limited", status=exc.code, retryAfter=wait, path=path[:120])
-                raise GitHubSnapshotError(
-                    f"GitHub rate limit; retry after {wait}s", status=exc.code, retry_after=wait
-                ) from exc
-            detail = ""
-            try:
-                payload = json.loads(exc.read().decode("utf-8", errors="replace"))
-                detail = str(payload.get("message") or "") if isinstance(payload, dict) else ""
-            except Exception:  # pragma: no cover - defensive
-                detail = ""
-            suffix = f": {detail[:200]}" if detail else ""
-            if exc.code in (401, 403) and not token:
-                suffix += " (no GitHub token configured; anonymous access is rate-limited and cannot write)"
+        if exc.code == 404 and method == "GET" and _close_http_error(exc):
+            return None
+        wait = _rate_limit_wait_seconds(exc)
+        if wait is not None:
+            _log_event("warning", tag="board_github_rate_limited", status=exc.code, retryAfter=wait, path=path[:120])
             raise GitHubSnapshotError(
-                f"GitHub API returned status {exc.code} for {method} {path}{suffix}", status=exc.code
-            ) from exc
-        finally:
-            exc.close()
+                f"GitHub rate limit; retry after {wait}s", status=exc.code, retry_after=wait
+            ) from _close_http_error(exc)
+        detail = ""
+        try:
+            payload = json.loads(_read_http_error(exc).decode("utf-8", errors="replace"))
+            detail = str(payload.get("message") or "") if isinstance(payload, dict) else ""
+        except Exception:  # pragma: no cover - defensive
+            detail = ""
+        suffix = f": {detail[:200]}" if detail else ""
+        if exc.code in (401, 403) and not token:
+            suffix += " (no GitHub token configured; anonymous access is rate-limited and cannot write)"
+        raise GitHubSnapshotError(
+            f"GitHub API returned status {exc.code} for {method} {path}{suffix}", status=exc.code
+        ) from exc
     except urlerror.URLError as exc:
         raise GitHubSnapshotError(f"GitHub API transport error: {exc.reason}") from exc
     if accept.endswith("raw") or accept == "application/vnd.github.diff":
