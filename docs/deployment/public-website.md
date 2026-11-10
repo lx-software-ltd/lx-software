@@ -19,19 +19,21 @@ or WhatsApp empty to show "Not configured".
 | `VITE_MEDIA_BASE_URL` | no | `https://media.lx-software.com` (no trailing slash). Empty keeps serving `/media/*` from this site |
 | `VITE_CONTACT_TEL` | no | Telephone, E.164 with a leading `+`. Empty shows "Not configured" |
 | `VITE_CONTACT_WHATSAPP` | no | WhatsApp digits only, country code, no `+`. Empty shows "Not configured" |
-| `VITE_CONTACT_EMAIL` | no | Mailto target. Empty uses `hello@lx-software.com` |
+| `VITE_CONTACT_EMAIL` | no | Leave unset. The mailto address is `site.email` in `site.json`. A value here overrides that |
 | `VITE_CONTACT_WECHAT_ID` | no | Shown on `/wechat`. Empty leaves the placeholder |
 | `VITE_CONTACT_LINKEDIN` | no | LinkedIn profile URL or `in/<slug>`. Drives the contact icon, the JSON-LD `sameAs`, and `llms.txt`. Empty shows "Not configured" |
 | `VITE_GTM_ID` | no | Google Tag Manager web container id (`GTM-XXXXXXX`). Empty ships the site without Tag Manager or GA4. See [Google Analytics 4 and Tag Manager](#google-analytics-4-and-tag-manager) |
 
-`ADMIN_API_BASE_URL` is no longer read by this workflow. The public site
-does not call the admin API.
+The public site does not call the admin API. **Deploy Admin Web** reads
+the API URL from the `lxsoftware` stack output `AdminApiBaseUrl`.
 
-`VITE_OWNER_NAME` is retired. The schema.org `Person` node, the `<title>`,
-the meta description, Open Graph tags, and the FAQ come from
+`VITE_OWNER_NAME` is retired. Delete it from the production environment if
+it is still set. The schema.org `Person` node, the `<title>`, the meta
+description, Open Graph tags, and the FAQ come from
 `apps/public_www/src/content/site.json` (`site.owner`, `site.role`,
 `site.title`, `site.description`, `site.keywords`). Editing that file is the
-only step needed to change the public copy.
+only step needed to change the public copy. Delete `VITE_CONTACT_EMAIL` as
+well when it only repeats `site.email`.
 
 ## Pages and pre-rendering
 

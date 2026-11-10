@@ -1,5 +1,4 @@
 export interface AdminConfig {
-  readonly userPoolId: string;
   readonly clientId: string;
   readonly cognitoDomain: string;
   readonly redirectUri: string;
@@ -7,8 +6,9 @@ export interface AdminConfig {
 }
 
 export function getAdminConfig(): AdminConfig {
-  const userPoolId = import.meta.env.VITE_COGNITO_USER_POOL_ID ?? "";
   const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID ?? "";
+  // CognitoDomain from the lxsoftware stack is an https origin. Callers
+  // append /oauth2/* and /logout, and logout passes the result to `new URL`.
   const cognitoDomain = (import.meta.env.VITE_COGNITO_DOMAIN ?? "").replace(
     /\/$/,
     ""
@@ -19,14 +19,13 @@ export function getAdminConfig(): AdminConfig {
     ""
   );
 
-  if (!userPoolId || !clientId || !cognitoDomain || !redirectUri) {
+  if (!clientId || !cognitoDomain || !redirectUri) {
     throw new Error(
       "Missing Cognito VITE_ configuration. Copy .env.example to .env and set values."
     );
   }
 
   return {
-    userPoolId,
     clientId,
     cognitoDomain,
     redirectUri,

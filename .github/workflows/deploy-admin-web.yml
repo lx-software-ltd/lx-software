@@ -5,6 +5,12 @@ on:
     branches: [main]
     paths: ["apps/admin_web/**", "scripts/deploy/deploy-admin-www.sh"]
   workflow_dispatch:
+  # A backend deploy can replace the Cognito client or the HTTP API. Rebuild
+  # the SPA from current main so it picks up those outputs. Only a successful
+  # Deploy Backend on main qualifies.
+  workflow_run:
+    workflows: ["Deploy Backend"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -16,6 +22,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-26.04
     environment: production
     steps:
@@ -30,18 +37,67 @@ jobs:
       - run: npm ci
         working-directory: apps/admin_web
 
-      - run: npm run build
-        working-directory: apps/admin_web
-        env:
-          VITE_COGNITO_USER_POOL_ID: ${{ vars.ADMIN_COGNITO_USER_POOL_ID }}
-          VITE_COGNITO_CLIENT_ID: ${{ vars.ADMIN_COGNITO_CLIENT_ID }}
-          VITE_COGNITO_DOMAIN: ${{ vars.ADMIN_COGNITO_DOMAIN }}
-          VITE_COGNITO_REDIRECT_URI: https://admin.lx-software.com/auth/callback
-          VITE_API_BASE_URL: ${{ vars.ADMIN_API_BASE_URL }}
-
       - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/GitHubActionsRole
           aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Read admin SPA settings from the lxsoftware stack
+        id: admin_spa
+        env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          stack=lxsoftware
+          err="$(mktemp)"
+          if ! json="$(aws cloudformation describe-stacks --stack-name "$stack" --output json 2>"$err")"; then
+            if grep -q 'AccessDenied' "$err"; then
+              echo "::error::GitHubActionsRole needs cloudformation:DescribeStacks on arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/${stack}/*"
+            fi
+            cat "$err" >&2
+            rm -f "$err"
+            exit 1
+          fi
+          rm -f "$err"
+          read_output() {
+            jq -r --arg key "$1" '
+              (.Stacks[0].Outputs // [])[] | select(.OutputKey == $key) | .OutputValue
+            ' <<<"$json"
+          }
+          client_id="$(read_output UserPoolClientId)"
+          domain="$(read_output CognitoDomain)"
+          api_url="$(read_output AdminApiBaseUrl)"
+          if [ -z "$client_id" ] || [ -z "$domain" ] || [ -z "$api_url" ]; then
+            echo "::error::Stack $stack is missing UserPoolClientId, CognitoDomain, or AdminApiBaseUrl"
+            exit 1
+          fi
+          case "$domain" in
+            https://*) ;;
+            *)
+              echo "::error::CognitoDomain on $stack must be an https origin"
+              exit 1
+              ;;
+          esac
+          case "$api_url" in
+            https://*) ;;
+            *)
+              echo "::error::AdminApiBaseUrl on $stack must be an https origin"
+              exit 1
+              ;;
+          esac
+          {
+            echo "client_id=$client_id"
+            echo "domain=$domain"
+            echo "api_url=$api_url"
+          } >> "$GITHUB_OUTPUT"
+
+      - run: npm run build
+        working-directory: apps/admin_web
+        env:
+          VITE_COGNITO_CLIENT_ID: ${{ steps.admin_spa.outputs.client_id }}
+          VITE_COGNITO_DOMAIN: ${{ steps.admin_spa.outputs.domain }}
+          VITE_COGNITO_REDIRECT_URI: https://admin.lx-software.com/auth/callback
+          VITE_API_BASE_URL: ${{ steps.admin_spa.outputs.api_url }}
 
       - run: bash scripts/deploy/deploy-admin-www.sh

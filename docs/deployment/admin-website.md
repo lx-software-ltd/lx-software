@@ -14,18 +14,21 @@ Executive Board design is in
 `backend/lambda/**` or `contracts/**` change (or via **Run workflow**).
 
 1. **GitHub environment** — `AWS_ACCOUNT_ID`, `AWS_REGION`, optional
-   `CDK_BOOTSTRAP_QUALIFIER`, `CDK_PARAM_FILE`, `ADMIN_ACM_CERT_ARN`,
+   `CDK_BOOTSTRAP_QUALIFIER`, `CDK_PARAM_FILE`,
    `ADMIN_GOOGLE_CLIENT_ID`, `ADMIN_FEDERATED_EMAIL_ALLOWLIST`
    (comma-separated lower-case emails that receive `admin` via Pre Token
-   Generation — every Google admin and the bootstrap email),
-   `ADMIN_BOOTSTRAP_EMAIL`, and after the first deploy the SPA vars
-   `ADMIN_COGNITO_*` and `ADMIN_API_BASE_URL`. Secrets
+   Generation — every Google admin and the bootstrap email), and
+   `ADMIN_BOOTSTRAP_EMAIL`. Secrets
    `ADMIN_GOOGLE_CLIENT_SECRET` and `ADMIN_BOOTSTRAP_TEMP_PASSWORD` (14+
    chars, mixed classes, or `adminCreateUser` fails).
+   **Deploy Admin Web** reads `UserPoolClientId`, `CognitoDomain`, and
+   `AdminApiBaseUrl` from the `lxsoftware` stack. Do not set
+   `ADMIN_COGNITO_*` or `ADMIN_API_BASE_URL`.
 2. **Region** — `AWS_REGION` must match where CDK Bootstrap ran (SSM
    `/cdk-bootstrap/<qualifier>/version` must exist) and where the public
    site deploys.
-3. **ACM** — `ADMIN_ACM_CERT_ARN` must be **ISSUED** in **us-east-1**.
+3. **ACM** — `lxsoftware-admin-web:AdminWebCertificateArn` in the CDK
+   parameter file must be an **ISSUED** certificate in **us-east-1**.
 4. **Cloudflare** — proxy **off** (gray cloud) for ACM validation and the
    `admin` CNAME.
 5. **Google OAuth client** — add
@@ -46,8 +49,8 @@ the Cognito **Users** page only shows accounts that have already signed in.
 
 Bootstrap the stack region and `us-east-1` ([`setup.md`](./setup.md#3-cdk-bootstrap)).
 Request a certificate for `admin.lx-software.com` in **us-east-1**, validate
-by DNS in Cloudflare with proxy disabled, wait for **ISSUED** and record the
-ARN as `ADMIN_ACM_CERT_ARN`.
+by DNS in Cloudflare with proxy disabled, wait for **ISSUED**, and set
+`lxsoftware-admin-web:AdminWebCertificateArn` in the CDK parameter file.
 
 ## 2. Deploy admin infrastructure
 
@@ -59,9 +62,9 @@ the key list). Confirm both stacks finish:
   set, Executive Board schedules
 - `lxsoftware-admin-web` — S3 origin + CloudFront for the SPA
 
-Copy the CloudFormation outputs (user pool, client, hosted UI domain, API
-URL, CloudFront domain) into the GitHub environment variables used by
-**Deploy Admin Web**.
+**Deploy Admin Web** reads `UserPoolClientId`, `CognitoDomain` (the full
+`https://` origin), and `AdminApiBaseUrl` from this stack when it builds
+the SPA. The CloudFront domain is the DNS target for `admin.lx-software.com`.
 
 If a deploy leaves `lxsoftware` in `UPDATE_ROLLBACK_FAILED` on a resource
 with no physical counterpart (a stage that references routes created in
@@ -109,7 +112,8 @@ console; CDK owns them from `AdminWebDomainName` and overwrites drift.
 ## 4. Deploy the admin SPA
 
 Run **Deploy Admin Web** (on `main` when `apps/admin_web/**` or
-`scripts/deploy/deploy-admin-www.sh` change, or manually). It builds
+`scripts/deploy/deploy-admin-www.sh` change, after a successful **Deploy
+Backend** on `main`, or manually). It builds
 `apps/admin_web` with production `VITE_*` values, then
 `scripts/deploy/deploy-admin-www.sh` uploads hashed `dist/assets/**` with a
 long immutable cache, uploads `index.html` with `no-cache` and invalidates
@@ -377,6 +381,9 @@ the `PUBLIC_API_KEY_GPG_PASSPHRASE` secret. Because the repository and its
 logs are public, a minted key is emitted as a gpg-encrypted block in the
 run summary (`gpg --decrypt key.asc`). `list` and `revoke` print to the
 summary directly.
+
+Set `ADMIN_API_BASE_URL` in your shell to the `AdminApiBaseUrl` output of
+the `lxsoftware` stack. It is not a GitHub variable.
 
 ```bash
 curl -H "x-api-key: lxpk_..." "$ADMIN_API_BASE_URL/public/finance"
@@ -763,8 +770,8 @@ others on from **Staff** (or `PUT /siu-tin-dei/board/staff/{id}`):
    logo and colours into `backend/lambda/admin/brand/`; Meta App Review
    for `pages_manage_posts` / `instagram_content_publish` is an owner task.
    Raise **Concurrent tasks** to 6 after the first stable week.
-5. **Newsletter / duties:** set `PublicSiteOrigins`; confirm
-   `ADMIN_API_BASE_URL` on the production environment; activate
+5. **Newsletter / duties:** set `PublicSiteOrigins`; confirm the
+   `lxsoftware` stack output `AdminApiBaseUrl` is the live admin HTTP API; activate
    `accountant` and `security-analyst`; then enable
    `settings.staff.dutiesEnabled` (Settings → Run scheduled seat duties).
 6. **Engineering:** once the siutindei workflows exist (architecture doc,

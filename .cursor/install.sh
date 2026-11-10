@@ -28,7 +28,6 @@ admin_env="apps/admin_web/.env"
 if [ ! -f "$admin_env" ]; then
   echo "==> Writing placeholder $admin_env"
   cat > "$admin_env" <<'EOF'
-VITE_COGNITO_USER_POOL_ID=us-east-1_PLACEHOLDER
 VITE_COGNITO_CLIENT_ID=placeholder-client-id
 VITE_COGNITO_DOMAIN=https://placeholder.auth.us-east-1.amazoncognito.com
 VITE_COGNITO_REDIRECT_URI=http://localhost:5174/auth/callback
