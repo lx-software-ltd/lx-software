@@ -16,9 +16,11 @@ writes (``issues: write``, ``pull-requests: write``) and security alerts (``secu
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 import os
 import re
+import time
 from datetime import datetime, timezone
 from typing import Any
 from urllib import error as urlerror
@@ -34,6 +36,8 @@ from secret_store import read_secret_string
 DEFAULT_REPO = "lx-software-ltd/siutindei"
 API_ORIGIN = "https://api.github.com"
 HTTP_TIMEOUT_SECONDS = 25
+# Idempotent reads only. A 502 from check-runs must not be retried as a write.
+_GET_RETRY_STATUSES = frozenset({500, 502, 503, 504})
 MAX_DOC_CHARS = 6000
 RAW_LOG_TAIL_BYTES = 400_000
 MAX_TOTAL_CHARS = 32000
@@ -185,21 +189,72 @@ def _urlopen(req: urlrequest.Request, timeout: float | None = None) -> Any:
     return _opener().open(req, timeout=timeout)
 
 
-def _read_body(resp: Any, *, raw: bool) -> str:
-    if not raw:
-        return resp.read().decode("utf-8", errors="replace")
+def _read_body(resp: Any, *, raw: bool, deadline: float) -> str:
+    """Read the body in chunks, and stop when ``deadline`` (monotonic) passes.
+
+    ``urlopen``'s timeout is socket inactivity. A job log that trickles bytes
+    resets it and can hold the staff tick until Lambda kills the invocation.
+    """
     buf = bytearray()
     while True:
-        chunk = resp.read(65536)
+        if time.monotonic() >= deadline:
+            raise GitHubSnapshotError("GitHub API read exceeded the request timeout")
+        try:
+            chunk = resp.read(65536)
+        except TypeError:
+            # Test doubles implement read() with no size. A real HTTPResponse
+            # accepts the size, so this path is the one-shot reader.
+            chunk = resp.read()
+            if chunk:
+                buf.extend(chunk)
+                if raw and len(buf) > RAW_LOG_TAIL_BYTES:
+                    del buf[:-RAW_LOG_TAIL_BYTES]
+            break
         if not chunk:
             break
         buf.extend(chunk)
-        if len(buf) > RAW_LOG_TAIL_BYTES:
+        if raw and len(buf) > RAW_LOG_TAIL_BYTES:
             del buf[:-RAW_LOG_TAIL_BYTES]
     return bytes(buf).decode("utf-8", errors="replace")
 
 
+def _retryable_get(exc: GitHubSnapshotError) -> bool:
+    if exc.status in _GET_RETRY_STATUSES:
+        return True
+    if exc.status is not None or exc.retry_after is not None:
+        return False
+    text = str(exc)
+    return (
+        "transport error" in text
+        or "truncated" in text
+        or "exceeded the request timeout" in text
+        or "invalid JSON" in text
+    )
+
+
 def _request(
+    method: str,
+    path: str,
+    *,
+    body: dict[str, Any] | None = None,
+    accept: str = "application/vnd.github+json",
+    timeout: int = HTTP_TIMEOUT_SECONDS,
+) -> Any:
+    attempts = 2 if method == "GET" else 1
+    last: GitHubSnapshotError | None = None
+    for attempt in range(attempts):
+        try:
+            return _request_once(method, path, body=body, accept=accept, timeout=timeout)
+        except GitHubSnapshotError as exc:
+            last = exc
+            if attempt + 1 < attempts and _retryable_get(exc):
+                continue
+            raise
+    assert last is not None
+    raise last
+
+
+def _request_once(
     method: str,
     path: str,
     *,
@@ -222,9 +277,12 @@ def _request(
         headers["Content-Type"] = "application/json"
     req = urlrequest.Request(url, data=data, method=method, headers=headers)  # noqa: S310 - fixed API origin
     raw = accept.endswith("raw") or accept == "application/vnd.github.diff"
+    granted = board_deadline.remaining(timeout)
+    if granted is None:
+        granted = float(timeout)
     try:
-        with _urlopen(req, timeout=board_deadline.remaining(timeout)) as resp:  # noqa: S310
-            text = _read_body(resp, raw=raw)
+        with _urlopen(req, timeout=granted) as resp:  # noqa: S310
+            text = _read_body(resp, raw=raw, deadline=time.monotonic() + float(granted))
     except urlerror.HTTPError as exc:
         if exc.code == 404 and method == "GET" and _close_http_error(exc):
             return None
@@ -248,6 +306,10 @@ def _request(
         ) from exc
     except urlerror.URLError as exc:
         raise GitHubSnapshotError(f"GitHub API transport error: {exc.reason}") from exc
+    except (http.client.HTTPException, TimeoutError, OSError) as exc:
+        # IncompleteRead and RemoteDisconnected escape urlopen during resp.read.
+        # Left alone they abort the whole code tick instead of one run.
+        raise GitHubSnapshotError(f"GitHub API transport error: {exc}") from exc
     if accept.endswith("raw") or accept == "application/vnd.github.diff":
         return text
     if not text.strip():

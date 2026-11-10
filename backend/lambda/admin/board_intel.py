@@ -26,6 +26,21 @@ def _host(url: str) -> str:
     return (urlparse(url).netloc or "").lower()
 
 
+def _backoff_days_after_fetch_failure(exc: BaseException) -> int:
+    """Days to skip a host that will fail the same way again. ``0`` means don't.
+
+    A self-signed certificate does not heal overnight. ``EBUSY`` after the
+    fetch helper's own retry is the resolver or a socket still busy; one day
+    is enough to stop the same page failing on every crawl.
+    """
+    text = str(exc).lower()
+    if "certificate verify failed" in text or "certificate_verify_failed" in text:
+        return 7
+    if getattr(exc, "errno", None) == 16 or "device or resource busy" in text:
+        return 1
+    return 0
+
+
 def _change_kind(url: str) -> str:
     lower = url.lower()
     if "pric" in lower or "fee" in lower or "tuition" in lower:
@@ -103,6 +118,9 @@ def daily_crawl(table: Any, settings: dict[str, Any], cursor: dict[str, Any] | N
             result = board_crawl.fetch(url)
         except Exception as exc:
             _log_event("warning", tag="board_intel_fetch_failed", url=url[:120], error=str(exc)[:200])
+            backoff_days = _backoff_days_after_fetch_failure(exc)
+            if backoff_days:
+                board_crawl.backoff_host(table, host, days=backoff_days)
             pages_run += 1
             continue
         if result.status in (403, 429):

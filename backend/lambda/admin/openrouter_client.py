@@ -34,6 +34,10 @@ _RETRYABLE_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
 _MODEL_WALK_STATUSES = frozenset({429, 502, 503})
 _MAX_RETRIES_DEFAULT = 2
 _MAX_FALLBACK_MODELS = 3
+# Leave this much of a shared wall clock for a later model when the slice still
+# leaves the current attempt at least _MIN_MODEL_ATTEMPT_SECONDS.
+_FALLBACK_RESERVE_SECONDS = 45.0
+_MIN_MODEL_ATTEMPT_SECONDS = 30.0
 # Cap wait so a 429 cannot eat a whole meeting-phase timeout (100s).
 _MAX_RETRY_SLEEP_SECONDS = 20.0
 # Skip a retry when sleep plus another attempt cannot finish inside ``timeout``.
@@ -336,6 +340,7 @@ def chat_completion(
         # First attempt keeps the caller's timeout so two clock reads cannot
         # truncate a 45 s floor to 44. Later models share the leftover budget.
         attempt_timeout = timeout if index == 0 else max(1, int(remaining))
+        attempt_wall = _slice_wall_clock(wall_left, len(rest))
         try:
             body_text = post_json(
                 url=endpoint_url(),
@@ -344,7 +349,7 @@ def chat_completion(
                 timeout=attempt_timeout,
                 max_retries=max_retries if index == 0 else min(1, max_retries),
                 service=service,
-                wall_clock_seconds=wall_left,
+                wall_clock_seconds=attempt_wall,
             )
             raw = _load_json_object(body_text, what="OpenRouter response")
             break
@@ -378,6 +383,12 @@ def chat_completion(
                         last_error = retry_exc
                         payload = retry_payload
             if last_error.status in _MODEL_WALK_STATUSES and index < len(chain) - 1:
+                continue
+            if (
+                _is_wall_clock_timeout(last_error)
+                and index < len(chain) - 1
+                and (_wall_clock_left() or 0) >= _MIN_MODEL_ATTEMPT_SECONDS
+            ):
                 continue
             raise last_error from None
     if raw is None:
@@ -590,6 +601,25 @@ def _retry_after_seconds(exc: urlerror.HTTPError) -> float | None:
         return max(0.0, float(raw))
     except ValueError:
         return None
+
+
+
+def _is_wall_clock_timeout(exc: OpenRouterError) -> bool:
+    return "wall-clock budget exhausted" in str(exc)
+
+
+def _slice_wall_clock(wall_left: float | None, later_models: int) -> float | None:
+    """Cap one attempt so a later model still has a slice of the same budget.
+
+    The last model keeps whatever is left. A budget too small to split is
+    left whole so a single slow call is not cut for a fallback that cannot run.
+    """
+    if wall_left is None or later_models <= 0:
+        return wall_left
+    reserve = min(_FALLBACK_RESERVE_SECONDS, wall_left / 2)
+    if wall_left - reserve < _MIN_MODEL_ATTEMPT_SECONDS:
+        return wall_left
+    return wall_left - reserve
 
 
 def _clock() -> float:

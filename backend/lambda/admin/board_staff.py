@@ -747,7 +747,7 @@ def run_step(payload: dict[str, Any]) -> None:
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
             model=model,
             timeout=min(90, loop_seconds),
-            max_tokens=_step_max_tokens(task),
+            max_tokens=_step_max_tokens(task, retried=bool(payload.get("retried"))),
             temperature=0.3,
             json_mode=False,
             tag="board_staff_step",
@@ -1043,6 +1043,8 @@ def _should_require_finish(task: dict[str, Any]) -> bool:
 
 _STEP_TOKENS_DEFAULT = 2500
 _STEP_TOKENS_LARGE = 6000
+# A retried step already burned the wall clock. Keep the second completion short.
+_STEP_TOKENS_RETRY = 1500
 # Content-plan weeks are staged in batches (content_stage_items). A 12000-token
 # completion does not fit in staffStepMaxSeconds once the model also has to
 # call evidence tools.
@@ -1054,18 +1056,24 @@ def _is_content_plan(task: dict[str, Any]) -> bool:
     return event_id.startswith("content-plan")
 
 
-def _step_max_tokens(task: dict[str, Any]) -> int:
+def _step_max_tokens(task: dict[str, Any], *, retried: bool = False) -> int:
     """Completion budget for one staff step.
 
     Content-plan steps stage at most six items, so they use the same 6000
     budget as other JSON deliverables. A 2500 cap still truncates a batch.
-    The last/idle step uses 6000; everything else stays 2500.
+    The last/idle step uses 6000; everything else stays 2500. A retried step
+    uses a shorter cap so the second model can finish inside the wall clock
+    that the first attempt exhausted.
     """
     if _is_content_plan(task):
-        return _STEP_TOKENS_CONTENT_PLAN
-    if str(task.get("deliverableType") or "") == "json" or _should_require_finish(task):
-        return _STEP_TOKENS_LARGE
-    return _STEP_TOKENS_DEFAULT
+        budget = _STEP_TOKENS_CONTENT_PLAN
+    elif str(task.get("deliverableType") or "") == "json" or _should_require_finish(task):
+        budget = _STEP_TOKENS_LARGE
+    else:
+        budget = _STEP_TOKENS_DEFAULT
+    if retried:
+        return min(budget, _STEP_TOKENS_RETRY)
+    return budget
 
 
 def _scratch_without_nudges(task_id: str, note: str) -> str:
