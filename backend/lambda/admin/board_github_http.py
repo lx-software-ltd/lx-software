@@ -1,9 +1,11 @@
 """GitHub reads with a hard deadline and one retry for idempotent GETs.
 
 ``urlopen`` times out on socket inactivity. A job log that trickles bytes
-resets that timer and can hold a staff tick until Lambda kills it. Reading
-stops at the granted timeout, and a truncated body becomes a snapshot error
-so one run cannot abort the whole code tick.
+resets that timer and can hold a staff tick until Lambda kills it. The body
+is read with ``read1`` so the deadline is checked after each socket receive,
+and a timed-out read becomes a snapshot error so one run cannot abort the
+whole code tick. A retried GET waits briefly first; an immediate second
+attempt usually meets the same gateway error.
 """
 
 from __future__ import annotations
@@ -18,6 +20,8 @@ import board_deadline
 from http_common import _close_http_error, _log_event, _read_http_error
 
 _GET_RETRY_STATUSES = frozenset({500, 502, 503, 504})
+# Long enough that a GitHub 502 is usually gone, short enough to stay inside a tick.
+_GET_RETRY_PAUSE_SECONDS = 1.0
 
 
 def _github():
@@ -28,6 +32,22 @@ def _github():
     return board_github
 
 
+def _next_chunk(resp: Any) -> tuple[bytes, bool]:
+    """Next bytes, and whether this read consumed the whole body.
+
+    ``read(size)`` blocks until ``size`` bytes arrive or the peer closes.
+    A trickling log resets the socket timeout on every byte, so the deadline
+    check between reads never runs. ``read1`` returns after one socket receive.
+    """
+    read1 = getattr(resp, "read1", None)
+    reader = read1 if read1 is not None else resp.read
+    try:
+        return reader(65536), False
+    except TypeError:
+        # Test doubles implement read() with no size. A real response accepts it.
+        return reader(), True
+
+
 def _read_body(resp: Any, *, raw: bool, deadline: float) -> str:
     """Read in chunks and stop when ``deadline`` (monotonic) passes."""
     gh = _github()
@@ -35,21 +55,13 @@ def _read_body(resp: Any, *, raw: bool, deadline: float) -> str:
     while True:
         if time.monotonic() >= deadline:
             raise gh.GitHubSnapshotError("GitHub API read exceeded the request timeout")
-        try:
-            chunk = resp.read(65536)
-        except TypeError:
-            # Test doubles implement read() with no size. A real response accepts it.
-            chunk = resp.read()
-            if chunk:
-                buf.extend(chunk)
-                if raw and len(buf) > gh.RAW_LOG_TAIL_BYTES:
-                    del buf[: -gh.RAW_LOG_TAIL_BYTES]
+        chunk, one_shot = _next_chunk(resp)
+        if chunk:
+            buf.extend(chunk)
+            if raw and len(buf) > gh.RAW_LOG_TAIL_BYTES:
+                del buf[: -gh.RAW_LOG_TAIL_BYTES]
+        if one_shot or not chunk:
             break
-        if not chunk:
-            break
-        buf.extend(chunk)
-        if raw and len(buf) > gh.RAW_LOG_TAIL_BYTES:
-            del buf[: -gh.RAW_LOG_TAIL_BYTES]
     return bytes(buf).decode("utf-8", errors="replace")
 
 
@@ -59,12 +71,7 @@ def _retryable_get(exc: Any) -> bool:
     if exc.status is not None or exc.retry_after is not None:
         return False
     text = str(exc)
-    return (
-        "transport error" in text
-        or "truncated" in text
-        or "exceeded the request timeout" in text
-        or "invalid JSON" in text
-    )
+    return "transport error" in text or "exceeded the request timeout" in text or "invalid JSON" in text
 
 
 def _request(
@@ -86,6 +93,9 @@ def _request(
         except gh.GitHubSnapshotError as exc:
             last = exc
             if attempt + 1 < attempts and _retryable_get(exc):
+                pause = board_deadline.remaining(_GET_RETRY_PAUSE_SECONDS)
+                if pause:
+                    time.sleep(pause)
                 continue
             raise
     assert last is not None

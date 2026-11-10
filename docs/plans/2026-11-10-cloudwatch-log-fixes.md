@@ -31,6 +31,7 @@ Stop the failures seen in the last five days of CloudWatch logs for this stack:
 - GitHub writes are not retried.
 - Rate-limit errors are not retried.
 - A staff step that has no fallback model still uses its full wall-clock budget.
+- A slice for a later model also fits in the caller's loop deadline.
 - A certificate failure is not treated as a busy file and retried.
 - Personas still see aliases; no new routes; no contract edits.
 

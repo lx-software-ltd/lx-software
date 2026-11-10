@@ -45,5 +45,5 @@ backend/lambda/admin/linkedin.py 967
 backend/lambda/admin/linkedin_draft.py 976
 backend/lambda/admin/linkedin_image.py 691
 backend/lambda/admin/linkedin_store.py 1811
-backend/lambda/admin/openrouter_client.py 1065
+backend/lambda/admin/openrouter_client.py 1064
 backend/lambda/admin/openrouter_usage_pull.py 586
