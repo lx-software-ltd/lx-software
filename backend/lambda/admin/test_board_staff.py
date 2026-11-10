@@ -15,6 +15,7 @@ import board_budget
 import board_code
 import board_personas
 import board_staff
+import board_staff_tokens
 import board_store
 import board_tools
 from contract_constants import (
@@ -2443,7 +2444,7 @@ class StaffStepTests(ToolsTestCase):
                     "retried": True,
                 }
             )
-        self.assertEqual(seen["max_tokens"], board_staff._STEP_TOKENS_RETRY)
+        self.assertEqual(seen["max_tokens"], board_staff_tokens._STEP_TOKENS_RETRY)
 
 
 class StaffRouteTests(BoardTestCase):

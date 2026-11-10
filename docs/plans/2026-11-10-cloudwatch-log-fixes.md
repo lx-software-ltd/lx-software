@@ -19,9 +19,9 @@ Stop the failures seen in the last five days of CloudWatch logs for this stack:
 
 ## Files
 
-- `backend/lambda/admin/board_github.py`
-- `backend/lambda/admin/openrouter_client.py`
-- `backend/lambda/admin/board_staff.py`
+- `backend/lambda/admin/board_github.py` and `board_github_http.py`
+- `backend/lambda/admin/openrouter_client.py` and `openrouter_fallback.py`
+- `backend/lambda/admin/board_staff.py` and `board_staff_tokens.py`
 - `backend/lambda/admin/board_crawl.py`
 - `backend/lambda/admin/board_intel.py`
 - Tests next to those modules.

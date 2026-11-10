@@ -31,6 +31,7 @@ def _install_stubs() -> None:
 _install_stubs()
 
 import openrouter_client  # noqa: E402
+import openrouter_fallback  # noqa: E402
 
 
 class _FakeResp:
@@ -471,7 +472,7 @@ class TestOpenRouterAttribution(unittest.TestCase):
             )
         self.assertEqual(completion.text, "from-b")
         self.assertEqual(completion.model, "b")
-        self.assertGreaterEqual(seen[1] or 0, openrouter_client._MIN_MODEL_ATTEMPT_SECONDS)
+        self.assertGreaterEqual(seen[1] or 0, openrouter_fallback.MIN_MODEL_ATTEMPT_SECONDS)
 
 
 class TestOpenRouterFallbacksAndRetries(unittest.TestCase):

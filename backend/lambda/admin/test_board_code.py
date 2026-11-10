@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 import board_async
 import board_code
 import board_github
+import board_github_http
 import board_holds
 import board_staff
 import board_store
@@ -2539,8 +2540,8 @@ class GithubRequestTests(unittest.TestCase):
         with (
             patch.object(board_github, "_token", return_value=""),
             patch.object(board_github, "_opener", return_value=_Opener()),
-            patch.object(board_github.time, "monotonic", monotonic),
-            patch.object(board_github.board_deadline, "remaining", return_value=2),
+            patch.object(board_github_http.time, "monotonic", monotonic),
+            patch.object(board_github_http.board_deadline, "remaining", return_value=2),
         ):
             with self.assertRaises(board_github.GitHubSnapshotError) as raised:
                 board_github._request("GET", "/repos/x/y/actions/jobs/1/logs", accept="application/vnd.github.raw")  # noqa: SLF001
@@ -2561,8 +2562,8 @@ class GithubRequestTests(unittest.TestCase):
         with (
             patch.object(board_github, "_token", return_value=""),
             patch.object(board_github, "_opener", return_value=opener),
-            patch.object(board_github, "_read_http_error", return_value=b""),
-            patch.object(board_github, "_close_http_error", side_effect=lambda exc: exc),
+            patch.object(board_github_http, "_read_http_error", return_value=b""),
+            patch.object(board_github_http, "_close_http_error", side_effect=lambda exc: exc),
         ):
             with self.assertRaises(board_github.GitHubSnapshotError):
                 board_github._request("POST", "/repos/x/y/issues", body={"title": "t"})  # noqa: SLF001
