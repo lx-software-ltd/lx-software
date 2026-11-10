@@ -15,6 +15,7 @@ import board_budget
 import board_code
 import board_personas
 import board_staff
+import board_staff_tokens
 import board_store
 import board_tools
 from contract_constants import (
@@ -2415,6 +2416,35 @@ class StaffStepTests(ToolsTestCase):
         self.assertIn("earlier scratchpad notes omitted", frame)
         self.assertIn("note 7", frame)
         self.assertNotIn("note 0", frame)
+
+
+    def test_retried_step_asks_for_a_shorter_completion(self) -> None:
+        task = self._queued_task()
+        tid = task["taskId"]
+        latest = board_store.get_task(self.table, tid)
+        assert latest is not None
+        latest["deliverableType"] = "json"
+        board_store.put_task(self.table, latest)
+        seen: dict[str, Any] = {}
+
+        def capture(*_a: Any, **kwargs: Any) -> None:
+            seen["max_tokens"] = kwargs.get("max_tokens")
+            raise RuntimeError("stop after observing the budget")
+
+        with (
+            patch.object(board_tools, "run_tool_loop", capture),
+            patch.object(board_async, "invoke_async", lambda payload, fallback=None: None),
+        ):
+            board_staff.run_step(
+                {
+                    "internal": "board_staff_step",
+                    "boardKey": BOARD_KEY,
+                    "taskId": tid,
+                    "step": 1,
+                    "retried": True,
+                }
+            )
+        self.assertEqual(seen["max_tokens"], board_staff_tokens._STEP_TOKENS_RETRY)
 
 
 class StaffRouteTests(BoardTestCase):

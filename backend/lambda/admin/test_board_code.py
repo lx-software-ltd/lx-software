@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 import board_async
 import board_code
 import board_github
+import board_github_http
 import board_holds
 import board_staff
 import board_store
@@ -2460,6 +2461,169 @@ class GithubRequestTests(unittest.TestCase):
         ):
             out = board_github._request("GET", "/repos/x/y")  # noqa: SLF001
         self.assertEqual(out, {"ok": True})
+
+
+    def test_get_retries_an_incomplete_read_once(self) -> None:
+        import http.client
+
+        class _Resp:
+            def __init__(self, body: bytes) -> None:
+                self._body = body
+                self._sent = False
+
+            def read(self, n: int = -1) -> bytes:  # noqa: ARG002
+                if self._sent:
+                    return b""
+                self._sent = True
+                if self._body == b"fail":
+                    raise http.client.IncompleteRead(b"partial")
+                return self._body
+
+            def __enter__(self) -> "_Resp":
+                return self
+
+            def __exit__(self, *_a: object) -> bool:
+                return False
+
+        calls = {"n": 0}
+
+        class _Opener:
+            def open(self, req: Any, timeout: Any = None) -> _Resp:  # noqa: ARG002
+                calls["n"] += 1
+                body = b"fail" if calls["n"] == 1 else b'{"ok": true}'
+                return _Resp(body)
+
+        sleeps: list[float] = []
+        with (
+            patch.object(board_github, "_token", return_value=""),
+            patch.object(board_github, "_opener", return_value=_Opener()),
+            patch.object(board_github_http.time, "sleep", lambda seconds: sleeps.append(seconds)),
+        ):
+            out = board_github._request("GET", "/repos/x/y")  # noqa: SLF001
+        self.assertEqual(out, {"ok": True})
+        self.assertEqual(calls["n"], 2)
+        self.assertEqual(sleeps, [board_github_http._GET_RETRY_PAUSE_SECONDS])
+
+    def test_remote_disconnect_becomes_a_snapshot_error(self) -> None:
+        import http.client
+
+        class _Opener:
+            def open(self, req: Any, timeout: Any = None) -> Any:  # noqa: ARG002
+                raise http.client.RemoteDisconnected("Remote end closed connection without response")
+
+        with (
+            patch.object(board_github, "_token", return_value=""),
+            patch.object(board_github, "_opener", return_value=_Opener()),
+            patch.object(board_github_http.time, "sleep", lambda *_a, **_k: None),
+        ):
+            with self.assertRaises(board_github.GitHubSnapshotError) as raised:
+                board_github._request("GET", "/repos/x/y")  # noqa: SLF001
+        self.assertIn("Remote end closed connection", str(raised.exception))
+
+    def test_a_trickling_read_stops_at_the_request_deadline(self) -> None:
+        class _Resp:
+            def read(self, n: int = -1) -> bytes:  # noqa: ARG002
+                raise AssertionError("read() waits for a full chunk; the deadline check never runs")
+
+            def read1(self, n: int = -1) -> bytes:  # noqa: ARG002
+                return b"x"
+
+            def __enter__(self) -> "_Resp":
+                return self
+
+            def __exit__(self, *_a: object) -> bool:
+                return False
+
+        class _Opener:
+            def open(self, req: Any, timeout: Any = None) -> _Resp:  # noqa: ARG002
+                return _Resp()
+
+        clock = {"now": 0.0}
+
+        def monotonic() -> float:
+            clock["now"] += 1.0
+            return clock["now"]
+
+        with (
+            patch.object(board_github, "_token", return_value=""),
+            patch.object(board_github, "_opener", return_value=_Opener()),
+            patch.object(board_github_http.time, "monotonic", monotonic),
+            patch.object(board_github_http.time, "sleep", lambda *_a, **_k: None),
+            patch.object(board_github_http.board_deadline, "remaining", return_value=2),
+        ):
+            with self.assertRaises(board_github.GitHubSnapshotError) as raised:
+                board_github._request("GET", "/repos/x/y/actions/jobs/1/logs", accept="application/vnd.github.raw")  # noqa: SLF001
+        self.assertIn("exceeded the request timeout", str(raised.exception))
+
+    def test_post_is_not_retried_on_a_gateway_error(self) -> None:
+        import urllib.error
+
+        class _Opener:
+            def __init__(self) -> None:
+                self.n = 0
+
+            def open(self, req: Any, timeout: Any = None) -> Any:  # noqa: ARG002
+                self.n += 1
+                raise urllib.error.HTTPError(req.full_url, 502, "bad gateway", hdrs=None, fp=None)  # type: ignore[arg-type]
+
+        opener = _Opener()
+        with (
+            patch.object(board_github, "_token", return_value=""),
+            patch.object(board_github, "_opener", return_value=opener),
+            patch.object(board_github_http, "_read_http_error", return_value=b""),
+            patch.object(board_github_http, "_close_http_error", side_effect=lambda exc: exc),
+        ):
+            with self.assertRaises(board_github.GitHubSnapshotError):
+                board_github._request("POST", "/repos/x/y/issues", body={"title": "t"})  # noqa: SLF001
+        self.assertEqual(opener.n, 1)
+
+
+    def test_get_pauses_before_retrying_a_gateway_error(self) -> None:
+        import urllib.error
+
+        class _Resp:
+            def __init__(self) -> None:
+                self._sent = False
+
+            def read(self, n: int = -1) -> bytes:  # noqa: ARG002
+                if self._sent:
+                    return b""
+                self._sent = True
+                return b'{"ok": true}'
+
+            def __enter__(self) -> "_Resp":
+                return self
+
+            def __exit__(self, *_a: object) -> bool:
+                return False
+
+        class _Opener:
+            def __init__(self) -> None:
+                self.n = 0
+
+            def open(self, req: Any, timeout: Any = None) -> Any:
+                self.n += 1
+                if self.n == 1:
+                    raise urllib.error.HTTPError(req.full_url, 502, "bad gateway", hdrs=None, fp=None)  # type: ignore[arg-type]
+                return _Resp()
+
+        opener = _Opener()
+        sleeps: list[float] = []
+        with (
+            patch.object(board_github, "_token", return_value=""),
+            patch.object(board_github, "_opener", return_value=opener),
+            patch.object(board_github_http, "_read_http_error", return_value=b""),
+            patch.object(board_github_http, "_close_http_error", side_effect=lambda exc: exc),
+            patch.object(board_github_http.time, "sleep", lambda seconds: sleeps.append(seconds)),
+        ):
+            out = board_github._request("GET", "/repos/x/y")  # noqa: SLF001
+        self.assertEqual(out, {"ok": True})
+        self.assertEqual(opener.n, 2)
+        self.assertEqual(sleeps, [board_github_http._GET_RETRY_PAUSE_SECONDS])
+
+    def test_an_unrelated_snapshot_error_is_not_retried(self) -> None:
+        exc = board_github.GitHubSnapshotError("body was truncated")
+        self.assertFalse(board_github_http._retryable_get(exc))
 
 
 if __name__ == "__main__":

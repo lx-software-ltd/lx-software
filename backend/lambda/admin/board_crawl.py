@@ -6,6 +6,7 @@ import hashlib
 import ipaddress
 import re
 import socket
+import ssl
 import time
 import urllib.error
 import urllib.request
@@ -140,8 +141,14 @@ def fetch_status_cached(table: Any, url: str) -> int | None:
 
 
 def _transient_oserror(exc: BaseException) -> bool:
-    """True for a contended resolver or busy file, not a read timeout."""
-    return isinstance(exc, OSError) and not isinstance(exc, TimeoutError)
+    """True for a contended resolver or busy file, not a read timeout.
+
+    A bad certificate will fail the same way on the second attempt, so it
+    is not worth the extra round trip.
+    """
+    if isinstance(exc, (ssl.SSLError, TimeoutError)):
+        return False
+    return isinstance(exc, OSError)
 
 
 _META_REFRESH_RE = re.compile(

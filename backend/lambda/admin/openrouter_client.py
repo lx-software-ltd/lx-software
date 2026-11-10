@@ -25,13 +25,13 @@ from urllib import request as urlrequest
 
 from contract_constants import OPENROUTER_APPS as OPENROUTER_APP_CATALOG
 from http_common import _read_http_error
+from openrouter_fallback import slice_wall_clock, walk_model
 
 DEFAULT_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
 IMAGES_ENDPOINT = "https://openrouter.ai/api/v1/images"
 CREDITS_URL = "https://openrouter.ai/api/v1/credits"
 DEFAULT_TIMEOUT_SECONDS = 60
 _RETRYABLE_STATUSES = frozenset({408, 409, 425, 429, 500, 502, 503, 504})
-_MODEL_WALK_STATUSES = frozenset({429, 502, 503})
 _MAX_RETRIES_DEFAULT = 2
 _MAX_FALLBACK_MODELS = 3
 # Cap wait so a 429 cannot eat a whole meeting-phase timeout (100s).
@@ -344,7 +344,7 @@ def chat_completion(
                 timeout=attempt_timeout,
                 max_retries=max_retries if index == 0 else min(1, max_retries),
                 service=service,
-                wall_clock_seconds=wall_left,
+                wall_clock_seconds=slice_wall_clock(wall_left, len(rest), loop_left=remaining),
             )
             raw = _load_json_object(body_text, what="OpenRouter response")
             break
@@ -377,9 +377,8 @@ def chat_completion(
                     except OpenRouterError as retry_exc:
                         last_error = retry_exc
                         payload = retry_payload
-            if last_error.status in _MODEL_WALK_STATUSES and index < len(chain) - 1:
-                continue
-            raise last_error from None
+            if not walk_model(last_error, index, len(chain), _wall_clock_left()):
+                raise last_error from None
     if raw is None:
         if last_error:
             raise last_error

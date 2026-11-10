@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import ssl
 import unittest
 import urllib.error
 from datetime import datetime, timezone
@@ -158,6 +159,23 @@ class SsrfTests(BoardTestCase):
         self.assertIn("cap", capped.get("error") or "")
 
 
+    def test_fetch_does_not_retry_a_certificate_error(self) -> None:
+        calls = {"n": 0}
+
+        def _open(req, timeout=None):  # noqa: ARG001
+            calls["n"] += 1
+            raise urllib.error.URLError(ssl.SSLError("certificate verify failed: self-signed certificate"))
+
+        with (
+            patch.object(board_crawl, "host_is_blocked", return_value=False),
+            patch.object(board_crawl, "_opener") as opener,
+        ):
+            opener.return_value.open = _open
+            with self.assertRaises(TimeoutError):
+                board_crawl.fetch("https://example.com/page")
+        self.assertEqual(calls["n"], 1)
+
+
 class CrawlHelperTests(unittest.TestCase):
     def test_normalise_strips_counters_dates_and_times(self) -> None:
         raw = "Price 88 updated 2026-09-09 at 14:30:01 visitors 1234567 stay"
@@ -261,6 +279,27 @@ class ChangeDetectionTests(BoardTestCase):
         pages = board_store.list_watch_pages(self.table, self.watch["watchId"])
         self.assertTrue(pages[0].get("emptyBody"))
         self.assertGreaterEqual(int(pages[0].get("emptyFetches") or 0), 2)
+
+
+    def test_certificate_failure_backs_the_host_off(self) -> None:
+        with (
+            patch("board_crawl.robots_allows", return_value=True),
+            patch("board_crawl.pace_host"),
+            patch("board_crawl.host_backed_off", return_value=False),
+            patch("board_crawl.fetch", side_effect=TimeoutError("certificate verify failed: self-signed certificate")),
+        ):
+            board_intel.daily_crawl(self.table, self.settings)
+        self.assertTrue(board_crawl.host_backed_off(self.table, "kiztopia.example"))
+
+    def test_busy_fetch_backs_the_host_off_for_a_day(self) -> None:
+        with (
+            patch("board_crawl.robots_allows", return_value=True),
+            patch("board_crawl.pace_host"),
+            patch("board_crawl.host_backed_off", return_value=False),
+            patch("board_crawl.fetch", side_effect=OSError(16, "Device or resource busy")),
+        ):
+            board_intel.daily_crawl(self.table, self.settings)
+        self.assertTrue(board_crawl.host_backed_off(self.table, "kiztopia.example"))
 
 
 class DiscoverTests(BoardTestCase):

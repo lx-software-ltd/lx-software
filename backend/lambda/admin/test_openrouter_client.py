@@ -31,6 +31,7 @@ def _install_stubs() -> None:
 _install_stubs()
 
 import openrouter_client  # noqa: E402
+import openrouter_fallback  # noqa: E402
 
 
 class _FakeResp:
@@ -347,7 +348,11 @@ class TestOpenRouterAttribution(unittest.TestCase):
         self.assertEqual(len(seen), 3)
         self.assertIsNotNone(seen[0])
         self.assertIsNotNone(seen[1])
-        self.assertLessEqual(seen[1], seen[0])
+        # The first slice fits the 90s loop deadline and keeps a reserve.
+        # The fallback is last, so an instant failure still leaves it the
+        # full wall clock.
+        self.assertLessEqual(seen[0], 90)
+        self.assertLessEqual(seen[1], 120)
         self.assertIsNone(seen[2])
 
     def test_post_json_success_does_not_read_monotonic(self) -> None:
@@ -436,6 +441,53 @@ class TestOpenRouterAttribution(unittest.TestCase):
                 )
         self.assertEqual(calls["n"], 1)
         self.assertIn("timed out", str(ctx.exception))
+
+    def test_wall_clock_timeout_walks_to_the_next_model(self) -> None:
+        seen: list[float | None] = []
+        clock = {"now": 1_000.0}
+
+        def fake_post_json(**kwargs: Any) -> str:
+            granted = kwargs.get("wall_clock_seconds")
+            seen.append(granted)
+            if len(seen) == 1:
+                # The model uses the whole slice. A slice longer than the
+                # 90s loop deadline expires that deadline before the fallback.
+                clock["now"] += float(granted or 0)
+                raise openrouter_client.OpenRouterError("OpenRouter request timed out: wall-clock budget exhausted")
+            return json.dumps(
+                {
+                    "model": "b",
+                    "choices": [{"message": {"role": "assistant", "content": "from-b"}}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                }
+            )
+
+        with (
+            patch.dict("os.environ", {"OPENROUTER_API_KEY": "sk-test"}, clear=False),
+            patch("openrouter_client.post_json", side_effect=fake_post_json),
+            patch("openrouter_client._clock", lambda: clock["now"]),
+        ):
+            completion = openrouter_client.chat_completion(
+                messages=[{"role": "user", "content": "hi"}],
+                model="a",
+                secrets_client=MagicMock(),
+                timeout=90,
+                fallback_models=["b"],
+                wall_clock_seconds=150,
+            )
+            lone = openrouter_client.chat_completion(
+                messages=[{"role": "user", "content": "hi"}],
+                model="a",
+                secrets_client=MagicMock(),
+                timeout=90,
+                wall_clock_seconds=150,
+            )
+        self.assertEqual(completion.text, "from-b")
+        self.assertEqual(completion.model, "b")
+        self.assertLessEqual(seen[0], 90)
+        self.assertGreaterEqual(seen[1] or 0, openrouter_fallback.MIN_MODEL_ATTEMPT_SECONDS)
+        self.assertEqual(lone.text, "from-b")
+        self.assertEqual(seen[2], 150.0)
 
 
 class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
