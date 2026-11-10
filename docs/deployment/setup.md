@@ -79,8 +79,13 @@ it):
 For the three stacks (`lxsoftware-public-www`, `lxsoftware`,
 `lxsoftware-admin-web`) the role also needs:
 
-- **CloudFormation** on the stack ARNs
-  `arn:aws:cloudformation:REGION:ACCOUNT_ID:stack/<stack>/*`.
+- **CloudFormation** `DescribeStacks` on
+  `arn:aws:cloudformation:REGION:ACCOUNT_ID:stack/lxsoftware/*`,
+  `arn:aws:cloudformation:REGION:ACCOUNT_ID:stack/lxsoftware-public-www/*`,
+  and `arn:aws:cloudformation:REGION:ACCOUNT_ID:stack/lxsoftware-admin-web/*`.
+  **Deploy Admin Web** reads `UserPoolClientId`, `CognitoDomain`, and
+  `AdminApiBaseUrl` from `lxsoftware` before it uploads the SPA. A missing
+  grant fails that step with `AccessDenied` and uploads nothing.
 - **S3** `GetObject` / `PutObject` / `DeleteObject` / `ListBucket` on the
   two website buckets (`lxsoftware-public-www` origin and
   `lxsoftware-admin-web-*`) for the deploy scripts.

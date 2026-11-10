@@ -10,6 +10,7 @@ Stop copying admin SPA settings into GitHub variables.
 - **Deploy Admin Web** reads `UserPoolClientId`, `CognitoDomain`, and `AdminApiBaseUrl` from the `lxsoftware` stack. `CognitoDomain` stays a full `https://` origin.
 - The admin SPA no longer requires `VITE_COGNITO_USER_POOL_ID`.
 - `lxsoftware-admin-web:AdminWebCertificateArn` lives in `params/production.json`, the same us-east-1 certificate the public site and the Cognito custom domain already use.
+- A successful **Deploy Backend** on `main` rebuilds the SPA. A stack with no outputs, or a role that cannot `DescribeStacks` `lxsoftware`, fails before the upload and names the missing grant.
 
 ## Non-goals
 

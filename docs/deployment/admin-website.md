@@ -112,7 +112,8 @@ console; CDK owns them from `AdminWebDomainName` and overwrites drift.
 ## 4. Deploy the admin SPA
 
 Run **Deploy Admin Web** (on `main` when `apps/admin_web/**` or
-`scripts/deploy/deploy-admin-www.sh` change, or manually). It builds
+`scripts/deploy/deploy-admin-www.sh` change, after a successful **Deploy
+Backend** on `main`, or manually). It builds
 `apps/admin_web` with production `VITE_*` values, then
 `scripts/deploy/deploy-admin-www.sh` uploads hashed `dist/assets/**` with a
 long immutable cache, uploads `index.html` with `no-cache` and invalidates

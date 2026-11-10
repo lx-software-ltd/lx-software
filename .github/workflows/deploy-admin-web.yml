@@ -5,6 +5,12 @@ on:
     branches: [main]
     paths: ["apps/admin_web/**", "scripts/deploy/deploy-admin-www.sh"]
   workflow_dispatch:
+  # A backend deploy can replace the Cognito client or the HTTP API. Rebuild
+  # the SPA from current main so it picks up those outputs. Only a successful
+  # Deploy Backend on main qualifies.
+  workflow_run:
+    workflows: ["Deploy Backend"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -16,6 +22,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-26.04
     environment: production
     steps:
@@ -35,17 +42,27 @@ jobs:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/GitHubActionsRole
           aws-region: ${{ vars.AWS_REGION }}
 
-      # CognitoDomain is the full https origin. The SPA appends /oauth2/* and
-      # /logout, and logout passes that string to `new URL`.
       - name: Read admin SPA settings from the lxsoftware stack
         id: admin_spa
+        env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
         run: |
           set -euo pipefail
           stack=lxsoftware
-          json="$(aws cloudformation describe-stacks --stack-name "$stack" --output json)"
+          err="$(mktemp)"
+          if ! json="$(aws cloudformation describe-stacks --stack-name "$stack" --output json 2>"$err")"; then
+            if grep -q 'AccessDenied' "$err"; then
+              echo "::error::GitHubActionsRole needs cloudformation:DescribeStacks on arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/${stack}/*"
+            fi
+            cat "$err" >&2
+            rm -f "$err"
+            exit 1
+          fi
+          rm -f "$err"
           read_output() {
             jq -r --arg key "$1" '
-              .Stacks[0].Outputs[] | select(.OutputKey == $key) | .OutputValue
+              (.Stacks[0].Outputs // [])[] | select(.OutputKey == $key) | .OutputValue
             ' <<<"$json"
           }
           client_id="$(read_output UserPoolClientId)"
