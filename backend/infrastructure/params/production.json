@@ -21,5 +21,6 @@
   "lxsoftware:SiutindeiBoardMetaAdAccountId": "1506380401671545",
   "lxsoftware:EvolvesproutsClusterArn": "arn:aws:rds:ap-southeast-1:588024549699:cluster:evolvesprouts-db-cluster",
   "lxsoftware:EvolvesproutsDbSecretName": "evolvesprouts-db-finance-readonly-credentials",
+  "lxsoftware-admin-web:AdminWebCertificateArn": "arn:aws:acm:us-east-1:588024549699:certificate/ea553e5a-e7af-43ba-bdd4-d46e2f8458aa",
   "lxsoftware-admin-web:CspCognitoConnectOrigin": "https://auth.lx-software.com"
 }

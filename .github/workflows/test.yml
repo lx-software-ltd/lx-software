@@ -79,7 +79,6 @@ jobs:
         run: npm run build
         working-directory: apps/admin_web
         env:
-          VITE_COGNITO_USER_POOL_ID: us-east-1_PLACEHOLDER
           VITE_COGNITO_CLIENT_ID: placeholder-client-id
           VITE_COGNITO_DOMAIN: https://placeholder.auth.us-east-1.amazoncognito.com
           VITE_COGNITO_REDIRECT_URI: http://localhost:5173/auth/callback
@@ -92,7 +91,6 @@ jobs:
         run: npm test
         working-directory: apps/admin_web
         env:
-          VITE_COGNITO_USER_POOL_ID: us-east-1_PLACEHOLDER
           VITE_COGNITO_CLIENT_ID: placeholder-client-id
           VITE_COGNITO_DOMAIN: https://placeholder.auth.us-east-1.amazoncognito.com
           VITE_COGNITO_REDIRECT_URI: http://localhost:5173/auth/callback

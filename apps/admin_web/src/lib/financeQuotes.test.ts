@@ -11,7 +11,6 @@ const ORIGINAL_FETCH = global.fetch;
 
 beforeEach(() => {
   vi.stubEnv("VITE_API_BASE_URL", "https://api.example/admin");
-  vi.stubEnv("VITE_COGNITO_USER_POOL_ID", "us-east-1_TEST");
   vi.stubEnv("VITE_COGNITO_CLIENT_ID", "test-client-id");
   vi.stubEnv("VITE_COGNITO_DOMAIN", "https://example.auth.us-east-1.amazoncognito.com");
   vi.stubEnv("VITE_COGNITO_REDIRECT_URI", "https://app.example/auth/callback");

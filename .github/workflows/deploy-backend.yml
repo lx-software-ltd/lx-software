@@ -105,7 +105,6 @@ jobs:
           P_EMAIL_ALLOWLIST: ${{ vars.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
           P_BOOTSTRAP_EMAIL: ${{ vars.ADMIN_BOOTSTRAP_EMAIL }}
           P_BOOTSTRAP_PASSWORD: ${{ secrets.ADMIN_BOOTSTRAP_TEMP_PASSWORD }}
-          P_ACM_CERT_ARN: ${{ vars.ADMIN_ACM_CERT_ARN }}
         run: |
           set -eo pipefail
           npx cdk acknowledge 34892 || true
@@ -178,5 +177,4 @@ jobs:
             --parameters "lxsoftware:AdminBootstrapTempPassword=${P_BOOTSTRAP_PASSWORD}" \
             --parameters lxsoftware:CognitoDomainPrefix=lxsoftware-admin-auth \
             --parameters lxsoftware-admin-web:AdminWebDomainName=admin.lx-software.com \
-            --parameters "lxsoftware-admin-web:AdminWebCertificateArn=${P_ACM_CERT_ARN}" \
             "${ADMIN_STACKS[@]}"

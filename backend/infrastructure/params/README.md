@@ -58,6 +58,7 @@ Typical committed values include:
   `key_read_only`, `owner_only`, `scope`).
 - Optional Cognito custom Hosted UI on `lxsoftware`: `lxsoftware:CognitoCustomDomainName`
   and `lxsoftware:CognitoCustomDomainCertificateArn` (ACM in **us-east-1**)
+- **`lxsoftware-admin-web:AdminWebCertificateArn`** — ACM certificate in **us-east-1** for the admin CloudFront alias. Production uses the same certificate as the public site and the Cognito custom domain.
 - **`lxsoftware-admin-web:CspCognitoConnectOrigin`** — full HTTPS origin for Cognito OAuth
   in the admin CloudFront CSP `connect-src` (e.g. `https://auth.lx-software.com`), must
   match the effective Cognito Hosted UI URL
