@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Publish or check the LX Software apex → www redirect.
 
-HTTPS is handled by a Single Redirect (it runs before Workers). The
-Worker on ``lx-software.com/*`` is the HTTP / fallback path. Both keep
-the path and query. A destination of ``https://www.lx-software.com/*``
-is a literal star and must not be used.
+A Single Redirect matches the apex host on HTTP and HTTPS and runs
+before Workers. The Worker on ``lx-software.com/*`` is the fallback
+when that redirect is absent. Both keep the path and query. A
+destination of ``https://www.lx-software.com/*`` is a literal star and
+must not be used.
 
 Requires:
     CLOUDFLARE_API_TOKEN   Workers edit, zone Workers Routes, zone DNS
@@ -329,11 +330,31 @@ def custom_domain_state(token: str, account_id: str, zone_id: str) -> dict[str, 
     return {"domain": match, "ok": custom_domain_is_correct(match)}
 
 
-def ensure_custom_domain(token: str, account_id: str, zone_id: str) -> str:
-    state = custom_domain_state(token, account_id, zone_id)
-    if state["ok"]:
-        return "unchanged"
-    current = state["domain"]
+def attach_was_refused(exc: BaseException) -> bool:
+    """True when Cloudflare rejected the attach with HTTP 409."""
+    message = str(exc)
+    marker = "failed: "
+    index = message.find(marker)
+    if index < 0:
+        return False
+    return message[index + len(marker):].startswith("409")
+
+
+def _put_custom_domain(token: str, account_id: str, zone_id: str) -> None:
+    _cf_request(
+        "PUT",
+        f"/accounts/{account_id}/workers/domains",
+        token,
+        custom_domain_payload(zone_id),
+    )
+
+
+def _clear_custom_domain_conflicts(
+    token: str,
+    account_id: str,
+    zone_id: str,
+    current: dict[str, Any] | None,
+) -> None:
     if current and current.get("id"):
         _cf_request(
             "DELETE",
@@ -345,23 +366,30 @@ def ensure_custom_domain(token: str, account_id: str, zone_id: str) -> str:
         f"/zones/{zone_id}/dns_records?{urllib.parse.urlencode({'name': ZONE_NAME})}",
         token,
     ).get("result") or []
-    removed = False
     for record in records:
         if not isinstance(record, dict) or not apex_address_record_blocks_worker(record):
             continue
         if not record.get("id"):
             continue
         _cf_request("DELETE", f"/zones/{zone_id}/dns_records/{record['id']}", token)
-        removed = True
-    _cf_request(
-        "PUT",
-        f"/accounts/{account_id}/workers/domains",
-        token,
-        custom_domain_payload(zone_id),
-    )
-    if current or removed:
+
+
+def ensure_custom_domain(token: str, account_id: str, zone_id: str) -> str:
+    state = custom_domain_state(token, account_id, zone_id)
+    if state["ok"]:
+        return "unchanged"
+    current = state["domain"]
+    try:
+        _put_custom_domain(token, account_id, zone_id)
+    except RuntimeError as exc:
+        if not attach_was_refused(exc):
+            raise
+        # The hostname or an address record is in the way. Remove that
+        # conflict only after the attach was refused, then attach once.
+        _clear_custom_domain_conflicts(token, account_id, zone_id, current)
+        _put_custom_domain(token, account_id, zone_id)
         return "replaced"
-    return "attached"
+    return "replaced" if current else "attached"
 
 
 def worker_state(token: str, account_id: str, zone_id: str) -> dict[str, Any]:

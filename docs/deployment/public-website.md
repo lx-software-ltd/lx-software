@@ -316,9 +316,10 @@ custom domain as success.
 
 `www.lx-software.com` stays a grey-cloud CNAME to CloudFront. Do not proxy
 it. The apex is a Worker custom domain (`AAAA 100::`, proxied) for
-`lx-software-apex-redirect`. `apply` attaches that hostname. It deletes
-an apex A, AAAA, or CNAME that is not the Worker's own read-only
-`100::` record, and it leaves MX and TXT records alone. A Single
+`lx-software-apex-redirect`. `apply` attaches that hostname first. It
+deletes an apex A, AAAA, or CNAME only when Cloudflare refuses the
+attach, and only when that record is not the Worker's own read-only
+`100::`. MX and TXT records stay. A Single
 Redirect (`http.host eq "lx-software.com"`) 301s to
 `concat("https://www.lx-software.com", http.request.uri.path)` and keeps
 the query. `check` fails unless the status is 301 and

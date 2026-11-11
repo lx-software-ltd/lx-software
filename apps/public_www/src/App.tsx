@@ -18,9 +18,9 @@ const ContentPage = lazy(() =>
  * on www. That address is not a page; open the home page.
  */
 function LegacyStarRedirect() {
-  const { pathname } = useLocation()
+  const { pathname, search, hash } = useLocation()
   if (pathname === '/*') {
-    return <Navigate to="/" replace />
+    return <Navigate to={{ pathname: '/', search, hash }} replace />
   }
   return (
     <Suspense fallback={null}>

@@ -1,9 +1,10 @@
 /**
  * Send every request on the proxied apex to the www CloudFront hostname.
  *
- * Single Redirects run before Workers. Keep that rule's destination as
- * concat(www host, request path), never a literal star path. This Worker
- * is the HTTP / fallback 301 on the apex wildcard route.
+ * Single Redirects run before Workers and match the apex on both
+ * schemes. Keep that rule's destination as concat(www host, request
+ * path), never a literal star path. This Worker is the fallback 301
+ * when that redirect is absent.
  *
  * Publish: python3 scripts/cloudflare/publish-apex-redirect.py apply
  */

@@ -139,6 +139,78 @@ class ApexRedirectTests(unittest.TestCase):
         )
         self.assertFalse(self.mod.custom_domain_is_correct(None))
 
+    def test_attach_refusal_is_only_http_409(self) -> None:
+        self.assertTrue(self.mod.attach_was_refused(RuntimeError(
+            "Cloudflare PUT /accounts/acct/workers/domains failed: 409 conflict"
+        )))
+        self.assertFalse(self.mod.attach_was_refused(RuntimeError(
+            'Cloudflare PUT /accounts/acct/workers/domains failed: 400 {"code":409}'
+        )))
+        self.assertFalse(self.mod.attach_was_refused(RuntimeError(
+            "Cloudflare PUT /accounts/acct/workers/domains failed: 403"
+        )))
+
+    def _fake_cf(self, calls: list[tuple[str, str]], *, refuse_first_put: bool):
+        def fake(method, path, token, payload=None, **kwargs):
+            calls.append((method, path))
+            if method == "GET" and "workers/domains" in path:
+                return {
+                    "result": [{
+                        "id": "dom1",
+                        "hostname": "lx-software.com",
+                        "service": "other-worker",
+                        "enabled": True,
+                    }]
+                }
+            if method == "GET" and "dns_records" in path:
+                return {
+                    "result": [{
+                        "id": "rec1",
+                        "name": "lx-software.com",
+                        "type": "A",
+                        "content": "192.0.2.1",
+                    }]
+                }
+            puts = sum(1 for item, _path in calls if item == "PUT")
+            if method == "PUT" and refuse_first_put and puts == 1:
+                raise RuntimeError(
+                    "Cloudflare PUT /accounts/acct/workers/domains failed: 409 conflict"
+                )
+            return {"result": {}}
+
+        return fake
+
+    def test_custom_domain_attach_is_tried_before_any_delete(self) -> None:
+        calls: list[tuple[str, str]] = []
+        self.mod._cf_request = self._fake_cf(calls, refuse_first_put=True)
+        self.assertEqual(self.mod.ensure_custom_domain("t", "acct", "zone"), "replaced")
+        put_at = next(i for i, (method, _path) in enumerate(calls) if method == "PUT")
+        delete_at = next(i for i, (method, _path) in enumerate(calls) if method == "DELETE")
+        self.assertLess(put_at, delete_at)
+        self.assertEqual(sum(1 for method, _path in calls if method == "PUT"), 2)
+        self.assertEqual(sum(1 for method, _path in calls if method == "DELETE"), 2)
+
+    def test_accepted_attach_does_not_delete_the_existing_domain(self) -> None:
+        calls: list[tuple[str, str]] = []
+        self.mod._cf_request = self._fake_cf(calls, refuse_first_put=False)
+        self.assertEqual(self.mod.ensure_custom_domain("t", "acct", "zone"), "replaced")
+        self.assertFalse(any(method == "DELETE" for method, _path in calls))
+        self.assertEqual(sum(1 for method, _path in calls if method == "PUT"), 1)
+
+    def test_a_non_conflict_attach_error_is_not_followed_by_a_delete(self) -> None:
+        calls: list[tuple[str, str]] = []
+
+        def fake(method, path, token, payload=None, **kwargs):
+            calls.append((method, path))
+            if method == "GET":
+                return {"result": []}
+            raise RuntimeError("Cloudflare PUT /accounts/acct/workers/domains failed: 403")
+
+        self.mod._cf_request = fake
+        with self.assertRaises(RuntimeError):
+            self.mod.ensure_custom_domain("t", "acct", "zone")
+        self.assertFalse(any(method == "DELETE" for method, _path in calls))
+
 
 if __name__ == "__main__":
     unittest.main()
