@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { SiteLayout } from './components/site-layout'
 import { defaultSiteContent } from './lib/content'
 import { HomePage } from './pages/home'
@@ -12,6 +12,22 @@ const WeChatPage = lazy(() => import('./pages/wechat').then((mod) => ({ default:
 const ContentPage = lazy(() =>
   import('./pages/content-page').then((mod) => ({ default: mod.ContentPage })),
 )
+
+/**
+ * Browsers can keep the old apex 301, whose destination was a literal star
+ * on www. That address is not a page; open the home page.
+ */
+function LegacyStarRedirect() {
+  const { pathname } = useLocation()
+  if (pathname === '/*') {
+    return <Navigate to="/" replace />
+  }
+  return (
+    <Suspense fallback={null}>
+      <NotFoundPage />
+    </Suspense>
+  )
+}
 
 /**
  * Route table shared by the browser (`main.tsx`, inside a BrowserRouter) and
@@ -57,14 +73,7 @@ export function AppRoutes() {
             }
           />
         ))}
-        <Route
-          path="*"
-          element={
-            <Suspense fallback={null}>
-              <NotFoundPage />
-            </Suspense>
-          }
-        />
+        <Route path="*" element={<LegacyStarRedirect />} />
       </Route>
     </Routes>
   )
