@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
 """Publish or check the LX Software apex → www redirect.
 
-HTTPS is handled by a Single Redirect (it runs before Workers). The
-Worker on ``lx-software.com/*`` is the HTTP / fallback path. Both keep
-the path and query. A destination of ``https://www.lx-software.com/*``
-is a literal star and must not be used.
+A Single Redirect matches the apex host on HTTP and HTTPS and runs
+before Workers. The Worker on ``lx-software.com/*`` is the fallback
+when that redirect is absent. Both keep the path and query. A
+destination of ``https://www.lx-software.com/*`` is a literal star and
+must not be used.
 
 Requires:
-    CLOUDFLARE_API_TOKEN   Workers edit, zone Workers Routes, and
-                           Zone Redirect Rules Edit on lx-software.com
+    CLOUDFLARE_API_TOKEN   Workers edit, zone Workers Routes, zone DNS
+                           edit, and Zone Redirect Rules Edit on lx-software.com
     CLOUDFLARE_ACCOUNT_ID  account that owns the zone
 
 Usage:
+  python3 scripts/cloudflare/publish-apex-redirect.py probe
   python3 scripts/cloudflare/publish-apex-redirect.py check
   python3 scripts/cloudflare/publish-apex-redirect.py apply
+
+``probe`` requests the public apex and needs no token. ``check`` also
+reads the zone. ``apply`` publishes the Single Redirect, the Worker,
+its route, and the apex custom domain.
 """
 
 from __future__ import annotations
@@ -31,9 +37,13 @@ from typing import Any
 LIVE_PROBES = (
     "http://lx-software.com/",
     "http://lx-software.com/privacy",
+    "http://lx-software.com/about?utm=gbp",
     "https://lx-software.com/",
     "https://lx-software.com/about",
+    "https://lx-software.com/about?utm=gbp",
 )
+WORKER_ORIGIN_AAAA = "100::"
+APEX_ADDRESS_TYPES = frozenset({"A", "AAAA", "CNAME"})
 
 ZONE_NAME = "lx-software.com"
 CANONICAL_HOST = "www.lx-software.com"
@@ -182,11 +192,20 @@ def is_apex_redirect_rule(rule: dict[str, Any]) -> bool:
     return expression in APEX_REDIRECT_EXPRESSIONS or target in APEX_TARGET_EXPRESSIONS
 
 
+def redirect_from_value(rule: dict[str, Any]) -> dict[str, Any]:
+    params = rule.get("action_parameters") or {}
+    from_value = params.get("from_value") or {}
+    return from_value if isinstance(from_value, dict) else {}
+
+
 def apex_redirect_is_correct(rule: dict[str, Any]) -> bool:
+    from_value = redirect_from_value(rule)
     return (
         bool(rule.get("enabled"))
         and str(rule.get("expression") or "") == APEX_REDIRECT_EXPRESSION
         and redirect_target_expression(rule) == APEX_TARGET_EXPRESSION
+        and from_value.get("status_code") == 301
+        and from_value.get("preserve_query_string") is True
         and not is_literal_star_www_redirect(rule)
     )
 
@@ -261,6 +280,118 @@ def ensure_route(token: str, zone_id: str) -> str:
     return "created"
 
 
+def apex_address_record_blocks_worker(record: dict[str, Any]) -> bool:
+    """An apex address record that is not the Worker custom domain itself.
+
+    MX and TXT stay. The Worker's proxied ``AAAA 100::`` record is
+    read-only and is not a conflict.
+    """
+    name = str(record.get("name") or "").rstrip(".")
+    if name != ZONE_NAME or str(record.get("type")) not in APEX_ADDRESS_TYPES:
+        return False
+    meta = record.get("meta") or {}
+    if (
+        str(record.get("type")) == "AAAA"
+        and str(record.get("content")) == WORKER_ORIGIN_AAAA
+        and bool(meta.get("read_only"))
+    ):
+        return False
+    return True
+
+
+def custom_domain_is_correct(row: dict[str, Any] | None) -> bool:
+    if not row:
+        return False
+    if str(row.get("hostname") or "") != ZONE_NAME:
+        return False
+    if str(row.get("service") or "") != SCRIPT_NAME:
+        return False
+    return row.get("enabled") is not False
+
+
+def custom_domain_payload(zone_id: str) -> dict[str, Any]:
+    return {
+        "hostname": ZONE_NAME,
+        "service": SCRIPT_NAME,
+        "environment": "production",
+        "zone_id": zone_id,
+    }
+
+
+def list_custom_domains(token: str, account_id: str, zone_id: str) -> list[dict[str, Any]]:
+    qs = urllib.parse.urlencode({"zone_id": zone_id, "hostname": ZONE_NAME, "per_page": "50"})
+    data = _cf_request("GET", f"/accounts/{account_id}/workers/domains?{qs}", token)
+    return [row for row in (data.get("result") or []) if isinstance(row, dict)]
+
+
+def custom_domain_state(token: str, account_id: str, zone_id: str) -> dict[str, Any]:
+    domains = list_custom_domains(token, account_id, zone_id)
+    match = next((row for row in domains if str(row.get("hostname") or "") == ZONE_NAME), None)
+    return {"domain": match, "ok": custom_domain_is_correct(match)}
+
+
+def attach_was_refused(exc: BaseException) -> bool:
+    """True when Cloudflare rejected the attach with HTTP 409."""
+    message = str(exc)
+    marker = "failed: "
+    index = message.find(marker)
+    if index < 0:
+        return False
+    return message[index + len(marker):].startswith("409")
+
+
+def _put_custom_domain(token: str, account_id: str, zone_id: str) -> None:
+    _cf_request(
+        "PUT",
+        f"/accounts/{account_id}/workers/domains",
+        token,
+        custom_domain_payload(zone_id),
+    )
+
+
+def _clear_custom_domain_conflicts(
+    token: str,
+    account_id: str,
+    zone_id: str,
+    current: dict[str, Any] | None,
+) -> None:
+    if current and current.get("id"):
+        _cf_request(
+            "DELETE",
+            f"/accounts/{account_id}/workers/domains/{current['id']}",
+            token,
+        )
+    records = _cf_request(
+        "GET",
+        f"/zones/{zone_id}/dns_records?{urllib.parse.urlencode({'name': ZONE_NAME})}",
+        token,
+    ).get("result") or []
+    for record in records:
+        if not isinstance(record, dict) or not apex_address_record_blocks_worker(record):
+            continue
+        if not record.get("id"):
+            continue
+        _cf_request("DELETE", f"/zones/{zone_id}/dns_records/{record['id']}", token)
+
+
+def ensure_custom_domain(token: str, account_id: str, zone_id: str) -> str:
+    state = custom_domain_state(token, account_id, zone_id)
+    if state["ok"]:
+        return "unchanged"
+    current = state["domain"]
+    try:
+        _put_custom_domain(token, account_id, zone_id)
+    except RuntimeError as exc:
+        if not attach_was_refused(exc):
+            raise
+        # The hostname or an address record is in the way. Remove that
+        # conflict only after the attach was refused, then attach once.
+        _clear_custom_domain_conflicts(token, account_id, zone_id, current)
+        _put_custom_domain(token, account_id, zone_id)
+        return "replaced"
+    return "replaced" if current else "attached"
+
+
 def worker_state(token: str, account_id: str, zone_id: str) -> dict[str, Any]:
     scripts = _cf_request("GET", f"/accounts/{account_id}/workers/scripts", token).get("result") or []
     script = next((row for row in scripts if str(row.get("id")) == SCRIPT_NAME), {})
@@ -302,10 +433,21 @@ def probe_live() -> list[str]:
     return problems
 
 
+def report_live(problems: list[str]) -> int:
+    if not problems:
+        print(f"live apex redirects ok ({len(LIVE_PROBES)} probes)")
+        return 0
+    for line in problems:
+        print(f"live {line}", file=sys.stderr)
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=("check", "apply"))
+    parser.add_argument("command", choices=("probe", "check", "apply"))
     args = parser.parse_args(argv)
+    if args.command == "probe":
+        return report_live(probe_live())
     token = os.environ.get("CLOUDFLARE_API_TOKEN") or ""
     account_id = os.environ.get("CLOUDFLARE_ACCOUNT_ID") or ""
     if not token or not account_id:
@@ -317,7 +459,11 @@ def main(argv: list[str] | None = None) -> int:
         redirect = ensure_apex_single_redirect(token, zone_id)
         put_worker(token, account_id)
         route = ensure_route(token, zone_id)
-        print(f"single redirect {redirect}; published {SCRIPT_NAME}; route {ROUTE_PATTERN} {route}")
+        domain = ensure_custom_domain(token, account_id, zone_id)
+        print(
+            f"single redirect {redirect}; published {SCRIPT_NAME}; "
+            f"route {ROUTE_PATTERN} {route}; custom domain {domain}"
+        )
     try:
         redirect_state = apex_redirect_state(token, zone_id)
         redirect_ok = bool(redirect_state["ok"])
@@ -341,10 +487,15 @@ def main(argv: list[str] | None = None) -> int:
     routes = state["routes"]
     worker_ok = bool(routes) and all(str(row.get("script")) == SCRIPT_NAME for row in routes)
     print(f"worker {script_id}; routes {len(routes)}; expected {ROUTE_PATTERN} -> {SCRIPT_NAME}")
+    try:
+        domain_ok = bool(custom_domain_state(token, account_id, zone_id)["ok"])
+    except RuntimeError as exc:
+        print(f"custom domain unread: {exc}", file=sys.stderr)
+        domain_ok = False
+    print(f"custom domain {'ok' if domain_ok else 'missing or wrong'}")
     live = probe_live()
-    for line in live:
-        print(f"live {line}")
-    return 0 if redirect_ok and worker_ok and not live else 1
+    live_ok = report_live(live) == 0
+    return 0 if redirect_ok and worker_ok and domain_ok and live_ok else 1
 
 
 if __name__ == "__main__":
