@@ -316,19 +316,26 @@ custom domain as success.
 
 `www.lx-software.com` stays a grey-cloud CNAME to CloudFront. Do not proxy
 it. The apex is a Worker custom domain (`AAAA 100::`, proxied) for
-`lx-software-apex-redirect`. A Single Redirect
-(`http.host eq "lx-software.com"`) 301s to
+`lx-software-apex-redirect`. `apply` attaches that hostname. It deletes
+an apex A, AAAA, or CNAME that is not the Worker's own read-only
+`100::` record, and it leaves MX and TXT records alone. A Single
+Redirect (`http.host eq "lx-software.com"`) 301s to
 `concat("https://www.lx-software.com", http.request.uri.path)` and keeps
-the query; that rule runs before Workers, so HTTPS never reaches a
-literal `https://www.lx-software.com/*` destination. The Worker on
-`lx-software.com/*` is the HTTP / fallback path. Publish with
+the query. `check` fails unless the status is 301 and
+`preserve_query_string` is set. That rule runs before Workers. The
+Worker on `lx-software.com/*` is the fallback when the Single Redirect
+is absent. Publish with
 `python3 scripts/cloudflare/publish-apex-redirect.py apply`
-(`CLOUDFLARE_API_TOKEN` needs Workers edit, zone Workers Routes, and
-Zone Redirect Rules Edit, plus `CLOUDFLARE_ACCOUNT_ID`).
-`publish-apex-redirect.py check` should report 301s for HTTP and HTTPS
-and refuse a star destination. Do not restore the dummy `192.0.2.1` A
-record unless you are removing the custom domain. Account-owned tokens
-cannot call Page Rules (error `1011`). Tiered Cache is off.
+(`CLOUDFLARE_API_TOKEN` needs Workers edit, zone Workers Routes, zone
+DNS edit, and Zone Redirect Rules Edit, plus `CLOUDFLARE_ACCOUNT_ID`).
+`check` reads the rule, the Worker route, and the custom domain, then
+probes live URLs including a query string. `probe` only requests those
+URLs and needs no token. The Apex redirect probe workflow runs `probe`
+weekly and on pull requests that touch the publisher. A star
+destination fails `check`. Account-owned tokens cannot call Page Rules
+(error `1011`). A browser that cached the old star redirect still
+requests the literal star path on `www`; the public site router opens
+the home page for that path. Tiered Cache is off.
 The media hostname is already caching from the object `Cache-Control`,
 so an extra cache rule is optional.
 
