@@ -5,6 +5,7 @@ import { LINKEDIN_BYTES_KEY, useLinkedIn } from "../../hooks/useLinkedIn";
 import { adminFetchJson, getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { DRAFT_RECORD_ID } from "../../lib/expandedRecord";
 import { fitLinkedInImage } from "../../lib/fitLinkedInImage";
+import { formatDateTimeHKT } from "../../lib/formatDisplay";
 import {
   guardrails,
   hasBlockingGuardrail,
@@ -271,12 +272,12 @@ function DraftRow({
           </span>
           <AdminDataTableCellMeta>
             {statusLabel(post.status)}
-            {post.slotAt ? ` · ${post.slotAt.slice(0, 10)}` : ""}
+            {post.slotAt ? ` · ${formatDateTimeHKT(post.slotAt)}` : ""}
           </AdminDataTableCellMeta>
         </div>
       </AdminCell>
       <AdminCell column="pillar">{pillarLabel(post.pillar)}</AdminCell>
-      <AdminCell column="slot">{post.slotAt ? post.slotAt.slice(0, 16).replace("T", " ") : "—"}</AdminCell>
+      <AdminCell column="slot">{post.slotAt ? formatDateTimeHKT(post.slotAt) : "—"}</AdminCell>
       <AdminCell column="status">{statusLabel(post.status)}</AdminCell>
       <AdminCell column="ops" className="text-end">
         <AdminRowActions
