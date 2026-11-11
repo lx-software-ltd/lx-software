@@ -1,14 +1,16 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
-import { DEFAULT_LINKEDIN_SETTINGS, IMAGE_SCENE_MAX, SAMPLE_LINKEDIN_POSTS } from "../../lib/linkedinModel";
+import { formatDateTimeHKT } from "../../lib/formatDisplay";
+import { DEFAULT_LINKEDIN_SETTINGS, IMAGE_SCENE_MAX, SAMPLE_LINKEDIN_POSTS, type LinkedInPost } from "../../lib/linkedinModel";
 import { LinkedInDraftsSection } from "./LinkedInDraftsSection";
 
-const { fitLinkedInImage, uploadImage } = vi.hoisted(() => ({
+const { fitLinkedInImage, uploadImage, draftItems } = vi.hoisted(() => ({
   fitLinkedInImage: vi.fn(async () => ({ contentType: "image/jpeg" as const, dataBase64: "c2hydW5r" })),
   uploadImage: { isPending: false, mutateAsync: vi.fn() },
+  draftItems: { current: null as LinkedInPost[] | null },
 }));
 
 vi.mock("../../lib/fitLinkedInImage", () => ({
@@ -21,7 +23,7 @@ const starPost = { isPending: false, error: null, mutate: vi.fn(), mutateAsync: 
 vi.mock("../../hooks/useLinkedIn", () => ({
   LINKEDIN_BYTES_KEY: ["linkedin-bytes"],
   useLinkedIn: () => ({
-    posts: { data: { items: SAMPLE_LINKEDIN_POSTS }, isLoading: false },
+    posts: { data: { items: draftItems.current ?? SAMPLE_LINKEDIN_POSTS }, isLoading: false },
     generate: { isPending: false, isError: false, error: null },
     updatePost,
     starPost,
@@ -49,6 +51,30 @@ function renderDrafts(path = "/") {
     </MemoryRouter>,
   );
 }
+
+describe("LinkedIn draft slot", () => {
+  afterEach(() => {
+    draftItems.current = null;
+  });
+
+  it("shows the slot in Hong Kong time, the same way as the calendar", () => {
+    const slotAt = "2026-09-28T16:30:00.000Z";
+    const label = formatDateTimeHKT(slotAt);
+    draftItems.current = [
+      { ...SAMPLE_LINKEDIN_POSTS[0], postId: "li_open", slotAt: "" },
+      { ...SAMPLE_LINKEDIN_POSTS[0], postId: "li_slotted", status: "approved", slotAt, starred: true },
+    ];
+
+    renderDrafts();
+
+    expect(label).toBe("September 29, 2026 at 12:30am HKT");
+    const slots = document.querySelectorAll('[data-column="slot"]');
+    expect([...slots].map((node) => node.textContent)).toEqual(["—", label]);
+    expect(screen.getByText(`Approved · ${label}`)).toBeInTheDocument();
+    expect(screen.queryByText(/2026-09-28/)).toBeNull();
+    expect(screen.queryByText(/16:30/)).toBeNull();
+  });
+});
 
 describe("LinkedIn draft stars", () => {
   it("stars a draft without opening the editor", async () => {
