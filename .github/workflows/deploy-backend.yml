@@ -103,8 +103,6 @@ jobs:
           P_GOOGLE_CLIENT_ID: ${{ vars.ADMIN_GOOGLE_CLIENT_ID }}
           P_GOOGLE_CLIENT_SECRET: ${{ secrets.ADMIN_GOOGLE_CLIENT_SECRET }}
           P_EMAIL_ALLOWLIST: ${{ vars.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
-          P_BOOTSTRAP_EMAIL: ${{ vars.ADMIN_BOOTSTRAP_EMAIL }}
-          P_BOOTSTRAP_PASSWORD: ${{ secrets.ADMIN_BOOTSTRAP_TEMP_PASSWORD }}
         run: |
           set -eo pipefail
           npx cdk acknowledge 34892 || true
@@ -173,8 +171,6 @@ jobs:
             --parameters "lxsoftware:GoogleClientId=${P_GOOGLE_CLIENT_ID}" \
             --parameters "lxsoftware:GoogleClientSecret=${P_GOOGLE_CLIENT_SECRET}" \
             --parameters "lxsoftware:AdminFederatedEmailAllowlist=${P_EMAIL_ALLOWLIST}" \
-            --parameters "lxsoftware:AdminBootstrapEmail=${P_BOOTSTRAP_EMAIL}" \
-            --parameters "lxsoftware:AdminBootstrapTempPassword=${P_BOOTSTRAP_PASSWORD}" \
             --parameters lxsoftware:CognitoDomainPrefix=lxsoftware-admin-auth \
             --parameters lxsoftware-admin-web:AdminWebDomainName=admin.lx-software.com \
             "${ADMIN_STACKS[@]}"

@@ -22,9 +22,7 @@ export interface AuthConstructProps {
   readonly cognitoCustomDomainNameParameter: cdk.CfnParameter;
   /** ACM cert ARN in us-east-1 for the Cognito custom domain (required with custom name). */
   readonly cognitoCustomDomainCertificateArnParameter: cdk.CfnParameter;
-  readonly adminBootstrapEmailParameter: cdk.CfnParameter;
-  readonly adminBootstrapTempPasswordParameter: cdk.CfnParameter;
-  /** Comma-separated emails that receive the admin group via Pre Token Generation (federated users). */
+  /** Comma-separated emails that receive the admin group via Pre Token Generation. */
   readonly adminFederatedEmailAllowlistParameter: cdk.CfnParameter;
   /** Shared CMK for Lambda env vars + log group encryption (CKV_AWS_173/158). */
   readonly sharedEncryptionKey: kms.IKey;
@@ -33,10 +31,9 @@ export interface AuthConstructProps {
 }
 
 /**
- * Cognito user pool with Google federation, TOTP-only MFA, hosted UI OAuth,
- * admin group, a fail-closed allow-list gate on Pre Sign-up and Pre Token
- * Generation, and chained custom resources that bootstrap the first native
- * admin user.
+ * Cognito user pool with Google as the only Hosted UI identity provider,
+ * TOTP-only MFA on the pool, hosted UI OAuth, an admin group, and a
+ * fail-closed allow-list gate on Pre Sign-up and Pre Token Generation.
  */
 export class AuthConstruct extends Construct {
   public readonly userPool: cognito.UserPool;
@@ -73,6 +70,8 @@ export class AuthConstruct extends Construct {
       signInAliases: { email: true },
       autoVerify: { email: true },
       standardAttributes: { email: { required: true, mutable: true } },
+      // MFA and the password policy stay. The app client does not offer native
+      // sign-in, and changing MFA on the live pool is a separate update.
       mfa: cognito.Mfa.REQUIRED,
       mfaSecondFactor: { sms: false, otp: true },
       passwordPolicy: {
@@ -107,11 +106,11 @@ export class AuthConstruct extends Construct {
     props.sharedDeadLetterQueue.grantSendMessages(preTokenFn);
 
     // One admin gate on two triggers (construct id kept so the function is
-    // not replaced). Pre Sign-up refuses to create a Cognito user for a
-    // Google account that is not on the allow-list; Pre Token Generation
-    // refuses to issue any token unless the email is allow-listed or the
-    // user already holds the `admin` group (bootstrap administrator). A
-    // token that reaches the API therefore always carries `admin`.
+    // not replaced). Pre Sign-up creates a user only for an allow-listed
+    // Google identity. Pre Token Generation refuses a token unless the email
+    // is allow-listed and the user is a Google identity, so a native user's
+    // refresh token stops at the next refresh. A token that reaches the API
+    // therefore always carries `admin`.
     this.userPool.addTrigger(
       cognito.UserPoolOperation.PRE_SIGN_UP,
       preTokenFn
@@ -144,9 +143,9 @@ export class AuthConstruct extends Construct {
       userPoolClientName: "lxsoftware-admin-spa-client",
       generateSecret: false,
       authFlows: {
-        userSrp: true,
-        userPassword: true,
-        adminUserPassword: true,
+        userSrp: false,
+        userPassword: false,
+        adminUserPassword: false,
         custom: false,
       },
       oAuth: {
@@ -160,7 +159,6 @@ export class AuthConstruct extends Construct {
         logoutUrls: [logoutUrl],
       },
       supportedIdentityProviders: [
-        cognito.UserPoolClientIdentityProvider.COGNITO,
         cognito.UserPoolClientIdentityProvider.custom(
           googleProvider.providerName
         ),
@@ -306,98 +304,5 @@ export class AuthConstruct extends Construct {
       description: "Administrators for the LX admin console",
       precedence: 1,
     });
-
-    const bootstrapEmail = props.adminBootstrapEmailParameter.valueAsString;
-    const bootstrapPassword =
-      props.adminBootstrapTempPasswordParameter.valueAsString;
-
-    const cognitoAdminPolicy = cr.AwsCustomResourcePolicy.fromStatements([
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          "cognito-idp:AdminCreateUser",
-          "cognito-idp:AdminSetUserPassword",
-          "cognito-idp:AdminAddUserToGroup",
-          "cognito-idp:AdminGetUser",
-        ],
-        resources: [this.userPool.userPoolArn],
-      }),
-    ]);
-
-    const createBootstrapUser = new cr.AwsCustomResource(
-      this,
-      "BootstrapAdminCreateUser",
-      {
-        onCreate: {
-          service: "CognitoIdentityServiceProvider",
-          action: "adminCreateUser",
-          parameters: {
-            UserPoolId: this.userPool.userPoolId,
-            Username: bootstrapEmail,
-            MessageAction: "SUPPRESS",
-            TemporaryPassword: bootstrapPassword,
-            UserAttributes: [
-              { Name: "email", Value: bootstrapEmail },
-              { Name: "email_verified", Value: "true" },
-            ],
-          },
-          physicalResourceId: cr.PhysicalResourceId.of("lxsoftware-admin-bootstrap-user"),
-          ignoreErrorCodesMatching: "UsernameExistsException",
-        },
-        onUpdate: {
-          service: "CognitoIdentityServiceProvider",
-          action: "adminGetUser",
-          parameters: {
-            UserPoolId: this.userPool.userPoolId,
-            Username: bootstrapEmail,
-          },
-          physicalResourceId: cr.PhysicalResourceId.of("lxsoftware-admin-bootstrap-user"),
-        },
-        policy: cognitoAdminPolicy,
-        installLatestAwsSdk: false,
-      }
-    );
-
-    const setBootstrapPassword = new cr.AwsCustomResource(
-      this,
-      "BootstrapAdminSetPassword",
-      {
-        onCreate: {
-          service: "CognitoIdentityServiceProvider",
-          action: "adminSetUserPassword",
-          parameters: {
-            UserPoolId: this.userPool.userPoolId,
-            Username: bootstrapEmail,
-            Password: bootstrapPassword,
-            Permanent: true,
-          },
-          physicalResourceId: cr.PhysicalResourceId.of("lxsoftware-admin-bootstrap-pw"),
-        },
-        policy: cognitoAdminPolicy,
-        installLatestAwsSdk: false,
-      }
-    );
-    setBootstrapPassword.node.addDependency(createBootstrapUser);
-
-    const addBootstrapToGroup = new cr.AwsCustomResource(
-      this,
-      "BootstrapAdminAddToGroup",
-      {
-        onCreate: {
-          service: "CognitoIdentityServiceProvider",
-          action: "adminAddUserToGroup",
-          parameters: {
-            UserPoolId: this.userPool.userPoolId,
-            Username: bootstrapEmail,
-            GroupName: this.adminGroupName,
-          },
-          physicalResourceId: cr.PhysicalResourceId.of("lxsoftware-admin-bootstrap-group"),
-        },
-        policy: cognitoAdminPolicy,
-        installLatestAwsSdk: false,
-      }
-    );
-    addBootstrapToGroup.node.addDependency(setBootstrapPassword);
-    addBootstrapToGroup.node.addDependency(this.adminGroup);
   }
 }

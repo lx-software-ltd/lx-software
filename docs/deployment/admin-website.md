@@ -15,12 +15,10 @@ Executive Board design is in
 
 1. **GitHub environment** — `AWS_ACCOUNT_ID`, `AWS_REGION`, optional
    `CDK_BOOTSTRAP_QUALIFIER`, `CDK_PARAM_FILE`,
-   `ADMIN_GOOGLE_CLIENT_ID`, `ADMIN_FEDERATED_EMAIL_ALLOWLIST`
+   `ADMIN_GOOGLE_CLIENT_ID`, and `ADMIN_FEDERATED_EMAIL_ALLOWLIST`
    (comma-separated lower-case emails that receive `admin` via Pre Token
-   Generation — every Google admin and the bootstrap email), and
-   `ADMIN_BOOTSTRAP_EMAIL`. Secrets
-   `ADMIN_GOOGLE_CLIENT_SECRET` and `ADMIN_BOOTSTRAP_TEMP_PASSWORD` (14+
-   chars, mixed classes, or `adminCreateUser` fails).
+   Generation — every Google admin). Secret
+   `ADMIN_GOOGLE_CLIENT_SECRET`.
    **Deploy Admin Web** reads `UserPoolClientId`, `CognitoDomain`, and
    `AdminApiBaseUrl` from the `lxsoftware` stack. Do not set
    `ADMIN_COGNITO_*` or `ADMIN_API_BASE_URL`.
@@ -45,6 +43,24 @@ refused at sign-in (**This account is not authorized.**), and every listed
 address is a full administrator. The variable is the complete admin list;
 the Cognito **Users** page only shows accounts that have already signed in.
 
+Sign-in is Google only. There is no password sign-in. If Google sign-in
+fails, correct `ADMIN_GOOGLE_CLIENT_SECRET` or
+`ADMIN_FEDERATED_EMAIL_ALLOWLIST` and run **Deploy Backend**. Further
+recovery needs an IAM principal that can administer the user pool.
+
+The deploy that drops the native bootstrap user leaves that user in the
+pool, because the old custom resources had no delete action. The token
+gate refuses that user on the next refresh even when the address is still
+on the allow-list, because the user is not a Google identity. After the
+deploy succeeds, delete the user in the Cognito console, then delete the
+GitHub variable `ADMIN_BOOTSTRAP_EMAIL` and the secret
+`ADMIN_BOOTSTRAP_TEMP_PASSWORD`. If that address is also a Google admin,
+leave it on the allow-list. If it was only the native account, remove it
+from `ADMIN_FEDERATED_EMAIL_ALLOWLIST` and run **Deploy Backend** again so
+a later Google sign-in for that address is not an administrator. Deleting
+the user removes the account. Taking the address off the list does not
+invalidate a token by itself.
+
 ## 1. CDK Bootstrap and ACM
 
 Bootstrap the stack region and `us-east-1` ([`setup.md`](./setup.md#3-cdk-bootstrap)).
@@ -65,6 +81,14 @@ the key list). Confirm both stacks finish:
 **Deploy Admin Web** reads `UserPoolClientId`, `CognitoDomain` (the full
 `https://` origin), and `AdminApiBaseUrl` from this stack when it builds
 the SPA. The CloudFront domain is the DNS target for `admin.lx-software.com`.
+
+Run **CDK Diff** on this revision before the first deploy that removes the
+bootstrap user. The user pool and the app client update in place
+(`AuthUserPool8115E87F`, `AuthUserPoolUserPoolClientBB863FCC`). The diff
+also deletes the `BootstrapAdmin*` custom resources and the two bootstrap
+parameters. A replacement of the user pool or the app client would change
+the client id the SPA reads from the stack outputs. Those logical ids are
+pinned in `backend/infrastructure/test/lxsoftware-stack.test.ts`.
 
 If a deploy leaves `lxsoftware` in `UPDATE_ROLLBACK_FAILED` on a resource
 with no physical counterpart (a stage that references routes created in
@@ -124,8 +148,7 @@ with `ADMIN_WEB_STACK_NAME`).
 ## 5. Smoke tests
 
 1. Open `https://admin.lx-software.com`; the login screen appears.
-2. **Sign in with Google** (allow-listed email) or **Sign in with email**
-   for the bootstrap user; complete Hosted UI / MFA.
+2. **Sign in with Google** (allow-listed email) and complete Hosted UI.
 3. Tokens exist in `sessionStorage`.
 4. `GET /health` without auth → **200**; `GET /me` with
    `Authorization: Bearer <id_token>` → **200**.
@@ -181,14 +204,15 @@ query against that function's log group (named
 
 ```
 fields @timestamp, email, username, trigger_source, decision, matched_admin,
-       in_admin_group, allowlist_size
+       google_identity, in_admin_group, allowlist_size
 | filter tag = "admin_auth_gate" or tag = "pre_token_generation"
 | sort @timestamp desc
 ```
 
-`decision` is `grant_admin` (email on the allow-list), `keep_admin_group`
-(native bootstrap administrator), `deny_token`, `deny_sign_up`,
-`allow_sign_up` or `allow_admin_create_user`. Lines tagged
+`decision` is `grant_admin` (allow-listed Google identity), `deny_token`,
+`deny_sign_up`, or `allow_sign_up`. A `matched_admin: true` line with
+`google_identity: false` is a native user, including a refresh of the old
+bootstrap user; group membership does not grant a token. Lines tagged
 `pre_token_generation` are from before the fail-closed gate; there
 `matched_admin: true` is the only way the token carried `admin`. A
 `matched_admin: true` line for an address you did not expect means that

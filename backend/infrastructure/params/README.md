@@ -104,5 +104,5 @@ addresses. Leave empty to keep notify off. The inbound domain must already
 be a verified SES identity that can send (out of the SES sandbox, or the
 destination address verified).
 
-Secrets and bootstrap passwords should not live in git; pass them via CI secrets
-or a private parameter file stored outside of git.
+Secrets should not live in git; pass them via CI secrets or a private
+parameter file stored outside of git.

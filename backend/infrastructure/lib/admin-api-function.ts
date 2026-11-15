@@ -49,8 +49,6 @@ export function defineAdminApiFunction(
     googleClientId,
     googleClientSecret,
     adminFederatedEmailAllowlist,
-    adminBootstrapEmail,
-    adminBootstrapTempPassword,
     cognitoDomainPrefix,
     cognitoCustomDomainName,
     cognitoCustomDomainCertificateArn,
