@@ -131,14 +131,13 @@ Variables:
 | `VITE_CONTACT_WECHAT_ID` | Public site only. Shown on `/wechat`, or empty. |
 | `VITE_CONTACT_LINKEDIN` | Public site only. LinkedIn profile URL or `in/<slug>`, or empty. |
 | `VITE_GTM_ID` | Public site only. Google Tag Manager container id (`GTM-XXXXXXX`), or empty for no analytics. Setup in [`public-website.md`](./public-website.md#google-analytics-4-and-tag-manager). |
-| `ADMIN_GOOGLE_CLIENT_ID`, `ADMIN_FEDERATED_EMAIL_ALLOWLIST`, `ADMIN_BOOTSTRAP_EMAIL` | Admin stack settings; see [`admin-website.md`](./admin-website.md). The admin certificate is `lxsoftware-admin-web:AdminWebCertificateArn` in the CDK parameter file. **Deploy Admin Web** reads the client id, Hosted UI origin, and API URL from the `lxsoftware` stack. |
+| `ADMIN_GOOGLE_CLIENT_ID`, `ADMIN_FEDERATED_EMAIL_ALLOWLIST` | Admin stack settings; see [`admin-website.md`](./admin-website.md). The admin certificate is `lxsoftware-admin-web:AdminWebCertificateArn` in the CDK parameter file. **Deploy Admin Web** reads the client id, Hosted UI origin, and API URL from the `lxsoftware` stack. |
 
 Secrets:
 
 | Secret | Purpose |
 |--------|---------|
 | `ADMIN_GOOGLE_CLIENT_SECRET` | Google OAuth client secret (CDK `noEcho`). |
-| `ADMIN_BOOTSTRAP_TEMP_PASSWORD` | Bootstrap admin password (14+ chars, mixed classes). |
 | `PUBLIC_API_KEY_GPG_PASSPHRASE` | Encrypts minted keys in the public workflow logs. |
 | `OPENROUTER_MANAGEMENT_API_KEY` | For **Mint OpenRouter App Keys**. |
 

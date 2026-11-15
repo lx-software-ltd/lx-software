@@ -33,23 +33,7 @@ export function defineAdminParameters(scope: cdk.Stack) {
     {
       type: "String",
       description:
-        "Comma-separated lower-case emails that receive the admin group in tokens (Pre Token Generation). Include every Google admin and the bootstrap email.",
-    }
-  );
-
-  const adminBootstrapEmail = new cdk.CfnParameter(scope, "AdminBootstrapEmail", {
-    type: "String",
-    description: "Email for the initial native admin user (bootstrap).",
-  });
-
-  const adminBootstrapTempPassword = new cdk.CfnParameter(
-    scope,
-    "AdminBootstrapTempPassword",
-    {
-      type: "String",
-      description:
-        "Temporary password for bootstrap admin (must meet pool policy; rotate after first login).",
-      noEcho: true,
+        "Comma-separated lower-case emails that receive the admin group in tokens (Pre Token Generation). Every address is a Google administrator.",
     }
   );
 
@@ -124,8 +108,6 @@ export function defineAdminParameters(scope: cdk.Stack) {
     googleClientId,
     googleClientSecret,
     adminFederatedEmailAllowlist,
-    adminBootstrapEmail,
-    adminBootstrapTempPassword,
     cognitoDomainPrefix,
     cognitoCustomDomainName,
     cognitoCustomDomainCertificateArn,

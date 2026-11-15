@@ -7,16 +7,16 @@ triggers and fails closed on both:
 * ``PreSignUp_ExternalProvider`` (first Google sign-in) raises unless the
   federated email is on ``ADMIN_EMAIL_ALLOWLIST``, so an unknown Google
   account never becomes a Cognito user.
-* ``TokenGeneration_*`` raises unless the email is on the allow-list or the
-  user already holds the ``admin`` group in the pool (the native bootstrap
-  administrator). Cognito turns the exception into a sign-in error, so an
-  unlisted account receives no ID / access / refresh token at all instead
-  of a valid token that merely lacks the group. Matching users get the
-  ``admin`` group override as before.
+* ``TokenGeneration_*`` raises unless the email is on the allow-list.
+  Cognito turns the exception into a sign-in error, so an unlisted account
+  receives no ID / access / refresh token at all. Membership in the pool's
+  ``admin`` group does not issue a token. Matching users get the ``admin``
+  group override.
 
-``AdminCreateUser`` (the bootstrap custom resource) is the only sign-up path
-that is not gated: an operator with ``cognito-idp:AdminCreateUser`` already
-controls the pool.
+``AdminCreateUser`` is the only sign-up path that is not gated: an operator
+with ``cognito-idp:AdminCreateUser`` already controls the pool. The app
+client does not enable password or SRP sign-in, and a token is still refused
+unless that email is on the allow-list.
 """
 
 from __future__ import annotations
@@ -100,9 +100,6 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 "preferredRole": None,
             }
         }
-        return event
-    if in_admin_group:
-        _log(decision="keep_admin_group", **common)
         return event
     _log(decision="deny_token", **common)
     raise NotAuthorizedError(DENIED_MESSAGE)

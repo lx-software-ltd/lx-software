@@ -48,8 +48,6 @@ export function defineInboundMail(
     googleClientId,
     googleClientSecret,
     adminFederatedEmailAllowlist,
-    adminBootstrapEmail,
-    adminBootstrapTempPassword,
     cognitoDomainPrefix,
     cognitoCustomDomainName,
     cognitoCustomDomainCertificateArn,

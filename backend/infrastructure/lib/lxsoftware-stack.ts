@@ -71,8 +71,6 @@ export class LxsoftwareStack extends cdk.Stack {
       cognitoDomainPrefixParameter: params.cognitoDomainPrefix,
       cognitoCustomDomainNameParameter: params.cognitoCustomDomainName,
       cognitoCustomDomainCertificateArnParameter: params.cognitoCustomDomainCertificateArn,
-      adminBootstrapEmailParameter: params.adminBootstrapEmail,
-      adminBootstrapTempPasswordParameter: params.adminBootstrapTempPassword,
       adminFederatedEmailAllowlistParameter: params.adminFederatedEmailAllowlist,
       sharedEncryptionKey: this.sharedEncryptionKey,
       sharedDeadLetterQueue: this.lambdaDeadLetterQueue,

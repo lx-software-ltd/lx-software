@@ -780,6 +780,8 @@ describe("Executive Board placeholder secrets", () => {
     "AppStoreConnectKeySecretArn",
     "GooglePlayServiceAccountSecretArn",
     "GoogleAnalyticsServiceAccountSecretArn",
+    "AdminBootstrapEmail",
+    "AdminBootstrapTempPassword",
   ];
 
   function secretsNamed(names: string[]): CfnResource[] {
@@ -1277,6 +1279,25 @@ describe("Admin user pool sign-in gate", () => {
     const clients = Object.values(resourcesOfType("AWS::Cognito::UserPoolClient"));
     expect(clients).toHaveLength(1);
     expect(clients[0].Properties?.GenerateSecret).toBe(false);
+  });
+
+  test("the SPA client signs in with Google and a refresh token only", () => {
+    const providers = Object.values(
+      resourcesOfType("AWS::Cognito::UserPoolIdentityProvider"),
+    );
+    expect(providers).toHaveLength(1);
+    expect(providers[0].Properties?.ProviderName).toBe("Google");
+    expect(providers[0].Properties?.ProviderType).toBe("Google");
+    const clients = Object.values(resourcesOfType("AWS::Cognito::UserPoolClient"));
+    expect(clients[0].Properties?.SupportedIdentityProviders).toEqual([
+      { Ref: expect.stringMatching(/GoogleProvider/) },
+    ]);
+    expect(clients[0].Properties?.ExplicitAuthFlows).toEqual(["ALLOW_REFRESH_TOKEN_AUTH"]);
+    const templateJson = JSON.stringify(template.toJSON());
+    expect(templateJson).not.toContain("adminCreateUser");
+    expect(templateJson).not.toContain("adminSetUserPassword");
+    expect(templateJson).not.toContain("adminAddUserToGroup");
+    expect(templateJson).not.toContain("adminGetUser");
   });
 });
 

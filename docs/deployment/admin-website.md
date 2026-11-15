@@ -15,12 +15,10 @@ Executive Board design is in
 
 1. **GitHub environment** — `AWS_ACCOUNT_ID`, `AWS_REGION`, optional
    `CDK_BOOTSTRAP_QUALIFIER`, `CDK_PARAM_FILE`,
-   `ADMIN_GOOGLE_CLIENT_ID`, `ADMIN_FEDERATED_EMAIL_ALLOWLIST`
+   `ADMIN_GOOGLE_CLIENT_ID`, and `ADMIN_FEDERATED_EMAIL_ALLOWLIST`
    (comma-separated lower-case emails that receive `admin` via Pre Token
-   Generation — every Google admin and the bootstrap email), and
-   `ADMIN_BOOTSTRAP_EMAIL`. Secrets
-   `ADMIN_GOOGLE_CLIENT_SECRET` and `ADMIN_BOOTSTRAP_TEMP_PASSWORD` (14+
-   chars, mixed classes, or `adminCreateUser` fails).
+   Generation — every Google admin). Secret
+   `ADMIN_GOOGLE_CLIENT_SECRET`.
    **Deploy Admin Web** reads `UserPoolClientId`, `CognitoDomain`, and
    `AdminApiBaseUrl` from the `lxsoftware` stack. Do not set
    `ADMIN_COGNITO_*` or `ADMIN_API_BASE_URL`.
@@ -44,6 +42,15 @@ every Google operator and nobody else: an unlisted Google account is
 refused at sign-in (**This account is not authorized.**), and every listed
 address is a full administrator. The variable is the complete admin list;
 the Cognito **Users** page only shows accounts that have already signed in.
+
+Sign-in is Google only. The deploy that drops the native bootstrap user
+leaves that user in the pool, because the old custom resources had no
+delete action. After that deploy succeeds, delete the user in the Cognito
+console, then delete the GitHub variable `ADMIN_BOOTSTRAP_EMAIL` and the
+secret `ADMIN_BOOTSTRAP_TEMP_PASSWORD`. If that address is also a Google
+admin, leave it on the allow-list. If it was only the native account,
+remove it from `ADMIN_FEDERATED_EMAIL_ALLOWLIST` and run **Deploy Backend**
+again so an existing refresh token for that address is refused.
 
 ## 1. CDK Bootstrap and ACM
 
@@ -124,8 +131,7 @@ with `ADMIN_WEB_STACK_NAME`).
 ## 5. Smoke tests
 
 1. Open `https://admin.lx-software.com`; the login screen appears.
-2. **Sign in with Google** (allow-listed email) or **Sign in with email**
-   for the bootstrap user; complete Hosted UI / MFA.
+2. **Sign in with Google** (allow-listed email) and complete Hosted UI.
 3. Tokens exist in `sessionStorage`.
 4. `GET /health` without auth → **200**; `GET /me` with
    `Authorization: Bearer <id_token>` → **200**.
@@ -186,9 +192,10 @@ fields @timestamp, email, username, trigger_source, decision, matched_admin,
 | sort @timestamp desc
 ```
 
-`decision` is `grant_admin` (email on the allow-list), `keep_admin_group`
-(native bootstrap administrator), `deny_token`, `deny_sign_up`,
-`allow_sign_up` or `allow_admin_create_user`. Lines tagged
+`decision` is `grant_admin` (email on the allow-list), `deny_token`,
+`deny_sign_up`, `allow_sign_up` or `allow_admin_create_user`. An
+`in_admin_group: true` line with `deny_token` is a native user the pool
+still knows; group membership does not grant a token. Lines tagged
 `pre_token_generation` are from before the fail-closed gate; there
 `matched_admin: true` is the only way the token carried `admin`. A
 `matched_admin: true` line for an address you did not expect means that
