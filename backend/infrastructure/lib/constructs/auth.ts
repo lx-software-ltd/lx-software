@@ -70,6 +70,8 @@ export class AuthConstruct extends Construct {
       signInAliases: { email: true },
       autoVerify: { email: true },
       standardAttributes: { email: { required: true, mutable: true } },
+      // MFA and the password policy stay. The app client does not offer native
+      // sign-in, and changing MFA on the live pool is a separate update.
       mfa: cognito.Mfa.REQUIRED,
       mfaSecondFactor: { sms: false, otp: true },
       passwordPolicy: {
@@ -104,10 +106,11 @@ export class AuthConstruct extends Construct {
     props.sharedDeadLetterQueue.grantSendMessages(preTokenFn);
 
     // One admin gate on two triggers (construct id kept so the function is
-    // not replaced). Pre Sign-up refuses to create a Cognito user for a
-    // Google account that is not on the allow-list. Pre Token Generation
-    // refuses to issue any token unless the email is allow-listed. A token
-    // that reaches the API therefore always carries `admin`.
+    // not replaced). Pre Sign-up creates a user only for an allow-listed
+    // Google identity. Pre Token Generation refuses a token unless the email
+    // is allow-listed and the user is a Google identity, so a native user's
+    // refresh token stops at the next refresh. A token that reaches the API
+    // therefore always carries `admin`.
     this.userPool.addTrigger(
       cognito.UserPoolOperation.PRE_SIGN_UP,
       preTokenFn

@@ -1,5 +1,6 @@
 """Unit tests for the Cognito admin gate (Pre Sign-up + Pre Token Generation)."""
 
+import json
 import unittest
 from unittest.mock import patch
 
@@ -14,8 +15,11 @@ def _event(
     email: str | None,
     groups: list[str] | None = None,
     username: str = "Google_123",
+    identities: str | None = None,
 ) -> dict:
     attrs = {} if email is None else {"email": email, "email_verified": "true"}
+    if identities is not None:
+        attrs["identities"] = identities
     request: dict = {"userAttributes": attrs}
     if groups is not None:
         request["groupConfiguration"] = {
@@ -30,6 +34,10 @@ def _event(
         "request": request,
         "response": {},
     }
+
+
+def _google_identities() -> str:
+    return json.dumps([{"providerName": "Google", "providerType": "Google", "userId": "123"}])
 
 
 def _override_groups(result: dict) -> list[str] | None:
@@ -75,6 +83,35 @@ class PreTokenGenerationTests(unittest.TestCase):
         with self.assertRaises(NotAuthorizedError):
             lambda_handler(_event("TokenGeneration_RefreshTokens", UNLISTED, groups=[]), None)
 
+    def test_refresh_for_allowlisted_google_user_is_granted(self) -> None:
+        result = lambda_handler(_event("TokenGeneration_RefreshTokens", ALLOWED, groups=[]), None)
+        self.assertEqual(_override_groups(result), [ADMIN_GROUP])
+
+    def test_allowlisted_native_user_is_refused_including_refresh(self) -> None:
+        with self.assertRaises(NotAuthorizedError):
+            lambda_handler(
+                _event(
+                    "TokenGeneration_RefreshTokens",
+                    ALLOWED,
+                    groups=[ADMIN_GROUP],
+                    username="native-user",
+                ),
+                None,
+            )
+
+    def test_identities_attribute_counts_as_google(self) -> None:
+        result = lambda_handler(
+            _event(
+                "TokenGeneration_RefreshTokens",
+                ALLOWED,
+                groups=[],
+                username="native-looking",
+                identities=_google_identities(),
+            ),
+            None,
+        )
+        self.assertEqual(_override_groups(result), [ADMIN_GROUP])
+
     def test_admin_group_membership_does_not_grant_a_token(self) -> None:
         with self.assertRaises(NotAuthorizedError):
             lambda_handler(
@@ -97,7 +134,7 @@ class PreTokenGenerationTests(unittest.TestCase):
                         "TokenGeneration_Authentication",
                         ALLOWED,
                         groups=[ADMIN_GROUP],
-                        username="native-user",
+                        username="Google_123",
                     ),
                     None,
                 )
@@ -125,13 +162,28 @@ class PreSignUpTests(unittest.TestCase):
         self.assertIs(result, event)
         self.assertEqual(result["response"], {})
 
+    def test_allowlisted_external_signup_without_google_username_is_refused(self) -> None:
+        with self.assertRaises(NotAuthorizedError):
+            lambda_handler(
+                _event(
+                    "PreSignUp_ExternalProvider",
+                    ALLOWED,
+                    username=ALLOWED,
+                ),
+                None,
+            )
+
     def test_self_sign_up_is_refused_for_unlisted_email(self) -> None:
         with self.assertRaises(NotAuthorizedError):
             lambda_handler(_event("PreSignUp_SignUp", UNLISTED, username=UNLISTED), None)
 
-    def test_admin_create_user_is_not_gated(self) -> None:
-        event = _event("PreSignUp_AdminCreateUser", UNLISTED, username=UNLISTED)
-        self.assertIs(lambda_handler(event, None), event)
+    def test_self_sign_up_is_refused_for_allowlisted_email(self) -> None:
+        with self.assertRaises(NotAuthorizedError):
+            lambda_handler(_event("PreSignUp_SignUp", ALLOWED, username=ALLOWED), None)
+
+    def test_admin_create_user_is_refused(self) -> None:
+        with self.assertRaises(NotAuthorizedError):
+            lambda_handler(_event("PreSignUp_AdminCreateUser", ALLOWED, username=ALLOWED), None)
 
 
 if __name__ == "__main__":

@@ -5,18 +5,19 @@ identity in it must be an administrator. The same Lambda is wired to two
 triggers and fails closed on both:
 
 * ``PreSignUp_ExternalProvider`` (first Google sign-in) raises unless the
-  federated email is on ``ADMIN_EMAIL_ALLOWLIST``, so an unknown Google
-  account never becomes a Cognito user.
-* ``TokenGeneration_*`` raises unless the email is on the allow-list.
-  Cognito turns the exception into a sign-in error, so an unlisted account
+  username is a Google identity and the federated email is on
+  ``ADMIN_EMAIL_ALLOWLIST``. Any other Pre Sign-up trigger, including
+  ``AdminCreateUser``, raises, so the account never becomes a Cognito user.
+* ``TokenGeneration_*`` raises unless the email is on the allow-list and
+  the user is a Google identity. Cognito turns the exception into a sign-in
+  error, so an unlisted account, and a native user whose email is listed,
   receives no ID / access / refresh token at all. Membership in the pool's
-  ``admin`` group does not issue a token. Matching users get the ``admin``
-  group override.
+  ``admin`` group does not issue a token. Matching Google users get the
+  ``admin`` group override.
 
-``AdminCreateUser`` is the only sign-up path that is not gated: an operator
-with ``cognito-idp:AdminCreateUser`` already controls the pool. The app
-client does not enable password or SRP sign-in, and a token is still refused
-unless that email is on the allow-list.
+A Google identity is a username prefixed ``Google_`` (the Cognito federated
+username, including on refresh) or an ``identities`` attribute whose
+``providerName`` is ``Google``.
 """
 
 from __future__ import annotations
@@ -31,9 +32,10 @@ logger.setLevel(logging.INFO)
 
 ADMIN_GROUP = "admin"
 DENIED_MESSAGE = "This account is not authorized."
+GOOGLE_USERNAME_PREFIX = "Google_"
 
 PRE_SIGN_UP_PREFIX = "PreSignUp_"
-PRE_SIGN_UP_ADMIN_CREATE = "PreSignUp_AdminCreateUser"
+PRE_SIGN_UP_EXTERNAL = "PreSignUp_ExternalProvider"
 
 
 class NotAuthorizedError(Exception):
@@ -57,6 +59,24 @@ def _current_groups(event: dict[str, Any]) -> list[str]:
     return [str(g) for g in raw if g]
 
 
+def _is_google_identity(event: dict[str, Any]) -> bool:
+    username = str(event.get("userName") or "")
+    if username.startswith(GOOGLE_USERNAME_PREFIX):
+        return True
+    attrs = (event.get("request") or {}).get("userAttributes") or {}
+    raw = attrs.get("identities")
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return False
+    else:
+        parsed = raw
+    if not isinstance(parsed, list):
+        return False
+    return any(isinstance(item, dict) and item.get("providerName") == "Google" for item in parsed)
+
+
 def _log(**fields: Any) -> None:
     logger.info(json.dumps({"tag": "admin_auth_gate", **fields}))
 
@@ -67,6 +87,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     email = _norm_email(attrs.get("email"))
     allow = _allowlist()
     matched = bool(email) and email in allow
+    google = _is_google_identity(event)
     groups = _current_groups(event)
     in_admin_group = ADMIN_GROUP in groups
     common = {
@@ -77,20 +98,18 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         "email_verified": attrs.get("email_verified"),
         "allowlist_size": len(allow),
         "matched_admin": matched,
+        "google_identity": google,
         "in_admin_group": in_admin_group,
     }
 
     if trigger.startswith(PRE_SIGN_UP_PREFIX):
-        if trigger == PRE_SIGN_UP_ADMIN_CREATE:
-            _log(decision="allow_admin_create_user", **common)
+        if trigger == PRE_SIGN_UP_EXTERNAL and matched and google:
+            _log(decision="allow_sign_up", **common)
             return event
-        if not matched:
-            _log(decision="deny_sign_up", **common)
-            raise NotAuthorizedError(DENIED_MESSAGE)
-        _log(decision="allow_sign_up", **common)
-        return event
+        _log(decision="deny_sign_up", **common)
+        raise NotAuthorizedError(DENIED_MESSAGE)
 
-    if matched:
+    if matched and google:
         _log(decision="grant_admin", **common)
         event.setdefault("response", {})
         event["response"]["claimsOverrideDetails"] = {

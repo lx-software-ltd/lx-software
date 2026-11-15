@@ -33,14 +33,16 @@ parameters use `noEcho: true`; S3 remains private behind CloudFront.
   client allows the authorization-code flow and refresh tokens. It does
   not enable SRP, user-password, or admin-password authentication.
 - One Lambda (`backend/lambda/pre_token_generation`) is the sign-in gate
-  on two user-pool triggers and **fails closed**. **Pre Sign-up** raises
-  for a first Google sign-in whose `email` is not on the comma-separated
-  `AdminFederatedEmailAllowlist` parameter, so the account never becomes a
-  Cognito user. **Pre Token Generation** raises unless the `email` is on
-  that list. Membership in the pool's `admin` group does not issue a
-  token. A refused account gets no ID, access or refresh token at all.
-  Matching users get the `admin` group override. Cognito surfaces the
-  refusal to the SPA as
+  on two user-pool triggers and **fails closed**. **Pre Sign-up** creates
+  a Cognito user only for a Google identity whose `email` is on the
+  comma-separated `AdminFederatedEmailAllowlist` parameter. **Pre Token
+  Generation** raises unless the `email` is on that list and the user is a
+  Google identity (`Google_` username, or `identities` with
+  `providerName` `Google`). A native user is refused on the next refresh
+  even when that address is still on the allow-list. Membership in the
+  pool's `admin` group does not issue a token. A refused account gets no
+  ID, access or refresh token at all. Matching Google users get the
+  `admin` group override. Cognito surfaces the refusal to the SPA as
   `error_description=PreTokenGeneration failed with error This account is
   not authorized.`, which the callback shows on the login screen. Federated
   users are never added to Cognito groups in the data plane; the allow-list
@@ -49,9 +51,14 @@ parameters use `noEcho: true`; S3 remains private behind CloudFront.
   Every decision is logged as JSON (`tag: admin_auth_gate`, `email`,
   `decision`) in the `PreTokenGenerationFn` log group.
 - The user pool still requires **TOTP** MFA (no SMS) and a 14+ character
-  mixed password for a native account. The app client does not offer
-  native sign-in. Cognito `mfa: REQUIRED` does not apply to federated
-  sign-in, so enforce 2-Step Verification org-wide in Google Admin.
+  mixed password. Those settings stay because changing MFA on the live
+  pool is a separate update, and the app client does not offer native
+  sign-in. Cognito `mfa: REQUIRED` does not apply to federated sign-in,
+  so enforce 2-Step Verification org-wide in Google Admin.
+- There is no password sign-in and no break-glass user. If Google sign-in
+  fails, correct `ADMIN_GOOGLE_CLIENT_SECRET` or
+  `ADMIN_FEDERATED_EMAIL_ALLOWLIST` and run **Deploy Backend**. Further
+  recovery needs an IAM principal that can administer the user pool.
 - Self sign-up is disabled. `standardThreatProtectionMode` is
   `NO_ENFORCEMENT` to stay off the Cognito PLUS feature plan.
 - The SPA uses the OAuth **authorization code** flow with **PKCE** and a

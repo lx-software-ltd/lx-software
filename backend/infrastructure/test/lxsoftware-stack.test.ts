@@ -1293,6 +1293,14 @@ describe("Admin user pool sign-in gate", () => {
       { Ref: expect.stringMatching(/GoogleProvider/) },
     ]);
     expect(clients[0].Properties?.ExplicitAuthFlows).toEqual(["ALLOW_REFRESH_TOKEN_AUTH"]);
+    // These logical ids are already deployed. Renaming the construct replaces
+    // the live user pool or app client and changes the client id the SPA reads.
+    expect(Object.keys(resourcesOfType("AWS::Cognito::UserPool"))).toEqual([
+      "AuthUserPool8115E87F",
+    ]);
+    expect(Object.keys(resourcesOfType("AWS::Cognito::UserPoolClient"))).toEqual([
+      "AuthUserPoolUserPoolClientBB863FCC",
+    ]);
     const templateJson = JSON.stringify(template.toJSON());
     expect(templateJson).not.toContain("adminCreateUser");
     expect(templateJson).not.toContain("adminSetUserPassword");
