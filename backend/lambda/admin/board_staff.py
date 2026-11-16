@@ -1929,7 +1929,7 @@ def _complete_step(table: Any, task_id: str, task: dict[str, Any], result: Any, 
 def _confirmed_lessons(table: Any, subject: str) -> list[str]:
     from contract_constants import BOARD_STAFF_LESSONS_PER_SEAT_IN_PROMPT
 
-    rows = board_store.list_lessons(table, subject, limit=BOARD_STAFF_LESSONS_PER_SEAT_IN_PROMPT)
+    rows = board_store.list_lessons(table, subject, limit=400)  # newest first; unconfirmed rows must not crowd out confirmed ones
     out: list[str] = []
     for row in rows:
         if not row.get("confirmed"):

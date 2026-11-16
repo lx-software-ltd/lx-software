@@ -13,6 +13,7 @@ from board_tools_core import (
     _str_param,
     _summ,
 )
+from contract_constants import BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS
 
 
 def _content_list(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
@@ -122,5 +123,7 @@ def ops() -> list[ToolOp]:
             summarize=_summ("Published a calendar item"),
             contexts=("chat", "meeting", "task"),
             validate=_validate_content_publish,
+            # Instagram is two Graph calls and Meta fetches the image in between.
+            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
         ),
     ]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import unittest
 from typing import Any
@@ -96,6 +97,30 @@ class QualifyTests(BoardTestCase):
             score, note = board_prospects.score(self.table, self.settings, row)
         self.assertEqual(score, 66)
         self.assertIn("Saturday", note)
+
+    def test_score_prompt_gives_a_range_and_labels_an_unfetched_homepage(self) -> None:
+        row, _ = board_prospects.upsert(self.table, name="Hall", type="venue", website="https://hall.example")
+        seen: dict[str, Any] = {}
+
+        class Fake:
+            text = '{"score": 70, "note": "Runs classes for children."}'
+
+        def fake_completion(**kwargs: Any) -> Fake:
+            seen.update(kwargs)
+            return Fake()
+
+        with (
+            patch("board_crawl.fetch", side_effect=RuntimeError("blocked")),
+            patch("board_budget.board_completion", side_effect=fake_completion),
+            patch("board_budget.model_for", return_value="desk"),
+        ):
+            score, _ = board_prospects.score(self.table, self.settings, row)
+        self.assertEqual(score, 70)
+        system = seen["messages"][0]["content"]
+        self.assertNotIn('"score":0', system.replace(" ", ""))
+        self.assertIn("0-100", system)
+        self.assertIn("start at 50", system)
+        self.assertIn("could not be fetched", json.loads(seen["messages"][1]["content"])["homepage"])
 
     def test_upsert_dedupes_and_intel_helper(self) -> None:
         first, created = board_prospects.upsert(self.table, name="A", type="venue", website="https://www.hall.example/")

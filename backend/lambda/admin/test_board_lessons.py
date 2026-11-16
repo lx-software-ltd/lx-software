@@ -56,6 +56,30 @@ class LessonTests(BoardTestCase):
         self.assertIn("STANDING INSTRUCTIONS FROM THE FOUNDER", prompt)
         self.assertIn("Always name the district and the date.", prompt)
 
+    def test_confirmed_lessons_outlast_a_run_of_newer_unconfirmed_rows(self) -> None:
+        clock = iter(f"2026-11-09T08:{minute:02d}:00.000Z" for minute in range(60))
+
+        def write(instruction: str, ref: str) -> dict[str, Any]:
+            return board_lessons._write(
+                self.table,
+                kind="veto",
+                subject="content-marketer",
+                class_key="publish:instagram",
+                what=f"content {ref}",
+                instruction=instruction,
+                source_ref=ref,
+            )
+
+        with patch.object(board_store, "now_iso", side_effect=lambda: next(clock)):
+            kept = write("One real Stanley listing per post.", "kept")
+            for index in range(20):
+                write(f"Unconfirmed draft {index}.", f"noise-{index}")
+        board_lessons.confirm(self.table, kept["lessonId"])
+        self.assertEqual(
+            board_staff._confirmed_lessons(self.table, "content-marketer"),
+            ["One real Stanley listing per post."],
+        )
+
     def test_correction_and_return(self) -> None:
         board_store.add_tool_call(
             self.table,

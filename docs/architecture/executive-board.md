@@ -229,7 +229,8 @@ the model.
 The loop (`run_tool_loop`) allows `maxToolRoundsPerTurn` 4 rounds and
 `maxToolCallsPerTurn` 8 calls per turn, truncates results to
 `toolResultMaxChars` 6 000, times out external calls at 10 s (25 s for
-slow GitHub / Meta ops) and bounds a turn by `chatToolLoopMaxSeconds` 120
+slow GitHub / Meta ops, `content_publish` and `outreach_score_prospect`)
+and bounds a turn by `chatToolLoopMaxSeconds` 120
 or `meetingToolLoopMaxSeconds` 100 (equal to the 100 s phase OpenRouter
 timeout: with the hard wall clock the loop budget is a kill, not an
 inactivity timeout, and 60 s cut eight parallel `deepseek-chat` position
@@ -983,7 +984,8 @@ Corrections become **lessons**: a veto, a manager `return`, or **This was
 wrong** on a sample row drafts a one-sentence instruction (`lessons#`,
 `confirmed=false`). Confirmed lessons are injected into that seat's or
 persona's prompt under "standing instructions" (`lessonsPerSeatInPrompt`
-12).
+12): the newest 12 confirmed ones among that seat's last 400 lesson rows,
+so a run of unconfirmed drafts does not push confirmed lessons out.
 
 ## 10. Growth engines
 
@@ -1044,7 +1046,13 @@ mapping (`reportBatchItemFailures`). Hard bounces and complaints write
 `…-link-signing-key` secret, rate-limited) suppresses without a JWT.
 First touches are `cold_outreach:{type}` holds until the ramp promotes
 the class. `outreach_send` re-checks stage, suppression, cap, breaker,
-identity verification and quiet hours at execution.
+identity verification and quiet hours at execution. Its hold or approval
+carries an email preview (`kind: "email"`: sender, subject and the
+rendered step) so the owner reads the draft on the same card as a mail
+draft. The recipient there is the organisation name and its `contact#N`
+alias; the address itself is on the prospect in Pipeline. The preview is
+rendered when the hold or approval is created; the send renders again
+from the sequence as saved at that moment.
 
 Daily `…-board-targets` (08:00 HKT) compares qualified prospects this
 ISO week with `targets.qualifiedPerWeek` (50) and opens `prospector`

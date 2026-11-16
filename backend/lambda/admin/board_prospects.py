@@ -35,6 +35,7 @@ BUSINESS_LOCAL_PARTS = frozenset(
     }
 )
 NEEDS_CONTACT_DAILY_CAP = 20
+_HOMEPAGE_UNREAD = "(homepage could not be fetched or had no readable text; that is not evidence the site is dead or the business closed)"
 OWNER_STAGES = frozenset({"suppressed", "declined", "qualified", "parked"})
 MULTI_LABEL_TLDS = frozenset({"com.hk", "org.hk", "net.hk", "edu.hk", "gov.hk", "idv.hk", "co.uk"})
 PUBLIC_MAILBOX_DOMAINS = frozenset(
@@ -271,7 +272,6 @@ def score(table: Any, settings: dict[str, Any], prospect: dict[str, Any]) -> tup
             homepage = board_crawl.digest(board_crawl.normalise(board_crawl.html_to_text(fetched.text)))
         except Exception as exc:
             _log_event("warning", tag="board_prospect_homepage_failed", error=str(exc)[:200])
-            homepage = ""
     pseud = pii.Pseudonymizer(table)
     public = {
         "name": prospect.get("name"),
@@ -293,13 +293,13 @@ def score(table: Any, settings: dict[str, Any], prospect: dict[str, Any]) -> tup
                 {
                     "role": "system",
                     "content": (
-                        "Score this organisation for Siu Tin Dei using the rubric. "
-                        "Reply with JSON only: {\"score\":0,\"note\":\"\"}."
+                        "Score this organisation for Siu Tin Dei using the rubric: start at 50, then apply only the adjustments the facts support. "
+                        'Reply with JSON only: {"score": <integer 0-100>, "note": "<one sentence naming the adjustments>"}.'
                     ),
                 },
                 {
                     "role": "user",
-                    "content": json.dumps({"rubric": rubric, "prospect": public, "homepage": homepage[:4000]}),
+                    "content": json.dumps({"rubric": rubric, "prospect": public, "homepage": homepage[:4000] or _HOMEPAGE_UNREAD}),
                 },
             ],
             model=board_budget.model_for("standup", settings),

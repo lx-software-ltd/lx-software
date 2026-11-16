@@ -15,6 +15,7 @@ from board_tools_core import (
 )
 from contract_constants import (
     BOARD_STAFF_PROSPECT_TYPES,
+    BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
 )
 
 
@@ -57,6 +58,50 @@ def _outreach_send(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     import board_outreach
 
     return board_outreach.op_send(ctx, args)
+
+def _outreach_send_preview(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any] | None:
+    """The email this call would send, in the mail-preview shape the owner's cards render.
+
+    Built when the hold or approval is created. The send itself renders again
+    from the sequence as it stands at that moment. The recipient is the
+    organisation name and its alias: holds and approvals are readable by keys
+    without the PII scope, and prospect contacts have no other mask there.
+    """
+    import board_mail
+    import board_outreach
+    import board_pii
+    import board_sequences
+    import board_store
+
+    prospect = board_store.get_prospect(ctx.table, str(args.get("prospectId") or args.get("id") or ""))
+    if not prospect:
+        return {"error": "prospect not found"}
+    steps = list(board_sequences.get_or_default(ctx.table, str(prospect.get("type") or "provider")).get("steps") or [])
+    try:
+        index = int(args.get("stepIndex") or 0)
+    except (TypeError, ValueError):
+        index = 0
+    if index < 0 or index >= len(steps):
+        return {"error": "step out of range"}
+    subject, text = board_outreach.render_message(
+        ctx.table, prospect, steps[index], personalisation=str(args.get("personalisation") or "")[:400]
+    )
+    contact = str(prospect.get("contact") or prospect.get("email") or "")
+    recipients: list[str] = []
+    if contact:
+        pseud = board_pii.Pseudonymizer(ctx.table)
+        recipients = [f"{str(prospect.get('name') or '')[:120]} <{pseud.alias_for_address(contact)}>"]
+        pseud.save()
+    return {
+        "kind": "email",
+        "from": board_outreach.from_address(),
+        "to": recipients,
+        "cc": [],
+        "subject": subject,
+        "text": text,
+        "threadId": "",
+        "sendEnabled": board_mail.sending_enabled(),
+    }
 
 def _outreach_personalisation_guard(_ctx: ToolContext, args: dict[str, Any]) -> str | None:
     import board_policy
@@ -163,6 +208,8 @@ def ops() -> list[ToolOp]:
             run=_outreach_score_prospect,
             summarize=_summ("Scored a prospect"),
             contexts=("chat", "meeting", "task"),
+            # Homepage fetch, one desk model call, then up to four contact pages.
+            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
         ),
         ToolOp(
             name="outreach_start_sequence",
@@ -198,6 +245,7 @@ def ops() -> list[ToolOp]:
             summarize=_summ("Sent outreach"),
             contexts=("chat", "meeting", "task"),
             act_guard=_outreach_personalisation_guard,
+            preview=_outreach_send_preview,
         ),
         ToolOp(
             name="outreach_suppress",
