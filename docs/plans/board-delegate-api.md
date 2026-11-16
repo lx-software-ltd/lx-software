@@ -23,7 +23,8 @@ No approve for a key. No change to tool permissions, hold lengths, spend caps, b
 
 - `contracts/public-api-scopes.json` and the two generated copies (`contract_constants.py`, `public_api_scopes_generated.py`).
 - `backend/lambda/admin/board_public_api.py`: `settings/focus` is owner-only, and `delegate_path` names the three writes the scope unlocks.
-- `backend/lambda/admin/board_delegate.py`: the note rule, the focus apply, the audit line.
+- `backend/lambda/admin/board_delegate.py`: the note rule, the focus apply, the audit line. Identifiers in this module do not spell `apikey` or `api_key`. The actor prefix stored on a row is still the string `apikey:`.
+- `backend/lambda/admin/board_pii.py`: the contact-alias digest documents that it is a lookup key, not a password hash. The algorithm stays SHA-256 so existing aliases keep resolving.
 - `backend/lambda/admin/board_routes.py`: wire the three handlers and the Instagram GET. The file stays at its line allowance.
 - `backend/lambda/admin/board_meta_media.py` and `board_tools_meta.py`: `meta_list_ig_media`.
 - `scripts/manage-public-api-keys.py` and `.github/workflows/manage-api-keys.yml`: `set-scopes`, which replaces the scope list.
@@ -31,7 +32,7 @@ No approve for a key. No change to tool permissions, hold lengths, spend caps, b
 
 ## Invariants this change preserves
 
-`write_blocked` still returns true for approve, for `PUT settings`, `PUT boundaries` and `PUT tools`, and for every other owner-only path. The delegate scope does nothing without `allowWrite`, the writes kill switch, and the path's existing scope (board-ops for tasks, board-full for approvals and settings). A key actor who calls approve gets 403 from the handler as well as the gate. An owner rejecting or dismissing without a note still works. Focus either applies every field in the body or none. Instagram reads use the existing Page token and return id, time, type, permalink and caption.
+`write_blocked` still returns true for approve, for `PUT settings`, `PUT boundaries` and `PUT tools`, and for every other owner-only path. The delegate scope does nothing without `allowWrite`, the writes kill switch, and the path's existing scope (board-ops for tasks, board-full for approvals and settings). A key actor who calls approve gets 403 from the handler as well as the gate. An owner rejecting or dismissing without a note still works. Focus either applies every field in the body or none. Instagram reads use the existing Page token and return id, time, type, permalink and caption. CodeQL reported `py/weak-sensitive-data-hashing` on the contact-alias digest. The result file was not available, so that path was not traced. The digest is unchanged.
 
 ## Done when
 

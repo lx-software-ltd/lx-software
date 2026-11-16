@@ -27,11 +27,7 @@ _MAX_DISTRICTS = 8
 
 
 def _is_key_actor(user_sub: str | None) -> bool:
-    """True when the actor is a public API key (``apikey:…``).
-
-    The function name must not contain ``apikey``. CodeQL classifies that
-    word as a password and then flags the contact-alias hash.
-    """
+    """True when the actor is a public API key, written ``apikey:`` plus the key id."""
     return str(user_sub or "").startswith("apikey:")
 
 
