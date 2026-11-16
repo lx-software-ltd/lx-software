@@ -53,6 +53,36 @@ function readOauthAnalytics(): boolean {
   return sessionStorage.getItem(OAUTH_ANALYTICS_KEY) === "1";
 }
 
+function planSummary() {
+  const now = Date.now();
+  const posts = state.linkedin.posts;
+  let planned = 0;
+  let overdue = 0;
+  let refreshAt: string | null = null;
+  const consider = (iso: string) => {
+    if (!refreshAt || iso < refreshAt) refreshAt = iso;
+  };
+  for (const row of posts) {
+    if (row.status !== "approved") continue;
+    const at = row.slotAt ? new Date(row.slotAt).getTime() : Number.NaN;
+    if (!row.slotAt || (Number.isFinite(at) && at > now)) {
+      planned += 1;
+      if (row.slotAt && Number.isFinite(at) && at > now) consider(row.slotAt);
+    } else {
+      overdue += 1;
+    }
+  }
+  const taken = new Set(
+    posts
+      .filter((row) => row.status === "approved" || row.status === "published")
+      .map((row) => row.slotAt)
+      .filter(Boolean),
+  );
+  const nextEmptySlot = nextSlots(state.linkedin.settings, new Date(), 1, taken)[0] ?? null;
+  if (nextEmptySlot) consider(nextEmptySlot);
+  return { planned, overdue, nextEmptySlot, refreshAt };
+}
+
 function overview() {
   const posts = state.linkedin.posts;
   const taken = new Set(
@@ -106,7 +136,10 @@ function postIdFrom(path: string): string {
 export function handleLinkedIn(ctx: MockCtx): Response | null {
   const { path, method } = ctx;
   if (path !== "/lx-software/linkedin" && !path.startsWith("/lx-software/linkedin/")) return null;
-  if (path === "/lx-software/linkedin" && method === "GET") return json(overview());
+  if (path === "/lx-software/linkedin" && method === "GET") {
+    if (ctx.url.searchParams.get("view") === "plan") return json(planSummary());
+    return json(overview());
+  }
   if (path === "/lx-software/linkedin/settings" && method === "PUT") {
     const body = parseBody(ctx.init);
     const voice = String(body.voiceNotes ?? state.linkedin.settings.voiceNotes).trim();

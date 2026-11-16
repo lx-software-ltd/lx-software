@@ -20,6 +20,7 @@ import linkedin_api
 import linkedin_draft
 import linkedin_image
 import linkedin_metrics
+import linkedin_plan
 import linkedin_store
 from http_common import _audit, _json_response, _log_event, _parse_json_body
 from linkedin_api import LinkedInApiError
@@ -46,8 +47,7 @@ def reset_ses_client_for_tests() -> None:
 
 
 def notify_from_address() -> str:
-    domain = (os.environ.get("INBOUND_MAIL_DOMAIN") or "inbound.lx-software.com").strip()
-    return f"linkedin@{domain}"
+    return f"linkedin@{(os.environ.get('INBOUND_MAIL_DOMAIN') or 'inbound.lx-software.com').strip()}"
 
 
 def send_notice(to_address: str, subject: str, body: str) -> bool:
@@ -94,7 +94,7 @@ def _parts(path: str) -> list[str]:
 def handle_http(event: dict[str, Any], method: str, path: str, user_sub: str | None) -> dict[str, Any]:
     parts = _parts(path)
     if not parts and method == "GET":
-        return _json_response(200, linkedin_store.overview(_table()))
+        return _json_response(200, linkedin_plan.http_get(_table(), event))
     if parts == ["settings"] and method == "PUT":
         blocked = _require_enabled()
         if blocked:

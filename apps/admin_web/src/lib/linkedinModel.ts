@@ -532,6 +532,41 @@ function isoWeek(year: number, month: number, day: number): string {
   return `${isoYear}-${week}`;
 }
 
+export type LinkedInPlan = {
+  planned: number;
+  overdue: number;
+  nextEmptySlot: string | null;
+  refreshAt: string | null;
+};
+
+export type LinkedInPlanSummary = {
+  readonly planned: number;
+  readonly overdue: number;
+  readonly nextEmptySlot: string | null;
+};
+
+function nonNegative(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+/** Keep a slot only while it is still ahead of `now`. */
+export function linkedInPlanSummary(
+  plan: {
+    readonly planned?: number;
+    readonly overdue?: number;
+    readonly nextEmptySlot?: string | null;
+  },
+  now: Date = new Date(),
+): LinkedInPlanSummary {
+  const raw = plan.nextEmptySlot?.trim() ?? "";
+  const at = raw ? new Date(raw).getTime() : Number.NaN;
+  return {
+    planned: nonNegative(plan.planned),
+    overdue: nonNegative(plan.overdue),
+    nextEmptySlot: Number.isFinite(at) && at > now.getTime() ? raw : null,
+  };
+}
+
 /** Upcoming 08:30 HKT slots (or the saved hour) as UTC timestamps. */
 export function nextSlots(
   settings: Pick<LinkedInDraftSettings, "weekdays" | "postsPerWeek" | "slotHour" | "slotMinute">,

@@ -13,6 +13,7 @@ import {
   guardrails,
   isLinkedInPostUrl,
   linkedInAccessState,
+  linkedInPlanSummary,
   linkedInShareUrl,
   linkedinDraftModel,
   nextSlots,
@@ -24,6 +25,37 @@ describe("linkedin pillars", () => {
     expect(LINKEDIN_PILLARS.some((row) => row.id === "personal")).toBe(true);
     expect(pillarLabel("personal")).toBe("Personal");
     expect(DEFAULT_LINKEDIN_SETTINGS.pillars).toContain("personal");
+  });
+});
+
+describe("linkedin plan summary", () => {
+  it("keeps an open slot that is still ahead", () => {
+    const now = new Date("2026-11-16T02:00:00.000Z");
+    expect(
+      linkedInPlanSummary(
+        {
+          planned: 2,
+          overdue: 1,
+          nextEmptySlot: "2026-11-17T00:30:00.000Z",
+        },
+        now,
+      ),
+    ).toEqual({
+      planned: 2,
+      overdue: 1,
+      nextEmptySlot: "2026-11-17T00:30:00.000Z",
+    });
+  });
+
+  it("drops a slot that has already started", () => {
+    const now = new Date("2026-11-17T00:30:00.000Z");
+    expect(
+      linkedInPlanSummary(
+        { planned: 0, overdue: 1, nextEmptySlot: "2026-11-17T00:30:00.000Z" },
+        now,
+      ),
+    ).toEqual({ planned: 0, overdue: 1, nextEmptySlot: null });
+    expect(linkedInPlanSummary({}, now)).toEqual({ planned: 0, overdue: 0, nextEmptySlot: null });
   });
 });
 
