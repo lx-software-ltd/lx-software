@@ -1,5 +1,6 @@
 import { OpenRouterUsageCard } from "../components/dashboard/OpenRouterUsageCard";
 import { AwsUsageCard } from "../components/dashboard/AwsUsageCard";
+import { LinkedInPlanDashboardCard } from "../components/dashboard/LinkedInPlanDashboardCard";
 import { LX_SOFTWARE_BOOK_KEY } from "../lib/statementOwners";
 import { StatementBookPage } from "./StatementBookPage";
 
@@ -7,6 +8,7 @@ export function LxSoftwarePage() {
   return (
     <StatementBookPage
       bookKey={LX_SOFTWARE_BOOK_KEY}
+      fiscalYearAside={<LinkedInPlanDashboardCard />}
       dashboardExtra={
         <div className="row g-3">
           <div className="col-12 col-md-6">

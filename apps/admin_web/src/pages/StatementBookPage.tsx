@@ -65,9 +65,12 @@ const ResumeTab = lazy(() => import("../components/resume/ResumeTab").then((m) =
 export function StatementBookPage({
   bookKey,
   dashboardExtra,
+  fiscalYearAside,
 }: {
   readonly bookKey: StatementBookKey;
   readonly dashboardExtra?: ReactNode;
+  /** Renders in the same row as the fiscal year card. */
+  readonly fiscalYearAside?: ReactNode;
 }) {
   const title = STATEMENT_BOOK_DISPLAY_LABEL[bookKey];
   const readOnly = isMirroredStatementBook(bookKey);
@@ -127,6 +130,15 @@ export function StatementBookPage({
   }, [bookKey, location.pathname, location.search, navigate, tab]);
   const idPrefix = `book-${bookKey}`;
   const panelId = `${idPrefix}-tabpanel`;
+  const fiscalYearCard = (
+    <StatementBookDashboardCard
+      title={title}
+      showTitle={bookKey !== LX_SOFTWARE_BOOK_KEY}
+      data={data}
+      fiscalYear={fiscalYear}
+      onFiscalYearChange={setFiscalYear}
+    />
+  );
   // The board has its own API; it stays usable even when the book failed to load.
   const canShowTab = !isError || tab === "board" || tab === "linkedin" || tab === "resume";
 
@@ -171,13 +183,14 @@ export function StatementBookPage({
           >
             {tab === "dashboard" ? (
               <>
-                <StatementBookDashboardCard
-                  title={title}
-                  showTitle={bookKey !== LX_SOFTWARE_BOOK_KEY}
-                  data={data}
-                  fiscalYear={fiscalYear}
-                  onFiscalYearChange={setFiscalYear}
-                />
+                {fiscalYearAside ? (
+                  <div className="row g-3">
+                    <div className="col-12 col-md-6">{fiscalYearCard}</div>
+                    <div className="col-12 col-md-6">{fiscalYearAside}</div>
+                  </div>
+                ) : (
+                  fiscalYearCard
+                )}
                 {readOnly ? (
                   <div className="mt-3">
                     <MirroredBookSummaryCard bookKey={bookKey} />

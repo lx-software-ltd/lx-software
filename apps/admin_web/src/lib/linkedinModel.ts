@@ -532,6 +532,26 @@ function isoWeek(year: number, month: number, day: number): string {
   return `${isoYear}-${week}`;
 }
 
+export type LinkedInPlanSummary = {
+  readonly planned: number;
+  readonly nextEmptySlot: string | null;
+};
+
+/**
+ * Approved posts are the planned queue. `nextSlots` is already the open
+ * calendar (taken approved and published slots removed).
+ */
+export function linkedInPlanSummary(overview: {
+  readonly counts?: { readonly approved?: number } | null;
+  readonly nextSlots?: readonly string[] | null;
+}): LinkedInPlanSummary {
+  const approved = overview.counts?.approved;
+  const planned =
+    typeof approved === "number" && Number.isFinite(approved) ? Math.max(0, approved) : 0;
+  const nextEmptySlot = (overview.nextSlots ?? []).find((slot) => slot.trim()) ?? null;
+  return { planned, nextEmptySlot };
+}
+
 /** Upcoming 08:30 HKT slots (or the saved hour) as UTC timestamps. */
 export function nextSlots(
   settings: Pick<LinkedInDraftSettings, "weekdays" | "postsPerWeek" | "slotHour" | "slotMinute">,
