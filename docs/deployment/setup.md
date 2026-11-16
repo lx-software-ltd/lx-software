@@ -138,7 +138,7 @@ Secrets:
 | Secret | Purpose |
 |--------|---------|
 | `ADMIN_GOOGLE_CLIENT_SECRET` | Google OAuth client secret (CDK `noEcho`). |
-| `ADMIN_FEDERATED_EMAIL_ALLOWLIST` | Comma-separated lower-case Google admin emails (CDK `noEcho`). **Deploy Backend** reads this production environment secret and stops when it has no email address. See [`admin-website.md`](./admin-website.md). |
+| `ADMIN_FEDERATED_EMAIL_ALLOWLIST` | Comma-separated lower-case Google admin emails (CDK `noEcho`). **Deploy Backend** reads this production environment secret, publishes the public website stack, then stops before the admin stacks when any entry is empty or not an email address. See [`admin-website.md`](./admin-website.md). |
 | `PUBLIC_API_KEY_GPG_PASSPHRASE` | Encrypts minted keys in the public workflow logs. |
 | `OPENROUTER_MANAGEMENT_API_KEY` | For **Mint OpenRouter App Keys**. |
 

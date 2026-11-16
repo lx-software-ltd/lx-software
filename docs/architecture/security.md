@@ -48,9 +48,14 @@ parameters use `noEcho: true`; S3 remains private behind CloudFront.
   users are never added to Cognito groups in the data plane; the allow-list
   is the only way a Google account gains `admin`, so every entry in the
   production environment secret `ADMIN_FEDERATED_EMAIL_ALLOWLIST` is an
-  administrator. CloudFormation stores that parameter with `noEcho`.
+  administrator. CloudFormation stores that parameter with `noEcho`, which
+  masks it in the stack console and in `describe-stacks`. The resolved list
+  stays on `PreTokenGenerationFn` as `ADMIN_EMAIL_ALLOWLIST`, and
+  `get-function-configuration` returns it to a caller who can `kms:Decrypt`
+  `alias/lxsoftware-admin/shared`.
   Every decision is logged as JSON (`tag: admin_auth_gate`, `email`,
-  `decision`) in the `PreTokenGenerationFn` log group.
+  `decision`, `allowlist_size`) in the `PreTokenGenerationFn` log group.
+  The log has that attempt's email. It does not include the full list.
 - The user pool still requires **TOTP** MFA (no SMS) and a 14+ character
   mixed password. Those settings stay because changing MFA on the live
   pool is a separate update, and the app client does not offer native
@@ -211,5 +216,8 @@ A name-only `ignore` for a still-vulnerable copy fails it with
   with `noEcho`. It can appear briefly in the runner process environment;
   rotate it in Google Cloud if it is ever exposed.
 - `ADMIN_FEDERATED_EMAIL_ALLOWLIST` is a production environment secret
-  passed to CDK with `noEcho`. **Deploy Backend** stops when it contains
-  no email address, so a missing secret leaves the live allow-list in place.
+  passed to CDK with `noEcho`. **Deploy Backend** publishes the public
+  website stack, then stops before the admin stacks when any entry is
+  empty or not an email address, so a missing secret leaves the live
+  allow-list in place. How to read the list back is in
+  [`../deployment/admin-website.md`](../deployment/admin-website.md).

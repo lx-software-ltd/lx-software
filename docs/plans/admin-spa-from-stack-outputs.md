@@ -32,7 +32,7 @@ Stop copying admin SPA settings into GitHub variables.
 
 - Sign-in, token, revoke, and logout URLs are absolute `https` URLs. A bare hostname fails the deploy.
 - The admin CloudFront certificate stays the issued us-east-1 certificate already in the parameter file.
-- Google client id and the email allow-list stay GitHub variables. Phone numbers and personal inboxes stay out of git. `ADMIN_BOOTSTRAP_EMAIL` was removed in a later change.
+- Google client id and the email allow-list stay GitHub variables. Phone numbers and personal inboxes stay out of git. `ADMIN_BOOTSTRAP_EMAIL` was removed in a later change. A later change moves `ADMIN_FEDERATED_EMAIL_ALLOWLIST` to the `production` environment secret.
 
 ## Done when
 

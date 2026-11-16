@@ -1259,6 +1259,9 @@ describe("Admin user pool sign-in gate", () => {
     expect(resources[fnLogicalId]?.Properties?.Environment?.Variables).toMatchObject({
       ADMIN_EMAIL_ALLOWLIST: { Ref: "AdminFederatedEmailAllowlist" },
     });
+  });
+
+  test("the federated email allow-list parameter is NoEcho", () => {
     expect(template.toJSON().Parameters.AdminFederatedEmailAllowlist.NoEcho).toBe(true);
   });
 

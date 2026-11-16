@@ -18,8 +18,9 @@ Executive Board design is in
    and `ADMIN_GOOGLE_CLIENT_ID`. Secrets `ADMIN_GOOGLE_CLIENT_SECRET` and
    `ADMIN_FEDERATED_EMAIL_ALLOWLIST` (comma-separated lower-case emails
    that receive `admin` via Pre Token Generation — every Google admin).
-   **Deploy Backend** stops before any stack update when that allow-list
-   secret has no email address.
+   **Deploy Backend** publishes the public website stack, then stops
+   before the admin stacks when any allow-list entry is empty or not an
+   email address. The live allow-list stays.
    **Deploy Admin Web** reads `UserPoolClientId`, `CognitoDomain`, and
    `AdminApiBaseUrl` from the `lxsoftware` stack. Do not set
    `ADMIN_COGNITO_*` or `ADMIN_API_BASE_URL`.
@@ -41,10 +42,32 @@ Executive Board design is in
 After the first deploy, the value in the production environment secret
 `ADMIN_FEDERATED_EMAIL_ALLOWLIST` is the complete admin list: an unlisted
 Google account is refused at sign-in (**This account is not authorized.**),
-and every listed address is a full administrator. CloudFormation masks
-`AdminFederatedEmailAllowlist`. The gate log field `allowlist_size` is the
-count of addresses that were deployed. The Cognito **Users** page only
-shows accounts that have already signed in.
+and every listed address is a full administrator. The Cognito **Users**
+page only shows accounts that have already signed in.
+
+GitHub does not show the secret again after you save it. `noEcho` masks
+`AdminFederatedEmailAllowlist` in the stack console and in
+`describe-stacks`. The resolved list remains `ADMIN_EMAIL_ALLOWLIST` on
+`PreTokenGenerationFn`. `get-function-configuration` returns it to a
+caller who can `kms:Decrypt` `alias/lxsoftware-admin/shared`. Each gate
+log line has that attempt's email and `allowlist_size`; the log does not
+include the full list. Read the Lambda value before replacing the secret,
+then write the whole list back. An address you leave out loses `admin`
+on its next token refresh.
+
+```bash
+FN=$(aws lambda list-functions --region ap-southeast-1 \
+  --query "Functions[?contains(FunctionName, 'PreTokenGenerationFn')].FunctionName" \
+  --output text)
+aws lambda get-function-configuration --region ap-southeast-1 \
+  --function-name "$FN" \
+  --query 'Environment.Variables.ADMIN_EMAIL_ALLOWLIST' --output text
+```
+
+Keep the repository variable until a deploy of this workflow has succeeded
+and you will not revert it. A revert makes **Deploy Backend** read the
+variable again. With the variable already deleted, that deploy passes an
+empty allow-list, and the guard is gone with the revert.
 
 Sign-in is Google only. There is no password sign-in. If Google sign-in
 fails, correct `ADMIN_GOOGLE_CLIENT_SECRET` or
@@ -219,9 +242,10 @@ bootstrap user; group membership does not grant a token. Lines tagged
 `pre_token_generation` are from before the fail-closed gate; there
 `matched_admin: true` is the only way the token carried `admin`. A
 `matched_admin: true` line for an address you did not expect means that
-address is in `ADMIN_FEDERATED_EMAIL_ALLOWLIST` — remove it from the
-production environment secret and run **Deploy Backend**; the next token
-refresh for that account is refused. The HTTP API access log (`claimEmail`,
+address is in `ADMIN_FEDERATED_EMAIL_ALLOWLIST` — read the live list from
+`PreTokenGenerationFn` as in the pre-deploy checklist, remove that address,
+write the whole list back to the production environment secret, and run
+**Deploy Backend**. The next token refresh for that account is refused. The HTTP API access log (`claimEmail`,
 `claimGroups`) and `admin_auth_denied` lines on `AdminApiFn` show the same
 identity on the API side.
 
