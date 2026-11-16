@@ -359,6 +359,7 @@ The handler enforces scopes, the write flag and the kill switch
 | `finance` | `/public/finance`, quotes, records, FX (GET only) |
 | `siutindei-board-ops` | overview, staff, tasks, breakers, review, holds, ramp, tools, tool-calls; writes on those heads with `allowWrite` (except owner-only) |
 | `siutindei-board-full` | every JWT GET under `/siu-tin-dei/board` except the PII heads; matching writes with `allowWrite` |
+| `siutindei-board-delegate` | on top of the path's own scope and `allowWrite`: reject an approval (note required), dismiss a task (note required), and `POST …/settings/focus`. Not approve |
 | `siutindei-pii` | unmasked mail; `allowList` / `digestTo` on overview and `GET /tools` `config.allowList`; `prospects`, `outreach`, `receivables` (with board-full); prospect import / PUT / merge |
 | `siutindei-assets` | content creative presigned URLs (GET only) |
 | `lxsoftware-linkedin` | `GET /public/lx-software/linkedin/posts` and `GET …/posts/{id}`. Text, time, and impression, reaction, and comment counts. No `status` parameter returns published posts. `?status=drafted` (also `approved`, `archived`, `failed`, a comma-separated list, or `all`) returns those posts on the same key; each item carries `status`. With `allowWrite`, `POST` creates a draft, `PUT …/posts/{id}` updates `body`, `firstComment`, `hashtags`, and `pillar`, and `DELETE …/posts/{id}` archives a post that is not published. No approve, mark-posted, regenerate, picture, connection, or tokens. A successful read sends the same coalesced notification as the other public reads; a write mails every time |
@@ -373,6 +374,12 @@ even for a write key: `PUT settings` / `boundaries` / `tools`,
 `catalog/skip`, `catalog/requeue`, `catalog/reimport`,
 `ramp/{classKey}/promote|pause`, `mail/selftest`, `DELETE chat/{persona}`,
 `POST meetings/{id}/cancel`, `POST tasks/{id}/cancel`, `POST staff/tick`.
+A key that also has `siutindei-board-delegate` may reject (not approve),
+dismiss a task, and `POST …/settings/focus`. Each of those needs a note
+except focus. Focus accepts only `districtsFirst`, `typesEnabled`,
+`qualifiedPerWeek`, `microBatchEnabled`, and `autoImport: false`.
+`PUT settings` stays owner-only, so caps, holds and the tool matrix do not
+move. The decision is stored on the row and as a board update naming the key.
 
 `PUT charter` / `brief` / `members` and `POST updates` / `tasks` / `chat`
 feed persona and staff prompts, so a leaked write key can steer the board
@@ -421,6 +428,9 @@ python3 scripts/manage-public-api-keys.py create --label "board-writer" \
 # Toggle write, list, revoke
 python3 scripts/manage-public-api-keys.py set-write --key-id <keyId> --allow-write
 python3 scripts/manage-public-api-keys.py set-write --key-id <keyId> --read-only
+# set-scopes replaces the list. Copy it from `list` and add the new scope.
+python3 scripts/manage-public-api-keys.py set-scopes --key-id <keyId> \
+  --scopes finance,siutindei-board-full,siutindei-board-delegate
 python3 scripts/manage-public-api-keys.py list
 python3 scripts/manage-public-api-keys.py revoke --key-id <keyId>
 ```
@@ -430,8 +440,8 @@ python3 scripts/manage-public-api-keys.py revoke --key-id <keyId>
 `GitHubActionsRole` and the `production` environment. One-time setup: add
 the `PUBLIC_API_KEY_GPG_PASSPHRASE` secret. Because the repository and its
 logs are public, a minted key is emitted as a gpg-encrypted block in the
-run summary (`gpg --decrypt key.asc`). `list` and `revoke` print to the
-summary directly.
+run summary (`gpg --decrypt key.asc`). `list`, `revoke`, `set-write` and
+`set-scopes` print to the summary directly. `set-scopes` replaces the list.
 
 Set `ADMIN_API_BASE_URL` in your shell to the `AdminApiBaseUrl` output of
 the `lxsoftware` stack. It is not a GitHub variable.

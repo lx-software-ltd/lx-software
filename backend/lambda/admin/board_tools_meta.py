@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import board_meta
+import board_meta_media
 from board_tools_core import (
     REASON_PARAM,
     ToolOp,
@@ -38,6 +39,19 @@ def ops() -> list[ToolOp]:
             parameters=_obj({"metric": _str_param("Comma-separated insight metrics.", max_len=120)}),
             run=board_meta.op_ig_insights,
             summarize=_summ("Read Instagram insights"),
+            timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
+        ),
+        ToolOp(
+            name="meta_list_ig_media",
+            tool_id="meta",
+            kind="read",
+            description=(
+                "Recent Instagram posts and current stories on the connected account, newest first. "
+                "Each post has id, timestamp, media type, permalink and caption. Use this to see what was actually published."
+            ),
+            parameters=_obj({"limit": _int_param("How many posts.", maximum=50)}),
+            run=board_meta_media.op_list,
+            summarize=_summ("Listed Instagram posts"),
             timeout_seconds=BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
         ),
         ToolOp(

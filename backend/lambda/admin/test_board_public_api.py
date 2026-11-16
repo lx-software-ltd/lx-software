@@ -13,6 +13,36 @@ from test_board import BoardTestCase, FakeTable
 
 
 class PathClassTests(unittest.TestCase):
+    def test_delegate_scope_opens_three_writes_and_not_approve(self) -> None:
+        write_ctx = {"keyId": "k-w", "write": "1"}
+        base = "/public/siu-tin-dei/board"
+        reject = f"{base}/approvals/a1/reject"
+        approve = f"{base}/approvals/a1/approve"
+        cancel = f"{base}/tasks/t1/cancel"
+        focus = f"{base}/settings/focus"
+        full = ["siutindei-board-full"]
+        delegated = ["siutindei-board-full", "siutindei-board-delegate"]
+        ops_delegated = ["siutindei-board-ops", "siutindei-board-delegate"]
+        delegate_only = ["siutindei-board-delegate"]
+        with patch.dict("os.environ", {"PUBLIC_API_WRITES_ENABLED": "true"}):
+            for path in (reject, approve, cancel, focus, f"{base}/settings", f"{base}/boundaries"):
+                self.assertTrue(board_public_api.write_blocked("POST" if path != f"{base}/settings" and path != f"{base}/boundaries" else "PUT", path))
+            self.assertEqual(board_public_api.write_deny_reason("POST", reject, write_ctx, full), "owner_only")
+            self.assertEqual(board_public_api.write_deny_reason("POST", approve, write_ctx, delegated), "owner_only")
+            self.assertEqual(board_public_api.write_deny_reason("PUT", f"{base}/settings", write_ctx, delegated), "owner_only")
+            self.assertEqual(board_public_api.write_deny_reason("PUT", f"{base}/boundaries", write_ctx, delegated), "owner_only")
+            self.assertEqual(board_public_api.write_deny_reason("PUT", f"{base}/tools", write_ctx, delegated), "owner_only")
+            self.assertEqual(board_public_api.write_deny_reason("POST", reject, write_ctx, delegate_only), "owner_only")
+            self.assertEqual(board_public_api.write_deny_reason("POST", reject, write_ctx, ops_delegated), "owner_only")
+            self.assertIsNone(board_public_api.write_deny_reason("POST", reject, write_ctx, delegated))
+            self.assertIsNone(board_public_api.write_deny_reason("POST", focus, write_ctx, delegated))
+            self.assertEqual(board_public_api.write_deny_reason("POST", focus, write_ctx, full), "owner_only")
+            self.assertIsNone(board_public_api.write_deny_reason("POST", cancel, write_ctx, ops_delegated))
+            self.assertEqual(board_public_api.write_deny_reason("POST", cancel, write_ctx, ["siutindei-board-ops"]), "owner_only")
+            self.assertEqual(
+                board_public_api.write_deny_reason("POST", reject, {"keyId": "k-r", "write": "0"}, delegated),
+                "key_read_only",
+            )
     def test_finance_and_ops_and_full(self) -> None:
         self.assertEqual(board_public_api.path_class("/public/finance"), "finance")
         self.assertEqual(board_public_api.path_class("/public/siu-tin-dei/board"), "siutindei-board-ops")

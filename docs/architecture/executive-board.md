@@ -318,7 +318,7 @@ snapshot of its `defaults`.
 | `security` | `board_security.py`, `board_dmarc.py` | GitHub alerts, Security Hub, Access Analyzer, Cognito MFA, DMARC aggregate summary | remediation issue proposal | Daily check is deterministic; see §6.1 |
 | `product` | `board_product.py`, `board_data_api.py` | `v_board_catalog_health`, `v_catalog_provider_counts`, `v_funnel_daily`, `v_provider_pipeline` views only | flag listing | RDS Data API on the siutindei Aurora cluster; see 6.3 |
 | `finance` | `board_finance.py`, `board_receivables.py`, `board_invoice_pdf.py` | subscriptions, invoices, aging, cash snapshot | draft / send invoice, reminder, match or record payment, price-change proposal | See 6.3. The board never initiates a bank payment. |
-| `meta` | `board_meta.py` | Page / Instagram insights, comments, DMs, WhatsApp threads, ad spend, templates | post, story, reply, WhatsApp reply, ad set, boost, lead relay | See 6.2 |
+| `meta` | `board_meta.py`, `board_meta_media.py` | Page / Instagram insights, recent Instagram posts and stories, comments, DMs, WhatsApp threads, ad spend, templates | post, story, reply, WhatsApp reply, ad set, boost, lead relay | See 6.2 |
 | `stores` | `board_stores.py` | App Store Connect + Play metrics, crashes, ratings, reviews (cached 20 h) | reply to review (CMO may `act`), release-notes draft (always Approval) | Secrets `…-app-store-connect-key` (ES256 JWT signed in Lambda), `…-google-play-sa` |
 | `web` | `board_web.py` | GA4 sessions / conversions, GTM live version (cached 20 h) | — | Dedicated SA `…-google-analytics-sa`; `SiutindeiBoardGa4PropertyIds` CSV, `SiutindeiBoardGtmContainers` `account:container` |
 | `intel` | `board_intel.py`, `board_watch.py`, `board_crawl.py`, `board_opendata.py` | watchlist, changes, single watchlist page, competitor reviews, search rank | — | Read-only; §10.1 |
@@ -404,7 +404,9 @@ handshake (`SiutindeiBoardMetaVerifyToken`), POST checks
 LLM work. WhatsApp uses **coexistence** so the owner's phone keeps the
 number; WhatsApp `act` is only inside the 24-hour window and only to the
 allow-list, otherwise an Approval (optionally a template).
-`meta_relay_lead` mails the provider and the parent from `hello@`.
+`meta_list_ig_media` (and `GET …/meta/instagram`) reads recent posts and
+current stories on the connected account: id, time, type, permalink and
+caption. `meta_relay_lead` mails the provider and the parent from `hello@`.
 
 ### 6.3 Receivables and product analytics (Aurora Data API)
 
