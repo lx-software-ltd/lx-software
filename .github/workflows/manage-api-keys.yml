@@ -1,6 +1,6 @@
 name: Manage Public API Keys
 
-# Mint / list / revoke / set-write the public API keys served by the /public/*
+# Mint / list / revoke / set-write / set-scopes the public API keys served by the /public/*
 # routes (see docs/deployment/admin-website.md, "Public API keys").
 #
 # SECURITY: this repository is PUBLIC, so workflow logs are world-readable.
@@ -21,7 +21,7 @@ on:
         description: "What to do"
         required: true
         type: choice
-        options: [create, list, revoke, set-write]
+        options: [create, list, revoke, set-write, set-scopes]
       label:
         description: "Key label (create only)"
         required: false
@@ -31,7 +31,7 @@ on:
         required: false
         type: string
       scopes:
-        description: "Comma-separated scopes (create only; default finance)"
+        description: "Comma-separated scopes (create, and set-scopes which replaces the list)"
         required: false
         type: string
       allowed_cidrs:
@@ -44,7 +44,7 @@ on:
         type: boolean
         default: false
       key_id:
-        description: "keyId to revoke or set-write"
+        description: "keyId to revoke, set-write or set-scopes"
         required: false
         type: string
 
@@ -69,6 +69,7 @@ jobs:
           ACTION: ${{ inputs.action }}
           LABEL: ${{ inputs.label }}
           KEY_ID: ${{ inputs.key_id }}
+          SCOPES: ${{ inputs.scopes }}
           HAS_PASSPHRASE: ${{ secrets.PUBLIC_API_KEY_GPG_PASSPHRASE != '' }}
         run: |
           set -euo pipefail
@@ -88,6 +89,10 @@ jobs:
           fi
           if [ "$ACTION" = "set-write" ] && [ -z "$KEY_ID" ]; then
             echo "::error::'key_id' is required for action=set-write"
+            exit 1
+          fi
+          if [ "$ACTION" = "set-scopes" ] && { [ -z "$KEY_ID" ] || [ -z "$SCOPES" ]; }; then
+            echo "::error::'key_id' and 'scopes' are required for action=set-scopes"
             exit 1
           fi
 
@@ -182,3 +187,13 @@ jobs:
             FLAG="--allow-write"
           fi
           python3 scripts/manage-public-api-keys.py set-write --key-id "$KEY_ID" "$FLAG" --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Set scopes
+        if: ${{ inputs.action == 'set-scopes' }}
+        env:
+          KEY_ID: ${{ inputs.key_id }}
+          SCOPES: ${{ inputs.scopes }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python3 scripts/manage-public-api-keys.py set-scopes --key-id "$KEY_ID" --scopes "$SCOPES" --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"

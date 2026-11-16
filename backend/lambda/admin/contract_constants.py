@@ -247,6 +247,7 @@ LEGACY_READ_SCOPE = PUBLIC_API_SCOPES_CONTRACT["legacyReadScope"]
 SCOPE_FINANCE = next(row["value"] for row in PUBLIC_API_SCOPES_CONTRACT["scopes"] if row["name"] == 'SCOPE_FINANCE')
 SCOPE_BOARD_OPS = next(row["value"] for row in PUBLIC_API_SCOPES_CONTRACT["scopes"] if row["name"] == 'SCOPE_BOARD_OPS')
 SCOPE_BOARD_FULL = next(row["value"] for row in PUBLIC_API_SCOPES_CONTRACT["scopes"] if row["name"] == 'SCOPE_BOARD_FULL')
+SCOPE_BOARD_DELEGATE = next(row["value"] for row in PUBLIC_API_SCOPES_CONTRACT["scopes"] if row["name"] == 'SCOPE_BOARD_DELEGATE')
 SCOPE_PII = next(row["value"] for row in PUBLIC_API_SCOPES_CONTRACT["scopes"] if row["name"] == 'SCOPE_PII')
 SCOPE_ASSETS = next(row["value"] for row in PUBLIC_API_SCOPES_CONTRACT["scopes"] if row["name"] == 'SCOPE_ASSETS')
 SCOPE_LINKEDIN = next(row["value"] for row in PUBLIC_API_SCOPES_CONTRACT["scopes"] if row["name"] == 'SCOPE_LINKEDIN')
@@ -254,6 +255,7 @@ ALL_SCOPES = frozenset({
     SCOPE_FINANCE,
     SCOPE_BOARD_OPS,
     SCOPE_BOARD_FULL,
+    SCOPE_BOARD_DELEGATE,
     SCOPE_PII,
     SCOPE_ASSETS,
     SCOPE_LINKEDIN,
