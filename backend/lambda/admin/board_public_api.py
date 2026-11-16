@@ -10,6 +10,7 @@ from contract_constants import (
     ALL_SCOPES,
     BOARD_KEY,
     SCOPE_ASSETS,
+    SCOPE_BOARD_DELEGATE,
     SCOPE_BOARD_FULL,
     SCOPE_BOARD_OPS,
     SCOPE_FINANCE,
@@ -137,6 +138,16 @@ def key_context_allows_write(key_ctx: dict[str, Any]) -> bool:
     return False
 
 
+def delegate_path(method: str, path: str) -> bool:
+    """The three writes ``siutindei-board-delegate`` may make. Approving is not one."""
+    rest = _board_rest(path)
+    if method == "POST" and len(rest) == 3 and rest[0] == "approvals" and rest[2] == "reject":
+        return True
+    if method == "POST" and len(rest) == 3 and rest[0] == "tasks" and rest[2] == "cancel":
+        return True
+    return method == "POST" and rest == ["settings", "focus"]
+
+
 def write_blocked(method: str, path: str) -> bool:
     """Owner-only (JWT) writes even when the key has allowWrite.
 
@@ -144,6 +155,10 @@ def write_blocked(method: str, path: str) -> bool:
     staging sync, catalog preview/import, approvals, mail selftest, and
     non-reversible live-state mutations (chat wipe, meeting/task cancel,
     staff tick, ramp pause, deleting a published post).
+
+    ``delegate_path`` names the three a key with ``siutindei-board-delegate``
+    may make on top of that: reject an approval, cancel a task, and
+    ``POST settings/focus``. The exception is in ``write_deny_reason``.
     """
     rest = _board_rest(path)
     if not rest:
@@ -151,6 +166,8 @@ def write_blocked(method: str, path: str) -> bool:
     head = rest[0]
     tail = rest[-1]
     if method == "PUT" and rest in (["settings"], ["boundaries"], ["tools"]):
+        return True
+    if method == "POST" and rest == ["settings", "focus"]:
         return True
     if method == "POST" and rest in (
         ["code", "promote"],
@@ -206,6 +223,12 @@ def write_deny_reason(
     if needed == SCOPE_LINKEDIN:
         return None if path_allowed(path, scopes) else "scope"
     if write_blocked(method, path):
+        if (
+            SCOPE_BOARD_DELEGATE in set(scopes)
+            and delegate_path(method, path)
+            and path_allowed(path, scopes)
+        ):
+            return None
         return "owner_only"
     if not path_allowed(path, scopes):
         return "scope"

@@ -10,6 +10,7 @@ import board_actions
 import board_budget
 import board_chat
 import board_code
+import board_delegate
 import board_github
 import board_holds
 import board_mail
@@ -89,6 +90,10 @@ def handle_board_route(
 
     if head == "settings" and len(rest) == 1 and method == "PUT":
         return _settings_put(event, user_sub)
+    if head == "settings" and len(rest) == 2 and rest[1] == "focus" and method == "POST":
+        return board_delegate.focus(event, user_sub)
+    if head == "meta" and len(rest) == 2 and rest[1] == "instagram" and method == "GET":
+        return board_delegate.instagram(event)
 
     if head == "updates" and len(rest) == 1:
         if method == "POST":
@@ -406,6 +411,10 @@ def _approval_decide(event: dict[str, Any], approval_id: str, *, approve: bool, 
         return _json_response(400, {"message": "note must be a string"})
     if len(note) > BOARD_MAX_APPROVAL_NOTE_LEN:
         return _json_response(400, {"message": f"note must be at most {BOARD_MAX_APPROVAL_NOTE_LEN} characters"})
+    problem = board_delegate.key_actor_decision_problem(user_sub, approve=approve, note=str(note or ""))
+    if problem:
+        status, message = problem
+        return _json_response(status, {"message": message})
     override = body.get("arguments") if isinstance(body, dict) else None
     if override is not None and not isinstance(override, dict):
         return _json_response(400, {"message": "arguments must be an object"})
@@ -427,6 +436,7 @@ def _approval_decide(event: dict[str, Any], approval_id: str, *, approve: bool, 
         return _json_response(400, {"message": str(exc)})
     except ValueError as exc:
         return _json_response(409, {"message": str(exc)})
+    board_delegate.record_rejection(table, user_sub, approval_id, str(note or ""))
     _audit(user_sub, "BOARD_APPROVAL_APPROVE" if approve else "BOARD_APPROVAL_REJECT", approval_id, event)
     return _json_response(200, {"approval": board_tools.public_approval(decided)})
 
@@ -804,19 +814,7 @@ def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
             },
         )
     if len(rest) == 3 and rest[2] == "cancel" and method == "POST":
-        if not board_staff.enabled(settings):
-            return _staff_disabled()
-        try:
-            task = board_staff.cancel_task(table, rest[1], user_sub or "")
-        except board_staff.StaffError as exc:
-            message = str(exc)
-            if "not found" in message.lower():
-                return _json_response(404, {"message": message})
-            if exc.code == "conflict":
-                return _json_response(409, {"message": message})
-            return _json_response(400, {"message": message})
-        _audit(user_sub, "BOARD_TASK_CANCEL", rest[1], event)
-        return _json_response(200, {"task": board_staff.public_task(task)})
+        return board_delegate.cancel_task(event, rest[1], user_sub)
     if len(rest) == 3 and rest[2] == "review" and method == "POST":
         if not board_staff.enabled(settings):
             return _staff_disabled()

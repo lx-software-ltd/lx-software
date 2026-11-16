@@ -5,6 +5,7 @@ from __future__ import annotations
 SCOPE_FINANCE = 'finance'
 SCOPE_BOARD_OPS = 'siutindei-board-ops'
 SCOPE_BOARD_FULL = 'siutindei-board-full'
+SCOPE_BOARD_DELEGATE = 'siutindei-board-delegate'
 SCOPE_PII = 'siutindei-pii'
 SCOPE_ASSETS = 'siutindei-assets'
 SCOPE_LINKEDIN = 'lxsoftware-linkedin'
@@ -13,6 +14,7 @@ ALL_SCOPES = frozenset({
     SCOPE_FINANCE,
     SCOPE_BOARD_OPS,
     SCOPE_BOARD_FULL,
+    SCOPE_BOARD_DELEGATE,
     SCOPE_PII,
     SCOPE_ASSETS,
     SCOPE_LINKEDIN,

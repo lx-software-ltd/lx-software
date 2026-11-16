@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mint, list, revoke, and toggle write on public API keys.
+"""Mint, list, revoke, and toggle write or scopes on public API keys.
 
 Keys authenticate the /public/* routes on the admin HTTP API via the
 `x-api-key` header (finance GET, records, FX, and GET/PUT/POST/DELETE
@@ -24,6 +24,8 @@ Usage:
   python3 scripts/manage-public-api-keys.py revoke --key-id <keyId>
   python3 scripts/manage-public-api-keys.py set-write --key-id <keyId> --allow-write
   python3 scripts/manage-public-api-keys.py set-write --key-id <keyId> --read-only
+  python3 scripts/manage-public-api-keys.py set-scopes --key-id <keyId> \\
+      --scopes finance,siutindei-board-full,siutindei-board-delegate
 """
 
 from __future__ import annotations
@@ -209,6 +211,29 @@ def cmd_revoke(args: argparse.Namespace) -> None:
     print("note: API Gateway caches authorizer verdicts for up to 60 seconds")
 
 
+def cmd_set_scopes(args: argparse.Namespace) -> None:
+    """Replace the scope list. The caller must repeat every scope the key should keep."""
+    scopes = _parse_scopes(args.scopes)
+    matches = [i for i in _scan_keys(args) if i.get("keyId") == args.key_id]
+    if not matches:
+        sys.exit(f"error: no API key with keyId {args.key_id!r}")
+    table = _table(args)
+    for it in matches:
+        previous = it.get("scopes") or ([SCOPE_FINANCE] if it.get("scope") == "read" else [])
+        if isinstance(previous, list):
+            previous_s = ",".join(str(s) for s in previous)
+        else:
+            previous_s = str(previous)
+        table.update_item(
+            Key={"pk": it["pk"], "sk": it["sk"]},
+            UpdateExpression="SET scopes = :s",
+            ExpressionAttributeValues={":s": scopes},
+        )
+        print(f"keyId {args.key_id} scopes {previous_s} -> {','.join(scopes)} (label={it.get('label')!r})")
+    print("note: API Gateway caches authorizer verdicts for up to 60 seconds")
+    print("note: a scope the deployed authorizer does not know is ignored until that deploy")
+
+
 def cmd_set_write(args: argparse.Namespace) -> None:
     if args.allow_write == args.read_only:
         sys.exit("error: pass exactly one of --allow-write or --read-only")
@@ -297,6 +322,20 @@ def main() -> None:
         help="clear allowWrite (GET only)",
     )
     p_set_write.set_defaults(func=cmd_set_write)
+
+    p_set_scopes = sub.add_parser(
+        "set-scopes",
+        parents=[common],
+        help="replace the scope list on an existing key without re-minting",
+    )
+    p_set_scopes.add_argument("--key-id", required=True)
+    p_set_scopes.add_argument(
+        "--scopes",
+        required=True,
+        help="comma-separated scopes that REPLACE the current list; repeat every scope to keep. "
+        f"Allowed: {', '.join(sorted(ALL_SCOPES))}",
+    )
+    p_set_scopes.set_defaults(func=cmd_set_scopes)
 
     args = parser.parse_args()
     args.func(args)

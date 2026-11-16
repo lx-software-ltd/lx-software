@@ -28,6 +28,11 @@ PII_STATE_SUFFIX = "mail#pii"
 
 
 def _digest(kind: str, value: str) -> str:
+    """Lookup key for an email, a phone number, or an external id.
+
+    The real value is stored beside the digest. This is not a password hash,
+    and the algorithm stays SHA-256 so existing aliases keep resolving.
+    """
     return hashlib.sha256(f"{kind}:{value}".encode("utf-8")).hexdigest()[:24]
 
 
