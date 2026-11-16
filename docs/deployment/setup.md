@@ -131,13 +131,14 @@ Variables:
 | `VITE_CONTACT_WECHAT_ID` | Public site only. Shown on `/wechat`, or empty. |
 | `VITE_CONTACT_LINKEDIN` | Public site only. LinkedIn profile URL or `in/<slug>`, or empty. |
 | `VITE_GTM_ID` | Public site only. Google Tag Manager container id (`GTM-XXXXXXX`), or empty for no analytics. Setup in [`public-website.md`](./public-website.md#google-analytics-4-and-tag-manager). |
-| `ADMIN_GOOGLE_CLIENT_ID`, `ADMIN_FEDERATED_EMAIL_ALLOWLIST` | Admin stack settings; see [`admin-website.md`](./admin-website.md). The admin certificate is `lxsoftware-admin-web:AdminWebCertificateArn` in the CDK parameter file. **Deploy Admin Web** reads the client id, Hosted UI origin, and API URL from the `lxsoftware` stack. |
+| `ADMIN_GOOGLE_CLIENT_ID` | Google OAuth client id. See [`admin-website.md`](./admin-website.md). The admin certificate is `lxsoftware-admin-web:AdminWebCertificateArn` in the CDK parameter file. **Deploy Admin Web** reads the client id, Hosted UI origin, and API URL from the `lxsoftware` stack. |
 
 Secrets:
 
 | Secret | Purpose |
 |--------|---------|
 | `ADMIN_GOOGLE_CLIENT_SECRET` | Google OAuth client secret (CDK `noEcho`). |
+| `ADMIN_FEDERATED_EMAIL_ALLOWLIST` | Comma-separated lower-case Google admin emails (CDK `noEcho`). **Deploy Backend** reads this production environment secret, publishes the public website stack, then stops before the admin stacks when any entry is empty or not an email address. See [`admin-website.md`](./admin-website.md). |
 | `PUBLIC_API_KEY_GPG_PASSPHRASE` | Encrypts minted keys in the public workflow logs. |
 | `OPENROUTER_MANAGEMENT_API_KEY` | For **Mint OpenRouter App Keys**. |
 

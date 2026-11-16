@@ -1261,6 +1261,10 @@ describe("Admin user pool sign-in gate", () => {
     });
   });
 
+  test("the federated email allow-list parameter is NoEcho", () => {
+    expect(template.toJSON().Parameters.AdminFederatedEmailAllowlist.NoEcho).toBe(true);
+  });
+
   test("Cognito may invoke the gate for both triggers", () => {
     const permissions = Object.values(resourcesOfType("AWS::Lambda::Permission")).filter(
       (p) =>

@@ -102,9 +102,11 @@ jobs:
           CDK_BOOTSTRAP_QUALIFIER: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
           P_GOOGLE_CLIENT_ID: ${{ vars.ADMIN_GOOGLE_CLIENT_ID }}
           P_GOOGLE_CLIENT_SECRET: ${{ secrets.ADMIN_GOOGLE_CLIENT_SECRET }}
-          P_EMAIL_ALLOWLIST: ${{ vars.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
+          P_EMAIL_ALLOWLIST: ${{ secrets.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
         run: |
           set -eo pipefail
+          # shellcheck source=../../scripts/check_email_allowlist.sh
+          source ../../scripts/check_email_allowlist.sh
           npx cdk acknowledge 34892 || true
 
           # Three stacks (post-consolidation):
@@ -149,6 +151,15 @@ jobs:
           npx cdk deploy --require-approval never \
             "${PUBLIC_PARAM_ARGS[@]}" \
             "$PUBLIC_STACK"
+
+          # The public site does not use the allow-list. Check it here so a
+          # missing or malformed secret still publishes lxsoftware-public-www
+          # and leaves lxsoftware and lxsoftware-admin-web, and the live
+          # allow-list, unchanged. The message names a position, not the value.
+          if ! allowlist_error="$(check_email_allowlist "${P_EMAIL_ALLOWLIST}" 2>&1)"; then
+            echo "::error::${allowlist_error} Deploy Backend will not update the admin stacks."
+            exit 1
+          fi
 
           # Backend + admin SPA: Cognito/Dynamo/API + CloudFront. The two stacks
           # are listed in dependency order; CDK additionally honours the
