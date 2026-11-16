@@ -180,6 +180,13 @@ class ContentTests(BoardTestCase):
         refused = board_content.publish(self.table, self.settings, capped["contentId"])
         self.assertEqual(refused["error"], "ig daily cap reached")
 
+    def test_publish_is_a_slow_op(self) -> None:
+        # Instagram is two Graph calls plus Meta fetching the image; 10 seconds is not enough.
+        self.assertEqual(
+            board_tools.REGISTRY["content_publish"].timeout_seconds,
+            board_tools.BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
+        )
+
     def test_assisted_and_readout_boost(self) -> None:
         doc = board_content.upsert_item(
             self.table,
