@@ -378,6 +378,57 @@ class OutreachTests(BoardTestCase):
         self.assertEqual(status, 200)
         self.assertEqual(body["dkimStatus"], "FAILED")
 
+    def test_send_hold_carries_the_email_the_owner_will_read(self) -> None:
+        row = _prospect(self.table)
+        board_sequences.save(
+            self.table,
+            "venue",
+            {"steps": [{"dayOffset": 0, "subjectEn": "Hello {name}", "bodyEn": "Could you send your schedule?\n{unsubscribeUrl}"}]},
+        )
+        ctx = board_tools.ToolContext(
+            table=self.table,
+            settings=self.settings,
+            persona_id="coo",
+            display_name="COO",
+            kind="task",
+            actor="persona",
+            seat_id="prospector",
+        )
+        outcome = board_tools.execute_call(
+            ctx,
+            board_tools.REGISTRY["outreach_send"],
+            {"prospectId": row["prospectId"], "stepIndex": 0, "reason": "first touch"},
+        )
+        self.assertEqual(outcome.status, "held")
+        preview = board_store.list_holds(self.table, "scheduled")[0]["preview"]
+        self.assertEqual(preview["kind"], "email")
+        self.assertEqual(preview["from"], "partnerships@partners.siutindei.com")
+        self.assertRegex(preview["to"][0], r"^Sha Tin Playhouse <contact#\d+>$")
+        self.assertNotIn("info@play.example", json.dumps(preview))
+        self.assertEqual(preview["cc"], [])
+        self.assertEqual(preview["subject"], "Hello Sha Tin Playhouse")
+        self.assertIn("Could you send your schedule?", preview["text"])
+        self.assertIn("https://api.example/public/outreach/unsubscribe/", preview["text"])
+        self.assertTrue(preview["sendEnabled"])
+        self.assertEqual(self.ses.calls, [])
+
+    def test_send_preview_names_what_is_missing(self) -> None:
+        row = _prospect(self.table)
+        ctx = board_tools.ToolContext(table=self.table, settings=self.settings, persona_id="coo", kind="task")
+        preview = board_tools.REGISTRY["outreach_send"].preview
+        self.assertEqual(preview(ctx, {"prospectId": "missing"}), {"error": "prospect not found"})
+        self.assertEqual(preview(ctx, {"prospectId": row["prospectId"], "stepIndex": 9}), {"error": "step out of range"})
+        row["contact"] = ""
+        row["email"] = ""
+        board_store.put_prospect(self.table, row)
+        self.assertEqual(preview(ctx, {"prospectId": row["prospectId"]})["to"], [])
+
+    def test_score_is_a_slow_op(self) -> None:
+        self.assertEqual(
+            board_tools.REGISTRY["outreach_score_prospect"].timeout_seconds,
+            board_tools.BOARD_TOOL_CALL_TIMEOUT_SLOW_SECONDS,
+        )
+
     def test_classify_outreach_send(self) -> None:
         row = _prospect(self.table)
         ctx = board_tools.ToolContext(table=self.table, settings=self.settings, persona_id="coo", kind="task")
