@@ -94,6 +94,9 @@ def _parts(path: str) -> list[str]:
 def handle_http(event: dict[str, Any], method: str, path: str, user_sub: str | None) -> dict[str, Any]:
     parts = _parts(path)
     if not parts and method == "GET":
+        view = (parse_qs(event.get("rawQueryString") or "").get("view") or [""])[0]
+        if view == "plan":
+            return _json_response(200, linkedin_store.plan_summary(_table()))
         return _json_response(200, linkedin_store.overview(_table()))
     if parts == ["settings"] and method == "PUT":
         blocked = _require_enabled()

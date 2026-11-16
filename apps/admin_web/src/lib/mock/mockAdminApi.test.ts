@@ -337,6 +337,21 @@ describe("mockAdminFetch", () => {
     expect(rows[0]?.rate).toBeCloseTo(1 / 7.8, 6);
   });
 
+  it("serves the LinkedIn dashboard plan without the overview", async () => {
+    const res = await mockAdminFetch("/lx-software/linkedin?view=plan");
+    expect(res.ok).toBe(true);
+    const body = (await res.json()) as {
+      planned: number;
+      overdue: number;
+      nextEmptySlot: string | null;
+      recommendedVoice?: string;
+    };
+    expect(body.planned).toBe(0);
+    expect(body.overdue).toBe(0);
+    expect(body.nextEmptySlot).toEqual(expect.any(String));
+    expect(body.recommendedVoice).toBeUndefined();
+  });
+
   it("persists the LinkedIn draft OpenRouter model", async () => {
     const overview = (await (await mockAdminFetch("/lx-software/linkedin")).json()) as {
       settings: { model: string; notifyEmail: string };

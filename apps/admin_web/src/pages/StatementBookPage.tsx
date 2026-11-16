@@ -151,6 +151,12 @@ export function StatementBookPage({
         onRetry={() => void refetch()}
         isRetrying={isRefetching}
       />
+      {tab === "dashboard" && (isLoading || isError) ? (
+        <div className="d-flex flex-column gap-3">
+          {fiscalYearAside}
+          {dashboardExtra}
+        </div>
+      ) : null}
       {!isLoading ? (
         <>
           {readOnly ? null : (

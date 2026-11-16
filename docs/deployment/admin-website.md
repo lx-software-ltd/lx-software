@@ -614,6 +614,18 @@ Activity is not added to Other.
 
 ### LinkedIn drafts
 
+LX Software → **Dashboard → LinkedIn** (`GET /lx-software/linkedin?view=plan`)
+sits beside the fiscal year card. Planned is the number of approved posts
+whose slot has not arrived, including an approved post that has no slot yet.
+Overdue is approved posts whose slot has passed and that are still not marked
+posted. The next empty slot is the first open time on the schedule, the same
+instant the next approval would take, shown in Hong Kong time. The response
+is only those figures plus `refreshAt`. The card refetches when the window is
+focused and when `refreshAt` arrives. If that instant is more than a day
+away, it waits a day and checks again, so a slot that has passed does not stay
+on screen. It still renders while the statement book is loading or when that
+book failed to load.
+
 LX Software → **LinkedIn** (`/lx-software?tab=linkedin`) stores a personal
 posting queue. A star on each draft row marks a favourite (`starred` on the
 post); it does not change approval or copy. Rows use the `LINKEDIN#` prefix and stay out of `/records`.

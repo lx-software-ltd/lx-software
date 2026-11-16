@@ -12,7 +12,13 @@ vi.mock("../lib/apiAdminClient", async (importOriginal) => {
   return { ...actual, adminFetchJson: vi.fn() };
 });
 
-const NEXT_SLOT = "2026-11-17T00:30:00.000Z";
+const NEXT_SLOT = "2099-01-05T00:30:00.000Z";
+const PLAN = {
+  planned: 2,
+  overdue: 1,
+  nextEmptySlot: NEXT_SLOT,
+  refreshAt: NEXT_SLOT,
+};
 
 function renderPage() {
   const client = new QueryClient({
@@ -32,9 +38,7 @@ describe("LX Software dashboard", () => {
     vi.mocked(adminFetchJson).mockReset();
     vi.mocked(adminFetchJson).mockImplementation(async (path: string) => {
       if (path === "/lx-software") return { data: lxSoftwareBookFixture };
-      if (path === "/lx-software/linkedin") {
-        return { counts: { approved: 2 }, nextSlots: [NEXT_SLOT] };
-      }
+      if (path === "/lx-software/linkedin?view=plan") return PLAN;
       throw new AdminApiError(404, "{}");
     });
   });
@@ -49,6 +53,19 @@ describe("LX Software dashboard", () => {
     expect(fiscalColumn?.parentElement?.classList.contains("row")).toBe(true);
     const card = linkedIn.closest(".card");
     expect(card).toHaveTextContent("2");
+    expect(card).toHaveTextContent("1");
     expect(card).toHaveTextContent(formatDateTimeHKT(NEXT_SLOT));
+  });
+
+  it("keeps the LinkedIn plan visible when the statement book fails", async () => {
+    vi.mocked(adminFetchJson).mockImplementation(async (path: string) => {
+      if (path === "/lx-software/linkedin?view=plan") return PLAN;
+      throw new AdminApiError(500, "{}");
+    });
+    renderPage();
+    expect(await screen.findByRole("heading", { name: "LinkedIn" })).toBeTruthy();
+    expect(await screen.findByText(formatDateTimeHKT(NEXT_SLOT))).toBeTruthy();
+    expect(screen.queryByLabelText(/LX Software: Fiscal year/)).toBeNull();
+    expect(screen.getByText(/Records could not be loaded/)).toBeTruthy();
   });
 });

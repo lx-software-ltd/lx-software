@@ -8,10 +8,12 @@ import type {
   LinkedInDraftSettings,
   LinkedInIdea,
   LinkedInOverview,
+  LinkedInPlan,
   LinkedInPost,
 } from "../lib/linkedinModel";
 
 export const LINKEDIN_KEY = ["linkedin"] as const;
+export const LINKEDIN_PLAN_KEY = [...LINKEDIN_KEY, "plan"] as const;
 /** Picture bytes. Kept off `LINKEDIN_KEY` so a draft save does not refetch them. */
 export const LINKEDIN_BYTES_KEY = ["linkedin-bytes"] as const;
 
@@ -29,6 +31,22 @@ function pendingPollDelay(pendingSince: number): number {
   return 15_000;
 }
 
+export function linkedInOverviewQuery() {
+  return {
+    queryKey: [...LINKEDIN_KEY, "overview"] as const,
+    queryFn: () => adminFetchJson<LinkedInOverview>("/lx-software/linkedin"),
+  };
+}
+
+/** Counts and the next open slot. Lighter than the full LinkedIn overview. */
+export function linkedInPlanQuery() {
+  return {
+    queryKey: LINKEDIN_PLAN_KEY,
+    queryFn: () => adminFetchJson<LinkedInPlan>("/lx-software/linkedin?view=plan"),
+    refetchOnWindowFocus: true,
+  };
+}
+
 export function useLinkedIn() {
   const qc = useQueryClient();
   const pendingSince = useRef<number | null>(null);
@@ -41,10 +59,7 @@ export function useLinkedIn() {
   const refreshPostBytes = (postId: string) => {
     void qc.invalidateQueries({ queryKey: [...LINKEDIN_BYTES_KEY, "post", postId] });
   };
-  const overview = useQuery({
-    queryKey: [...LINKEDIN_KEY, "overview"] as const,
-    queryFn: () => adminFetchJson<LinkedInOverview>("/lx-software/linkedin"),
-  });
+  const overview = useQuery(linkedInOverviewQuery());
   const posts = useQuery({
     queryKey: [...LINKEDIN_KEY, "posts"] as const,
     queryFn: () => adminFetchJson<{ items: LinkedInPost[] }>("/lx-software/linkedin/posts"),

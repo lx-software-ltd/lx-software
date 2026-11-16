@@ -79,6 +79,21 @@ class LinkedInStoreTests(unittest.TestCase):
         slots = linkedin_store.next_slots(linkedin_store.default_settings(), now=now, count=1)
         self.assertEqual(slots[0], "2026-10-08T00:30:00.000Z")
 
+    def test_plan_summary_splits_upcoming_from_overdue(self) -> None:
+        now = datetime(2026, 10, 5, 10, 0, tzinfo=HKT)
+        ahead = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nStill ahead."})
+        missed = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nAlready missed."})
+        linkedin_store.approve_post(self.table, ahead["postId"], "admin-sub", now=now)
+        linkedin_store.approve_post(self.table, missed["postId"], "admin-sub", now=now)
+        missed_doc = linkedin_store.get_post(self.table, missed["postId"]) or {}
+        missed_doc["slotAt"] = "2026-10-01T00:30:00.000Z"
+        linkedin_store.put_post(self.table, missed_doc)
+        summary = linkedin_store.plan_summary(self.table, now=now)
+        self.assertEqual(summary["planned"], 1)
+        self.assertEqual(summary["overdue"], 1)
+        self.assertEqual(summary["nextEmptySlot"], "2026-10-08T00:30:00.000Z")
+        self.assertEqual(summary["refreshAt"], "2026-10-06T00:30:00.000Z")
+
     def test_guardrails_block_company_product_and_a_long_hook(self) -> None:
         settings = linkedin_store.default_settings()
         findings = linkedin_store.guardrails(
@@ -1082,6 +1097,18 @@ class LinkedInHttpTests(unittest.TestCase):
         self.env = patch.dict("os.environ", ENABLED, clear=False)
         self.env.start()
         self.addCleanup(self.env.stop)
+
+    def test_plan_view_returns_only_the_dashboard_counts(self) -> None:
+        event = _event("/lx-software/linkedin")
+        event["rawQueryString"] = "view=plan"
+        response = lambda_handler(event, None)
+        self.assertEqual(response["statusCode"], 200)
+        body = _body(response)
+        self.assertEqual(set(body), {"planned", "overdue", "nextEmptySlot", "refreshAt"})
+        self.assertNotIn("recommendedVoice", body)
+        self.assertEqual(body["planned"], 0)
+        self.assertEqual(body["overdue"], 0)
+        self.assertTrue(body["nextEmptySlot"])
 
     def test_writes_are_refused_when_the_switch_is_off(self) -> None:
         with patch.dict("os.environ", {"LINKEDIN_ENABLED": "false"}):

@@ -29,21 +29,33 @@ describe("linkedin pillars", () => {
 });
 
 describe("linkedin plan summary", () => {
-  it("counts approved posts and keeps the first open slot", () => {
+  it("keeps an open slot that is still ahead", () => {
+    const now = new Date("2026-11-16T02:00:00.000Z");
     expect(
-      linkedInPlanSummary({
-        counts: { approved: 2 },
-        nextSlots: ["2026-11-17T00:30:00.000Z", "2026-11-19T00:30:00.000Z"],
-      }),
-    ).toEqual({ planned: 2, nextEmptySlot: "2026-11-17T00:30:00.000Z" });
+      linkedInPlanSummary(
+        {
+          planned: 2,
+          overdue: 1,
+          nextEmptySlot: "2026-11-17T00:30:00.000Z",
+        },
+        now,
+      ),
+    ).toEqual({
+      planned: 2,
+      overdue: 1,
+      nextEmptySlot: "2026-11-17T00:30:00.000Z",
+    });
   });
 
-  it("reports no empty slot when the calendar has none", () => {
-    expect(linkedInPlanSummary({ counts: { approved: 0 }, nextSlots: ["", "  "] })).toEqual({
-      planned: 0,
-      nextEmptySlot: null,
-    });
-    expect(linkedInPlanSummary({})).toEqual({ planned: 0, nextEmptySlot: null });
+  it("drops a slot that has already started", () => {
+    const now = new Date("2026-11-17T00:30:00.000Z");
+    expect(
+      linkedInPlanSummary(
+        { planned: 0, overdue: 1, nextEmptySlot: "2026-11-17T00:30:00.000Z" },
+        now,
+      ),
+    ).toEqual({ planned: 0, overdue: 1, nextEmptySlot: null });
+    expect(linkedInPlanSummary({}, now)).toEqual({ planned: 0, overdue: 0, nextEmptySlot: null });
   });
 });
 
