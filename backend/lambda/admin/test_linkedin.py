@@ -18,6 +18,7 @@ import linkedin_api  # noqa: E402
 import linkedin_draft  # noqa: E402
 import linkedin_image  # noqa: E402
 import linkedin_metrics  # noqa: E402
+import linkedin_plan  # noqa: E402
 import linkedin_reach  # noqa: E402
 import linkedin_seeds  # noqa: E402
 import linkedin_store  # noqa: E402
@@ -88,7 +89,7 @@ class LinkedInStoreTests(unittest.TestCase):
         missed_doc = linkedin_store.get_post(self.table, missed["postId"]) or {}
         missed_doc["slotAt"] = "2026-10-01T00:30:00.000Z"
         linkedin_store.put_post(self.table, missed_doc)
-        summary = linkedin_store.plan_summary(self.table, now=now)
+        summary = linkedin_plan.plan_summary(self.table, now=now)
         self.assertEqual(summary["planned"], 1)
         self.assertEqual(summary["overdue"], 1)
         self.assertEqual(summary["nextEmptySlot"], "2026-10-08T00:30:00.000Z")

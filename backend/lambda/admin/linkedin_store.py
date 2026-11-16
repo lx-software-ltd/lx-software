@@ -1228,38 +1228,6 @@ def new_job(table: Any, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
     return put_job(table, doc)
 
 
-def plan_summary(table: Any, *, now: datetime | None = None) -> dict[str, Any]:
-    """Approved posts still ahead, approved posts that missed their slot, and the next open slot.
-
-    A post with no slot counts as planned. ``refreshAt`` is the soonest future
-    instant that changes this summary, so the dashboard can refetch then.
-    """
-    settings = load_settings(table)
-    current = _as_hkt(now)
-    planned = 0
-    overdue = 0
-    refresh_at: datetime | None = None
-    for row in list_posts(table, status="approved", limit=400):
-        slot = _parse_slot(str(row.get("slotAt") or ""))
-        if slot is None or slot > current:
-            planned += 1
-            if slot is not None and (refresh_at is None or slot < refresh_at):
-                refresh_at = slot
-        else:
-            overdue += 1
-    upcoming = next_slots(settings, now=current, count=1, taken=taken_slots(table))
-    next_empty = upcoming[0] if upcoming else None
-    parsed_empty = _parse_slot(next_empty) if next_empty else None
-    if parsed_empty is not None and (refresh_at is None or parsed_empty < refresh_at):
-        refresh_at = parsed_empty
-    return {
-        "planned": planned,
-        "overdue": overdue,
-        "nextEmptySlot": next_empty,
-        "refreshAt": _format_slot(refresh_at) if refresh_at is not None else None,
-    }
-
-
 def counts(table: Any) -> dict[str, int]:
     posts = list_posts(table, limit=400)
     return {

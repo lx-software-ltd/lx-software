@@ -22,7 +22,7 @@ is focused or when the next relevant time arrives.
 ## Files
 
 - `docs/plans/linkedin-dashboard-plan-card.md` (this plan)
-- `backend/lambda/admin/linkedin_store.py` — `plan_summary`
+- `backend/lambda/admin/linkedin_plan.py` — `plan_summary`, under the file-length ceiling
 - `backend/lambda/admin/linkedin.py` — `?view=plan` on the existing GET
 - `backend/lambda/admin/test_linkedin.py`
 - `apps/admin_web/src/lib/linkedinModel.ts` — `linkedInPlanSummary`
