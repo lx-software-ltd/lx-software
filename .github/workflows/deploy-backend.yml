@@ -102,9 +102,18 @@ jobs:
           CDK_BOOTSTRAP_QUALIFIER: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
           P_GOOGLE_CLIENT_ID: ${{ vars.ADMIN_GOOGLE_CLIENT_ID }}
           P_GOOGLE_CLIENT_SECRET: ${{ secrets.ADMIN_GOOGLE_CLIENT_SECRET }}
-          P_EMAIL_ALLOWLIST: ${{ vars.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
+          P_EMAIL_ALLOWLIST: ${{ secrets.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
         run: |
           set -eo pipefail
+          # A missing production environment secret is empty. Deploying that
+          # would clear AdminFederatedEmailAllowlist and lock every admin out.
+          case "${P_EMAIL_ALLOWLIST}" in
+            *@*) ;;
+            *)
+              echo "::error::Production environment secret ADMIN_FEDERATED_EMAIL_ALLOWLIST has no email address. Deploy Backend will not clear the admin allow-list."
+              exit 1
+              ;;
+          esac
           npx cdk acknowledge 34892 || true
 
           # Three stacks (post-consolidation):

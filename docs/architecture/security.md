@@ -47,7 +47,8 @@ parameters use `noEcho: true`; S3 remains private behind CloudFront.
   not authorized.`, which the callback shows on the login screen. Federated
   users are never added to Cognito groups in the data plane; the allow-list
   is the only way a Google account gains `admin`, so every entry in the
-  GitHub variable `ADMIN_FEDERATED_EMAIL_ALLOWLIST` is an administrator.
+  production environment secret `ADMIN_FEDERATED_EMAIL_ALLOWLIST` is an
+  administrator. CloudFormation stores that parameter with `noEcho`.
   Every decision is logged as JSON (`tag: admin_auth_gate`, `email`,
   `decision`) in the `PreTokenGenerationFn` log group.
 - The user pool still requires **TOTP** MFA (no SMS) and a 14+ character
@@ -209,3 +210,6 @@ A name-only `ignore` for a still-vulnerable copy fails it with
 - The Google OAuth client secret is a GitHub Actions secret passed to CDK
   with `noEcho`. It can appear briefly in the runner process environment;
   rotate it in Google Cloud if it is ever exposed.
+- `ADMIN_FEDERATED_EMAIL_ALLOWLIST` is a production environment secret
+  passed to CDK with `noEcho`. **Deploy Backend** stops when it contains
+  no email address, so a missing secret leaves the live allow-list in place.

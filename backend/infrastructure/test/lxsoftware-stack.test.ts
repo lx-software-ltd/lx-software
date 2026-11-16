@@ -1259,6 +1259,7 @@ describe("Admin user pool sign-in gate", () => {
     expect(resources[fnLogicalId]?.Properties?.Environment?.Variables).toMatchObject({
       ADMIN_EMAIL_ALLOWLIST: { Ref: "AdminFederatedEmailAllowlist" },
     });
+    expect(template.toJSON().Parameters.AdminFederatedEmailAllowlist.NoEcho).toBe(true);
   });
 
   test("Cognito may invoke the gate for both triggers", () => {

@@ -13,12 +13,13 @@ Executive Board design is in
 **Deploy Backend** runs on `main` when `backend/infrastructure/**`,
 `backend/lambda/**` or `contracts/**` change (or via **Run workflow**).
 
-1. **GitHub environment** — `AWS_ACCOUNT_ID`, `AWS_REGION`, optional
-   `CDK_BOOTSTRAP_QUALIFIER`, `CDK_PARAM_FILE`,
-   `ADMIN_GOOGLE_CLIENT_ID`, and `ADMIN_FEDERATED_EMAIL_ALLOWLIST`
-   (comma-separated lower-case emails that receive `admin` via Pre Token
-   Generation — every Google admin). Secret
-   `ADMIN_GOOGLE_CLIENT_SECRET`.
+1. **GitHub environment** `production` — variables `AWS_ACCOUNT_ID`,
+   `AWS_REGION`, optional `CDK_BOOTSTRAP_QUALIFIER`, `CDK_PARAM_FILE`,
+   and `ADMIN_GOOGLE_CLIENT_ID`. Secrets `ADMIN_GOOGLE_CLIENT_SECRET` and
+   `ADMIN_FEDERATED_EMAIL_ALLOWLIST` (comma-separated lower-case emails
+   that receive `admin` via Pre Token Generation — every Google admin).
+   **Deploy Backend** stops before any stack update when that allow-list
+   secret has no email address.
    **Deploy Admin Web** reads `UserPoolClientId`, `CognitoDomain`, and
    `AdminApiBaseUrl` from the `lxsoftware` stack. Do not set
    `ADMIN_COGNITO_*` or `ADMIN_API_BASE_URL`.
@@ -37,11 +38,13 @@ Executive Board design is in
    `docker/setup-qemu-action`. For template-only synth set
    `CDK_SKIP_PYTHON_PIP=1`.
 
-After the first deploy, verify `AdminFederatedEmailAllowlist` includes
-every Google operator and nobody else: an unlisted Google account is
-refused at sign-in (**This account is not authorized.**), and every listed
-address is a full administrator. The variable is the complete admin list;
-the Cognito **Users** page only shows accounts that have already signed in.
+After the first deploy, the value in the production environment secret
+`ADMIN_FEDERATED_EMAIL_ALLOWLIST` is the complete admin list: an unlisted
+Google account is refused at sign-in (**This account is not authorized.**),
+and every listed address is a full administrator. CloudFormation masks
+`AdminFederatedEmailAllowlist`. The gate log field `allowlist_size` is the
+count of addresses that were deployed. The Cognito **Users** page only
+shows accounts that have already signed in.
 
 Sign-in is Google only. There is no password sign-in. If Google sign-in
 fails, correct `ADMIN_GOOGLE_CLIENT_SECRET` or
@@ -216,9 +219,9 @@ bootstrap user; group membership does not grant a token. Lines tagged
 `pre_token_generation` are from before the fail-closed gate; there
 `matched_admin: true` is the only way the token carried `admin`. A
 `matched_admin: true` line for an address you did not expect means that
-address is in `ADMIN_FEDERATED_EMAIL_ALLOWLIST` — remove it from the GitHub
-environment variable and run **Deploy Backend**; the next token refresh for
-that account is refused. The HTTP API access log (`claimEmail`,
+address is in `ADMIN_FEDERATED_EMAIL_ALLOWLIST` — remove it from the
+production environment secret and run **Deploy Backend**; the next token
+refresh for that account is refused. The HTTP API access log (`claimEmail`,
 `claimGroups`) and `admin_auth_denied` lines on `AdminApiFn` show the same
 identity on the API side.
 

@@ -32,8 +32,9 @@ export function defineAdminParameters(scope: cdk.Stack) {
     "AdminFederatedEmailAllowlist",
     {
       type: "String",
+      noEcho: true,
       description:
-        "Comma-separated lower-case emails that receive the admin group in tokens (Pre Token Generation). Every address is a Google administrator.",
+        "Comma-separated lower-case emails that receive the admin group in tokens (Pre Token Generation). Every address is a Google administrator. Production environment secret ADMIN_FEDERATED_EMAIL_ALLOWLIST.",
     }
   );
 
