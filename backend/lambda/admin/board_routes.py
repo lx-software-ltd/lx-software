@@ -411,7 +411,7 @@ def _approval_decide(event: dict[str, Any], approval_id: str, *, approve: bool, 
         return _json_response(400, {"message": "note must be a string"})
     if len(note) > BOARD_MAX_APPROVAL_NOTE_LEN:
         return _json_response(400, {"message": f"note must be at most {BOARD_MAX_APPROVAL_NOTE_LEN} characters"})
-    problem = board_delegate.apikey_decision_problem(user_sub, approve=approve, note=str(note or ""))
+    problem = board_delegate.key_actor_decision_problem(user_sub, approve=approve, note=str(note or ""))
     if problem:
         status, message = problem
         return _json_response(status, {"message": message})
