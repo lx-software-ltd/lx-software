@@ -61,6 +61,36 @@ def _install_botocore_config_stub() -> None:
     sys.modules["botocore.config"] = config
 
 
+def _condition_holds(item: dict[str, Any] | None, expr: str, values: dict[str, Any]) -> bool:
+    """The condition shapes ``put_item`` uses. Unknown shapes fail the test."""
+    if expr == "attribute_not_exists(pk)":
+        return item is None
+    if expr == "attribute_not_exists(spendToken)":
+        return item is not None and "spendToken" not in item
+    if expr == "spendToken = :prev":
+        return item is not None and item.get("spendToken") == values.get(":prev")
+    if item is None:
+        return False
+    for part in expr.split(" AND "):
+        clause = part.strip()
+        if clause == "attribute_exists(accessToken)":
+            if not item.get("accessToken"):
+                return False
+            continue
+        equal = re.fullmatch(r"(\w+) = (:\w+)", clause)
+        if equal:
+            if item.get(equal.group(1)) != values.get(equal.group(2)):
+                return False
+            continue
+        different = re.fullmatch(r"(\w+) <> (:\w+)", clause)
+        if different:
+            if item.get(different.group(1)) == values.get(different.group(2)):
+                return False
+            continue
+        raise AssertionError(f"FakeTable condition not supported: {expr}")
+    return True
+
+
 class FakeTable:
     """In-memory stand-in for a DynamoDB Table resource."""
 
@@ -88,14 +118,7 @@ class FakeTable:
         if ConditionExpression:
             expr = " ".join(ConditionExpression.split())
             values = ExpressionAttributeValues or {}
-            if expr == "attribute_not_exists(pk)":
-                conflict = current is not None
-            elif expr == "attribute_not_exists(spendToken)":
-                conflict = current is None or "spendToken" in current
-            elif expr == "spendToken = :prev":
-                conflict = current is None or current.get("spendToken") != values.get(":prev")
-            else:
-                raise AssertionError(f"FakeTable condition not supported: {expr}")
+            conflict = not _condition_holds(current, expr, values)
             if conflict:
                 from botocore.exceptions import ClientError
 

@@ -1,9 +1,7 @@
 """LX Software LinkedIn drafts, ideas, and settings.
 
-Rows live in the records table under ``LINKEDIN#`` and stay out of ``/records``.
-Posts are a personal presence queue: the default voice does not mention LX
-Software or sibling products. This module stores drafts, assigns 08:30 HKT
-slots, records a hand post, and keeps the LinkedIn connection.
+``LINKEDIN#`` rows stay out of ``/records``. The default voice does not mention
+LX Software. This module stores drafts, 08:30 HKT slots, and the connection.
 """
 
 from __future__ import annotations
@@ -1333,6 +1331,7 @@ def save_oauth_state(
     *,
     include_organizations: bool = False,
     include_member_analytics: bool = False,
+    analytics_app: bool = False,
 ) -> None:
     _put(
         table,
@@ -1342,6 +1341,7 @@ def save_oauth_state(
             "userSub": user_sub,
             "includeOrganizations": bool(include_organizations),
             "includeMemberAnalytics": bool(include_member_analytics),
+            "analyticsApp": bool(analytics_app),
             "createdAt": board_store.now_iso(),
             "expiresAt": int(time.time()) + 15 * 60,
         },

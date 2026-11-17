@@ -62,6 +62,21 @@ class LinkedInApiTests(unittest.TestCase):
         self.assertIn("r_member_postAnalytics", both)
         self.assertIn("w_organization_social", both)
 
+    def test_basic_profile_reads_the_member_name_without_a_version_header(self) -> None:
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            self.assertEqual(method, "GET")
+            self.assertEqual(url, "https://api.linkedin.com/v2/me")
+            self.assertEqual(headers["Authorization"], "Bearer token")
+            self.assertNotIn("LinkedIn-Version", headers)
+            self.assertIsNone(body)
+            return _ok(200, {"id": "abc", "localizedFirstName": "Example", "localizedLastName": "Member"})
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.assertEqual(
+            linkedin_api.basic_profile("token"),
+            {"memberId": "abc", "memberName": "Example Member"},
+        )
+
     def test_commentary_appends_a_missing_hashtag_and_escapes_parentheses(self) -> None:
         text = linkedin_api.commentary("A lesson (short).", ["Architecture"])
         self.assertIn("\\(short\\)", text)
