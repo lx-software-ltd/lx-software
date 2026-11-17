@@ -74,4 +74,65 @@ describe("LinkedIn posted reach", () => {
     expect(screen.getByText("26,498 impressions")).toBeInTheDocument();
     expect(screen.queryByText(/reactions/)).toBeNull();
   });
+
+  it("omits a profile zero that was never read", () => {
+    postedItems.current = [
+      {
+        ...SAMPLE_LINKEDIN_POSTS[1],
+        postId: "li_placeholder_zero",
+        channel: "profile",
+        metrics: { impressions: 26498, reactions: 0, comments: 0 },
+      },
+    ];
+    renderPosted();
+    expect(screen.getByText("26,498 impressions")).toBeInTheDocument();
+    expect(screen.queryByText(/reactions/)).toBeNull();
+    expect(screen.queryByText(/comments/)).toBeNull();
+  });
+
+  it("shows a profile zero after that count was read", () => {
+    postedItems.current = [
+      {
+        ...SAMPLE_LINKEDIN_POSTS[1],
+        postId: "li_read_zero",
+        channel: "profile",
+        metrics: {
+          impressions: 10,
+          reactions: 0,
+          comments: 2,
+          reactionReadAt: "2026-11-01T00:00:00.000Z",
+          commentReadAt: "2026-11-01T00:00:00.000Z",
+        },
+      },
+    ];
+    renderPosted();
+    expect(screen.getByText("0 reactions · 2 comments · 10 impressions")).toBeInTheDocument();
+  });
+
+  it("shows a read reaction when the comment was not read", () => {
+    postedItems.current = [
+      {
+        ...SAMPLE_LINKEDIN_POSTS[1],
+        postId: "li_reaction_only",
+        channel: "profile",
+        metrics: { impressions: 10, reactions: 5, comments: 0, reactionReadAt: "2026-11-01T00:00:00.000Z" },
+      },
+    ];
+    renderPosted();
+    expect(screen.getByText("5 reactions · 10 impressions")).toBeInTheDocument();
+    expect(screen.queryByText(/comments/)).toBeNull();
+  });
+
+  it("shows a page zero from the posting app", () => {
+    postedItems.current = [
+      {
+        ...SAMPLE_LINKEDIN_POSTS[1],
+        postId: "li_page_zero",
+        channel: "page",
+        metrics: { impressions: 10, reactions: 0, comments: 0 },
+      },
+    ];
+    renderPosted();
+    expect(screen.getByText("0 reactions · 0 comments · 10 impressions")).toBeInTheDocument();
+  });
 });

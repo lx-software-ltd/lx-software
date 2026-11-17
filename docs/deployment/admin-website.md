@@ -719,12 +719,16 @@ profile read at connect and a token refresh count toward that 80. A failed
 read keeps a count already stored; a metric that has never been read stays
 empty for six hours. A post from the last 7 days is read again every six
 hours. A post from day 8 through day 30 is read again once a day. An older
-stored count stays. While the analytics app is connected, profile reactions
-are not taken from the posting app. A denied social-actions read, used for
-page posts and for profile posts only when analytics is disconnected, is
-stored and not retried. Page impressions are read only for posts that went
-out as a page. Hitting the daily cap skips further analytics reads.
-Disconnecting posting leaves the analytics connection, and the reverse.
+stored count stays. Due profile posts are read newest first. While the
+analytics app is connected, profile reactions are not taken from the posting
+app. A denied member-analytics query is logged and not retried. A rate limit
+is logged, that post waits six hours, and later profile reads wait until the
+next pass. A denied social-actions read, used for page posts and for profile
+posts only when analytics is disconnected, is stored and not retried. Page
+impressions are read only for posts that went out as a page. Hitting the
+daily cap skips further analytics reads and still refreshes page posts.
+Disconnecting analytics leaves a stored analytics reaction or comment in
+place. Disconnecting posting leaves the analytics connection, and the reverse.
 
 With the first switch on, Sunday 18:00 HKT
 (`lxsoftware-admin-linkedin-plan`) drafts the configured batch, and a
@@ -757,9 +761,13 @@ The pass runs after the due-post mail. Each tick updates at most five page
 reaction counts and eight profile posts, and stops after about 75 seconds.
 Connecting analytics queues one pass immediately. An expired access token is
 skipped quietly until the owner connects again. A failed read waits
-six hours when the post has no count yet. A post from the last 7 days is read
-again every six hours, a post from day 8 through day 30 once a day, and an
-older stored count stays.
+six hours when the post has no count yet. A denied member-analytics query is
+logged and not retried. Due profile posts are read newest first. A post from
+the last 7 days is read again every six hours, a post from day 8 through day
+30 once a day, and an older stored count stays. Hitting the daily cap still
+refreshes page posts. Disconnecting analytics does not replace a stored
+analytics reaction or comment. The posted table shows each read count on its
+own, and a profile zero that was never read stays blank.
 While the publish switch is off, or LinkedIn is not connected, the share
 box and **Mark posted** stay the way to publish.
 Add any employer name under Settings → extra phrases; do not put it in source.

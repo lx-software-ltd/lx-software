@@ -464,7 +464,7 @@ _MEMBER_QUERY_TYPES = frozenset({"IMPRESSION", "REACTION", "COMMENT"})
 
 
 def member_post_count(token: str, post_urn: str, query_type: str) -> int | None:
-    """Lifetime total for one profile-post metric. A non-200 leaves the count empty."""
+    """Lifetime total for one profile-post metric. A non-200 raises LinkedInApiError."""
     if query_type not in _MEMBER_QUERY_TYPES:
         return None
     encoded = urllib.parse.quote(post_urn, safe="")
@@ -478,7 +478,7 @@ def member_post_count(token: str, post_urn: str, query_type: str) -> int | None:
         timeout=METRICS_TIMEOUT_SECONDS,
     )
     if status != 200:
-        return None
+        raise LinkedInApiError(_error_message(payload, status), status=status)
     elements = _json_body(payload).get("elements")
     if not isinstance(elements, list) or not elements or not isinstance(elements[0], dict):
         return None
@@ -490,4 +490,9 @@ def member_post_count(token: str, post_urn: str, query_type: str) -> int | None:
 
 def member_impressions(token: str, post_urn: str) -> int | None:
     """Lifetime impressions for a profile post. A non-200 leaves the count empty."""
-    return member_post_count(token, post_urn, "IMPRESSION")
+    try:
+        return member_post_count(token, post_urn, "IMPRESSION")
+    except LinkedInApiError as exc:
+        if exc.status is None:
+            raise
+        return None

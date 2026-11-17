@@ -231,6 +231,17 @@ class LinkedInApiTests(unittest.TestCase):
         linkedin_api.set_transport_for_tests(transport)
         self.assertIsNone(linkedin_api.member_impressions("token", "urn:li:share:9"))
 
+    def test_member_post_count_reports_a_denied_read(self) -> None:
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, url, headers, body
+            return _ok(403, {"message": "forbidden"})
+
+        linkedin_api.set_transport_for_tests(transport)
+        with self.assertRaises(LinkedInApiError) as caught:
+            linkedin_api.member_post_count("token", "urn:li:share:9", "REACTION")
+        self.assertEqual(caught.exception.status, 403)
+        self.assertIsNone(linkedin_api.member_impressions("token", "urn:li:share:9"))
+
     def test_connection_target_selects_a_page(self) -> None:
         table = FakeTable()
         linkedin_store.save_connection(

@@ -2581,6 +2581,204 @@ class LinkedInHttpTests(unittest.TestCase):
         self.assertFalse(any("memberCreatorPostAnalytics" in url for url, _auth in seen))
         self.assertFalse(any("/socialActions/" in url for url, _auth in seen))
 
+    def test_the_analytics_cap_still_refreshes_a_page_post(self) -> None:
+        old = format_iso_millis(datetime.now(HKT) - timedelta(days=40))
+        profile = self._published_profile(
+            published_at=old, urn="urn:li:share:1", body="A short hook.\n\nThe profile one."
+        )
+        page = self._published_profile(
+            urn="urn:li:share:8",
+            channel="page",
+            body="A short hook.\n\nThe page one.",
+        )
+        self._save_member(analytics=False)
+        today = datetime.now(timezone.utc).date().isoformat()
+        self._save_analytics(calls=80, callsOn=today)
+        seen: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            seen.append(url)
+            if "organizationalEntityShareStatistics" in url:
+                return 200, {}, b'{"elements":[{"totalShareStatistics":{"impressionCount":7}}]}'
+            if "/socialActions/" in url:
+                return 200, {}, b'{"likesSummary":{"totalLikes":1},"commentsSummary":{"aggregatedTotalComments":0}}'
+            return 200, {}, b'{"elements":[{"count":12}]}'
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
+            linkedin.handle_publish_due({})
+        self.assertIsNone(linkedin_store.get_post(self.table, profile["postId"]).get("metrics"))
+        stored = linkedin_store.get_post(self.table, page["postId"])
+        self.assertEqual(stored["metrics"]["impressions"], 7)
+        self.assertEqual(stored["metrics"]["reactions"], 1)
+        self.assertEqual(stored["metrics"]["comments"], 0)
+        self.assertFalse(any("memberCreatorPostAnalytics" in url for url in seen))
+        self.assertTrue(any("/socialActions/" in url for url in seen))
+
+    def test_a_newer_profile_post_is_read_before_an_older_one(self) -> None:
+        older = format_iso_millis(datetime.now(HKT) - timedelta(days=20))
+        newer = format_iso_millis(datetime.now(HKT) - timedelta(days=1))
+        self._published_profile(urn="urn:li:share:1", published_at=older, body="A short hook.\n\nThe older one.")
+        self._published_profile(urn="urn:li:share:2", published_at=newer, body="A short hook.\n\nThe newer one.")
+        self._save_member(analytics=False)
+        self._save_analytics()
+        seen: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            if "memberCreatorPostAnalytics" in url:
+                seen.append(url)
+                return 200, {}, b'{"elements":[{"count":4}]}'
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        linkedin.handle_publish_due({})
+        self.assertIn("urn%3Ali%3Ashare%3A2", seen[0])
+
+    def test_a_denied_reaction_is_logged_and_not_read_again(self) -> None:
+        old = format_iso_millis(datetime.now(HKT) - timedelta(days=40))
+        first = self._published_profile(published_at=old, urn="urn:li:share:1", body="A short hook.\n\nThe first one.")
+        second = self._published_profile(
+            published_at=old, urn="urn:li:share:2", body="A short hook.\n\nThe second one."
+        )
+        self._save_member(analytics=False)
+        self._save_analytics()
+        seen: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            if "memberCreatorPostAnalytics" in url:
+                seen.append(url)
+                if "queryType=REACTION" in url:
+                    return 403, {}, b'{"message":"forbidden"}'
+                count = 3 if "queryType=COMMENT" in url else 12
+                return 200, {}, f'{{"elements":[{{"count":{count}}}]}}'.encode()
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch("linkedin_member_analytics._log_event") as log:
+            linkedin.handle_publish_due({})
+        denied = [call.kwargs for call in log.call_args_list if call.kwargs.get("status") == 403]
+        self.assertEqual(len(denied), 1)
+        self.assertEqual(denied[0]["query"], "REACTION")
+        self.assertEqual(sum("queryType=REACTION" in url for url in seen), 1)
+        for doc in (first, second):
+            stored = linkedin_store.get_post(self.table, doc["postId"])
+            self.assertTrue(stored["metrics"]["reactionDenied"])
+            self.assertEqual(stored["metrics"]["comments"], 3)
+            self.assertEqual(stored["metrics"]["impressions"], 12)
+            self.assertNotIn("engagementReadAt", stored["metrics"])
+            self.assertNotIn("reactionReadAt", stored["metrics"])
+        linkedin.handle_publish_due({})
+        self.assertEqual(sum("queryType=REACTION" in url for url in seen), 1)
+
+    def test_a_rate_limit_stops_later_profile_reads_and_still_refreshes_a_page(self) -> None:
+        newer = format_iso_millis(datetime.now(HKT) - timedelta(days=1))
+        older = format_iso_millis(datetime.now(HKT) - timedelta(days=2))
+        first = self._published_profile(
+            urn="urn:li:share:2", published_at=newer, body="A short hook.\n\nThe newer one."
+        )
+        second = self._published_profile(
+            urn="urn:li:share:1", published_at=older, body="A short hook.\n\nThe older one."
+        )
+        page = self._published_profile(urn="urn:li:share:8", channel="page", body="A short hook.\n\nThe page one.")
+        self._save_member(analytics=False)
+        self._save_analytics()
+        seen: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            seen.append(url)
+            if "memberCreatorPostAnalytics" in url:
+                return 429, {}, b'{"message":"too many requests"}'
+            if "organizationalEntityShareStatistics" in url:
+                return 200, {}, b'{"elements":[{"totalShareStatistics":{"impressionCount":7}}]}'
+            if "/socialActions/" in url:
+                return 200, {}, b'{"likesSummary":{"totalLikes":1},"commentsSummary":{"aggregatedTotalComments":0}}'
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch("linkedin_member_analytics._log_event") as log:
+            with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
+                linkedin.handle_publish_due({})
+        self.assertEqual(sum("memberCreatorPostAnalytics" in url for url in seen), 1)
+        self.assertTrue(any(call.kwargs.get("status") == 429 for call in log.call_args_list))
+        stored = linkedin_store.get_post(self.table, first["postId"])
+        self.assertTrue(stored["metrics"]["impressionCheckedAt"])
+        self.assertIsNone(linkedin_store.get_post(self.table, second["postId"]).get("metrics"))
+        page_stored = linkedin_store.get_post(self.table, page["postId"])
+        self.assertEqual(page_stored["metrics"]["impressions"], 7)
+        self.assertEqual(page_stored["metrics"]["reactions"], 1)
+
+    def test_disconnecting_analytics_keeps_stored_reactions(self) -> None:
+        read_at = format_iso_millis(datetime.now(HKT) - timedelta(hours=7))
+        doc = self._published_profile(
+            metrics={
+                "reactions": 9,
+                "comments": 2,
+                "impressions": 12,
+                "impressionReadAt": read_at,
+                "engagementReadAt": read_at,
+                "reactionReadAt": read_at,
+                "commentReadAt": read_at,
+            }
+        )
+        self._save_member(analytics=False)
+        seen: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            seen.append(url)
+            if "/socialActions/" in url:
+                return 200, {}, b'{"likesSummary":{"totalLikes":0},"commentsSummary":{"aggregatedTotalComments":0}}'
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
+            linkedin.handle_publish_due({})
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertEqual(stored["metrics"]["reactions"], 9)
+        self.assertEqual(stored["metrics"]["comments"], 2)
+        self.assertEqual(stored["metrics"]["impressions"], 12)
+        self.assertFalse(any("/socialActions/" in url for url in seen))
+
+    def test_social_actions_keep_a_count_already_read_from_analytics(self) -> None:
+        read_at = format_iso_millis(datetime.now(HKT) - timedelta(hours=7))
+        doc = self._published_profile(
+            metrics={
+                "reactions": 9,
+                "comments": 0,
+                "impressions": 12,
+                "impressionReadAt": read_at,
+                "reactionReadAt": read_at,
+            }
+        )
+        self._save_member(analytics=False)
+        seen: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            seen.append(url)
+            if "/socialActions/" in url:
+                return 200, {}, b'{"likesSummary":{"totalLikes":0},"commentsSummary":{"aggregatedTotalComments":4}}'
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
+            linkedin.handle_publish_due({})
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertEqual(stored["metrics"]["reactions"], 9)
+        self.assertEqual(stored["metrics"]["comments"], 4)
+        self.assertEqual(stored["metrics"]["reactionReadAt"], read_at)
+        self.assertTrue(any("/socialActions/" in url for url in seen))
+
     def test_a_missed_impression_is_not_read_again_with_reactions(self) -> None:
         checked = format_iso_millis(datetime.now(HKT) - timedelta(minutes=30))
         doc = self._published_profile(

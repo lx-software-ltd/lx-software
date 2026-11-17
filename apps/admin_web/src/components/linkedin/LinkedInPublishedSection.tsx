@@ -16,13 +16,27 @@ const COLUMNS = [
   { key: "ops", header: <span className="visually-hidden">Operations</span>, className: "text-end" },
 ];
 
-function reachText(metrics: LinkedInMetrics | null | undefined): string {
+function countWasRead(metrics: LinkedInMetrics, kind: "reactions" | "comments"): boolean {
+  if (kind === "reactions") return Boolean(metrics.reactionReadAt || metrics.engagementReadAt);
+  return Boolean(metrics.commentReadAt || metrics.engagementReadAt);
+}
+
+function showCount(value: number | null | undefined, read: boolean, channel: string): value is number {
+  if (value == null || Number.isNaN(value)) return false;
+  if (channel === "page" || read) return true;
+  return value !== 0;
+}
+
+function reachText(metrics: LinkedInMetrics | null | undefined, channel: string): string {
   if (!metrics || (metrics.unavailable && metrics.reactions === 0 && metrics.comments === 0 && metrics.impressions == null)) {
     return "—";
   }
   const parts: string[] = [];
-  if (metrics.reactions != null && metrics.comments != null) {
-    parts.push(`${formatCount(metrics.reactions)} reactions · ${formatCount(metrics.comments)} comments`);
+  if (showCount(metrics.reactions, countWasRead(metrics, "reactions"), channel)) {
+    parts.push(`${formatCount(metrics.reactions)} reactions`);
+  }
+  if (showCount(metrics.comments, countWasRead(metrics, "comments"), channel)) {
+    parts.push(`${formatCount(metrics.comments)} comments`);
   }
   if (metrics.impressions != null) parts.push(`${formatCount(metrics.impressions)} impressions`);
   return parts.length ? parts.join(" · ") : "—";
@@ -46,7 +60,7 @@ export function LinkedInPublishedSection() {
                   {hookText(row.body) || "Untitled"}
                 </AdminCell>
                 <AdminCell column="posted">{when ? formatDateTimeHKT(when) : "—"}</AdminCell>
-                <AdminCell column="reach">{reachText(row.metrics)}</AdminCell>
+                <AdminCell column="reach">{reachText(row.metrics, row.channel)}</AdminCell>
                 <AdminCell column="ops" className="text-end">
                   <AdminRowActions
                     actions={[
