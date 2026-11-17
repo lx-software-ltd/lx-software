@@ -20,8 +20,12 @@ function reachText(metrics: LinkedInMetrics | null | undefined): string {
   if (!metrics || (metrics.unavailable && metrics.reactions === 0 && metrics.comments === 0 && metrics.impressions == null)) {
     return "—";
   }
-  const base = `${formatCount(metrics.reactions)} reactions · ${formatCount(metrics.comments)} comments`;
-  return metrics.impressions == null ? base : `${base} · ${formatCount(metrics.impressions)} impressions`;
+  const parts: string[] = [];
+  if (metrics.reactions != null && metrics.comments != null) {
+    parts.push(`${formatCount(metrics.reactions)} reactions · ${formatCount(metrics.comments)} comments`);
+  }
+  if (metrics.impressions != null) parts.push(`${formatCount(metrics.impressions)} impressions`);
+  return parts.length ? parts.join(" · ") : "—";
 }
 
 export function LinkedInPublishedSection() {

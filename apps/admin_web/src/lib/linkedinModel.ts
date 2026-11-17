@@ -100,8 +100,8 @@ export type LinkedInAnalyticsConnection = {
 };
 
 export type LinkedInMetrics = {
-  reactions: number;
-  comments: number;
+  reactions?: number | null;
+  comments?: number | null;
   impressions: number | null;
   pulledAt?: string;
   unavailable?: boolean;

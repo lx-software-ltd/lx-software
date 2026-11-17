@@ -1,11 +1,14 @@
 """Refresh LinkedIn reaction, comment, and impression counts.
 
-Profile impressions use the analytics app when that connection exists. A posting
-connection that already asked for member post analytics still uses its own token.
+Profile impressions, reactions, and comments use the analytics app when that
+connection exists. Each metric is its own call. A missing count is read first.
+A post from the last 7 days is read again every six hours, a post from day 8
+through day 30 once a day, and an older stored count stays. A posting connection
+that already asked for member post analytics still reads impressions on its own
+token, and its reactions still come from social actions for the last 30 days.
 Posts already published are included at any age, including a share or ugcPost URN
-taken from the pasted LinkedIn URL. A count from the last 30 days is read again
-every six hours. Older stored counts stay. A failed read keeps a count already
-stored. A denied reaction read is stored and not retried.
+taken from the pasted LinkedIn URL. A failed read keeps a count already stored.
+A denied social-actions read is stored and not retried.
 """
 
 from __future__ import annotations
@@ -25,11 +28,14 @@ from http_common import _log_event
 from linkedin_api import LinkedInApiError
 from linkedin_store import HKT
 
-# One post can still make two eight-second calls after the budget check.
+# One analytics post can still make three eight-second calls after the budget check.
 # 75 seconds plus that remainder stays far under the 300-second Lambda limit.
 BUDGET_SECONDS = 75
 REACTION_CAP = 5
 BACKFILL_CAP = 8
+_ANALYTICS_QUERIES = ("IMPRESSION", "REACTION", "COMMENT")
+_FRESH_DAYS = 7
+_ACTIVE_DAYS = 30
 POST_LIMIT = 400
 _PAGE_SIZE = 100
 _SHARE_URN = re.compile(r"urn:li:(?:share|ugcPost):\d+")
@@ -95,6 +101,101 @@ def _needs_impression(
     if published is None or published < refresh_after:
         return False
     return not _within(str(previous.get("impressionReadAt") or ""), cutoff)
+
+
+def _stamp(value: object) -> datetime | None:
+    return linkedin_store._parse_slot(str(value or ""))
+
+
+def _analytics_queries(row: dict[str, Any], previous: dict[str, Any], now: datetime) -> set[str]:
+    """Member metrics still due for this profile post. Empty means leave it."""
+    checked = now - timedelta(hours=6)
+    wanted: set[str] = set()
+    if previous.get("impressions") is None and not _within(str(previous.get("impressionCheckedAt") or ""), checked):
+        wanted.add("IMPRESSION")
+    if not previous.get("engagementReadAt") and not _within(str(previous.get("engagementCheckedAt") or ""), checked):
+        wanted.update(("REACTION", "COMMENT"))
+    if wanted:
+        return wanted
+    published = _stamp(_platform(row).get("publishedAt"))
+    if published is None or now - published > timedelta(days=_ACTIVE_DAYS):
+        return set()
+    wait = timedelta(hours=6) if now - published <= timedelta(days=_FRESH_DAYS) else timedelta(days=1)
+    read_at = [
+        stamp
+        for stamp in (_stamp(previous.get("impressionReadAt")), _stamp(previous.get("engagementReadAt")))
+        if stamp is not None
+    ]
+    if not read_at or now - min(read_at) >= wait:
+        return set(_ANALYTICS_QUERIES)
+    return set()
+
+
+def _analytics_carry(previous: dict[str, Any]) -> dict[str, Any]:
+    metrics: dict[str, Any] = {
+        "pulledAt": str(previous.get("pulledAt") or ""),
+        "unavailable": bool(previous.get("unavailable")),
+    }
+    if "impressions" in previous:
+        metrics["impressions"] = previous.get("impressions")
+    for key in ("reactions", "comments"):
+        if key in previous and previous.get(key) is not None:
+            metrics[key] = int(previous[key])
+    for key in ("impressionCheckedAt", "impressionReadAt", "engagementReadAt", "engagementCheckedAt"):
+        if previous.get(key):
+            metrics[key] = str(previous[key])
+    if previous.get("error"):
+        metrics["error"] = str(previous["error"])[:200]
+    return metrics
+
+
+def _read_member_analytics(
+    metrics: dict[str, Any],
+    previous: dict[str, Any],
+    urn: str,
+    token: str,
+    wanted: set[str],
+    allow: Any,
+) -> tuple[bool, bool]:
+    """Read the wanted totals. Returns whether a call ran, and whether the day is spent."""
+    fresh: dict[str, int | None] = {}
+    for query in _ANALYTICS_QUERIES:
+        if query not in wanted:
+            continue
+        if allow is not None and not allow():
+            return bool(fresh), True
+        try:
+            fresh[query] = linkedin_api.member_post_count(token, urn, query)
+        except LinkedInApiError as exc:
+            _log_event("warning", tag="linkedin_metrics_failed", error=str(exc)[:200])
+            fresh[query] = None
+    read_at = board_store.now_iso()
+    if "IMPRESSION" in fresh:
+        read = fresh["IMPRESSION"]
+        if read is None and previous.get("impressions") is not None:
+            metrics["impressions"] = previous["impressions"]
+        else:
+            metrics["impressions"] = read
+        if read is None:
+            metrics["impressionCheckedAt"] = read_at
+        else:
+            metrics.pop("impressionCheckedAt", None)
+            metrics["impressionReadAt"] = read_at
+    for query, key in (("REACTION", "reactions"), ("COMMENT", "comments")):
+        if query not in fresh:
+            continue
+        read = fresh[query]
+        if read is None and previous.get(key) is not None:
+            metrics[key] = int(previous[key])
+        elif read is not None:
+            metrics[key] = read
+    if "REACTION" in fresh and "COMMENT" in fresh:
+        if fresh["REACTION"] is not None and fresh["COMMENT"] is not None:
+            metrics["engagementReadAt"] = read_at
+            metrics.pop("engagementCheckedAt", None)
+        else:
+            metrics["engagementCheckedAt"] = read_at
+    return bool(fresh), False
 
 
 def _reactions_due(platform: dict[str, Any], previous: dict[str, Any], oldest: datetime, cutoff: datetime) -> bool:
@@ -226,9 +327,15 @@ def refresh(
     refresh_after = oldest if analytics_on else None
     started = time.monotonic()
     rows = _published_rows(table, POST_LIMIT)
+
+    def _due(row: dict[str, Any]) -> bool:
+        if analytics_on and not _is_page(row, connection):
+            return bool(_analytics_queries(row, _previous(row), now))
+        return _needs_impression(row, _previous(row), connection, include, cutoff, refresh_after)
+
     rows.sort(
         key=lambda row: (
-            0 if _needs_impression(row, _previous(row), connection, include, cutoff, refresh_after) else 1,
+            0 if _due(row) else 1,
             str(_platform(row).get("publishedAt") or row.get("slotAt") or ""),
         )
     )
@@ -243,9 +350,26 @@ def refresh(
         platform = _platform(row)
         previous = _previous(row)
         page = _is_page(row, connection)
-        needs = _needs_impression(row, previous, connection, include, cutoff, refresh_after)
         urn = _share_urn(platform)
         usable = urn or str(platform.get("urn") or "")
+        if analytics_on and not page:
+            if backfill_done >= BACKFILL_CAP or not usable:
+                continue
+            wanted = _analytics_queries(row, previous, now)
+            if not wanted:
+                continue
+            metrics = _analytics_carry(previous)
+            made, capped = _read_member_analytics(
+                metrics, previous, usable, analytics_token, wanted, allow_analytics_call
+            )
+            if made:
+                _save(table, row, metrics, urn)
+                updated += 1
+                backfill_done += 1
+            if capped or not made:
+                break
+            continue
+        needs = _needs_impression(row, previous, connection, include, cutoff, refresh_after)
         do_reactions = (
             bool(token)
             and bool(usable)

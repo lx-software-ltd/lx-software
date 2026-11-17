@@ -711,15 +711,19 @@ the only product on its app. Settings → **Connect analytics** calls
 app. **Disconnect analytics** calls
 `POST /lx-software/linkedin/analytics/disconnect`. Connect requests
 `r_member_postAnalytics r_basicprofile` from that app. Profile posts then read
-lifetime impressions from `memberCreatorPostAnalytics` (`IMPRESSION`,
-`TOTAL`), including posts already published. The pass stops after 80 of those
-calls in a UTC day, under the development-tier member cap. The member profile
-read at connect and a token refresh count toward that 80. A failed impression
-read keeps a count already stored; a post that has never had one stays empty
-for six hours. A count from the last 30 days is read again every six hours.
-An older stored count stays. A denied reaction read is stored and not retried;
-page impressions are read only for posts that went out as a page. Hitting the
-daily cap skips further impression reads and still updates reactions.
+lifetime impressions, reactions, and comments from `memberCreatorPostAnalytics`
+(`IMPRESSION`, `REACTION`, and `COMMENT`, each with `TOTAL`), including posts
+already published. Each metric is its own call. The pass stops after 80 of
+those calls in a UTC day, under the development-tier member cap. The member
+profile read at connect and a token refresh count toward that 80. A failed
+read keeps a count already stored; a metric that has never been read stays
+empty for six hours. A post from the last 7 days is read again every six
+hours. A post from day 8 through day 30 is read again once a day. An older
+stored count stays. While the analytics app is connected, profile reactions
+are not taken from the posting app. A denied social-actions read, used for
+page posts and for profile posts only when analytics is disconnected, is
+stored and not retried. Page impressions are read only for posts that went
+out as a page. Hitting the daily cap skips further analytics reads.
 Disconnecting posting leaves the analytics connection, and the reverse.
 
 With the first switch on, Sunday 18:00 HKT
@@ -743,19 +747,19 @@ failed publishes the previous ready picture instead. A comment failure leaves th
 published. An image upload or API failure counts as a failed attempt (three tries,
 then a second email that posting has stopped). A missing connection or an
 expired token does not use up those tries. The same 15-minute worker refreshes
-reactions and comments for page and profile posts from the last 30 days, at most
-every six hours, including while automatic posting is off. Profile impressions
-are read when the analytics app is connected. That pass also fills impressions
-for older profile posts and for posts marked posted from a LinkedIn URL that
+page reactions and comments from the last 30 days, at most
+every six hours, including while automatic posting is off. Profile impressions,
+reactions, and comments are read when the analytics app is connected. That pass
+also fills older profile posts and posts marked posted from a LinkedIn URL that
 contains a share or ugcPost URN. **Mark posted** records the current
 destination, so a company page selected in Settings is read as a page.
-The pass runs after the due-post mail. Each tick updates at most five reaction
-counts and eight missing impression counts, and stops after about 75 seconds.
+The pass runs after the due-post mail. Each tick updates at most five page
+reaction counts and eight profile posts, and stops after about 75 seconds.
 Connecting analytics queues one pass immediately. An expired access token is
-skipped quietly until the owner connects again. A failed impression read waits
-six hours when the post has no count yet. A count from the last 30 days is read
-again every six hours, and an older stored count stays, so the daily cap remains
-for posts that still have none.
+skipped quietly until the owner connects again. A failed read waits
+six hours when the post has no count yet. A post from the last 7 days is read
+again every six hours, a post from day 8 through day 30 once a day, and an
+older stored count stays.
 While the publish switch is off, or LinkedIn is not connected, the share
 box and **Mark posted** stay the way to publish.
 Add any employer name under Settings → extra phrases; do not put it in source.

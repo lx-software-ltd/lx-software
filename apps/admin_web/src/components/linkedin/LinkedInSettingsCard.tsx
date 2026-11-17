@@ -575,7 +575,7 @@ function analyticsCopy(analytics: LinkedInAnalyticsConnection): string {
   if (!analytics.appConfigured) {
     return "The analytics app secret is not filled in yet.";
   }
-  return "Connect analytics to store impressions for profile posts, including ones already published.";
+  return "Connect analytics to store impressions, reactions, and comments for profile posts, including ones already published.";
 }
 
 function LinkedInAnalyticsPanel({
@@ -603,7 +603,7 @@ function LinkedInAnalyticsPanel({
       ) : null}
       <p className="mb-2">
         {connected
-          ? `Analytics connected${analytics.memberName ? ` as ${analytics.memberName}` : ""}. Profile posts, including ones already published, show impressions.`
+          ? `Analytics connected${analytics.memberName ? ` as ${analytics.memberName}` : ""}. Profile posts, including ones already published, show impressions, reactions, and comments.`
           : analyticsCopy(analytics)}
       </p>
       {access ? (

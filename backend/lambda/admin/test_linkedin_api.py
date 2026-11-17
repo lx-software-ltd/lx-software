@@ -195,6 +195,25 @@ class LinkedInApiTests(unittest.TestCase):
         self.assertIn("queryType=IMPRESSION", seen[0])
         self.assertIn("aggregation=TOTAL", seen[0])
 
+    def test_member_post_counts_read_reactions_and_comments(self) -> None:
+        seen: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            seen.append(url)
+            count = 4 if "queryType=REACTION" in url else 1
+            return _ok(200, {"elements": [{"count": count}]})
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.assertEqual(linkedin_api.member_post_count("token", "urn:li:share:9", "REACTION"), 4)
+        self.assertEqual(linkedin_api.member_post_count("token", "urn:li:ugcPost:9", "COMMENT"), 1)
+        self.assertIsNone(linkedin_api.member_post_count("token", "urn:li:share:9", "RESHARE"))
+        self.assertIn("queryType=REACTION", seen[0])
+        self.assertIn("aggregation=TOTAL", seen[0])
+        self.assertIn("entity=(ugc:urn%3Ali%3AugcPost%3A9)", seen[1])
+        self.assertIn("queryType=COMMENT", seen[1])
+        self.assertEqual(len(seen), 2)
+
     def test_member_impressions_use_the_ugc_entity(self) -> None:
         def transport(method: str, url: str, headers: dict, body: bytes | None):
             del method, headers, body

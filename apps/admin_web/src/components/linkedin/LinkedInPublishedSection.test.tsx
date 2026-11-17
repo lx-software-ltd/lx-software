@@ -61,4 +61,17 @@ describe("LinkedIn posted reach", () => {
     expect(screen.getByText("4 reactions · 1 comments")).toBeInTheDocument();
     expect(screen.queryByText(/impressions/)).toBeNull();
   });
+
+  it("omits reactions that were never read", () => {
+    postedItems.current = [
+      {
+        ...SAMPLE_LINKEDIN_POSTS[1],
+        postId: "li_impressions_only",
+        metrics: { impressions: 26498, reactions: null, comments: null },
+      },
+    ];
+    renderPosted();
+    expect(screen.getByText("26,498 impressions")).toBeInTheDocument();
+    expect(screen.queryByText(/reactions/)).toBeNull();
+  });
 });
