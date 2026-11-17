@@ -43,6 +43,7 @@ Import from the barrel: `import { MoneyAmount, … } from "../components/ui"` (a
 
 ## Formatting helpers (`src/lib/formatDisplay.ts`)
 
+- `formatCount(value)` — grouped integer (`30,000`).
 - `formatMoneyAmount(amount, currency)` — `HK$ 3,300.23` for non-React contexts.
 - `formatMoneyAmountWithoutCurrency(amount, currency)` — amount only (`3,300.23`).
 - `listNonZeroMoneyLines(...)` / `formatNonZeroMoneyLines(...)` — skips zero amounts.

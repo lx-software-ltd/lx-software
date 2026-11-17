@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   currencySymbol,
+  formatCount,
   formatDateTimeHKT,
   formatMoneyAmount,
   formatMoneyAmountWithoutCurrency,
@@ -55,6 +56,18 @@ describe("formatMoneyAmountWithoutCurrency", () => {
     expect(formatMoneyAmountWithoutCurrency(1234.5, "USD")).toBe("1,234.50");
     expect(formatMoneyAmountWithoutCurrency(-1234.5)).toBe("-1,234.50");
     expect(formatMoneyAmount(1234.5, "USD")).toBe("US$ 1,234.50");
+  });
+});
+
+describe("formatCount", () => {
+  it("groups thousands with a comma", () => {
+    expect(formatCount(30000)).toBe("30,000");
+    expect(formatCount(128)).toBe("128");
+    expect(formatCount(1200)).toBe("1,200");
+  });
+
+  it("uses an em dash for non-finite amounts", () => {
+    expect(formatCount(Number.NaN)).toBe("—");
   });
 });
 
