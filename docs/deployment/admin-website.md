@@ -687,31 +687,40 @@ When **Draw a black-and-white comic for each draft** is on (the default), the sa
 | `LxSoftwareLinkedinEnabled` | `false` | `true` |
 | `LxSoftwareLinkedinPublishEnabled` | `false` | `true` |
 
-The app credentials live in Secrets Manager `lxsoftware-admin-linkedin-app`
-(`clientId`, `clientSecret`). The stack creates that secret with
-`clientId` set to `replace-me`. Replace both values in the console. The
-redirect URL to register on the LinkedIn app is
-`https://admin.lx-software.com/lx-software/linkedin/callback`.
+The posting app credentials live in Secrets Manager `lxsoftware-admin-linkedin-app`
+(`clientId`, `clientSecret`). The same secret holds the analytics app as
+`analyticsClientId` and `analyticsClientSecret`. The stack creates that secret
+with `clientId` set to `replace-me`. Replace the posting values in the console,
+and add the analytics pair beside them. The redirect URL to register on both
+LinkedIn apps is `https://admin.lx-software.com/lx-software/linkedin/callback`.
 That URL is the deployed admin origin (`ADMIN_WEB_ORIGIN`), so a local dev
 server cannot finish the LinkedIn redirect unless its origin is the one
 registered on the app.
-Enable Sign In with LinkedIn using OpenID Connect and Share on LinkedIn, and
-request `openid profile w_member_social`. Company pages are optional: Settings
-→ **Include company pages** also requests
+The posting app enables Sign In with LinkedIn using OpenID Connect and Share
+on LinkedIn, and requests `openid profile w_member_social`. Company pages are
+optional: Settings → **Include company pages** also requests
 `w_organization_social r_organization_social rw_organization_admin`, which
 need Community Management approval. An unapproved scope fails the whole
-consent screen, so leave company pages off until that product is approved.
-`rw_organization_admin` lists the pages you administer. **Refresh pages**
-reloads that list without reconnecting. Page impressions use the same
-approval. Personal post impressions are optional: Settings → **Include
-personal post analytics** also requests `r_member_postAnalytics`. Leave that
-off until the LinkedIn app is approved for member post statistics, because an
-unapproved scope fails the whole consent screen. Profile posts then read
+consent screen, so leave company pages off until that product is approved on
+the posting app. `rw_organization_admin` lists the pages you administer.
+**Refresh pages** reloads that list without reconnecting. Page impressions use
+the same approval and the posting token.
+Profile impressions use a second app, because Community Management has to be
+the only product on its app. Settings → **Connect analytics** calls
+`POST /lx-software/linkedin/analytics/connect` and sends the browser to that
+app. **Disconnect analytics** calls
+`POST /lx-software/linkedin/analytics/disconnect`. Connect requests
+`r_member_postAnalytics r_basicprofile` from that app. Profile posts then read
 lifetime impressions from `memberCreatorPostAnalytics` (`IMPRESSION`,
-`TOTAL`), including posts already published. A failed impression read keeps a
-count already stored; a post that has never had one stays empty for six hours.
-A denied reaction read is stored and not retried;
-page impressions are read only for posts that went out as a page.
+`TOTAL`), including posts already published. The pass stops after 80 of those
+calls in a UTC day, under the development-tier member cap. The member profile
+read at connect and a token refresh count toward that 80. A failed impression
+read keeps a count already stored; a post that has never had one stays empty
+for six hours. A count from the last 30 days is read again every six hours.
+An older stored count stays. A denied reaction read is stored and not retried;
+page impressions are read only for posts that went out as a page. Hitting the
+daily cap skips further impression reads and still updates reactions.
+Disconnecting posting leaves the analytics connection, and the reverse.
 
 With the first switch on, Sunday 18:00 HKT
 (`lxsoftware-admin-linkedin-plan`) drafts the configured batch, and a
@@ -736,15 +745,17 @@ then a second email that posting has stopped). A missing connection or an
 expired token does not use up those tries. The same 15-minute worker refreshes
 reactions and comments for page and profile posts from the last 30 days, at most
 every six hours, including while automatic posting is off. Profile impressions
-are read only when the connection included personal post analytics. That pass
-also fills impressions for older profile posts and for posts marked posted from
-a LinkedIn URL that contains a share or ugcPost URN. **Mark posted** records the
-current destination, so a company page selected in Settings is read as a page.
+are read when the analytics app is connected. That pass also fills impressions
+for older profile posts and for posts marked posted from a LinkedIn URL that
+contains a share or ugcPost URN. **Mark posted** records the current
+destination, so a company page selected in Settings is read as a page.
 The pass runs after the due-post mail. Each tick updates at most five reaction
 counts and eight missing impression counts, and stops after about 75 seconds.
-Connecting with personal post analytics queues one pass immediately. An expired
-access token is skipped quietly until the owner connects again. A failed
-impression read waits six hours when the post has no count yet.
+Connecting analytics queues one pass immediately. An expired access token is
+skipped quietly until the owner connects again. A failed impression read waits
+six hours when the post has no count yet. A count from the last 30 days is read
+again every six hours, and an older stored count stays, so the daily cap remains
+for posts that still have none.
 While the publish switch is off, or LinkedIn is not connected, the share
 box and **Mark posted** stay the way to publish.
 Add any employer name under Settings → extra phrases; do not put it in source.

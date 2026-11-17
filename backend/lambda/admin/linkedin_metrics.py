@@ -1,9 +1,11 @@
 """Refresh LinkedIn reaction, comment, and impression counts.
 
-Profile impressions are read when the connection asked for member post
-analytics. Posts already published are included at any age, including a share
-or ugcPost URN taken from the pasted LinkedIn URL. A failed read keeps a count
-already stored. A denied reaction read is stored and not retried.
+Profile impressions use the analytics app when that connection exists. A posting
+connection that already asked for member post analytics still uses its own token.
+Posts already published are included at any age, including a share or ugcPost URN
+taken from the pasted LinkedIn URL. A count from the last 30 days is read again
+every six hours. Older stored counts stay. A failed read keeps a count already
+stored. A denied reaction read is stored and not retried.
 """
 
 from __future__ import annotations
@@ -80,12 +82,19 @@ def _needs_impression(
     connection: dict[str, Any],
     include: bool,
     cutoff: datetime,
+    refresh_after: datetime | None = None,
 ) -> bool:
+    """A missing count is due. A recent analytics count is due again after six hours."""
     if not include or _is_page(row, connection):
         return False
-    if previous.get("impressions") is not None:
+    if previous.get("impressions") is None:
+        return not _within(str(previous.get("impressionCheckedAt") or ""), cutoff)
+    if refresh_after is None:
         return False
-    return not _within(str(previous.get("impressionCheckedAt") or ""), cutoff)
+    published = linkedin_store._parse_slot(str(_platform(row).get("publishedAt") or ""))
+    if published is None or published < refresh_after:
+        return False
+    return not _within(str(previous.get("impressionReadAt") or ""), cutoff)
 
 
 def _reactions_due(platform: dict[str, Any], previous: dict[str, Any], oldest: datetime, cutoff: datetime) -> bool:
@@ -110,6 +119,9 @@ def _carry(previous: dict[str, Any]) -> dict[str, Any]:
     checked = str(previous.get("impressionCheckedAt") or "")
     if checked:
         metrics["impressionCheckedAt"] = checked
+    read_at = str(previous.get("impressionReadAt") or "")
+    if read_at:
+        metrics["impressionReadAt"] = read_at
     return metrics
 
 
@@ -121,10 +133,16 @@ def _impressions(
     *,
     page: bool,
     include_member_analytics: bool,
+    analytics_token: str = "",
+    analytics_connected: bool = False,
 ) -> int | None:
-    if page and organization_id:
+    if page and organization_id and token:
         return linkedin_api.page_impressions(token, organization_id, urn)
-    if include_member_analytics and not page:
+    if analytics_connected and not page:
+        if not analytics_token:
+            return None
+        return linkedin_api.member_impressions(analytics_token, urn)
+    if include_member_analytics and not page and token:
         return linkedin_api.member_impressions(token, urn)
     return None
 
@@ -144,6 +162,7 @@ def _apply_impressions(
         metrics["impressionCheckedAt"] = board_store.now_iso()
     elif read is not None:
         metrics.pop("impressionCheckedAt", None)
+        metrics["impressionReadAt"] = board_store.now_iso()
 
 
 def _save(table: Any, row: dict[str, Any], metrics: dict[str, Any], share_urn: str) -> None:
@@ -191,16 +210,25 @@ def _token_needs_reconnect(connection: dict[str, Any]) -> bool:
     return expires is not None and expires <= datetime.now(HKT) + timedelta(minutes=2)
 
 
-def refresh(table: Any, connection: dict[str, Any], token: str) -> int:
+def refresh(
+    table: Any,
+    connection: dict[str, Any],
+    token: str,
+    *,
+    analytics_token: str = "",
+    allow_analytics_call: Any = None,
+) -> int:
     now = datetime.now(HKT)
     cutoff = now - timedelta(hours=6)
     oldest = now - timedelta(days=30)
-    include = bool(connection.get("includeMemberAnalytics"))
+    analytics_on = bool(analytics_token)
+    include = analytics_on or bool(connection.get("includeMemberAnalytics"))
+    refresh_after = oldest if analytics_on else None
     started = time.monotonic()
     rows = _published_rows(table, POST_LIMIT)
     rows.sort(
         key=lambda row: (
-            0 if _needs_impression(row, _previous(row), connection, include, cutoff) else 1,
+            0 if _needs_impression(row, _previous(row), connection, include, cutoff, refresh_after) else 1,
             str(_platform(row).get("publishedAt") or row.get("slotAt") or ""),
         )
     )
@@ -215,11 +243,14 @@ def refresh(table: Any, connection: dict[str, Any], token: str) -> int:
         platform = _platform(row)
         previous = _previous(row)
         page = _is_page(row, connection)
-        needs = _needs_impression(row, previous, connection, include, cutoff)
+        needs = _needs_impression(row, previous, connection, include, cutoff, refresh_after)
         urn = _share_urn(platform)
         usable = urn or str(platform.get("urn") or "")
         do_reactions = (
-            bool(usable) and _reactions_due(platform, previous, oldest, cutoff) and reactions_done < REACTION_CAP
+            bool(token)
+            and bool(usable)
+            and _reactions_due(platform, previous, oldest, cutoff)
+            and reactions_done < REACTION_CAP
         )
         do_backfill = needs and backfill_done < BACKFILL_CAP
         if (not do_reactions and not do_backfill) or not usable:
@@ -242,6 +273,16 @@ def refresh(table: Any, connection: dict[str, Any], token: str) -> int:
                     "unavailable": False,
                 }
         read: int | None = None
+        capped = False
+        member_token = ""
+        # The daily cap skips this impression read. Reactions on later posts still run.
+        if do_backfill and not page and analytics_on:
+            if allow_analytics_call is not None and not allow_analytics_call():
+                capped = True
+            else:
+                member_token = analytics_token
+        if capped and not do_reactions:
+            continue
         try:
             read = _impressions(
                 token,
@@ -250,17 +291,33 @@ def refresh(table: Any, connection: dict[str, Any], token: str) -> int:
                 _organization_id(row, platform, connection),
                 page=page,
                 include_member_analytics=include,
+                analytics_token=member_token,
+                analytics_connected=analytics_on,
             )
         except LinkedInApiError as exc:
             _log_event("warning", tag="linkedin_metrics_failed", error=str(exc)[:200])
-        _apply_impressions(metrics, previous, read, backfill=do_backfill)
+        _apply_impressions(metrics, previous, read, backfill=do_backfill and not capped)
         _save(table, row, metrics, urn)
         updated += 1
         if do_reactions:
             reactions_done += 1
-        if do_backfill:
+        if do_backfill and not capped:
             backfill_done += 1
     return updated
+
+
+def _analytics_reader(table: Any) -> tuple[str, Any]:
+    import linkedin_analytics
+
+    analytics = linkedin_analytics.load_connection(table)
+    if not analytics or _token_needs_reconnect(analytics):
+        return "", None
+    try:
+        token = linkedin_analytics.access_token(table, analytics)
+    except Exception as exc:  # noqa: BLE001 — a bad analytics token must not stop posting metrics
+        _log_event("warning", tag="linkedin_metrics_failed", error=str(exc)[:240])
+        return "", None
+    return token, lambda: linkedin_analytics.take_call(table, analytics)
 
 
 def refresh_connected(table: Any) -> dict[str, Any]:
@@ -269,11 +326,27 @@ def refresh_connected(table: Any) -> dict[str, Any]:
         import linkedin
 
         fresh = linkedin_store.load_connection(table)
-        if not fresh:
-            return {"ok": True, "refreshed": 0}
-        if _token_needs_reconnect(fresh):
+        analytics_token, allow = _analytics_reader(table)
+        if fresh and not _token_needs_reconnect(fresh):
+            refreshed = refresh(
+                table,
+                fresh,
+                linkedin._access_token(table, fresh),
+                analytics_token=analytics_token,
+                allow_analytics_call=allow,
+            )
+        elif analytics_token:
+            refreshed = refresh(
+                table,
+                fresh or {"channel": "profile"},
+                "",
+                analytics_token=analytics_token,
+                allow_analytics_call=allow,
+            )
+        elif fresh:
             return {"ok": True, "refreshed": 0, "skipped": "expired"}
-        refreshed = refresh(table, fresh, linkedin._access_token(table, fresh))
+        else:
+            return {"ok": True, "refreshed": 0}
     except Exception as exc:  # noqa: BLE001 — metrics must not fail publishing or the reminder
         _log_event("warning", tag="linkedin_metrics_failed", error=str(exc)[:240])
         return {"ok": False, "refreshed": 0}

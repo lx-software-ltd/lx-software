@@ -1,8 +1,7 @@
 """HTTP and scheduled workers for the LX Software LinkedIn tab.
 
-Drafts, the share box, and — when ``LINKEDIN_PUBLISH_ENABLED`` is true — the
-LinkedIn Posts API. A due slot posts as the connected member or company page,
-then adds the first comment and refreshes reactions and impressions.
+Drafts, the share box, and, when publishing is on, the Posts API. A due slot
+posts as the member or a company page, then adds the first comment and refreshes counts.
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ from urllib.parse import parse_qs
 
 import board_async
 import board_store
+import linkedin_analytics
 import linkedin_api
 import linkedin_draft
 import linkedin_image
@@ -165,10 +165,12 @@ def handle_http(event: dict[str, Any], method: str, path: str, user_sub: str | N
         linkedin_store.delete_idea(_table(), parts[1])
         _audit(user_sub, "LINKEDIN_IDEA_DELETE", parts[1], event)
         return _json_response(200, {"deleted": parts[1]})
+    if parts[:1] == ["analytics"]:
+        return linkedin_analytics.handle_http(event, method, parts, user_sub)
     if parts == ["connect"] and method == "POST":
         return _connect(event, user_sub)
     if parts == ["oauth", "exchange"] and method == "POST":
-        return _exchange(event, user_sub)
+        return linkedin_analytics.exchange_if_ours(event, user_sub) or _exchange(event, user_sub)
     if parts == ["disconnect"] and method == "POST":
         return _disconnect(event, user_sub)
     if parts == ["connection", "refresh"] and method == "POST":
@@ -214,11 +216,7 @@ def _post_action(event: dict[str, Any], post_id: str, action: str, user_sub: str
 
 
 def _picture_for_new_post(doc: dict[str, Any]) -> dict[str, Any]:
-    """An owner-written post gets its scene, expression, caption, and picture from the worker.
-
-    The worker writes the three fields from the post before it draws. A failure
-    here never fails the save.
-    """
+    """Queue the picture for an owner-written post. A failure leaves the saved post."""
     table = _table()
     try:
         if not linkedin_store.load_settings(table).get("imagesEnabled"):

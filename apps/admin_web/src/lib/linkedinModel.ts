@@ -91,6 +91,14 @@ export type LinkedInConnection = {
   appStatus: string;
 };
 
+export type LinkedInAnalyticsConnection = {
+  status: string;
+  memberName: string;
+  tokenExpiresAt: string;
+  appConfigured: boolean;
+  appStatus: string;
+};
+
 export type LinkedInMetrics = {
   reactions: number;
   comments: number;
@@ -207,6 +215,7 @@ export type LinkedInOverview = {
   settings: LinkedInDraftSettings;
   pillars: readonly { id: string; label: string }[];
   connection: LinkedInConnection;
+  analytics?: LinkedInAnalyticsConnection;
   counts: { drafted: number; approved: number; published: number; ideas: number };
   spendUsdMonth: number;
   nextSlots: string[];

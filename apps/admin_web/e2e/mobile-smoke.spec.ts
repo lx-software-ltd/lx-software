@@ -129,7 +129,8 @@ test.describe("admin viewport smoke", () => {
     await page.getByRole("tab", { name: "Ideas" }).click();
     await expect(page.getByText("A rollback that took longer than the change.")).toBeVisible();
     await page.getByRole("tab", { name: "Settings" }).click();
-    await expect(page.getByRole("button", { name: "Connect" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Connect", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Connect analytics" })).toBeEnabled();
     await expect(page.getByText("Connect LinkedIn to post approved drafts")).toBeVisible();
     await expect(
       page.getByText(/Writes each post and, when pictures are on, the scene, expression, and caption/),

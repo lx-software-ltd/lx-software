@@ -320,6 +320,18 @@ describe("HTTP API routes", () => {
     }
   });
 
+  test("LinkedIn analytics connect and disconnect are JWT-protected", () => {
+    const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
+    for (const key of [
+      "POST /lx-software/linkedin/analytics/connect",
+      "POST /lx-software/linkedin/analytics/disconnect",
+    ]) {
+      const route = routes.find((row) => row.Properties?.RouteKey === key);
+      expect(route?.Properties?.AuthorizationType).toBe("JWT");
+      expect(route?.Properties?.AuthorizerId).toBeDefined();
+    }
+  });
+
   test("LinkedIn picture and character routes are JWT-protected", () => {
     const routes = Object.values(resourcesOfType("AWS::ApiGatewayV2::Route"));
     const keys = [

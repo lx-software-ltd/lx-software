@@ -42,6 +42,7 @@ import {
   DEFAULT_LINKEDIN_SETTINGS,
   SAMPLE_LINKEDIN_IDEAS,
   SAMPLE_LINKEDIN_POSTS,
+  type LinkedInAnalyticsConnection,
   type LinkedInConnection,
   type LinkedInIdea,
   type LinkedInPost,
@@ -159,6 +160,7 @@ type MockState = {
     posts: LinkedInPost[];
     ideas: LinkedInIdea[];
     connection: LinkedInConnection;
+    analytics: LinkedInAnalyticsConnection;
     oauthState: string;
     character: {
       photo: { contentType: string; dataBase64: string } | null;
@@ -228,6 +230,13 @@ function initialMockState(): MockState {
         tokenExpiresAt: "",
         includeOrganizations: false,
         includeMemberAnalytics: false,
+        appConfigured: true,
+        appStatus: "ready",
+      },
+      analytics: {
+        status: "not_connected",
+        memberName: "",
+        tokenExpiresAt: "",
         appConfigured: true,
         appStatus: "ready",
       },

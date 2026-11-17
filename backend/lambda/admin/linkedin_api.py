@@ -235,6 +235,23 @@ def userinfo(token: str) -> dict[str, str]:
     return {"memberId": member_id, "memberName": str(parsed.get("name") or "").strip()}
 
 
+def basic_profile(token: str) -> dict[str, str]:
+    """Member id and name. The analytics app has ``r_basicprofile`` and no OpenID."""
+    status, _headers, payload = _call(
+        "GET",
+        "https://api.linkedin.com/v2/me",
+        {"Authorization": f"Bearer {token}", "X-Restli-Protocol-Version": "2.0.0"},
+        None,
+    )
+    parsed = _expect(status, payload, ok={200})
+    member_id = str(parsed.get("id") or "").strip()
+    if not member_id:
+        raise LinkedInApiError("LinkedIn did not return a member id.")
+    first = str(parsed.get("localizedFirstName") or "").strip()
+    last = str(parsed.get("localizedLastName") or "").strip()
+    return {"memberId": member_id, "memberName": f"{first} {last}".strip()}
+
+
 def list_organizations(token: str) -> list[dict[str, str]]:
     """Pages the member administers. A 403 leaves the profile connection usable."""
     query = urllib.parse.urlencode({"q": "roleAssignee", "role": "ADMINISTRATOR", "state": "APPROVED"})

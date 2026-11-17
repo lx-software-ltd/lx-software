@@ -137,11 +137,16 @@ from the first wave to the second.
 
 ## Open questions
 
-- The admin metrics refresh (`linkedin_metrics.py`) stored `impressions:
-  null` and `reactions: 0` for every post above, including the one that
-  reached 26,498. Until that is fixed the LinkedIn creator export is the
-  source of truth, and `GET /public/lx-software/linkedin/posts` returns
-  text without numbers.
+- Profile impressions come from the analytics app
+  (`memberCreatorPostAnalytics`, `IMPRESSION`, `TOTAL`) once that app is
+  connected in Settings. A count from the last 30 days is read again every
+  six hours; an older stored count stays. Until the app is connected the
+  refresh stores `impressions: null`.
+  Reactions and comments still come from the posting app's social-actions
+  read, which stored `reactions: 0` for every post above, including the one
+  that reached 26,498. Until that read matches the creator export, the export
+  remains the source for engagements, and
+  `GET /public/lx-software/linkedin/posts` returns whatever the refresh stored.
 - One personal post is one data point. The rules above are the measurable
   differences, not a proof. Re-measure after four posts written under them
   and update this page.

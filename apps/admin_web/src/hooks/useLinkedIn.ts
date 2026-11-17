@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { adminFetchJson } from "../lib/apiAdminClient";
 import { assertJobDone, pollJob } from "../lib/pollJob";
 import type {
+  LinkedInAnalyticsConnection,
   LinkedInCharacter,
   LinkedInConnection,
   LinkedInDraftSettings,
@@ -161,11 +162,26 @@ export function useLinkedIn() {
     onSettled: refresh,
   });
   const connect = useMutation({
-    mutationFn: (body: { includeOrganizations: boolean; includeMemberAnalytics: boolean }) =>
+    mutationFn: (body: { includeOrganizations: boolean }) =>
       adminFetchJson<{ url: string }>("/lx-software/linkedin/connect", {
         method: "POST",
         body: JSON.stringify(body),
       }),
+  });
+  const connectAnalytics = useMutation({
+    mutationFn: () =>
+      adminFetchJson<{ url: string }>("/lx-software/linkedin/analytics/connect", {
+        method: "POST",
+        body: "{}",
+      }),
+  });
+  const disconnectAnalytics = useMutation({
+    mutationFn: () =>
+      adminFetchJson<{ analytics: LinkedInAnalyticsConnection }>("/lx-software/linkedin/analytics/disconnect", {
+        method: "POST",
+        body: "{}",
+      }),
+    onSuccess: refresh,
   });
   const completeAuth = useMutation({
     mutationFn: (body: { code: string; state: string }) =>
@@ -309,6 +325,8 @@ export function useLinkedIn() {
     generate,
     regenerate,
     connect,
+    connectAnalytics,
+    disconnectAnalytics,
     completeAuth,
     disconnect,
     saveConnection,
