@@ -706,7 +706,10 @@ the posting app. `rw_organization_admin` lists the pages you administer.
 **Refresh pages** reloads that list without reconnecting. Page impressions use
 the same approval and the posting token.
 Profile impressions use a second app, because Community Management has to be
-the only product on its app. Settings → **Connect analytics** requests
+the only product on its app. Settings → **Connect analytics** calls
+`POST /lx-software/linkedin/analytics/connect` and sends the browser to that
+app. **Disconnect analytics** calls
+`POST /lx-software/linkedin/analytics/disconnect`. Connect requests
 `r_member_postAnalytics r_basicprofile` from that app. Profile posts then read
 lifetime impressions from `memberCreatorPostAnalytics` (`IMPRESSION`,
 `TOTAL`), including posts already published. The pass stops after 80 of those
