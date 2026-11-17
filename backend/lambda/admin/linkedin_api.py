@@ -460,23 +460,39 @@ def page_impressions(token: str, organization_id: str, post_urn: str) -> int | N
         return None
 
 
-def member_impressions(token: str, post_urn: str) -> int | None:
-    """Lifetime impressions for a profile post. A non-200 leaves the count empty."""
+_MEMBER_QUERY_TYPES = frozenset({"IMPRESSION", "REACTION", "COMMENT"})
+
+
+def member_post_count(token: str, post_urn: str, query_type: str) -> int | None:
+    """Lifetime total for one profile-post metric. A non-200 raises LinkedInApiError."""
+    if query_type not in _MEMBER_QUERY_TYPES:
+        return None
     encoded = urllib.parse.quote(post_urn, safe="")
     kind = "ugc" if ":ugcPost:" in post_urn else "share"
     status, _headers, payload = _call(
         "GET",
-        f"{REST}/memberCreatorPostAnalytics?q=entity&entity=({kind}:{encoded})&queryType=IMPRESSION&aggregation=TOTAL",
+        f"{REST}/memberCreatorPostAnalytics?q=entity&entity=({kind}:{encoded})"
+        f"&queryType={query_type}&aggregation=TOTAL",
         _api_headers(token),
         None,
         timeout=METRICS_TIMEOUT_SECONDS,
     )
     if status != 200:
-        return None
+        raise LinkedInApiError(_error_message(payload, status), status=status)
     elements = _json_body(payload).get("elements")
     if not isinstance(elements, list) or not elements or not isinstance(elements[0], dict):
         return None
     try:
         return int(elements[0]["count"])
     except (KeyError, TypeError, ValueError):
+        return None
+
+
+def member_impressions(token: str, post_urn: str) -> int | None:
+    """Lifetime impressions for a profile post. A non-200 leaves the count empty."""
+    try:
+        return member_post_count(token, post_urn, "IMPRESSION")
+    except LinkedInApiError as exc:
+        if exc.status is None:
+            raise
         return None

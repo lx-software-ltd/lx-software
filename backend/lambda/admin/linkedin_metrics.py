@@ -1,11 +1,17 @@
 """Refresh LinkedIn reaction, comment, and impression counts.
 
-Profile impressions use the analytics app when that connection exists. A posting
-connection that already asked for member post analytics still uses its own token.
+Profile impressions, reactions, and comments use the analytics app when that
+connection exists. Each metric is its own call. A missing count is read first,
+newest post first. A post from the last 7 days is read again every six hours, a
+post from day 8 through day 30 once a day, and an older stored count stays. The
+daily analytics cap skips later profile reads and still refreshes page posts.
+A denied member-analytics query is logged and not retried. A posting connection
+that already asked for member post analytics still reads impressions on its own
+token, and its reactions still come from social actions for the last 30 days.
 Posts already published are included at any age, including a share or ugcPost URN
-taken from the pasted LinkedIn URL. A count from the last 30 days is read again
-every six hours. Older stored counts stay. A failed read keeps a count already
-stored. A denied reaction read is stored and not retried.
+taken from the pasted LinkedIn URL. A failed read keeps a count already stored.
+A count read from the analytics app is kept when analytics is later disconnected.
+A denied social-actions read is stored and not retried.
 """
 
 from __future__ import annotations
@@ -23,9 +29,17 @@ import linkedin_store
 from ddb_convert import _from_ddb_nested
 from http_common import _log_event
 from linkedin_api import LinkedInApiError
+from linkedin_member_analytics import (
+    _analytics_carry,
+    _analytics_count,
+    _analytics_queries,
+    _copy_bookkeeping,
+    _read_member_analytics,
+    _social_metrics,
+)
 from linkedin_store import HKT
 
-# One post can still make two eight-second calls after the budget check.
+# One analytics post can still make three eight-second calls after the budget check.
 # 75 seconds plus that remainder stays far under the 300-second Lambda limit.
 BUDGET_SECONDS = 75
 REACTION_CAP = 5
@@ -116,12 +130,7 @@ def _carry(previous: dict[str, Any]) -> dict[str, Any]:
     }
     if previous.get("error"):
         metrics["error"] = str(previous["error"])[:200]
-    checked = str(previous.get("impressionCheckedAt") or "")
-    if checked:
-        metrics["impressionCheckedAt"] = checked
-    read_at = str(previous.get("impressionReadAt") or "")
-    if read_at:
-        metrics["impressionReadAt"] = read_at
+    _copy_bookkeeping(metrics, previous)
     return metrics
 
 
@@ -226,15 +235,19 @@ def refresh(
     refresh_after = oldest if analytics_on else None
     started = time.monotonic()
     rows = _published_rows(table, POST_LIMIT)
-    rows.sort(
-        key=lambda row: (
-            0 if _needs_impression(row, _previous(row), connection, include, cutoff, refresh_after) else 1,
-            str(_platform(row).get("publishedAt") or row.get("slotAt") or ""),
-        )
-    )
+
+    def _due(row: dict[str, Any]) -> bool:
+        if analytics_on and not _is_page(row, connection):
+            return bool(_analytics_queries(row, _previous(row), now))
+        return _needs_impression(row, _previous(row), connection, include, cutoff, refresh_after)
+
+    rows.sort(key=lambda row: str(_platform(row).get("publishedAt") or row.get("slotAt") or ""), reverse=True)
+    rows.sort(key=lambda row: 0 if _due(row) else 1)
     reactions_done = 0
     backfill_done = 0
     updated = 0
+    analytics_capped = False
+    denied_now: set[str] = set()
     for row in rows:
         if time.monotonic() - started >= BUDGET_SECONDS:
             break
@@ -243,14 +256,34 @@ def refresh(
         platform = _platform(row)
         previous = _previous(row)
         page = _is_page(row, connection)
-        needs = _needs_impression(row, previous, connection, include, cutoff, refresh_after)
         urn = _share_urn(platform)
         usable = urn or str(platform.get("urn") or "")
+        if analytics_on and not page:
+            if analytics_capped or backfill_done >= BACKFILL_CAP or not usable:
+                continue
+            wanted = _analytics_queries(row, previous, now)
+            if not wanted:
+                continue
+            metrics = _analytics_carry(previous)
+            made, capped = _read_member_analytics(
+                metrics, previous, usable, analytics_token, wanted, allow_analytics_call, denied_now
+            )
+            if made:
+                _save(table, row, metrics, urn)
+                updated += 1
+                backfill_done += 1
+            if capped:
+                analytics_capped = True
+            continue
+        needs = _needs_impression(row, previous, connection, include, cutoff, refresh_after)
+        analytics_reactions = _analytics_count(previous, "REACTION") is not None
+        analytics_comments = _analytics_count(previous, "COMMENT") is not None
         do_reactions = (
             bool(token)
             and bool(usable)
             and _reactions_due(platform, previous, oldest, cutoff)
             and reactions_done < REACTION_CAP
+            and not (not page and analytics_reactions and analytics_comments)
         )
         do_backfill = needs and backfill_done < BACKFILL_CAP
         if (not do_reactions and not do_backfill) or not usable:
@@ -265,13 +298,7 @@ def refresh(
                 metrics["unavailable"] = exc.status == 403
                 metrics["error"] = str(exc)[:200]
             else:
-                metrics = {
-                    "reactions": counts["reactions"],
-                    "comments": counts["comments"],
-                    "impressions": previous.get("impressions") if "impressions" in previous else None,
-                    "pulledAt": board_store.now_iso(),
-                    "unavailable": False,
-                }
+                metrics = _social_metrics(previous, counts)
         read: int | None = None
         capped = False
         member_token = ""

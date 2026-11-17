@@ -100,11 +100,15 @@ export type LinkedInAnalyticsConnection = {
 };
 
 export type LinkedInMetrics = {
-  reactions: number;
-  comments: number;
+  reactions?: number | null;
+  comments?: number | null;
   impressions: number | null;
   pulledAt?: string;
   unavailable?: boolean;
+  /** Set when the analytics app read this count. A profile zero without it was never read. */
+  reactionReadAt?: string;
+  commentReadAt?: string;
+  engagementReadAt?: string;
 };
 
 const COMMENTARY_RESERVED = new Set("\\()[]{}@|~_<>*".split(""));
