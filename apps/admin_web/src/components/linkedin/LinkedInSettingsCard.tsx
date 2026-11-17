@@ -13,6 +13,7 @@ import {
   WEEKDAY_OPTIONS,
   linkedInAccessState,
   pillarLabel,
+  type LinkedInAnalyticsConnection,
   type LinkedInConnection,
   type LinkedInOverview,
   type LinkedInDraftSettings,
@@ -36,6 +37,9 @@ export function LinkedInSettingsCard({
     <div className="d-flex flex-column gap-3">
       <AdminEditorSection title="Connection">
         <LinkedInConnectionPanel overview={overview} enabled={enabled} />
+      </AdminEditorSection>
+      <AdminEditorSection title="Post analytics">
+        <LinkedInAnalyticsPanel overview={overview} enabled={enabled} />
       </AdminEditorSection>
       <AdminEditorSection
         title="Drafts"
@@ -387,12 +391,12 @@ function connectionCopy(connection: LinkedInConnection): string {
   return "Connect LinkedIn to post approved drafts at the slot. Until then, use the share box.";
 }
 
-function accessCopy(iso: string): { tone: "muted" | "warning"; text: string } | null {
+function accessCopy(iso: string, subject = "LinkedIn access"): { tone: "muted" | "warning"; text: string } | null {
   const state = linkedInAccessState(iso);
   if (!state) return null;
   const when = formatDateTimeHKT(iso);
-  if (state === "expired") return { tone: "warning", text: `LinkedIn access expired ${when}. Connect again before the next slot.` };
-  if (state === "soon") return { tone: "warning", text: `LinkedIn access expires ${when}. Connect again before the next slot.` };
+  if (state === "expired") return { tone: "warning", text: `${subject} expired ${when}. Connect again before the next slot.` };
+  if (state === "soon") return { tone: "warning", text: `${subject} expires ${when}. Connect again before the next slot.` };
   return { tone: "muted", text: `Access until ${when}.` };
 }
 
@@ -405,7 +409,6 @@ function LinkedInConnectionPanel({
 }) {
   const linkedIn = useLinkedIn();
   const [includePages, setIncludePages] = useState(false);
-  const [includeAnalytics, setIncludeAnalytics] = useState(false);
   const connection = overview.connection;
   const connected = connection.status === "connected";
   const access = connected ? accessCopy(connection.tokenExpiresAt) : null;
@@ -475,11 +478,6 @@ function LinkedInConnectionPanel({
               This connection is profile only. Disconnect and connect again with company pages included.
             </p>
           )}
-          <p className="text-muted small mb-0">
-            {connection.includeMemberAnalytics
-              ? "Personal post impressions are included, including posts already published."
-              : "Profile impressions are off until the LinkedIn app is approved for member post analytics."}
-          </p>
           {connection.channel === "page" && connection.organizations.length > 0 ? (
             <select
               className="form-select"
@@ -509,19 +507,6 @@ function LinkedInConnectionPanel({
           </label>
           <p id="linkedin-pages-help" className="form-text mb-0">
             Posts can then go out as a page you administer. The LinkedIn app needs Community Management approval; without it, leave this off.
-          </p>
-          <label className="form-check mt-3 mb-0">
-            <input
-              className="form-check-input"
-              type="checkbox"
-              checked={includeAnalytics}
-              aria-describedby="linkedin-analytics-help"
-              onChange={(event) => setIncludeAnalytics(event.target.checked)}
-            />
-            Include personal post analytics
-          </label>
-          <p id="linkedin-analytics-help" className="form-text mb-0">
-            Profile posts, including ones already published, can then show impressions. The LinkedIn app needs member post analytics approval; without it, leave this off.
           </p>
         </div>
       )}
@@ -553,15 +538,91 @@ function LinkedInConnectionPanel({
             className="btn btn-primary btn-sm"
             disabled={!enabled || !connection.appConfigured || linkedIn.connect.isPending}
             onClick={() => {
-              void linkedIn.connect.mutateAsync({
-                includeOrganizations: includePages,
-                includeMemberAnalytics: includeAnalytics,
-              }).then((result) => {
+              void linkedIn.connect.mutateAsync({ includeOrganizations: includePages }).then((result) => {
                 window.location.assign(result.url);
               });
             }}
           >
             Connect
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const EMPTY_ANALYTICS: LinkedInAnalyticsConnection = {
+  status: "not_connected",
+  memberName: "",
+  tokenExpiresAt: "",
+  appConfigured: false,
+  appStatus: "missing",
+};
+
+function analyticsCopy(analytics: LinkedInAnalyticsConnection): string {
+  if (analytics.appStatus === "unreadable") {
+    return "The analytics app secret could not be read.";
+  }
+  if (!analytics.appConfigured) {
+    return "The analytics app secret is not filled in yet.";
+  }
+  return "Connect analytics to store impressions for profile posts, including ones already published.";
+}
+
+function LinkedInAnalyticsPanel({
+  overview,
+  enabled,
+}: {
+  readonly overview: LinkedInOverview;
+  readonly enabled: boolean;
+}) {
+  const linkedIn = useLinkedIn();
+  const analytics = overview.analytics ?? EMPTY_ANALYTICS;
+  const connected = analytics.status === "connected";
+  const access = connected ? accessCopy(analytics.tokenExpiresAt, "Analytics access") : null;
+  const error =
+    getAdminApiErrorMessage(linkedIn.connectAnalytics.error) ??
+    getAdminApiErrorMessage(linkedIn.disconnectAnalytics.error);
+
+  return (
+    <div>
+      {error ? (
+        <div className="alert alert-danger py-2 small" role="alert">
+          {error}
+        </div>
+      ) : null}
+      <p className="mb-2">
+        {connected
+          ? `Analytics connected${analytics.memberName ? ` as ${analytics.memberName}` : ""}. Profile posts, including ones already published, show impressions.`
+          : analyticsCopy(analytics)}
+      </p>
+      {access ? (
+        <p className={access.tone === "warning" ? "text-warning small mb-2" : "text-muted small mb-2"} role="status">
+          {access.text}
+        </p>
+      ) : null}
+      <div className="d-flex gap-2">
+        {connected ? (
+          <button
+            type="button"
+            className="btn btn-outline-secondary btn-sm"
+            disabled={!enabled || linkedIn.disconnectAnalytics.isPending}
+            onClick={() => void linkedIn.disconnectAnalytics.mutate()}
+          >
+            Disconnect analytics
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={!enabled || !analytics.appConfigured || linkedIn.connectAnalytics.isPending}
+            onClick={() => {
+              void linkedIn.connectAnalytics.mutateAsync().then((result) => {
+                window.location.assign(result.url);
+              });
+            }}
+          >
+            Connect analytics
           </button>
         )}
       </div>

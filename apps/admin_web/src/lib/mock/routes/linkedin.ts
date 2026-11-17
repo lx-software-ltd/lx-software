@@ -33,12 +33,27 @@ const EXAMPLE_PAGE = { id: "99", name: "Example Page" };
 const OAUTH_KEY = "lx-mock-linkedin-oauth";
 const OAUTH_PAGES_KEY = "lx-mock-linkedin-oauth-pages";
 const OAUTH_ANALYTICS_KEY = "lx-mock-linkedin-oauth-analytics";
+const OAUTH_APP_KEY = "lx-mock-linkedin-oauth-app";
 
-function rememberOauth(token: string, includeOrganizations: boolean, includeMemberAnalytics: boolean) {
+const DISCONNECTED_ANALYTICS = {
+  status: "not_connected",
+  memberName: "",
+  tokenExpiresAt: "",
+  appConfigured: true,
+  appStatus: "ready",
+};
+
+function rememberOauth(
+  token: string,
+  includeOrganizations: boolean,
+  includeMemberAnalytics: boolean,
+  app: "post" | "analytics" = "post",
+) {
   state.linkedin.oauthState = token;
   sessionStorage.setItem(OAUTH_KEY, token);
   sessionStorage.setItem(OAUTH_PAGES_KEY, includeOrganizations ? "1" : "0");
   sessionStorage.setItem(OAUTH_ANALYTICS_KEY, includeMemberAnalytics ? "1" : "0");
+  sessionStorage.setItem(OAUTH_APP_KEY, app);
 }
 
 function readOauth(): string {
@@ -113,6 +128,7 @@ function overview() {
     imageStyleMax: 600,
     imageCharacterMax: 400,
     imageSceneMax: IMAGE_SCENE_MAX,
+    analytics: state.linkedin.analytics,
   };
 }
 
@@ -193,6 +209,11 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
     state.linkedin.ideas = state.linkedin.ideas.filter((row) => row.ideaId !== ideaId);
     return json({ deleted: ideaId });
   }
+  if (path === "/lx-software/linkedin/analytics/connect" && method === "POST") {
+    const token = `oauth_analytics_${state.linkedin.posts.length}`;
+    rememberOauth(token, false, false, "analytics");
+    return json({ url: `/lx-software/linkedin/callback?code=mock&state=${encodeURIComponent(token)}` });
+  }
   if (path === "/lx-software/linkedin/connect" && method === "POST") {
     const body = parseBody(ctx.init);
     const includeOrganizations = Boolean(body.includeOrganizations);
@@ -212,6 +233,18 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
     sessionStorage.removeItem(OAUTH_KEY);
     sessionStorage.removeItem(OAUTH_PAGES_KEY);
     sessionStorage.removeItem(OAUTH_ANALYTICS_KEY);
+    if (sessionStorage.getItem(OAUTH_APP_KEY) === "analytics") {
+      sessionStorage.removeItem(OAUTH_APP_KEY);
+      state.linkedin.analytics = {
+        status: "connected",
+        memberName: "Example Member",
+        tokenExpiresAt: "2099-01-01T00:00:00.000Z",
+        appConfigured: true,
+        appStatus: "ready",
+      };
+      return json({ analytics: state.linkedin.analytics });
+    }
+    sessionStorage.removeItem(OAUTH_APP_KEY);
     state.linkedin.connection = {
       status: "connected",
       channel: "profile",
@@ -226,6 +259,10 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
       appStatus: "ready",
     };
     return json({ connection: state.linkedin.connection });
+  }
+  if (path === "/lx-software/linkedin/analytics/disconnect" && method === "POST") {
+    state.linkedin.analytics = { ...DISCONNECTED_ANALYTICS };
+    return json({ analytics: state.linkedin.analytics });
   }
   if (path === "/lx-software/linkedin/disconnect" && method === "POST") {
     state.linkedin.connection = { ...DISCONNECTED, organizations: [] };

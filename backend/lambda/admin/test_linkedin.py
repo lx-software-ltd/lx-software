@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import time
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
 
 from test_support import FakeTable, install_aws_stubs
@@ -14,6 +15,7 @@ from test_support import FakeTable, install_aws_stubs
 install_aws_stubs()
 
 import linkedin  # noqa: E402
+import linkedin_analytics  # noqa: E402
 import linkedin_api  # noqa: E402
 import linkedin_draft  # noqa: E402
 import linkedin_image  # noqa: E402
@@ -1091,6 +1093,7 @@ class LinkedInHttpTests(unittest.TestCase):
     def setUp(self) -> None:
         self.table = FakeTable()
         linkedin_api.reset_credentials_cache_for_tests()
+        linkedin_analytics.reset_credentials_cache_for_tests()
         patcher = patch.object(runtime, "_ddb")
         mock_ddb = patcher.start()
         self.addCleanup(patcher.stop)
@@ -2193,6 +2196,199 @@ class LinkedInHttpTests(unittest.TestCase):
         self.assertEqual(posted, [])
         self.assertEqual(linkedin_store.get_post(self.table, approved["postId"])["status"], "approved")
         self.assertEqual(linkedin_store.get_post(self.table, doc["postId"])["metrics"]["impressions"], 8)
+
+    def _save_analytics(self, **extra: object) -> None:
+        linkedin_analytics.save_connection(
+            self.table,
+            {
+                "accessToken": "analytics-token",
+                "tokenExpiresAt": "2099-01-01T00:00:00.000Z",
+                "memberId": "analytics-member",
+                "memberName": "Example Member",
+                "callsOn": "",
+                "calls": 0,
+                **extra,
+            },
+        )
+
+    def test_overview_reports_analytics_when_the_secret_is_unset(self) -> None:
+        with patch.dict("os.environ", {"LINKEDIN_APP_SECRET_ID": ""}, clear=False):
+            linkedin_analytics.reset_credentials_cache_for_tests()
+            response = lambda_handler(_event("/lx-software/linkedin"), None)
+        self.assertEqual(response["statusCode"], 200)
+        analytics = _body(response)["analytics"]
+        self.assertEqual(analytics["status"], "not_connected")
+        self.assertEqual(analytics["appStatus"], "missing")
+        self.assertFalse(analytics["appConfigured"])
+
+    def test_analytics_connect_asks_only_for_read_scopes(self) -> None:
+        linkedin_store.save_connection(
+            self.table,
+            {
+                "accessToken": "token-1",
+                "tokenExpiresAt": "2099-01-01T00:00:00.000Z",
+                "memberId": "member1",
+                "memberName": "Posting Member",
+                "channel": "profile",
+            },
+        )
+        with patch.object(
+            linkedin_analytics, "load_credentials", return_value=("analytics-client", "analytics-secret")
+        ):
+            response = lambda_handler(_event("/lx-software/linkedin/analytics/connect", "POST", {}), None)
+        self.assertEqual(response["statusCode"], 200)
+        url = _body(response)["url"]
+        self.assertIn("r_member_postAnalytics", url)
+        self.assertIn("r_basicprofile", url)
+        self.assertNotIn("openid", url)
+        self.assertNotIn("w_member_social", url)
+        self.assertNotIn("w_organization_social", url)
+        state = parse_qs(urlparse(url).query)["state"][0]
+        row = linkedin_store._get(self.table, f"LINKEDIN#oauth#{state}")
+        self.assertTrue(row["analyticsApp"])
+        posting = linkedin_store.load_connection(self.table)
+        self.assertEqual(posting["accessToken"], "token-1")
+        self.assertEqual(posting["memberName"], "Posting Member")
+
+    def test_analytics_exchange_stores_its_own_connection(self) -> None:
+        linkedin_store.save_connection(
+            self.table,
+            {
+                "accessToken": "token-1",
+                "tokenExpiresAt": "2099-01-01T00:00:00.000Z",
+                "memberId": "member1",
+                "memberName": "Posting Member",
+                "channel": "profile",
+            },
+        )
+        linkedin_analytics._save_state(self.table, "analytics-state", "admin-sub")
+        with (
+            patch.object(linkedin_analytics, "load_credentials", return_value=("analytics-client", "analytics-secret")),
+            patch.object(
+                linkedin_api,
+                "exchange_code",
+                return_value={"access_token": "analytics-token", "expires_in": 3600},
+            ) as exchanged,
+            patch.object(
+                linkedin_api,
+                "basic_profile",
+                return_value={"memberId": "analytics-member", "memberName": "Example Member"},
+            ),
+            patch("board_async.try_invoke_event", return_value=True) as queued,
+        ):
+            response = lambda_handler(
+                _event(
+                    "/lx-software/linkedin/oauth/exchange",
+                    "POST",
+                    {"code": "code-1", "state": "analytics-state"},
+                ),
+                None,
+            )
+        self.assertEqual(response["statusCode"], 200)
+        body = _body(response)
+        self.assertEqual(body["analytics"]["status"], "connected")
+        self.assertEqual(body["analytics"]["memberName"], "Example Member")
+        self.assertNotIn("accessToken", body["analytics"])
+        exchanged.assert_called_once()
+        self.assertEqual(exchanged.call_args.kwargs["client_id"], "analytics-client")
+        stored = linkedin_analytics.load_connection(self.table)
+        self.assertEqual(stored["accessToken"], "analytics-token")
+        self.assertEqual(stored["memberName"], "Example Member")
+        posting = linkedin_store.load_connection(self.table)
+        self.assertEqual(posting["accessToken"], "token-1")
+        self.assertEqual(posting["memberName"], "Posting Member")
+        queued.assert_called_once_with({"internal": "linkedin_publish_due", "metricsOnly": True})
+
+    def test_analytics_disconnect_leaves_posting_connected(self) -> None:
+        linkedin_store.save_connection(
+            self.table,
+            {
+                "accessToken": "token-1",
+                "tokenExpiresAt": "2099-01-01T00:00:00.000Z",
+                "memberId": "member1",
+                "channel": "profile",
+            },
+        )
+        self._save_analytics()
+        response = lambda_handler(_event("/lx-software/linkedin/analytics/disconnect", "POST", {}), None)
+        self.assertEqual(response["statusCode"], 200)
+        self.assertEqual(_body(response)["analytics"]["status"], "not_connected")
+        self.assertEqual(linkedin_analytics.load_connection(self.table), {})
+        self.assertEqual(linkedin_store.load_connection(self.table)["accessToken"], "token-1")
+
+    def test_analytics_app_fills_old_profile_impressions(self) -> None:
+        old = format_iso_millis(datetime.now(HKT) - timedelta(days=40))
+        doc = self._published_profile(published_at=old)
+        self._save_member(analytics=False)
+        self._save_analytics()
+        seen: list[tuple[str, str]] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, body
+            seen.append((url, str(headers.get("Authorization") or "")))
+            if "memberCreatorPostAnalytics" in url:
+                return 200, {}, b'{"elements":[{"count":12,"metricType":"IMPRESSION"}]}'
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        linkedin.handle_publish_due({})
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertEqual(stored["metrics"]["impressions"], 12)
+        member_calls = [auth for url, auth in seen if "memberCreatorPostAnalytics" in url]
+        self.assertEqual(member_calls, ["Bearer analytics-token"])
+        self.assertFalse(any("/socialActions/" in url for url, _auth in seen))
+
+    def test_analytics_impressions_and_posting_reactions_use_different_tokens(self) -> None:
+        doc = self._published_profile()
+        self._save_member(analytics=False)
+        self._save_analytics()
+        seen: list[tuple[str, str]] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, body
+            seen.append((url, str(headers.get("Authorization") or "")))
+            if "memberCreatorPostAnalytics" in url:
+                return 200, {}, b'{"elements":[{"count":12,"metricType":"IMPRESSION"}]}'
+            if "/socialActions/" in url:
+                return 200, {}, b'{"likesSummary":{"totalLikes":4},"commentsSummary":{"aggregatedTotalComments":1}}'
+            return 404, {}, b""
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
+            linkedin.handle_publish_due({})
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertEqual(stored["metrics"]["impressions"], 12)
+        self.assertEqual(stored["metrics"]["reactions"], 4)
+        self.assertIn(
+            ("social", "Bearer token-1"),
+            [("social" if "/socialActions/" in url else "other", auth) for url, auth in seen],
+        )
+        self.assertTrue(
+            any("memberCreatorPostAnalytics" in url and auth == "Bearer analytics-token" for url, auth in seen)
+        )
+
+    def test_analytics_daily_cap_leaves_the_post_for_tomorrow(self) -> None:
+        old = format_iso_millis(datetime.now(HKT) - timedelta(days=40))
+        doc = self._published_profile(published_at=old)
+        self._save_member(analytics=False)
+        today = datetime.now(timezone.utc).date().isoformat()
+        self._save_analytics(calls=80, callsOn=today)
+        seen: list[str] = []
+
+        def transport(method: str, url: str, headers: dict, body: bytes | None):
+            del method, headers, body
+            seen.append(url)
+            return 200, {}, b'{"elements":[{"count":12,"metricType":"IMPRESSION"}]}'
+
+        linkedin_api.set_transport_for_tests(transport)
+        self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
+        linkedin.handle_publish_due({})
+        stored = linkedin_store.get_post(self.table, doc["postId"])
+        self.assertIsNone(stored.get("metrics"))
+        self.assertFalse(any("memberCreatorPostAnalytics" in url for url in seen))
+        self.assertEqual(linkedin_analytics.load_connection(self.table)["calls"], 80)
 
     def test_generate_queues_a_job(self) -> None:
         with patch("board_async.try_invoke_event", return_value=True) as invoke:

@@ -24,7 +24,9 @@ vi.mock("../../hooks/useLinkedIn", () => ({
   useLinkedIn: () => ({
     saveSettings: { isPending: false, isError: false, error: null, mutateAsync: vi.fn() },
     connect: { isPending: false, error: null, mutateAsync: vi.fn() },
+    connectAnalytics: { isPending: false, error: null, mutateAsync: vi.fn() },
     disconnect: { isPending: false, error: null, mutate: vi.fn() },
+    disconnectAnalytics: { isPending: false, error: null, mutate: vi.fn() },
     saveConnection: { error: null, mutate: vi.fn() },
     refreshOrganizations: { isPending: false, error: null, mutate: vi.fn() },
     character: { data: undefined },
@@ -54,6 +56,13 @@ function overview(voiceNotes: string): LinkedInOverview {
       appConfigured: true,
       appStatus: "ready",
     },
+    analytics: {
+      status: "not_connected",
+      memberName: "",
+      tokenExpiresAt: "",
+      appConfigured: true,
+      appStatus: "ready",
+    },
     counts: { drafted: 0, approved: 0, published: 0, ideas: 0 },
     spendUsdMonth: 0,
     nextSlots: [],
@@ -65,35 +74,40 @@ function overview(voiceNotes: string): LinkedInOverview {
 }
 
 describe("LinkedIn connection", () => {
-  it("offers personal post analytics before connect", () => {
+  it("connects analytics apart from posting", () => {
     render(<LinkedInSettingsCard overview={overview("")} enabled />);
-    expect(screen.getByRole("checkbox", { name: "Include personal post analytics" })).not.toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: "Include personal post analytics" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Connect analytics" })).toBeEnabled();
     expect(screen.getByText(/including ones already published/)).toBeInTheDocument();
   });
 
   it("says existing posts are included once analytics is connected", () => {
     const connected = overview("");
-    connected.connection = {
-      ...connected.connection,
+    connected.analytics = {
       status: "connected",
       memberName: "Example Member",
-      includeMemberAnalytics: true,
+      tokenExpiresAt: "2099-01-01T00:00:00.000Z",
+      appConfigured: true,
+      appStatus: "ready",
     };
     render(<LinkedInSettingsCard overview={connected} enabled />);
-    expect(screen.getByText(/including posts already published/)).toBeInTheDocument();
+    expect(screen.getByText(/Analytics connected as Example Member/)).toBeInTheDocument();
+    expect(screen.getByText(/including ones already published/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Disconnect analytics" })).toBeInTheDocument();
   });
 
-  it("waits for LinkedIn approval when personal post analytics is off", () => {
-    const connected = overview("");
-    connected.connection = {
-      ...connected.connection,
-      status: "connected",
-      memberName: "Example Member",
-      includeMemberAnalytics: false,
+  it("waits until the analytics app secret is filled in", () => {
+    const pending = overview("");
+    pending.analytics = {
+      status: "not_connected",
+      memberName: "",
+      tokenExpiresAt: "",
+      appConfigured: false,
+      appStatus: "missing",
     };
-    render(<LinkedInSettingsCard overview={connected} enabled />);
-    expect(screen.getByText(/approved for member post analytics/)).toBeInTheDocument();
-    expect(screen.queryByText(/Disconnect and connect again with personal post analytics/)).toBeNull();
+    render(<LinkedInSettingsCard overview={pending} enabled />);
+    expect(screen.getByText(/analytics app secret is not filled in/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Connect analytics" })).toBeDisabled();
   });
 });
 

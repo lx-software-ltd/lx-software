@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import parse_qs
 
+import linkedin_analytics
 import linkedin_store
 
 
@@ -49,4 +50,6 @@ def http_get(table: Any, event: dict[str, Any]) -> dict[str, Any]:
     view = (parse_qs(event.get("rawQueryString") or "").get("view") or [""])[0]
     if view == "plan":
         return plan_summary(table)
-    return linkedin_store.overview(table)
+    payload = linkedin_store.overview(table)
+    payload["analytics"] = linkedin_analytics.public_status(linkedin_analytics.load_connection(table))
+    return payload
