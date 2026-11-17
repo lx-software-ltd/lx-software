@@ -271,7 +271,7 @@ export const SAMPLE_LINKEDIN_POSTS: LinkedInPost[] = [
       publishedAt: "2026-09-29T00:30:00.000Z",
       urn: "urn:li:share:1",
     },
-    metrics: { reactions: 4, comments: 1, impressions: 128 },
+    metrics: { reactions: 4, comments: 1, impressions: 30000 },
   },
 ];
 

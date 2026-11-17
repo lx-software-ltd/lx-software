@@ -31,6 +31,12 @@ export function currencySymbol(currency: string): string {
   return CURRENCY_SYMBOLS[code] ?? code;
 }
 
+/** Grouped integer (`30,000`, `128`). */
+export function formatCount(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(value);
+}
+
 /** Grouped number with a leading minus when negative (`3,300.23`, `-3,300.23`). */
 export function formatMoneyNumber(amount: number, fractionDigits = 2): string {
   if (!Number.isFinite(amount)) return "—";

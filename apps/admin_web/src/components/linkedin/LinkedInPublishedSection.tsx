@@ -1,5 +1,5 @@
 import { useLinkedIn } from "../../hooks/useLinkedIn";
-import { formatDateTimeHKT } from "../../lib/formatDisplay";
+import { formatCount, formatDateTimeHKT } from "../../lib/formatDisplay";
 import { hookText, postUrl, type LinkedInMetrics } from "../../lib/linkedinModel";
 import {
   AdminCell,
@@ -20,8 +20,8 @@ function reachText(metrics: LinkedInMetrics | null | undefined): string {
   if (!metrics || (metrics.unavailable && metrics.reactions === 0 && metrics.comments === 0 && metrics.impressions == null)) {
     return "—";
   }
-  const base = `${metrics.reactions} reactions · ${metrics.comments} comments`;
-  return metrics.impressions == null ? base : `${base} · ${metrics.impressions} impressions`;
+  const base = `${formatCount(metrics.reactions)} reactions · ${formatCount(metrics.comments)} comments`;
+  return metrics.impressions == null ? base : `${base} · ${formatCount(metrics.impressions)} impressions`;
 }
 
 export function LinkedInPublishedSection() {
