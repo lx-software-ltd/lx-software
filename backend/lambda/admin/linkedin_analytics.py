@@ -124,18 +124,108 @@ def authorize_url(*, client_id: str, redirect: str, state: str) -> str:
     return f"{linkedin_api.AUTH_URL}?{query}"
 
 
+def _conflict(exc: BaseException) -> bool:
+    """True when a conditional write lost a race. Test stubs replace ``ClientError``."""
+    response = getattr(exc, "response", None)
+    error = response.get("Error") if isinstance(response, dict) else None
+    return isinstance(error, dict) and error.get("Code") == "ConditionalCheckFailedException"
+
+
+def _put_if(table: Any, doc: dict[str, Any], condition: str, values: dict[str, Any]) -> None:
+    """Write the analytics row only when ``condition`` still matches the stored one."""
+    from ddb_convert import _to_ddb_nested
+
+    item = {
+        **linkedin_store._state_key(_SK),
+        **{key: value for key, value in doc.items() if key not in {"pk", "sk"}},
+        "updatedAt": board_store.now_iso(),
+    }
+    table.put_item(
+        Item=_to_ddb_nested(item),
+        ConditionExpression=condition,
+        ExpressionAttributeValues=values,
+    )
+
+
 def take_call(table: Any, connection: dict[str, Any]) -> bool:
-    """Count one Community Management call. Development tier allows 100 a day."""
+    """Count one analytics call. The write touches only the counter on the live row."""
     today = datetime.now(timezone.utc).date().isoformat()
-    if str(connection.get("callsOn") or "") != today:
+    for _attempt in range(4):
+        current = load_connection(table)
+        token = str(current.get("accessToken") or "")
+        if not token:
+            return False
+        day = str(current.get("callsOn") or "")
+        used = int(current.get("calls") or 0)
+        if day != today:
+            try:
+                _put_if(
+                    table,
+                    {**current, "callsOn": today, "calls": 1},
+                    "attribute_exists(accessToken) AND accessToken = :token AND callsOn <> :day",
+                    {":token": token, ":day": today},
+                )
+            except Exception as exc:  # noqa: BLE001 — stubbed ClientError is not one class
+                if not _conflict(exc):
+                    raise
+                continue
+            connection["accessToken"] = token
+            connection["callsOn"] = today
+            connection["calls"] = 1
+            return True
+        if used >= CALLS_PER_DAY:
+            connection["accessToken"] = token
+            connection["callsOn"] = day
+            connection["calls"] = used
+            return False
+        try:
+            _put_if(
+                table,
+                {**current, "calls": used + 1},
+                "attribute_exists(accessToken) AND accessToken = :token AND callsOn = :day AND calls = :prev",
+                {":token": token, ":day": today, ":prev": used},
+            )
+        except Exception as exc:  # noqa: BLE001 — stubbed ClientError is not one class
+            if not _conflict(exc):
+                raise
+            continue
+        connection["accessToken"] = token
         connection["callsOn"] = today
-        connection["calls"] = 0
-    used = int(connection.get("calls") or 0)
-    if used >= CALLS_PER_DAY:
-        return False
-    connection["calls"] = used + 1
-    save_connection(table, connection)
-    return True
+        connection["calls"] = used + 1
+        return True
+    return False
+
+
+def _remember_token(table: Any, connection: dict[str, Any], previous: str, token: dict[str, Any]) -> str:
+    access = str(token.get("access_token") or "")
+    if not access:
+        raise LinkedInApiError("Reconnect LinkedIn analytics. The access token expired.", counts_attempt=False)
+    expiry = _token_expiry(token)
+    refresh = str(token.get("refresh_token") or connection.get("refreshToken") or "")
+    for _attempt in range(4):
+        current = load_connection(table)
+        if str(current.get("accessToken") or "") != previous:
+            stored = linkedin_store._parse_slot(str(current.get("tokenExpiresAt") or ""))
+            if current and stored is not None and stored > datetime.now(HKT) + timedelta(minutes=2):
+                connection.update(current)
+                return str(current["accessToken"])
+            raise LinkedInApiError("Reconnect LinkedIn analytics. The access token expired.", counts_attempt=False)
+        try:
+            _put_if(
+                table,
+                {**current, "accessToken": access, "refreshToken": refresh, "tokenExpiresAt": expiry},
+                "attribute_exists(accessToken) AND accessToken = :token",
+                {":token": previous},
+            )
+        except Exception as exc:  # noqa: BLE001 — stubbed ClientError is not one class
+            if not _conflict(exc):
+                raise
+            continue
+        connection["accessToken"] = access
+        connection["refreshToken"] = refresh
+        connection["tokenExpiresAt"] = expiry
+        return access
+    raise LinkedInApiError("Reconnect LinkedIn analytics. The access token expired.", counts_attempt=False)
 
 
 def access_token(table: Any, connection: dict[str, Any]) -> str:
@@ -145,6 +235,9 @@ def access_token(table: Any, connection: dict[str, Any]) -> str:
     refresh = str(connection.get("refreshToken") or "")
     if not refresh:
         raise LinkedInApiError("Reconnect LinkedIn analytics. The access token expired.", counts_attempt=False)
+    if not take_call(table, connection):
+        raise LinkedInApiError("Reconnect LinkedIn analytics. The access token expired.", counts_attempt=False)
+    previous = str(connection.get("accessToken") or "")
     client_id, client_secret = load_credentials()
     try:
         token = linkedin_api.refresh_access_token(
@@ -154,15 +247,7 @@ def access_token(table: Any, connection: dict[str, Any]) -> str:
         )
     except LinkedInApiError as exc:
         raise LinkedInApiError("Reconnect LinkedIn analytics. The access token expired.", counts_attempt=False) from exc
-    access = str(token.get("access_token") or "")
-    if not access:
-        raise LinkedInApiError("Reconnect LinkedIn analytics. The access token expired.", counts_attempt=False)
-    connection["accessToken"] = access
-    if token.get("refresh_token"):
-        connection["refreshToken"] = str(token["refresh_token"])
-    connection["tokenExpiresAt"] = _token_expiry(token)
-    save_connection(table, connection)
-    return access
+    return _remember_token(table, connection, previous, token)
 
 
 def handle_http(event: dict[str, Any], method: str, parts: list[str], user_sub: str | None) -> dict[str, Any]:
@@ -204,20 +289,6 @@ def _token_expiry(token: dict[str, Any]) -> str:
     return format_iso_millis(datetime.now(HKT) + timedelta(seconds=seconds))
 
 
-def _save_state(table: Any, state: str, user_sub: str) -> None:
-    linkedin_store._put(
-        table,
-        {
-            "pk": f"LINKEDIN#oauth#{state}",
-            "sk": "META",
-            "userSub": user_sub,
-            "analyticsApp": True,
-            "createdAt": board_store.now_iso(),
-            "expiresAt": int(time.time()) + 15 * 60,
-        },
-    )
-
-
 def _connect(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
     blocked = _require_enabled()
     if blocked:
@@ -228,7 +299,7 @@ def _connect(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
         return _json_response(503, {"message": str(exc)})
     state = secrets.token_urlsafe(18)
     table = board_store.records_table()
-    _save_state(table, state, user_sub or "")
+    linkedin_store.save_oauth_state(table, state, user_sub or "", analytics_app=True)
     url = authorize_url(
         client_id=client_id,
         redirect=linkedin_api.redirect_uri(_origin()),
@@ -272,8 +343,8 @@ def _exchange(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
                 "memberId": profile["memberId"],
                 "memberName": profile["memberName"],
                 "connectedAt": board_store.now_iso(),
-                "callsOn": "",
-                "calls": 0,
+                "callsOn": datetime.now(timezone.utc).date().isoformat(),
+                "calls": 1,
             },
         )
     except (LinkedInError, LinkedInApiError) as exc:

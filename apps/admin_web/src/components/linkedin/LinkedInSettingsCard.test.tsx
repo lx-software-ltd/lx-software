@@ -96,6 +96,22 @@ describe("LinkedIn connection", () => {
     expect(screen.getByRole("button", { name: "Disconnect analytics" })).toBeInTheDocument();
   });
 
+  it("offers connect again when analytics access has expired", () => {
+    const expired = overview("");
+    expired.analytics = {
+      status: "connected",
+      memberName: "Example Member",
+      tokenExpiresAt: "2000-01-01T00:00:00.000Z",
+      appConfigured: true,
+      appStatus: "ready",
+    };
+    render(<LinkedInSettingsCard overview={expired} enabled />);
+    expect(screen.getByText(/Analytics access expired/)).toBeInTheDocument();
+    expect(screen.queryByText(/next slot/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Connect analytics" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Disconnect analytics" })).toBeInTheDocument();
+  });
+
   it("waits until the analytics app secret is filled in", () => {
     const pending = overview("");
     pending.analytics = {

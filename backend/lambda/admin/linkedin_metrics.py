@@ -3,8 +3,9 @@
 Profile impressions use the analytics app when that connection exists. A posting
 connection that already asked for member post analytics still uses its own token.
 Posts already published are included at any age, including a share or ugcPost URN
-taken from the pasted LinkedIn URL. A failed read keeps a count already stored.
-A denied reaction read is stored and not retried.
+taken from the pasted LinkedIn URL. A count from the last 30 days is read again
+every six hours. Older stored counts stay. A failed read keeps a count already
+stored. A denied reaction read is stored and not retried.
 """
 
 from __future__ import annotations
@@ -81,12 +82,19 @@ def _needs_impression(
     connection: dict[str, Any],
     include: bool,
     cutoff: datetime,
+    refresh_after: datetime | None = None,
 ) -> bool:
+    """A missing count is due. A recent analytics count is due again after six hours."""
     if not include or _is_page(row, connection):
         return False
-    if previous.get("impressions") is not None:
+    if previous.get("impressions") is None:
+        return not _within(str(previous.get("impressionCheckedAt") or ""), cutoff)
+    if refresh_after is None:
         return False
-    return not _within(str(previous.get("impressionCheckedAt") or ""), cutoff)
+    published = linkedin_store._parse_slot(str(_platform(row).get("publishedAt") or ""))
+    if published is None or published < refresh_after:
+        return False
+    return not _within(str(previous.get("impressionReadAt") or ""), cutoff)
 
 
 def _reactions_due(platform: dict[str, Any], previous: dict[str, Any], oldest: datetime, cutoff: datetime) -> bool:
@@ -111,6 +119,9 @@ def _carry(previous: dict[str, Any]) -> dict[str, Any]:
     checked = str(previous.get("impressionCheckedAt") or "")
     if checked:
         metrics["impressionCheckedAt"] = checked
+    read_at = str(previous.get("impressionReadAt") or "")
+    if read_at:
+        metrics["impressionReadAt"] = read_at
     return metrics
 
 
@@ -151,6 +162,7 @@ def _apply_impressions(
         metrics["impressionCheckedAt"] = board_store.now_iso()
     elif read is not None:
         metrics.pop("impressionCheckedAt", None)
+        metrics["impressionReadAt"] = board_store.now_iso()
 
 
 def _save(table: Any, row: dict[str, Any], metrics: dict[str, Any], share_urn: str) -> None:
@@ -211,11 +223,12 @@ def refresh(
     oldest = now - timedelta(days=30)
     analytics_on = bool(analytics_token)
     include = analytics_on or bool(connection.get("includeMemberAnalytics"))
+    refresh_after = oldest if analytics_on else None
     started = time.monotonic()
     rows = _published_rows(table, POST_LIMIT)
     rows.sort(
         key=lambda row: (
-            0 if _needs_impression(row, _previous(row), connection, include, cutoff) else 1,
+            0 if _needs_impression(row, _previous(row), connection, include, cutoff, refresh_after) else 1,
             str(_platform(row).get("publishedAt") or row.get("slotAt") or ""),
         )
     )
@@ -230,7 +243,7 @@ def refresh(
         platform = _platform(row)
         previous = _previous(row)
         page = _is_page(row, connection)
-        needs = _needs_impression(row, previous, connection, include, cutoff)
+        needs = _needs_impression(row, previous, connection, include, cutoff, refresh_after)
         urn = _share_urn(platform)
         usable = urn or str(platform.get("urn") or "")
         do_reactions = (
@@ -262,14 +275,14 @@ def refresh(
         read: int | None = None
         capped = False
         member_token = ""
-        # A stored impression is kept. Re-reading it would spend the daily call cap.
-        if not page and analytics_on and previous.get("impressions") is None:
+        # The daily cap skips this impression read. Reactions on later posts still run.
+        if do_backfill and not page and analytics_on:
             if allow_analytics_call is not None and not allow_analytics_call():
                 capped = True
-                if not do_reactions:
-                    break
             else:
                 member_token = analytics_token
+        if capped and not do_reactions:
+            continue
         try:
             read = _impressions(
                 token,
@@ -288,10 +301,8 @@ def refresh(
         updated += 1
         if do_reactions:
             reactions_done += 1
-        if do_backfill:
+        if do_backfill and not capped:
             backfill_done += 1
-        if capped:
-            break
     return updated
 
 

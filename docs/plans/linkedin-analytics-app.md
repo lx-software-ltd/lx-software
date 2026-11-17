@@ -5,7 +5,7 @@
 
 ## Goal
 
-Profile posts store lifetime impressions from the LX Software Analytics app, which holds the Community Management API. Posting stays on the LX Software app. The owner connects the analytics app on its own, and the metrics pass reads `memberCreatorPostAnalytics` with that token, including posts already published. A development-tier day stops after 80 analytics calls.
+Profile posts store lifetime impressions from the LX Software Analytics app, which holds the Community Management API. Posting stays on the LX Software app. The owner connects the analytics app on its own, and the metrics pass reads `memberCreatorPostAnalytics` with that token, including posts already published. Counts from the last 30 days are read again every six hours. A development-tier day stops after 80 analytics calls, including the profile read and a token refresh. The counter update does not rewrite the token.
 
 ## Non-goals
 

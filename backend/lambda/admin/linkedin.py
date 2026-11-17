@@ -1,4 +1,8 @@
-"""HTTP and scheduled workers for the LX Software LinkedIn tab."""
+"""HTTP and scheduled workers for the LX Software LinkedIn tab.
+
+Drafts, the share box, and, when publishing is on, the Posts API. A due slot
+posts as the member or a company page, then adds the first comment and refreshes counts.
+"""
 
 from __future__ import annotations
 
@@ -212,11 +216,7 @@ def _post_action(event: dict[str, Any], post_id: str, action: str, user_sub: str
 
 
 def _picture_for_new_post(doc: dict[str, Any]) -> dict[str, Any]:
-    """An owner-written post gets its scene, expression, caption, and picture from the worker.
-
-    The worker writes the three fields from the post before it draws. A failure
-    here never fails the save.
-    """
+    """Queue the picture for an owner-written post. A failure leaves the saved post."""
     table = _table()
     try:
         if not linkedin_store.load_settings(table).get("imagesEnabled"):

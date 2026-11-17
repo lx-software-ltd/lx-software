@@ -710,11 +710,14 @@ the only product on its app. Settings → **Connect analytics** requests
 `r_member_postAnalytics r_basicprofile` from that app. Profile posts then read
 lifetime impressions from `memberCreatorPostAnalytics` (`IMPRESSION`,
 `TOTAL`), including posts already published. The pass stops after 80 of those
-calls in a UTC day, under the development-tier member cap. A failed impression
+calls in a UTC day, under the development-tier member cap. The member profile
+read at connect and a token refresh count toward that 80. A failed impression
 read keeps a count already stored; a post that has never had one stays empty
-for six hours. A denied reaction read is stored and not retried; page
-impressions are read only for posts that went out as a page. Disconnecting
-posting leaves the analytics connection, and the reverse.
+for six hours. A count from the last 30 days is read again every six hours.
+An older stored count stays. A denied reaction read is stored and not retried;
+page impressions are read only for posts that went out as a page. Hitting the
+daily cap skips further impression reads and still updates reactions.
+Disconnecting posting leaves the analytics connection, and the reverse.
 
 With the first switch on, Sunday 18:00 HKT
 (`lxsoftware-admin-linkedin-plan`) drafts the configured batch, and a
@@ -747,8 +750,9 @@ The pass runs after the due-post mail. Each tick updates at most five reaction
 counts and eight missing impression counts, and stops after about 75 seconds.
 Connecting analytics queues one pass immediately. An expired access token is
 skipped quietly until the owner connects again. A failed impression read waits
-six hours when the post has no count yet. A stored impression is not read again
-on later ticks, so the daily cap stays available for posts that still have none.
+six hours when the post has no count yet. A count from the last 30 days is read
+again every six hours, and an older stored count stays, so the daily cap remains
+for posts that still have none.
 While the publish switch is off, or LinkedIn is not connected, the share
 box and **Mark posted** stay the way to publish.
 Add any employer name under Settings → extra phrases; do not put it in source.

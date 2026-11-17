@@ -13,7 +13,7 @@ const REDIRECT_NOTICES: Record<string, string> = {
   user_cancelled_login: "The LinkedIn connection was cancelled.",
   user_cancelled_authorize: "The LinkedIn connection was cancelled.",
   unauthorized_scope_error:
-    "LinkedIn refused a requested permission. Connect again without company pages, or approve that product on the LinkedIn app.",
+    "LinkedIn refused a requested permission. Approve that product on the LinkedIn app. For posting, connect again without company pages.",
 };
 
 const UNKNOWN_REDIRECT_NOTICE = "LinkedIn did not authorize the connection.";

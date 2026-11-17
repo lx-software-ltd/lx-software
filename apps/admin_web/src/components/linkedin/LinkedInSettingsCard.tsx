@@ -559,6 +559,15 @@ const EMPTY_ANALYTICS: LinkedInAnalyticsConnection = {
   appStatus: "missing",
 };
 
+function analyticsAccessCopy(iso: string): { tone: "muted" | "warning"; text: string } | null {
+  const state = linkedInAccessState(iso);
+  if (!state) return null;
+  const when = formatDateTimeHKT(iso);
+  if (state === "expired") return { tone: "warning", text: `Analytics access expired ${when}. Connect analytics again.` };
+  if (state === "soon") return { tone: "warning", text: `Analytics access expires ${when}. Connect analytics again before then.` };
+  return { tone: "muted", text: `Access until ${when}.` };
+}
+
 function analyticsCopy(analytics: LinkedInAnalyticsConnection): string {
   if (analytics.appStatus === "unreadable") {
     return "The analytics app secret could not be read.";
@@ -579,7 +588,8 @@ function LinkedInAnalyticsPanel({
   const linkedIn = useLinkedIn();
   const analytics = overview.analytics ?? EMPTY_ANALYTICS;
   const connected = analytics.status === "connected";
-  const access = connected ? accessCopy(analytics.tokenExpiresAt, "Analytics access") : null;
+  const access = connected ? analyticsAccessCopy(analytics.tokenExpiresAt) : null;
+  const renew = access?.tone === "warning";
   const error =
     getAdminApiErrorMessage(linkedIn.connectAnalytics.error) ??
     getAdminApiErrorMessage(linkedIn.disconnectAnalytics.error);
@@ -602,16 +612,7 @@ function LinkedInAnalyticsPanel({
         </p>
       ) : null}
       <div className="d-flex gap-2">
-        {connected ? (
-          <button
-            type="button"
-            className="btn btn-outline-secondary btn-sm"
-            disabled={!enabled || linkedIn.disconnectAnalytics.isPending}
-            onClick={() => void linkedIn.disconnectAnalytics.mutate()}
-          >
-            Disconnect analytics
-          </button>
-        ) : (
+        {!connected || renew ? (
           <button
             type="button"
             className="btn btn-primary btn-sm"
@@ -624,7 +625,17 @@ function LinkedInAnalyticsPanel({
           >
             Connect analytics
           </button>
-        )}
+        ) : null}
+        {connected ? (
+          <button
+            type="button"
+            className="btn btn-outline-secondary btn-sm"
+            disabled={!enabled || linkedIn.disconnectAnalytics.isPending}
+            onClick={() => void linkedIn.disconnectAnalytics.mutate()}
+          >
+            Disconnect analytics
+          </button>
+        ) : null}
       </div>
     </div>
   );
