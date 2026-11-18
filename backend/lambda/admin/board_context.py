@@ -297,8 +297,9 @@ def render_context_pack(pack: dict[str, Any]) -> str:
         parts.append("")
         parts.append(
             f"--- Meta: {meta.get('unread') or 0} unread threads "
-            f"({meta.get('whatsappThreads') or 0} WhatsApp) — members with meta access "
-            "use meta_list_whatsapp / meta_list_dms ---"
+            f"(page {meta.get('pageUnread') or 0}, Instagram {meta.get('instagramUnread') or 0}, "
+            f"WhatsApp {meta.get('whatsappUnread') or 0}; {meta.get('whatsappThreads') or 0} WhatsApp stored) "
+            "— members with meta access use meta_list_threads / meta_get_thread ---"
         )
 
     stores = pack.get("stores") or {}

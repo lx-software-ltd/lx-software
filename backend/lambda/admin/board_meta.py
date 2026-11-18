@@ -21,7 +21,6 @@ import hmac
 import json
 import os
 import re
-import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib import error as urlerror
@@ -76,11 +75,24 @@ def ig_user_id() -> str:
 
 
 def wa_phone_id() -> str:
-    return (os.environ.get("META_WA_PHONE_NUMBER_ID") or "").strip()
+    env = (os.environ.get("META_WA_PHONE_NUMBER_ID") or "").strip()
+    return env or _stored_meta_id("phone")
 
 
 def waba_id() -> str:
-    return (os.environ.get("META_WABA_ID") or "").strip()
+    env = (os.environ.get("META_WABA_ID") or "").strip()
+    return env or _stored_meta_id("waba")
+
+
+def _stored_meta_id(kind: str) -> str:
+    try:
+        import board_meta_whatsapp
+
+        state = board_meta_whatsapp._load(board_store.records_table())
+    except Exception:
+        return ""
+    key = "phoneNumberId" if kind == "phone" else "wabaId"
+    return str(state.get(key) or "")
 
 
 def ad_account_id() -> str:
@@ -378,169 +390,10 @@ def handle_http(event: dict[str, Any], method: str) -> dict[str, Any]:
 
 
 def ingest_webhook(table: Any, payload: dict[str, Any]) -> dict[str, Any]:
-    """Store masked inbound messages. Must stay well under Meta's 20 s ack."""
-    obj = str(payload.get("object") or "")
-    entries = payload.get("entry") or []
-    stored = 0
-    duplicates = 0
-    pseud = board_pii.Pseudonymizer(table)
-    now = _utc_iso_z(datetime.now(timezone.utc))
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        channel = "whatsapp" if obj == "whatsapp_business_account" else ("instagram" if obj == "instagram" else "page")
-        for msg in _iter_inbound(entry, channel=channel):
-            if _store_inbound(table, pseud, msg, received_at=now):
-                stored += 1
-            else:
-                duplicates += 1
-    pseud.save()
-    _log_event("info", tag="board_meta_ingested", stored=stored, duplicates=duplicates, object=obj)
-    return {"stored": stored, "duplicates": duplicates}
+    """Store one webhook delivery. Parsing lives in board_meta_ingest."""
+    import board_meta_ingest
 
-
-def _iter_inbound(entry: dict[str, Any], *, channel: str) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    messaging = entry.get("messaging") or entry.get("standby") or []
-    for item in messaging:
-        if not isinstance(item, dict):
-            continue
-        message = item.get("message") or {}
-        if not isinstance(message, dict):
-            continue
-        if message.get("is_echo"):
-            # Our own outbound messages come back through the webhook too.
-            continue
-        sender = _sender_id(item.get("sender")) or _sender_id(item.get("from"))
-        text = str(message.get("text") or message.get("body") or "")
-        mid = str(message.get("mid") or message.get("id") or board_store.new_id())
-        ts = item.get("timestamp") or entry.get("time") or int(time.time() * 1000)
-        out.append(
-            {
-                "channel": channel,
-                "threadKey": str(sender or mid),
-                "senderId": str(sender),
-                "messageId": mid,
-                "text": text,
-                "timestampMs": int(ts) if str(ts).isdigit() else int(time.time() * 1000),
-            }
-        )
-    for change in entry.get("changes") or []:
-        if not isinstance(change, dict):
-            continue
-        value = change.get("value") or {}
-        if not isinstance(value, dict):
-            continue
-        if change.get("field") in ("messages", "whatsapp_business_account"):
-            contacts = value.get("contacts") or []
-            contact_wa_id = str((contacts[0] or {}).get("wa_id") or "") if contacts and isinstance(contacts[0], dict) else ""
-            for m in value.get("messages") or []:
-                if not isinstance(m, dict):
-                    continue
-                sender = _phone_digits(str(m.get("from") or contact_wa_id or ""))
-                text = str((m.get("text") or {}).get("body") or m.get("body") or "")
-                mid = str(m.get("id") or board_store.new_id())
-                out.append(
-                    {
-                        "channel": "whatsapp",
-                        "threadKey": sender or mid,
-                        "senderId": sender,
-                        "messageId": mid,
-                        "text": text,
-                        "timestampMs": _int_or(m.get("timestamp"), int(time.time())),
-                    }
-                )
-        if change.get("field") in ("comments", "feed"):
-            comment = value.get("comment") or value
-            if not isinstance(comment, dict):
-                continue
-            text = str(comment.get("message") or comment.get("text") or "")
-            cid = str(comment.get("id") or board_store.new_id())
-            sender = _sender_id(comment.get("from"))
-            out.append(
-                {
-                    "channel": "instagram" if channel == "instagram" else "page",
-                    "threadKey": f"comment:{cid}",
-                    "senderId": sender,
-                    "messageId": cid,
-                    "text": text,
-                    "timestampMs": _int_or(comment.get("created_time"), int(time.time() * 1000)),
-                    "kind": "comment",
-                }
-            )
-    return out
-
-
-def _sender_id(raw: Any) -> str:
-    """Graph ``from`` / ``sender`` is usually ``{"id": ...}`` but can be a bare id string."""
-    if isinstance(raw, dict):
-        return str(raw.get("id") or "")
-    return str(raw or "")
-
-
-def _int_or(raw: Any, default: int) -> int:
-    text = str(raw or "").strip()
-    return int(text) if text.isdigit() else default
-
-
-def thread_id_for(channel: str, thread_key: str) -> str:
-    return hashlib.sha256(f"{channel}:{thread_key}".encode()).hexdigest()[:20]
-
-
-def whatsapp_thread_id(number: str) -> str:
-    """Stored thread id for a WhatsApp number; the same derivation the webhook uses."""
-    return thread_id_for("whatsapp", _phone_digits(number))
-
-
-def _store_inbound(table: Any, pseud: board_pii.Pseudonymizer, msg: dict[str, Any], *, received_at: str) -> bool:
-    """Store one inbound message; returns False when Meta redelivered a known message."""
-    thread_id = thread_id_for(str(msg.get("channel")), str(msg.get("threadKey")))
-    text = str(msg.get("text") or "")
-    masked = pseud.mask_text(text)
-    ts_ms = int(msg.get("timestampMs") or 0)
-    received = received_at
-    if ts_ms > 10_000_000_000:
-        received = _utc_iso_z(datetime.fromtimestamp(ts_ms / 1000, timezone.utc))
-    elif ts_ms > 1_000_000_000:
-        received = _utc_iso_z(datetime.fromtimestamp(ts_ms, timezone.utc))
-    is_new = board_store.put_meta_message_if_new(
-        table,
-        {
-            "threadId": thread_id,
-            "messageId": str(msg.get("messageId")),
-            "receivedAt": received,
-            "direction": "in",
-            "textMasked": masked[:4000],
-            "channel": msg.get("channel"),
-        },
-    )
-    if not is_new:
-        _log_event("info", tag="board_meta_duplicate_delivery", threadId=thread_id, messageId=str(msg.get("messageId")))
-        return False
-    existing = board_store.get_meta_thread(table, thread_id) or {}
-    board_store.put_meta_thread(
-        table,
-        {
-            "threadId": thread_id,
-            "channel": msg.get("channel"),
-            "kind": msg.get("kind") or "message",
-            "senderId": msg.get("senderId"),
-            "lastTextMasked": masked[:240],
-            "lastMessageAt": received,
-            "lastInboundAt": received,
-            "unread": True,
-            "messageCount": int(existing.get("messageCount") or 0) + 1,
-        },
-    )
-    try:
-        import board_triage
-
-        settings = board_store.load_settings(table)
-        stored = board_store.get_meta_thread(table, thread_id) or {"threadId": thread_id}
-        board_triage.on_meta_event(table, settings, stored, msg)
-    except Exception as exc:
-        _log_event("warning", tag="board_triage_meta_failed", error=str(exc)[:300])
-    return True
+    return board_meta_ingest.ingest_webhook(table, payload)
 
 
 # ---------------------------------------------------------------------------
@@ -1164,6 +1017,15 @@ def _phone_digits(value: str) -> str:
     return re.sub(r"\D", "", board_pii.normalize_phone(value) or "")
 
 
+def thread_id_for(channel: str, thread_key: str) -> str:
+    return hashlib.sha256(f"{channel}:{thread_key}".encode()).hexdigest()[:20]
+
+
+def whatsapp_thread_id(number: str) -> str:
+    """Stored thread id for a WhatsApp number; the same derivation the webhook uses."""
+    return thread_id_for("whatsapp", _phone_digits(number))
+
+
 def act_guard_ads(ctx: Any, args: dict[str, Any], *, days: int | None = None) -> str | None:
     try:
         daily = float(args.get("dailyBudgetUsd"))
@@ -1250,13 +1112,18 @@ def owner_preview_message(ctx: Any, args: dict[str, Any], *, op: str) -> dict[st
     }
     if error:
         out["error"] = error
+    if op == "meta_reply_whatsapp" and first:
+        import board_meta_whatsapp
+
+        link = board_meta_whatsapp.phone_link(first, out["text"])
+        if link:
+            out["phoneLink"] = link
     return out
 
 
 def digest_for_context(table: Any) -> dict[str, Any]:
     if table is None:
         return {}
-    threads = board_store.list_meta_threads(table)
-    unread = sum(1 for t in threads if t.get("unread"))
-    wa = sum(1 for t in threads if t.get("channel") == "whatsapp")
-    return {"unread": unread, "threads": len(threads), "whatsappThreads": wa}
+    import board_meta_inbox
+
+    return board_meta_inbox.digest_for_context(table)

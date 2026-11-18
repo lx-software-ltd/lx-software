@@ -34,6 +34,7 @@ def refresh_all(table: Any) -> dict[str, Any]:
         ("stores", board_stores.refresh_caches),
         ("web", board_web.refresh_caches),
         ("product", board_product.refresh_caches),
+        ("meta", _refresh_meta),
     )
     for name, fn in jobs:
         try:
@@ -51,6 +52,12 @@ def refresh_all(table: Any) -> dict[str, Any]:
     except Exception as exc:
         _log_event("warning", tag="board_ops_triage_failed", error=str(exc)[:200])
     return result
+
+
+def _refresh_meta(table: Any) -> dict[str, Any]:
+    import board_meta_inbox
+
+    return board_meta_inbox.backfill(table)
 
 
 def handle_schedule_trigger(event: dict[str, Any]) -> dict[str, Any]:

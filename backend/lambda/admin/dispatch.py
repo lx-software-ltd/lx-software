@@ -1210,7 +1210,6 @@ def _match_prefix(prefix: str):
 
     return match
 
-
 EARLY_INTERNAL = {
     'parse_statement_async': _internal_parse_statement_async,
     'bank_sync': _internal_bank_sync,
@@ -1230,6 +1229,7 @@ EARLY_INTERNAL = {
     'board_targets': _internal_board_targets,
     'board_content_plan': _internal_board_content_plan,
     'board_content_readout': _internal_board_content_readout,
+    'board_meta_after_ingest': _bind_internal('board_meta_inbox', 'handle_after_ingest'),
     'linkedin_generate': _bind_internal('linkedin', 'handle_generate'),
     'linkedin_weekly_plan': _bind_internal('linkedin', 'handle_weekly_plan'),
     'linkedin_publish_due': _bind_internal('linkedin', 'handle_publish_due'),

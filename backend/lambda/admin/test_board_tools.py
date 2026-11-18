@@ -243,6 +243,8 @@ _REGISTRY_SNAPSHOT = (
     ("meta_list_comments", "meta", "read"),
     ("meta_list_dms", "meta", "read"),
     ("meta_list_whatsapp", "meta", "read"),
+    ("meta_list_threads", "meta", "read"),
+    ("meta_get_thread", "meta", "read"),
     ("meta_list_whatsapp_templates", "meta", "read"),
     ("meta_ad_spend", "meta", "read"),
     ("meta_propose_post", "meta", "write"),
@@ -409,7 +411,7 @@ class TestLevels(unittest.TestCase):
 
         actual = tuple((op.name, op.tool_id, op.kind) for op in board_tools.REGISTRY.values())
         self.assertEqual(actual, _REGISTRY_SNAPSHOT)
-        self.assertEqual(len(actual), 121)
+        self.assertEqual(len(actual), 123)
         public_ids = [tool["id"] for tool in board_tools.public_registry()]
         self.assertEqual(
             public_ids,

@@ -94,7 +94,10 @@ parameters use `noEcho: true`; S3 remains private behind CloudFront.
   → "Public API keys".
 - Routes with **no authorizer**: `GET/POST /webhooks/meta/siutindei` (and
   legacy `/webhooks/meta`) verified by the Meta verify token and
-  `X-Hub-Signature-256`; `/public/outreach/unsubscribe/{token}` and
+  `X-Hub-Signature-256`. The webhook stores the message text and returns
+  before any model call. Persona tools and public-API keys without
+  `siutindei-pii` read an alias, the same way mail does. Media bytes are
+  refused to a key without that scope. `/public/outreach/unsubscribe/{token}` and
   `/public/newsletter/{subscribe,confirm,unsubscribe}` verified by HMAC
   tokens and rate-limited.
 - Every admin action writes an audit row (`USER#<sub>` in
@@ -113,6 +116,10 @@ global virtual-hosted form and a future SDK may switch to the regional one,
 so both are allow-listed (Safari reports a blocked upload as `Load failed`,
 Chrome as `Failed to fetch`). When any of those URLs changes, redeploy
 `lxsoftware-admin-web` and invalidate the distribution.
+`script-src` also allows `https://connect.facebook.net` and `frame-src`
+allows `https://www.facebook.com`, so the Messages tab can load Embedded
+Signup when a configuration id is set. The connect form does not need the
+SDK: the owner pastes the business-account id and the phone-number id.
 
 ## Uploads
 

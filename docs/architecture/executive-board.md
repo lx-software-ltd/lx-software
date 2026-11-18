@@ -154,7 +154,7 @@ listings; `expiresAt` drives TTL where noted.
 | `approvals#{id}` | `META` | Pending / decided `propose` writes | 60 d |
 | `cache#…` | `STATE` | Cached reads (AWS, security, stores, web, product, research, robots, seen ids, duty marks) | per entry |
 | `mail#{threadId}` | `MSG#{ts}` | Indexed mail (masked for personas, raw for the owner) | 90 d |
-| `meta#…` | `META` | Masked Meta webhook payloads | 90 d |
+| `meta#…` | `META` | Page, Instagram and WhatsApp threads. Full text at rest, masked when a persona or a key without `siutindei-pii` reads it | 90 d |
 | `staff#{seatId}` | `STATE` | Seat overrides (`displayName`, `brief`, `isActive`, `modelTier`) | — |
 | `tasks#{taskId}` | `META`, `STEP#{attempt}#{seq}`, `REVIEW#{seq}` | Task document, step log, manager reviews | 90 d after terminal |
 | `holds#{holdId}` | `META` | Scheduled write awaiting veto | 90 d after terminal |
@@ -400,10 +400,20 @@ User token (`…-meta-token`) and app secret (`…-meta-app-secret`).
 `GET/POST /webhooks/meta/siutindei` (canonical) and `/webhooks/meta`
 (already-subscribed app) are **non-JWT** routes: GET answers the verify
 handshake (`SiutindeiBoardMetaVerifyToken`), POST checks
-`X-Hub-Signature-256`, stores masked `meta#` rows and returns 200 with no
-LLM work. WhatsApp uses **coexistence** so the owner's phone keeps the
-number; WhatsApp `act` is only inside the 24-hour window and only to the
-allow-list, otherwise an Approval (optionally a template).
+`X-Hub-Signature-256`, stores the message (full text, plus a masked copy)
+and returns 200. Triage and media download run on `board_meta_after_ingest`,
+not on the webhook. The owner reads threads on **Messages**. Personas use
+`meta_list_threads` / `meta_get_thread` and see aliases. A key without
+`siutindei-pii` gets the same aliases and cannot read media. WhatsApp uses
+**coexistence** so the owner's phone keeps the number. **Messages → Connect**
+records the business-account id and phone-number id and subscribes the app;
+it does not register the number. **Import history once** calls
+`smb_app_data` for contacts and then history, and a second call is refused.
+A thread matched to an organisation does not get an automatic reply: the
+content marketer gets one catalog task, and any reply waits for Approval.
+WhatsApp `act` is only inside the 24-hour window and only to the
+allow-list, otherwise an Approval (optionally a template, or the `wa.me`
+link on the approval card).
 `meta_list_ig_media` (and `GET …/meta/instagram`) reads recent posts and
 current stories on the connected account: id, time, type, permalink and
 caption. `meta_relay_lead` mails the provider and the parent from `hello@`.

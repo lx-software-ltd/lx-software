@@ -8,6 +8,7 @@ import {
   memberLabel,
   PHASE_LABELS,
   type BoardApproval,
+  type BoardApprovalPreview,
   type BoardMailPreview,
   type BoardMember,
   type BoardPhishingPreview,
@@ -64,6 +65,15 @@ function PhishingPreviewCard({ preview }: { readonly preview: BoardPhishingPrevi
   );
 }
 
+function hasMessagePreview(preview: BoardApprovalPreview | undefined): boolean {
+  return !!preview && "text" in preview && "to" in preview && Array.isArray(preview.to);
+}
+
+function phoneLinkOf(preview: BoardMailPreview): string {
+  const value = (preview as BoardMailPreview & { phoneLink?: unknown }).phoneLink;
+  return typeof value === "string" ? value : "";
+}
+
 /** What the owner would actually send: real addresses, un-masked body. */
 export function MailPreviewCard({ preview, onOpenThread }: { readonly preview: BoardMailPreview; readonly onOpenThread?: (threadId: string) => void }) {
   return (
@@ -86,6 +96,11 @@ export function MailPreviewCard({ preview, onOpenThread }: { readonly preview: B
       </div>
       <div className="fw-semibold mt-1">{preview.subject}</div>
       <pre className="mb-0 mt-1 board-mail-body">{preview.text}</pre>
+      {phoneLinkOf(preview) ? (
+        <a className="d-inline-block mt-2" href={phoneLinkOf(preview)}>
+          Open in WhatsApp
+        </a>
+      ) : null}
       <div className="d-flex flex-wrap gap-3 mt-2">
         {preview.threadId && onOpenThread ? (
           <button type="button" className="btn btn-link btn-sm p-0 align-baseline" onClick={() => onOpenThread(preview.threadId)}>
@@ -219,9 +234,9 @@ export function BoardApprovalsList({
           </div>
         ) : null}
 
-        {editingArgsId !== a.approvalId && isMailPreview(a.preview) ? (
+        {editingArgsId !== a.approvalId && hasMessagePreview(a.preview) ? (
           <div className="mt-2">
-            <MailPreviewCard preview={a.preview} onOpenThread={onOpenMailThread} />
+            <MailPreviewCard preview={a.preview as BoardMailPreview} onOpenThread={onOpenMailThread} />
           </div>
         ) : null}
         {editingArgsId !== a.approvalId && isPhishingPreview(a.preview) ? (
@@ -275,7 +290,7 @@ export function BoardApprovalsList({
               </>
             )}
           </div>
-        ) : isMailPreview(a.preview) || isPhishingPreview(a.preview) ? null : (
+        ) : hasMessagePreview(a.preview) || isPhishingPreview(a.preview) ? null : (
           <div className="mt-2">
             <ArgumentsTable args={a.arguments} />
           </div>

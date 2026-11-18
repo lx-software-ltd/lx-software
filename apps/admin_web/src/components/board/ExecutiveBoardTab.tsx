@@ -13,6 +13,7 @@ import { BoardCharterEditor } from "./BoardCharterEditor";
 import { BoardChatOffcanvas } from "./BoardChatOffcanvas";
 import { BoardHeaderStrip } from "./BoardHeaderStrip";
 import { BoardMailView } from "./BoardMailView";
+import { BoardMessagesView } from "./BoardMessagesView";
 import { BoardReceivablesView } from "./BoardReceivablesView";
 import { BoardMeetingHistory } from "./BoardMeetingHistory";
 import { BoardMeetingPanel } from "./BoardMeetingPanel";
@@ -58,7 +59,7 @@ import {
   type BoardOverview,
 } from "../../lib/boardModel";
 
-type BoardSection = "review" | "progress" | "market" | "pipeline" | "content" | "actions" | "staff" | "tasks" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
+type BoardSection = "review" | "progress" | "market" | "pipeline" | "content" | "actions" | "staff" | "tasks" | "approvals" | "mail" | "messages" | "receivables" | "meetings" | "members" | "brief" | "settings";
 
 const CLOSED_MEETING = "__closed__";
 const SECTION_ID_PREFIX = "board-section";
@@ -75,6 +76,7 @@ const SECTIONS: readonly { readonly id: BoardSection; readonly label: string; re
   { id: "tasks", label: "Tasks", icon: "bi-kanban" },
   { id: "approvals", label: "Approvals", icon: "bi-shield-check" },
   { id: "mail", label: "Mail", icon: "bi-envelope" },
+  { id: "messages", label: "Messages", icon: "bi-chat-dots" },
   { id: "receivables", label: "Receivables", icon: "bi-receipt" },
   { id: "meetings", label: "Meetings", icon: "bi-people" },
   { id: "members", label: "Board members", icon: "bi-person-badge" },
@@ -96,6 +98,7 @@ function sectionTabs(
     tasks: { value: needsOwner, tone: "warning" },
     approvals: { value: overview?.pendingApprovalCount ?? 0, tone: "warning" },
     mail: { value: overview?.unreadMailCount ?? 0, tone: "neutral" },
+    messages: { value: overview?.unreadMessageCount ?? 0, tone: "neutral" },
     receivables: { value: overview?.overdueInvoiceCount ?? 0, tone: "warning" },
   };
   return SECTIONS.map((s) => {
@@ -376,6 +379,8 @@ export function ExecutiveBoardTab() {
               errorText={errorText}
             />
           ) : null}
+
+          {overview && section === "messages" ? <BoardMessagesView errorText={errorText} /> : null}
 
           {overview && section === "receivables" ? (
             <BoardReceivablesView overdueCount={overview.overdueInvoiceCount} errorText={errorText} />

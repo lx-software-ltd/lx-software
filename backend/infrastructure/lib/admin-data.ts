@@ -181,6 +181,13 @@ export function defineAdminBuckets(scope: cdk.Stack, adminWebDomainName: cdk.Cfn
         abortIncompleteMultipartUploadAfter: cdk.Duration.days(7),
       },
       {
+        id: "ExpireBoardMetaMedia",
+        enabled: true,
+        prefix: "board/meta-media/",
+        expiration: cdk.Duration.days(90),
+        noncurrentVersionExpiration: cdk.Duration.days(90),
+      },
+      {
         id: "GlacierInstantRetrievalForNonCurrentVersions",
         enabled: true,
         noncurrentVersionTransitions: [
