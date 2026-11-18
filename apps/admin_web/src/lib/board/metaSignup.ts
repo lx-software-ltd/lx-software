@@ -27,13 +27,12 @@ declare global {
   }
 }
 
+/** The two origins Meta's signup window reports from. Compared whole, so a look-alike host or plain http is refused. */
+const META_ORIGIN = "https://www.facebook.com";
+const META_ORIGIN_WEB = "https://web.facebook.com";
+
 function fromFacebook(origin: string): boolean {
-  try {
-    const host = new URL(origin).hostname;
-    return host === "facebook.com" || host.endsWith(".facebook.com");
-  } catch {
-    return false;
-  }
+  return origin === META_ORIGIN || origin === META_ORIGIN_WEB;
 }
 
 /** Null for anything that is not a signup report from facebook.com. */
@@ -107,6 +106,7 @@ export function startWhatsAppSignup(sdk: FacebookSdk, configId: string): Promise
       resolve(result);
     };
     const onMessage = (event: MessageEvent) => {
+      if (event.origin !== META_ORIGIN && event.origin !== META_ORIGIN_WEB) return;
       const result = parseSignupMessage(event.origin, event.data);
       if (result) finish(result);
     };

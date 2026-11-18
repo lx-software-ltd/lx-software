@@ -20,7 +20,10 @@ describe("parseSignupMessage", () => {
   it("ignores a message that does not come from facebook.com", () => {
     const body = report("FINISH", { waba_id: "111", phone_number_id: "222" });
     expect(parseSignupMessage("https://facebook.com.example.com", body)).toBeNull();
+    expect(parseSignupMessage("https://examplefacebook.com", body)).toBeNull();
+    expect(parseSignupMessage("http://www.facebook.com", body)).toBeNull();
     expect(parseSignupMessage("not a url", body)).toBeNull();
+    expect(parseSignupMessage("https://web.facebook.com", body)?.kind).toBe("finished");
     expect(parseSignupMessage(FACEBOOK, "not json")).toBeNull();
     expect(parseSignupMessage(FACEBOOK, JSON.stringify({ type: "other" }))).toBeNull();
   });
@@ -54,6 +57,17 @@ describe("startWhatsAppSignup", () => {
       response_type: "code",
       extras: { featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" },
     });
+    window.dispatchEvent(
+      new MessageEvent("message", { origin: FACEBOOK, data: report("FINISH", { waba_id: "111", phone_number_id: "222" }) }),
+    );
+    await expect(result).resolves.toEqual({ kind: "finished", wabaId: "111", phoneNumberId: "222" });
+  });
+
+  it("ignores a report posted by another site and keeps waiting for Meta's", async () => {
+    const result = startWhatsAppSignup({ init: vi.fn(), login: vi.fn() }, "config-9");
+    window.dispatchEvent(
+      new MessageEvent("message", { origin: "https://www.example.com", data: report("FINISH", { waba_id: "999", phone_number_id: "888" }) }),
+    );
     window.dispatchEvent(
       new MessageEvent("message", { origin: FACEBOOK, data: report("FINISH", { waba_id: "111", phone_number_id: "222" }) }),
     );
