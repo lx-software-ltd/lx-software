@@ -56,10 +56,12 @@ Written as an operator runbook. Menu names follow Meta's documentation of Novemb
 
 ### Part A. Verify token
 
+The owner chose the GitHub secret over a CloudFormation console edit.
+
 1. Generate a random string of 40 or more letters and digits in a password manager. Keep it there.
-2. Until pull request 1 merges: AWS console, CloudFormation, stack `lxsoftware`, Update, Use existing template, set `SiutindeiBoardMetaVerifyToken`, leave every other parameter on "Use existing value", submit.
-3. After pull request 1 merges: GitHub repository, Settings, Secrets and variables, Actions, new repository secret `SIUTINDEI_BOARD_META_VERIFY_TOKEN`, then run Deploy Backend.
-4. Check: open `https://<admin-api>/webhooks/meta/siutindei?hub.mode=subscribe&hub.verify_token=<token>&hub.challenge=123` in a private window. The page shows `123`. A page that shows `forbidden` means the token is not deployed.
+2. GitHub, this repository, Settings, Environments, `production`, Add environment secret. Name `SIUTINDEI_BOARD_META_VERIFY_TOKEN`. Value is the string from step 1. Save. Do not put it in `params/*.json` or in chat.
+3. After pull request 1 (Deploy Backend wiring) is merged: Actions, Deploy Backend, Run workflow, branch `main`. Wait until it is green. Merging the wiring pull request does not run Deploy Backend by itself (the workflow path filter is `backend/**` and `contracts/**` only).
+4. Check: open `https://<admin-api>/webhooks/meta/siutindei?hub.mode=subscribe&hub.verify_token=<token>&hub.challenge=123` in a private window. The page shows `123`. A page that shows `forbidden` means the token is not deployed. The secret can be created before pull request 1 merges; it does nothing until that deploy.
 
 ### Part B. Facebook Page and Instagram
 
@@ -96,7 +98,7 @@ Side effects Meta applies to a coexistence number: disappearing messages, view-o
 
 ### Part D. What the owner can start today
 
-Part A step 1, Part B steps 1 to 10, Part C steps 1, 2 and 4. None of these depends on code.
+Part A steps 1 and 2 (create the GitHub secret), Part B steps 1 to 10, Part C steps 1, 2 and 4. Creating the secret does not depend on code. Deploying it does (Part A step 3).
 
 ## Design
 
@@ -160,8 +162,8 @@ Part A step 1, Part B steps 1 to 10, Part C steps 1, 2 and 4. None of these depe
 ## Files
 
 Pull request 1. Verify token in Deploy Backend (red).
-- `.github/workflows/deploy-backend.yml`: pass `SiutindeiBoardMetaVerifyToken` from a repository secret only when the secret is non-empty, so a missing secret never blanks a set value.
-- `docs/deployment/admin-website.md`: the secret and the handshake check.
+- `.github/workflows/deploy-backend.yml`: pass `SiutindeiBoardMetaVerifyToken` from the `production` environment secret `SIUTINDEI_BOARD_META_VERIFY_TOKEN` only when it is non-empty, so a missing secret never blanks a set value. Helper: `scripts/deploy/cdk-params.sh` `cdk_append_nonempty_param`.
+- `docs/deployment/admin-website.md` and `docs/deployment/setup.md`: the secret, the handshake check, and the Run workflow step.
 
 Pull request 2. Inbox backend and staff tools (yellow, plus contracts).
 - New: `backend/lambda/admin/board_meta_ingest.py`, `board_meta_inbox.py`, `board_meta_media.py`, `test_board_meta_ingest.py`, `test_board_meta_inbox.py`.
