@@ -181,11 +181,13 @@ export function defineAdminBuckets(scope: cdk.Stack, adminWebDomainName: cdk.Cfn
         abortIncompleteMultipartUploadAfter: cdk.Duration.days(7),
       },
       {
+        // The bucket is versioned. Expiry turns the photo into a noncurrent
+        // version, and that copy goes a day later rather than after a second term.
         id: "ExpireBoardMetaMedia",
         enabled: true,
         prefix: "board/meta-media/",
         expiration: cdk.Duration.days(90),
-        noncurrentVersionExpiration: cdk.Duration.days(90),
+        noncurrentVersionExpiration: cdk.Duration.days(1),
       },
       {
         id: "GlacierInstantRetrievalForNonCurrentVersions",

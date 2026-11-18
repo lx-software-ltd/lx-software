@@ -796,6 +796,24 @@ describe("Admin Lambda IAM policies", () => {
   });
 });
 
+describe("Board message media retention", () => {
+  test("photos expire after 90 days and the old version goes a day later", () => {
+    const rules = Object.values(template.toJSON().Resources as Record<string, CfnResource>)
+      .filter((resource) => resource.Type === "AWS::S3::Bucket")
+      .flatMap((bucket) => bucket.Properties?.LifecycleConfiguration?.Rules ?? [])
+      .filter((rule: { Id?: string }) => rule.Id === "ExpireBoardMetaMedia");
+    expect(rules).toEqual([
+      {
+        Id: "ExpireBoardMetaMedia",
+        Status: "Enabled",
+        Prefix: "board/meta-media/",
+        ExpirationInDays: 90,
+        NoncurrentVersionExpiration: { NoncurrentDays: 1 },
+      },
+    ]);
+  });
+});
+
 describe("Executive Board placeholder secrets", () => {
   const reservedNames = [
     "lxsoftware-admin-github-read-token",
