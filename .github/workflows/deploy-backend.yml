@@ -103,10 +103,13 @@ jobs:
           P_GOOGLE_CLIENT_ID: ${{ vars.ADMIN_GOOGLE_CLIENT_ID }}
           P_GOOGLE_CLIENT_SECRET: ${{ secrets.ADMIN_GOOGLE_CLIENT_SECRET }}
           P_EMAIL_ALLOWLIST: ${{ secrets.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
+          P_META_VERIFY_TOKEN: ${{ secrets.SIUTINDEI_BOARD_META_VERIFY_TOKEN }}
         run: |
           set -eo pipefail
           # shellcheck source=../../scripts/check_email_allowlist.sh
           source ../../scripts/check_email_allowlist.sh
+          # shellcheck source=../../scripts/deploy/cdk-params.sh
+          source ../../scripts/deploy/cdk-params.sh
           npx cdk acknowledge 34892 || true
 
           # Three stacks (post-consolidation):
@@ -137,8 +140,6 @@ jobs:
           if [ -n "${CDK_PARAM_FILE:-}" ]; then
             RESOLVED_PARAM_FILE=$(resolve_param_file "$CDK_PARAM_FILE" || true)
             if [ -n "$RESOLVED_PARAM_FILE" ]; then
-              # shellcheck source=../../scripts/deploy/cdk-params.sh
-              source ../../scripts/deploy/cdk-params.sh
               cdk_load_param_args "$RESOLVED_PARAM_FILE"
             else
               echo "CDK_PARAM_FILE '$CDK_PARAM_FILE' not found"
@@ -160,6 +161,15 @@ jobs:
             echo "::error::${allowlist_error} Deploy Backend will not update the admin stacks."
             exit 1
           fi
+
+          # Pass the Meta webhook verify token only when the secret is set.
+          # An empty secret must not blank a value already on the stack.
+          if [ -n "${P_META_VERIFY_TOKEN:-}" ]; then
+            echo "Passing lxsoftware:SiutindeiBoardMetaVerifyToken from GitHub Actions secret"
+          else
+            echo "SIUTINDEI_BOARD_META_VERIFY_TOKEN is unset; CloudFormation keeps the previous verify token"
+          fi
+          cdk_append_nonempty_param "lxsoftware:SiutindeiBoardMetaVerifyToken" "${P_META_VERIFY_TOKEN:-}"
 
           # Backend + admin SPA: Cognito/Dynamo/API + CloudFront. The two stacks
           # are listed in dependency order; CDK additionally honours the
