@@ -15,12 +15,16 @@ Executive Board design is in
 
 1. **GitHub environment** `production` — variables `AWS_ACCOUNT_ID`,
    `AWS_REGION`, optional `CDK_BOOTSTRAP_QUALIFIER`, `CDK_PARAM_FILE`,
-   and `ADMIN_GOOGLE_CLIENT_ID`. Secrets `ADMIN_GOOGLE_CLIENT_SECRET` and
+   and `ADMIN_GOOGLE_CLIENT_ID`. Secrets `ADMIN_GOOGLE_CLIENT_SECRET`,
    `ADMIN_FEDERATED_EMAIL_ALLOWLIST` (comma-separated lower-case emails
-   that receive `admin` via Pre Token Generation — every Google admin).
-   **Deploy Backend** publishes the public website stack, then stops
-   before the admin stacks when any allow-list entry is empty or not an
-   email address. The live allow-list stays.
+   that receive `admin` via Pre Token Generation — every Google admin),
+   and `SIUTINDEI_BOARD_META_VERIFY_TOKEN` (Meta webhook GET handshake;
+   letters and digits, 40 or more). **Deploy Backend** passes the Meta
+   token only when the secret is non-empty, so a missing secret never
+   blanks a value already on the stack. **Deploy Backend** publishes the
+   public website stack, then stops before the admin stacks when any
+   allow-list entry is empty or not an email address. The live allow-list
+   stays.
    **Deploy Admin Web** reads `UserPoolClientId`, `CognitoDomain`, and
    `AdminApiBaseUrl` from the `lxsoftware` stack. Do not set
    `ADMIN_COGNITO_*` or `ADMIN_API_BASE_URL`.
@@ -536,7 +540,7 @@ stack-wide knobs are unprefixed. Lambda env vars stay short
 | `SiutindeiBoardAwsStackPrefix` / `SiutindeiBoardAwsLambdaNames` | Alarm-name prefix (default `siutindei`) and CSV of siutindei Lambda names for `aws_lambda_health`. `aws_monthly_cost` filters by the `Project` tag and falls back to the account (`scope: account`). |
 | `SiutindeiClusterArn` | Aurora cluster ARN. When set, CDK enables the HTTP Data API and applies `scripts/siutindei/receivables.sql`; required for `finance` / `product` tools. |
 | `SiutindeiDbSecretArn` / `SiutindeiDbSecretName` | DB credentials secret (default name `lxsoftware-siutindei-database-credentials`; RDS-owned, do not recreate). |
-| `SiutindeiBoardMetaVerifyToken` | Meta GET verify token (not a Secrets Manager secret). |
+| `SiutindeiBoardMetaVerifyToken` | Meta GET verify token (not a Secrets Manager secret). Set it as the GitHub Actions secret `SIUTINDEI_BOARD_META_VERIFY_TOKEN` on the `production` environment. **Deploy Backend** passes it only when the secret is non-empty. |
 | `SiutindeiBoardMetaPageId` / `MetaIgUserId` / `MetaWaPhoneNumberId` / `MetaAdAccountId` / `MetaWabaId` | Graph ids for the `meta` tools. |
 | `SiutindeiBoardAppStoreConnectAppId` / `AppStoreConnectVendorNumber` / `GooglePlayPackageName` | Store ids if not inside the secrets. The vendor number is needed for Apple download counts. |
 | `SiutindeiBoardGa4PropertyIds` / `SiutindeiBoardGtmContainers` | CSV of GA4 properties; `account:container` pairs. |
@@ -1116,8 +1120,14 @@ organisations.
 2. Turn on **WhatsApp coexistence** so the owner's phone keeps working. If
    unavailable, the number moves fully to the Cloud API and the owner
    replies from **Approvals**.
-3. Subscribe the app to `GET/POST https://<admin-api>/webhooks/meta/siutindei`
-   (legacy `/webhooks/meta` still works).
+3. Put a 40-character letters-and-digits string in the GitHub secret
+   `SIUTINDEI_BOARD_META_VERIFY_TOKEN` on the `production` environment,
+   run **Deploy Backend**, then confirm the handshake: open
+   `https://<admin-api>/webhooks/meta/siutindei?hub.mode=subscribe&hub.verify_token=<token>&hub.challenge=123`
+   in a private window. The page must show `123`. `forbidden` means the
+   token is not on the Lambda yet. Then subscribe the app to
+   `GET/POST https://<admin-api>/webhooks/meta/siutindei` (legacy
+   `/webhooks/meta` still works) with that same token.
 4. Set the `SiutindeiBoardMeta*` ids. Production already sets Page and
    Instagram in `params/production.json`. Until then `meta` tools return
    "not configured". `MetaIgUserId` must be the Graph

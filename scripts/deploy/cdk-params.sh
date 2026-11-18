@@ -2,6 +2,19 @@
 # Source from backend/infrastructure (deploy-backend.yml and cdk-diff.yml).
 # cdk_load_param_args <resolved-param-file> sets:
 #   PUBLIC_PARAM_ARGS, ADMIN_LX_PARAM_ARGS, ADMIN_WEB_PARAM_ARGS
+# cdk_append_nonempty_param KEY VALUE appends --parameters KEY=VALUE to
+# ADMIN_LX_PARAM_ARGS when VALUE is non-empty after trim. It does not print VALUE.
+
+cdk_append_nonempty_param() {
+  local key="${1-}"
+  local value="${2-}"
+  local trimmed="${value#"${value%%[![:space:]]*}"}"
+  trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+  if [[ -z "$key" || -z "$trimmed" ]]; then
+    return 0
+  fi
+  ADMIN_LX_PARAM_ARGS+=( --parameters "${key}=${trimmed}" )
+}
 
 cdk_load_param_args() {
   local resolved="$1"

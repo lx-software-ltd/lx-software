@@ -139,6 +139,7 @@ Secrets:
 |--------|---------|
 | `ADMIN_GOOGLE_CLIENT_SECRET` | Google OAuth client secret (CDK `noEcho`). |
 | `ADMIN_FEDERATED_EMAIL_ALLOWLIST` | Comma-separated lower-case Google admin emails (CDK `noEcho`). **Deploy Backend** reads this production environment secret, publishes the public website stack, then stops before the admin stacks when any entry is empty or not an email address. See [`admin-website.md`](./admin-website.md). |
+| `SIUTINDEI_BOARD_META_VERIFY_TOKEN` | Meta webhook GET handshake (`SiutindeiBoardMetaVerifyToken`, CDK `noEcho`). Production environment secret. **Deploy Backend** passes it only when non-empty, so an unset secret never blanks the live token. Letters and digits, 40 or more. See [`admin-website.md`](./admin-website.md#board-meta-page-instagram-whatsapp). |
 | `PUBLIC_API_KEY_GPG_PASSPHRASE` | Encrypts minted keys in the public workflow logs. |
 | `OPENROUTER_MANAGEMENT_API_KEY` | For **Mint OpenRouter App Keys**. |
 
