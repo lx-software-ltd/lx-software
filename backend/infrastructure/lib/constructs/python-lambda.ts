@@ -128,7 +128,7 @@ function tryLocalPythonBundle(entry: string, outputDir: string): boolean {
  */
 export const DOCKER_BUNDLE_SCRIPT = [
   "set -euo pipefail",
-  "export PIP_ROOT_USER_ACTION=ignore PIP_NO_CACHE_DIR=1",
+  "export PIP_ROOT_USER_ACTION=ignore PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1",
   "if [[ -f requirements.txt ]]; then",
   "  pip install -r requirements.txt -t /asset-output",
   "fi",

@@ -12,6 +12,7 @@ import { DOCKER_BUNDLE_SCRIPT } from "../lib/constructs/python-lambda";
  */
 describe("DOCKER_BUNDLE_SCRIPT", () => {
   test("is newline-joined and parses as bash", () => {
+    expect(DOCKER_BUNDLE_SCRIPT).toContain("PIP_DISABLE_PIP_VERSION_CHECK=1");
     expect(DOCKER_BUNDLE_SCRIPT.split("\n").length).toBeGreaterThan(5);
     const check = spawnSync("bash", ["-n", "-c", DOCKER_BUNDLE_SCRIPT], {
       encoding: "utf8",
