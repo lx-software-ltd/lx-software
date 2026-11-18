@@ -1144,11 +1144,20 @@ organisations.
    Subscribe the Page, Instagram and WhatsApp Business Account webhooks
    (messages, echoes, history, `smb_app_state_sync`) to the URL in step 3.
    Subscribing does not attach the Page and does not connect the phone.
-   After this build is deployed, open **Messages**, paste the WhatsApp
-   business-account id and phone-number id, and choose **Connect**. Then
-   **Import history once**, within 24 hours, and accept history sharing on
-   the phone. A second import is refused. Do not use Meta's "add phone
-   number" flow: that moves the number off the WhatsApp Business app.
+   On **Messages**, **Subscribe Page** attaches the Page to the app.
+   Connect the phone only after this build is deployed: history can be
+   imported once, within 24 hours of connecting. On **Messages**, type the
+   Meta app id and the Embedded Signup configuration id, choose **Connect
+   WhatsApp**, pick "Connect your existing WhatsApp Business app" in Meta's
+   window and scan the code with the phone. The app needs Facebook Login
+   for Business with the admin console's domain allowed for the JavaScript
+   SDK. The board reads the number back from Meta before it shows
+   "Connected", and warns when Meta says the number is not on the Business
+   app. Then choose **Import history**, confirm, and accept history
+   sharing on the phone. A failed step can be retried; a finished import
+   is refused. Do not use Meta's "add phone number" flow: that moves the
+   number off the WhatsApp Business app. Message photos and files are
+   deleted after 90 days.
 
 ### Board stores (App Store Connect + Google Play)
 

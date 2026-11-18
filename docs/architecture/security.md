@@ -96,8 +96,10 @@ parameters use `noEcho: true`; S3 remains private behind CloudFront.
   legacy `/webhooks/meta`) verified by the Meta verify token and
   `X-Hub-Signature-256`. The webhook stores the message text and returns
   before any model call. Persona tools and public-API keys without
-  `siutindei-pii` read an alias, the same way mail does. Media bytes are
-  refused to a key without that scope. `/public/outreach/unsubscribe/{token}` and
+  `siutindei-pii` read a sender alias, no display name or handle, and text
+  with phone numbers and email addresses masked. A name typed inside the
+  text is not masked, the same as in mail. Media, and the WhatsApp account
+  ids and number, are refused to a key without that scope. `/public/outreach/unsubscribe/{token}` and
   `/public/newsletter/{subscribe,confirm,unsubscribe}` verified by HMAC
   tokens and rate-limited.
 - Every admin action writes an audit row (`USER#<sub>` in
@@ -117,9 +119,11 @@ so both are allow-listed (Safari reports a blocked upload as `Load failed`,
 Chrome as `Failed to fetch`). When any of those URLs changes, redeploy
 `lxsoftware-admin-web` and invalidate the distribution.
 `script-src` also allows `https://connect.facebook.net` and `frame-src`
-allows `https://www.facebook.com`, so the Messages tab can load Embedded
-Signup when a configuration id is set. The connect form does not need the
-SDK: the owner pastes the business-account id and the phone-number id.
+allows `https://www.facebook.com`, so the Messages tab can load Meta's
+SDK for Embedded Signup. The SDK is loaded only after the owner types a
+Meta app id on that tab. `img-src` stays `'self' data:`, so a message photo
+opens in a new tab from a short-lived signed link and is never embedded in
+the console.
 
 ## Uploads
 
