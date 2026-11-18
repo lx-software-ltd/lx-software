@@ -65,6 +65,8 @@ The owner chose the GitHub secret over a CloudFormation console edit.
 
 ### Part B. Facebook Page and Instagram
 
+The app's **Webhooks** page lists Page, Instagram and WhatsApp Business Account in one object selector. The callback URL, verify token and field subscriptions in steps 3 and 5, and in Part C step 5, can all be set there. The Messenger, Instagram and WhatsApp settings screens edit the same subscriptions. Subscribing an object says where Meta sends events. It does not attach an asset: the Page still has to be added to the app (step 4), and a WhatsApp number still has to be connected to the Cloud API (Part C).
+
 1. developers.facebook.com, My Apps, the Siu Tin Dei app. Confirm the app mode switch reads **Live**.
 2. App settings, Basic: privacy policy URL, app icon and category are filled in. Meta refuses Live mode and App Review without them.
 3. Add the **Messenger** product if it is missing. Messenger, Settings (or Messenger API Settings), Configure webhooks: Callback URL `https://<admin-api>/webhooks/meta/siutindei`, Verify token from Part A, Verify and save.
@@ -81,13 +83,16 @@ The owner chose the GitHub secret over a CloudFormation console edit.
 
 ### Part C. WhatsApp coexistence
 
-Meta allows coexistence onboarding only through an app that is a **Tech Provider** or through a **Solution Partner**. The owner chooses a route at step 1.
+A number that lives only in the WhatsApp Business app sends nothing to a webhook, whatever is subscribed, until it is connected to the Cloud API through Meta's coexistence flow (Embedded Signup with WhatsApp Business app onboarding). The normal "add phone number" flow is not that: it asks to migrate the number off the phone app and must not be used.
+
+Meta's coexistence page lists "Solution Partner or Tech Provider" as a requirement. That is unsettled for a business connecting its own number through its own app: Meta Support is reported to have told one such business that no enrolment is needed, and Standard Access already lets a person with a role on the app grant its permissions on assets they own. No documented dashboard path for that case was found. The routes below are ordered by cost, and Route 0 is tried first.
 
 1. Choose the route.
+   - Route 0, own app and own number under Standard Access. No enrolment and no App Review. An app admin who also administers the business portfolio runs the coexistence flow. Unconfirmed: it is proven or ruled out by the first attempt in step 6.
    - Route 1, own Tech Provider. The existing Meta app enrols. No third party sees the messages, the existing webhook and signature check are reused, and there is no monthly fee. It needs business verification and an App Review with two screen recordings.
    - Route 2, Solution Partner. A partner onboards the number in a day or two. Messages pass through the partner, the partner charges a fee, and the webhook authentication differs from Meta's. This is the fallback if Route 1 stalls.
-2. Business verification: business.facebook.com, Settings, Security Centre, Start verification. Legal name, address, phone, website and a business registration document. Meta takes from a few days to two weeks.
-3. Route 1: App Dashboard, Use cases, add or customise **WhatsApp**, then Tech Provider onboarding. Follow its checklist. App Review asks for Advanced Access to `whatsapp_business_messaging` and `whatsapp_business_management`, with one recording of a message being sent and one of a template being created. The agent prepares the written answers.
+2. Business verification (needed for Routes 1 and 2, and for Advanced Access in Part B step 13; worth starting whichever route is used): business.facebook.com, Settings, Security Centre, Start verification. Legal name, address, phone, website and a business registration document. Meta takes from a few days to two weeks.
+3. Route 1 only, and only if Route 0 is refused: App Dashboard, Use cases, add or customise **WhatsApp**, then Tech Provider onboarding. Follow its checklist. App Review asks for Advanced Access to `whatsapp_business_messaging` and `whatsapp_business_management`, with one recording of a message being sent and one of a template being created. The agent prepares the written answers.
 4. Update the WhatsApp Business app on the phone to the current version (2.24.17 is the minimum).
 5. App Dashboard, WhatsApp, Configuration: same Callback URL and Verify token. Subscribe `messages`, `smb_message_echoes`, `history`, `smb_app_state_sync` and `account_update`.
 6. Wait for pull request 4 to deploy. Console, Executive Board, Messages, **Connect WhatsApp**. In the Meta window choose "Connect your existing WhatsApp Business app", enter the number, scan the QR code with the phone, and choose **share chat history** when asked.
@@ -220,7 +225,7 @@ Pull request 5. Staff behaviour (yellow).
 
 ## Open questions
 
-- Route 1 (own Tech Provider) or Route 2 (Solution Partner) for coexistence. Recommendation: start Route 1 now and switch only if business verification or App Review is refused.
+- Which coexistence route works. Route 0 (own app, own number, Standard Access) contradicts the requirement on Meta's coexistence page and is supported only by a reported Meta Support answer. Recommendation: build pull request 4 so the connect flow can be tried under Route 0 first, start business verification now, and begin Tech Provider enrolment (Route 1) only if Meta refuses the flow. Route 2 (Solution Partner) stays the last resort.
 - Does the Page and Instagram messaging need Advanced Access? Meta's pages disagree for a business messaging on its own assets. Part B step 11 answers it.
 - Storing Meta text unmasked at rest, as mail is, in place of masked at ingest. Recommendation: yes, because the owner cannot read aliases and the catalog seat needs the real timetable. The reviewer should confirm against `docs/architecture/security.md`.
 - Should WhatsApp history be imported at all? It brings up to 180 days of every business chat on the number, not only the nine organisations. Recommendation: yes, since the number is business-only.
