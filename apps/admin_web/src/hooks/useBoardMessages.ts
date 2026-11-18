@@ -14,6 +14,8 @@ export type BoardMessageThread = {
   readonly threadId: string;
   readonly channel: string;
   readonly displayName: string;
+  /** Instagram username, when Meta returned one. */
+  readonly handle?: string;
   readonly phone: string;
   readonly lastText: string;
   readonly lastDirection: string;
@@ -29,8 +31,19 @@ export type BoardMessage = {
   readonly direction: string;
   readonly text: string;
   readonly senderName: string;
-  readonly attachments: readonly { readonly kind: string; readonly name?: string; readonly stored?: boolean; readonly key?: string }[];
+  readonly attachments: readonly BoardMessageAttachment[];
 };
+
+export type BoardMessageAttachment = {
+  readonly kind: string;
+  readonly name?: string;
+  readonly mime?: string;
+  readonly stored?: boolean;
+  /** Handle for the media route. Absent on a read that may not open media. */
+  readonly ref?: string;
+};
+
+export type BoardWhatsAppSyncStep = { readonly ok?: boolean; readonly error?: string };
 
 export type BoardMessageStatus = {
   readonly configured: boolean;
@@ -42,9 +55,18 @@ export type BoardMessageStatus = {
     readonly connected: boolean;
     readonly phoneNumberId: string;
     readonly wabaId: string;
+    readonly displayPhoneNumber?: string;
+    readonly verifiedName?: string;
+    /** Meta's answer to "is this number also on the WhatsApp Business app". Null when Meta did not say. */
+    readonly onBusinessApp?: boolean | null;
     readonly historyDeclined: boolean;
     readonly disconnectedAt: string;
-    readonly sync: { readonly startedAt?: string };
+    readonly sync: {
+      readonly startedAt?: string;
+      readonly done?: boolean;
+      readonly contacts?: BoardWhatsAppSyncStep;
+      readonly history?: BoardWhatsAppSyncStep;
+    };
   };
 };
 
@@ -68,6 +90,18 @@ export function useBoardMessageStatus() {
   return useQuery({
     queryKey: [...BOARD_MESSAGES_KEY, "status"],
     queryFn: () => adminFetchJson<BoardMessageStatus>(boardMessagesStatusPath()),
+    refetchInterval: 60_000,
+  });
+}
+
+/** The link is signed for a few minutes, so it is asked for when the owner opens the file. */
+export function fetchBoardMessageMediaUrl(threadId: string, ref: string): Promise<{ url: string }> {
+  return adminFetchJson<{ url: string }>(`${boardMessageThreadPath(threadId)}/media/${encodeURIComponent(ref)}`);
+}
+
+export function useBoardPageSubscribe() {
+  return useMutation({
+    mutationFn: () => adminFetchJson<{ ok: boolean; fields: string[] }>(`${BOARD_API_BASE}/messages/connect/page`, { method: "POST", body: "{}" }),
   });
 }
 

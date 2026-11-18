@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { DateTimeDisplay } from "../ui";
 import {
+  fetchBoardMessageMediaUrl,
   useBoardMessageRead,
   useBoardMessages,
-  useBoardMessageStatus,
   useBoardMessageThread,
-  useBoardWhatsAppConnect,
-  useBoardWhatsAppSync,
   type BoardMessage,
+  type BoardMessageAttachment,
+  type BoardMessageThread,
 } from "../../hooks/useBoardMessages";
+import { BoardMessagesConnections } from "./BoardMessagesConnections";
 
 const CHANNELS = [
   { id: "all", label: "All" },
@@ -16,6 +17,23 @@ const CHANNELS = [
   { id: "page", label: "Facebook" },
   { id: "instagram", label: "Instagram" },
 ] as const;
+
+const CHANNEL_LABELS: Record<string, string> = {
+  whatsapp: "WhatsApp",
+  page: "Facebook",
+  instagram: "Instagram",
+};
+
+function channelLabel(channel: string): string {
+  return CHANNEL_LABELS[channel] ?? channel;
+}
+
+function threadTitle(thread: BoardMessageThread): string {
+  if (thread.displayName) return thread.displayName;
+  if (thread.handle) return `@${thread.handle}`;
+  if (thread.phone) return `+${thread.phone.replace(/^\+/, "")}`;
+  return `${channelLabel(thread.channel)} contact`;
+}
 
 export function BoardMessagesView({ errorText }: { readonly errorText: (err: unknown) => string | null }) {
   const [channel, setChannel] = useState<(typeof CHANNELS)[number]["id"]>("all");
@@ -28,7 +46,7 @@ export function BoardMessagesView({ errorText }: { readonly errorText: (err: unk
   return (
     <div className="row g-3">
       <div className="col-12">
-        <WhatsAppConnect errorText={errorText} />
+        <BoardMessagesConnections errorText={errorText} />
       </div>
       <div className="col-12 col-lg-5">
         <div className="btn-group btn-group-sm mb-2" role="group" aria-label="Channel">
@@ -58,8 +76,8 @@ export function BoardMessagesView({ errorText }: { readonly errorText: (err: unk
               }}
             >
               <div className="d-flex justify-content-between gap-2">
-                <span className="fw-semibold">{item.displayName || item.phone || item.channel}</span>
-                <span className="small">{item.channel}</span>
+                <span className="fw-semibold">{threadTitle(item)}</span>
+                <span className="small">{channelLabel(item.channel)}</span>
               </div>
               <div className="small text-truncate">{item.lastText || "(no text)"}</div>
               {item.unread ? <span className="badge text-bg-primary">unread</span> : null}
@@ -71,7 +89,7 @@ export function BoardMessagesView({ errorText }: { readonly errorText: (err: unk
         {thread.data ? (
           <ul className="list-group">
             {thread.data.messages.map((message) => (
-              <MessageRow key={message.messageId} message={message} />
+              <MessageRow key={message.messageId} message={message} threadId={thread.data.thread.threadId} errorText={errorText} />
             ))}
           </ul>
         ) : (
@@ -83,7 +101,13 @@ export function BoardMessagesView({ errorText }: { readonly errorText: (err: unk
   );
 }
 
-function MessageRow({ message }: { readonly message: BoardMessage }) {
+type RowProps = {
+  readonly message: BoardMessage;
+  readonly threadId: string;
+  readonly errorText: (err: unknown) => string | null;
+};
+
+function MessageRow({ message, threadId, errorText }: RowProps) {
   const outbound = message.direction === "out";
   return (
     <li className="list-group-item">
@@ -91,77 +115,60 @@ function MessageRow({ message }: { readonly message: BoardMessage }) {
         <span>{outbound ? "Sent" : message.senderName || "Received"}</span>
         <DateTimeDisplay iso={message.receivedAt} />
       </div>
-      <pre className="mb-0 mt-1 board-mail-body">{message.text || "(attachment)"}</pre>
-      {message.attachments.length > 0 ? (
-        <div className="small mt-1">{message.attachments.map((item) => item.kind).join(", ")}</div>
-      ) : null}
+      {message.text || message.attachments.length === 0 ? <pre className="mb-0 mt-1 board-mail-body">{message.text || "(no text)"}</pre> : null}
+      {message.attachments.map((item, index) => (
+        <AttachmentLink key={item.ref ?? index} attachment={item} threadId={threadId} errorText={errorText} />
+      ))}
     </li>
   );
 }
 
-function WhatsAppConnect({ errorText }: { readonly errorText: (err: unknown) => string | null }) {
-  const status = useBoardMessageStatus();
-  const connect = useBoardWhatsAppConnect();
-  const sync = useBoardWhatsAppSync();
-  const [wabaId, setWabaId] = useState("");
-  const [phoneNumberId, setPhoneNumberId] = useState("");
-  const wa = status.data?.whatsapp;
-  const started = Boolean(wa?.sync?.startedAt);
+const ATTACHMENT_NOUNS: Record<string, string> = {
+  image: "photo",
+  sticker: "sticker",
+  video: "video",
+  audio: "voice message",
+  document: "document",
+};
+
+function AttachmentLink({ attachment, threadId, errorText }: Omit<RowProps, "message"> & { readonly attachment: BoardMessageAttachment }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const noun = ATTACHMENT_NOUNS[attachment.kind] ?? "file";
+  // A photo's name is its caption, which the message text already shows.
+  const named = noun === "document" || noun === "file" ? attachment.name : "";
+  const label = named ? `Open ${noun}: ${named}` : `Open ${noun}`;
+  const ref = attachment.ref;
+  if (!ref) return <div className="small text-muted mt-1">{noun} (not available on this read)</div>;
+
+  const open = async () => {
+    // The tab is opened inside the click, before the request, so the browser does not block it.
+    // The console's content policy only allows its own images, so the photo cannot be shown inline.
+    const tab = window.open("about:blank", "_blank");
+    setBusy(true);
+    setError(null);
+    try {
+      const { url } = await fetchBoardMessageMediaUrl(threadId, ref);
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else {
+        window.location.assign(url);
+      }
+    } catch (err) {
+      tab?.close();
+      setError(errorText(err) ?? "This file could not be opened.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <div className="border rounded p-3">
-      <h3 className="h6">WhatsApp</h3>
-      <p className="small text-muted mb-2">
-        Paste the WhatsApp Business account id and the phone number id from the app. This subscribes the app.
-        It does not register the number, so the phone app keeps working. History can be imported once, and only
-        within 24 hours of connecting the number.
-      </p>
-      {wa?.connected ? (
-        <p className="small mb-2">
-          Connected to phone number id <code>{wa.phoneNumberId}</code>.
-          {started ? " History import already started." : ""}
-          {wa.historyDeclined ? " History sharing was declined on the phone." : ""}
-          {wa.disconnectedAt ? " The phone disconnected this app." : ""}
-        </p>
-      ) : (
-        <form
-          className="row g-2 align-items-end"
-          onSubmit={(event) => {
-            event.preventDefault();
-            connect.mutate({ wabaId: wabaId.trim(), phoneNumberId: phoneNumberId.trim() });
-          }}
-        >
-          <div className="col-12 col-md-4">
-            <label className="form-label small" htmlFor="wa-waba">
-              Business account id
-            </label>
-            <input id="wa-waba" className="form-control form-control-sm" value={wabaId} onChange={(event) => setWabaId(event.target.value)} />
-          </div>
-          <div className="col-12 col-md-4">
-            <label className="form-label small" htmlFor="wa-phone">
-              Phone number id
-            </label>
-            <input
-              id="wa-phone"
-              className="form-control form-control-sm"
-              value={phoneNumberId}
-              onChange={(event) => setPhoneNumberId(event.target.value)}
-            />
-          </div>
-          <div className="col-12 col-md-4">
-            <button type="submit" className="btn btn-sm btn-primary" disabled={connect.isPending}>
-              Connect
-            </button>
-          </div>
-        </form>
-      )}
-      {wa?.connected && !started ? (
-        <button type="button" className="btn btn-sm btn-outline-primary mt-2" disabled={sync.isPending} onClick={() => sync.mutate()}>
-          Import history once
-        </button>
-      ) : null}
-      {connect.error ? <p className="text-danger small mb-0 mt-2">{errorText(connect.error)}</p> : null}
-      {sync.error ? <p className="text-danger small mb-0 mt-2">{errorText(sync.error)}</p> : null}
+    <div className="mt-1">
+      <button type="button" className="btn btn-link btn-sm p-0 align-baseline" disabled={busy} onClick={() => void open()}>
+        {label}
+      </button>
+      {error ? <span className="text-danger small ms-2">{error}</span> : null}
     </div>
   );
 }

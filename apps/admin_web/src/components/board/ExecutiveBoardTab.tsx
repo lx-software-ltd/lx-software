@@ -35,6 +35,7 @@ import { useBoardActions } from "../../hooks/useBoardActions";
 import { useBoardApprovals } from "../../hooks/useBoardApprovals";
 import { useBoardBoundaries } from "../../hooks/useBoardBoundaries";
 import { useBoardHolds } from "../../hooks/useBoardHolds";
+import { useBoardMessageStatus } from "../../hooks/useBoardMessages";
 import { useBoardReview } from "../../hooks/useBoardReview";
 import { createTaskMutationOptions } from "../../hooks/useBoardTasks";
 import { useBoardToolCalls, useBoardTools } from "../../hooks/useBoardTools";
@@ -92,13 +93,14 @@ function errorText(err: unknown): string | null {
 function sectionTabs(
   overview: BoardOverview | undefined,
   needsOwner: number,
+  unreadMessages: number,
 ): readonly AdminTabItem<BoardSection>[] {
   const counts: Partial<Record<BoardSection, { value: number; tone: "neutral" | "warning" }>> = {
     actions: { value: overview?.openActionCount ?? 0, tone: "neutral" },
     tasks: { value: needsOwner, tone: "warning" },
     approvals: { value: overview?.pendingApprovalCount ?? 0, tone: "warning" },
     mail: { value: overview?.unreadMailCount ?? 0, tone: "neutral" },
-    messages: { value: overview?.unreadMessageCount ?? 0, tone: "neutral" },
+    messages: { value: unreadMessages, tone: "neutral" },
     receivables: { value: overview?.overdueInvoiceCount ?? 0, tone: "warning" },
   };
   return SECTIONS.map((s) => {
@@ -130,6 +132,7 @@ export function ExecutiveBoardTab() {
   const [chatPersonaId, setChatPersonaId] = useState<string | null>(null);
   const board = useBoard();
   const staff = useBoardStaff();
+  const messageStatus = useBoardMessageStatus();
   const overviewEarly = board.overview;
   const section = sectionFromSearch(
     location.search,
@@ -272,7 +275,7 @@ export function ExecutiveBoardTab() {
           ) : null}
 
           <AdminTabList
-            tabs={sectionTabs(overview, staff.counts.needs_owner ?? 0)}
+            tabs={sectionTabs(overview, staff.counts.needs_owner ?? 0, messageStatus.data?.unreadCount ?? 0)}
             active={section}
             onChange={setSection}
             label="Board sections"

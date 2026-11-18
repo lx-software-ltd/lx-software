@@ -65,8 +65,15 @@ function PhishingPreviewCard({ preview }: { readonly preview: BoardPhishingPrevi
   );
 }
 
+/**
+ * A Facebook, Instagram or WhatsApp reply with a resolved recipient. Ad sets,
+ * boosts and posts carry the same preview shape with no recipient, and those
+ * keep their argument table so the budget and targets stay visible.
+ */
 function hasMessagePreview(preview: BoardApprovalPreview | undefined): boolean {
-  return !!preview && "text" in preview && "to" in preview && Array.isArray(preview.to);
+  if (isMailPreview(preview)) return true;
+  if (!preview || !("to" in preview) || !Array.isArray(preview.to)) return false;
+  return (preview as { kind?: string }).kind === "meta" && preview.to.length > 0;
 }
 
 function phoneLinkOf(preview: BoardMailPreview): string {
@@ -97,9 +104,12 @@ export function MailPreviewCard({ preview, onOpenThread }: { readonly preview: B
       <div className="fw-semibold mt-1">{preview.subject}</div>
       <pre className="mb-0 mt-1 board-mail-body">{preview.text}</pre>
       {phoneLinkOf(preview) ? (
-        <a className="d-inline-block mt-2" href={phoneLinkOf(preview)}>
-          Open in WhatsApp
-        </a>
+        <div className="mt-2">
+          <a href={phoneLinkOf(preview)} target="_blank" rel="noopener noreferrer">
+            Open in WhatsApp
+          </a>
+          <span className="text-muted ms-2">Sends from your phone. Reject this approval afterwards, or the message goes out twice.</span>
+        </div>
       ) : null}
       <div className="d-flex flex-wrap gap-3 mt-2">
         {preview.threadId && onOpenThread ? (
@@ -236,7 +246,7 @@ export function BoardApprovalsList({
 
         {editingArgsId !== a.approvalId && hasMessagePreview(a.preview) ? (
           <div className="mt-2">
-            <MailPreviewCard preview={a.preview as BoardMailPreview} onOpenThread={onOpenMailThread} />
+            <MailPreviewCard preview={a.preview as BoardMailPreview} onOpenThread={isMailPreview(a.preview) ? onOpenMailThread : undefined} />
           </div>
         ) : null}
         {editingArgsId !== a.approvalId && isPhishingPreview(a.preview) ? (
