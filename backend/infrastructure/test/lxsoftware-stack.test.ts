@@ -1323,6 +1323,46 @@ describe("Admin user pool sign-in gate", () => {
     expect(templateJson).not.toContain("adminAddUserToGroup");
     expect(templateJson).not.toContain("adminGetUser");
   });
+
+  test("the custom Hosted UI domain is optional and acknowledges empty-default W1030", () => {
+    expect(template.toJSON().Parameters.CognitoCustomDomainName.Default).toBe("");
+    expect(template.toJSON().Parameters.CognitoCustomDomainCertificateArn.Default).toBe(
+      ""
+    );
+    const domains = Object.entries(resourcesOfType("AWS::Cognito::UserPoolDomain"));
+    expect(domains).toHaveLength(2);
+    const custom = domains.find(([, resource]) => resource.Properties?.CustomDomainConfig);
+    const prefix = domains.find(([, resource]) => !resource.Properties?.CustomDomainConfig);
+    expect(custom?.[1].Condition).toMatch(/UseCustomAuthDomain/);
+    expect(prefix?.[1].Condition).toMatch(/UseCognitoPrefixAuthDomain/);
+    expect(custom?.[1].Properties?.Domain).toEqual({ Ref: "CognitoCustomDomainName" });
+    expect(custom?.[1].Properties?.CustomDomainConfig?.CertificateArn).toEqual({
+      Ref: "CognitoCustomDomainCertificateArn",
+    });
+
+    const app = new cdk.App({
+      context: {
+        "aws:cdk:bundling-stacks": [],
+      },
+    });
+    const stack = new LxsoftwareStack(app, "lxsoftware", {
+      env: { account: "123456789012", region: "ap-southeast-1" },
+    });
+    const domain = stack.node.findAll().find((construct) => construct.node.id === "HostedUICustomDomain");
+    expect(domain).toBeDefined();
+    const reason =
+      "HostedUICustomDomain is gated by UseCustomAuthDomain; empty CognitoCustomDomainName and CognitoCustomDomainCertificateArn defaults never reach CloudFormation.";
+    const acknowledged = [domain!, stack].map((construct) =>
+      construct.node.metadata.find(
+        (entry) => entry.type === cdk.Validations.ACKNOWLEDGED_RULES_METADATA_KEY
+      )?.data
+    );
+    for (const data of acknowledged) {
+      expect(data).toMatchObject({
+        "CloudFormation-Validate::W1030": reason,
+      });
+    }
+  });
 });
 
 describe("Lambda service-principal permissions", () => {

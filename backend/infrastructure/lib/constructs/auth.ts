@@ -279,6 +279,20 @@ export class AuthConstruct extends Construct {
     );
     this.cognitoCustomHostedDomain.cfnOptions.condition = useCustomDomain;
     this.cognitoCustomHostedDomain.node.addDependency(removeCognitoPrefixDomain);
+    // CloudFormation Validate substitutes parameter defaults before Conditions.
+    // Empty optional custom-domain defaults fail CertificateArn/Domain schema
+    // checks even though this resource is not created when they are blank.
+    // The parameter-default finding is attributed to the stack; the property
+    // findings are attributed to this resource.
+    const emptyOptionalCustomDomain = {
+      id: "CloudFormation-Validate::W1030",
+      reason:
+        "HostedUICustomDomain is gated by UseCustomAuthDomain; empty CognitoCustomDomainName and CognitoCustomDomainCertificateArn defaults never reach CloudFormation.",
+    };
+    cdk.Validations.of(this.cognitoCustomHostedDomain).acknowledge(
+      emptyOptionalCustomDomain
+    );
+    cdk.Validations.of(cdk.Stack.of(this)).acknowledge(emptyOptionalCustomDomain);
 
     const prefixOAuthBaseUrl = cdk.Fn.join("", [
       "https://",
