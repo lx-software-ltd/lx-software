@@ -466,7 +466,7 @@ export const boardOverviewFixture: BoardOverview = {
   repo: "lx-software-ltd/siutindei",
   pendingApprovalCount: 1,
   toolsEnabled: true,
-  unreadMailCount: 3, unreadMessageCount: 1,
+  unreadMailCount: 3,
   overdueInvoiceCount: 2,
   mail: {
     threadCount: 11,

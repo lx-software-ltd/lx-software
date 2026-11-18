@@ -886,7 +886,7 @@ export type BoardOverview = {
   readonly repo: string;
   readonly pendingApprovalCount: number;
   readonly toolsEnabled: boolean;
-  readonly unreadMailCount: number; readonly unreadMessageCount?: number;
+  readonly unreadMailCount: number;
   readonly overdueInvoiceCount?: number;
   readonly mail: BoardMailStatus;
   readonly outreachIdentity?: BoardOutreachIdentity;
