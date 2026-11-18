@@ -57,7 +57,11 @@ Typical committed values include:
   write denials return `403 {"reason": …}` (`writes_disabled`,
   `key_read_only`, `owner_only`, `scope`).
 - Optional Cognito custom Hosted UI on `lxsoftware`: `lxsoftware:CognitoCustomDomainName`
-  and `lxsoftware:CognitoCustomDomainCertificateArn` (ACM in **us-east-1**)
+  and `lxsoftware:CognitoCustomDomainCertificateArn` (ACM in **us-east-1**).
+  An empty value keeps the prefix domain. The template defaults are disabled
+  placeholders (`disabled.example.com` and a certificate ARN in account
+  `000000000000`) so CloudFormation Validate can resolve them; they select
+  the prefix domain too. `production.json` sets the real hostname and certificate.
 - **`lxsoftware-admin-web:AdminWebCertificateArn`** — ACM certificate in **us-east-1** for the admin CloudFront alias. Production uses the same certificate as the public site and the Cognito custom domain.
 - **`lxsoftware-admin-web:CspCognitoConnectOrigin`** — full HTTPS origin for Cognito OAuth
   in the admin CloudFront CSP `connect-src` (e.g. `https://auth.lx-software.com`), must

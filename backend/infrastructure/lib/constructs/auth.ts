@@ -6,6 +6,11 @@ import * as kms from "aws-cdk-lib/aws-kms";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as path from "node:path";
 import { Construct } from "constructs";
+import {
+  COGNITO_CUSTOM_CERTIFICATE_DISABLED,
+  COGNITO_CUSTOM_DOMAIN_DISABLED,
+  cognitoCustomValueUnset,
+} from "../cognito-custom-domain";
 import { createPythonLambda } from "./python-lambda";
 
 export interface AuthConstructProps {
@@ -169,20 +174,19 @@ export class AuthConstruct extends Construct {
 
     this.userPoolClient.node.addDependency(googleProvider);
 
+    // Empty and the disabled defaults both keep the prefix domain.
+    const nameUnset = cognitoCustomValueUnset(
+      props.cognitoCustomDomainNameParameter.valueAsString,
+      COGNITO_CUSTOM_DOMAIN_DISABLED
+    );
+    const certificateUnset = cognitoCustomValueUnset(
+      props.cognitoCustomDomainCertificateArnParameter.valueAsString,
+      COGNITO_CUSTOM_CERTIFICATE_DISABLED
+    );
     const useCustomDomain = new cdk.CfnCondition(this, "UseCustomAuthDomain", {
       expression: cdk.Fn.conditionAnd(
-        cdk.Fn.conditionNot(
-          cdk.Fn.conditionEquals(
-            props.cognitoCustomDomainNameParameter.valueAsString,
-            ""
-          )
-        ),
-        cdk.Fn.conditionNot(
-          cdk.Fn.conditionEquals(
-            props.cognitoCustomDomainCertificateArnParameter.valueAsString,
-            ""
-          )
-        )
+        cdk.Fn.conditionNot(nameUnset),
+        cdk.Fn.conditionNot(certificateUnset)
       ),
     });
 
@@ -190,16 +194,7 @@ export class AuthConstruct extends Construct {
       this,
       "UseCognitoPrefixAuthDomain",
       {
-        expression: cdk.Fn.conditionOr(
-          cdk.Fn.conditionEquals(
-            props.cognitoCustomDomainNameParameter.valueAsString,
-            ""
-          ),
-          cdk.Fn.conditionEquals(
-            props.cognitoCustomDomainCertificateArnParameter.valueAsString,
-            ""
-          )
-        ),
+        expression: cdk.Fn.conditionOr(nameUnset, certificateUnset),
       }
     );
 
