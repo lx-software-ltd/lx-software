@@ -1,12 +1,15 @@
-"""Read a Meta thread the way mail is read: full text in the store, aliases for staff."""
+"""Read a Meta thread the way mail is read: full text in the store, aliases for staff and keys."""
 
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Any
 
 import board_meta
+import board_meta_store
 import board_pii
+import board_policy
 import board_store
 from contract_constants import BOARD_TOOLS_CONTRACT
 from http_common import _log_event
@@ -14,7 +17,6 @@ from http_common import _log_event
 _LIMITS = BOARD_TOOLS_CONTRACT["limits"]
 _LIST_MAX = int(_LIMITS["metaThreadListMax"])
 _MSG_MAX = int(_LIMITS["metaThreadMessagesMax"])
-_BACKFILL = int(_LIMITS["metaBackfillThreadsPerRun"])
 
 
 def digest_for_context(table: Any) -> dict[str, Any]:
@@ -56,9 +58,10 @@ def op_get_thread(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if not thread:
         raise board_meta.MetaError("thread not found")
     pseud = board_pii.Pseudonymizer(ctx.table)
-    messages = [_public_message(row, pseud) for row in _messages(ctx.table, thread_id)]
+    shown = _public_thread(thread, pseud)
+    messages = [_public_message(row, pseud, sender=shown["displayName"]) for row in _messages(ctx.table, thread_id)]
     pseud.save()
-    return {"thread": _public_thread(thread, pseud), "messages": messages, "count": len(messages)}
+    return {"thread": shown, "messages": messages, "count": len(messages)}
 
 
 def op_list_dms(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
@@ -71,33 +74,56 @@ def op_list_whatsapp(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
 
 def record_outbound(ctx: Any, args: dict[str, Any], sent: dict[str, Any]) -> None:
     """Store a reply that an approval just sent, so the thread shows both directions."""
-    thread_id = str(sent.get("threadId") or args.get("threadId") or "")
-    if not thread_id or not sent.get("ok"):
+    if not sent.get("ok"):
         return
-    thread = board_store.get_meta_thread(ctx.table, thread_id) or {"threadId": thread_id}
-    text = str(args.get("message") or "")
-    received = board_store.now_iso()
-    message_id = str(sent.get("messageId") or board_store.new_id())
-    fresh = board_store.put_meta_message_if_new(
-        ctx.table,
+    thread = _sent_thread(ctx.table, args, sent)
+    if not thread:
+        return
+    # A reply addressed by number can be the first row of its thread.
+    number = board_meta._phone_digits(str(sent.get("to") or ""))
+    writer = board_meta_store.Writer(ctx.table)
+    writer.add(
         {
-            "threadId": thread_id,
-            "messageId": message_id,
-            "receivedAt": received,
+            "_threadId": thread["threadId"],
+            "channel": thread.get("channel") or ("whatsapp" if number else "page"),
+            "senderId": thread.get("senderId") or number or str(sent.get("recipientId") or ""),
+            "phone": thread.get("phone") or number,
+            "messageId": str(sent.get("messageId") or sent.get("commentId") or board_store.new_id()),
+            "text": str(args.get("message") or args.get("template") or ""),
             "direction": "out",
-            "text": text[: int(_LIMITS["metaMessageTextMax"])],
-            "textMasked": text[:240],
-            "channel": thread.get("channel"),
             "source": "board",
-            "attachments": [],
-        },
+        }
     )
-    if not fresh:
-        return
-    board_store.put_meta_thread(
-        ctx.table,
-        {**thread, "lastMessageAt": received, "lastOutboundAt": received, "lastDirection": "out", "messageCount": int(thread.get("messageCount") or 0) + 1},
-    )
+    writer.flush()
+
+
+def _sent_thread(table: Any, args: dict[str, Any], sent: dict[str, Any]) -> dict[str, Any] | None:
+    thread_id = str(sent.get("threadId") or args.get("threadId") or "")
+    if thread_id:
+        return board_store.get_meta_thread(table, thread_id) or {"threadId": thread_id}
+    comment = str(args.get("commentId") or "")
+    for channel in ("page", "instagram") if comment else ():
+        found = board_store.get_meta_thread(table, board_meta.thread_id_for(channel, f"comment:{comment}"))
+        if found:
+            return found
+    return None
+
+
+def organisation_hold(table: Any, args: dict[str, Any]) -> str | None:
+    """A reply addressed by number or recipient id, not by thread, is held for an organisation too."""
+    if str(args.get("threadId") or "").strip():
+        return None
+    ids = []
+    if str(args.get("to") or "").strip():
+        ids.append(board_meta.whatsapp_thread_id(str(args.get("to"))))
+    recipient = str(args.get("recipientId") or "").strip()
+    if recipient:
+        ids.extend(board_meta.thread_id_for(channel, recipient) for channel in ("page", "instagram"))
+    for thread_id in ids:
+        thread = board_store.get_meta_thread(table, thread_id)
+        if thread and str(thread.get("prospectId") or ""):
+            return board_policy.ORGANISATION_REPLY_REASON
+    return None
 
 
 def list_for_owner(table: Any, *, channel: str = "all", unread_only: bool = False) -> dict[str, Any]:
@@ -121,36 +147,57 @@ def thread_for_owner(table: Any, thread_id: str) -> dict[str, Any] | None:
     return {"thread": _owner_thread(thread), "messages": messages}
 
 
+def media_ref(message_id: str, index: int) -> str:
+    """URL-safe handle for one attachment. Message ids hold characters a path cannot carry."""
+    return f"{hashlib.sha256(str(message_id).encode()).hexdigest()[:16]}-{index}"
+
+
+def find_media(table: Any, thread_id: str, ref: str) -> tuple[dict[str, Any], int] | None:
+    for row in board_store.list_meta_messages(table, thread_id):
+        attachments = row.get("attachments") or []
+        for index in range(len(attachments)):
+            if media_ref(str(row.get("messageId") or ""), index) == ref and isinstance(attachments[index], dict):
+                return row, index
+    return None
+
+
 def mark_read(table: Any, thread_id: str) -> dict[str, Any] | None:
     thread = board_store.get_meta_thread(table, thread_id)
     if not thread:
         return None
     thread["unread"] = False
     thread["unreadCount"] = 0
+    thread["lastReadAt"] = board_store.now_iso()
     board_store.put_meta_thread(table, thread)
     return _owner_thread(thread)
 
 
 def mask_public(body: dict[str, Any], rest: list[str]) -> tuple[dict[str, Any], bool]:
-    """Mask a key read. Media bytes are refused without the pii scope."""
+    """Mask a key read. Names, numbers, account ids and media are refused without the pii scope."""
     if "media" in rest:
         return {"message": "forbidden", "reason": "scope"}, True
-    mask = _regex_mask
     if isinstance(body.get("threads"), list):
-        body["threads"] = [_mask_owner_thread(row, mask) for row in body["threads"]]
+        body["threads"] = [_mask_owner_thread(row) for row in body["threads"]]
     if isinstance(body.get("thread"), dict):
-        body["thread"] = _mask_owner_thread(body["thread"], mask)
+        body["thread"] = _mask_owner_thread(body["thread"])
     if isinstance(body.get("messages"), list):
-        body["messages"] = [_mask_owner_message(row, mask) for row in body["messages"]]
+        body["messages"] = [_mask_owner_message(row) for row in body["messages"]]
+    if isinstance(body.get("whatsapp"), dict):
+        body["whatsapp"] = {k: v for k, v in body["whatsapp"].items() if k not in _ACCOUNT_FIELDS}
     return body, False
 
 
 _LONG_NUMBER = re.compile(r"(?<!\d)\d{8,15}(?!\d)")
+_ACCOUNT_FIELDS = frozenset({"phoneNumberId", "wabaId", "displayPhoneNumber", "verifiedName"})
 
 
 def _regex_mask(text: str) -> str:
     masked = board_pii.EMAIL_RE.sub("contact#hidden", board_pii.PHONE_RE.sub("phone#hidden", str(text or "")))
     return _LONG_NUMBER.sub("phone#hidden", masked)
+
+
+def _hidden(value: Any, placeholder: str) -> str:
+    return placeholder if str(value or "").strip() else ""
 
 
 def status(table: Any) -> dict[str, Any]:
@@ -165,78 +212,41 @@ def status(table: Any) -> dict[str, Any]:
     return summary
 
 
-def backfill(table: Any) -> dict[str, Any]:
-    """Pull the newest Page and Instagram conversations. WhatsApp has no equivalent read."""
-    if not board_meta.page_id():
-        return {"skipped": "no page"}
-    inserted = 0
-    for platform, channel in (("messenger", "page"), ("instagram", "instagram")):
-        try:
-            rows = board_meta.graph_pages(
-                "GET",
-                f"{board_meta.page_id()}/conversations",
-                {"platform": platform, "fields": "id,updated_time,messages.limit(20){id,message,from,created_time}"},
-                limit=_BACKFILL,
-            )
-        except board_meta.MetaError as exc:
-            _log_event("warning", tag="board_meta_backfill_failed", channel=channel, error=str(exc)[:200])
-            continue
-        inserted += _insert_conversations(table, rows, channel=channel)
-    return {"inserted": inserted}
-
-
 def handle_after_ingest(event: dict[str, Any]) -> dict[str, Any]:
     if not board_store.event_targets_this_board(event):
         return {}
+    import board_meta_triage
+
     table = board_store.records_table()
-    try:
-        import board_meta_triage
-
-        settings = board_store.load_settings(table)
-        for item in event.get("items") or []:
-            if not isinstance(item, dict):
-                continue
-            thread = board_store.get_meta_thread(table, str(item.get("threadId") or ""))
-            if not thread:
-                continue
-            message = _find_message(table, thread["threadId"], str(item.get("messageId") or ""))
-            if message and message.get("direction") != "out":
-                board_meta_triage.on_message(table, settings, thread, message)
-            if message:
-                import board_meta_attachments
-
-                board_meta_attachments.fetch_pending(table, thread, message)
-    except Exception as exc:
-        _log_event("warning", tag="board_meta_after_ingest_failed", error=str(exc)[:300])
+    settings = board_store.load_settings(table)
+    index = board_meta_triage.ProspectIndex(table)
+    for item in event.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        # One bad message must not stop the rest of the delivery.
+        try:
+            _after_one(table, settings, index, item)
+        except Exception as exc:
+            _log_event("warning", tag="board_meta_after_ingest_failed", threadId=str(item.get("threadId") or ""), error=str(exc)[:300])
     return {}
 
 
-def _insert_conversations(table: Any, rows: list[dict[str, Any]], *, channel: str) -> int:
-    import board_meta_ingest
+def _after_one(table: Any, settings: dict[str, Any], index: Any, item: dict[str, Any]) -> None:
+    import board_meta_attachments
+    import board_meta_profile
+    import board_meta_triage
 
-    inserted = 0
-    pseud = board_pii.Pseudonymizer(table)
-    for row in rows[:_BACKFILL]:
-        messages = ((row.get("messages") or {}).get("data") or []) if isinstance(row.get("messages"), dict) else []
-        for raw in messages:
-            if not isinstance(raw, dict):
-                continue
-            sender = str(((raw.get("from") or {}) if isinstance(raw.get("from"), dict) else {}).get("id") or "")
-            msg = {
-                "channel": channel,
-                "threadKey": sender or str(row.get("id") or ""),
-                "senderId": sender,
-                "messageId": str(raw.get("id") or ""),
-                "text": str(raw.get("message") or ""),
-                "timestampMs": 0,
-                "direction": "in",
-                "source": "backfill",
-                "attachments": [],
-            }
-            if msg["messageId"] and board_meta_ingest._store(table, pseud, msg, received_at=str(raw.get("created_time") or board_store.now_iso())):
-                inserted += 1
-    pseud.save()
-    return inserted
+    thread = board_store.get_meta_thread(table, str(item.get("threadId") or ""))
+    if not thread:
+        return
+    message = _find_message(table, thread["threadId"], str(item.get("messageId") or ""))
+    if not message:
+        return
+    thread = board_meta_profile.fill_name(table, thread)
+    if message.get("direction") != "out":
+        board_meta_triage.on_message(table, settings, thread, message, index=index, route_customers=item.get("mode") == "live")
+    if message.get("source") != "history":
+        board_meta_attachments.fetch_pending(table, message)
 
 
 def _messages(table: Any, thread_id: str) -> list[dict[str, Any]]:
@@ -258,12 +268,24 @@ def _text(row: dict[str, Any]) -> str:
     return str(row.get("textMasked") or row.get("lastTextMasked") or "")
 
 
-def _public_thread(thread: dict[str, Any], pseud: board_pii.Pseudonymizer) -> dict[str, Any]:
+def _alias(thread: dict[str, Any], pseud: Any) -> str:
+    """Staff never see a contact's name. A WhatsApp sender shares the alias its number has in text."""
+    sender = str(thread.get("senderId") or "")
+    if not sender:
+        return "contact"
+    if thread.get("channel") == "whatsapp":
+        return pseud.alias_for("phone", f"+{sender}")
+    # "fb" is the namespace Page comment senders already use, so one person keeps one alias.
+    namespace = "ig" if thread.get("channel") == "instagram" else "fb"
+    return pseud.alias_for_external(namespace, sender, display=str(thread.get("displayName") or ""))
+
+
+def _public_thread(thread: dict[str, Any], pseud: Any) -> dict[str, Any]:
     return {
         "threadId": thread.get("threadId"),
         "channel": thread.get("channel"),
         "kind": thread.get("kind") or "message",
-        "displayName": pseud.mask_text(str(thread.get("displayName") or "")) or "contact",
+        "displayName": _alias(thread, pseud),
         "lastText": pseud.mask_text(_text(thread)),
         "lastTextMasked": pseud.mask_text(_text(thread)),
         "inWindow": board_meta._in_window(thread),
@@ -275,13 +297,13 @@ def _public_thread(thread: dict[str, Any], pseud: board_pii.Pseudonymizer) -> di
     }
 
 
-def _public_message(row: dict[str, Any], pseud: board_pii.Pseudonymizer) -> dict[str, Any]:
+def _public_message(row: dict[str, Any], pseud: Any, *, sender: str = "") -> dict[str, Any]:
     return {
         "messageId": row.get("messageId"),
         "receivedAt": row.get("receivedAt"),
         "direction": row.get("direction") or "in",
         "text": pseud.mask_text(_text(row)),
-        "senderName": pseud.mask_text(str(row.get("senderName") or "")),
+        "senderName": sender if (row.get("direction") or "in") == "in" else "",
         "source": row.get("source") or "webhook",
         "attachments": [_attachment_public(item) for item in row.get("attachments") or [] if isinstance(item, dict)],
     }
@@ -297,7 +319,6 @@ def _owner_thread(thread: dict[str, Any]) -> dict[str, Any]:
     shown["phone"] = str(thread.get("phone") or "")
     shown["handle"] = str(thread.get("handle") or "")
     shown["lastText"] = _text(thread)
-    shown["prospectId"] = thread.get("prospectId") or ""
     return shown
 
 
@@ -305,24 +326,26 @@ def _owner_message(row: dict[str, Any]) -> dict[str, Any]:
     shown = _public_message(row, _plain())
     shown["text"] = _text(row)
     shown["senderName"] = str(row.get("senderName") or "")
+    for index, item in enumerate(shown["attachments"]):
+        item["ref"] = media_ref(str(row.get("messageId") or ""), index)
     return shown
 
 
-def _mask_owner_thread(thread: dict[str, Any], mask: Any) -> dict[str, Any]:
+def _mask_owner_thread(thread: dict[str, Any]) -> dict[str, Any]:
     out = dict(thread)
-    out["displayName"] = mask(str(thread.get("displayName") or ""))
-    out["phone"] = mask(str(thread.get("phone") or ""))
-    out["handle"] = mask(str(thread.get("handle") or ""))
-    out["lastText"] = mask(str(thread.get("lastText") or ""))
-    out["lastTextMasked"] = mask(str(thread.get("lastTextMasked") or thread.get("lastText") or ""))
+    out["displayName"] = _hidden(thread.get("displayName"), "contact#hidden")
+    out["phone"] = _hidden(thread.get("phone"), "phone#hidden")
+    out["handle"] = _hidden(thread.get("handle"), "contact#hidden")
+    out["lastText"] = _regex_mask(str(thread.get("lastText") or ""))
+    out["lastTextMasked"] = _regex_mask(str(thread.get("lastTextMasked") or thread.get("lastText") or ""))
     return out
 
 
-def _mask_owner_message(row: dict[str, Any], mask: Any) -> dict[str, Any]:
+def _mask_owner_message(row: dict[str, Any]) -> dict[str, Any]:
     out = dict(row)
-    out["text"] = mask(str(row.get("text") or ""))
-    out["senderName"] = mask(str(row.get("senderName") or ""))
-    out.pop("url", None)
+    out["text"] = _regex_mask(str(row.get("text") or ""))
+    out["senderName"] = _hidden(row.get("senderName"), "contact#hidden")
+    out["attachments"] = [{k: v for k, v in item.items() if k != "ref"} for item in row.get("attachments") or [] if isinstance(item, dict)]
     return out
 
 
@@ -331,6 +354,12 @@ class _plain:
 
     def mask_text(self, text: str) -> str:
         return text
+
+    def alias_for(self, _kind: str, value: str) -> str:
+        return value
+
+    def alias_for_external(self, _namespace: str, external_id: str, *, display: str = "") -> str:
+        return display or external_id
 
 
 def _limit(raw: Any, ceiling: int) -> int:

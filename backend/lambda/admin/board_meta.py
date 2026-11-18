@@ -466,14 +466,6 @@ def op_list_comments(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     return {"posts": posts, "count": len(posts)}
 
 
-def op_list_dms(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
-    return _list_stored(ctx.table, channel="page", limit=int(args.get("limit") or 20))
-
-
-def op_list_whatsapp(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
-    return _list_stored(ctx.table, channel="whatsapp", limit=int(args.get("limit") or 20))
-
-
 def op_ad_spend(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     aid = str(args.get("adAccountId") or ad_account_id())
     if not aid:
@@ -501,24 +493,6 @@ def op_ad_spend(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         "recordedDailyUsd": snapshot["recordedDailyUsd"],
         "recordedMonthlyUsd": snapshot["recordedMonthlyUsd"],
         "rows": rows[:5],
-    }
-
-
-def _list_stored(table: Any, *, channel: str, limit: int) -> dict[str, Any]:
-    threads = [t for t in board_store.list_meta_threads(table) if t.get("channel") == channel]
-    threads = threads[: max(1, min(limit, BOARD_META_LIST_MAX))]
-    return {
-        "threads": [
-            {
-                "threadId": t.get("threadId"),
-                "lastTextMasked": t.get("lastTextMasked"),
-                "lastMessageAt": t.get("lastMessageAt"),
-                "unread": bool(t.get("unread")),
-                "inWindow": _in_window(t),
-            }
-            for t in threads
-        ],
-        "count": len(threads),
     }
 
 

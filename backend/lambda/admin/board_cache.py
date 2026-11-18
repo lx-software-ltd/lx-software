@@ -55,9 +55,9 @@ def refresh_all(table: Any) -> dict[str, Any]:
 
 
 def _refresh_meta(table: Any) -> dict[str, Any]:
-    import board_meta_inbox
+    import board_meta_backfill
 
-    return board_meta_inbox.backfill(table)
+    return board_meta_backfill.backfill(table)
 
 
 def handle_schedule_trigger(event: dict[str, Any]) -> dict[str, Any]:

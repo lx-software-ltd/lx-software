@@ -224,6 +224,7 @@ def handle_board_route(
 
     return not_found()
 
+
 def _overview() -> dict[str, Any]:
     table = board_store.records_table()
     settings = board_store.load_settings(table)
@@ -251,7 +252,6 @@ def _overview() -> dict[str, Any]:
             "openActionCount": open_count,
             "pendingApprovalCount": pending_approvals,
             "unreadMailCount": mail["unreadCount"],
-            "unreadMessageCount": board_meta.status_summary(table)["unreadCount"],
             "overdueInvoiceCount": int(recv.get("overdue") or 0),
             "mail": mail,
             "outreachIdentity": board_outreach.identity_health(),

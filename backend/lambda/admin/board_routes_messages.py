@@ -71,19 +71,16 @@ def _sync(table: Any) -> dict[str, Any]:
         return _json_response(exc.status or 400, {"message": str(exc)})
 
 
-def _media(table: Any, thread_id: str, index: str) -> dict[str, Any]:
-    detail = board_meta_inbox.thread_for_owner(table, thread_id)
-    if not detail:
+def _media(table: Any, thread_id: str, ref: str) -> dict[str, Any]:
+    found = board_meta_inbox.find_media(table, thread_id, ref)
+    if not found:
         return not_found()
-    try:
-        nth = int(index)
-    except ValueError:
-        return not_found()
-    for message in detail.get("messages") or []:
-        attachments = message.get("attachments") or []
-        if 0 <= nth < len(attachments) and isinstance(attachments[nth], dict):
-            url = board_meta_attachments.presign(str(attachments[nth].get("key") or ""))
-            if not url:
-                return _json_response(404, {"message": "media is not stored"})
-            return _json_response(200, {"url": url})
-    return not_found()
+    message, index = found
+    if not message["attachments"][index].get("key"):
+        # History media is not copied on import. It is fetched the first time the owner opens it.
+        board_meta_attachments.fetch_pending(table, message)
+    item = message["attachments"][index]
+    url = board_meta_attachments.presign(item)
+    if not url:
+        return _json_response(404, {"message": "This file is no longer available from Meta."})
+    return _json_response(200, {"url": url, "kind": item.get("kind") or "file", "mime": item.get("mime") or "", "name": item.get("name") or ""})

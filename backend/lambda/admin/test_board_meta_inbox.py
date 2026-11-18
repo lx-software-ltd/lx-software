@@ -17,8 +17,10 @@ import board_meta_whatsapp
 import board_policy
 import board_public_api
 import board_routes
+import board_staff
 import board_store
 import board_tools
+import board_triage
 from test_board import BoardTestCase
 from test_board_t5 import MetaTestCase
 
@@ -79,7 +81,7 @@ class IngestTests(MetaTestCase):
         self.assertTrue((cached.get("payload") or {}).get("declined"))
 
     def test_owner_sees_the_number_and_staff_see_an_alias(self) -> None:
-        with patch.object(board_meta_ingest, "_follow_up", lambda items: None):
+        with patch.object(board_meta_ingest, "follow_up", lambda items: None):
             board_meta.ingest_webhook(
                 self.table,
                 {
@@ -119,7 +121,7 @@ class IngestTests(MetaTestCase):
 
 class RouteTests(BoardTestCase):
     def test_owner_routes_list_and_mark_read(self) -> None:
-        with patch.object(board_meta_ingest, "_follow_up", lambda items: None):
+        with patch.object(board_meta_ingest, "follow_up", lambda items: None):
             board_meta.ingest_webhook(
                 self.table,
                 {
@@ -174,25 +176,11 @@ class RouteTests(BoardTestCase):
         return out["statusCode"], json.loads(out["body"])
 
 
-class WhatsAppConnectTests(BoardTestCase):
-    def test_connect_stores_ids_and_history_runs_once(self) -> None:
-        calls: list[str] = []
-
-        def fake_graph(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
-            calls.append(f"{method} {path}")
-            return {"success": True}
-
-        with patch.object(board_meta, "graph", side_effect=fake_graph):
-            connected = board_meta_whatsapp.connect(self.table, {"wabaId": "111", "phoneNumberId": "222"})
-            first = board_meta_whatsapp.sync_history(self.table)
-            with self.assertRaises(board_meta.MetaError):
-                board_meta_whatsapp.sync_history(self.table)
-        self.assertTrue(connected["connected"])
-        self.assertEqual(connected["phoneNumberId"], "222")
-        self.assertEqual(first["contacts"]["syncType"], "smb_app_state_sync")
-        self.assertEqual(first["history"]["syncType"], "history")
-        self.assertEqual(calls, ["POST 111/subscribed_apps", "POST 222/smb_app_data", "POST 222/smb_app_data"])
-        self.assertIn("text=", board_meta_whatsapp.phone_link("+85291234567", "Saturday"))
+class WhatsAppLinkTests(unittest.TestCase):
+    def test_the_tap_to_send_link_carries_the_number_and_the_text(self) -> None:
+        link = board_meta_whatsapp.phone_link("+852 9123 4567", "Saturday 9am")
+        self.assertEqual(link, "https://wa.me/85291234567?text=Saturday%209am")
+        self.assertEqual(board_meta_whatsapp.phone_link("", "x"), "")
 
 
 class OrganisationThreadTests(BoardTestCase):
@@ -200,6 +188,11 @@ class OrganisationThreadTests(BoardTestCase):
         super().setUp()
         os.environ["BOARD_STAFF_ENABLED"] = "true"
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
+        # In-memory blobs, and the seat does not start on the task: no call leaves the test.
+        os.environ.pop("ASSETS_BUCKET_NAME", None)
+        runner = patch.object(board_staff, "run_step", lambda payload: None)
+        runner.start()
+        self.addCleanup(runner.stop)
         settings = board_store.load_settings(self.table)
         settings["staff"] = board_store.normalize_staff_config({**(settings.get("staff") or {}), "enabled": True})
         self.settings = board_store.save_settings(self.table, settings)
@@ -238,7 +231,7 @@ class OrganisationThreadTests(BoardTestCase):
                     ],
                 },
             )
-        tasks = board_store.list_tasks(self.table, "queued")
+        tasks = [task for status in board_triage.OPEN_TASK_STATUSES for task in board_store.list_tasks(self.table, status)]
         self.assertEqual(len(tasks), 1)
         self.assertEqual(tasks[0]["assignee"], "content-marketer")
         self.assertIn("Harbour Club", tasks[0]["brief"])

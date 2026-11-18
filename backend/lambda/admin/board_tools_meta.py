@@ -199,7 +199,7 @@ def ops() -> list[ToolOp]:
             summarize=_summ("Reply to Page DM {threadId}"),
             act_guard=_reply_guard(
                 "meta_reply_dm",
-                lambda ctx, args: board_meta.act_guard_allow_list(ctx, args, field="recipientId"),
+                _organisation_guard(lambda ctx, args: board_meta.act_guard_allow_list(ctx, args, field="recipientId")),
             ),
             preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_dm"),
         ),
@@ -221,7 +221,7 @@ def ops() -> list[ToolOp]:
             ),
             run=_remember_send(board_meta.op_reply_whatsapp),
             summarize=_summ("WhatsApp reply in thread {threadId}"),
-            act_guard=_reply_guard("meta_reply_whatsapp", board_meta.act_guard_whatsapp),
+            act_guard=_reply_guard("meta_reply_whatsapp", _organisation_guard(board_meta.act_guard_whatsapp)),
             preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_whatsapp"),
         ),
         ToolOp(
@@ -288,6 +288,15 @@ def ops() -> list[ToolOp]:
             preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_relay_lead"),
         ),
     ]
+
+
+def _organisation_guard(inner):
+    """``_reply_guard`` finds the thread by ``threadId``. This covers a reply addressed by number or id."""
+
+    def guard(ctx, args):
+        return inner(ctx, args) or board_meta_inbox.organisation_hold(ctx.table, args)
+
+    return guard
 
 
 def _remember_send(run):

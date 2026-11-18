@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import board_meta
-import board_pii
+import board_meta_store
 import board_store
 from contract_constants import BOARD_KEY, BOARD_TOOLS_CONTRACT
 from http_common import _log_event, _utc_iso_z
@@ -16,16 +16,19 @@ _LIMITS = BOARD_TOOLS_CONTRACT["limits"]
 _TEXT_MAX = int(_LIMITS["metaMessageTextMax"])
 _MEDIA_MAX = int(_LIMITS["metaMediaPerMessageMax"])
 _MEDIA_TYPES = frozenset({"image", "audio", "video", "file", "reel", "ig_reel", "sticker", "document"})
+_FOLLOW_UP_BATCH = 100
+_HISTORY_DECLINED = "2593109"
 
 
 def ingest_webhook(table: Any, payload: dict[str, Any]) -> dict[str, Any]:
-    """Store one delivery and return. Triage and media run on the async follow-up."""
+    """Store one delivery and return. Triage, names and media run on the async follow-up."""
     obj = str(payload.get("object") or "")
     stored = 0
     duplicates = 0
-    fresh: list[dict[str, str]] = []
-    pseud = board_pii.Pseudonymizer(table)
-    now = _utc_iso_z(datetime.now(timezone.utc))
+    live: list[dict[str, str]] = []
+    imported: dict[str, dict[str, str]] = {}
+    channels: set[str] = set()
+    writer = board_meta_store.Writer(table)
     for entry in payload.get("entry") or []:
         if not isinstance(entry, dict):
             continue
@@ -35,17 +38,24 @@ def ingest_webhook(table: Any, payload: dict[str, Any]) -> dict[str, Any]:
                 board_store.put_cache(table, "meta:wa-history", {"declined": True}, ttl_seconds=90 * 86400)
                 continue
             if msg.get("skip_empty"):
-                _touch_name(table, msg)
+                writer.remember_name(str(msg.get("phone") or ""), str(msg.get("senderName") or ""))
                 continue
-            if _store(table, pseud, msg, received_at=now):
-                stored += 1
-                fresh.append({"threadId": str(msg.get("_threadId") or ""), "messageId": str(msg.get("messageId") or "")})
-            else:
+            if not writer.add(msg):
                 duplicates += 1
+                continue
+            stored += 1
+            channels.add(str(msg.get("channel") or channel))
+            item = {"threadId": str(msg.get("_threadId") or ""), "messageId": str(msg.get("messageId") or ""), "mode": "live" if msg.get("_live") else "link"}
+            if msg.get("_live") or (msg.get("direction") == "out" and msg.get("source") != "history"):
+                live.append(item)
+            elif msg.get("direction") == "in":
+                # History is not triaged. One row per thread is enough to link an organisation.
+                imported[item["threadId"]] = item
         _note_account(table, entry)
-    pseud.save()
-    if fresh:
-        _follow_up(fresh)
+    writer.flush()
+    for channel in sorted(channels):
+        _mark_delivery(table, channel)
+    follow_up(live + list(imported.values()))
     _log_event("info", tag="board_meta_ingested", stored=stored, duplicates=duplicates, object=obj)
     return {"stored": stored, "duplicates": duplicates}
 
@@ -85,7 +95,7 @@ def _messaging_item(item: Any, *, channel: str, owner: str, entry: dict[str, Any
         direction="out" if outbound else "in",
         source="echo" if outbound else "webhook",
         attachments=_attachments(message.get("attachments")),
-        sender_name=_sender_name(item.get("sender")),
+        sender_name="" if outbound else _sender_name(item.get("sender")),
     )
 
 
@@ -99,7 +109,7 @@ def _change(change: dict[str, Any], *, channel: str) -> list[dict[str, Any]]:
     if field == "smb_message_echoes":
         return _whatsapp_messages(value, source="echo", direction="out", key="message_echoes")
     if field == "history":
-        if any(isinstance(err, dict) and err.get("code") == 2593109 for err in (value.get("errors") or [])):
+        if _declined(value):
             return [_row(channel="whatsapp", thread_key="", sender_id="", message_id="", text="", timestamp=0, direction="in", source="history", attachments=[], historyDeclined=True)]
         return _history(value)
     if field == "smb_app_state_sync":
@@ -283,80 +293,6 @@ def _attachments(raw: Any) -> list[dict[str, Any]]:
     return out
 
 
-def _store(table: Any, pseud: board_pii.Pseudonymizer, msg: dict[str, Any], *, received_at: str) -> bool:
-    thread_id = board_meta.thread_id_for(str(msg.get("channel")), str(msg.get("threadKey")))
-    msg["_threadId"] = thread_id
-    text = str(msg.get("text") or "")
-    masked = pseud.mask_text(text)
-    received = _received(msg.get("timestampMs"), received_at)
-    is_new = board_store.put_meta_message_if_new(
-        table,
-        {
-            "threadId": thread_id,
-            "messageId": str(msg.get("messageId")),
-            "receivedAt": received,
-            "direction": msg.get("direction") or "in",
-            "text": text[:_TEXT_MAX],
-            "textMasked": masked[:_TEXT_MAX],
-            "channel": msg.get("channel"),
-            "senderName": str(msg.get("senderName") or "")[:120],
-            "source": msg.get("source") or "webhook",
-            "attachments": msg.get("attachments") or [],
-            "replyTo": str(msg.get("replyTo") or ""),
-        },
-    )
-    if not is_new:
-        _log_event("info", tag="board_meta_duplicate_delivery", threadId=thread_id, messageId=str(msg.get("messageId")))
-        return False
-    inbound = (msg.get("direction") or "in") == "in"
-    existing = board_store.get_meta_thread(table, thread_id) or {}
-    board_store.put_meta_thread(
-        table,
-        {
-            **{k: v for k, v in existing.items() if k != "expiresAt"},
-            "threadId": thread_id,
-            "channel": msg.get("channel"),
-            "kind": msg.get("kind") or existing.get("kind") or "message",
-            "senderId": msg.get("senderId") or existing.get("senderId"),
-            "displayName": str(msg.get("senderName") or existing.get("displayName") or "")[:120],
-            "phone": msg.get("phone") or existing.get("phone") or "",
-            "text": text[:240],
-            "lastTextMasked": masked[:240],
-            "lastMessageAt": received,
-            "lastInboundAt": received if inbound else existing.get("lastInboundAt"),
-            "lastOutboundAt": received if not inbound else existing.get("lastOutboundAt"),
-            "lastDirection": "in" if inbound else "out",
-            "unread": True if inbound else bool(existing.get("unread")),
-            "unreadCount": int(existing.get("unreadCount") or 0) + (1 if inbound else 0),
-            "messageCount": int(existing.get("messageCount") or 0) + 1,
-        },
-    )
-    _mark_delivery(table, str(msg.get("channel") or ""))
-    return True
-
-
-def _touch_name(table: Any, msg: dict[str, Any]) -> None:
-    thread_id = board_meta.thread_id_for("whatsapp", str(msg.get("threadKey")))
-    existing = board_store.get_meta_thread(table, thread_id)
-    if not existing:
-        return
-    existing["displayName"] = str(msg.get("senderName") or existing.get("displayName") or "")[:120]
-    existing["phone"] = msg.get("phone") or existing.get("phone") or ""
-    board_store.put_meta_thread(table, existing)
-
-
-def _received(ts_ms: Any, fallback: str) -> str:
-    try:
-        stamp = int(ts_ms or 0)
-    except (TypeError, ValueError):
-        stamp = 0
-    if stamp > 10_000_000_000:
-        return _utc_iso_z(datetime.fromtimestamp(stamp / 1000, timezone.utc))
-    if stamp > 1_000_000_000:
-        return _utc_iso_z(datetime.fromtimestamp(stamp, timezone.utc))
-    return fallback
-
-
 def _mark_delivery(table: Any, channel: str) -> None:
     if not channel:
         return
@@ -370,22 +306,35 @@ def _note_account(table: Any, entry: dict[str, Any]) -> None:
         value = change.get("value") if isinstance(change.get("value"), dict) else {}
         if str(value.get("event") or "") == "PARTNER_REMOVED":
             board_store.put_cache(table, "meta:whatsapp-disconnected", {"at": _utc_iso_z(datetime.now(timezone.utc)), "event": "PARTNER_REMOVED"}, ttl_seconds=90 * 86400)
-        errors = value.get("errors") or []
-        if any(isinstance(err, dict) and err.get("code") == 2593109 for err in errors):
+        if _declined(value):
             board_store.put_cache(table, "meta:wa-history", {"declined": True}, ttl_seconds=90 * 86400)
 
 
-def _follow_up(items: list[dict[str, str]]) -> None:
+def follow_up(items: list[dict[str, str]]) -> None:
     import board_async
     import board_meta_inbox
 
-    try:
-        board_async.invoke_async(
-            {"internal": "board_meta_after_ingest", "boardKey": BOARD_KEY, "items": items[:200]},
-            fallback=board_meta_inbox.handle_after_ingest,
-        )
-    except Exception as exc:
-        _log_event("warning", tag="board_meta_follow_up_failed", error=str(exc)[:200])
+    for start in range(0, len(items), _FOLLOW_UP_BATCH):
+        try:
+            board_async.invoke_async(
+                {"internal": "board_meta_after_ingest", "boardKey": BOARD_KEY, "items": items[start : start + _FOLLOW_UP_BATCH]},
+                fallback=board_meta_inbox.handle_after_ingest,
+            )
+        except Exception as exc:
+            _log_event("warning", tag="board_meta_follow_up_failed", error=str(exc)[:200])
+
+
+def _declined(value: Any, depth: int = 0) -> bool:
+    """The business refused to share history. Meta has reported the code at more than one level."""
+    if depth > 4:
+        return False
+    if isinstance(value, dict):
+        if str(value.get("code") or "") == _HISTORY_DECLINED:
+            return True
+        return any(_declined(item, depth + 1) for item in value.values())
+    if isinstance(value, list):
+        return any(_declined(item, depth + 1) for item in value)
+    return False
 
 
 def _sender_id(raw: Any) -> str:
