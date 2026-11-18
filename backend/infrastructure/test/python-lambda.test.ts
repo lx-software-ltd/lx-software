@@ -67,4 +67,51 @@ describe("DOCKER_BUNDLE_SCRIPT", () => {
       "receivables.sql",
     ]);
   });
+
+  test("the pip install inside the bundle script does not print an upgrade notice", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "py-pip-"));
+    const input = path.join(root, "asset-input");
+    const output = path.join(root, "asset-output");
+    const bin = path.join(root, "bin");
+    fs.mkdirSync(input);
+    fs.mkdirSync(output);
+    fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(input, "requirements.txt"), "packaging==24.2\n");
+    fs.writeFileSync(path.join(input, "handler.py"), "");
+    fs.writeFileSync(
+      path.join(bin, "pip"),
+      [
+        "#!/bin/sh",
+        'printf "%s\\n" "$@" > "$PIP_ARGS_FILE"',
+        'case " $* " in',
+        '  *" --disable-pip-version-check "*) ;;',
+        "  *)",
+        '    if [ "${PIP_DISABLE_PIP_VERSION_CHECK:-}" != 1 ]; then',
+        '      echo "[notice] A new release of pip is available: 25.0.1 -> 26.3" >&2',
+        "    fi",
+        "    ;;",
+        "esac",
+        "exit 0",
+        "",
+      ].join("\n")
+    );
+    fs.chmodSync(path.join(bin, "pip"), 0o755);
+
+    const script = DOCKER_BUNDLE_SCRIPT.split("/asset-output").join(output);
+    const run = spawnSync("bash", ["-c", script], {
+      cwd: input,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PATH: `${bin}:${process.env.PATH ?? ""}`,
+        PIP_ARGS_FILE: path.join(root, "args"),
+      },
+    });
+    expect(run.stderr).not.toContain("[notice] A new release of pip is available");
+    expect(run.status).toBe(0);
+    expect(fs.readFileSync(path.join(root, "args"), "utf8")).toContain(
+      "--disable-pip-version-check"
+    );
+    expect(fs.existsSync(path.join(output, "handler.py"))).toBe(true);
+  });
 });
