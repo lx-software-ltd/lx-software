@@ -86,6 +86,8 @@ vi.mock("../../lib/board/metaSignup", () => ({
   startWhatsAppSignup: () => Promise.resolve({ kind: "finished", wabaId: "111", phoneNumberId: "222" }),
 }));
 
+const stored = new Map<string, string>();
+
 const connected = {
   connected: true,
   phoneNumberId: "222",
@@ -108,7 +110,15 @@ describe("BoardMessagesView", () => {
       if (typeof mock === "function") mock.mockReset();
     });
     mocks.whatsapp = { ...connected };
-    window.localStorage.clear();
+    // Newer Node versions define their own localStorage, which hides jsdom's.
+    stored.clear();
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => stored.get(key) ?? null,
+        setItem: (key: string, value: string) => void stored.set(key, value),
+      },
+    });
     // jsdom has no modal dialogs.
     HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) {
       this.open = true;
@@ -197,7 +207,7 @@ describe("BoardMessagesView", () => {
     fireEvent.click(button);
 
     await waitFor(() => expect(mocks.connect).toHaveBeenCalledWith({ wabaId: "111", phoneNumberId: "222" }));
-    expect(JSON.parse(window.localStorage.getItem("board.messages.metaSignup") ?? "{}")).toEqual({ appId: "123456789", configId: "987654321" });
+    expect(JSON.parse(stored.get("board.messages.metaSignup") ?? "{}")).toEqual({ appId: "123456789", configId: "987654321" });
   });
 
   it("subscribes the Page on request", () => {
