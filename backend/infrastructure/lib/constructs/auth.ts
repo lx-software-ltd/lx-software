@@ -6,6 +6,11 @@ import * as kms from "aws-cdk-lib/aws-kms";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import * as path from "node:path";
 import { Construct } from "constructs";
+import {
+  COGNITO_CUSTOM_CERTIFICATE_DISABLED,
+  COGNITO_CUSTOM_DOMAIN_DISABLED,
+  cognitoCustomValueUnset,
+} from "../cognito-custom-domain";
 import { createPythonLambda } from "./python-lambda";
 
 export interface AuthConstructProps {
@@ -169,20 +174,19 @@ export class AuthConstruct extends Construct {
 
     this.userPoolClient.node.addDependency(googleProvider);
 
+    // Empty and the disabled defaults both keep the prefix domain.
+    const nameUnset = cognitoCustomValueUnset(
+      props.cognitoCustomDomainNameParameter.valueAsString,
+      COGNITO_CUSTOM_DOMAIN_DISABLED
+    );
+    const certificateUnset = cognitoCustomValueUnset(
+      props.cognitoCustomDomainCertificateArnParameter.valueAsString,
+      COGNITO_CUSTOM_CERTIFICATE_DISABLED
+    );
     const useCustomDomain = new cdk.CfnCondition(this, "UseCustomAuthDomain", {
       expression: cdk.Fn.conditionAnd(
-        cdk.Fn.conditionNot(
-          cdk.Fn.conditionEquals(
-            props.cognitoCustomDomainNameParameter.valueAsString,
-            ""
-          )
-        ),
-        cdk.Fn.conditionNot(
-          cdk.Fn.conditionEquals(
-            props.cognitoCustomDomainCertificateArnParameter.valueAsString,
-            ""
-          )
-        )
+        cdk.Fn.conditionNot(nameUnset),
+        cdk.Fn.conditionNot(certificateUnset)
       ),
     });
 
@@ -190,16 +194,7 @@ export class AuthConstruct extends Construct {
       this,
       "UseCognitoPrefixAuthDomain",
       {
-        expression: cdk.Fn.conditionOr(
-          cdk.Fn.conditionEquals(
-            props.cognitoCustomDomainNameParameter.valueAsString,
-            ""
-          ),
-          cdk.Fn.conditionEquals(
-            props.cognitoCustomDomainCertificateArnParameter.valueAsString,
-            ""
-          )
-        ),
+        expression: cdk.Fn.conditionOr(nameUnset, certificateUnset),
       }
     );
 
@@ -279,20 +274,6 @@ export class AuthConstruct extends Construct {
     );
     this.cognitoCustomHostedDomain.cfnOptions.condition = useCustomDomain;
     this.cognitoCustomHostedDomain.node.addDependency(removeCognitoPrefixDomain);
-    // CloudFormation Validate substitutes parameter defaults before Conditions.
-    // Empty optional custom-domain defaults fail CertificateArn/Domain schema
-    // checks even though this resource is not created when they are blank.
-    // The parameter-default finding is attributed to the stack; the property
-    // findings are attributed to this resource.
-    const emptyOptionalCustomDomain = {
-      id: "CloudFormation-Validate::W1030",
-      reason:
-        "HostedUICustomDomain is gated by UseCustomAuthDomain; empty CognitoCustomDomainName and CognitoCustomDomainCertificateArn defaults never reach CloudFormation.",
-    };
-    cdk.Validations.of(this.cognitoCustomHostedDomain).acknowledge(
-      emptyOptionalCustomDomain
-    );
-    cdk.Validations.of(cdk.Stack.of(this)).acknowledge(emptyOptionalCustomDomain);
 
     const prefixOAuthBaseUrl = cdk.Fn.join("", [
       "https://",

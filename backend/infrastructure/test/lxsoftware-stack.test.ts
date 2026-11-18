@@ -1,8 +1,14 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import * as cdk from "aws-cdk-lib";
+import * as cognito from "aws-cdk-lib/aws-cognito";
 import { Match, Template } from "aws-cdk-lib/assertions";
+import {
+  COGNITO_CUSTOM_CERTIFICATE_DISABLED,
+  COGNITO_CUSTOM_DOMAIN_DISABLED,
+} from "../lib/cognito-custom-domain";
 import { CheckovSuppressionAspect } from "../lib/constructs/checkov-suppressions";
 import { LxsoftwareAdminWebStack } from "../lib/lxsoftware-admin-web-stack";
 import { LxsoftwareStack } from "../lib/lxsoftware-stack";
@@ -17,6 +23,34 @@ type CfnResource = {
   DeletionPolicy?: string;
   Metadata?: { checkov?: { skip?: { id: string }[] } };
 };
+
+function cloudFormationViolations(app: cdk.App): {
+  ruleName: string;
+  description: string;
+  constructPath: string;
+}[] {
+  const assembly = app.synth();
+  const report = JSON.parse(
+    fs.readFileSync(path.join(assembly.directory, "validation-report.json"), "utf8")
+  ) as {
+    pluginReports?: {
+      violations?: {
+        ruleName: string;
+        description: string;
+        violatingConstructs?: { constructPath?: string }[];
+      }[];
+    }[];
+  };
+  return (report.pluginReports ?? []).flatMap((plugin) =>
+    (plugin.violations ?? []).flatMap((violation) =>
+      (violation.violatingConstructs ?? []).map((construct) => ({
+        ruleName: violation.ruleName,
+        description: violation.description,
+        constructPath: construct.constructPath ?? "",
+      }))
+    )
+  );
+}
 
 /**
  * Synthesize the admin backend stack once for the whole file. The App is
@@ -1324,10 +1358,17 @@ describe("Admin user pool sign-in gate", () => {
     expect(templateJson).not.toContain("adminGetUser");
   });
 
-  test("the custom Hosted UI domain is optional and acknowledges empty-default W1030", () => {
-    expect(template.toJSON().Parameters.CognitoCustomDomainName.Default).toBe("");
-    expect(template.toJSON().Parameters.CognitoCustomDomainCertificateArn.Default).toBe(
-      ""
+  test("the custom Hosted UI domain stays off for an empty value or the disabled default", () => {
+    const certificatePattern =
+      /^arn:[\w+=/,.@-]+:[\w+=/,.@-]+:([\w+=/,.@-]*)?:[0-9]+:[\w+=/,.@-]+(:[\w+=/,.@-]+)?(:[\w+=/,.@-]+)?$/;
+    expect(COGNITO_CUSTOM_DOMAIN_DISABLED.length).toBeGreaterThanOrEqual(1);
+    expect(COGNITO_CUSTOM_CERTIFICATE_DISABLED).toMatch(certificatePattern);
+    expect(COGNITO_CUSTOM_CERTIFICATE_DISABLED.length).toBeGreaterThanOrEqual(20);
+
+    const parameters = template.toJSON().Parameters;
+    expect(parameters.CognitoCustomDomainName.Default).toBe(COGNITO_CUSTOM_DOMAIN_DISABLED);
+    expect(parameters.CognitoCustomDomainCertificateArn.Default).toBe(
+      COGNITO_CUSTOM_CERTIFICATE_DISABLED
     );
     const domains = Object.entries(resourcesOfType("AWS::Cognito::UserPoolDomain"));
     expect(domains).toHaveLength(2);
@@ -1340,28 +1381,83 @@ describe("Admin user pool sign-in gate", () => {
       Ref: "CognitoCustomDomainCertificateArn",
     });
 
+    const conditions = template.toJSON().Conditions as Record<string, unknown>;
+    const customCondition = JSON.stringify(
+      conditions[custom?.[1].Condition as string]
+    );
+    const prefixCondition = JSON.stringify(
+      conditions[prefix?.[1].Condition as string]
+    );
+    for (const serialized of [customCondition, prefixCondition]) {
+      expect(serialized).toContain(COGNITO_CUSTOM_DOMAIN_DISABLED);
+      expect(serialized).toContain(COGNITO_CUSTOM_CERTIFICATE_DISABLED);
+      expect(serialized).toContain('""');
+    }
+  });
+
+  test("CloudFormation Validate reports no W1030 for these defaults, and still reports one elsewhere", () => {
+    const outdir = fs.mkdtempSync(path.join(os.tmpdir(), "cdk-w1030-"));
     const app = new cdk.App({
-      context: {
-        "aws:cdk:bundling-stacks": [],
-      },
+      outdir,
+      context: { "aws:cdk:bundling-stacks": [] },
     });
     const stack = new LxsoftwareStack(app, "lxsoftware", {
       env: { account: "123456789012", region: "ap-southeast-1" },
     });
-    const domain = stack.node.findAll().find((construct) => construct.node.id === "HostedUICustomDomain");
-    expect(domain).toBeDefined();
-    const reason =
-      "HostedUICustomDomain is gated by UseCustomAuthDomain; empty CognitoCustomDomainName and CognitoCustomDomainCertificateArn defaults never reach CloudFormation.";
-    const acknowledged = [domain!, stack].map((construct) =>
-      construct.node.metadata.find(
-        (entry) => entry.type === cdk.Validations.ACKNOWLEDGED_RULES_METADATA_KEY
-      )?.data
+    const acknowledged = [stack, ...stack.node.findAll()].flatMap((construct) =>
+      construct.node.metadata.filter(
+        (entry) =>
+          entry.type === cdk.Validations.ACKNOWLEDGED_RULES_METADATA_KEY &&
+          JSON.stringify(entry.data).includes("W1030")
+      )
     );
-    for (const data of acknowledged) {
-      expect(data).toMatchObject({
-        "CloudFormation-Validate::W1030": reason,
-      });
+    expect(acknowledged).toEqual([]);
+    // jest.config.js turns validation off so the suite stays quiet.
+    // This test turns it back on for the same check `cdk synth` runs.
+    const previousValidation = process.env.CDK_VALIDATION;
+    process.env.CDK_VALIDATION = "true";
+    const probe = new cdk.Stack(app, "probe", {
+      env: { account: "123456789012", region: "ap-southeast-1" },
+    });
+    const pool = new cognito.UserPool(probe, "Pool");
+    const emptyCertificate = new cdk.CfnParameter(probe, "EmptyCertificateArn", {
+      type: "String",
+      default: "",
+    });
+    new cognito.CfnUserPoolDomain(probe, "UnguardedDomain", {
+      userPoolId: pool.userPoolId,
+      domain: "probe.example.com",
+      customDomainConfig: { certificateArn: emptyCertificate.valueAsString },
+    });
+
+    let violations: ReturnType<typeof cloudFormationViolations>;
+    const reportError = console.error;
+    console.error = () => undefined;
+    try {
+      violations = cloudFormationViolations(app);
+    } finally {
+      console.error = reportError;
+      if (previousValidation === undefined) {
+        delete process.env.CDK_VALIDATION;
+      } else {
+        process.env.CDK_VALIDATION = previousValidation;
+      }
+      cdk.CloudFormationValidatePlugin._disposeSingleton();
     }
+    const lxsoftware = violations.filter((violation) =>
+      violation.constructPath.startsWith("lxsoftware")
+    );
+    const probeViolations = violations.filter((violation) =>
+      violation.constructPath.startsWith("probe")
+    );
+    expect(lxsoftware).toEqual([]);
+    expect(
+      probeViolations.some(
+        (violation) =>
+          violation.ruleName === "W1030" &&
+          violation.description.includes("EmptyCertificateArn")
+      )
+    ).toBe(true);
   });
 });
 

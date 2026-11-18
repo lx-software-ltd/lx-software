@@ -1,4 +1,8 @@
 import * as cdk from "aws-cdk-lib";
+import {
+  COGNITO_CUSTOM_CERTIFICATE_DISABLED,
+  COGNITO_CUSTOM_DOMAIN_DISABLED,
+} from "./cognito-custom-domain";
 import { ADMIN_WEB_HOSTNAME } from "./shared-contracts";
 import { defineProductParameters } from "./admin-parameters-product";
 
@@ -49,10 +53,11 @@ export function defineAdminParameters(scope: cdk.Stack) {
     "CognitoCustomDomainName",
     {
       type: "String",
-      default: "",
+      default: COGNITO_CUSTOM_DOMAIN_DISABLED,
       description:
         "Optional custom Hosted UI domain (e.g. auth.lx-software.com). " +
-        "Set together with CognitoCustomDomainCertificateArn; leave empty for the prefix domain.",
+        "Set together with CognitoCustomDomainCertificateArn. " +
+        "An empty value or disabled.example.com keeps the prefix domain.",
     }
   );
 
@@ -61,9 +66,10 @@ export function defineAdminParameters(scope: cdk.Stack) {
     "CognitoCustomDomainCertificateArn",
     {
       type: "String",
-      default: "",
+      default: COGNITO_CUSTOM_CERTIFICATE_DISABLED,
       description:
-        "ACM certificate ARN for the Cognito custom domain (must be in us-east-1).",
+        "ACM certificate ARN for the Cognito custom domain (must be in us-east-1). " +
+        "An empty value or the disabled placeholder keeps the prefix domain.",
     }
   );
 
