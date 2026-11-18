@@ -375,7 +375,7 @@ export const BOARD_TOOL_DEFINITIONS: readonly BoardToolDefinition[] = [
   {
     "id": "meta",
     "label": "Meta",
-    "description": "Facebook Page, Instagram and WhatsApp Cloud API on the existing number. Reads insights, comments, DMs and WhatsApp threads. Writes (post, story, reply, ad set, lead relay) go to Approvals. WhatsApp act is only inside the 24-hour window and only to allow-listed recipients.",
+    "description": "Facebook Page, Instagram and WhatsApp Cloud API on the existing number. Reads insights, comments and stored message threads (meta_list_threads, meta_get_thread). Writes (post, story, reply, ad set, lead relay) go to Approvals. WhatsApp act is only inside the 24-hour window and only to allow-listed recipients. A thread tied to an organisation always waits for the owner's approval.",
     "maxLevel": "act",
     "defaults": {
       "ceo": "read",

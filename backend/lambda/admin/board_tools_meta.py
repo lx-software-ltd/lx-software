@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import board_meta
+import board_meta_inbox
 import board_meta_media
 from board_tools_core import (
     REASON_PARAM,
@@ -70,7 +71,7 @@ def ops() -> list[ToolOp]:
             kind="read",
             description="Inbound Facebook Page DMs stored from the webhook (masked).",
             parameters=_obj({"limit": _int_param("How many threads.", maximum=40)}),
-            run=board_meta.op_list_dms,
+            run=board_meta_inbox.op_list_dms,
             summarize=_summ("Listed Page DMs"),
         ),
         ToolOp(
@@ -79,8 +80,32 @@ def ops() -> list[ToolOp]:
             kind="read",
             description="Inbound WhatsApp threads stored from the webhook (masked). Notes the 24-hour window.",
             parameters=_obj({"limit": _int_param("How many threads.", maximum=40)}),
-            run=board_meta.op_list_whatsapp,
+            run=board_meta_inbox.op_list_whatsapp,
             summarize=_summ("Listed WhatsApp threads"),
+        ),
+        ToolOp(
+            name="meta_list_threads",
+            tool_id="meta",
+            kind="read",
+            description="Stored Page, Instagram and WhatsApp threads. Contacts and message text are masked.",
+            parameters=_obj(
+                {
+                    "channel": _str_param("page, instagram, whatsapp, or all.", max_len=16),
+                    "unreadOnly": {"type": "boolean", "description": "Only threads the owner has not opened."},
+                    "limit": _int_param("How many threads.", maximum=50),
+                }
+            ),
+            run=board_meta_inbox.op_list_threads,
+            summarize=_summ("Listed message threads"),
+        ),
+        ToolOp(
+            name="meta_get_thread",
+            tool_id="meta",
+            kind="read",
+            description="One stored thread and its messages, oldest first. Contacts and text are masked.",
+            parameters=_obj({"threadId": _str_param("Stored thread id.", max_len=40)}, ["threadId"]),
+            run=board_meta_inbox.op_get_thread,
+            summarize=_summ("Read message thread {threadId}"),
         ),
         ToolOp(
             name="meta_list_whatsapp_templates",
@@ -151,7 +176,7 @@ def ops() -> list[ToolOp]:
                 },
                 ["commentId", "message", "reason"],
             ),
-            run=board_meta.op_reply_comment,
+            run=_remember_send(board_meta.op_reply_comment),
             summarize=_summ("Reply to comment {commentId}"),
             act_guard=_reply_guard("meta_reply_comment"),
             preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_comment"),
@@ -170,11 +195,11 @@ def ops() -> list[ToolOp]:
                 },
                 ["message", "reason"],
             ),
-            run=board_meta.op_reply_dm,
+            run=_remember_send(board_meta.op_reply_dm),
             summarize=_summ("Reply to Page DM {threadId}"),
             act_guard=_reply_guard(
                 "meta_reply_dm",
-                lambda ctx, args: board_meta.act_guard_allow_list(ctx, args, field="recipientId"),
+                _organisation_guard(lambda ctx, args: board_meta.act_guard_allow_list(ctx, args, field="recipientId")),
             ),
             preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_dm"),
         ),
@@ -194,9 +219,9 @@ def ops() -> list[ToolOp]:
                 },
                 ["reason"],
             ),
-            run=board_meta.op_reply_whatsapp,
+            run=_remember_send(board_meta.op_reply_whatsapp),
             summarize=_summ("WhatsApp reply in thread {threadId}"),
-            act_guard=_reply_guard("meta_reply_whatsapp", board_meta.act_guard_whatsapp),
+            act_guard=_reply_guard("meta_reply_whatsapp", _organisation_guard(board_meta.act_guard_whatsapp)),
             preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_reply_whatsapp"),
         ),
         ToolOp(
@@ -263,3 +288,24 @@ def ops() -> list[ToolOp]:
             preview=lambda ctx, args: board_meta.owner_preview_message(ctx, args, op="meta_relay_lead"),
         ),
     ]
+
+
+def _organisation_guard(inner):
+    """``_reply_guard`` finds the thread by ``threadId``. This covers a reply addressed by number or id."""
+
+    def guard(ctx, args):
+        return inner(ctx, args) or board_meta_inbox.organisation_hold(ctx.table, args)
+
+    return guard
+
+
+def _remember_send(run):
+    """Keep a sent reply on the same thread the inbound message used."""
+
+    def wrapped(ctx, args):
+        sent = run(ctx, args)
+        if isinstance(sent, dict) and sent.get("ok"):
+            board_meta_inbox.record_outbound(ctx, args, sent)
+        return sent
+
+    return wrapped

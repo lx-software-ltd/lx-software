@@ -149,17 +149,7 @@ def delegate_path(method: str, path: str) -> bool:
 
 
 def write_blocked(method: str, path: str) -> bool:
-    """Owner-only (JWT) writes even when the key has allowWrite.
-
-    Cost/safety knobs (settings, boundaries, tools), production promote,
-    staging sync, catalog preview/import, approvals, mail selftest, and
-    non-reversible live-state mutations (chat wipe, meeting/task cancel,
-    staff tick, ramp pause, deleting a published post).
-
-    ``delegate_path`` names the three a key with ``siutindei-board-delegate``
-    may make on top of that: reject an approval, cancel a task, and
-    ``POST settings/focus``. The exception is in ``write_deny_reason``.
-    """
+    """Owner-only writes. A delegate key's exceptions are in ``write_deny_reason``."""
     rest = _board_rest(path)
     if not rest:
         return True
@@ -199,6 +189,12 @@ def write_blocked(method: str, path: str) -> bool:
     if method == "POST" and head == "content" and len(rest) == 3 and tail == "delete-post":
         return True
     if method == "DELETE" and head == "chat" and len(rest) == 2:
+        return True
+    if method == "POST" and rest in (
+        ["messages", "connect", "page"],
+        ["messages", "whatsapp", "connect"],
+        ["messages", "whatsapp", "sync"],
+    ):
         return True
     return False
 
@@ -273,6 +269,13 @@ def redact_board_response(
     rest = _board_rest(path)
     if rest[:1] == ["mail"] and SCOPE_PII not in have:
         body = _mask_mail_payload(body)
+        changed = True
+    if rest[:1] == ["messages"] and SCOPE_PII not in have:
+        import board_meta_inbox
+
+        body, refused = board_meta_inbox.mask_public(body, rest)
+        if refused:
+            return {**response, "statusCode": 403, "body": json.dumps({"message": "forbidden"})}
         changed = True
     if (
         len(rest) == 4

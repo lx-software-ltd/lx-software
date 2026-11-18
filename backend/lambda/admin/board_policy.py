@@ -19,6 +19,7 @@ REPLY_OPS = frozenset(
     }
 )
 
+ORGANISATION_REPLY_REASON = "this organisation's reply waits for the owner's approval"
 PROMISE_RE = re.compile(
     r"(?i)(\bguarantee\b|we will hold the place|refund\s+(of\s+)?[\$£€]|HK\$\s*\d|退款\s*\d|保證|我们会预留|我們會預留)"
 )
@@ -51,6 +52,8 @@ def check_reply(settings: dict[str, Any], ctx: Any, op: Any, args: dict[str, Any
     """Return a reason to downgrade to Approval, or None to continue (including quiet-hour holds)."""
     if op.name not in REPLY_OPS:
         return None
+    if thread and str(thread.get("prospectId") or ""):
+        return ORGANISATION_REPLY_REASON
     # Quiet hours: hold to 08:00 rather than refuse (see board_holds.maybe_hold).
     body = str(args.get("body") or args.get("message") or "")
     if PROMISE_RE.search(body):

@@ -6,6 +6,7 @@
  *
  * Never enable in a production build: `isAdminMockEnabled()` is the only gate.
  */
+import { messageApprovalsFixture } from "../messageApprovals";
 import type {
   HouseFinanceData,
   FinancePersistedState,
@@ -206,7 +207,7 @@ function initialMockState(): MockState {
     prospects: structuredClone(boardProspectsFixture) as BoardProspect[],
     sequences: {},
     content: structuredClone(boardContentFixture) as BoardContentItem[],
-    approvals: structuredClone(boardApprovalsFixture) as BoardApproval[],
+    approvals: structuredClone([...boardApprovalsFixture, ...messageApprovalsFixture]) as BoardApproval[],
     settings: structuredClone(boardOverviewFixture.settings) as BoardSettings,
     staging: {
       status: "diverged",

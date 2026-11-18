@@ -160,35 +160,9 @@ def on_mail_ingested(
 
 
 def on_meta_event(table: Any, settings: dict[str, Any], thread: dict[str, Any], msg: dict[str, Any]) -> dict[str, Any] | None:
-    if not board_staff.enabled(settings):
-        return None
-    text = str(msg.get("textMasked") or thread.get("lastTextMasked") or "")
-    channel = str(msg.get("channel") or thread.get("channel") or "meta")
-    classified = classify_text(table, settings, text, channel=channel, sender=str(msg.get("senderId") or ""))
-    assignee, sla = _route_meta(thread, msg, classified)
-    brief = render_event_brief("meta", thread, msg, classified)
-    op = "meta_reply_whatsapp" if channel == "whatsapp" else "meta_reply_dm"
-    if str(thread.get("kind") or msg.get("kind") or "") == "comment":
-        op = "meta_reply_comment"
-    return _open_or_append(
-        table,
-        settings,
-        kind="meta",
-        event_id=str(thread.get("threadId") or ""),
-        assignee=assignee,
-        brief=brief,
-        sla_hours=sla,
-        escalate=bool(classified.get("escalate")),
-        channel=channel,
-        reply_args={
-            "threadId": str(thread.get("threadId") or ""),
-            "commentId": str(msg.get("messageId") or ""),
-            "message": "",
-            "reason": "escalation acknowledgement",
-        },
-        text=text,
-        reply_op=op,
-    )
+    import board_meta_triage
+
+    return board_meta_triage.on_message(table, settings, thread, msg)
 
 
 def on_store_reviews(table: Any, settings: dict[str, Any], new_reviews: list[dict[str, Any]]) -> list[dict[str, Any]]:

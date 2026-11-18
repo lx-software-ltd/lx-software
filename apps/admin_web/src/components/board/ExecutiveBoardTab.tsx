@@ -13,6 +13,7 @@ import { BoardCharterEditor } from "./BoardCharterEditor";
 import { BoardChatOffcanvas } from "./BoardChatOffcanvas";
 import { BoardHeaderStrip } from "./BoardHeaderStrip";
 import { BoardMailView } from "./BoardMailView";
+import { BoardMessagesView } from "./BoardMessagesView";
 import { BoardReceivablesView } from "./BoardReceivablesView";
 import { BoardMeetingHistory } from "./BoardMeetingHistory";
 import { BoardMeetingPanel } from "./BoardMeetingPanel";
@@ -34,6 +35,7 @@ import { useBoardActions } from "../../hooks/useBoardActions";
 import { useBoardApprovals } from "../../hooks/useBoardApprovals";
 import { useBoardBoundaries } from "../../hooks/useBoardBoundaries";
 import { useBoardHolds } from "../../hooks/useBoardHolds";
+import { useBoardMessageStatus } from "../../hooks/useBoardMessages";
 import { useBoardReview } from "../../hooks/useBoardReview";
 import { createTaskMutationOptions } from "../../hooks/useBoardTasks";
 import { useBoardToolCalls, useBoardTools } from "../../hooks/useBoardTools";
@@ -58,7 +60,7 @@ import {
   type BoardOverview,
 } from "../../lib/boardModel";
 
-type BoardSection = "review" | "progress" | "market" | "pipeline" | "content" | "actions" | "staff" | "tasks" | "approvals" | "mail" | "receivables" | "meetings" | "members" | "brief" | "settings";
+type BoardSection = "review" | "progress" | "market" | "pipeline" | "content" | "actions" | "staff" | "tasks" | "approvals" | "mail" | "messages" | "receivables" | "meetings" | "members" | "brief" | "settings";
 
 const CLOSED_MEETING = "__closed__";
 const SECTION_ID_PREFIX = "board-section";
@@ -75,6 +77,7 @@ const SECTIONS: readonly { readonly id: BoardSection; readonly label: string; re
   { id: "tasks", label: "Tasks", icon: "bi-kanban" },
   { id: "approvals", label: "Approvals", icon: "bi-shield-check" },
   { id: "mail", label: "Mail", icon: "bi-envelope" },
+  { id: "messages", label: "Messages", icon: "bi-chat-dots" },
   { id: "receivables", label: "Receivables", icon: "bi-receipt" },
   { id: "meetings", label: "Meetings", icon: "bi-people" },
   { id: "members", label: "Board members", icon: "bi-person-badge" },
@@ -90,12 +93,14 @@ function errorText(err: unknown): string | null {
 function sectionTabs(
   overview: BoardOverview | undefined,
   needsOwner: number,
+  unreadMessages: number,
 ): readonly AdminTabItem<BoardSection>[] {
   const counts: Partial<Record<BoardSection, { value: number; tone: "neutral" | "warning" }>> = {
     actions: { value: overview?.openActionCount ?? 0, tone: "neutral" },
     tasks: { value: needsOwner, tone: "warning" },
     approvals: { value: overview?.pendingApprovalCount ?? 0, tone: "warning" },
     mail: { value: overview?.unreadMailCount ?? 0, tone: "neutral" },
+    messages: { value: unreadMessages, tone: "neutral" },
     receivables: { value: overview?.overdueInvoiceCount ?? 0, tone: "warning" },
   };
   return SECTIONS.map((s) => {
@@ -127,6 +132,7 @@ export function ExecutiveBoardTab() {
   const [chatPersonaId, setChatPersonaId] = useState<string | null>(null);
   const board = useBoard();
   const staff = useBoardStaff();
+  const messageStatus = useBoardMessageStatus();
   const overviewEarly = board.overview;
   const section = sectionFromSearch(
     location.search,
@@ -269,7 +275,7 @@ export function ExecutiveBoardTab() {
           ) : null}
 
           <AdminTabList
-            tabs={sectionTabs(overview, staff.counts.needs_owner ?? 0)}
+            tabs={sectionTabs(overview, staff.counts.needs_owner ?? 0, messageStatus.data?.unreadCount ?? 0)}
             active={section}
             onChange={setSection}
             label="Board sections"
@@ -376,6 +382,8 @@ export function ExecutiveBoardTab() {
               errorText={errorText}
             />
           ) : null}
+
+          {overview && section === "messages" ? <BoardMessagesView errorText={errorText} /> : null}
 
           {overview && section === "receivables" ? (
             <BoardReceivablesView overdueCount={overview.overdueInvoiceCount} errorText={errorText} />

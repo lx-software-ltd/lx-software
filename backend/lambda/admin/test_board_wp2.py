@@ -72,7 +72,7 @@ class TestWebhookParsing(MetaTestCase):
         self.assertEqual(len(threads), 1)
         self.assertEqual(threads[0]["messageCount"], 2)
 
-    def test_page_echo_messages_are_skipped(self) -> None:
+    def test_page_echo_shares_the_customer_thread(self) -> None:
         payload = {
             "object": "page",
             "entry": [
@@ -97,11 +97,13 @@ class TestWebhookParsing(MetaTestCase):
             ],
         }
         out = board_meta.ingest_webhook(self.table, payload)
-        self.assertEqual(out["stored"], 1)
+        self.assertEqual(out, {"stored": 2, "duplicates": 0})
         threads = board_store.list_meta_threads(self.table)
         self.assertEqual(len(threads), 1)
         self.assertEqual(threads[0]["senderId"], "psid-1")
         self.assertEqual(threads[0]["channel"], "page")
+        messages = board_store.list_meta_messages(self.table, threads[0]["threadId"])
+        self.assertEqual(sorted(m["direction"] for m in messages), ["in", "out"])
 
     def test_comment_with_string_from_does_not_crash(self) -> None:
         payload = {

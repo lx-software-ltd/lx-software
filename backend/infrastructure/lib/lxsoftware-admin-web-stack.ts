@@ -133,13 +133,13 @@ export class LxsoftwareAdminWebStack extends cdk.Stack {
     });
 
     const cspValue = cdk.Fn.join("", [
-      "default-src 'self'; script-src 'self'; connect-src 'self' ",
+      "default-src 'self'; script-src 'self' https://connect.facebook.net; connect-src 'self' ",
       cspCognitoConnectOrigin.valueAsString,
       " ",
       props.cspApiConnectOrigin,
       " ",
       props.cspAssetsConnectOrigins,
-      "; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
+      "; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-src https://www.facebook.com; frame-ancestors 'none'",
     ]);
 
     const securityHeadersPolicy = new cloudfront.ResponseHeadersPolicy(

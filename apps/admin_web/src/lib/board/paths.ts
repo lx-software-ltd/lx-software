@@ -40,6 +40,24 @@ export function boardMailThreadPath(threadId: string): string {
 }
 
 
+export function boardMessagesPath(channel?: string): string {
+  const params = new URLSearchParams();
+  if (channel && channel !== "all") params.set("channel", channel);
+  const query = params.toString();
+  return query ? `${BOARD_API_BASE}/messages?${query}` : `${BOARD_API_BASE}/messages`;
+}
+
+
+export function boardMessageThreadPath(threadId: string): string {
+  return `${BOARD_API_BASE}/messages/${encodeURIComponent(threadId)}`;
+}
+
+
+export function boardMessagesStatusPath(): string {
+  return `${BOARD_API_BASE}/messages/status`;
+}
+
+
 export function boardStaffPath(seatId?: string): string {
   return seatId ? `${BOARD_API_BASE}/staff/${encodeURIComponent(seatId)}` : `${BOARD_API_BASE}/staff`;
 }

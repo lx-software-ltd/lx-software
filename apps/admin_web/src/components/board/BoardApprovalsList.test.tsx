@@ -76,4 +76,71 @@ describe("BoardApprovalsList", () => {
     );
     expect(screen.getByLabelText(`Approval ${approvalId}`)).toHaveTextContent(approvalId);
   });
+
+  function renderList(item: BoardApproval) {
+    render(
+      <BoardApprovalsList approvals={[item]} members={members} isLoading={false} isDeciding={false} onDecide={vi.fn()} onOpenMeeting={vi.fn()} />,
+    );
+  }
+
+  function metaPreview(overrides: Record<string, unknown>): BoardApproval["preview"] {
+    const preview = { kind: "meta", from: "facebook", to: [], cc: [], subject: "", text: "", threadId: "", sendEnabled: true, ...overrides };
+    return preview as unknown as BoardApproval["preview"];
+  }
+
+  it("keeps the budget and targets visible on an ad set approval", () => {
+    renderList(
+      approval({
+        toolId: "meta",
+        toolLabel: "Meta",
+        op: "meta_create_ad_set",
+        arguments: { campaignId: "1200000000001", name: "Stanley parents", dailyBudgetUsd: 15, countries: ["HK"] },
+        preview: metaPreview({ subject: "Stanley parents" }),
+      }),
+    );
+
+    expect(screen.getByText("dailyBudgetUsd")).toBeInTheDocument();
+    expect(screen.getByText("15")).toBeInTheDocument();
+    expect(screen.getByText("1200000000001")).toBeInTheDocument();
+    expect(screen.queryByText("from")).not.toBeInTheDocument();
+  });
+
+  it("keeps the argument table for a preview from another tool", () => {
+    renderList(
+      approval({
+        toolId: "stores",
+        op: "stores_reply_review",
+        arguments: { store: "apple", reviewId: "rev-7", message: "Thank you" },
+        preview: metaPreview({ kind: "stores", from: "apple", to: ["rev-7"], text: "Thank you" }),
+      }),
+    );
+
+    expect(screen.getByText("reviewId")).toBeInTheDocument();
+  });
+
+  it("shows a WhatsApp reply as a message, with a link that opens the phone app in a new tab", () => {
+    renderList(
+      approval({
+        toolId: "meta",
+        op: "meta_reply_whatsapp",
+        arguments: { threadId: "thread-1", message: "Thanks, see you Saturday" },
+        preview: metaPreview({
+          from: "whatsapp",
+          to: ["+85255500100"],
+          text: "Thanks, see you Saturday",
+          threadId: "thread-1",
+          phoneLink: "https://wa.me/85255500100?text=Thanks",
+        }),
+      }),
+    );
+
+    expect(screen.getByText("+85255500100")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "Open in WhatsApp" });
+    expect(link).toHaveAttribute("href", "https://wa.me/85255500100?text=Thanks");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(screen.getByText(/goes out twice/)).toBeInTheDocument();
+    expect(screen.queryByText("threadId")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /open thread/ })).not.toBeInTheDocument();
+  });
 });

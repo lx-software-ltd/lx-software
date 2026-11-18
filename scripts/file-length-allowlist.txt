@@ -23,7 +23,7 @@ backend/lambda/admin/board_github.py 909
 backend/lambda/admin/board_holds.py 644
 backend/lambda/admin/board_mail.py 1436
 backend/lambda/admin/board_meeting.py 1243
-backend/lambda/admin/board_meta.py 1262
+backend/lambda/admin/board_meta.py 1103
 backend/lambda/admin/board_newsletter.py 538
 backend/lambda/admin/board_opendata.py 625
 backend/lambda/admin/board_outreach.py 733
@@ -38,7 +38,6 @@ backend/lambda/admin/board_staff_help.py 571
 backend/lambda/admin/board_store.py 2624
 backend/lambda/admin/board_stores.py 986
 backend/lambda/admin/board_tools.py 1810
-backend/lambda/admin/board_triage.py 507
 backend/lambda/admin/dispatch.py 1346
 backend/lambda/admin/finance_store.py 2422
 backend/lambda/admin/linkedin.py 965

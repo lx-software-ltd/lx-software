@@ -8,6 +8,7 @@ import {
   memberLabel,
   PHASE_LABELS,
   type BoardApproval,
+  type BoardApprovalPreview,
   type BoardMailPreview,
   type BoardMember,
   type BoardPhishingPreview,
@@ -64,6 +65,22 @@ function PhishingPreviewCard({ preview }: { readonly preview: BoardPhishingPrevi
   );
 }
 
+/**
+ * A Facebook, Instagram or WhatsApp reply with a resolved recipient. Ad sets,
+ * boosts and posts carry the same preview shape with no recipient, and those
+ * keep their argument table so the budget and targets stay visible.
+ */
+function hasMessagePreview(preview: BoardApprovalPreview | undefined): boolean {
+  if (isMailPreview(preview)) return true;
+  if (!preview || !("to" in preview) || !Array.isArray(preview.to)) return false;
+  return (preview as { kind?: string }).kind === "meta" && preview.to.length > 0;
+}
+
+function phoneLinkOf(preview: BoardMailPreview): string {
+  const value = (preview as BoardMailPreview & { phoneLink?: unknown }).phoneLink;
+  return typeof value === "string" ? value : "";
+}
+
 /** What the owner would actually send: real addresses, un-masked body. */
 export function MailPreviewCard({ preview, onOpenThread }: { readonly preview: BoardMailPreview; readonly onOpenThread?: (threadId: string) => void }) {
   return (
@@ -86,6 +103,14 @@ export function MailPreviewCard({ preview, onOpenThread }: { readonly preview: B
       </div>
       <div className="fw-semibold mt-1">{preview.subject}</div>
       <pre className="mb-0 mt-1 board-mail-body">{preview.text}</pre>
+      {phoneLinkOf(preview) ? (
+        <div className="mt-2">
+          <a href={phoneLinkOf(preview)} target="_blank" rel="noopener noreferrer">
+            Open in WhatsApp
+          </a>
+          <span className="text-muted ms-2">Sends from your phone. Reject this approval afterwards, or the message goes out twice.</span>
+        </div>
+      ) : null}
       <div className="d-flex flex-wrap gap-3 mt-2">
         {preview.threadId && onOpenThread ? (
           <button type="button" className="btn btn-link btn-sm p-0 align-baseline" onClick={() => onOpenThread(preview.threadId)}>
@@ -219,9 +244,9 @@ export function BoardApprovalsList({
           </div>
         ) : null}
 
-        {editingArgsId !== a.approvalId && isMailPreview(a.preview) ? (
+        {editingArgsId !== a.approvalId && hasMessagePreview(a.preview) ? (
           <div className="mt-2">
-            <MailPreviewCard preview={a.preview} onOpenThread={onOpenMailThread} />
+            <MailPreviewCard preview={a.preview as BoardMailPreview} onOpenThread={isMailPreview(a.preview) ? onOpenMailThread : undefined} />
           </div>
         ) : null}
         {editingArgsId !== a.approvalId && isPhishingPreview(a.preview) ? (
@@ -275,7 +300,7 @@ export function BoardApprovalsList({
               </>
             )}
           </div>
-        ) : isMailPreview(a.preview) || isPhishingPreview(a.preview) ? null : (
+        ) : hasMessagePreview(a.preview) || isPhishingPreview(a.preview) ? null : (
           <div className="mt-2">
             <ArgumentsTable args={a.arguments} />
           </div>

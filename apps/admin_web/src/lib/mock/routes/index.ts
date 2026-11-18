@@ -3,11 +3,12 @@ import * as admin from "./admin";
 import * as finance from "./finance";
 import * as banking from "./banking";
 import * as board from "./board";
+import * as messages from "./messages";
 import * as content from "./content";
 import * as linkedin from "./linkedin";
 import * as resume from "./resume";
 
-const modules = { admin, finance, banking, board, content, linkedin, resume };
+const modules = { admin, finance, banking, board, content, linkedin, resume, messages };
 
 export const mockRoutes: readonly MockRoute[] = [
   {
@@ -108,6 +109,10 @@ export const mockRoutes: readonly MockRoute[] = [
   {
     pattern: /.*/,
     handler: modules.banking.handleB3,
+  },
+  {
+    pattern: /.*/,
+    handler: modules.messages.handleMessages,
   },
   {
     pattern: /.*/,

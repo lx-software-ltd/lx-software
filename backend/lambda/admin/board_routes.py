@@ -218,12 +218,12 @@ def handle_board_route(
     if head == "catalog":
         return _catalog_route(event, method, rest, user_sub)
 
+    if head == "messages":
+        import board_routes_messages
+        return board_routes_messages.handle(event, method, rest, user_sub)
+
     return not_found()
 
-
-# ---------------------------------------------------------------------------
-# Handlers
-# ---------------------------------------------------------------------------
 
 def _overview() -> dict[str, Any]:
     table = board_store.records_table()

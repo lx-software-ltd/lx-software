@@ -1140,6 +1140,24 @@ organisations.
 5. WhatsApp `act` is only inside the 24-hour window and only to
    allow-listed E.164 numbers. Set **Meta ads spend caps** on the Tools
    card (defaults USD 10 / 50; clamped to 500 / 2 000).
+6. **Messages** lists Page, Instagram and WhatsApp threads for the owner.
+   Subscribe the Page, Instagram and WhatsApp Business Account webhooks
+   (messages, echoes, history, `smb_app_state_sync`) to the URL in step 3.
+   Subscribing does not attach the Page and does not connect the phone.
+   On **Messages**, **Subscribe Page** attaches the Page to the app.
+   Connect the phone only after this build is deployed: history can be
+   imported once, within 24 hours of connecting. On **Messages**, type the
+   Meta app id and the Embedded Signup configuration id, choose **Connect
+   WhatsApp**, pick "Connect your existing WhatsApp Business app" in Meta's
+   window and scan the code with the phone. The app needs Facebook Login
+   for Business with the admin console's domain allowed for the JavaScript
+   SDK. The board reads the number back from Meta before it shows
+   "Connected", and warns when Meta says the number is not on the Business
+   app. Then choose **Import history**, confirm, and accept history
+   sharing on the phone. A failed step can be retried; a finished import
+   is refused. Do not use Meta's "add phone number" flow: that moves the
+   number off the WhatsApp Business app. Message photos and files are
+   deleted after 90 days.
 
 ### Board stores (App Store Connect + Google Play)
 
