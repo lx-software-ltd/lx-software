@@ -42,15 +42,11 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: lx-software-ltd/actions/setup-node@c850872471a02a3f6112a9c5321b485e7f181443 # main 2026-11-20
         with:
           node-version: "lts/*"
-          cache: "npm"
-          cache-dependency-path: apps/public_www/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-        working-directory: apps/public_www
+          cache: npm
+          working-directory: apps/public_www
 
       - name: Run tests
         run: npm run test --if-present
@@ -68,15 +64,11 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: lx-software-ltd/actions/setup-node@c850872471a02a3f6112a9c5321b485e7f181443 # main 2026-11-20
         with:
           node-version: "lts/*"
-          cache: "npm"
-          cache-dependency-path: apps/admin_web/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-        working-directory: apps/admin_web
+          cache: npm
+          working-directory: apps/admin_web
 
       - name: Build admin website
         run: npm run build
@@ -107,15 +99,11 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: lx-software-ltd/actions/setup-node@c850872471a02a3f6112a9c5321b485e7f181443 # main 2026-11-20
         with:
           node-version: "lts/*"
-          cache: "npm"
-          cache-dependency-path: apps/admin_web/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-        working-directory: apps/admin_web
+          cache: npm
+          working-directory: apps/admin_web
 
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
@@ -133,15 +121,11 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: lx-software-ltd/actions/setup-node@c850872471a02a3f6112a9c5321b485e7f181443 # main 2026-11-20
         with:
           node-version: "lts/*"
-          cache: "npm"
-          cache-dependency-path: backend/infrastructure/package-lock.json
-
-      - name: Install infrastructure dependencies
-        run: npm ci
-        working-directory: backend/infrastructure
+          cache: npm
+          working-directory: backend/infrastructure
 
       - name: Build CDK app
         run: npm run build
@@ -167,6 +151,6 @@ jobs:
     if: always()
     steps:
       - name: Require every test job
-        uses: lx-software-ltd/actions/require-jobs@1a3cca7c38163f8164c262323601c34a4df5b7a4 # main 2026-11-20
+        uses: lx-software-ltd/actions/require-jobs@c850872471a02a3f6112a9c5321b485e7f181443 # main 2026-11-20
         with:
           needs-json: ${{ toJson(needs) }}
