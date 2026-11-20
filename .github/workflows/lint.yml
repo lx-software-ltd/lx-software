@@ -1,5 +1,8 @@
 name: Lint
 
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
   # No path filter. The `lint` job is a required check, and a skipped
