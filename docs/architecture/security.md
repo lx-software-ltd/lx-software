@@ -179,13 +179,14 @@ Only **404** responses are rewritten to `/index.html` for SPA routing.
 `active`, include `refs/heads/main`, block deletion and force-push, and
 require status checks whose contexts exactly match a job `name` in
 `.github/workflows` (the aggregator jobs are `test` and `lint`).
-`scripts/verify_github_rulesets.py` is the weekly **Verify GitHub
-Rulesets** job. A ruleset that targets `main` while its enforcement is
-`disabled` fails that job. A required context with no matching job name
-fails it too, which is why the aggregators are named `test` and `lint`
-rather than the longer per-app job names.
+The weekly **Verify GitHub Rulesets** job runs
+`lx-software-ltd/actions/verify-rulesets` with expected approving reviews
+0 and required checks `lint` and `test`. A ruleset that targets `main`
+while its enforcement is `disabled` fails that job. A required context
+with no matching job name fails it too, which is why the aggregators
+are named `test` and `lint` rather than the longer per-app job names.
 
-Approving reviews are reported and do not fail the script. Pull requests
+An approving-review count other than 0 fails that job. Pull requests
 in this repository are opened by the maintainer account, and GitHub does
 not let an author approve their own pull request, so a required review
 count of 1 blocks every merge until a second reviewer exists. Status
