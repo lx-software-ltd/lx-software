@@ -167,27 +167,6 @@ jobs:
     if: always()
     steps:
       - name: Require every test job
-        env:
-          CHECK_CONTRACTS: ${{ needs.check-contracts.result }}
-          TEST_WEB: ${{ needs.test-web.result }}
-          BUILD_ADMIN_WEB: ${{ needs.build-admin-web.result }}
-          E2E_ADMIN_WEB: ${{ needs.e2e-admin-web.result }}
-          TEST_INFRASTRUCTURE: ${{ needs.test-infrastructure.result }}
-        run: |
-          python3 - <<'PY'
-          import os
-          import sys
-
-          jobs = {
-              "check-contracts": os.environ["CHECK_CONTRACTS"],
-              "test-web": os.environ["TEST_WEB"],
-              "build-admin-web": os.environ["BUILD_ADMIN_WEB"],
-              "e2e-admin-web": os.environ["E2E_ADMIN_WEB"],
-              "test-infrastructure": os.environ["TEST_INFRASTRUCTURE"],
-          }
-          failed = [f"{name}={result}" for name, result in jobs.items() if result != "success"]
-          if failed:
-              print("Test jobs did not all succeed: " + ", ".join(failed))
-              sys.exit(1)
-          print("All test jobs succeeded.")
-          PY
+        uses: lx-software-ltd/actions/require-jobs@1a3cca7c38163f8164c262323601c34a4df5b7a4 # main 2026-11-20
+        with:
+          needs-json: ${{ toJson(needs) }}

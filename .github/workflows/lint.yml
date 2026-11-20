@@ -137,27 +137,6 @@ jobs:
     if: always()
     steps:
       - name: Require every lint job
-        env:
-          LINT_WEB: ${{ needs.lint-web.result }}
-          LINT_ADMIN_WEB: ${{ needs.lint-admin-web.result }}
-          BUILD_CDK: ${{ needs.build-cdk.result }}
-          LINT_PYTHON: ${{ needs.lint-python.result }}
-          VALIDATE_AGENT_HARNESS: ${{ needs.validate-agent-harness.result }}
-        run: |
-          python3 - <<'PY'
-          import os
-          import sys
-
-          jobs = {
-              "lint-web": os.environ["LINT_WEB"],
-              "lint-admin-web": os.environ["LINT_ADMIN_WEB"],
-              "build-cdk": os.environ["BUILD_CDK"],
-              "lint-python": os.environ["LINT_PYTHON"],
-              "validate-agent-harness": os.environ["VALIDATE_AGENT_HARNESS"],
-          }
-          failed = [f"{name}={result}" for name, result in jobs.items() if result != "success"]
-          if failed:
-              print("Lint jobs did not all succeed: " + ", ".join(failed))
-              sys.exit(1)
-          print("All lint jobs succeeded.")
-          PY
+        uses: lx-software-ltd/actions/require-jobs@1a3cca7c38163f8164c262323601c34a4df5b7a4 # main 2026-11-20
+        with:
+          needs-json: ${{ toJson(needs) }}
