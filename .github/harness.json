@@ -1,0 +1,82 @@
+{
+  "rules": {
+    "agents-phrases": [
+      "## Zones",
+      "docs/architecture/zones.md",
+      "## Cursor Cloud"
+    ],
+    "core-rule": "00-repository-core.mdc",
+    "agents-limit": 60,
+    "rule-limit": 80,
+    "skill-limit": 160,
+    "pointer-limit": 8,
+    "required-rules": {
+      "00-repository-core.mdc": true,
+      "admin-web.mdc": false,
+      "public-www.mdc": false,
+      "infrastructure-cdk.mdc": false,
+      "backend-admin.mdc": false,
+      "board.mdc": false,
+      "linkedin.mdc": false,
+      "public-api.mdc": false,
+      "scripts.mdc": false
+    },
+    "required-skills": [
+      "verify-change",
+      "add-board-tool",
+      "add-admin-route",
+      "admin-record-table",
+      "edit-contracts",
+      "cdk-parameter",
+      "public-www-page",
+      "cursor-cloud"
+    ],
+    "required-files": [
+      "docs/architecture/zones.md",
+      "docs/plans/_template.md",
+      "docs/research/_template.md",
+      ".github/PULL_REQUEST_TEMPLATE.md",
+      ".cursor/hooks.json",
+      "BUGBOT.md"
+    ],
+    "extra-rules": "full",
+    "verify-why-commits": true,
+    "skills": "all"
+  },
+  "file-length": {
+    "mode": "typed",
+    "allowlist": "scripts/file-length-allowlist.txt",
+    "python-limit": 500,
+    "typescript-limit": 800,
+    "python-prefix": "backend/lambda/",
+    "typescript-app-prefix": "apps/",
+    "typescript-lib-prefix": "backend/infrastructure/lib/",
+    "generated-suffix": "src/lib/contracts/generated.ts",
+    "scan-roots": [
+      "backend/lambda",
+      "backend/infrastructure/lib",
+      "apps"
+    ]
+  },
+  "test-focus": {
+    "mode": "test-names",
+    "roots": [
+      "apps",
+      "backend/lambda",
+      "backend/infrastructure/test",
+      "scripts"
+    ],
+    "suffixes": [
+      ".py",
+      ".ts",
+      ".tsx",
+      ".js",
+      ".jsx",
+      ".mjs"
+    ],
+    "skip-parts": [
+      "node_modules",
+      "dist"
+    ]
+  }
+}
