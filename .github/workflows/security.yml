@@ -23,14 +23,14 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@61d2a581a1d880533982bada88923ad1b6431700 # main 2026-11-20
+        uses: lx-software-ltd/actions/setup-node@f33bc376b6745fcf47a4af88e436ce14b8e55c9b # main 2026-11-21
         with:
           node-version: "lts/*"
           cache: npm
           working-directory: backend/infrastructure
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@61d2a581a1d880533982bada88923ad1b6431700 # main 2026-11-20
+        uses: lx-software-ltd/actions/setup-python@f33bc376b6745fcf47a4af88e436ce14b8e55c9b # main 2026-11-21
         with:
           python-version: "3.12"
 
@@ -120,7 +120,7 @@ jobs:
 
       - name: Set up Python
         if: matrix.language == 'python'
-        uses: lx-software-ltd/actions/setup-python@61d2a581a1d880533982bada88923ad1b6431700 # main 2026-11-20
+        uses: lx-software-ltd/actions/setup-python@f33bc376b6745fcf47a4af88e436ce14b8e55c9b # main 2026-11-21
         with:
           python-version: "3.12"
 
@@ -144,12 +144,12 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@61d2a581a1d880533982bada88923ad1b6431700 # main 2026-11-20
+        uses: lx-software-ltd/actions/setup-python@f33bc376b6745fcf47a4af88e436ce14b8e55c9b # main 2026-11-21
         with:
           python-version: "3.12"
 
       - name: Check hashed PII denylist
-        run: python3 scripts/check_pii.py
+        uses: lx-software-ltd/actions/pii-denylist@f33bc376b6745fcf47a4af88e436ce14b8e55c9b # main 2026-11-21
 
       - name: Test PII check normalization
         run: python3 -m unittest scripts/test_check_pii.py -v
