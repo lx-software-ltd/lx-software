@@ -3,11 +3,11 @@
 **Status**: In progress
 **Zone**: yellow
 
-Parent plan: [Shared actions repository and CI convergence](https://github.com/lx-software-ltd/actions/blob/c850872471a02a3f6112a9c5321b485e7f181443/docs/plans/shared-actions-and-ci-convergence.md), step SA-301. `findingalpha` #73 is the pattern.
+Parent plan: [Shared actions repository and CI convergence](https://github.com/lx-software-ltd/actions/blob/61d2a581a1d880533982bada88923ad1b6431700/docs/plans/shared-actions-and-ci-convergence.md), step SA-301. `findingalpha` #73 is the pattern.
 
 ## Goal
 
-Call `lx-software-ltd/actions` `setup-node` and `setup-python` at `c850872471a02a3f6112a9c5321b485e7f181443` (`# main 2026-11-20`) from the CI workflows. Each caller keeps the Node or Python version it uses today. Move the `require-jobs` pin in `lint.yml` and `test.yml` from `1a3cca7c38163f8164c262323601c34a4df5b7a4` to that same commit.
+Call `lx-software-ltd/actions` `setup-node` and `setup-python` at `61d2a581a1d880533982bada88923ad1b6431700` (`# main 2026-11-20`) from the CI workflows. Each caller keeps the Node or Python version it uses today. Move the `require-jobs` pin in `lint.yml` and `test.yml` from `1a3cca7c38163f8164c262323601c34a4df5b7a4` to that same commit.
 
 ## Non-goals
 
@@ -15,7 +15,9 @@ No Node 26 switch. No Python default substitution. No deploy, bootstrap, cdk-dif
 
 ## Pin
 
-`c850872471a02a3f6112a9c5321b485e7f181443` `# main 2026-11-20`
+`61d2a581a1d880533982bada88923ad1b6431700` (`61d2a58`) `# main 2026-11-20`
+
+The pin is `61d2a58` so this pull request and the ruleset pull request use one actions SHA.
 
 ## Files
 
@@ -100,7 +102,7 @@ Changing `lighthouse-public-website.yml` also runs Lighthouse audit on the pull 
 
 ## Done when
 
-The five workflow files contain no `actions/setup-node@v7`, no `actions/setup-python@v7`, and no `1a3cca7`. Every `lx-software-ltd/actions` reference in those files is `c850872471a02a3f6112a9c5321b485e7f181443`. Deploy, cdk-diff, bootstrap, and key workflows are unchanged.
+The five workflow files contain no `actions/setup-node@v7`, no `actions/setup-python@v7`, and no `1a3cca7`. Every `lx-software-ltd/actions` reference in those files is `61d2a581a1d880533982bada88923ad1b6431700`. Deploy, cdk-diff, bootstrap, and key workflows are unchanged.
 
 ## Rollback
 
