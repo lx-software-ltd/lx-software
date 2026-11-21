@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@61d2a581a1d880533982bada88923ad1b6431700 # main 2026-11-20
+        uses: lx-software-ltd/actions/setup-node@f33bc376b6745fcf47a4af88e436ce14b8e55c9b # main 2026-11-21
         with:
           node-version: "lts/*"
 

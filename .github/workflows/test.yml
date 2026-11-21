@@ -29,7 +29,7 @@ jobs:
         run: python3 scripts/check-contracts.py
 
       - name: Check hashed PII denylist
-        run: python3 scripts/check_pii.py
+        uses: lx-software-ltd/actions/pii-denylist@f33bc376b6745fcf47a4af88e436ce14b8e55c9b # main 2026-11-21
 
       - name: Test OpenRouter key mint script
         run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
@@ -42,7 +42,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@61d2a581a1d880533982bada88923ad1b6431700 # main 2026-11-20
+        uses: lx-software-ltd/actions/setup-node@f33bc376b6745fcf47a4af88e436ce14b8e55c9b # main 2026-11-21
         with:
           node-version: "lts/*"
           cache: npm
@@ -64,7 +64,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@61d2a581a1d880533982bada88923ad1b6431700 # main 2026-11-20
+        uses: lx-software-ltd/actions/setup-node@f33bc376b6745fcf47a4af88e436ce14b8e55c9b # main 2026-11-21
         with:
           node-version: "lts/*"
           cache: npm
@@ -99,7 +99,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@61d2a581a1d880533982bada88923ad1b6431700 # main 2026-11-20
+        uses: lx-software-ltd/actions/setup-node@f33bc376b6745fcf47a4af88e436ce14b8e55c9b # main 2026-11-21
         with:
           node-version: "lts/*"
           cache: npm
@@ -121,7 +121,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@61d2a581a1d880533982bada88923ad1b6431700 # main 2026-11-20
+        uses: lx-software-ltd/actions/setup-node@f33bc376b6745fcf47a4af88e436ce14b8e55c9b # main 2026-11-21
         with:
           node-version: "lts/*"
           cache: npm
@@ -151,6 +151,6 @@ jobs:
     if: always()
     steps:
       - name: Require every test job
-        uses: lx-software-ltd/actions/require-jobs@61d2a581a1d880533982bada88923ad1b6431700 # main 2026-11-20
+        uses: lx-software-ltd/actions/require-jobs@f33bc376b6745fcf47a4af88e436ce14b8e55c9b # main 2026-11-21
         with:
           needs-json: ${{ toJson(needs) }}
