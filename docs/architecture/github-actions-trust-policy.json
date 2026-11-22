@@ -14,10 +14,10 @@
         },
         "StringLike": {
           "token.actions.githubusercontent.com:sub": [
-            "repo:lx-software-ltd/findingalpha:*",
-            "repo:lx-software-ltd/lx-software:*",
-            "repo:lx-software-ltd/evolvesprouts:*",
-            "repo:lx-software-ltd/siutindei:*"
+            "repo:lx-software-ltd@321652495/findingalpha@1456774357:*",
+            "repo:lx-software-ltd@321652495/lx-software@1147603768:*",
+            "repo:lx-software-ltd@321652495/evolvesprouts@1154094921:*",
+            "repo:lx-software-ltd@321652495/siutindei@1139707866:*"
           ]
         }
       }
