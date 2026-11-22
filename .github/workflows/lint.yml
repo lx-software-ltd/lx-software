@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@aab84b76383d5a44838f9617ac47b23cfff7fdaf # main 2026-11-21
+        uses: lx-software-ltd/actions/setup-node@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:
           node-version: "lts/*"
           cache: npm
@@ -46,7 +46,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@aab84b76383d5a44838f9617ac47b23cfff7fdaf # main 2026-11-21
+        uses: lx-software-ltd/actions/setup-node@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:
           node-version: "lts/*"
           cache: npm
@@ -64,7 +64,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@aab84b76383d5a44838f9617ac47b23cfff7fdaf # main 2026-11-21
+        uses: lx-software-ltd/actions/setup-node@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:
           node-version: "lts/*"
           cache: npm
@@ -82,7 +82,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@aab84b76383d5a44838f9617ac47b23cfff7fdaf # main 2026-11-21
+        uses: lx-software-ltd/actions/setup-python@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:
           python-version: "3.12"
 
@@ -102,12 +102,12 @@ jobs:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@aab84b76383d5a44838f9617ac47b23cfff7fdaf # main 2026-11-21
+        uses: lx-software-ltd/actions/setup-python@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:
           python-version: "3.12"
 
       - name: Run harness checks
-        uses: lx-software-ltd/actions/agent-harness@aab84b76383d5a44838f9617ac47b23cfff7fdaf # main 2026-11-21
+        uses: lx-software-ltd/actions/agent-harness@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
 
       - name: Test harness ratchets
         run: python3 -m unittest scripts/test_agent_hooks.py scripts/test_harness_ratchets.py -v
@@ -124,6 +124,6 @@ jobs:
     if: always()
     steps:
       - name: Require every lint job
-        uses: lx-software-ltd/actions/require-jobs@aab84b76383d5a44838f9617ac47b23cfff7fdaf # main 2026-11-21
+        uses: lx-software-ltd/actions/require-jobs@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:
           needs-json: ${{ toJson(needs) }}
