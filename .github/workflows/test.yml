@@ -106,8 +106,10 @@ jobs:
           working-directory: apps/admin_web
 
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
-        working-directory: apps/admin_web
+        uses: lx-software-ltd/actions/playwright-install@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        with:
+          working-directory: apps/admin_web
+          browsers: chromium
 
       - name: Run viewport smoke tests
         run: npm run test:e2e
