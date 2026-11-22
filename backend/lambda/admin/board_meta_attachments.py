@@ -89,7 +89,7 @@ def _fetch(url: str, headers: dict[str, str]) -> bytes | None:
     if not url.startswith("https://"):
         return None
     try:
-        with urlrequest.urlopen(urlrequest.Request(url, method="GET", headers=headers), timeout=10) as resp:  # noqa: S310 # nosec B310
+        with urlrequest.urlopen(urlrequest.Request(url, method="GET", headers=headers), timeout=10) as resp:  # noqa: S310 # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
             body = resp.read(_MAX_BYTES + 1)
     except Exception as exc:
         _log_event("info", tag="board_meta_media_fetch_failed", error=str(exc)[:200])

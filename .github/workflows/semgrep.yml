@@ -24,10 +24,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # python.lang.security.audit.dynamic-urllib-use-detected is excluded for
-      # backend/lambda/admin/handler.py and openrouter_statement_parser.py.
-      # Both call urllib.request.urlopen() with HTTPS-only, fixed-scheme URLs
-      # (Frankfurter API base, OpenRouter API base) and already carry noqa: S310.
+      # The urllib rule is not excluded. exclude-rules would turn it off
+      # for the whole repository. A urlopen line that already carries
+      # noqa: S310 also carries nosemgrep for
+      # python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected.
+      # bank_sync.py and board_catalog_import.py have no such review, so
+      # the rule checks those calls. board_geocode.py is marked on the
+      # ALS lookup line, which already had noqa: S310.
       #
       # mode scan reads the whole repository. The previous semgrep ci command
       # scanned only files changed since the base. The packs add p/python and
@@ -39,7 +42,6 @@ jobs:
         with:
           mode: scan
           rules: p/python p/javascript p/security-audit p/secrets p/owasp-top-ten
-          exclude-rules: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
           upload: "false"
 
       - name: Upload SARIF results

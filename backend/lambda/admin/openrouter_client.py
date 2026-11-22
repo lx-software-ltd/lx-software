@@ -197,7 +197,7 @@ def remaining_credits(secrets_client: Any, *, service: str = SERVICE_EXECUTIVE_B
         },
     )
     try:
-        with urlrequest.urlopen(req, timeout=10) as resp:  # noqa: S310 # nosec B310
+        with urlrequest.urlopen(req, timeout=10) as resp:  # noqa: S310 # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
             raw = resp.read().decode("utf-8")
     except Exception as exc:
         raise OpenRouterError(f"OpenRouter credits probe failed: {exc}") from exc
@@ -608,7 +608,7 @@ def _can_retry(*, deadline: float, sleep_s: float) -> bool:
 
 def _read_plain(req: Any, sock_timeout: int) -> str:
     """Read one response with socket-inactivity semantics only."""
-    resp = urlrequest.urlopen(req, timeout=sock_timeout)  # noqa: S310 # nosec B310
+    resp = urlrequest.urlopen(req, timeout=sock_timeout)  # noqa: S310 # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
     try:
         raw = resp.read()
     finally:
@@ -648,7 +648,7 @@ def _read_http_response(req: Any, sock_timeout: int, deadline: float | None) -> 
     def _worker() -> None:
         resp = None
         try:
-            resp = urlrequest.urlopen(req, timeout=bounded)  # noqa: S310 # nosec B310
+            resp = urlrequest.urlopen(req, timeout=bounded)  # noqa: S310 # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
             box["resp"] = resp
             raw = resp.read()
             if isinstance(raw, str):

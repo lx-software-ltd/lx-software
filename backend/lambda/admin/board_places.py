@@ -124,7 +124,7 @@ def _charge(table: Any, settings: dict[str, Any] | None, usd: float, *, kind: st
 def _http(method: str, url: str, *, headers: dict[str, str], body: bytes | None = None) -> dict[str, Any]:
     req = urllib.request.Request(url, data=body, headers=headers, method=method)  # noqa: S310
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 # nosec B310
+        with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
             raw = resp.read()
     except urllib.error.HTTPError as exc:
         raw = _read_http_error(exc)
