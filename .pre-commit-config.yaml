@@ -19,36 +19,16 @@ repos:
       - id: check-merge-conflict
       - id: detect-private-key
 
-  - repo: local
+  - repo: https://github.com/lx-software-ltd/actions
+    rev: 61b67ed4f686659433f6ca4cb10c80707e365cd0
     hooks:
       - id: check-pii
-        name: Check hashed PII denylist
-        entry: bash scripts/check-pii.sh
-        language: system
-        pass_filenames: false
-        always_run: true
-
       - id: validate-agent-rules
-        name: Validate agent rules
-        entry: python3 scripts/validate_agent_rules.py
-        language: system
-        pass_filenames: false
-        always_run: true
-
       - id: check-file-length
-        name: Check file length
-        entry: python3 scripts/check_file_length.py
-        language: system
-        pass_filenames: false
-        always_run: true
-
       - id: check-test-focus
-        name: Check focused or skipped tests
-        entry: python3 scripts/check_test_focus.py
-        language: system
-        pass_filenames: false
-        always_run: true
 
+  - repo: local
+    hooks:
       - id: ruff
         name: Ruff
         entry: python3 -m ruff check backend/lambda scripts .cursor/hooks

@@ -18,8 +18,6 @@ pairs on the change.
 - `contracts/**`
 - `scripts/deploy/**`
 - `scripts/cloudflare/**`
-- `scripts/check-pii.sh`
-- `scripts/check_pii.py`
 - `scripts/pii-denylist.sha256`
 - `scripts/manage-public-api-keys.py`
 - `scripts/mint-openrouter-app-keys.py`

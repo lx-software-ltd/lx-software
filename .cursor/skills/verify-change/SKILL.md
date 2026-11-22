@@ -13,8 +13,8 @@ Run the narrowest command that exercises the edit, then the area lint. Paste the
 - One Lambda: `python3 -m unittest discover -p 'test_*.py' -v` in that Lambda directory (`backend/lambda/admin`, `public_api_authorizer`, `pre_token_generation`, or `siutindei_schema`).
 - CDK: `npm test` and `npm run build` in `backend/infrastructure` when a stack changed.
 - Contracts: `python3 scripts/sync-contracts.py` then `python3 scripts/check-contracts.py`.
-- Personal data: `python3 scripts/check_pii.py`.
-- Agent rules: `python3 scripts/validate_agent_rules.py`.
+- Personal data: `pre-commit run check-pii --all-files`.
+- Agent rules, file length, and test focus: `pre-commit run validate-agent-rules --all-files`, `pre-commit run check-file-length --all-files`, and `pre-commit run check-test-focus --all-files`.
 
 A UI behavior change is verified in the browser (click, type, submit, and the other screens that share the state).
 

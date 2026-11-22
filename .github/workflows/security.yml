@@ -98,9 +98,6 @@ jobs:
       - name: Check hashed PII denylist
         uses: lx-software-ltd/actions/pii-denylist@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
 
-      - name: Test PII check normalization
-        run: python3 -m unittest scripts/test_check_pii.py -v
-
   secrets-scan:
     name: Secret Scanning
     runs-on: ubuntu-26.04

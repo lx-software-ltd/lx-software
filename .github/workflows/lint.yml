@@ -110,7 +110,7 @@ jobs:
         uses: lx-software-ltd/actions/agent-harness@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
 
       - name: Test harness ratchets
-        run: python3 -m unittest scripts/test_agent_hooks.py scripts/test_harness_ratchets.py -v
+        run: python3 -m unittest scripts/test_agent_hooks.py -v
 
   lint:
     name: lint
