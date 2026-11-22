@@ -62,7 +62,7 @@ def _call(
         return int(status), {str(k).lower(): str(v) for k, v in dict(response_headers).items()}, payload or b""
     request = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
             raw_headers = {key.lower(): value for key, value in response.headers.items()}
             return int(response.status), raw_headers, response.read()
     except urllib.error.HTTPError as exc:

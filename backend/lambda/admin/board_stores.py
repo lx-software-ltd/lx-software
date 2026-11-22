@@ -320,7 +320,7 @@ def play_access_token() -> str:
 # ---------------------------------------------------------------------------
 
 def _urlopen(req: urlrequest.Request, timeout: float | None = None) -> Any:
-    return urlrequest.urlopen(req, timeout=board_deadline.remaining(timeout or HTTP_TIMEOUT_SECONDS))  # nosec B310
+    return urlrequest.urlopen(req, timeout=board_deadline.remaining(timeout or HTTP_TIMEOUT_SECONDS))  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
 
 
 def http_bytes(

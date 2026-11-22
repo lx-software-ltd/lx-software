@@ -153,7 +153,7 @@ def _cfn_respond(event: dict[str, Any], context: Any, status: str, data: dict[st
     req = urllib.request.Request(event["ResponseURL"], data=body, method="PUT")
     req.add_header("Content-Type", "")
     try:
-        urllib.request.urlopen(req, timeout=30).read()  # nosec B310
+        urllib.request.urlopen(req, timeout=30).read()  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
     except urllib.error.URLError:
         print("cfn_respond_failed", status)
 

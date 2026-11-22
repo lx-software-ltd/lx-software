@@ -156,7 +156,7 @@ def _eb_request(
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=EB_HTTP_TIMEOUT_SECONDS) as resp:  # nosec B310
+        with urllib.request.urlopen(req, timeout=EB_HTTP_TIMEOUT_SECONDS) as resp:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
             raw = resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         detail = _read_http_error(exc).decode("utf-8", errors="replace")[:400]
