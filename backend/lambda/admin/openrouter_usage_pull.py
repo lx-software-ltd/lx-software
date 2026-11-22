@@ -144,7 +144,7 @@ def http_get_json(url: str, token: str) -> dict[str, Any]:
         method="GET",
     )
     try:
-        with urlrequest.urlopen(req, timeout=_HTTP_TIMEOUT_SECONDS) as resp:  # nosec B310
+        with urlrequest.urlopen(req, timeout=_HTTP_TIMEOUT_SECONDS) as resp:  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
             payload = json.loads(resp.read().decode("utf-8"))
     except urlerror.HTTPError as exc:
         raise PullHttpError(exc.code, _read_http_error(exc).decode("utf-8", errors="replace")[:300]) from exc
