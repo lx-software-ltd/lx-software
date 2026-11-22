@@ -23,14 +23,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        uses: lx-software-ltd/actions/setup-node@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
         with:
           node-version: "26"
           cache: npm
           working-directory: backend/infrastructure
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        uses: lx-software-ltd/actions/setup-python@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
         with:
           python-version: "3.12"
 
@@ -47,7 +47,7 @@ jobs:
             --parameters PublicWebsiteCertificateArn=arn:aws:acm:us-east-1:123456789012:certificate/example
 
       - name: Run Checkov
-        uses: lx-software-ltd/actions/checkov-cloudformation@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        uses: lx-software-ltd/actions/checkov-cloudformation@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
         with:
           directory: backend/infrastructure/cdk.out
           config-file: backend/infrastructure/.checkov.yaml
@@ -72,12 +72,12 @@ jobs:
 
       - name: Set up Python
         if: matrix.language == 'python'
-        uses: lx-software-ltd/actions/setup-python@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        uses: lx-software-ltd/actions/setup-python@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
         with:
           python-version: "3.12"
 
       - name: Analyze
-        uses: lx-software-ltd/actions/codeql@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        uses: lx-software-ltd/actions/codeql@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
         with:
           language: ${{ matrix.language }}
           queries: security-extended
@@ -91,12 +91,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        uses: lx-software-ltd/actions/setup-python@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
         with:
           python-version: "3.12"
 
       - name: Check hashed PII denylist
-        uses: lx-software-ltd/actions/pii-denylist@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        uses: lx-software-ltd/actions/pii-denylist@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
 
   secrets-scan:
     name: Secret Scanning
@@ -108,7 +108,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run Gitleaks
-        uses: lx-software-ltd/actions/gitleaks@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        uses: lx-software-ltd/actions/gitleaks@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
 
   dependency-audit:
     name: Dependency audit
@@ -118,12 +118,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        uses: lx-software-ltd/actions/setup-python@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
         with:
           python-version: "3.12"
 
       - name: Audit Python requirements
-        uses: lx-software-ltd/actions/pip-audit@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        uses: lx-software-ltd/actions/pip-audit@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
         with:
           requirements: |
             backend/lambda/admin/requirements.txt
@@ -137,7 +137,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        uses: lx-software-ltd/actions/setup-python@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
         with:
           python-version: "3.12"
 
@@ -152,7 +152,7 @@ jobs:
       # fixtures, optional-fetch continues, and a fixed openssl argv.
       # scripts/ is not scanned. The step exits 0.
       - name: Run Bandit
-        uses: lx-software-ltd/actions/bandit@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        uses: lx-software-ltd/actions/bandit@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
         with:
           paths: backend/lambda
           skip: B101
@@ -165,14 +165,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        uses: lx-software-ltd/actions/setup-node@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
         with:
           node-version: "26"
 
       # audit-level stays high. backend/infrastructure has a moderate minimatch
       # advisory below that level. No high advisory in the three lockfiles.
       - name: Audit npm lockfiles
-        uses: lx-software-ltd/actions/npm-audit@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        uses: lx-software-ltd/actions/npm-audit@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
         with:
           directories: |
             apps/public_www
@@ -186,6 +186,6 @@ jobs:
     if: always()
     steps:
       - name: Require every security job
-        uses: lx-software-ltd/actions/require-jobs@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        uses: lx-software-ltd/actions/require-jobs@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
         with:
           needs-json: ${{ toJson(needs) }}
