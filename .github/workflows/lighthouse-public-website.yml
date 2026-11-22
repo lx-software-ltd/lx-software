@@ -25,6 +25,9 @@ concurrency:
 jobs:
   lighthouse:
     name: Lighthouse audit
+    # Dependabot cannot use the production environment, so the job fails
+    # before any step. Other pull requests still run the audit.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-26.04
     # The VITE_* build variables live on the production environment, the same
     # ones Deploy Public Website reads, so the audited bundle matches the live site.
