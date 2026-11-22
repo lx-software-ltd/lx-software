@@ -122,7 +122,7 @@ jobs:
       - name: Check workflows
         uses: lx-software-ltd/actions/workflow-conformance@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:
-          mode: warn
+          mode: enforce
           profile: product
 
   lint:
