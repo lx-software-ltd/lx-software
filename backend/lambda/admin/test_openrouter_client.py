@@ -155,7 +155,7 @@ class TestOpenRouterAttribution(unittest.TestCase):
         with patch.dict(
             "os.environ",
             {
-                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",
+                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",  # nosec B105
                 "OPENROUTER_API_KEY": "",
             },
             clear=False,
@@ -171,7 +171,7 @@ class TestOpenRouterAttribution(unittest.TestCase):
         with patch.dict(
             "os.environ",
             {
-                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",
+                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",  # nosec B105
                 "OPENROUTER_API_KEY": "",
             },
             clear=False,
@@ -186,7 +186,7 @@ class TestOpenRouterAttribution(unittest.TestCase):
         with patch.dict(
             "os.environ",
             {
-                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",
+                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",  # nosec B105
                 "OPENROUTER_API_KEY": "",
             },
             clear=False,
@@ -201,7 +201,7 @@ class TestOpenRouterAttribution(unittest.TestCase):
         with patch.dict(
             "os.environ",
             {
-                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",
+                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",  # nosec B105
                 "OPENROUTER_API_KEY": "",
             },
             clear=False,
@@ -228,7 +228,7 @@ class TestOpenRouterAttribution(unittest.TestCase):
         with patch.dict(
             "os.environ",
             {
-                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",
+                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",  # nosec B105
                 "OPENROUTER_API_KEY": "",
             },
             clear=False,

@@ -124,7 +124,7 @@ def _charge(table: Any, settings: dict[str, Any] | None, usd: float, *, kind: st
 def _http(method: str, url: str, *, headers: dict[str, str], body: bytes | None = None) -> dict[str, Any]:
     req = urllib.request.Request(url, data=body, headers=headers, method=method)  # noqa: S310
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 # nosec B310
             raw = resp.read()
     except urllib.error.HTTPError as exc:
         raw = _read_http_error(exc)
@@ -280,7 +280,7 @@ def discover(
             page_places = list(hit["payload"]["places"])
         else:
             page_places = []
-            page_token = ""
+            page_token = ""  # nosec B105
             for _page in range(pages):
                 body: dict[str, Any] = {
                     "textQuery": q,
@@ -340,7 +340,7 @@ def _search_pages(
 ) -> list[dict[str, Any]]:
     """Run one Text Search (with ``pages`` follow-ups) and keep Hong Kong addresses."""
     out: list[dict[str, Any]] = []
-    page_token = ""
+    page_token = ""  # nosec B105
     for _page in range(pages):
         payload = dict(body)
         if page_token:

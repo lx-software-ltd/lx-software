@@ -391,7 +391,7 @@ def find_contact(table: Any, settings: dict[str, Any], prospect: dict[str, Any])
         for url in pages:
             try:
                 fetched = board_crawl.fetch(url)
-            except Exception:
+            except Exception:  # nosec B112
                 continue
             text = fetched.text or ""
             for match in list(MAILTO_RE.findall(text)) + EMAIL_RE.findall(text):

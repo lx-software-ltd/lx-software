@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import sys
 import tempfile
 import unittest
@@ -32,11 +32,11 @@ class SplitTests(unittest.TestCase):
     def test_handler_imports_from_a_lambda_like_shallow_directory(self) -> None:
         # Mirror the deployed layout: only the packaged files, two levels
         # below the filesystem root, imported the way the Lambda runtime does.
-        with tempfile.TemporaryDirectory(dir="/tmp") as tmp:
+        with tempfile.TemporaryDirectory(dir="/tmp") as tmp:  # nosec B108
             for name in ("handler.py", "sql_split.py", "receivables.sql"):
                 shutil.copy(HERE / name, Path(tmp) / name)
             self.assertLessEqual(len(Path(tmp).resolve().parents), 3)
-            proc = subprocess.run(
+            proc = subprocess.run(  # nosec B603
                 [
                     sys.executable,
                     "-c",

@@ -100,7 +100,7 @@ class TestTypedParameters(unittest.TestCase):
 
     def test_statement_kwargs_include_transaction(self) -> None:
         kwargs = board_data_api.statement_kwargs(
-            "SELECT 1", None, resource_arn="arn:c", secret="arn:s", database="db", transaction_id="tx-1"
+            "SELECT 1", None, resource_arn="arn:c", secret="arn:s", database="db", transaction_id="tx-1"  # nosec B106
         )
         self.assertEqual(kwargs["resourceArn"], "arn:c")
         self.assertEqual(kwargs["transactionId"], "tx-1")

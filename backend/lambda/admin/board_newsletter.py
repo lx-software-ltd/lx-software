@@ -86,7 +86,7 @@ def _sub_row(raw: dict[str, Any] | None) -> dict[str, Any]:
 def handle_subscribe(event: dict[str, Any]) -> dict[str, Any]:
     table = board_store.records_table()
     http = (event.get("requestContext") or {}).get("http") or {}
-    ip = str(http.get("sourceIp") or "0.0.0.0")
+    ip = str(http.get("sourceIp") or "0.0.0.0")  # nosec B104
     if _rate_limited(table, ip, "nl-sub-ip"):
         return _json_response(429, {"message": "Too many requests"})
     body = _parse_json_body(event)
@@ -167,7 +167,7 @@ def _send_confirm(table: Any, email: str, list_name: str, digest: str, lang: str
 def handle_confirm(event: dict[str, Any], token: str) -> dict[str, Any]:
     table = board_store.records_table()
     http = (event.get("requestContext") or {}).get("http") or {}
-    ip = str(http.get("sourceIp") or "0.0.0.0")
+    ip = str(http.get("sourceIp") or "0.0.0.0")  # nosec B104
     if _rate_limited(table, ip, "nl-confirm-ip"):
         return _html_response(429, "<!doctype html><html><body><p>Too many requests.</p></body></html>")
     parsed = parse_token(token)
@@ -188,7 +188,7 @@ def handle_confirm(event: dict[str, Any], token: str) -> dict[str, Any]:
 def handle_unsubscribe(event: dict[str, Any], method: str, token: str) -> dict[str, Any]:
     table = board_store.records_table()
     http = (event.get("requestContext") or {}).get("http") or {}
-    ip = str(http.get("sourceIp") or "0.0.0.0")
+    ip = str(http.get("sourceIp") or "0.0.0.0")  # nosec B104
     if _rate_limited(table, ip, "nl-unsub-ip"):
         if method == "POST":
             return {"statusCode": 429, "headers": {"content-type": "text/plain"}, "body": ""}

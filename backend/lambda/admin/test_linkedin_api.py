@@ -118,7 +118,7 @@ class LinkedInApiTests(unittest.TestCase):
         def transport(method: str, url: str, headers: dict, body: bytes | None):
             del headers, body
             if method == "POST" and url.endswith("/accessToken"):
-                return _ok(200, {"access_token": "token", "refresh_token": "refresh", "expires_in": 3600})
+                return _ok(200, {"access_token": "token", "refresh_token": "refresh", "expires_in": 3600})  # nosec B105
             if url.endswith("/userinfo"):
                 return _ok(200, {"sub": "member1", "name": "Example Member"})
             if "organizationAcls" in url:
@@ -130,7 +130,7 @@ class LinkedInApiTests(unittest.TestCase):
         linkedin_api.set_transport_for_tests(transport)
         token = linkedin_api.exchange_code(
             client_id="client",
-            client_secret="secret",
+            client_secret="secret",  # nosec B106
             code="code",
             redirect="https://admin.example/callback",
         )

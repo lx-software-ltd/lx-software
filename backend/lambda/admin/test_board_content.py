@@ -50,7 +50,7 @@ class ContentTests(BoardTestCase):
         os.environ.pop("ASSETS_BUCKET_NAME", None)
         os.environ["META_PAGE_ID"] = "page-1"
         os.environ["META_IG_USER_ID"] = "ig-1"
-        os.environ["META_BOARD_TOKEN"] = "token"
+        os.environ["META_BOARD_TOKEN"] = "token"  # nosec B105
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
         self.addCleanup(lambda: os.environ.pop("META_PAGE_ID", None))
         self.addCleanup(lambda: os.environ.pop("META_IG_USER_ID", None))

@@ -52,7 +52,7 @@ class NewsletterTests(BoardTestCase):
         super().setUp()
         os.environ["BOARD_STAFF_ENABLED"] = "true"
         os.environ["BOARD_MAIL_SENDING_ENABLED"] = "true"
-        os.environ["BOARD_LINK_SIGNING_SECRET"] = "link-secret-for-tests"
+        os.environ["BOARD_LINK_SIGNING_SECRET"] = "link-secret-for-tests"  # nosec B105
         os.environ["PUBLIC_API_BASE_URL"] = "https://api.example"
         os.environ["BOARD_MAIL_DOMAIN"] = "siutindei.com"
         os.environ.pop("ASSETS_BUCKET_NAME", None)

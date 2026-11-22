@@ -425,7 +425,7 @@ class ImportClientTests(BoardTestCase):
         os.environ["SIUTINDEI_USER_POOL_ID"] = "ap-southeast-1_pool"
         os.environ["BOARD_IMPORTER_CLIENT_ID"] = "client-1"
         os.environ["BOARD_CATALOG_MANAGER_ID"] = "mgr-1"
-        os.environ["BOARD_IMPORTER_CREDENTIALS_SECRET_ARN"] = "arn:test"
+        os.environ["BOARD_IMPORTER_CREDENTIALS_SECRET_ARN"] = "arn:test"  # nosec B105
         self.addCleanup(lambda: os.environ.pop("BOARD_STAFF_ENABLED", None))
         for key in (
             "BOARD_CATALOG_IMPORT_ENABLED",
@@ -436,7 +436,7 @@ class ImportClientTests(BoardTestCase):
             "BOARD_IMPORTER_CREDENTIALS_SECRET_ARN",
         ):
             self.addCleanup(lambda k=key: os.environ.pop(k, None))
-        board_catalog_import.set_secret_for_tests(lambda: {"username": "importer", "password": "secret"})
+        board_catalog_import.set_secret_for_tests(lambda: {"username": "importer", "password": "secret"})  # nosec B105
         board_catalog_import.set_auth_for_tests(lambda user, pw: f"idtok-{user}")
         self.calls: list[tuple[str, str, dict | None]] = []
 

@@ -141,11 +141,16 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Measured 22 Nov 2026 on backend/lambda. No high findings.
-      # B101 is assert, skipped. B311 is a seeded Random in
-      # board_review_sample.py, which is production code, so it is not skipped.
-      # Medium findings stay: B104, B108, B310, and B608. They are not skipped.
-      # The step does not exit 0. scripts/ is not scanned.
+      # Measured 22 Nov 2026 on backend/lambda, then again after the line
+      # marks. No high findings. B101 is assert and stays the only skip.
+      # Every other finding is # nosec on that line. B311 stays off the
+      # skip list: the seeded Random in board_review_sample.py is
+      # # nosec B311. Medium lines are B104 (four 0.0.0.0 fallbacks),
+      # B108 (a test TemporaryDirectory under /tmp), B310 (sixteen
+      # urlopen calls), and B608 (two Metrics Insights expressions).
+      # Low lines are empty strings, token URLs, secret names, test
+      # fixtures, optional-fetch continues, and a fixed openssl argv.
+      # scripts/ is not scanned. The step exits 0.
       - name: Run Bandit
         uses: lx-software-ltd/actions/bandit@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:

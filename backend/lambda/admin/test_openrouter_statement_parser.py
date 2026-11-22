@@ -265,7 +265,7 @@ class TestParseStatementFromAsset(unittest.TestCase):
             patch.dict(
                 "os.environ",
                 {
-                    "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:fake",
+                    "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:fake",  # nosec B105
                     "OPENROUTER_API_KEY": "",
                 },
                 clear=False,

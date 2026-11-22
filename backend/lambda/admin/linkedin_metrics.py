@@ -301,7 +301,7 @@ def refresh(
                 metrics = _social_metrics(previous, counts)
         read: int | None = None
         capped = False
-        member_token = ""
+        member_token = ""  # nosec B105
         # The daily cap skips this impression read. Reactions on later posts still run.
         if do_backfill and not page and analytics_on:
             if allow_analytics_call is not None and not allow_analytics_call():

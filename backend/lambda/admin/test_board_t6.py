@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
+import subprocess  # nosec B404
 import unittest
 from typing import Any
 from unittest.mock import patch
@@ -20,19 +20,19 @@ from test_board_tools import ToolsTestCase
 
 def _openssl_pem(kind: str) -> str:
     if kind == "ec":
-        raw = subprocess.run(
+        raw = subprocess.run(  # nosec B603 B607
             ["openssl", "ecparam", "-name", "prime256v1", "-genkey", "-noout"],
             capture_output=True,
             check=True,
         )
-        pkcs8 = subprocess.run(
+        pkcs8 = subprocess.run(  # nosec B603 B607
             ["openssl", "pkcs8", "-topk8", "-nocrypt"],
             input=raw.stdout,
             capture_output=True,
             check=True,
         )
         return pkcs8.stdout.decode()
-    rsa = subprocess.run(
+    rsa = subprocess.run(  # nosec B603 B607
         ["openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048"],
         capture_output=True,
         check=True,
@@ -56,7 +56,7 @@ class FakeStoresHttp:
                 body = raw
         self.calls.append((method, url, body))
         if "oauth2.googleapis.com/token" in url:
-            payload: Any = {"access_token": "play-oauth-test", "expires_in": 3600}
+            payload: Any = {"access_token": "play-oauth-test", "expires_in": 3600}  # nosec B105
         elif "/v1/apps/app-1/customerReviews" in url:
             payload = {
                 "data": [
@@ -186,9 +186,9 @@ class StoresTestCase(ToolsTestCase):
     def setUp(self) -> None:
         super().setUp()
         board_stores.reset_caches_for_tests()
-        os.environ["APP_STORE_CONNECT_TOKEN"] = "asc-test-token"
+        os.environ["APP_STORE_CONNECT_TOKEN"] = "asc-test-token"  # nosec B105
         os.environ["APP_STORE_CONNECT_APP_ID"] = "app-1"
-        os.environ["GOOGLE_PLAY_ACCESS_TOKEN"] = "play-test-token"
+        os.environ["GOOGLE_PLAY_ACCESS_TOKEN"] = "play-test-token"  # nosec B105
         os.environ["GOOGLE_PLAY_PACKAGE_NAME"] = "com.siutindei.app"
         os.environ["APP_STORE_CONNECT_KEY"] = json.dumps(
             {"keyId": "KEY1", "issuerId": "ISS1", "privateKey": "unused", "appId": "app-1"}

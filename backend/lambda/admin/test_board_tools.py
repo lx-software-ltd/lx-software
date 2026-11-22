@@ -663,7 +663,7 @@ class TestChatToolLoop(ToolsTestCase):
 
     def test_approve_executes_as_owner(self) -> None:
         approval = self.propose_issue()
-        with patch.dict("os.environ", {"GITHUB_READ_TOKEN": "ghp_test"}):
+        with patch.dict("os.environ", {"GITHUB_READ_TOKEN": "ghp_test"}):  # nosec B105
             board_github.reset_token_cache_for_tests()
             status, body = self.call(
                 f"/siu-tin-dei/board/approvals/{approval['approvalId']}/approve",
@@ -722,7 +722,7 @@ class TestChatToolLoop(ToolsTestCase):
         self.assertEqual(body["effective"]["github"]["cto"], "act")
         self.assertEqual(body["effective"]["github"]["cpo"], "propose")
         self.use_script([[("github_comment_issue", {"number": 42, "body": "On it.", "reason": "Unblock."})]], "Commented.")
-        with patch.dict("os.environ", {"GITHUB_READ_TOKEN": "ghp_test"}):
+        with patch.dict("os.environ", {"GITHUB_READ_TOKEN": "ghp_test"}):  # nosec B105
             board_github.reset_token_cache_for_tests()
             job = self.chat("cto")
         call = job["message"]["toolCalls"][0]
@@ -940,7 +940,7 @@ class TestGitHubOps(ToolsTestCase):
             board_github.op_create_issue({"title": "t", "body": "b"})
         self.assertIn("token", str(ctx.exception))
         self.assertEqual(self.github.requests, [])
-        with patch.dict("os.environ", {"GITHUB_READ_TOKEN": "ghp_x"}):
+        with patch.dict("os.environ", {"GITHUB_READ_TOKEN": "ghp_x"}):  # nosec B105
             board_github.reset_token_cache_for_tests()
             out = board_github.op_set_labels({"number": 42, "labels": ["bug", "bug", " P1 "]})
         self.assertEqual(out["labels"], ["bug", "P1"])
@@ -1043,7 +1043,7 @@ class AutonomyToolTests(ToolsTestCase):
         op = board_tools.REGISTRY["github_set_labels"]
         self.assertTrue(board_tools._architect_backlog_write(ctx, op))  # noqa: SLF001
         self.github.issue_labels = ["security"]
-        with patch.dict("os.environ", {"GITHUB_READ_TOKEN": "ghp_test", "BOARD_STAFF_ENABLED": "true"}):
+        with patch.dict("os.environ", {"GITHUB_READ_TOKEN": "ghp_test", "BOARD_STAFF_ENABLED": "true"}):  # nosec B105
             board_github.reset_token_cache_for_tests()
             outcome = board_tools.execute_call(
                 ctx, op, {"number": 42, "labels": ["board-ready", "bug"], "reason": "groom"}
@@ -1073,7 +1073,7 @@ class AutonomyToolTests(ToolsTestCase):
         )
         op = board_tools.REGISTRY["github_comment_issue"]
         self.assertFalse(board_tools._architect_backlog_write(ctx, op))  # noqa: SLF001
-        with patch.dict("os.environ", {"GITHUB_READ_TOKEN": "ghp_test", "BOARD_STAFF_ENABLED": "true"}):
+        with patch.dict("os.environ", {"GITHUB_READ_TOKEN": "ghp_test", "BOARD_STAFF_ENABLED": "true"}):  # nosec B105
             board_github.reset_token_cache_for_tests()
             outcome = board_tools.execute_call(
                 ctx,

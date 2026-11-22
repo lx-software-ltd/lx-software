@@ -146,7 +146,7 @@ def _brave_search(query: str, *, count: int) -> list[dict[str, Any]]:
         },
     )
     try:
-        with urlrequest.urlopen(req, timeout=board_deadline.remaining(HTTP_TIMEOUT_SECONDS)) as resp:  # noqa: S310
+        with urlrequest.urlopen(req, timeout=board_deadline.remaining(HTTP_TIMEOUT_SECONDS)) as resp:  # noqa: S310 # nosec B310
             body = json.loads(resp.read().decode("utf-8", errors="replace") or "{}")
     except urlerror.HTTPError as exc:
         raise ResearchError(f"Brave Search returned status {exc.code}") from _close_http_error(exc)

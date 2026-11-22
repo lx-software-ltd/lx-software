@@ -30,7 +30,7 @@ from secret_store import read_secret_raw
 
 GA4_ORIGIN = "https://analyticsdata.googleapis.com"
 GTM_ORIGIN = "https://tagmanager.googleapis.com"
-TOKEN_URL = "https://oauth2.googleapis.com/token"
+TOKEN_URL = "https://oauth2.googleapis.com/token"  # nosec B105
 SCOPES = (
     "https://www.googleapis.com/auth/analytics.readonly "
     "https://www.googleapis.com/auth/tagmanager.readonly"

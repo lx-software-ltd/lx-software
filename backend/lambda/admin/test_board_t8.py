@@ -79,7 +79,7 @@ class WebTestCase(ToolsTestCase):
     def setUp(self) -> None:
         super().setUp()
         board_web.reset_caches_for_tests()
-        os.environ["GOOGLE_ANALYTICS_ACCESS_TOKEN"] = "ga-test-token"
+        os.environ["GOOGLE_ANALYTICS_ACCESS_TOKEN"] = "ga-test-token"  # nosec B105
         os.environ["GA4_PROPERTY_IDS"] = "properties/111,222"
         os.environ["GTM_CONTAINERS"] = "acc-1:c1,acc-1:c2"
         self.addCleanup(board_web.reset_caches_for_tests)
@@ -196,7 +196,7 @@ class TestWebSecretFromArn(WebTestCase):
         os.environ.pop("GA4_PROPERTY_IDS", None)
         os.environ.pop("GTM_CONTAINERS", None)
         os.environ.pop("GOOGLE_ANALYTICS_SERVICE_ACCOUNT", None)
-        os.environ["GOOGLE_ANALYTICS_SERVICE_ACCOUNT_SECRET_ARN"] = "arn:ga-sa"
+        os.environ["GOOGLE_ANALYTICS_SERVICE_ACCOUNT_SECRET_ARN"] = "arn:ga-sa"  # nosec B105
         board_web.reset_caches_for_tests()
         secrets = patch.object(board_web, "_get_secretsmanager_client", return_value=FakeAnalyticsSecrets())
         secrets.start()

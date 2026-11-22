@@ -860,7 +860,7 @@ def _http(
         return _http_fn(method, url, headers or {}, body)
     req = urllib.request.Request(url, data=body, method=method, headers=headers or {})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
             raw = resp.read()
             status = int(getattr(resp, "status", 200) or 200)
             text = raw.decode("utf-8", errors="replace") if raw else ""

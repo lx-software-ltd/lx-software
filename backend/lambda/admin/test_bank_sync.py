@@ -120,7 +120,7 @@ class BankSyncTestCase(unittest.TestCase):
         patcher_env = patch.dict("os.environ", self.env, clear=False)
         patcher_env.start()
         self.addCleanup(patcher_env.stop)
-        bank_sync._jwt_cache.update({"token": None, "expires": 0.0, "app_id": None})
+        bank_sync._jwt_cache.update({"token": None, "expires": 0.0, "app_id": None})  # nosec B105
 
     def _seed_state(self, state: dict) -> None:
         self.table.put_item(Item={**BANK_SYNC_STATE_KEY, **_to_ddb_nested(state)})

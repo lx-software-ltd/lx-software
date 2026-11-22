@@ -138,7 +138,7 @@ class TestOpenRouterUsagePull(unittest.TestCase):
             }
 
         result = pull.pull_sibling_usage(
-            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2
+            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2  # nosec B106
         )
         self.assertTrue(result["ok"])
         by_status = {row["id"]: row["status"] for row in result["apps"]}
@@ -163,7 +163,7 @@ class TestOpenRouterUsagePull(unittest.TestCase):
         self.assertEqual(by_id["statement-parser"]["calls"], 1)
 
         again = pull.pull_sibling_usage(
-            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2
+            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2  # nosec B106
         )
         self.assertTrue(again["ok"])
         out = openrouter_usage.list_usage(table, from_day="2026-09-21", to_day="2026-09-22")
@@ -191,7 +191,7 @@ class TestOpenRouterUsagePull(unittest.TestCase):
             }
 
         result = pull.pull_sibling_usage(
-            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2
+            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2  # nosec B106
         )
         by_status = {row["id"]: row["status"] for row in result["apps"]}
         self.assertEqual(by_status["siutindei"], "no_usage")
@@ -230,7 +230,7 @@ class TestOpenRouterUsagePull(unittest.TestCase):
             }
 
         result = pull.pull_sibling_usage(
-            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2
+            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2  # nosec B106
         )
         self.assertTrue(result["ok"])
         out = openrouter_usage.list_usage(table, from_day="2026-09-21", to_day="2026-09-22")
@@ -277,12 +277,12 @@ class TestOpenRouterUsagePull(unittest.TestCase):
             }
 
         first = pull.pull_sibling_usage(
-            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2
+            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2  # nosec B106
         )
         self.assertTrue(first["ok"])
         state["fail"] = True
         second = pull.pull_sibling_usage(
-            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2
+            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2  # nosec B106
         )
         self.assertFalse(second["ok"])
         self.assertEqual(second["reason"], "partial")
@@ -318,10 +318,10 @@ class TestOpenRouterUsagePull(unittest.TestCase):
                 return {"data": []}
             return {"data": payloads.pop(0)}
 
-        pull.pull_sibling_usage(table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2)
+        pull.pull_sibling_usage(table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2)  # nosec B106
         first = openrouter_usage.list_usage(table, from_day="2026-09-21", to_day="2026-09-21")
         self.assertAlmostEqual(_app_cost(first, "evolvesprouts"), 0.0)
-        pull.pull_sibling_usage(table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2)
+        pull.pull_sibling_usage(table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2)  # nosec B106
         second = openrouter_usage.list_usage(table, from_day="2026-09-21", to_day="2026-09-21")
         self.assertAlmostEqual(_app_cost(second, "evolvesprouts"), 1.5)
 
@@ -329,7 +329,7 @@ class TestOpenRouterUsagePull(unittest.TestCase):
         table = FakeTable()
         with patch.dict(
             os.environ,
-            {"RECORDS_TABLE_NAME": "records", "OPENROUTER_API_KEY_SECRET_ARN": ""},
+            {"RECORDS_TABLE_NAME": "records", "OPENROUTER_API_KEY_SECRET_ARN": ""},  # nosec B105
             clear=False,
         ):
             with patch.object(runtime, "_ddb", _Ddb(table)):
@@ -351,7 +351,7 @@ class TestOpenRouterUsagePull(unittest.TestCase):
             os.environ,
             {
                 "RECORDS_TABLE_NAME": "records",
-                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",
+                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",  # nosec B105
             },
             clear=False,
         ):
@@ -390,7 +390,7 @@ class TestOpenRouterUsagePull(unittest.TestCase):
             os.environ,
             {
                 "RECORDS_TABLE_NAME": "records",
-                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",
+                "OPENROUTER_API_KEY_SECRET_ARN": "arn:aws:secretsmanager:eu-west-1:1:secret:x",  # nosec B105
             },
             clear=False,
         ):
@@ -497,7 +497,7 @@ class TestOpenRouterUsagePull(unittest.TestCase):
             }
 
         result = pull.pull_sibling_usage(
-            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2
+            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2  # nosec B106
         )
         self.assertTrue(result["ok"])
         out = openrouter_usage.list_usage(table, from_day="2026-09-21", to_day="2026-09-22")
@@ -560,14 +560,14 @@ class TestOpenRouterUsagePull(unittest.TestCase):
                 ]
             }
 
-        pull.pull_sibling_usage(table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2)
+        pull.pull_sibling_usage(table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2)  # nosec B106
         self.assertAlmostEqual(_app_cost(
             openrouter_usage.list_usage(table, from_day="2026-09-21", to_day="2026-09-21"),
             "openrouter-other",
         ), 1.0)
         state["fail_account"] = True
         second = pull.pull_sibling_usage(
-            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2
+            table, token="mgmt", fetch=fetch, now=NOW, lookback_days=2  # nosec B106
         )
         self.assertFalse(second["ok"])
         self.assertEqual(second["reason"], "partial")

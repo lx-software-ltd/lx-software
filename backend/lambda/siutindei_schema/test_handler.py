@@ -24,7 +24,7 @@ class ApplySchemaTests(unittest.TestCase):
         with patch("handler.boto3.client", side_effect=clients):
             result = handler.apply_schema(
                 cluster_arn="arn:cluster",
-                secret_arn="arn:secret",
+                secret_arn="arn:secret",  # nosec B106
                 database="siutindei",
             )
 
@@ -50,7 +50,7 @@ class ApplySchemaTests(unittest.TestCase):
             return rds if name == "rds-data" else sm
 
         with patch("handler.boto3.client", side_effect=clients), patch("handler.time.sleep") as sleep:
-            result = handler.apply_schema(cluster_arn="arn:cluster", secret_arn="arn:secret", database="siutindei")
+            result = handler.apply_schema(cluster_arn="arn:cluster", secret_arn="arn:secret", database="siutindei")  # nosec B106
 
         self.assertEqual(sleep.call_count, 2)
         self.assertGreaterEqual(result["applied"], 10)
@@ -63,7 +63,7 @@ class ApplySchemaTests(unittest.TestCase):
         )
         with patch("handler.boto3.client", return_value=rds), patch("handler.time.sleep") as sleep:
             with self.assertRaises(RuntimeError) as ctx:
-                handler.apply_schema(cluster_arn="arn:cluster", secret_arn="arn:secret", database="siutindei")
+                handler.apply_schema(cluster_arn="arn:cluster", secret_arn="arn:secret", database="siutindei")  # nosec B106
         sleep.assert_not_called()
         self.assertIn("organizations", str(ctx.exception))
 
@@ -146,7 +146,7 @@ class ApplySchemaTests(unittest.TestCase):
             patch("handler.boto3.client", side_effect=clients),
             patch.dict(
                 "os.environ",
-                {"SIUTINDEI_CLUSTER_ARN": "arn:c", "SIUTINDEI_DB_SECRET_ARN": "arn:s"},
+                {"SIUTINDEI_CLUSTER_ARN": "arn:c", "SIUTINDEI_DB_SECRET_ARN": "arn:s"},  # nosec B105
             ),
         ):
             out = handler.lambda_handler(
@@ -171,7 +171,7 @@ class ApplySchemaTests(unittest.TestCase):
 
         with (
             patch("handler.boto3.client", side_effect=clients),
-            patch.dict("os.environ", {"SIUTINDEI_CLUSTER_ARN": "arn:c", "SIUTINDEI_DB_SECRET_ARN": "arn:s"}),
+            patch.dict("os.environ", {"SIUTINDEI_CLUSTER_ARN": "arn:c", "SIUTINDEI_DB_SECRET_ARN": "arn:s"}),  # nosec B105
         ):
             with self.assertRaises(RuntimeError):
                 handler.lambda_handler({"internal": "siutindei_data_api_ensure"}, MagicMock())

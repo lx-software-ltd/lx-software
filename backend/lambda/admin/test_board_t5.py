@@ -20,7 +20,7 @@ from board_tools import REGISTRY, ToolContext, execute_call
 from test_board import BoardTestCase
 from test_board_tools import ToolsTestCase
 
-PAGE_TOKEN = "page-token-local"
+PAGE_TOKEN = "page-token-local"  # nosec B105
 
 
 class FakeGraph:
@@ -109,9 +109,9 @@ class MetaTestCase(ToolsTestCase):
     def setUp(self) -> None:
         super().setUp()
         board_meta.reset_caches_for_tests()
-        os.environ["META_BOARD_TOKEN"] = "token-local"
-        os.environ["META_APP_SECRET"] = "app-secret"
-        os.environ["META_VERIFY_TOKEN"] = "verify-me"
+        os.environ["META_BOARD_TOKEN"] = "token-local"  # nosec B105
+        os.environ["META_APP_SECRET"] = "app-secret"  # nosec B105
+        os.environ["META_VERIFY_TOKEN"] = "verify-me"  # nosec B105
         os.environ["META_PAGE_ID"] = "page-1"
         os.environ["META_IG_USER_ID"] = "ig-1"
         os.environ["META_WA_PHONE_NUMBER_ID"] = "wa-phone-1"

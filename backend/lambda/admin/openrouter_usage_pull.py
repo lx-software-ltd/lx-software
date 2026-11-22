@@ -144,7 +144,7 @@ def http_get_json(url: str, token: str) -> dict[str, Any]:
         method="GET",
     )
     try:
-        with urlrequest.urlopen(req, timeout=_HTTP_TIMEOUT_SECONDS) as resp:
+        with urlrequest.urlopen(req, timeout=_HTTP_TIMEOUT_SECONDS) as resp:  # nosec B310
             payload = json.loads(resp.read().decode("utf-8"))
     except urlerror.HTTPError as exc:
         raise PullHttpError(exc.code, _read_http_error(exc).decode("utf-8", errors="replace")[:300]) from exc
@@ -295,7 +295,7 @@ def handle_pull(event: dict[str, Any]) -> dict[str, Any]:
 
     table = board_store.records_table()
     arn = os.getenv("OPENROUTER_API_KEY_SECRET_ARN", "").strip()
-    token = ""
+    token = ""  # nosec B105
     if arn:
         try:
             raw = read_secret_raw(
