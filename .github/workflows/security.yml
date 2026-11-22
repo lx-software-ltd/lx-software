@@ -155,10 +155,32 @@ jobs:
           paths: backend/lambda
           skip: B101
 
+  npm-audit:
+    name: npm audit
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: lx-software-ltd/actions/setup-node@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        with:
+          node-version: "26"
+
+      # audit-level stays high. backend/infrastructure has a moderate minimatch
+      # advisory below that level. No high advisory in the three lockfiles.
+      - name: Audit npm lockfiles
+        uses: lx-software-ltd/actions/npm-audit@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        with:
+          directories: |
+            apps/public_www
+            apps/admin_web
+            backend/infrastructure
+
   security-summary:
     name: Security Summary
     runs-on: ubuntu-26.04
-    needs: [checkov, codeql, pii-denylist, secrets-scan, dependency-audit, bandit]
+    needs: [checkov, codeql, pii-denylist, secrets-scan, dependency-audit, bandit, npm-audit]
     if: always()
     steps:
       - name: Require every security job
