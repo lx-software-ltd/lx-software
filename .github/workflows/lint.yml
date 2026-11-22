@@ -122,6 +122,25 @@ jobs:
           mode: enforce
           profile: product
 
+  type-check:
+    name: Type-check
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: lx-software-ltd/actions/setup-node@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
+
+      - name: Type-check Node apps
+        run: |
+          set -euo pipefail
+          for dir in apps/admin_web apps/public_www backend/infrastructure; do
+            echo "Type-checking $dir"
+            npm ci --prefix "$dir"
+            npm run typecheck --prefix "$dir"
+          done
+
   lint:
     name: lint
     runs-on: ubuntu-26.04
@@ -132,6 +151,7 @@ jobs:
       - lint-python
       - validate-agent-harness
       - workflow-conformance
+      - type-check
     if: always()
     steps:
       - name: Require every lint job
