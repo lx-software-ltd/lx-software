@@ -24,20 +24,23 @@ jobs:
           node-version: "26"
 
       - name: Validate package-lock.json
-        run: |
-          set -e
-          for dir in apps/public_www apps/admin_web backend/infrastructure; do
-            if [ -f "$dir/package.json" ]; then
-              if [ ! -f "$dir/package-lock.json" ]; then
-                echo "Missing package-lock.json in $dir"
-                exit 1
-              fi
-              (cd "$dir" && npm ci)
-              if ! git diff --exit-code "$dir/package-lock.json"; then
-                echo "package-lock.json is out of sync in $dir"
-                exit 1
-              fi
-            else
-              echo "Skipping Node lockfile check for $dir"
-            fi
-          done
+        uses: lx-software-ltd/actions/node-lockfiles@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        with:
+          directories: |
+            apps/public_www
+            apps/admin_web
+            backend/infrastructure
+
+  python-requirements:
+    name: Check Python requirement pins
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check requirement pins
+        uses: lx-software-ltd/actions/python-requirements-pins@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        with:
+          files: |
+            backend/lambda/admin/requirements.txt
+            backend/lambda/public_api_authorizer/requirements.txt
