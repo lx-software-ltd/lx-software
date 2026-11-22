@@ -121,6 +121,8 @@ jobs:
         with:
           python-version: "3.12"
 
+      # 22 Nov 2026: ignore-vulns is the hatch for an upstream advisory
+      # with no fix. A dated reason goes on this step when one is ignored.
       - name: Audit Python requirements
         uses: lx-software-ltd/actions/pip-audit@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
         with:
@@ -168,6 +170,8 @@ jobs:
 
       # audit-level stays high. backend/infrastructure has a moderate minimatch
       # advisory below that level. No high advisory in the three lockfiles.
+      # 22 Nov 2026: audit-level is the hatch for an upstream advisory
+      # with no fix. A dated reason goes on this step when the level changes.
       - name: Audit npm lockfiles
         uses: lx-software-ltd/actions/npm-audit@9235676200771b2f93bc01ac85f3de1392133182 # main 2026-11-22
         with:
@@ -177,7 +181,7 @@ jobs:
             backend/infrastructure
 
   security-summary:
-    name: Security Summary
+    name: security-summary
     runs-on: ubuntu-26.04
     needs: [checkov, codeql, pii-denylist, secrets-scan, dependency-audit, bandit, npm-audit]
     if: always()

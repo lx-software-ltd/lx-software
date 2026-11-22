@@ -21,4 +21,4 @@ jobs:
         with:
           token: ${{ github.token }}
           expected-reviews: "0"
-          required-checks: lint test
+          required-checks: lint test security-summary
