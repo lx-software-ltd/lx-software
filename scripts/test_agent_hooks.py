@@ -188,15 +188,19 @@ class StopGateTest(unittest.TestCase):
                 return subprocess_result("", 0)
             raise FileNotFoundError(command[0])
 
+        original_run = stop.subprocess.run
         stop.subprocess.run = fake_run
         stop.sys.stdin = io.StringIO(json.dumps({"status": "completed"}))
         stop.sys.stdout = io.StringIO()
-        self.assertEqual(stop.main(), 0)
-        payload = json.loads(stop.sys.stdout.getvalue())
-        message = payload["followup_message"]
-        self.assertEqual(message.count("pre-commit is not on PATH"), 1)
-        self.assertIn("lx-software-ltd/actions", message)
-        self.assertIn("network", message)
+        try:
+            self.assertEqual(stop.main(), 0)
+            payload = json.loads(stop.sys.stdout.getvalue())
+            message = payload["followup_message"]
+            self.assertEqual(message.count("pre-commit is not on PATH"), 1)
+            self.assertIn("lx-software-ltd/actions", message)
+            self.assertIn("network", message)
+        finally:
+            stop.subprocess.run = original_run
 
 
 class _Completed:
