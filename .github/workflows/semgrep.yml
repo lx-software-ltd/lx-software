@@ -1,0 +1,52 @@
+name: Semgrep
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: semgrep/ci
+    if: github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-26.04
+    container:
+      image: semgrep/semgrep@sha256:f83a64e8a7d985eaa51ee3978c9c882be946964c68633fba5d2817cf297a3912 # 2026-11-17
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # python.lang.security.audit.dynamic-urllib-use-detected is excluded for
+      # backend/lambda/admin/handler.py and openrouter_statement_parser.py.
+      # Both call urllib.request.urlopen() with HTTPS-only, fixed-scheme URLs
+      # (Frankfurter API base, OpenRouter API base) and already carry noqa: S310.
+      #
+      # mode scan reads the whole repository. The previous semgrep ci command
+      # scanned only files changed since the base. The packs add p/python and
+      # p/owasp-top-ten to p/javascript, p/security-audit, and p/secrets.
+      # Upload stays on the old category so alerts filed from security.yml
+      # are not left without a configuration.
+      - name: Run Semgrep
+        uses: lx-software-ltd/actions/semgrep@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        with:
+          mode: scan
+          rules: p/python p/javascript p/security-audit p/secrets p/owasp-top-ten
+          exclude-rules: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+          upload: "false"
+
+      - name: Upload SARIF results
+        if: always()
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        continue-on-error: true
+        with:
+          sarif_file: semgrep-results.sarif
+          category: ".github/workflows/security.yml:semgrep"
+          wait-for-processing: false

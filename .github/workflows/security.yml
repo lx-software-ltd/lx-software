@@ -113,74 +113,10 @@ jobs:
       - name: Run Gitleaks
         uses: lx-software-ltd/actions/gitleaks@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
 
-  semgrep:
-    name: Semgrep SAST
-    runs-on: ubuntu-26.04
-    container:
-      image: semgrep/semgrep
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      # Rule exclusions (centralized suppressions):
-      # - python.lang.security.audit.dynamic-urllib-use-detected: Suppressed
-      #   for backend/lambda/admin/handler.py and openrouter_statement_parser.py
-      #   where urllib.request.urlopen() is called with HTTPS-only, fixed-scheme
-      #   URLs (Frankfurter API base, OpenRouter API base). Both call sites
-      #   already carry an inline `# noqa: S310` comment with the same rationale.
-      - name: Run Semgrep
-        run: |
-          semgrep ci \
-            --sarif \
-            --output=semgrep-results.sarif \
-            --exclude-rule python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected \
-            || true
-        env:
-          SEMGREP_RULES: >-
-            p/javascript
-            p/security-audit
-            p/secrets
-
-      - name: Filter in-source suppressed Semgrep findings
-        if: always()
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          sarif_path = Path("semgrep-results.sarif")
-          if not sarif_path.exists():
-              print("semgrep-results.sarif not found; skipping suppression filter.")
-              raise SystemExit(0)
-
-          payload = json.loads(sarif_path.read_text(encoding="utf-8"))
-          removed = 0
-          for run in payload.get("runs", []):
-              kept = []
-              for result in run.get("results", []):
-                  suppressions = result.get("suppressions", [])
-                  if any(item.get("kind") == "inSource" for item in suppressions):
-                      removed += 1
-                      continue
-                  kept.append(result)
-              run["results"] = kept
-
-          sarif_path.write_text(json.dumps(payload), encoding="utf-8")
-          print(f"Removed {removed} in-source suppressed Semgrep findings from SARIF.")
-          PY
-
-      - name: Upload SARIF results
-        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
-        if: always()
-        continue-on-error: true
-        with:
-          sarif_file: semgrep-results.sarif
-          wait-for-processing: false
-
   security-summary:
     name: Security Summary
     runs-on: ubuntu-26.04
-    needs: [checkov, codeql, pii-denylist, secrets-scan, semgrep]
+    needs: [checkov, codeql, pii-denylist, secrets-scan]
     if: always()
     steps:
       - name: Require every security job
