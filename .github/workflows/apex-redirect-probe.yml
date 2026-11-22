@@ -17,11 +17,11 @@ permissions:
 jobs:
   probe:
     name: Probe apex redirects
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Probe live apex redirects
         run: python3 scripts/cloudflare/publish-apex-redirect.py probe

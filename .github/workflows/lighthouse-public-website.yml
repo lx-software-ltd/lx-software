@@ -16,7 +16,7 @@ on:
 
 permissions:
   contents: read
-  statuses: write
+  "statuses": write
 
 concurrency:
   group: lighthouse-public-website-${{ github.ref }}
@@ -36,12 +36,12 @@ jobs:
     timeout-minutes: 40
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
         uses: lx-software-ltd/actions/setup-node@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:
-          node-version: "lts/*"
+          node-version: "26"
           cache: npm
           working-directory: apps/public_www
 
@@ -98,7 +98,7 @@ jobs:
 
       - name: Upload Lighthouse artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lighthouse-public-www-results
           path: apps/public_www/.lighthouseci/**
