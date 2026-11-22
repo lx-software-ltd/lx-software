@@ -1955,7 +1955,7 @@ class LinkedInHttpTests(unittest.TestCase):
             patch.object(
                 linkedin_api,
                 "exchange_code",
-                return_value={"access_token": "token", "expires_in": 3600},
+                return_value={"access_token": "token", "expires_in": 3600},  # nosec B105
             ),
             patch.object(
                 linkedin_api, "userinfo", return_value={"memberId": "member1", "memberName": "Example Member"}
@@ -2212,7 +2212,7 @@ class LinkedInHttpTests(unittest.TestCase):
         )
 
     def test_overview_reports_analytics_when_the_secret_is_unset(self) -> None:
-        with patch.dict("os.environ", {"LINKEDIN_APP_SECRET_ID": ""}, clear=False):
+        with patch.dict("os.environ", {"LINKEDIN_APP_SECRET_ID": ""}, clear=False):  # nosec B105
             linkedin_analytics.reset_credentials_cache_for_tests()
             response = lambda_handler(_event("/lx-software/linkedin"), None)
         self.assertEqual(response["statusCode"], 200)
@@ -2267,7 +2267,7 @@ class LinkedInHttpTests(unittest.TestCase):
             patch.object(
                 linkedin_api,
                 "exchange_code",
-                return_value={"access_token": "analytics-token", "expires_in": 3600},
+                return_value={"access_token": "analytics-token", "expires_in": 3600},  # nosec B105
             ) as exchanged,
             patch.object(
                 linkedin_api,
@@ -2875,7 +2875,7 @@ class LinkedInHttpTests(unittest.TestCase):
             patch.object(
                 linkedin_api,
                 "refresh_access_token",
-                return_value={"access_token": "new-token", "refresh_token": "refresh-2", "expires_in": 3600},
+                return_value={"access_token": "new-token", "refresh_token": "refresh-2", "expires_in": 3600},  # nosec B105
             ),
         ):
             token = linkedin_analytics.access_token(self.table, linkedin_analytics.load_connection(self.table))

@@ -224,7 +224,7 @@ def execute(
         raise DataApiError(_not_configured_message(chosen))
     client = boto3.client("rds-data")
     rows: list[dict[str, Any]] = []
-    next_token = ""
+    next_token = ""  # nosec B105
     pages = 0
     try:
         while True:

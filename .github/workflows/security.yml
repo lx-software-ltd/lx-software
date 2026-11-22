@@ -20,17 +20,17 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@aab84b76383d5a44838f9617ac47b23cfff7fdaf # main 2026-11-21
+        uses: lx-software-ltd/actions/setup-node@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:
-          node-version: "lts/*"
+          node-version: "26"
           cache: npm
           working-directory: backend/infrastructure
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@aab84b76383d5a44838f9617ac47b23cfff7fdaf # main 2026-11-21
+        uses: lx-software-ltd/actions/setup-python@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:
           python-version: "3.12"
 
@@ -47,65 +47,11 @@ jobs:
             --parameters PublicWebsiteCertificateArn=arn:aws:acm:us-east-1:123456789012:certificate/example
 
       - name: Run Checkov
-        uses: bridgecrewio/checkov-action@v12.3141.0
+        uses: lx-software-ltd/actions/checkov-cloudformation@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:
           directory: backend/infrastructure/cdk.out
-          config_file: backend/infrastructure/.checkov.yaml
+          config-file: backend/infrastructure/.checkov.yaml
           framework: cloudformation
-          output_format: cli,sarif
-          output_file_path: console,backend/infrastructure/checkov-results.sarif
-
-      # Strip findings whose only suppression is in-source CDK metadata
-      # (kind == "inSource"). Mirrors the lcacchiani/evolvesprouts pattern.
-      - name: Filter in-source suppressed Checkov findings
-        id: filter_checkov_sarif
-        if: always()
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          sarif_path = Path("backend/infrastructure/checkov-results.sarif")
-          if sarif_path.is_dir():
-              candidates = sorted(sarif_path.glob("*.sarif"))
-              sarif_path = candidates[0] if candidates else None
-
-          output_path = Path(os.environ["RUNNER_TEMP"]) / "checkov-results.filtered.sarif"
-          if not sarif_path or not sarif_path.exists():
-              print("checkov-results.sarif not found; emitting empty SARIF.")
-              output_path.write_text(
-                  json.dumps({"version": "2.1.0", "runs": []}), encoding="utf-8"
-              )
-          else:
-              payload = json.loads(sarif_path.read_text(encoding="utf-8"))
-              removed = 0
-              for run in payload.get("runs", []):
-                  kept = []
-                  for result in run.get("results", []):
-                      suppressions = result.get("suppressions", [])
-                      if any(item.get("kind") == "inSource" for item in suppressions):
-                          removed += 1
-                          continue
-                      kept.append(result)
-                  run["results"] = kept
-              output_path.write_text(json.dumps(payload), encoding="utf-8")
-              print(f"Removed {removed} in-source suppressed Checkov findings from SARIF.")
-
-          output_file = os.environ.get("GITHUB_OUTPUT")
-          if output_file:
-              with open(output_file, "a", encoding="utf-8") as fh:
-                  fh.write(f"filtered_sarif={output_path}\n")
-          PY
-
-      - name: Upload SARIF results
-        uses: github/codeql-action/upload-sarif@v4
-        # The Checkov step is the gate (365 passed / 0 failed on main). GitHub's
-        # code-scanning upload API 5xx must not fail Security Scanning.
-        continue-on-error: true
-        with:
-          sarif_file: ${{ steps.filter_checkov_sarif.outputs.filtered_sarif }}
-          wait-for-processing: false
 
   codeql:
     name: CodeQL Analysis (${{ matrix.language }})
@@ -113,164 +59,133 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [javascript, python]
+        include:
+          # javascript-typescript is the analyzed language. The category stays
+          # /language:javascript, which is where the existing alerts are filed.
+          - language: javascript-typescript
+            category: "/language:javascript"
+          - language: python
+            category: "/language:python"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
         if: matrix.language == 'python'
-        uses: lx-software-ltd/actions/setup-python@aab84b76383d5a44838f9617ac47b23cfff7fdaf # main 2026-11-21
+        uses: lx-software-ltd/actions/setup-python@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:
           python-version: "3.12"
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
+      - name: Analyze
+        uses: lx-software-ltd/actions/codeql@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:
-          languages: ${{ matrix.language }}
+          language: ${{ matrix.language }}
           queries: security-extended
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4
-        with:
-          category: /language:${{ matrix.language }}
-          wait-for-processing: false
+          category: ${{ matrix.category }}
 
   pii-denylist:
     name: PII denylist
     runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@aab84b76383d5a44838f9617ac47b23cfff7fdaf # main 2026-11-21
+        uses: lx-software-ltd/actions/setup-python@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:
           python-version: "3.12"
 
       - name: Check hashed PII denylist
-        uses: lx-software-ltd/actions/pii-denylist@aab84b76383d5a44838f9617ac47b23cfff7fdaf # main 2026-11-21
-
-      - name: Test PII check normalization
-        run: python3 -m unittest scripts/test_check_pii.py -v
+        uses: lx-software-ltd/actions/pii-denylist@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
 
   secrets-scan:
     name: Secret Scanning
     runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
-      # Use the MIT-licensed gitleaks CLI instead of gitleaks-action.
-      # The action requires GITLEAKS_LICENSE on organization repos, and
-      # Dependabot pull_request runs cannot read Actions secrets
-      # (Secret source: Dependabot), so the action fails with
-      # "missing gitleaks license" on every Dependabot PR. The CLI
-      # needs no license and still scans the checked-out history.
       - name: Run Gitleaks
-        env:
-          GITLEAKS_VERSION: "8.30.1"
-          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
-        run: |
-          # GitHub has returned 504 for this asset. curl -f then exits 22
-          # and fails the job. Retry the download before checking the hash.
-          downloaded=0
-          for attempt in 1 2 3 4 5; do
-            if [ "$attempt" -gt 1 ]; then
-              sleep $(((attempt - 1) * 2))
-            fi
-            if curl -sSfL \
-              "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
-              -o /tmp/gitleaks.tgz; then
-              downloaded=1
-              break
-            fi
-          done
-          test "$downloaded" = 1
-          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tgz" | sha256sum -c -
-          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
-          /tmp/gitleaks detect --source . --verbose --redact --no-banner
+        uses: lx-software-ltd/actions/gitleaks@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
 
-  semgrep:
-    name: Semgrep SAST
+  dependency-audit:
+    name: Dependency audit
     runs-on: ubuntu-26.04
-    container:
-      image: semgrep/semgrep
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Rule exclusions (centralized suppressions):
-      # - python.lang.security.audit.dynamic-urllib-use-detected: Suppressed
-      #   for backend/lambda/admin/handler.py and openrouter_statement_parser.py
-      #   where urllib.request.urlopen() is called with HTTPS-only, fixed-scheme
-      #   URLs (Frankfurter API base, OpenRouter API base). Both call sites
-      #   already carry an inline `# noqa: S310` comment with the same rationale.
-      - name: Run Semgrep
-        run: |
-          semgrep ci \
-            --sarif \
-            --output=semgrep-results.sarif \
-            --exclude-rule python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected \
-            || true
-        env:
-          SEMGREP_RULES: >-
-            p/javascript
-            p/security-audit
-            p/secrets
-
-      - name: Filter in-source suppressed Semgrep findings
-        if: always()
-        run: |
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          sarif_path = Path("semgrep-results.sarif")
-          if not sarif_path.exists():
-              print("semgrep-results.sarif not found; skipping suppression filter.")
-              raise SystemExit(0)
-
-          payload = json.loads(sarif_path.read_text(encoding="utf-8"))
-          removed = 0
-          for run in payload.get("runs", []):
-              kept = []
-              for result in run.get("results", []):
-                  suppressions = result.get("suppressions", [])
-                  if any(item.get("kind") == "inSource" for item in suppressions):
-                      removed += 1
-                      continue
-                  kept.append(result)
-              run["results"] = kept
-
-          sarif_path.write_text(json.dumps(payload), encoding="utf-8")
-          print(f"Removed {removed} in-source suppressed Semgrep findings from SARIF.")
-          PY
-
-      - name: Upload SARIF results
-        uses: github/codeql-action/upload-sarif@v4
-        if: always()
-        continue-on-error: true
+      - name: Set up Python
+        uses: lx-software-ltd/actions/setup-python@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:
-          sarif_file: semgrep-results.sarif
-          wait-for-processing: false
+          python-version: "3.12"
+
+      - name: Audit Python requirements
+        uses: lx-software-ltd/actions/pip-audit@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        with:
+          requirements: |
+            backend/lambda/admin/requirements.txt
+            backend/lambda/public_api_authorizer/requirements.txt
+
+  bandit:
+    name: Bandit
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: lx-software-ltd/actions/setup-python@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        with:
+          python-version: "3.12"
+
+      # Measured 22 Nov 2026 on backend/lambda, then again after the line
+      # marks. No high findings. B101 is assert and stays the only skip.
+      # Every other finding is # nosec on that line. B311 stays off the
+      # skip list: the seeded Random in board_review_sample.py is
+      # # nosec B311. Medium lines are B104 (four 0.0.0.0 fallbacks),
+      # B108 (a test TemporaryDirectory under /tmp), B310 (sixteen
+      # urlopen calls), and B608 (two Metrics Insights expressions).
+      # Low lines are empty strings, token URLs, secret names, test
+      # fixtures, optional-fetch continues, and a fixed openssl argv.
+      # scripts/ is not scanned. The step exits 0.
+      - name: Run Bandit
+        uses: lx-software-ltd/actions/bandit@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        with:
+          paths: backend/lambda
+          skip: B101
+
+  npm-audit:
+    name: npm audit
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: lx-software-ltd/actions/setup-node@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        with:
+          node-version: "26"
+
+      # audit-level stays high. backend/infrastructure has a moderate minimatch
+      # advisory below that level. No high advisory in the three lockfiles.
+      - name: Audit npm lockfiles
+        uses: lx-software-ltd/actions/npm-audit@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        with:
+          directories: |
+            apps/public_www
+            apps/admin_web
+            backend/infrastructure
 
   security-summary:
     name: Security Summary
     runs-on: ubuntu-26.04
-    needs: [checkov, codeql, pii-denylist, secrets-scan, semgrep]
+    needs: [checkov, codeql, pii-denylist, secrets-scan, dependency-audit, bandit, npm-audit]
     if: always()
     steps:
-      - name: Check job results
-        run: |
-          echo "## Security Scan Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Checkov | ${{ needs.checkov.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| CodeQL | ${{ needs.codeql.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| PII denylist | ${{ needs.pii-denylist.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Secret Scanning | ${{ needs.secrets-scan.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Semgrep | ${{ needs.semgrep.result }} |" >> $GITHUB_STEP_SUMMARY
+      - name: Require every security job
+        uses: lx-software-ltd/actions/require-jobs@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
+        with:
+          needs-json: ${{ toJson(needs) }}

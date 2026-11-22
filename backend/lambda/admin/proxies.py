@@ -185,7 +185,7 @@ def _fetch_yahoo_quote(
             },
             method="GET",
         )
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        with urllib.request.urlopen(req, timeout=8) as resp:  # nosec B310
             raw = resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         body = _read_http_error(exc).decode("utf-8", errors="replace")[:200]
@@ -328,7 +328,7 @@ def _proxy_fx_v2_rates(qs: dict[str, Any] | None, request_id: str) -> dict[str, 
             headers={"User-Agent": "lxsoftware-admin-api/1.0"},
             method="GET",
         )
-        with urllib.request.urlopen(req, timeout=12) as resp:
+        with urllib.request.urlopen(req, timeout=12) as resp:  # nosec B310
             raw = resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         body = _read_http_error(exc).decode("utf-8", errors="replace")[:500]

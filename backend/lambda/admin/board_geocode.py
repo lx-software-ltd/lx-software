@@ -150,7 +150,7 @@ def _fetch_als(address: str) -> dict[str, Any]:
         headers={"Accept": "application/json", "User-Agent": ALS_USER_AGENT},
         method="GET",
     )
-    with urlrequest.urlopen(req, timeout=ALS_TIMEOUT_SECONDS) as resp:  # noqa: S310
+    with urlrequest.urlopen(req, timeout=ALS_TIMEOUT_SECONDS) as resp:  # noqa: S310 # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
         raw = resp.read()
     data = json.loads(raw.decode("utf-8", errors="replace") if raw else "{}")
     return data if isinstance(data, dict) else {}

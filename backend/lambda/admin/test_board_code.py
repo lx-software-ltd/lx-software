@@ -307,7 +307,7 @@ class RunnerTests(BoardTestCase):
         gh_patch = patch.object(board_github, "_request", side_effect=self.gh)
         gh_patch.start()
         self.addCleanup(gh_patch.stop)
-        os.environ["GITHUB_READ_TOKEN"] = "ghp_test"
+        os.environ["GITHUB_READ_TOKEN"] = "ghp_test"  # nosec B105
         board_github.reset_token_cache_for_tests()
         self.addCleanup(lambda: os.environ.pop("GITHUB_READ_TOKEN", None))
         self.addCleanup(board_github.reset_token_cache_for_tests)

@@ -107,7 +107,7 @@ def build_finance_summary(table: Any, *, now: datetime | None = None) -> dict[st
     for book in BOOKS:
         try:
             data = _load_finance_owner(table, book)
-        except Exception:  # pragma: no cover - defensive: summary is optional
+        except Exception:  # pragma: no cover - defensive: summary is optional  # nosec B112
             continue
         books[book] = summarize_book(data, now=now)
     return {

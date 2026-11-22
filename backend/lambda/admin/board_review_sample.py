@@ -255,7 +255,7 @@ def collect(table: Any, settings: dict[str, Any], date_hkt: str, start: str, end
         if board_holds.hold_hours(table, settings, action_class, class_key) > 0:
             continue
         pool.append(row_from_call(table, call, class_key, cache))
-    rng = random.Random(date_hkt)
+    rng = random.Random(date_hkt)  # nosec B311
     rng.shuffle(pool)
     return pool[: max(1, size)]
 

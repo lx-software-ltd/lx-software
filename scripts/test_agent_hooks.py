@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import json
 import unittest
 from pathlib import Path
 
@@ -20,7 +22,6 @@ def _load(name: str, path: Path):
 
 guard = _load("guard_shell", ROOT / ".cursor" / "hooks" / "guard_shell.py")
 post_edit = _load("post_edit", ROOT / ".cursor" / "hooks" / "post_edit.py")
-rules = _load("validate_agent_rules", ROOT / "scripts" / "validate_agent_rules.py")
 
 
 class GuardShellTest(unittest.TestCase):
@@ -176,13 +177,41 @@ class HarnessConfigTest(unittest.TestCase):
             self.assertIn(expected, matched)
 
 
-class AgentRulesTest(unittest.TestCase):
-    def test_repository_rules_pass(self) -> None:
-        self.assertEqual(rules.validate(), [])
+class StopGateTest(unittest.TestCase):
+    def test_missing_pre_commit_returns_a_followup(self) -> None:
+        stop = _load("stop_gate", ROOT / ".cursor" / "hooks" / "stop_gate.py")
 
-    def test_convention_tag_is_accepted_and_unknown_sha_is_not(self) -> None:
-        self.assertTrue(rules._why_is_real("convention"))
-        self.assertFalse(rules._why_is_real("deadbee is not a commit"))
+        def fake_run(command, **kwargs):
+            if command[0] == "git":
+                return subprocess_result(" M file.py\n")
+            if command[0] == stop.sys.executable:
+                return subprocess_result("", 0)
+            raise FileNotFoundError(command[0])
+
+        original_run = stop.subprocess.run
+        stop.subprocess.run = fake_run
+        stop.sys.stdin = io.StringIO(json.dumps({"status": "completed"}))
+        stop.sys.stdout = io.StringIO()
+        try:
+            self.assertEqual(stop.main(), 0)
+            payload = json.loads(stop.sys.stdout.getvalue())
+            message = payload["followup_message"]
+            self.assertEqual(message.count("pre-commit is not on PATH"), 1)
+            self.assertIn("lx-software-ltd/actions", message)
+            self.assertIn("network", message)
+        finally:
+            stop.subprocess.run = original_run
+
+
+class _Completed:
+    def __init__(self, stdout: str, returncode: int) -> None:
+        self.stdout = stdout
+        self.stderr = ""
+        self.returncode = returncode
+
+
+def subprocess_result(stdout: str, returncode: int = 0) -> _Completed:
+    return _Completed(stdout, returncode)
 
 
 if __name__ == "__main__":

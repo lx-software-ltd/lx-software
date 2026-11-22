@@ -19,14 +19,14 @@ from http_common import _read_http_error
 
 API_VERSION = "202609"
 AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization"
-TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
+TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"  # nosec B105
 USERINFO_URL = "https://api.linkedin.com/v2/userinfo"
 REST = "https://api.linkedin.com/rest"
 PROFILE_SCOPES = "openid profile w_member_social"
 ORGANIZATION_SCOPES = "openid profile w_member_social w_organization_social r_organization_social rw_organization_admin"
 MEMBER_ANALYTICS_SCOPE = "r_member_postAnalytics"
 COMMENTARY_MAX = 3000
-SECRET_ID_ENV = "LINKEDIN_APP_SECRET_ID"
+SECRET_ID_ENV = "LINKEDIN_APP_SECRET_ID"  # nosec B105
 METRICS_TIMEOUT_SECONDS = 8
 
 _transport = None
@@ -62,7 +62,7 @@ def _call(
         return int(status), {str(k).lower(): str(v) for k, v in dict(response_headers).items()}, payload or b""
     request = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # nosec B310
             raw_headers = {key.lower(): value for key, value in response.headers.items()}
             return int(response.status), raw_headers, response.read()
     except urllib.error.HTTPError as exc:

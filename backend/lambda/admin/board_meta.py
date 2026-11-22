@@ -249,7 +249,7 @@ def status_summary(table: Any) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def _urlopen(req: urlrequest.Request, timeout: float | None = None) -> Any:
-    return urlrequest.urlopen(req, timeout=board_deadline.remaining(timeout or HTTP_TIMEOUT_SECONDS))
+    return urlrequest.urlopen(req, timeout=board_deadline.remaining(timeout or HTTP_TIMEOUT_SECONDS))  # nosec B310
 
 
 def graph(

@@ -14,10 +14,10 @@ jobs:
     runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Verify rulesets
-        uses: lx-software-ltd/actions/verify-rulesets@aab84b76383d5a44838f9617ac47b23cfff7fdaf # main 2026-11-21
+        uses: lx-software-ltd/actions/verify-rulesets@61b67ed4f686659433f6ca4cb10c80707e365cd0 # main 2026-11-22
         with:
           token: ${{ github.token }}
           expected-reviews: "0"

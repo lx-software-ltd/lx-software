@@ -30,7 +30,7 @@ import gzip
 import io
 import json
 import os
-import subprocess
+import subprocess  # nosec B404
 import tempfile
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -51,7 +51,7 @@ from secret_store import read_secret_raw
 ASC_ORIGIN = "https://api.appstoreconnect.apple.com"
 PLAY_ORIGIN = "https://androidpublisher.googleapis.com"
 PLAY_REPORTING_ORIGIN = "https://playdeveloperreporting.googleapis.com"
-PLAY_TOKEN_URL = "https://oauth2.googleapis.com/token"
+PLAY_TOKEN_URL = "https://oauth2.googleapis.com/token"  # nosec B105
 PLAY_SCOPES = (
     "https://www.googleapis.com/auth/androidpublisher "
     "https://www.googleapis.com/auth/playdeveloperreporting"
@@ -245,7 +245,7 @@ def sign_jwt(header: dict[str, Any], payload: dict[str, Any], pem: str) -> str:
         handle.write(pem if pem.endswith("\n") else pem + "\n")
         key_path = handle.name
     try:
-        proc = subprocess.run(  # noqa: S603 - openssl dgst; key is a temp file we wrote
+        proc = subprocess.run(  # noqa: S603 - openssl dgst; key is a temp file we wrote  # nosec B603 B607
             ["openssl", "dgst", "-sha256", "-sign", key_path],
             input=signing_input.encode(),
             capture_output=True,
@@ -320,7 +320,7 @@ def play_access_token() -> str:
 # ---------------------------------------------------------------------------
 
 def _urlopen(req: urlrequest.Request, timeout: float | None = None) -> Any:
-    return urlrequest.urlopen(req, timeout=board_deadline.remaining(timeout or HTTP_TIMEOUT_SECONDS))
+    return urlrequest.urlopen(req, timeout=board_deadline.remaining(timeout or HTTP_TIMEOUT_SECONDS))  # nosec B310
 
 
 def http_bytes(

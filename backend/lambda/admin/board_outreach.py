@@ -519,7 +519,7 @@ def _rate_limited(table: Any, ip: str) -> bool:
 def handle_unsubscribe(event: dict[str, Any], method: str, token: str) -> dict[str, Any]:
     table = board_store.records_table()
     http = (event.get("requestContext") or {}).get("http") or {}
-    ip = str(http.get("sourceIp") or "0.0.0.0")
+    ip = str(http.get("sourceIp") or "0.0.0.0")  # nosec B104
     if _rate_limited(table, ip):
         if method == "GET":
             return _html_response(429, "<!doctype html><html><body><p>Too many requests.</p></body></html>")

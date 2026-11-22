@@ -58,7 +58,7 @@ MAX_BANK_MAPPINGS = 50
 # Booked/settled balances first, then expected, then available/interim.
 BALANCE_TYPE_PREFERENCE = ("CLBD", "XPCD", "CLAV", "ITAV", "VALU", "OTHR")
 
-_jwt_cache: dict[str, Any] = {"token": None, "expires": 0.0, "app_id": None}
+_jwt_cache: dict[str, Any] = {"token": None, "expires": 0.0, "app_id": None}  # nosec B105
 
 
 class BankSyncError(Exception):
@@ -156,7 +156,7 @@ def _eb_request(
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=EB_HTTP_TIMEOUT_SECONDS) as resp:
+        with urllib.request.urlopen(req, timeout=EB_HTTP_TIMEOUT_SECONDS) as resp:  # nosec B310
             raw = resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         detail = _read_http_error(exc).decode("utf-8", errors="replace")[:400]

@@ -1,4 +1,4 @@
-# Files already over the ceiling in scripts/check_file_length.py.
+# Files already over the file-length ceiling.
 # A listed file may not grow. Lower the number when it shrinks.
 # Remove the line when the file is at or under its ceiling
 # (500 for backend/lambda Python, 800 for app and CDK TypeScript).

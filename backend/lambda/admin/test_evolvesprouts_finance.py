@@ -183,7 +183,7 @@ class TestEvolveSproutsMirror(unittest.TestCase):
             "os.environ",
             {
                 "EVOLVESPROUTS_CLUSTER_ARN": "arn:cluster",
-                "EVOLVESPROUTS_DB_SECRET_ARN": "arn:secret",
+                "EVOLVESPROUTS_DB_SECRET_ARN": "arn:secret",  # nosec B105
                 "EVOLVESPROUTS_DB_NAME": "evolvesprouts",
                 "RECORDS_TABLE_NAME": "records-test",
             },
@@ -353,7 +353,7 @@ class TestEvolveSproutsMirror(unittest.TestCase):
         board_data_api.set_executor_for_tests(explode)
         with patch.dict(
             "os.environ",
-            {"EVOLVESPROUTS_CLUSTER_ARN": "", "EVOLVESPROUTS_DB_SECRET_ARN": ""},
+            {"EVOLVESPROUTS_CLUSTER_ARN": "", "EVOLVESPROUTS_DB_SECRET_ARN": ""},  # nosec B105
         ):
             result = es.sync(self.table)
         self.assertEqual(result["skipped"], "not_configured")
@@ -399,7 +399,7 @@ class TestEvolveSproutsRoutes(unittest.TestCase):
                 "AUDIT_LOG_TABLE_NAME": "audit-test",
                 "ASSETS_BUCKET_NAME": "assets-test",
                 "EVOLVESPROUTS_CLUSTER_ARN": "",
-                "EVOLVESPROUTS_DB_SECRET_ARN": "",
+                "EVOLVESPROUTS_DB_SECRET_ARN": "",  # nosec B105
             },
         )
         patcher_env.start()
@@ -468,7 +468,7 @@ class TestEvolveSproutsRoutes(unittest.TestCase):
                 "os.environ",
                 {
                     "EVOLVESPROUTS_CLUSTER_ARN": "arn:cluster",
-                    "EVOLVESPROUTS_DB_SECRET_ARN": "arn:secret",
+                    "EVOLVESPROUTS_DB_SECRET_ARN": "arn:secret",  # nosec B105
                 },
             ),
             patch("board_async.try_invoke_event", return_value=True) as invoke,
@@ -488,7 +488,7 @@ class TestEvolveSproutsRoutes(unittest.TestCase):
             "os.environ",
             {
                 "EVOLVESPROUTS_CLUSTER_ARN": "arn:cluster",
-                "EVOLVESPROUTS_DB_SECRET_ARN": "arn:secret",
+                "EVOLVESPROUTS_DB_SECRET_ARN": "arn:secret",  # nosec B105
             },
         ):
             with self.assertRaises(es.EvolveSproutsFinanceError):
@@ -525,7 +525,7 @@ class TestDataApiPages(unittest.TestCase):
                 "os.environ",
                 {
                     "EVOLVESPROUTS_CLUSTER_ARN": "arn:cluster",
-                    "EVOLVESPROUTS_DB_SECRET_ARN": "arn:secret",
+                    "EVOLVESPROUTS_DB_SECRET_ARN": "arn:secret",  # nosec B105
                 },
             ),
             patch.object(board_data_api.boto3, "client", return_value=client),

@@ -181,12 +181,12 @@ def fetch_cognito_sign_in_metrics(pool_id: str) -> dict[str, Any]:
     queries = [
         {
             "Id": "signInThrottles",
-            "Expression": f"SELECT SUM(SignInThrottles) FROM {schema} WHERE UserPool = '{safe_pool}'",
+            "Expression": f"SELECT SUM(SignInThrottles) FROM {schema} WHERE UserPool = '{safe_pool}'",  # nosec B608
             "Period": 3600,
         },
         {
             "Id": "signInSuccesses",
-            "Expression": f"SELECT SUM(SignInSuccesses) FROM {schema} WHERE UserPool = '{safe_pool}'",
+            "Expression": f"SELECT SUM(SignInSuccesses) FROM {schema} WHERE UserPool = '{safe_pool}'",  # nosec B608
             "Period": 3600,
         },
     ]
