@@ -166,8 +166,8 @@ console; CDK owns them from `AdminWebDomainName` and overwrites drift.
 
 ## 4. Deploy the admin SPA
 
-Run **Deploy Admin Web** (on `main` when `apps/admin_web/**`
-or this workflow change, after a
+Run **Deploy Admin Web** (on `main` when `apps/admin_web/**`,
+`scripts/deploy/deploy-admin-www.sh`, or this workflow change, after a
 successful **Deploy Backend** on `main`, or manually). It builds
 `apps/admin_web` with production `VITE_*` values, then
 `s3-cloudfront-deploy` with profile `admin-hashed` uploads hashed

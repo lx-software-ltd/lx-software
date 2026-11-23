@@ -59,18 +59,39 @@ jobs:
       # After the build. npm ci and the build must not see the deploy role.
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@daa2fd06bb4a9580a3d3302f9127a66da39d940e # main 2026-11-23
+        uses: lx-software-ltd/actions/aws-oidc@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
 
+      - name: Read the public website outputs
+        id: site
+        if: steps.aws.outputs.ready == 'true'
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          PUBLIC_WEBSITE_STACK_NAME: ${{ vars.PUBLIC_WEBSITE_STACK_NAME }}
+        run: |
+          set -euo pipefail
+          stack="${PUBLIC_WEBSITE_STACK_NAME:-lxsoftware-public-www}"
+          bucket="$(aws cloudformation describe-stacks --stack-name "$stack" --query "Stacks[0].Outputs[?OutputKey=='PublicWebsiteBucketName'].OutputValue" --output text)"
+          distribution="$(aws cloudformation describe-stacks --stack-name "$stack" --query "Stacks[0].Outputs[?OutputKey=='PublicWebsiteDistributionId'].OutputValue" --output text)"
+          if [ -z "$bucket" ] || [ "$bucket" = "None" ]; then
+            echo "Public website bucket output not found for $stack" >&2
+            exit 1
+          fi
+          if [ "$distribution" = "None" ]; then
+            distribution=""
+          fi
+          echo "bucket=$bucket" >> "$GITHUB_OUTPUT"
+          echo "distribution=$distribution" >> "$GITHUB_OUTPUT"
+
       - name: Deploy public website
         if: steps.aws.outputs.ready == 'true'
-        uses: lx-software-ltd/actions/s3-cloudfront-deploy@daa2fd06bb4a9580a3d3302f9127a66da39d940e # main 2026-11-23
+        uses: lx-software-ltd/actions/s3-cloudfront-deploy@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
         with:
           source: apps/public_www/dist
-          stack: ${{ vars.PUBLIC_WEBSITE_STACK_NAME || 'lxsoftware-public-www' }}
-          region: ${{ vars.AWS_REGION }}
+          bucket: ${{ steps.site.outputs.bucket }}
+          distribution-id: ${{ steps.site.outputs.distribution }}
           profile: public-routes
           indexnow: "true"
           dry-run: "false"

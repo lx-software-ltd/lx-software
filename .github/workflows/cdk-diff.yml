@@ -47,7 +47,7 @@ jobs:
       - name: Configure AWS credentials
         id: aws
         if: github.event_name != 'pull_request' || vars.AWS_DIFF_ROLE_NAME != ''
-        uses: lx-software-ltd/actions/aws-oidc@daa2fd06bb4a9580a3d3302f9127a66da39d940e # main 2026-11-23
+        uses: lx-software-ltd/actions/aws-oidc@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
@@ -80,7 +80,7 @@ jobs:
 
       - name: Check CDK Bootstrap status
         if: steps.aws.outputs.ready == 'true'
-        uses: lx-software-ltd/actions/cdk-bootstrap-check@daa2fd06bb4a9580a3d3302f9127a66da39d940e # main 2026-11-23
+        uses: lx-software-ltd/actions/cdk-bootstrap-check@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
         with:
           qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
           region: ${{ vars.AWS_REGION }}
@@ -98,6 +98,41 @@ jobs:
           cd backend/infrastructure
           npx cdk acknowledge 34892 || true
           npm run build --if-present
+          PUBLIC_PARAM_ARGS=()
+          ADMIN_LX_PARAM_ARGS=()
+          ADMIN_WEB_PARAM_ARGS=()
+          resolve_param_file() {
+            local path="$1"
+            if [ -z "$path" ]; then
+              return 1
+            fi
+            if [ -f "$path" ]; then
+              echo "$path"
+              return 0
+            fi
+            if [ -n "$GITHUB_WORKSPACE" ] && [ -f "$GITHUB_WORKSPACE/$path" ]; then
+              echo "$GITHUB_WORKSPACE/$path"
+              return 0
+            fi
+            return 1
+          }
+          if [ -n "${CDK_PARAM_FILE:-}" ]; then
+            RESOLVED_PARAM_FILE=$(resolve_param_file "$CDK_PARAM_FILE" || true)
+            if [ -n "$RESOLVED_PARAM_FILE" ]; then
+              # shellcheck source=../../scripts/deploy/cdk-params.sh
+              source ../../scripts/deploy/cdk-params.sh
+              cdk_load_param_args "$RESOLVED_PARAM_FILE"
+            else
+              echo "CDK_PARAM_FILE '$CDK_PARAM_FILE' not found"
+              exit 1
+            fi
+          fi
+          PARAM_ARGS=( "${PUBLIC_PARAM_ARGS[@]}" "${ADMIN_LX_PARAM_ARGS[@]}" "${ADMIN_WEB_PARAM_ARGS[@]}" )
+          if [ ${#PARAM_ARGS[@]} -gt 0 ]; then
+            printf '%s\0' "${PARAM_ARGS[@]}" > "$RUNNER_TEMP/cdk-diff-args"
+          else
+            : > "$RUNNER_TEMP/cdk-diff-args"
+          fi
           STACK_ARGS=()
           if [ -n "${CDK_STACKS:-}" ]; then
             IFS=$', \n\t' read -r -a STACK_LIST <<< "$CDK_STACKS"
@@ -125,11 +160,9 @@ jobs:
 
       - name: Run CDK diff
         if: steps.aws.outputs.ready == 'true' && steps.prep.outputs.run == 'true'
-        uses: lx-software-ltd/actions/cdk-diff@daa2fd06bb4a9580a3d3302f9127a66da39d940e # main 2026-11-23
+        uses: lx-software-ltd/actions/cdk-diff@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
         with:
           working-directory: backend/infrastructure
           stacks: ${{ steps.prep.outputs.stacks }}
-          plan-file: backend/infrastructure/cdk-plan.json
-          param-file: ${{ vars.CDK_PARAM_FILE }}
-          format: prefixed-json
+          args-file: ${{ runner.temp }}/cdk-diff-args
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
