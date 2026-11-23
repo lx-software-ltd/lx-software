@@ -792,12 +792,6 @@ def _access_token(table: Any, connection: dict[str, Any]) -> str:
     return access
 
 
-def _counts_attempt(exc: BaseException) -> bool:
-    if isinstance(exc, LinkedInApiError):
-        return exc.counts_attempt
-    return True
-
-
 def _reconnect_error(message: str) -> bool:
     text = message.lower()
     return any(
@@ -858,22 +852,12 @@ def handle_publish_due(event: dict[str, Any] | None = None) -> dict[str, Any]:
             publish = "not_connected"
         else:
             publish = "posted"
-            for row in linkedin_store.posts_ready_to_publish(table):
-                post_id = str(row.get("postId") or "")
-                try:
-                    publish_one(table, row)
-                    published += 1
-                except Exception as exc:  # noqa: BLE001 — one failure must not skip the rest of the tick
-                    _log_event("warning", tag="linkedin_publish_failed", error=str(exc)[:240])
-                    try:
-                        linkedin_store.record_publish_failure(
-                            table,
-                            post_id,
-                            str(exc),
-                            count_attempt=_counts_attempt(exc),
-                        )
-                    except LinkedInError:
-                        _log_event("warning", tag="linkedin_publish_failed", error="post not found")
+            published += linkedin_video.publish_ready(
+                table,
+                publish_one,
+                record_failure=linkedin_store.record_publish_failure,
+                log=lambda message: _log_event("warning", tag="linkedin_publish_failed", error=message),
+            )
     settings = linkedin_store.load_settings(table)
     address = str(settings.get("notifyEmail") or "")
     reminded = 0

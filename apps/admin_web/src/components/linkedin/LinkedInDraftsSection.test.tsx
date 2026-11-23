@@ -19,9 +19,10 @@ const { fitLinkedInImage, uploadImage, draftItems } = vi.hoisted(() => ({
   draftItems: { current: null as LinkedInPost[] | null },
 }));
 
-vi.mock("../../lib/fitLinkedInImage", () => ({
-  fitLinkedInImage,
-}));
+vi.mock("../../lib/fitLinkedInImage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/fitLinkedInImage")>();
+  return { ...actual, fitLinkedInImage };
+});
 
 const updatePost = { isPending: false, error: null, mutate: vi.fn(), mutateAsync: vi.fn() };
 const starPost = { isPending: false, error: null, mutate: vi.fn(), mutateAsync: vi.fn() };
@@ -142,7 +143,7 @@ describe("LinkedIn draft image upload", () => {
     bytes[1] = 0xd8;
     bytes[2] = 0xff;
     const file = new File([bytes], "large.jpg", { type: "image/jpeg" });
-    await user.upload(screen.getByLabelText("Picture"), file);
+    await user.upload(screen.getByLabelText("Picture or video"), file);
 
     expect(screen.queryByText("The image must be under 1.5 MB.")).toBeNull();
     await waitFor(() =>
@@ -166,7 +167,7 @@ describe("LinkedIn draft image upload", () => {
     uploadImage.mutateAsync.mockResolvedValue({});
     renderDrafts("/?linkedin-post=li_hook");
 
-    const input = screen.getByLabelText("Picture");
+    const input = screen.getByLabelText("Picture or video");
     expect(input).toHaveAttribute("accept", LINKEDIN_POST_MEDIA_ACCEPT);
     expect(LINKEDIN_POST_MEDIA_ACCEPT).toContain("image/gif");
     expect(LINKEDIN_POST_MEDIA_ACCEPT).toContain("video/quicktime");
@@ -196,10 +197,10 @@ describe("LinkedIn draft image upload", () => {
     uploadImage.mutateAsync.mockResolvedValue({});
     renderDrafts("/?linkedin-post=li_hook");
 
-    const input = screen.getByLabelText("Picture");
+    const input = screen.getByLabelText("Picture or video");
     await user.upload(input, new File([new Uint8Array([1])], "IMG_1234.MOV", { type: "" }));
 
-    expect(await screen.findByText("Preparing…")).toBeInTheDocument();
+    expect(await screen.findByText(/Preparing…/)).toBeInTheDocument();
     expect(screen.queryByText("Resizing…")).toBeNull();
     resolveFit({ contentType: "video/mp4", dataBase64: "c2hydW5r" });
     await waitFor(() =>
@@ -211,10 +212,32 @@ describe("LinkedIn draft image upload", () => {
     );
   });
 
+  it("shows prepare progress and cancel does not surface an error", async () => {
+    const user = userEvent.setup();
+    fitLinkedInImage.mockImplementation((_file, _shrink, video) => {
+      video?.onProgress?.(0.4);
+      return new Promise((_resolve, reject) => {
+        video?.signal?.addEventListener("abort", () => {
+          reject(Object.assign(new Error("Cancelled."), { name: "VideoPrepareCancelled" }));
+        });
+      });
+    });
+    renderDrafts("/?linkedin-post=li_hook");
+    await user.upload(
+      screen.getByLabelText("Picture or video"),
+      new File([new Uint8Array([1])], "IMG_1234.MOV", { type: "" }),
+    );
+    expect(await screen.findByText("Preparing… 40%")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByText(/Preparing…/)).toBeNull());
+    expect(screen.queryByText(/Could not attach/)).toBeNull();
+    expect(uploadImage.mutateAsync).not.toHaveBeenCalled();
+  });
+
   it("disables the file input while the upload is in flight", () => {
     uploadImage.isPending = true;
     renderDrafts("/?linkedin-post=li_hook");
-    expect(screen.getByLabelText("Picture")).toBeDisabled();
+    expect(screen.getByLabelText("Picture or video")).toBeDisabled();
     expect(screen.getByText("Uploading…")).toBeInTheDocument();
   });
 });

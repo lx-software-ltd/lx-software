@@ -1724,7 +1724,7 @@ def choose_character(table: Any, candidate_id: str) -> dict[str, Any]:
 
 
 def posts_ready_to_publish(table: Any, *, now_iso: str | None = None) -> list[dict[str, Any]]:
-    """The oldest approved slot still inside the grace window. One post per tick."""
+    """Approved slots inside the grace window, oldest first. The caller posts one."""
     now = _parse_slot(now_iso or board_store.now_iso()) or _as_hkt()
     ready: list[dict[str, Any]] = []
     for row in list_posts(table, status="approved"):
@@ -1734,7 +1734,7 @@ def posts_ready_to_publish(table: Any, *, now_iso: str | None = None) -> list[di
             continue
         ready.append(row)
     ready.sort(key=lambda doc: str(doc.get("slotAt") or ""))
-    return ready[:1]
+    return ready
 
 
 def posts_given_up(table: Any) -> list[dict[str, Any]]:

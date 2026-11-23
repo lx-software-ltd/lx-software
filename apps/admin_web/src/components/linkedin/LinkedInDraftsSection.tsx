@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { LINKEDIN_BYTES_KEY, useLinkedIn } from "../../hooks/useLinkedIn";
 import { adminFetchJson, getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { DRAFT_RECORD_ID } from "../../lib/expandedRecord";
-import { fitLinkedInImage } from "../../lib/fitLinkedInImage";
+import { fitLinkedInImage, linkedInUploadType } from "../../lib/fitLinkedInImage";
+import { VideoPrepareCancelled } from "../../lib/fitLinkedInVideo";
 import { formatDateTimeHKT } from "../../lib/formatDisplay";
 import {
   guardrails,
@@ -427,6 +428,7 @@ function PostEditor({
   const [localError, setLocalError] = useState<string | null>(null);
   const [fittingImage, setFittingImage] = useState(false);
   const [fittingLabel, setFittingLabel] = useState("Resizing…");
+  const prepareRef = useRef<AbortController | null>(null);
   const linkedIn = useLinkedIn();
   const pictureId = post?.postId ?? "";
   const picture = pictureDraft?.id === pictureId ? pictureDraft : null;
@@ -528,7 +530,7 @@ function PostEditor({
               />
             </AdminField>
             {post ? (
-              <AdminField label="Picture" htmlFor={`${formId}-image`}>
+              <AdminField label="Picture or video" htmlFor={`${formId}-image`}>
                 {post.image?.status === "pending" ? <p className="small mb-2">Drawing…</p> : null}
                 {post.image?.status === "failed" ? (
                   <p className="small text-danger mb-2">{post.image.error || "The picture failed."}</p>
@@ -637,10 +639,28 @@ function PostEditor({
                     event.target.value = "";
                     if (!file || pictureBusy) return;
                     setLocalError(null);
-                    const videoFile = file.type.startsWith("video/") || /\.(mp4|mov|m4v|qt)$/i.test(file.name);
-                    setFittingLabel(videoFile ? "Preparing…" : "Resizing…");
+                    prepareRef.current?.abort();
+                    const controller = new AbortController();
+                    prepareRef.current = controller;
+                    const videoFile = linkedInUploadType(file) === "video";
+                    setFittingLabel(videoFile ? "Preparing… 0%" : "Resizing…");
                     setFittingImage(true);
-                    void fitLinkedInImage(file)
+                    void fitLinkedInImage(
+                      file,
+                      undefined,
+                      videoFile
+                        ? {
+                            signal: controller.signal,
+                            onProgress: (fraction) => {
+                              const percent = Math.min(99, Math.round(fraction * 100));
+                              setFittingLabel((current) => {
+                                const next = `Preparing… ${percent}%`;
+                                return current === next ? current : next;
+                              });
+                            },
+                          }
+                        : undefined,
+                    )
                       .then((fitted) =>
                         linkedIn.uploadImage.mutateAsync({
                           postId: post.postId,
@@ -649,13 +669,25 @@ function PostEditor({
                         }),
                       )
                       .catch((caught: unknown) => {
+                        if (controller.signal.aborted || caught instanceof VideoPrepareCancelled) return;
                         setLocalError(caught instanceof Error ? caught.message : "Could not attach the image.");
                       })
-                      .finally(() => setFittingImage(false));
+                      .finally(() => {
+                        if (prepareRef.current !== controller) return;
+                        prepareRef.current = null;
+                        setFittingImage(false);
+                      });
                   }}
                 />
                 {pictureBusy ? (
-                  <p className="small mb-1">{fittingImage ? fittingLabel : "Uploading…"}</p>
+                  <p className="small mb-1">
+                    {fittingImage ? fittingLabel : "Uploading…"}
+                    {fittingImage && fittingLabel.startsWith("Preparing") ? (
+                      <button type="button" className="btn btn-link btn-sm px-2 py-0" onClick={() => prepareRef.current?.abort()}>
+                        Cancel
+                      </button>
+                    ) : null}
+                  </p>
                 ) : null}
                 <p className="form-text mb-0">
                   PNG or JPEG, resized to stay under 1.5 MB. A GIF stays a GIF, up to 3 MB. An MP4 under 3 MB is stored

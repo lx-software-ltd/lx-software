@@ -52,7 +52,7 @@ posted through the Videos API once LinkedIn has finished processing it.
 
 - GIF and stored MP4: 3 MB, so the base64 JSON body stays under the API Gateway and Lambda response caps
 - Browser will open a source video up to 80 MB, then re-encode clips longer than a pass-through MP4
-- Pass-through only when the MP4 major brand is `isom`, `iso2`, `mp41`, `mp42`, `avc1`, or `M4V `
+- Pass-through only for H.264 (`avc1` or `avc3`). QuickTime and HEVC are re-encoded. A prepared file may also use the recorder brands `iso5` and `iso6`
 - Re-encode is 3 to 90 seconds. A pass-through MP4 may be up to 30 minutes
 - LinkedIn's own floor is 75 KB and 3 seconds
 

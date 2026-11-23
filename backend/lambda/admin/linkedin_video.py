@@ -70,6 +70,8 @@ def upload_video(token: str, owner: str, data: bytes) -> str:
         last = int(last_byte)
         if last < first or last >= len(data):
             raise LinkedInApiError("LinkedIn returned a video upload outside the file.")
+        # The upload URL is pre-signed. LinkedIn's sample sends only Content-Type.
+        # The image upload is the call that still sends Authorization.
         put_status, put_headers, put_payload = _call(
             "PUT",
             str(part["uploadUrl"]),
@@ -115,31 +117,44 @@ def video_status(token: str, video_urn: str) -> str:
     return str(parsed.get("status") or "")
 
 
-def _remember_media_urn(table: Any, post_id: str, urn: str) -> None:
+def _stored_urn(chosen: dict[str, Any], author: str) -> str:
+    """A video id can be reused only for the profile or page that uploaded it."""
+    urn = str(chosen.get("mediaUrn") or "")
+    if urn and str(chosen.get("mediaOwner") or "") == author:
+        return urn
+    return ""
+
+
+def _remember_media(table: Any, post_id: str, urn: str, owner: str) -> None:
+    """Write the video id onto the picture publishing will read, including a held redraw."""
     doc = linkedin_store.get_post(table, post_id)
     if not doc:
         raise LinkedInApiError("The attached video could not be loaded.")
     image = dict(doc.get("image") or {})
-    image["mediaUrn"] = urn
+    chosen = linkedin_store.publishable_image(image) or image
+    chosen["mediaUrn"] = urn
+    chosen["mediaOwner"] = owner
     doc["image"] = image
     linkedin_store.put_post(table, doc)
 
 
 def _ready_video_urn(table: Any, doc: dict[str, Any], token: str, author: str, chosen: dict[str, Any]) -> str:
     post_id = str(doc["postId"])
-    urn = str(chosen.get("mediaUrn") or "")
+    urn = _stored_urn(chosen, author)
     if not urn:
         loaded = linkedin_store.load_post_image(post_id)
         if not loaded:
             raise LinkedInApiError("The attached video could not be loaded.")
         urn = upload_video(token, author, loaded[1])
-        _remember_media_urn(table, post_id, urn)
+        _remember_media(table, post_id, urn, author)
     status = video_status(token, urn)
     if status == "PROCESSING_FAILED":
-        _remember_media_urn(table, post_id, "")
+        _remember_media(table, post_id, "", "")
         raise LinkedInApiError("LinkedIn could not process the video.")
     if status != "AVAILABLE":
-        raise LinkedInApiError("The video is still processing on LinkedIn.", counts_attempt=False)
+        waiting = LinkedInApiError("The video is still processing on LinkedIn.", counts_attempt=False)
+        waiting.defer = True
+        raise waiting
     return urn
 
 
@@ -157,3 +172,25 @@ def attachment_for_publish(table: Any, doc: dict[str, Any], token: str, author: 
         raise LinkedInApiError("The attached image could not be loaded.")
     alt = linkedin_store.caption_alt(str(chosen.get("caption") or ""))
     return linkedin_api.upload_image(token, author, loaded[1]), alt, False
+
+
+def publish_ready(table: Any, publish_one: Any, *, record_failure: Any, log: Any) -> int:
+    """Post one due draft. A video that is still processing does not take the slot or send mail."""
+    published = 0
+    for row in linkedin_store.posts_ready_to_publish(table):
+        post_id = str(row.get("postId") or "")
+        try:
+            publish_one(table, row)
+        except Exception as exc:  # noqa: BLE001 — a real failure stops this tick; processing does not
+            if getattr(exc, "defer", False):
+                continue
+            log(str(exc)[:240])
+            try:
+                counts = exc.counts_attempt if isinstance(exc, LinkedInApiError) else True
+                record_failure(table, post_id, str(exc), count_attempt=counts)
+            except linkedin_store.LinkedInError:
+                log("post not found")
+            break
+        published += 1
+        break
+    return published
