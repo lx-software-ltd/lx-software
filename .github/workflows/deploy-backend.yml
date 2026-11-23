@@ -95,172 +95,21 @@ jobs:
           AWS_REGION: ${{ vars.AWS_REGION }}
           CDK_BOOTSTRAP_QUALIFIER: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
 
-      - name: Checkout the pinned deploy action
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: lx-software-ltd/actions
-          ref: ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f
-          path: .actions-pin
-
-      - name: Compare the dry run with the current deploy
-        continue-on-error: true
+      - name: Acknowledge CDK notices
         working-directory: backend/infrastructure
+        run: npx cdk acknowledge 34892 || true
+
+      - name: Build the CDK plan
+        id: plan
         env:
-          CDK_PARAM_FILE: ${{ vars.CDK_PARAM_FILE }}
-          CDK_BOOTSTRAP_QUALIFIER: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
           P_GOOGLE_CLIENT_ID: ${{ vars.ADMIN_GOOGLE_CLIENT_ID }}
           P_GOOGLE_CLIENT_SECRET: ${{ secrets.ADMIN_GOOGLE_CLIENT_SECRET }}
-          CDK_PARAM_PUBLIC_WEBSITE_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_PUBLIC_WEBSITE_CERTIFICATE_ARN }}
-          CDK_PARAM_OPENROUTER_API_KEY_SECRET_ARN: ${{ secrets.CDK_PARAM_OPENROUTER_API_KEY_SECRET_ARN }}
-          CDK_PARAM_SIUTINDEI_CLUSTER_ARN: ${{ secrets.CDK_PARAM_SIUTINDEI_CLUSTER_ARN }}
-          CDK_PARAM_EVOLVESPROUTS_CLUSTER_ARN: ${{ secrets.CDK_PARAM_EVOLVESPROUTS_CLUSTER_ARN }}
-          CDK_PARAM_COGNITO_CUSTOM_DOMAIN_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_COGNITO_CUSTOM_DOMAIN_CERTIFICATE_ARN }}
-          CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN }}
           P_EMAIL_ALLOWLIST: ${{ secrets.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
-          P_META_VERIFY_TOKEN: ${{ secrets.SIUTINDEI_BOARD_META_VERIFY_TOKEN }}
         run: |
-          set -euo pipefail
-          umask 077
-          real_npx="$(command -v npx)"
-          real_aws="$(command -v aws)"
-          bindir="$RUNNER_TEMP/cdk-dry/bin"
-          mkdir -p "$bindir"
-          CURRENT_LOG="$RUNNER_TEMP/cdk-current.jsonl"
-          ACTION_LOG="$RUNNER_TEMP/cdk-action.jsonl"
-          rm -f "$CURRENT_LOG" "$ACTION_LOG"
-          trap 'rm -f "$CURRENT_LOG" "$ACTION_LOG" "$RUNNER_TEMP/current-cdk.sh"' EXIT
-          REAL_NPX="$real_npx" REAL_AWS="$real_aws" BINDIR="$bindir" python3 - << 'PY'
-          import os
-          from pathlib import Path
-
-          bindir = Path(os.environ["BINDIR"])
-          (bindir / "record.py").write_text(
-              "import json, os, sys\n"
-              'open(os.environ["DEPLOY_LOG"], "a", encoding="utf-8").write(json.dumps(sys.argv[1:]) + "\\n")\n'
-          )
-          npx = bindir / "npx"
-          npx.write_text(
-              "\n".join(
-                  [
-                      "#!/usr/bin/env bash",
-                      "set -euo pipefail",
-                      'real="${REAL_NPX:?}"',
-                      'log="${DEPLOY_LOG:?}"',
-                      'here="$(cd "$(dirname "$0")" && pwd)"',
-                      'if [[ "${1:-}" == "cdk" && ( "${2:-}" == "deploy" || "${2:-}" == "destroy" || "${2:-}" == "bootstrap" ) ]]; then',
-                      '  DEPLOY_LOG="$log" python3 "$here/record.py" npx "$@"',
-                      "  exit 0",
-                      "fi",
-                      'exec "$real" "$@"',
-                      "",
-                  ]
-              )
-          )
-          npx.chmod(0o755)
-          aws = bindir / "aws"
-          aws.write_text(
-              "\n".join(
-                  [
-                      "#!/usr/bin/env bash",
-                      "set -euo pipefail",
-                      'real="${REAL_AWS:?}"',
-                      'log="${DEPLOY_LOG:?}"',
-                      'here="$(cd "$(dirname "$0")" && pwd)"',
-                      'if [[ "${1:-}" == "cloudformation" ]]; then',
-                      '  case "${2:-}" in',
-                      "    describe-*|list-*|get-*)",
-                      '      exec "$real" "$@"',
-                      "      ;;",
-                      "  esac",
-                      "fi",
-                      'DEPLOY_LOG="$log" python3 "$here/record.py" aws "$@"',
-                      "exit 0",
-                      "",
-                  ]
-              )
-          )
-          aws.chmod(0o755)
-          PY
-          : > "$CURRENT_LOG"
-          REAL_NPX=/bin/false REAL_AWS=/bin/false DEPLOY_LOG="$CURRENT_LOG" PATH="$bindir:$PATH" \
-            npx cdk deploy --require-approval never sentinel-stack
-          REAL_NPX=/bin/false REAL_AWS=/bin/false DEPLOY_LOG="$CURRENT_LOG" PATH="$bindir:$PATH" \
-            npx cdk destroy --force sentinel-stack
-          REAL_NPX=/bin/false REAL_AWS=/bin/false DEPLOY_LOG="$CURRENT_LOG" PATH="$bindir:$PATH" \
-            aws cloudformation continue-update-rollback --stack-name sentinel-stack
-          LOG="$CURRENT_LOG" python3 - << 'PY'
+          python3 - << 'PY'
           import json as _json
           import os
           from pathlib import Path
-
-          rows = [_json.loads(line) for line in Path(os.environ["LOG"]).read_text(encoding="utf-8").splitlines()]
-          cdk = [row for row in rows if row[:1] == ["npx"]]
-          aws = [row for row in rows if row[:1] == ["aws"]]
-          if [row[1:3] for row in cdk] != [["cdk", "deploy"], ["cdk", "destroy"]]:
-              raise SystemExit("npx stub executed or failed to record")
-          if len(aws) != 1 or aws[0][:3] != ["aws", "cloudformation", "continue-update-rollback"]:
-              raise SystemExit("aws stub executed a CloudFormation write")
-          PY
-          : > "$CURRENT_LOG"
-          export REAL_NPX="$real_npx"
-          export REAL_AWS="$real_aws"
-          export PATH="$bindir:$PATH"
-          STEP_NAME="Deploy CDK stacks" \
-            WORKFLOW="$GITHUB_WORKSPACE/.github/workflows/deploy-backend.yml" \
-            OUT="$RUNNER_TEMP/current-cdk.sh" \
-            python3 - << 'PY'
-          import os
-          from pathlib import Path
-
-          text = Path(os.environ["WORKFLOW"]).read_text(encoding="utf-8")
-          lines = text.splitlines()
-          name = os.environ["STEP_NAME"]
-          start = None
-          for index, line in enumerate(lines):
-              if line == f"      - name: {name}":
-                  start = index
-                  break
-          if start is None:
-              raise SystemExit("deploy step not found")
-          end = len(lines)
-          for index in range(start + 1, len(lines)):
-              if lines[index].startswith("      - ") or (
-                  lines[index].strip() and not lines[index].startswith(" ")
-              ):
-                  end = index
-                  break
-          step = lines[start:end]
-          body = None
-          for index, line in enumerate(step):
-              if line != "        run: |":
-                  continue
-              kept = []
-              for later in step[index + 1 :]:
-                  if later.strip() == "":
-                      kept.append("")
-                      continue
-                  if later.startswith("          "):
-                      kept.append(later[10:])
-                      continue
-                  break
-              body = "\n".join(kept).rstrip() + "\n"
-              break
-          if body is None or "npx cdk deploy" not in body:
-              raise SystemExit("refusing to run a step that is not the current cdk deploy")
-          if "REAL_NPX" in body or "cdk_deploy.py" in body:
-              raise SystemExit("refusing to run the comparison step")
-          Path(os.environ["OUT"]).write_text(body, encoding="utf-8")
-          PY
-          export DEPLOY_LOG="$CURRENT_LOG"
-          bash "$RUNNER_TEMP/current-cdk.sh" || true
-          export DEPLOY_LOG="$ACTION_LOG"
-          python3 - << 'PY' || true
-          import importlib.util
-          import os
-          import sys
-
-          import json as _json
-          import os
 
           def build_plan():
               extra = [
@@ -296,117 +145,32 @@ jobs:
                           ],
                           "extra-args": extra,
                       },
-                  ]
+                  ],
               }
 
-          def configure() -> None:
-              os.environ["PLAN"] = _json.dumps(build_plan())
-              os.environ["PARAM_FILE"] = os.environ.get("CDK_PARAM_FILE", "")
-              os.environ["WORKING_DIRECTORY"] = ""
-              os.environ["FORMAT"] = "prefixed-json"
-              os.environ["ATTEMPTS"] = "1"
-              os.environ["NO_NOTICES"] = "false"
-              os.environ["PASS_EMPTY"] = ""
-              os.environ["ESCAPE_NEWLINES"] = "false"
-              os.environ["SKIP_RESOURCE"] = ""
-              os.environ["ROLLBACK_MATCH"] = "is in UPDATE_ROLLBACK_FAILED state and can not be updated"
-              seed = os.environ.get("RUN_SEED_DATA", "false").strip().lower()
-              os.environ["RUN_SEED"] = "true" if seed == "true" else "false"
-              destroy = os.environ.get("DESTROY_BEFORE_DEPLOY", "false").strip().lower()
-              os.environ["DESTROY"] = "true" if destroy == "true" else "false"
-
-          configure()
-          path = os.environ["GITHUB_WORKSPACE"] + "/.actions-pin/cdk-deploy/cdk_deploy.py"
-          spec = importlib.util.spec_from_file_location("cdk_deploy", path)
-          if spec is None or spec.loader is None:
-              raise SystemExit("cdk_deploy.py is not in the pinned checkout")
-          module = importlib.util.module_from_spec(spec)
-          spec.loader.exec_module(module)
-          raise SystemExit(module.main())
-          PY
-          CURRENT="$CURRENT_LOG" ACTION="$ACTION_LOG" python3 - << 'PY'
-          import json as _json
-          import os
-          import re
-          import sys
-          from pathlib import Path
-
-          account = re.compile(r"\b\d{12}\b")
-
-          def load(path):
-              file = Path(path)
-              if not file.is_file():
-                  return []
-              text = file.read_text(encoding="utf-8")
-              return [_json.loads(line) for line in text.splitlines() if line.strip()]
-
-          def signature(argv):
-              flags = []
-              params = []
-              positional = []
-              index = 0
-              while index < len(argv):
-                  token = argv[index]
-                  if token == "--parameters" and index + 1 < len(argv):
-                      params.append(argv[index + 1])
-                      index += 2
-                      continue
-                  if token.startswith("--") and index + 1 < len(argv) and not argv[index + 1].startswith("-"):
-                      flags.append((token, argv[index + 1]))
-                      index += 2
-                      continue
-                  if token.startswith("-"):
-                      flags.append((token, ""))
-                      index += 1
-                      continue
-                  positional.append(token)
-                  index += 1
-              if len(positional) < 3 or positional[1] != "cdk":
-                  return None
-              if positional[2] not in {"deploy", "destroy"}:
-                  return None
-              return (positional[2], tuple(positional[3:]), tuple(sorted(flags)), tuple(sorted(params)))
-
-          def keys(params):
-              return [item.split("=", 1)[0] for item in params]
-
-          def show(label, sig):
-              command, stacks, flags, params = sig
-              flag_text = " ".join(flag + (" " + value if value else "") for flag, value in flags)
-              print(
-                  account.sub("************", f"{label}: cdk {command} {flag_text} stacks {' '.join(stacks)}"),
-                  file=sys.stderr,
-              )
-              print(f"{label} parameters: {', '.join(keys(params))}", file=sys.stderr)
-
-          current = [item for item in (signature(row) for row in load(os.environ["CURRENT"])) if item]
-          action = [item for item in (signature(row) for row in load(os.environ["ACTION"])) if item]
-          if not action:
-              print("action produced no deploy commands", file=sys.stderr)
-              raise SystemExit(1)
-          if not current or current != action:
-              print("planned CDK changes differ", file=sys.stderr)
-              for index in range(max(len(current), len(action))):
-                  left = current[index] if index < len(current) else None
-                  right = action[index] if index < len(action) else None
-                  if left == right:
-                      continue
-                  if left is not None:
-                      show("current", left)
-                  if right is not None:
-                      show("action", right)
-                  if left is not None and right is not None:
-                      left_values = {item.split("=", 1)[0]: item.split("=", 1)[1] for item in left[3]}
-                      right_values = {item.split("=", 1)[0]: item.split("=", 1)[1] for item in right[3]}
-                      for key in sorted(set(left_values) & set(right_values)):
-                          if left_values[key] != right_values[key]:
-                              print(f"parameter value differs for {key}", file=sys.stderr)
-              raise SystemExit(1)
-          print(f"Dry run matches the current deploy ({len(current)} planned CDK changes)")
+          plan = _json.dumps(build_plan())
+          for name in ("P_GOOGLE_CLIENT_SECRET", "P_EMAIL_ALLOWLIST"):
+              value = os.environ.get(name, "")
+              if value:
+                  print(f"::add-mask::{value}")
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
+              handle.write("plan<<PLANJSON\n")
+              handle.write(plan + "\n")
+              handle.write("PLANJSON\n")
           PY
 
       - name: Deploy CDK stacks
-        working-directory: backend/infrastructure
+        uses: lx-software-ltd/actions/cdk-deploy@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
+        with:
+          working-directory: backend/infrastructure
+          plan: ${{ steps.plan.outputs.plan }}
+          param-file: ${{ vars.CDK_PARAM_FILE }}
+          format: prefixed-json
+          attempts: "1"
+          no-notices: "false"
+          escape-newlines: "false"
+          rollback-match: is in UPDATE_ROLLBACK_FAILED state and can not be updated
+          region: ${{ vars.AWS_REGION }}
         env:
           CDK_PARAM_FILE: ${{ vars.CDK_PARAM_FILE }}
           CDK_BOOTSTRAP_QUALIFIER: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
@@ -420,94 +184,3 @@ jobs:
           CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN }}
           P_EMAIL_ALLOWLIST: ${{ secrets.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
           P_META_VERIFY_TOKEN: ${{ secrets.SIUTINDEI_BOARD_META_VERIFY_TOKEN }}
-        run: |
-          set -eo pipefail
-          # shellcheck source=../../scripts/check_email_allowlist.sh
-          source ../../scripts/check_email_allowlist.sh
-          # shellcheck source=../../scripts/deploy/cdk-params.sh
-          source ../../scripts/deploy/cdk-params.sh
-          npx cdk acknowledge 34892 || true
-
-          # Three stacks (post-consolidation):
-          #   1. lxsoftware-public-www  (S3 + CloudFront for the marketing site)
-          #   2. lxsoftware             (Cognito + DynamoDB + S3 assets + HTTP API)
-          #   3. lxsoftware-admin-web   (S3 + CloudFront for the admin SPA)
-          PUBLIC_STACK="lxsoftware-public-www"
-          ADMIN_STACKS=(lxsoftware lxsoftware-admin-web)
-
-          PUBLIC_PARAM_ARGS=()
-          ADMIN_LX_PARAM_ARGS=()
-          ADMIN_WEB_PARAM_ARGS=()
-          resolve_param_file() {
-            local path="$1"
-            if [ -z "$path" ]; then
-              return 1
-            fi
-            if [ -f "$path" ]; then
-              echo "$path"
-              return 0
-            fi
-            if [ -n "${GITHUB_WORKSPACE:-}" ] && [ -f "$GITHUB_WORKSPACE/$path" ]; then
-              echo "$GITHUB_WORKSPACE/$path"
-              return 0
-            fi
-            return 1
-          }
-          if [ -n "${CDK_PARAM_FILE:-}" ]; then
-            RESOLVED_PARAM_FILE=$(resolve_param_file "$CDK_PARAM_FILE" || true)
-            if [ -n "$RESOLVED_PARAM_FILE" ]; then
-              cdk_load_param_args "$RESOLVED_PARAM_FILE"
-            else
-              echo "CDK_PARAM_FILE '$CDK_PARAM_FILE' not found"
-              exit 1
-            fi
-          fi
-
-          # Deploy the public website stack first: only parameters for
-          # lxsoftware-public-www (unprefixed keys or lxsoftware-public-www:*).
-          npx cdk deploy --require-approval never \
-            "${PUBLIC_PARAM_ARGS[@]}" \
-            "$PUBLIC_STACK"
-
-          # The public site does not use the allow-list. Check it here so a
-          # missing or malformed secret still publishes lxsoftware-public-www
-          # and leaves lxsoftware and lxsoftware-admin-web, and the live
-          # allow-list, unchanged. The message names a position, not the value.
-          if ! allowlist_error="$(check_email_allowlist "${P_EMAIL_ALLOWLIST}" 2>&1)"; then
-            echo "::error::${allowlist_error} Deploy Backend will not update the admin stacks."
-            exit 1
-          fi
-
-          # Pass the Meta webhook verify token only when the secret is set.
-          # An empty secret must not blank a value already on the stack.
-          if [ -n "${P_META_VERIFY_TOKEN:-}" ]; then
-            echo "Passing lxsoftware:SiutindeiBoardMetaVerifyToken from GitHub Actions secret"
-          else
-            echo "SIUTINDEI_BOARD_META_VERIFY_TOKEN is unset; CloudFormation keeps the previous verify token"
-          fi
-          cdk_append_nonempty_param "lxsoftware:SiutindeiBoardMetaVerifyToken" "${P_META_VERIFY_TOKEN:-}"
-
-          # Backend + admin SPA: Cognito/Dynamo/API + CloudFront. The two stacks
-          # are listed in dependency order; CDK additionally honours the
-          # cross-stack import graph automatically, so `lxsoftware` is always
-          # updated *first* (publishing any new Outputs / cross-stack exports it
-          # introduces) before `lxsoftware-admin-web` consumes them.
-          #
-          # We deliberately do NOT use `--exclusively` here: that flag would skip
-          # `lxsoftware` and CloudFormation would then fail to resolve any new
-          # `Fn::ImportValue` references admin-web added in the same PR (e.g. the
-          # AssetsBucket DomainName / RegionalDomainName exports added for the
-          # CSP connect-src allow-list). All `lxsoftware:*` AND
-          # `lxsoftware-admin-web:*` parameters are forwarded together, so the
-          # earlier two-phase split (originally added to drop a stale
-          # UserPoolDomain export, since cleaned up) is no longer needed.
-          npx cdk deploy --require-approval never \
-            "${ADMIN_LX_PARAM_ARGS[@]}" \
-            "${ADMIN_WEB_PARAM_ARGS[@]}" \
-            --parameters lxsoftware:AdminWebDomainName=admin.lx-software.com \
-            --parameters "lxsoftware:GoogleClientId=${P_GOOGLE_CLIENT_ID}" \
-            --parameters "lxsoftware:GoogleClientSecret=${P_GOOGLE_CLIENT_SECRET}" \
-            --parameters "lxsoftware:AdminFederatedEmailAllowlist=${P_EMAIL_ALLOWLIST}" \
-            --parameters lxsoftware:CognitoDomainPrefix=lxsoftware-admin-auth \
-            --parameters lxsoftware-admin-web:AdminWebDomainName=admin.lx-software.com \
-            "${ADMIN_STACKS[@]}"
