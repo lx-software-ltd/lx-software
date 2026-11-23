@@ -16,8 +16,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: cdk-diff
-  cancel-in-progress: false
+  group: cdk-diff-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   diff:
@@ -38,14 +38,29 @@ jobs:
           cache: "npm"
           cache-dependency-path: backend/infrastructure/package-lock.json
 
+      - name: Refuse the deploy role on a pull request
+        if: github.event_name == 'pull_request' && vars.AWS_DIFF_ROLE_NAME == 'GitHubActionsRole'
+        run: |
+          echo "::error::AWS_DIFF_ROLE_NAME must name a read-only role. A pull request does not assume GitHubActionsRole."
+          exit 1
+
       - name: Configure AWS credentials
         id: aws
+        if: github.event_name != 'pull_request' || vars.AWS_DIFF_ROLE_NAME != ''
         uses: lx-software-ltd/actions/aws-oidc@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
+          role-name: ${{ github.event_name == 'pull_request' && vars.AWS_DIFF_ROLE_NAME || 'GitHubActionsRole' }}
+          required: ${{ github.event_name == 'pull_request' && 'false' || 'true' }}
+
+      - name: Note when a pull request diff did not run
+        if: github.event_name == 'pull_request' && steps.aws.outputs.ready != 'true'
+        run: |
+          echo "::warning::This pull request did not assume a role. Set AWS_DIFF_ROLE_NAME to a read-only role that trusts only pull_request. GitHubActionsRole is not assumed from a pull request."
 
       - name: Install CDK dependencies
+        if: steps.aws.outputs.ready == 'true'
         run: |
           if [ -f "backend/infrastructure/package.json" ]; then
             cd backend/infrastructure
@@ -58,17 +73,20 @@ jobs:
       # `cdk diff` synthesizes with asset bundling; AdminApiFn pip deps are
       # installed in the linux/arm64 SAM image, which needs QEMU on x86-64.
       - name: Set up QEMU for arm64 Lambda bundling
+        if: steps.aws.outputs.ready == 'true'
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
           platforms: arm64
 
       - name: Check CDK Bootstrap status
+        if: steps.aws.outputs.ready == 'true'
         uses: lx-software-ltd/actions/cdk-bootstrap-check@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
         with:
           qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
           region: ${{ vars.AWS_REGION }}
 
       - name: Prepare CDK diff
+        if: steps.aws.outputs.ready == 'true'
         id: prep
         run: |
           if [ ! -f "backend/infrastructure/package.json" ]; then
@@ -141,7 +159,7 @@ jobs:
           CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN }}
 
       - name: Run CDK diff
-        if: steps.prep.outputs.run == 'true'
+        if: steps.aws.outputs.ready == 'true' && steps.prep.outputs.run == 'true'
         uses: lx-software-ltd/actions/cdk-diff@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
         with:
           working-directory: backend/infrastructure
