@@ -54,13 +54,13 @@ jobs:
           VITE_GTM_ID: ${{ vars.VITE_GTM_ID }}
         run: npm run build
 
+      # After the build. npm ci and the build must not see the deploy role.
       - name: Configure AWS credentials
-        if: ${{ vars.AWS_REGION != '' }}
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        id: aws
+        uses: lx-software-ltd/actions/aws-oidc@b40bb0725bf84f25a38641f6ca5ec6f4c2f14f98 # main 2026-11-23
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsRole
-          aws-region: ${{ vars.AWS_REGION }}
-          role-session-name: GitHubActions-${{ github.run_id }}
+          account-id: ${{ secrets.AWS_ACCOUNT_ID }}
+          region: ${{ vars.AWS_REGION }}
 
       - name: Deploy public website
         run: |

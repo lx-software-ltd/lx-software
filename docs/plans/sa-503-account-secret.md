@@ -1,6 +1,6 @@
 # Plan: SA-503 account id secret
 
-**Status**: In progress
+**Status**: Merged in lx-software #674 (`b96868b`).
 **Zone**: red
 
 The deploy, diff, bootstrap, and key workflows change which value they read. No actions pin moves. No workflow is dispatched.
