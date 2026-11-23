@@ -61,7 +61,7 @@ def _board_list_meetings(ctx: ToolContext, args: dict[str, Any]) -> dict[str, An
         limit = 10
     out = []
     for m in board_store.list_meetings(ctx.table, limit=limit):
-        minutes = m.get("minutes") if isinstance(m.get("minutes"), dict) else {}
+        minutes = _g if isinstance(_g := m.get("minutes"), dict) else {}
         out.append(
             {
                 "meetingId": m.get("meetingId"),
@@ -88,7 +88,7 @@ def _board_get_minutes(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]
                 break
     if not doc:
         return {"error": "No minutes found" + (f" for meeting {meeting_id}" if meeting_id else "")}
-    minutes = doc.get("minutes") if isinstance(doc.get("minutes"), dict) else None
+    minutes = _g if isinstance(_g := doc.get("minutes"), dict) else None
     if not minutes:
         return {"error": f"Meeting {doc.get('meetingId')} has no minutes (status {doc.get('status')})"}
     return {
@@ -127,7 +127,7 @@ def _board_add_action(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
         effort = "M"
     due_at = None
     try:
-        due_days = int(args.get("dueInDays")) if args.get("dueInDays") is not None else None
+        due_days = _whole(args.get("dueInDays")) if args.get("dueInDays") is not None else None
     except (TypeError, ValueError):
         due_days = None
     now = datetime.now(timezone.utc)
@@ -179,7 +179,7 @@ def _board_update_action(ctx: ToolContext, args: dict[str, Any]) -> dict[str, An
             changed = True
     if args.get("dueInDays") is not None:
         try:
-            due_days = int(args.get("dueInDays"))
+            due_days = _whole(args.get("dueInDays"))
         except (TypeError, ValueError):
             return {"error": "dueInDays must be a whole number of days"}
         # 0 clears the due date; otherwise re-anchor from today.
@@ -300,3 +300,15 @@ def ops() -> list[ToolOp]:
             summarize=_summ_update_action,
         ),
     ]
+
+
+def _num(value: Any | None) -> float:
+    if value is None:
+        raise TypeError("expected a number")
+    return float(value)
+
+
+def _whole(value: Any | None) -> int:
+    if value is None:
+        raise TypeError("expected an int")
+    return int(value)

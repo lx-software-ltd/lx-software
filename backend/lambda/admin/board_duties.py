@@ -349,7 +349,7 @@ def triage_ops_signals(table: Any, settings: dict[str, Any]) -> dict[str, int]:
                 if not fid:
                     continue
                 alert_ids.append(fid)
-                new_alerts.append((fid, _alert_task_brief(fid, row if isinstance(row, dict) else {})))
+                new_alerts.append((fid, _alert_task_brief(fid, _g if isinstance(_g := row, dict) else {})))
     github = board_store.get_cache(table, "security:github")
     if github and isinstance(github.get("payload"), dict):
         for key in ("dependabot", "codeScanning", "secretScanning"):
@@ -358,7 +358,7 @@ def triage_ops_signals(table: Any, settings: dict[str, Any]) -> dict[str, int]:
                 if not fid:
                     continue
                 alert_ids.append(f"gh:{key}:{fid}")
-                new_alerts.append((f"gh:{key}:{fid}", _alert_task_brief(f"gh:{key}:{fid}", row if isinstance(row, dict) else {})))
+                new_alerts.append((f"gh:{key}:{fid}", _alert_task_brief(f"gh:{key}:{fid}", _g if isinstance(_g := row, dict) else {})))
     seen_alerts = _seen_payload(table, "seen:alerts")
     security_assignee = "security-analyst" if (roster.get("security-analyst") or {}).get("isActive") else "ciso"
     new_gh: list[tuple[str, str]] = []
@@ -421,7 +421,7 @@ def _dmarc_enabled(settings: dict[str, Any]) -> bool:
 
 
 def _dmarc_task_brief(finding: dict[str, Any]) -> str:
-    evidence = finding.get("evidence") if isinstance(finding.get("evidence"), dict) else {}
+    evidence = _g if isinstance(_g := finding.get("evidence"), dict) else {}
     try:
         blob = json.dumps(evidence, default=str, ensure_ascii=False)
     except TypeError:

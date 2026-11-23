@@ -8,6 +8,7 @@ import re
 import sys
 import unittest
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "configure-public-analytics.py"
@@ -30,9 +31,12 @@ def _ts_array(source: str, name: str) -> tuple[str, ...]:
 
 
 class FakeApi:
-    def __init__(self, responses: dict[str, object] | None = None):
-        self.responses = responses or {}
-        self.calls: list[tuple[str, str, object]] = []
+    def __init__(self, responses: Any = None) -> None:
+        self.responses: dict[Any, Any] = {}
+        if responses:
+            for key, value in responses.items():
+                self.responses[key] = value
+        self.calls: list[tuple[str, str, Any]] = []
 
     def _key(self, url: str) -> str:
         return url.split("?")[0]
@@ -313,12 +317,14 @@ class GtmPlanTests(unittest.TestCase):
         self.assertFalse(any(m == "DELETE" for m, u, b in api.calls))
 
     def test_apply_deletes_workspace_on_failure(self) -> None:
-        live = {}
+        live: dict[str, Any] = {}
         report = self.mod.Report()
         plan = self.mod.plan_gtm(live, "G-TEST123456", self.container, report)
         ws = "accounts/1/containers/2/workspaces/5"
 
         class Failing(FakeApi):
+            mod_error: Any
+
             def post(self, url, body=None):
                 if url.endswith(":create_version"):
                     raise self.mod_error

@@ -99,7 +99,10 @@ def _is_pdf_part(part: EmailMessage, payload: bytes) -> bool:
 
 def extract_pdf_attachments(raw: bytes) -> list[tuple[bytes, str]]:
     """Return ``(pdf_bytes, safe_filename)`` for every PDF part, in walk order."""
-    msg = BytesParser(policy=policy.default).parsebytes(raw)
+    parsed = BytesParser(policy=policy.default).parsebytes(raw)
+    if not isinstance(parsed, EmailMessage):
+        raise TypeError("expected an email message")
+    msg = parsed
     out: list[tuple[bytes, str]] = []
     for part in msg.walk():
         if part.get_content_maintype() == "multipart":
@@ -151,9 +154,10 @@ def _part_text(part: EmailMessage | None) -> str:
 
 def _body_part(msg: EmailMessage, preference: tuple[str, ...]) -> EmailMessage | None:
     try:
-        return msg.get_body(preferencelist=preference)
+        found = msg.get_body(preferencelist=preference)
     except Exception:
         return None
+    return found if isinstance(found, EmailMessage) else None
 
 
 def _choose_body(plain: str, html: str) -> str:
@@ -309,7 +313,10 @@ def extract_statement_sources(raw: bytes) -> list[StatementSource]:
             StatementSource(data=data, filename=name, content_type="application/pdf", kind="pdf") for data, name in pdfs
         ]
 
-    msg = BytesParser(policy=policy.default).parsebytes(raw)
+    parsed = BytesParser(policy=policy.default).parsebytes(raw)
+    if not isinstance(parsed, EmailMessage):
+        raise TypeError("expected an email message")
+    msg = parsed
     plain_part = _body_part(msg, ("plain",))
     html_part = _body_part(msg, ("html",))
     body = _choose_body(_part_text(plain_part), _part_text(html_part))

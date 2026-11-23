@@ -56,7 +56,8 @@ def upload_video(token: str, owner: str, data: bytes) -> str:
         timeout=60,
     )
     parsed = _expect(status, payload, ok={200})
-    value = parsed.get("value") if isinstance(parsed.get("value"), dict) else {}
+    raw_value = parsed.get("value")
+    value: dict[str, Any] = raw_value if isinstance(raw_value, dict) else {}
     video_urn = str(value.get("video") or "")
     upload_token = value.get("uploadToken")
     if not video_urn or not isinstance(upload_token, str):

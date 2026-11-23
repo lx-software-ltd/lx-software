@@ -48,8 +48,9 @@ class FakeStoresHttp:
         method = req.get_method()
         url = req.full_url
         body: Any = None
-        if req.data:
-            raw = req.data.decode("utf-8")
+        raw_data = req.data
+        if isinstance(raw_data, (bytes, bytearray)):
+            raw = raw_data.decode("utf-8")
             try:
                 body = json.loads(raw)
             except json.JSONDecodeError:

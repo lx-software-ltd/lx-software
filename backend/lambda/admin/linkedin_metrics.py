@@ -51,12 +51,12 @@ _SHARE_URN = re.compile(r"urn:li:(?:share|ugcPost):\d+")
 
 def _platform(row: dict[str, Any]) -> dict[str, Any]:
     platform = row.get("platform")
-    return platform if isinstance(platform, dict) else {}
+    return _g if isinstance(_g := platform, dict) else {}
 
 
 def _previous(row: dict[str, Any]) -> dict[str, Any]:
     metrics = row.get("metrics")
-    return metrics if isinstance(metrics, dict) else {}
+    return _g if isinstance(_g := metrics, dict) else {}
 
 
 def _share_urn(platform: dict[str, Any]) -> str:

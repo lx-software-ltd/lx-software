@@ -296,7 +296,7 @@ def graph(
         parsed = json.loads(raw.decode("utf-8"))
     except json.JSONDecodeError as exc:
         raise MetaError("Meta Graph returned non-JSON") from exc
-    return parsed if isinstance(parsed, dict) else {"data": parsed}
+    return _g if isinstance(_g := parsed, dict) else {"data": parsed}
 
 
 def graph_pages(
@@ -385,7 +385,7 @@ def handle_http(event: dict[str, Any], method: str) -> dict[str, Any]:
         payload = json.loads(body.decode("utf-8") or "{}")
     except json.JSONDecodeError:
         return {"statusCode": 400, "headers": {"Content-Type": "application/json"}, "body": json.dumps({"message": "invalid json"})}
-    ingested = ingest_webhook(board_store.records_table(), payload if isinstance(payload, dict) else {})
+    ingested = ingest_webhook(board_store.records_table(), _g if isinstance(_g := payload, dict) else {})
     return {"statusCode": 200, "headers": {"Content-Type": "application/json"}, "body": json.dumps({"ok": True, **ingested})}
 
 
@@ -716,7 +716,7 @@ def op_reply_whatsapp(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
 
 def _parse_daily_budget(args: dict[str, Any]) -> float:
     try:
-        daily = float(args.get("dailyBudgetUsd"))
+        daily = _num(args.get("dailyBudgetUsd"))
     except (TypeError, ValueError) as exc:
         raise MetaError("dailyBudgetUsd must be a number") from exc
     if daily <= 0:
@@ -852,7 +852,7 @@ def _relay_lead_action(ctx: Any, *, provider: str, provider_phone: str, parent: 
     """Open action so the founder can see the hand-off was made and chase the provider."""
     now = datetime.now(timezone.utc)
     who = provider or provider_phone
-    doc = {
+    doc: dict[str, Any] = {
         "actionId": board_store.new_id(),
         "title": f"Lead hand-off: {who}"[:200],
         "detail": (summary or f"Parent {parent} introduced to {who}.")[:800],
@@ -1002,7 +1002,7 @@ def whatsapp_thread_id(number: str) -> str:
 
 def act_guard_ads(ctx: Any, args: dict[str, Any], *, days: int | None = None) -> str | None:
     try:
-        daily = float(args.get("dailyBudgetUsd"))
+        daily = _num(args.get("dailyBudgetUsd"))
     except (TypeError, ValueError):
         return "dailyBudgetUsd must be a number"
     if daily <= 0:
@@ -1074,7 +1074,7 @@ def owner_preview_message(ctx: Any, args: dict[str, Any], *, op: str) -> dict[st
         error = str(exc)
     recipients = [r for r in recipients if r]
     first = recipients[0] if recipients else ""
-    out = {
+    out: dict[str, Any] = {
         "kind": "email" if "@" in first else "meta",
         "from": "whatsapp" if "whatsapp" in op else ("instagram" if "story" in op else "facebook"),
         "to": recipients,
@@ -1101,3 +1101,15 @@ def digest_for_context(table: Any) -> dict[str, Any]:
     import board_meta_inbox
 
     return board_meta_inbox.digest_for_context(table)
+
+
+def _num(value: Any | None) -> float:
+    if value is None:
+        raise TypeError("expected a number")
+    return float(value)
+
+
+def _whole(value: Any | None) -> int:
+    if value is None:
+        raise TypeError("expected an int")
+    return int(value)

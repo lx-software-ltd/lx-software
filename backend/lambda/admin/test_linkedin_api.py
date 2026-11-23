@@ -159,7 +159,7 @@ class LinkedInApiTests(unittest.TestCase):
         self.assertEqual(urn, "urn:li:share:9")
         self.assertEqual(counts, {"reactions": 3, "comments": 1})
         self.assertIn(
-            b"First comment", seen["POST https://api.linkedin.com/rest/socialActions/urn%3Ali%3Ashare%3A9/comments"]
+            b"First comment", _nn(seen["POST https://api.linkedin.com/rest/socialActions/urn%3Ali%3Ashare%3A9/comments"])
         )
 
     def test_page_impressions_read_the_share_statistics(self) -> None:
@@ -257,3 +257,11 @@ class LinkedInApiTests(unittest.TestCase):
         self.assertEqual(public["channel"], "page")
         self.assertEqual(public["organizationName"], "Example Page")
         self.assertNotIn("accessToken", public)
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

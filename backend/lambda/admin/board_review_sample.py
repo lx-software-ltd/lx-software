@@ -25,7 +25,7 @@ def _clip(text: Any, limit: int) -> str:
 def _json_preview(value: Any, limit: int) -> str:
     if value is None or value == {} or value == "":
         return ""
-    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
+    text = _g if isinstance(_g := value, str) else json.dumps(value, ensure_ascii=False, default=str)
     if len(text) <= limit:
         return text
     return text[: limit - 40].rstrip() + f" … [truncated, {len(text)} chars]"
@@ -151,7 +151,7 @@ def _stored_call(table: Any, created_at: str, call_id: str) -> dict[str, Any] | 
     if not isinstance(item, dict):
         return None
     doc = board_store._from_ddb_nested(board_store._strip_keys(item))
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def enrich_stored_sample(table: Any, review: dict[str, Any]) -> dict[str, Any]:

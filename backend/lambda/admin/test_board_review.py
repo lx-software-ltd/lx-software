@@ -87,6 +87,7 @@ class ReviewCompileTests(BoardTestCase):
         with patch.object(board_github, "_request", side_effect=AssertionError("compile must not call GitHub")):
             board_review.compile(self.table, self.settings, date)
         stored = board_store.get_review_snapshot(self.table, date)
+        assert stored is not None
         self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in stored["configGaps"]))
         board_duties.clear_config_gap(self.table, "dmarc:siutindei.com")
         status, body = self.call("/siu-tin-dei/board/review")
@@ -94,6 +95,7 @@ class ReviewCompileTests(BoardTestCase):
         live = body["review"]["configGaps"]
         self.assertFalse(any(str(row.get("gapId") or "") == "dmarc:siutindei.com" for row in live))
         kept = board_store.get_review_snapshot(self.table, date)
+        assert kept is not None
         self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in kept["configGaps"]))
         self.assertIn("dmarc:siutindei.com", kept["digestHtml"])
         self.assertNotIn("dmarc:siutindei.com", body["review"]["digestHtml"])
@@ -148,6 +150,7 @@ class ReviewCompileTests(BoardTestCase):
         self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in past["review"]["configGaps"]))
         self.assertIn("dmarc:siutindei.com", past["review"]["digestHtml"])
         kept = board_store.get_review_snapshot(self.table, fixed)
+        assert kept is not None
         self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in kept["configGaps"]))
 
     def _summary(self, *, generated_at: str, findings: list[dict[str, Any]], enabled: bool = True) -> None:
@@ -172,6 +175,7 @@ class ReviewCompileTests(BoardTestCase):
             any(row.get("gapId") == "dmarc:siutindei.com" for row in board_duties.list_config_gaps(self.table))
         )
         kept = board_store.get_review_snapshot(self.table, date)
+        assert kept is not None
         self.assertTrue(any(row.get("gapId") == "dmarc:siutindei.com" for row in kept["configGaps"]))
 
     def test_stale_or_disabled_summary_does_not_hide_a_dmarc_gap(self) -> None:
@@ -478,6 +482,7 @@ class ReviewCompileTests(BoardTestCase):
         with patch.object(board_hk, "now_hkt", return_value=board_hk.as_hkt(fake_now)):
             task = board_review.maybe_create_headline_duty(self.table, self.settings)
         self.assertIsNotNone(task)
+        assert task is not None
         self.assertEqual(task["assignee"], "business-analyst")
         self.assertEqual(task["origin"], "duty")
         self.assertIn("three-sentence headline", task["brief"])

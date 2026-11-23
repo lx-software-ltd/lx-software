@@ -34,7 +34,7 @@ class FakeCompletion:
         self.text = text
         self.model = "test"
         self.usage = {"cost": 0.0, "promptTokens": 1, "completionTokens": 1}
-        self.tool_calls = []
+        self.tool_calls: list[Any] = []
 
 
 class TriageTests(BoardTestCase):
@@ -329,6 +329,7 @@ class PolicyTests(BoardTestCase):
         )
         self.assertIsNone(out)
         stored = board_store.get_mail_thread(self.table, "th-arch")
+        assert stored is not None
         self.assertEqual(stored["disposition"], "archived")
         self.assertEqual(board_store.list_tasks(self.table, None), [])
 

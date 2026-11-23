@@ -88,7 +88,7 @@ def _secret_json(env_plain: str, env_arn: str, *, what: str) -> dict[str, Any]:
             parsed = json.loads(plain)
         except json.JSONDecodeError:
             return {}
-        return parsed if isinstance(parsed, dict) else {}
+        return _g if isinstance(_g := parsed, dict) else {}
     arn = (os.environ.get(env_arn) or "").strip()
     if not arn:
         return {}
@@ -103,7 +103,7 @@ def _secret_json(env_plain: str, env_arn: str, *, what: str) -> dict[str, Any]:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
         return {}
-    return parsed if isinstance(parsed, dict) else {}
+    return _g if isinstance(_g := parsed, dict) else {}
 
 
 def _asc_secret() -> dict[str, str]:
@@ -661,7 +661,7 @@ def _play_date(value: Any) -> str | None:
     if not isinstance(value, dict):
         return None
     try:
-        return date(int(value.get("year")), int(value.get("month")), int(value.get("day"))).isoformat()
+        return date(_whole(value.get("year")), _whole(value.get("month")), _whole(value.get("day"))).isoformat()
     except (TypeError, ValueError):
         return None
 
@@ -719,15 +719,19 @@ def fetch_play_crash_rate(package: str, days: int = 7) -> dict[str, Any]:
                 "distinctUsers": values.get("distinctUsers"),
             }
         )
-    series.sort(key=lambda r: r.get("date") or "")
-    latest = next((r for r in reversed(series) if r.get("crashRate") is not None), None)
+    series.sort(key=lambda r: str(r.get("date") or ""))
+    latest_row: dict[str, Any] | None = None
+    for row in reversed(series):
+        if row.get("crashRate") is not None:
+            latest_row = row
+            break
     return {
         "available": True,
         "source": "crashRateMetricSet DAILY",
         "windowStart": start_day.isoformat(),
         "windowEnd": end_day.isoformat(),
-        "latestCrashRate": latest.get("crashRate") if latest else None,
-        "latestDate": latest.get("date") if latest else None,
+        "latestCrashRate": latest_row.get("crashRate") if latest_row else None,
+        "latestDate": latest_row.get("date") if latest_row else None,
         "days": series,
         "note": "" if series else "no crash-rate rows for the window (Play needs enough users per day)",
     }
@@ -925,7 +929,7 @@ def op_draft_release_notes(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         raise StoresError("notes are required")
     now = _utc_iso_z(datetime.now(timezone.utc))
     title = f"Release notes draft ({store} {version or 'next'})".strip()
-    doc = {
+    doc: dict[str, Any] = {
         "actionId": board_store.new_id(),
         "title": title[:200],
         "detail": f"{notes}\n\n{reason}"[:800],
@@ -984,3 +988,15 @@ def digest_for_context(table: Any) -> dict[str, Any]:
         "playReviews": google.get("reviewCount"),
         "fetchedAt": hit.get("fetchedAt"),
     }
+
+
+def _num(value: Any | None) -> float:
+    if value is None:
+        raise TypeError("expected a number")
+    return float(value)
+
+
+def _whole(value: Any | None) -> int:
+    if value is None:
+        raise TypeError("expected an int")
+    return int(value)

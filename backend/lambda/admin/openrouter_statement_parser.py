@@ -67,7 +67,7 @@ def parse_statement_from_asset(
         asset_payload["content"],
     ]
 
-    messages = [
+    messages: list[dict[str, Any]] = [
         {
             "role": "system",
             "content": ("You extract finance statement lines from documents and return strict JSON only."),
@@ -179,7 +179,7 @@ def _normalize_result(parsed: dict[str, Any], *, default_currency: str) -> dict[
     fallback_cur = _coerce_currency(default_currency, fallback="HKD")
     raw_lines = parsed.get("lines")
     if not isinstance(raw_lines, list):
-        raw_lines = parsed.get("transactions") if isinstance(parsed.get("transactions"), list) else []
+        raw_lines = _g if isinstance(_g := parsed.get("transactions"), list) else []
     out: list[dict[str, Any]] = []
     for raw in raw_lines:
         if not isinstance(raw, dict):

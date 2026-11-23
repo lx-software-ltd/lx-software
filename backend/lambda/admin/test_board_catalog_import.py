@@ -8,6 +8,7 @@ import os
 import unittest
 import urllib.error
 from datetime import datetime, timedelta, timezone
+from email.message import Message
 from unittest.mock import patch
 
 import board_catalog
@@ -253,16 +254,19 @@ class TransformTests(unittest.TestCase):
 
     def test_opening_hours_expands_weekday_range(self) -> None:
         entries = board_catalog_import.parse_opening_hours("Mon-Fri 9am-6pm")
+        assert entries is not None
         self.assertEqual([row["day_of_week"] for row in entries], [1, 2, 3, 4, 5])
         self.assertEqual(entries[0]["start_time"], "09:00")
         self.assertEqual(entries[0]["end_time"], "18:00")
 
     def test_opening_hours_drops_closed_days(self) -> None:
         entries = board_catalog_import.parse_opening_hours("7am-11pm, closed Tuesdays")
+        assert entries is not None
         self.assertEqual([row["day_of_week"] for row in entries], [0, 1, 3, 4, 5, 6])
 
     def test_opening_hours_parses_daily_chinese(self) -> None:
         entries = board_catalog_import.parse_opening_hours("每日上午7時至晚上11時")
+        assert entries is not None
         self.assertEqual(len(entries), 7)
         self.assertEqual(entries[0]["start_time"], "07:00")
         self.assertEqual(entries[0]["end_time"], "23:00")
@@ -365,6 +369,7 @@ class TransformTests(unittest.TestCase):
         }
         known = board_catalog_import._known_names_for_task(None, task)  # noqa: SLF001
         self.assertIsNotNone(known)
+        assert known is not None
         self.assertIn("repulse bay beach", known)
         self.assertIn("stanley plaza", known)
         org, report = board_catalog_import.transform_org(
@@ -411,6 +416,7 @@ class TransformTests(unittest.TestCase):
     def test_config_gap_while_off(self) -> None:
         gap = board_catalog_import.config_gap()
         self.assertIsNotNone(gap)
+        assert gap is not None
         self.assertEqual(gap["id"], "catalog-import")
         self.assertIn("kill switch", gap["reason"])
 
@@ -435,7 +441,10 @@ class ImportClientTests(BoardTestCase):
             "BOARD_CATALOG_MANAGER_ID",
             "BOARD_IMPORTER_CREDENTIALS_SECRET_ARN",
         ):
-            self.addCleanup(lambda k=key: os.environ.pop(k, None))
+            def _drop_env(name: str = key) -> None:
+                os.environ.pop(name, None)
+
+            self.addCleanup(_drop_env)
         board_catalog_import.set_secret_for_tests(lambda: {"username": "importer", "password": "secret"})  # nosec B105
         board_catalog_import.set_auth_for_tests(lambda user, pw: f"idtok-{user}")
         self.calls: list[tuple[str, str, dict | None]] = []
@@ -504,6 +513,7 @@ class ImportClientTests(BoardTestCase):
         self.assertEqual(out["import"]["sent"], 1)
         self.assertEqual(out["import"]["accepted"], 1)
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertTrue(saved.get("importedAt"))
         self.assertEqual(saved.get("status"), "delivered")
         self.assertEqual((saved.get("importResult") or {}).get("sent"), 1)
@@ -554,6 +564,7 @@ class ImportClientTests(BoardTestCase):
         self.assertEqual([c[0] for c in self.calls], ["POST", "PUT", "POST"])
         self.assertEqual((out.get("dryRun") or {}).get("mode"), "remote")
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(((saved.get("importPreview") or {}).get("dryRun") or {}).get("mode"), "remote")
         self.assertTrue(saved.get("lastValidatedAt"))
 
@@ -595,6 +606,7 @@ class ImportClientTests(BoardTestCase):
         out = board_catalog_import.owner_preview(self.table, {"taskId": task["taskId"]})
         self.assertTrue((out.get("dryRun") or {}).get("wouldUpdate"))
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "needs_owner")
         self.assertEqual(saved.get("importPhase"), "collision")
         self.assertEqual(saved.get("importError"), "")
@@ -607,6 +619,7 @@ class ImportClientTests(BoardTestCase):
         board_store.put_task(self.table, task)
         board_catalog_import.owner_preview(self.table, {"taskId": task["taskId"]})
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("importPhase"), "validated")
         self.assertEqual(saved.get("importError"), "")
         self.assertTrue(saved.get("lastValidatedAt"))
@@ -619,6 +632,7 @@ class ImportClientTests(BoardTestCase):
         board_store.put_task(self.table, task)
         board_catalog_import.owner_preview(self.table, {"taskId": task["taskId"], "remote": False})
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "needs_owner")
         self.assertEqual(saved.get("importPhase"), "collision")
         self.assertEqual(saved.get("importError"), "old remote error")
@@ -635,6 +649,7 @@ class ImportClientTests(BoardTestCase):
         self.assertTrue(out.get("collision"))
         self.assertEqual(self.calls, [])
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "needs_owner")
         self.assertEqual(saved.get("importPhase"), "collision")
 
@@ -650,6 +665,7 @@ class ImportClientTests(BoardTestCase):
         self.assertTrue(out.get("previewed"))
         self.assertTrue(all((c[2] or {}).get("dry_run") for c in self.calls if c[1].endswith("/admin/imports")))
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("importPhase"), "validated")
         self.assertFalse(saved.get("importedAt"))
 
@@ -670,7 +686,7 @@ class ImportClientTests(BoardTestCase):
     def test_http_error_strips_query(self) -> None:
         board_catalog_import.set_http_for_tests(None)
         signed = "https://s3.example.test/put?X-Amz-Signature=secret"
-        err = urllib.error.HTTPError(signed, 403, "Forbidden", hdrs={}, fp=io.BytesIO(b"no"))
+        err = urllib.error.HTTPError(signed, 403, "Forbidden", hdrs=Message(), fp=io.BytesIO(b"no"))
         with patch("urllib.request.urlopen", side_effect=err):
             with self.assertRaises(board_catalog_import.CatalogImportError) as ctx:
                 board_catalog_import._http("PUT", signed)
@@ -882,6 +898,7 @@ class ImportClientTests(BoardTestCase):
         self.assertTrue(out["ok"])
         self.assertFalse(out.get("collision"))
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("importPhase"), "imported")
         self.assertEqual(saved.get("status"), "delivered")
         self.assertTrue(saved.get("importedAt"))
@@ -897,6 +914,7 @@ class ImportClientTests(BoardTestCase):
         out = board_catalog_import.skip_import(self.table, task)
         self.assertTrue(out["skipped"])
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "delivered")
         self.assertTrue(saved.get("importSkipped"))
         self.assertFalse(saved.get("importedAt"))
@@ -929,6 +947,7 @@ class ImportClientTests(BoardTestCase):
         out = board_catalog_import.handle_tick(self.table, settings)
         self.assertEqual(out["backfilled"], 1)
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "awaiting_import")
         self.assertIsNone(saved.get("finishedAt"))
         self.assertNotIn("expiresAt", saved)
@@ -985,8 +1004,10 @@ class ImportClientTests(BoardTestCase):
         ran = board_holds.execute_due(self.table, settings, "2099-01-01T00:00:00Z")
         self.assertEqual(ran, 1)
         latest = board_store.get_hold(self.table, holds[0]["holdId"])
+        assert latest is not None
         self.assertEqual(latest.get("status"), "executed")
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "delivered")
         self.assertTrue(saved.get("importedAt"))
 
@@ -1000,6 +1021,7 @@ class ImportClientTests(BoardTestCase):
         self.assertEqual(out["scheduled"], 1)
         self.assertEqual(out["imported"], 0)
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "awaiting_import")
         self.assertFalse(saved.get("importedAt"))
 
@@ -1015,6 +1037,7 @@ class ImportClientTests(BoardTestCase):
         out = board_catalog_import.handle_tick(self.table, settings)
         self.assertEqual(out["revalidated"], 0)
         saved = board_store.get_task(self.table, accepted["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("acceptedAt"), first)
 
     def test_remote_auth_failure_stays_pending(self) -> None:
@@ -1091,6 +1114,7 @@ class ImportClientTests(BoardTestCase):
         self.assertFalse(out["ok"])
         self.assertTrue(out.get("partial"))
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "needs_owner")
         self.assertEqual(saved.get("importPhase"), "partial")
         self.assertIn("unknown category_name", str(saved.get("importError") or "") + str(saved.get("openQuestions") or ""))
@@ -1120,6 +1144,7 @@ class ImportClientTests(BoardTestCase):
         out = board_catalog_import.owner_reimport(self.table, {"taskId": task["taskId"]})
         self.assertTrue(out["ok"])
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertTrue(saved.get("reimportedAt"))
 
     def test_reimport_transport_failure_keeps_imported_phase(self) -> None:
@@ -1137,6 +1162,7 @@ class ImportClientTests(BoardTestCase):
             with self.assertRaises(board_catalog_import.CatalogImportError):
                 board_catalog_import.reimport_failed_rows(self.table, task)
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("importPhase"), "imported")
         self.assertEqual(saved.get("importedAt"), "2026-09-16T12:00:00Z")
         self.assertIn("failed", saved.get("importError") or "")
@@ -1171,6 +1197,7 @@ class ImportClientTests(BoardTestCase):
         self.assertFalse(out["ok"])
         self.assertTrue(out.get("partial"))
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "needs_owner")
         self.assertEqual(saved.get("importPhase"), "partial")
 
@@ -1182,6 +1209,7 @@ class ImportClientTests(BoardTestCase):
         board_store.put_task(self.table, task)
         out = board_catalog_import.requeue_for_import(self.table, task)
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "awaiting_import")
         self.assertEqual(saved.get("openQuestions"), [])
         self.assertEqual(out.get("taskId"), task["taskId"])
@@ -1213,7 +1241,7 @@ class ImportClientTests(BoardTestCase):
         task = board_staff._accept_task(self.table, self._sheet_task(settings), "2026-09-16T12:00:00Z")
         board_catalog_import.handle_tick(self.table, settings)
         self.assertEqual(len(board_store.list_holds(self.table, "scheduled", limit=20)), 1)
-        board_catalog_import.run_import(self.table, board_store.get_task(self.table, task["taskId"]))
+        board_catalog_import.run_import(self.table, _nn(board_store.get_task(self.table, task["taskId"])))
         self.assertEqual(board_store.list_holds(self.table, "scheduled", limit=20), [])
         vetoed = board_store.list_holds(self.table, "vetoed", limit=20)
         self.assertEqual(len(vetoed), 1)
@@ -1246,6 +1274,7 @@ class ImportClientTests(BoardTestCase):
         out = board_catalog_import.handle_tick(self.table, settings)
         self.assertEqual(out["revalidated"], 1)
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "awaiting_import")
         self.assertEqual(saved.get("importPhase"), "validated")
         self.assertEqual(saved.get("revalidateAttempts"), 0)
@@ -1259,6 +1288,7 @@ class ImportClientTests(BoardTestCase):
         out = board_catalog_import.handle_tick(self.table, settings)
         self.assertEqual(out["revalidated"], 0)
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "needs_owner")
         self.assertEqual(saved.get("importPhase"), "invalid")
 
@@ -1275,6 +1305,7 @@ class ImportClientTests(BoardTestCase):
         out = board_catalog_import.handle_tick(self.table, settings)
         self.assertEqual(out["revalidated"], 0)
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "needs_owner")
 
     def test_tick_stops_after_three_parked_revalidates(self) -> None:
@@ -1288,6 +1319,7 @@ class ImportClientTests(BoardTestCase):
         out = board_catalog_import.handle_tick(self.table, settings)
         self.assertEqual(out["revalidated"], 0)
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "needs_owner")
         self.assertEqual(saved.get("revalidateAttempts"), 3)
 
@@ -1313,6 +1345,7 @@ class ImportClientTests(BoardTestCase):
         preview = board_catalog_import.owner_preview(self.table, {"taskId": task["taskId"]})
         self.assertTrue(preview.get("ok"))
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "awaiting_import")
         self.assertEqual(saved.get("importPhase"), "validated")
         self.assertEqual(saved.get("revalidateAttempts"), 0)
@@ -1329,6 +1362,7 @@ class ImportClientTests(BoardTestCase):
         )
         self.assertTrue(preview.get("ok"))
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("revalidateAttempts"), 0)
 
     def _rejecting_remote_http(self) -> None:
@@ -1388,6 +1422,7 @@ class ImportClientTests(BoardTestCase):
         out = board_catalog_import.handle_tick(self.table, settings)
         self.assertEqual(out["revalidated"], 1)
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "needs_owner")
         self.assertEqual(saved.get("importPhase"), "rejected")
         self.assertEqual(saved.get("revalidateAttempts"), 1)
@@ -1399,6 +1434,7 @@ class ImportClientTests(BoardTestCase):
         again = board_catalog_import.handle_tick(self.table, settings)
         self.assertEqual(again["revalidated"], 1)
         latest = board_store.get_task(self.table, task["taskId"])
+        assert latest is not None
         self.assertEqual(latest.get("revalidateAttempts"), 2)
         self.assertEqual(len([q for q in (latest.get("openQuestions") or []) if "zh-HK" in str(q)]), 1)
 
@@ -1415,6 +1451,7 @@ class ImportClientTests(BoardTestCase):
         out = board_catalog_import.handle_tick(self.table, settings)
         self.assertEqual(out["revalidated"], 1)
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "needs_owner")
         self.assertEqual(saved.get("importPhase"), "invalid")
         self.assertEqual(int(saved.get("revalidateAttempts") or 0), 0)
@@ -1435,6 +1472,7 @@ class ImportClientTests(BoardTestCase):
         out = board_catalog_import.handle_tick(self.table, settings)
         self.assertEqual(out["revalidated"], 1)
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "needs_owner")
         self.assertEqual(saved.get("revalidateAttempts"), 3)
         self.assertIn(board_catalog_import._revalidate_gave_up_line(), saved.get("openQuestions") or [])
@@ -1449,7 +1487,8 @@ class ImportClientTests(BoardTestCase):
         self.assertEqual(parked[0]["taskId"], task["taskId"])
 
     def test_http_attaches_amzn_request_id(self) -> None:
-        headers = {"x-amzn-RequestId": "req-abc"}
+        headers = Message()
+        headers["x-amzn-RequestId"] = "req-abc"
         err = urllib.error.HTTPError(
             "https://siu.example/v1/admin/imports",
             500,
@@ -1499,8 +1538,10 @@ class ImportClientTests(BoardTestCase):
                 latest = board_store.get_task(self.table, task["taskId"]) or task
                 board_catalog_import._note_pending_remote_error(self.table, settings, latest)
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("remoteErrorCount"), 3)
         row = board_catalog_import.engineering_import_error(self.table)
+        assert row is not None
         self.assertEqual(row["kind"], "siutindei-import")
         headline = board_catalog_import.catalog_headline(self.table)
         self.assertGreaterEqual(int(headline.get("remoteErrorSheets") or 0), 1)
@@ -1528,6 +1569,7 @@ class ImportClientTests(BoardTestCase):
         latest = board_store.get_task(self.table, task["taskId"]) or task
         board_catalog_import._note_pending_remote_error(self.table, settings, latest)
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("remoteErrorCount"), 0)
         self.assertFalse(saved.get("remoteErrorFirstAt"))
         self.assertFalse(saved.get("importError"))
@@ -1545,6 +1587,7 @@ class ImportClientTests(BoardTestCase):
         latest = board_store.get_task(self.table, task["taskId"]) or task
         board_catalog_import._note_pending_remote_error(self.table, settings, latest)
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("importError"), "name collision: Foo Park")
         self.assertEqual(saved.get("remoteErrorCount"), 0)
         self.assertFalse(saved.get("remoteErrorFirstAt"))
@@ -1573,6 +1616,7 @@ class RouteTests(BoardTestCase):
         board_store.put_task(self.table, task)
         event = self.event("/siu-tin-dei/board/catalog/preview", "POST", {"taskId": task["taskId"]})
         resp = board_routes.handle_board_route(event, "POST", "/siu-tin-dei/board/catalog/preview", "owner")
+        assert resp is not None
         self.assertEqual(resp["statusCode"], 200)
         body = __import__("json").loads(resp["body"])
         self.assertTrue(body["preview"]["ok"])
@@ -1589,6 +1633,7 @@ class RouteTests(BoardTestCase):
             task = board_catalog.create_next(self.table, settings)
         event = self.event("/siu-tin-dei/board/catalog/import", "POST", {"taskId": task["taskId"]})
         resp = board_routes.handle_board_route(event, "POST", "/siu-tin-dei/board/catalog/import", "owner")
+        assert resp is not None
         self.assertEqual(resp["statusCode"], 409)
         self.assertIn("switched off", resp["body"])
 
@@ -1604,11 +1649,21 @@ class RouteTests(BoardTestCase):
         board_store.put_task(self.table, task)
         event = self.event("/siu-tin-dei/board/catalog/skip", "POST", {"taskId": task["taskId"]})
         resp = board_routes.handle_board_route(event, "POST", "/siu-tin-dei/board/catalog/skip", "owner")
+        assert resp is not None
         self.assertEqual(resp["statusCode"], 200)
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved.get("status"), "delivered")
         self.assertTrue(saved.get("importSkipped"))
 
 
 if __name__ == "__main__":
     unittest.main()
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

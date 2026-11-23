@@ -89,6 +89,31 @@ jobs:
       - name: Ruff
         run: python3 -m ruff check backend/lambda scripts .cursor/hooks
 
+      - name: Install mypy
+        run: python3 -m pip install 'mypy==1.8.0'
+
+      - name: Mypy
+        run: |
+          set -euo pipefail
+          dirs=()
+          for dir in backend/lambda/*; do
+            if [ -d "$dir" ] && find "$dir" -name '*.py' -print -quit | grep -q .; then
+              dirs+=("$dir")
+            fi
+          done
+          dirs+=(scripts .cursor/hooks)
+          if [ "${#dirs[@]}" -eq 0 ]; then
+            echo "no Python directories to check"
+            exit 1
+          fi
+          for dir in "${dirs[@]}"; do
+            echo "mypy $dir"
+            (
+              cd "$dir"
+              python3 -m mypy --ignore-missing-imports .
+            )
+          done
+
   validate-agent-harness:
     name: Validate agent harness
     runs-on: ubuntu-26.04

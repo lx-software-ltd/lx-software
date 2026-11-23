@@ -93,7 +93,7 @@ def headline_pack(table: Any, settings: dict[str, Any] | None = None) -> dict[st
 
 
 def _listings(table: Any, settings: dict[str, Any] | None) -> dict[str, Any]:
-    empty = {
+    empty: dict[str, Any] = {
         "activities": 0,
         "providers": 0,
         "stores": 0,

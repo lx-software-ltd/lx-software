@@ -688,7 +688,7 @@ def normalize_positions(raw: dict[str, Any], *, agenda_len: int) -> dict[str, An
                 continue
             idx = it.get("agendaIndex")
             try:
-                idx_int = int(idx)
+                idx_int = _whole(idx)
             except (TypeError, ValueError):
                 idx_int = len(items_out) + 1
             idx_int = min(max(1, idx_int), max(1, agenda_len))
@@ -1140,7 +1140,7 @@ def normalize_minutes(
 
 
 def _phase_persist(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
-    minutes = doc.get("minutes") if isinstance(doc.get("minutes"), dict) else {}
+    minutes = _g if isinstance(_g := doc.get("minutes"), dict) else {}
     created_ids, reaffirmed_ids = board_actions.create_actions_from_minutes(
         table, minutes=minutes, meeting_id=str(doc["meetingId"])
     )
@@ -1197,7 +1197,7 @@ PHASE_RUNNERS = {
 # ---------------------------------------------------------------------------
 
 def public_meeting_summary(doc: dict[str, Any]) -> dict[str, Any]:
-    minutes = doc.get("minutes") if isinstance(doc.get("minutes"), dict) else None
+    minutes = _g if isinstance(_g := doc.get("minutes"), dict) else None
     return {
         "meetingId": doc.get("meetingId"),
         "status": doc.get("status"),
@@ -1241,3 +1241,15 @@ def _clean(value: Any, limit: int) -> str:
         return ""
     text = " ".join(str(value).split()) if limit <= 400 else str(value).strip()
     return text[:limit]
+
+
+def _num(value: Any | None) -> float:
+    if value is None:
+        raise TypeError("expected a number")
+    return float(value)
+
+
+def _whole(value: Any | None) -> int:
+    if value is None:
+        raise TypeError("expected an int")
+    return int(value)

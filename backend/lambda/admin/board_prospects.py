@@ -212,7 +212,7 @@ def upsert_prospect(table: Any, row: dict[str, Any]) -> tuple[dict[str, Any], bo
         phone=str(row.get("phone") or ""),
         email=str(row.get("email") or row.get("contact") or ""),
         place_id=str(row.get("placeId") or row.get("place_id") or ""),
-        raw=row.get("raw") if isinstance(row.get("raw"), dict) else {k: v for k, v in row.items() if k not in {"name", "type"}},
+        raw=_g if isinstance(_g := row.get("raw"), dict) else {k: v for k, v in row.items() if k not in {"name", "type"}},
     )
 
 
@@ -328,7 +328,7 @@ def qualify(table: Any, settings: dict[str, Any], prospect: dict[str, Any]) -> d
     enabled = set(types_enabled(settings))
     ptype = str(prospect.get("type") or "")
     try:
-        score_n = int(prospect.get("score") if prospect.get("score") is not None else -1)
+        score_n = _whole(prospect.get("score") if prospect.get("score") is not None else -1)
     except (TypeError, ValueError):
         score_n = -1
     if ptype not in enabled:
@@ -618,3 +618,15 @@ def open_data_rows(table: Any, kind: str, district: str = "") -> list[dict[str, 
         if len(out) >= 40:
             break
     return out
+
+
+def _num(value: Any | None) -> float:
+    if value is None:
+        raise TypeError("expected a number")
+    return float(value)
+
+
+def _whole(value: Any | None) -> int:
+    if value is None:
+        raise TypeError("expected an int")
+    return int(value)

@@ -2035,7 +2035,7 @@ def _liability_row_signature(
         float(row["outstandingBalance"]),
         str(row["currency"]),
         rate,
-        rh if isinstance(rh, str) else None,
+        _g if isinstance(_g := rh, str) else None,
     )
 
 
@@ -2194,9 +2194,13 @@ def upsert_mirrored_lines(
         raise MirroredBookError(str(exc)) from exc
     # Normalisation drops unknown keys; re-tag mirrored lines so a later read
     # can tell them from manual entries.
-    for line in payload["lines"]:
-        if str(line.get("id") or "").startswith(id_prefixes):
-            line["source"] = source
+    stored_lines = payload.get("lines")
+    if isinstance(stored_lines, list):
+        for stored in stored_lines:
+            if not isinstance(stored, dict):
+                continue
+            if str(stored.get("id") or "").startswith(id_prefixes):
+                stored["source"] = source
     _put_finance_owner_payload(table, book, payload)
     return written, removed
 

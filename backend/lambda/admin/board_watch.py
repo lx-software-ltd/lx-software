@@ -244,7 +244,7 @@ def add_watch(table: Any, body: dict[str, Any]) -> dict[str, Any]:
         "kind": kind,
         "urls": urls[:20],
         "district": _watch_district(body.get("district")),
-        "appIds": body.get("appIds") if isinstance(body.get("appIds"), dict) else {},
+        "appIds": _g if isinstance(_g := body.get("appIds"), dict) else {},
         "socialHandles": [str(x) for x in (body.get("socialHandles") or []) if str(x).strip()][:12],
         "seenWeeks": list(body.get("seenWeeks") or []),
         "createdAt": now,
@@ -326,7 +326,7 @@ def discover(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
             if host in suppressed or any(host.endswith("." + s) for s in suppressed):
                 skipped_suppressed += 1
                 continue
-            if not _has_hk_signal(item if isinstance(item, dict) else {}, host):
+            if not _has_hk_signal(_g if isinstance(_g := item, dict) else {}, host):
                 continue
             if host not in known_hosts and looks_like_media(str((item or {}).get("title") or "")):
                 skipped_media += 1
@@ -351,7 +351,7 @@ def discover(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
             doc = add_watch(
                 table,
                 {
-                    "name": _candidate_name(item if isinstance(item, dict) else {}, host),
+                    "name": _candidate_name(_g if isinstance(_g := item, dict) else {}, host),
                     "kind": "candidate",
                     "urls": [homepage],
                     "seenWeeks": [week],

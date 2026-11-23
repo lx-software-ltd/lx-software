@@ -369,8 +369,8 @@ def imported_orgs(
                 continue
             if str(ref.get("districtId") or "").strip().lower() != did:
                 continue
-            preview = task.get("importPreview") if isinstance(task.get("importPreview"), dict) else {}
-            payload = preview.get("payload") if isinstance(preview.get("payload"), dict) else {}
+            preview = _g if isinstance(_g := task.get("importPreview"), dict) else {}
+            payload = _g if isinstance(_g := preview.get("payload"), dict) else {}
             for org in payload.get("organizations") or []:
                 if isinstance(org, dict):
                     add(str(org.get("name") or ""), _org_page_url(org))

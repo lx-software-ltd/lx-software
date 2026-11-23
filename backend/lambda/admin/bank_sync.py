@@ -545,8 +545,8 @@ def handle_banking_auth_complete(
         return _json_response(
             502, {"message": "Enable Banking did not return a session id"}
         )
-    aspsp = session.get("aspsp") if isinstance(session.get("aspsp"), dict) else {}
-    access = session.get("access") if isinstance(session.get("access"), dict) else {}
+    aspsp = _g if isinstance(_g := session.get("aspsp"), dict) else {}
+    access = _g if isinstance(_g := session.get("access"), dict) else {}
     stored_session: dict[str, Any] = {
         "sessionId": session_id.strip(),
         "bankName": str(aspsp.get("name") or pending.get("bankName") or "")[:100],

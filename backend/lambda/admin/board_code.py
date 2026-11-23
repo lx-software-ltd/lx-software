@@ -305,7 +305,7 @@ def _pr_for_branch(task_id: str) -> dict[str, Any] | None:
     owner = repo.split("/", 1)[0]
     raw = _gh("GET", f"/repos/{repo}/pulls?head={owner}:board/{task_id}&state=all&per_page=5") or []
     if isinstance(raw, list) and raw:
-        return raw[0] if isinstance(raw[0], dict) else None
+        return _g if isinstance(_g := raw[0], dict) else None
     for pr in list_open_board_prs():
         head = ((pr.get("head") or {}).get("ref") or "") if isinstance(pr.get("head"), dict) else ""
         if head == f"board/{task_id}":
@@ -341,7 +341,7 @@ def _lookup_issue(number: int) -> dict[str, Any]:
         found = board_github.op_get_issue({"number": number})
     except Exception:
         return {}
-    return found if isinstance(found, dict) else {}
+    return _g if isinstance(_g := found, dict) else {}
 
 
 def ci_state(sha: str) -> str:
@@ -401,7 +401,7 @@ def _diff_text(number: int) -> str:
         f"/repos/{repo}/pulls/{int(number)}",
         accept="application/vnd.github.diff",
     )
-    text = raw if isinstance(raw, str) else str(raw or "")
+    text = _g if isinstance(_g := raw, str) else str(raw or "")
     if len(text) > MAX_DIFF_CHARS:
         return text[: MAX_DIFF_CHARS - 40].rstrip() + f"\n... [truncated, {len(text)} chars total]"
     return text
@@ -447,7 +447,7 @@ def parse_review_verdict(text: str) -> dict[str, Any]:
     verdict = str(parsed.get("verdict") or "").strip().lower()
     if verdict not in ("accept", "changes"):
         return {}
-    notes = parsed.get("notes") if isinstance(parsed.get("notes"), list) else []
+    notes = _g if isinstance(_g := parsed.get("notes"), list) else []
     return {"verdict": verdict, "notes": [str(n)[:400] for n in notes if n][:12]}
 
 
@@ -1167,7 +1167,7 @@ def op_get_run(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
             pr = looked
     sha = ""
     if isinstance(pr, dict):
-        head = pr.get("head") if isinstance(pr.get("head"), dict) else {}
+        head = _g if isinstance(_g := pr.get("head"), dict) else {}
         sha = str((head or {}).get("sha") or "")
     prev_sha = str(stored.get("headSha") or "")
     if sha and prev_sha and prev_sha != sha:
@@ -1719,7 +1719,7 @@ def _sync_result_succeeded(result: dict[str, Any] | None) -> bool:
         return False
     if result.get("ok") or result.get("mergedSha") or result.get("alreadyCurrent"):
         return True
-    preview = result.get("preview") if isinstance(result.get("preview"), dict) else {}
+    preview = _g if isinstance(_g := result.get("preview"), dict) else {}
     try:
         return bool(preview) and not preview.get("error") and int(preview.get("behindBy") or 0) == 0
     except (TypeError, ValueError):
@@ -1728,7 +1728,7 @@ def _sync_result_succeeded(result: dict[str, Any] | None) -> bool:
 
 def _preview_from_sync_result(result: dict[str, Any], live: dict[str, Any]) -> dict[str, Any]:
     preview = dict(live) if isinstance(live, dict) else {}
-    stored = result.get("preview") if isinstance(result.get("preview"), dict) else {}
+    stored = _g if isinstance(_g := result.get("preview"), dict) else {}
     ahead = result.get("aheadBy")
     if ahead in (None, ""):
         ahead = stored.get("aheadBy")
@@ -1841,7 +1841,7 @@ def on_sync_hold_outcome(table: Any, hold: dict[str, Any]) -> dict[str, Any] | N
         return _settle_sync_executed(
             table,
             task,
-            hold.get("result") if isinstance(hold.get("result"), dict) else {},
+            _g if isinstance(_g := hold.get("result"), dict) else {},
             source="hold",
             source_id=hold_id,
         )
@@ -1866,7 +1866,7 @@ def on_sync_approval_outcome(table: Any, approval: dict[str, Any]) -> dict[str, 
     status = str(approval.get("status") or "")
     approval_id = str(approval.get("approvalId") or "")
     if status == "executed":
-        result = approval.get("result") if isinstance(approval.get("result"), dict) else {}
+        result = _g if isinstance(_g := approval.get("result"), dict) else {}
         return _settle_sync_executed(table, task, result, source="approval", source_id=approval_id)
     if status in ("rejected", "failed"):
         reason = str(approval.get("errorMessage") or approval.get("note") or status)
@@ -1971,7 +1971,7 @@ def _ensure_rebase_task(
     _supersede_stale_sync_tasks(table, today)
     if _list_sync_tasks(table, _OPEN_SYNC_STATUSES):
         return None
-    snapshot = preview if isinstance(preview, dict) else staging_preview()
+    snapshot = _g if isinstance(_g := preview, dict) else staging_preview()
     if snapshot.get("error"):
         return None
     if int(snapshot.get("behindBy") or 0) <= 0:
@@ -2009,7 +2009,7 @@ def maybe_daily_staging_sync(
     if local.hour < _SYNC_STAGING_HOUR_HKT:
         return None
     date_hkt = local.date().isoformat()
-    preview = preview if isinstance(preview, dict) else staging_preview()
+    preview = _g if isinstance(_g := preview, dict) else staging_preview()
     if preview.get("error"):
         _log_event("warning", tag="board_code_staging_sync_preview_failed", error=str(preview.get("error"))[:200])
         return None
@@ -2078,7 +2078,7 @@ _LABEL_CACHE = "github:label:board-ready"
 
 
 def cache_staging_preview(table: Any, preview: dict[str, Any] | None = None) -> dict[str, Any]:
-    snap = dict(preview if isinstance(preview, dict) else staging_preview())
+    snap = dict(_g if isinstance(_g := preview, dict) else staging_preview())
     snap["fetchedAt"] = board_store.now_iso()
     board_store.put_cache(table, _COMPARE_CACHE, snap, ttl_seconds=6 * 3600)
     return snap

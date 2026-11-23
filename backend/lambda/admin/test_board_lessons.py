@@ -107,6 +107,7 @@ class LessonTests(BoardTestCase):
         self.assertEqual(from_task["kind"], "return")
         board_lessons.dismiss(self.table, from_call["lessonId"])
         dismissed = board_store.get_lesson(self.table, from_call["lessonId"])
+        assert dismissed is not None
         self.assertTrue(dismissed.get("dismissed"))
 
 

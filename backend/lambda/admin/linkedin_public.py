@@ -150,8 +150,8 @@ def _statuses(query: Any) -> tuple[str, ...] | None:
 
 
 def published_post(doc: dict[str, Any]) -> dict[str, Any]:
-    platform = doc.get("platform") if isinstance(doc.get("platform"), dict) else {}
-    image = linkedin_store.public_image(doc.get("image") if isinstance(doc.get("image"), dict) else None)
+    platform = _g if isinstance(_g := doc.get("platform"), dict) else {}
+    image = linkedin_store.public_image(_g if isinstance(_g := doc.get("image"), dict) else None)
     picture = None
     if image:
         picture = {

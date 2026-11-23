@@ -18,7 +18,7 @@ from runtime import ADMIN_GROUP, logger
 def _json_response(
     status_code: int, payload: dict[str, Any] | list[Any] | str
 ) -> dict[str, Any]:
-    body = payload if isinstance(payload, str) else json.dumps(payload, default=str)
+    body = _g if isinstance(_g := payload, str) else json.dumps(payload, default=str)
     return {
         "statusCode": status_code,
         "headers": {"Content-Type": "application/json"},
@@ -65,7 +65,7 @@ def _public_authorizer_context(event: dict[str, Any]) -> dict[str, Any]:
     as credential material (``py/weak-sensitive-data-hashing``).
     """
     ctx = event.get("requestContext", {}).get("authorizer", {}).get("lambda")
-    return ctx if isinstance(ctx, dict) else {}
+    return _g if isinstance(_g := ctx, dict) else {}
 
 
 def _groups_include_admin(claims: dict[str, Any]) -> bool:

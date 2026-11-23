@@ -125,12 +125,19 @@ def effective_profile(default: dict[str, Any], override: dict[str, Any] | None) 
     }
     for field in CHARTER_FIELDS:
         value = ov.get(field)
-        has = isinstance(value, str) and bool(value.strip())
-        profile[field] = value.strip() if has else str(default.get(field) or "")
-        profile["isOverridden"][field] = has
+        if isinstance(value, str) and value.strip():
+            profile[field] = value.strip()
+            profile["isOverridden"][field] = True
+        else:
+            profile[field] = str(default.get(field) or "")
+            profile["isOverridden"][field] = False
     name = ov.get("displayName")
-    has_name = isinstance(name, str) and bool(name.strip())
-    profile["displayName"] = name.strip() if has_name else str(default["shortName"])
+    if isinstance(name, str) and name.strip():
+        profile["displayName"] = name.strip()
+        has_name = True
+    else:
+        profile["displayName"] = str(default["shortName"])
+        has_name = False
     profile["isOverridden"]["displayName"] = has_name
     profile["profileHash"] = profile_hash(profile)
     return profile

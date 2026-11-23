@@ -248,6 +248,7 @@ class OrganisationThreadTests(BoardTestCase):
         )
         self.assertIn("owner", reason or "")
         again = board_meta_triage.on_message(self.table, self.settings, thread, {"direction": "in", "text": "again", "channel": "whatsapp"})
+        assert again is not None
         self.assertEqual(again["taskId"], tasks[0]["taskId"])
 
 

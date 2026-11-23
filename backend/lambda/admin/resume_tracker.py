@@ -100,9 +100,9 @@ def _day(value: str, label: str) -> str:
 
 
 def _recruiter(body: dict[str, Any], current: dict[str, Any], *, partial: bool) -> dict[str, str]:
-    source = body.get("recruiter") if isinstance(body.get("recruiter"), dict) else None
+    source = _g if isinstance(_g := body.get("recruiter"), dict) else None
     if source is None and partial:
-        source = current.get("recruiter") if isinstance(current.get("recruiter"), dict) else {}
+        source = _g if isinstance(_g := current.get("recruiter"), dict) else {}
     source = source or {}
     email = str(source.get("email") or "").strip()
     if email and "@" not in email:

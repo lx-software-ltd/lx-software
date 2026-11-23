@@ -49,7 +49,7 @@ def _persona_covers_tools(settings: dict[str, Any], persona_id: str, tool_ids: l
 def _normalize_help_tool_ids(raw: Any) -> list[str]:
     from board_staff import _HELP_INTERNAL_TOOLS
     ids: list[str] = []
-    items = raw if isinstance(raw, list) else []
+    items = _g if isinstance(_g := raw, list) else []
     for item in items:
         tid = str(item or "").strip()
         if tid and tid in BOARD_TOOL_IDS and tid not in _HELP_INTERNAL_TOOLS and tid not in ids:

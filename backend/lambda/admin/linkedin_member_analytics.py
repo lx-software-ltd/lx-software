@@ -46,7 +46,7 @@ _ACTIVE_DAYS = 30
 
 def _platform(row: dict[str, Any]) -> dict[str, Any]:
     platform = row.get("platform")
-    return platform if isinstance(platform, dict) else {}
+    return _g if isinstance(_g := platform, dict) else {}
 
 
 def _within(value: str, cutoff: datetime) -> bool:

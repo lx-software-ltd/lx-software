@@ -105,7 +105,7 @@ def create_actions_from_minutes(
             if isinstance(due_days, int) and due_days > 0
             else None
         )
-        doc = {
+        doc: dict[str, Any] = {
             "actionId": board_store.new_id(),
             "title": title[:120],
             "detail": str(proposal.get("detail") or "")[:800],

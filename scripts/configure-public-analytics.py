@@ -241,6 +241,9 @@ class Report:
 # GA4
 
 
+_property = property
+
+
 @dataclass
 class Ga4State:
     property: dict
@@ -252,11 +255,14 @@ class Ga4State:
     custom_dimensions: list[dict]
     key_events: list[dict]
 
-    @property
+    @_property
     def measurement_id(self) -> str:
         if not self.stream:
             return ""
-        return str(self.stream.get("webStreamData", {}).get("measurementId", ""))
+        web = self.stream.get("webStreamData")
+        if not isinstance(web, dict):
+            return ""
+        return str(web.get("measurementId", ""))
 
 
 def _paged(api: Api, url: str, key: str) -> list[dict]:
@@ -375,10 +381,17 @@ def plan_ga4(state: Ga4State, property_id: str, site_url: str, report: Report) -
     missing = [p for p in SITE_EVENT_PARAMS if p not in existing]
     for param in missing:
         body = {"parameterName": param, "displayName": param, "scope": "EVENT"}
+
+        def _create_dimension(payload: dict[str, str] = body) -> Callable[[Api], Any]:
+            def apply(api: Api) -> Any:
+                return api.post(f"{base}/customDimensions", payload)
+
+            return apply
+
         report.drift(
             "ga4",
             f"custom dimension (event) {param}",
-            lambda api, body=body: api.post(f"{base}/customDimensions", body),
+            _create_dimension(),
         )
     if not missing:
         report.note(f"  custom dimensions: {', '.join(SITE_EVENT_PARAMS)}")
@@ -388,10 +401,17 @@ def plan_ga4(state: Ga4State, property_id: str, site_url: str, report: Report) -
         if name in have_keys:
             continue
         body = {"eventName": name, "countingMethod": "ONCE_PER_EVENT"}
+
+        def _create_key_event(payload: dict[str, str] = body) -> Callable[[Api], Any]:
+            def apply(api: Api) -> Any:
+                return api.post(f"{base}/keyEvents", payload)
+
+            return apply
+
         report.drift(
             "ga4",
             f"key event {name}",
-            lambda api, body=body: api.post(f"{base}/keyEvents", body),
+            _create_key_event(),
         )
     if all(name in have_keys for name in KEY_EVENTS):
         report.note(f"  key events: {', '.join(KEY_EVENTS)}")

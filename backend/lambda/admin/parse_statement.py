@@ -124,7 +124,7 @@ def _duplicate_basename_content(*, bucket: str, head: dict[str, Any], prior_keys
             prior_head = runtime._s3.head_object(Bucket=bucket, Key=key)
         except ClientError:
             continue
-        prior = _object_fingerprint(prior_head if isinstance(prior_head, dict) else {})
+        prior = _object_fingerprint(_g if isinstance(_g := prior_head, dict) else {})
         if prior is None:
             continue
         if prior == current:

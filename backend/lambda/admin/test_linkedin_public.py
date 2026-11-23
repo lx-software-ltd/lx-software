@@ -106,7 +106,7 @@ class LinkedInPublicPostsTests(unittest.TestCase):
         payload = linkedin_public.published_posts(table)
         self.assertEqual([row["postId"] for row in payload["items"]], ["post_a", "post_b"])
         self.assertIsNone(table.calls[0])
-        self.assertEqual(table.calls[1]["gsi1sk"], "1#post_a")
+        self.assertEqual(_nn(table.calls[1])["gsi1sk"], "1#post_a")
         self.assertNotIn("truncated", payload)
 
     def test_status_drafted_returns_drafts_and_keeps_secrets_off(self) -> None:
@@ -313,3 +313,11 @@ def _stored(post_id: str, slot: str) -> dict:
         "slotAt": slot,
         "createdAt": slot,
     }
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

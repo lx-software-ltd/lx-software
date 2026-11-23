@@ -8,6 +8,7 @@ import json
 import os
 import unittest
 from datetime import datetime, timezone
+from email.message import Message
 from typing import Any
 from unittest.mock import patch
 from urllib import error as urlerror
@@ -234,7 +235,7 @@ class TestSecurityCognito(ToolsTestCase):
         self.assertIn("not measured", out["note"])
 
     def test_metric_sum_handles_missing_ids(self) -> None:
-        rows = [{"Id": "signInThrottles", "Values": [1.0, 2.0]}, {"Id": "signInSuccesses", "Values": []}]
+        rows: list[dict[str, Any]] = [{"Id": "signInThrottles", "Values": [1.0, 2.0]}, {"Id": "signInSuccesses", "Values": []}]
         self.assertEqual(board_security._metric_sum(rows, "signInThrottles"), 3)
         self.assertEqual(board_security._metric_sum(rows, "signInSuccesses"), 0)
         self.assertIsNone(board_security._metric_sum(rows, "other"))
@@ -272,7 +273,7 @@ class SalesReportHttp(FakeStoresHttp):
                     req.full_url,
                     self.status,
                     "not found",
-                    {},
+                    Message(),
                     io.BytesIO(b'{"errors":[{"detail":"There were no sales for the date specified."}]}'),
                 )
                 self.http_errors.append(err)
@@ -368,7 +369,7 @@ class TestStoresCrashUnavailable(StoresTestCase):
 
         def failing(req, timeout=None):  # noqa: ARG001
             calls.append(req.full_url)
-            err = urlerror.HTTPError(req.full_url, 403, "forbidden", {}, io.BytesIO(b'{"error":"no reporting access"}'))
+            err = urlerror.HTTPError(req.full_url, 403, "forbidden", Message(), io.BytesIO(b'{"error":"no reporting access"}'))
             errors.append(err)
             raise err
 
@@ -405,8 +406,11 @@ class TestGitHubRateLimit(ToolsTestCase):
         self.http_errors: list[urlerror.HTTPError] = []
 
         def limited(req, timeout=None):  # noqa: ARG001
+            limited_headers = Message()
+            for key, value in headers.items():
+                limited_headers[key] = value
             err = urlerror.HTTPError(
-                req.full_url, status, "limited", headers, io.BytesIO(b'{"message":"API rate limit exceeded"}')
+                req.full_url, status, "limited", limited_headers, io.BytesIO(b'{"message":"API rate limit exceeded"}')
             )
             self.http_errors.append(err)
             raise err
@@ -422,7 +426,9 @@ class TestGitHubRateLimit(ToolsTestCase):
         message = str(ctx.exception)
         self.assertTrue(message.startswith("GitHub rate limit; retry after "), message)
         self.assertTrue(message.endswith("s"))
-        self.assertTrue(100 <= ctx.exception.retry_after <= 121)
+        retry_after = ctx.exception.retry_after
+        assert retry_after is not None
+        self.assertTrue(100 <= retry_after <= 121)
         self.assertEqual(ctx.exception.status, 403)
         self.assertTrue(self.http_errors)
         self.assertTrue(all(err.fp.closed for err in self.http_errors))

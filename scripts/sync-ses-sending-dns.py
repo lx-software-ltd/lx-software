@@ -32,8 +32,8 @@ DEFAULT_ZONE = "siutindei.com"
 
 
 def dkim_records(identity: dict[str, Any], domain: str) -> list[dict[str, str]]:
-    dkim = identity.get("DkimAttributes") if isinstance(identity.get("DkimAttributes"), dict) else {}
-    tokens = dkim.get("Tokens") if isinstance(dkim.get("Tokens"), list) else []
+    dkim = _g if isinstance(_g := identity.get("DkimAttributes"), dict) else {}
+    tokens = _g if isinstance(_g := dkim.get("Tokens"), list) else []
     out: list[dict[str, str]] = []
     for tok in tokens:
         token = str(tok or "").strip()
@@ -51,7 +51,7 @@ def dkim_records(identity: dict[str, Any], domain: str) -> list[dict[str, str]]:
 
 
 def mail_from_records(identity: dict[str, Any], domain: str, region: str) -> list[dict[str, Any]]:
-    mail_from = identity.get("MailFromAttributes") if isinstance(identity.get("MailFromAttributes"), dict) else {}
+    mail_from = _g if isinstance(_g := identity.get("MailFromAttributes"), dict) else {}
     host = str(mail_from.get("MailFromDomain") or f"mail.{domain}").strip()
     if not host:
         return []
@@ -156,7 +156,7 @@ def upsert_records(
 
 def retry_ses(sesv2: Any, domain: str, identity: dict[str, Any]) -> None:
     sesv2.put_email_identity_dkim_attributes(EmailIdentity=domain, SigningEnabled=True)
-    mail_from = identity.get("MailFromAttributes") if isinstance(identity.get("MailFromAttributes"), dict) else {}
+    mail_from = _g if isinstance(_g := identity.get("MailFromAttributes"), dict) else {}
     host = str(mail_from.get("MailFromDomain") or f"mail.{domain}").strip()
     if host:
         sesv2.put_email_identity_mail_from_attributes(

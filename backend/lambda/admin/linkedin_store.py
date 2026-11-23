@@ -262,7 +262,7 @@ def _get(table: Any, pk: str, sk: str = "META", *, consistent: bool = False) -> 
     if not item:
         return None
     doc = _from_ddb_nested(_strip(item))
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def _query(table: Any, gsi_pk: str, *, limit: int = 200) -> list[dict[str, Any]]:
@@ -906,7 +906,7 @@ def _recent_image_text(table: Any, field: str, *, limit: int) -> list[str]:
     rows.sort(key=lambda doc: str(doc.get("createdAt") or ""), reverse=True)
     found: list[str] = []
     for row in rows:
-        image = row.get("image") if isinstance(row.get("image"), dict) else {}
+        image = _g if isinstance(_g := row.get("image"), dict) else {}
         text = str(image.get(field) or "").strip()
         if text and text not in found:
             found.append(text)
@@ -1087,7 +1087,7 @@ def mark_posted(table: Any, post_id: str, url: str) -> dict[str, Any]:
 
 
 def public_post(doc: dict[str, Any]) -> dict[str, Any]:
-    image = doc.get("image") if isinstance(doc.get("image"), dict) else None
+    image = _g if isinstance(_g := doc.get("image"), dict) else None
     return {
         "postId": doc.get("postId"),
         "status": doc.get("status"),
@@ -1535,7 +1535,7 @@ def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) ->
         )
     else:
         _IMAGE_MEMORY[post_id] = (content_type, data)
-    previous = doc.get("image") if isinstance(doc.get("image"), dict) else {}
+    previous = _g if isinstance(_g := doc.get("image"), dict) else {}
     doc["image"] = {
         **previous,
         "contentType": content_type,
@@ -1641,8 +1641,8 @@ def _save_character(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
 
 def public_character(doc: dict[str, Any] | None) -> dict[str, Any]:
     stored = doc or {}
-    photo = stored.get("photo") if isinstance(stored.get("photo"), dict) else None
-    sheet = stored.get("sheet") if isinstance(stored.get("sheet"), dict) else None
+    photo = _g if isinstance(_g := stored.get("photo"), dict) else None
+    sheet = _g if isinstance(_g := stored.get("sheet"), dict) else None
     candidates = []
     for row in stored.get("candidates") or []:
         if isinstance(row, dict) and row.get("id"):

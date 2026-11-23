@@ -77,8 +77,8 @@ def provider_name_from_error(exc: OpenRouterError) -> str:
             parsed = {}
         if isinstance(parsed, dict):
             data = parsed
-    err = data.get("error") if isinstance(data.get("error"), dict) else {}
-    meta = err.get("metadata") if isinstance(err.get("metadata"), dict) else {}
+    err = _g if isinstance(_g := data.get("error"), dict) else {}
+    meta = _g if isinstance(_g := err.get("metadata"), dict) else {}
     name = str(meta.get("provider_name") or "").strip()
     if name:
         return name
@@ -202,7 +202,7 @@ def remaining_credits(secrets_client: Any, *, service: str = SERVICE_EXECUTIVE_B
     except Exception as exc:
         raise OpenRouterError(f"OpenRouter credits probe failed: {exc}") from exc
     data = _load_json_object(raw, what="OpenRouter credits")
-    inner = data.get("data") if isinstance(data.get("data"), dict) else data
+    inner = _g if isinstance(_g := data.get("data"), dict) else data
     if inner.get("total_credits") is None and inner.get("total_usage") is None:
         return None
     try:

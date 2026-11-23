@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from typing import Any
 
 from test_support import install_aws_stubs
 
@@ -16,7 +17,7 @@ PARAGRAPHS = [
     {"id": "p2", "text": "Built the billing export for Northwind."},
     {"id": "p3", "text": "Python, TypeScript"},
 ]
-LAYOUT = {
+LAYOUT: dict[str, Any] = {
     "paragraphs": [
         {"id": "p0", "role": "name"},
         {"id": "p1", "role": "headline"},

@@ -118,6 +118,7 @@ class TestCallSitesUseTypeHints(ReceivablesTestCase):
     def test_draft_invoice_emits_uuid_date_decimal(self) -> None:
         board_receivables.op_draft_invoice(None, {"subscriptionId": "sub-1", "amountHkd": 388, "reason": "r"})
         insert = next(p for s, p in zip(self.db.sqls, self.db.parameters, strict=False) if s.startswith("INSERT INTO invoices"))
+        assert insert is not None
         hints = {p["name"]: p.get("typeHint") for p in insert}
         self.assertEqual(hints["id"], "UUID")
         self.assertEqual(hints["sub"], "UUID")
@@ -126,16 +127,19 @@ class TestCallSitesUseTypeHints(ReceivablesTestCase):
         self.assertEqual(hints["amount"], "DECIMAL")
         self.assertIsNone(hints["number"])
         lookup = next(p for s, p in zip(self.db.sqls, self.db.parameters, strict=False) if "FROM listing_subscriptions WHERE id" in s)
+        assert lookup is not None
         self.assertEqual(lookup[0]["typeHint"], "UUID")
 
     def test_manual_payment_and_plan_emit_hints(self) -> None:
         board_receivables.op_record_manual_payment(None, {"amountHkd": 50, "receivedOn": "2026-09-03", "reason": "r"})
         insert = next(p for s, p in zip(self.db.sqls, self.db.parameters, strict=False) if s.startswith("INSERT INTO payments"))
+        assert insert is not None
         hints = {p["name"]: p.get("typeHint") for p in insert}
         self.assertEqual((hints["id"], hints["received"], hints["amount"]), ("UUID", "DATE", "DECIMAL"))
         self.assertEqual(next(p for p in insert if p["name"] == "inv")["value"], {"isNull": True})
         board_receivables.op_propose_price_change(None, {"name": "Annual", "priceHkd": 3880, "billingPeriod": "annual"})
         plan = next(p for s, p in zip(self.db.sqls, self.db.parameters, strict=False) if s.startswith("INSERT INTO listing_plans"))
+        assert plan is not None
         hints = {p["name"]: p.get("typeHint") for p in plan}
         self.assertEqual((hints["id"], hints["price"]), ("UUID", "DECIMAL"))
         with self.assertRaises(board_receivables.ReceivablesError):

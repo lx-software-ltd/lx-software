@@ -112,7 +112,7 @@ def build_context_pack(
     except Exception:
         catalog = {}
 
-    pack = {
+    pack: dict[str, Any] = {
         "brief": _cap(str(brief.get("markdown") or ""), MAX_BRIEF_CHARS),
         "briefUpdatedAt": brief.get("updatedAt"),
         "updates": [

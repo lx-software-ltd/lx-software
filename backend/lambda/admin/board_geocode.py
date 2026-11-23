@@ -153,7 +153,7 @@ def _fetch_als(address: str) -> dict[str, Any]:
     with urlrequest.urlopen(req, timeout=ALS_TIMEOUT_SECONDS) as resp:  # noqa: S310 # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
         raw = resp.read()
     data = json.loads(raw.decode("utf-8", errors="replace") if raw else "{}")
-    return data if isinstance(data, dict) else {}
+    return _g if isinstance(_g := data, dict) else {}
 
 
 def _pick_suggestion(payload: dict[str, Any], district: str) -> dict[str, Any] | None:
@@ -167,14 +167,14 @@ def _pick_suggestion(payload: dict[str, Any], district: str) -> dict[str, Any] |
         eng = premises.get("EngPremisesAddress") if isinstance(premises, dict) else {}
         als_district = ""
         if isinstance(eng, dict):
-            block = eng.get("EngDistrict") if isinstance(eng.get("EngDistrict"), dict) else {}
+            block = _g if isinstance(_g := eng.get("EngDistrict"), dict) else {}
             als_district = str((block or {}).get("DcDistrict") or "")
         geo = premises.get("GeospatialInformation") if isinstance(premises, dict) else {}
         if not isinstance(geo, dict):
             continue
         try:
-            lat = float(geo.get("Latitude"))
-            lng = float(geo.get("Longitude"))
+            lat = _num(geo.get("Latitude"))
+            lng = _num(geo.get("Longitude"))
         except (TypeError, ValueError):
             continue
         if not _districts_match(district, als_district):
@@ -203,3 +203,15 @@ def _norm_district(name: str) -> str:
 
 def _norm_address(address: str) -> str:
     return " ".join(str(address or "").casefold().split())
+
+
+def _num(value: Any | None) -> float:
+    if value is None:
+        raise TypeError("expected a number")
+    return float(value)
+
+
+def _whole(value: Any | None) -> int:
+    if value is None:
+        raise TypeError("expected an int")
+    return int(value)

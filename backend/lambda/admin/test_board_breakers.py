@@ -142,6 +142,7 @@ class BreakerRuleTests(BoardTestCase):
         board_breakers.evaluate(self.table, self.settings)
         self.assertTrue(board_breakers.is_tripped(self.table, "tool:mail"))
         row = board_store.get_breaker(self.table, "tool:mail")
+        assert row is not None
         row["trippedAt"] = (datetime.now(timezone.utc) - timedelta(minutes=31)).strftime("%Y-%m-%dT%H:%M:%SZ")
         board_store.put_breaker(self.table, "tool:mail", row)
         board_breakers.evaluate(self.table, self.settings)
@@ -164,6 +165,7 @@ class BreakerRuleTests(BoardTestCase):
             )
         board_breakers.trip(self.table, "tool:mail", "10 errors in the last hour")
         row = board_store.get_breaker(self.table, "tool:mail")
+        assert row is not None
         row["trippedAt"] = (datetime.now(timezone.utc) - timedelta(minutes=31)).strftime("%Y-%m-%dT%H:%M:%SZ")
         board_store.put_breaker(self.table, "tool:mail", row)
         board_breakers.evaluate(self.table, self.settings)
@@ -252,14 +254,16 @@ class BreakerRuleTests(BoardTestCase):
     def test_auto_reset_only_once_until_owner_clears(self) -> None:
         board_breakers.trip(self.table, "tool:mail", "10 errors in the last hour")
         row = board_store.get_breaker(self.table, "tool:mail")
+        assert row is not None
         row["trippedAt"] = (datetime.now(timezone.utc) - timedelta(minutes=31)).strftime("%Y-%m-%dT%H:%M:%SZ")
         board_store.put_breaker(self.table, "tool:mail", row)
         board_breakers.evaluate(self.table, self.settings)
         self.assertFalse(board_breakers.is_tripped(self.table, "tool:mail"))
-        self.assertEqual(board_store.get_breaker(self.table, "tool:mail").get("autoResetCount"), 1)
+        self.assertEqual(_nn(board_store.get_breaker(self.table, "tool:mail")).get("autoResetCount"), 1)
 
         board_breakers.trip(self.table, "tool:mail", "10 errors in the last hour")
         row = board_store.get_breaker(self.table, "tool:mail")
+        assert row is not None
         self.assertEqual(row.get("autoResetCount"), 1)
         row["trippedAt"] = (datetime.now(timezone.utc) - timedelta(minutes=31)).strftime("%Y-%m-%dT%H:%M:%SZ")
         board_store.put_breaker(self.table, "tool:mail", row)
@@ -267,7 +271,7 @@ class BreakerRuleTests(BoardTestCase):
         self.assertTrue(board_breakers.is_tripped(self.table, "tool:mail"))
 
         board_breakers.reset(self.table, "tool:mail", "owner")
-        self.assertEqual(board_store.get_breaker(self.table, "tool:mail").get("autoResetCount"), 0)
+        self.assertEqual(_nn(board_store.get_breaker(self.table, "tool:mail")).get("autoResetCount"), 0)
 
     def test_task_tool_still_blocked_by_channel_breaker(self) -> None:
         board_breakers.trip(self.table, "channel:mail", "escalation")
@@ -315,6 +319,7 @@ class BreakerRuleTests(BoardTestCase):
     def test_auto_reset_parses_millisecond_tripped_at(self) -> None:
         board_breakers.trip(self.table, "tool:research", "11 errors in the last hour")
         row = board_store.get_breaker(self.table, "tool:research")
+        assert row is not None
         self.assertRegex(str(row.get("trippedAt") or ""), r"\.\d{3}Z$")
         row["trippedAt"] = (datetime.now(timezone.utc) - timedelta(minutes=31)).strftime(
             "%Y-%m-%dT%H:%M:%S.%f"
@@ -463,6 +468,7 @@ class PolicyRefusalTests(BoardTestCase):
                 created_by="owner",
             )
         latest = board_store.get_task(self.table, task["taskId"])
+        assert latest is not None
         latest["status"] = "needs_owner"
         latest["parkedReason"] = "blocked:tool:code"
         board_store.put_task(self.table, latest)
@@ -471,6 +477,7 @@ class PolicyRefusalTests(BoardTestCase):
             board_breakers.reset(self.table, "tool:code", "owner")
         queued = board_store.get_task(self.table, task["taskId"])
         # retry_task calls drain_queue, which may start the task immediately.
+        assert queued is not None
         self.assertIn(queued["status"], ("queued", "running"))
         self.assertEqual(queued.get("retriedBy"), "system:breaker-reset")
         self.assertFalse(queued.get("parkedReason"))
@@ -479,6 +486,7 @@ class PolicyRefusalTests(BoardTestCase):
         board_breakers.trip(self.table, "budget", "OpenRouter 402: insufficient credits")
         self.assertTrue(board_breakers.openrouter_credits_paused(self.table))
         row = board_store.get_breaker(self.table, "budget")
+        assert row is not None
         row["trippedAt"] = (
             datetime.now(timezone.utc) - timedelta(seconds=board_breakers.OPENROUTER_PAUSE_SECONDS + 5)
         ).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -510,3 +518,11 @@ class PolicyRefusalTests(BoardTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

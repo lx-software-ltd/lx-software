@@ -8,6 +8,7 @@ import json
 import unittest
 import zipfile
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from unittest.mock import patch
 
 from docx import Document
@@ -88,7 +89,7 @@ class ResumeStoreTests(unittest.TestCase):
         doc["extract"] = {"status": "ready", "error": ""}
         resume_store.save_resume(self.table, doc)
         self.assertEqual(resume_store.set_template(self.table, doc["resumeId"]), doc["resumeId"])
-        self.assertEqual(resume_store.get_resume(self.table, doc["resumeId"])["kind"], "template")
+        self.assertEqual(_nn(resume_store.get_resume(self.table, doc["resumeId"]))["kind"], "template")
 
     def test_template_and_referenced_resumes_cannot_be_deleted(self) -> None:
         doc = resume_store.create_resume(
@@ -395,6 +396,7 @@ class ResumeWorkerTests(unittest.TestCase):
         usage.assert_called_once()
         self.assertEqual(usage.call_args.kwargs["service"], "resume")
         stored = resume_store.get_resume(self.table, doc["resumeId"])
+        assert stored is not None
         self.assertEqual(stored["extract"]["status"], "ready")
         self.assertEqual(resume_store.template_id(self.table), doc["resumeId"])
         self.assertEqual(stored["kind"], "template")
@@ -410,6 +412,7 @@ class ResumeWorkerTests(unittest.TestCase):
         with patch("openrouter_client.chat_completion", side_effect=AssertionError("no model")):
             resume_extract.run(self.table, doc["resumeId"])
         stored = resume_store.get_resume(self.table, doc["resumeId"])
+        assert stored is not None
         self.assertEqual(stored["extract"]["status"], "ready")
         self.assertEqual(stored["paragraphs"][0]["text"], "Alex Example")
 
@@ -425,8 +428,8 @@ class ResumeWorkerTests(unittest.TestCase):
         with patch("openrouter_client.chat_completion", side_effect=ResumeError("No model is configured.")):
             result = resume.handle_extract({"jobId": job["jobId"], "internal": "resume_extract"})
         self.assertFalse(result["ok"])
-        self.assertEqual(resume_store.get_resume(self.table, doc["resumeId"])["extract"]["status"], "failed")
-        self.assertEqual(resume_store.get_job(self.table, job["jobId"])["status"], "failed")
+        self.assertEqual(_nn(resume_store.get_resume(self.table, doc["resumeId"]))["extract"]["status"], "failed")
+        self.assertEqual(_nn(resume_store.get_job(self.table, job["jobId"]))["status"], "failed")
 
     def test_worker_stops_when_resume_is_turned_off(self) -> None:
         doc = resume_store.create_resume(
@@ -440,7 +443,7 @@ class ResumeWorkerTests(unittest.TestCase):
         with patch.dict("os.environ", {"RESUME_ENABLED": "false"}):
             result = resume.handle_extract({"jobId": job["jobId"]})
         self.assertFalse(result["ok"])
-        self.assertIn("turned off", resume_store.get_job(self.table, job["jobId"])["error"])
+        self.assertIn("turned off", _nn(resume_store.get_job(self.table, job["jobId"]))["error"])
 
     def test_tailor_saves_a_docx_and_a_tracker_row(self) -> None:
         source = _docx("Alex Example", "Engineer", "Built the billing export for Northwind.", "Python, TypeScript")
@@ -496,9 +499,11 @@ class ResumeWorkerTests(unittest.TestCase):
         self.assertEqual(chat.call_args.kwargs["max_tokens"], 6000)
         self.assertFalse(chat.call_args.kwargs["reasoning"]["enabled"])
         finished = resume_store.get_job(self.table, job["jobId"])
+        assert finished is not None
         self.assertEqual(finished["status"], "done")
         tailored_id = finished["resumeIds"][0]
         tailored = resume_store.get_resume(self.table, tailored_id)
+        assert tailored is not None
         self.assertEqual(tailored["kind"], "tailored")
         self.assertEqual(tailored["format"], "docx")
         self.assertEqual(resume_store.template_id(self.table), doc["resumeId"])
@@ -541,13 +546,13 @@ class ResumeWorkerTests(unittest.TestCase):
         self.assertEqual(resume_store.list_resumes(self.table), [resume_store.get_resume(self.table, doc["resumeId"])])
         self.assertEqual(resume_tracker.list_applications(self.table), [])
         self.assertAlmostEqual(resume_store.month_spend(self.table), 0.04)
-        self.assertTrue(resume_store.get_job(self.table, job["jobId"])["findings"])
+        self.assertTrue(_nn(resume_store.get_job(self.table, job["jobId"]))["findings"])
 
     def test_length_finish_retries_once_with_double_the_tokens(self) -> None:
         calls: list[int] = []
 
-        def chat(**kwargs: object) -> ChatCompletion:
-            calls.append(int(kwargs["max_tokens"]))  # type: ignore[arg-type]
+        def chat(**kwargs: Any) -> ChatCompletion:
+            calls.append(int(kwargs["max_tokens"]))
             if len(calls) == 1:
                 return _completion({}, finish_reason="length")
             return _completion(
@@ -643,5 +648,13 @@ class ResumeWorkerTests(unittest.TestCase):
         with patch("openrouter_client.chat_completion", side_effect=AssertionError("no model")):
             result = resume.handle_tailor({"jobId": job["jobId"]})
         self.assertFalse(result["ok"])
-        self.assertIn("ran out of time", resume_store.get_job(self.table, job["jobId"])["error"])
+        self.assertIn("ran out of time", _nn(resume_store.get_job(self.table, job["jobId"]))["error"])
         self.assertAlmostEqual(resume_store.month_spend(self.table), 0.0)
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

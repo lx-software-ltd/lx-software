@@ -7,6 +7,7 @@ import json
 import os
 import unittest
 from datetime import datetime, timedelta, timezone
+from email.message import Message
 from typing import Any
 from unittest.mock import patch
 from urllib import error as urlerror
@@ -66,11 +67,12 @@ class FakeGitHub:
 
     def __init__(self) -> None:
         self.requests: list[tuple[str, str, dict[str, str], Any]] = []
+        self.issue_labels: list[str] = []
         self.fail_with: int | None = None
         self.http_errors: list[urlerror.HTTPError] = []
 
     def _raise_http(self, req: Any, code: int, msg: str, body: bytes) -> None:
-        err = urlerror.HTTPError(req.full_url, code, msg, {}, io.BytesIO(body))
+        err = urlerror.HTTPError(req.full_url, code, msg, Message(), io.BytesIO(body))
         self.http_errors.append(err)
         raise err
 
@@ -1128,10 +1130,11 @@ class AutonomyToolTests(ToolsTestCase):
         n = board_tools.expire_stale_approvals(self.table, board_store.load_settings(self.table), now_iso=fresh)
         self.assertEqual(n, 1)
         expired = board_store.get_approval(self.table, "old-1")
+        assert expired is not None
         self.assertEqual(expired["status"], "rejected")
         self.assertEqual(expired["decidedBySub"], "system:expiry")
-        self.assertEqual(board_store.get_approval(self.table, "legacy-1")["status"], "pending")
-        self.assertEqual(board_store.get_approval(self.table, "fresh-1")["status"], "pending")
+        self.assertEqual(_nn(board_store.get_approval(self.table, "legacy-1"))["status"], "pending")
+        self.assertEqual(_nn(board_store.get_approval(self.table, "fresh-1"))["status"], "pending")
         created = board_tools.create_approval(
             board_tools.ToolContext(self.table, board_store.load_settings(self.table), "cmo"),
             board_tools.REGISTRY["mail_send"],
@@ -1173,3 +1176,11 @@ class TestCompletionTimeout(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

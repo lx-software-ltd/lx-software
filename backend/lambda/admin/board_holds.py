@@ -392,7 +392,7 @@ def _execute_one(table: Any, settings: dict[str, Any], hold: dict[str, Any]) -> 
         "executed",
         now,
         call_id=outcome.call_id,
-        result=outcome.result if isinstance(outcome.result, dict) else None,
+        result=_g if isinstance(_g := outcome.result, dict) else None,
     )
     record_ramp(table, settings, str(hold.get("classKey") or ""), vetoed=False)
     return True
@@ -440,7 +440,7 @@ def _compact_sync_hold_result(result: dict[str, Any]) -> dict[str, Any]:
         compact["mergedSha"] = sha
     if result.get("alreadyCurrent"):
         compact["alreadyCurrent"] = True
-    preview = result.get("preview") if isinstance(result.get("preview"), dict) else {}
+    preview = _g if isinstance(_g := result.get("preview"), dict) else {}
     if preview:
         try:
             compact["behindBy"] = int(preview.get("behindBy") or 0)

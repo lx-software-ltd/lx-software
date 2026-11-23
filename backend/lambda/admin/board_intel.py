@@ -293,9 +293,9 @@ def on_brief_delivered(table: Any, task: dict[str, Any]) -> dict[str, Any]:
             parsed = json.loads(match.group(1))
         except json.JSONDecodeError:
             parsed = {}
-    gaps = parsed.get("gaps") if isinstance(parsed.get("gaps"), list) else []
-    ideas = parsed.get("ideas") if isinstance(parsed.get("ideas"), list) else []
-    prospects = parsed.get("prospects") if isinstance(parsed.get("prospects"), list) else []
+    gaps = _g if isinstance(_g := parsed.get("gaps"), list) else []
+    ideas = _g if isinstance(_g := parsed.get("ideas"), list) else []
+    prospects = _g if isinstance(_g := parsed.get("prospects"), list) else []
     board_store.put_cache(table, "intel:gaps", {"gaps": gaps}, ttl_seconds=14 * 86400)
     if prospects:
         try:
@@ -334,7 +334,7 @@ def handle_crawl(event: dict[str, Any]) -> dict[str, Any]:
         return {"ok": True, "skipped": "other_board"}
     table = board_store.records_table()
     settings = board_store.load_settings(table)
-    return daily_crawl(table, settings, event.get("cursor") if isinstance(event.get("cursor"), dict) else None)
+    return daily_crawl(table, settings, _g if isinstance(_g := event.get("cursor"), dict) else None)
 
 
 def handle_weekly(event: dict[str, Any]) -> dict[str, Any]:

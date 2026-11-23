@@ -7,6 +7,7 @@ import os
 import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -544,7 +545,7 @@ class TestArgumentValidation(ToolsTestCase):
     def test_type_enum_length_and_range_checks(self) -> None:
         ctx = self._ctx("act")
         op = REGISTRY["board_add_action"]
-        cases = [
+        cases: list[tuple[dict[str, Any], str]] = [
             ({"title": "t", "detail": "d", "priority": "urgent", "reason": "r"}, "must be one of"),
             ({"title": "t" * 500, "detail": "d", "priority": "now", "reason": "r"}, "longer than"),
             ({"title": "t", "detail": "d", "priority": "now", "dueInDays": 0, "reason": "r"}, "at least"),
@@ -624,7 +625,7 @@ class TestDecideApprovalGates(ToolsTestCase):
         status, body = self.call(f"/siu-tin-dei/board/approvals/{approval_id}/approve", "POST", {})
         self.assertEqual(status, 409)
         self.assertIn("read-only", body["message"])
-        self.assertEqual(board_store.get_approval(self.table, approval_id)["status"], "pending")
+        self.assertEqual(_nn(board_store.get_approval(self.table, approval_id))["status"], "pending")
         # Rejecting is always allowed: nothing executes.
         status, body = self.call(f"/siu-tin-dei/board/approvals/{approval_id}/reject", "POST", {})
         self.assertEqual(status, 200)
@@ -784,9 +785,7 @@ class TestLoopRuntimeLimits(ToolsTestCase):
         ctx = ToolContext(table=self.table, settings=board_store.default_settings(), persona_id="ceo", display_name="CEO")
         ctx.deadline = time.monotonic() + 3
 
-        real_pool = board_tools.ThreadPoolExecutor
-
-        class SpyPool(real_pool):
+        class SpyPool(ThreadPoolExecutor):
             def submit(self, fn, *args, **kwargs):
                 future = super().submit(fn, *args, **kwargs)
                 original = future.result
@@ -838,12 +837,13 @@ class TestUpdateActionReprioritise(ToolsTestCase):
         out = execute_call(ctx, op, {"actionId": action_id, "priority": "now", "dueInDays": 3, "reason": "r"})
         self.assertEqual(out.status, "ok", out.result)
         action = board_store.get_action(self.table, action_id)
+        assert action is not None
         self.assertEqual(action["priority"], "now")
         self.assertTrue(action["dueAt"])
         self.assertIn("priority → now", out.summary)
         out = execute_call(ctx, op, {"actionId": action_id, "dueInDays": 0, "reason": "r"})
         self.assertEqual(out.status, "ok")
-        self.assertIsNone(board_store.get_action(self.table, action_id)["dueAt"])
+        self.assertIsNone(_nn(board_store.get_action(self.table, action_id))["dueAt"])
         out = execute_call(ctx, op, {"actionId": action_id, "priority": "urgent", "reason": "r"})
         self.assertEqual(out.status, "error")
         self.assertIn("must be one of", out.result["error"])
@@ -914,3 +914,11 @@ class TestProductViewCache(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

@@ -314,7 +314,7 @@ def op_draft_invoice(_ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     sub_id = str(args.get("subscriptionId") or "").strip()
     amount = args.get("amountHkd")
     try:
-        hkd = float(amount)
+        hkd = _num(amount)
     except (TypeError, ValueError) as exc:
         raise ReceivablesError("amountHkd must be a number") from exc
     if hkd <= 0:
@@ -694,7 +694,7 @@ def op_propose_price_change(_ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     if period not in ("monthly", "annual"):
         raise ReceivablesError("billingPeriod must be monthly or annual")
     try:
-        price = float(args.get("priceHkd"))
+        price = _num(args.get("priceHkd"))
     except (TypeError, ValueError) as exc:
         raise ReceivablesError("priceHkd must be a number") from exc
     if price <= 0:
@@ -713,7 +713,7 @@ def op_propose_price_change(_ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
 
 def op_record_manual_payment(_ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     try:
-        amount = float(args.get("amountHkd"))
+        amount = _num(args.get("amountHkd"))
     except (TypeError, ValueError) as exc:
         raise ReceivablesError("amountHkd must be a number") from exc
     if amount <= 0:
@@ -963,3 +963,15 @@ def digest_for_context() -> dict[str, Any]:
         + len((aging.get("buckets") or {}).get("d21") or [])
         + len((aging.get("buckets") or {}).get("d35") or []),
     }
+
+
+def _num(value: Any | None) -> float:
+    if value is None:
+        raise TypeError("expected a number")
+    return float(value)
+
+
+def _whole(value: Any | None) -> int:
+    if value is None:
+        raise TypeError("expected an int")
+    return int(value)

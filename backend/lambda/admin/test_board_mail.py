@@ -118,7 +118,10 @@ class FakeSES:
         from email import policy
         from email.parser import BytesParser
 
-        return BytesParser(policy=policy.default).parsebytes(self.sent[-1]["Content"]["Raw"]["Data"])
+        parsed = BytesParser(policy=policy.default).parsebytes(self.sent[-1]["Content"]["Raw"]["Data"])
+        if not isinstance(parsed, EmailMessage):
+            raise TypeError("expected an email message")
+        return parsed
 
 
 class MailTestCase(ToolsTestCase):
@@ -257,7 +260,7 @@ class TestParseAndIngest(MailTestCase):
         again = self.ingest()
         self.assertTrue(again["duplicate"])
         self.assertEqual(again["threadId"], first["threadId"])
-        self.assertEqual(board_store.get_mail_thread(self.table, first["threadId"])["messageCount"], 1)
+        self.assertEqual(_nn(board_store.get_mail_thread(self.table, first["threadId"]))["messageCount"], 1)
 
     def test_inbound_handler_routes_board_prefix_and_deletes_raw(self) -> None:
         s3 = FakeS3()
@@ -297,6 +300,7 @@ class TestParseAndIngest(MailTestCase):
             attachments=[("report.zip", "application/zip", b"this is not a zip")],
         )
         thread = board_store.get_mail_thread(self.table, result["threadId"])
+        assert thread is not None
         self.assertEqual(thread["disposition"], "archived")
         self.assertFalse(thread["unread"])
         self.assertNotIn("dmarcReportIds", thread)
@@ -421,7 +425,7 @@ class TestMailRoutes(MailTestCase):
         # The resource ARN survives: it is the field the earlier 300-char cap lost.
         self.assertIn("identity/hello@siutindei.com", body["message"])
         self.assertIn("health", body)
-        code, detail, resource = board_mail.describe_ses_error(self.ses.fail_with)
+        code, detail, resource = board_mail.describe_ses_error(_nn(self.ses.fail_with))
         self.assertEqual(code, "AccessDeniedException")
         self.assertEqual(resource, "arn:aws:ses:ap-southeast-1:<ACCOUNT_ID>:identity/hello@siutindei.com")
         self.assertIn("because no identity-based policy", detail)
@@ -495,8 +499,10 @@ class TestMailRoutes(MailTestCase):
         )
         rua_thread = board_store.get_mail_thread(self.table, rua)
         google_thread = board_store.get_mail_thread(self.table, google)
+        assert rua_thread is not None
         self.assertEqual(rua_thread["disposition"], "archived")
         self.assertFalse(rua_thread["unread"])
+        assert google_thread is not None
         self.assertEqual(google_thread["disposition"], "archived")
         self.assertFalse(google_thread["unread"])
 
@@ -530,6 +536,7 @@ class TestMailRoutes(MailTestCase):
             message_id="<rua@google.com>",
         )
         archived = board_store.get_mail_thread(self.table, first["threadId"])
+        assert archived is not None
         self.assertEqual(archived["disposition"], "archived")
         self.assertFalse(archived["unread"])
         reply = self.ingest(
@@ -542,6 +549,7 @@ class TestMailRoutes(MailTestCase):
         )
         self.assertEqual(reply["threadId"], first["threadId"])
         thread = board_store.get_mail_thread(self.table, first["threadId"])
+        assert thread is not None
         self.assertNotEqual(thread.get("disposition"), "archived")
         self.assertTrue(thread["unread"])
         status, body = self.call("/siu-tin-dei/board/mail")
@@ -563,6 +571,7 @@ class TestMailRoutes(MailTestCase):
         )
         self.assertEqual(bounce["threadId"], first["threadId"])
         thread = board_store.get_mail_thread(self.table, first["threadId"])
+        assert thread is not None
         self.assertNotEqual(thread.get("disposition"), "archived")
         status, body = self.call("/siu-tin-dei/board/mail")
         self.assertEqual(status, 200)
@@ -693,6 +702,7 @@ class TestMailTools(MailTestCase):
         self.assertEqual([m["direction"] for m in messages], ["in", "out"])
         self.assertEqual(messages[1]["mailbox"], "hello@siutindei.com")
         thread = board_store.get_mail_thread(self.table, thread_id)
+        assert thread is not None
         self.assertFalse(thread["unread"])
         self.assertEqual(thread["messageCount"], 2)
         # The result handed back to the model is masked again.
@@ -885,3 +895,11 @@ class TestMailTools(MailTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

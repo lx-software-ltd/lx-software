@@ -272,8 +272,8 @@ def period_label(from_day: str, to_day: str) -> str:
 def render_allocation_pdf(payload: dict[str, Any]) -> bytes:
     from_day = str(payload.get("from") or "")
     to_day = str(payload.get("to") or "")
-    payer = payload.get("payer") if isinstance(payload.get("payer"), dict) else {}
-    total = payload.get("total") if isinstance(payload.get("total"), dict) else {}
+    payer = _g if isinstance(_g := payload.get("payer"), dict) else {}
+    total = _g if isinstance(_g := payload.get("total"), dict) else {}
     total_usd = float(total.get("usd") or 0)
     lines = [
         "LX Software - AWS cost allocation",
@@ -285,7 +285,7 @@ def render_allocation_pdf(payload: dict[str, Any]) -> bytes:
         f"Total  USD {total_usd:.2f}",
         "",
     ]
-    companies = payload.get("companies") if isinstance(payload.get("companies"), list) else []
+    companies = _g if isinstance(_g := payload.get("companies"), list) else []
     for company in companies:
         if not isinstance(company, dict):
             continue
@@ -294,7 +294,7 @@ def render_allocation_pdf(payload: dict[str, Any]) -> bytes:
         lines.append(
             f"{company.get('label') or company.get('id')}  USD {usd:.2f}  ({share:.1f}%)"
         )
-        projects = company.get("projects") if isinstance(company.get("projects"), list) else []
+        projects = _g if isinstance(_g := company.get("projects"), list) else []
         for project in projects:
             if not isinstance(project, dict):
                 continue

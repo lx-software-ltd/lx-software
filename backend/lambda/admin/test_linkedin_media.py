@@ -38,6 +38,7 @@ class LinkedInMediaTests(unittest.TestCase):
         saved = linkedin_store.save_post_image(self.table, doc["postId"], "image/gif", _gif())
         self.assertEqual(saved["image"]["contentType"], "image/gif")
         loaded = linkedin_store.load_post_image(doc["postId"])
+        assert loaded is not None
         self.assertEqual(loaded[0], "image/gif")
         self.assertTrue(loaded[1].startswith(b"GIF89a"))
         with self.assertRaises(LinkedInError) as caught:
@@ -62,6 +63,7 @@ class LinkedInMediaTests(unittest.TestCase):
         self.assertEqual(saved["image"]["contentType"], "video/mp4")
         self.assertEqual(saved["image"]["mediaUrn"], "")
         public = linkedin_store.public_image(saved["image"])
+        assert public is not None
         self.assertEqual(public["contentType"], "video/mp4")
         self.assertNotIn("mediaUrn", public)
         with self.assertRaises(LinkedInError) as quicktime:

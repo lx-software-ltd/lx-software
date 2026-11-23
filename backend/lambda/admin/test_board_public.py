@@ -268,7 +268,7 @@ class PublicBoardWriteTests(BoardTestCase):
         self.assertEqual(body["prospect"]["ownerNote"], "from key")
 
     def test_owner_ops_and_settings_tools_stay_closed(self) -> None:
-        for path, method, body in (
+        cases: list[tuple[str, str, dict[str, Any] | None]] = [
             ("/public/siu-tin-dei/board/approvals/a1/approve", "POST", {"note": "ok"}),
             ("/public/siu-tin-dei/board/code/promote", "POST", {}),
             ("/public/siu-tin-dei/board/code/sync-staging", "POST", {}),
@@ -284,7 +284,8 @@ class PublicBoardWriteTests(BoardTestCase):
             ("/public/siu-tin-dei/board/meetings/m1/cancel", "POST", {}),
             ("/public/siu-tin-dei/board/tasks/t1/cancel", "POST", {}),
             ("/public/siu-tin-dei/board/mail/selftest", "POST", {}),
-        ):
+        ]
+        for path, method, body in cases:
             status, resp = self.public_call(path, method, body=body)
             self.assertEqual(status, 403, msg=f"{method} {path} {resp}")
             self.assertEqual(resp["message"], "Forbidden")

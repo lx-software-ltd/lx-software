@@ -413,7 +413,7 @@ def _parse_hours_days(text: str) -> set[int] | None:
     return remaining or None
 
 
-def parse_opening_hours(raw: Any) -> list[dict[str, str]] | None:
+def parse_opening_hours(raw: Any) -> list[dict[str, str | int]] | None:
     """Parse a verified hours string into Sunday-first weekly_entries, or None."""
     text = str(raw or "").strip()
     if not text or text.lower() == "unverified":
@@ -695,7 +695,7 @@ def transform_sheet(
         als_budget = board_geocode.AlsBudget()
     for i, org in enumerate(orgs):
         row, report = transform_org(
-            org if isinstance(org, dict) else {},
+            _g if isinstance(_g := org, dict) else {},
             district=district,
             manager_id=mid,
             index=i,
@@ -936,8 +936,8 @@ def _as_count(value: Any) -> int:
 
 def _org_counts(resp: dict[str, Any]) -> dict[str, int]:
     """Read siutindei ``summary.organizations`` counts, with flat fallbacks."""
-    summary = resp.get("summary") if isinstance(resp.get("summary"), dict) else {}
-    orgs = summary.get("organizations") if isinstance(summary.get("organizations"), dict) else {}
+    summary = _g if isinstance(_g := resp.get("summary"), dict) else {}
+    orgs = _g if isinstance(_g := summary.get("organizations"), dict) else {}
     created = _as_count(orgs.get("created") if orgs else None)
     updated = _as_count(orgs.get("updated") if orgs else None)
     skipped = _as_count(orgs.get("skipped") if orgs else None)
@@ -965,12 +965,12 @@ def _failed_row_count(resp: dict[str, Any], summary: dict[str, Any] | None = Non
     but rejects every activity used to look clean because only
     ``summary.organizations.failed`` was read.
     """
-    packed = summary if isinstance(summary, dict) else (
-        resp.get("summary") if isinstance(resp.get("summary"), dict) else {}
+    packed = _g if isinstance(_g := summary, dict) else (
+        _g if isinstance(_g := resp.get("summary"), dict) else {}
     )
     total = 0
     for key in ("organizations", "locations", "activities", "pricing", "schedules"):
-        counts = packed.get(key) if isinstance(packed.get(key), dict) else {}
+        counts = _g if isinstance(_g := packed.get(key), dict) else {}
         total += _as_count(counts.get("failed") if counts else None)
     if total:
         return total
@@ -1015,10 +1015,10 @@ def _importer_accepted(resp: dict[str, Any]) -> int:
     A matching-manager reimport skips every organisation and only
     creates the missing activities; those still count as accepted.
     """
-    packed = resp.get("summary") if isinstance(resp.get("summary"), dict) else {}
+    packed = _g if isinstance(_g := resp.get("summary"), dict) else {}
     total = 0
     for key in ("organizations", "locations", "activities"):
-        counts = packed.get(key) if isinstance(packed.get(key), dict) else {}
+        counts = _g if isinstance(_g := packed.get(key), dict) else {}
         total += _as_count(counts.get("created") if counts else None)
         total += _as_count(counts.get("updated") if counts else None)
     if total:
@@ -1240,7 +1240,7 @@ def _save_task(table: Any, task: dict[str, Any]) -> None:
 
 def _preview_dry(preview: Any) -> dict[str, Any]:
     dry = preview.get("dryRun") if isinstance(preview, dict) else None
-    return dry if isinstance(dry, dict) else {}
+    return _g if isinstance(_g := dry, dict) else {}
 
 
 def _preview_would_update(dry: dict[str, Any]) -> list[str]:
@@ -1445,7 +1445,7 @@ def run_import(table: Any, task: dict[str, Any], *, force: bool = False, live_af
     now = _now_iso()
     task_id = str(task.get("taskId") or "")
     if not force:
-        stored = task.get("importPreview") if isinstance(task.get("importPreview"), dict) else {}
+        stored = _g if isinstance(_g := task.get("importPreview"), dict) else {}
         stored_dry = _preview_dry(stored)
         if (
             _preview_would_update(stored_dry) or (stored_dry.get("summary") or {}).get("updated")
@@ -1686,7 +1686,7 @@ def owner_requeue(table: Any, body: dict[str, Any]) -> dict[str, Any]:
 
 
 def failed_activity_count(task: dict[str, Any]) -> int:
-    result = task.get("importResult") if isinstance(task.get("importResult"), dict) else {}
+    result = _g if isinstance(_g := task.get("importResult"), dict) else {}
     stored = result.get("failedActivities")
     if isinstance(stored, int):
         return stored
@@ -1836,7 +1836,7 @@ def catalog_coverage(table: Any) -> dict[str, Any]:
     failed = 0
     for status in ("delivered", "awaiting_import", "needs_owner"):
         for task in _catalog_tasks(table, status):
-            result = task.get("importResult") if isinstance(task.get("importResult"), dict) else {}
+            result = _g if isinstance(_g := task.get("importResult"), dict) else {}
             for row in result.get("results") or []:
                 if not isinstance(row, dict):
                     continue

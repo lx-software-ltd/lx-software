@@ -133,7 +133,7 @@ class HistoryTests(InboxCase):
         self.organisation()
         self.ingest(wa_history(wa("old-1", "Saturday 9am at the court", 1_690_000_000)), follow=True)
         self.assertEqual(self.only_thread()["prospectId"], "org-1")
-        self.assertEqual(board_store.get_prospect(self.table, "org-1")["stage"], "replied")
+        self.assertEqual(_nn(board_store.get_prospect(self.table, "org-1"))["stage"], "replied")
         self.assertEqual(len(self.open_tasks()), 1)
 
     def test_a_live_message_is_unread_and_goes_to_triage(self) -> None:
@@ -167,7 +167,11 @@ class ThreadSummaryTests(InboxCase):
     def test_one_delivery_writes_each_thread_once(self) -> None:
         calls: list[str] = []
         real = board_store.put_meta_thread
-        with patch.object(board_store, "put_meta_thread", side_effect=lambda table, doc: (calls.append(doc["threadId"]), real(table, doc))[1]):
+        def _record(table: Any, doc: dict[str, Any]) -> Any:
+            calls.append(doc["threadId"])
+            return real(table, doc)
+
+        with patch.object(board_store, "put_meta_thread", side_effect=_record):
             self.ingest(wa_messages(*[wa(f"w-{i}", f"message {i}", 1_700_000_000 + i) for i in range(30)]))
         self.assertEqual(len(calls), 1)
         self.assertEqual(self.only_thread()["messageCount"], 30)
@@ -257,6 +261,7 @@ class MediaTests(InboxCase):
 
     def owner_get(self, path: str) -> tuple[int, dict[str, Any]]:
         out = board_routes.handle_board_route(BoardTestCase.event(path, "GET"), "GET", path, "owner")
+        assert out is not None
         return out["statusCode"], json.loads(out["body"])
 
     def test_a_page_photo_is_stored_and_opens_for_the_owner(self) -> None:
@@ -346,6 +351,7 @@ class MaskingTests(InboxCase):
 
     def test_the_owner_still_sees_the_name_and_the_number(self) -> None:
         owner = board_meta_inbox.thread_for_owner(self.table, self.thread_id)
+        assert owner is not None
         self.assertEqual(owner["thread"]["displayName"], "Ada Wong")
         self.assertEqual(owner["thread"]["phone"], NUMBER)
         self.assertIn("9123", owner["messages"][0]["text"])
@@ -358,7 +364,7 @@ class MaskingTests(InboxCase):
         listed = as_key("/public/siu-tin-dei/board/messages", board_meta_inbox.list_for_owner(self.table))
         self.assertEqual(listed["threads"][0]["displayName"], "contact#hidden")
         self.assertEqual(listed["threads"][0]["phone"], "phone#hidden")
-        detail = as_key(f"/public/siu-tin-dei/board/messages/{self.thread_id}", board_meta_inbox.thread_for_owner(self.table, self.thread_id))
+        detail = as_key(f"/public/siu-tin-dei/board/messages/{self.thread_id}", _nn(board_meta_inbox.thread_for_owner(self.table, self.thread_id)))
         self.assertEqual(detail["messages"][0]["senderName"], "contact#hidden")
         self.assertNotIn("Ada", json.dumps([listed, detail]))
         self.assertNotIn("9123", json.dumps([listed, detail]))
@@ -389,7 +395,7 @@ class OrganisationTests(InboxCase):
         for stage in ("listed", "onboarding", "declined", "suppressed"):
             self.organisation(stage)
             self.ingest(wa_messages(wa(f"w-{stage}", "Saturday 9am", 1_700_000_000)), follow=True)
-            self.assertEqual(board_store.get_prospect(self.table, "org-1")["stage"], stage)
+            self.assertEqual(_nn(board_store.get_prospect(self.table, "org-1"))["stage"], stage)
         self.assertEqual(len(self.open_tasks()), 1)
 
     def test_staff_switched_off_raises_nothing_and_still_links_the_thread(self) -> None:
@@ -428,6 +434,7 @@ class OrganisationTests(InboxCase):
         settings = board_store.save_settings(self.table, settings)
         guard = board_tools.REGISTRY["meta_reply_whatsapp"].act_guard
         for args in ({"threadId": thread["threadId"]}, {"to": f"+{NUMBER}"}):
+            assert guard is not None
             self.assertIn("owner's approval", guard(self.ctx(settings), {**args, "message": "Thanks", "reason": "reply"}) or "")
         self.assertIsNone(board_meta_inbox.organisation_hold(self.table, {"to": "+85260002222"}))
 
@@ -532,11 +539,13 @@ class RouteTests(InboxCase):
         path = "/siu-tin-dei/board/messages/connect/page"
         self.graph.queue.append({"success": True})
         out = board_routes.handle_board_route(BoardTestCase.event(path, "POST", {}), "POST", path, "owner")
+        assert out is not None
         self.assertEqual(out["statusCode"], 200)
         self.assertIn("message_echoes", json.loads(out["body"])["fields"])
         self.assertIn("page-1/subscribed_apps", self.graph.calls[-1][1])
         with patch.dict(os.environ, {"META_PAGE_ID": ""}):
             out = board_routes.handle_board_route(BoardTestCase.event(path, "POST", {}), "POST", path, "owner")
+        assert out is not None
         self.assertEqual(out["statusCode"], 400)
 
     def test_a_stored_timestamp_has_one_format(self) -> None:
@@ -549,3 +558,11 @@ class RouteTests(InboxCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

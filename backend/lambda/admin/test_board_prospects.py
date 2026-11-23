@@ -72,7 +72,7 @@ class QualifyTests(BoardTestCase):
         )
         found = board_prospects.find_contact(self.table, allow, row)
         self.assertIsNone(found)
-        self.assertIsNone(board_store.get_prospect(self.table, row["prospectId"]).get("contact") or None)
+        self.assertIsNone(_nn(board_store.get_prospect(self.table, row["prospectId"])).get("contact") or None)
 
     def test_score_uses_fake_desk(self) -> None:
         row, _ = board_prospects.upsert(self.table, name="Hall", type="venue", website="https://hall.example")
@@ -139,7 +139,7 @@ class QualifyTests(BoardTestCase):
         b, _ = board_prospects.upsert(self.table, name="Twin", type="venue", district="Sha Tin", website="https://b.example")
         dest = board_prospects.merge(self.table, a["prospectId"], b["prospectId"])
         self.assertEqual(dest["prospectId"], b["prospectId"])
-        self.assertEqual(board_store.get_prospect(self.table, a["prospectId"])["stage"], "suppressed")
+        self.assertEqual(_nn(board_store.get_prospect(self.table, a["prospectId"]))["stage"], "suppressed")
         status, body = self.call("/siu-tin-dei/board/prospects")
         self.assertEqual(status, 200)
         self.assertGreaterEqual(len(body["prospects"]), 2)
@@ -190,3 +190,11 @@ class QualifyTests(BoardTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

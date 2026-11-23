@@ -9,8 +9,37 @@ from __future__ import annotations
 import re
 import sys
 import types
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
+
+
+class _StubBotoCoreError(Exception):
+    pass
+
+
+class _StubClientError(_StubBotoCoreError):
+    pass
+
+
+class _StubConfig:
+    def __init__(self, **kwargs: Any) -> None:
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
+class _ExceptionsModule(types.ModuleType):
+    BotoCoreError: type[Exception]
+    ClientError: type[Exception]
+
+
+class _ConfigModule(types.ModuleType):
+    Config: type[_StubConfig]
+
+
+class _BotocoreModule(types.ModuleType):
+    __path__: list[str]
+    exceptions: _ExceptionsModule
+    config: _ConfigModule
 
 
 def install_aws_stubs() -> None:
@@ -18,26 +47,20 @@ def install_aws_stubs() -> None:
     if "boto3" not in sys.modules or not isinstance(sys.modules["boto3"], MagicMock):
         sys.modules["boto3"] = MagicMock()
     if "botocore.exceptions" not in sys.modules:
-        botocore = types.ModuleType("botocore")
-        exceptions = types.ModuleType("botocore.exceptions")
-
-        class BotoCoreError(Exception):
-            pass
-
-        class ClientError(BotoCoreError):
-            pass
-
-        exceptions.BotoCoreError = BotoCoreError
-        exceptions.ClientError = ClientError
+        exceptions = _ExceptionsModule("botocore.exceptions")
+        exceptions.BotoCoreError = _StubBotoCoreError
+        exceptions.ClientError = _StubClientError
+        botocore = _BotocoreModule("botocore")
         botocore.exceptions = exceptions
         sys.modules["botocore"] = botocore
         sys.modules["botocore.exceptions"] = exceptions
-    elif not hasattr(sys.modules["botocore.exceptions"], "BotoCoreError"):
-
-        class BotoCoreError(Exception):
-            pass
-
-        sys.modules["botocore.exceptions"].BotoCoreError = BotoCoreError
+    else:
+        exc_mod = sys.modules["botocore.exceptions"]
+        if not hasattr(exc_mod, "BotoCoreError"):
+            if isinstance(exc_mod, _ExceptionsModule):
+                exc_mod.BotoCoreError = _StubBotoCoreError
+            else:
+                cast(Any, exc_mod).BotoCoreError = _StubBotoCoreError
     _install_botocore_config_stub()
 
 
@@ -45,18 +68,12 @@ def _install_botocore_config_stub() -> None:
     if "botocore.config" in sys.modules and hasattr(sys.modules["botocore.config"], "Config"):
         return
     botocore = sys.modules.get("botocore")
-    if botocore is None or not isinstance(botocore, types.ModuleType):
-        botocore = types.ModuleType("botocore")
+    if not isinstance(botocore, _BotocoreModule):
+        botocore = _BotocoreModule("botocore")
         sys.modules["botocore"] = botocore
-    botocore.__path__ = []  # type: ignore[attr-defined]
-    config = types.ModuleType("botocore.config")
-
-    class Config:
-        def __init__(self, **kwargs: Any) -> None:
-            for key, value in kwargs.items():
-                setattr(self, key, value)
-
-    config.Config = Config
+    botocore.__path__ = []
+    config = _ConfigModule("botocore.config")
+    config.Config = _StubConfig
     botocore.config = config
     sys.modules["botocore.config"] = config
 
@@ -148,8 +165,8 @@ class FakeTable:
         item = dict(self.items.get(key) or {"pk": Key["pk"], "sk": Key["sk"]})
         names = ExpressionAttributeNames or {}
         values = ExpressionAttributeValues or {}
-        expression = UpdateExpression.strip()
-        add_part, _, set_part = expression.partition("SET")
+        update_expression = UpdateExpression.strip()
+        add_part, _separator, set_part = update_expression.partition("SET")
         if add_part.strip().upper().startswith("ADD"):
             for piece in add_part.strip()[3:].split(","):
                 attr, placeholder = piece.split()

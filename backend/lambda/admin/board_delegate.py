@@ -67,7 +67,7 @@ def cancel_task(event: dict[str, Any], task_id: str, user_sub: str | None) -> di
     if not board_staff.enabled(settings):
         return _json_response(409, {"message": "Staff is disabled"})
     body = _parse_json_body(event)
-    note = _note_from(body if isinstance(body, dict) else {})
+    note = _note_from(_g if isinstance(_g := body, dict) else {})
     if note is None:
         return _json_response(400, {"message": "note must be a string"})
     if len(note) > BOARD_MAX_APPROVAL_NOTE_LEN:

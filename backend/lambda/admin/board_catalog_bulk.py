@@ -307,7 +307,7 @@ def _put_job(table: Any, source: str, doc: dict[str, Any]) -> None:
 def _job(table: Any, source: str) -> dict[str, Any] | None:
     hit = board_store.get_cache(table, f"catalog:bulk:{source}:job")
     payload = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else None
-    return payload if isinstance(payload, dict) else None
+    return _g if isinstance(_g := payload, dict) else None
 
 
 def _job_age_seconds(job: dict[str, Any] | None) -> float | None:
@@ -1234,7 +1234,7 @@ def launch_listing_target(settings: dict[str, Any] | None) -> int:
     catalog = (settings or {}).get("catalog") if isinstance(settings, dict) else None
     if isinstance(catalog, dict) and catalog.get("launchListingTarget") not in (None, ""):
         try:
-            value = int(catalog.get("launchListingTarget"))
+            value = _whole(catalog.get("launchListingTarget"))
         except (TypeError, ValueError):
             value = -1
         if 0 <= value <= 100_000:
@@ -1394,7 +1394,7 @@ def op_import_source(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     limit = None
     if args.get("limit") is not None:
         try:
-            limit = max(1, int(args.get("limit")))
+            limit = max(1, _whole(args.get("limit")))
         except (TypeError, ValueError):
             limit = None
     return queue_action(ctx.table, "import", source, requested_by=requested, limit=limit)
@@ -1472,7 +1472,7 @@ def _importer_issue_approvals(table: Any) -> list[dict[str, Any]]:
 
 
 def _issue_number_from_approval(row: dict[str, Any]) -> int | None:
-    result = row.get("result") if isinstance(row.get("result"), dict) else {}
+    result = _g if isinstance(_g := row.get("result"), dict) else {}
     try:
         number = int(result.get("number") or 0)
     except (TypeError, ValueError):
@@ -1833,13 +1833,13 @@ def handle_job(event: dict[str, Any]) -> dict[str, Any]:
             first_error = _first_partial_error(out)
             if first_error:
                 job_doc["error"] = first_error[:300]
-        closed = out.get("closed") if isinstance(out.get("closed"), list) else []
+        closed = _g if isinstance(_g := out.get("closed"), list) else []
         if closed:
             try:
                 _open_bulk_500_task(table, board_store.load_settings(table), source, closed)
             except Exception as exc:
                 _log_event("info", tag="board_catalog_bulk_500_task_skipped", source=source, error=str(exc)[:200])
-        remaining_ids = out.get("bisectRemaining") if isinstance(out.get("bisectRemaining"), list) else []
+        remaining_ids = _g if isinstance(_g := out.get("bisectRemaining"), list) else []
         if remaining_ids and not source_is_paused(table, source) and not out.get("paused"):
             if _continue_job(
                 table,
@@ -1879,3 +1879,15 @@ def handle_job(event: dict[str, Any]) -> dict[str, Any]:
             {"phase": "error", "action": action, "at": board_store.now_iso(), "error": str(exc)[:300]},
         )
         return {"ok": False, "error": str(exc)[:300], "source": source, "action": action}
+
+
+def _num(value: Any | None) -> float:
+    if value is None:
+        raise TypeError("expected a number")
+    return float(value)
+
+
+def _whole(value: Any | None) -> int:
+    if value is None:
+        raise TypeError("expected an int")
+    return int(value)

@@ -7,6 +7,7 @@ import json
 import sys
 import types
 import unittest
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 
@@ -14,13 +15,18 @@ def _install_stubs() -> None:
     if "boto3" not in sys.modules:
         sys.modules["boto3"] = MagicMock()
     if "botocore" not in sys.modules:
-        botocore = types.ModuleType("botocore")
-        exceptions = types.ModuleType("botocore.exceptions")
+        class _Exceptions(types.ModuleType):
+            ClientError: type[Exception]
+
+        class _Botocore(types.ModuleType):
+            exceptions: _Exceptions
 
         class ClientError(Exception):  # noqa: D401
             pass
 
+        exceptions = _Exceptions("botocore.exceptions")
         exceptions.ClientError = ClientError
+        botocore = _Botocore("botocore")
         botocore.exceptions = exceptions
         sys.modules["botocore"] = botocore
         sys.modules["botocore.exceptions"] = exceptions
@@ -226,7 +232,7 @@ class TestParseStatementFromAsset(unittest.TestCase):
         secrets = MagicMock()
         secrets.get_secret_value.return_value = {"SecretString": json.dumps({"statement-parser": "sk-test"})}
 
-        captured: dict[str, object] = {}
+        captured: dict[str, Any] = {}
 
         class _FakeResp:
             def __init__(self, body: bytes) -> None:
@@ -303,7 +309,7 @@ class TestParseStatementFromAsset(unittest.TestCase):
         s3 = MagicMock()
         s3.get_object.return_value = {"Body": io.BytesIO(b"\x89PNG\r\n")}
         secrets = MagicMock()
-        captured: dict[str, object] = {}
+        captured: dict[str, Any] = {}
 
         class _FakeResp:
             def __init__(self, body: bytes) -> None:
@@ -347,7 +353,7 @@ class TestParseStatementFromAsset(unittest.TestCase):
         note = b"Subject: Invoice\n\nHosting total USD 42.00 on 1 Nov 2026.\n"
         s3.get_object.return_value = {"Body": io.BytesIO(note)}
         secrets = MagicMock()
-        captured: dict[str, object] = {}
+        captured: dict[str, Any] = {}
 
         class _FakeResp:
             def __init__(self, body: bytes) -> None:

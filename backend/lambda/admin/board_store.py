@@ -135,7 +135,7 @@ def _get_state(table: Any, suffix: str) -> dict[str, Any] | None:
     if not item:
         return None
     doc = _from_ddb_nested(_strip_keys(item))
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def _put_state(table: Any, suffix: str, doc: dict[str, Any]) -> None:
@@ -413,13 +413,13 @@ def normalize_dmarc_config(raw: Any) -> dict[str, Any]:
     out["knownSenderDomains"] = cleaned
     if "spoofAlertCount" in raw and raw.get("spoofAlertCount") not in (None, ""):
         try:
-            count = int(raw.get("spoofAlertCount"))
+            count = _whole(raw.get("spoofAlertCount"))
         except (TypeError, ValueError):
             count = 20
         out["spoofAlertCount"] = max(1, min(100_000, count))
     if "silenceDays" in raw and raw.get("silenceDays") not in (None, ""):
         try:
-            days = int(raw.get("silenceDays"))
+            days = _whole(raw.get("silenceDays"))
         except (TypeError, ValueError):
             days = 3
         out["silenceDays"] = max(1, min(30, days))
@@ -432,7 +432,7 @@ def normalize_dmarc_config(raw: Any) -> dict[str, Any]:
         if sp not in ("", "none", "quarantine", "reject"):
             sp = ""
         try:
-            pct = int(policy.get("pct") if policy.get("pct") not in (None, "") else 100)
+            pct = _whole(policy.get("pct") if policy.get("pct") not in (None, "") else 100)
         except (TypeError, ValueError):
             pct = 100
         out["expectedPolicy"] = {"p": p, "pct": max(0, min(100, pct)), "sp": sp}
@@ -458,7 +458,7 @@ def normalize_catalog_config(raw: Any, *, strict: bool = False) -> dict[str, Any
         out["microBatchEnabled"] = bool(raw.get("microBatchEnabled"))
     if "launchListingTarget" in raw and raw.get("launchListingTarget") not in (None, ""):
         try:
-            target = int(raw.get("launchListingTarget"))
+            target = _whole(raw.get("launchListingTarget"))
         except (TypeError, ValueError):
             target = -1
         if 0 <= target <= 100_000:
@@ -585,7 +585,7 @@ def normalize_review_config(raw: Any) -> dict[str, Any]:
     if isinstance(digest, str):
         out["digestTo"] = digest.strip()[:200]
     try:
-        hour = int(raw.get("digestHourHkt") if raw.get("digestHourHkt") is not None else out["digestHourHkt"])
+        hour = _whole(raw.get("digestHourHkt") if raw.get("digestHourHkt") is not None else out["digestHourHkt"])
         out["digestHourHkt"] = max(0, min(23, hour))
     except (TypeError, ValueError):
         pass
@@ -655,11 +655,12 @@ def normalize_boundaries(raw: Any) -> dict[str, Any]:
                     continue
         # Previous default was 0, then 24. Treat a stored 0 as unset unless
         # the owner wrote an explicit holdOverrides.catalog_import (including 0).
-        overrides = raw.get("holdOverrides") if isinstance(raw.get("holdOverrides"), dict) else {}
-        if out["holds"].get("catalog_import") == 0 and "catalog_import" not in overrides:
+        hold_overrides = _g if isinstance(_g := raw.get("holdOverrides"), dict) else {}
+        if out["holds"].get("catalog_import") == 0 and "catalog_import" not in hold_overrides:
             out["holds"]["catalog_import"] = BOARD_CATALOG_IMPORT_HOLD_HOURS
-    overrides = raw.get("holdOverrides")
-    if isinstance(overrides, dict):
+    raw_overrides = raw.get("holdOverrides")
+    if isinstance(raw_overrides, dict):
+        overrides = raw_overrides
         cleaned: dict[str, int] = {}
         for key, hours in overrides.items():
             if not isinstance(key, str):
@@ -982,7 +983,7 @@ def get_meeting(table: Any, meeting_id: str) -> dict[str, Any] | None:
     if not item:
         return None
     doc = _from_ddb_nested(_strip_keys(item))
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def list_meetings(table: Any, *, limit: int = 30) -> list[dict[str, Any]]:
@@ -1073,7 +1074,7 @@ def get_action(table: Any, action_id: str) -> dict[str, Any] | None:
     if not item:
         return None
     doc = _from_ddb_nested(_strip_keys(item))
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def list_actions(table: Any) -> list[dict[str, Any]]:
@@ -1173,7 +1174,7 @@ def get_chat_job(table: Any, job_id: str) -> dict[str, Any] | None:
     if not item:
         return None
     doc = _from_ddb_nested(_strip_keys(item))
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def claim_chat_job(table: Any, job_id: str, *, stale_before_iso: str) -> bool:
@@ -1265,7 +1266,7 @@ def get_approval(table: Any, approval_id: str) -> dict[str, Any] | None:
     if not item:
         return None
     doc = _from_ddb_nested(_strip_keys(item))
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def list_approvals(table: Any) -> list[dict[str, Any]]:
@@ -1376,7 +1377,7 @@ def get_mail_thread(table: Any, thread_id: str) -> dict[str, Any] | None:
     if not item:
         return None
     doc = _public_mail(item)
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def list_mail_threads(table: Any) -> list[dict[str, Any]]:
@@ -1623,7 +1624,7 @@ def get_meta_thread(table: Any, thread_id: str) -> dict[str, Any] | None:
     if not item:
         return None
     doc = {k: v for k, v in _strip_keys(item).items() if k != "expiresAt"}
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def list_meta_threads(table: Any) -> list[dict[str, Any]]:
@@ -1761,7 +1762,7 @@ def get_task(table: Any, task_id: str) -> dict[str, Any] | None:
     if not item:
         return None
     doc = _from_ddb_nested(_strip_keys(item))
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def list_all_tasks(table: Any, status: str) -> list[dict[str, Any]]:
@@ -1999,7 +2000,7 @@ def get_hold(table: Any, hold_id: str) -> dict[str, Any] | None:
     if not item:
         return None
     doc = _from_ddb_nested(_strip_keys(item))
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def list_holds(table: Any, status: str = "scheduled", *, limit: int = 200) -> list[dict[str, Any]]:
@@ -2095,7 +2096,7 @@ def get_lesson(table: Any, lesson_id: str) -> dict[str, Any] | None:
     if not item:
         return None
     doc = _from_ddb_nested(_strip_keys(item))
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def list_lessons(table: Any, subject: str | None = None, *, limit: int = 100) -> list[dict[str, Any]]:
@@ -2166,7 +2167,7 @@ def get_review_snapshot(table: Any, date_hkt: str) -> dict[str, Any] | None:
     if not item:
         return None
     doc = _from_ddb_nested(_strip_keys(item))
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def prospect_key(prospect_id: str) -> dict[str, str]:
@@ -2192,7 +2193,7 @@ def get_prospect(table: Any, prospect_id: str) -> dict[str, Any] | None:
     if not item:
         return None
     doc = _from_ddb_nested(_strip_keys(item))
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def list_prospects(table: Any, stage: str | None = None, *, limit: int = 200) -> list[dict[str, Any]]:
@@ -2287,7 +2288,7 @@ def get_watch(table: Any, watch_id: str) -> dict[str, Any] | None:
     if not item:
         return None
     doc = _from_ddb_nested(_strip_keys(item))
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def list_watches(table: Any) -> list[dict[str, Any]]:
@@ -2337,7 +2338,7 @@ def get_watch_page(table: Any, watch_id: str, url_digest: str) -> dict[str, Any]
     if not item:
         return None
     doc = _from_ddb_nested(_strip_keys(item))
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def put_change(table: Any, doc: dict[str, Any]) -> None:
@@ -2394,7 +2395,7 @@ def get_content(table: Any, content_id: str) -> dict[str, Any] | None:
     if not item:
         return None
     doc = _from_ddb_nested(_strip_keys(item))
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def list_content(table: Any, status: str | None = None, *, limit: int = 200) -> list[dict[str, Any]]:
@@ -2536,7 +2537,7 @@ def get_candidate(table: Any, candidate_id: str) -> dict[str, Any] | None:
     if not item:
         return None
     doc = _from_ddb_nested(_strip_keys(item))
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def list_candidates(
@@ -2622,3 +2623,15 @@ def put_listing_mirror(table: Any, listing_key: str, doc: dict[str, Any]) -> Non
 
 def get_listing_mirror(table: Any, listing_key: str) -> dict[str, Any] | None:
     return _get_state(table, f"cataloglisting#{listing_key}")
+
+
+def _num(value: Any | None) -> float:
+    if value is None:
+        raise TypeError("expected a number")
+    return float(value)
+
+
+def _whole(value: Any | None) -> int:
+    if value is None:
+        raise TypeError("expected an int")
+    return int(value)
