@@ -19,6 +19,8 @@ concurrency:
 jobs:
   diff:
     runs-on: ubuntu-26.04
+    env:
+      CDK_BOOTSTRAP_QUALIFIER: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -31,12 +33,11 @@ jobs:
           cache-dependency-path: backend/infrastructure/package-lock.json
 
       - name: Configure AWS credentials
-        if: ${{ vars.AWS_REGION != '' }}
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        id: aws
+        uses: lx-software-ltd/actions/aws-oidc@b40bb0725bf84f25a38641f6ca5ec6f4c2f14f98 # main 2026-11-23
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsRole
-          aws-region: ${{ vars.AWS_REGION }}
-          role-session-name: GitHubActions-${{ github.run_id }}
+          account-id: ${{ secrets.AWS_ACCOUNT_ID }}
+          region: ${{ vars.AWS_REGION }}
 
       - name: Install CDK dependencies
         run: |
@@ -44,6 +45,7 @@ jobs:
             cd backend/infrastructure
             npm ci
           else
+            echo "::warning::Missing backend/infrastructure/package.json"
             echo "Missing backend/infrastructure/package.json"
           fi
 
@@ -55,89 +57,82 @@ jobs:
           platforms: arm64
 
       - name: Check CDK Bootstrap status
-        if: ${{ vars.AWS_REGION != '' }}
-        run: |
-          QUALIFIER="${CDK_BOOTSTRAP_QUALIFIER:-hnb659fds}"
-          SSM_PARAM="/cdk-bootstrap/${QUALIFIER}/version"
-          echo "Checking for CDK Bootstrap in account $AWS_ACCOUNT_ID region $AWS_REGION..."
-          if ! aws ssm get-parameter --name "$SSM_PARAM" --query "Parameter.Value" --output text 2>/dev/null; then
-            echo ""
-            echo "::error::CDK Bootstrap not found or not accessible."
-            echo "::error::The SSM parameter '$SSM_PARAM' could not be read."
-            echo ""
-            echo "Possible causes:"
-            echo "  1. CDK Bootstrap missing: run 'cdk bootstrap aws://$AWS_ACCOUNT_ID/$AWS_REGION'"
-            echo "  2. Permission denied: GitHubActionsRole needs ssm:GetParameter on /cdk-bootstrap/*"
-            echo "  3. Wrong region: Verify AWS_REGION matches the bootstrapped region"
-            echo ""
-            echo "If bootstrap was run from another repo, ensure GitHubActionsRole has:"
-            echo "  - sts:AssumeRole on cdk-${QUALIFIER}-*-role-* resources"
-            echo "  - ssm:GetParameter on /cdk-bootstrap/* parameters"
-            echo ""
-            exit 1
-          fi
-          echo "CDK Bootstrap found. Proceeding with diff..."
-        env:
-          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          CDK_BOOTSTRAP_QUALIFIER: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
+        uses: lx-software-ltd/actions/cdk-bootstrap-check@b40bb0725bf84f25a38641f6ca5ec6f4c2f14f98 # main 2026-11-23
+        with:
+          qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
+          region: ${{ vars.AWS_REGION }}
 
-      - name: Run CDK diff
+      - name: Prepare CDK diff
+        id: prep
         run: |
-          if [ -f "backend/infrastructure/package.json" ]; then
-            cd backend/infrastructure
-            npx cdk acknowledge 34892 || true
-            npm run build --if-present
-            PUBLIC_PARAM_ARGS=()
-            ADMIN_LX_PARAM_ARGS=()
-            ADMIN_WEB_PARAM_ARGS=()
-            resolve_param_file() {
-              local path="$1"
-              if [ -z "$path" ]; then
-                return 1
-              fi
-              if [ -f "$path" ]; then
-                echo "$path"
-                return 0
-              fi
-              if [ -n "$GITHUB_WORKSPACE" ] && [ -f "$GITHUB_WORKSPACE/$path" ]; then
-                echo "$GITHUB_WORKSPACE/$path"
-                return 0
-              fi
-              return 1
-            }
-            if [ -n "${CDK_PARAM_FILE:-}" ]; then
-              RESOLVED_PARAM_FILE=$(resolve_param_file "$CDK_PARAM_FILE" || true)
-              if [ -n "$RESOLVED_PARAM_FILE" ]; then
-                # shellcheck source=../../scripts/deploy/cdk-params.sh
-                source ../../scripts/deploy/cdk-params.sh
-                cdk_load_param_args "$RESOLVED_PARAM_FILE"
-              else
-                echo "CDK_PARAM_FILE '$CDK_PARAM_FILE' not found"
-                exit 1
-              fi
-            fi
-            PARAM_ARGS=( "${PUBLIC_PARAM_ARGS[@]}" "${ADMIN_LX_PARAM_ARGS[@]}" "${ADMIN_WEB_PARAM_ARGS[@]}" )
-            STACK_ARGS=()
-            if [ -n "${CDK_STACKS:-}" ]; then
-              IFS=$', \n\t' read -r -a STACK_LIST <<< "$CDK_STACKS"
-              for stack in "${STACK_LIST[@]}"; do
-                trimmed="${stack#"${stack%%[![:space:]]*}"}"
-                trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
-                if [ -n "$trimmed" ]; then
-                  STACK_ARGS+=("$trimmed")
-                fi
-              done
-            fi
-            if [ ${#STACK_ARGS[@]} -gt 0 ]; then
-              npx cdk diff --no-color "${PARAM_ARGS[@]}" "${STACK_ARGS[@]}"
-            else
-              npx cdk diff --no-color "${PARAM_ARGS[@]}"
-            fi
-          else
+          if [ ! -f "backend/infrastructure/package.json" ]; then
+            echo "::warning::Missing backend/infrastructure/package.json"
             echo "Missing backend/infrastructure/package.json"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          cd backend/infrastructure
+          npx cdk acknowledge 34892 || true
+          npm run build --if-present
+          PUBLIC_PARAM_ARGS=()
+          ADMIN_LX_PARAM_ARGS=()
+          ADMIN_WEB_PARAM_ARGS=()
+          resolve_param_file() {
+            local path="$1"
+            if [ -z "$path" ]; then
+              return 1
+            fi
+            if [ -f "$path" ]; then
+              echo "$path"
+              return 0
+            fi
+            if [ -n "$GITHUB_WORKSPACE" ] && [ -f "$GITHUB_WORKSPACE/$path" ]; then
+              echo "$GITHUB_WORKSPACE/$path"
+              return 0
+            fi
+            return 1
+          }
+          if [ -n "${CDK_PARAM_FILE:-}" ]; then
+            RESOLVED_PARAM_FILE=$(resolve_param_file "$CDK_PARAM_FILE" || true)
+            if [ -n "$RESOLVED_PARAM_FILE" ]; then
+              # shellcheck source=../../scripts/deploy/cdk-params.sh
+              source ../../scripts/deploy/cdk-params.sh
+              cdk_load_param_args "$RESOLVED_PARAM_FILE"
+            else
+              echo "CDK_PARAM_FILE '$CDK_PARAM_FILE' not found"
+              exit 1
+            fi
+          fi
+          PARAM_ARGS=( "${PUBLIC_PARAM_ARGS[@]}" "${ADMIN_LX_PARAM_ARGS[@]}" "${ADMIN_WEB_PARAM_ARGS[@]}" )
+          if [ ${#PARAM_ARGS[@]} -gt 0 ]; then
+            printf '%s\0' "${PARAM_ARGS[@]}" > "$RUNNER_TEMP/cdk-diff-args"
+          else
+            : > "$RUNNER_TEMP/cdk-diff-args"
+          fi
+          STACK_ARGS=()
+          if [ -n "${CDK_STACKS:-}" ]; then
+            IFS=$', \n\t' read -r -a STACK_LIST <<< "$CDK_STACKS"
+            for stack in "${STACK_LIST[@]}"; do
+              trimmed="${stack#"${stack%%[![:space:]]*}"}"
+              trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+              if [ -n "$trimmed" ]; then
+                STACK_ARGS+=("$trimmed")
+              fi
+            done
+          fi
+          {
+            echo "run=true"
+            echo "stacks=${STACK_ARGS[*]}"
+          } >> "$GITHUB_OUTPUT"
         env:
           CDK_STACKS: ${{ inputs.stacks }}
           CDK_PARAM_FILE: ${{ vars.CDK_PARAM_FILE }}
-          CDK_BOOTSTRAP_QUALIFIER: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
+
+      - name: Run CDK diff
+        if: steps.prep.outputs.run == 'true'
+        uses: lx-software-ltd/actions/cdk-diff@b40bb0725bf84f25a38641f6ca5ec6f4c2f14f98 # main 2026-11-23
+        with:
+          working-directory: backend/infrastructure
+          stacks: ${{ steps.prep.outputs.stacks }}
+          args-file: ${{ runner.temp }}/cdk-diff-args
+          account-id: ${{ secrets.AWS_ACCOUNT_ID }}

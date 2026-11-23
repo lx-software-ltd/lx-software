@@ -37,60 +37,47 @@ jobs:
       - run: npm ci
         working-directory: apps/admin_web
 
-      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+      - name: Configure AWS credentials
+        id: aws
+        uses: lx-software-ltd/actions/aws-oidc@b40bb0725bf84f25a38641f6ca5ec6f4c2f14f98 # main 2026-11-23
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsRole
-          aws-region: ${{ vars.AWS_REGION }}
+          account-id: ${{ secrets.AWS_ACCOUNT_ID }}
+          region: ${{ vars.AWS_REGION }}
 
       - name: Read admin SPA settings from the lxsoftware stack
+        id: stack_outputs
+        uses: lx-software-ltd/actions/cfn-stack-outputs@b40bb0725bf84f25a38641f6ca5ec6f4c2f14f98 # main 2026-11-23
+        with:
+          stack: lxsoftware
+          outputs: UserPoolClientId CognitoDomain AdminApiBaseUrl
+          region: ${{ vars.AWS_REGION }}
+
+      - name: Check admin SPA settings
         id: admin_spa
         env:
-          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
+          JSON: ${{ steps.stack_outputs.outputs.json }}
         run: |
           set -euo pipefail
-          stack=lxsoftware
-          err="$(mktemp)"
-          if ! json="$(aws cloudformation describe-stacks --stack-name "$stack" --output json 2>"$err")"; then
-            if grep -q 'AccessDenied' "$err"; then
-              echo "::error::GitHubActionsRole needs cloudformation:DescribeStacks on arn:aws:cloudformation:${AWS_REGION}:${AWS_ACCOUNT_ID}:stack/${stack}/*"
-            fi
-            cat "$err" >&2
-            rm -f "$err"
-            exit 1
-          fi
-          rm -f "$err"
-          read_output() {
-            jq -r --arg key "$1" '
-              (.Stacks[0].Outputs // [])[] | select(.OutputKey == $key) | .OutputValue
-            ' <<<"$json"
-          }
-          client_id="$(read_output UserPoolClientId)"
-          domain="$(read_output CognitoDomain)"
-          api_url="$(read_output AdminApiBaseUrl)"
-          if [ -z "$client_id" ] || [ -z "$domain" ] || [ -z "$api_url" ]; then
-            echo "::error::Stack $stack is missing UserPoolClientId, CognitoDomain, or AdminApiBaseUrl"
-            exit 1
-          fi
-          case "$domain" in
-            https://*) ;;
-            *)
-              echo "::error::CognitoDomain on $stack must be an https origin"
-              exit 1
-              ;;
-          esac
-          case "$api_url" in
-            https://*) ;;
-            *)
-              echo "::error::AdminApiBaseUrl on $stack must be an https origin"
-              exit 1
-              ;;
-          esac
-          {
-            echo "client_id=$client_id"
-            echo "domain=$domain"
-            echo "api_url=$api_url"
-          } >> "$GITHUB_OUTPUT"
+          python3 - << 'PY'
+          import json
+          import os
+          import sys
+
+          data = json.loads(os.environ["JSON"])
+          domain = data["CognitoDomain"]
+          api_url = data["AdminApiBaseUrl"]
+          client_id = data["UserPoolClientId"]
+          if not domain.startswith("https://"):
+              print("::error::CognitoDomain on lxsoftware must be an https origin", file=sys.stderr)
+              sys.exit(1)
+          if not api_url.startswith("https://"):
+              print("::error::AdminApiBaseUrl on lxsoftware must be an https origin", file=sys.stderr)
+              sys.exit(1)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"client_id={client_id}\n")
+              handle.write(f"domain={domain}\n")
+              handle.write(f"api_url={api_url}\n")
+          PY
 
       - run: npm run build
         working-directory: apps/admin_web
