@@ -31,13 +31,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: "26"
-          cache: "npm"
-          cache-dependency-path: backend/infrastructure/package-lock.json
-
       - name: Refuse the deploy role on a pull request
         if: github.event_name == 'pull_request' && vars.AWS_DIFF_ROLE_NAME == 'GitHubActionsRole'
         run: |
@@ -59,16 +52,12 @@ jobs:
         run: |
           echo "::warning::This pull request did not assume a role. Set AWS_DIFF_ROLE_NAME to a read-only role that trusts only pull_request. GitHubActionsRole is not assumed from a pull request."
 
-      - name: Install CDK dependencies
+      - name: Set up Node.js
         if: steps.aws.outputs.ready == 'true'
-        run: |
-          if [ -f "backend/infrastructure/package.json" ]; then
-            cd backend/infrastructure
-            npm ci
-          else
-            echo "::warning::Missing backend/infrastructure/package.json"
-            echo "Missing backend/infrastructure/package.json"
-          fi
+        uses: lx-software-ltd/actions/setup-node@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
+        with:
+          cache: npm
+          working-directory: backend/infrastructure
 
       # `cdk diff` synthesizes with asset bundling; AdminApiFn pip deps are
       # installed in the linux/arm64 SAM image, which needs QEMU on x86-64.
