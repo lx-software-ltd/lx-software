@@ -748,14 +748,28 @@ standard app has no refresh token, so connect again before that time.
 When `LxSoftwareLinkedinPublishEnabled` is also `true` and a member is
 connected, one due approved draft is posted per tick through the Posts API,
 and only when the slot is less than three hours old. Older approved slots
-stay for the share box. The first comment is added, and a ready PNG or JPEG
+stay for the share box. The first comment is added, and a ready PNG, JPEG, or GIF
 attached on the draft is uploaded with it (the caption, without quotes, is
-the alt text). A picture that has never been ready does not hold
+the alt text). A ready MP4 is uploaded as a video. The video part upload
+sends no Authorization header: LinkedIn's upload URL is pre-signed, and the
+image upload is the call that still sends the token. LinkedIn processes that
+video before the post can go out. While the status is still processing, or
+still `WAITING_UPLOAD`, that draft does not use a publish attempt, does not
+send the failure email, and does not take the tick: the next due draft can
+go out instead. The video id stays with the draft, including the copy kept
+while a picture is being redrawn, and it belongs to the profile or page that
+uploaded it. Switching the connection to the other destination uploads the
+file again. If the video is still not ready when the slot is more than three
+hours old, automatic posting stops and the owner gets the "more than three
+hours old" email, not a processing failure. A picture that has never been ready does not hold
 the slot: the post goes out as text. A redraw that is still pending or that
-failed publishes the previous ready picture instead. A comment failure leaves the post
+failed publishes the previous ready picture or video instead. A comment failure leaves the post
 published. An image upload or API failure counts as a failed attempt (three tries,
 then a second email that posting has stopped). A missing connection or an
-expired token does not use up those tries. The same 15-minute worker refreshes
+expired token does not use up those tries. The browser prepares an iPad clip
+as an H.264 MP4 under 3 MB, with the audio track counted inside that budget,
+and shows progress. Cancel stops the prepare. A hidden tab pauses the
+prepare instead of cutting the clip short. The same 15-minute worker refreshes
 page reactions and comments from the last 30 days, at most
 every six hours, including while automatic posting is off. Profile impressions,
 reactions, and comments are read when the analytics app is connected. That pass

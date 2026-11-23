@@ -1,17 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { LINKEDIN_BYTES_KEY, useLinkedIn } from "../../hooks/useLinkedIn";
 import { adminFetchJson, getAdminApiErrorMessage } from "../../lib/apiAdminClient";
 import { DRAFT_RECORD_ID } from "../../lib/expandedRecord";
-import { fitLinkedInImage } from "../../lib/fitLinkedInImage";
+import { fitLinkedInImage, linkedInUploadType } from "../../lib/fitLinkedInImage";
+import { VideoPrepareCancelled } from "../../lib/fitLinkedInVideo";
 import { formatDateTimeHKT } from "../../lib/formatDisplay";
 import {
   guardrails,
   hasBlockingGuardrail,
   hookText,
   IMAGE_SCENE_MAX,
-  LINKEDIN_IMAGE_ACCEPT,
+  LINKEDIN_POST_MEDIA_ACCEPT,
   isLinkedInPostUrl,
   linkedInShareUrl,
   linkedinDraftModel,
@@ -426,6 +427,8 @@ function PostEditor({
   } | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [fittingImage, setFittingImage] = useState(false);
+  const [fittingLabel, setFittingLabel] = useState("Resizing…");
+  const prepareRef = useRef<AbortController | null>(null);
   const linkedIn = useLinkedIn();
   const pictureId = post?.postId ?? "";
   const picture = pictureDraft?.id === pictureId ? pictureDraft : null;
@@ -527,7 +530,7 @@ function PostEditor({
               />
             </AdminField>
             {post ? (
-              <AdminField label="Picture" htmlFor={`${formId}-image`}>
+              <AdminField label="Picture or video" htmlFor={`${formId}-image`}>
                 {post.image?.status === "pending" ? <p className="small mb-2">Drawing…</p> : null}
                 {post.image?.status === "failed" ? (
                   <p className="small text-danger mb-2">{post.image.error || "The picture failed."}</p>
@@ -537,7 +540,7 @@ function PostEditor({
                   <PostPicture
                     postId={post.postId}
                     alt={post.image.caption || "Draft picture"}
-                    version={`${post.updatedAt ?? ""}:${post.image.status ?? ""}`}
+                    version={`${post.updatedAt ?? ""}:${post.image.status ?? ""}:${post.image.contentType ?? ""}`}
                   />
                 ) : null}
                 {settings.imagesEnabled ? (
@@ -629,15 +632,35 @@ function PostEditor({
                   id={`${formId}-image`}
                   className="form-control"
                   type="file"
-                  accept={LINKEDIN_IMAGE_ACCEPT}
+                  accept={LINKEDIN_POST_MEDIA_ACCEPT}
                   disabled={pictureBusy}
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     event.target.value = "";
                     if (!file || pictureBusy) return;
                     setLocalError(null);
+                    prepareRef.current?.abort();
+                    const controller = new AbortController();
+                    prepareRef.current = controller;
+                    const videoFile = linkedInUploadType(file) === "video";
+                    setFittingLabel(videoFile ? "Preparing… 0%" : "Resizing…");
                     setFittingImage(true);
-                    void fitLinkedInImage(file)
+                    void fitLinkedInImage(
+                      file,
+                      undefined,
+                      videoFile
+                        ? {
+                            signal: controller.signal,
+                            onProgress: (fraction) => {
+                              const percent = Math.min(99, Math.round(fraction * 100));
+                              setFittingLabel((current) => {
+                                const next = `Preparing… ${percent}%`;
+                                return current === next ? current : next;
+                              });
+                            },
+                          }
+                        : undefined,
+                    )
                       .then((fitted) =>
                         linkedIn.uploadImage.mutateAsync({
                           postId: post.postId,
@@ -646,16 +669,29 @@ function PostEditor({
                         }),
                       )
                       .catch((caught: unknown) => {
+                        if (controller.signal.aborted || caught instanceof VideoPrepareCancelled) return;
                         setLocalError(caught instanceof Error ? caught.message : "Could not attach the image.");
                       })
-                      .finally(() => setFittingImage(false));
+                      .finally(() => {
+                        if (prepareRef.current !== controller) return;
+                        prepareRef.current = null;
+                        setFittingImage(false);
+                      });
                   }}
                 />
                 {pictureBusy ? (
-                  <p className="small mb-1">{fittingImage ? "Resizing…" : "Uploading…"}</p>
+                  <p className="small mb-1">
+                    {fittingImage ? fittingLabel : "Uploading…"}
+                    {fittingImage && fittingLabel.startsWith("Preparing") ? (
+                      <button type="button" className="btn btn-link btn-sm px-2 py-0" onClick={() => prepareRef.current?.abort()}>
+                        Cancel
+                      </button>
+                    ) : null}
+                  </p>
                 ) : null}
                 <p className="form-text mb-0">
-                  PNG or JPEG. A larger photo is resized to stay under 1.5 MB.
+                  PNG or JPEG, resized to stay under 1.5 MB. A GIF stays a GIF, up to 3 MB. An MP4 under 3 MB is stored
+                  as itself. A video from the iPad is prepared as an MP4 under 3 MB, from 3 to 90 seconds.
                 </p>
                 {post.image?.contentType ? (
                   <button
@@ -663,7 +699,7 @@ function PostEditor({
                     className="btn btn-link btn-sm px-0"
                     onClick={() => void linkedIn.deleteImage.mutate(post.postId)}
                   >
-                    Remove image
+                    {post.image.contentType.startsWith("video/") ? "Remove video" : "Remove image"}
                   </button>
                 ) : null}
               </AdminField>
@@ -722,11 +758,9 @@ function PostPicture({ postId, alt, version }: { readonly postId: string; readon
     staleTime: Infinity,
   });
   if (!query.data) return null;
-  return (
-    <img
-      src={`data:${query.data.contentType};base64,${query.data.dataBase64}`}
-      alt={alt}
-      className="img-fluid border mb-2"
-    />
-  );
+  const src = `data:${query.data.contentType};base64,${query.data.dataBase64}`;
+  if (query.data.contentType.startsWith("video/")) {
+    return <video src={src} controls playsInline aria-label={alt} className="img-fluid border mb-2" />;
+  }
+  return <img src={src} alt={alt} className="img-fluid border mb-2" />;
 }

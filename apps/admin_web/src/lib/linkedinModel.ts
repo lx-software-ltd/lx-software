@@ -329,8 +329,22 @@ export const IMAGE_SCENE_MAX = 1200;
 export const IMAGE_BYTE_MAX = 1_500_000;
 /** Largest source photo the browser will decode before shrinking to `IMAGE_BYTE_MAX`. */
 export const IMAGE_SOURCE_BYTE_MAX = 25_000_000;
-/** Picker filter. `image/jpg` and HEIC still go through `fitLinkedInImage`, which stores PNG or JPEG. */
+/** Mirrors `GIF_BYTE_MAX` and `VIDEO_BYTE_MAX` in `linkedin_media.py`. */
+export const GIF_BYTE_MAX = 3_000_000;
+export const VIDEO_BYTE_MAX = 3_000_000;
+/** LinkedIn rejects a video under this size. */
+export const VIDEO_BYTE_MIN = 75_000;
+/** Largest camera video the browser will open before preparing an MP4. */
+export const VIDEO_SOURCE_BYTE_MAX = 80_000_000;
+export const VIDEO_DURATION_MIN_SECONDS = 3;
+/** A clip the browser re-encodes. A pass-through MP4 may be longer. */
+export const VIDEO_DURATION_MAX_SECONDS = 90;
+export const VIDEO_PASS_MAX_SECONDS = 30 * 60;
+/** Picker filter for a character photo. `image/jpg` and HEIC still go through `fitLinkedInImage`. */
 export const LINKEDIN_IMAGE_ACCEPT = "image/png,image/jpeg,image/heic,image/heif";
+/** Draft attachment. `video/*` and `.mov` are what an iPad photo library offers. */
+export const LINKEDIN_POST_MEDIA_ACCEPT =
+  "image/png,image/jpeg,image/heic,image/heif,image/gif,.gif,video/mp4,video/quicktime,video/*,.mp4,.mov,.m4v";
 
 /** Mirrors `DEFAULT_IMAGE_MODEL` and `RECOMMENDED_IMAGE_STYLE` in `linkedin_store.py`. */
 export const DEFAULT_IMAGE_MODEL = "bytedance-seed/seedream-4.5";
