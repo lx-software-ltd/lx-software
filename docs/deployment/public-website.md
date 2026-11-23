@@ -68,7 +68,7 @@ proprietorship. The legal entity facts are in [`docs/legal/README.md`](../legal/
 
 ## Lighthouse
 
-**Lighthouse Public Website** (`.github/workflows/lighthouse-public-website.yml`)
+**Lighthouse Public Website** (`.github/workflows/lighthouse-public-www.yml`)
 runs on pull requests that touch `apps/public_www/**`, every Monday, and on
 demand. It builds `apps/public_www` with the production variables, serves
 `dist/` locally, and runs Lighthouse CI against `/`,

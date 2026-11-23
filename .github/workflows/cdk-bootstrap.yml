@@ -21,11 +21,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        uses: lx-software-ltd/actions/setup-node@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
         with:
-          node-version: "26"
-          cache: "npm"
-          cache-dependency-path: backend/infrastructure/package-lock.json
+          cache: npm
+          working-directory: backend/infrastructure
+          install: "false"
 
       - name: Configure AWS credentials
         id: aws
