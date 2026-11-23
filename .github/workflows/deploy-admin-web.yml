@@ -39,14 +39,14 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@b40bb0725bf84f25a38641f6ca5ec6f4c2f14f98 # main 2026-11-23
+        uses: lx-software-ltd/actions/aws-oidc@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
 
       - name: Read admin SPA settings from the lxsoftware stack
         id: stack_outputs
-        uses: lx-software-ltd/actions/cfn-stack-outputs@b40bb0725bf84f25a38641f6ca5ec6f4c2f14f98 # main 2026-11-23
+        uses: lx-software-ltd/actions/cfn-stack-outputs@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
         with:
           stack: lxsoftware
           outputs: UserPoolClientId CognitoDomain AdminApiBaseUrl
@@ -92,7 +92,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: lx-software-ltd/actions
-          ref: e6be2629d7206b0d5c079662f364772bc816acc1
+          ref: ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f
           path: .actions-pin
 
       - name: Compare the dry run with the current deploy

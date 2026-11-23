@@ -37,7 +37,7 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@b40bb0725bf84f25a38641f6ca5ec6f4c2f14f98 # main 2026-11-23
+        uses: lx-software-ltd/actions/aws-oidc@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
@@ -99,7 +99,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: lx-software-ltd/actions
-          ref: e6be2629d7206b0d5c079662f364772bc816acc1
+          ref: ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f
           path: .actions-pin
 
       - name: Compare the dry run with the current deploy
@@ -275,6 +275,7 @@ jobs:
                   "lxsoftware-admin-web:AdminWebDomainName=admin.lx-software.com",
               ]
               return {
+                  "unprefixed-prefix": "lxsoftware-public-www:",
                   "groups": [
                       {
                           "stacks": ["lxsoftware-public-www"],
@@ -330,7 +331,10 @@ jobs:
           account = re.compile(r"\b\d{12}\b")
 
           def load(path):
-              text = Path(path).read_text(encoding="utf-8")
+              file = Path(path)
+              if not file.is_file():
+                  return []
+              text = file.read_text(encoding="utf-8")
               return [_json.loads(line) for line in text.splitlines() if line.strip()]
 
           def signature(argv):
@@ -374,6 +378,9 @@ jobs:
 
           current = [item for item in (signature(row) for row in load(os.environ["CURRENT"])) if item]
           action = [item for item in (signature(row) for row in load(os.environ["ACTION"])) if item]
+          if not action:
+              print("action produced no deploy commands", file=sys.stderr)
+              raise SystemExit(1)
           if not current or current != action:
               print("planned CDK changes differ", file=sys.stderr)
               for index in range(max(len(current), len(action))):
