@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import io
 import json
-from email.message import Message
 import os
 import unittest
 from datetime import datetime, timedelta, timezone
+from email.message import Message
 from typing import Any
 from unittest.mock import patch
 from urllib import error as urlerror

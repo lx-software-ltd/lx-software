@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import io
 import json
-from email.message import Message
 import os
 import unittest
 import urllib.error
 from datetime import datetime, timedelta, timezone
+from email.message import Message
 from unittest.mock import patch
 
 import board_catalog

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import base64
 import os
-from email.message import Message
 import unittest
 from datetime import datetime, timedelta, timezone
+from email.message import Message
 from typing import Any, Literal
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse

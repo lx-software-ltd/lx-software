@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import gzip
 import io
-from email.message import Message
 import json
 import os
 import unittest
 from datetime import datetime, timezone
+from email.message import Message
 from typing import Any
 from unittest.mock import patch
 from urllib import error as urlerror

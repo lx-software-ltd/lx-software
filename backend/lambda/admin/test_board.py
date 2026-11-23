@@ -8,7 +8,7 @@ import sys
 import types
 import unittest
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 
@@ -36,6 +36,7 @@ class _ConfigModule(types.ModuleType):
 
 
 class _BotocoreModule(types.ModuleType):
+    __path__: list[str]
     exceptions: _ExceptionsModule
     config: _ConfigModule
 
@@ -48,7 +49,7 @@ def _install_botocore_config_stub() -> None:
     if not isinstance(botocore, _BotocoreModule):
         botocore = _BotocoreModule("botocore")
         sys.modules["botocore"] = botocore
-    setattr(botocore, "__path__", [])
+    botocore.__path__ = []
     config = _ConfigModule("botocore.config")
     config.Config = _StubConfig
     botocore.config = config
@@ -72,7 +73,7 @@ def _install_stubs() -> None:
             if isinstance(exc_mod, _ExceptionsModule):
                 exc_mod.BotoCoreError = _StubBotoCoreError
             else:
-                setattr(exc_mod, "BotoCoreError", _StubBotoCoreError)
+                cast(Any, exc_mod).BotoCoreError = _StubBotoCoreError
     _install_botocore_config_stub()
 
 
