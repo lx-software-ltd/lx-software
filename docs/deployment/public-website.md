@@ -68,7 +68,7 @@ proprietorship. The legal entity facts are in [`docs/legal/README.md`](../legal/
 
 ## Lighthouse
 
-**Lighthouse Public Website** (`.github/workflows/lighthouse-public-website.yml`)
+**Lighthouse Public Website** (`.github/workflows/lighthouse-public-www.yml`)
 runs on pull requests that touch `apps/public_www/**`, every Monday, and on
 demand. It builds `apps/public_www` with the production variables, serves
 `dist/` locally, and runs Lighthouse CI against `/`,
@@ -333,12 +333,10 @@ is absent. Publish with
 DNS edit, and Zone Redirect Rules Edit, plus `CLOUDFLARE_ACCOUNT_ID`).
 `check` reads the rule, the Worker route, and the custom domain, then
 probes live URLs including a query string. `probe` only requests those
-URLs and needs no token. The Apex redirect probe workflow runs `probe`
-weekly and on pull requests that touch the publisher. A star
-destination fails `check`. Account-owned tokens cannot call Page Rules
-(error `1011`). A browser that cached the old star redirect still
-requests the literal star path on `www`; the public site router opens
-the home page for that path. Tiered Cache is off.
+URLs and needs no token. A star destination fails `check`. Account-owned
+tokens cannot call Page Rules (error `1011`). A browser that cached the
+old star redirect still requests the literal star path on `www`; the
+public site router opens the home page for that path. Tiered Cache is off.
 The media hostname is already caching from the object `Cache-Control`,
 so an extra cache rule is optional.
 

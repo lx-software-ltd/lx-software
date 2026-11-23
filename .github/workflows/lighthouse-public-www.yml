@@ -10,7 +10,7 @@ on:
   pull_request:
     paths:
       - 'apps/public_www/**'
-      - '.github/workflows/lighthouse-public-website.yml'
+      - '.github/workflows/lighthouse-public-www.yml'
   schedule:
     - cron: '15 6 * * 1'
 
@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: lighthouse-public-website-${{ github.ref }}
+  group: lighthouse-public-www-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

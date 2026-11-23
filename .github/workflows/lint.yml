@@ -24,8 +24,8 @@ on:
       - "pyproject.toml"
 
 jobs:
-  lint-web:
-    name: Lint Public Website
+  lint-public-www:
+    name: Lint Public Www
     runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
@@ -174,7 +174,7 @@ jobs:
     name: lint
     runs-on: ubuntu-26.04
     needs:
-      - lint-web
+      - lint-public-www
       - lint-admin-web
       - build-cdk
       - lint-python
