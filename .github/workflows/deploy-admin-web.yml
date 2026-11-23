@@ -30,14 +30,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - name: Set up Node.js
+        uses: lx-software-ltd/actions/setup-node@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
         with:
-          node-version: "26"
-          cache: "npm"
-          cache-dependency-path: apps/admin_web/package-lock.json
-
-      - run: npm ci
-        working-directory: apps/admin_web
+          cache: npm
+          working-directory: apps/admin_web
 
       - name: Configure AWS credentials
         id: aws
