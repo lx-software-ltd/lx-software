@@ -42,6 +42,7 @@ class LinkedInApiError(RuntimeError):
         super().__init__(message)
         self.status = status
         self.counts_attempt = counts_attempt
+        self.defer = False
 
 
 def set_transport_for_tests(fn) -> None:

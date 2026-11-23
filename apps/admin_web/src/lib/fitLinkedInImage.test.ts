@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { IMAGE_BYTE_MAX, IMAGE_SOURCE_BYTE_MAX } from "./linkedinModel";
+import { GIF_BYTE_MAX, IMAGE_BYTE_MAX, IMAGE_SOURCE_BYTE_MAX, VIDEO_BYTE_MIN } from "./linkedinModel";
 import {
   downsampleSteps,
   fitLinkedInImage,
@@ -54,9 +54,38 @@ describe("fitLinkedInImage", () => {
     expect(atob(result.dataBase64).length).toBe(200);
   });
 
-  it("rejects a file that is not a PNG or JPEG", async () => {
+  it("rejects a file that is not a picture, a GIF, or a video", async () => {
     const file = new File([new Uint8Array(10)], "notes.txt", { type: "text/plain" });
-    await expect(fitLinkedInImage(file)).rejects.toThrow("Use a PNG or JPEG image.");
+    await expect(fitLinkedInImage(file)).rejects.toThrow("Use a PNG, JPEG, GIF, or MP4 video.");
+  });
+
+  it("stores a GIF without turning it into a JPEG", async () => {
+    const bytes = new Uint8Array(32);
+    bytes.set(Array.from("GIF89a").map((char) => char.charCodeAt(0)));
+    const file = new File([bytes], "clip.gif", { type: "" });
+    const result = await fitLinkedInImage(file);
+    expect(result.contentType).toBe("image/gif");
+    expect(atob(result.dataBase64).startsWith("GIF89a")).toBe(true);
+  });
+
+  it("rejects a GIF over 3 MB instead of flattening it", async () => {
+    const bytes = new Uint8Array(GIF_BYTE_MAX + 1);
+    bytes.set(Array.from("GIF89a").map((char) => char.charCodeAt(0)));
+    const file = new File([bytes], "wide.gif", { type: "image/gif" });
+    await expect(fitLinkedInImage(file)).rejects.toThrow("under 3 MB");
+  });
+
+  it("prepares an iPad movie that has no MIME type", async () => {
+    const prepared = new Uint8Array(VIDEO_BYTE_MIN);
+    prepared.set([0x66, 0x74, 0x79, 0x70], 4);
+    prepared.set(Array.from("mp42").map((char) => char.charCodeAt(0)), 8);
+    const file = new File([new Uint8Array(120)], "IMG_1234.MOV", { type: "" });
+    const result = await fitLinkedInImage(file, undefined, {
+      durationSeconds: async () => 5,
+      transcode: async () => new Blob([prepared], { type: "video/mp4" }),
+    });
+    expect(result.contentType).toBe("video/mp4");
+    expect(atob(result.dataBase64).length).toBe(VIDEO_BYTE_MIN);
   });
 
   it("rejects an empty file", async () => {

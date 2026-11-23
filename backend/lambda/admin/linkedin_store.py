@@ -1388,7 +1388,6 @@ def set_connection_target(table: Any, channel: str, organization_id: str) -> dic
 
 _IMAGE_MEMORY: dict[str, tuple[str, bytes]] = {}
 _CHARACTER_MEMORY: dict[str, tuple[str, bytes]] = {}
-_IMAGE_MAX = IMAGE_BYTE_MAX
 
 
 def public_image(image: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -1510,14 +1509,9 @@ def _image_key(post_id: str) -> str:
 
 
 def _check_image(content_type: str, data: bytes) -> None:
-    if content_type not in ("image/png", "image/jpeg"):
-        raise LinkedInError("Use a PNG or JPEG image.")
-    if not data or len(data) > _IMAGE_MAX:
-        raise LinkedInError("The image must be under 1.5 MB.")
-    if content_type == "image/png" and not data.startswith(b"\x89PNG"):
-        raise LinkedInError("That file is not a PNG.")
-    if content_type == "image/jpeg" and not data.startswith(b"\xff\xd8"):
-        raise LinkedInError("That file is not a JPEG.")
+    from linkedin_media import check_picture
+
+    check_picture(content_type, data)
 
 
 def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) -> dict[str, Any]:
@@ -1526,7 +1520,9 @@ def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) ->
         raise LinkedInError("post not found")
     if str(doc.get("status") or "") in ("published", "archived"):
         raise LinkedInError("That post can no longer be edited.")
-    _check_image(content_type, data)
+    from linkedin_media import check_post_media
+
+    check_post_media(content_type, data)
     bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
     if bucket:
         import boto3
@@ -1546,6 +1542,7 @@ def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) ->
         "bytes": len(data),
         "status": "ready",
         "error": "",
+        "mediaUrn": "",
     }
     return put_post(table, doc)
 
@@ -1727,7 +1724,7 @@ def choose_character(table: Any, candidate_id: str) -> dict[str, Any]:
 
 
 def posts_ready_to_publish(table: Any, *, now_iso: str | None = None) -> list[dict[str, Any]]:
-    """The oldest approved slot still inside the grace window. One post per tick."""
+    """Approved slots inside the grace window, oldest first. The caller posts one."""
     now = _parse_slot(now_iso or board_store.now_iso()) or _as_hkt()
     ready: list[dict[str, Any]] = []
     for row in list_posts(table, status="approved"):
@@ -1737,7 +1734,7 @@ def posts_ready_to_publish(table: Any, *, now_iso: str | None = None) -> list[di
             continue
         ready.append(row)
     ready.sort(key=lambda doc: str(doc.get("slotAt") or ""))
-    return ready[:1]
+    return ready
 
 
 def posts_given_up(table: Any) -> list[dict[str, Any]]:

@@ -22,6 +22,7 @@ import linkedin_image
 import linkedin_metrics
 import linkedin_plan
 import linkedin_store
+import linkedin_video
 from http_common import _audit, _json_response, _log_event, _parse_json_body
 from linkedin_api import LinkedInApiError
 from linkedin_store import HKT, LinkedInError
@@ -793,12 +794,6 @@ def _access_token(table: Any, connection: dict[str, Any]) -> str:
     return access
 
 
-def _counts_attempt(exc: BaseException) -> bool:
-    if isinstance(exc, LinkedInApiError):
-        return exc.counts_attempt
-    return True
-
-
 def _reconnect_error(message: str) -> bool:
     text = message.lower()
     return any(
@@ -825,18 +820,7 @@ def publish_one(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     urn = str(platform.get("urn") or "")
     skipped_picture = False
     if not urn:
-        image_meta = _g if isinstance(_g := doc.get("image"), dict) else None
-        image_urn = ""
-        alt_text = ""
-        chosen = linkedin_store.publishable_image(image_meta)
-        if chosen:
-            loaded = linkedin_store.load_post_image(str(doc["postId"]))
-            if not loaded:
-                raise LinkedInApiError("The attached image could not be loaded.")
-            image_urn = linkedin_api.upload_image(token, author, loaded[1])
-            alt_text = linkedin_store.caption_alt(str(chosen.get("caption") or ""))
-        elif image_meta and str(image_meta.get("status") or "") in ("pending", "failed"):
-            skipped_picture = True
+        image_urn, alt_text, skipped_picture = linkedin_video.attachment_for_publish(table, doc, token, author)
         urn = linkedin_api.create_post(token, author, text, image_urn=image_urn, alt_text=alt_text)
         doc = linkedin_store.remember_publish_urn(table, str(doc["postId"]), urn)
     channel = "page" if connection.get("channel") == "page" else "profile"
@@ -870,22 +854,12 @@ def handle_publish_due(event: dict[str, Any] | None = None) -> dict[str, Any]:
             publish = "not_connected"
         else:
             publish = "posted"
-            for row in linkedin_store.posts_ready_to_publish(table):
-                post_id = str(row.get("postId") or "")
-                try:
-                    publish_one(table, row)
-                    published += 1
-                except Exception as exc:  # noqa: BLE001 — one failure must not skip the rest of the tick
-                    _log_event("warning", tag="linkedin_publish_failed", error=str(exc)[:240])
-                    try:
-                        linkedin_store.record_publish_failure(
-                            table,
-                            post_id,
-                            str(exc),
-                            count_attempt=_counts_attempt(exc),
-                        )
-                    except LinkedInError:
-                        _log_event("warning", tag="linkedin_publish_failed", error="post not found")
+            published += linkedin_video.publish_ready(
+                table,
+                publish_one,
+                record_failure=linkedin_store.record_publish_failure,
+                log=lambda message: _log_event("warning", tag="linkedin_publish_failed", error=message),
+            )
     settings = linkedin_store.load_settings(table)
     address = str(settings.get("notifyEmail") or "")
     reminded = 0

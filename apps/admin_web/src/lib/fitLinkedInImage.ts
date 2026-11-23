@@ -1,7 +1,8 @@
-import { IMAGE_BYTE_MAX, IMAGE_SOURCE_BYTE_MAX } from "./linkedinModel";
+import { prepareLinkedInVideo, type VideoPrepare } from "./fitLinkedInVideo";
+import { GIF_BYTE_MAX, IMAGE_BYTE_MAX, IMAGE_SOURCE_BYTE_MAX } from "./linkedinModel";
 
 export type LinkedInImageUpload = {
-  contentType: "image/png" | "image/jpeg";
+  contentType: "image/png" | "image/jpeg" | "image/gif" | "video/mp4";
   dataBase64: string;
 };
 
@@ -12,7 +13,7 @@ export type JpegFrame = {
 };
 
 type CanvasPainter = Pick<CanvasRenderingContext2D, "fillStyle" | "fillRect" | "drawImage">;
-type UploadKind = "image/png" | "image/jpeg" | "image/heic";
+type UploadKind = "image/png" | "image/jpeg" | "image/heic" | "image/gif" | "video";
 
 const MAX_EDGE = 1600;
 const MIN_EDGE = 320;
@@ -26,6 +27,8 @@ export function linkedInUploadType(file: File): UploadKind | null {
   if (type === "image/png") return "image/png";
   if (type === "image/jpeg" || type === "image/jpg" || type === "image/pjpeg") return "image/jpeg";
   if (type === "image/heic" || type === "image/heif") return "image/heic";
+  if (type === "image/gif") return "image/gif";
+  if (type.startsWith("video/")) return "video";
   if (type === "" || type === "application/octet-stream") return kindFromName(file.name);
   return null;
 }
@@ -33,10 +36,13 @@ export function linkedInUploadType(file: File): UploadKind | null {
 export async function fitLinkedInImage(
   file: File,
   shrink: (file: File) => Promise<LinkedInImageUpload> = shrinkLinkedInImage,
+  video?: VideoPrepare,
 ): Promise<LinkedInImageUpload> {
   const kind = linkedInUploadType(file);
+  if (kind === "image/gif") return fitGif(file);
+  if (kind === "video") return prepareLinkedInVideo(file, video);
   if (kind !== "image/png" && kind !== "image/jpeg" && kind !== "image/heic") {
-    throw new Error("Use a PNG or JPEG image.");
+    throw new Error("Use a PNG, JPEG, GIF, or MP4 video.");
   }
   if (!file.size) {
     throw new Error("The image is empty.");
@@ -193,11 +199,24 @@ export async function shrinkLinkedInImage(file: File, frame?: JpegFrame): Promis
   }
 }
 
+async function fitGif(file: File): Promise<LinkedInImageUpload> {
+  if (!file.size) throw new Error("The image is empty.");
+  if (file.size > GIF_BYTE_MAX) throw new Error("That GIF must be under 3 MB.");
+  const header = new Uint8Array(await file.slice(0, 6).arrayBuffer());
+  const text = String.fromCharCode(...header);
+  if (text !== "GIF87a" && text !== "GIF89a") throw new Error("That file is not a GIF.");
+  return { contentType: "image/gif", dataBase64: await readFileAsBase64(file) };
+}
+
 function kindFromName(name: string): UploadKind | null {
   const lower = name.toLowerCase();
   if (lower.endsWith(".png")) return "image/png";
   if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
   if (lower.endsWith(".heic") || lower.endsWith(".heif")) return "image/heic";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".m4v") || lower.endsWith(".qt")) {
+    return "video";
+  }
   return null;
 }
 

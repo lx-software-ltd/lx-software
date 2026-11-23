@@ -192,27 +192,25 @@ def queue_for_post(
 def _held_picture(current: dict[str, Any]) -> dict[str, Any] | None:
     """The ready panel a redraw must keep until the new one is saved."""
     if str(current.get("status") or "") == "ready" and current.get("contentType"):
-        return {
-            "status": "ready",
-            "scene": str(current.get("scene") or ""),
-            "caption": str(current.get("caption") or ""),
-            "expression": str(current.get("expression") or ""),
-            "contentType": str(current.get("contentType") or ""),
-            "bytes": int(current.get("bytes") or 0),
-            "model": str(current.get("model") or ""),
-        }
+        return _held_copy(current)
     previous = current.get("held")
     if isinstance(previous, dict) and previous.get("contentType"):
-        return {
-            "status": "ready",
-            "scene": str(previous.get("scene") or ""),
-            "caption": str(previous.get("caption") or ""),
-            "expression": str(previous.get("expression") or ""),
-            "contentType": str(previous.get("contentType") or ""),
-            "bytes": int(previous.get("bytes") or 0),
-            "model": str(previous.get("model") or ""),
-        }
+        return _held_copy(previous)
     return None
+
+
+def _held_copy(source: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": "ready",
+        "scene": str(source.get("scene") or ""),
+        "caption": str(source.get("caption") or ""),
+        "expression": str(source.get("expression") or ""),
+        "contentType": str(source.get("contentType") or ""),
+        "bytes": int(source.get("bytes") or 0),
+        "model": str(source.get("model") or ""),
+        "mediaUrn": str(source.get("mediaUrn") or ""),
+        "mediaOwner": str(source.get("mediaOwner") or ""),
+    }
 
 
 def picture_text(
@@ -250,9 +248,7 @@ def picture_text(
                 _log_event("warning", tag="linkedin_image_usage_failed", error=str(exc)[:200])
         scene = scene or str(written.get("imageScene") or "").strip() or fallback_scene(body)
         expression = (
-            expression
-            or str(written.get("imageExpression") or "").strip()
-            or linkedin_store.FALLBACK_IMAGE_EXPRESSION
+            expression or str(written.get("imageExpression") or "").strip() or linkedin_store.FALLBACK_IMAGE_EXPRESSION
         )
         caption = caption or linkedin_store.finish_caption(
             str(written.get("imageCaption") or "") or linkedin_store.FALLBACK_IMAGE_CAPTION
@@ -337,7 +333,11 @@ def write_brief(
     expression = str(written.get("imageExpression") or "").strip()
     caption = linkedin_store.finish_caption(str(written.get("imageCaption") or ""))
     if not (scene and caption):
-        _mark(table, post_id, brief={"status": "failed", "error": "The model did not return a scene and a caption. Try again."})
+        _mark(
+            table,
+            post_id,
+            brief={"status": "failed", "error": "The model did not return a scene and a caption. Try again."},
+        )
         return {"ok": False, "error": "incomplete"}
     _mark(
         table,
