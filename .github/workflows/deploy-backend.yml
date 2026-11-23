@@ -39,7 +39,7 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@82f7f9b4cd0d304e9ebcf6aac28c7fc123b9feb0 # main 2026-11-23
+        uses: lx-software-ltd/actions/aws-oidc@7d93bef212616595c866a76b03862eb72abbb746 # main 2026-11-23
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
@@ -68,7 +68,7 @@ jobs:
           platforms: arm64
 
       - name: Check CDK bootstrap
-        uses: lx-software-ltd/actions/cdk-bootstrap-check@82f7f9b4cd0d304e9ebcf6aac28c7fc123b9feb0 # main 2026-11-23
+        uses: lx-software-ltd/actions/cdk-bootstrap-check@7d93bef212616595c866a76b03862eb72abbb746 # main 2026-11-23
         with:
           qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
           region: ${{ vars.AWS_REGION }}
@@ -86,7 +86,7 @@ jobs:
           if [ -n "$P_EMAIL_ALLOWLIST" ]; then echo "::add-mask::$P_EMAIL_ALLOWLIST"; fi
 
       - name: Deploy CDK stacks
-        uses: lx-software-ltd/actions/cdk-deploy@82f7f9b4cd0d304e9ebcf6aac28c7fc123b9feb0 # main 2026-11-23
+        uses: lx-software-ltd/actions/cdk-deploy@7d93bef212616595c866a76b03862eb72abbb746 # main 2026-11-23
         with:
           working-directory: backend/infrastructure
           plan-file: backend/infrastructure/cdk-plan.json

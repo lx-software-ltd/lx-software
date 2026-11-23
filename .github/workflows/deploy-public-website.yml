@@ -59,14 +59,14 @@ jobs:
       # After the build. npm ci and the build must not see the deploy role.
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@82f7f9b4cd0d304e9ebcf6aac28c7fc123b9feb0 # main 2026-11-23
+        uses: lx-software-ltd/actions/aws-oidc@7d93bef212616595c866a76b03862eb72abbb746 # main 2026-11-23
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
 
       - name: Deploy public website
         if: steps.aws.outputs.ready == 'true'
-        uses: lx-software-ltd/actions/s3-cloudfront-deploy@82f7f9b4cd0d304e9ebcf6aac28c7fc123b9feb0 # main 2026-11-23
+        uses: lx-software-ltd/actions/s3-cloudfront-deploy@7d93bef212616595c866a76b03862eb72abbb746 # main 2026-11-23
         with:
           source: apps/public_www/dist
           stack: ${{ vars.PUBLIC_WEBSITE_STACK_NAME || 'lxsoftware-public-www' }}
