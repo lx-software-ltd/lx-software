@@ -21,7 +21,7 @@ that CDK uses to deploy stacks.
 2. Click **Run workflow**
 3. Select the branch and click **Run workflow**
 
-The workflow uses the `AWS_ACCOUNT_ID` and `AWS_REGION` repository variables.
+The workflow uses the `AWS_ACCOUNT_ID` repository secret and the `AWS_REGION` repository variable.
 
 ### Bootstrap locally
 
