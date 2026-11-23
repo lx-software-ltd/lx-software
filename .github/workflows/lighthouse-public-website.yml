@@ -25,10 +25,7 @@ concurrency:
 jobs:
   lighthouse:
     name: Lighthouse audit
-    # Dependabot cannot use the production environment, so the job fails
-    # before any step. The pull request author is what matters: a later
-    # push to that branch is not made by the Dependabot actor.
-    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-26.04
     # The VITE_* build variables live on the production environment, the same
     # ones Deploy Public Website reads, so the audited bundle matches the live site.
@@ -36,7 +33,90 @@ jobs:
     # still carries VITE_GTM_ID, but the runs no longer count as sessions on the
     # production GA4 property (three runs per page per workflow used to show up
     # as US "direct" traffic on /privacy, /terms and /wechat).
+    # production allows only main. A pull_request ref is refs/pull/N/merge, so
+    # this job does not run for a pull request. The pull-request job below
+    # audits without that environment.
     environment: production
+    timeout-minutes: 40
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: lx-software-ltd/actions/setup-node@b40bb0725bf84f25a38641f6ca5ec6f4c2f14f98 # main 2026-11-23
+        with:
+          cache: npm
+          working-directory: apps/public_www
+
+      - name: Build public website
+        working-directory: apps/public_www
+        env:
+          VITE_MEDIA_BASE_URL: ${{ vars.VITE_MEDIA_BASE_URL }}
+          VITE_CONTACT_TEL: ${{ vars.VITE_CONTACT_TEL }}
+          VITE_CONTACT_WHATSAPP: ${{ vars.VITE_CONTACT_WHATSAPP }}
+          VITE_CONTACT_EMAIL: ${{ vars.VITE_CONTACT_EMAIL }}
+          VITE_CONTACT_WECHAT_ID: ${{ vars.VITE_CONTACT_WECHAT_ID }}
+          VITE_CONTACT_LINKEDIN: ${{ vars.VITE_CONTACT_LINKEDIN }}
+          VITE_GTM_ID: ${{ vars.VITE_GTM_ID }}
+        run: npm run build
+
+      - name: Run Lighthouse CI
+        working-directory: apps/public_www
+        env:
+          LIGHTHOUSE_PAGE_PATHS: ${{ inputs.page_paths }}
+          LHCI_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+
+          const baseConfigPath = path.resolve('.lighthouserc.json');
+          const runtimeConfigPath = path.resolve('.lighthouserc.runtime.json');
+          const rawInput = (process.env.LIGHTHOUSE_PAGE_PATHS ?? '').trim();
+          const defaultTargets = ['/', '/fractional-cto-hong-kong', '/about', '/privacy', '/terms', '/wechat'];
+          const requestedTargets = (rawInput ? rawInput.split(/[\n,]+/) : defaultTargets)
+            .map((value) => value.trim())
+            .filter(Boolean);
+
+          const normalizedUrls = requestedTargets.map((target) => {
+            if (/^https?:\/\//i.test(target)) {
+              return target;
+            }
+            const normalizedPath = target.startsWith('/') ? target : `/${target}`;
+            return `http://localhost:9000${normalizedPath}`;
+          });
+
+          const config = JSON.parse(fs.readFileSync(baseConfigPath, 'utf8'));
+          config.ci = config.ci ?? {};
+          config.ci.collect = config.ci.collect ?? {};
+          config.ci.collect.url = normalizedUrls;
+          fs.writeFileSync(runtimeConfigPath, `${JSON.stringify(config, null, 2)}\n`);
+          console.log('Lighthouse targets:');
+          for (const url of normalizedUrls) {
+            console.log(`- ${url}`);
+          }
+          NODE
+
+          npx --yes @lhci/cli autorun --config=.lighthouserc.runtime.json
+
+      - name: Upload Lighthouse artifacts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: lighthouse-public-www-results
+          path: apps/public_www/.lighthouseci/**
+          if-no-files-found: warn
+          include-hidden-files: true
+
+  lighthouse-pull-request:
+    name: Lighthouse audit
+    # Dependabot cannot read the production variables. The pull request
+    # author is what matters: a later push to that branch is not made by
+    # the Dependabot actor. This job does not select production: that
+    # environment allows only main, and the pull request ref is rejected
+    # before any step.
+    if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-26.04
     timeout-minutes: 40
     steps:
       - name: Checkout repository
