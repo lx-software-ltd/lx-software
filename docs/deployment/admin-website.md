@@ -166,17 +166,15 @@ console; CDK owns them from `AdminWebDomainName` and overwrites drift.
 
 ## 4. Deploy the admin SPA
 
-Run **Deploy Admin Web** (on `main` when `apps/admin_web/**` or
-`scripts/deploy/deploy-admin-www.sh` change, after a successful **Deploy
-Backend** on `main`, or manually). It builds
+Run **Deploy Admin Web** (on `main` when `apps/admin_web/**`,
+`scripts/deploy/deploy-admin-www.sh`, or this workflow change, after a
+successful **Deploy Backend** on `main`, or manually). It builds
 `apps/admin_web` with production `VITE_*` values, then
-`scripts/deploy/deploy-admin-www.sh` uploads hashed `dist/assets/**` with a
-long immutable cache, uploads `index.html` with `no-cache` and invalidates
-CloudFront. Before that upload, the workflow dry-runs `s3-cloudfront-deploy`
-with profile `admin-hashed` and compares the planned S3 changes. The
-comparison is `continue-on-error`, and the upload step stays the script. The script reads `AdminWebBucketName` and
-`AdminWebDistributionId` from the `lxsoftware-admin-web` outputs (override
-with `ADMIN_WEB_STACK_NAME`).
+`s3-cloudfront-deploy` with profile `admin-hashed` uploads hashed
+`dist/assets/**` with a long immutable cache, uploads `index.html` with
+`no-cache`, and invalidates CloudFront. The workflow reads
+`AdminWebBucketName` and `AdminWebDistributionId` from
+`lxsoftware-admin-web`. Root dotfiles are not uploaded.
 
 ## 5. Smoke tests
 
