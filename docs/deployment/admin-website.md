@@ -277,8 +277,8 @@ metadata (never the statements themselves) and query the admin tables:
       "Effect": "Allow",
       "Action": ["s3:ListBucket", "s3:GetObject"],
       "Resource": [
-        "arn:aws:s3:::lxsoftware-admin-assets-logs-588024549699-ap-southeast-1",
-        "arn:aws:s3:::lxsoftware-admin-assets-logs-588024549699-ap-southeast-1/*"
+        "arn:aws:s3:::lxsoftware-admin-assets-logs-<ACCOUNT_ID>-ap-southeast-1",
+        "arn:aws:s3:::lxsoftware-admin-assets-logs-<ACCOUNT_ID>-ap-southeast-1/*"
       ]
     },
     {
@@ -288,15 +288,15 @@ metadata (never the statements themselves) and query the admin tables:
         "s3:GetBucketCORS", "s3:GetBucketPolicy", "s3:GetBucketLocation",
         "s3:GetBucketVersioning", "s3:GetBucketLogging", "s3:GetEncryptionConfiguration"
       ],
-      "Resource": ["arn:aws:s3:::lxsoftware-admin-assets-588024549699-ap-southeast-1"]
+      "Resource": ["arn:aws:s3:::lxsoftware-admin-assets-<ACCOUNT_ID>-ap-southeast-1"]
     },
     {
       "Sid": "ReadAdminTables",
       "Effect": "Allow",
       "Action": ["dynamodb:GetItem", "dynamodb:Query", "dynamodb:DescribeTable"],
       "Resource": [
-        "arn:aws:dynamodb:ap-southeast-1:588024549699:table/lxsoftware-admin-audit-log",
-        "arn:aws:dynamodb:ap-southeast-1:588024549699:table/lxsoftware-admin-records"
+        "arn:aws:dynamodb:ap-southeast-1:<ACCOUNT_ID>:table/lxsoftware-admin-audit-log",
+        "arn:aws:dynamodb:ap-southeast-1:<ACCOUNT_ID>:table/lxsoftware-admin-records"
       ]
     },
     {
@@ -304,8 +304,8 @@ metadata (never the statements themselves) and query the admin tables:
       "Effect": "Allow",
       "Action": ["ses:GetEmailIdentity"],
       "Resource": [
-        "arn:aws:ses:ap-southeast-1:588024549699:identity/siutindei.com",
-        "arn:aws:ses:ap-southeast-1:588024549699:identity/partners.siutindei.com"
+        "arn:aws:ses:ap-southeast-1:<ACCOUNT_ID>:identity/siutindei.com",
+        "arn:aws:ses:ap-southeast-1:<ACCOUNT_ID>:identity/partners.siutindei.com"
       ]
     },
     {
@@ -313,8 +313,8 @@ metadata (never the statements themselves) and query the admin tables:
       "Effect": "Allow",
       "Action": ["ses:PutEmailIdentityDkimAttributes", "ses:PutEmailIdentityMailFromAttributes"],
       "Resource": [
-        "arn:aws:ses:ap-southeast-1:588024549699:identity/siutindei.com",
-        "arn:aws:ses:ap-southeast-1:588024549699:identity/partners.siutindei.com"
+        "arn:aws:ses:ap-southeast-1:<ACCOUNT_ID>:identity/siutindei.com",
+        "arn:aws:ses:ap-southeast-1:<ACCOUNT_ID>:identity/partners.siutindei.com"
       ]
     }
   ]
@@ -795,7 +795,7 @@ Download `.docx` is the Word file. View and Download PDF are a rendered copy (`f
 
 ### AWS bill (shared account)
 
-One AWS invoice for account `588024549699`. Cost allocation tags
+One AWS invoice for account `<ACCOUNT_ID>`. Cost allocation tags
 **Organization** and **Project** are active. Catalog:
 [`contracts/aws-billing.json`](../../contracts/aws-billing.json); first
 matching row wins:

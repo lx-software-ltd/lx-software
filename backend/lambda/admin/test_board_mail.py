@@ -406,9 +406,9 @@ class TestMailRoutes(MailTestCase):
         from botocore.exceptions import ClientError
 
         deny = (
-            "User: arn:aws:sts::588024549699:assumed-role/lxsoftware-AdminApiFnServiceRole3DBF280A-R5kCD57g90Z1/"
+            "User: arn:aws:sts::<ACCOUNT_ID>:assumed-role/lxsoftware-AdminApiFnServiceRole3DBF280A-R5kCD57g90Z1/"
             "lxsoftware-AdminApiFnA81506EE-Dtien8OG6FVk is not authorized to perform: ses:SendRawEmail on resource: "
-            "arn:aws:ses:ap-southeast-1:588024549699:identity/hello@siutindei.com because no identity-based policy "
+            "arn:aws:ses:ap-southeast-1:<ACCOUNT_ID>:identity/hello@siutindei.com because no identity-based policy "
             "allows the ses:SendRawEmail action"
         )
         self.ses.fail_with = ClientError({"Error": {"Code": "AccessDeniedException", "Message": deny}}, "SendEmail")
@@ -423,7 +423,7 @@ class TestMailRoutes(MailTestCase):
         self.assertIn("health", body)
         code, detail, resource = board_mail.describe_ses_error(self.ses.fail_with)
         self.assertEqual(code, "AccessDeniedException")
-        self.assertEqual(resource, "arn:aws:ses:ap-southeast-1:588024549699:identity/hello@siutindei.com")
+        self.assertEqual(resource, "arn:aws:ses:ap-southeast-1:<ACCOUNT_ID>:identity/hello@siutindei.com")
         self.assertIn("because no identity-based policy", detail)
 
         # No email claim: refused before SES is called.
