@@ -41,14 +41,14 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
+        uses: lx-software-ltd/actions/aws-oidc@385abf462c6d47a66afcb7cebc15152ffe7049e7 # main 2026-11-23
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
 
       - name: Read admin SPA settings from the lxsoftware stack
         id: stack_outputs
-        uses: lx-software-ltd/actions/cfn-stack-outputs@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
+        uses: lx-software-ltd/actions/cfn-stack-outputs@385abf462c6d47a66afcb7cebc15152ffe7049e7 # main 2026-11-23
         with:
           stack: lxsoftware
           outputs: UserPoolClientId CognitoDomain AdminApiBaseUrl
@@ -91,7 +91,7 @@ jobs:
 
       - name: Upload the admin site
         if: steps.aws.outputs.ready == 'true'
-        uses: lx-software-ltd/actions/s3-cloudfront-deploy@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
+        uses: lx-software-ltd/actions/s3-cloudfront-deploy@385abf462c6d47a66afcb7cebc15152ffe7049e7 # main 2026-11-23
         with:
           source: apps/admin_web/dist
           stack: lxsoftware-admin-web

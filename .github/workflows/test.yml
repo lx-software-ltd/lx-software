@@ -33,7 +33,7 @@ jobs:
         run: python3 scripts/check-contracts.py
 
       - name: Check hashed PII denylist
-        uses: lx-software-ltd/actions/pii-denylist@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
+        uses: lx-software-ltd/actions/pii-denylist@385abf462c6d47a66afcb7cebc15152ffe7049e7 # main 2026-11-23
 
       - name: Test OpenRouter key mint script
         run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
@@ -46,7 +46,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
+        uses: lx-software-ltd/actions/setup-node@385abf462c6d47a66afcb7cebc15152ffe7049e7 # main 2026-11-23
         with:
           cache: npm
           working-directory: apps/public_www
@@ -67,7 +67,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
+        uses: lx-software-ltd/actions/setup-node@385abf462c6d47a66afcb7cebc15152ffe7049e7 # main 2026-11-23
         with:
           cache: npm
           working-directory: apps/admin_web
@@ -101,13 +101,13 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
+        uses: lx-software-ltd/actions/setup-node@385abf462c6d47a66afcb7cebc15152ffe7049e7 # main 2026-11-23
         with:
           cache: npm
           working-directory: apps/admin_web
 
       - name: Install Playwright Chromium
-        uses: lx-software-ltd/actions/playwright-install@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
+        uses: lx-software-ltd/actions/playwright-install@385abf462c6d47a66afcb7cebc15152ffe7049e7 # main 2026-11-23
         with:
           working-directory: apps/admin_web
           browsers: chromium
@@ -124,7 +124,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
+        uses: lx-software-ltd/actions/setup-node@385abf462c6d47a66afcb7cebc15152ffe7049e7 # main 2026-11-23
         with:
           cache: npm
           working-directory: backend/infrastructure
@@ -153,6 +153,6 @@ jobs:
     if: always()
     steps:
       - name: Require every test job
-        uses: lx-software-ltd/actions/require-jobs@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
+        uses: lx-software-ltd/actions/require-jobs@385abf462c6d47a66afcb7cebc15152ffe7049e7 # main 2026-11-23
         with:
           needs-json: ${{ toJson(needs) }}

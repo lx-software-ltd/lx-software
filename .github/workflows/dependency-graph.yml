@@ -1,0 +1,27 @@
+name: Dependency graph
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    name: Submit dependency graph
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Submit pinned manifests
+        uses: lx-software-ltd/actions/dependency-graph@385abf462c6d47a66afcb7cebc15152ffe7049e7 # main 2026-11-23
+        with:
+          submit: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          token: ${{ github.token }}
