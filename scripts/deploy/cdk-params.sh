@@ -16,13 +16,44 @@ cdk_append_nonempty_param() {
   ADMIN_LX_PARAM_ARGS+=( --parameters "${key}=${trimmed}" )
 }
 
+cdk_resolve_placeholders() {
+  local src="$1"
+  local dest="$2"
+  python3 - "$src" "$dest" << 'PY'
+import json
+import os
+import re
+import sys
+
+secret = re.compile(r"^<FROM_GITHUB_SECRET:\s*([^>]+?)\s*>$")
+variable = re.compile(r"^<FROM_GITHUB_VAR:\s*([^>]+?)\s*>$")
+with open(sys.argv[1], encoding="utf-8") as handle:
+    data = json.load(handle)
+resolved = {}
+for key, value in data.items():
+    if isinstance(value, str):
+        match = secret.fullmatch(value.strip()) or variable.fullmatch(value.strip())
+        if match:
+            value = os.environ.get(match.group(1), "")
+    resolved[key] = value
+with open(sys.argv[2], "w", encoding="utf-8") as handle:
+    json.dump(resolved, handle)
+PY
+}
+
 cdk_load_param_args() {
   local resolved="$1"
-  local public_file admin_lx_file admin_web_file unknown
+  local public_file admin_lx_file admin_web_file unknown resolved_json
+  resolved_json="$(mktemp)"
+  if ! cdk_resolve_placeholders "$resolved" "$resolved_json"; then
+    rm -f "$resolved_json"
+    return 1
+  fi
+  resolved="$resolved_json"
   public_file="$(mktemp)"
   admin_lx_file="$(mktemp)"
   admin_web_file="$(mktemp)"
-  _cdk_params_cleanup() { rm -f "$public_file" "$admin_lx_file" "$admin_web_file"; }
+  _cdk_params_cleanup() { rm -f "$public_file" "$admin_lx_file" "$admin_web_file" "$resolved_json"; }
   unknown="$(jq -r 'to_entries[] | select(.value != null) | .value = (if .value | type == "string" then .value else (.value | tostring) end) | select(.value != "") | .key | select(test(":")) | select(test("^(lxsoftware:|lxsoftware-public-www:|lxsoftware-admin-web:)") | not)' "$resolved")"
   if [[ -n "$unknown" ]]; then
     echo "unknown parameter key prefix:" >&2

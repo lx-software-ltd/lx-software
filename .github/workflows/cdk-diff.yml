@@ -127,6 +127,9 @@ jobs:
         env:
           CDK_STACKS: ${{ inputs.stacks }}
           CDK_PARAM_FILE: ${{ vars.CDK_PARAM_FILE }}
+          CDK_PARAM_PUBLIC_WEBSITE_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_PUBLIC_WEBSITE_CERTIFICATE_ARN }}
+          CDK_PARAM_COGNITO_CUSTOM_DOMAIN_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_COGNITO_CUSTOM_DOMAIN_CERTIFICATE_ARN }}
+          CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN }}
 
       - name: Run CDK diff
         if: steps.prep.outputs.run == 'true'
