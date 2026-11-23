@@ -12,7 +12,7 @@ or WhatsApp empty to show "Not configured".
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `AWS_ACCOUNT_ID` | yes, to deploy | Target AWS account ID |
+| `AWS_ACCOUNT_ID` | yes, to deploy | Repository secret, not a variable. The workflow reads `secrets.AWS_ACCOUNT_ID`. |
 | `AWS_REGION` | yes, to deploy | Target AWS region |
 | `CDK_PARAM_FILE` | for CDK | Path to parameter file, e.g. `backend/infrastructure/params/production.json` |
 | `PUBLIC_WEBSITE_STACK_NAME` | no | Stack that owns the bucket and distribution. Default `lxsoftware-public-www` |

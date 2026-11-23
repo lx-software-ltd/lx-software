@@ -120,7 +120,7 @@ Variables:
 
 | Variable | Purpose |
 |----------|---------|
-| `AWS_ACCOUNT_ID`, `AWS_REGION` | Target account and region (must match where CDK Bootstrap ran). |
+| `AWS_REGION` | Target region (must match where CDK Bootstrap ran). |
 | `CDK_BOOTSTRAP_QUALIFIER` | Only if you did not use the default `hnb659fds`. |
 | `CDK_PARAM_FILE` | e.g. `backend/infrastructure/params/production.json` (`backend/infrastructure/params/README.md` lists the keys). |
 | `PUBLIC_WEBSITE_STACK_NAME` | Defaults to `lxsoftware-public-www`. |
@@ -137,6 +137,7 @@ Secrets:
 
 | Secret | Purpose |
 |--------|---------|
+| `AWS_ACCOUNT_ID` | Repository secret. Workflows read `secrets.AWS_ACCOUNT_ID`. A variable of the same name is not read. |
 | `ADMIN_GOOGLE_CLIENT_SECRET` | Google OAuth client secret (CDK `noEcho`). |
 | `ADMIN_FEDERATED_EMAIL_ALLOWLIST` | Comma-separated lower-case Google admin emails (CDK `noEcho`). **Deploy Backend** reads this production environment secret, publishes the public website stack, then stops before the admin stacks when any entry is empty or not an email address. See [`admin-website.md`](./admin-website.md). |
 | `SIUTINDEI_BOARD_META_VERIFY_TOKEN` | Meta webhook GET handshake (`SiutindeiBoardMetaVerifyToken`, CDK `noEcho`). Production environment secret. **Deploy Backend** passes it only when non-empty, so an unset secret never blanks the live token. Letters and digits, 40 or more. See [`admin-website.md`](./admin-website.md#board-meta-page-instagram-whatsapp). |

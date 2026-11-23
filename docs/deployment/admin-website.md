@@ -13,9 +13,10 @@ Executive Board design is in
 **Deploy Backend** runs on `main` when `backend/infrastructure/**`,
 `backend/lambda/**` or `contracts/**` change (or via **Run workflow**).
 
-1. **GitHub environment** `production` — variables `AWS_ACCOUNT_ID`,
-   `AWS_REGION`, optional `CDK_BOOTSTRAP_QUALIFIER`, `CDK_PARAM_FILE`,
-   and `ADMIN_GOOGLE_CLIENT_ID`. Secrets `ADMIN_GOOGLE_CLIENT_SECRET`,
+1. **GitHub environment** `production` — repository secret
+   `AWS_ACCOUNT_ID`. Variables `AWS_REGION`, optional
+   `CDK_BOOTSTRAP_QUALIFIER`, `CDK_PARAM_FILE`, and
+   `ADMIN_GOOGLE_CLIENT_ID`. Secrets `ADMIN_GOOGLE_CLIENT_SECRET`,
    `ADMIN_FEDERATED_EMAIL_ALLOWLIST` (comma-separated lower-case emails
    that receive `admin` via Pre Token Generation — every Google admin),
    and `SIUTINDEI_BOARD_META_VERIFY_TOKEN` (Meta webhook GET handshake;
