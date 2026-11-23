@@ -117,13 +117,10 @@ PUBLIC_WEBSITE_STACK_NAME=lxsoftware-public-www \
   bash scripts/deploy/deploy-public-website.sh
 ```
 
-The script reads the stack outputs `PublicWebsiteBucketName` and
-`PublicWebsiteDistributionId`.
-
-The workflow dry-runs that script with `INDEXNOW_DISABLED=1` and compares
-the planned S3 changes with `s3-cloudfront-deploy` profile `public-routes`
-before the real upload. The comparison is `continue-on-error`. The real
-step does not set `INDEXNOW_DISABLED`, so it still pings IndexNow.
+The workflow reads the stack outputs `PublicWebsiteBucketName` and
+`PublicWebsiteDistributionId`, then uploads with `s3-cloudfront-deploy`
+profile `public-routes` and `indexnow: true`. A manual run can still use
+the script above. The script reads the same two outputs.
 
 After the CloudFront invalidation the script submits every sitemap URL to
 [IndexNow](https://www.indexnow.org/) (Bing, Yandex, Naver, Seznam, Yep;
