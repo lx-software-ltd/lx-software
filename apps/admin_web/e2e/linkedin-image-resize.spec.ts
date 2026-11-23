@@ -157,7 +157,7 @@ test("the draft file input stores that fitted JPEG", async ({ page }, testInfo) 
     expect(sample.corner[0]).toBeGreaterThanOrEqual(240);
     expect(sample.corner[1]).toBeGreaterThanOrEqual(240);
     expect(sample.corner[2]).toBeGreaterThanOrEqual(240);
-    await expect(page.getByText("A larger photo is resized to stay under 1.5 MB.")).toBeVisible();
+    await expect(page.getByText("PNG or JPEG, resized to stay under 1.5 MB.")).toBeVisible();
     await img.scrollIntoViewIfNeeded();
     await page.screenshot({ path: "/opt/cursor/artifacts/draft-transparent-upload.png" });
   } finally {
