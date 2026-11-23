@@ -405,12 +405,13 @@ export function handleLinkedIn(ctx: MockCtx): Response | null {
   if (path.endsWith("/image") && method === "POST" && index >= 0) {
     const body = parseBody(ctx.init);
     const contentType = String(body.contentType ?? "");
-    if (contentType !== "image/png" && contentType !== "image/jpeg") {
-      return json({ message: "Use a PNG or JPEG image." }, 400);
+    if (!["image/png", "image/jpeg", "image/gif", "video/mp4"].includes(contentType)) {
+      return json({ message: "Use a PNG, JPEG, GIF, or MP4 video." }, 400);
     }
     state.linkedin.images[id] = { contentType, dataBase64: String(body.dataBase64 ?? "") };
     state.linkedin.posts[index] = {
       ...state.linkedin.posts[index],
+      updatedAt: new Date().toISOString(),
       image: { contentType, status: "ready", scene: "", caption: "", expression: "", error: "", model: "" },
     };
     return json({ item: state.linkedin.posts[index] });

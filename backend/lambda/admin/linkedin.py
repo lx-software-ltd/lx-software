@@ -22,6 +22,7 @@ import linkedin_image
 import linkedin_metrics
 import linkedin_plan
 import linkedin_store
+import linkedin_video
 from http_common import _audit, _json_response, _log_event, _parse_json_body
 from linkedin_api import LinkedInApiError
 from linkedin_store import HKT, LinkedInError
@@ -823,18 +824,7 @@ def publish_one(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     urn = str(platform.get("urn") or "")
     skipped_picture = False
     if not urn:
-        image_meta = doc.get("image") if isinstance(doc.get("image"), dict) else None
-        image_urn = ""
-        alt_text = ""
-        chosen = linkedin_store.publishable_image(image_meta)
-        if chosen:
-            loaded = linkedin_store.load_post_image(str(doc["postId"]))
-            if not loaded:
-                raise LinkedInApiError("The attached image could not be loaded.")
-            image_urn = linkedin_api.upload_image(token, author, loaded[1])
-            alt_text = linkedin_store.caption_alt(str(chosen.get("caption") or ""))
-        elif image_meta and str(image_meta.get("status") or "") in ("pending", "failed"):
-            skipped_picture = True
+        image_urn, alt_text, skipped_picture = linkedin_video.attachment_for_publish(table, doc, token, author)
         urn = linkedin_api.create_post(token, author, text, image_urn=image_urn, alt_text=alt_text)
         doc = linkedin_store.remember_publish_urn(table, str(doc["postId"]), urn)
     channel = "page" if connection.get("channel") == "page" else "profile"

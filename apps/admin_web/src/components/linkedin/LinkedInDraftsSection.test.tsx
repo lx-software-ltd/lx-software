@@ -4,7 +4,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { formatDateTimeHKT } from "../../lib/formatDisplay";
-import { DEFAULT_LINKEDIN_SETTINGS, IMAGE_SCENE_MAX, SAMPLE_LINKEDIN_POSTS, type LinkedInPost } from "../../lib/linkedinModel";
+import {
+  DEFAULT_LINKEDIN_SETTINGS,
+  IMAGE_SCENE_MAX,
+  LINKEDIN_POST_MEDIA_ACCEPT,
+  SAMPLE_LINKEDIN_POSTS,
+  type LinkedInPost,
+} from "../../lib/linkedinModel";
 import { LinkedInDraftsSection } from "./LinkedInDraftsSection";
 
 const { fitLinkedInImage, uploadImage, draftItems } = vi.hoisted(() => ({
@@ -161,7 +167,11 @@ describe("LinkedIn draft image upload", () => {
     renderDrafts("/?linkedin-post=li_hook");
 
     const input = screen.getByLabelText("Picture");
-    expect(input).toHaveAttribute("accept", "image/png,image/jpeg,image/heic,image/heif");
+    expect(input).toHaveAttribute("accept", LINKEDIN_POST_MEDIA_ACCEPT);
+    expect(LINKEDIN_POST_MEDIA_ACCEPT).toContain("image/gif");
+    expect(LINKEDIN_POST_MEDIA_ACCEPT).toContain("video/quicktime");
+    expect(LINKEDIN_POST_MEDIA_ACCEPT).toContain("video/*");
+    expect(screen.getByText(/A GIF stays a GIF/)).toBeInTheDocument();
     await user.upload(input, new File([new Uint8Array([1])], "large.jpg", { type: "image/jpeg" }));
 
     expect(await screen.findByText("Resizing…")).toBeInTheDocument();
@@ -172,6 +182,33 @@ describe("LinkedIn draft image upload", () => {
     await waitFor(() => expect(uploadImage.mutateAsync).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByText("Resizing…")).toBeNull());
     expect(input).toBeEnabled();
+  });
+
+  it("shows Preparing… while an iPad video is fitted", async () => {
+    const user = userEvent.setup();
+    let resolveFit: (value: { contentType: "video/mp4"; dataBase64: string }) => void = () => {};
+    fitLinkedInImage.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFit = resolve;
+        }),
+    );
+    uploadImage.mutateAsync.mockResolvedValue({});
+    renderDrafts("/?linkedin-post=li_hook");
+
+    const input = screen.getByLabelText("Picture");
+    await user.upload(input, new File([new Uint8Array([1])], "IMG_1234.MOV", { type: "" }));
+
+    expect(await screen.findByText("Preparing…")).toBeInTheDocument();
+    expect(screen.queryByText("Resizing…")).toBeNull();
+    resolveFit({ contentType: "video/mp4", dataBase64: "c2hydW5r" });
+    await waitFor(() =>
+      expect(uploadImage.mutateAsync).toHaveBeenCalledWith({
+        postId: "li_hook",
+        contentType: "video/mp4",
+        dataBase64: "c2hydW5r",
+      }),
+    );
   });
 
   it("disables the file input while the upload is in flight", () => {

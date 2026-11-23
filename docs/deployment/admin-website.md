@@ -748,9 +748,11 @@ standard app has no refresh token, so connect again before that time.
 When `LxSoftwareLinkedinPublishEnabled` is also `true` and a member is
 connected, one due approved draft is posted per tick through the Posts API,
 and only when the slot is less than three hours old. Older approved slots
-stay for the share box. The first comment is added, and a ready PNG or JPEG
+stay for the share box. The first comment is added, and a ready PNG, JPEG, or GIF
 attached on the draft is uploaded with it (the caption, without quotes, is
-the alt text). A picture that has never been ready does not hold
+the alt text). A ready MP4 is uploaded as a video. LinkedIn processes that
+video before the post can go out; a video that is still processing waits for
+a later tick and does not use up a publish attempt. A picture that has never been ready does not hold
 the slot: the post goes out as text. A redraw that is still pending or that
 failed publishes the previous ready picture instead. A comment failure leaves the post
 published. An image upload or API failure counts as a failed attempt (three tries,

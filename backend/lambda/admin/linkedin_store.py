@@ -1388,7 +1388,6 @@ def set_connection_target(table: Any, channel: str, organization_id: str) -> dic
 
 _IMAGE_MEMORY: dict[str, tuple[str, bytes]] = {}
 _CHARACTER_MEMORY: dict[str, tuple[str, bytes]] = {}
-_IMAGE_MAX = IMAGE_BYTE_MAX
 
 
 def public_image(image: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -1510,14 +1509,9 @@ def _image_key(post_id: str) -> str:
 
 
 def _check_image(content_type: str, data: bytes) -> None:
-    if content_type not in ("image/png", "image/jpeg"):
-        raise LinkedInError("Use a PNG or JPEG image.")
-    if not data or len(data) > _IMAGE_MAX:
-        raise LinkedInError("The image must be under 1.5 MB.")
-    if content_type == "image/png" and not data.startswith(b"\x89PNG"):
-        raise LinkedInError("That file is not a PNG.")
-    if content_type == "image/jpeg" and not data.startswith(b"\xff\xd8"):
-        raise LinkedInError("That file is not a JPEG.")
+    from linkedin_media import check_picture
+
+    check_picture(content_type, data)
 
 
 def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) -> dict[str, Any]:
@@ -1526,7 +1520,9 @@ def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) ->
         raise LinkedInError("post not found")
     if str(doc.get("status") or "") in ("published", "archived"):
         raise LinkedInError("That post can no longer be edited.")
-    _check_image(content_type, data)
+    from linkedin_media import check_post_media
+
+    check_post_media(content_type, data)
     bucket = (os.environ.get("ASSETS_BUCKET_NAME") or "").strip()
     if bucket:
         import boto3
@@ -1546,6 +1542,7 @@ def save_post_image(table: Any, post_id: str, content_type: str, data: bytes) ->
         "bytes": len(data),
         "status": "ready",
         "error": "",
+        "mediaUrn": "",
     }
     return put_post(table, doc)
 
