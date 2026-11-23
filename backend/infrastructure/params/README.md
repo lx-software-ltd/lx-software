@@ -49,7 +49,7 @@ Set the repository variable `CDK_PARAM_FILE` to the path you want CI to use
 
 Typical committed values include:
 
-- `PublicWebsiteDomainName`, `PublicWebsiteCertificateArn` (public site)
+- `PublicWebsiteDomainName` (public site). `PublicWebsiteCertificateArn` is `<FROM_GITHUB_SECRET: CDK_PARAM_PUBLIC_WEBSITE_CERTIFICATE_ARN>`.
 - **`lxsoftware:PublicApiWritesEnabled`** — production is `true` so Cloud Agent
   keys with `allowWrite` can POST/PUT/DELETE board routes. The CDK parameter
   default stays `false` (fail-closed) for new stacks. Finance `/public/*`
@@ -57,12 +57,12 @@ Typical committed values include:
   write denials return `403 {"reason": …}` (`writes_disabled`,
   `key_read_only`, `owner_only`, `scope`).
 - Optional Cognito custom Hosted UI on `lxsoftware`: `lxsoftware:CognitoCustomDomainName`
-  and `lxsoftware:CognitoCustomDomainCertificateArn` (ACM in **us-east-1**).
+  and `lxsoftware:CognitoCustomDomainCertificateArn` (`<FROM_GITHUB_SECRET: CDK_PARAM_COGNITO_CUSTOM_DOMAIN_CERTIFICATE_ARN>`, ACM in **us-east-1**).
   An empty value keeps the prefix domain. The template defaults are disabled
   placeholders (`disabled.example.com` and a certificate ARN in account
   `000000000000`) so CloudFormation Validate can resolve them; they select
-  the prefix domain too. `production.json` sets the real hostname and certificate.
-- **`lxsoftware-admin-web:AdminWebCertificateArn`** — ACM certificate in **us-east-1** for the admin CloudFront alias. Production uses the same certificate as the public site and the Cognito custom domain.
+  the prefix domain too. `production.json` sets the real hostname. The certificate is the secret placeholder.
+- **`lxsoftware-admin-web:AdminWebCertificateArn`** — `<FROM_GITHUB_SECRET: CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN>`, an ACM certificate in **us-east-1** for the admin CloudFront alias.
 - **`lxsoftware-admin-web:CspCognitoConnectOrigin`** — full HTTPS origin for Cognito OAuth
   in the admin CloudFront CSP `connect-src` (e.g. `https://auth.lx-software.com`), must
   match the effective Cognito Hosted UI URL

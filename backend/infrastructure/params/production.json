@@ -1,8 +1,8 @@
 {
   "PublicWebsiteDomainName": "www.lx-software.com",
-  "PublicWebsiteCertificateArn": "arn:aws:acm:us-east-1:588024549699:certificate/ea553e5a-e7af-43ba-bdd4-d46e2f8458aa",
+  "PublicWebsiteCertificateArn": "<FROM_GITHUB_SECRET: CDK_PARAM_PUBLIC_WEBSITE_CERTIFICATE_ARN>",
   "lxsoftware:CognitoCustomDomainName": "auth.lx-software.com",
-  "lxsoftware:CognitoCustomDomainCertificateArn": "arn:aws:acm:us-east-1:588024549699:certificate/ea553e5a-e7af-43ba-bdd4-d46e2f8458aa",
+  "lxsoftware:CognitoCustomDomainCertificateArn": "<FROM_GITHUB_SECRET: CDK_PARAM_COGNITO_CUSTOM_DOMAIN_CERTIFICATE_ARN>",
   "lxsoftware:OpenRouterApiKeySecretArn": "arn:aws:secretsmanager:ap-southeast-1:588024549699:secret:lxsoftware-admin-openrouter-api-secret-Hzerh6",
   "lxsoftware:SiutindeiBoardMailSendingEnabled": "true",
   "lxsoftware:SiutindeiBoardStaffEnabled": "true",
@@ -21,6 +21,6 @@
   "lxsoftware:SiutindeiBoardMetaAdAccountId": "1506380401671545",
   "lxsoftware:EvolvesproutsClusterArn": "arn:aws:rds:ap-southeast-1:588024549699:cluster:evolvesprouts-db-cluster",
   "lxsoftware:EvolvesproutsDbSecretName": "evolvesprouts-db-finance-readonly-credentials",
-  "lxsoftware-admin-web:AdminWebCertificateArn": "arn:aws:acm:us-east-1:588024549699:certificate/ea553e5a-e7af-43ba-bdd4-d46e2f8458aa",
+  "lxsoftware-admin-web:AdminWebCertificateArn": "<FROM_GITHUB_SECRET: CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN>",
   "lxsoftware-admin-web:CspCognitoConnectOrigin": "https://auth.lx-software.com"
 }
