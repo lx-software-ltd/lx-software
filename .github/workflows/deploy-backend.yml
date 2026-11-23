@@ -143,11 +143,6 @@ jobs:
           working-directory: backend/infrastructure
           plan: ${{ steps.plan.outputs.plan }}
           param-file: ${{ vars.CDK_PARAM_FILE }}
-          format: prefixed-json
-          attempts: "1"
-          no-notices: "false"
-          escape-newlines: "false"
-          rollback-match: is in UPDATE_ROLLBACK_FAILED state and can not be updated
           region: ${{ vars.AWS_REGION }}
         env:
           CDK_PARAM_FILE: ${{ vars.CDK_PARAM_FILE }}
