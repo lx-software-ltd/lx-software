@@ -39,7 +39,7 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
+        uses: lx-software-ltd/actions/aws-oidc@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
@@ -68,7 +68,7 @@ jobs:
           platforms: arm64
 
       - name: Check CDK bootstrap
-        uses: lx-software-ltd/actions/cdk-bootstrap-check@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
+        uses: lx-software-ltd/actions/cdk-bootstrap-check@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
         with:
           qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
           region: ${{ vars.AWS_REGION }}
@@ -77,71 +77,19 @@ jobs:
         working-directory: backend/infrastructure
         run: npx cdk acknowledge 34892 || true
 
-      - name: Build the CDK plan
-        id: plan
+      - name: Mask CDK plan secrets
         env:
-          P_GOOGLE_CLIENT_ID: ${{ vars.ADMIN_GOOGLE_CLIENT_ID }}
           P_GOOGLE_CLIENT_SECRET: ${{ secrets.ADMIN_GOOGLE_CLIENT_SECRET }}
           P_EMAIL_ALLOWLIST: ${{ secrets.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
         run: |
-          python3 - << 'PY'
-          import json as _json
-          import os
-          from pathlib import Path
-
-          def build_plan():
-              extra = [
-                  "--parameters",
-                  "lxsoftware:AdminWebDomainName=admin.lx-software.com",
-                  "--parameters",
-                  "lxsoftware:GoogleClientId=" + os.environ.get("P_GOOGLE_CLIENT_ID", ""),
-                  "--parameters",
-                  "lxsoftware:GoogleClientSecret=" + os.environ.get("P_GOOGLE_CLIENT_SECRET", ""),
-                  "--parameters",
-                  "lxsoftware:AdminFederatedEmailAllowlist=" + os.environ.get("P_EMAIL_ALLOWLIST", ""),
-                  "--parameters",
-                  "lxsoftware:CognitoDomainPrefix=lxsoftware-admin-auth",
-                  "--parameters",
-                  "lxsoftware-admin-web:AdminWebDomainName=admin.lx-software.com",
-              ]
-              return {
-                  "unprefixed-prefix": "lxsoftware-public-www:",
-                  "groups": [
-                      {
-                          "stacks": ["lxsoftware-public-www"],
-                          "prefixes": ["lxsoftware-public-www:"],
-                      },
-                      {
-                          "stacks": ["lxsoftware", "lxsoftware-admin-web"],
-                          "prefixes": ["lxsoftware:", "lxsoftware-admin-web:"],
-                          "allowlist-env": "P_EMAIL_ALLOWLIST",
-                          "append-if-set": [
-                              {
-                                  "parameter": "lxsoftware:SiutindeiBoardMetaVerifyToken",
-                                  "env": "P_META_VERIFY_TOKEN",
-                              }
-                          ],
-                          "extra-args": extra,
-                      },
-                  ],
-              }
-
-          plan = _json.dumps(build_plan())
-          for name in ("P_GOOGLE_CLIENT_SECRET", "P_EMAIL_ALLOWLIST"):
-              value = os.environ.get(name, "")
-              if value:
-                  print(f"::add-mask::{value}")
-          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as handle:
-              handle.write("plan<<PLANJSON\n")
-              handle.write(plan + "\n")
-              handle.write("PLANJSON\n")
-          PY
+          if [ -n "$P_GOOGLE_CLIENT_SECRET" ]; then echo "::add-mask::$P_GOOGLE_CLIENT_SECRET"; fi
+          if [ -n "$P_EMAIL_ALLOWLIST" ]; then echo "::add-mask::$P_EMAIL_ALLOWLIST"; fi
 
       - name: Deploy CDK stacks
-        uses: lx-software-ltd/actions/cdk-deploy@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
+        uses: lx-software-ltd/actions/cdk-deploy@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
         with:
           working-directory: backend/infrastructure
-          plan: ${{ steps.plan.outputs.plan }}
+          plan-file: backend/infrastructure/cdk-plan.json
           param-file: ${{ vars.CDK_PARAM_FILE }}
           region: ${{ vars.AWS_REGION }}
         env:

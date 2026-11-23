@@ -1,0 +1,34 @@
+{
+  "unprefixed-prefix": "lxsoftware-public-www:",
+  "groups": [
+    {
+      "stacks": ["lxsoftware-public-www"],
+      "prefixes": ["lxsoftware-public-www:"]
+    },
+    {
+      "stacks": ["lxsoftware", "lxsoftware-admin-web"],
+      "prefixes": ["lxsoftware:", "lxsoftware-admin-web:"],
+      "allowlist-env": "P_EMAIL_ALLOWLIST",
+      "append-if-set": [
+        {
+          "parameter": "lxsoftware:SiutindeiBoardMetaVerifyToken",
+          "env": "P_META_VERIFY_TOKEN"
+        }
+      ],
+      "extra-args": [
+        "--parameters",
+        "lxsoftware:AdminWebDomainName=admin.lx-software.com",
+        "--parameters",
+        "lxsoftware:GoogleClientId={P_GOOGLE_CLIENT_ID}",
+        "--parameters",
+        "lxsoftware:GoogleClientSecret={P_GOOGLE_CLIENT_SECRET}",
+        "--parameters",
+        "lxsoftware:AdminFederatedEmailAllowlist={P_EMAIL_ALLOWLIST}",
+        "--parameters",
+        "lxsoftware:CognitoDomainPrefix=lxsoftware-admin-auth",
+        "--parameters",
+        "lxsoftware-admin-web:AdminWebDomainName=admin.lx-software.com"
+      ]
+    }
+  ]
+}

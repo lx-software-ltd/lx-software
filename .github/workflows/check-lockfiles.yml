@@ -23,10 +23,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
+        uses: lx-software-ltd/actions/setup-node@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
 
       - name: Validate package-lock.json
-        uses: lx-software-ltd/actions/node-lockfiles@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
+        uses: lx-software-ltd/actions/node-lockfiles@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
         with:
           directories: |
             apps/public_www
@@ -41,7 +41,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check requirement pins
-        uses: lx-software-ltd/actions/python-requirements-pins@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
+        uses: lx-software-ltd/actions/python-requirements-pins@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
         with:
           files: |
             backend/lambda/admin/requirements.txt

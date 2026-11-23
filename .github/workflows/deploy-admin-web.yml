@@ -41,14 +41,14 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
+        uses: lx-software-ltd/actions/aws-oidc@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
 
       - name: Read admin SPA settings from the lxsoftware stack
         id: stack_outputs
-        uses: lx-software-ltd/actions/cfn-stack-outputs@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
+        uses: lx-software-ltd/actions/cfn-stack-outputs@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
         with:
           stack: lxsoftware
           outputs: UserPoolClientId CognitoDomain AdminApiBaseUrl
@@ -89,32 +89,14 @@ jobs:
           VITE_COGNITO_REDIRECT_URI: https://admin.lx-software.com/auth/callback
           VITE_API_BASE_URL: ${{ steps.admin_spa.outputs.api_url }}
 
-      - name: Read the admin website outputs
-        id: site
-        if: steps.aws.outputs.ready == 'true'
-        env:
-          AWS_REGION: ${{ vars.AWS_REGION }}
-        run: |
-          set -euo pipefail
-          stack=lxsoftware-admin-web
-          bucket="$(aws cloudformation describe-stacks --stack-name "$stack" --query "Stacks[0].Outputs[?OutputKey=='AdminWebBucketName'].OutputValue" --output text)"
-          distribution="$(aws cloudformation describe-stacks --stack-name "$stack" --query "Stacks[0].Outputs[?OutputKey=='AdminWebDistributionId'].OutputValue" --output text)"
-          if [ -z "$bucket" ] || [ "$bucket" = "None" ]; then
-            echo "Admin web bucket output not found for $stack" >&2
-            exit 1
-          fi
-          if [ "$distribution" = "None" ]; then
-            distribution=""
-          fi
-          echo "bucket=$bucket" >> "$GITHUB_OUTPUT"
-          echo "distribution=$distribution" >> "$GITHUB_OUTPUT"
-
       - name: Upload the admin site
         if: steps.aws.outputs.ready == 'true'
-        uses: lx-software-ltd/actions/s3-cloudfront-deploy@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
+        uses: lx-software-ltd/actions/s3-cloudfront-deploy@a1816561097c19870cc3a4af1407b6ac2caddfe6 # main 2026-11-23
         with:
           source: apps/admin_web/dist
-          bucket: ${{ steps.site.outputs.bucket }}
-          distribution-id: ${{ steps.site.outputs.distribution }}
+          stack: lxsoftware-admin-web
+          region: ${{ vars.AWS_REGION }}
+          bucket-output: AdminWebBucketName
+          distribution-output: AdminWebDistributionId
           profile: admin-hashed
           dry-run: "false"
