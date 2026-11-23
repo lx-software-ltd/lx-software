@@ -16,14 +16,16 @@ on:
 
 permissions:
   contents: read
-  statuses: write
 
 concurrency:
   group: lighthouse-public-website-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lighthouse:
+    permissions:
+      contents: read
+      statuses: write
     name: Lighthouse audit
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-26.04
@@ -109,6 +111,9 @@ jobs:
           include-hidden-files: true
 
   lighthouse-pull-request:
+    permissions:
+      contents: read
+      statuses: write
     name: Lighthouse audit
     # Dependabot cannot read the production variables. The pull request
     # author is what matters: a later push to that branch is not made by

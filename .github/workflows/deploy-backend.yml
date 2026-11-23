@@ -14,7 +14,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: deploy-backend
@@ -22,6 +21,9 @@ concurrency:
 
 jobs:
   deploy:
+    permissions:
+      contents: read
+      id-token: write
     runs-on: ubuntu-26.04
     environment: production
     steps:
@@ -65,35 +67,11 @@ jobs:
         with:
           platforms: arm64
 
-      - name: Check CDK Bootstrap status
-        run: |
-          QUALIFIER="${CDK_BOOTSTRAP_QUALIFIER:-hnb659fds}"
-          SSM_PARAM="/cdk-bootstrap/${QUALIFIER}/version"
-          echo "Checking for CDK Bootstrap in account $AWS_ACCOUNT_ID region $AWS_REGION (qualifier=$QUALIFIER)..."
-          if ! aws ssm get-parameter --name "$SSM_PARAM" --query "Parameter.Value" --output text 2>/dev/null; then
-            echo ""
-            echo "::error::CDK Bootstrap not found or not accessible."
-            echo "::error::The SSM parameter '$SSM_PARAM' could not be read."
-            echo ""
-            echo "Possible causes:"
-            echo "  1. CDK Bootstrap missing: run 'npx cdk bootstrap aws://$AWS_ACCOUNT_ID/$AWS_REGION'"
-            echo "  2. Permission denied: GitHubActionsRole needs ssm:GetParameter on /cdk-bootstrap/*"
-            echo "  3. Wrong region: Verify AWS_REGION matches the bootstrapped region"
-            echo ""
-            echo "If you use a custom bootstrap qualifier, set GitHub variable CDK_BOOTSTRAP_QUALIFIER"
-            echo "to match this repo's bin/app.ts / CDK CLI."
-            echo ""
-            echo "If CDK Bootstrap exists but this job still fails:"
-            echo "  - GitHubActionsRole needs sts:AssumeRole on arn:aws:iam::$AWS_ACCOUNT_ID:role/cdk-${QUALIFIER}-*-role-*"
-            echo "  - CDK deploy/file-publish roles must trust GitHubActionsRole (or your org's deploy principal)"
-            echo ""
-            exit 1
-          fi
-          echo "CDK Bootstrap found (version: $(aws ssm get-parameter --name "$SSM_PARAM" --query "Parameter.Value" --output text)). Proceeding with deployment..."
-        env:
-          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          CDK_BOOTSTRAP_QUALIFIER: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
+      - name: Check CDK bootstrap
+        uses: lx-software-ltd/actions/cdk-bootstrap-check@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
+        with:
+          qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
+          region: ${{ vars.AWS_REGION }}
 
       - name: Acknowledge CDK notices
         working-directory: backend/infrastructure
@@ -165,11 +143,6 @@ jobs:
           working-directory: backend/infrastructure
           plan: ${{ steps.plan.outputs.plan }}
           param-file: ${{ vars.CDK_PARAM_FILE }}
-          format: prefixed-json
-          attempts: "1"
-          no-notices: "false"
-          escape-newlines: "false"
-          rollback-match: is in UPDATE_ROLLBACK_FAILED state and can not be updated
           region: ${{ vars.AWS_REGION }}
         env:
           CDK_PARAM_FILE: ${{ vars.CDK_PARAM_FILE }}

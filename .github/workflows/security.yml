@@ -1,4 +1,8 @@
 name: Security Scanning
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 
 on:
   push:
@@ -11,11 +15,13 @@ on:
 
 permissions:
   contents: read
-  security-events: write
-  actions: read
 
 jobs:
   checkov:
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
     name: Checkov IaC Security
     runs-on: ubuntu-26.04
     steps:
@@ -53,6 +59,10 @@ jobs:
           framework: cloudformation
 
   codeql:
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
     name: CodeQL Analysis (${{ matrix.language }})
     runs-on: ubuntu-26.04
     strategy:
@@ -83,6 +93,8 @@ jobs:
           category: ${{ matrix.category }}
 
   pii-denylist:
+    permissions:
+      contents: read
     name: PII denylist
     runs-on: ubuntu-26.04
     steps:
@@ -98,6 +110,8 @@ jobs:
         uses: lx-software-ltd/actions/pii-denylist@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
 
   secrets-scan:
+    permissions:
+      contents: read
     name: Secret Scanning
     runs-on: ubuntu-26.04
     steps:
@@ -110,6 +124,8 @@ jobs:
         uses: lx-software-ltd/actions/gitleaks@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
 
   dependency-audit:
+    permissions:
+      contents: read
     name: Dependency audit
     runs-on: ubuntu-26.04
     steps:
@@ -131,6 +147,8 @@ jobs:
             backend/lambda/public_api_authorizer/requirements.txt
 
   bandit:
+    permissions:
+      contents: read
     name: Bandit
     runs-on: ubuntu-26.04
     steps:
@@ -159,6 +177,8 @@ jobs:
           skip: B101
 
   npm-audit:
+    permissions:
+      contents: read
     name: npm audit
     runs-on: ubuntu-26.04
     steps:
@@ -181,6 +201,8 @@ jobs:
             backend/infrastructure
 
   security-summary:
+    permissions:
+      contents: read
     name: security-summary
     runs-on: ubuntu-26.04
     needs: [checkov, codeql, pii-denylist, secrets-scan, dependency-audit, bandit, npm-audit]

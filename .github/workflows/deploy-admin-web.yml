@@ -14,7 +14,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: deploy-admin-web
@@ -22,6 +21,9 @@ concurrency:
 
 jobs:
   deploy:
+    permissions:
+      contents: read
+      id-token: write
     if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-26.04
     environment: production
