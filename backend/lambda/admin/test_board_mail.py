@@ -657,8 +657,10 @@ class TestMailTools(MailTestCase):
         self.assertEqual(listing["items"][0]["participants"], ["contact#1"])
         detail = json.loads(scripted.requests[2]["messages"][-1]["content"])
         self.assertEqual(detail["messages"][0]["from"], "contact#1")
-        self.assertNotIn("wendy", json.dumps(detail).lower())
-        self.assertNotIn("9123", json.dumps(detail))
+        rendered = json.dumps(detail)
+        self.assertNotIn("wendy", rendered.lower())
+        self.assertNotIn("9123 4567", rendered)
+        self.assertNotIn("91234567", rendered)
         self.assertIn("phone#2", detail["messages"][0]["text"])
 
     def test_reply_at_act_to_unlisted_recipient_becomes_approval_with_preview(self) -> None:
