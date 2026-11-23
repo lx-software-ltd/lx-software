@@ -208,7 +208,7 @@ def _fetch_once(url: str, *, max_bytes: int, timeout: int) -> FetchResult:
             break
         except urllib.error.URLError as exc:
             reason = exc.reason
-            if attempt == 0 and _transient_oserror(reason):
+            if attempt == 0 and isinstance(reason, BaseException) and _transient_oserror(reason):
                 last_os = exc
                 time.sleep(0.2)
                 continue

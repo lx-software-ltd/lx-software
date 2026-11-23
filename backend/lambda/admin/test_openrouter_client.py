@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+from email.message import Message
 import sys
 import types
 import unittest
@@ -16,13 +17,18 @@ def _install_stubs() -> None:
     if "boto3" not in sys.modules:
         sys.modules["boto3"] = MagicMock()
     if "botocore" not in sys.modules:
-        botocore = types.ModuleType("botocore")
-        exceptions = types.ModuleType("botocore.exceptions")
+        class _Exceptions(types.ModuleType):
+            ClientError: type[Exception]
+
+        class _Botocore(types.ModuleType):
+            exceptions: _Exceptions
 
         class ClientError(Exception):
             pass
 
+        exceptions = _Exceptions("botocore.exceptions")
         exceptions.ClientError = ClientError
+        botocore = _Botocore("botocore")
         botocore.exceptions = exceptions
         sys.modules["botocore"] = botocore
         sys.modules["botocore.exceptions"] = exceptions
@@ -69,7 +75,7 @@ class TestOpenRouterAttribution(unittest.TestCase):
         self.assertEqual(encoded, b"LX Admin - Statement parser")
 
     def test_board_headers_and_user(self) -> None:
-        captured: dict[str, object] = {}
+        captured: dict[str, Any] = {}
 
         def fake_urlopen(req, timeout=None):  # noqa: ARG001
             captured["headers"] = dict(req.headers)
@@ -111,7 +117,7 @@ class TestOpenRouterAttribution(unittest.TestCase):
         self.assertAlmostEqual(completion.cost_usd, 0.002)
 
     def test_reasoning_knob_is_sent_only_when_asked(self) -> None:
-        captured: dict[str, object] = {}
+        captured: dict[str, Any] = {}
 
         def fake_urlopen(req, timeout=None):  # noqa: ARG001
             captured["body"] = json.loads(req.data.decode("utf-8"))
@@ -351,8 +357,8 @@ class TestOpenRouterAttribution(unittest.TestCase):
         # The first slice fits the 90s loop deadline and keeps a reserve.
         # The fallback is last, so an instant failure still leaves it the
         # full wall clock.
-        self.assertLessEqual(seen[0], 90)
-        self.assertLessEqual(seen[1], 120)
+        self.assertLessEqual(_nn(seen[0]), 90)
+        self.assertLessEqual(_nn(seen[1]), 120)
         self.assertIsNone(seen[2])
 
     def test_post_json_success_does_not_read_monotonic(self) -> None:
@@ -484,7 +490,7 @@ class TestOpenRouterAttribution(unittest.TestCase):
             )
         self.assertEqual(completion.text, "from-b")
         self.assertEqual(completion.model, "b")
-        self.assertLessEqual(seen[0], 90)
+        self.assertLessEqual(_nn(seen[0]), 90)
         self.assertGreaterEqual(seen[1] or 0, openrouter_fallback.MIN_MODEL_ATTEMPT_SECONDS)
         self.assertEqual(lone.text, "from-b")
         self.assertEqual(seen[2], 150.0)
@@ -513,7 +519,7 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
         self.assertEqual(openrouter_client.normalize_fallback_models("m", ["", "m"]), [])
 
     def test_chat_completion_sends_fallback_models(self) -> None:
-        captured: dict[str, object] = {}
+        captured: dict[str, Any] = {}
 
         def fake_urlopen(req, timeout=None):  # noqa: ARG001
             captured["body"] = json.loads(req.data.decode("utf-8"))
@@ -556,7 +562,7 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
                 }
             }
         ).encode("utf-8")
-        calls: dict[str, object] = {"n": 0, "bodies": []}
+        calls: dict[str, Any] = {"n": 0, "bodies": []}
         errors: list[urlerror.HTTPError] = []
 
         def fake_urlopen(req, timeout=None):  # noqa: ARG001
@@ -564,11 +570,13 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
             bodies: list = calls["bodies"]  # type: ignore[assignment]
             bodies.append(json.loads(req.data.decode("utf-8")))
             if calls["n"] == 1:
+                retry_headers = Message()
+                retry_headers["Retry-After"] = "1"
                 err = urlerror.HTTPError(
                     req.full_url,
                     429,
                     "Too Many Requests",
-                    {"Retry-After": "1"},
+                    retry_headers,
                     io.BytesIO(error_body),
                 )
                 errors.append(err)
@@ -600,11 +608,13 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
 
         def fake_urlopen(req, timeout=None):  # noqa: ARG001
             calls["n"] += 1
+            retry_headers = Message()
+            retry_headers["Retry-After"] = "30"
             raise urlerror.HTTPError(
                 req.full_url,
                 429,
                 "Too Many Requests",
-                {"Retry-After": "30"},
+                retry_headers,
                 io.BytesIO(b'{"error":{"message":"rate limited","code":429}}'),
             )
 
@@ -632,7 +642,7 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
                 req.full_url,
                 429,
                 "Too Many Requests",
-                {},
+                Message(),
                 io.BytesIO(b'{"error":{"message":"rate limited","code":429}}'),
             )
             errors.append(err)
@@ -666,7 +676,7 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
                     req.full_url,
                     429,
                     "Too Many Requests",
-                    {},
+                    Message(),
                     io.BytesIO(b'{"error":{"message":"rate limited","code":429}}'),
                 )
             return _FakeResp(
@@ -904,3 +914,11 @@ class TestOpenRouterFallbacksAndRetries(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

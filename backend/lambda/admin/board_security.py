@@ -237,8 +237,8 @@ def fetch_cognito() -> dict[str, Any]:
     return {
         "userPoolId": pool_id,
         "mfa": mfa,
-        "tier": tier if isinstance(tier, str) else None,
-        "advancedSecurityMode": advanced_mode if isinstance(advanced_mode, str) else None,
+        "tier": _g if isinstance(_g := tier, str) else None,
+        "advancedSecurityMode": _g if isinstance(_g := advanced_mode, str) else None,
         "estimatedUsers": pool.get("EstimatedNumberOfUsers"),
         "passwordPolicy": {
             "minLength": (pool.get("Policies") or {}).get("PasswordPolicy", {}).get("MinimumLength"),
@@ -306,7 +306,7 @@ def op_open_remediation(_ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     body = str(args.get("body") or "").strip()
     if not title or not body:
         raise SecurityToolError("title and body are required")
-    labels = args.get("labels") if isinstance(args.get("labels"), list) else ["security"]
+    labels = _g if isinstance(_g := args.get("labels"), list) else ["security"]
     if "security" not in [str(x).lower() for x in labels]:
         labels = ["security", *labels]
     return board_github.op_create_issue({"title": title, "body": body, "labels": labels})

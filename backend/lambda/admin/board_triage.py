@@ -44,7 +44,7 @@ def archive_reason(thread: dict[str, Any], message: dict[str, Any]) -> str:
     """
     if message.get("bulk") or message.get("skipTriage"):
         return "bulk"
-    headers = message.get("headers") if isinstance(message.get("headers"), dict) else {}
+    headers = _g if isinstance(_g := message.get("headers"), dict) else {}
     auto = str(message.get("autoSubmitted") or headers.get("Auto-Submitted") or "").strip().lower()
     if auto and auto != "no":
         return "auto-submitted"
@@ -112,10 +112,12 @@ def on_mail_ingested(
     if str(message.get("direction") or "") not in ("in", "inbound"):
         return None
     if message.get("skipTriage") or message.get("bulk"):
-        return _archive_mail(table, thread, message, "bulk")
+        _archive_mail(table, thread, message, "bulk")
+        return None
     archived_reason = archive_reason(thread, message)
     if archived_reason:
-        return _archive_mail(table, thread, message, archived_reason)
+        _archive_mail(table, thread, message, archived_reason)
+        return None
     sender = str((message.get("from") or {}).get("address") or message.get("from") or "")
     if sender and board_mail._is_own(sender):  # noqa: SLF001 - same-domain outbound copies
         return None

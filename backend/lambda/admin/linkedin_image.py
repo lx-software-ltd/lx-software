@@ -149,7 +149,7 @@ def queue_for_post(
         raise LinkedInError("post not found")
     if str(doc.get("status") or "") in ("published", "archived"):
         raise LinkedInError("That post can no longer be edited.")
-    current = doc.get("image") if isinstance(doc.get("image"), dict) else {}
+    current = _g if isinstance(_g := doc.get("image"), dict) else {}
     if (
         not force
         and str(current.get("status") or "") == "pending"
@@ -223,7 +223,7 @@ def picture_text(
     scene: str = "",
     expression: str = "",
     caption: str = "",
-    brief: Callable[..., dict[str, str]] | None = None,
+    brief: Callable[..., tuple[dict[str, str], float]] | None = None,
 ) -> tuple[str, str, str]:
     """Scene, expression, and caption for a post.
 
@@ -281,7 +281,7 @@ def queue_brief(table: Any, post_id: str) -> dict[str, Any]:
         raise LinkedInError("Pictures are turned off.")
     if not str(doc.get("body") or "").strip():
         raise LinkedInError("Write the post first.")
-    current = doc.get("image") if isinstance(doc.get("image"), dict) else {}
+    current = _g if isinstance(_g := doc.get("image"), dict) else {}
     if str(current.get("status") or "") == "pending" and not linkedin_store.image_pending_stale(current):
         raise LinkedInError("A picture is already being drawn.")
     if linkedin_store.brief_pending(current):
@@ -301,7 +301,7 @@ def write_brief(
     table: Any,
     post_id: str,
     *,
-    brief: Callable[..., dict[str, str]] | None = None,
+    brief: Callable[..., tuple[dict[str, str], float]] | None = None,
 ) -> dict[str, Any]:
     """Worker: write a new scene, expression, and caption for the post without drawing.
 
@@ -355,14 +355,14 @@ def render_post(
     post_id: str,
     *,
     generate: Generate | None = None,
-    brief: Callable[..., dict[str, str]] | None = None,
+    brief: Callable[..., tuple[dict[str, str], float]] | None = None,
 ) -> dict[str, Any]:
     """Draw one panel for a pending post. A failure leaves the draft and marks the picture failed."""
     doc = linkedin_store.get_post(table, post_id, consistent=True)
     if not doc:
         return {"ok": False, "error": "post not found"}
     settings = linkedin_store.load_settings(table)
-    image = doc.get("image") if isinstance(doc.get("image"), dict) else {}
+    image = _g if isinstance(_g := doc.get("image"), dict) else {}
     if not settings.get("imagesEnabled"):
         _fail_picture(table, post_id, "Pictures are turned off.")
         return {"ok": False, "error": "disabled"}

@@ -57,7 +57,7 @@ def connect(table: Any, body: dict[str, Any]) -> dict[str, Any]:
         "connectedAt": board_store.now_iso(),
         "displayPhoneNumber": str(number.get("display_phone_number") or ""),
         "verifiedName": str(number.get("verified_name") or ""),
-        "onBusinessApp": number.get("is_on_biz_app") if isinstance(number.get("is_on_biz_app"), bool) else None,
+        "onBusinessApp": _g if isinstance(_g := number.get("is_on_biz_app"), bool) else None,
         "platformType": str(number.get("platform_type") or ""),
     }
     board_store.put_cache(table, _STATE, state, ttl_seconds=_KEEP_SECONDS)
@@ -137,4 +137,4 @@ def _smb(phone: str, sync_type: str) -> dict[str, Any]:
 def _load(table: Any) -> dict[str, Any]:
     cached = board_store.get_cache(table, _STATE) or {}
     payload = cached.get("payload")
-    return payload if isinstance(payload, dict) else {}
+    return _g if isinstance(_g := payload, dict) else {}

@@ -79,7 +79,7 @@ def _json_body(payload: bytes) -> dict[str, Any]:
         parsed = json.loads(payload.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
         return {}
-    return parsed if isinstance(parsed, dict) else {}
+    return _g if isinstance(_g := parsed, dict) else {}
 
 
 def _error_message(payload: bytes, status: int) -> str:
@@ -265,7 +265,7 @@ def list_organizations(token: str) -> list[dict[str, str]]:
         return []
     parsed = _expect(status, payload, ok={200})
     found: list[dict[str, str]] = []
-    elements = parsed.get("elements") if isinstance(parsed.get("elements"), list) else []
+    elements = _g if isinstance(_g := parsed.get("elements"), list) else []
     for row in elements:
         if not isinstance(row, dict):
             continue
@@ -399,7 +399,7 @@ def upload_image(token: str, owner: str, data: bytes) -> str:
         json.dumps({"initializeUploadRequest": {"owner": owner}}).encode("utf-8"),
     )
     parsed = _expect(status, payload, ok={200})
-    value = parsed.get("value") if isinstance(parsed.get("value"), dict) else {}
+    value = _g if isinstance(_g := parsed.get("value"), dict) else {}
     upload_url = str(value.get("uploadUrl") or "")
     image_urn = str(value.get("image") or "")
     if not upload_url or not image_urn:
@@ -425,8 +425,8 @@ def social_counts(token: str, post_urn: str) -> dict[str, int]:
         timeout=METRICS_TIMEOUT_SECONDS,
     )
     parsed = _expect(status, payload, ok={200})
-    likes = parsed.get("likesSummary") if isinstance(parsed.get("likesSummary"), dict) else {}
-    comments = parsed.get("commentsSummary") if isinstance(parsed.get("commentsSummary"), dict) else {}
+    likes = _g if isinstance(_g := parsed.get("likesSummary"), dict) else {}
+    comments = _g if isinstance(_g := parsed.get("commentsSummary"), dict) else {}
     return {
         "reactions": int(likes.get("totalLikes") or 0),
         "comments": int(comments.get("aggregatedTotalComments") or comments.get("totalFirstLevelComments") or 0),

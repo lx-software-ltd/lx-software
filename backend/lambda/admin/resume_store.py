@@ -120,7 +120,7 @@ def _get(table: Any, pk: str, sk: str) -> dict[str, Any] | None:
     if not item:
         return None
     loaded = _from_ddb_nested(item)
-    return loaded if isinstance(loaded, dict) else None
+    return _g if isinstance(_g := loaded, dict) else None
 
 
 def _query(table: Any, gsi1pk: str) -> list[dict[str, Any]]:
@@ -336,7 +336,7 @@ def create_resume(
     key = f"resume/resumes/{resume_id}/source.{ext}"
     put_bytes(key, content_type, data)
     now = _now()
-    doc = {
+    doc: dict[str, Any] = {
         "resumeId": resume_id,
         "title": cleaned,
         "kind": "archive",
@@ -442,7 +442,7 @@ def public_resume(doc: dict[str, Any], *, detail: bool) -> dict[str, Any]:
 
 def new_job(table: Any, kind: str, payload: dict[str, Any]) -> dict[str, Any]:
     job_id = _new_id()
-    doc = {
+    doc: dict[str, Any] = {
         "jobId": job_id,
         "kind": kind,
         "status": "queued",

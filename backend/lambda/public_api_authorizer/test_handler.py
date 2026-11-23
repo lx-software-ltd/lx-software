@@ -11,14 +11,20 @@ def _install_stubs() -> None:
     mock_boto = MagicMock()
     sys.modules["boto3"] = mock_boto
 
+    class _Exceptions(types.ModuleType):
+        ClientError: type[Exception]
+
+    class _Botocore(types.ModuleType):
+        exceptions: _Exceptions
+
     class ClientError(Exception):
         def __init__(self, response=None, operation_name=""):
             super().__init__(operation_name)
             self.response = response or {}
 
-    botocore = types.ModuleType("botocore")
-    exceptions = types.ModuleType("botocore.exceptions")
+    exceptions = _Exceptions("botocore.exceptions")
     exceptions.ClientError = ClientError
+    botocore = _Botocore("botocore")
     botocore.exceptions = exceptions
     sys.modules["botocore"] = botocore
     sys.modules["botocore.exceptions"] = exceptions

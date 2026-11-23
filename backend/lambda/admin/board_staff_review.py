@@ -138,7 +138,7 @@ def run_review(payload: dict[str, Any]) -> None:
         if str(((task or {}).get("eventRef") or {}).get("kind") or "") in BOARD_CATALOG_EVENT_KINDS:
             sheet = board_catalog_import.parse_sheet(raw)
             kept, dropped = board_catalog_import.keep_quality_orgs(sheet)
-            kept_orgs = kept.get("organisations") if isinstance(kept.get("organisations"), list) else []
+            kept_orgs = _g if isinstance(_g := kept.get("organisations"), list) else []
             catalog_note = (
                 f"Quality filter kept {len(kept_orgs)} organisation(s). "
                 "That count is authoritative. Do not return because it differs "

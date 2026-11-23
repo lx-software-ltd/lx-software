@@ -14,7 +14,7 @@ def _as_int(value: Any) -> int:
 
 def _gap_rank(finding: dict[str, Any]) -> tuple[int, int]:
     """Prefer the last-24h source with the most DMARC failures, then the most messages."""
-    evidence = finding.get("evidence") if isinstance(finding.get("evidence"), dict) else {}
+    evidence = _g if isinstance(_g := finding.get("evidence"), dict) else {}
     incident = _as_int(evidence.get("quarantine")) + _as_int(evidence.get("reject")) + _as_int(evidence.get("bothFail"))
     return (incident, _as_int(evidence.get("count")))
 
@@ -24,7 +24,7 @@ def _dmarc_gaps(finding: dict[str, Any]) -> list[tuple[str, str]]:
     import board_dmarc
 
     kind = finding.get("kind")
-    evidence = finding.get("evidence") if isinstance(finding.get("evidence"), dict) else {}
+    evidence = _g if isinstance(_g := finding.get("evidence"), dict) else {}
     if kind == "own_sender_failing":
         sender = str(evidence.get("sender") or "sender")
         ip = str(evidence.get("sourceIp") or "unknown ip")

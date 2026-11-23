@@ -246,6 +246,7 @@ class ContentTests(BoardTestCase):
         with patch("board_budget.board_completion", side_effect=RuntimeError("no model")):
             board_holds.veto(self.table, hold_id, "owner", "not this one")
         latest = board_store.get_content(self.table, doc["contentId"])
+        assert latest is not None
         self.assertEqual(latest["status"], "vetoed")
         lessons = board_store.list_lessons(self.table)
         self.assertTrue(lessons)
@@ -286,7 +287,7 @@ class ContentTests(BoardTestCase):
         with self.assertRaises(board_content.ContentError) as ctx:
             board_content.delete_post(self.table, ig["contentId"])
         self.assertIn("Instagram", str(ctx.exception))
-        self.assertEqual(board_store.get_content(self.table, ig["contentId"])["status"], "published")
+        self.assertEqual(_nn(board_store.get_content(self.table, ig["contentId"]))["status"], "published")
 
     def test_stage_items_are_merged_into_task_finish(self) -> None:
         task = board_staff.create_task(
@@ -359,10 +360,18 @@ class ContentTests(BoardTestCase):
                 },
             )
         self.assertEqual(finished["status"], "review")
-        raw = board_staff.read_deliverable(board_store.get_task(self.table, task["taskId"]))
+        raw = board_staff.read_deliverable(_nn(board_store.get_task(self.table, task["taskId"])))
         self.assertIn("Play at the park", raw)
         self.assertIn("facebook", raw)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

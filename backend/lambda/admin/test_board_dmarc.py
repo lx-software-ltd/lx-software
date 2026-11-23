@@ -93,7 +93,10 @@ def _message_with(name: str, ctype: str, payload: bytes, *, subject: str | None 
     from email import policy
     from email.parser import BytesParser
 
-    return BytesParser(policy=policy.default).parsebytes(raw)
+    parsed = BytesParser(policy=policy.default).parsebytes(raw)
+    if not isinstance(parsed, EmailMessage):
+        raise TypeError("expected an email message")
+    return parsed
 
 
 class DmarcParseTests(BoardTestCase):
@@ -186,8 +189,10 @@ class DmarcParseTests(BoardTestCase):
         from email import policy
         from email.parser import BytesParser
 
-        msg = BytesParser(policy=policy.default).parsebytes(raw)
-        out = board_dmarc.ingest_message(self.table, msg, thread_id="thr-f")
+        parsed = BytesParser(policy=policy.default).parsebytes(raw)
+        if not isinstance(parsed, EmailMessage):
+            raise TypeError("expected an email message")
+        out = board_dmarc.ingest_message(self.table, parsed, thread_id="thr-f")
         self.assertTrue(out["forensic"])
         self.assertEqual(out["reports"], 0)
         meta = board_store._get_state(self.table, "dmarc#meta") or {}  # noqa: SLF001
@@ -211,6 +216,7 @@ class DmarcParseTests(BoardTestCase):
             ),
         )
         thread = board_store.get_mail_thread(self.table, result["threadId"])
+        assert thread is not None
         self.assertEqual(thread["disposition"], "archived")
         self.assertFalse(thread["unread"])
         self.assertEqual(thread["dmarcReportIds"], ["google.com:via-mail"])
@@ -225,9 +231,9 @@ class DmarcParseTests(BoardTestCase):
                 raise RuntimeError("ddb down")
             return real_put(Item=Item, **kwargs)
 
-        self.table.put_item = _put  # type: ignore[method-assign]
-        self.addCleanup(lambda: setattr(self.table, "put_item", real_put))
-        with patch.object(board_staff, "_blob_delete", side_effect=lambda key: deleted.append(key)):
+        with patch.object(self.table, "put_item", side_effect=_put), patch.object(
+            board_staff, "_blob_delete", side_effect=lambda key: deleted.append(key)
+        ):
             out = board_dmarc.ingest_message(
                 self.table,
                 _message_with("lost.xml", "application/xml", _xml(report_id="lost")),

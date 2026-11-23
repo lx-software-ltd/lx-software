@@ -328,7 +328,7 @@ def op_propose_budget_alert(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
     """Owner-approved: record an action item. Never calls AWS Budgets."""
     amount = args.get("monthlyUsd")
     try:
-        monthly = float(amount)
+        monthly = _num(amount)
     except (TypeError, ValueError) as exc:
         raise AwsToolError("monthlyUsd must be a number") from exc
     if monthly <= 0 or monthly > 100_000:
@@ -340,7 +340,7 @@ def op_propose_budget_alert(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         raise AwsToolError("thresholdPercent must be a number") from exc
     title = f"Create an AWS budget alert at USD {monthly:.0f}/month ({pct:.0f}% threshold) for {stack_prefix()}"
     now = _utc_iso_z(datetime.now(timezone.utc))
-    doc = {
+    doc: dict[str, Any] = {
         "actionId": board_store.new_id(),
         "title": title[:200],
         "detail": str(args.get("reason") or "Proposed by the board after reviewing Cost Explorer.")[:800],
@@ -370,3 +370,15 @@ def digest_for_context(table: Any) -> dict[str, Any]:
         "alarmCount": alarms.get("count"),
         "fetchedAt": cost.get("fetchedAt") or alarms.get("fetchedAt"),
     }
+
+
+def _num(value: Any | None) -> float:
+    if value is None:
+        raise TypeError("expected a number")
+    return float(value)
+
+
+def _whole(value: Any | None) -> int:
+    if value is None:
+        raise TypeError("expected an int")
+    return int(value)

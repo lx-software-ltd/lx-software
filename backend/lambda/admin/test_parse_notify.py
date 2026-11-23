@@ -61,7 +61,7 @@ class TestBuildMessage(unittest.TestCase):
             {"ADMIN_WEB_ORIGIN": "https://admin.lx-software.com"},
             clear=False,
         ):
-            subject, body = parse_notify.build_parse_notify_message(
+            subject, body = _nn(parse_notify.build_parse_notify_message(
                 {
                     "status": "succeeded",
                     "house": "hillmarton",
@@ -70,7 +70,7 @@ class TestBuildMessage(unittest.TestCase):
                     "addedLines": 4,
                     "s3Keys": ["inbound/hillmarton/" + ("a" * 32) + "/00_KDQ170167_-_Landlord_Statement.pdf"],
                 }
-            )
+            ))
         self.assertEqual(subject, "[32 Hillmarton] Statement parse succeeded")
         self.assertIn("Lines added: 4", body)
         self.assertIn("KDQ170167_-_Landlord_Statement.pdf", body)
@@ -79,7 +79,7 @@ class TestBuildMessage(unittest.TestCase):
         self.assertIn("https://admin.lx-software.com", body)
 
     def test_failure_includes_error(self) -> None:
-        subject, body = parse_notify.build_parse_notify_message(
+        subject, body = _nn(parse_notify.build_parse_notify_message(
             {
                 "status": "failed",
                 "house": "lxSoftware",
@@ -88,14 +88,14 @@ class TestBuildMessage(unittest.TestCase):
                 "errorMessage": "OpenRouter request failed with status 400",
                 "s3Keys": ["uploads/sub/x/invoice.pdf"],
             }
-        )
+        ))
         self.assertEqual(subject, "[LX Software] Statement parse failed")
         self.assertIn("Error: OpenRouter request failed with status 400", body)
         self.assertIn("admin upload", body)
         self.assertIn("invoice.pdf", body)
 
     def test_success_mentions_a_repeated_filename(self) -> None:
-        subject, body = parse_notify.build_parse_notify_message(
+        subject, body = _nn(parse_notify.build_parse_notify_message(
             {
                 "status": "succeeded",
                 "house": "morrison",
@@ -106,14 +106,14 @@ class TestBuildMessage(unittest.TestCase):
                 "duplicateBasenames": ["00_advice-note.pdf"],
                 "duplicateBasenameContent": "same",
             }
-        )
+        ))
         self.assertIn("(repeated filename)", subject)
         self.assertIn("Repeated filename: 00_advice-note.pdf", body)
         self.assertIn("same size and S3 etag", body)
         self.assertIn("Lines added: 2", body)
 
     def test_success_says_when_the_exact_file_was_skipped(self) -> None:
-        _subject, body = parse_notify.build_parse_notify_message(
+        _subject, body = _nn(parse_notify.build_parse_notify_message(
             {
                 "status": "succeeded",
                 "house": "morrison",
@@ -124,12 +124,12 @@ class TestBuildMessage(unittest.TestCase):
                 "duplicateBasenameContent": "same",
                 "skippedExistingAssetKeys": ["inbound/morrison/batch/00_advice-note.pdf"],
             }
-        )
+        ))
         self.assertIn("Lines added: 0", body)
         self.assertIn("already linked to a statement line", body)
 
     def test_success_says_when_the_file_differs(self) -> None:
-        _subject, body = parse_notify.build_parse_notify_message(
+        _subject, body = _nn(parse_notify.build_parse_notify_message(
             {
                 "status": "succeeded",
                 "house": "morrison",
@@ -139,7 +139,7 @@ class TestBuildMessage(unittest.TestCase):
                 "duplicateBasenames": ["advice-note.pdf"],
                 "duplicateBasenameContent": "different",
             }
-        )
+        ))
         self.assertIn("differs from the earlier import", body)
 
 
@@ -209,3 +209,11 @@ class TestWorkerNotifyHook(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

@@ -556,8 +556,8 @@ def seed_listing_mirror(table: Any) -> int:
         for task in board_store.list_tasks(table, status, limit=200):
             if not board_catalog_import.is_catalog_sheet(task):
                 continue
-            preview = task.get("importPreview") if isinstance(task.get("importPreview"), dict) else {}
-            payload = preview.get("payload") if isinstance(preview.get("payload"), dict) else {}
+            preview = _g if isinstance(_g := task.get("importPreview"), dict) else {}
+            payload = _g if isinstance(_g := preview.get("payload"), dict) else {}
             for org in payload.get("organizations") or []:
                 if isinstance(org, dict) and (org.get("name") or org.get("nameEn")):
                     remember_listing(table, org)
@@ -789,7 +789,7 @@ def _place_to_candidate_fields(place: dict[str, Any]) -> dict[str, Any]:
     opening = ""
     if isinstance(hours, dict) and hours.get("weekdayDescriptions"):
         opening = "; ".join(str(x) for x in hours.get("weekdayDescriptions") or [])[:200]
-    loc = place.get("location") if isinstance(place.get("location"), dict) else {}
+    loc = _g if isinstance(_g := place.get("location"), dict) else {}
     return {
         "placeId": str(place.get("placeId") or ""),
         "addressEn": str(place.get("address") or "")[:300],

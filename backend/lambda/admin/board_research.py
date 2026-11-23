@@ -239,7 +239,7 @@ def _live_search(table: Any, query: str, *, count: int) -> tuple[list[dict[str, 
     )
 
 
-def _run_search(ctx: Any, query: str, *, kind: str, count: int | None = None) -> dict[str, Any]:
+def _run_search(ctx: Any, query: Any, *, kind: str, count: Any = None) -> dict[str, Any]:
     q = _clamp_query(query)
     limit = max(1, min(int(count or BOARD_RESEARCH_MAX_RESULTS), BOARD_RESEARCH_MAX_RESULTS))
     name = _cache_name(kind, q)
@@ -366,7 +366,7 @@ def _enrich_fetch_rules(ctx: Any, task_id: str) -> dict[str, Any] | None:
     """Official URLs and names for a catalog-enrich task. None for every other task."""
     if getattr(ctx, "_enrich_fetch_loaded", False):
         rules = getattr(ctx, "_enrich_fetch_rules", None)
-        return rules if isinstance(rules, dict) else None
+        return _g if isinstance(_g := rules, dict) else None
     try:
         ctx._enrich_fetch_loaded = True
     except Exception:

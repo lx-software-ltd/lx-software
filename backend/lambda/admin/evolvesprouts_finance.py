@@ -20,7 +20,7 @@ write to it.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, tzinfo
 from typing import Any
 
 import board_store
@@ -28,7 +28,7 @@ import board_store
 try:
     from zoneinfo import ZoneInfo
 
-    _HKT = ZoneInfo("Asia/Hong_Kong")
+    _HKT: tzinfo = ZoneInfo("Asia/Hong_Kong")
 except Exception:  # pragma: no cover - Lambda images ship tzdata
     _HKT = timezone(timedelta(hours=8))
 

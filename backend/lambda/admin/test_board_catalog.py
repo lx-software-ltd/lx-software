@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import unittest
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from unittest.mock import patch
 
 import board_async
@@ -466,7 +467,7 @@ class CatalogDutyTests(BoardTestCase):
         task = {
             "eventRef": {"kind": "catalog-enrich", "district": "Eastern", "districtId": "eastern"},
         }
-        sheet = {
+        sheet: dict[str, Any] = {
             "district": "Eastern",
             "organisations": [
                 {

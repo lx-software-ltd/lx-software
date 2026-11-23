@@ -87,11 +87,12 @@ class StaffEngineTests(BoardTestCase):
         board_store.put_task(self.table, lone)
         self.assertEqual(board_staff.supersede_stale_failed_duties(self.table), 1)
         closed = board_store.get_task(self.table, older["taskId"])
+        assert closed is not None
         self.assertEqual(closed["status"], "cancelled")
         self.assertEqual(closed["closedBy"], "board_staff:superseded")
         self.assertEqual(closed["failureReason"], "")
-        self.assertEqual(board_store.get_task(self.table, newer["taskId"])["status"], "needs_owner")
-        self.assertEqual(board_store.get_task(self.table, lone["taskId"])["status"], "failed")
+        self.assertEqual(_nn(board_store.get_task(self.table, newer["taskId"]))["status"], "needs_owner")
+        self.assertEqual(_nn(board_store.get_task(self.table, lone["taskId"]))["status"], "failed")
 
     def test_supersede_strips_duty_date_and_clears_needs_owner_after_deliver(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"
@@ -127,8 +128,8 @@ class StaffEngineTests(BoardTestCase):
         newer["createdAt"] = "2026-09-21T10:00:00Z"
         board_store.put_task(self.table, newer)
         self.assertEqual(board_staff.supersede_stale_failed_duties(self.table), 1)
-        self.assertEqual(board_store.get_task(self.table, older["taskId"])["status"], "cancelled")
-        self.assertEqual(board_store.get_task(self.table, newer["taskId"])["status"], "delivered")
+        self.assertEqual(_nn(board_store.get_task(self.table, older["taskId"]))["status"], "cancelled")
+        self.assertEqual(_nn(board_store.get_task(self.table, newer["taskId"]))["status"], "delivered")
 
     def test_supersede_keeps_parked_catalog_import_sheets(self) -> None:
         os.environ["BOARD_STAFF_ENABLED"] = "true"
@@ -165,7 +166,7 @@ class StaffEngineTests(BoardTestCase):
         newer["createdAt"] = "2026-09-21T00:00:00Z"
         board_store.put_task(self.table, newer)
         self.assertEqual(board_staff.supersede_stale_failed_duties(self.table), 0)
-        self.assertEqual(board_store.get_task(self.table, parked["taskId"])["status"], "needs_owner")
+        self.assertEqual(_nn(board_store.get_task(self.table, parked["taskId"]))["status"], "needs_owner")
 
     def test_step_max_tokens_gives_content_plan_the_large_budget(self) -> None:
         plan = {"eventRef": {"id": "content-plan:2026-09-22"}, "deliverableType": "json", "idleSteps": 0, "step": 0}
@@ -221,7 +222,7 @@ class StaffEngineTests(BoardTestCase):
             ],
         )
         board_staff._complete_step(self.table, task["taskId"], task, result, 1)  # noqa: SLF001
-        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "running")
+        self.assertEqual(_nn(board_store.get_task(self.table, task["taskId"]))["status"], "running")
 
         parked = board_staff.create_task(
             self.table,
@@ -249,7 +250,7 @@ class StaffEngineTests(BoardTestCase):
             ],
         )
         board_staff._complete_step(self.table, parked["taskId"], parked, blocking, 1)  # noqa: SLF001
-        self.assertEqual(board_store.get_task(self.table, parked["taskId"])["status"], "waiting_approval")
+        self.assertEqual(_nn(board_store.get_task(self.table, parked["taskId"]))["status"], "waiting_approval")
 
     def test_complete_step_parks_review_when_blocking_approval_in_same_step(self) -> None:
         """task_finish may land in review before the approval; still park waiting_approval."""
@@ -287,6 +288,7 @@ class StaffEngineTests(BoardTestCase):
         )
         board_staff._complete_step(self.table, task["taskId"], task, result, 2)  # noqa: SLF001
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved["status"], "waiting_approval")
         self.assertEqual(saved["blockedOn"], ["appr-content"])
 
@@ -322,6 +324,7 @@ class StaffEngineTests(BoardTestCase):
         with patch.object(board_async, "invoke_async", side_effect=lambda payload, *, fallback=None: None):
             board_staff._complete_step(self.table, task["taskId"], task, result, 1)  # noqa: SLF001
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved["status"], "running")
         self.assertEqual(int(saved.get("idleSteps") or 0), 0)
         scratch = board_staff._blob_get(board_staff._scratchpad_key(task["taskId"])).decode()  # noqa: SLF001
@@ -359,6 +362,7 @@ class StaffEngineTests(BoardTestCase):
         with patch.object(board_async, "invoke_async", side_effect=lambda payload, *, fallback=None: queued.append(payload)):
             board_staff._complete_step(self.table, task["taskId"], task, result, 1)  # noqa: SLF001
         saved = board_store.get_task(self.table, task["taskId"])
+        assert saved is not None
         self.assertEqual(saved["status"], "running")
         self.assertEqual(int(saved.get("idleSteps") or 0), 0)
         self.assertEqual(int(saved.get("yieldedSteps") or 0), 1)
@@ -466,8 +470,8 @@ class StaffEngineTests(BoardTestCase):
         settings = _enable_staff(self.table, maxRunningTasks=1)
         first = board_staff.create_task(self.table, settings, assignee="cfo", origin="owner", brief="One", deliverable_type="markdown", created_by="a")
         second = board_staff.create_task(self.table, settings, assignee="cfo", origin="owner", brief="Two", deliverable_type="markdown", created_by="a")
-        self.assertEqual(board_store.get_task(self.table, first["taskId"])["status"], "running")
-        self.assertEqual(board_store.get_task(self.table, second["taskId"])["status"], "queued")
+        self.assertEqual(_nn(board_store.get_task(self.table, first["taskId"]))["status"], "running")
+        self.assertEqual(_nn(board_store.get_task(self.table, second["taskId"]))["status"], "queued")
         self.assertEqual(len(self.async_payloads), 1)
 
     def test_prompts_include_task_frame(self) -> None:
@@ -619,7 +623,7 @@ class StaffEngineTests(BoardTestCase):
                 },
             )
         self.assertIn("web_sessions", str(raised.exception))
-        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "running")
+        self.assertEqual(_nn(board_store.get_task(self.table, task["taskId"]))["status"], "running")
         board_store.add_tool_call(
             self.table,
             {
@@ -691,6 +695,7 @@ class StaffEngineTests(BoardTestCase):
             ),
             {"need": "Fetch official LCSD pages", "toolIds": ["web"]},
         )
+        assert reason is not None
         self.assertIn("already have those tools", reason)
 
     def test_ga4_brief_does_not_deadlock_seats_without_web(self) -> None:
@@ -827,6 +832,7 @@ class StaffStepTests(ToolsTestCase):
         board_store.claim_task_step(self.table, task["taskId"], 0)
         board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": task["taskId"], "step": 2})
         latest = board_store.get_task(self.table, task["taskId"])
+        assert latest is not None
         self.assertEqual(latest["step"], 0)
 
     def test_task_finish_evidence_rule_and_review_accept(self) -> None:
@@ -862,11 +868,13 @@ class StaffStepTests(ToolsTestCase):
                 },
             )
         latest = board_store.get_task(self.table, task["taskId"])
+        assert latest is not None
         self.assertEqual(latest["status"], "review")
         self.assertEqual(latest["evidence"], ["aws-1", "fin-1"])
         self.use_script([], '{"verdict":"accept","notes":"Good."}')
         board_staff.run_review({"internal": "board_staff_review", "boardKey": BOARD_KEY, "taskId": task["taskId"]})
         done = board_store.get_task(self.table, task["taskId"])
+        assert done is not None
         self.assertEqual(done["status"], "delivered")
         reviews = board_store.list_task_reviews(self.table, task["taskId"])
         self.assertEqual(reviews[0]["verdict"], "accept")
@@ -916,6 +924,7 @@ class StaffStepTests(ToolsTestCase):
                 },
             )
         latest = board_store.get_task(self.table, task["taskId"])
+        assert latest is not None
         self.assertEqual(latest["status"], "review")
         self.assertEqual(latest["evidence"], ["aws-hex", "fin-hex"])
 
@@ -958,6 +967,7 @@ class StaffStepTests(ToolsTestCase):
         self.use_script([], "not json at all")
         board_staff.run_review({"internal": "board_staff_review", "boardKey": BOARD_KEY, "taskId": task["taskId"]})
         done = board_store.get_task(self.table, task["taskId"])
+        assert done is not None
         self.assertEqual(done["lastReview"]["verdict"], "return")
 
     def test_review_empty_completion_returns(self) -> None:
@@ -987,6 +997,7 @@ class StaffStepTests(ToolsTestCase):
         self.use_script([], "")
         board_staff.run_review({"internal": "board_staff_review", "boardKey": BOARD_KEY, "taskId": task["taskId"]})
         done = board_store.get_task(self.table, task["taskId"])
+        assert done is not None
         self.assertEqual(done["lastReview"]["verdict"], "return")
 
     def test_catalog_quality_return_flags_thin_sheet(self) -> None:
@@ -1065,12 +1076,14 @@ class StaffStepTests(ToolsTestCase):
                 },
             )
         latest = board_store.get_task(self.table, task["taskId"])
+        assert latest is not None
         self.assertEqual(latest["status"], "review")
         with patch.object(board_budget, "board_completion") as completion:
             board_staff.run_review({"internal": "board_staff_review", "boardKey": BOARD_KEY, "taskId": task["taskId"]})
         review_calls = [call for call in completion.call_args_list if call.kwargs.get("tag") == "board_staff_review"]
         self.assertEqual(review_calls, [])
         done = board_store.get_task(self.table, task["taskId"])
+        assert done is not None
         self.assertEqual(done["lastReview"]["verdict"], "return")
         self.assertIn("Return —", done["lastReview"]["notes"])
         self.assertIn("Thin Park", done["lastReview"]["notes"])
@@ -1098,6 +1111,7 @@ class StaffStepTests(ToolsTestCase):
                 },
             )
         latest = board_store.get_task(self.table, task["taskId"])
+        assert latest is not None
         self.assertEqual(latest["confidence"], "medium")
         self.assertIn("no_evidence", latest["flags"])
 
@@ -1128,7 +1142,7 @@ class StaffStepTests(ToolsTestCase):
                 },
             )
         self.assertIn("placeholder", str(raised.exception).lower())
-        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "running")
+        self.assertEqual(_nn(board_store.get_task(self.table, task["taskId"]))["status"], "running")
 
     def test_task_finish_strips_function_call_and_rejects_bad_json(self) -> None:
         settings = _enable_staff(self.table)
@@ -1174,7 +1188,7 @@ class StaffStepTests(ToolsTestCase):
                     "confidence": "low",
                 },
             )
-        raw = board_staff.read_deliverable(board_store.get_task(self.table, task["taskId"]))
+        raw = board_staff.read_deliverable(_nn(board_store.get_task(self.table, task["taskId"])))
         self.assertNotIn("!function_call:", raw)
         self.assertIn("Sha Tin", raw)
 
@@ -1210,7 +1224,7 @@ class StaffStepTests(ToolsTestCase):
                 "confidence": "low",
             },
         )
-        self.assertEqual(board_store.get_mail_thread(self.table, "th-fin")["disposition"], "archived")
+        self.assertEqual(_nn(board_store.get_mail_thread(self.table, "th-fin"))["disposition"], "archived")
 
     def test_task_finish_requires_evidence_when_brief_names_tools(self) -> None:
         settings = _enable_staff(self.table)
@@ -1247,7 +1261,7 @@ class StaffStepTests(ToolsTestCase):
                 },
             )
         self.assertIn("finance_cash_snapshot", str(raised.exception))
-        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "running")
+        self.assertEqual(_nn(board_store.get_task(self.table, task["taskId"]))["status"], "running")
 
     def test_task_finish_autocites_a_same_attempt_read(self) -> None:
         settings = _enable_staff(self.table)
@@ -1296,7 +1310,7 @@ class StaffStepTests(ToolsTestCase):
                 },
             )
         self.assertEqual(out["status"], "review")
-        self.assertEqual(board_store.get_task(self.table, task["taskId"])["evidence"], [recorded["callId"]])
+        self.assertEqual(_nn(board_store.get_task(self.table, task["taskId"]))["evidence"], [recorded["callId"]])
 
     def test_web_help_is_refused_when_the_seat_already_has_research(self) -> None:
         settings = _enable_staff(self.table)
@@ -1436,6 +1450,7 @@ class StaffStepTests(ToolsTestCase):
         payload["retried"] = True
         board_staff._on_step_exception(self.table, task, payload, 1, exc)  # noqa: SLF001
         finished = board_store.get_task(self.table, task["taskId"])
+        assert finished is not None
         self.assertEqual(finished["status"], "failed")
         self.assertIn("wall-clock", finished.get("failureReason") or "")
 
@@ -1468,7 +1483,7 @@ class StaffStepTests(ToolsTestCase):
     def test_review_return_then_max_revisions_needs_owner(self) -> None:
         task = self._queued_task()
         board_store.claim_task_step(self.table, task["taskId"], 0)
-        task = board_store.get_task(self.table, task["taskId"])
+        task = _nn(board_store.get_task(self.table, task["taskId"]))
         task["status"] = "review"
         task["deliverableKey"] = "x"
         board_store.put_task(self.table, task)
@@ -1502,19 +1517,20 @@ class StaffStepTests(ToolsTestCase):
         )
         task = self._queued_task()
         board_store.claim_task_step(self.table, task["taskId"], 0)
-        task = board_store.get_task(self.table, task["taskId"])
+        task = _nn(board_store.get_task(self.table, task["taskId"]))
         task.update({"status": "review", "actionId": action_id, "deliverableType": "markdown", "summary": "Done"})
         board_store.put_task(self.table, task)
         settings = board_store.load_settings(self.table)
         board_staff.apply_review(self.table, settings, task, verdict="accept", notes="ok", by="manager")
         action = board_store.get_action(self.table, action_id)
+        assert action is not None
         self.assertEqual(action["status"], "done")
         self.assertIn(f"staff:{task['taskId']}", action["closedBy"])
 
     def test_step_limit_finishes_incomplete(self) -> None:
         task = self._queued_task()
         board_store.claim_task_step(self.table, task["taskId"], 0)
-        task = board_store.get_task(self.table, task["taskId"])
+        task = _nn(board_store.get_task(self.table, task["taskId"]))
         task["step"] = BOARD_STAFF_MAX_STEPS_PER_TASK - 1
         task["status"] = "running"
         board_store.put_task(self.table, task)
@@ -1522,6 +1538,7 @@ class StaffStepTests(ToolsTestCase):
         self.router.openrouter = scripted
         board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": task["taskId"], "step": BOARD_STAFF_MAX_STEPS_PER_TASK})
         latest = board_store.get_task(self.table, task["taskId"])
+        assert latest is not None
         self.assertEqual(latest["status"], "failed")
         self.assertEqual(latest["failureReason"], "step limit")
 
@@ -1558,6 +1575,7 @@ class StaffStepTests(ToolsTestCase):
         )
         self.assertIn("read_github", preamble)
         latest = board_store.get_task(self.table, task["taskId"])
+        assert latest is not None
         self.assertEqual(latest["step"], 1)
         self.assertNotEqual(latest.get("failureReason"), "step limit")
 
@@ -1568,6 +1586,7 @@ class StaffStepTests(ToolsTestCase):
         board_store.claim_task_step(self.table, task["taskId"], 0)
         stale = board_store.get_task(self.table, task["taskId"])
         stale_at = (datetime.now(timezone.utc) - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        assert stale is not None
         stale["updatedAt"] = stale_at
         stale.pop("stepClaimedAt", None)
         board_store.put_task(self.table, stale)
@@ -1575,6 +1594,7 @@ class StaffStepTests(ToolsTestCase):
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: payloads.append(payload)):
             board_staff.handle_tick({"internal": "board_staff_tick", "boardKey": BOARD_KEY})
         latest = board_store.get_task(self.table, task["taskId"])
+        assert latest is not None
         self.assertEqual(latest["status"], "running")
         self.assertTrue(latest.get("stuckRetried"))
         self.assertTrue(any(p.get("internal") == "board_staff_step" for p in payloads))
@@ -1583,6 +1603,7 @@ class StaffStepTests(ToolsTestCase):
         board_store.put_task(self.table, latest)
         board_staff.handle_tick({"internal": "board_staff_tick", "boardKey": BOARD_KEY})
         failed = board_store.get_task(self.table, task["taskId"])
+        assert failed is not None
         self.assertEqual(failed["status"], "failed")
         self.assertEqual(failed["failureReason"], "stuck")
 
@@ -1599,6 +1620,7 @@ class StaffStepTests(ToolsTestCase):
                 self.table, settings, assignee="cfo", origin="owner", brief="Start me", deliverable_type="markdown", created_by="a"
             )
         latest = board_store.get_task(self.table, task["taskId"])
+        assert latest is not None
         self.assertEqual(latest["status"], "queued")
         self.assertIsNone(latest.get("startedAt"))
         self.assertTrue(any(p.get("internal") == "board_staff_step" for p in calls))
@@ -1634,12 +1656,14 @@ class StaffStepTests(ToolsTestCase):
                 {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1}
             )
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         self.assertEqual(latest["status"], "review")
         self.assertEqual(latest["step"], 1)
         settings = board_store.load_settings(self.table)
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: payloads.append(payload)):
             board_staff.apply_review(self.table, settings, latest, verdict="return", notes="more", by="manager")
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         self.assertEqual(latest["status"], "running")
         self.assertEqual(latest["stepClaimed"], 1)
         self.assertEqual(payloads[-1]["step"], 2)
@@ -1650,6 +1674,7 @@ class StaffStepTests(ToolsTestCase):
         tid = task["taskId"]
         self.assertTrue(board_store.claim_task_step(self.table, tid, 0))
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         latest.update({"status": "review", "step": 0, "stepClaimed": 1, "deliverableKey": "x"})
         board_store.put_task(self.table, latest)
         settings = board_store.load_settings(self.table)
@@ -1667,6 +1692,7 @@ class StaffStepTests(ToolsTestCase):
                     {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": seq}
                 )
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         self.assertEqual(latest["status"], "failed")
         self.assertEqual(latest["failureReason"], "idle step limit")
         self.assertEqual(latest["idleSteps"], BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK)
@@ -1677,6 +1703,7 @@ class StaffStepTests(ToolsTestCase):
         task = self._queued_task()
         tid = task["taskId"]
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         latest["status"] = "running"
         latest["step"] = BOARD_STAFF_MAX_STEPS_PER_TASK - 3
         board_store.put_task(self.table, latest)
@@ -1710,6 +1737,7 @@ class StaffStepTests(ToolsTestCase):
             )
         tid = task["taskId"]
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         latest["status"] = "running"
         latest["step"] = 1
         board_store.put_task(self.table, latest)
@@ -1753,6 +1781,7 @@ class StaffStepTests(ToolsTestCase):
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             board_staff._complete_step(self.table, tid, latest, result, 2)
         out = board_store.get_task(self.table, tid)
+        assert out is not None
         self.assertEqual(out["idleSteps"], 1)
         scratch = board_staff._blob_get(board_staff._scratchpad_key(tid)).decode()  # noqa: SLF001
         self.assertIn("NUDGE", scratch)
@@ -1773,6 +1802,7 @@ class StaffStepTests(ToolsTestCase):
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         self.assertEqual(latest["status"], "review", latest.get("failureReason"))
         self.assertIn("salvaged", latest.get("flags") or [])
         body = board_staff._blob_get(str(latest.get("deliverableKey") or "")).decode()  # noqa: SLF001
@@ -1782,6 +1812,7 @@ class StaffStepTests(ToolsTestCase):
         task = self._queued_task()
         tid = task["taskId"]
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         latest["idleSteps"] = BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK - 1
         board_store.put_task(self.table, latest)
         scripted = self.use_script(
@@ -1809,7 +1840,7 @@ class StaffStepTests(ToolsTestCase):
         )
         names = [str(t.get("function", {}).get("name")) for t in scripted.requests[0]["tools"]]
         self.assertEqual(names[:2], ["task_note", "task_finish"])
-        self.assertEqual(board_store.get_task(self.table, tid)["status"], "review")
+        self.assertEqual(_nn(board_store.get_task(self.table, tid))["status"], "review")
 
     def test_step_exception_retries_once_then_fails(self) -> None:
         task = self._queued_task()
@@ -1825,6 +1856,7 @@ class StaffStepTests(ToolsTestCase):
         ):
             board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         self.assertEqual(latest["status"], "running")
         self.assertTrue(payloads[-1].get("retried"))
         with (
@@ -1833,6 +1865,7 @@ class StaffStepTests(ToolsTestCase):
         ):
             board_staff.run_step(payloads[-1])
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         self.assertEqual(latest["status"], "failed")
         self.assertIn("IncompleteRead", latest["failureReason"])
 
@@ -1864,6 +1897,7 @@ class StaffStepTests(ToolsTestCase):
         self.assertEqual(len(scripted.requests), 1)
         self.assertNotEqual(scripted.requests[0].get("tool_choice"), "none")
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         self.assertEqual(latest["status"], "review")
         self.assertEqual(latest["step"], 1)
 
@@ -1883,6 +1917,7 @@ class StaffStepTests(ToolsTestCase):
         ):
             board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         self.assertEqual(latest["status"], "failed")
         self.assertTrue(latest["failureReason"].startswith("step error:"))
         self.assertFalse(any(p.get("retried") for p in payloads))
@@ -1903,6 +1938,7 @@ class StaffStepTests(ToolsTestCase):
         ):
             board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         self.assertEqual(latest["status"], "running")
         self.assertTrue(payloads)
         self.assertTrue(payloads[0].get("retried"))
@@ -1952,6 +1988,7 @@ class StaffStepTests(ToolsTestCase):
         ):
             board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         self.assertEqual(latest["status"], "queued")
         self.assertIn("OpenRouter credits", latest.get("parkedReason") or "")
         breaker = board_store.get_breaker(self.table, "budget")
@@ -1964,10 +2001,11 @@ class StaffStepTests(ToolsTestCase):
         settings["staff"]["dailyBudgetUsd"] = 0.01
         board_store.save_settings(self.table, settings)
         board_store.add_staff_usage_day(self.table, "cfo", {"cost": 0.02, "calls": 1})
-        self.assertEqual(board_store.get_task(self.table, tid)["status"], "running")
+        self.assertEqual(_nn(board_store.get_task(self.table, tid))["status"], "running")
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         self.assertEqual(latest["status"], "queued")
         self.assertIn("daily budget", latest.get("parkedReason") or "")
         self.assertEqual(board_staff.drain_queue(self.table, board_store.load_settings(self.table)), 0)
@@ -1981,6 +2019,7 @@ class StaffStepTests(ToolsTestCase):
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             board_staff.run_step({"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": tid, "step": 1})
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         self.assertEqual(latest["status"], "queued")
         self.assertIn("openrouter credits paused", latest.get("parkedReason") or "")
 
@@ -2000,7 +2039,7 @@ class StaffStepTests(ToolsTestCase):
         )
         self.assertEqual(task["status"], "queued")
         self.assertEqual(board_staff.drain_queue(self.table, settings), 0)
-        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "queued")
+        self.assertEqual(_nn(board_store.get_task(self.table, task["taskId"]))["status"], "queued")
 
     def test_stale_step_claim_reinvokes_once_then_fails(self) -> None:
         settings = _enable_staff(self.table)
@@ -2011,6 +2050,7 @@ class StaffStepTests(ToolsTestCase):
         board_store.claim_task_step(self.table, task["taskId"], 0)
         stale = board_store.get_task(self.table, task["taskId"])
         stale_at = (datetime.now(timezone.utc) - timedelta(minutes=6)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        assert stale is not None
         stale["stepClaimedAt"] = stale_at
         stale["updatedAt"] = board_store.now_iso()
         board_store.put_task(self.table, stale)
@@ -2018,6 +2058,7 @@ class StaffStepTests(ToolsTestCase):
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: payloads.append(payload)):
             board_staff.handle_tick({"internal": "board_staff_tick", "boardKey": BOARD_KEY})
         latest = board_store.get_task(self.table, task["taskId"])
+        assert latest is not None
         self.assertEqual(latest["status"], "running")
         self.assertTrue(latest.get("stuckRetried"))
         self.assertTrue(any(p.get("internal") == "board_staff_step" for p in payloads))
@@ -2026,13 +2067,14 @@ class StaffStepTests(ToolsTestCase):
         board_store.put_task(self.table, latest)
         board_staff.handle_tick({"internal": "board_staff_tick", "boardKey": BOARD_KEY})
         failed = board_store.get_task(self.table, task["taskId"])
+        assert failed is not None
         self.assertEqual(failed["status"], "failed")
         self.assertEqual(failed["failureReason"], "stuck")
 
     def test_owner_accept_bypasses_unverified_hold(self) -> None:
         task = self._queued_task()
         board_store.claim_task_step(self.table, task["taskId"], 0)
-        task = board_store.get_task(self.table, task["taskId"])
+        task = _nn(board_store.get_task(self.table, task["taskId"]))
         task.update(
             {
                 "status": "review",
@@ -2048,7 +2090,7 @@ class StaffStepTests(ToolsTestCase):
         held = board_staff.apply_review(self.table, settings, dict(task), verdict="accept", notes="ok", by="manager")
         self.assertEqual(held["status"], "needs_owner")
         accepted = board_staff.apply_review(
-            self.table, settings, board_store.get_task(self.table, task["taskId"]), verdict="accept", notes="merged", by="owner:founder"
+            self.table, settings, _nn(board_store.get_task(self.table, task["taskId"])), verdict="accept", notes="merged", by="owner:founder"
         )
         self.assertEqual(accepted["status"], "delivered")
         self.assertEqual(accepted.get("acceptedBy"), "owner:founder")
@@ -2058,6 +2100,7 @@ class StaffStepTests(ToolsTestCase):
         tid = task["taskId"]
         board_store.claim_task_step(self.table, tid, 0)
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         latest["status"] = "running"
         board_store.put_task(self.table, latest)
         ctx = board_tools.ToolContext(
@@ -2087,6 +2130,7 @@ class StaffStepTests(ToolsTestCase):
         )
         self.assertTrue(out.get("blocked"))
         parked = board_store.get_task(self.table, tid)
+        assert parked is not None
         self.assertEqual(parked["status"], "needs_owner")
         self.assertEqual(parked["parkedReason"], "blocked:tool:code")
         self.assertEqual(parked.get("reviews") or 0, 0)
@@ -2098,6 +2142,7 @@ class StaffStepTests(ToolsTestCase):
         tid = task["taskId"]
         board_store.claim_task_step(self.table, tid, 0)
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         latest["status"] = "running"
         board_store.put_task(self.table, latest)
         ctx = board_tools.ToolContext(
@@ -2119,6 +2164,7 @@ class StaffStepTests(ToolsTestCase):
         self.assertIn("refused tool call", out["note"])
         self.assertFalse(out.get("blocked"))
         reviewed = board_store.get_task(self.table, tid)
+        assert reviewed is not None
         self.assertEqual(reviewed["status"], "review")
         self.assertIsNone(reviewed.get("parkedReason") or None)
 
@@ -2127,6 +2173,7 @@ class StaffStepTests(ToolsTestCase):
         tid = task["taskId"]
         board_store.claim_task_step(self.table, tid, 0)
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         latest["status"] = "running"
         board_store.put_task(self.table, latest)
         ctx = board_tools.ToolContext(
@@ -2143,6 +2190,7 @@ class StaffStepTests(ToolsTestCase):
         task = self._queued_task()
         tid = task["taskId"]
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         latest["status"] = "running"
         latest["step"] = 1
         latest["idleSteps"] = BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK - 1
@@ -2185,6 +2233,7 @@ class StaffStepTests(ToolsTestCase):
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             board_staff._complete_step(self.table, tid, latest, result, 2)
         out = board_store.get_task(self.table, tid)
+        assert out is not None
         self.assertEqual(out["status"], "failed")
         self.assertEqual(out["failureReason"], "no progress")
 
@@ -2192,6 +2241,7 @@ class StaffStepTests(ToolsTestCase):
         task = self._queued_task()
         tid = task["taskId"]
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         latest["status"] = "running"
         latest["step"] = 1
         latest["idleSteps"] = BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK - 1
@@ -2234,6 +2284,7 @@ class StaffStepTests(ToolsTestCase):
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             board_staff._complete_step(self.table, tid, latest, result, 2)
         out = board_store.get_task(self.table, tid)
+        assert out is not None
         self.assertNotEqual(out.get("failureReason"), "no progress")
 
     def test_task_note_is_not_evidence(self) -> None:
@@ -2272,6 +2323,7 @@ class StaffStepTests(ToolsTestCase):
         task = self._queued_task()
         tid = task["taskId"]
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         latest["status"] = "running"
         latest["step"] = 1
         latest["idleSteps"] = BOARD_STAFF_MAX_IDLE_STEPS_PER_TASK - 1
@@ -2297,6 +2349,7 @@ class StaffStepTests(ToolsTestCase):
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             board_staff._complete_step(self.table, tid, latest, result, 2)
         out = board_store.get_task(self.table, tid)
+        assert out is not None
         self.assertEqual(out["status"], "failed")
         self.assertEqual(out["failureReason"], "no progress")
 
@@ -2304,6 +2357,7 @@ class StaffStepTests(ToolsTestCase):
         task = self._queued_task()
         tid = task["taskId"]
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         latest["status"] = "running"
         latest["step"] = BOARD_STAFF_MAX_STEPS_PER_TASK - 1
         latest["lastReview"] = {"verdict": "return", "notes": "no progress", "by": "manager"}
@@ -2318,6 +2372,7 @@ class StaffStepTests(ToolsTestCase):
         with patch.object(board_async, "invoke_async", side_effect=capture):
             board_staff._complete_step(self.table, tid, latest, result, BOARD_STAFF_MAX_STEPS_PER_TASK)
         out = board_store.get_task(self.table, tid)
+        assert out is not None
         self.assertEqual(out["status"], "needs_owner")
         self.assertIn("salvaged", out.get("flags") or [])
         self.assertIn("already returned", out.get("parkedReason") or "")
@@ -2327,6 +2382,7 @@ class StaffStepTests(ToolsTestCase):
         task = self._queued_task()
         tid = task["taskId"]
         latest = board_store.get_task(self.table, tid)
+        assert latest is not None
         latest["status"] = "running"
         latest["step"] = BOARD_STAFF_MAX_STEPS_PER_TASK - 1
         latest["retriedAt"] = "2026-09-16T00:00:00Z"
@@ -2347,6 +2403,7 @@ class StaffStepTests(ToolsTestCase):
         with patch.object(board_async, "invoke_async", side_effect=capture):
             board_staff._complete_step(self.table, tid, latest, result, BOARD_STAFF_MAX_STEPS_PER_TASK)
         out = board_store.get_task(self.table, tid)
+        assert out is not None
         self.assertEqual(out["status"], "review")
         self.assertTrue(any(p.get("internal") == "board_staff_review" for p in invoked))
 
@@ -2381,6 +2438,7 @@ class StaffStepTests(ToolsTestCase):
         self.assertEqual(out["boundaries"]["holds"]["catalog_import"], 2)
         self.assertNotIn("catalog_import", out["boundaries"]["holdOverrides"])
         stored = board_store._get_state(self.table, "settings")  # noqa: SLF001
+        assert stored is not None
         self.assertEqual(stored["staff"]["modelBySeat"]["content-marketer"], "qwen/qwen-2.5-72b-instruct")
         self.assertEqual(stored["boundaries"]["holds"]["catalog_import"], 2)
         self.assertNotIn("catalog_import", stored["boundaries"].get("holdOverrides") or {})
@@ -2712,6 +2770,7 @@ class StaffRouteTests(BoardTestCase):
             self.assertEqual(status, 201)
             task_id = created["task"]["taskId"]
             row = board_store.get_task(self.table, task_id)
+            assert row is not None
             row.update(
                 {
                     "status": "failed",
@@ -2741,6 +2800,7 @@ class StaffRouteTests(BoardTestCase):
             self.assertEqual(status, 201)
             task_id = created["task"]["taskId"]
             row = board_store.get_task(self.table, task_id)
+            assert row is not None
             board_staff._append_scratchpad(row, "run already scheduled")  # noqa: SLF001
             row.update({"status": "needs_owner", "failureReason": "breaker tripped"})
             board_store.put_task(self.table, row)
@@ -2775,14 +2835,16 @@ class StaffRouteTests(BoardTestCase):
             self.assertEqual(status, 201)
             task_id = created["task"]["taskId"]
             row = board_store.get_task(self.table, task_id)
+            assert row is not None
             row.update({"status": "failed", "failureReason": "step limit"})
             board_store.put_task(self.table, row)
             status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/cancel", "POST", {})
             self.assertEqual(status, 200)
             self.assertEqual(body["task"]["status"], "cancelled")
             self.assertIn("step limit", body["task"].get("failureReason") or "")
-            self.assertEqual(board_store.get_task(self.table, task_id)["cancelledFrom"], "failed")
+            self.assertEqual(_nn(board_store.get_task(self.table, task_id))["cancelledFrom"], "failed")
             row = board_store.get_task(self.table, task_id)
+            assert row is not None
             row["status"] = "delivered"
             row.pop("failureReason", None)
             board_store.put_task(self.table, row)
@@ -2801,6 +2863,7 @@ class StaffRouteTests(BoardTestCase):
             self.assertEqual(status, 201)
             task_id = created["task"]["taskId"]
             row = board_store.get_task(self.table, task_id)
+            assert row is not None
             row.update({"status": "failed", "failureReason": "step limit", "managerId": "cfo"})
             board_store.put_task(self.table, row)
             ctx = board_tools.ToolContext(
@@ -2818,6 +2881,7 @@ class StaffRouteTests(BoardTestCase):
             self.assertIn("step limit", reason)
             self.assertIn("superseded", reason)
             stored = board_store.get_task(self.table, task_id)
+            assert stored is not None
             self.assertEqual(stored["cancelledFrom"], "failed")
             self.assertIn("step limit", stored.get("failureReason") or "")
             stored["status"] = "delivered"
@@ -2839,6 +2903,7 @@ class StaffRouteTests(BoardTestCase):
             self.assertEqual(status, 201)
             task_id = created["task"]["taskId"]
             row = board_store.get_task(self.table, task_id)
+            assert row is not None
             row.update({
                 "status": "failed",
                 "failureReason": "Task budget exhausted",
@@ -2865,6 +2930,7 @@ class StaffRouteTests(BoardTestCase):
             self.assertEqual(status, 201)
             task_id = created["task"]["taskId"]
             row = board_store.get_task(self.table, task_id)
+            assert row is not None
             row.update({"status": "failed", "failureReason": "stuck"})
             board_store.put_task(self.table, row)
             board_store.save_staff_override(self.table, "support", {"isActive": False})
@@ -2884,6 +2950,7 @@ class StaffRouteTests(BoardTestCase):
                 },
             )
             row = board_store.get_task(self.table, task_id)
+            assert row is not None
             row["actionId"] = action_id
             board_store.put_task(self.table, row)
             status, body = self.call(f"/siu-tin-dei/board/tasks/{task_id}/retry", "POST", {})
@@ -2906,6 +2973,7 @@ class StaffRouteTests(BoardTestCase):
                     created_by="t",
                 )
                 row = board_store.get_task(self.table, task["taskId"])
+                assert row is not None
                 row.update({"status": "failed", "failureReason": "stuck", "finishedAt": board_store.now_iso()})
                 board_store.put_task(self.table, row)
                 failed_ids.append(task["taskId"])
@@ -2920,6 +2988,7 @@ class StaffRouteTests(BoardTestCase):
                     created_by="t",
                 )
                 row = board_store.get_task(self.table, task["taskId"])
+                assert row is not None
                 row.update({"status": "delivered", "finishedAt": board_store.now_iso()})
                 board_store.put_task(self.table, row)
         listed = board_staff.list_tasks_for_api(self.table, limit=20)
@@ -2961,6 +3030,7 @@ class StaffRouteTests(BoardTestCase):
         self._seed_delivered(210)
         found = board_code._find_task(self.table, "code-implement", "issue:209")  # noqa: SLF001
         self.assertIsNotNone(found)
+        assert found is not None
         self.assertEqual(found["taskId"], "t209")
 
 
@@ -2979,6 +3049,7 @@ class StaffAccountingTests(StaffStepTests):
             {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": task["taskId"], "step": 1}
         )
         latest = board_store.get_task(self.table, task["taskId"])
+        assert latest is not None
         self.assertEqual(latest["step"], 0)
 
     def test_task_usage_accumulates_and_budget_stops_third_step(self) -> None:
@@ -2998,12 +3069,14 @@ class StaffAccountingTests(StaffStepTests):
                     {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": task["taskId"], "step": 2}
                 )
         latest = board_store.get_task(self.table, task["taskId"])
+        assert latest is not None
         self.assertAlmostEqual(float((latest.get("usage") or {}).get("cost") or 0), 0.02)
         with patch.object(board_tools, "run_tool_loop", return_value=FakeResult()):
             board_staff.run_step(
                 {"internal": "board_staff_step", "boardKey": BOARD_KEY, "taskId": task["taskId"], "step": 3}
             )
         failed = board_store.get_task(self.table, task["taskId"])
+        assert failed is not None
         self.assertEqual(failed["status"], "failed")
         self.assertEqual(failed["failureReason"], "Task budget exhausted")
 
@@ -3149,6 +3222,7 @@ class StaffExecuteCallTests(StaffStepTests):
             )
         self.assertEqual(out.status, "ok", out.result)
         latest = board_store.get_task(self.table, task["taskId"])
+        assert latest is not None
         self.assertEqual(latest["status"], "review")
 
     def test_execute_call_task_finish_refused_outside_task_context(self) -> None:
@@ -3232,6 +3306,7 @@ class StaffActionHandoffTests(BoardTestCase):
         self.assertEqual(task["actionId"], action["actionId"])
         self.assertEqual(task["meetingId"], "m-1")
         linked = board_store.get_action(self.table, action["actionId"])
+        assert linked is not None
         self.assertEqual(linked["assignee"], "prospector")
         self.assertEqual(linked["staffTaskId"], task["taskId"])
         self.assertEqual(linked["status"], "open")
@@ -3244,11 +3319,13 @@ class StaffActionHandoffTests(BoardTestCase):
         self.assertEqual(status, 409, body)
         # Deliver and accept: the founder action closes with the task reference.
         stored = board_store.get_task(self.table, task["taskId"])
+        assert stored is not None
         stored["status"] = "review"
         board_store.put_task(self.table, stored)
         status, body = self.call(f"/siu-tin-dei/board/tasks/{task['taskId']}/review", "POST", {"verdict": "accept", "notes": "Good"})
         self.assertEqual(status, 200, body)
         closed = board_store.get_action(self.table, action["actionId"])
+        assert closed is not None
         self.assertEqual(closed["status"], "done")
         self.assertEqual(closed["closedBy"], f"staff:{task['taskId']}")
         self.assertIn(task["taskId"], closed["note"])
@@ -3304,6 +3381,7 @@ class StaffActionHandoffTests(BoardTestCase):
         self.assertEqual(tasks[0]["assignee"], "prospector")
         self.assertEqual(tasks[0]["actionId"], action["actionId"])
         linked = board_store.get_action(self.table, action["actionId"])
+        assert linked is not None
         self.assertEqual(linked["staffTaskId"], tasks[0]["taskId"])
 
     def test_minutes_assignee_starts_task_when_chair_may_act(self) -> None:
@@ -3412,6 +3490,7 @@ class StaffHelpTests(ToolsTestCase):
         task, settings = self._support_task()
         board_store.claim_task_step(self.table, task["taskId"], 0)
         latest = board_store.get_task(self.table, task["taskId"])
+        assert latest is not None
         latest["status"] = "running"
         latest["helpTaskIds"] = ["child-help"]
         board_store.put_task(self.table, latest)
@@ -3438,7 +3517,7 @@ class StaffHelpTests(ToolsTestCase):
                 },
             )
         self.assertIn("wait for the help task", str(raised.exception))
-        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "running")
+        self.assertEqual(_nn(board_store.get_task(self.table, task["taskId"]))["status"], "running")
 
     def test_finish_allows_short_pr_memo_after_refused_help(self) -> None:
         task, settings = self._support_task("Open a draft PR for the booking form.")
@@ -3452,7 +3531,7 @@ class StaffHelpTests(ToolsTestCase):
                 "taskId": task["taskId"],
             },
         )
-        ctx = self._help_ctx(board_store.get_task(self.table, task["taskId"]), settings)
+        ctx = self._help_ctx(_nn(board_store.get_task(self.table, task["taskId"])), settings)
         with self.assertRaises(board_staff.StaffError) as waiting:
             board_staff.op_task_finish(
                 ctx,
@@ -3548,6 +3627,7 @@ class StaffHelpTests(ToolsTestCase):
         self.assertTrue(outcome.approval_id)
         board_staff._park_waiting_approval(self.table, task, [outcome.approval_id])  # noqa: SLF001
         parked = board_store.get_task(self.table, task["taskId"])
+        assert parked is not None
         self.assertEqual(parked["status"], "waiting_approval")
         decided = board_tools.decide_approval(
             self.table, settings, outcome.approval_id, approve=True, owner_sub="owner-1"
@@ -3555,9 +3635,11 @@ class StaffHelpTests(ToolsTestCase):
         self.assertEqual(decided["status"], "executed", decided)
         self.assertIn("data-analyst", str(decided.get("summary") or ""))
         parent = board_store.get_task(self.table, task["taskId"])
+        assert parent is not None
         self.assertEqual(parent["status"], "waiting_subtask")
         child_id = parent["helpTaskIds"][0]
         child = board_store.get_task(self.table, child_id)
+        assert child is not None
         self.assertEqual(child["origin"], "task")
         self.assertEqual(child["parentTaskId"], task["taskId"])
         self.assertEqual(child["assignee"], "data-analyst")
@@ -3580,6 +3662,7 @@ class StaffHelpTests(ToolsTestCase):
         board_store.put_task(self.table, child)
         board_staff._accept_task(self.table, child, board_store.now_iso())  # noqa: SLF001
         parent = board_store.get_task(self.table, task["taskId"])
+        assert parent is not None
         self.assertEqual(parent["status"], "running")
         scratch = board_staff._blob_get(parent["scratchpadKey"]).decode()  # noqa: SLF001
         self.assertIn("HELP FROM data-analyst", scratch)
@@ -3631,6 +3714,7 @@ class StaffHelpTests(ToolsTestCase):
                 },
             )
         finished = board_store.get_task(self.table, task["taskId"])
+        assert finished is not None
         self.assertEqual(finished["status"], "review")
         self.assertEqual(finished["evidence"], ["web-1"])
 
@@ -3649,6 +3733,7 @@ class StaffHelpTests(ToolsTestCase):
             )
         self.assertEqual(outcome.status, "ok", outcome.result)
         parent = board_store.get_task(self.table, task["taskId"])
+        assert parent is not None
         self.assertEqual(parent["status"], "waiting_subtask")
         self.assertEqual(board_store.list_approvals(self.table), [])
 
@@ -3665,6 +3750,7 @@ class StaffHelpTests(ToolsTestCase):
             self.table, settings, outcome.approval_id, approve=False, owner_sub="owner-1"
         )
         parent = board_store.get_task(self.table, task["taskId"])
+        assert parent is not None
         self.assertEqual(parent["status"], "running")
         scratch = board_staff._blob_get(parent["scratchpadKey"]).decode()  # noqa: SLF001
         self.assertIn("founder declined", scratch)
@@ -3673,6 +3759,7 @@ class StaffHelpTests(ToolsTestCase):
             self._help_ctx(parent, settings),
             {"need": "Sessions", "toolIds": ["web"]},
         )
+        assert again is not None
         self.assertIn("already used", again)
 
     def test_help_refuses_tools_the_seat_already_has(self) -> None:
@@ -3681,6 +3768,7 @@ class StaffHelpTests(ToolsTestCase):
             self._help_ctx(task, settings),
             {"need": "Send the reply", "toolIds": ["mail"]},
         )
+        assert reason is not None
         self.assertIn("already have those tools", reason)
 
     def test_help_refuses_when_nobody_covers_the_tools(self) -> None:
@@ -3689,6 +3777,7 @@ class StaffHelpTests(ToolsTestCase):
             self._help_ctx(task, settings),
             {"need": "Dispatch the coding runner", "toolIds": ["code"]},
         )
+        assert reason is not None
         self.assertIn("No active seat has those tools", reason)
 
     def test_help_child_cannot_request_further_help(self) -> None:
@@ -3704,7 +3793,9 @@ class StaffHelpTests(ToolsTestCase):
                 {"need": "Sessions", "toolIds": ["web"], "reason": "Need GA4"},
             )
         parent = board_store.get_task(self.table, task["taskId"])
+        assert parent is not None
         child = board_store.get_task(self.table, parent["helpTaskIds"][0])
+        assert child is not None
         child_ctx = board_tools.ToolContext(
             table=self.table,
             settings=settings,
@@ -3718,6 +3809,7 @@ class StaffHelpTests(ToolsTestCase):
         reason = board_staff.validate_task_request_help(
             child_ctx, {"need": "More", "toolIds": ["finance"]}
         )
+        assert reason is not None
         self.assertIn("cannot request further help", reason)
 
     def test_cancel_parent_cancels_open_child(self) -> None:
@@ -3733,11 +3825,12 @@ class StaffHelpTests(ToolsTestCase):
                 {"need": "Sessions", "toolIds": ["web"], "reason": "Need GA4"},
             )
         parent = board_store.get_task(self.table, task["taskId"])
+        assert parent is not None
         child_id = parent["helpTaskIds"][0]
         cancelled = board_staff.cancel_task(self.table, task["taskId"], "owner-1")
         self.assertEqual(cancelled["status"], "cancelled")
-        self.assertEqual(board_store.get_task(self.table, child_id)["status"], "cancelled")
-        self.assertEqual(board_store.get_task(self.table, task["taskId"])["status"], "cancelled")
+        self.assertEqual(_nn(board_store.get_task(self.table, child_id))["status"], "cancelled")
+        self.assertEqual(_nn(board_store.get_task(self.table, task["taskId"]))["status"], "cancelled")
 
     def test_waiting_subtask_expires(self) -> None:
         task, settings = self._support_task()
@@ -3752,6 +3845,7 @@ class StaffHelpTests(ToolsTestCase):
                 {"need": "Sessions", "toolIds": ["web"], "reason": "Need GA4"},
             )
         parent = board_store.get_task(self.table, task["taskId"])
+        assert parent is not None
         child_id = parent["helpTaskIds"][0]
         parent["parkedAt"] = "2000-01-01T00:00:00Z"
         parent["updatedAt"] = board_store.now_iso()
@@ -3759,8 +3853,9 @@ class StaffHelpTests(ToolsTestCase):
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             expired = board_staff.expire_waiting_help(self.table, settings)
         self.assertGreaterEqual(expired, 1)
-        self.assertEqual(board_store.get_task(self.table, child_id)["status"], "cancelled")
+        self.assertEqual(_nn(board_store.get_task(self.table, child_id))["status"], "cancelled")
         resumed = board_store.get_task(self.table, task["taskId"])
+        assert resumed is not None
         self.assertEqual(resumed["status"], "running")
         scratch = board_staff._blob_get(resumed["scratchpadKey"]).decode()  # noqa: SLF001
         self.assertIn("no answer", scratch)
@@ -3788,9 +3883,12 @@ class StaffHelpTests(ToolsTestCase):
                 {"need": "Sessions", "toolIds": ["web"], "reason": "Need GA4"},
             )
         parent = board_store.get_task(self.table, task["taskId"])
+        assert parent is not None
         child = board_store.get_task(self.table, parent["helpTaskIds"][0])
+        assert child is not None
         board_staff._finish_incomplete(self.table, child, "step error")  # noqa: SLF001
         resumed = board_store.get_task(self.table, task["taskId"])
+        assert resumed is not None
         self.assertEqual(resumed["status"], "running")
         scratch = board_staff._blob_get(resumed["scratchpadKey"]).decode()  # noqa: SLF001
         self.assertIn("help unavailable", scratch)
@@ -3808,7 +3906,9 @@ class StaffHelpTests(ToolsTestCase):
                 {"need": "Sessions", "toolIds": ["web"], "reason": "Need GA4"},
             )
         parent = board_store.get_task(self.table, task["taskId"])
+        assert parent is not None
         child = board_store.get_task(self.table, parent["helpTaskIds"][0])
+        assert child is not None
         return parent, child, settings
 
     def test_finish_refused_while_waiting_on_help(self) -> None:
@@ -3826,8 +3926,8 @@ class StaffHelpTests(ToolsTestCase):
                 },
             )
         self.assertIn("waiting_subtask", str(cm.exception))
-        self.assertNotIn(board_store.get_task(self.table, child["taskId"])["status"], {"cancelled", "delivered", "failed"})
-        self.assertEqual(board_store.get_task(self.table, parent["taskId"])["status"], "waiting_subtask")
+        self.assertNotIn(_nn(board_store.get_task(self.table, child["taskId"]))["status"], {"cancelled", "delivered", "failed"})
+        self.assertEqual(_nn(board_store.get_task(self.table, parent["taskId"]))["status"], "waiting_subtask")
 
     def test_child_needs_owner_keeps_parent_parked(self) -> None:
         parent, child, settings = self._act_help()
@@ -3842,9 +3942,10 @@ class StaffHelpTests(ToolsTestCase):
             notes="Still no GA4 proof.",
             by="cio",
         )
-        child = board_store.get_task(self.table, child["taskId"])
+        child = _nn(board_store.get_task(self.table, child["taskId"]))
         self.assertEqual(child["status"], "needs_owner")
         parked = board_store.get_task(self.table, parent["taskId"])
+        assert parked is not None
         self.assertEqual(parked["status"], "waiting_subtask")
         self.assertIn("founder review", parked.get("parkedReason") or "")
         scratch = board_staff._blob_get(parked["scratchpadKey"]).decode()  # noqa: SLF001
@@ -3854,8 +3955,8 @@ class StaffHelpTests(ToolsTestCase):
         board_store.put_task(self.table, parked)
         expired = board_staff.expire_waiting_help(self.table, settings)
         self.assertEqual(expired, 0)
-        self.assertEqual(board_store.get_task(self.table, child["taskId"])["status"], "needs_owner")
-        self.assertEqual(board_store.get_task(self.table, parent["taskId"])["status"], "waiting_subtask")
+        self.assertEqual(_nn(board_store.get_task(self.table, child["taskId"]))["status"], "needs_owner")
+        self.assertEqual(_nn(board_store.get_task(self.table, parent["taskId"]))["status"], "waiting_subtask")
 
     def test_failed_help_approval_resumes_parent(self) -> None:
         task, settings = self._support_task()
@@ -3874,6 +3975,7 @@ class StaffHelpTests(ToolsTestCase):
         )
         self.assertEqual(decided["status"], "failed", decided)
         parent = board_store.get_task(self.table, task["taskId"])
+        assert parent is not None
         self.assertEqual(parent["status"], "running")
         self.assertEqual(int(parent.get("helpRequests") or 0), 1)
         scratch = board_staff._blob_get(parent["scratchpadKey"]).decode()  # noqa: SLF001
@@ -3882,6 +3984,7 @@ class StaffHelpTests(ToolsTestCase):
             self._help_ctx(parent, settings),
             {"need": "Sessions", "toolIds": ["web"]},
         )
+        assert again is not None
         self.assertIn("already used", again)
 
     def test_expired_help_approval_is_rejected(self) -> None:
@@ -3894,15 +3997,18 @@ class StaffHelpTests(ToolsTestCase):
         )
         board_staff._park_waiting_approval(self.table, task, [outcome.approval_id])  # noqa: SLF001
         parked = board_store.get_task(self.table, task["taskId"])
+        assert parked is not None
         parked["parkedAt"] = "2000-01-01T00:00:00Z"
         board_store.put_task(self.table, parked)
         with patch.object(board_async, "invoke_async", lambda payload, fallback=None: None):
             expired = board_staff.expire_waiting_help(self.table, settings)
         self.assertGreaterEqual(expired, 1)
         approval = board_store.get_approval(self.table, outcome.approval_id)
+        assert approval is not None
         self.assertEqual(approval["status"], "rejected")
         self.assertEqual(approval.get("decidedBySub"), "system:expiry")
         resumed = board_store.get_task(self.table, task["taskId"])
+        assert resumed is not None
         self.assertEqual(resumed["status"], "running")
         self.assertEqual(int(resumed.get("helpRequests") or 0), 1)
         with self.assertRaises(ValueError):
@@ -3917,8 +4023,8 @@ class StaffHelpTests(ToolsTestCase):
         board_store.put_task(self.table, parent)
         expired = board_staff.expire_waiting_help(self.table, settings)
         self.assertEqual(expired, 0)
-        self.assertEqual(board_store.get_task(self.table, parent["taskId"])["status"], "waiting_subtask")
-        self.assertNotIn(board_store.get_task(self.table, child["taskId"])["status"], {"cancelled", "delivered", "failed"})
+        self.assertEqual(_nn(board_store.get_task(self.table, parent["taskId"]))["status"], "waiting_subtask")
+        self.assertNotIn(_nn(board_store.get_task(self.table, child["taskId"]))["status"], {"cancelled", "delivered", "failed"})
 
     def test_help_refuses_internal_tool_ids(self) -> None:
         task, settings = self._support_task()
@@ -3926,6 +4032,7 @@ class StaffHelpTests(ToolsTestCase):
             self._help_ctx(task, settings),
             {"need": "Read board records", "toolIds": ["board", "staff"]},
         )
+        assert reason is not None
         self.assertIn("toolIds must be one or more board tools", reason)
 
     def test_pick_helper_falls_back_to_manager_persona(self) -> None:
@@ -4075,3 +4182,11 @@ class CashSnapshotTests(BoardTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

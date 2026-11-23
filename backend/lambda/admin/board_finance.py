@@ -68,7 +68,7 @@ def summarize_book(data: dict[str, Any], *, now: datetime | None = None) -> dict
         currency = str(line.get("currency") or "HKD").upper()
         amount = line.get("grossAmount")
         try:
-            value = abs(float(amount))
+            value = abs(_num(amount))
         except (TypeError, ValueError):
             continue
         if dt >= fy_start:
@@ -218,3 +218,15 @@ def render_finance_summary(summary: dict[str, Any]) -> str:
                 f"net {row['net']:.2f} {row['currency']}."
             )
     return "\n".join(lines)
+
+
+def _num(value: Any | None) -> float:
+    if value is None:
+        raise TypeError("expected a number")
+    return float(value)
+
+
+def _whole(value: Any | None) -> int:
+    if value is None:
+        raise TypeError("expected an int")
+    return int(value)

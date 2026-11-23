@@ -12,23 +12,45 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 
+class _StubBotoCoreError(Exception):
+    pass
+
+
+class _StubClientError(_StubBotoCoreError):
+    pass
+
+
+class _StubConfig:
+    def __init__(self, **kwargs: Any) -> None:
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+
+class _ExceptionsModule(types.ModuleType):
+    BotoCoreError: type[Exception]
+    ClientError: type[Exception]
+
+
+class _ConfigModule(types.ModuleType):
+    Config: type[_StubConfig]
+
+
+class _BotocoreModule(types.ModuleType):
+    exceptions: _ExceptionsModule
+    config: _ConfigModule
+
+
 def _install_botocore_config_stub() -> None:
     """Make the test ``botocore`` stub importable as a package (``botocore.config``)."""
     if "botocore.config" in sys.modules and hasattr(sys.modules["botocore.config"], "Config"):
         return
     botocore = sys.modules.get("botocore")
-    if botocore is None or not isinstance(botocore, types.ModuleType):
-        botocore = types.ModuleType("botocore")
+    if not isinstance(botocore, _BotocoreModule):
+        botocore = _BotocoreModule("botocore")
         sys.modules["botocore"] = botocore
-    botocore.__path__ = []  # type: ignore[attr-defined]
-    config = types.ModuleType("botocore.config")
-
-    class Config:
-        def __init__(self, **kwargs: Any) -> None:
-            for key, value in kwargs.items():
-                setattr(self, key, value)
-
-    config.Config = Config
+    setattr(botocore, "__path__", [])
+    config = _ConfigModule("botocore.config")
+    config.Config = _StubConfig
     botocore.config = config
     sys.modules["botocore.config"] = config
 
@@ -37,26 +59,20 @@ def _install_stubs() -> None:
     if "boto3" not in sys.modules or not isinstance(sys.modules["boto3"], MagicMock):
         sys.modules["boto3"] = MagicMock()
     if "botocore.exceptions" not in sys.modules:
-        botocore = types.ModuleType("botocore")
-        exceptions = types.ModuleType("botocore.exceptions")
-
-        class BotoCoreError(Exception):
-            pass
-
-        class ClientError(BotoCoreError):
-            pass
-
-        exceptions.BotoCoreError = BotoCoreError
-        exceptions.ClientError = ClientError
+        exceptions = _ExceptionsModule("botocore.exceptions")
+        exceptions.BotoCoreError = _StubBotoCoreError
+        exceptions.ClientError = _StubClientError
+        botocore = _BotocoreModule("botocore")
         botocore.exceptions = exceptions
         sys.modules["botocore"] = botocore
         sys.modules["botocore.exceptions"] = exceptions
-    elif not hasattr(sys.modules["botocore.exceptions"], "BotoCoreError"):
-
-        class BotoCoreError(Exception):
-            pass
-
-        sys.modules["botocore.exceptions"].BotoCoreError = BotoCoreError
+    else:
+        exc_mod = sys.modules["botocore.exceptions"]
+        if not hasattr(exc_mod, "BotoCoreError"):
+            if isinstance(exc_mod, _ExceptionsModule):
+                exc_mod.BotoCoreError = _StubBotoCoreError
+            else:
+                setattr(exc_mod, "BotoCoreError", _StubBotoCoreError)
     _install_botocore_config_stub()
 
 
@@ -1404,10 +1420,23 @@ class TestAssets(BoardTestCase):
                 return {"LastModified": when}
 
         class _DropBeforeUpdate(FakeTable):
-            def update_item(self, **kwargs: Any) -> dict:
-                if kwargs["Key"]["pk"].endswith("deleted-row.pdf"):
-                    self.items.pop((kwargs["Key"]["pk"], kwargs["Key"]["sk"]), None)
-                return super().update_item(**kwargs)
+            def update_item(
+                self,
+                Key: dict[str, Any],
+                UpdateExpression: str,
+                ExpressionAttributeValues: dict[str, Any],
+                ConditionExpression: str | None = None,
+                ExpressionAttributeNames: dict[str, str] | None = None,
+            ) -> dict:
+                if str(Key.get("pk") or "").endswith("deleted-row.pdf"):
+                    self.items.pop((Key["pk"], Key["sk"]), None)
+                return super().update_item(
+                    Key,
+                    UpdateExpression,
+                    ExpressionAttributeValues,
+                    ConditionExpression,
+                    ExpressionAttributeNames,
+                )
 
         table = _DropBeforeUpdate()
         table.put_item(Item={"pk": f"ASSET#{present}", "sk": "META", "size": 1})

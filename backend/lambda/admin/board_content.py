@@ -95,7 +95,7 @@ def list_for_api(table: Any, *, status: str | None = None, start: str = "", end:
     rows = board_store.list_content(table, status, limit=max(limit, 400))
     cleaned: list[dict[str, Any]] = []
     for raw in rows:
-        row = raw if isinstance(raw, dict) else {}
+        row = _g if isinstance(_g := raw, dict) else {}
         slot = str(row.get("slotAt") or "")
         if start and slot < start:
             continue
@@ -146,7 +146,10 @@ def render_item(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     channel = str(doc.get("channel") or "facebook")
     fields = dict(doc.get("fields") or {})
     fields.setdefault("title", (doc.get("copyEn") or doc.get("copyZh") or "Siu Tin Dei")[:80])
-    fields.setdefault("body", (doc.get("copyZh") if channel.endswith("xiaohongshu") else doc.get("copyEn") or "")[:200])
+    copy_zh = doc.get("copyZh")
+    copy_en = doc.get("copyEn")
+    body_src = copy_zh if channel.endswith("xiaohongshu") else copy_en
+    fields.setdefault("body", (body_src if isinstance(body_src, str) else "")[:200])
     fields.setdefault("pillar", doc.get("pillar") or "")
     template = str(doc.get("template") or "spotlight")
     keys: list[str] = []
@@ -248,7 +251,7 @@ def load_staged_items(task_id: str) -> list[dict[str, Any]]:
 
 def coerce_hashtags(value: Any) -> list[str]:
     """Tags as a list; the tool schema sends one string, which must not be spelled out."""
-    raw = re.split(r"[\s,]+", value) if isinstance(value, str) else (value if isinstance(value, list) else [])
+    raw = re.split(r"[\s,]+", value) if isinstance(value, str) else (_g if isinstance(_g := value, list) else [])
     return [(t if t.startswith("#") else f"#{t}")[:40] for t in (str(x).strip() for x in raw) if t][:20]
 
 
@@ -410,7 +413,7 @@ def on_plan_delivered(table: Any, settings: dict[str, Any], task: dict[str, Any]
                 parsed = json.loads(text[start : end + 1])
             except json.JSONDecodeError:
                 parsed = {}
-    items = parsed.get("items") if isinstance(parsed.get("items"), list) else []
+    items = _g if isinstance(_g := parsed.get("items"), list) else []
     created = 0
     for raw in items:
         if not isinstance(raw, dict):
@@ -788,18 +791,18 @@ def write_performance(table: Any, settings: dict[str, Any]) -> dict[str, Any]:
                     continue
         if best is None or score > best[0]:
             best = (score, row)
-    boost = None
+    boost_out: dict[str, Any] | None = None
     if best and best[1].get("platformPostId") and best[1].get("platformPostId") != "manual":
         try:
-            boost = board_tools.execute_call(
+            outcome = board_tools.execute_call(
                 ctx,
                 board_tools.REGISTRY["meta_boost_post"],
                 {"postId": best[1]["platformPostId"], "reason": "weekly readout best post"},
             )
-            boost = {"status": boost.status, "result": boost.result}
+            boost_out = {"status": outcome.status, "result": outcome.result}
         except Exception as exc:
-            boost = {"error": str(exc)[:200]}
-    return {"page": page, "ig": ig, "web": campaigns, "updated": updated, "boost": boost}
+            boost_out = {"error": str(exc)[:200]}
+    return {"page": page, "ig": ig, "web": campaigns, "updated": updated, "boost": boost_out}
 
 
 def on_readout_delivered(table: Any, settings: dict[str, Any], task: dict[str, Any]) -> dict[str, Any]:

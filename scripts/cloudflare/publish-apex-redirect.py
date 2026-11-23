@@ -393,8 +393,13 @@ def ensure_custom_domain(token: str, account_id: str, zone_id: str) -> str:
 
 
 def worker_state(token: str, account_id: str, zone_id: str) -> dict[str, Any]:
-    scripts = _cf_request("GET", f"/accounts/{account_id}/workers/scripts", token).get("result") or []
-    script = next((row for row in scripts if str(row.get("id")) == SCRIPT_NAME), {})
+    raw_scripts = _cf_request("GET", f"/accounts/{account_id}/workers/scripts", token).get("result")
+    script: dict[str, Any] = {}
+    if isinstance(raw_scripts, list):
+        for row in raw_scripts:
+            if isinstance(row, dict) and str(row.get("id")) == SCRIPT_NAME:
+                script = row
+                break
     routes = _cf_request("GET", f"/zones/{zone_id}/workers/routes", token).get("result") or []
     matching = [row for row in routes if str(row.get("pattern")) == ROUTE_PATTERN]
     return {

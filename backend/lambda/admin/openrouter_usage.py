@@ -239,7 +239,7 @@ def replace_usage_day(
 
 def put_pull_status(table: Any, status: dict[str, Any]) -> None:
     """Remember the last sibling-usage pull so the dashboard can explain a zero."""
-    apps_in = status.get("apps") if isinstance(status.get("apps"), list) else []
+    apps_in = _g if isinstance(_g := status.get("apps"), list) else []
     apps: list[dict[str, Any]] = []
     for row in apps_in:
         if not isinstance(row, dict) or not row.get("id"):
@@ -268,7 +268,7 @@ def read_pull_status(table: Any) -> dict[str, Any] | None:
     item = result.get("Item") if isinstance(result, dict) else None
     if not isinstance(item, dict):
         return None
-    apps_in = item.get("apps") if isinstance(item.get("apps"), list) else []
+    apps_in = _g if isinstance(_g := item.get("apps"), list) else []
     apps: list[dict[str, Any]] = []
     for row in apps_in:
         if not isinstance(row, dict) or not row.get("id"):

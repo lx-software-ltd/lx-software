@@ -486,9 +486,15 @@ def render_markdown(data: ReportData) -> str:
     for table in data.breakdowns:
         out.append(render_table(table))
     out += ["## Google Search Console", ""]
-    for table in (data.gsc_totals, data.gsc_queries, data.gsc_pages, data.gsc_sitemaps):
-        if table is not None:
-            out.append(render_table(table))
+    gsc_tables: tuple[Table | None, ...] = (
+        data.gsc_totals,
+        data.gsc_queries,
+        data.gsc_pages,
+        data.gsc_sitemaps,
+    )
+    for gsc_table in gsc_tables:
+        if gsc_table is not None:
+            out.append(render_table(gsc_table))
     if data.errors:
         out += ["## Errors", ""] + [f"- {e}" for e in data.errors] + [""]
     return "\n".join(out).rstrip() + "\n"

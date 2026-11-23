@@ -265,7 +265,7 @@ def _blob_payload(raw: bytes) -> dict[str, Any] | None:
         doc = json.loads(raw.decode("utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return None
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def _cached(table: Any, name: str) -> dict[str, Any] | None:
@@ -456,7 +456,7 @@ def parse_csdi_features(body: str, *, facility_kind: str, category: str, source:
         if not isinstance(feat, dict):
             continue
         raw = dict(feat.get("attributes") or {})
-        geom = feat.get("geometry") if isinstance(feat.get("geometry"), dict) else {}
+        geom = _g if isinstance(_g := feat.get("geometry"), dict) else {}
         if raw.get("LATITUDE") in (None, "") and geom.get("y") is not None:
             raw["LATITUDE"] = geom.get("y")
             raw["LONGITUDE"] = geom.get("x")

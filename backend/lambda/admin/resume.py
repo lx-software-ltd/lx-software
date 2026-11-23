@@ -313,7 +313,7 @@ def _tailor(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
         if not resume_tracker.get_posting(table, posting_id):
             raise ResumeError("Job post not found.", 404)
     else:
-        posting = body.get("posting") if isinstance(body.get("posting"), dict) else None
+        posting = _g if isinstance(_g := body.get("posting"), dict) else None
         if not posting:
             raise ResumeError("Choose or paste a job post.")
         created = resume_tracker.create_posting(table, posting)

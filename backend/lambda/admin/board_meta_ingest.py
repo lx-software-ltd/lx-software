@@ -155,7 +155,7 @@ def _wa_body(raw: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
     kind = str(raw.get("type") or "text")
     if kind == "text":
         return str((raw.get("text") or {}).get("body") or ""), []
-    block = raw.get(kind) if isinstance(raw.get(kind), dict) else {}
+    block = _g if isinstance(_g := raw.get(kind), dict) else {}
     caption = str(block.get("caption") or block.get("filename") or "")
     if kind == "location":
         return f"{block.get('latitude')},{block.get('longitude')}".strip(","), []
@@ -209,7 +209,7 @@ def _contacts(value: dict[str, Any]) -> list[dict[str, Any]]:
     for row in value.get("state_sync") or value.get("contacts") or []:
         if not isinstance(row, dict):
             continue
-        contact = row.get("contact") if isinstance(row.get("contact"), dict) else row
+        contact = _g if isinstance(_g := row.get("contact"), dict) else row
         phone = board_meta._phone_digits(str(contact.get("phone_number") or contact.get("wa_id") or ""))
         name = str(((contact.get("profile") or {}) if isinstance(contact.get("profile"), dict) else {}).get("name") or contact.get("full_name") or "")
         if not phone or not name:
@@ -237,7 +237,7 @@ def _comment(value: dict[str, Any], *, channel: str) -> dict[str, Any] | None:
     item = str(value.get("item") or "")
     if item and item not in ("comment",):
         return None
-    comment = value.get("comment") if isinstance(value.get("comment"), dict) else value
+    comment = _g if isinstance(_g := value.get("comment"), dict) else value
     if not isinstance(comment, dict):
         return None
     cid = str(value.get("comment_id") or comment.get("id") or "")
@@ -284,7 +284,7 @@ def _attachments(raw: Any) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             continue
         kind = str(item.get("type") or "")
-        payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+        payload = _g if isinstance(_g := item.get("payload"), dict) else {}
         if kind not in _MEDIA_TYPES and not payload.get("url"):
             continue
         out.append({"kind": kind or "file", "url": str(payload.get("url") or ""), "mime": str(payload.get("mime_type") or "")})
@@ -303,7 +303,7 @@ def _note_account(table: Any, entry: dict[str, Any]) -> None:
     for change in entry.get("changes") or []:
         if not isinstance(change, dict) or change.get("field") != "account_update":
             continue
-        value = change.get("value") if isinstance(change.get("value"), dict) else {}
+        value = _g if isinstance(_g := change.get("value"), dict) else {}
         if str(value.get("event") or "") == "PARTNER_REMOVED":
             board_store.put_cache(table, "meta:whatsapp-disconnected", {"at": _utc_iso_z(datetime.now(timezone.utc)), "event": "PARTNER_REMOVED"}, ttl_seconds=90 * 86400)
         if _declined(value):

@@ -26,7 +26,7 @@ def _summ_search(args: dict[str, Any]) -> str:
     return f"Searched GitHub {args.get('type') or 'issue'}s" + (f" for '{q}'" if q else "") + f" ({args.get('state') or 'open'})"
 
 def _summ_labels(args: dict[str, Any]) -> str:
-    labels = args.get("labels") if isinstance(args.get("labels"), list) else []
+    labels = _g if isinstance(_g := args.get("labels"), list) else []
     return f"Set labels on #{args.get('number')}: {', '.join(str(x) for x in labels) or '(none)'}"
 
 def _validate_github_create_issue(_ctx: ToolContext, args: dict[str, Any]) -> str | None:

@@ -8,7 +8,7 @@ import unittest
 import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from unittest.mock import patch
 
 import board_crawl
@@ -45,7 +45,7 @@ class SsrfTests(BoardTestCase):
             def __enter__(self) -> "_Ok":
                 return self
 
-            def __exit__(self, *_a: object) -> bool:
+            def __exit__(self, *_a: object) -> Literal[False]:
                 return False
 
         def _open(req, timeout=None):  # noqa: ARG001
@@ -472,6 +472,7 @@ class BriefTests(BoardTestCase):
             )
         brief = board_intel.latest_brief(self.table)
         self.assertIsNotNone(brief)
+        assert brief is not None
         self.assertEqual(brief["taskId"], "brief-oct")
 
 

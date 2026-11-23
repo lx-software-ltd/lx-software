@@ -29,7 +29,7 @@ def _function_name() -> str:
     )
 
 
-def invoke_async(payload: dict[str, Any], *, fallback: Callable[[dict[str, Any]], None]) -> None:
+def invoke_async(payload: dict[str, Any], *, fallback: Callable[[dict[str, Any]], Any]) -> None:
     """Invoke this Lambda asynchronously; run ``fallback`` inline when no function name is known.
 
     The inline fallback keeps unit tests and local runs deterministic.

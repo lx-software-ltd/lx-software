@@ -30,6 +30,8 @@ def _ignored_names(block: str) -> set[str]:
 
 
 class DependabotConfigTest(unittest.TestCase):
+    text: str
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.text = CONFIG.read_text(encoding="utf-8")

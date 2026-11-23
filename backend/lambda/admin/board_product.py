@@ -52,7 +52,7 @@ def _cached_rows(table: Any, name: str, fetcher: Any) -> dict[str, Any]:
         return {"rows": fetcher(), "cached": False}
     hit = board_store.get_cache(table, name)
     payload = hit.get("payload") if isinstance(hit, dict) else None
-    if isinstance(payload, dict) and isinstance(payload.get("rows"), list):
+    if isinstance(hit, dict) and isinstance(payload, dict) and isinstance(payload.get("rows"), list):
         return {**payload, "cached": True, "fetchedAt": hit.get("fetchedAt")}
     rows = fetcher()
     doc = board_store.put_cache(table, name, {"rows": rows}, ttl_seconds=BOARD_CACHE_REFRESH_TTL_HOURS * 3600)
@@ -158,7 +158,7 @@ def provider_counts(table: Any) -> dict[str, Any] | None:
     if table is not None:
         hit = board_store.get_cache(table, PROVIDER_COUNTS_CACHE)
         payload = hit.get("payload") if isinstance(hit, dict) else None
-        if isinstance(payload, dict) and payload.get("providersWithVenue") is not None:
+        if isinstance(hit, dict) and isinstance(payload, dict) and payload.get("providersWithVenue") is not None:
             return {**payload, "cached": True, "fetchedAt": hit.get("fetchedAt")}
     try:
         counted = _provider_count_payload()
@@ -184,7 +184,7 @@ def cached_catalog_health(table: Any) -> dict[str, Any]:
         return {"rows": [], "cached": False}
     hit = board_store.get_cache(table, CATALOG_CACHE)
     payload = hit.get("payload") if isinstance(hit, dict) else None
-    if isinstance(payload, dict) and isinstance(payload.get("rows"), list):
+    if isinstance(hit, dict) and isinstance(payload, dict) and isinstance(payload.get("rows"), list):
         return {**payload, "cached": True, "fetchedAt": hit.get("fetchedAt")}
     return {"rows": [], "cached": False}
 
@@ -231,7 +231,7 @@ def op_flag_listing(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
         raise ProductError("listingId is required")
     now = _utc_iso_z(datetime.now(timezone.utc))
     title = f"Review listing {listing_id}"
-    doc = {
+    doc: dict[str, Any] = {
         "actionId": board_store.new_id(),
         "title": title[:200],
         "detail": reason[:800],

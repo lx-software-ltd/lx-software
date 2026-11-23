@@ -127,8 +127,8 @@ def handle_http(event: dict[str, Any], method: str, path: str, user_sub: str | N
         try:
             doc = linkedin_store.update_post(_table(), parts[1], _parse_json_body(event))
         except LinkedInError as exc:
-            status = 404 if str(exc) == "post not found" else 400
-            return _json_response(status, {"message": str(exc)})
+            code = 404 if str(exc) == "post not found" else 400
+            return _json_response(code, {"message": str(exc)})
         _audit(user_sub, "LINKEDIN_POST_UPDATE", parts[1], event)
         return _json_response(200, {"item": linkedin_store.public_post(doc)})
     if parts and parts[0] == "character":
@@ -181,11 +181,13 @@ def handle_http(event: dict[str, Any], method: str, path: str, user_sub: str | N
         return _generate(event, user_sub)
     if len(parts) == 2 and parts[0] == "jobs" and method == "GET":
         table = _table()
-        doc = linkedin_store.get_job(table, parts[1])
-        if not doc:
+        job = linkedin_store.get_job(table, parts[1])
+        if not job:
             return _json_response(404, {"message": "Job not found"})
-        doc = linkedin_store.expire_character_job(table, doc)
-        return _json_response(200, {"job": _public_job(doc)})
+        expired = linkedin_store.expire_character_job(table, job)
+        if not expired:
+            return _json_response(404, {"message": "Job not found"})
+        return _json_response(200, {"job": _public_job(expired)})
     return _json_response(404, {"message": "Not found"})
 
 
@@ -237,7 +239,7 @@ def _generate(event: dict[str, Any], user_sub: str | None) -> dict[str, Any]:
     payload = {
         "count": body.get("count"),
         "pillar": str(body.get("pillar") or ""),
-        "ideaIds": body.get("ideaIds") if isinstance(body.get("ideaIds"), list) else [],
+        "ideaIds": _g if isinstance(_g := body.get("ideaIds"), list) else [],
         "postId": "",
     }
     return _queue(event, payload, user_sub)
@@ -819,11 +821,11 @@ def publish_one(table: Any, doc: dict[str, Any]) -> dict[str, Any]:
     token = _access_token(table, connection)
     author = linkedin_api.author_urn(connection)
     text = linkedin_api.commentary(str(doc.get("body") or ""), list(doc.get("hashtags") or []))
-    platform = doc.get("platform") if isinstance(doc.get("platform"), dict) else {}
+    platform = _g if isinstance(_g := doc.get("platform"), dict) else {}
     urn = str(platform.get("urn") or "")
     skipped_picture = False
     if not urn:
-        image_meta = doc.get("image") if isinstance(doc.get("image"), dict) else None
+        image_meta = _g if isinstance(_g := doc.get("image"), dict) else None
         image_urn = ""
         alt_text = ""
         chosen = linkedin_store.publishable_image(image_meta)

@@ -13,14 +13,20 @@ from unittest.mock import MagicMock, patch
 def _install_stubs() -> None:
     sys.modules["boto3"] = MagicMock()
 
+    class _Exceptions(types.ModuleType):
+        ClientError: type[Exception]
+
+    class _Botocore(types.ModuleType):
+        exceptions: _Exceptions
+
     class ClientError(Exception):
         def __init__(self, message: str = "", response: dict | None = None) -> None:
             super().__init__(message)
             self.response = response or {"Error": {"Code": "", "Message": message}}
 
-    botocore = types.ModuleType("botocore")
-    exceptions = types.ModuleType("botocore.exceptions")
+    exceptions = _Exceptions("botocore.exceptions")
     exceptions.ClientError = ClientError
+    botocore = _Botocore("botocore")
     botocore.exceptions = exceptions
     sys.modules["botocore"] = botocore
     sys.modules["botocore.exceptions"] = exceptions

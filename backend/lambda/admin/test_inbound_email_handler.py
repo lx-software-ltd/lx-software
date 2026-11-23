@@ -74,6 +74,7 @@ class TestExtractFirstPdf(unittest.TestCase):
         raw = msg.as_bytes()
         got = extract_first_pdf_attachment(raw)
         self.assertIsNotNone(got)
+        assert got is not None
         data, name = got
         self.assertEqual(data, pdf)
         self.assertEqual(name, "January.pdf")

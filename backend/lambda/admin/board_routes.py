@@ -710,7 +710,7 @@ def _owner_revision_event_ref(
     explicit = pr_raw not in (None, "")
     if explicit:
         try:
-            pr_number = int(pr_raw)
+            pr_number = _whole(pr_raw)
         except (TypeError, ValueError):
             return None, _json_response(400, {"message": "prNumber must be an integer"})
         if pr_number <= 0:
@@ -800,9 +800,10 @@ def _tasks_route(event: dict[str, Any], method: str, rest: list[str], user_sub: 
             return method_not_allowed()
         if not board_staff.env_enabled():
             return _staff_disabled()
-        task = board_store.get_task(table, rest[1])
-        if not task:
+        loaded_task = board_store.get_task(table, rest[1])
+        if not loaded_task:
             return _json_response(404, {"message": "Task not found"})
+        task = loaded_task
         return _json_response(
             200,
             {
@@ -988,7 +989,7 @@ def _lessons_route(event: dict[str, Any], method: str, rest: list[str], user_sub
         try:
             if rest[2] == "confirm":
                 instruction = body.get("instruction") if isinstance(body, dict) else None
-                lesson = board_lessons.confirm(table, rest[1], instruction if isinstance(instruction, str) else None)
+                lesson = board_lessons.confirm(table, rest[1], _g if isinstance(_g := instruction, str) else None)
             else:
                 lesson = board_lessons.dismiss(table, rest[1])
         except KeyError:
@@ -1028,8 +1029,8 @@ def _watchlist_route(event: dict[str, Any], method: str, rest: list[str], user_s
             return _json_response(201, {"watch": board_intel.public_watch(table, watch)})
         return method_not_allowed()
     if len(rest) == 2 and rest[1] == "suppressed":
-        body = _parse_json_body(event) if method in ("POST", "DELETE") else None
-        hosts = [str(h) for h in ((body or {}).get("hosts") or []) if str(h).strip()] if isinstance(body, dict) else []
+        suppress_body = _parse_json_body(event) if method in ("POST", "DELETE") else None
+        hosts = [str(h) for h in ((suppress_body or {}).get("hosts") or []) if str(h).strip()] if isinstance(suppress_body, dict) else []
         if method == "GET":
             return _json_response(200, {"suppressedHosts": board_watch.suppressed_hosts(table)})
         if method in ("POST", "DELETE"):
@@ -1515,3 +1516,15 @@ def _repo_snapshot_refresh(event: dict[str, Any], user_sub: str | None) -> dict[
     board_store.save_repo_snapshot(table, snapshot)
     _audit(user_sub, "BOARD_REPO_SNAPSHOT_REFRESH", snapshot.get("repo") or "", event)
     return _json_response(200, {"repoSnapshot": board_github.public_snapshot_meta(snapshot)})
+
+
+def _num(value: Any | None) -> float:
+    if value is None:
+        raise TypeError("expected a number")
+    return float(value)
+
+
+def _whole(value: Any | None) -> int:
+    if value is None:
+        raise TypeError("expected an int")
+    return int(value)

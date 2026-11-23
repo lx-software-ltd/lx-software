@@ -146,7 +146,7 @@ class TestWebhookParsing(MetaTestCase):
         # Marking the thread read survives a redelivery of an already-stored message.
         board_store.put_meta_thread(self.table, {**thread, "unread": False})
         board_meta.ingest_webhook(self.table, payload)
-        self.assertFalse(board_store.get_meta_thread(self.table, thread["threadId"])["unread"])
+        self.assertFalse(_nn(board_store.get_meta_thread(self.table, thread["threadId"]))["unread"])
 
 
 class TestWhatsAppBinding(MetaTestCase):
@@ -197,7 +197,7 @@ class TestWhatsAppBinding(MetaTestCase):
             {"to": f"+{NUMBER_A}", "message": "Hi A", "reason": "In window."},
         )
         self.assertEqual(ok.status, "ok")
-        self.assertEqual(self.graph.calls[-1][2]["to"], NUMBER_A)
+        self.assertEqual(_nn(self.graph.calls[-1][2])["to"], NUMBER_A)
 
     def test_template_outside_window_proposes_inside_acts(self) -> None:
         ctx = self._act_ctx([f"+{NUMBER_A}", f"+{NUMBER_B}"])
@@ -226,8 +226,8 @@ class TestWhatsAppBinding(MetaTestCase):
             {"to": f"+{NUMBER_A}", "template": "hello_world", "reason": "Open window."},
         )
         self.assertEqual(ok.status, "ok")
-        self.assertEqual(self.graph.calls[-1][2]["type"], "template")
-        self.assertEqual(self.graph.calls[-1][2]["template"]["name"], "hello_world")
+        self.assertEqual(_nn(self.graph.calls[-1][2])["type"], "template")
+        self.assertEqual(_nn(self.graph.calls[-1][2])["template"]["name"], "hello_world")
 
     def test_reply_by_thread_id_alone_resolves_recipient(self) -> None:
         # ``threadId``-only calls go through the op directly until the
@@ -240,17 +240,17 @@ class TestWhatsAppBinding(MetaTestCase):
         self.assertTrue(out["ok"])
         self.assertEqual(out["to"], NUMBER_A)
         self.assertEqual(out["threadId"], thread_id)
-        self.assertEqual(self.graph.calls[-1][2]["to"], NUMBER_A)
+        self.assertEqual(_nn(self.graph.calls[-1][2])["to"], NUMBER_A)
         preview = board_meta.owner_preview_message(ctx, {"threadId": thread_id, "message": "x"}, op="meta_reply_whatsapp")
         self.assertEqual(preview["to"], [NUMBER_A])
         self.assertEqual(preview["from"], "whatsapp")
         # A thread paired with a different number is refused outright, in the guard and in the op.
         mismatch = {"threadId": thread_id, "to": f"+{NUMBER_B}", "message": "x"}
-        self.assertIn("does not belong", board_meta.act_guard_whatsapp(ctx, mismatch))
+        self.assertIn("does not belong", _nn(board_meta.act_guard_whatsapp(ctx, mismatch)))
         with self.assertRaises(board_meta.MetaError):
             board_meta.op_reply_whatsapp(ctx, mismatch)
         # Unknown thread and no ``to``: nothing to send to.
-        self.assertIn("required", board_meta.act_guard_whatsapp(ctx, {"threadId": "nope", "message": "x"}))
+        self.assertIn("required", _nn(board_meta.act_guard_whatsapp(ctx, {"threadId": "nope", "message": "x"})))
 
     def test_reply_dm_by_thread_and_allow_list_guard(self) -> None:
         board_meta.ingest_webhook(
@@ -284,12 +284,12 @@ class TestWhatsAppBinding(MetaTestCase):
         ok = board_meta.op_reply_dm(ctx, args)
         self.assertEqual(ok["recipientId"], "1234567890")
         self.assertEqual(ok["threadId"], thread_id)
-        self.assertEqual(self.graph.calls[-1][2]["recipient"]["id"], "1234567890")
+        self.assertEqual(_nn(self.graph.calls[-1][2])["recipient"]["id"], "1234567890")
         preview = board_meta.owner_preview_message(ctx, {"threadId": thread_id, "message": "Yes"}, op="meta_reply_dm")
         self.assertEqual(preview["to"], ["1234567890"])
         self.assertIn(
             "does not belong",
-            board_meta.act_guard_allow_list(ctx, {"threadId": thread_id, "recipientId": "other"}, field="recipientId"),
+            _nn(board_meta.act_guard_allow_list(ctx, {"threadId": thread_id, "recipientId": "other"}, field="recipientId")),
         )
         # Backward compatible: recipientId alone (today's schema) still works end to end.
         legacy = execute_call(
@@ -328,8 +328,8 @@ class TestRelayLead(MetaTestCase):
         # The WhatsApp template hand-off went to the provider's number.
         wa = [b for m, url, b in self.graph.calls if m == "POST" and "/wa-phone-1/messages" in url]
         self.assertEqual(len(wa), 1)
-        self.assertEqual(wa[0]["to"], NUMBER_B)
-        self.assertEqual(wa[0]["template"]["name"], "new_lead")
+        self.assertEqual(_nn(wa[0])["to"], NUMBER_B)
+        self.assertEqual(_nn(wa[0])["template"]["name"], "new_lead")
         preview = board_meta.owner_preview_message(
             owner,
             {"providerEmail": "studio@example.com", "providerPhone": f"+{NUMBER_B}", "parentEmail": "parent@example.com"},
@@ -356,7 +356,7 @@ class TestRelayLead(MetaTestCase):
         settings["tools"]["allowList"] = ["parent@example.com"]
         ctx = ToolContext(table=self.table, settings=settings, persona_id="coo", actor="persona")
         args = {"providerPhone": f"+{NUMBER_B}", "template": "new_lead", "parentEmail": "parent@example.com"}
-        self.assertIn("allow-list", board_meta.act_guard_relay(ctx, args))
+        self.assertIn("allow-list", _nn(board_meta.act_guard_relay(ctx, args)))
         settings["tools"]["allowList"].append(f"+{NUMBER_B}")
         self.assertIsNone(board_meta.act_guard_relay(ctx, args))
 
@@ -520,3 +520,11 @@ class TestGraphClient(MetaTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

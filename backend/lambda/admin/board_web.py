@@ -83,7 +83,7 @@ def _secret_json() -> dict[str, Any]:
     except json.JSONDecodeError:
         _sa = {}
         return _sa
-    _sa = parsed if isinstance(parsed, dict) else {}
+    _sa = _g if isinstance(_g := parsed, dict) else {}
     return _sa
 
 

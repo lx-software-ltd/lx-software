@@ -192,9 +192,9 @@ def identity_health(*, force: bool = False) -> dict[str, Any]:
         _health_cache = (now, out)
         return out
     out["identityVerified"] = bool(ident.get("VerifiedForSendingStatus"))
-    dkim = ident.get("DkimAttributes") if isinstance(ident.get("DkimAttributes"), dict) else {}
+    dkim = _g if isinstance(_g := ident.get("DkimAttributes"), dict) else {}
     out["dkimStatus"] = str(dkim.get("Status") or "") or None
-    tokens = dkim.get("Tokens") if isinstance(dkim.get("Tokens"), list) else []
+    tokens = _g if isinstance(_g := dkim.get("Tokens"), list) else []
     records = []
     for tok in tokens:
         token = str(tok or "").strip()
@@ -207,7 +207,7 @@ def identity_health(*, force: bool = False) -> dict[str, Any]:
             }
         )
     out["dkimRecords"] = records
-    mail_from = ident.get("MailFromAttributes") if isinstance(ident.get("MailFromAttributes"), dict) else {}
+    mail_from = _g if isinstance(_g := ident.get("MailFromAttributes"), dict) else {}
     out["mailFromDomain"] = str(mail_from.get("MailFromDomain") or "") or None
     out["mailFromStatus"] = str(mail_from.get("MailFromDomainStatus") or "") or None
     _health_cache = (now, out)

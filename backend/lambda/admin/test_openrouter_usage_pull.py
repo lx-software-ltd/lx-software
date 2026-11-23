@@ -440,7 +440,8 @@ class TestOpenRouterUsagePull(unittest.TestCase):
                         },
                     ]
                 }
-            key_hash = (parse_qs(parsed.query).get("api_key_hash") or [None])[0]
+            hashes = parse_qs(parsed.query).get("api_key_hash") or []
+            key_hash = hashes[0] if hashes else None
             if key_hash is None:
                 return {
                     "data": [

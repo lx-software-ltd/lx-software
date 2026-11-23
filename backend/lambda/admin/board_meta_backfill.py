@@ -64,7 +64,7 @@ def _conversation(table: Any, writer: board_meta_store.Writer, row: dict[str, An
             continue
         sender = str(((raw.get("from") or {}) if isinstance(raw.get("from"), dict) else {}).get("id") or "")
         outbound = sender in own or (bool(sender) and sender != customer["id"])
-        msg = {
+        msg: dict[str, Any] = {
             "_threadId": thread_id,
             "channel": channel,
             "threadKey": customer["id"],
@@ -99,8 +99,8 @@ def _attachments(raw: Any) -> list[dict[str, Any]]:
     for item in ((raw or {}).get("data") or []) if isinstance(raw, dict) else []:
         if not isinstance(item, dict):
             continue
-        image = item.get("image_data") if isinstance(item.get("image_data"), dict) else {}
-        video = item.get("video_data") if isinstance(item.get("video_data"), dict) else {}
+        image = _g if isinstance(_g := item.get("image_data"), dict) else {}
+        video = _g if isinstance(_g := item.get("video_data"), dict) else {}
         url = str(image.get("url") or video.get("url") or item.get("file_url") or "")
         if not url:
             continue

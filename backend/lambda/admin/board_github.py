@@ -288,7 +288,7 @@ def fetch_snapshot() -> dict[str, Any]:
                 }
             )
 
-    snapshot = {
+    snapshot: dict[str, Any] = {
         "repo": repo,
         "defaultBranch": default_branch,
         "description": _cap(str(meta.get("description") or ""), 400),
@@ -570,7 +570,7 @@ def op_list_workflow_runs(args: dict[str, Any]) -> dict[str, Any]:
         for run in raw.get("workflow_runs") or []:
             if not isinstance(run, dict):
                 continue
-            head_commit = run.get("head_commit") if isinstance(run.get("head_commit"), dict) else {}
+            head_commit = _g if isinstance(_g := run.get("head_commit"), dict) else {}
             commit_lines = str(head_commit.get("message") or "").splitlines()
             runs.append(
                 {
@@ -725,10 +725,10 @@ def _patched_version(vuln: Any) -> str | None:
 
 
 def _dependabot_summary(alert: dict[str, Any], *, detail: bool = False) -> dict[str, Any]:
-    adv = alert.get("security_advisory") if isinstance(alert.get("security_advisory"), dict) else {}
-    vuln = alert.get("security_vulnerability") if isinstance(alert.get("security_vulnerability"), dict) else {}
-    dep = alert.get("dependency") if isinstance(alert.get("dependency"), dict) else {}
-    pkg = dep.get("package") if isinstance(dep.get("package"), dict) else {}
+    adv = _g if isinstance(_g := alert.get("security_advisory"), dict) else {}
+    vuln = _g if isinstance(_g := alert.get("security_vulnerability"), dict) else {}
+    dep = _g if isinstance(_g := alert.get("dependency"), dict) else {}
+    pkg = _g if isinstance(_g := dep.get("package"), dict) else {}
     out: dict[str, Any] = {
         "number": alert.get("number"),
         "state": alert.get("state"),
@@ -750,9 +750,9 @@ def _dependabot_summary(alert: dict[str, Any], *, detail: bool = False) -> dict[
 
 
 def _code_scanning_summary(alert: dict[str, Any], *, detail: bool = False) -> dict[str, Any]:
-    rule = alert.get("rule") if isinstance(alert.get("rule"), dict) else {}
-    instance = alert.get("most_recent_instance") if isinstance(alert.get("most_recent_instance"), dict) else {}
-    loc = instance.get("location") if isinstance(instance.get("location"), dict) else {}
+    rule = _g if isinstance(_g := alert.get("rule"), dict) else {}
+    instance = _g if isinstance(_g := alert.get("most_recent_instance"), dict) else {}
+    loc = _g if isinstance(_g := instance.get("location"), dict) else {}
     out: dict[str, Any] = {
         "number": alert.get("number"),
         "state": alert.get("state"),

@@ -333,8 +333,10 @@ def seats(table: Any, settings: dict[str, Any] | None = None) -> list[dict[str, 
         ov = overrides.get(str(default["id"])) or {}
         is_active = ov["isActive"] if "isActive" in ov else bool(default.get("isActiveDefault"))
         tier = ov.get("modelTier") if ov.get("modelTier") in BOARD_STAFF_MODEL_TIERS else default.get("modelTier")
-        brief = ov.get("brief") if isinstance(ov.get("brief"), str) and ov.get("brief").strip() else str(default.get("brief") or "")
-        display = ov.get("displayName") if isinstance(ov.get("displayName"), str) and ov.get("displayName").strip() else str(default.get("title") or "")
+        brief_raw = ov.get("brief")
+        brief = brief_raw if isinstance(brief_raw, str) and brief_raw.strip() else str(default.get("brief") or "")
+        name_raw = ov.get("displayName")
+        display = name_raw if isinstance(name_raw, str) and name_raw.strip() else str(default.get("title") or "")
         seat = {
             "id": default["id"],
             "reportsTo": default["reportsTo"],
@@ -433,12 +435,10 @@ def create_task(
         if not parent:
             raise StaffError("Parent task not found")
         depth = 1
-        ancestor = parent
-        while ancestor.get("parentTaskId"):
+        ancestor: dict[str, Any] | None = parent
+        while ancestor is not None and ancestor.get("parentTaskId"):
             depth += 1
             ancestor = board_store.get_task(table, str(ancestor.get("parentTaskId") or ""))
-            if not ancestor:
-                break
         if depth > BOARD_STAFF_HELP_DEPTH_MAX:
             raise StaffError("Help tasks cannot spawn further help")
     now = datetime.now(timezone.utc)
@@ -2208,9 +2208,9 @@ def op_task_finish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
     latest_calls = _latest_ok_calls_by_op(ctx.table, task) if missing else {}
     if missing:
         for tool in missing:
-            cid = latest_calls.get(tool)
-            if cid and cid not in evidence:
-                evidence.append(cid)
+            seed_id = latest_calls.get(tool)
+            if seed_id and seed_id not in evidence:
+                evidence.append(seed_id)
         cited = {id_to_op[cid] for cid in evidence if cid in id_to_op}
         # Seeded calls are in the catalog; a call recorded after the catalog
         # scan still has an id we just appended. Fill ops from the latest map.
@@ -2226,9 +2226,9 @@ def op_task_finish(ctx: ToolContext, args: dict[str, Any]) -> dict[str, Any]:
             if borrowed
             else " Call those tools first and pass their call ids in evidence."
         )
-        known = [f"{op} {cid}" for op, cid in latest_calls.items() if op in needed]
-        if known:
-            hint += " Already on this attempt: " + ", ".join(known) + "."
+        already = [f"{op} {cid}" for op, cid in latest_calls.items() if op in needed]
+        if already:
+            hint += " Already on this attempt: " + ", ".join(already) + "."
         raise StaffError("This brief requires evidence from " + ", ".join(needed) + "." + hint)
     confidence = str(args.get("confidence") or "medium")
     flags = list(task.get("flags") or [])
@@ -2474,16 +2474,16 @@ def list_tasks_for_api(
         failed = [t for t in failed if t.get("assignee") == assignee]
         terminal = [t for t in terminal if t.get("assignee") == assignee]
     seen: set[str] = set()
-    items: list[dict[str, Any]] = []
+    ordered: list[dict[str, Any]] = []
     for row in (*failed, *inflight, *terminal):
         tid = str(row.get("taskId") or "")
         if not tid or tid in seen:
             continue
         seen.add(tid)
-        items.append(row)
-        if len(items) >= limit:
+        ordered.append(row)
+        if len(ordered) >= limit:
             break
-    return items
+    return ordered
 
 
 def staff_counts(table: Any) -> dict[str, int]:

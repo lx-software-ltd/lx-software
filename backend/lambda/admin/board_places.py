@@ -76,7 +76,7 @@ def _month_key() -> str:
 
 def _month_doc(table: Any) -> dict[str, Any]:
     hit = board_store.get_cache(table, _month_key())
-    payload = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else {}
+    payload = _g if hit and isinstance(_g := hit.get("payload"), dict) else {}
     return {
         "usd": float(payload.get("usd") or 0),
         "searches": int(payload.get("searches") or 0),
@@ -91,7 +91,7 @@ def _save_month(table: Any, doc: dict[str, Any]) -> None:
 def monthly_cap_usd(settings: dict[str, Any] | None = None) -> float:
     staff = (settings or {}).get("staff") or {}
     try:
-        override = float(staff.get("placesMonthlyCapUsd"))
+        override = _num(staff.get("placesMonthlyCapUsd"))
     except (TypeError, ValueError):
         override = 0
     if override > 0:
@@ -135,14 +135,14 @@ def _http(method: str, url: str, *, headers: dict[str, str], body: bytes | None 
         parsed = json.loads(raw.decode("utf-8"))
     except json.JSONDecodeError as exc:
         raise PlacesError("Places returned non-JSON") from exc
-    return parsed if isinstance(parsed, dict) else {}
+    return _g if isinstance(_g := parsed, dict) else {}
 
 
 def _normalise_place(raw: dict[str, Any]) -> dict[str, Any]:
     name = raw.get("displayName")
     if isinstance(name, dict):
         name = name.get("text") or ""
-    location = raw.get("location") if isinstance(raw.get("location"), dict) else {}
+    location = _g if isinstance(_g := raw.get("location"), dict) else {}
     return {
         "placeId": str(raw.get("id") or raw.get("placeId") or ""),
         "name": str(name or raw.get("name") or ""),
@@ -384,8 +384,8 @@ def discover_area(
     if not name:
         raise PlacesError("area name is required")
     try:
-        lat = float(area.get("lat"))
-        lng = float(area.get("lng"))
+        lat = _num(area.get("lat"))
+        lng = _num(area.get("lng"))
         radius = float(area.get("radius") or 1500)
     except (TypeError, ValueError) as exc:
         raise PlacesError("area centre is required") from exc
@@ -417,3 +417,15 @@ def discover_area(
             seen.add(pid)
             found.append({**place, "facilityKind": kind, "district": district, "area": str(area.get("id") or "")})
     return found
+
+
+def _num(value: Any | None) -> float:
+    if value is None:
+        raise TypeError("expected a number")
+    return float(value)
+
+
+def _whole(value: Any | None) -> int:
+    if value is None:
+        raise TypeError("expected an int")
+    return int(value)

@@ -14,12 +14,18 @@ def _install_stubs() -> None:
     if "boto3" not in sys.modules:
         sys.modules["boto3"] = MagicMock()
     if "botocore.exceptions" not in sys.modules:
+        class _Exceptions(types.ModuleType):
+            ClientError: type[Exception]
+
+        class _Botocore(types.ModuleType):
+            exceptions: _Exceptions
+
         class ClientError(Exception):
             pass
 
-        botocore = types.ModuleType("botocore")
-        exceptions = types.ModuleType("botocore.exceptions")
+        exceptions = _Exceptions("botocore.exceptions")
         exceptions.ClientError = ClientError
+        botocore = _Botocore("botocore")
         botocore.exceptions = exceptions
         sys.modules["botocore"] = botocore
         sys.modules["botocore.exceptions"] = exceptions
@@ -223,6 +229,7 @@ class TestPickBalance(unittest.TestCase):
             },
         ]
         picked = _pick_balance(balances)
+        assert picked is not None
         self.assertEqual(picked["balanceType"], "CLBD")
         self.assertEqual(picked["amount"], 100.50)
 
@@ -231,6 +238,7 @@ class TestPickBalance(unittest.TestCase):
             {"balance_type": "ZZZZ", "balance_amount": {"amount": "1", "currency": "EUR"}},
         ]
         picked = _pick_balance(balances)
+        assert picked is not None
         self.assertEqual(picked["amount"], 1.0)
         self.assertEqual(picked["currency"], "EUR")
 
@@ -240,6 +248,7 @@ class TestPickBalance(unittest.TestCase):
             {"balance_type": "ITAV", "balance_amount": {"amount": "5.5", "currency": "gbp"}},
         ]
         picked = _pick_balance(balances)
+        assert picked is not None
         self.assertEqual(picked["amount"], 5.5)
         self.assertEqual(picked["currency"], "GBP")
 
@@ -489,6 +498,7 @@ class TestBankingAuthRoutes(BankSyncTestCase):
         self.assertEqual(body["url"], "https://auth.enablebanking.com/x")
         pending = self.table.items.get((f"BANKSYNC#auth#{body['state']}", "META"))
         self.assertIsNotNone(pending)
+        assert pending is not None
         self.assertEqual(pending["bankName"], "HSBC Personal")
 
     def test_auth_start_unknown_bank(self) -> None:

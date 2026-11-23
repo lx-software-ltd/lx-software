@@ -261,8 +261,8 @@ def area_from_point(lat: Any, lng: Any) -> str:
     best: tuple[float, str] | None = None
     for row in areas():
         try:
-            c_lat = float(row.get("lat"))
-            c_lng = float(row.get("lng"))
+            c_lat = _num(row.get("lat"))
+            c_lng = _num(row.get("lng"))
             radius = float(row.get("radius") or 0)
         except (TypeError, ValueError):
             continue
@@ -376,3 +376,15 @@ def brief_paragraph(area: dict[str, Any]) -> str:
         "Prefer classes, clubs and playgroups that run there weekly over venues that already appear "
         "on LCSD pages. "
     )
+
+
+def _num(value: Any | None) -> float:
+    if value is None:
+        raise TypeError("expected a number")
+    return float(value)
+
+
+def _whole(value: Any | None) -> int:
+    if value is None:
+        raise TypeError("expected an int")
+    return int(value)

@@ -370,8 +370,8 @@ def parse_aggregate_xml(xml: bytes) -> dict[str, Any] | None:
     ranked = sorted(sources.values(), key=lambda row: int(row["count"]), reverse=True)
     truncated = len(ranked) > MAX_SOURCES
     kept = []
-    for row in ranked[:MAX_SOURCES]:
-        published = {k: v for k, v in row.items() if k != "latestEnd"}
+    for source_row in ranked[:MAX_SOURCES]:
+        published = {k: v for k, v in source_row.items() if k != "latestEnd"}
         kept.append(published)
     return {
         "orgName": _text(meta, "org_name")[:120] or "unknown",
@@ -1054,9 +1054,9 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
         for report in reports:
             if "google" not in str(report.get("orgName") or "").lower():
                 continue
-            received = str(report.get("receivedAt") or "")
-            if received > last_google:
-                last_google = received
+            received_at = str(report.get("receivedAt") or "")
+            if received_at > last_google:
+                last_google = received_at
         try:
             silence_days = int(cfg.get("silenceDays") or 3)
         except (TypeError, ValueError):
@@ -1087,9 +1087,9 @@ def evaluate(table: Any, settings: dict[str, Any], *, now: datetime | None = Non
         findings = []
     last_any = ""
     for report in reports:
-        received = str(report.get("receivedAt") or "")
-        if received > last_any:
-            last_any = received
+        received_at = str(report.get("receivedAt") or "")
+        if received_at > last_any:
+            last_any = received_at
     day_stats = _stats(day)
     payload = {
         "generatedAt": moment.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1118,7 +1118,7 @@ def refresh(table: Any) -> dict[str, Any]:
 def read_summary(table: Any) -> dict[str, Any] | None:
     hit = board_store.get_cache(table, SUMMARY_CACHE)
     payload = hit.get("payload") if isinstance(hit, dict) else None
-    return payload if isinstance(payload, dict) else None
+    return _g if isinstance(_g := payload, dict) else None
 
 
 def summary_is_stale(payload: dict[str, Any], *, now: datetime | None = None) -> bool:

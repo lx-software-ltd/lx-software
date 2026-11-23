@@ -100,7 +100,7 @@ def save(table: Any, ptype: str, body: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(raw, dict):
             continue
         try:
-            offset = int(raw.get("dayOffset"))
+            offset = _whole(raw.get("dayOffset"))
         except (TypeError, ValueError):
             continue
         steps.append(
@@ -154,3 +154,15 @@ def touch(table: Any, settings: dict[str, Any], prospect: dict[str, Any], *, per
         step_index=len(prospect.get("touches") or []),
         personalisation=personalisation,
     )
+
+
+def _num(value: Any | None) -> float:
+    if value is None:
+        raise TypeError("expected a number")
+    return float(value)
+
+
+def _whole(value: Any | None) -> int:
+    if value is None:
+        raise TypeError("expected an int")
+    return int(value)

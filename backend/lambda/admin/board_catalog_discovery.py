@@ -143,7 +143,7 @@ def _district_names() -> list[str]:
 
 def _cursor(table: Any) -> dict[str, Any]:
     hit = board_store.get_cache(table, CURSOR_CACHE)
-    payload = hit.get("payload") if hit and isinstance(hit.get("payload"), dict) else {}
+    payload = _g if hit and isinstance(_g := hit.get("payload"), dict) else {}
     return {
         "offset": int(payload.get("offset") or 0),
         "lastOpenDataAt": str(payload.get("lastOpenDataAt") or ""),
@@ -230,7 +230,7 @@ def source_needs_refresh(table: Any, source: str) -> bool:
         count = int(payload.get("rowCount") or 0)
     except (TypeError, ValueError):
         count = 0
-    rows = payload.get("rows") if isinstance(payload.get("rows"), list) else []
+    rows = _g if isinstance(_g := payload.get("rows"), list) else []
     return count <= 0 and not rows
 
 

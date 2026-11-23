@@ -46,7 +46,8 @@ class FakeGraph:
     def __call__(self, req: urlrequest.Request, timeout=None):  # noqa: ARG002
         method = req.get_method()
         url = req.full_url
-        body = json.loads(req.data.decode("utf-8")) if req.data else None
+        raw_data = req.data
+        body = json.loads(raw_data.decode("utf-8")) if isinstance(raw_data, (bytes, bytearray)) else None
         if method == "GET" and url.endswith("?fields=access_token"):
             self.exchanges.append(str(req.get_header("Authorization") or ""))
             payload: Any = {"id": url.rsplit("/", 1)[1].split("?", 1)[0]}
@@ -61,7 +62,7 @@ class FakeGraph:
                 raise payload
         elif "/insights" in url:
             if "/act_" in url:
-                payload: Any = {"data": [{"spend": "0.00", "impressions": "1", "clicks": "0"}]}
+                payload = {"data": [{"spend": "0.00", "impressions": "1", "clicks": "0"}]}
             else:
                 payload = {"data": [{"name": "page_impressions", "values": [{"value": 12}]}]}
         elif "/message_templates" in url:

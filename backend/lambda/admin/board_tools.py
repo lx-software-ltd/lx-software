@@ -635,7 +635,7 @@ def _check_value(key: str, value: Any, spec: dict[str, Any]) -> tuple[Any, str]:
         max_items = spec.get("maxItems")
         if max_items and len(value) > int(max_items):
             return None, f"'{key}' has more than {max_items} items"
-        item_spec = spec.get("items") if isinstance(spec.get("items"), dict) else {}
+        item_spec = _g if isinstance(_g := spec.get("items"), dict) else {}
         cleaned: list[Any] = []
         for index, item in enumerate(value):
             if item_spec.get("type"):
@@ -653,7 +653,7 @@ def _check_value(key: str, value: Any, spec: dict[str, Any]) -> tuple[Any, str]:
 
 
 def _validate_against(args: dict[str, Any], schema: dict[str, Any], *, prefix: str = "") -> tuple[dict[str, Any], list[str]]:
-    props: dict[str, Any] = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+    props: dict[str, Any] = _g if isinstance(_g := schema.get("properties"), dict) else {}
     problems: list[str] = []
     out: dict[str, Any] = {}
     for key in schema.get("required") or []:
@@ -749,7 +749,7 @@ def _invoke_op(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> dict[
         finally:
             board_deadline.reset(token)
             pool.shutdown(wait=False, cancel_futures=True)
-    return result if isinstance(result, dict) else {"result": result}
+    return _g if isinstance(_g := result, dict) else {"result": result}
 
 
 _SECURITY_ISSUE_LABELS = frozenset({"security", "dependencies"})
@@ -815,7 +815,7 @@ def _is_terminal_merge_guard(reason: str) -> bool:
 def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> ToolOutcome:
     """Run (or record for approval) one operation and write the audit row."""
     started = time.monotonic()
-    raw = arguments if isinstance(arguments, dict) else {}
+    raw = _g if isinstance(_g := arguments, dict) else {}
     invalid = ""
     arg_limit = _argument_char_limit(op.name)
     try:
@@ -961,11 +961,9 @@ def execute_call(ctx: ToolContext, op: ToolOp, arguments: dict[str, Any]) -> Too
             },
             summary=f"Scheduled {summary} (executes {execute_at} unless vetoed)",
         )
-    elif (
-        (reused_assign := _reuse_staff_assign(ctx, op, arguments))
-        if op.name == "staff_assign"
-        else None
-    ):
+    elif op.name == "staff_assign" and isinstance(
+        reused_assign := _reuse_staff_assign(ctx, op, arguments), dict
+    ) and reused_assign:
         outcome = ToolOutcome(status="ok", result=reused_assign, summary="Attached to an open task")
     elif guard_reason and op.name == "code_merge_staging" and _is_terminal_merge_guard(guard_reason):
         outcome = ToolOutcome(status="refused", result={"error": guard_reason}, summary=summary)
@@ -1525,7 +1523,7 @@ def _tool_call_from_prose_payload(data: Any, *, call_id: str = "prose-call") -> 
     if not isinstance(data, dict):
         return None
     name = str(data.get("call") or data.get("name") or "").strip()
-    args = data.get("arguments") if isinstance(data.get("arguments"), dict) else {}
+    args = _g if isinstance(_g := data.get("arguments"), dict) else {}
     if not name:
         return None
     return ToolCall(

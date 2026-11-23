@@ -80,7 +80,7 @@ def _sub_row(raw: dict[str, Any] | None) -> dict[str, Any]:
     if isinstance(raw, dict) and "email" in raw:
         return raw
     unwrapped = board_store._from_ddb_nested(raw)  # noqa: SLF001
-    return unwrapped if isinstance(unwrapped, dict) else {}
+    return _g if isinstance(_g := unwrapped, dict) else {}
 
 
 def handle_subscribe(event: dict[str, Any]) -> dict[str, Any]:
@@ -243,7 +243,7 @@ def get_issue(table: Any, issue_id: str) -> dict[str, Any] | None:
     if not item:
         return None
     doc = board_store._from_ddb_nested(board_store._strip_keys(item))  # noqa: SLF001
-    return doc if isinstance(doc, dict) else None
+    return _g if isinstance(_g := doc, dict) else None
 
 
 def render_html(markdown: str) -> str:

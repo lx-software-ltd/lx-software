@@ -1,43 +1,31 @@
-# Plan: mypy error ceiling
+# Plan: mypy on the Python lint job
 
 **Status**: Draft
 **Zone**: yellow
 
 ## Goal
 
-The Python lint job fails when `mypy==1.8.0` reports more than 1269 errors on the paths Ruff already checks. The 1269 existing errors stay allowed.
+The Python lint job runs `mypy==1.8.0` on the paths Ruff already checks, and the job fails when mypy reports an error.
+
+## What was wrong
+
+One mypy process on `backend/lambda` stops at the first duplicate module named `handler`. The gate runs one process per top-level directory. That command reported 1269 errors (admin lambda 1228, public API authorizer 2, scripts 39). Those errors are fixed in the code. The job fails on any remaining error.
 
 ## Non-goals
 
-Driving the count to zero. A coverage floor. OpenAPI lint. This repository has no OpenAPI file.
-
-## Measurement
-
-`mypy 1.8.0 --ignore-missing-imports`, one process per directory. One process on `backend/lambda` stops at the first duplicate module named `handler` and does not reach the other errors.
-
-| Directory | Errors |
-| --- | --- |
-| `backend/lambda/admin` | 1228 |
-| `backend/lambda/public_api_authorizer` | 2 |
-| `backend/lambda/pre_token_generation` | 0 |
-| `backend/lambda/siutindei_schema` | 0 |
-| `scripts` | 39 |
-| `.cursor/hooks` | 0 |
-| Total | 1269 |
-
-The same total is on `9707ab0` and on current `main`. An earlier note of 1254 is not what this command prints, so the ceiling is 1269.
+A coverage floor. OpenAPI lint. This repository has no OpenAPI file.
 
 ## Files
 
-`.github/workflows/lint.yml` and this plan.
+`.github/workflows/lint.yml`, the Python modules and tests named by mypy, and this plan.
 
 ## Invariants this change preserves
 
-The `lint` job id and its display name stay `lint`. The actions pin stays `ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f`. A mypy exit code above 1 still fails the job.
+The `lint` job id and its display name stay `lint`. The actions pin stays `ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f`. mypy still uses `--ignore-missing-imports`. A mypy exit code other than 0 fails the job.
 
 ## Done when
 
-The Mypy step is in `lint-python`, and that command prints `mypy errors: 1269 (ceiling 1269)`.
+`mypy 1.8.0 --ignore-missing-imports` exits 0 in `backend/lambda/admin`, `backend/lambda/public_api_authorizer`, `backend/lambda/pre_token_generation`, `backend/lambda/siutindei_schema`, `scripts`, and `.cursor/hooks`, and the Mypy step is in `lint-python`.
 
 ## Rollback
 

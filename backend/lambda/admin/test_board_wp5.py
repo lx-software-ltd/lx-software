@@ -54,7 +54,7 @@ class TestDedupeRollback(MailTestCase):
         self.assertTrue(second["messageId"])
         self.assertEqual(len(self._marker_rows()), 1)
         self.assertEqual(len(board_store.list_mail_messages(self.table, second["threadId"])), 1)
-        self.assertEqual(board_store.get_mail_thread(self.table, second["threadId"])["messageCount"], 1)
+        self.assertEqual(_nn(board_store.get_mail_thread(self.table, second["threadId"]))["messageCount"], 1)
         # And a third delivery is now a genuine duplicate.
         self.assertTrue(board_mail.ingest_bytes(self.table, raw)["duplicate"])
 
@@ -146,6 +146,7 @@ class TestSizeCaps(MailTestCase):
         )
         result = board_mail.ingest_bytes(self.table, raw)
         detail = board_mail.masked_thread_detail(self.table, result["threadId"])
+        assert detail is not None
         message = detail["messages"][0]
         self.assertTrue(message["truncated"])
         self.assertEqual(message["attachmentsSkipped"], ["invoice.pdf"])
@@ -171,7 +172,7 @@ class TestPdfAttachments(MailTestCase):
         result = board_mail.ingest_bytes(self.table, raw)
         message = board_store.list_mail_messages(self.table, result["threadId"])[0]
         self.assertEqual(message["attachmentsSkipped"], ["prices.pdf", "Scan 001.PDF"])
-        self.assertTrue(board_store.get_mail_thread(self.table, result["threadId"])["hasAttachments"])
+        self.assertTrue(_nn(board_store.get_mail_thread(self.table, result["threadId"]))["hasAttachments"])
 
 
 class TestHeaderInjection(MailTestCase):
@@ -243,7 +244,7 @@ class TestHeaderInjection(MailTestCase):
         )
         self.assertFalse(reply["duplicate"])
         self.assertEqual(reply["threadId"], first["threadId"])
-        self.assertEqual(board_store.get_mail_thread(self.table, first["threadId"])["messageCount"], 2)
+        self.assertEqual(_nn(board_store.get_mail_thread(self.table, first["threadId"]))["messageCount"], 2)
 
     def test_subject_with_injected_prefix_threads_by_normalised_subject(self) -> None:
         first = board_mail.ingest_bytes(self.table, self._raw())
@@ -267,12 +268,12 @@ class TestMissingMessageId(MailTestCase):
         again = board_mail.ingest_bytes(self.table, raw)
         self.assertTrue(again["duplicate"])
         self.assertEqual(again["threadId"], first["threadId"])
-        self.assertEqual(board_store.get_mail_thread(self.table, first["threadId"])["messageCount"], 1)
+        self.assertEqual(_nn(board_store.get_mail_thread(self.table, first["threadId"]))["messageCount"], 1)
 
         other = board_mail.ingest_bytes(self.table, build_mail(message_id=None, text="A different body."))
         self.assertFalse(other["duplicate"])
         self.assertEqual(other["threadId"], first["threadId"])  # same subject + counterpart
-        self.assertEqual(board_store.get_mail_thread(self.table, first["threadId"])["messageCount"], 2)
+        self.assertEqual(_nn(board_store.get_mail_thread(self.table, first["threadId"]))["messageCount"], 2)
         self.assertNotEqual(
             board_store.list_mail_messages(self.table, first["threadId"])[1]["rfcMessageId"],
             message["rfcMessageId"],
@@ -296,3 +297,11 @@ class TestMissingMessageId(MailTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

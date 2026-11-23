@@ -33,7 +33,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email import policy
-from email.message import EmailMessage
+from email.message import EmailMessage, Message
 from email.parser import BytesParser
 from email.utils import formataddr, getaddresses, make_msgid, parseaddr, parsedate_to_datetime
 from typing import Any
@@ -210,7 +210,7 @@ def _body_text(msg: EmailMessage) -> tuple[str, bool]:
         body = msg.get_body(preferencelist=("plain", "html"))
     except Exception:  # pragma: no cover - malformed MIME
         body = None
-    if body is None:
+    if not isinstance(body, EmailMessage):
         return "", False
     try:
         content = body.get_content()
@@ -232,7 +232,7 @@ def _decode_text(payload: bytes | bytearray, charset: str | None) -> str:
         return payload.decode("utf-8", "replace")
 
 
-def _is_pdf(part: EmailMessage, name: str) -> bool:
+def _is_pdf(part: Message, name: str) -> bool:
     return part.get_content_type() in _PDF_CONTENT_TYPES or name.lower().endswith(".pdf")
 
 
@@ -270,7 +270,10 @@ def _attachments(msg: EmailMessage) -> tuple[list[dict[str, Any]], list[str], bo
 
 def parse_mime(raw: bytes, *, domain: str | None = None) -> ParsedMail:
     domain = domain or mail_domain()
-    msg = BytesParser(policy=policy.default).parsebytes(raw)
+    parsed_msg = BytesParser(policy=policy.default).parsebytes(raw)
+    if not isinstance(parsed_msg, EmailMessage):
+        raise TypeError("expected an email message")
+    msg = parsed_msg
     from_list = getaddresses([str(v) for v in (msg.get_all("From", []) or [])])
     from_name, from_addr = (from_list[0] if from_list else ("", ""))
     date_iso = ""
@@ -570,7 +573,10 @@ def ingest_bytes(
     )
     if direction in ("in", "inbound") and parsed.bulk:
         try:
-            msg = BytesParser(policy=policy.default).parsebytes(raw)
+            parsed_msg = BytesParser(policy=policy.default).parsebytes(raw)
+            if not isinstance(parsed_msg, EmailMessage):
+                raise TypeError("expected an email message")
+            msg = parsed_msg
             if is_dmarc_or_feedback_report(
                 subject=parsed.subject,
                 text=parsed.text,
@@ -802,7 +808,7 @@ def masked_thread(pseud: board_pii.Pseudonymizer, thread: dict[str, Any]) -> dic
 
 
 def masked_message(pseud: board_pii.Pseudonymizer, message: dict[str, Any], *, text_limit: int = 4000) -> dict[str, Any]:
-    sender = message.get("from") if isinstance(message.get("from"), dict) else {}
+    sender = _g if isinstance(_g := message.get("from"), dict) else {}
     return {
         "messageId": message.get("messageId"),
         "direction": message.get("direction"),
@@ -879,7 +885,9 @@ def recipient_sourced(pseud: board_pii.Pseudonymizer, value: Any) -> bool:
     addr = board_pii.normalize_email(text)
     if not addr:
         return False
-    return board_pii.is_own_address(addr, getattr(pseud, "own_domains", ()) or ())
+    own = getattr(pseud, "own_domains", None)
+    domains = {item for item in own if isinstance(item, str)} if isinstance(own, (set, list, tuple)) else set()
+    return board_pii.is_own_address(addr, domains)
 
 
 def recipient_values(values: Any) -> list[Any]:
@@ -979,7 +987,7 @@ def outgoing_plan(table: Any, op: str, args: dict[str, Any], *, require_sourced:
     if op == "mail_reply":
         if not last_in:
             raise MailError("Nothing to reply to: this thread has no inbound message.")
-        sender = last_in.get("from") if isinstance(last_in.get("from"), dict) else {}
+        sender = _g if isinstance(_g := last_in.get("from"), dict) else {}
         to = [board_pii.normalize_email(str(sender.get("address") or ""))]
         if not to[0] or _is_own(to[0]):
             raise MailError("The last inbound message has no external sender to reply to.")
@@ -1004,7 +1012,7 @@ def outgoing_plan(table: Any, op: str, args: dict[str, Any], *, require_sourced:
             raise MailError("At least one recipient is required.")
         if not last:
             raise MailError("This thread has no messages to forward.")
-        sender = last.get("from") if isinstance(last.get("from"), dict) else {}
+        sender = _g if isinstance(_g := last.get("from"), dict) else {}
         quoted = "\n".join(f"> {line}" for line in str(last.get("text") or "").splitlines()[:200])
         note = pseud.unmask_text(str(args.get("note") or "").strip()[:BOARD_MAIL_BODY_MAX_CHARS])
         text = (
@@ -1229,7 +1237,7 @@ def sending_health(*, force: bool = False) -> dict[str, Any]:
         out["identityVerified"] = bool(ident.get("VerifiedForSendingStatus"))
         dkim = ident.get("DkimAttributes") or {}
         out["dkimStatus"] = str(dkim.get("Status") or "") or None
-        mail_from = ident.get("MailFromAttributes") if isinstance(ident.get("MailFromAttributes"), dict) else {}
+        mail_from = _g if isinstance(_g := ident.get("MailFromAttributes"), dict) else {}
         out["mailFromDomain"] = str(mail_from.get("MailFromDomain") or "") or None
         out["mailFromStatus"] = str(mail_from.get("MailFromDomainStatus") or "") or None
     except Exception as exc:
@@ -1379,7 +1387,7 @@ def op_report_phishing(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
                 "duplicate": True,
             }
     now = _utc_iso_z(datetime.now(timezone.utc))
-    doc = {
+    doc: dict[str, Any] = {
         "actionId": board_store.new_id(),
         "title": f"Phishing report: {subject}"[:200],
         "detail": (note or f"CISO flagged mail thread {thread_id}.")[:800],

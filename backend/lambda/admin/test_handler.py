@@ -13,12 +13,18 @@ def _install_stubs() -> None:
     mock_boto = MagicMock()
     sys.modules["boto3"] = mock_boto
 
+    class _Exceptions(types.ModuleType):
+        ClientError: type[Exception]
+
+    class _Botocore(types.ModuleType):
+        exceptions: _Exceptions
+
     class ClientError(Exception):
         pass
 
-    botocore = types.ModuleType("botocore")
-    exceptions = types.ModuleType("botocore.exceptions")
+    exceptions = _Exceptions("botocore.exceptions")
     exceptions.ClientError = ClientError
+    botocore = _Botocore("botocore")
     botocore.exceptions = exceptions
     sys.modules["botocore"] = botocore
     sys.modules["botocore.exceptions"] = exceptions
@@ -2464,19 +2470,28 @@ class TestFxV2RatesQuery(unittest.TestCase):
         )
 
     def test_supported_and_sorted(self) -> None:
-        base, need = _parse_fx_v2_rates_query({"base": "hkd", "quotes": "USD,EUR"})
+        parsed = _parse_fx_v2_rates_query({"base": "hkd", "quotes": "USD,EUR"})
+        self.assertIsInstance(parsed, tuple)
+        assert isinstance(parsed, tuple)
+        base, need = parsed
         self.assertEqual(base, "HKD")
         self.assertEqual(need, ["EUR", "USD"])
 
     def test_drops_base_from_quotes(self) -> None:
-        base, need = _parse_fx_v2_rates_query({"base": "HKD", "quotes": "HKD,USD"})
+        parsed = _parse_fx_v2_rates_query({"base": "HKD", "quotes": "HKD,USD"})
+        self.assertIsInstance(parsed, tuple)
+        assert isinstance(parsed, tuple)
+        base, need = parsed
         self.assertEqual(base, "HKD")
         self.assertEqual(need, ["USD"])
 
     def test_accepts_any_three_letter_code(self) -> None:
         # Codes outside SUPPORTED_FINANCE_CURRENCIES (e.g. JPY, BTC) are
         # passed through; Frankfurter validates upstream.
-        base, need = _parse_fx_v2_rates_query({"base": "HKD", "quotes": "JPY,BTC"})
+        parsed = _parse_fx_v2_rates_query({"base": "HKD", "quotes": "JPY,BTC"})
+        self.assertIsInstance(parsed, tuple)
+        assert isinstance(parsed, tuple)
+        base, need = parsed
         self.assertEqual(base, "HKD")
         self.assertEqual(need, ["BTC", "JPY"])
 

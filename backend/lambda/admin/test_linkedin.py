@@ -6,6 +6,7 @@ import json
 import time
 import unittest
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo
@@ -1201,6 +1202,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.assertNotIn("skipped", result)
         send.assert_called_once()
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["status"], "approved")
 
     def test_generate_without_a_job_does_not_draft(self) -> None:
@@ -1216,6 +1218,7 @@ class LinkedInHttpTests(unittest.TestCase):
             result = linkedin.handle_generate({"jobId": job["jobId"]})
         self.assertFalse(result["ok"])
         stored = linkedin_store.get_job(self.table, job["jobId"])
+        assert stored is not None
         self.assertEqual(stored["status"], "failed")
         self.assertIn("linkedin key missing", stored["error"])
 
@@ -1223,7 +1226,7 @@ class LinkedInHttpTests(unittest.TestCase):
         with patch.object(linkedin_draft, "generate_drafts", side_effect=RuntimeError("boom")):
             failed = linkedin.handle_generate({"jobId": unknown["jobId"]})
         self.assertEqual(failed["error"], "Generation failed.")
-        self.assertEqual(linkedin_store.get_job(self.table, unknown["jobId"])["status"], "failed")
+        self.assertEqual(_nn(linkedin_store.get_job(self.table, unknown["jobId"]))["status"], "failed")
 
     def test_bad_replacement_hashtag_fails_the_job(self) -> None:
         post = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nKeep this id."})
@@ -1242,6 +1245,7 @@ class LinkedInHttpTests(unittest.TestCase):
             result = linkedin.handle_generate({"jobId": job["jobId"]})
         self.assertFalse(result["ok"])
         stored = linkedin_store.get_job(self.table, job["jobId"])
+        assert stored is not None
         self.assertEqual(stored["status"], "failed")
         self.assertIn("invalid", stored["error"])
 
@@ -1308,6 +1312,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.assertEqual(result["reminded"], 0)
         self.assertEqual(result["publish"], "posted")
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["status"], "published")
         self.assertEqual(stored["platform"]["urn"], "urn:li:share:1")
         self.assertEqual(stored["metrics"]["reactions"], 4)
@@ -1347,6 +1352,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.assertEqual(result["published"], 0)
         self.assertEqual(result["reminded"], 1)
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["status"], "approved")
         self.assertEqual(stored["publishAttempts"], 1)
         self.assertIn("commentary rejected", stored["publishError"])
@@ -1386,7 +1392,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.assertEqual(result["reminded"], 1)
         self.assertEqual(calls, [])
         self.assertIn("three hours", send.call_args.args[2])
-        self.assertEqual(linkedin_store.get_post(self.table, doc["postId"])["status"], "approved")
+        self.assertEqual(_nn(linkedin_store.get_post(self.table, doc["postId"]))["status"], "approved")
 
     def test_only_one_due_post_goes_out_per_tick(self) -> None:
         first = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nFirst."})
@@ -1416,8 +1422,8 @@ class LinkedInHttpTests(unittest.TestCase):
         with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
             result = linkedin.handle_publish_due({})
         self.assertEqual(result["published"], 1)
-        self.assertEqual(linkedin_store.get_post(self.table, first["postId"])["status"], "published")
-        self.assertEqual(linkedin_store.get_post(self.table, second["postId"])["status"], "approved")
+        self.assertEqual(_nn(linkedin_store.get_post(self.table, first["postId"]))["status"], "published")
+        self.assertEqual(_nn(linkedin_store.get_post(self.table, second["postId"]))["status"], "approved")
 
     def test_an_expired_token_does_not_use_up_attempts(self) -> None:
         doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nNeeds a new login."})
@@ -1442,6 +1448,7 @@ class LinkedInHttpTests(unittest.TestCase):
                 result = linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
         self.assertEqual(result["published"], 0)
+        assert stored is not None
         self.assertEqual(stored["status"], "approved")
         self.assertEqual(int(stored.get("publishAttempts") or 0), 0)
         self.assertIn("Reconnect LinkedIn", stored["publishError"])
@@ -1479,6 +1486,7 @@ class LinkedInHttpTests(unittest.TestCase):
         stored = linkedin_store.get_post(self.table, doc["postId"])
         self.assertEqual(result["gaveUp"], 1)
         self.assertEqual(result["reminded"], 0)
+        assert stored is not None
         self.assertEqual(stored["publishAttempts"], 3)
         self.assertEqual(stored["status"], "approved")
         self.assertIn("will not be tried again", send.call_args.args[2])
@@ -1527,6 +1535,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.assertEqual(second["published"], 1)
         self.assertEqual(created, ["https://api.linkedin.com/rest/posts"])
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["status"], "published")
         self.assertEqual(stored["platform"]["urn"], "urn:li:share:7")
 
@@ -1561,6 +1570,7 @@ class LinkedInHttpTests(unittest.TestCase):
             linkedin.handle_publish_due({})
             linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertTrue(stored["metrics"]["unavailable"])
         self.assertEqual(len(social), 1)
 
@@ -1660,6 +1670,7 @@ class LinkedInHttpTests(unittest.TestCase):
         with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
             linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["impressions"], 12)
         self.assertEqual(stored["metrics"]["reactions"], 3)
         self.assertFalse(stored["metrics"]["unavailable"])
@@ -1690,6 +1701,7 @@ class LinkedInHttpTests(unittest.TestCase):
         with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
             linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertIsNone(stored["metrics"]["impressions"])
         self.assertFalse(any("memberCreatorPostAnalytics" in url for url in seen))
 
@@ -1719,6 +1731,7 @@ class LinkedInHttpTests(unittest.TestCase):
         with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
             linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["reactions"], 4)
         self.assertIsNone(stored["metrics"]["impressions"])
         self.assertFalse(stored["metrics"]["unavailable"])
@@ -1752,6 +1765,7 @@ class LinkedInHttpTests(unittest.TestCase):
         with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
             linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["impressions"], 7)
         self.assertFalse(any("memberCreatorPostAnalytics" in url for url in seen))
 
@@ -1778,9 +1792,10 @@ class LinkedInHttpTests(unittest.TestCase):
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["impressions"], 21)
         self.assertFalse(any("/socialActions/" in url for url in seen))
-        self.assertIsNone(linkedin_store.get_post(self.table, page["postId"]).get("metrics"))
+        self.assertIsNone(_nn(linkedin_store.get_post(self.table, page["postId"])).get("metrics"))
 
     def test_a_recent_reaction_pull_does_not_delay_impressions(self) -> None:
         pulled = format_iso_millis(datetime.now(HKT) - timedelta(minutes=30))
@@ -1799,6 +1814,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["impressions"], 12)
         self.assertEqual(stored["metrics"]["reactions"], 4)
         self.assertFalse(any("/socialActions/" in url for url in seen))
@@ -1822,6 +1838,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["impressions"], 6)
         self.assertEqual(stored["platform"]["urn"], "urn:li:share:9")
 
@@ -1844,6 +1861,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertIsNone(stored.get("metrics"))
         self.assertEqual(seen, [])
 
@@ -1865,6 +1883,7 @@ class LinkedInHttpTests(unittest.TestCase):
         linkedin.handle_publish_due({})
         linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertIsNone(stored["metrics"]["impressions"])
         self.assertTrue(stored["metrics"]["impressionCheckedAt"])
         self.assertEqual(len(seen), 1)
@@ -1889,6 +1908,7 @@ class LinkedInHttpTests(unittest.TestCase):
             linkedin.handle_publish_due({})
             linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["impressions"], 6)
         self.assertEqual(stored["metrics"]["reactions"], 2)
         self.assertTrue(stored["metrics"]["unavailable"])
@@ -1915,8 +1935,8 @@ class LinkedInHttpTests(unittest.TestCase):
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         result = linkedin.handle_publish_due({})
         self.assertEqual(result["published"], 0)
-        self.assertEqual(linkedin_store.get_post(self.table, approved["postId"])["status"], "approved")
-        self.assertEqual(linkedin_store.get_post(self.table, doc["postId"])["metrics"]["impressions"], 3)
+        self.assertEqual(_nn(linkedin_store.get_post(self.table, approved["postId"]))["status"], "approved")
+        self.assertEqual(_nn(linkedin_store.get_post(self.table, doc["postId"]))["metrics"]["impressions"], 3)
 
     def test_metrics_only_does_not_publish_a_due_draft(self) -> None:
         approved = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nDue now."})
@@ -1944,8 +1964,8 @@ class LinkedInHttpTests(unittest.TestCase):
             result = linkedin.handle_publish_due({"metricsOnly": True})
         self.assertEqual(result["refreshed"], 1)
         self.assertEqual(posted, [])
-        self.assertEqual(linkedin_store.get_post(self.table, approved["postId"])["status"], "approved")
-        self.assertEqual(linkedin_store.get_post(self.table, doc["postId"])["metrics"]["impressions"], 8)
+        self.assertEqual(_nn(linkedin_store.get_post(self.table, approved["postId"]))["status"], "approved")
+        self.assertEqual(_nn(linkedin_store.get_post(self.table, doc["postId"]))["metrics"]["impressions"], 8)
 
     def test_analytics_connect_queues_impression_backfill(self) -> None:
         linkedin_store.save_oauth_state(self.table, "plain-state", "admin-sub")
@@ -2005,6 +2025,7 @@ class LinkedInHttpTests(unittest.TestCase):
         with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
             linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["impressions"], 12)
         self.assertEqual(stored["metrics"]["reactions"], 3)
 
@@ -2037,6 +2058,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, dated["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["impressions"], 11)
 
     def test_impression_backfill_stops_at_eight(self) -> None:
@@ -2077,6 +2099,7 @@ class LinkedInHttpTests(unittest.TestCase):
         with patch.object(linkedin_metrics, "BUDGET_SECONDS", 0):
             linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertIsNone(stored.get("metrics"))
         self.assertEqual(seen, [])
 
@@ -2128,6 +2151,7 @@ class LinkedInHttpTests(unittest.TestCase):
             linkedin.handle_publish_due({})
         log.assert_not_called()
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertIsNone(stored.get("metrics"))
 
     def test_a_hand_marked_page_post_uses_page_impressions(self) -> None:
@@ -2164,6 +2188,7 @@ class LinkedInHttpTests(unittest.TestCase):
         with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
             linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["impressions"], 7)
         self.assertTrue(any("organizationalEntityShareStatistics" in url for url in seen))
         self.assertFalse(any("memberCreatorPostAnalytics" in url for url in seen))
@@ -2194,8 +2219,8 @@ class LinkedInHttpTests(unittest.TestCase):
             result = lambda_handler({"internal": "linkedin_publish_due", "metricsOnly": True}, None)
         self.assertEqual(result["refreshed"], 1)
         self.assertEqual(posted, [])
-        self.assertEqual(linkedin_store.get_post(self.table, approved["postId"])["status"], "approved")
-        self.assertEqual(linkedin_store.get_post(self.table, doc["postId"])["metrics"]["impressions"], 8)
+        self.assertEqual(_nn(linkedin_store.get_post(self.table, approved["postId"]))["status"], "approved")
+        self.assertEqual(_nn(linkedin_store.get_post(self.table, doc["postId"]))["metrics"]["impressions"], 8)
 
     def _save_analytics(self, **extra: object) -> None:
         linkedin_analytics.save_connection(
@@ -2245,6 +2270,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.assertNotIn("w_organization_social", url)
         state = parse_qs(urlparse(url).query)["state"][0]
         row = linkedin_store._get(self.table, f"LINKEDIN#oauth#{state}")
+        assert row is not None
         self.assertTrue(row["analyticsApp"])
         posting = linkedin_store.load_connection(self.table)
         self.assertEqual(posting["accessToken"], "token-1")
@@ -2337,6 +2363,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["impressions"], 12)
         self.assertEqual(stored["metrics"]["reactions"], 4)
         self.assertEqual(stored["metrics"]["comments"], 1)
@@ -2366,6 +2393,7 @@ class LinkedInHttpTests(unittest.TestCase):
         with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
             linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["impressions"], 12)
         self.assertEqual(stored["metrics"]["reactions"], 4)
         self.assertEqual(stored["metrics"]["comments"], 1)
@@ -2389,6 +2417,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertIsNone(stored.get("metrics"))
         self.assertFalse(any("memberCreatorPostAnalytics" in url for url in seen))
         self.assertEqual(linkedin_analytics.load_connection(self.table)["calls"], 80)
@@ -2422,6 +2451,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["impressions"], 40)
         self.assertEqual(stored["metrics"]["reactions"], 2)
         self.assertEqual(stored["metrics"]["comments"], 0)
@@ -2453,6 +2483,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["impressions"], 3)
         self.assertFalse(any("memberCreatorPostAnalytics" in url for url in seen))
 
@@ -2482,6 +2513,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["impressions"], 12)
         self.assertFalse(any("memberCreatorPostAnalytics" in url for url in seen))
 
@@ -2505,6 +2537,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["impressions"], 12)
         self.assertEqual(stored["metrics"]["reactions"], 194)
         self.assertEqual(stored["metrics"]["comments"], 3)
@@ -2551,8 +2584,8 @@ class LinkedInHttpTests(unittest.TestCase):
         linkedin_api.set_transport_for_tests(transport)
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         linkedin.handle_publish_due({})
-        self.assertEqual(linkedin_store.get_post(self.table, waiting["postId"])["metrics"]["impressions"], 8)
-        self.assertEqual(linkedin_store.get_post(self.table, due["postId"])["metrics"]["impressions"], 15)
+        self.assertEqual(_nn(linkedin_store.get_post(self.table, waiting["postId"]))["metrics"]["impressions"], 8)
+        self.assertEqual(_nn(linkedin_store.get_post(self.table, due["postId"]))["metrics"]["impressions"], 15)
         self.assertTrue(any("urn%3Ali%3Ashare%3A12" in url for url in seen))
         self.assertFalse(any("urn%3Ali%3Ashare%3A11" in url for url in seen))
 
@@ -2577,6 +2610,7 @@ class LinkedInHttpTests(unittest.TestCase):
         with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
             linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, recent["postId"])
+        assert stored is not None
         self.assertIsNone(stored.get("metrics"))
         self.assertFalse(any("memberCreatorPostAnalytics" in url for url, _auth in seen))
         self.assertFalse(any("/socialActions/" in url for url, _auth in seen))
@@ -2609,8 +2643,9 @@ class LinkedInHttpTests(unittest.TestCase):
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
             linkedin.handle_publish_due({})
-        self.assertIsNone(linkedin_store.get_post(self.table, profile["postId"]).get("metrics"))
+        self.assertIsNone(_nn(linkedin_store.get_post(self.table, profile["postId"])).get("metrics"))
         stored = linkedin_store.get_post(self.table, page["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["impressions"], 7)
         self.assertEqual(stored["metrics"]["reactions"], 1)
         self.assertEqual(stored["metrics"]["comments"], 0)
@@ -2668,6 +2703,7 @@ class LinkedInHttpTests(unittest.TestCase):
         self.assertEqual(sum("queryType=REACTION" in url for url in seen), 1)
         for doc in (first, second):
             stored = linkedin_store.get_post(self.table, doc["postId"])
+            assert stored is not None
             self.assertTrue(stored["metrics"]["reactionDenied"])
             self.assertEqual(stored["metrics"]["comments"], 3)
             self.assertEqual(stored["metrics"]["impressions"], 12)
@@ -2709,9 +2745,11 @@ class LinkedInHttpTests(unittest.TestCase):
         self.assertEqual(sum("memberCreatorPostAnalytics" in url for url in seen), 1)
         self.assertTrue(any(call.kwargs.get("status") == 429 for call in log.call_args_list))
         stored = linkedin_store.get_post(self.table, first["postId"])
+        assert stored is not None
         self.assertTrue(stored["metrics"]["impressionCheckedAt"])
-        self.assertIsNone(linkedin_store.get_post(self.table, second["postId"]).get("metrics"))
+        self.assertIsNone(_nn(linkedin_store.get_post(self.table, second["postId"])).get("metrics"))
         page_stored = linkedin_store.get_post(self.table, page["postId"])
+        assert page_stored is not None
         self.assertEqual(page_stored["metrics"]["impressions"], 7)
         self.assertEqual(page_stored["metrics"]["reactions"], 1)
 
@@ -2743,6 +2781,7 @@ class LinkedInHttpTests(unittest.TestCase):
         with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
             linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["reactions"], 9)
         self.assertEqual(stored["metrics"]["comments"], 2)
         self.assertEqual(stored["metrics"]["impressions"], 12)
@@ -2774,6 +2813,7 @@ class LinkedInHttpTests(unittest.TestCase):
         with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
             linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["metrics"]["reactions"], 9)
         self.assertEqual(stored["metrics"]["comments"], 4)
         self.assertEqual(stored["metrics"]["reactionReadAt"], read_at)
@@ -2801,6 +2841,7 @@ class LinkedInHttpTests(unittest.TestCase):
         with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true"}):
             linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertIsNone(stored["metrics"]["impressions"])
         self.assertEqual(stored["metrics"]["reactions"], 5)
         self.assertEqual(stored["metrics"]["comments"], 2)
@@ -2841,7 +2882,7 @@ class LinkedInHttpTests(unittest.TestCase):
         real_put = self.table.put_item
         failed = {"once": False}
 
-        def put_item(**kwargs: object) -> dict[str, object]:
+        def put_item(**kwargs: Any) -> dict[str, Any]:
             condition = str(kwargs.get("ConditionExpression") or "")
             if "calls = :prev" in condition and not failed["once"]:
                 failed["once"] = True
@@ -2850,6 +2891,7 @@ class LinkedInHttpTests(unittest.TestCase):
                 exc = ClientError("conflict")
                 exc.response = {"Error": {"Code": "ConditionalCheckFailedException", "Message": "conflict"}}  # type: ignore[attr-defined]
                 raise exc
+            assert kwargs is not None
             return real_put(**kwargs)
 
         with patch.object(self.table, "put_item", side_effect=put_item):
@@ -2989,6 +3031,7 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertTrue(result["ok"])
         stored = linkedin_store.get_post(self.table, doc["postId"])
         self.assertIn("Fourteen percent failed validation.", calls[0])
+        assert stored is not None
         self.assertEqual(stored["image"]["caption"], "Fourteen percent of these people do not exist.")
         self.assertEqual(stored["image"]["expression"], "baffled, one eyebrow up")
         self.assertTrue(stored["image"]["scene"].startswith("At a desk"))
@@ -3003,7 +3046,7 @@ class LinkedInImageTests(unittest.TestCase):
 
         failed = linkedin_image.write_brief(self.table, doc["postId"], brief=broken)
         self.assertFalse(failed["ok"])
-        public = linkedin_store.public_post(linkedin_store.get_post(self.table, doc["postId"]))
+        public = linkedin_store.public_post(_nn(linkedin_store.get_post(self.table, doc["postId"])))
         self.assertEqual(public["image"]["brief"]["status"], "failed")
         self.assertIn("Could not write the scene", public["image"]["brief"]["error"])
         # The last good fields are still there.
@@ -3017,7 +3060,7 @@ class LinkedInImageTests(unittest.TestCase):
             return ({"imageScene": "A desk.", "imageExpression": "weary", "imageCaption": "Fine"}, 0.0)
 
         self.assertTrue(linkedin_image.write_brief(self.table, doc["postId"], brief=brief)["ok"])
-        public = linkedin_store.public_post(linkedin_store.get_post(self.table, doc["postId"]))
+        public = linkedin_store.public_post(_nn(linkedin_store.get_post(self.table, doc["postId"])))
         self.assertIsNotNone(public["image"])
         self.assertEqual(public["image"]["caption"], "Fine.")
         self.assertNotIn("contentType", public["image"])
@@ -3035,6 +3078,7 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertFalse(linkedin_store.brief_pending(image, now=late))
         with patch.object(linkedin_store, "brief_pending", return_value=False):
             shown = linkedin_store.public_brief(image)
+        assert shown is not None
         self.assertEqual(shown["status"], "failed")
         self.assertIn("took too long", shown["error"])
         # A stale rewrite does not block a new one or a redraw.
@@ -3069,7 +3113,7 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertEqual(item["image"]["status"], "pending")
         self.assertEqual(invoke.call_args.args[0]["internal"], "linkedin_image")
         linkedin_store.put_post(
-            self.table, {**linkedin_store.get_post(self.table, item["postId"]), "image": {"status": "failed"}}
+            self.table, {**_nn(linkedin_store.get_post(self.table, item["postId"])), "image": {"status": "failed"}}
         )
         # The rewrite is queued, never run inside the request: API Gateway cuts at 30 s.
         with (
@@ -3133,7 +3177,7 @@ class LinkedInImageTests(unittest.TestCase):
                 0.002,
             )
 
-        seen: dict[str, object] = {}
+        seen: dict[str, Any] = {}
 
         def generate(prompt, aspect, seed, references, settings, n=1):
             seen["prompt"] = prompt
@@ -3149,6 +3193,7 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertIn("progress bar the length of a bus", str(seen["prompt"]))
         self.assertIn("Expression: weary, jaw set", str(seen["prompt"]))
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["image"]["status"], "ready")
         self.assertEqual(stored["image"]["caption"], "Forty minutes, the estimate said.")
         self.assertEqual(stored["image"]["expression"], "weary, jaw set")
@@ -3175,12 +3220,13 @@ class LinkedInImageTests(unittest.TestCase):
         result = linkedin_image.render_post(self.table, doc["postId"], generate=generate, brief=brief)
         self.assertTrue(result["ok"])
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertIn("The lift queue was the real bottleneck.", stored["image"]["scene"])
         self.assertEqual(stored["image"]["caption"], "Still queueing.")
         self.assertEqual(stored["image"]["expression"], linkedin_store.FALLBACK_IMAGE_EXPRESSION)
 
     def test_the_picture_brief_is_asked_from_the_post_alone(self) -> None:
-        captured: dict[str, object] = {}
+        captured: dict[str, Any] = {}
 
         def fake(messages, *, table=None, settings=None):
             captured["messages"] = messages
@@ -3302,6 +3348,7 @@ class LinkedInImageTests(unittest.TestCase):
         result = linkedin_image.render_post(self.table, doc["postId"], generate=generate)
         self.assertFalse(result["ok"])
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["image"]["status"], "failed")
         self.assertIn("siutindei", stored["image"]["error"])
 
@@ -3312,7 +3359,7 @@ class LinkedInImageTests(unittest.TestCase):
         linkedin_image.queue_for_post(
             self.table, doc["postId"], scene="The author under a tower of paper.", caption="Quite a pile.", force=True
         )
-        seen: dict[str, object] = {}
+        seen: dict[str, Any] = {}
 
         def generate(prompt, aspect, seed, references, settings, n=1):
             seen["prompt"] = prompt
@@ -3331,10 +3378,12 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertIn(linkedin_store.FALLBACK_IMAGE_EXPRESSION, str(seen["prompt"]))
         self.assertIsNone(seen["references"])
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["image"]["status"], "ready")
         self.assertEqual(stored["image"]["caption"], "Quite a pile.")
         loaded = linkedin_store.load_post_image(doc["postId"])
         self.assertIsNotNone(loaded)
+        assert loaded is not None
         self.assertTrue(loaded[1].startswith(b"\x89PNG"))
         self.assertAlmostEqual(linkedin_store.month_spend(self.table), 0.04)
         public = linkedin_store.public_post(stored)
@@ -3373,7 +3422,7 @@ class LinkedInImageTests(unittest.TestCase):
         linkedin_image.queue_for_post(
             self.table, doc["postId"], scene="The author and a huge envelope.", caption="It barely fits.", force=True
         )
-        seen: dict[str, object] = {}
+        seen: dict[str, Any] = {}
 
         def one(prompt, aspect, seed, references, settings, n=1):
             del prompt, aspect, seed, settings, n
@@ -3412,10 +3461,11 @@ class LinkedInImageTests(unittest.TestCase):
         linkedin_api.set_transport_for_tests(transport)
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true", "LINKEDIN_ENABLED": "true"}):
-            linkedin.publish_one(self.table, linkedin_store.get_post(self.table, doc["postId"]))
+            linkedin.publish_one(self.table, _nn(linkedin_store.get_post(self.table, doc["postId"])))
         posted = json.loads(bodies[0])
         self.assertNotIn("content", posted)
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         self.assertEqual(stored["status"], "published")
         self.assertIn("without the picture", stored["imageNote"])
 
@@ -3429,7 +3479,7 @@ class LinkedInImageTests(unittest.TestCase):
             "data": [{"b64_json": base64.b64encode(b"\x89PNG").decode("ascii"), "media_type": "image/png"}],
             "usage": {"prompt_tokens": 0, "completion_tokens": 1, "total_tokens": 1, "cost": 0.04},
         }
-        seen: dict[str, object] = {}
+        seen: dict[str, Any] = {}
 
         def post_json(**kwargs):
             seen["payload"] = kwargs["payload"]
@@ -3443,7 +3493,7 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertEqual(seen["payload"]["resolution"], "2K")
 
     def test_live_generate_requests_2k(self) -> None:
-        captured: dict[str, object] = {}
+        captured: dict[str, Any] = {}
 
         def generate_image(**kwargs):
             captured.update(kwargs)
@@ -3470,7 +3520,7 @@ class LinkedInImageTests(unittest.TestCase):
                     # Creating the post already queued its picture; let that one finish first.
                     self.assertEqual(_body(created)["item"]["image"]["status"], "pending")
                     linkedin_store.put_post(
-                        self.table, {**linkedin_store.get_post(self.table, post_id), "image": {"status": "failed"}}
+                        self.table, {**_nn(linkedin_store.get_post(self.table, post_id)), "image": {"status": "failed"}}
                     )
                     first = lambda_handler(
                         _event(
@@ -3506,6 +3556,7 @@ class LinkedInImageTests(unittest.TestCase):
         doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOne lesson."})
         linkedin_store.save_post_image(self.table, doc["postId"], "image/png", self._png())
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         stored["image"]["caption"] = "Old line."
         linkedin_store.put_post(self.table, stored)
         with patch("board_async.try_invoke_event", return_value=True):
@@ -3520,6 +3571,7 @@ class LinkedInImageTests(unittest.TestCase):
             result = linkedin_image.render_post(self.table, doc["postId"], generate=self._generated())
         self.assertFalse(result["ok"])
         failed = linkedin_store.get_post(self.table, doc["postId"])
+        assert failed is not None
         self.assertEqual(failed["image"]["status"], "failed")
         self.assertEqual(failed["image"]["held"]["caption"], "Old line.")
         self.assertEqual(failed["image"]["contentType"], "image/png")
@@ -3539,7 +3591,7 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertTrue(ok["ok"])
         self.assertEqual(blocked["error"], "budget")
         self.assertAlmostEqual(linkedin_store.month_spend(self.table), 0.04)
-        self.assertEqual(linkedin_store.get_post(self.table, second["postId"])["image"]["status"], "failed")
+        self.assertEqual(_nn(linkedin_store.get_post(self.table, second["postId"]))["image"]["status"], "failed")
 
     def test_the_worker_reads_the_post_consistently(self) -> None:
         doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOne lesson."})
@@ -3567,6 +3619,7 @@ class LinkedInImageTests(unittest.TestCase):
         doc = linkedin_store.create_post(self.table, {"body": "A short hook.\n\nOne lesson."})
         linkedin_store.save_post_image(self.table, doc["postId"], "image/png", self._png())
         stored = linkedin_store.get_post(self.table, doc["postId"])
+        assert stored is not None
         stored["image"]["caption"] = "Old line."
         stored["status"] = "approved"
         stored["slotAt"] = _recent_slot()
@@ -3599,10 +3652,11 @@ class LinkedInImageTests(unittest.TestCase):
         linkedin_api.set_transport_for_tests(transport)
         self.addCleanup(lambda: linkedin_api.set_transport_for_tests(None))
         with patch.dict("os.environ", {"LINKEDIN_PUBLISH_ENABLED": "true", "LINKEDIN_ENABLED": "true"}):
-            linkedin.publish_one(self.table, linkedin_store.get_post(self.table, doc["postId"]))
+            linkedin.publish_one(self.table, _nn(linkedin_store.get_post(self.table, doc["postId"])))
         posted = json.loads(bodies[0])
         self.assertEqual(posted["content"]["media"]["altText"], "Old line.")
         published = linkedin_store.get_post(self.table, doc["postId"])
+        assert published is not None
         self.assertEqual(published["status"], "published")
         self.assertFalse(published.get("imageNote"))
 
@@ -3714,3 +3768,11 @@ class LinkedInImageTests(unittest.TestCase):
         self.assertEqual(response["statusCode"], 200)
         self.assertEqual(_body(response)["job"]["status"], "failed")
         self.assertIn("timed out", _body(response)["job"]["error"])
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

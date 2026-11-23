@@ -43,13 +43,13 @@ class DelegateTests(BoardTestCase):
         status, body = _call("/siu-tin-dei/board/approvals/a1/reject", "POST", {}, "apikey:k1")
         self.assertEqual(status, 400)
         self.assertEqual(body["message"], "note is required")
-        self.assertEqual(board_store.get_approval(self.table, "a1")["status"], "pending")
+        self.assertEqual(_nn(board_store.get_approval(self.table, "a1"))["status"], "pending")
         status, body = _call(
             "/siu-tin-dei/board/approvals/a1/reject", "POST", {"note": "Listing id is not real."}, "apikey:k1"
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["approval"]["status"], "rejected")
-        self.assertEqual(board_store.get_approval(self.table, "a1")["decidedBySub"], "apikey:k1")
+        self.assertEqual(_nn(board_store.get_approval(self.table, "a1"))["decidedBySub"], "apikey:k1")
         self.assertNotIn("decidedBySub", body["approval"])
         updates = board_store.list_updates(self.table, limit=5)
         self.assertTrue(any("apikey:k1" in u["text"] and "a1" in u["text"] for u in updates))
@@ -57,15 +57,15 @@ class DelegateTests(BoardTestCase):
     def test_apikey_cannot_approve_and_owner_can_reject_without_a_note(self) -> None:
         status, body = _call("/siu-tin-dei/board/approvals/a1/approve", "POST", {"note": "send it"}, "apikey:k1")
         self.assertEqual(status, 403)
-        self.assertEqual(board_store.get_approval(self.table, "a1")["status"], "pending")
+        self.assertEqual(_nn(board_store.get_approval(self.table, "a1"))["status"], "pending")
         status, _ = _call("/siu-tin-dei/board/approvals/a1/reject", "POST", {}, "admin-sub")
         self.assertEqual(status, 200)
-        self.assertEqual(board_store.get_approval(self.table, "a1")["status"], "rejected")
+        self.assertEqual(_nn(board_store.get_approval(self.table, "a1"))["status"], "rejected")
 
     def test_apikey_dismiss_needs_a_note(self) -> None:
         status, body = _call("/siu-tin-dei/board/tasks/t1/cancel", "POST", {}, "apikey:k1")
         self.assertEqual(status, 400)
-        self.assertEqual(board_store.get_task(self.table, "t1")["status"], "needs_owner")
+        self.assertEqual(_nn(board_store.get_task(self.table, "t1"))["status"], "needs_owner")
         status, body = _call(
             "/siu-tin-dei/board/tasks/t1/cancel", "POST", {"note": "Re-proposes a fake listing id."}, "apikey:k1"
         )
@@ -171,7 +171,10 @@ class InstagramReadTests(BoardTestCase):
         with patch("board_meta.graph", side_effect=self._graph):
             status, body = _call("/siu-tin-dei/board/meta/instagram", "GET", None, "apikey:k1")
             tool = board_tools.REGISTRY["meta_list_ig_media"]
-            listed = tool.run(None, {"limit": 5})
+            listed = tool.run(
+                board_tools.ToolContext(self.table, board_store.default_settings(), "cmo"),
+                {"limit": 5},
+            )
         self.assertEqual(status, 200)
         self.assertEqual(body["media"][0]["permalink"], "https://www.instagram.com/p/abc/")
         self.assertEqual(body["media"][0]["caption"], "Stanley this week")
@@ -185,3 +188,11 @@ class InstagramReadTests(BoardTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+from typing import TypeVar
+
+_T = TypeVar("_T")
+
+def _nn(value: _T | None) -> _T:
+    assert value is not None
+    return value

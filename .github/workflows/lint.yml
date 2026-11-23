@@ -94,9 +94,7 @@ jobs:
 
       - name: Mypy
         run: |
-          set +e
-          ceiling=1269
-          total=0
+          set -euo pipefail
           dirs=()
           for dir in backend/lambda/*; do
             if [ -d "$dir" ] && find "$dir" -name '*.py' -print -quit | grep -q .; then
@@ -109,26 +107,12 @@ jobs:
             exit 1
           fi
           for dir in "${dirs[@]}"; do
+            echo "mypy $dir"
             (
               cd "$dir"
               python3 -m mypy --ignore-missing-imports .
-            ) > "$RUNNER_TEMP/mypy.txt" 2>&1
-            status=$?
-            if [ "$status" -gt 1 ]; then
-              echo "mypy failed to run in $dir"
-              cat "$RUNNER_TEMP/mypy.txt"
-              exit "$status"
-            fi
-            count="$(grep -c ': error:' "$RUNNER_TEMP/mypy.txt" || true)"
-            echo "$dir: $count"
-            total=$((total + count))
+            )
           done
-          set -e
-          echo "mypy errors: ${total} (ceiling ${ceiling})"
-          if [ "$total" -gt "$ceiling" ]; then
-            echo "mypy error count rose above the ceiling"
-            exit 1
-          fi
 
   validate-agent-harness:
     name: Validate agent harness

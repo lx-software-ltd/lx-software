@@ -10,6 +10,7 @@ from test_board import BoardTestCase
 class ConfigGapCacheTests(BoardTestCase):
     def test_same_week_refreshes_the_reason_once(self) -> None:
         first = board_config_gaps.note_config_gap(self.table, gap_id="dmarc:example.com", reason="first")
+        assert first is not None
         self.assertEqual(first["reason"], "first")
         again = board_config_gaps.note_config_gap(self.table, gap_id="dmarc:example.com", reason="second")
         self.assertIsNone(again)
