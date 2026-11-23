@@ -178,13 +178,13 @@ Only **404** responses are rewritten to `/index.html` for SPA routing.
 `main` is gated by the `main-protection` ruleset. The ruleset must be
 `active`, include `refs/heads/main`, block deletion and force-push, and
 require status checks whose contexts exactly match a job `name` in
-`.github/workflows` (the aggregator jobs are `test` and `lint`).
+`.github/workflows` (the aggregator jobs are `lint`, `test`, and `security-summary`).
 The weekly **Verify GitHub Rulesets** job runs
 `lx-software-ltd/actions/verify-rulesets` with expected approving reviews
-0 and required checks `lint` and `test`. A ruleset that targets `main`
+0 and required checks `lint`, `test`, and `security-summary`. A ruleset that targets `main`
 while its enforcement is `disabled` fails that job. A required context
 with no matching job name fails it too, which is why the aggregators
-are named `test` and `lint` rather than the longer per-app job names.
+are named `lint`, `test`, and `security-summary` rather than the longer per-app job names.
 
 An approving-review count other than 0 fails that job. Pull requests
 in this repository are opened by the maintainer account, and GitHub does
