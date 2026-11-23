@@ -45,7 +45,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
+        uses: lx-software-ltd/actions/setup-node@daa2fd06bb4a9580a3d3302f9127a66da39d940e # main 2026-11-23
         with:
           cache: npm
           working-directory: apps/public_www
@@ -63,43 +63,12 @@ jobs:
         run: npm run build
 
       - name: Run Lighthouse CI
-        working-directory: apps/public_www
-        env:
-          LIGHTHOUSE_PAGE_PATHS: ${{ inputs.page_paths }}
-          LHCI_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node <<'NODE'
-          const fs = require('node:fs');
-          const path = require('node:path');
-
-          const baseConfigPath = path.resolve('.lighthouserc.json');
-          const runtimeConfigPath = path.resolve('.lighthouserc.runtime.json');
-          const rawInput = (process.env.LIGHTHOUSE_PAGE_PATHS ?? '').trim();
-          const defaultTargets = ['/', '/fractional-cto-hong-kong', '/about', '/privacy', '/terms', '/wechat'];
-          const requestedTargets = (rawInput ? rawInput.split(/[\n,]+/) : defaultTargets)
-            .map((value) => value.trim())
-            .filter(Boolean);
-
-          const normalizedUrls = requestedTargets.map((target) => {
-            if (/^https?:\/\//i.test(target)) {
-              return target;
-            }
-            const normalizedPath = target.startsWith('/') ? target : `/${target}`;
-            return `http://localhost:9000${normalizedPath}`;
-          });
-
-          const config = JSON.parse(fs.readFileSync(baseConfigPath, 'utf8'));
-          config.ci = config.ci ?? {};
-          config.ci.collect = config.ci.collect ?? {};
-          config.ci.collect.url = normalizedUrls;
-          fs.writeFileSync(runtimeConfigPath, `${JSON.stringify(config, null, 2)}\n`);
-          console.log('Lighthouse targets:');
-          for (const url of normalizedUrls) {
-            console.log(`- ${url}`);
-          }
-          NODE
-
-          npx --yes @lhci/cli autorun --config=.lighthouserc.runtime.json
+        uses: lx-software-ltd/actions/lighthouse-ci@daa2fd06bb4a9580a3d3302f9127a66da39d940e # main 2026-11-23
+        with:
+          working-directory: apps/public_www
+          page-paths: ${{ inputs.page_paths }}
+          default-paths: /,/fractional-cto-hong-kong,/about,/privacy,/terms,/wechat
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Lighthouse artifacts
         if: always()
@@ -128,7 +97,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
+        uses: lx-software-ltd/actions/setup-node@daa2fd06bb4a9580a3d3302f9127a66da39d940e # main 2026-11-23
         with:
           cache: npm
           working-directory: apps/public_www
@@ -146,43 +115,12 @@ jobs:
         run: npm run build
 
       - name: Run Lighthouse CI
-        working-directory: apps/public_www
-        env:
-          LIGHTHOUSE_PAGE_PATHS: ${{ inputs.page_paths }}
-          LHCI_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          node <<'NODE'
-          const fs = require('node:fs');
-          const path = require('node:path');
-
-          const baseConfigPath = path.resolve('.lighthouserc.json');
-          const runtimeConfigPath = path.resolve('.lighthouserc.runtime.json');
-          const rawInput = (process.env.LIGHTHOUSE_PAGE_PATHS ?? '').trim();
-          const defaultTargets = ['/', '/fractional-cto-hong-kong', '/about', '/privacy', '/terms', '/wechat'];
-          const requestedTargets = (rawInput ? rawInput.split(/[\n,]+/) : defaultTargets)
-            .map((value) => value.trim())
-            .filter(Boolean);
-
-          const normalizedUrls = requestedTargets.map((target) => {
-            if (/^https?:\/\//i.test(target)) {
-              return target;
-            }
-            const normalizedPath = target.startsWith('/') ? target : `/${target}`;
-            return `http://localhost:9000${normalizedPath}`;
-          });
-
-          const config = JSON.parse(fs.readFileSync(baseConfigPath, 'utf8'));
-          config.ci = config.ci ?? {};
-          config.ci.collect = config.ci.collect ?? {};
-          config.ci.collect.url = normalizedUrls;
-          fs.writeFileSync(runtimeConfigPath, `${JSON.stringify(config, null, 2)}\n`);
-          console.log('Lighthouse targets:');
-          for (const url of normalizedUrls) {
-            console.log(`- ${url}`);
-          }
-          NODE
-
-          npx --yes @lhci/cli autorun --config=.lighthouserc.runtime.json
+        uses: lx-software-ltd/actions/lighthouse-ci@daa2fd06bb4a9580a3d3302f9127a66da39d940e # main 2026-11-23
+        with:
+          working-directory: apps/public_www
+          page-paths: ${{ inputs.page_paths }}
+          default-paths: /,/fractional-cto-hong-kong,/about,/privacy,/terms,/wechat
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Lighthouse artifacts
         if: always()

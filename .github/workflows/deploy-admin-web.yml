@@ -3,7 +3,7 @@ name: Deploy Admin Web
 on:
   push:
     branches: [main]
-    paths: ["apps/admin_web/**", "scripts/deploy/deploy-admin-www.sh", ".github/workflows/deploy-admin-web.yml"]
+    paths: ["apps/admin_web/**", ".github/workflows/deploy-admin-web.yml"]
   workflow_dispatch:
   # A backend deploy can replace the Cognito client or the HTTP API. Rebuild
   # the SPA from current main so it picks up those outputs. Only a successful
@@ -41,14 +41,14 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
+        uses: lx-software-ltd/actions/aws-oidc@daa2fd06bb4a9580a3d3302f9127a66da39d940e # main 2026-11-23
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
 
       - name: Read admin SPA settings from the lxsoftware stack
         id: stack_outputs
-        uses: lx-software-ltd/actions/cfn-stack-outputs@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
+        uses: lx-software-ltd/actions/cfn-stack-outputs@daa2fd06bb4a9580a3d3302f9127a66da39d940e # main 2026-11-23
         with:
           stack: lxsoftware
           outputs: UserPoolClientId CognitoDomain AdminApiBaseUrl
@@ -111,7 +111,7 @@ jobs:
 
       - name: Upload the admin site
         if: steps.aws.outputs.ready == 'true'
-        uses: lx-software-ltd/actions/s3-cloudfront-deploy@ffde04dca3c78b1ccb8739f4d3a23f728ac7a05f # main 2026-11-23
+        uses: lx-software-ltd/actions/s3-cloudfront-deploy@daa2fd06bb4a9580a3d3302f9127a66da39d940e # main 2026-11-23
         with:
           source: apps/admin_web/dist
           bucket: ${{ steps.site.outputs.bucket }}

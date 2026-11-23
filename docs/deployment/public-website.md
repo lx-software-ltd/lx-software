@@ -112,15 +112,10 @@ and the `<route>/index.html` copies) are uploaded the same way, with a
 content type and `no-cache`. `media/` syncs with `--size-only`. Retired
 hashed assets are deleted only after the new shell is uploaded.
 
-```bash
-PUBLIC_WEBSITE_STACK_NAME=lxsoftware-public-www \
-  bash scripts/deploy/deploy-public-website.sh
-```
-
-The workflow reads the stack outputs `PublicWebsiteBucketName` and
-`PublicWebsiteDistributionId`, then uploads with `s3-cloudfront-deploy`
-profile `public-routes` and `indexnow: true`. A manual run can still use
-the script above. The script reads the same two outputs.
+**Deploy Public Website** reads the stack outputs `PublicWebsiteBucketName`
+and `PublicWebsiteDistributionId`, then uploads with `s3-cloudfront-deploy`
+profile `public-routes` and `indexnow: true`. The stack name is
+`vars.PUBLIC_WEBSITE_STACK_NAME`, or `lxsoftware-public-www`.
 
 After the CloudFront invalidation the script submits every sitemap URL to
 [IndexNow](https://www.indexnow.org/) (Bing, Yandex, Naver, Seznam, Yep;
