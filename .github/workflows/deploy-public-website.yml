@@ -62,6 +62,96 @@ jobs:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
 
+      - name: Checkout the pinned deploy action
+        if: steps.aws.outputs.ready == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: lx-software-ltd/actions
+          ref: e6be2629d7206b0d5c079662f364772bc816acc1
+          path: .actions-pin
+
+      - name: Compare the dry run with the current deploy
+        if: steps.aws.outputs.ready == 'true'
+        continue-on-error: true
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          PUBLIC_WEBSITE_STACK_NAME: ${{ vars.PUBLIC_WEBSITE_STACK_NAME }}
+        run: |
+          set -euo pipefail
+          stack="${PUBLIC_WEBSITE_STACK_NAME:-lxsoftware-public-www}"
+          bucket="$(aws cloudformation describe-stacks --stack-name "$stack" --query "Stacks[0].Outputs[?OutputKey=='PublicWebsiteBucketName'].OutputValue" --output text)"
+          distribution="$(aws cloudformation describe-stacks --stack-name "$stack" --query "Stacks[0].Outputs[?OutputKey=='PublicWebsiteDistributionId'].OutputValue" --output text)"
+          if [ -z "$bucket" ] || [ "$bucket" = "None" ]; then
+            echo "Public website bucket output not found for $stack" >&2
+            exit 1
+          fi
+          if [ "$distribution" = "None" ]; then
+            distribution=""
+          fi
+          real_aws="$(command -v aws)"
+          bindir="$RUNNER_TEMP/aws-dry/bin"
+          mkdir -p "$bindir"
+          REAL_AWS="$real_aws" BINDIR="$bindir" python3 - << 'PY'
+          import os
+          from pathlib import Path
+          path = Path(os.environ["BINDIR"]) / "aws"
+          path.write_text(
+              "#!/usr/bin/env bash\n"
+              "set -euo pipefail\n"
+              f"real={os.environ['REAL_AWS']!r}\n"
+              'if [[ "$1" == "s3" ]]; then\n'
+              '  exec "$real" s3 "$2" --dryrun "${@:3}"\n'
+              "fi\n"
+              'if [[ "$1" == "cloudfront" ]]; then\n'
+              '  echo "Dry run: skipping CloudFront invalidation" >&2\n'
+              "  exit 0\n"
+              "fi\n"
+              'exec "$real" "$@"\n'
+          )
+          path.chmod(0o755)
+          PY
+          INDEXNOW_DISABLED=1 PATH="$bindir:$PATH" bash scripts/deploy/deploy-public-website.sh > "$RUNNER_TEMP/current-deploy.txt"
+          SOURCE="$GITHUB_WORKSPACE/apps/public_www/dist" \
+            BUCKET="$bucket" \
+            DISTRIBUTION_ID="$distribution" \
+            PROFILE=public-routes \
+            DRY_RUN=true \
+            python3 "$GITHUB_WORKSPACE/.actions-pin/s3-cloudfront-deploy/s3_sync.py" > "$RUNNER_TEMP/action-deploy.txt"
+          CURRENT="$RUNNER_TEMP/current-deploy.txt" ACTION="$RUNNER_TEMP/action-deploy.txt" python3 - << 'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          account = re.compile(r"\b\d{12}\b")
+
+          def planned(path):
+              found = []
+              for line in Path(path).read_text(encoding="utf-8").splitlines():
+                  if "(dryrun)" not in line:
+                      continue
+                  if " to " in line:
+                      found.append("upload " + line.split(" to ", 1)[1].strip())
+                  else:
+                      found.append(line.split("(dryrun)", 1)[1].strip())
+              return sorted(found)
+
+          current = planned(os.environ["CURRENT"])
+          action = planned(os.environ["ACTION"])
+          if not current or not action:
+              raise SystemExit("dry run produced no planned S3 changes")
+          if current != action:
+              print("planned S3 changes differ", file=sys.stderr)
+              for line in current:
+                  if line not in action:
+                      print("current only: " + account.sub("************", line), file=sys.stderr)
+              for line in action:
+                  if line not in current:
+                      print("action only: " + account.sub("************", line), file=sys.stderr)
+              raise SystemExit(1)
+          print(f"Dry run matches the current deploy ({len(current)} planned S3 changes)")
+          PY
+
       - name: Deploy public website
         run: |
           if [ -f "scripts/deploy/deploy-public-website.sh" ]; then
