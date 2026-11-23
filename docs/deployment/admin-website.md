@@ -172,7 +172,9 @@ Backend** on `main`, or manually). It builds
 `apps/admin_web` with production `VITE_*` values, then
 `scripts/deploy/deploy-admin-www.sh` uploads hashed `dist/assets/**` with a
 long immutable cache, uploads `index.html` with `no-cache` and invalidates
-CloudFront. The script reads `AdminWebBucketName` and
+CloudFront. Before that upload, the workflow dry-runs `s3-cloudfront-deploy`
+with profile `admin-hashed` and compares the planned S3 changes. The
+comparison is `continue-on-error`, and the upload step stays the script. The script reads `AdminWebBucketName` and
 `AdminWebDistributionId` from the `lxsoftware-admin-web` outputs (override
 with `ADMIN_WEB_STACK_NAME`).
 
