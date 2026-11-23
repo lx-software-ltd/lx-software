@@ -11,8 +11,22 @@ permissions:
   contents: read
 
 jobs:
+  check:
+    name: Check dependency graph
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main'
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check pinned manifests
+        uses: lx-software-ltd/actions/dependency-graph@82f7f9b4cd0d304e9ebcf6aac28c7fc123b9feb0 # main 2026-11-23
+        with:
+          submit: "false"
+
   submit:
     name: Submit dependency graph
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-26.04
     permissions:
       contents: write
@@ -21,7 +35,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Submit pinned manifests
-        uses: lx-software-ltd/actions/dependency-graph@385abf462c6d47a66afcb7cebc15152ffe7049e7 # main 2026-11-23
+        uses: lx-software-ltd/actions/dependency-graph@82f7f9b4cd0d304e9ebcf6aac28c7fc123b9feb0 # main 2026-11-23
         with:
-          submit: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          submit: "true"
           token: ${{ github.token }}
