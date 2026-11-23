@@ -32,7 +32,7 @@ npx cdk bootstrap aws://ACCOUNT_ID/REGION
 ```
 
 Replace `ACCOUNT_ID` and `REGION` with your target AWS account and region
-(e.g., `aws://588024549699/ap-southeast-1`).
+(e.g., `aws://<ACCOUNT_ID>/ap-southeast-1`).
 
 ## Local deploy
 
@@ -50,6 +50,8 @@ Set the repository variable `CDK_PARAM_FILE` to the path you want CI to use
 Typical committed values include:
 
 - `PublicWebsiteDomainName` (public site). `PublicWebsiteCertificateArn` is `<FROM_GITHUB_SECRET: CDK_PARAM_PUBLIC_WEBSITE_CERTIFICATE_ARN>`.
+- **`lxsoftware:SiutindeiClusterArn`** — `<FROM_GITHUB_SECRET: CDK_PARAM_SIUTINDEI_CLUSTER_ARN>`.
+- **`lxsoftware:EvolvesproutsClusterArn`** — `<FROM_GITHUB_SECRET: CDK_PARAM_EVOLVESPROUTS_CLUSTER_ARN>`.
 - **`lxsoftware:PublicApiWritesEnabled`** — production is `true` so Cloud Agent
   keys with `allowWrite` can POST/PUT/DELETE board routes. The CDK parameter
   default stays `false` (fail-closed) for new stacks. Finance `/public/*`
@@ -77,8 +79,8 @@ The admin **Finance > House > Import statement (PDF)** UI uploads PDFs to S3 and
 asks OpenRouter to extract transactions. Configure these `lxsoftware:`-prefixed
 parameters to enable it:
 
-- **`lxsoftware:OpenRouterApiKeySecretArn`** — ARN of the AWS Secrets Manager
-  secret containing OpenRouter API keys. The secret **must** be a JSON object
+- **`lxsoftware:OpenRouterApiKeySecretArn`** — `<FROM_GITHUB_SECRET: CDK_PARAM_OPENROUTER_API_KEY_SECRET_ARN>`,
+  the Secrets Manager ARN whose JSON contains the OpenRouter API keys. The secret **must** be a JSON object
   with named keys `statement-parser`, `executive-board`, `linkedin`, `resume`, and `management`
   (a Management API key, not an inference key; see
   `contracts/openrouter-apps.json`). Mint with
