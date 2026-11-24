@@ -9,6 +9,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
 import type * as kms from "aws-cdk-lib/aws-kms";
 import type * as lambda from "aws-cdk-lib/aws-lambda";
+import { defineApiDomain } from "./admin-api-domain";
 import { ROUTES } from "./admin-api-routes";
 
 /**
@@ -38,6 +39,8 @@ export function defineAdminHttpApi(
     readonly adminWebDomainName: cdk.CfnParameter;
     readonly publicSiteOrigins: cdk.CfnParameter;
     readonly publicApiBaseUrl: cdk.CfnParameter;
+    readonly apiCustomDomainName: cdk.CfnParameter;
+    readonly apiCustomDomainCertificateArn: cdk.CfnParameter;
     readonly sharedEncryptionKey: kms.IKey;
   },
 ): apigwv2.HttpApi {
@@ -48,6 +51,8 @@ export function defineAdminHttpApi(
     adminWebDomainName,
     publicSiteOrigins,
     publicApiBaseUrl,
+    apiCustomDomainName,
+    apiCustomDomainCertificateArn,
     sharedEncryptionKey,
   } = deps;
 
@@ -159,12 +164,25 @@ export function defineAdminHttpApi(
       cdk.Fn.conditionEquals(publicApiBaseUrl.valueAsString, ""),
     ),
   });
+  const apiDomain = defineApiDomain(
+    scope,
+    httpApi,
+    apiCustomDomainName,
+    apiCustomDomainCertificateArn,
+  );
+  // A set PublicApiBaseUrl wins. Otherwise links use the custom hostname
+  // when that domain is on, and the execute-api endpoint when it is not.
+  const defaultPublicBaseUrl = cdk.Fn.conditionIf(
+    apiDomain.useApiCustomDomain.logicalId,
+    apiDomain.url,
+    httpApi.apiEndpoint,
+  ).toString();
   adminFn.addEnvironment(
     "PUBLIC_API_BASE_URL",
     cdk.Fn.conditionIf(
       hasPublicApiBaseUrl.logicalId,
       publicApiBaseUrl.valueAsString,
-      httpApi.apiEndpoint,
+      defaultPublicBaseUrl,
     ).toString(),
   );
 

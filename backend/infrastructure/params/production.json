@@ -3,6 +3,8 @@
   "PublicWebsiteCertificateArn": "<FROM_GITHUB_SECRET: CDK_PARAM_PUBLIC_WEBSITE_CERTIFICATE_ARN>",
   "lxsoftware:CognitoCustomDomainName": "auth.lx-software.com",
   "lxsoftware:CognitoCustomDomainCertificateArn": "<FROM_GITHUB_SECRET: CDK_PARAM_COGNITO_CUSTOM_DOMAIN_CERTIFICATE_ARN>",
+  "lxsoftware:ApiCustomDomainName": "api.lx-software.com",
+  "lxsoftware:ApiCustomDomainCertificateArn": "<FROM_GITHUB_SECRET: CDK_PARAM_API_CUSTOM_DOMAIN_CERTIFICATE_ARN>",
   "lxsoftware:OpenRouterApiKeySecretArn": "<FROM_GITHUB_SECRET: CDK_PARAM_OPENROUTER_API_KEY_SECRET_ARN>",
   "lxsoftware:SiutindeiBoardMailSendingEnabled": "true",
   "lxsoftware:SiutindeiBoardStaffEnabled": "true",

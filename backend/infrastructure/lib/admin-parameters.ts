@@ -1,5 +1,9 @@
 import * as cdk from "aws-cdk-lib";
 import {
+  API_CUSTOM_CERTIFICATE_DISABLED,
+  API_CUSTOM_DOMAIN_DISABLED,
+} from "./admin-api-domain";
+import {
   COGNITO_CUSTOM_CERTIFICATE_DISABLED,
   COGNITO_CUSTOM_DOMAIN_DISABLED,
 } from "./cognito-custom-domain";
@@ -73,6 +77,28 @@ export function defineAdminParameters(scope: cdk.Stack) {
     }
   );
 
+  const apiCustomDomainName = new cdk.CfnParameter(scope, "ApiCustomDomainName", {
+    type: "String",
+    default: API_CUSTOM_DOMAIN_DISABLED,
+    description:
+      "Optional API hostname (api.lx-software.com). Set together with " +
+      "ApiCustomDomainCertificateArn. An empty value or disabled.example.com " +
+      "leaves the execute-api endpoint as the only hostname.",
+  });
+
+  const apiCustomDomainCertificateArn = new cdk.CfnParameter(
+    scope,
+    "ApiCustomDomainCertificateArn",
+    {
+      type: "String",
+      default: API_CUSTOM_CERTIFICATE_DISABLED,
+      description:
+        "ACM certificate ARN for the API hostname. Must be in this stack's region " +
+        "(ap-southeast-1), not us-east-1. An empty value or the disabled placeholder " +
+        "skips the custom domain.",
+    },
+  );
+
   const openRouterApiKeySecretArn = new cdk.CfnParameter(
     scope,
     "OpenRouterApiKeySecretArn",
@@ -118,6 +144,8 @@ export function defineAdminParameters(scope: cdk.Stack) {
     cognitoDomainPrefix,
     cognitoCustomDomainName,
     cognitoCustomDomainCertificateArn,
+    apiCustomDomainName,
+    apiCustomDomainCertificateArn,
     openRouterApiKeySecretArn,
     openRouterModel,
     openRouterPdfEngine,
