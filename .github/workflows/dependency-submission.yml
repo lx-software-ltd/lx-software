@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check pinned manifests
-        uses: lx-software-ltd/actions/dependency-submission@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
+        uses: lx-software-ltd/actions/dependency-submission@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
         with:
           submit: "false"
 
@@ -39,7 +39,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Submit pinned manifests
-        uses: lx-software-ltd/actions/dependency-submission@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
+        uses: lx-software-ltd/actions/dependency-submission@7274dbbda035e283bf0d2a78c98d45deae348344 # main 2026-11-24
         with:
           submit: "true"
           token: ${{ github.token }}
