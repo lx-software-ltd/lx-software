@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@7d93bef212616595c866a76b03862eb72abbb746 # main 2026-11-23
+        uses: lx-software-ltd/actions/setup-node@67d19fe22da0c68541b24034c56d52d25fe9c420 # main 2026-11-24
         with:
           cache: npm
           working-directory: backend/infrastructure
@@ -29,30 +29,15 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@7d93bef212616595c866a76b03862eb72abbb746 # main 2026-11-23
+        uses: lx-software-ltd/actions/aws-oidc@67d19fe22da0c68541b24034c56d52d25fe9c420 # main 2026-11-24
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
 
       - name: Bootstrap CDK
-        run: |
-          if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$AWS_REGION" ]; then
-            echo "Set AWS_ACCOUNT_ID as a repository secret and AWS_REGION as a variable"
-            exit 1
-          fi
-          if [ ! -f "backend/infrastructure/package.json" ]; then
-            echo "Missing backend/infrastructure/package.json"
-            exit 1
-          fi
-          cd backend/infrastructure
-          npm ci
-          npm run build --if-present
-          if [ -n "$CDK_BOOTSTRAP_QUALIFIER" ]; then
-            npx cdk bootstrap --qualifier "$CDK_BOOTSTRAP_QUALIFIER" "aws://$AWS_ACCOUNT_ID/$AWS_REGION"
-          else
-            npx cdk bootstrap "aws://$AWS_ACCOUNT_ID/$AWS_REGION"
-          fi
-        env:
-          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
-          AWS_REGION: ${{ vars.AWS_REGION }}
-          CDK_BOOTSTRAP_QUALIFIER: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
+        uses: lx-software-ltd/actions/cdk-bootstrap@67d19fe22da0c68541b24034c56d52d25fe9c420 # main 2026-11-24
+        with:
+          working-directory: backend/infrastructure
+          account-id: ${{ secrets.AWS_ACCOUNT_ID }}
+          region: ${{ vars.AWS_REGION }}
+          qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}

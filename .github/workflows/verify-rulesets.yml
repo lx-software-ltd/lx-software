@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Verify rulesets
-        uses: lx-software-ltd/actions/verify-rulesets@7d93bef212616595c866a76b03862eb72abbb746 # main 2026-11-23
+        uses: lx-software-ltd/actions/verify-rulesets@67d19fe22da0c68541b24034c56d52d25fe9c420 # main 2026-11-24
         with:
           token: ${{ github.token }}
           expected-reviews: "0"
