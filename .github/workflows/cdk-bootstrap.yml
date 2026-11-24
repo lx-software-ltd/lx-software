@@ -21,23 +21,23 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@a461dd613711bb036918699617487c42f324cc9e # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@edcf302f2f8712f49f18cb55a09abbab80e24388 # main 2026-11-24
         with:
           cache: npm
           working-directory: backend/infrastructure
           install: "false"
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@a461dd613711bb036918699617487c42f324cc9e # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-python@edcf302f2f8712f49f18cb55a09abbab80e24388 # main 2026-11-24
 
       - name: Configure AWS credentials
-        uses: lx-software-ltd/actions/aws-oidc@a461dd613711bb036918699617487c42f324cc9e # main 2026-11-24
+        uses: lx-software-ltd/actions/aws-oidc@edcf302f2f8712f49f18cb55a09abbab80e24388 # main 2026-11-24
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
 
       - name: Bootstrap CDK
-        uses: lx-software-ltd/actions/cdk-bootstrap@a461dd613711bb036918699617487c42f324cc9e # main 2026-11-24
+        uses: lx-software-ltd/actions/cdk-bootstrap@edcf302f2f8712f49f18cb55a09abbab80e24388 # main 2026-11-24
         with:
           working-directory: backend/infrastructure
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
