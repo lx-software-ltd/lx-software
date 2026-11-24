@@ -128,7 +128,7 @@ flowchart TD
   A skipped required check would leave the pull request blocked. **Test**
   runs Vitest, the Python unit tests, the CDK Jest assertion tests
   (`backend/infrastructure`, `npm test`), `scripts/check-contracts.py`,
-  `scripts/check_pii.py`, and the Playwright viewport smoke. **Lint**
+  the `pii-denylist` action, and the Playwright viewport smoke. **Lint**
   includes the agent-harness checks. **Security Scanning** runs the same
   PII check on every pull request.
 - Dependabot watches the workflows, the three npm projects, and the admin

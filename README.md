@@ -15,13 +15,13 @@ git.
 
 | Path | What it is |
 | --- | --- |
-| `apps/public_www/` | The public site. Vite and React Router with hand-written CSS, pre-rendered to static HTML at build time. |
-| `apps/admin_web/` | The admin console. Vite and React Router with TanStack Query and Bootstrap 5. |
-| `backend/infrastructure/` | The AWS CDK app. Static assets deploy to private S3 buckets and are served through CloudFront. |
-| `backend/lambda/` | The Python Lambda code: the admin API, the public API key authorizer, and the Cognito pre-token hook. |
-| `contracts/` | Constants shared by the admin console, the admin Lambda, and CDK. |
-| `scripts/` | Checks, contract sync, key management, and deploy scripts. |
-| `docs/` | Architecture, deployment runbooks, and legal notes. |
+| [`apps/public_www/`](apps/public_www/) | The public site. Vite and React Router with hand-written CSS, pre-rendered to static HTML at build time. |
+| [`apps/admin_web/`](apps/admin_web/) | The admin console. Vite and React Router with TanStack Query and Bootstrap 5. |
+| [`backend/infrastructure/`](backend/infrastructure/) | The AWS CDK app. Static assets deploy to private S3 buckets and are served through CloudFront. |
+| [`backend/lambda/`](backend/lambda/) | The Python Lambda code: the admin API, the public API key authorizer, and the Cognito pre-token hook. |
+| [`contracts/`](contracts/) | Constants shared by the admin console, the admin Lambda, and CDK. |
+| [`scripts/`](scripts/) | Checks, contract sync, key management, and deploy scripts. |
+| [`docs/`](docs/) | Architecture, deployment runbooks, and legal notes. |
 
 ## Working here
 
@@ -29,34 +29,29 @@ Read [`AGENTS.md`](AGENTS.md) before changing anything. The zone map,
 [`docs/architecture/zones.md`](docs/architecture/zones.md), says which
 paths need a plan or an approval first.
 
-### Quick start (public site)
-
-```bash
-cd apps/public_www
-npm install
-npm run dev
-```
-
-### Quick start (admin console)
-
-```bash
-cd apps/admin_web
-npm install
-npm run dev
-```
-
-Copy `apps/admin_web/.env.example` to `.env` and fill in Cognito and API values.
-
-Infra deploy expects GitHub variable **`ADMIN_GOOGLE_CLIENT_ID`**, and production environment secrets **`ADMIN_GOOGLE_CLIENT_SECRET`** (Google OAuth client secret, CDK `noEcho`) and **`ADMIN_FEDERATED_EMAIL_ALLOWLIST`** (comma-separated admin emails, CDK `noEcho`); see `docs/deployment/admin-website.md`.
-
 ## Documentation
 
-- Architecture: `docs/architecture/overview.md`, `docs/architecture/security.md`
-- Agent rules: `AGENTS.md`, `.cursor/rules/`, `docs/architecture/zones.md`
-- Executive Board design: `docs/architecture/executive-board.md`
-- AWS / GitHub OIDC setup and CDK Bootstrap: `docs/deployment/setup.md`
-- Deploying the public site: `docs/deployment/public-website.md`
-- Deploying and operating the admin site: `docs/deployment/admin-website.md`
+- [`docs/architecture/overview.md`](docs/architecture/overview.md): the
+  two sites and the three stacks.
+- [`docs/architecture/security.md`](docs/architecture/security.md):
+  sign-in, API authorization, uploads, and logging.
+- [`docs/architecture/zones.md`](docs/architecture/zones.md): which paths
+  need a plan or an approval first.
+- [`docs/architecture/executive-board.md`](docs/architecture/executive-board.md):
+  the Siu Tin Dei Executive Board.
+- [`docs/architecture/linkedin-reach.md`](docs/architecture/linkedin-reach.md):
+  LinkedIn reach.
+- [`docs/deployment/setup.md`](docs/deployment/setup.md): AWS, GitHub
+  OIDC, and CDK bootstrap.
+- [`docs/deployment/public-website.md`](docs/deployment/public-website.md):
+  deploying the public site.
+- [`docs/deployment/admin-website.md`](docs/deployment/admin-website.md):
+  deploying and operating the admin site.
+- [`docs/legal/README.md`](docs/legal/README.md): where the privacy
+  policy and terms live.
+- [`docs/plans/README.md`](docs/plans/README.md) and
+  [`docs/research/README.md`](docs/research/README.md): open plans and
+  research memos.
 
 ## Security
 
@@ -67,4 +62,5 @@ open a public issue.
 
 Licensed under the Apache License, Version 2.0. The full text is in
 [`LICENSE`](LICENSE). The fonts in `backend/lambda/admin/fonts/` keep
-their own licence, the SIL Open Font License in `OFL.txt` there.
+their own licence, the SIL Open Font License in
+[`OFL.txt`](backend/lambda/admin/fonts/OFL.txt) there.
