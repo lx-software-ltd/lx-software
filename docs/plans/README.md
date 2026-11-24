@@ -7,4 +7,4 @@ before any write. The zone map is [`docs/architecture/zones.md`](../architecture
 | File | What it covers |
 | --- | --- |
 | [`linkedin-reach-rules.md`](linkedin-reach-rules.md) | LinkedIn reach rules |
-| [`2026-11-24-dependency-submission-name.md`](2026-11-24-dependency-submission-name.md) | The dependency workflow display name |
+| [`2026-11-24-bandit-application-asserts.md`](2026-11-24-bandit-application-asserts.md) | Reviewed assert Bandit still reports in the GitHub client |

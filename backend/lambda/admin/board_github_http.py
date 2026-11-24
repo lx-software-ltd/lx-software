@@ -98,7 +98,7 @@ def _request(
                     time.sleep(pause)
                 continue
             raise
-    assert last is not None
+    assert last is not None  # nosec B101
     raise last
 
 

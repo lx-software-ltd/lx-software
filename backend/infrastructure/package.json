@@ -10,7 +10,8 @@
     "test": "jest",
     "cdk": "cdk",
     "synth": "cdk synth",
-    "deploy": "cdk deploy"
+    "deploy": "cdk deploy",
+    "synth:ci": "CDK_SKIP_PYTHON_PIP=1 cdk synth --quiet --output cdk.out"
   },
   "keywords": [],
   "author": "",

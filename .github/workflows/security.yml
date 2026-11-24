@@ -1,20 +1,20 @@
 name: Security Scanning
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "main"
   pull_request:
-    branches: [main]
   schedule:
     - cron: "0 8 * * 1"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   checkov:
@@ -29,30 +29,22 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           cache: npm
           working-directory: backend/infrastructure
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
-        with:
-          python-version: "3.12"
+        uses: lx-software-ltd/actions/setup-python@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
 
       - name: Synthesize CDK templates
         working-directory: backend/infrastructure
         env:
           CDK_DISABLE_CONTEXT_LOOKUPS: "1"
-          # Pillow/defusedxml force Docker ARM bundling; Checkov only needs the
-          # CloudFormation template, same as CDK Jest (`bundling-stacks: []`).
-          CDK_SKIP_PYTHON_PIP: "1"
-        run: |
-          npx cdk synth --quiet --output cdk.out \
-            --parameters PublicWebsiteDomainName=example.com \
-            --parameters PublicWebsiteCertificateArn=arn:aws:acm:us-east-1:123456789012:certificate/example
+        run: npm run synth:ci
 
       - name: Run Checkov
-        uses: lx-software-ltd/actions/checkov-cloudformation@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
+        uses: lx-software-ltd/actions/checkov-cloudformation@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           directory: backend/infrastructure/cdk.out
           config-file: backend/infrastructure/.checkov.yaml
@@ -62,34 +54,24 @@ jobs:
       contents: read
       security-events: write
       actions: read
-    name: CodeQL Analysis (${{ matrix.language }})
+    name: CodeQL Analysis
     runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # javascript-typescript is the analyzed language. The category stays
-          # /language:javascript, which is where the existing alerts are filed.
-          - language: javascript-typescript
-            category: "/language:javascript"
-          - language: python
-            category: "/language:python"
+        language: [python, javascript-typescript]
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Python
-        if: matrix.language == 'python'
-        uses: lx-software-ltd/actions/setup-python@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
-        with:
-          python-version: "3.12"
-
       - name: Analyze
-        uses: lx-software-ltd/actions/codeql@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
+        uses: lx-software-ltd/actions/codeql@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           language: ${{ matrix.language }}
           queries: security-extended
-          category: ${{ matrix.category }}
+          # template:set
+          # template:end
+          category: "/language:${{ matrix.language }}"
 
   pii-denylist:
     permissions:
@@ -101,12 +83,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
-        with:
-          python-version: "3.12"
+        uses: lx-software-ltd/actions/setup-python@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
 
       - name: Check hashed PII denylist
-        uses: lx-software-ltd/actions/pii-denylist@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
+        uses: lx-software-ltd/actions/pii-denylist@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
 
   secrets-scan:
     permissions:
@@ -120,60 +100,50 @@ jobs:
           fetch-depth: 0
 
       - name: Run Gitleaks
-        uses: lx-software-ltd/actions/gitleaks@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
+        uses: lx-software-ltd/actions/gitleaks@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
+        with:
+          config-path: .gitleaks.toml
 
   dependency-audit:
     permissions:
       contents: read
-    name: Dependency audit
+    name: Python Dependency Audit
     runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
-        with:
-          python-version: "3.12"
+        uses: lx-software-ltd/actions/setup-python@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
 
-      # 22 Nov 2026: ignore-vulns is the hatch for an upstream advisory
-      # with no fix. A dated reason goes on this step when one is ignored.
       - name: Audit Python requirements
-        uses: lx-software-ltd/actions/pip-audit@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
+        uses: lx-software-ltd/actions/pip-audit@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
+          # template:set
           requirements: |
             backend/lambda/admin/requirements.txt
             backend/lambda/public_api_authorizer/requirements.txt
+          # template:end
 
   bandit:
     permissions:
       contents: read
-    name: Bandit
+    name: Bandit Security Linter
     runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: lx-software-ltd/actions/setup-python@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
-        with:
-          python-version: "3.12"
+        uses: lx-software-ltd/actions/setup-python@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
 
-      # Measured 22 Nov 2026 on backend/lambda, then again after the line
-      # marks. No high findings. B101 is assert and stays the only skip.
-      # Every other finding is # nosec on that line. B311 stays off the
-      # skip list: the seeded Random in board_review_sample.py is
-      # # nosec B311. Medium lines are B104 (four 0.0.0.0 fallbacks),
-      # B108 (a test TemporaryDirectory under /tmp), B310 (sixteen
-      # urlopen calls), and B608 (two Metrics Insights expressions).
-      # Low lines are empty strings, token URLs, secret names, test
-      # fixtures, optional-fetch continues, and a fixed openssl argv.
-      # scripts/ is not scanned. The step exits 0.
       - name: Run Bandit
-        uses: lx-software-ltd/actions/bandit@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
+        uses: lx-software-ltd/actions/bandit@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
+          # template:set
           paths: backend/lambda
-          skip: B101
+          exclude: "**/test_*.py"
+          # template:end
 
   npm-audit:
     permissions:
@@ -185,29 +155,34 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
 
-      # audit-level stays high. backend/infrastructure has a moderate minimatch
-      # advisory below that level. No high advisory in the three lockfiles.
-      # 22 Nov 2026: audit-level is the hatch for an upstream advisory
-      # with no fix. A dated reason goes on this step when the level changes.
       - name: Audit npm lockfiles
-        uses: lx-software-ltd/actions/npm-audit@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
+        uses: lx-software-ltd/actions/npm-audit@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
+          # template:set
           directories: |
             apps/public_www
             apps/admin_web
             backend/infrastructure
+          # template:end
 
   security-summary:
     permissions:
       contents: read
     name: security-summary
     runs-on: ubuntu-26.04
-    needs: [checkov, codeql, pii-denylist, secrets-scan, dependency-audit, bandit, npm-audit]
+    needs:
+      - checkov
+      - codeql
+      - pii-denylist
+      - secrets-scan
+      - dependency-audit
+      - bandit
+      - npm-audit
     if: always()
     steps:
       - name: Require every security job
-        uses: lx-software-ltd/actions/require-jobs@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
+        uses: lx-software-ltd/actions/require-jobs@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           needs-json: ${{ toJson(needs) }}
