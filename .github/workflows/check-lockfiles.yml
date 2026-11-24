@@ -15,7 +15,6 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-
   node-lockfiles:
     name: Check Node.js lockfiles
     runs-on: ubuntu-26.04
@@ -29,13 +28,12 @@ jobs:
       - name: Validate package-lock.json
         uses: lx-software-ltd/actions/node-lockfiles@1d66ad00053fdbea390c4d2c3f4b89d8c31cfdfc # main 2026-11-24
         with:
-# template:set
+          # template:set
           directories: |
             apps/public_www
             apps/admin_web
             backend/infrastructure
-# template:end
-
+          # template:end
 
   python-requirements:
     name: Check Python requirements
@@ -47,8 +45,8 @@ jobs:
       - name: Check requirement pins
         uses: lx-software-ltd/actions/python-requirements-pins@1d66ad00053fdbea390c4d2c3f4b89d8c31cfdfc # main 2026-11-24
         with:
-# template:set
+          # template:set
           files: |
             backend/lambda/admin/requirements.txt
             backend/lambda/public_api_authorizer/requirements.txt
-# template:end
+          # template:end
