@@ -23,13 +23,13 @@ The Actions tab uses title case. GitHub's built-in Dependency Graph entry sits n
 ## Invariants this change preserves
 
 - Job ids stay `check` and `submit`
-- The dependency-graph action pin stays `lx-software-ltd/actions/dependency-graph@7d93bef212616595c866a76b03862eb72abbb746 # main 2026-11-23`
+- This pull request does not edit the dependency-graph action pin. main already has `lx-software-ltd/actions/dependency-graph@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24` from #694.
 - Triggers, permissions, `if` conditions, and step names stay as they are
 - The workflow file name stays `dependency-graph.yml`
 
 ## Done when
 
-`python3` on `workflow-conformance/check_workflows.py` from `lx-software-ltd/actions` at `7d93bef212616595c866a76b03862eb72abbb746`, with `CONFORMANCE_MODE=enforce`, `CONFORMANCE_PROFILE=product`, `CONFORMANCE_ROOT` set to this checkout, and `CONFORMANCE_ALIGNMENT=warn`, prints `Workflow conformance passed.`
+`python3` on `workflow-conformance/check_workflows.py` from `lx-software-ltd/actions` at `48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e` (`# main 2026-11-24`, already on main from #694), with `CONFORMANCE_MODE=enforce`, `CONFORMANCE_PROFILE=product`, `CONFORMANCE_ROOT` set to this checkout, and `CONFORMANCE_ALIGNMENT=warn`, prints `Workflow conformance passed.` This pull request does not edit that pin.
 
 ## Rollback
 
