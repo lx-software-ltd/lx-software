@@ -23,10 +23,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@08a56d0682c5bfc55c8f4b770ac176941ee5a15d # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@936d3fad83b00b4cc23a603717fdf804576c300c # main 2026-11-24
 
       - name: Validate package-lock.json
-        uses: lx-software-ltd/actions/node-lockfiles@08a56d0682c5bfc55c8f4b770ac176941ee5a15d # main 2026-11-24
+        uses: lx-software-ltd/actions/node-lockfiles@936d3fad83b00b4cc23a603717fdf804576c300c # main 2026-11-24
         with:
           # template:set
           directories: |
@@ -43,7 +43,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Check requirement pins
-        uses: lx-software-ltd/actions/python-requirements-pins@08a56d0682c5bfc55c8f4b770ac176941ee5a15d # main 2026-11-24
+        uses: lx-software-ltd/actions/python-requirements-pins@936d3fad83b00b4cc23a603717fdf804576c300c # main 2026-11-24
         with:
           # template:set
           files: |
