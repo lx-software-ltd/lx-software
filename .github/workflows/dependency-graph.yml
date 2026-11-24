@@ -1,4 +1,4 @@
-name: Dependency graph
+name: Dependency Submission
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   check:
-    name: Check dependency graph
+    name: Check Dependency Submission
     if: github.event_name != 'push' || github.ref != 'refs/heads/main'
     runs-on: ubuntu-26.04
     steps:
@@ -25,7 +25,7 @@ jobs:
           submit: "false"
 
   submit:
-    name: Submit dependency graph
+    name: Submit Dependency Submission
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-26.04
     permissions:
