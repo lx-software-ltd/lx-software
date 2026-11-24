@@ -16,12 +16,13 @@
   account numbers, and business-registration numbers stay out of source and
   docs. The public website owner name in
   `apps/public_www/src/content/site.json` (`site.owner`) is intentionally
-  public and is not on the denylist. `scripts/check-pii.sh` compares
-  normalized text to SHA-256 digests in `scripts/pii-denylist.sha256`
-  (digests only; a hit is a path and line). Product mailboxes (`hello@`,
-  `board@`, `billing@`, inbound SES recipients) remain. Git author and
-  `Co-authored-by` trailers are outside the check. Pre-commit and
-  **Security Scanning** both run the check.
+  public and is not on the denylist. The `pii-denylist` action and the
+  `check-pii` pre-commit hook compare normalized text to SHA-256 digests
+  in `scripts/pii-denylist.sha256` (digests only; a hit is a path and
+  line). Product mailboxes (`hello@`, `board@`, `billing@`, inbound SES
+  recipients) remain. Git author and `Co-authored-by` trailers are
+  outside the check. Pre-commit runs the hook. **Test** and **Security
+  Scanning** run the action.
 - A `.gitleaks.toml` rule flags any committed `lxpk_…` public API key.
 
 Review checklist: no credentials in code or config; sensitive CDK
