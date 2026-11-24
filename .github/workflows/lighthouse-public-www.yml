@@ -1,18 +1,24 @@
 name: Lighthouse Public Website
+# template:set
+# template:end
 
 on:
   workflow_dispatch:
     inputs:
       page_paths:
+        # template:set
         description: 'Comma/newline-separated page paths or full URLs to audit (e.g. /, /privacy)'
+        # template:end
         required: false
+        # template:set
         default: '/, /fractional-cto-hong-kong, /about, /privacy, /terms, /wechat'
+        # template:end
   pull_request:
     paths:
-      - 'apps/public_www/**'
-      - '.github/workflows/lighthouse-public-www.yml'
+      - "apps/public_www/**"
+      - ".github/workflows/lighthouse-public-www.yml"
   schedule:
-    - cron: '15 6 * * 1'
+    - cron: "15 6 * * 1"
 
 permissions:
   contents: read
@@ -27,8 +33,9 @@ jobs:
       contents: read
       statuses: write
     name: Lighthouse audit
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-26.04
+
+    # template:optional production-environment
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name != 'pull_request') }}
     # The VITE_* build variables live on the production environment, the same
     # ones Deploy Public Website reads, so the audited bundle matches the live site.
     # .lighthouserc.json blocks the GTM / GA4 hosts during the audit: the bundle
@@ -39,10 +46,17 @@ jobs:
     # this job does not run for a pull request. The pull-request job below
     # audits without that environment.
     environment: production
-    timeout-minutes: 40
+
+    # template:end
+
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # template:set
+        # template:end
+
 
       - name: Set up Node.js
         uses: lx-software-ltd/actions/setup-node@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
@@ -50,8 +64,10 @@ jobs:
           cache: npm
           working-directory: apps/public_www
 
+
       - name: Build public website
         working-directory: apps/public_www
+        # template:set
         env:
           VITE_MEDIA_BASE_URL: ${{ vars.VITE_MEDIA_BASE_URL }}
           VITE_CONTACT_TEL: ${{ vars.VITE_CONTACT_TEL }}
@@ -60,6 +76,7 @@ jobs:
           VITE_CONTACT_WECHAT_ID: ${{ vars.VITE_CONTACT_WECHAT_ID }}
           VITE_CONTACT_LINKEDIN: ${{ vars.VITE_CONTACT_LINKEDIN }}
           VITE_GTM_ID: ${{ vars.VITE_GTM_ID }}
+        # template:end
         run: npm run build
 
       - name: Run Lighthouse CI
@@ -67,7 +84,9 @@ jobs:
         with:
           working-directory: apps/public_www
           page-paths: ${{ inputs.page_paths }}
+          # template:set
           default-paths: /, /fractional-cto-hong-kong, /about, /privacy, /terms, /wechat
+          # template:end
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Lighthouse artifacts
@@ -78,7 +97,7 @@ jobs:
           path: apps/public_www/.lighthouseci/**
           if-no-files-found: warn
           include-hidden-files: true
-
+# template:optional lighthouse-pull-request
   lighthouse-pull-request:
     permissions:
       contents: read
@@ -91,7 +110,7 @@ jobs:
     # before any step.
     if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-26.04
-    timeout-minutes: 40
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -130,3 +149,5 @@ jobs:
           path: apps/public_www/.lighthouseci/**
           if-no-files-found: warn
           include-hidden-files: true
+
+# template:end

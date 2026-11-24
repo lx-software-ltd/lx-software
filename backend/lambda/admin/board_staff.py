@@ -2594,7 +2594,3 @@ def append_event_note(table: Any, task: dict[str, Any], text: str) -> dict[str, 
 
 def public_task(doc: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in doc.items() if k not in ("pk", "sk", "gsi1pk", "gsi1sk")}
-
-
-
-

@@ -1,16 +1,29 @@
 name: Deploy Admin Web
 
 on:
-  push:
-    branches: [main]
-    paths: ["apps/admin_web/**", "scripts/deploy/deploy-admin-www.sh", ".github/workflows/deploy-admin-web.yml"]
+  repository_dispatch:
+    types: [deploy-admin-web]
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    # template:set
+    paths:
+      - "apps/admin_web/**"
+      - ".github/workflows/deploy-admin-web.yml"
+    # template:end
+
+  # template:optional workflow-run
+  # template:set
   # A backend deploy can replace the Cognito client or the HTTP API. Rebuild
   # the SPA from current main so it picks up those outputs. Only a successful
   # Deploy Backend on main qualifies.
+  # template:end
   workflow_run:
     workflows: ["Deploy Backend"]
     types: [completed]
+
+  # template:end
 
 permissions:
   contents: read
@@ -20,15 +33,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build-and-deploy:
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')) }}
     permissions:
       contents: read
       id-token: write
-    if: ${{ github.event_name != 'workflow_run' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-26.04
     environment: production
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
         uses: lx-software-ltd/actions/setup-node@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
@@ -36,18 +50,24 @@ jobs:
           cache: npm
           working-directory: apps/admin_web
 
+
       - name: Configure AWS credentials
+        # template:set
         id: aws
+        # template:end
         uses: lx-software-ltd/actions/aws-oidc@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
 
-      - name: Read admin SPA settings from the lxsoftware stack
+      # template:optional admin-settings
+      - name: Read admin SPA settings
         id: stack_outputs
         uses: lx-software-ltd/actions/cfn-stack-outputs@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
+          # template:set
           stack: lxsoftware
+          # template:end
           outputs: UserPoolClientId CognitoDomain AdminApiBaseUrl
           region: ${{ vars.AWS_REGION }}
 
@@ -55,45 +75,36 @@ jobs:
         id: admin_spa
         env:
           JSON: ${{ steps.stack_outputs.outputs.json }}
-        run: |
-          set -euo pipefail
-          python3 - << 'PY'
-          import json
-          import os
-          import sys
+          # template:set
+          STACK_NAME: lxsoftware
+          # template:end
+        run: bash scripts/deploy/check-admin-spa-settings.sh
 
-          data = json.loads(os.environ["JSON"])
-          domain = data["CognitoDomain"]
-          api_url = data["AdminApiBaseUrl"]
-          client_id = data["UserPoolClientId"]
-          if not domain.startswith("https://"):
-              print("::error::CognitoDomain on lxsoftware must be an https origin", file=sys.stderr)
-              sys.exit(1)
-          if not api_url.startswith("https://"):
-              print("::error::AdminApiBaseUrl on lxsoftware must be an https origin", file=sys.stderr)
-              sys.exit(1)
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
-              handle.write(f"client_id={client_id}\n")
-              handle.write(f"domain={domain}\n")
-              handle.write(f"api_url={api_url}\n")
-          PY
+      # template:end
 
-      - run: npm run build
+      - name: Build admin web
+        run: npm run build
         working-directory: apps/admin_web
+        # template:set
         env:
           VITE_COGNITO_CLIENT_ID: ${{ steps.admin_spa.outputs.client_id }}
           VITE_COGNITO_DOMAIN: ${{ steps.admin_spa.outputs.domain }}
-          VITE_COGNITO_REDIRECT_URI: https://admin.lx-software.com/auth/callback
+          VITE_COGNITO_REDIRECT_URI: https://${{ vars.ADMIN_WEB_DOMAIN_NAME }}/auth/callback
+          VITE_COGNITO_LOGOUT_URI: https://${{ vars.ADMIN_WEB_DOMAIN_NAME }}/
           VITE_API_BASE_URL: ${{ steps.admin_spa.outputs.api_url }}
+        # template:end
 
-      - name: Upload the admin site
-        if: steps.aws.outputs.ready == 'true'
+      - name: Deploy admin web
         uses: lx-software-ltd/actions/s3-cloudfront-deploy@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
+          # template:set
           source: apps/admin_web/dist
           stack: lxsoftware-admin-web
+          # template:end
           region: ${{ vars.AWS_REGION }}
           bucket-output: AdminWebBucketName
           distribution-output: AdminWebDistributionId
+          # template:set
           profile: admin-hashed
+          # template:end
           dry-run: "false"

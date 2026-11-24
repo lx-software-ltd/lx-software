@@ -39,8 +39,6 @@ jobs:
 
       - name: Synthesize CDK templates
         working-directory: backend/infrastructure
-        env:
-          CDK_DISABLE_CONTEXT_LOOKUPS: "1"
         run: npm run synth:ci
 
       - name: Run Checkov

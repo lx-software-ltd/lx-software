@@ -404,5 +404,3 @@ def _handle_parse_statement_async_worker(payload: dict[str, Any]) -> None:
         ok_doc["usage"] = usage
     table.put_item(Item=_to_ddb_nested(ok_doc))
     _notify_parse_job_quietly(ok_doc)
-
-

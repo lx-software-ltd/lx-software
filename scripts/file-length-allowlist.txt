@@ -33,7 +33,7 @@ backend/lambda/admin/board_receivables.py 977
 backend/lambda/admin/board_research.py 526
 backend/lambda/admin/board_review.py 788
 backend/lambda/admin/board_routes.py 1530
-backend/lambda/admin/board_staff.py 2600
+backend/lambda/admin/board_staff.py 2596
 backend/lambda/admin/board_staff_help.py 571
 backend/lambda/admin/board_store.py 2637
 backend/lambda/admin/board_stores.py 1002

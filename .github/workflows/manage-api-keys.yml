@@ -1,5 +1,5 @@
 name: Manage Public API Keys
-
+# template:set
 # Mint / list / revoke / set-write / set-scopes the public API keys served by the /public/*
 # routes (see docs/deployment/admin-website.md, "Public API keys").
 #
@@ -13,10 +13,12 @@ name: Manage Public API Keys
 #
 # entering the same passphrase. Configure the secret once under
 # Settings > Environments > production > Secrets.
+# template:end
 
 on:
   workflow_dispatch:
     inputs:
+      # template:set
       action:
         description: "What to do"
         required: true
@@ -47,6 +49,7 @@ on:
         description: "keyId to revoke, set-write or set-scopes"
         required: false
         type: string
+      # template:end
 
 permissions:
   contents: read
@@ -57,14 +60,19 @@ concurrency:
 
 jobs:
   manage:
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
       id-token: write
+    name: Manage keys
     runs-on: ubuntu-26.04
     environment: production
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: lx-software-ltd/actions/setup-python@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
 
       - name: Validate inputs
         env:
@@ -73,30 +81,7 @@ jobs:
           KEY_ID: ${{ inputs.key_id }}
           SCOPES: ${{ inputs.scopes }}
           HAS_PASSPHRASE: ${{ secrets.PUBLIC_API_KEY_GPG_PASSPHRASE != '' }}
-        run: |
-          set -euo pipefail
-          if [ "$ACTION" = "create" ]; then
-            if [ -z "$LABEL" ]; then
-              echo "::error::'label' is required for action=create"
-              exit 1
-            fi
-            if [ "$HAS_PASSPHRASE" != "true" ]; then
-              echo "::error::Secret PUBLIC_API_KEY_GPG_PASSPHRASE is not set. Add it under Settings > Environments > production > Secrets; it is needed to encrypt the minted key in this public repo's logs."
-              exit 1
-            fi
-          fi
-          if [ "$ACTION" = "revoke" ] && [ -z "$KEY_ID" ]; then
-            echo "::error::'key_id' is required for action=revoke"
-            exit 1
-          fi
-          if [ "$ACTION" = "set-write" ] && [ -z "$KEY_ID" ]; then
-            echo "::error::'key_id' is required for action=set-write"
-            exit 1
-          fi
-          if [ "$ACTION" = "set-scopes" ] && { [ -z "$KEY_ID" ] || [ -z "$SCOPES" ]; }; then
-            echo "::error::'key_id' and 'scopes' are required for action=set-scopes"
-            exit 1
-          fi
+        run: bash scripts/deploy/validate-api-key-inputs.sh
 
       - name: Configure AWS credentials
         id: aws
@@ -109,7 +94,8 @@ jobs:
         run: pip install --quiet boto3
 
       - name: Create key
-        if: ${{ inputs.action == 'create' }}
+        if: inputs.action == 'create'
+        # template:set
         env:
           LABEL: ${{ inputs.label }}
           EXPIRES_AT: ${{ inputs.expires_at }}
@@ -118,66 +104,24 @@ jobs:
           ALLOW_WRITE: ${{ inputs.allow_write }}
           GPG_PASSPHRASE: ${{ secrets.PUBLIC_API_KEY_GPG_PASSPHRASE }}
           AWS_REGION: ${{ vars.AWS_REGION }}
-        run: |
-          set -euo pipefail
-          KEY_FILE="$(mktemp -u)"
-          ARGS=(create --label "$LABEL" --plaintext-out "$KEY_FILE" --region "$AWS_REGION")
-          if [ -n "$EXPIRES_AT" ]; then
-            ARGS+=(--expires-at "$EXPIRES_AT")
-          fi
-          if [ -n "$SCOPES" ]; then
-            ARGS+=(--scopes "$SCOPES")
-          fi
-          if [ -n "$ALLOWED_CIDRS" ]; then
-            ARGS+=(--allowed-cidrs "$ALLOWED_CIDRS")
-          fi
-          if [ "$ALLOW_WRITE" = "true" ]; then
-            ARGS+=(--allow-write)
-          fi
-          python3 scripts/manage-public-api-keys.py "${ARGS[@]}"
-
-          # Defense in depth: even though the key is never echoed, register it
-          # with the log masker in case a later step accidentally prints it.
-          echo "::add-mask::$(tr -d '\n' < "$KEY_FILE")"
-
-          gpg --batch --yes --symmetric --cipher-algo AES256 --armor \
-            --passphrase "$GPG_PASSPHRASE" \
-            --output key.asc "$KEY_FILE"
-          rm -f "$KEY_FILE"
-
-          {
-            echo "## Encrypted API key"
-            echo ""
-            echo "Copy the block below into \`key.asc\`, then run"
-            echo "\`gpg --decrypt key.asc\` and enter the"
-            echo "\`PUBLIC_API_KEY_GPG_PASSPHRASE\` value."
-            echo ""
-            echo '```'
-            cat key.asc
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          rm -f key.asc
-          echo "Encrypted key emitted to the job summary."
+        # template:end
+        run: bash scripts/deploy/create-api-key.sh
 
       - name: List keys
-        if: ${{ inputs.action == 'list' }}
+        if: inputs.action == 'list'
         env:
           AWS_REGION: ${{ vars.AWS_REGION }}
-        run: |
-          set -euo pipefail
-          python3 scripts/manage-public-api-keys.py list --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: python3 scripts/manage-public-api-keys.py list --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Revoke key
-        if: ${{ inputs.action == 'revoke' }}
+        if: inputs.action == 'revoke'
         env:
           KEY_ID: ${{ inputs.key_id }}
           AWS_REGION: ${{ vars.AWS_REGION }}
-        run: |
-          set -euo pipefail
-          python3 scripts/manage-public-api-keys.py revoke --key-id "$KEY_ID" --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: python3 scripts/manage-public-api-keys.py revoke --key-id "$KEY_ID" --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Set write
-        if: ${{ inputs.action == 'set-write' }}
+        if: inputs.action == 'set-write'
         env:
           KEY_ID: ${{ inputs.key_id }}
           ALLOW_WRITE: ${{ inputs.allow_write }}
@@ -191,11 +135,9 @@ jobs:
           python3 scripts/manage-public-api-keys.py set-write --key-id "$KEY_ID" "$FLAG" --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Set scopes
-        if: ${{ inputs.action == 'set-scopes' }}
+        if: inputs.action == 'set-scopes'
         env:
           KEY_ID: ${{ inputs.key_id }}
           SCOPES: ${{ inputs.scopes }}
           AWS_REGION: ${{ vars.AWS_REGION }}
-        run: |
-          set -euo pipefail
-          python3 scripts/manage-public-api-keys.py set-scopes --key-id "$KEY_ID" --scopes "$SCOPES" --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"
+        run: python3 scripts/manage-public-api-keys.py set-scopes --key-id "$KEY_ID" --scopes "$SCOPES" --region "$AWS_REGION" | tee -a "$GITHUB_STEP_SUMMARY"

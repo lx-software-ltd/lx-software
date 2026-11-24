@@ -1,44 +1,72 @@
 name: Test
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+on:
+  pull_request:
+  push:
+    branches:
+      - "main"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-on:
-  workflow_dispatch:
-  # No path filter. The `test` job is a required check, and a skipped
-  # required check leaves the pull request blocked.
-  pull_request:
-  push:
-    branches:
-      - main
-    paths:
-      - "apps/public_www/**"
-      - "apps/admin_web/**"
-      - "backend/infrastructure/**"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  check-contracts:
-    name: Check shared contracts
+  test-python:
+    name: Test Python
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # template:set
+        # template:end
+
+      - name: Set up Python
+        uses: lx-software-ltd/actions/setup-python@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
+
+      - name: Run Python tests
+        run: bash scripts/ci/test-python.sh
+        # template:set
+        # template:end
+  test-admin-web:
+    name: Test Admin Web
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: lx-software-ltd/actions/setup-node@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
-          # Script tests resolve [why:] commit ids. A shallow clone cannot see them.
-          fetch-depth: 0
-      - name: Verify contract artifacts
-        run: python3 scripts/check-contracts.py
+          cache: npm
+          working-directory: apps/admin_web
 
-      - name: Check hashed PII denylist
-        uses: lx-software-ltd/actions/pii-denylist@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
+      - name: Run tests
+        run: npm run test:ci
+        working-directory: apps/admin_web
+        # template:set
+        env:
+          VITE_COGNITO_CLIENT_ID: placeholder-client-id
+          VITE_COGNITO_DOMAIN: https://placeholder.auth.us-east-1.amazoncognito.com
+          VITE_COGNITO_REDIRECT_URI: http://localhost:5173/auth/callback
+          VITE_API_BASE_URL: https://placeholder.execute-api.us-east-1.amazonaws.com
+        # template:end
 
-      - name: Test OpenRouter key mint script
-        run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
+      - name: Build
+        run: npm run build
+        working-directory: apps/admin_web
+        # template:set
+        env:
+          VITE_COGNITO_CLIENT_ID: placeholder-client-id
+          VITE_COGNITO_DOMAIN: https://placeholder.auth.us-east-1.amazoncognito.com
+          VITE_COGNITO_REDIRECT_URI: http://localhost:5173/auth/callback
+          VITE_API_BASE_URL: https://placeholder.execute-api.us-east-1.amazonaws.com
+        # template:end
 
-  test-web:
+  test-public-www:
     name: Test Public Website
     runs-on: ubuntu-26.04
     steps:
@@ -52,15 +80,19 @@ jobs:
           working-directory: apps/public_www
 
       - name: Run tests
-        run: npm run test --if-present
+        run: npm run test:ci
         working-directory: apps/public_www
+        # template:set
+        # template:end
 
-      - name: Build public website
+      - name: Build
         run: npm run build
         working-directory: apps/public_www
+        # template:set
+        # template:end
 
-  build-admin-web:
-    name: Build Admin Web
+  test-infrastructure:
+    name: Test infrastructure
     runs-on: ubuntu-26.04
     steps:
       - name: Checkout repository
@@ -70,32 +102,20 @@ jobs:
         uses: lx-software-ltd/actions/setup-node@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           cache: npm
-          working-directory: apps/admin_web
+          working-directory: backend/infrastructure
 
-      - name: Build admin website
-        run: npm run build
-        working-directory: apps/admin_web
-        env:
-          VITE_COGNITO_CLIENT_ID: placeholder-client-id
-          VITE_COGNITO_DOMAIN: https://placeholder.auth.us-east-1.amazoncognito.com
-          VITE_COGNITO_REDIRECT_URI: http://localhost:5173/auth/callback
-          VITE_API_BASE_URL: https://placeholder.execute-api.us-east-1.amazonaws.com
+      - name: Set up Python
+        uses: lx-software-ltd/actions/setup-python@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
 
-      - name: Install admin Lambda test deps
-        run: python3 -m pip install -q -r backend/lambda/admin/requirements.txt
+      - name: Run infrastructure tests
+        run: npm run test:infra
+        working-directory: backend/infrastructure
 
-      - name: Test admin website
-        run: npm test
-        working-directory: apps/admin_web
-        env:
-          VITE_COGNITO_CLIENT_ID: placeholder-client-id
-          VITE_COGNITO_DOMAIN: https://placeholder.auth.us-east-1.amazoncognito.com
-          VITE_COGNITO_REDIRECT_URI: http://localhost:5173/auth/callback
-          VITE_API_BASE_URL: https://placeholder.execute-api.us-east-1.amazonaws.com
-
+  # template:optional playwright-admin
   e2e-admin-web:
     name: Admin Web viewport smoke
     runs-on: ubuntu-26.04
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -110,46 +130,28 @@ jobs:
         uses: lx-software-ltd/actions/playwright-install@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           working-directory: apps/admin_web
+          # template:set
           browsers: chromium
+          # template:end
 
       - name: Run viewport smoke tests
         run: npm run test:e2e
         working-directory: apps/admin_web
+        # template:set
+        # template:end
 
-  test-infrastructure:
-    name: Test Infrastructure
-    runs-on: ubuntu-26.04
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
-        with:
-          cache: npm
-          working-directory: backend/infrastructure
-
-      - name: Build CDK app
-        run: npm run build
-        working-directory: backend/infrastructure
-
-      # Synthesizes the stacks with aws-cdk-lib/assertions (no AWS credentials
-      # or Docker needed; asset bundling is disabled in the tests).
-      - name: Run CDK assertion tests
-        run: npm test
-        working-directory: backend/infrastructure
-        env:
-          CI: "true"
-
+  # template:end
   test:
     name: test
     runs-on: ubuntu-26.04
+    # template:set
     needs:
-      - check-contracts
-      - test-web
-      - build-admin-web
-      - e2e-admin-web
+      - test-python
+      - test-admin-web
+      - test-public-www
       - test-infrastructure
+      - e2e-admin-web
+    # template:end
     if: always()
     steps:
       - name: Require every test job

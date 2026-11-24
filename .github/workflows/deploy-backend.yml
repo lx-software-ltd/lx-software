@@ -1,8 +1,21 @@
 name: Deploy Backend
 
 on:
+  repository_dispatch:
+    types: [deploy-backend]
+  workflow_dispatch:
+    inputs:
+      # template:set
+      cdk_stacks:
+        description: CDK stacks to deploy. Empty deploys every stack in the plan.
+        required: false
+        default: ""
+        type: string
+      # template:end
   push:
-    branches: [main]
+    branches:
+      - main
+    # template:set
     # AdminApiFn / inbound-mail / authorizer code lives next to the CDK app.
     # A Lambda-only PR (no stack.ts change) must still roll the function, or
     # the admin SPA can ship a button whose route 404s on the previous build.
@@ -10,7 +23,7 @@ on:
       - "backend/infrastructure/**"
       - "backend/lambda/**"
       - "contracts/**"
-  workflow_dispatch:
+    # template:end
 
 permissions:
   contents: read
@@ -21,6 +34,9 @@ concurrency:
 
 jobs:
   deploy:
+    # template:set
+    # template:end
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
       id-token: write
@@ -29,69 +45,80 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # template:set
+        # template:end
+
 
       - name: Set up Node.js
         uses: lx-software-ltd/actions/setup-node@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           cache: npm
           working-directory: backend/infrastructure
-          install: "false"
+      # template:set
+      # template:end
+      - name: Set up Python
+        uses: lx-software-ltd/actions/setup-python@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
+
 
       - name: Configure AWS credentials
+        # template:set
         id: aws
+        # template:end
         uses: lx-software-ltd/actions/aws-oidc@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
+          # template:set
           region: ${{ vars.AWS_REGION }}
+          # template:end
 
-      - name: Install CDK dependencies
-        run: |
-          if [ ! -f "backend/infrastructure/package.json" ]; then
-            echo "Missing backend/infrastructure/package.json"
-            exit 1
-          fi
-          cd backend/infrastructure
-          npm ci
-
-      - name: Build CDK app
-        run: |
-          cd backend/infrastructure
-          npm run build --if-present
-
+      # template:optional qemu
+      # template:set
       # AdminApiFn bundles pip dependencies (Pillow, defusedxml) inside the
       # linux/arm64 SAM build image. The x86-64 runner needs QEMU binfmt
       # registered or `docker run --platform linux/arm64` fails with
       # "exec /usr/bin/bash: exec format error".
+      # template:end
       - name: Set up QEMU for arm64 Lambda bundling
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
           platforms: arm64
 
+      # template:end
+
       - name: Check CDK bootstrap
         uses: lx-software-ltd/actions/cdk-bootstrap-check@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
+          # template:set
           region: ${{ vars.AWS_REGION }}
-
-      - name: Acknowledge CDK notices
-        working-directory: backend/infrastructure
-        run: npx cdk acknowledge 34892 || true
-
-      - name: Mask CDK plan secrets
+          # template:end
+      - name: Prepare CDK app
+        id: prep
+        run: bash scripts/deploy/cdk-prepare.sh deploy
+        # template:set
         env:
+          CDK_STACKS: ${{ inputs.cdk_stacks }}
           P_GOOGLE_CLIENT_SECRET: ${{ secrets.ADMIN_GOOGLE_CLIENT_SECRET }}
           P_EMAIL_ALLOWLIST: ${{ secrets.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
-        run: |
-          if [ -n "$P_GOOGLE_CLIENT_SECRET" ]; then echo "::add-mask::$P_GOOGLE_CLIENT_SECRET"; fi
-          if [ -n "$P_EMAIL_ALLOWLIST" ]; then echo "::add-mask::$P_EMAIL_ALLOWLIST"; fi
+        # template:end
 
-      - name: Deploy CDK stacks
+
+      - name: Deploy stacks
         uses: lx-software-ltd/actions/cdk-deploy@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           working-directory: backend/infrastructure
           plan-file: backend/infrastructure/cdk-plan.json
+          # template:set
+          stacks: ${{ inputs.cdk_stacks }}
+          # template:end
           param-file: ${{ vars.CDK_PARAM_FILE }}
+          attempts: "3"
+          # template:set
+          # template:end
+          # template:set
           region: ${{ vars.AWS_REGION }}
+          # template:end
+        # template:set
         env:
           CDK_PARAM_FILE: ${{ vars.CDK_PARAM_FILE }}
           CDK_BOOTSTRAP_QUALIFIER: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
@@ -105,3 +132,4 @@ jobs:
           CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN: ${{ secrets.CDK_PARAM_ADMIN_WEB_CERTIFICATE_ARN }}
           P_EMAIL_ALLOWLIST: ${{ secrets.ADMIN_FEDERATED_EMAIL_ALLOWLIST }}
           P_META_VERIFY_TOKEN: ${{ secrets.SIUTINDEI_BOARD_META_VERIFY_TOKEN }}
+        # template:end

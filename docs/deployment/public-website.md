@@ -112,10 +112,7 @@ and the `<route>/index.html` copies) are uploaded the same way, with a
 content type and `no-cache`. `media/` syncs with `--size-only`. Retired
 hashed assets are deleted only after the new shell is uploaded.
 
-```bash
-PUBLIC_WEBSITE_STACK_NAME=lxsoftware-public-www \
-  bash scripts/deploy/deploy-public-website.sh
-```
+Run **Deploy Public Website**. The workflow reads the public website stack outputs and uploads `dist/`.
 
 The workflow reads the stack outputs `PublicWebsiteBucketName` and
 `PublicWebsiteDistributionId`, then uploads with `s3-cloudfront-deploy`

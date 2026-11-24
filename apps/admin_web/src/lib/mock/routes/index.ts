@@ -393,4 +393,3 @@ export const mockRoutes: readonly MockRoute[] = [
     handler: modules.board.handleB58,
   },
 ];
-
