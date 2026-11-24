@@ -11,7 +11,7 @@
     "cdk": "cdk",
     "synth": "cdk synth",
     "deploy": "cdk deploy",
-    "synth:ci": "CDK_SKIP_PYTHON_PIP=1 cdk synth --quiet --output cdk.out --parameters PublicWebsiteDomainName=example.com --parameters PublicWebsiteCertificateArn=\"${CDK_PARAM_PUBLIC_WEBSITE_CERTIFICATE_ARN:?}\""
+    "synth:ci": "CDK_SKIP_PYTHON_PIP=1 cdk synth --quiet --output cdk.out"
   },
   "keywords": [],
   "author": "",

@@ -6,7 +6,7 @@ import os
 import ssl
 import unittest
 import urllib.error
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 from unittest.mock import patch
@@ -81,7 +81,9 @@ class SsrfTests(BoardTestCase):
             return board_crawl.FetchResult(200, url, "text/html", "<html><body>共融遊樂設施</body></html>", "b")
 
         with patch.object(board_crawl, "_fetch_once", side_effect=_once):
-            result = board_crawl.fetch("http://www.lcsd.gov.hk/tc/facilities/facilitieslist/facilities.php?ftid=55&did=2")
+            result = board_crawl.fetch(
+                "http://www.lcsd.gov.hk/tc/facilities/facilitieslist/facilities.php?ftid=55&did=2"
+            )
         self.assertEqual(len(seen), 2)
         self.assertTrue(seen[1].startswith("https://www.lcsd.gov.hk/clpss/"))
         self.assertIn("共融遊樂設施", result.text)
@@ -91,7 +93,9 @@ class SsrfTests(BoardTestCase):
         self.assertEqual(board_crawl.meta_refresh_target(stub, "https://example.com/"), "")
         self.assertEqual(board_crawl.meta_refresh_target("<html><body>hi</body></html>", "https://example.com/"), "")
         self.assertEqual(
-            board_crawl.meta_refresh_target('<meta http-equiv="refresh" content="0;URL=/next">', "https://example.com/a"),
+            board_crawl.meta_refresh_target(
+                '<meta http-equiv="refresh" content="0;URL=/next">', "https://example.com/a"
+            ),
             "https://example.com/next",
         )
 
@@ -126,8 +130,13 @@ class SsrfTests(BoardTestCase):
         refused = board_intel.op_fetch_page(ctx, {"url": "https://evil.example/"})
         self.assertIn("watchlist", refused.get("error") or "")
         board_watch.add_watch(self.table, {"name": "Ok", "kind": "competitor", "urls": ["https://ok.example/home"]})
-        fetched = board_crawl.FetchResult(status=200, final_url="https://ok.example/home", content_type="text/html", text="<p>hi</p>", hash="h")
-        with patch.object(board_crawl, "fetch", return_value=fetched), patch.object(board_crawl, "robots_allows", return_value=True):
+        fetched = board_crawl.FetchResult(
+            status=200, final_url="https://ok.example/home", content_type="text/html", text="<p>hi</p>", hash="h"
+        )
+        with (
+            patch.object(board_crawl, "fetch", return_value=fetched),
+            patch.object(board_crawl, "robots_allows", return_value=True),
+        ):
             allowed = board_intel.op_fetch_page(ctx, {"url": "https://ok.example/home"})
         self.assertEqual(allowed.get("status"), 200)
 
@@ -157,7 +166,6 @@ class SsrfTests(BoardTestCase):
             )
         capped = board_research.op_fetch_page(ctx, {"url": "https://ok.example/"})
         self.assertIn("cap", capped.get("error") or "")
-
 
     def test_fetch_does_not_retry_a_certificate_error(self) -> None:
         calls = {"n": 0}
@@ -207,7 +215,7 @@ class CrawlHelperTests(unittest.TestCase):
         board_store.put_cache(
             table,
             "crawl:host:example.com",
-            {"lastFetchAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")},
+            {"lastFetchAt": (datetime.now(timezone.utc) + timedelta(seconds=30)).strftime("%Y-%m-%dT%H:%M:%SZ")},
             ttl_seconds=86400,
         )
         with patch("board_crawl.time.sleep") as sleep:
@@ -280,7 +288,6 @@ class ChangeDetectionTests(BoardTestCase):
         self.assertTrue(pages[0].get("emptyBody"))
         self.assertGreaterEqual(int(pages[0].get("emptyFetches") or 0), 2)
 
-
     def test_certificate_failure_backs_the_host_off(self) -> None:
         with (
             patch("board_crawl.robots_allows", return_value=True),
@@ -347,10 +354,16 @@ class DiscoverTests(BoardTestCase):
     def test_discovery_skips_media_round_ups(self) -> None:
         payload = {
             "results": [
-                {"url": "https://roundup.example/kids", "title": "23 Rainy Day Indoor Activities for Kids in Hong Kong"},
+                {
+                    "url": "https://roundup.example/kids",
+                    "title": "23 Rainy Day Indoor Activities for Kids in Hong Kong",
+                },
                 {"url": "https://guide.example/hk", "title": "【親子好去處2026】30大香港週末放電推介"},
                 {"url": "https://weekend.example/", "title": "Things to Do With Kids in Hong Kong This Weekend"},
-                {"url": "https://realbiz.example/classes", "title": "Classbee — Find activities your child will love in Hong Kong"},
+                {
+                    "url": "https://realbiz.example/classes",
+                    "title": "Classbee — Find activities your child will love in Hong Kong",
+                },
             ]
         }
         with patch("board_research.op_search", side_effect=lambda _c, _a: payload):
@@ -556,9 +569,7 @@ class RouteTests(BoardTestCase):
         status, body = self.call("/siu-tin-dei/board/watchlist")
         self.assertEqual(status, 200)
         self.assertIn("kiztopia.example", body["suppressedHosts"])
-        status, body = self.call(
-            "/siu-tin-dei/board/watchlist/suppressed", "DELETE", {"hosts": ["kiztopia.example"]}
-        )
+        status, body = self.call("/siu-tin-dei/board/watchlist/suppressed", "DELETE", {"hosts": ["kiztopia.example"]})
         self.assertEqual(status, 200)
         self.assertEqual(body["suppressedHosts"], {})
         status, body = self.call("/siu-tin-dei/board/watchlist/suppressed", "POST", {"hosts": ["hk01.com"]})
