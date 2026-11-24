@@ -1,97 +1,51 @@
-# Security Policy
+# Security policy
 
-## Supported Versions
+This policy covers the code in this repository and whatever is deployed from it. Every `lx-software-ltd` repository carries the same policy. Only the last section, [This repository](#this-repository), differs.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| main    | :white_check_mark: |
+## Supported versions
 
-## Reporting a Vulnerability
+Only the latest `main` is supported. Earlier commits do not receive fixes.
 
-We take security seriously. If you discover a security vulnerability in this project, please report it responsibly.
+## Report a vulnerability
 
-### How to Report
+Report it privately through GitHub. Open the **Security** tab of this repository and choose **Report a vulnerability**. Do not open a public issue, pull request, or discussion.
 
-1. **Do NOT create a public GitHub issue** for security vulnerabilities
-2. Instead, please report security vulnerabilities via GitHub's private vulnerability reporting:
-   - Go to the repository's **Security** tab
-   - Click **Report a vulnerability**
-   - Fill out the vulnerability report form
+Include:
 
-Alternatively, you can email the maintainers directly (add email if applicable).
+- what is affected and what an attacker could do with it
+- the steps to reproduce it
+- the commit or URL you tested
+- a fix or mitigation, if you have one
 
-### What to Include
+Do not put a live credential or anyone's personal data in the report. Say where you found it.
 
-When reporting a vulnerability, please include:
+## What to expect
 
-- A clear description of the vulnerability
-- Steps to reproduce the issue
-- Potential impact of the vulnerability
-- Any suggested fixes or mitigations (optional)
+| Step | Target |
+| --- | --- |
+| First response | Within 48 hours |
+| Status update | Within 7 days |
+| Fix for a critical finding | Within 24 to 48 hours |
+| Fix for a high finding | Within 7 days |
+| Fix for a medium finding | Within 30 days |
+| Fix for a low finding | Within 90 days |
 
-### Response Timeline
+You get updates while the fix is in progress and a note when it ships. The advisory credits you unless you ask to stay anonymous.
 
-- **Initial Response**: Within 48 hours
-- **Status Update**: Within 7 days
-- **Resolution Target**: Depends on severity
-  - Critical: Within 24-48 hours
-  - High: Within 7 days
-  - Medium: Within 30 days
-  - Low: Within 90 days
+## Rules every repository follows
 
-### What to Expect
+- **No secrets and no private personal data in git.** Secrets live in GitHub Actions secrets or AWS Secrets Manager. Gitleaks and a hashed personal-data denylist run on every pull request to `main`. GitHub secret scanning and push protection are on.
+- **Changes reach `main` by pull request.** The `main-protection` ruleset blocks force-push and deletion, and requires the `lint`, `test`, and `security-summary` checks.
+- **Security checks gate the merge.** `security-summary` fails unless every job in `.github/workflows/security.yml` succeeded. That workflow also runs every Monday.
+- **Dependencies are pinned and watched.** Third-party GitHub Actions are pinned by full commit SHA. Dependabot opens version updates and security updates.
+- **CI holds no long-lived AWS key.** Every workflow starts from `contents: read`. A job that calls AWS assumes a role through GitHub OIDC.
 
-1. Acknowledgment of your report within 48 hours
-2. Regular updates on the progress of addressing the vulnerability
-3. Credit in the security advisory (unless you prefer to remain anonymous)
-4. Notification when the fix is released
+## This repository
 
-## Security Best Practices for Contributors
+`lx-software` deploys the LX Software public website and a private admin console with its backend API.
 
-### Code Security
+- `security.yml` runs Checkov, CodeQL, the personal-data denylist, Gitleaks, pip-audit, Bandit, and npm audit. `semgrep.yml` runs Semgrep.
+- The owner name on the public website is published on purpose. It is not on the personal-data denylist.
+- Known limitations: the admin distribution gets a web ACL only when `WafWebAclArn` is set. The stacks here do not set up CloudTrail.
 
-- Never commit secrets, API keys, or credentials to the repository.
-- Use environment variables or GitHub Secrets for sensitive configuration.
-- Keep public site content free of PII or internal-only details.
-
-### Dependency Management
-
-- Keep dependencies up to date (Dependabot is configured for this).
-- Review dependency updates before merging.
-- Monitor for security advisories in dependencies.
-
-### Infrastructure Security
-
-- Use IAM roles with minimum required permissions.
-- Keep the S3 bucket private and serve content via CloudFront.
-- Enable encryption at rest and in transit.
-- Enable audit logging where applicable.
-
-## Security Features
-
-This project implements the following security measures:
-
-- GitHub OIDC for CI/CD AWS access (no long-lived keys).
-- Private S3 bucket with CloudFront as the public edge.
-- HTTPS enforcement via CloudFront.
-
-## Known Limitations
-
-Please review the following when deploying to production:
-
-1. **WAF**: Consider adding AWS WAF for additional protection.
-2. **CloudTrail**: Ensure CloudTrail is enabled for audit logging.
-
-## Automated Security Scanning
-
-This repository uses the following automated security tools:
-
-- **Dependabot**: Automated dependency updates and security alerts
-- **CodeQL**: Static code analysis for security vulnerabilities
-- **Checkov**: Infrastructure as Code security scanning
-- **Semgrep**: SAST scanning
-- **Gitleaks**: Secret scanning
-
-## License
-
-This security policy is part of the project and is subject to the same license terms.
+The controls for sign-in, API authorization, uploads, the Executive Board, and logging are in [`docs/architecture/security.md`](docs/architecture/security.md).
