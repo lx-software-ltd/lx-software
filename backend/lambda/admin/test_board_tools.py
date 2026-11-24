@@ -1130,7 +1130,7 @@ class AutonomyToolTests(ToolsTestCase):
         n = board_tools.expire_stale_approvals(self.table, board_store.load_settings(self.table), now_iso=fresh)
         self.assertEqual(n, 1)
         expired = board_store.get_approval(self.table, "old-1")
-        assert expired is not None
+        assert expired is not None  # nosec B101
         self.assertEqual(expired["status"], "rejected")
         self.assertEqual(expired["decidedBySub"], "system:expiry")
         self.assertEqual(_nn(board_store.get_approval(self.table, "legacy-1"))["status"], "pending")
@@ -1182,5 +1182,5 @@ from typing import TypeVar
 _T = TypeVar("_T")
 
 def _nn(value: _T | None) -> _T:
-    assert value is not None
+    assert value is not None  # nosec B101
     return value

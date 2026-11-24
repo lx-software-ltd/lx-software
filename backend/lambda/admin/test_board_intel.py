@@ -472,7 +472,7 @@ class BriefTests(BoardTestCase):
             )
         brief = board_intel.latest_brief(self.table)
         self.assertIsNotNone(brief)
-        assert brief is not None
+        assert brief is not None  # nosec B101
         self.assertEqual(brief["taskId"], "brief-oct")
 
 

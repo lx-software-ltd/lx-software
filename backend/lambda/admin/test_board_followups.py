@@ -837,7 +837,7 @@ class TestUpdateActionReprioritise(ToolsTestCase):
         out = execute_call(ctx, op, {"actionId": action_id, "priority": "now", "dueInDays": 3, "reason": "r"})
         self.assertEqual(out.status, "ok", out.result)
         action = board_store.get_action(self.table, action_id)
-        assert action is not None
+        assert action is not None  # nosec B101
         self.assertEqual(action["priority"], "now")
         self.assertTrue(action["dueAt"])
         self.assertIn("priority → now", out.summary)
@@ -920,5 +920,5 @@ from typing import TypeVar
 _T = TypeVar("_T")
 
 def _nn(value: _T | None) -> _T:
-    assert value is not None
+    assert value is not None  # nosec B101
     return value

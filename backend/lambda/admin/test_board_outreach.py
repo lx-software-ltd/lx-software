@@ -60,7 +60,7 @@ def _prospect(table: Any, **kwargs: Any) -> dict[str, Any]:
         "email": "info@play.example",
     }
     defaults.update(kwargs)
-    assert defaults is not None
+    assert defaults is not None  # nosec B101
     row, _ = board_prospects.upsert(table, **defaults)
     row["score"] = 70
     row["fitNote"] = "Saturday play sessions for ages 3-8."
@@ -286,14 +286,14 @@ class OutreachTests(BoardTestCase):
         self.assertGreaterEqual(day["sent"], 1)
         # Reply from the prospect → replied + provider-success task
         handled = board_outreach.maybe_handle_reply(self.table, self.settings, "info@play.example", "Thanks, we are interested")
-        assert handled is not None
+        assert handled is not None  # nosec B101
         self.assertFalse(handled["suppressed"])
         self.assertEqual(_nn(board_store.get_prospect(self.table, row["prospectId"]))["stage"], "replied")
         thread = {"threadId": "th-1", "subject": "Re: listing", "mailbox": "partnerships@siutindei.com"}
         message = {"from": {"address": "info@play.example"}, "text": "Thanks", "direction": "in", "threadId": "th-1"}
         task = board_triage.on_mail_ingested(self.table, self.settings, thread, message)
         self.assertIsNotNone(task)
-        assert task is not None
+        assert task is not None  # nosec B101
         self.assertEqual(task.get("assignee"), "provider-success")
         # unsubscribe reply
         other = _prospect(self.table, name="Stop", website="https://stop.example", email="info@stop.example")
@@ -327,17 +327,17 @@ class OutreachTests(BoardTestCase):
             "> Reply \"unsubscribe\" or use https://example/unsub\n"
         )
         handled = board_outreach.maybe_handle_reply(self.table, self.settings, "info@play.example", text)
-        assert handled is not None
+        assert handled is not None  # nosec B101
         self.assertFalse(handled["suppressed"])
         self.assertEqual(_nn(board_store.get_prospect(self.table, row["prospectId"]))["stage"], "replied")
         bare = _prospect(self.table, name="Stop", website="https://stop.example", email="info@stop.example")
         handled2 = board_outreach.maybe_handle_reply(self.table, self.settings, "info@stop.example", "unsubscribe")
-        assert handled2 is not None
+        assert handled2 is not None  # nosec B101
         self.assertTrue(handled2["suppressed"])
         self.assertEqual(_nn(board_store.get_prospect(self.table, bare["prospectId"]))["stage"], "suppressed")
         _zh = _prospect(self.table, name="Zh", website="https://zh2.example", email="info@zh2.example")
         handled3 = board_outreach.maybe_handle_reply(self.table, self.settings, "info@zh2.example", "請取消")
-        assert handled3 is not None
+        assert handled3 is not None  # nosec B101
         self.assertTrue(handled3["suppressed"])
 
     def test_two_sends_at_cap_minus_one(self) -> None:
@@ -422,7 +422,7 @@ class OutreachTests(BoardTestCase):
         row = _prospect(self.table)
         ctx = board_tools.ToolContext(table=self.table, settings=self.settings, persona_id="coo", kind="task")
         preview = board_tools.REGISTRY["outreach_send"].preview
-        assert preview is not None
+        assert preview is not None  # nosec B101
         self.assertEqual(preview(ctx, {"prospectId": "missing"}), {"error": "prospect not found"})
         self.assertEqual(preview(ctx, {"prospectId": row["prospectId"], "stepIndex": 9}), {"error": "step out of range"})
         row["contact"] = ""
@@ -452,5 +452,5 @@ from typing import TypeVar
 _T = TypeVar("_T")
 
 def _nn(value: _T | None) -> _T:
-    assert value is not None
+    assert value is not None  # nosec B101
     return value

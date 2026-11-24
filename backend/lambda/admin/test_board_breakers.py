@@ -142,7 +142,7 @@ class BreakerRuleTests(BoardTestCase):
         board_breakers.evaluate(self.table, self.settings)
         self.assertTrue(board_breakers.is_tripped(self.table, "tool:mail"))
         row = board_store.get_breaker(self.table, "tool:mail")
-        assert row is not None
+        assert row is not None  # nosec B101
         row["trippedAt"] = (datetime.now(timezone.utc) - timedelta(minutes=31)).strftime("%Y-%m-%dT%H:%M:%SZ")
         board_store.put_breaker(self.table, "tool:mail", row)
         board_breakers.evaluate(self.table, self.settings)
@@ -165,7 +165,7 @@ class BreakerRuleTests(BoardTestCase):
             )
         board_breakers.trip(self.table, "tool:mail", "10 errors in the last hour")
         row = board_store.get_breaker(self.table, "tool:mail")
-        assert row is not None
+        assert row is not None  # nosec B101
         row["trippedAt"] = (datetime.now(timezone.utc) - timedelta(minutes=31)).strftime("%Y-%m-%dT%H:%M:%SZ")
         board_store.put_breaker(self.table, "tool:mail", row)
         board_breakers.evaluate(self.table, self.settings)
@@ -254,7 +254,7 @@ class BreakerRuleTests(BoardTestCase):
     def test_auto_reset_only_once_until_owner_clears(self) -> None:
         board_breakers.trip(self.table, "tool:mail", "10 errors in the last hour")
         row = board_store.get_breaker(self.table, "tool:mail")
-        assert row is not None
+        assert row is not None  # nosec B101
         row["trippedAt"] = (datetime.now(timezone.utc) - timedelta(minutes=31)).strftime("%Y-%m-%dT%H:%M:%SZ")
         board_store.put_breaker(self.table, "tool:mail", row)
         board_breakers.evaluate(self.table, self.settings)
@@ -263,7 +263,7 @@ class BreakerRuleTests(BoardTestCase):
 
         board_breakers.trip(self.table, "tool:mail", "10 errors in the last hour")
         row = board_store.get_breaker(self.table, "tool:mail")
-        assert row is not None
+        assert row is not None  # nosec B101
         self.assertEqual(row.get("autoResetCount"), 1)
         row["trippedAt"] = (datetime.now(timezone.utc) - timedelta(minutes=31)).strftime("%Y-%m-%dT%H:%M:%SZ")
         board_store.put_breaker(self.table, "tool:mail", row)
@@ -319,7 +319,7 @@ class BreakerRuleTests(BoardTestCase):
     def test_auto_reset_parses_millisecond_tripped_at(self) -> None:
         board_breakers.trip(self.table, "tool:research", "11 errors in the last hour")
         row = board_store.get_breaker(self.table, "tool:research")
-        assert row is not None
+        assert row is not None  # nosec B101
         self.assertRegex(str(row.get("trippedAt") or ""), r"\.\d{3}Z$")
         row["trippedAt"] = (datetime.now(timezone.utc) - timedelta(minutes=31)).strftime(
             "%Y-%m-%dT%H:%M:%S.%f"
@@ -468,7 +468,7 @@ class PolicyRefusalTests(BoardTestCase):
                 created_by="owner",
             )
         latest = board_store.get_task(self.table, task["taskId"])
-        assert latest is not None
+        assert latest is not None  # nosec B101
         latest["status"] = "needs_owner"
         latest["parkedReason"] = "blocked:tool:code"
         board_store.put_task(self.table, latest)
@@ -477,7 +477,7 @@ class PolicyRefusalTests(BoardTestCase):
             board_breakers.reset(self.table, "tool:code", "owner")
         queued = board_store.get_task(self.table, task["taskId"])
         # retry_task calls drain_queue, which may start the task immediately.
-        assert queued is not None
+        assert queued is not None  # nosec B101
         self.assertIn(queued["status"], ("queued", "running"))
         self.assertEqual(queued.get("retriedBy"), "system:breaker-reset")
         self.assertFalse(queued.get("parkedReason"))
@@ -486,7 +486,7 @@ class PolicyRefusalTests(BoardTestCase):
         board_breakers.trip(self.table, "budget", "OpenRouter 402: insufficient credits")
         self.assertTrue(board_breakers.openrouter_credits_paused(self.table))
         row = board_store.get_breaker(self.table, "budget")
-        assert row is not None
+        assert row is not None  # nosec B101
         row["trippedAt"] = (
             datetime.now(timezone.utc) - timedelta(seconds=board_breakers.OPENROUTER_PAUSE_SECONDS + 5)
         ).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -524,5 +524,5 @@ from typing import TypeVar
 _T = TypeVar("_T")
 
 def _nn(value: _T | None) -> _T:
-    assert value is not None
+    assert value is not None  # nosec B101
     return value

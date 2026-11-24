@@ -197,7 +197,7 @@ class LinkedInVideoPublishTests(unittest.TestCase):
             with patch.object(linkedin, "send_notice", return_value=True):
                 first = linkedin.handle_publish_due({})
         stored = linkedin_store.get_post(self.table, doc["postId"])
-        assert stored is not None
+        assert stored is not None  # nosec B101
         self.assertEqual(first["published"], 0)
         self.assertEqual(stored["status"], "approved")
         self.assertEqual(int(stored.get("publishAttempts") or 0), 0)
@@ -213,7 +213,7 @@ class LinkedInVideoPublishTests(unittest.TestCase):
             with patch.object(linkedin, "send_notice", return_value=True):
                 second = linkedin.handle_publish_due({})
         posted = linkedin_store.get_post(self.table, doc["postId"])
-        assert posted is not None
+        assert posted is not None  # nosec B101
         self.assertEqual(second["published"], 1)
         self.assertEqual(posted["status"], "published")
         self.assertEqual(posted["platform"]["urn"], "urn:li:share:7")
@@ -224,7 +224,7 @@ class LinkedInVideoPublishTests(unittest.TestCase):
         doc = self._approved()
         linkedin_store.save_post_image(self.table, doc["postId"], "video/mp4", _mp4())
         saved = linkedin_store.get_post(self.table, doc["postId"])
-        assert saved is not None
+        assert saved is not None  # nosec B101
         saved["image"]["mediaUrn"] = "urn:li:video:bad"
         saved["image"]["mediaOwner"] = "urn:li:person:member1"
         linkedin_store.put_post(self.table, saved)
@@ -237,11 +237,11 @@ class LinkedInVideoPublishTests(unittest.TestCase):
 
         linkedin_api.set_transport_for_tests(transport)
         fresh = linkedin_store.get_post(self.table, doc["postId"])
-        assert fresh is not None
+        assert fresh is not None  # nosec B101
         with self.assertRaises(LinkedInApiError):
             linkedin.publish_one(self.table, fresh)
         stored = linkedin_store.get_post(self.table, doc["postId"])
-        assert stored is not None
+        assert stored is not None  # nosec B101
         self.assertEqual(stored["image"].get("mediaUrn") or "", "")
         self.assertEqual(linkedin_media.VIDEO_BYTE_MAX, 3_000_000)
         self.assertEqual(linkedin_media.VIDEO_BYTE_MIN, 75_000)
@@ -286,8 +286,8 @@ class LinkedInVideoPublishTests(unittest.TestCase):
                 result = linkedin.handle_publish_due({})
         waiting = linkedin_store.get_post(self.table, video["postId"])
         posted = linkedin_store.get_post(self.table, later["postId"])
-        assert waiting is not None
-        assert posted is not None
+        assert waiting is not None  # nosec B101
+        assert posted is not None  # nosec B101
         self.assertEqual(result["published"], 1)
         self.assertEqual(result["reminded"], 0)
         self.assertEqual(send.call_count, 0)
@@ -342,11 +342,11 @@ class LinkedInVideoPublishTests(unittest.TestCase):
 
         linkedin_api.set_transport_for_tests(transport)
         fresh = linkedin_store.get_post(self.table, doc["postId"])
-        assert fresh is not None
+        assert fresh is not None  # nosec B101
         with self.assertRaises(LinkedInApiError):
             linkedin.publish_one(self.table, fresh)
         stored = linkedin_store.get_post(self.table, doc["postId"])
-        assert stored is not None
+        assert stored is not None  # nosec B101
         self.assertEqual(stored["image"]["held"]["mediaUrn"], "urn:li:video:held")
         self.assertEqual(stored["image"]["held"]["mediaOwner"], "urn:li:person:member1")
         self.assertEqual(stored["image"].get("mediaUrn") or "", "")
@@ -359,7 +359,7 @@ class LinkedInVideoPublishTests(unittest.TestCase):
         doc = self._approved()
         linkedin_store.save_post_image(self.table, doc["postId"], "video/mp4", _mp4())
         stored = linkedin_store.get_post(self.table, doc["postId"])
-        assert stored is not None
+        assert stored is not None  # nosec B101
         stored["image"]["mediaUrn"] = "urn:li:video:person"
         stored["image"]["mediaOwner"] = "urn:li:person:member1"
         linkedin_store.put_post(self.table, stored)
@@ -395,7 +395,7 @@ class LinkedInVideoPublishTests(unittest.TestCase):
 
         linkedin_api.set_transport_for_tests(transport)
         fresh = linkedin_store.get_post(self.table, doc["postId"])
-        assert fresh is not None
+        assert fresh is not None  # nosec B101
         posted = linkedin.publish_one(self.table, fresh)
         self.assertEqual(owners, ["urn:li:organization:99"])
         self.assertEqual(posted["status"], "published")

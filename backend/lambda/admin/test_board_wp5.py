@@ -146,7 +146,7 @@ class TestSizeCaps(MailTestCase):
         )
         result = board_mail.ingest_bytes(self.table, raw)
         detail = board_mail.masked_thread_detail(self.table, result["threadId"])
-        assert detail is not None
+        assert detail is not None  # nosec B101
         message = detail["messages"][0]
         self.assertTrue(message["truncated"])
         self.assertEqual(message["attachmentsSkipped"], ["invoice.pdf"])
@@ -303,5 +303,5 @@ from typing import TypeVar
 _T = TypeVar("_T")
 
 def _nn(value: _T | None) -> _T:
-    assert value is not None
+    assert value is not None  # nosec B101
     return value

@@ -300,7 +300,7 @@ class TestParseAndIngest(MailTestCase):
             attachments=[("report.zip", "application/zip", b"this is not a zip")],
         )
         thread = board_store.get_mail_thread(self.table, result["threadId"])
-        assert thread is not None
+        assert thread is not None  # nosec B101
         self.assertEqual(thread["disposition"], "archived")
         self.assertFalse(thread["unread"])
         self.assertNotIn("dmarcReportIds", thread)
@@ -499,10 +499,10 @@ class TestMailRoutes(MailTestCase):
         )
         rua_thread = board_store.get_mail_thread(self.table, rua)
         google_thread = board_store.get_mail_thread(self.table, google)
-        assert rua_thread is not None
+        assert rua_thread is not None  # nosec B101
         self.assertEqual(rua_thread["disposition"], "archived")
         self.assertFalse(rua_thread["unread"])
-        assert google_thread is not None
+        assert google_thread is not None  # nosec B101
         self.assertEqual(google_thread["disposition"], "archived")
         self.assertFalse(google_thread["unread"])
 
@@ -536,7 +536,7 @@ class TestMailRoutes(MailTestCase):
             message_id="<rua@google.com>",
         )
         archived = board_store.get_mail_thread(self.table, first["threadId"])
-        assert archived is not None
+        assert archived is not None  # nosec B101
         self.assertEqual(archived["disposition"], "archived")
         self.assertFalse(archived["unread"])
         reply = self.ingest(
@@ -549,7 +549,7 @@ class TestMailRoutes(MailTestCase):
         )
         self.assertEqual(reply["threadId"], first["threadId"])
         thread = board_store.get_mail_thread(self.table, first["threadId"])
-        assert thread is not None
+        assert thread is not None  # nosec B101
         self.assertNotEqual(thread.get("disposition"), "archived")
         self.assertTrue(thread["unread"])
         status, body = self.call("/siu-tin-dei/board/mail")
@@ -571,7 +571,7 @@ class TestMailRoutes(MailTestCase):
         )
         self.assertEqual(bounce["threadId"], first["threadId"])
         thread = board_store.get_mail_thread(self.table, first["threadId"])
-        assert thread is not None
+        assert thread is not None  # nosec B101
         self.assertNotEqual(thread.get("disposition"), "archived")
         status, body = self.call("/siu-tin-dei/board/mail")
         self.assertEqual(status, 200)
@@ -704,7 +704,7 @@ class TestMailTools(MailTestCase):
         self.assertEqual([m["direction"] for m in messages], ["in", "out"])
         self.assertEqual(messages[1]["mailbox"], "hello@siutindei.com")
         thread = board_store.get_mail_thread(self.table, thread_id)
-        assert thread is not None
+        assert thread is not None  # nosec B101
         self.assertFalse(thread["unread"])
         self.assertEqual(thread["messageCount"], 2)
         # The result handed back to the model is masked again.
@@ -903,5 +903,5 @@ from typing import TypeVar
 _T = TypeVar("_T")
 
 def _nn(value: _T | None) -> _T:
-    assert value is not None
+    assert value is not None  # nosec B101
     return value

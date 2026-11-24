@@ -53,7 +53,7 @@ class PlacesTests(BoardTestCase):
         body = json.loads(http.call_args.kwargs["body"].decode("utf-8"))
         self.assertIn("locationRestriction", body)
         month = board_store.get_cache(self.table, board_places._month_key())
-        assert month is not None
+        assert month is not None  # nosec B101
         self.assertAlmostEqual(float(month["payload"]["usd"]), board_places.TEXT_SEARCH_USD)
 
     def test_monthly_cap_refuses(self) -> None:

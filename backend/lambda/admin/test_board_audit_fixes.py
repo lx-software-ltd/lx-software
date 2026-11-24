@@ -93,14 +93,14 @@ class PauseAndDedupeTests(BoardTestCase):
         self.assertEqual(first["approvalId"], second["approvalId"])
         board_staff._park_waiting_approval(self.table, task, [first["approvalId"]])
         parked = board_store.get_task(self.table, task["taskId"])
-        assert parked is not None
+        assert parked is not None  # nosec B101
         self.assertEqual(parked["status"], "waiting_approval")
         first["status"] = "rejected"
         first["context"] = {"taskId": task["taskId"]}
         board_store.put_approval(self.table, first)
         board_staff.resume_after_approval(self.table, self.settings, first)
         resumed = board_store.get_task(self.table, task["taskId"])
-        assert resumed is not None
+        assert resumed is not None  # nosec B101
         self.assertEqual(resumed["status"], "running")
 
     def _park_on(self, task: dict[str, Any], op: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -137,7 +137,7 @@ class PauseAndDedupeTests(BoardTestCase):
         board_store.put_approval(self.table, approval)
         board_staff.resume_after_approval(self.table, self.settings, approval)
         resumed = board_store.get_task(self.table, task["taskId"])
-        assert resumed is not None
+        assert resumed is not None  # nosec B101
         self.assertEqual(resumed["status"], "running")
         self.assertTrue(resumed.get("scratchpadKey"))
         scratch = self._scratchpad(task["taskId"])
@@ -209,7 +209,7 @@ class PauseAndDedupeTests(BoardTestCase):
             board_staff._complete_step(self.table, task["taskId"], task, result, 1)
             inv.assert_not_called()
         parked = board_store.get_task(self.table, task["taskId"])
-        assert parked is not None
+        assert parked is not None  # nosec B101
         self.assertEqual(parked["status"], "waiting_approval")
         self.assertEqual(parked["blockedOn"], ["ap-1"])
         self.assertEqual(int(parked["step"]), 1)
@@ -230,7 +230,7 @@ class PauseAndDedupeTests(BoardTestCase):
     def test_parking_yields_to_cancel_that_landed_mid_step(self) -> None:
         task = _running_task(self.table, self.settings)
         stored = board_store.get_task(self.table, task["taskId"])
-        assert stored is not None
+        assert stored is not None  # nosec B101
         stored["status"] = "cancelled"
         board_store.put_task(self.table, stored)
         board_staff._park_waiting_approval(self.table, task, ["ap-x"])
@@ -337,7 +337,7 @@ class BreakerAndUnconfiguredTests(BoardTestCase):
         self.assertTrue(board_breakers.is_tripped(self.table, "tool:github"))
         old = datetime.now(timezone.utc) - timedelta(minutes=31)
         row = board_store.get_breaker(self.table, "tool:github")
-        assert row is not None
+        assert row is not None  # nosec B101
         row["trippedAt"] = old.strftime("%Y-%m-%dT%H:%M:%SZ")
         board_store.put_breaker(self.table, "tool:github", row)
         board_breakers.evaluate(self.table, board_store.load_settings(self.table))
@@ -842,11 +842,11 @@ class ProseToolCallAndStuckTests(BoardTestCase):
         )
         with patch.object(board_meeting, "start_meeting", return_value={"meetingId": "m-retry"}) as start:
             out = board_meeting.maybe_retry_failed_schedule(self.table, settings)
-        assert out is not None
+        assert out is not None  # nosec B101
         self.assertEqual(out["meetingId"], "m-retry")
         self.assertEqual(start.call_args.kwargs["trigger"], "schedule:morning:retry")
         original = board_store.get_meeting(self.table, "m-fail")
-        assert original is not None
+        assert original is not None  # nosec B101
         self.assertEqual(original["retriedByMeetingId"], "m-retry")
         # A second tick inside the two-hour window must not spawn another standup.
         with patch.object(board_meeting, "start_meeting") as start_again:
@@ -965,7 +965,7 @@ class CodeImplementHandoffTests(BoardTestCase):
         )
         self.assertEqual(out["status"], "waiting_approval")
         latest = board_store.get_task(self.table, task["taskId"])
-        assert latest is not None
+        assert latest is not None  # nosec B101
         self.assertEqual(latest["status"], "waiting_approval")
 
     def test_reject_code_run_ends_implement_task(self) -> None:
@@ -982,7 +982,7 @@ class CodeImplementHandoffTests(BoardTestCase):
         board_store.put_approval(self.table, approval)
         board_staff.resume_after_approval(self.table, self.settings, approval)
         latest = board_store.get_task(self.table, task["taskId"])
-        assert latest is not None
+        assert latest is not None  # nosec B101
         self.assertEqual(latest["status"], "needs_owner")
         self.assertIn("rejected", latest.get("failureReason") or "")
 
@@ -1000,7 +1000,7 @@ class CodeImplementHandoffTests(BoardTestCase):
         board_store.put_approval(self.table, approval)
         board_staff.resume_after_approval(self.table, self.settings, approval)
         latest = board_store.get_task(self.table, task["taskId"])
-        assert latest is not None
+        assert latest is not None  # nosec B101
         self.assertEqual(latest["status"], "delivered")
         self.assertIn("code_runner_dispatched", latest.get("flags") or [])
         self.assertTrue(latest.get("expiresAt"))
@@ -1023,7 +1023,7 @@ class CodeImplementHandoffTests(BoardTestCase):
             self._finish(task)
         self.assertIn("code_run_task", str(raised.exception))
         latest = board_store.get_task(self.table, task["taskId"])
-        assert latest is not None
+        assert latest is not None  # nosec B101
         self.assertEqual(latest["status"], "running")
 
     def test_task_finish_delivers_when_runner_already_dispatched(self) -> None:
@@ -1041,7 +1041,7 @@ class CodeImplementHandoffTests(BoardTestCase):
         out = self._finish(task)
         self.assertEqual(out["status"], "delivered")
         latest = board_store.get_task(self.table, task["taskId"])
-        assert latest is not None
+        assert latest is not None  # nosec B101
         self.assertEqual(latest["status"], "delivered")
         self.assertTrue(latest.get("expiresAt"))
         self.assertIn("code_runner_dispatched", latest.get("flags") or [])
@@ -1060,7 +1060,7 @@ class CodeImplementHandoffTests(BoardTestCase):
         out = self._finish(task)
         self.assertEqual(out["status"], "delivered")
         latest = board_store.get_task(self.table, task["taskId"])
-        assert latest is not None
+        assert latest is not None  # nosec B101
         self.assertEqual(latest["status"], "delivered")
         self.assertTrue(latest.get("expiresAt"))
 
@@ -1127,7 +1127,7 @@ class CodeImplementHandoffTests(BoardTestCase):
             self._finish(retried)
         self.assertIn("code_run_task", str(raised.exception))
         latest = board_store.get_task(self.table, task["taskId"])
-        assert latest is not None
+        assert latest is not None  # nosec B101
         self.assertEqual(latest["status"], "running")
         self.assertFalse(latest.get("expiresAt"))
         self.assertNotIn("code_runner_dispatched", latest.get("flags") or [])
@@ -1156,7 +1156,7 @@ class CodeImplementHandoffTests(BoardTestCase):
         )
         board_staff._complete_step(self.table, task["taskId"], task, result, 1)  # noqa: SLF001
         latest = board_store.get_task(self.table, task["taskId"])
-        assert latest is not None
+        assert latest is not None  # nosec B101
         self.assertEqual(latest["status"], "delivered")
         self.assertIn("code_runner_dispatched", latest.get("flags") or [])
 
@@ -1390,5 +1390,5 @@ from typing import TypeVar
 _T = TypeVar("_T")
 
 def _nn(value: _T | None) -> _T:
-    assert value is not None
+    assert value is not None  # nosec B101
     return value

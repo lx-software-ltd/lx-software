@@ -329,7 +329,7 @@ class PolicyTests(BoardTestCase):
         )
         self.assertIsNone(out)
         stored = board_store.get_mail_thread(self.table, "th-arch")
-        assert stored is not None
+        assert stored is not None  # nosec B101
         self.assertEqual(stored["disposition"], "archived")
         self.assertEqual(board_store.list_tasks(self.table, None), [])
 

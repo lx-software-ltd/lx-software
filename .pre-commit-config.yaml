@@ -20,7 +20,7 @@ repos:
       - id: detect-private-key
 
   - repo: https://github.com/lx-software-ltd/actions
-    rev: 498ccef500b37e3b04314213aa10f49a2b5c02e5
+    rev: cd643d664bed34eca3fbb1e77edcb498e7ff6ef6
     hooks:
       - id: check-pii
       - id: validate-agent-rules

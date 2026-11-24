@@ -149,7 +149,7 @@ class FinishPreviewTests(BoardTestCase):
         self.assertNotIn("call-newer", [row["callId"] for row in rows])
         self.assertNotIn("Eastern", body["review"].get("digestHtml") or "")
         stored = board_store.get_review_snapshot(self.table, today)
-        assert stored is not None
+        assert stored is not None  # nosec B101
         self.assertEqual(stored["sample"], stored_sample)
         self.assertEqual(stored["digestHtml"], "stored")
 

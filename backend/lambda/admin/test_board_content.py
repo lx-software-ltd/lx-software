@@ -246,7 +246,7 @@ class ContentTests(BoardTestCase):
         with patch("board_budget.board_completion", side_effect=RuntimeError("no model")):
             board_holds.veto(self.table, hold_id, "owner", "not this one")
         latest = board_store.get_content(self.table, doc["contentId"])
-        assert latest is not None
+        assert latest is not None  # nosec B101
         self.assertEqual(latest["status"], "vetoed")
         lessons = board_store.list_lessons(self.table)
         self.assertTrue(lessons)
@@ -373,5 +373,5 @@ from typing import TypeVar
 _T = TypeVar("_T")
 
 def _nn(value: _T | None) -> _T:
-    assert value is not None
+    assert value is not None  # nosec B101
     return value

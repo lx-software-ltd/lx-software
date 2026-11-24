@@ -2472,7 +2472,7 @@ class TestFxV2RatesQuery(unittest.TestCase):
     def test_supported_and_sorted(self) -> None:
         parsed = _parse_fx_v2_rates_query({"base": "hkd", "quotes": "USD,EUR"})
         self.assertIsInstance(parsed, tuple)
-        assert isinstance(parsed, tuple)
+        assert isinstance(parsed, tuple)  # nosec B101
         base, need = parsed
         self.assertEqual(base, "HKD")
         self.assertEqual(need, ["EUR", "USD"])
@@ -2480,7 +2480,7 @@ class TestFxV2RatesQuery(unittest.TestCase):
     def test_drops_base_from_quotes(self) -> None:
         parsed = _parse_fx_v2_rates_query({"base": "HKD", "quotes": "HKD,USD"})
         self.assertIsInstance(parsed, tuple)
-        assert isinstance(parsed, tuple)
+        assert isinstance(parsed, tuple)  # nosec B101
         base, need = parsed
         self.assertEqual(base, "HKD")
         self.assertEqual(need, ["USD"])
@@ -2490,7 +2490,7 @@ class TestFxV2RatesQuery(unittest.TestCase):
         # passed through; Frankfurter validates upstream.
         parsed = _parse_fx_v2_rates_query({"base": "HKD", "quotes": "JPY,BTC"})
         self.assertIsInstance(parsed, tuple)
-        assert isinstance(parsed, tuple)
+        assert isinstance(parsed, tuple)  # nosec B101
         base, need = parsed
         self.assertEqual(base, "HKD")
         self.assertEqual(need, ["BTC", "JPY"])

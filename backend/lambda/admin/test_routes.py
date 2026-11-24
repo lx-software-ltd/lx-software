@@ -40,13 +40,13 @@ class RouteTableTests(unittest.TestCase):
         for method, path, auth in _HANDLER_CASES:
             route = _first_specific_route(method, path)
             self.assertIsNotNone(route, path)
-            assert route is not None
+            assert route is not None  # nosec B101
             self.assertEqual(route.auth, auth, path)
 
     def test_get_finance_is_exact_admin_route(self) -> None:
         route = _first_specific_route("GET", "/finance")
         self.assertIsNotNone(route)
-        assert route is not None
+        assert route is not None  # nosec B101
         self.assertEqual(route.kind, "exact")
         self.assertEqual(route.pattern, "/finance")
         self.assertIsNone(_first_specific_route("PUT", "/finance"))
@@ -54,14 +54,14 @@ class RouteTableTests(unittest.TestCase):
     def test_health_get_is_unauthenticated_and_post_is_not(self) -> None:
         health = _first_specific_route("GET", "/health")
         self.assertIsNotNone(health)
-        assert health is not None
+        assert health is not None  # nosec B101
         self.assertEqual(health.auth, "none")
         self.assertIsNone(_first_specific_route("POST", "/health"))
 
     def test_public_kind_matches_the_public_prefix_only(self) -> None:
         route = _first_specific_route("GET", "/public/finance")
         self.assertIsNotNone(route)
-        assert route is not None
+        assert route is not None  # nosec B101
         self.assertEqual(route.kind, "public")
         self.assertTrue(route_matches(route, "GET", "/public"))
         self.assertTrue(route_matches(route, "PUT", "/public/finance"))
@@ -77,7 +77,7 @@ class RouteTableTests(unittest.TestCase):
     def test_resume_prefix_is_an_admin_route(self) -> None:
         route = _first_specific_route("POST", "/lx-software/resume/tailor")
         self.assertIsNotNone(route)
-        assert route is not None
+        assert route is not None  # nosec B101
         self.assertEqual(route.auth, "admin")
         self.assertEqual(route.handler, dispatch_handler())
 

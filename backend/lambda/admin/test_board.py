@@ -1513,13 +1513,13 @@ class TestAssets(BoardTestCase):
         _persist_asset_meta_after_parse(
             table=stored, s3_key=key, house="hillmarton", head=head, file_name="old.pdf", request_id="r"
         )
-        assert stored.values is not None
+        assert stored.values is not None  # nosec B101
         self.assertTrue(stored.values[":gsk"].startswith("2018-04-01T00:00:00.000Z#"))
         fresh = _Table(None)
         _persist_asset_meta_after_parse(
             table=fresh, s3_key=key, house="hillmarton", head=head, file_name="old.pdf", request_id="r"
         )
-        assert fresh.values is not None
+        assert fresh.values is not None  # nosec B101
         self.assertTrue(fresh.values[":gsk"].startswith("2026-01-01T00:00:00.000Z#"))
 
 
