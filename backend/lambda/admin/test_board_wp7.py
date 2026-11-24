@@ -427,7 +427,7 @@ class TestGitHubRateLimit(ToolsTestCase):
         self.assertTrue(message.startswith("GitHub rate limit; retry after "), message)
         self.assertTrue(message.endswith("s"))
         retry_after = ctx.exception.retry_after
-        assert retry_after is not None  # nosec B101
+        assert retry_after is not None
         self.assertTrue(100 <= retry_after <= 121)
         self.assertEqual(ctx.exception.status, 403)
         self.assertTrue(self.http_errors)

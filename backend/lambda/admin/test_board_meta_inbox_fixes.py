@@ -261,7 +261,7 @@ class MediaTests(InboxCase):
 
     def owner_get(self, path: str) -> tuple[int, dict[str, Any]]:
         out = board_routes.handle_board_route(BoardTestCase.event(path, "GET"), "GET", path, "owner")
-        assert out is not None  # nosec B101
+        assert out is not None
         return out["statusCode"], json.loads(out["body"])
 
     def test_a_page_photo_is_stored_and_opens_for_the_owner(self) -> None:
@@ -351,7 +351,7 @@ class MaskingTests(InboxCase):
 
     def test_the_owner_still_sees_the_name_and_the_number(self) -> None:
         owner = board_meta_inbox.thread_for_owner(self.table, self.thread_id)
-        assert owner is not None  # nosec B101
+        assert owner is not None
         self.assertEqual(owner["thread"]["displayName"], "Ada Wong")
         self.assertEqual(owner["thread"]["phone"], NUMBER)
         self.assertIn("9123", owner["messages"][0]["text"])
@@ -434,7 +434,7 @@ class OrganisationTests(InboxCase):
         settings = board_store.save_settings(self.table, settings)
         guard = board_tools.REGISTRY["meta_reply_whatsapp"].act_guard
         for args in ({"threadId": thread["threadId"]}, {"to": f"+{NUMBER}"}):
-            assert guard is not None  # nosec B101
+            assert guard is not None
             self.assertIn("owner's approval", guard(self.ctx(settings), {**args, "message": "Thanks", "reason": "reply"}) or "")
         self.assertIsNone(board_meta_inbox.organisation_hold(self.table, {"to": "+85260002222"}))
 
@@ -539,13 +539,13 @@ class RouteTests(InboxCase):
         path = "/siu-tin-dei/board/messages/connect/page"
         self.graph.queue.append({"success": True})
         out = board_routes.handle_board_route(BoardTestCase.event(path, "POST", {}), "POST", path, "owner")
-        assert out is not None  # nosec B101
+        assert out is not None
         self.assertEqual(out["statusCode"], 200)
         self.assertIn("message_echoes", json.loads(out["body"])["fields"])
         self.assertIn("page-1/subscribed_apps", self.graph.calls[-1][1])
         with patch.dict(os.environ, {"META_PAGE_ID": ""}):
             out = board_routes.handle_board_route(BoardTestCase.event(path, "POST", {}), "POST", path, "owner")
-        assert out is not None  # nosec B101
+        assert out is not None
         self.assertEqual(out["statusCode"], 400)
 
     def test_a_stored_timestamp_has_one_format(self) -> None:
@@ -564,5 +564,5 @@ from typing import TypeVar
 _T = TypeVar("_T")
 
 def _nn(value: _T | None) -> _T:
-    assert value is not None  # nosec B101
+    assert value is not None
     return value

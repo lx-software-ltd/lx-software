@@ -229,7 +229,7 @@ class TestPickBalance(unittest.TestCase):
             },
         ]
         picked = _pick_balance(balances)
-        assert picked is not None  # nosec B101
+        assert picked is not None
         self.assertEqual(picked["balanceType"], "CLBD")
         self.assertEqual(picked["amount"], 100.50)
 
@@ -238,7 +238,7 @@ class TestPickBalance(unittest.TestCase):
             {"balance_type": "ZZZZ", "balance_amount": {"amount": "1", "currency": "EUR"}},
         ]
         picked = _pick_balance(balances)
-        assert picked is not None  # nosec B101
+        assert picked is not None
         self.assertEqual(picked["amount"], 1.0)
         self.assertEqual(picked["currency"], "EUR")
 
@@ -248,7 +248,7 @@ class TestPickBalance(unittest.TestCase):
             {"balance_type": "ITAV", "balance_amount": {"amount": "5.5", "currency": "gbp"}},
         ]
         picked = _pick_balance(balances)
-        assert picked is not None  # nosec B101
+        assert picked is not None
         self.assertEqual(picked["amount"], 5.5)
         self.assertEqual(picked["currency"], "GBP")
 
@@ -498,7 +498,7 @@ class TestBankingAuthRoutes(BankSyncTestCase):
         self.assertEqual(body["url"], "https://auth.enablebanking.com/x")
         pending = self.table.items.get((f"BANKSYNC#auth#{body['state']}", "META"))
         self.assertIsNotNone(pending)
-        assert pending is not None  # nosec B101
+        assert pending is not None
         self.assertEqual(pending["bankName"], "HSBC Personal")
 
     def test_auth_start_unknown_bank(self) -> None:

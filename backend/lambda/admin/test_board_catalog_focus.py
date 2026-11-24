@@ -180,7 +180,7 @@ class FocusDutyTests(BoardTestCase):
             board_catalog.create_next(self.table, settings)
         self.assertIn("southern:stanley", board_catalog.claimed_district_ids(self.table))
         nxt = board_catalog.next_district(self.table, settings, enforce_completeness_gate=False)
-        assert nxt is not None  # nosec B101
+        assert nxt is not None
         self.assertEqual(nxt["id"], "southern")
         self.assertNotIn("areaId", nxt)
 
@@ -309,13 +309,13 @@ class FocusCandidateTests(BoardTestCase):
         body = {"nameEn": "Stanley Sailing Juniors", "addressEn": STANLEY_ADDRESS, "officialUrl": "https://stanleysailing.example"}
         event = self.event("/siu-tin-dei/board/catalog/candidates", "POST", body)
         resp = board_routes.handle_board_route(event, "POST", "/siu-tin-dei/board/catalog/candidates", "owner")
-        assert resp is not None  # nosec B101
+        assert resp is not None
         self.assertEqual(resp["statusCode"], 201)
         payload = json.loads(resp["body"])
         self.assertEqual(payload["candidate"]["area"], "stanley")
         bad = self.event("/siu-tin-dei/board/catalog/candidates", "POST", {"district": "Southern"})
         resp = board_routes.handle_board_route(bad, "POST", "/siu-tin-dei/board/catalog/candidates", "owner")
-        assert resp is not None  # nosec B101
+        assert resp is not None
         self.assertEqual(resp["statusCode"], 400)
         self.assertFalse(board_public_api.write_blocked("POST", "/public/siu-tin-dei/board/catalog/candidates"))
         self.assertTrue(board_public_api.write_blocked("POST", "/public/siu-tin-dei/board/catalog/candidates/bulk"))
@@ -344,7 +344,7 @@ class FocusDiscoveryTests(BoardTestCase):
         with patch.object(board_places, "_http", return_value=payload) as http, patch.object(
             board_places, "_api_key", return_value="k"
         ):
-            assert area is not None  # nosec B101
+            assert area is not None
             first = board_places.discover_area(self.table, area, queries, settings=self.settings)
             second = board_places.discover_area(self.table, area, queries, settings=self.settings)
         self.assertEqual(http.call_count, 2)

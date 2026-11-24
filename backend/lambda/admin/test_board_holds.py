@@ -218,7 +218,7 @@ class ExecuteDueAndVetoTests(BoardTestCase):
         )
         self.assertEqual(outcome.status, "held")
         hold = board_store.get_hold(self.table, outcome.result["holdId"])
-        assert hold is not None  # nosec B101
+        assert hold is not None
         hold["executeAt"] = "2020-01-01T00:00:00Z"
         board_store.put_hold(self.table, hold)
         return hold
@@ -241,7 +241,7 @@ class ExecuteDueAndVetoTests(BoardTestCase):
             ran = board_holds.execute_due(self.table, settings, "2026-09-16T00:00:00Z")
         self.assertEqual(ran, 1)
         stored = board_store.get_hold(self.table, "h-merge-closed")
-        assert stored is not None  # nosec B101
+        assert stored is not None
         self.assertEqual(stored["status"], "failed")
         self.assertIn("not open", str((stored.get("result") or {}).get("error") or ""))
 
@@ -251,7 +251,7 @@ class ExecuteDueAndVetoTests(BoardTestCase):
         ran = board_holds.execute_due(self.table, settings, "2026-09-10T00:00:00Z")
         self.assertEqual(ran, 1)
         stored = board_store.get_hold(self.table, hold["holdId"])
-        assert stored is not None  # nosec B101
+        assert stored is not None
         self.assertEqual(stored["status"], "executed")
         actions = board_store.list_actions(self.table)
         self.assertTrue(any("Call ten providers" in str(a.get("title") or "") for a in actions))
@@ -263,7 +263,7 @@ class ExecuteDueAndVetoTests(BoardTestCase):
         ran = board_holds.execute_due(self.table, settings, "2026-09-10T00:00:00Z")
         self.assertEqual(ran, 0)
         stored = board_store.get_hold(self.table, hold["holdId"])
-        assert stored is not None  # nosec B101
+        assert stored is not None
         self.assertEqual(stored["status"], "vetoed")
         self.assertEqual(board_store.list_actions(self.table), [])
 
@@ -303,7 +303,7 @@ class ExecuteDueAndVetoTests(BoardTestCase):
         ran = board_holds.execute_due(self.table, settings, "2026-09-10T13:00:00Z")
         self.assertEqual(ran, 1)
         stored = board_store.get_hold(self.table, hold["holdId"])
-        assert stored is not None  # nosec B101
+        assert stored is not None
         self.assertEqual(stored["status"], "failed")
         self.assertIn("thread changed", str(stored.get("result") or ""))
 
@@ -410,7 +410,7 @@ class HoldSafetyTests(BoardTestCase):
         )
         self.assertEqual(outcome.status, "held")
         hold = board_store.get_hold(self.table, outcome.result["holdId"])
-        assert hold is not None  # nosec B101
+        assert hold is not None
         hold["executeAt"] = "2020-01-01T00:00:00Z"
         board_store.put_hold(self.table, hold)
         import board_breakers
@@ -419,7 +419,7 @@ class HoldSafetyTests(BoardTestCase):
         ran = board_holds.execute_due(self.table, settings, "2026-09-10T00:00:00Z")
         self.assertEqual(ran, 1)
         stored = board_store.get_hold(self.table, hold["holdId"])
-        assert stored is not None  # nosec B101
+        assert stored is not None
         self.assertEqual(stored["status"], "failed")
         self.assertIn("breaker", str(stored.get("result") or "").lower())
 
@@ -435,7 +435,7 @@ class HoldSafetyTests(BoardTestCase):
         )
         self.assertEqual(outcome.status, "held")
         hold = board_store.get_hold(self.table, outcome.result["holdId"])
-        assert hold is not None  # nosec B101
+        assert hold is not None
         hold["executeAt"] = "2020-01-01T00:00:00Z"
         board_store.put_hold(self.table, hold)
         settings["tools"]["matrix"]["board"]["ceo"] = "propose"
@@ -443,7 +443,7 @@ class HoldSafetyTests(BoardTestCase):
         ran = board_holds.execute_due(self.table, settings, "2026-09-10T00:00:00Z")
         self.assertEqual(ran, 1)
         stored = board_store.get_hold(self.table, hold["holdId"])
-        assert stored is not None  # nosec B101
+        assert stored is not None
         self.assertEqual(stored["status"], "failed")
         self.assertIn("level changed", str(stored.get("result") or ""))
 

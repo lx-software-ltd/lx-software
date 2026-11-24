@@ -396,7 +396,7 @@ class ResumeWorkerTests(unittest.TestCase):
         usage.assert_called_once()
         self.assertEqual(usage.call_args.kwargs["service"], "resume")
         stored = resume_store.get_resume(self.table, doc["resumeId"])
-        assert stored is not None  # nosec B101
+        assert stored is not None
         self.assertEqual(stored["extract"]["status"], "ready")
         self.assertEqual(resume_store.template_id(self.table), doc["resumeId"])
         self.assertEqual(stored["kind"], "template")
@@ -412,7 +412,7 @@ class ResumeWorkerTests(unittest.TestCase):
         with patch("openrouter_client.chat_completion", side_effect=AssertionError("no model")):
             resume_extract.run(self.table, doc["resumeId"])
         stored = resume_store.get_resume(self.table, doc["resumeId"])
-        assert stored is not None  # nosec B101
+        assert stored is not None
         self.assertEqual(stored["extract"]["status"], "ready")
         self.assertEqual(stored["paragraphs"][0]["text"], "Alex Example")
 
@@ -499,11 +499,11 @@ class ResumeWorkerTests(unittest.TestCase):
         self.assertEqual(chat.call_args.kwargs["max_tokens"], 6000)
         self.assertFalse(chat.call_args.kwargs["reasoning"]["enabled"])
         finished = resume_store.get_job(self.table, job["jobId"])
-        assert finished is not None  # nosec B101
+        assert finished is not None
         self.assertEqual(finished["status"], "done")
         tailored_id = finished["resumeIds"][0]
         tailored = resume_store.get_resume(self.table, tailored_id)
-        assert tailored is not None  # nosec B101
+        assert tailored is not None
         self.assertEqual(tailored["kind"], "tailored")
         self.assertEqual(tailored["format"], "docx")
         self.assertEqual(resume_store.template_id(self.table), doc["resumeId"])
@@ -656,5 +656,5 @@ from typing import TypeVar
 _T = TypeVar("_T")
 
 def _nn(value: _T | None) -> _T:
-    assert value is not None  # nosec B101
+    assert value is not None
     return value

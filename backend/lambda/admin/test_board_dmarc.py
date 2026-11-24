@@ -216,7 +216,7 @@ class DmarcParseTests(BoardTestCase):
             ),
         )
         thread = board_store.get_mail_thread(self.table, result["threadId"])
-        assert thread is not None  # nosec B101
+        assert thread is not None
         self.assertEqual(thread["disposition"], "archived")
         self.assertFalse(thread["unread"])
         self.assertEqual(thread["dmarcReportIds"], ["google.com:via-mail"])
@@ -357,7 +357,7 @@ class DmarcEvaluateTests(BoardTestCase):
         board_dmarc.evaluate(self.table, self.settings)
         gap = self._gap("dmarc:siutindei.com")
         self.assertIsNotNone(gap)
-        assert gap is not None  # nosec B101
+        assert gap is not None
         self.assertIn("23.251.232.13", gap["reason"])
         self.assertIn("dkim fail", gap["reason"])
         self.assertIn("spf fail", gap["reason"])
@@ -419,7 +419,7 @@ class DmarcEvaluateTests(BoardTestCase):
         board_dmarc.evaluate(self.table, self.settings)
         gap = self._gap("dmarc:siutindei.com")
         self.assertIsNotNone(gap)
-        assert gap is not None  # nosec B101
+        assert gap is not None
         self.assertIn("23.251.232.13", gap["reason"])
         self.assertIn("4 rejected", gap["reason"])
         self.assertNotIn("23.251.232.12", gap["reason"])
@@ -512,7 +512,7 @@ class DmarcEvaluateTests(BoardTestCase):
                 end=old_end,
             )
         )
-        assert stale is not None  # nosec B101
+        assert stale is not None
         stale["receivedAt"] = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
         with patch.object(board_dmarc, "list_reports", return_value=[stale]):
             summary = board_dmarc.evaluate(self.table, self.settings)

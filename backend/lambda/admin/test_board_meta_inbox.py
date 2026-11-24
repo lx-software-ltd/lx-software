@@ -172,7 +172,7 @@ class RouteTests(BoardTestCase):
 
     def _board(self, method: str, path: str, body: dict | None = None) -> tuple[int, Any]:
         out = board_routes.handle_board_route(self.event(path, method, body), method, path, "owner")
-        assert out is not None  # nosec B101
+        assert out is not None
         return out["statusCode"], json.loads(out["body"])
 
 
@@ -248,7 +248,7 @@ class OrganisationThreadTests(BoardTestCase):
         )
         self.assertIn("owner", reason or "")
         again = board_meta_triage.on_message(self.table, self.settings, thread, {"direction": "in", "text": "again", "channel": "whatsapp"})
-        assert again is not None  # nosec B101
+        assert again is not None
         self.assertEqual(again["taskId"], tasks[0]["taskId"])
 
 

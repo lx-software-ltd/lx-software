@@ -79,7 +79,7 @@ class CronArithmeticTests(unittest.TestCase):
         self.assertFalse(board_duties.matches(parsed, too_early_utc))
         last = board_duties.last_scheduled(ACCOUNTANT_MONTH, too_early_utc)
         self.assertIsNotNone(last)
-        assert last is not None  # nosec B101
+        assert last is not None
         self.assertEqual(board_hk.as_hkt(last).day, 1)
         self.assertEqual(board_hk.as_hkt(last).month, 8)
 
@@ -92,7 +92,7 @@ class CronArithmeticTests(unittest.TestCase):
     def test_is_due_when_last_run_is_before_most_recent_scheduled(self) -> None:
         now = SEPT_MONDAY_0810_HKT
         scheduled = board_duties.last_scheduled(BA_KPI, now)
-        assert scheduled is not None  # nosec B101
+        assert scheduled is not None
         self.assertEqual(board_hk.as_hkt(scheduled).isoformat(), "2026-09-07T08:00:00+08:00")
         self.assertTrue(board_duties.is_due(BA_KPI, "", now))
         prev = board_hk.to_iso(datetime(2026, 8, 31, 8, 0, tzinfo=MONDAY_HKT))
@@ -191,7 +191,7 @@ class DutyRunTests(BoardTestCase):
 
     def test_note_config_gap_updates_reason_once_per_week(self) -> None:
         first = board_duties.note_config_gap(self.table, gap_id="dmarc:example.com", reason="first")
-        assert first is not None  # nosec B101
+        assert first is not None
         self.assertEqual(first["reason"], "first")
         again = board_duties.note_config_gap(self.table, gap_id="dmarc:example.com", reason="second")
         self.assertIsNone(again)

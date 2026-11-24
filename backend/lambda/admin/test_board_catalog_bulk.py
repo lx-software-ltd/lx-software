@@ -429,7 +429,7 @@ class BulkTransformTests(BoardTestCase):
         self.assertEqual(out["imported"], 0)
         self.assertIn("organization name already exists", out["error"])
         row = board_store.get_candidate(self.table, drop["candidateId"])
-        assert row is not None  # nosec B101
+        assert row is not None
         self.assertEqual(row["status"], "approved")
         self.assertEqual(row["importRejects"], 1)
         self.assertIn("already exists", row["importError"])
@@ -437,7 +437,7 @@ class BulkTransformTests(BoardTestCase):
             with patches[0], patches[1], patches[2], patches[3]:
                 out = board_catalog_bulk.import_source(self.table, "edb")
         row = board_store.get_candidate(self.table, drop["candidateId"])
-        assert row is not None  # nosec B101
+        assert row is not None
         self.assertEqual(row["status"], "closed")
         self.assertEqual(row["importRejects"], 3)
         self.assertIn("importer rejected 3x", row["closeReason"])
@@ -490,7 +490,7 @@ class BulkTransformTests(BoardTestCase):
         self.assertEqual(out["imported"], 1)
         self.assertIn("Hoh Fuk Tong Kindergarten: unknown area_name", out["batches"][0]["error"])
         row = board_store.get_candidate(self.table, dup["candidateId"])
-        assert row is not None  # nosec B101
+        assert row is not None
         self.assertEqual(row["status"], "imported")
         self.assertEqual(row["importRejects"], 1)
         self.assertEqual(row["importError"], "locations: unknown area_name")
@@ -622,7 +622,7 @@ class BulkTransformTests(BoardTestCase):
             out = board_catalog_bulk.handle_job({"action": "import", "source": "lcsd"})
         self.assertFalse(out["ok"])
         job = board_catalog_bulk._job(self.table, "lcsd")
-        assert job is not None  # nosec B101
+        assert job is not None
         self.assertEqual(job["phase"], "done")
         self.assertFalse(job.get("ok"))
         self.assertIn("timed out", job.get("error") or "")
@@ -646,7 +646,7 @@ class BulkTransformTests(BoardTestCase):
             out = board_catalog_bulk.handle_job({"action": "preview", "source": "lcsd"})
         self.assertFalse(out["ok"])
         job = board_catalog_bulk._job(self.table, "lcsd")
-        assert job is not None  # nosec B101
+        assert job is not None
         self.assertEqual(job["phase"], "done")
         self.assertFalse(job.get("ok"))
         self.assertIn("timed out", job.get("error") or "")
@@ -674,7 +674,7 @@ class BulkTransformTests(BoardTestCase):
         self.assertIn("cognito timeout", out["error"])
         job = board_catalog_bulk._job(self.table, "lcsd")
         self.assertIsNotNone(job)
-        assert job is not None  # nosec B101
+        assert job is not None
         self.assertEqual(job["phase"], "error")
         self.assertIn("cognito timeout", job["error"])
 
@@ -916,7 +916,7 @@ class DiscoveryTests(BoardTestCase):
             n = board_catalog_candidates.enrich_with_places(self.table, {})
         self.assertEqual(n, 1)
         saved = board_store.get_candidate(self.table, row["candidateId"])
-        assert saved is not None  # nosec B101
+        assert saved is not None
         self.assertEqual(saved.get("placeId"), "ChIJhappy")
         self.assertIn("Sha Tin", saved.get("addressEn") or "")
         self.assertEqual(saved.get("status"), "approved")
@@ -962,7 +962,7 @@ class DiscoveryTests(BoardTestCase):
         self.assertEqual(n, 1)
         self.assertIn("Happy Playhouse Hong Kong", search.call_args.args)
         saved = board_store.get_candidate(self.table, row["candidateId"])
-        assert saved is not None  # nosec B101
+        assert saved is not None
         self.assertEqual(saved.get("district"), "Sha Tin")
         self.assertEqual(saved.get("status"), "approved")
         self.assertEqual(saved.get("officialUrl"), "https://happy.example")
@@ -978,7 +978,7 @@ class DiscoveryTests(BoardTestCase):
         self.assertEqual(second, 0)
         self.assertEqual(search.call_count, 1)
         saved = board_store.get_candidate(self.table, row["candidateId"])
-        assert saved is not None  # nosec B101
+        assert saved is not None
         self.assertTrue(saved.get("placesTriedAt"))
         self.assertEqual(saved.get("status"), "new")
         saved["placesTriedAt"] = "2026-01-01T00:00:00Z"
@@ -1017,7 +1017,7 @@ class OpenDataCacheTests(BoardTestCase):
         self.assertEqual(payload["s3Key"], stored["s3Key"])
         cached = board_opendata._cached(self.table, "opendata:edb")  # noqa: SLF001
         self.assertIsNotNone(cached)
-        assert cached is not None  # nosec B101
+        assert cached is not None
         self.assertEqual(cached["rows"][0]["nameEn"], "Little Stars KG")
 
     def test_legacy_inline_rows_still_read(self) -> None:
@@ -1028,7 +1028,7 @@ class OpenDataCacheTests(BoardTestCase):
             ttl_seconds=3600,
         )
         cached = board_opendata._cached(self.table, "opendata:edb")  # noqa: SLF001
-        assert cached is not None  # nosec B101
+        assert cached is not None
         self.assertEqual(cached["rows"][0]["nameEn"], "Old KG")
 
     def test_edb_store_failure_still_returns_rows(self) -> None:
@@ -1102,7 +1102,7 @@ class ChunkedIngestTests(BoardTestCase):
         self.assertEqual(len(board_store.list_candidates(self.table, "approved", per_status_limit=10_000)), 1200)
         job = board_catalog_bulk._job(self.table, "edb")
         self.assertIsNotNone(job)
-        assert job is not None  # nosec B101
+        assert job is not None
         self.assertEqual(job["phase"], "done")
         self.assertEqual(job["upserted"], 1200)
         self.assertEqual(job["processed"], 1200)
@@ -1203,7 +1203,7 @@ class ChunkedIngestTests(BoardTestCase):
         self.assertIn("enqueue", out["error"])
         job = board_catalog_bulk._job(self.table, "lcsd")
         self.assertIsNotNone(job)
-        assert job is not None  # nosec B101
+        assert job is not None
         self.assertEqual(job["phase"], "error")
         self.assertIn("enqueue", job["error"])
         self.assertEqual(job["offset"], 500)
@@ -1462,11 +1462,11 @@ class AutonomyCatalogTests(BoardTestCase):
             ran = board_holds.execute_due(self.table, settings, "2099-01-01T00:00:00Z")
         self.assertEqual(ran, 1)
         latest = board_store.get_hold(self.table, holds[0]["holdId"])
-        assert latest is not None  # nosec B101
+        assert latest is not None
         self.assertEqual(latest.get("status"), "executed")
         invoke.assert_called_once()
         job = board_catalog_bulk._job(self.table, "swd")  # noqa: SLF001
-        assert job is not None  # nosec B101
+        assert job is not None
         self.assertEqual(job.get("action"), "import")
         self.assertEqual(job.get("requestedBy"), "auto")
 
@@ -1608,7 +1608,7 @@ class AutonomyCatalogTests(BoardTestCase):
             again = board_catalog_bulk.import_source(self.table, "lcsd")
         self.assertEqual(again["closed"], [])
         saved = board_store.get_candidate(self.table, bad["candidateId"])
-        assert saved is not None  # nosec B101
+        assert saved is not None
         self.assertEqual(saved["status"], "imported")
         self.assertEqual(saved.get("importNote"), board_catalog_bulk.SCHEDULES_DROPPED_NOTE)
         self.assertEqual(_nn(board_store.get_candidate(self.table, good["candidateId"]))["status"], "imported")
@@ -2109,7 +2109,7 @@ class CatalogImportActivityTests(unittest.TestCase):
             index=0,
         )
         self.assertFalse(meta.get("skipped"))
-        assert org is not None  # nosec B101
+        assert org is not None
         self.assertEqual(len(org["activities"]), 1)
         self.assertNotIn("schedules", org["activities"][0])
 
@@ -2122,5 +2122,5 @@ from typing import TypeVar
 _T = TypeVar("_T")
 
 def _nn(value: _T | None) -> _T:
-    assert value is not None  # nosec B101
+    assert value is not None
     return value

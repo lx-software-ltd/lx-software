@@ -285,7 +285,7 @@ class LinkedInPublicWriteTests(unittest.TestCase):
         self.assertEqual(code, 400)
         self.assertIn("published", payload["message"])
         stored = linkedin_store.get_post(table, "post_pub")
-        assert stored is not None  # nosec B101
+        assert stored is not None
         self.assertEqual(stored["status"], "published")
         self.assertEqual(stored["body"], "Already out.")
 
@@ -319,5 +319,5 @@ from typing import TypeVar
 _T = TypeVar("_T")
 
 def _nn(value: _T | None) -> _T:
-    assert value is not None  # nosec B101
+    assert value is not None
     return value

@@ -31,7 +31,7 @@ class GeocodeTests(unittest.TestCase):
     def test_picks_matching_district(self) -> None:
         board_geocode.set_lookup_for_tests(lambda _addr: ALS_EASTERN)
         hit = board_geocode.lookup_address("Quarry Bay Park", district="Eastern")
-        assert hit is not None  # nosec B101
+        assert hit is not None
         self.assertEqual(hit["lat"], 22.28369)
         self.assertEqual(hit["lng"], 114.21179)
         self.assertEqual(hit["source"], "als")

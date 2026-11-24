@@ -612,7 +612,7 @@ class RunnerTests(BoardTestCase):
         self.gh.checks["abc123"] = _green()
         out = board_code.on_review_delivered(self.table, self.settings, task)
         follow = board_store.get_task(self.table, out["taskId"])
-        assert follow is not None  # nosec B101
+        assert follow is not None
         self.assertIn("CI failure:", follow["brief"])
         self.assertIn("mypy: got", follow["brief"])
         self.assertIn("Call code_run_task ONCE", follow["brief"])
@@ -648,7 +648,7 @@ class RunnerTests(BoardTestCase):
         self.gh.checks["abc123"] = _green()
         out = board_code.on_review_delivered(self.table, self.settings, task)
         follow = board_store.get_task(self.table, out["taskId"])
-        assert follow is not None  # nosec B101
+        assert follow is not None
         self.assertIn("short test summary info", follow["brief"])
 
     def test_review_changes_skips_pending_only_notes(self) -> None:
@@ -776,7 +776,7 @@ class RunnerTests(BoardTestCase):
         )
         self.assertTrue(out.get("briefMismatch"))
         task = board_store.get_task(self.table, "task-1")
-        assert task is not None  # nosec B101
+        assert task is not None
         self.assertIn("brief_mismatch", task.get("flags") or [])
 
     def test_action_required_run_still_blocks_issue(self) -> None:
@@ -1519,7 +1519,7 @@ class RunnerTests(BoardTestCase):
         after = board_code._get_run(self.table, "task-1")  # noqa: SLF001
         seen = board_code._parse_iso(str(after.get("prSeenAt") or ""))  # noqa: SLF001
         self.assertIsNotNone(seen)
-        assert seen is not None  # nosec B101
+        assert seen is not None
         self.assertLess((datetime.now(timezone.utc) - seen).total_seconds(), 60)
         self.assertIsNotNone(board_code._parse_iso(board_store.now_iso()))  # noqa: SLF001
 
@@ -1606,7 +1606,7 @@ class RunnerTests(BoardTestCase):
         tid = task["taskId"]
         board_store.claim_task_step(self.table, tid, 0)
         latest = board_store.get_task(self.table, tid)
-        assert latest is not None  # nosec B101
+        assert latest is not None
         latest["status"] = "running"
         board_store.put_task(self.table, latest)
         ctx = ToolContext(
@@ -1639,7 +1639,7 @@ class RunnerTests(BoardTestCase):
         )
         self.assertTrue(out.get("blocked"))
         parked = board_store.get_task(self.table, tid)
-        assert parked is not None  # nosec B101
+        assert parked is not None
         self.assertEqual(parked["status"], "needs_owner")
         self.assertEqual(parked["parkedReason"], "blocked:tool:code")
 
@@ -1737,9 +1737,9 @@ class RunnerTests(BoardTestCase):
         self.assertEqual(self.gh.merges, [])
         self.assertEqual(self.gh.ref_updates[0]["body"]["sha"], "abcmain00001")
         self.assertFalse(self.gh.ref_updates[0]["body"]["force"])
-        assert created is not None  # nosec B101
+        assert created is not None
         cancelled = board_store.get_task(self.table, created["taskId"])
-        assert cancelled is not None  # nosec B101
+        assert cancelled is not None
         self.assertEqual(cancelled["status"], "cancelled")
         self.assertEqual(cancelled["closedBy"], "owner")
 
@@ -1899,7 +1899,7 @@ class RunnerTests(BoardTestCase):
             },
         )
         stored = board_store.get_hold(self.table, "hold-sync-store")
-        assert stored is not None  # nosec B101
+        assert stored is not None
         self.assertTrue(stored["result"]["ok"])
         self.assertEqual(stored["result"]["mergedSha"], "abcmerged000")
         self.assertEqual(stored["result"]["behindBy"], 0)
@@ -1922,7 +1922,7 @@ class RunnerTests(BoardTestCase):
         out = board_code.on_sync_hold_outcome(self.table, hold)
         self.assertIsNotNone(out)
         stored = board_store.get_task(self.table, task["taskId"])
-        assert stored is not None  # nosec B101
+        assert stored is not None
         self.assertEqual(stored["status"], "delivered")
         self.assertEqual(stored["closedBy"], "hold:hold-sync-ok")
         self.assertNotIn("sync_scheduled", stored.get("flags") or [])
@@ -1943,7 +1943,7 @@ class RunnerTests(BoardTestCase):
             "result": {"callId": "", "error": ""},
         }
         out = board_code.on_sync_hold_outcome(self.table, hold)
-        assert out is not None  # nosec B101
+        assert out is not None
         self.assertEqual(out["status"], "needs_owner")
         self.assertIn("staging_behind", out.get("flags") or [])
         self.assertTrue(any("vetoed" in str(q) for q in (out.get("openQuestions") or [])))
@@ -1965,12 +1965,12 @@ class RunnerTests(BoardTestCase):
         board_store.put_task(self.table, stale)
         created = board_code.maybe_daily_staging_sync(self.table, self.settings, now=_AFTER_SEVEN_HKT)
         self.assertIsNotNone(created)
-        assert created is not None  # nosec B101
+        assert created is not None
         self.assertNotEqual(created["taskId"], stale["taskId"])
         self.assertEqual(created["assignee"], "cto")
         self.assertIn("citing that hold", created["brief"])
         old = board_store.get_task(self.table, stale["taskId"])
-        assert old is not None  # nosec B101
+        assert old is not None
         self.assertEqual(old["status"], "cancelled")
         self.assertEqual(old["closedBy"], "board_code:superseded")
         self.assertEqual(old.get("failureReason") or "", "")
@@ -1994,7 +1994,7 @@ class RunnerTests(BoardTestCase):
         out = board_code.maybe_daily_staging_sync(self.table, self.settings, now=_AFTER_SEVEN_HKT)
         self.assertIsNone(out)
         stored = board_store.get_task(self.table, parked["taskId"])
-        assert stored is not None  # nosec B101
+        assert stored is not None
         self.assertEqual(stored["status"], "delivered")
         self.assertEqual(stored["closedBy"], "compare:current")
         self.assertIn("behindBy=0", board_staff.read_deliverable(stored))
@@ -2026,10 +2026,10 @@ class RunnerTests(BoardTestCase):
             "result": {"callId": "c1", "error": "", "ok": True, "mergedSha": "abcmerged000", "behindBy": 0, "aheadBy": 1},
         }
         out = board_code.on_sync_hold_outcome(self.table, hold)
-        assert out is not None  # nosec B101
+        assert out is not None
         self.assertEqual(out["status"], "delivered")
         stored = board_store.get_task(self.table, task["taskId"])
-        assert stored is not None  # nosec B101
+        assert stored is not None
         self.assertEqual(stored["closedBy"], "hold:hold-sync-lag")
 
     def test_sync_hold_executed_skips_running_task(self) -> None:
@@ -2045,10 +2045,10 @@ class RunnerTests(BoardTestCase):
             "result": {"callId": "c1", "error": "", "ok": True, "mergedSha": "abcmerged000"},
         }
         out = board_code.on_sync_hold_outcome(self.table, hold)
-        assert out is not None  # nosec B101
+        assert out is not None
         self.assertEqual(out["status"], "running")
         stored = board_store.get_task(self.table, task["taskId"])
-        assert stored is not None  # nosec B101
+        assert stored is not None
         self.assertEqual(stored["status"], "running")
         scratch = board_staff._blob_get(stored.get("scratchpadKey") or board_staff._scratchpad_key(stored["taskId"])).decode()  # noqa: SLF001
         self.assertIn("staging is current", scratch)
@@ -2067,10 +2067,10 @@ class RunnerTests(BoardTestCase):
             "result": {"ok": True, "mergedSha": "abcmerged000", "preview": {"behindBy": 0, "aheadBy": 1}},
         }
         out = board_code.on_sync_approval_outcome(self.table, approval)
-        assert out is not None  # nosec B101
+        assert out is not None
         self.assertEqual(out["status"], "delivered")
         stored = board_store.get_task(self.table, task["taskId"])
-        assert stored is not None  # nosec B101
+        assert stored is not None
         self.assertEqual(stored["closedBy"], "approval:apr-sync-ok")
         self.assertNotIn("sync_scheduled", stored.get("flags") or [])
 
@@ -2088,7 +2088,7 @@ class RunnerTests(BoardTestCase):
             "note": "not now",
         }
         out = board_code.on_sync_approval_outcome(self.table, approval)
-        assert out is not None  # nosec B101
+        assert out is not None
         self.assertEqual(out["status"], "needs_owner")
         self.assertIn("staging_behind", out.get("flags") or [])
         self.assertTrue(any("rejected" in str(q) for q in (out.get("openQuestions") or [])))
@@ -2110,7 +2110,7 @@ class RunnerTests(BoardTestCase):
             board_staff.resume_after_approval(self.table, self.settings, approval)
         invoke.assert_not_called()
         stored = board_store.get_task(self.table, task["taskId"])
-        assert stored is not None  # nosec B101
+        assert stored is not None
         self.assertEqual(stored["status"], "delivered")
 
     def test_sweep_deletes_board_branches_without_open_prs(self) -> None:
@@ -2297,11 +2297,11 @@ class RunnerTests(BoardTestCase):
         out = board_code.op_close_pr(self.ctx, {"prNumber": 7, "reason": "Founder vetoed the merge."})
         self.assertEqual(out["rejectedMergeApprovals"], 1)
         saved = board_store.get_approval(self.table, approval["approvalId"])
-        assert saved is not None  # nosec B101
+        assert saved is not None
         self.assertEqual(saved["status"], "rejected")
         self.assertEqual(saved["decidedBySub"], "system:close-pr")
         resumed = board_store.get_task(self.table, merge_task["taskId"])
-        assert resumed is not None  # nosec B101
+        assert resumed is not None
         self.assertEqual(resumed["status"], "running")
 
     def test_close_pr_is_always_an_approval(self) -> None:
@@ -2415,7 +2415,7 @@ class GithubRequestTests(unittest.TestCase):
             req, None, 302, "Found", _Headers({"Location": location}), location
         )
         self.assertIsNotNone(followed)
-        assert followed is not None  # nosec B101
+        assert followed is not None
         self.assertNotIn("authorization", {key.lower() for key in followed.headers})
 
     def test_raw_accept_returns_plain_text(self) -> None:

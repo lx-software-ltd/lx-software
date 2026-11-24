@@ -21,7 +21,7 @@ from test_board import BoardTestCase
 def _call(path: str, method: str, body: dict | None, user_sub: str) -> tuple[int, Any]:
     event = BoardTestCase.event(path, method, body)
     out = board_routes.handle_board_route(event, method, path, user_sub)
-    assert out is not None  # nosec B101
+    assert out is not None
     return out["statusCode"], json.loads(out["body"])
 
 
@@ -194,5 +194,5 @@ from typing import TypeVar
 _T = TypeVar("_T")
 
 def _nn(value: _T | None) -> _T:
-    assert value is not None  # nosec B101
+    assert value is not None
     return value

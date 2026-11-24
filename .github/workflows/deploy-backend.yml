@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Node.js
-        uses: lx-software-ltd/actions/setup-node@cd643d664bed34eca3fbb1e77edcb498e7ff6ef6 # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           cache: npm
           working-directory: backend/infrastructure
@@ -39,7 +39,7 @@ jobs:
 
       - name: Configure AWS credentials
         id: aws
-        uses: lx-software-ltd/actions/aws-oidc@cd643d664bed34eca3fbb1e77edcb498e7ff6ef6 # main 2026-11-24
+        uses: lx-software-ltd/actions/aws-oidc@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
@@ -68,7 +68,7 @@ jobs:
           platforms: arm64
 
       - name: Check CDK bootstrap
-        uses: lx-software-ltd/actions/cdk-bootstrap-check@cd643d664bed34eca3fbb1e77edcb498e7ff6ef6 # main 2026-11-24
+        uses: lx-software-ltd/actions/cdk-bootstrap-check@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
           region: ${{ vars.AWS_REGION }}
@@ -86,7 +86,7 @@ jobs:
           if [ -n "$P_EMAIL_ALLOWLIST" ]; then echo "::add-mask::$P_EMAIL_ALLOWLIST"; fi
 
       - name: Deploy CDK stacks
-        uses: lx-software-ltd/actions/cdk-deploy@cd643d664bed34eca3fbb1e77edcb498e7ff6ef6 # main 2026-11-24
+        uses: lx-software-ltd/actions/cdk-deploy@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           working-directory: backend/infrastructure
           plan-file: backend/infrastructure/cdk-plan.json

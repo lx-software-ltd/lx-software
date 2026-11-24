@@ -74,7 +74,7 @@ class TestExtractFirstPdf(unittest.TestCase):
         raw = msg.as_bytes()
         got = extract_first_pdf_attachment(raw)
         self.assertIsNotNone(got)
-        assert got is not None  # nosec B101
+        assert got is not None
         data, name = got
         self.assertEqual(data, pdf)
         self.assertEqual(name, "January.pdf")
@@ -133,7 +133,7 @@ class TestHouseKeyFromRawMailKey(unittest.TestCase):
             raw_mail_prefix="inbound-raw",
         )
         self.assertIsNotNone(mailbox)
-        assert mailbox is not None  # nosec B101
+        assert mailbox is not None
         self.assertEqual(mailbox.owner_key, "lxSoftware")
         self.assertEqual(mailbox.line_type_only, "expenditure")
         self.assertEqual(
@@ -178,7 +178,7 @@ class TestHouseKeyFromRawMailKey(unittest.TestCase):
                 raw_mail_prefix="inbound-raw",
             )
             self.assertIsNotNone(mailbox)
-            assert mailbox is not None  # nosec B101
+            assert mailbox is not None
             self.assertEqual(mailbox.line_type_only, "income")
             self.assertIsNone(
                 house_key_from_raw_mail_s3_key(

@@ -176,7 +176,7 @@ class TestWebUnavailable(ToolsTestCase):
 
 class FakeAnalyticsSecrets:
     def get_secret_value(self, SecretId: str) -> dict[str, str]:  # noqa: N803
-        assert SecretId == "arn:ga-sa"  # nosec B101
+        assert SecretId == "arn:ga-sa"
         return {
             "SecretString": (
                 '{"client_email":"ga@example.iam.gserviceaccount.com",'
