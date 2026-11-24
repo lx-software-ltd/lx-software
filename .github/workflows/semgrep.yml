@@ -1,17 +1,19 @@
 name: Semgrep
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 
 on:
   push:
-    branches: [main]
+    branches: ["main"]
   pull_request:
+  schedule:
+    - cron: "0 8 * * 1"
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   semgrep:
@@ -28,30 +30,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # The urllib rule is not excluded. exclude-rules would turn it off
-      # for the whole repository. A urlopen line that already carries
-      # noqa: S310 also carries nosemgrep for
-      # python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected.
-      # bank_sync.py and board_catalog_import.py have no such review, so
-      # the rule checks those calls. board_geocode.py is marked on the
-      # ALS lookup line, which already had noqa: S310.
-      #
-      # mode scan reads the whole repository. The previous semgrep ci command
-      # scanned only files changed since the base. The packs add p/python and
-      # p/owasp-top-ten to p/javascript, p/security-audit, and p/secrets.
-      # Upload stays on the old category so alerts filed from security.yml
-      # are not left without a configuration.
+      # gha-curl-pipe-shell parses run blocks as Bash and warns on
+      # GitHub expressions, which marks Semgrep OSS as reporting warnings.
       - name: Run Semgrep
-        uses: lx-software-ltd/actions/semgrep@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
+        uses: lx-software-ltd/actions/semgrep@1d66ad00053fdbea390c4d2c3f4b89d8c31cfdfc # main 2026-11-24
         with:
           rules: p/python p/javascript p/security-audit p/secrets p/owasp-top-ten
-          upload: "false"
-
-      - name: Upload SARIF results
-        if: always()
-        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
-        continue-on-error: true
-        with:
-          sarif_file: semgrep-results.sarif
-          category: ".github/workflows/security.yml:semgrep"
-          wait-for-processing: false
+          exclude-rules: yaml.github-actions.security.gha-curl-pipe-shell.gha-curl-pipe-shell

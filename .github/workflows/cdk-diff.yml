@@ -40,7 +40,7 @@ jobs:
       - name: Configure AWS credentials
         id: aws
         if: github.event_name != 'pull_request' || vars.AWS_DIFF_ROLE_NAME != ''
-        uses: lx-software-ltd/actions/aws-oidc@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
+        uses: lx-software-ltd/actions/aws-oidc@1d66ad00053fdbea390c4d2c3f4b89d8c31cfdfc # main 2026-11-24
         with:
           account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           region: ${{ vars.AWS_REGION }}
@@ -54,7 +54,7 @@ jobs:
 
       - name: Set up Node.js
         if: steps.aws.outputs.ready == 'true'
-        uses: lx-software-ltd/actions/setup-node@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
+        uses: lx-software-ltd/actions/setup-node@1d66ad00053fdbea390c4d2c3f4b89d8c31cfdfc # main 2026-11-24
         with:
           cache: npm
           working-directory: backend/infrastructure
@@ -69,7 +69,7 @@ jobs:
 
       - name: Check CDK Bootstrap status
         if: steps.aws.outputs.ready == 'true'
-        uses: lx-software-ltd/actions/cdk-bootstrap-check@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
+        uses: lx-software-ltd/actions/cdk-bootstrap-check@1d66ad00053fdbea390c4d2c3f4b89d8c31cfdfc # main 2026-11-24
         with:
           qualifier: ${{ vars.CDK_BOOTSTRAP_QUALIFIER }}
           region: ${{ vars.AWS_REGION }}
@@ -149,7 +149,7 @@ jobs:
 
       - name: Run CDK diff
         if: steps.aws.outputs.ready == 'true' && steps.prep.outputs.run == 'true'
-        uses: lx-software-ltd/actions/cdk-diff@48ffe6dadb6c1540b8992e8e8edfda4f8aa0933e # main 2026-11-24
+        uses: lx-software-ltd/actions/cdk-diff@1d66ad00053fdbea390c4d2c3f4b89d8c31cfdfc # main 2026-11-24
         with:
           working-directory: backend/infrastructure
           stacks: ${{ steps.prep.outputs.stacks }}
