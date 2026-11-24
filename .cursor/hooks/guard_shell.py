@@ -206,8 +206,6 @@ def _live_mutation(tokens: list[str], indexes: list[int]) -> str | None:
         return "configure-public-analytics.py apply is blocked. Use check."
     if _script_indexes(tokens, indexes, "publish-apex-redirect.py") and "apply" in tokens:
         return "publish-apex-redirect.py apply is blocked. Use check."
-    if _script_indexes(tokens, indexes, "publish-api-domain.py") and "apply" in tokens:
-        return "publish-api-domain.py apply is blocked. Use check."
     if _script_indexes(tokens, indexes, "publish-public-media.sh"):
         return "publish-public-media.sh is blocked in the agent shell."
     if _script_indexes(tokens, indexes, "backfill-asset-index.py") and "--apply" in tokens:

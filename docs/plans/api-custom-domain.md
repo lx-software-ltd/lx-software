@@ -1,6 +1,6 @@
 # Plan: API hostname api.lx-software.com
 
-**Status**: In review
+**Status**: Done. The one-off Cloudflare publisher was removed after the record was published.
 **Zone**: red (`backend/infrastructure`, `scripts/cloudflare`, deploy workflows)
 
 ## Goal
@@ -24,7 +24,6 @@ and a DNS-only Cloudflare CNAME to `ApiCustomDomainTarget`.
 - `backend/infrastructure/lib/admin-parameters.ts`
 - `backend/infrastructure/params/production.json`
 - `.github/workflows/deploy-backend.yml` and `cdk-diff.yml`
-- `scripts/cloudflare/publish-api-domain.py`
 
 ## Invariants this change preserves
 
@@ -36,10 +35,9 @@ and a DNS-only Cloudflare CNAME to `ApiCustomDomainTarget`.
 
 ## Done when
 
-`npm test` in `backend/infrastructure` passes, and
-`python3 -m unittest scripts/test_publish_api_domain.py scripts/test_agent_hooks.py`
-passes. The hostname itself waits on the certificate secret and a
-deploy; `publish-api-domain.py check` reports that until then.
+`npm test` in `backend/infrastructure` passes. The hostname is the
+API Gateway domain `api.lx-software.com`, with a DNS-only CNAME in
+Cloudflare. No publisher script remains in the repository.
 
 ## Rollback
 
@@ -50,6 +48,4 @@ no longer exists.
 
 ## Open questions
 
-None. The cloud agent cannot request the ACM certificate or create the
-API Gateway domain. Those happen on the next backend deploy after the
-secret is set.
+None.

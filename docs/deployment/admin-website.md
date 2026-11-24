@@ -562,19 +562,11 @@ environment secret `CDK_PARAM_API_CUSTOM_DOMAIN_CERTIFICATE_ARN` when
 the certificate is **ISSUED**. An empty secret leaves the custom domain
 off, and the execute-api URL keeps working for the admin SPA.
 
-The DNS record points at the stack output `ApiCustomDomainTarget` (a
-`d-<id>.execute-api.ap-southeast-1.amazonaws.com` name). It does not
-point at `<api-id>.execute-api.ap-southeast-1.amazonaws.com`. The
-record is DNS only, not proxied. After the domain exists:
-
-```bash
-python3 scripts/cloudflare/publish-api-domain.py check
-python3 scripts/cloudflare/publish-api-domain.py apply
-```
-
-`CLOUDFLARE_API_TOKEN` needs Zone DNS edit on `lx-software.com`. AWS
-credentials need `apigateway:GET` on the domain name. `check` only
-reads. `apply` writes the CNAME.
+The DNS record is a DNS-only CNAME to the stack output
+`ApiCustomDomainTarget` (a `d-<id>.execute-api.ap-southeast-1.amazonaws.com`
+name). It does not point at `<api-id>.execute-api.ap-southeast-1.amazonaws.com`,
+and Cloudflare does not proxy it. The record is published in the
+`lx-software.com` zone. There is no repository script for it.
 
 ### Secrets
 
