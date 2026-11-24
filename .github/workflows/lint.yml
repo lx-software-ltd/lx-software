@@ -71,16 +71,22 @@ jobs:
         with:
           install: "false"
 
-      # template:set
+      # template:optional hook-deps
       - name: Install hook dependencies
-        run: python -m pip install ruff && npm ci --prefix apps/public_www && npm ci --prefix apps/admin_web
-      # template:end
+        # template:set
+        run: python -m pip install 'ruff==0.17.6' && npm ci --prefix apps/public_www && npm ci --prefix apps/admin_web
+        # template:end
 
+      # template:end
       - name: Install pre-commit
         run: python -m pip install pre-commit
 
       - name: Run pre-commit checks
         run: pre-commit run --all-files --show-diff-on-failure
+
+      - name: Run mypy
+        run: bash scripts/ci/mypy.sh
+
   lint-admin-web:
     name: Lint Admin Web
     runs-on: ubuntu-26.04
@@ -160,9 +166,7 @@ jobs:
             if [ ! -f "$dir/package.json" ]; then echo "Skipping missing $dir"; continue; fi
             echo "Type-checking $dir"
             npm ci --prefix "$dir"
-            # template:set
-            npm run typecheck --prefix "$dir"
-            # template:end
+            npm run typecheck --if-present --prefix "$dir"
           done
 
   workflow-conformance:

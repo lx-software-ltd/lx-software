@@ -78,8 +78,6 @@ jobs:
         with:
           cache: npm
           working-directory: apps/public_www
-      # template:set
-      # template:end
 
       - name: Run tests
         run: npm run test:ci
@@ -117,6 +115,7 @@ jobs:
   e2e-admin-web:
     name: Admin Web viewport smoke
     runs-on: ubuntu-26.04
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -131,11 +130,15 @@ jobs:
         uses: lx-software-ltd/actions/playwright-install@8b75c2c3e18a96ffae1ac4f99e3dceb4821a1faf # main 2026-11-24
         with:
           working-directory: apps/admin_web
+          # template:set
           browsers: chromium
+          # template:end
 
       - name: Run viewport smoke tests
         run: npm run test:e2e
         working-directory: apps/admin_web
+        # template:set
+        # template:end
 
   # template:end
   test:
