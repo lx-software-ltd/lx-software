@@ -150,6 +150,7 @@ jobs:
         with:
           mode: enforce
           profile: product
+          alignment: enforce
 
   type-check:
     name: Type-check
