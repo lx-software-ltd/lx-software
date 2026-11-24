@@ -16,11 +16,12 @@ Usage:
 
 from __future__ import annotations
 
-import http.client
 import json
 import os
 import sys
+import urllib.error
 import urllib.parse
+import urllib.request
 from typing import Any
 
 API_HOSTNAME = "api.lx-software.com"
@@ -66,27 +67,27 @@ def desired_cname(target: str) -> dict[str, Any]:
 
 
 def _cf_request(method: str, path: str, token: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    # cloudflare_url keeps the request on api.cloudflare.com. http.client cannot use file://.
-    cloudflare_url(path)
-    data = None if payload is None else json.dumps(payload)
-    connection = http.client.HTTPSConnection("api.cloudflare.com", timeout=30)
+    data = None if payload is None else json.dumps(payload).encode()
+    # cloudflare_url rejects a scheme, a protocol-relative path, and '..'.
+    req = urllib.request.Request(  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
+        cloudflare_url(path),
+        data=data,
+        method=method,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
     try:
-        connection.request(
-            method,
-            "/client/v4" + path,
-            body=data,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
-        )
-        response = connection.getresponse()
-        body = response.read().decode()
-    finally:
-        connection.close()
-    if response.status >= 400:
-        raise RuntimeError(f"Cloudflare {method} {path} failed: {response.status} {body[:800]}")
-    return json.loads(body)
+        with (
+            urllib.request.urlopen(  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected # nosec B310
+                req
+            ) as resp
+        ):
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode()[:800]
+        raise RuntimeError(f"Cloudflare {method} {path} failed: {exc.code} {body}") from exc
 
 
 def resolve_zone_id(token: str, zone_name: str) -> str:
