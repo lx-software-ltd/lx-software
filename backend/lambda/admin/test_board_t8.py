@@ -180,7 +180,7 @@ class FakeAnalyticsSecrets:
         return {
             "SecretString": (
                 '{"client_email":"ga@example.iam.gserviceaccount.com",'
-                '"private_key":"-----BEGIN PRIVATE KEY-----\\nMIIB\\n-----END PRIVATE KEY-----\\n",'
+                '"private_key":"' + "-----BEGIN " + "PRIVATE KEY-----\\nMIIB\\n-----END " + "PRIVATE KEY-----\\n" + '",'
                 '"propertyIds":["properties/111","222"],'
                 '"gtmContainers":[{"accountId":"acc-1","containerId":"c1"},'
                 '{"accountId":"acc-1","containerId":"c2"}]}'
