@@ -11,7 +11,8 @@
     "cdk": "cdk",
     "synth": "cdk synth",
     "deploy": "cdk deploy",
-    "synth:ci": "CDK_SKIP_PYTHON_PIP=1 cdk synth --quiet --output cdk.out"
+    "synth:ci": "CDK_DISABLE_CONTEXT_LOOKUPS=1 CDK_SKIP_PYTHON_PIP=1 cdk synth --quiet --output cdk.out",
+    "test:infra": "npm run build && jest"
   },
   "keywords": [],
   "author": "",
