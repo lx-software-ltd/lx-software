@@ -4,12 +4,32 @@
 work for Hong Kong startups: part-time technology leadership, AI and
 automation, cloud and microservice architecture, and technical due
 diligence. This repository hosts that **public** marketing site and a
-separate **admin** console. Both are Vite + React Router apps. The public
-site uses hand-written CSS and is pre-rendered to static HTML at build time;
-the admin console uses TanStack Query and Bootstrap 5. Static assets deploy
-to private S3 buckets and are served through CloudFront.
+separate **admin** console. The admin console is private. It holds the
+finance books, statement import, banking sync, and the Siu Tin Dei
+Executive Board.
 
-## Quick start (public site)
+This repository is public. Secrets and private personal data stay out of
+git.
+
+## What is here
+
+| Path | What it is |
+| --- | --- |
+| `apps/public_www/` | The public site. Vite and React Router with hand-written CSS, pre-rendered to static HTML at build time. |
+| `apps/admin_web/` | The admin console. Vite and React Router with TanStack Query and Bootstrap 5. |
+| `backend/infrastructure/` | The AWS CDK app. Static assets deploy to private S3 buckets and are served through CloudFront. |
+| `backend/lambda/` | The Python Lambda code: the admin API, the public API key authorizer, and the Cognito pre-token hook. |
+| `contracts/` | Constants shared by the admin console, the admin Lambda, and CDK. |
+| `scripts/` | Checks, contract sync, key management, and deploy scripts. |
+| `docs/` | Architecture, deployment runbooks, and legal notes. |
+
+## Working here
+
+Read [`AGENTS.md`](AGENTS.md) before changing anything. The zone map,
+[`docs/architecture/zones.md`](docs/architecture/zones.md), says which
+paths need a plan or an approval first.
+
+### Quick start (public site)
 
 ```bash
 cd apps/public_www
@@ -17,7 +37,7 @@ npm install
 npm run dev
 ```
 
-## Quick start (admin console)
+### Quick start (admin console)
 
 ```bash
 cd apps/admin_web
@@ -37,3 +57,14 @@ Infra deploy expects GitHub variable **`ADMIN_GOOGLE_CLIENT_ID`**, and productio
 - AWS / GitHub OIDC setup and CDK Bootstrap: `docs/deployment/setup.md`
 - Deploying the public site: `docs/deployment/public-website.md`
 - Deploying and operating the admin site: `docs/deployment/admin-website.md`
+
+## Security
+
+To report a vulnerability, follow [`SECURITY.md`](SECURITY.md). Do not
+open a public issue.
+
+## Licence
+
+Licensed under the Apache License, Version 2.0. The full text is in
+[`LICENSE`](LICENSE). The fonts in `backend/lambda/admin/fonts/` keep
+their own licence, the SIL Open Font License in `OFL.txt` there.
