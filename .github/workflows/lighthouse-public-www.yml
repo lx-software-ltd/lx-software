@@ -27,7 +27,7 @@ jobs:
       contents: read
       statuses: write
     name: Lighthouse audit
-    if: github.event_name != 'pull_request'
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name != 'pull_request') }}
     runs-on: ubuntu-26.04
     # The VITE_* build variables live on the production environment, the same
     # ones Deploy Public Website reads, so the audited bundle matches the live site.

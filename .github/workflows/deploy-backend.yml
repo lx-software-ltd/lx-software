@@ -1,6 +1,8 @@
 name: Deploy Backend
 
 on:
+  repository_dispatch:
+    types: [deploy-backend]
   push:
     branches: [main]
     # AdminApiFn / inbound-mail / authorizer code lives next to the CDK app.
@@ -21,6 +23,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
       id-token: write

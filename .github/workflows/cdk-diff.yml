@@ -1,6 +1,8 @@
 name: CDK Diff
 
 on:
+  repository_dispatch:
+    types: [cdk-diff]
   pull_request:
     paths:
       - "backend/**"
